@@ -1,6 +1,7 @@
 import 'package:matrix/matrix.dart';
 
 import 'duplicate_room_registry.dart';
+import 'conversation_identity_admission.dart';
 
 /// Account-synced associations preserve every source room. m.direct is never
 /// destructively collapsed: the app projection selects one representative.
@@ -88,6 +89,14 @@ Future<void> convergeDirectDirectory(
       directory[entry.key] = (entry.value as List).whereType<String>().toSet();
     }
   }
+  for (final entry in identities.localDirectPeers(self).entries) {
+    final local = _joinedRoomById(client, entry.key);
+    if (local != null &&
+        admitConversationIdentity(local, self, identities) != entry.value) {
+      continue;
+    }
+    directory.putIfAbsent(entry.value, () => <String>{}).add(entry.key);
+  }
   for (final entry in identities.entries(self)) {
     directory.putIfAbsent(entry.peerId, () => <String>{})
       ..add(entry.duplicateRoomId)
@@ -134,7 +143,9 @@ Future<void> convergeDirectDirectory(
     final revision = identities.revisionForPeer(self, entry.key);
     final localVerified = entry.value.where((id) {
       final room = _joinedRoomById(client, id);
-      return room != null && room.encrypted;
+      return room != null &&
+          room.encrypted &&
+          admitConversationIdentity(room, self, identities) == entry.key;
     }).toSet();
     final retained = identities
         .entries(self)

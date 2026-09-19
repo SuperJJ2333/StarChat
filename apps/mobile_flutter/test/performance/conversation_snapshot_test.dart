@@ -1,16 +1,28 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart';
 
 final class _SnapshotClient extends Client {
   _SnapshotClient() : super('conversation-snapshot-performance');
+  @override
+  String get userID => '@me:test';
   final roomsForTest = <Room>[];
   @override
   List<Room> get rooms => roomsForTest;
 }
 
 final class _MeasuredRoom extends Room {
-  _MeasuredRoom({required super.id, required super.client});
+  _MeasuredRoom({required super.id, required super.client}) {
+    setState(Event(
+        room: this,
+        type: 'com.chatflow.conversation_kind',
+        stateKey: '',
+        eventId: 'fixture-kind',
+        senderId: '@me:test',
+        originServerTs: DateTime.utc(2026, 9, 19),
+        content: {'kind': 'group'}));
+  }
   final users = <User>[];
   int participantReads = 0;
 
@@ -32,6 +44,8 @@ final class _MeasuredRoom extends Room {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   test('500-room snapshots project members only for dirty group rooms',
       () async {
     final client = _SnapshotClient();

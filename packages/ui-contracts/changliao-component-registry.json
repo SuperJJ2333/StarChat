@@ -1,6 +1,30 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-19-conversation-identity-admission": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "messages-inbox-identity-pending",
+      "components": [
+            "ConversationListTile",
+            "CupertinoButton"
+      ],
+      "props": [
+            "unresolvedRoomCount"
+      ],
+      "states": [
+            "identity-pending",
+            "retrying",
+            "resolved",
+            "offline"
+      ],
+      "tokens": [
+            "WeChatColors.textSecondary",
+            "WeChatSpacing.md",
+            "WeChatDimensions.conversationAvatar"
+      ],
+      "behavior": "One generic recovery notice without physical room identities/counts; retained local rows remain usable; retry invokes existing directory convergence and refreshes only the current account on completion."
+},
     "2026-09-09-shared-media-identity": {
       "comments": "Reuse ChatEmojiPanel and ImagePickerPage; prepareGalleryMedia shared with chat; preserve GIF animation and actual MIME",
       "identity": "ProfileRepository.resolveIdentity; local remark before public nickname; known avatar deletion distinct from absent metadata; account-scoped cacheKey",
@@ -1480,7 +1504,7 @@
     }
   },
   "screens": {
-    "expectedCount": 372
+    "expectedCount": 373
   },
   "adminCompletion20260910": {
     "html": [

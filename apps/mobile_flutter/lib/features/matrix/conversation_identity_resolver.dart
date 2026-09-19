@@ -151,6 +151,11 @@ ConversationIdentityResolution<T> resolveIdentityResolution<T>(
   final groups = <String, List<T>>{};
   final keys = <T, String>{};
   for (final item in items) {
+    final peer = directPeerIdOf(item);
+    if (isDirectOf(item) &&
+        (peer == null || peer.isEmpty || peer == selfUserId)) {
+      continue;
+    }
     final key = conversationIdentityKeyOf(
       isDirect: isDirectOf(item),
       directPeerId: directPeerIdOf(item),
@@ -166,8 +171,8 @@ ConversationIdentityResolution<T> resolveIdentityResolution<T>(
     final primary = (peer == null || peer.isEmpty || primaryRoomIdOf == null)
         ? null
         : primaryRoomIdOf(peer);
-    winners[entry.key] = entry.value.reduce(
-        (incumbent, candidate) => _preferCandidate(
+    winners[entry.key] =
+        entry.value.reduce((incumbent, candidate) => _preferCandidate(
               candidate,
               incumbent,
               primaryRoomId: primary,
@@ -176,8 +181,8 @@ ConversationIdentityResolution<T> resolveIdentityResolution<T>(
               messageCountOf: messageCountOf,
               lastActivityOf: lastActivityOf,
             )
-            ? candidate
-            : incumbent);
+                ? candidate
+                : incumbent);
   }
   final duplicates = <String, List<T>>{};
   for (final entry in groups.entries) {

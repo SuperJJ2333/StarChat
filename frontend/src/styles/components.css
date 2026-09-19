@@ -1094,3 +1094,12 @@ app-image-editor, app-room-image-gallery { display: block; height: 100%; min-hei
 .c-official-name { display: inline-flex; min-width: 0; align-items: baseline; gap: var(--space-xs); }
 .c-official-name__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-official-name__badge { flex: 0 0 auto; color: var(--color-support-identity); font-size: var(--type-caption-size); line-height: var(--type-caption-line); }
+
+.c-conversation-row__recovery-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 var(--size-avatar-conversation);
+  width: var(--size-avatar-conversation);
+  height: var(--size-avatar-conversation);
+  color: var(--color-text-secondary);
+}

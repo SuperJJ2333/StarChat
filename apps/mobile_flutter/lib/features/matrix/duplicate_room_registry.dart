@@ -55,6 +55,38 @@ final class DuplicateRoomRegistry {
   final Map<String, Future<void>> _writes = {};
   final Map<String, Map<String, String>> _primaries = {};
   final Map<String, Map<String, int>> _revisions = {};
+  final Map<String, Map<String, String>> _localIdentities = {};
+
+  /// Projection identity is durable independently of the sending authority.
+  /// Observing m.direct must never elect or overwrite a canonical destination.
+  Future<void> rememberLocalIdentities(
+      String accountId, Map<String, String> identities) async {
+    await ensureLoaded(accountId);
+    final retained = _localIdentities.putIfAbsent(accountId, () => {});
+    var changed = false;
+    for (final entry in identities.entries) {
+      if (!entry.key.startsWith('!') ||
+          (entry.value != 'group' &&
+              (!entry.value.startsWith('@') || entry.value == accountId))) {
+        continue;
+      }
+      if (retained[entry.key] == entry.value) continue;
+      retained[entry.key] = entry.value;
+      changed = true;
+    }
+    if (changed) await _persist(accountId);
+  }
+
+  bool isKnownGroup(String accountId, String roomId) =>
+      _localIdentities[accountId]?[roomId] == 'group';
+
+  Map<String, String> localDirectPeers(String accountId) => {
+        for (final entry
+            in (_localIdentities[accountId] ?? <String, String>{}).entries)
+          if (entry.value.startsWith('@'))
+            entry.key:
+                verifiedPeerIdForRoom(accountId, entry.key) ?? entry.value,
+      };
 
   Future<bool> rememberPrimary(String accountId, String peerId, String roomId,
       {int? revision}) async {
@@ -166,6 +198,20 @@ final class DuplicateRoomRegistry {
           }
         }
       }
+      if (decoded is Map && decoded['local_identities'] is Map) {
+        final identities = _localIdentities.putIfAbsent(accountId, () => {});
+        for (final entry in (decoded['local_identities'] as Map).entries) {
+          if (entry.key is String &&
+              (entry.key as String).startsWith('!') &&
+              entry.value is String &&
+              (entry.value == 'group' ||
+                  ((entry.value as String).startsWith('@') &&
+                      entry.value != accountId))) {
+            identities.putIfAbsent(
+                entry.key as String, () => entry.value as String);
+          }
+        }
+      }
     } catch (_) {
       // 持久层不可用：登记退化为进程内内存（不阻断收敛/解析）。
     } finally {
@@ -227,6 +273,13 @@ final class DuplicateRoomRegistry {
       _byAccount[accountId]?[roomId];
 
   String? peerIdForRoom(String accountId, String roomId) {
+    final verified = verifiedPeerIdForRoom(accountId, roomId);
+    if (verified != null) return verified;
+    final local = _localIdentities[accountId]?[roomId];
+    return local?.startsWith('@') == true ? local : null;
+  }
+
+  String? verifiedPeerIdForRoom(String accountId, String roomId) {
     final duplicate = entryForRoom(accountId, roomId);
     if (duplicate != null) return duplicate.peerId;
     for (final entry in (_primaries[accountId] ?? <String, String>{}).entries) {
@@ -265,6 +318,7 @@ final class DuplicateRoomRegistry {
           ],
           'primaries': _primaries[accountId] ?? <String, String>{},
           'revisions': _revisions[accountId] ?? <String, int>{},
+          'local_identities': _localIdentities[accountId] ?? <String, String>{},
         }),
       );
     } catch (_) {
@@ -277,6 +331,7 @@ final class DuplicateRoomRegistry {
     _byAccount.clear();
     _primaries.clear();
     _revisions.clear();
+    _localIdentities.clear();
     _loadedAccounts.clear();
     _loads.clear();
     _writes.clear();

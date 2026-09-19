@@ -1,5 +1,6 @@
 import { fixtures } from "../catalog/fixtures.js";
 import { button, element } from "../components/base.js";
+import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
 
 function conversationTile(conversation, options = {}) {
@@ -22,6 +23,17 @@ function messageInbox(definition) {
   const content = element("div", "p-messages-inbox__content");
   if (["offline", "reconnecting"].includes(definition.state)) {
     content.append(component("app-network-capsule", { state: definition.state }));
+  }
+  if (definition.state === "identity-pending") {
+    const recovery = conversationTile({ name: "正在恢复会话", preview: "聊天记录已保留，联网后自动重试", time: "重试", unread: 0 });
+    const recoveryIcon = element("span", "c-conversation-row__recovery-icon");
+    recoveryIcon.append(icon("retry"));
+    recovery.firstElementChild.replaceWith(recoveryIcon);
+    recovery.dataset.action = "open:messages-inbox-default";
+    recovery.tabIndex = 0;
+    recovery.setAttribute("role", "status");
+    recovery.setAttribute("aria-label", "正在恢复会话，聊天记录已保留，联网后自动重试；点击重试");
+    content.append(recovery);
   }
   if (definition.state === "empty") {
     content.append(component("app-empty-state", { title: "暂无会话", message: "从通讯录选择好友开始加密聊天", action: "打开通讯录" }));

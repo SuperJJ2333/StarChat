@@ -139,7 +139,7 @@ void main() {
             selfUserId: '@alice:test', peerId: '@me:test'));
   });
 
-  test('directPeerId 缺失的房间按 roomId 独立保留，不被误删', () {
+  test('directPeerId 缺失的私聊不得作为独立可见行泄漏', () {
     final rooms = [
       directRoom('!x:test', ''),
       directRoom('!y:test', ''),
@@ -147,8 +147,7 @@ void main() {
     ];
     final resolved =
         resolveConversationIdentities(rooms, selfUserId: '@me:test');
-    expect(resolved.map((room) => room.id).toSet(),
-        {'!x:test', '!y:test', '!peer:test'});
+    expect(resolved.map((room) => room.id).toSet(), {'!peer:test'});
   });
 
   test('群聊按 roomId 出行，永不与私聊混淆', () {
@@ -190,12 +189,12 @@ void main() {
     );
     expect(resolution.representatives.map((room) => room.id).toList(),
         ['!new:test', '!group:test']);
-    expect(
-        resolution.duplicatesByRepresentativeId['!new:test']!.single.id,
+    expect(resolution.duplicatesByRepresentativeId['!new:test']!.single.id,
         '!old:test',
         reason: '落选房间必须挂在其主房间名下，供未读并入');
     expect(resolution.duplicatesByRepresentativeId.containsKey('!group:test'),
-        isFalse, reason: '无落选者的主房间不得出现空分组');
+        isFalse,
+        reason: '无落选者的主房间不得出现空分组');
   });
 
   test('被本机隐藏（删除该聊天）的重复房间不得压制可见房间', () {

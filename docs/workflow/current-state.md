@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-19 会话身份未恢复时禁止重复出行（实现及客户端门禁通过，2140待构建）
+
+用户要求进一步修复2137未覆盖的身份缺失窗口。消息列表增加身份准入、本地持久恢复及统一待恢复提示；不按名称或两名成员猜私聊。权威状态见[任务](tasks/2026-09-19-conversation-identity-admission.md)与[证据](../verification/2026-09-19-conversation-identity-admission.md)。已整合并行发布的0.3.99/2139版本提交，新候选预留0.3.100/2140；2137及2139均不包含本次修复。
+
 ## 2026-09-19 私聊自动恢复（服务端及Android0.3.98/2137已发布，iOS候选已验包，待企业签名）
 
 用户确认单好友人工校正后正常发送，要求从根源覆盖其他有效好友。新增权威目标生命周期、固定恢复世代、目录revision防回滚，以及新消息/附件发送前恢复。main742bf4eb已合并推送；Flutter3604、analyze0、完整verify、真实PostgreSQL15情景通过。生产API4996/0071已于22:36+08上线，旧GET实际自动修复另一对符合条件会话且重放零写；无source/单方退出需新版客户端驱动。Android2137固定签名APK及非强制弹窗22:42发布、两侧下载验证完成；iOS2137候选已验包交付企业重签，签名CI、Android CI及iOS18/26兼容性全部通过；线上iOS2134保持原状。权威进度见[任务记录](tasks/2026-09-19-direct-conversation-auto-recovery.md)、[证据](../verification/2026-09-19-direct-conversation-auto-recovery.md)与[ADR](../adr/2026-09-19-direct-destination-lifecycle.md)。

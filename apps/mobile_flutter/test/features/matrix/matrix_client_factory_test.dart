@@ -115,7 +115,22 @@ class FailedOpenDatabase extends Fake implements MatrixSdkDatabase {
 
 class SnapshotRoom extends Room {
   SnapshotRoom(
-      {required super.id, required super.client, required this.joined});
+      {required super.id, required super.client, required this.joined}) {
+    // Real app groups carry these authority keys in their creation state.
+    setState(Event(
+        room: this,
+        type: EventTypes.RoomPowerLevels,
+        stateKey: '',
+        eventId: 'fixture-group-kind',
+        senderId: '@me:test',
+        originServerTs: DateTime.utc(2026, 9, 19),
+        content: {
+          'events': {
+            'com.changliao.group.settings': 50,
+            'com.changliao.group.announcement': 50
+          }
+        }));
+  }
   final bool joined;
   int refreshCalls = 0;
   final refresh = Completer<List<User>>();

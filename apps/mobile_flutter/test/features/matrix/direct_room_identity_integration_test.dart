@@ -93,6 +93,24 @@ Room _joinedRealRoom(IdentityFlowClient client, String id) => IdentityFlowRoom(
       }),
     );
 
+final class MutableRoomsClient extends IdentityFlowClient {
+  final liveRooms = <Room>[];
+  @override
+  List<Room> get rooms => liveRooms;
+}
+
+final class HydratingIdentityRoom extends IdentityFlowRoom {
+  HydratingIdentityRoom(
+      {required super.client, required super.id, required this.onHydrate})
+      : super(membership: Membership.join);
+  final void Function() onHydrate;
+  @override
+  Future<void> postLoad() async {
+    onHydrate();
+    partial = false;
+  }
+}
+
 void main() {
   setUp(() {
     PathProviderPlatform.instance = MatrixTestPaths();
@@ -204,5 +222,144 @@ void main() {
     expect(lease.roomInfo.id, '!new:test');
     expect(lease.roomInfo.isDirect, isTrue,
         reason: '打开的是逻辑会话的 primary 房间，身份来自真实 SDK 计算');
+  });
+  test(
+      'unknown rooms wait for identity instead of flashing duplicate group rows',
+      () async {
+    final client = IdentityFlowClient();
+    client.roomsById
+      ..['!old:test'] = _joinedRealRoom(client, '!old:test')
+      ..['!new:test'] = _joinedRealRoom(client, '!new:test');
+    final registry = DuplicateRoomRegistry();
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'), duplicateRooms: registry);
+    final pending = await matrix.conversations.snapshot();
+    expect(pending.rooms, isEmpty);
+    expect(pending.unresolvedRoomCount, 2);
+    expect(client.rooms, hasLength(2),
+        reason: 'quarantine must not delete room history');
+    await registry.rememberPrimary('@me:test', '@peer:test', '!new:test');
+    await registry.record(
+        accountId: '@me:test',
+        peerId: '@peer:test',
+        primaryRoomId: '!new:test',
+        duplicateRoomId: '!old:test');
+    final resolved = await matrix.conversations.snapshot();
+    expect(resolved.rooms.map((r) => r.id), ['!new:test']);
+    expect(resolved.unresolvedRoomCount, 0);
+    expect(client.accountWrites, isEmpty,
+        reason: 'projection must be local with no Matrix writes');
+  });
+
+  test(
+      'observed direct identity survives m.direct removal and process restart offline',
+      () async {
+    final client = IdentityFlowClient();
+    client.roomsById
+      ..['!old:test'] = _joinedRealRoom(client, '!old:test')
+      ..['!new:test'] = _joinedRealRoom(client, '!new:test');
+    client.directory['@peer:test'] = ['!old:test', '!new:test'];
+    final first = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        duplicateRooms: DuplicateRoomRegistry());
+    expect((await first.conversations.snapshot()).rooms, hasLength(1));
+    client.directory.clear();
+    final restarted = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        duplicateRooms: DuplicateRoomRegistry());
+    final snapshot = await restarted.conversations.snapshot();
+    expect(snapshot.rooms, hasLength(1));
+    expect(snapshot.rooms.single.directPeerId, '@peer:test');
+    expect(restarted.logicalRoomSourcesSync(snapshot.rooms.single.id),
+        {'!old:test', '!new:test'},
+        reason: 'both histories remain logical sources');
+  });
+
+  test('reservation arriving before m.direct resolves from complete pair state',
+      () async {
+    final client = IdentityFlowClient();
+    for (final id in ['!old:test', '!new:test']) {
+      final room = _joinedRealRoom(client, id);
+      room.partial = false;
+      room.setState(Event(
+          room: room,
+          type: 'com.chatflow.direct_reservation',
+          stateKey: '',
+          eventId: 'reservation-$id',
+          senderId: '@me:test',
+          originServerTs: DateTime.utc(2026, 9, 19),
+          content: {'reservation_id': 'known'}));
+      client.roomsById[id] = room;
+    }
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        duplicateRooms: DuplicateRoomRegistry());
+    final snapshot = await matrix.conversations.snapshot();
+    expect(snapshot.rooms, hasLength(1));
+    expect(snapshot.rooms.single.directPeerId, '@peer:test');
+  });
+
+  test('two-member legacy app groups remain separate from private chat',
+      () async {
+    final client = IdentityFlowClient();
+    for (final id in ['!group1:test', '!group2:test']) {
+      final room = _joinedRealRoom(client, id);
+      room.setState(Event(
+          room: room,
+          type: EventTypes.RoomPowerLevels,
+          stateKey: '',
+          eventId: 'power-$id',
+          senderId: '@me:test',
+          originServerTs: DateTime.utc(2026, 9, 19),
+          content: {
+            'events': {
+              'com.changliao.group.settings': 50,
+              'com.changliao.group.announcement': 50
+            }
+          }));
+      client.roomsById[id] = room;
+    }
+    client.roomsById['!direct:test'] = _joinedRealRoom(client, '!direct:test');
+    client.directory['@peer:test'] = ['!direct:test'];
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        duplicateRooms: DuplicateRoomRegistry());
+    final snapshot = await matrix.conversations.snapshot();
+    expect(snapshot.rooms, hasLength(3));
+    expect(snapshot.rooms.where((r) => !r.isDirect).map((r) => r.id).toSet(),
+        {'!group1:test', '!group2:test'});
+  });
+
+  test('sync may add a room while lazy local identity is being hydrated',
+      () async {
+    final client = MutableRoomsClient();
+    client.liveRooms.add(HydratingIdentityRoom(
+        client: client,
+        id: '!pending:test',
+        onHydrate: () =>
+            client.liveRooms.add(_joinedRealRoom(client, '!later:test'))));
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        duplicateRooms: DuplicateRoomRegistry());
+    final first = await matrix.conversations.snapshot();
+    expect(first.rooms, isEmpty);
+    expect(first.unresolvedRoomCount, 1);
+    expect((await matrix.conversations.snapshot()).unresolvedRoomCount, 2);
+  });
+  test('identity becoming contradictory during local hydration stays pending',
+      () async {
+    final client = MutableRoomsClient();
+    client.directory['@peer:test'] = ['!first:test'];
+    client.liveRooms.add(_joinedRealRoom(client, '!first:test'));
+    client.liveRooms.add(HydratingIdentityRoom(
+        client: client,
+        id: '!pending:test',
+        onHydrate: () => client.directory['@other:test'] = ['!first:test']));
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        duplicateRooms: DuplicateRoomRegistry());
+    final snapshot = await matrix.conversations.snapshot();
+    expect(snapshot.rooms, isEmpty);
+    expect(snapshot.unresolvedRoomCount, 2);
   });
 }

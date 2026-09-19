@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +13,8 @@ import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   testWidgets('same event ID content edit replaces the home preview',
       (tester) async {
     MatrixConversationSnapshot snapshot(String body) =>
@@ -187,13 +190,24 @@ BusinessApiClient _api() => BusinessApiClient(
 
 final class _SnapshotClient extends Client {
   _SnapshotClient() : super('home-projection-test');
+  @override
+  String get userID => '@me:test';
   final roomsForTest = <Room>[];
   @override
   List<Room> get rooms => roomsForTest;
 }
 
 final class _MeasuredRoom extends Room {
-  _MeasuredRoom({required super.id, required super.client});
+  _MeasuredRoom({required super.id, required super.client}) {
+    setState(Event(
+        room: this,
+        type: 'com.chatflow.conversation_kind',
+        stateKey: '',
+        eventId: 'fixture-kind',
+        senderId: '@me:test',
+        originServerTs: DateTime.utc(2026, 9, 19),
+        content: {'kind': 'group'}));
+  }
   final users = <User>[];
   int participantReads = 0;
   @override

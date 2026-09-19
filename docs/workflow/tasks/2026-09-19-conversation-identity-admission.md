@@ -1,0 +1,7 @@
+# Conversation identity admission repair
+
+Started2026-09-19T23:08+08 (first investigation; exact initial second unknown). User explicitly authorized further repair; prior main/GitHub/production/mobile release authority retained. Basecd18e8b1, reused clean conversation-reliability worktree; root unrelated dirty files remain untouched. Root owns identity/cache/snapshot/resolver/group creation and docs; UI agent owns message page/demo/registry and separate tests. [Plan](../../superpowers/plans/2026-09-19-conversation-identity-admission.md).
+
+Status: investigation/design accepted by user scope; implementation beginning. Confirmed fallback roomId on unknown identity and unawaited convergence refresh ordering. Existing2137 is shipped but does not include this task. Next: red tests for unknown classification/persistence and real SDK recovery. Artifact directory docs/verification/artifacts/2026-09-19/conversation-identity-admission. No production writes yet; no signing files received.
+
+23:39+08 source ready: initial four red cases plus three review cases corrected; independent spec/security final review approved. Flutter3628/analyze0, boundary70/UIcontract373/frontend216 passed. Full verify still running, backend inputs unchanged from prior742bf4eb full PASS. Integrated concurrent4da52382 release version-only changes; candidate0.3.100/2140. Next: freeze reviewed source, build Android fixed-signer and iOS CI; publish only after full applicable gates. [Evidence](../../verification/2026-09-19-conversation-identity-admission.md).

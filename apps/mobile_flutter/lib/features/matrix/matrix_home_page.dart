@@ -264,6 +264,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   final SnapshotRefreshCoordinator<MatrixConversationSnapshot>
       _snapshotRefresh = SnapshotRefreshCoordinator();
   var _snapshotOwnerEpoch = 0;
+  int _unresolvedRoomCount = 0;
+  Object? _directRecoveryJob;
   late DecryptionStateController decryptionStates;
   List<_RoomSnapshot> _rooms = const [];
   final Map<String, _RoomProjectionCacheEntry> _roomProjectionCache = {};
@@ -307,44 +309,68 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   Future<void> _processPendingDirectInvites() async {
-    if (widget.previewOnly) return;
+    if (!mounted || widget.previewOnly || _directRecoveryJob != null) return;
+    final matrix = widget.matrix;
+    final api = widget.api;
+    final identities = _identityCache;
+    final ownerEpoch = _snapshotOwnerEpoch;
+    final userId = matrix.userId;
+    final job = Object();
+    setState(() => _directRecoveryJob = job);
+    bool current() =>
+        mounted &&
+        ownerEpoch == _snapshotOwnerEpoch &&
+        identical(widget.matrix, matrix) &&
+        matrix.userId == userId &&
+        identical(widget.api, api) &&
+        identical(_identityCache, identities);
     try {
-      await _identityCache.preload();
-      await widget.matrix.conversations.autoJoinDirectInvites(
-          _identityCache.contactsByMatrixId.keys.toSet(), _directJoinInFlight);
-      // m.direct 目录收敛（同一好友单条目，绝不 leave）：canonical 查询走
-      // 业务 API 权威目录；m.direct 键是 matrixId，先经好友目录转换为业务
-      // userId 再查询（转换缺失则跳过，只用本地规则）。失败静默，下次 sync
-      // 重试。列表唯一性另有 ConversationIdentityResolver 兜底。
-      unawaited(widget.matrix.conversations
-          .convergeDirectRoomDirectory(
-              knownMatrixPeers: _identityCache.contactsByMatrixId.keys,
-              businessUserIdOf: (matrixPeer) =>
-                  _identityCache.contactsByMatrixId[matrixPeer]?.userId,
-              associationsOf: (peer) async {
-                final body =
-                    await widget.api.directConversationAssociations(peer);
-                final primary = body['matrix_room_id'];
-                if (primary is! String || primary.isEmpty) return null;
-                return DirectRoomAssociations(
-                    primaryRoomId: primary,
-                    revision: body['revision'] as int?,
-                    roomIds: (body['room_ids'] as List? ?? const [])
-                        .whereType<String>()
-                        .toList());
-              },
-              publishAssociations: (peer, rooms) async {
-                for (final room in rooms) {
-                  await widget.api
-                      .registerDirectConversationHistory(peer, room);
-                }
-              },
-              canonicalRoomIdOf: (businessUserId) =>
-                  ApiDirectRoomCoordinator(widget.api)
-                      .canonicalRoomId(businessUserId))
-          .catchError((_) {}));
-      await _refreshClientSnapshot();
-    } catch (_) {/* Contact availability is required; retry after sync. */}
+      await identities.preload();
+      if (!current()) return;
+      await matrix.conversations.autoJoinDirectInvites(
+          identities.contactsByMatrixId.keys.toSet(), _directJoinInFlight);
+      if (!current()) return;
+      // Initial local snapshot loads independently. Refresh again only after
+      // directory convergence completes, so resolved identities appear promptly.
+      await matrix.conversations.convergeDirectRoomDirectory(
+        knownMatrixPeers: identities.contactsByMatrixId.keys,
+        businessUserIdOf: (peer) =>
+            current() ? identities.contactsByMatrixId[peer]?.userId : null,
+        associationsOf: (peer) async {
+          if (!current()) return null;
+          final body = await api.directConversationAssociations(peer);
+          if (!current()) return null;
+          final primary = body['matrix_room_id'];
+          if (primary is! String || primary.isEmpty) return null;
+          return DirectRoomAssociations(
+            primaryRoomId: primary,
+            revision: body['revision'] as int?,
+            roomIds: (body['room_ids'] as List? ?? const [])
+                .whereType<String>()
+                .toList(),
+          );
+        },
+        publishAssociations: (peer, rooms) async {
+          for (final room in rooms) {
+            if (!current()) return;
+            await api.registerDirectConversationHistory(peer, room);
+          }
+        },
+        canonicalRoomIdOf: (peer) async {
+          if (!current()) return null;
+          final room =
+              await ApiDirectRoomCoordinator(api).canonicalRoomId(peer);
+          return current() ? room : null;
+        },
+      );
+      if (current()) await _refreshClientSnapshot();
+    } catch (_) {
+      // Local history stays visible; the next sync or explicit retry can recover.
+    } finally {
+      if (mounted && identical(_directRecoveryJob, job)) {
+        setState(() => _directRecoveryJob = null);
+      }
+    }
   }
 
   List<MatrixGroupInviteSnapshot> get _pendingInviteRooms =>
@@ -525,11 +551,13 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         _roomProjectionCache.removeWhere((id, _) => !liveRoomIds.contains(id));
         _conversationRows.removeWhere((id, _) => !liveRoomIds.contains(id));
         _conversationKeys.removeWhere((id, _) => !liveRoomIds.contains(id));
-        final changed = _vaultRoomId != snapshot.vaultRoomId ||
+        final changed = _unresolvedRoomCount != snapshot.unresolvedRoomCount ||
+            _vaultRoomId != snapshot.vaultRoomId ||
             _reminderRoomId != snapshot.reminderRoomId ||
             !_sameRoomSnapshots(_rooms, nextRooms);
         if (!changed) return;
         setState(() {
+          _unresolvedRoomCount = snapshot.unresolvedRoomCount;
           _vaultRoomId = snapshot.vaultRoomId;
           _reminderRoomId = snapshot.reminderRoomId;
           _rooms = List.unmodifiable(nextRooms);
@@ -685,8 +713,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       }
       unawaited(_refreshClientSnapshot());
     }
-    if (!identical(widget.matrix, oldWidget.matrix)) {
+    if (!identical(widget.matrix, oldWidget.matrix) ||
+        !identical(widget.api, oldWidget.api) ||
+        identityChanged) {
       _snapshotOwnerEpoch++;
+      _directRecoveryJob = null;
       _roomProjectionCache.clear();
       _conversationRows.clear();
       _conversationKeys.clear();
@@ -696,6 +727,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         decryptionStates = DecryptionStateController();
         setState(() {
           _rooms = const [];
+          _unresolvedRoomCount = 0;
           _roomProjectionCache.clear();
           _conversationRows.clear();
           _conversationKeys.clear();
@@ -703,7 +735,10 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           _reminderRoomId = null;
         });
       }
-      if (!widget.previewOnly) _attachMatrixListeners();
+      if (!widget.previewOnly) {
+        _attachMatrixListeners();
+        unawaited(_processPendingDirectInvites());
+      }
       unawaited(_refreshClientSnapshot());
     }
   }
@@ -1184,7 +1219,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         child: Builder(builder: (context) {
           final invites = _pendingInviteRooms;
           final body = rooms.isEmpty && foldedRooms.isEmpty && invites.isEmpty
-              ? const _MessagesEmptyState()
+              ? (_unresolvedRoomCount > 0
+                  ? const SizedBox.expand()
+                  : const _MessagesEmptyState())
               : ListView.separated(
                   padding: EdgeInsets.zero,
                   itemCount: invites.length +
@@ -1280,6 +1317,21 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+              if (_unresolvedRoomCount > 0)
+                Semantics(
+                  liveRegion: true,
+                  child: ConversationListTile(
+                    key: const Key('conversation-identity-recovery'),
+                    title: '正在恢复会话',
+                    subtitle: '聊天记录已保留，联网后自动重试',
+                    timeLabel: _directRecoveryJob == null ? '重试' : '',
+                    avatar: const Icon(CupertinoIcons.arrow_clockwise,
+                        color: WeChatColors.textSecondary),
+                    onTap: widget.previewOnly || _directRecoveryJob != null
+                        ? null
+                        : () => unawaited(_processPendingDirectInvites()),
                   ),
                 ),
               Expanded(child: body),

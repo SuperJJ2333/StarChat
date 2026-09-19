@@ -1,6 +1,7 @@
 import 'package:matrix/matrix.dart';
 
 import 'group_chat_controller.dart';
+import 'conversation_identity_admission.dart';
 import 'group_room_authority.dart';
 
 final class MatrixGroupChatBackend implements GroupChatBackend {
@@ -30,6 +31,10 @@ final class MatrixGroupChatBackend implements GroupChatBackend {
           },
         },
         initialState: [
+          StateEvent(
+              type: conversationKindStateType,
+              stateKey: '',
+              content: {'kind': 'group'}),
           StateEvent(
             type: EventTypes.Encryption,
             content: {

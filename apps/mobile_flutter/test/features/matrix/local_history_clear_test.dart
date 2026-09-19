@@ -14,6 +14,8 @@ class LocalClearRoom extends SnapshotRoom {
   @override
   bool get isDirectChat => true;
   @override
+  String? get directChatMatrixID => '@peer-$id:test';
+  @override
   int get notificationCount => unread;
   int unread = 3;
 }

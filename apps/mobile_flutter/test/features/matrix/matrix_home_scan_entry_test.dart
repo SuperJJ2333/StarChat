@@ -45,6 +45,14 @@ void main() {
     if (encrypted) {
       final room =
           Room(id: '!locked:example', client: sdk, membership: Membership.join);
+      room.setState(Event(
+          room: room,
+          type: 'com.chatflow.conversation_kind',
+          stateKey: '',
+          eventId: 'fixture-group-kind',
+          senderId: '@me:test',
+          originServerTs: DateTime.utc(2026, 9, 19),
+          content: {'kind': 'group'}));
       room.lastEvent = Event.fromJson({
         'event_id': r'$locked',
         'type': EventTypes.Encrypted,

@@ -1,3 +1,4 @@
+import 'conversation_identity_admission.dart';
 import 'logical_conversation_timeline.dart';
 import 'matrix_room_display_name.dart' as room_names;
 import 'matrix_outgoing_work_coordinator.dart';
@@ -639,10 +640,14 @@ final class MatrixConversationSnapshot {
     required this.vaultRoomId,
     required this.reminderRoomId,
     required List<MatrixConversationRoomSnapshot> rooms,
+    this.unresolvedRoomCount = 0,
   }) : rooms = List.unmodifiable(rooms);
   final String? vaultRoomId;
   final String? reminderRoomId;
   final List<MatrixConversationRoomSnapshot> rooms;
+
+  /// Rooms retained locally while their conversation identity is restored.
+  final int unresolvedRoomCount;
 }
 
 final class MatrixConversationCapability {
@@ -741,6 +746,7 @@ final class MatrixConversationCapability {
 
   Future<MatrixConversationSnapshot> snapshot() =>
       _owner._withClient((client) async {
+        final snapshotAccount = client.userID;
         await reconcileConversationPreferences(client);
         _flushPreferences();
         final localHistory = client.userID == null
@@ -755,18 +761,63 @@ final class MatrixConversationCapability {
         if (selfUserId != null && registry != null) {
           await loadDirectRoomAssociations(client, registry);
         }
+        if (client.userID != snapshotAccount) {
+          throw StateError('Conversation snapshot account changed');
+        }
+        final admitted = <MatrixConversationRoomSnapshot>[];
+        final observed = <String, String>{};
+        final snapshotRooms = client.rooms.toList(growable: false);
+        final controlRooms = {
+          client.accountData[emojiVaultAccountDataType]?.content['room_id'],
+          client
+              .accountData[messageReminderAccountDataType]?.content['room_id'],
+        };
+        for (final room in snapshotRooms) {
+          if (room.membership != Membership.join) continue;
+          var identity = selfUserId == null || registry == null
+              ? null
+              : admitConversationIdentity(room, selfUserId, registry);
+          if (identity == null &&
+              room.partial &&
+              selfUserId != null &&
+              registry != null) {
+            // SDK custom state is lazy. Hydrate only its local database, never
+            // wait on /state or /members to render established conversations.
+            await room.postLoad();
+            if (client.userID != snapshotAccount) {
+              throw StateError('Conversation snapshot account changed');
+            }
+            identity = admitConversationIdentity(room, selfUserId, registry);
+          }
+          if (identity != null) observed[room.id] = identity;
+        }
+        if (registry != null && selfUserId != null) {
+          await registry.rememberLocalIdentities(selfUserId, observed);
+        }
+        if (client.userID != snapshotAccount) {
+          throw StateError('Conversation snapshot account changed');
+        }
+        var unresolved = 0;
+        // No awaits from this point: current evidence and the projected row
+        // must be from the same sync state, not a pre-hydration observation.
+        for (final room in snapshotRooms) {
+          if (room.membership != Membership.join) continue;
+          final identity = selfUserId == null || registry == null
+              ? null
+              : admitConversationIdentity(room, selfUserId, registry);
+          if (identity == null && !controlRooms.contains(room.id)) {
+            unresolved++;
+            continue;
+          }
+          admitted.add(_reassociateDuplicate(
+              _snapshotRoom(room, localHistory), registry, selfUserId,
+              admittedIdentity: identity));
+        }
         // 身份解析（同一好友一行）在数据源出口统一执行：m.direct 中同一
         // peer 的多个已加入房间（历史房间/旧版本建房/avoidRoomId 新建残留）
         // 不再各自渲染一条。落选房间仅从列表隐藏，绝不 leave。
         final resolution = resolveConversationIdentitiesDetailed(
-          [
-            for (final raw in [
-              for (final room in client.rooms)
-                if (room.membership == Membership.join)
-                  _snapshotRoom(room, localHistory)
-            ])
-              _reassociateDuplicate(raw, registry, selfUserId)
-          ],
+          admitted,
           selfUserId: selfUserId,
           // 规则一数据源：收敛服务登记的服务端 canonical（未注入登记簿时
           // 自动退回消息数/活跃度规则）。
@@ -777,6 +828,7 @@ final class MatrixConversationCapability {
           localMessageCountOf: (room) => _owner._decryptedEventCount(room.id),
         );
         return MatrixConversationSnapshot(
+          unresolvedRoomCount: unresolved,
           vaultRoomId: client
               .accountData[emojiVaultAccountDataType]?.content['room_id']
               ?.toString(),
@@ -802,17 +854,23 @@ final class MatrixConversationCapability {
   MatrixConversationRoomSnapshot _reassociateDuplicate(
     MatrixConversationRoomSnapshot room,
     DuplicateRoomRegistry? registry,
-    String? selfUserId,
-  ) {
+    String? selfUserId, {
+    String? admittedIdentity,
+  }) {
     if (registry == null || selfUserId == null) return room;
-    if (room.isDirect && (room.directPeerId?.isNotEmpty ?? false)) return room;
-    final peer = registry.peerIdForRoom(selfUserId, room.id);
-    if (peer == null || peer.isEmpty) return room;
+    final isGroup = admittedIdentity == groupConversationIdentity;
+    final peer = isGroup
+        ? null
+        : admittedIdentity ?? registry.peerIdForRoom(selfUserId, room.id);
+    if ((!isGroup && (peer == null || peer.isEmpty)) ||
+        (room.isDirect == !isGroup && room.directPeerId == peer)) {
+      return room;
+    }
     return MatrixConversationRoomSnapshot(
       id: room.id,
       displayName: room.displayName,
       avatar: room.avatar,
-      isDirect: true,
+      isDirect: !isGroup,
       directPeerId: peer,
       members: room.members,
       lastEvent: room.lastEvent,
@@ -4722,7 +4780,7 @@ final class MatrixSdkE2eeClient
           retryDelay: memberRefreshRetryDelay,
         ),
         _memberProjectionCache = _ConversationMemberProjectionCache(),
-        _duplicateRooms = duplicateRooms,
+        _duplicateRooms = duplicateRooms ?? DuplicateRoomRegistry(),
         _outgoingWorkFactory = outgoingWorkFactory ??
             ((accountId) =>
                 MatrixOutgoingWorkCoordinator(accountId: accountId)),
@@ -4989,11 +5047,17 @@ final class MatrixSdkE2eeClient
       if (registry?.primaryRoomIdForPeer(self, peer) case final String primary)
         primary,
       ...?(client.directChats[peer] as List?)?.whereType<String>(),
+      for (final entry
+          in (registry?.localDirectPeers(self) ?? <String, String>{}).entries)
+        if (entry.value == peer) entry.key,
       for (final old in registry?.entries(self) ?? <DuplicateRoomEntry>[])
         if (old.peerId == peer) ...[old.duplicateRoomId, old.primaryRoomId],
-    }
-        .where((id) => client.getRoomById(id)?.membership == Membership.join)
-        .toSet();
+    }.where((id) {
+      final source = client.getRoomById(id);
+      return source?.membership == Membership.join &&
+          (registry == null ||
+              admitConversationIdentity(source!, self, registry) == peer);
+    }).toSet();
   }
 
   String? duplicateRoomPrimaryIdSync(String roomId) {
@@ -7060,6 +7124,13 @@ final class MatrixSdkE2eeClient
                 StateEvent(type: EventTypes.Encryption, content: {
                   'algorithm': Client.supportedGroupEncryptionAlgorithms.first
                 }),
+                StateEvent(
+                    type: conversationKindStateType,
+                    stateKey: '',
+                    content: {
+                      'kind': 'direct',
+                      'participants': [self, peer]
+                    }),
                 StateEvent(
                     type: 'com.chatflow.direct_reservation',
                     stateKey: '',
