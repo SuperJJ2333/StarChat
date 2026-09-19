@@ -99,10 +99,10 @@
 | 页面 | 位置 | 复核后缺口 | 备注 |
 |---|---|---|---|
 | **提现页「申请状态卡」**（真机新发现） | `wallet/manual_wallet_page.dart:312-315`、渲染条件 `:1945-1973` | **L1**：状态对象 `ManualPayout` 只来自 `api.payout(id)`，无本地快照；已持久化的只有申请操作记录 `ManualOperationStore` | Mi 6 真机 A/B：断网冷启动后余额/步骤条仍在，**状态卡消失**；联网刷新后恢复（`docs/verification/2026-09-19-wallet-offline-device-verification.md` §2，截图 `withdraw-A-offline.png` vs `withdraw-C-online-refreshed.png`）。**实施约束**：不能直接复用 `ManualOperationStore`——它的 `save` 有安全白名单（`manual_operation_store.dart:43-68`，仅 `key/amount/version/id/quote_id/address/method/confirm_key/funding_asset`），写入 `status/review_reason/settlement_txid` 会抛 `ArgumentError`；应新增独立的状态快照 store（键按 `<scope>:payout:<id>`，自带显式非密字段白名单、账号作用域校验），进入先渲染、后台刷新覆盖、失败不覆盖 |
-| 通讯录首页 | `contacts/contacts_page.dart:66` | L1 角标 / L4 reload 回退本地投影 | **另一会话正在改**（该文件带未提交改动），本会话按仓库"同一文件不得并发编辑"规则未动 |
-| 通讯录标签列表持久化 | `contacts/contact_tag_pages.dart:142` | L1（标签列表本身无持久化） | 三态已就绪，只差落盘；同一文件也带其他会话的未提交改动，避免并发编辑 |
-| 日历选择页 | `ui/chat/chat_search_page.dart:738` | L1（月份 map 只留内存） | **本轮确认受阻**：`ChatSearchPage` 本身没有 room 标识（只有 `loadCalendarMonth` 回调），缓存作用域只能由 `room_page.dart` 传入，而该文件正带其他会话的未提交改动。无作用域的月份缓存会造成跨会话串数据，故不做，等 `room_page.dart` 落定后再实施 |
+| 通讯录首页 | `contacts/contacts_page.dart:66`、`reload()` `:201-207` | L1 角标 / L4 reload 回退本地投影（`reload()` 仍直接替换为网络 future，builder 无 error 分支） | 原"另一会话正在改"的并发占用**已解除**（该会话的改动已于 `9c68eea6`/`130c7741` 前后落库，工作树仅剩一个 gradle lock）；该项仍未实施，可安全接手 |
+| 日历选择页 | `ui/chat/chat_search_page.dart:738` | L1（月份 map 只留内存） | 原阻塞原因（`room_page.dart` 带未提交改动）**已解除**；实施时仍需由 `room_page.dart` 传入 room 作用域再建会话级月份缓存，无作用域会造成跨会话串数据 |
 | 入群确认页 | `contacts/group_join_confirm_page.dart:10` | **判定下调** | 复核：`_load()` 只在 initState 与错误态重试时调用（重试按钮只在 `_info == null` 时渲染），因此"已有群信息 + 刷新失败"的组合**不可达**，L4 实际上已满足；首帧 spinner 出现在确实无数据时（模型允许）。剩余 L1（按 token 持久化扫到的群信息）价值有限：token 来自刚扫的二维码、加入动作本身必须联网，且缓存的人数/审批提示可能过期误导。**建议不开工**，除非将来支持"从聊天记录重新打开入群确认页" |
+| ~~通讯录标签列表持久化~~ | `contacts/contact_tag_pages.dart:142` | ✅ **已由并发会话完成**（`9c68eea6`，新增 `contact_tag_snapshot_store.dart`） | 本审计的该行可关闭 |
 
 ### 6.2 审计误报（结论修正）
 
