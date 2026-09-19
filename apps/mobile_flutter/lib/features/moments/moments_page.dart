@@ -859,7 +859,8 @@ final class _MomentsPageState extends State<MomentsPage> {
                 onPressed: () => Navigator.push(
                   context,
                   MotionPageRoute(
-                    builder: (_) => MomentsSettingsPage(api: widget.api),
+                    builder: (_) => MomentsSettingsPage(
+                        api: widget.api, identityCache: _identityCache),
                   ),
                 ),
                 child: const Icon(CupertinoIcons.settings),
@@ -870,7 +871,8 @@ final class _MomentsPageState extends State<MomentsPage> {
                   final didPublish = await Navigator.push<bool>(
                     context,
                     MotionPageRoute(
-                      builder: (_) => MomentComposerPage(api: widget.api),
+                      builder: (_) => MomentComposerPage(
+                          api: widget.api, identityCache: _identityCache),
                     ),
                   );
                   if (didPublish == true) _reloadFeed();

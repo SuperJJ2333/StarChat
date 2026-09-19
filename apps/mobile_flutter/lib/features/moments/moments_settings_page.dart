@@ -7,12 +7,16 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
+import '../matrix/profile_repository.dart';
 import 'moments_privacy_changes.dart';
 import '../../ui/motion/motion_page_route.dart';
 
 class MomentsSettingsPage extends StatefulWidget {
-  const MomentsSettingsPage({super.key, required this.api});
+  const MomentsSettingsPage({super.key, required this.api, this.identityCache});
   final BusinessApiClient api;
+
+  /// 本地联系人投影：透传给「不给谁看」名单页做首帧渲染。
+  final ProfileRepository? identityCache;
   @override
   State<MomentsSettingsPage> createState() => _MomentsSettingsState();
 }
@@ -123,8 +127,10 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
     final selected = await Navigator.push<List<String>>(
         context,
         MotionPageRoute(
-            builder: (_) =>
-                _ExcludedPeoplePage(api: widget.api, initial: _excluded)));
+            builder: (_) => _ExcludedPeoplePage(
+                api: widget.api,
+                initial: _excluded,
+                identityCache: widget.identityCache)));
     if (!mounted || selected == null) return;
     setState(() => _excluded = selected);
     await _save();
@@ -216,17 +222,62 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
 }
 
 class _ExcludedPeoplePage extends StatefulWidget {
-  const _ExcludedPeoplePage({required this.api, required this.initial});
+  const _ExcludedPeoplePage(
+      {required this.api, required this.initial, this.identityCache});
   final BusinessApiClient api;
   final List<String> initial;
+  final ProfileRepository? identityCache;
   @override
   State<_ExcludedPeoplePage> createState() => _ExcludedPeopleState();
 }
 
 class _ExcludedPeopleState extends State<_ExcludedPeoplePage> {
   late final _selected = widget.initial.toSet();
-  late Future<List<ContactSummary>> _contacts = widget.api.listContacts();
+
+  /// 本地优先：先用已水合的联系人投影渲染，再后台刷新；失败保留已有列表。
+  List<ContactSummary> _contacts = const [];
+  bool _loading = false;
+  Object? _error;
+  int _generation = 0;
+  bool _disposed = false;
   String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final cache = widget.identityCache;
+    if (cache != null) _contacts = cache.contacts;
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (mounted) setState(() => _loading = true);
+    try {
+      final contacts = await widget.api.listContacts();
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _contacts = contacts;
+        _error = null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
@@ -242,53 +293,52 @@ class _ExcludedPeopleState extends State<_ExcludedPeoplePage> {
               child: CupertinoSearchTextField(
                   onChanged: (v) => setState(() => _query = v))),
           Expanded(
-              child: FutureBuilder<List<ContactSummary>>(
-                  future: _contacts,
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Center(
-                          child: CupertinoButton(
-                              onPressed: () => setState(() {
-                                    _contacts = widget.api.listContacts();
-                                  }),
-                              child: const Text('加载失败，重试')));
+              child: Builder(builder: (context) {
+            final contacts = _contacts
+                .where((c) => '${c.displayName} ${c.username}'
+                    .toLowerCase()
+                    .contains(_query.toLowerCase()))
+                .toList();
+            if (contacts.isEmpty) {
+              // 本地优先 / 失败不覆盖：只有"没有任何本地联系人且确实失败"
+              // 才显示错误；有内容时即使刷新失败也继续可选。
+              if (_loading) {
+                return const Center(child: CupertinoActivityIndicator());
+              }
+              if (_error != null && _contacts.isEmpty) {
+                return Center(
+                    child: CupertinoButton(
+                        key: const Key('moments-excluded-retry'),
+                        onPressed: () => unawaited(_load()),
+                        child: const Text('加载失败，重试')));
+              }
+              return const Center(child: Text('暂无好友'));
+            }
+            return ListView(children: [
+              for (final c in contacts)
+                CupertinoListTile(
+                  key: ValueKey('exclude-${c.userId}'),
+                  leading: UserAvatar(
+                      nickname: c.displayName,
+                      fallbackSeed: c.userId,
+                      avatarUrl: c.avatarUrl,
+                      size: 36),
+                  title: Text(c.displayName),
+                  trailing: Icon(
+                      _selected.contains(c.userId)
+                          ? CupertinoIcons.check_mark_circled_solid
+                          : CupertinoIcons.circle,
+                      color: _selected.contains(c.userId)
+                          ? WeChatColors.brandPrimary
+                          : CupertinoColors.systemGrey),
+                  onTap: () => setState(() {
+                    if (!_selected.remove(c.userId)) {
+                      _selected.add(c.userId);
                     }
-                    if (!snapshot.hasData) {
-                      return const Center(child: CupertinoActivityIndicator());
-                    }
-                    final contacts = snapshot.data!
-                        .where((c) => '${c.displayName} ${c.username}'
-                            .toLowerCase()
-                            .contains(_query.toLowerCase()))
-                        .toList();
-                    if (contacts.isEmpty) {
-                      return const Center(child: Text('暂无好友'));
-                    }
-                    return ListView(children: [
-                      for (final c in contacts)
-                        CupertinoListTile(
-                          key: ValueKey('exclude-${c.userId}'),
-                          leading: UserAvatar(
-                              nickname: c.displayName,
-                              fallbackSeed: c.userId,
-                              avatarUrl: c.avatarUrl,
-                              size: 36),
-                          title: Text(c.displayName),
-                          trailing: Icon(
-                              _selected.contains(c.userId)
-                                  ? CupertinoIcons.check_mark_circled_solid
-                                  : CupertinoIcons.circle,
-                              color: _selected.contains(c.userId)
-                                  ? WeChatColors.brandPrimary
-                                  : CupertinoColors.systemGrey),
-                          onTap: () => setState(() {
-                            if (!_selected.remove(c.userId)) {
-                              _selected.add(c.userId);
-                            }
-                          }),
-                        )
-                    ]);
-                  })),
+                  }),
+                )
+            ]);
+          })),
         ])),
       );
 }

@@ -5,6 +5,7 @@ import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../matrix/profile_repository.dart';
 import 'moment_visibility_people_page.dart';
 import 'moment_visibility_selection.dart';
 import '../../ui/motion/motion_page_route.dart';
@@ -16,10 +17,14 @@ final class MomentVisibilityPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.initialSelection,
+    this.identityCache,
   });
 
   final BusinessApiClient api;
   final MomentVisibilitySelection initialSelection;
+
+  /// 本地联系人投影：透传给「只给谁看 / 不给谁看」名单页做首帧渲染。
+  final ProfileRepository? identityCache;
 
   @override
   State<MomentVisibilityPage> createState() => _MomentVisibilityPageState();
@@ -39,6 +44,7 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
           api: widget.api,
           mode: mode,
           initialSelection: current,
+          identityCache: widget.identityCache,
         ),
       ),
     );

@@ -257,6 +257,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
         builder: (_) => MomentVisibilityPage(
           api: widget.api,
           initialSelection: current,
+          identityCache: widget.identityCache,
         ),
       ),
     );

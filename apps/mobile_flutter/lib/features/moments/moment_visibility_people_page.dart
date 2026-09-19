@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
@@ -8,6 +10,7 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/contact_tag_models.dart';
+import '../matrix/profile_repository.dart';
 import 'moment_visibility_selection.dart';
 
 final class MomentVisibilityPeoplePage extends StatefulWidget {
@@ -16,7 +19,11 @@ final class MomentVisibilityPeoplePage extends StatefulWidget {
     required this.api,
     required this.mode,
     required this.initialSelection,
+    this.identityCache,
   });
+
+  /// 本地联系人投影：先用它渲染「朋友」页签（断网也能选人），随后后台刷新。
+  final ProfileRepository? identityCache;
 
   final BusinessApiClient api;
   final String mode;
@@ -31,14 +38,64 @@ final class _MomentVisibilityPeoplePageState
     extends State<MomentVisibilityPeoplePage> {
   late final Set<String> users = {...widget.initialSelection.userIds};
   late final Set<String> tags = {...widget.initialSelection.tagIds};
-  late Future<List<Object>> _data = _load();
+
+  /// 本地优先：先用已水合的联系人投影渲染「朋友」页签，再后台刷新。
+  List<ContactSummary> _contacts = const [];
+  List<ContactTagSummary> _allTags = const [];
+  bool _loading = false;
+  Object? _error;
+  int _generation = 0;
+  bool _disposed = false;
   String _tab = '标签';
   String _query = '';
 
-  Future<List<Object>> _load() async => Future.wait<Object>([
+  @override
+  void initState() {
+    super.initState();
+    final cache = widget.identityCache;
+    if (cache != null) _contacts = cache.contacts;
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (mounted) setState(() => _loading = true);
+    try {
+      final results = await Future.wait<Object>([
         widget.api.listContacts(),
         widget.api.contactTags(),
       ]);
+      if (_disposed || generation != _generation) return;
+      final contacts = results[0] as List<ContactSummary>;
+      final tagJson = results[1] as Map<String, dynamic>;
+      final allTags = ((tagJson['items'] as List?) ?? const [])
+          .map((raw) => ContactTagSummary.fromJson(
+                Map<String, dynamic>.from(raw as Map),
+              ))
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() {
+        _contacts = contacts;
+        _allTags = allTags;
+        _error = null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
 
   MomentVisibilitySelection get _selection => MomentVisibilitySelection(
         visibility: widget.mode,
@@ -62,10 +119,14 @@ final class _MomentVisibilityPeoplePageState
           ),
         ),
         child: SafeArea(
-          child: FutureBuilder<List<Object>>(
-            future: _data,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
+          child: Builder(builder: (context) {
+            // 本地优先 / 失败不覆盖：有本地联系人或本地标签就先渲染，
+            // 只有"什么都没有且确实失败"才显示整页错误。
+            if (_contacts.isEmpty && _allTags.isEmpty) {
+              if (_loading) {
+                return const Center(child: CupertinoActivityIndicator());
+              }
+              if (_error != null) {
                 return Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -75,51 +136,41 @@ final class _MomentVisibilityPeoplePageState
                       ModernActionButton(
                         icon: CupertinoIcons.refresh,
                         label: '重试',
-                        onPressed: () => setState(() => _data = _load()),
+                        onPressed: () => unawaited(_load()),
                       ),
                     ],
                   ),
                 );
               }
-              if (!snapshot.hasData) {
-                return const Center(child: CupertinoActivityIndicator());
-              }
-              final contacts = snapshot.data![0] as List<ContactSummary>;
-              final tagJson = snapshot.data![1] as Map<String, dynamic>;
-              final allTags = ((tagJson['items'] as List?) ?? const [])
-                  .map((raw) => ContactTagSummary.fromJson(
-                        Map<String, dynamic>.from(raw as Map),
-                      ))
-                  .toList(growable: false);
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                    child: CupertinoSearchTextField(
-                      placeholder: '搜索',
-                      onChanged: (value) => setState(() => _query = value),
-                    ),
+            }
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: CupertinoSearchTextField(
+                    placeholder: '搜索',
+                    onChanged: (value) => setState(() => _query = value),
                   ),
-                  Container(
-                    color: WeChatColors.elevatedSurface(context),
-                    child: Row(
-                      children: [
-                        _tabButton('标签'),
-                        _tabButton('朋友'),
-                      ],
-                    ),
+                ),
+                Container(
+                  color: WeChatColors.elevatedSurface(context),
+                  child: Row(
+                    children: [
+                      _tabButton('标签'),
+                      _tabButton('朋友'),
+                    ],
                   ),
-                  Expanded(
-                    child: ListView(
-                      children: _tab == '标签'
-                          ? _tagRows(allTags)
-                          : _contactRows(contacts),
-                    ),
+                ),
+                Expanded(
+                  child: ListView(
+                    children: _tab == '标签'
+                        ? _tagRows(_allTags)
+                        : _contactRows(_contacts),
                   ),
-                ],
-              );
-            },
-          ),
+                ),
+              ],
+            );
+          }),
         ),
       );
 

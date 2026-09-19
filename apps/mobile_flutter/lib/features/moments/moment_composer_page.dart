@@ -8,6 +8,7 @@ import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../matrix/profile_repository.dart';
 import 'moment_visibility_page.dart';
 import 'moment_image_preprocessor.dart';
 import '../../ui/motion/motion_page_route.dart';
@@ -18,6 +19,7 @@ final class MomentComposerPage extends StatefulWidget {
     required this.api,
     this.initialImages = const [],
     this.imagePreprocessor,
+    this.identityCache,
   });
 
   final BusinessApiClient api;
@@ -25,6 +27,9 @@ final class MomentComposerPage extends StatefulWidget {
 
   /// 可注入的图片压缩管线（缺省为原生 JPEG 压缩实现）。
   final MomentImagePreprocessor? imagePreprocessor;
+
+  /// 本地联系人投影：透传给可见范围名单页做首帧渲染。
+  final ProfileRepository? identityCache;
 
   @override
   State<MomentComposerPage> createState() => _MomentComposerPageState();
@@ -262,6 +267,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         builder: (_) => MomentVisibilityPage(
           api: widget.api,
           initialSelection: visibility,
+          identityCache: widget.identityCache,
         ),
       ),
     );
