@@ -68,7 +68,18 @@ adb shell run-as com.liuhetong.mobile cat .../shared_prefs/FlutterSharedPreferen
 - 充值页填金额 →「下一步」后进入受截图保护的窗口：此时 `adb exec-out screencap` 返回 0 字节（应用侧 `FLAG_SECURE`，见 `lib/features/matrix/screen_capture_protection.dart`），返回 3 次后回到「我」页且截图恢复正常，与"钱包→充值→转账（收款地址/二维码）"的返回栈一致。因此**该步的界面无法截图取证**（属产品有意的防截屏），离线可达性只能间接判断。
 - 冷启动离线与恢复联网全程 `logcat` 无 `FATAL EXCEPTION` / `ANR in com.liuhetong.mobile`。
 
-## 5. 复现命令
+## 5. 复现命令与"再上机"的注意事项
+
+**本轮上机时的一个硬约束（写给下一个复验的人）：** 机上是仓库稳定签名身份的交付构建，`flutter build apk --debug` 产出的 raw Gradle APK（`build/app/outputs/flutter-apk/app-standard-debug.apk`）**装不上去**：
+
+```
+adb install -r app-standard-debug.apk
+→ INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.liuhetong.mobile signatures do not match previously installed version
+```
+
+`adb uninstall` 会连带清掉本机会话与所有本地快照（正是本验收依赖的东西，还会把用户登出），因此**没有**执行。要真机复验 §2 的修复，必须按 `docs/runbooks/android-apk-rebuild.md` 走稳定签名身份的打包流程再安装。
+
+**本轮已获得的替代证据：** `flutter test test/features/wallet` 113 例全绿（含新增 6 例与反向对照）、`flutter analyze lib/features/wallet test/features/wallet` 无问题、全量 `flutter test` **3432 例全部通过**（退出码 0）。
 
 ```powershell
 $adb = 'E:\software\platform-tools\adb.exe'   # 或 PATH 中的 adb
