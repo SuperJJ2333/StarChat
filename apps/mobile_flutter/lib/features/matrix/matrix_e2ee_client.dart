@@ -789,6 +789,29 @@ final class MatrixConversationCapability {
             }
             identity = admitConversationIdentity(room, selfUserId, registry);
           }
+          if (identity == null &&
+              selfUserId != null &&
+              registry != null &&
+              (room.summary.mJoinedMemberCount ?? 0) >= 3 &&
+              !room.participantListComplete) {
+            // postLoad does not hydrate the SDK's separate member table.
+            // Reading it is local-only, including after partial becomes false.
+            List<User> stored;
+            try {
+              stored = await client.database?.getUsers(room) ?? const [];
+            } catch (_) {
+              stored = const [];
+            }
+            if (client.userID != snapshotAccount) {
+              throw StateError('Conversation snapshot account changed');
+            }
+            for (final member in stored) {
+              if (room.getState(EventTypes.RoomMember, member.id) == null) {
+                room.setState(member);
+              }
+            }
+            identity = admitConversationIdentity(room, selfUserId, registry);
+          }
           if (identity != null) observed[room.id] = identity;
         }
         if (registry != null && selfUserId != null) {

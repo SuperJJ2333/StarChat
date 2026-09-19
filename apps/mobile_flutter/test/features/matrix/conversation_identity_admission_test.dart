@@ -149,4 +149,45 @@ void main() {
         revision: 4);
     expect(registry.localDirectPeers('@me:test')['!room:test'], '@other:test');
   });
+  test('legacy complete multiparty state proves group without a modern marker',
+      () {
+    final legacy = IdentityFlowRoom(
+        client: client,
+        id: '!legacy:test',
+        membership: Membership.join,
+        summary: RoomSummary.fromJson(
+            {'m.joined_member_count': 3, 'm.invited_member_count': 0}));
+    legacy.partial = false;
+    legacy.setState(Event(
+        room: legacy,
+        type: EventTypes.RoomMember,
+        stateKey: '@third:test',
+        senderId: '@third:test',
+        eventId: 'third',
+        originServerTs: DateTime.utc(2026, 9, 19),
+        content: {'membership': 'join'}));
+    expect(admitConversationIdentity(legacy, '@me:test', registry), 'group');
+    legacy.setState(Event(
+        room: legacy,
+        type: 'com.chatflow.direct_reservation',
+        stateKey: '',
+        senderId: '@me:test',
+        eventId: 'dm',
+        originServerTs: DateTime.utc(2026, 9, 19),
+        content: {'reservation_id': 'dm'}));
+    expect(admitConversationIdentity(legacy, '@me:test', registry), isNull,
+        reason: 'a malformed known DM cannot be reclassified by member count');
+  });
+  test(
+      'summary alone cannot classify a group without complete local membership',
+      () {
+    final incomplete = IdentityFlowRoom(
+        client: client,
+        id: '!legacy:test',
+        membership: Membership.join,
+        summary: RoomSummary.fromJson(
+            {'m.joined_member_count': 3, 'm.invited_member_count': 0}));
+    incomplete.partial = false;
+    expect(admitConversationIdentity(incomplete, '@me:test', registry), isNull);
+  });
 }

@@ -70,6 +70,17 @@ String? admitConversationIdentity(
       room.isSpace) {
     return groupConversationIdentity;
   }
+  // Legacy groups predate the explicit kind/authority keys. Positive complete
+  // multiparty membership is incompatible with the app's two-party DM model.
+  // All private/conflicting evidence above takes precedence; invites don't count.
+  if (!room.partial &&
+      (room.summary.mJoinedMemberCount ?? 0) >= 3 &&
+      room.participantListComplete) {
+    final joined = room.getParticipants([Membership.join]);
+    if (joined.length >= 3 && joined.any((member) => member.id == self)) {
+      return groupConversationIdentity;
+    }
+  }
   // In particular, don't guess from a name, encryption or two participants.
   return null;
 }

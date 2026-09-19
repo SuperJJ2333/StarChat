@@ -111,6 +111,21 @@ final class HydratingIdentityRoom extends IdentityFlowRoom {
   }
 }
 
+final class MemberDatabaseClient extends IdentityFlowClient {
+  final stored = MemberDatabase();
+  @override
+  DatabaseApi get database => stored;
+}
+
+final class MemberDatabase extends Fake implements DatabaseApi {
+  int reads = 0;
+  @override
+  Future<List<User>> getUsers(Room room) async {
+    reads++;
+    return [User('@third:test', room: room, membership: 'join')];
+  }
+}
+
 void main() {
   setUp(() {
     PathProviderPlatform.instance = MatrixTestPaths();
@@ -361,5 +376,30 @@ void main() {
     final snapshot = await matrix.conversations.snapshot();
     expect(snapshot.rooms, isEmpty);
     expect(snapshot.unresolvedRoomCount, 2);
+  });
+  test(
+      'legacy multiparty group hydrates member store locally even when partial is false',
+      () async {
+    final client = MemberDatabaseClient();
+    final legacy = IdentityFlowRoom(
+        client: client,
+        id: '!legacy:test',
+        membership: Membership.join,
+        summary: RoomSummary.fromJson(
+            {'m.joined_member_count': 3, 'm.invited_member_count': 0}));
+    legacy.partial = false;
+    client.roomsById[legacy.id] = legacy;
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        duplicateRooms: DuplicateRoomRegistry());
+    final snapshot = await matrix.conversations.snapshot();
+    expect(snapshot.rooms.map((r) => r.id), ['!legacy:test']);
+    expect(snapshot.rooms.single.isDirect, isFalse);
+    expect(client.stored.reads, 1);
+    expect(snapshot.unresolvedRoomCount, 0);
+    expect((await matrix.conversations.snapshot()).rooms, hasLength(1));
+    expect(client.stored.reads, 1,
+        reason: 'retained identity avoids repeated member hydration');
+    expect(client.accountWrites, isEmpty);
   });
 }
