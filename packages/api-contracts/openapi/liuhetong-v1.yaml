@@ -2236,6 +2236,11 @@
             ],
             "title": "Matrix Room Id"
           },
+          "revision": {
+            "default": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
           "room_ids": {
             "items": {
               "type": "string"
@@ -2368,6 +2373,31 @@
         "title": "DirectConversationClaimV2Response",
         "type": "object"
       },
+      "DirectConversationDirectoryResponse": {
+        "properties": {
+          "matrix_room_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix Room Id"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "matrix_room_id",
+          "revision"
+        ],
+        "title": "DirectConversationDirectoryResponse",
+        "type": "object"
+      },
       "DirectConversationPublishBody": {
         "additionalProperties": false,
         "properties": {
@@ -2411,6 +2441,148 @@
           "matrix_room_id"
         ],
         "title": "DirectConversationPublishResponse",
+        "type": "object"
+      },
+      "DirectConversationRecoveryPublishBody": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "generation": {
+            "minimum": 0.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "matrix_room_id": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^![^\\s:]+:[^\\s]+$",
+            "title": "Matrix Room Id",
+            "type": "string"
+          },
+          "peer_user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Peer User Id",
+            "type": "string"
+          },
+          "reservation_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "pattern": "^[0-9a-fA-F-]{36}$",
+            "title": "Reservation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "peer_user_id",
+          "attempt_id",
+          "matrix_room_id",
+          "generation",
+          "reservation_id"
+        ],
+        "title": "DirectConversationRecoveryPublishBody",
+        "type": "object"
+      },
+      "DirectConversationRecoveryPublishResponse": {
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "matrix_room_id": {
+            "title": "Matrix Room Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "matrix_room_id",
+          "generation",
+          "revision"
+        ],
+        "title": "DirectConversationRecoveryPublishResponse",
+        "type": "object"
+      },
+      "DirectConversationResolveResponse": {
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "matrix_room_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix Room Id"
+          },
+          "reservation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reservation Id"
+          },
+          "revision": {
+            "default": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "room_alias_localpart": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Alias Localpart"
+          },
+          "room_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Room Ids",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "join_required",
+              "create_required",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matrix_room_id",
+          "room_ids",
+          "status",
+          "generation",
+          "room_alias_localpart",
+          "reservation_id"
+        ],
+        "title": "DirectConversationResolveResponse",
         "type": "object"
       },
       "DraftPayload": {
@@ -6267,6 +6439,22 @@
           "value"
         ],
         "title": "RegistrationDay",
+        "type": "object"
+      },
+      "RegistrationEmailChangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "RegistrationEmailChangeRequest",
         "type": "object"
       },
       "RegistrationSessionRequest": {
@@ -14934,6 +15122,107 @@
         ]
       }
     },
+    "/api/v1/auth/registrations/{registration_session}/email": {
+      "post": {
+        "operationId": "change_registration_email_api_v1_auth_registrations__registration_session__email_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registration_session",
+            "required": true,
+            "schema": {
+              "title": "Registration Session",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Device-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Device-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationEmailChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Change Registration Email Api V1 Auth Registrations  Registration Session  Email Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Change Registration Email",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/blocks": {
       "get": {
         "operationId": "blocks_api_v1_blocks_get",
@@ -15908,7 +16197,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationDirectoryResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -16363,6 +16654,73 @@
         ]
       }
     },
+    "/api/v1/direct-conversations/publish-recovery": {
+      "post": {
+        "operationId": "publish_recovery_api_v1_direct_conversations_publish_recovery_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationRecoveryPublishBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationRecoveryPublishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish Recovery",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
     "/api/v1/direct-conversations/recover": {
       "post": {
         "operationId": "recover_api_v1_direct_conversations_recover_post",
@@ -16425,6 +16783,73 @@
           }
         ],
         "summary": "Recover",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/api/v1/direct-conversations/resolve": {
+      "post": {
+        "operationId": "resolve_direct_api_v1_direct_conversations_resolve_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationClaimBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationResolveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resolve Direct",
         "tags": [
           "friends"
         ]

@@ -25,12 +25,27 @@ class DirectConversationClaimResponse(BaseModel):
     can_publish:bool
 class DirectConversationPublishResponse(BaseModel):
     matrix_room_id:str
+class DirectConversationDirectoryResponse(BaseModel):
+    matrix_room_id:str|None
+    revision:int
 class DirectConversationClaimV2Response(DirectConversationClaimResponse):
     room_alias_localpart:str
     reservation_id:str
 class DirectConversationAssociationsResponse(BaseModel):
     matrix_room_id:str|None
     room_ids:list[str]
+    revision:int=0
+class DirectConversationResolveResponse(DirectConversationAssociationsResponse):
+    status:Literal['ready','join_required','create_required','unavailable']
+    generation:int
+    room_alias_localpart:str|None
+    reservation_id:str|None
+class DirectConversationRecoveryPublishBody(DirectConversationPublishBody):
+    generation:int=Field(ge=0)
+    reservation_id:str=Field(min_length=36,max_length=36,pattern=r'^[0-9a-fA-F-]{36}$')
+class DirectConversationRecoveryPublishResponse(DirectConversationPublishResponse):
+    generation:int
+    revision:int
 class FriendProjection(BaseModel):
     user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;nudge_suffix:str|None;moments_permission:str;tags:list[str]
 class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
@@ -110,7 +125,7 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
         # 404 = 不存在/拉黑/自己（与搜索隐私口径一致）。
         rate_limiter.hit(f'user-lookup:{user}', limit=30, window_seconds=60)
         return service.lookup_by_matrix(user,matrix_user_id)
-    @router.get('/direct-conversations')
+    @router.get('/direct-conversations',response_model=DirectConversationDirectoryResponse)
     def direct_conversation(peer_user_id:Annotated[str,Query(min_length=1,max_length=36)],user=Depends(actor)):
         # Canonical Direct Conversation（Phase E）：创建私聊前先查询复用。
         if peer_user_id==user:raise AppError(code='INVALID_FRIEND_TARGET',message='不能查询自己',status_code=422)
@@ -130,6 +145,14 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
     def claim_v2(body:DirectConversationClaimBody,user=Depends(actor)):
         rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)
         return service.claim_direct_conversation_v2(user,body.peer_user_id,body.attempt_id)
+    @router.post('/direct-conversations/resolve',response_model=DirectConversationResolveResponse)
+    def resolve_direct(body:DirectConversationClaimBody,user=Depends(actor)):
+        rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)
+        return service.resolve_direct_conversation(user,body.peer_user_id,body.attempt_id)
+    @router.post('/direct-conversations/publish-recovery',response_model=DirectConversationRecoveryPublishResponse)
+    def publish_recovery(body:DirectConversationRecoveryPublishBody,user=Depends(actor)):
+        rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)
+        return service.publish_direct_recovery(user,body.peer_user_id,body.attempt_id,body.generation,body.reservation_id,body.matrix_room_id)
     @router.post('/direct-conversations/recover',response_model=DirectConversationPublishResponse)
     def recover(body:DirectConversationPublishBody,user=Depends(actor)):
         rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)

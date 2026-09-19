@@ -125,7 +125,10 @@ def test_relationship_target_and_cas_refuse(repair, failure):
         repair.matrix_gateway.states[TARGET].append({'type': 'm.room.member', 'state_key': '@eve:test', 'content': {'membership': 'invite'}})
     with pytest.raises(AppError):
         invoke(repair, **({'expected_old_room_id': '!stale:test'} if failure == 'cas' else {}))
-    assert repair.direct_conversation('alice', 'bob')['matrix_room_id'] == OLD
+    # Inspect the failed operation directly: legacy GET now performs independent
+    # safe auto-reconciliation and would intentionally repair the CAS fixture.
+    with repair.factory() as session:
+        assert session.get(DirectConversation, 'canonical').matrix_room_id == OLD
 
 
 def test_concurrent_replay_changes_once(repair):

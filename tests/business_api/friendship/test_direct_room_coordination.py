@@ -54,10 +54,11 @@ def service(tmp_path):
         # users table supplies only the FK target; unrelated identity metadata
         # has a SQLite-specific BOOLEAN DEFAULT 1 and is outside this test.
         with engine.begin() as connection:
-            connection.execute(text(f'CREATE TABLE {schema}.users (id VARCHAR(36) PRIMARY KEY)'))
+            connection.execute(text(f"CREATE TABLE {schema}.users (id VARCHAR(36) PRIMARY KEY, status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE')"))
             connection.execute(text(f"INSERT INTO {schema}.users (id) VALUES ('alice'), ('bob')"))
         for name in ('direct_conversations', 'direct_room_reservations', 'direct_conversation_rooms', 'audit_events',
-                     'outbox_events', 'idempotency_records'):
+                     'outbox_events', 'idempotency_records', 'direct_pair_mutexes', 'direct_room_generations',
+                     'friendships', 'user_blocks'):
             Base.metadata.tables[name].create(engine)
     else:
         Base.metadata.create_all(engine)
@@ -128,7 +129,7 @@ def test_pending_blocks_legacy_and_does_not_expire(service):
     with pytest.raises(AppError) as exc:
         service.register_direct_conversation('alice', 'bob', '!bypass:example.test', 'legacy')
     assert exc.value.status_code == 409
-    assert service.direct_conversation('alice', 'bob') == {'matrix_room_id': None}
+    assert service.direct_conversation('alice', 'bob') == {'matrix_room_id': None, 'revision': 0}
 
 
 def test_missing_peer_and_unclaimed_publish_fail_closed(service):

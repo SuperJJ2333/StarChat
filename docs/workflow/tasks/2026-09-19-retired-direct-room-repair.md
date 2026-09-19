@@ -16,7 +16,7 @@ Root cause: blanket immutability of physical canonical had no operations correct
 
 Root owns plan/ADR/task/evidence/review. Implementation agent owns recovery service, strict metadata gateway and new regression tests. Production agent owns metadata/release scripts and execution after review. Client-review agent verified current2136 fallback: both directory endpoints must reflect newcanonical, preserve old source, reopen after sync, new unbound messages bind newtarget; old bound failed/uncertain messages never retarget.
 
-Status at21:18+08: server deployed and selected-pair correction verified; device new-message feedback pending. Source c7534a33, main integration based on dc48cb95; source hashes unchanged from candidate. Candidate repair only explicitly selected pair, not all exited rooms. Existing Android/iOS binaries and update settings stay unchanged. [Evidence](../../verification/2026-09-19-retired-direct-room-repair.md), [operations runbook](../../runbooks/retired-direct-room-repair.md).
+Status at21:18+08: server deployed and selected-pair correction verified; device success now confirmed by user. Source c7534a33, main integration based on dc48cb95; source hashes unchanged from candidate. Candidate repair only explicitly selected pair, not all exited rooms. Existing Android/iOS binaries and update settings stay unchanged. [Evidence](../../verification/2026-09-19-retired-direct-room-repair.md), [operations runbook](../../runbooks/retired-direct-room-repair.md).
 
 ## Acceptance
 
@@ -25,7 +25,7 @@ Status at21:18+08: server deployed and selected-pair correction verified; device
 - [x] Tests red/green, spec review then quality/security; applicable repository gates. Latest-main unrelated baseline failure remains separately recorded.
 - [x] Isolated PostgreSQL correction/replay and rollback-source backup.
 - [x] API overlay, selected-pair public-service correction, both directory readbacks, old room/source preserved, replay0newwrites.
-- [ ] Device confirmation: reopen synchronized friendship and send a NEW text; old red bubble is not a valid fresh-send test.
+- [x] Device confirmation: user explicitly reported normal sending after the repair. This confirms the incident pair, not all friendships.
 
 ## Timing and next step
 

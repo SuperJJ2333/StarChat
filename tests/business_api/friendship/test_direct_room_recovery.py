@@ -62,7 +62,7 @@ def test_legacy_first_publication_requires_authoritative_evidence(recovery, oper
         else:
             recovery.publish_direct_conversation('alice', 'bob', attempt, '!unverified:example.test')
     assert rejected.value.code == 'DIRECT_ROOM_INVALID_EVIDENCE'
-    assert recovery.direct_conversation('alice', 'bob') == {'matrix_room_id': None}
+    assert recovery.direct_conversation('alice', 'bob') == {'matrix_room_id': None, 'revision': 0}
 
 
 @pytest.mark.parametrize('operation', ['register', 'publish'])
@@ -90,7 +90,7 @@ def test_invalid_late_legacy_room_does_not_replace_or_associate(recovery, operat
             recovery.register_direct_conversation('alice', 'bob', '!forged:example.test', str(uuid4()))
         else:
             recovery.publish_direct_conversation('bob', 'alice', str(uuid4()), '!forged:example.test')
-    assert recovery.direct_conversation_associations('alice', 'bob') == {'matrix_room_id': canonical, 'room_ids': [canonical]}
+    assert recovery.direct_conversation_associations('alice', 'bob') == {'matrix_room_id': canonical, 'room_ids': [canonical], 'revision': 0}
     recovery.matrix_gateway = None
     # Existing canonical reads/replays do not depend on fresh Matrix availability.
     assert recovery.publish_direct_conversation('bob', 'alice', str(uuid4()), canonical) == {'matrix_room_id': canonical}
@@ -117,7 +117,7 @@ def test_legacy_upgrade_fences_late_creator_but_retains_verified_history(recover
     room(recovery, claim, '!late:example.test')
     assert recovery.publish_direct_conversation('alice', 'bob', old, '!late:example.test') == {'matrix_room_id': canonical}
     assert recovery.direct_conversation_associations('bob', 'alice') == {
-        'matrix_room_id': canonical, 'room_ids': ['!late:example.test', canonical]}
+        'matrix_room_id': canonical, 'room_ids': ['!late:example.test', canonical], 'revision': 0}
 
 
 def test_unverified_or_wrong_alias_room_never_published(recovery):
@@ -176,7 +176,7 @@ def test_history_association_never_changes_canonical(recovery):
     claim = recovery.claim_direct_conversation_v2('alice', 'bob', str(uuid4()))
     candidate = room(recovery, claim, '!history:example.test')
     result = recovery.associate_direct_conversation('alice', 'bob', candidate)
-    assert result == {'matrix_room_id': '!original:example.test', 'room_ids': [candidate, '!original:example.test']}
+    assert result == {'matrix_room_id': '!original:example.test', 'room_ids': [candidate, '!original:example.test'], 'revision': 0}
     assert recovery.direct_conversation_associations('bob', 'alice') == result
 
 
@@ -253,4 +253,4 @@ async def test_recovery_api_wires_gateway_and_shared_associations(friend_compone
         assert recovered.status_code == 200
         assert recovered.json() == {'matrix_room_id': candidate}
         associated = await client.get('/api/v1/direct-conversations/associations?peer_user_id=alice', headers=bob)
-        assert associated.json() == {'matrix_room_id': candidate, 'room_ids': [candidate]}
+        assert associated.json() == {'matrix_room_id': candidate, 'room_ids': [candidate], 'revision': 0}

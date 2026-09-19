@@ -1,0 +1,30 @@
+# Direct conversation automatic recovery verification
+
+Task and authorization: [task](../workflow/tasks/2026-09-19-direct-conversation-auto-recovery.md), [specification](../superpowers/specs/2026-09-19-direct-conversation-auto-recovery.md), [ADR](../adr/2026-09-19-direct-destination-lifecycle.md). Base2080b480; candidate0.3.98/2137. This record distinguishes source verification from deployment and device feedback.
+
+## Current evidence
+
+- Read-only production audit65 canonical pairs:59 both joined/encrypted,2 invitation,2 fully exited,2 partially exited. Both fully exited pairs still active unblocked friends; only one has a healthy registered source. A partial exit also remains friends. No user plaintext/keys read. Raw identity metadata and backup stay server0700.
+- Prior named pair repair is confirmed by the user; it is not system-wide acceptance.
+- Flutter full analyze:0 issues,14.0 seconds. Full tests:3604 passed,133 seconds,exit0. Logs and exact modified client input hashes: `artifacts/2026-09-19/direct-conversation-auto-recovery/flutter-{analyze,full}.log`, `flutter-inputs.json`.
+- Registry revision/history24 tests passed, including independent-review cases first failing then passing. Unbound online retry2 new cases first failing then passing; scheduler combined38 passed. Backoff does not rebind bound operations and disposal cancels timers.
+- Client owner additional evidence under `artifacts/2026-09-19/direct-auto-recovery/`:160 focused cases,8 real AppHome entry cases. Root full suite supersedes the intermediate compilation failure during scheduler editing.
+- Latest-main OpenAPI drift separately reproduced before lifecycle changes. Generated schema includes existing identity/email contracts as well as this task. Red-packet limit test fixture explicitly supplies its tested20000 cap; production default/formula unchanged. Contract/settings preflight8 passed.
+
+## Specification review
+
+Root inspected coordinator, shared API revision cache, AppHome account guards/page replacement, SDK new-operation admission and RoomPage text/media entry changes. Local history opening remains local-first; new text binds only null room IDs; existing bound text/media jobs remain fixed to original destination/transaction. New target selection retains peer identity and final permission/E2EE guards. Active route replacement waits for widget disposal before releasing its timeline lease, with real navigation regression coverage. All physical history sources remain associated with one logical friend.
+
+Server specification review completed against final lifecycle SHA AA70F30F8216F0DD39F6F9D46805D3D2724380F8E11B40DE91884A4530F7B50B: healthy canonical preferred; strict initial departed actor; durable original actor and same-alias continuation; retired empty state; fresh target/relation recheck under mutex; generation/revision fencing; GET4/POST32 budget and fair source start; unknown evidence cannot create. Independent reviewer already identified and required fixes for stream deadlines, scan starvation, account-data post-await writes and primary-only historical sources. Final PostgreSQL and full repository gate results must be attached before release.
+
+Final server focused lifecycle/stream53 passed in24.60 seconds (owner log, subsequently covered by root full gate). Root OpenAPI check and unique0071 migration head passed before launching `pwsh -NoProfile -File scripts/verify.ps1` at2026-09-19T22:13+08. Mobile-only commit6aca86365697282812b077e2f90e783fbe1f11e9 is the Android build input; server edits remain outside that stage commit pending final gate. Android build runs independently; no publication is authorized by a build result alone.
+
+Full gate completed2026-09-19T22:35:26+08, exit0 `Verification: PASS`: infrastructure143, bridge28, bot9, API/Worker2206 passed with58 environment-gated skips, mobile boundaries70 passed; repository/deployment policies, UI contract, AST/import, unique migration/offline expansion, OpenAPI and Compose all passed. API/Worker runtime1283.19 seconds. Existing dependency deprecation warnings (Starlette/httpx and bridge settings configuration) were emitted, not suppressed; no new runtime bypass or test skip was introduced. New PostgreSQL recovery behavior is independently exercised by the15 real-PG checks above. Full gate wall interval22:13:04–22:35:26 overlaps other validation/build work.
+
+## Delivery status
+
+Android candidate built and independently verified, not published:0.3.98/2137 ARM64,80391198 bytes, SHA256 `45260d12897d7cec4024b192610dc5a74f9c13942e84db72ee9180fbd40b9021`, fixed certificate `75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff`, v2/v3 signatures. Source6aca8636, conventional rebuild preserves25346 classes and338 native/assets, manifest semantics unchanged. Build pipeline exit0; evidence under task artifacts/android.
+
+Server candidate `sha256:4996d6263ef215fffd02c4becf720411803198858f341b2e7739d80e550fc973` overlays exactly8 files on live13f52 while preserving main/dependencies and all other Compose fields. Independent quality/security review has no remaining blockers. Real isolated PostgreSQL15 checks passed, including four concurrent claims/publications, one-switch source failover, response loss, stale generation, fresh old-state fencing, block serialization, partial exit/empty-state continuation and six retired sources.0070→0071 migration preserves65 canonical/38 history/56 reservation/63 friendship fingerprints; old13f52 application reads65 canonical rows successfully on the expanded schema. No destructive downgrade. Artifacts `candidate-result.json`, `lifecycle-pg-result.json`, `INDEPENDENT-REVIEW.md`.
+
+Not yet deployed, merged or published for this task. Android live remains0.3.97/2136, iOS live0.3.96/2134. iOS new candidate must be verified and handed to the user for enterprise re-signing; pending signature does not authorize changing iOS distribution. No claim of universal success without connectivity, current friendship permissions and usable device keys.

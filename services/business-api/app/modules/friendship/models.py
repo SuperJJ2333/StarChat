@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -23,6 +23,7 @@ class DirectConversation(Base):
     """Canonical Direct Conversation（好友系统重构 Phase E）：每对好友
     至多一条规范私聊房间。创建前先查复用；并发注册冲突以既有行为准。"""
     __tablename__='direct_conversations';__table_args__=(UniqueConstraint('user_low_id','user_high_id',name='uq_direct_conversation_pair'),)
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
     id:Mapped[str]=mapped_column(String(36),primary_key=True);user_low_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);user_high_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);matrix_room_id:Mapped[str]=mapped_column(String(255));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
 
 class Complaint(Base):
@@ -52,3 +53,25 @@ class DirectConversationRoom(Base):
     user_high_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
     matrix_room_id: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DirectRoomGeneration(Base):
+    """A fixed, non-expiring alias per recovery generation; retain all generations."""
+    __tablename__ = 'direct_room_generations'
+    __table_args__ = (UniqueConstraint('user_low_id', 'user_high_id', 'generation', name='uq_direct_room_generation'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_low_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    user_high_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    generation: Mapped[int] = mapped_column(Integer)
+    expected_old_room_id: Mapped[str] = mapped_column(String(255))
+    recovery_reason: Mapped[str] = mapped_column(String(30), default='retired', server_default='retired')
+    departed_user_id: Mapped[str | None] = mapped_column(ForeignKey('users.id'))
+    matrix_room_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DirectPairMutex(Base):
+    """Relationship serialization without consuming room creation authority."""
+    __tablename__ = 'direct_pair_mutexes'
+    user_low_id: Mapped[str] = mapped_column(ForeignKey('users.id'), primary_key=True)
+    user_high_id: Mapped[str] = mapped_column(ForeignKey('users.id'), primary_key=True)

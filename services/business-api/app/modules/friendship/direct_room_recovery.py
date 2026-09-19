@@ -94,6 +94,7 @@ class DirectRoomRecovery:
             before = dict(matrix_room_id=expected_old_room_id, user_low_id=low, user_high_id=high)
             after = dict(matrix_room_id=target_room_id, user_low_id=low, user_high_id=high)
             canonical.matrix_room_id = target_room_id
+            canonical.revision += 1
             result = dict(conversation_id=canonical.id, matrix_room_id=target_room_id, previous_room_id=expected_old_room_id)
             session.add(AuditEvent(id=str(uuid4()), actor_id=operator_id, subject_type='friendship',
                 subject_id=canonical.id, action='friend.direct_room_repaired', result='SUCCESS',
@@ -229,6 +230,7 @@ class DirectRoomRecovery:
 
     def direct_conversation_associations(self, actor, peer):
         self._validate_direct_peer(actor, peer)
+        self.reconcile_direct_directory(actor, peer)
         low, high = sorted((actor, peer))
         with self.factory() as session:
             canonical = self._canonical(session, actor, peer)
@@ -236,4 +238,5 @@ class DirectRoomRecovery:
                 DirectConversationRoom.user_low_id == low, DirectConversationRoom.user_high_id == high)))
             if canonical:
                 ids.add(canonical.matrix_room_id)
-            return {'matrix_room_id': canonical.matrix_room_id if canonical else None, 'room_ids': sorted(ids)}
+            return {'matrix_room_id': canonical.matrix_room_id if canonical else None, 'room_ids': sorted(ids),
+                    'revision': canonical.revision if canonical else 0}

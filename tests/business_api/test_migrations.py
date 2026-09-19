@@ -37,7 +37,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0070_direct_room_history (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0071_direct_room_generations (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history
@@ -55,6 +55,15 @@ def test_direct_room_history_is_expand_only():
     sql = _normalized_sql(_alembic('upgrade', '0069_media_platform:0070_direct_room_history', '--sql'))
     assert 'create table direct_conversation_rooms' in sql
     assert 'uq_direct_conversation_source' in sql
+    assert 'drop table' not in sql
+    assert 'delete from' not in sql
+
+
+def test_direct_room_generations_are_expand_only_and_preserve_revision():
+    sql = _normalized_sql(_alembic('upgrade', '0070_direct_room_history:0071_direct_room_generations', '--sql'))
+    assert 'create table direct_room_generations' in sql
+    assert 'create table direct_pair_mutexes' in sql
+    assert 'add column revision integer default' in sql
     assert 'drop table' not in sql
     assert 'delete from' not in sql
 

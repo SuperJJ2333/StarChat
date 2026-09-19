@@ -6,7 +6,18 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from app.modules.friendship.models import DirectRoomReservation
+from app.modules.friendship.models import DirectRoomReservation, DirectPairMutex
+
+
+def lock_pair_mutex(session, actor, peer):
+    """Lock order: pair mutex, reservation, then relationship rows."""
+    low, high = sorted((actor, peer))
+    insert = {'postgresql': postgres_insert, 'sqlite': sqlite_insert}.get(session.get_bind().dialect.name)
+    if insert is None:
+        raise RuntimeError('Direct-room coordination requires PostgreSQL or SQLite')
+    session.execute(insert(DirectPairMutex).values(user_low_id=low, user_high_id=high).on_conflict_do_nothing())
+    session.scalar(select(DirectPairMutex).where(DirectPairMutex.user_low_id == low,
+        DirectPairMutex.user_high_id == high).with_for_update())
 
 
 def lock_pair(session, actor, peer, attempt_id):
@@ -16,6 +27,7 @@ def lock_pair(session, actor, peer, attempt_id):
     transaction. The returned inserted flag is the only creation authorization.
     All callers hold this pair lock through canonical-room publication/commit.
     """
+    lock_pair_mutex(session, actor, peer)
     low, high = sorted((actor, peer))
     dialect = session.get_bind().dialect.name
     insert = {'postgresql': postgres_insert, 'sqlite': sqlite_insert}.get(dialect)

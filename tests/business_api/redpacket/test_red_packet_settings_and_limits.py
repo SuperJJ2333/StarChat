@@ -30,7 +30,9 @@ def context():
         session.add(User(id="admin-1", username="admin", username_normalized="admin", email="a@x.com", email_normalized="a@x.com", password_hash="x", status=AccountStatus.ACTIVE, created_at=now, updated_at=now))
         session.add(User(id="sender", username="sender", username_normalized="sender", email="sender@x.com", email_normalized="sender@x.com", password_hash="x", status=AccountStatus.ACTIVE, matrix_user_id="@sender:example.test", created_at=now, updated_at=now))
         session.add(UserRole(id="r1", user_id="admin-1", role_code=RoleCode.SUPER_ADMIN, assigned_by="bootstrap", assigned_at=now))
-    settings = Settings(_env_file=None, environment="test", database_url="sqlite+pysqlite:///:memory:", redis_url="redis://localhost:6379/15", jwt_secret="r" * 32, totp_issuer="六合通")
+    # This fixture exercises an explicit runtime cap, independently of the
+    # production default (which main changed from 20000 to 200).
+    settings = Settings(_env_file=None, environment="test", database_url="sqlite+pysqlite:///:memory:", redis_url="redis://localhost:6379/15", jwt_secret="r" * 32, totp_issuer="六合通", red_packet_max_total="20000.00")
     app = create_app(settings, session_factory=factory, matrix_gateway=FakeMatrixGateway())
     LedgerService(factory).adjust(user_id="sender", amount=Decimal("50000.00"), actor_id="finance", reason_code="INITIAL_CREDIT", idempotency_key="seed")
     yield app, factory, settings

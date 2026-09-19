@@ -12,8 +12,10 @@ from app.modules.friendship.models import ContactProfile,ContactTag,DirectConver
 from app.modules.identity.models import Device
 from app.modules.friendship.direct_room_coordinator import lock_pair
 from app.modules.friendship.direct_room_recovery import DirectRoomRecovery, V2_PREFIX
+from app.modules.friendship.direct_conversation_lifecycle import DirectConversationLifecycle
+from app.modules.friendship.direct_room_coordinator import lock_pair_mutex
 
-class FriendshipService(DirectRoomRecovery):
+class FriendshipService(DirectConversationLifecycle, DirectRoomRecovery):
     def __init__(self,factory,profile_reader,*,matrix_gateway=None,matrix_server_name='matrix.localhost'):
         self.factory=factory;self.profile_reader=profile_reader
         self.matrix_gateway=matrix_gateway;self.matrix_server_name=matrix_server_name
@@ -144,6 +146,7 @@ class FriendshipService(DirectRoomRecovery):
             row.status='CANCELLED';row.resolved_at=datetime.now(timezone.utc);self._audit(s,actor,row.id,'friend.request.cancelled','FRIEND_REQUEST_CANCEL',key);return row
     def block(self,actor,target,key):
         with self.factory.begin() as s:
+            lock_pair_mutex(s,actor,target)
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
             if row:return row
             row=UserBlock(id=str(uuid4()),blocker_id=actor,blocked_id=target,idempotency_key=key,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.blocked','USER_BLOCK',key);return row
@@ -157,6 +160,7 @@ class FriendshipService(DirectRoomRecovery):
             return [{'id':row.id,'user_id':row.blocked_id,'matrix_user_id':(users[row.blocked_id].matrix_user_id if row.blocked_id in users else None)} for row in rows]
     def unblock(self,actor,target,key):
         with self.factory.begin() as s:
+            lock_pair_mutex(s,actor,target)
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
             if row:s.delete(row);self._audit(s,actor,row.id,'friend.unblocked','USER_UNBLOCK',key)
     def create_tag(self,actor,name,key):
@@ -208,6 +212,7 @@ class FriendshipService(DirectRoomRecovery):
     def delete_friend(self,actor,target,key):
         low,high=sorted((actor,target))
         with self.factory.begin() as s:
+            lock_pair_mutex(s,actor,target)
             if self._idempotency(s,f'friend.delete:{actor}',key,{'target':target}):return
             row=s.scalar(select(Friendship).where(Friendship.user_low_id==low,Friendship.user_high_id==high))
             if not row:raise AppError(code='FRIEND_NOT_FOUND',message='好友不存在',status_code=404)
@@ -235,11 +240,12 @@ class FriendshipService(DirectRoomRecovery):
         return {'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'relationship_state':'FRIEND' if profile.user_id in friends else 'OUTGOING_PENDING' if profile.user_id in pending else 'REUSABLE' if profile.user_id in reusable else 'NONE'}
     def direct_conversation(self,actor,peer):
         self._validate_direct_peer(actor,peer)
+        self.reconcile_direct_directory(actor,peer)
         # Canonical Direct Conversation：创建私聊前先查询复用（Phase E）。
         low,high=sorted((actor,peer))
         with self.factory() as s:
             row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
-            return {'matrix_room_id':row.matrix_room_id} if row else {'matrix_room_id':None}
+            return {'matrix_room_id':row.matrix_room_id,'revision':row.revision} if row else {'matrix_room_id':None,'revision':0}
     def register_direct_conversation(self,actor,peer,matrix_room_id,key):
         self._validate_direct_peer(actor,peer)
         low,high=sorted((actor,peer))

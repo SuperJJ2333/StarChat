@@ -1,13 +1,19 @@
 from base64 import urlsafe_b64encode
+from contextlib import contextmanager
+from contextvars import ContextVar
+from time import monotonic
 from datetime import datetime, timezone
 from hashlib import sha256
 import hmac
+import json
 from typing import NoReturn, Protocol
 from urllib.parse import quote
 
 import httpx
 
 from app.core.errors import AppError
+
+_metadata_deadline = ContextVar('matrix_metadata_deadline', default=None)
 
 
 class MatrixAdminGateway(Protocol):
@@ -67,15 +73,59 @@ class MatrixCredentialCodec:
 
 
 class SynapseMatrixAdminGateway:
+    @contextmanager
+    def metadata_deadline(self, deadline):
+        token = _metadata_deadline.set(deadline)
+        try:
+            yield
+        finally:
+            _metadata_deadline.reset(token)
+
+    def _metadata_timeout(self):
+        deadline = _metadata_deadline.get()
+        if deadline is None:
+            return {}
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise AppError(code='DIRECT_ROOM_EVIDENCE_UNAVAILABLE', message='会话校验超时', status_code=503)
+        return {'timeout': min(0.5, remaining / 4)}
+
+    def _bounded_metadata_get(self, url):
+        """Bound decoded metadata to 2 MiB and check the budget per chunk.
+
+        A blocking final read may finish up to its 0.5s phase timeout after the
+        deadline; its result is rejected. No unbounded eager response read.
+        """
+        timeout = self._metadata_timeout()
+        with self._client.stream('GET', url,
+                headers={'Authorization': f'Bearer {self._admin_access_token}'}, **timeout) as response:
+            self._metadata_timeout()
+            if response.status_code != 200:
+                return response.status_code, None
+            data = bytearray()
+            iterator = response.iter_bytes()
+            while True:
+                self._metadata_timeout()
+                try:
+                    chunk = next(iterator)
+                except StopIteration:
+                    break
+                self._metadata_timeout()
+                if len(data) + len(chunk) > 2 * 1024 * 1024:
+                    raise ValueError('metadata body exceeds limit')
+                data.extend(chunk)
+            body = json.loads(data)
+            self._metadata_timeout()
+            return response.status_code, body
+
     def _strict_room_metadata(self, room_id: str, suffix: str = ''):
         """Operations evidence: an absent room is never proof of retirement."""
         try:
-            response = self._client.get(
-                f'{self._homeserver_url}/_synapse/admin/v1/rooms/{quote(room_id, safe="")}{suffix}',
-                headers={'Authorization': f'Bearer {self._admin_access_token}'})
-            if response.status_code != 200:
+            status, body = self._bounded_metadata_get(
+                f'{self._homeserver_url}/_synapse/admin/v1/rooms/{quote(room_id, safe="")}{suffix}')
+            if status != 200:
                 raise ValueError('metadata unavailable')
-            return response.json()
+            return body
         except (httpx.HTTPError, ValueError):
             raise AppError(code='DIRECT_ROOM_EVIDENCE_UNAVAILABLE', message='会话校验暂不可用', status_code=503) from None
 
@@ -99,14 +149,13 @@ class SynapseMatrixAdminGateway:
     def resolve_room_alias(self, alias: str) -> str | None:
         """Read room directory metadata only; never accepts caller-supplied URLs."""
         try:
-            response = self._client.get(
-                f'{self._homeserver_url}/_matrix/client/v3/directory/room/{quote(alias, safe="")}',
-                headers={'Authorization': f'Bearer {self._admin_access_token}'})
-            if response.status_code == 404:
+            status, body = self._bounded_metadata_get(
+                f'{self._homeserver_url}/_matrix/client/v3/directory/room/{quote(alias, safe="")}')
+            if status == 404:
                 return None
-            if response.status_code != 200:
+            if status != 200:
                 raise ValueError('directory unavailable')
-            room_id = response.json().get('room_id')
+            room_id = body.get('room_id')
             if not isinstance(room_id, str) or not room_id.startswith('!'):
                 raise ValueError('invalid directory result')
             return room_id
