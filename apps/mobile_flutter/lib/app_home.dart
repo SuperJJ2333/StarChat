@@ -1907,9 +1907,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 仍作 short-window single-flight：toast 显示期间连点不会叠出多条提示。
   Future<void> _openManagedRoomRequest(RoomOpenRequest request) async {
     if (_roomOpenFailureVisible) return;
+    // 逻辑会话归一化（缺陷 0919 项 3）：搜索/通知命中历史孤儿房间时，
+    // 只允许只读定位打开（保留 roomId+anchor），不作为独立可发送会话。
+    final normalized = normalizeDuplicateRoomOpen(request,
+        isDuplicateRoom: (roomId) =>
+            widget.matrix.duplicateRoomPrimaryIdSync(roomId) != null);
     try {
       await _roomOpening.open(
-        request,
+        normalized,
         navigate: _roomNavigation.open,
         awaitLocalRoom: _awaitLocalRoom,
       );
@@ -2016,6 +2021,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               onVideo: (contact) => _openCall(contact, CallMediaType.video),
               reminderService: reminderService,
               initialIdentityCache: identityCache,
+              readOnly: request.readOnly,
             ));
     handle.register(route);
     // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，

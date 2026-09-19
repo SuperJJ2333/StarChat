@@ -119,3 +119,83 @@ TDD：resolver 详细分组用例 + `duplicate_unread_merge_test.dart`（合并 
 选择性提交说明：`matrix_e2ee_client.dart` 暂存内容额外剔除并行任务新写入的
 BUG-23 `markRoomRead`、withdrawInvite（含重复 `@override`）等在途行；`matrix_home_page.dart`
 同前剔除 BUG-11/draft 等。
+
+## 第四轮记录（用户纠正后继续执行完整规格，2026-09-19 晚）
+
+用户纠正：37357c66 仅是"未读投影合并"阶段件；**整体状态不得标为"仅待真机"**；
+"最多 10 秒""OpenAPI 自然消除"等结论超出证据。以下为按七项要求继续执行的结果。
+
+### 项1（修复）：canonical 查询的 ID 转换
+m.direct 键是 matrixId，canonical 目录以业务 userId 为键——原实现拿 matrixId
+误查目录（生产上 canonical 永远查不中、登记簿永不填充）。修复：
+`convergeDirectDirectory` 新增 `businessUserIdOf` 转换器；消息页钩子经好友
+目录（`contactsByMatrixId[matrixPeer]?.userId`）转换；转换缺失时跳过查询、
+只用本地规则，绝不误查。测试：`direct_room_identity_integration_test.dart`
+（转换器被调用、业务身份缺失时跳过查询）。
+
+### 项2（修复）：收敛后旧房间身份丢失、以普通房间重现
+收敛把旧房间移出 m.direct 后，真实 SDK 计算的 `isDirectChat` 丢失，旧房间
+会以普通房间行重现。修复：snapshot 投影阶段经 `DuplicateRoomRegistry
+.entryForRoom` 反查（duplicateRoomId→peerId）恢复私聊身份后再归并；纯展示
+投影，不改任何 Matrix 状态。测试：组合测试第 3 例（先断言 loser.isDirectChat
+== false 前置成立，再断言列表仍只有一行且 directPeerId 正确）。
+
+### 项3+4：逻辑会话统一入口 / 搜索定位 / 摘要与回执
+- `aggregateConversationHits` 新增 `primaryRoomIdOf`：孤儿房间命中归并到
+  主会话分组；每条命中保留自身 roomId（sourceRoomId）+ eventId 供定位。
+- 控制器/页面接线（`primaryRoomIdOf`）；映射按本轮命中逐房间解析。
+- `RoomOpenRequest.readOnly` + `normalizeDuplicateRoomOpen`：搜索/通知命中
+  登记在案的孤儿房间时强制只读打开（保留 roomId+anchor 定位，隐藏输入区，
+  不得作为独立可发送会话出现）；归一化收敛在 `_openManagedRoomRequest`
+  单一咽喉点，覆盖全部入口。
+- `RoomPage.readOnly`：隐藏输入区与面板，显示"该消息来自历史会话，仅可查看"。
+- 列表摘要：`_mergeDuplicateConversationState` 在未读合并外，取身份组内
+  最新事件作为预览/排序锚点——落选房间的新消息不因隐藏而在摘要中消失。
+- 已读回执：保持逐房间真实阅读位置（每个房间独立 read marker/manual
+  unread；合并徽标 = 各房间按同一读态公式求和，各房间被实际阅读后各自清零）。
+  测试：`logical_conversation_search_test.dart` 4 例。
+
+### 项5：三个审计问题的继续处理
+- **pending 交接重复发送**：核查结论 = 同设备重复已由 BUG-3 修复（持久化
+  打招呼账本 + 确定性 txid + 6 项编排测试）。**残余**（在案开放）：换设备/
+  重装后本地账本为空可能重发一次（原审计
+  `docs/verification/2026-09-19-friend-acceptance-greeting-idempotency.md`
+  已列为未实施纵深防御：发送前查房间历史同 txid/request_id）。本轮未实施。
+- **建房授权响应丢失无法恢复**：核查结论 = 服务端预约行**有意**永不过期
+  （`direct_room_coordinator.py` docstring、runbook
+  `docs/runbooks/direct-room-coordination.md:16-20`、协调测试
+  `test_pending_blocks_legacy_and_does_not_expire` 明确断言不过期）。
+  客户端无法区分"对端正在建"与"预约永久卡死"（两者 claim 响应相同），
+  客户端侧自动重建会重新打开重复建房窗口。**需要服务端契约决策（ADR）**
+  （如 owner 持匹配 attempt 的"确认未建"二次授权，或带校验的接管端点）。
+  开放项，不在客户端擅动。
+- **首次建房网络恢复不自动继续**：已修复。`PendingConversationPage
+  ._onNetworkChanged` 在 offline/weak → online/recovering 沿且上次尝试
+  失败时自动重跑 `_start()`（`_opening/_settled` 守卫防风暴；initState
+  记录网络基线）。测试：`pending_conversation_outbox_test.dart` 项5-3 用例。
+
+### 项6：真实 SDK 组合测试
+`direct_room_identity_integration_test.dart`：真实 `Room`（身份字段全部由
+SDK 从 m.direct 计算，**无固定替身**；仅覆写非身份的 encrypted/timeline
+载体）→ 收敛（含 ID 转换、登记）→ snapshot 唯一 → `openRoomLease` +
+`openRoomTimeline` + `roomInfo.isDirect` 断言。4 用例。
+
+### 项7：结论更正（在案）
+- 「canonical 等待最多 10 秒」仅适用于 claim 已有结论后的轮询窗口
+  （20×500ms）；**授权响应丢失/预约卡死不受此界**，可持续存在——两项结论
+  不可混用。
+- 整体状态改为「实现继续/开放项在案」，不使用「仅待真机」。
+- verify.ps1 的 OpenAPI 契约漂移 = 并行批次服务端在途改动；**须在该任务
+  修复后重新运行 verify.ps1 验证 PASS 才可关闭**，不得预设自然消除。
+
+### 第四轮门禁（真实退出码）
+
+| 门禁 | 结果 |
+| --- | --- |
+| `flutter analyze` | No issues found!（exit 0） |
+| `flutter test test/features/matrix test/features/search --timeout 120s` | 1791 通过，0 失败（exit 0） |
+| `flutter test --timeout 120s`（全量） | **3515 通过，0 失败（exit 0）** |
+
+第四轮阶段提交：`fe9f178b`（前序：`ac01f7cf` 身份解析与收敛、`37357c66` 未读投影合并）。
+选择性提交同前：四个共享文件（e2ee/home/app_home/room_page）均为 HEAD+本任务改动
+（逐 hunk 分离，已断言不含并行任务 BUG-11/14/15/16/20/23/32 与 ignore-list 等在途行）。

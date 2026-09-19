@@ -135,30 +135,42 @@ final class GlobalSearchResults {
   bool get isNotEmpty => !isEmpty;
 }
 
-/// 按 roomId 聚合命中，保持「最近命中优先」的稳定顺序。
+/// 按逻辑会话聚合命中，保持「最近命中优先」的稳定顺序。
+///
+/// 分组键 = [primaryRoomIdOf] 把物理 roomId 归并到逻辑会话（同一好友的
+/// primary 房间）；无映射时退回物理 roomId。每条命中的 `hit.roomId` 始终
+/// 保留其**来源房间**（sourceRoomId）供点击定位；孤儿房间的命中归并到
+/// 主会话名下，打开时必须以只读方式定位，不得作为独立可发送的会话打开。
 List<GlobalSearchConversationHit> aggregateConversationHits(
   Iterable<GlobalSearchMessageHit> hits, {
   int maxHitsPerConversation = 200,
+  String? Function(String roomId)? primaryRoomIdOf,
 }) {
+  String conversationKeyOf(GlobalSearchMessageHit hit) {
+    final primary = primaryRoomIdOf?.call(hit.roomId);
+    return (primary == null || primary.isEmpty) ? hit.roomId : primary;
+  }
+
   final order = <String>[];
   final grouped = <String, List<GlobalSearchMessageHit>>{};
   for (final hit in hits) {
-    final bucket = grouped.putIfAbsent(hit.roomId, () {
-      order.add(hit.roomId);
+    final key = conversationKeyOf(hit);
+    final bucket = grouped.putIfAbsent(key, () {
+      order.add(key);
       return <GlobalSearchMessageHit>[];
     });
     if (bucket.length < maxHitsPerConversation) bucket.add(hit);
   }
   return [
-    for (final roomId in order)
+    for (final key in order)
       GlobalSearchConversationHit(
-        roomId: roomId,
-        roomName: grouped[roomId]!.first.roomName,
-        isGroup: grouped[roomId]!.first.isGroup,
-        hits: List.unmodifiable(grouped[roomId]!
+        roomId: key,
+        roomName: grouped[key]!.first.roomName,
+        isGroup: grouped[key]!.first.isGroup,
+        hits: List.unmodifiable(grouped[key]!
           ..sort((a, b) => b.timestamp.compareTo(a.timestamp))),
-        roomAvatarSeed: grouped[roomId]!.first.roomAvatarSeed,
-        roomAvatarUrl: grouped[roomId]!.first.roomAvatarUrl,
+        roomAvatarSeed: grouped[key]!.first.roomAvatarSeed,
+        roomAvatarUrl: grouped[key]!.first.roomAvatarUrl,
       ),
   ];
 }

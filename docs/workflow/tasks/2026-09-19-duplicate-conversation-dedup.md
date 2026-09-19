@@ -4,10 +4,10 @@
 
 - 目标、用户授权来源及边界：修复「iOS/Android 消息列表偶现两个相同聊天会话」。用户授权四项重点（single-flight 核查、cached_direct_room_directory 核查、ConversationIdentityResolver、sync merge 核查）+ 四项测试；已确认 D1=展示去重+m.direct 收敛（不 leave）、D2=LEGACY 保留+加强守卫。
 - 关联计划/ADR：`docs/superpowers/plans/2026-09-19-duplicate-conversation-dedup-plan.md`
-- 当前状态：验证通过，待真机
-- 负责人、工作树、文件所有权、源码commit：ZCode；本任务拥有 `apps/mobile_flutter/lib/features/matrix/{conversation_identity_resolver,direct_room_directory_convergence}.dart`、`matrix_e2ee_client.dart`、`matrix_home_page.dart` 及 test/features/matrix 下 5 个新测试；基线 commit `b308598d4711349f02bcc3873b01b8a47c0cd3a3`
-- 最后更新时间（含时区）：2026-09-19 15:00 +0800
-- 下一条具体操作、必要输入、阻断的验收ID：真机复验四场景（连点/弱网/重启/前后台），需 Mi 6 + iOS 设备反馈；阻断 A1–A5 真机列
+- 当前状态：**实现继续/开放项在案**（用户纠正：不使用「仅待真机」）。已完成：项1 canonical ID 转换修复、项2 收敛后旧房间身份重关联、项3 搜索逻辑会话归并+readOnly 贯通、项4 摘要取组内最新+逐房间已读回执、项5-3 网络恢复自动继续、项6 真实 SDK 组合测试。**开放项**：项5-1 换设备招呼重发（需发送前历史核查）、项5-2 授权预约卡死（需服务端 ADR 决策）、OpenAPI 契约漂移（并行任务修复后重跑 verify.ps1）、真机四场景复验。
+- 负责人、工作树、文件所有权、源码commit：ZCode；本任务拥有 `apps/mobile_flutter/lib/features/matrix/{conversation_identity_resolver,direct_room_directory_convergence,duplicate_room_registry}.dart`、`matrix_e2ee_client.dart`、`matrix_home_page.dart`、`room_navigation_coordinator.dart`、`room_page.dart`、`lib/main.dart` 及 test/features/{matrix,search} 下本任务测试；基线 commit `b308598d`，阶段提交 `ac01f7cf`、`37357c66`
+- 最后更新时间（含时区）：2026-09-19 21:30 +0800
+- 下一条具体操作、必要输入、阻断的验收ID：项5-2 需服务端 ADR 决策（授权接管/二次授权契约）；真机复验需 Mi 6 + iOS 设备反馈
 
 ## 验收台账
 
@@ -53,3 +53,21 @@
 - 生产备份位置、恢复操作：不适用（无生产变更）；回退 = 还原本轮涉及文件。
 - 运行中CI/命令：无。
 - 下次恢复先检查的事实：`git status` 中本任务文件是否完整；测试是否红→绿已闭环。
+
+## 第四轮追加台账（2026-09-19 晚，用户纠正后）
+
+| ID | 场景及预期 | 实现 | 测试及证据 | 发布 | 真机反馈/缺口 |
+| --- | --- | --- | --- | --- | --- |
+| C1 | canonical 查询用业务 userId（matrixId 转换） | convergeDirectDirectory.businessUserIdOf + 消息页好友目录转换 | direct_room_identity_integration_test 项1 两用例绿 | — | 待真机 |
+| C2 | 收敛后旧房间不以普通房间重现 | snapshot 经 registry.entryForRoom 重关联身份 | 组合测试项2 用例绿（前置断言 isDirectChat 已丢失） | — | 待真机 |
+| C3 | 搜索按逻辑会话归并，保留 sourceRoomId+eventId | aggregateConversationHits.primaryRoomIdOf + 控制器/页面接线 | logical_conversation_search_test 4 用例绿 | — | 待真机 |
+| C4 | 孤儿房间经搜索/通知只读定位，不可独立发送 | RoomOpenRequest.readOnly + normalizeDuplicateRoomOpen + RoomPage 输入区门控 | 归一化纯函数用例绿；RoomPage 门控待 widget 用例补强 | — | 待真机 |
+| C5 | 列表摘要取身份组内最新事件 | _mergeDuplicateConversationState | 合并测试（含未读）绿；摘要专项断言待补 | — | 待真机 |
+| C6 | 首次建房网络恢复自动继续 | PendingConversationPage._onNetworkChanged 恢复沿重试 | pending_conversation_outbox_test 项5-3 绿 | — | 待真机 |
+| C7 | 真实 SDK 身份链路组合证明 | direct_room_identity_integration_test（无 isDirectChat 替身） | 4 用例绿（含打开时间线） | — | — |
+
+### 开放项（不得标"仅待真机"）
+1. **项5-1 残余**：换设备/重装后招呼可能重发一次——需"发送前查房间历史同 txid/request_id"纵深防御（客户端可做，未排入本轮）。
+2. **项5-2 阻塞**：建房授权预约永不过期是服务端有意设计；卡死恢复需服务端契约变更（ADR 决策点：owner 二次授权/带校验接管）。客户端擅动会重新打开重复建房窗口。
+3. **OpenAPI 契约漂移**：并行批次服务端在途改动所致；须其修复后重跑 verify.ps1 验证 PASS。
+4. **真机复验**：连点/弱网/重启/前后台 + 搜索定位只读打开 + 通知点击路由。

@@ -755,9 +755,12 @@ final class MatrixConversationCapability {
         // 不再各自渲染一条。落选房间仅从列表隐藏，绝不 leave。
         final resolution = resolveConversationIdentitiesDetailed(
           [
-            for (final room in client.rooms)
-              if (room.membership == Membership.join)
-                _snapshotRoom(room, localHistory)
+            for (final raw in [
+              for (final room in client.rooms)
+                if (room.membership == Membership.join)
+                  _snapshotRoom(room, localHistory)
+            ])
+              _reassociateDuplicate(raw, registry, selfUserId)
           ],
           selfUserId: selfUserId,
           // 规则一数据源：收敛服务登记的服务端 canonical（未注入登记簿时
@@ -775,10 +778,11 @@ final class MatrixConversationCapability {
           reminderRoomId: client
               .accountData[messageReminderAccountDataType]?.content['room_id']
               ?.toString(),
-          // 方案 A：落选房间不渲染行，其未读并入主行，不能凭空消失。
+          // 方案 A：落选房间不渲染行，其未读并入主行，不能凭空消失；列表
+          // 摘要取身份组内最新事件，落选房间的新消息不因隐藏而在预览中消失。
           rooms: [
             for (final room in resolution.representatives)
-              _mergeDuplicateUnread(
+              _mergeDuplicateConversationState(
                   room,
                   resolution.duplicatesByRepresentativeId[room.id] ??
                       const [],
@@ -787,14 +791,47 @@ final class MatrixConversationCapability {
         );
       });
 
-  /// 把落选房间的未读（与本页一致的读态公式）并进主行快照。
-  MatrixConversationRoomSnapshot _mergeDuplicateUnread(
+  /// 项2 修正：收敛把旧房间移出 m.direct 后，真实 SDK 计算的
+  /// isDirectChat/directPeerId 会丢失——若不补救，旧房间会以"普通房间"
+  /// 身份重新出现在列表里。这里用登记簿（duplicateRoomId→peerId）恢复其
+  /// 私聊身份，再交给身份解析归并。纯展示投影，不改任何 Matrix 状态。
+  MatrixConversationRoomSnapshot _reassociateDuplicate(
+    MatrixConversationRoomSnapshot room,
+    DuplicateRoomRegistry? registry,
+    String? selfUserId,
+  ) {
+    if (registry == null || selfUserId == null) return room;
+    if (room.isDirect && (room.directPeerId?.isNotEmpty ?? false)) return room;
+    final entry = registry.entryForRoom(selfUserId, room.id);
+    if (entry == null || entry.peerId.isEmpty) return room;
+    return MatrixConversationRoomSnapshot(
+      id: room.id,
+      displayName: room.displayName,
+      avatar: room.avatar,
+      isDirect: true,
+      directPeerId: entry.peerId,
+      members: room.members,
+      lastEvent: room.lastEvent,
+      preference: room.preference,
+      notificationCount: room.notificationCount,
+      notificationsEnabled: room.notificationsEnabled,
+      name: room.name,
+      isJoined: room.isJoined,
+      lastActivityAt: room.lastActivityAt,
+      duplicateUnreadCount: room.duplicateUnreadCount,
+    );
+  }
+
+  /// 把落选房间的未读并入主行、列表摘要采用身份组内最新事件。
+  MatrixConversationRoomSnapshot _mergeDuplicateConversationState(
     MatrixConversationRoomSnapshot primary,
     List<MatrixConversationRoomSnapshot> duplicates,
     String? selfUserId,
   ) {
     if (duplicates.isEmpty) return primary;
     var merged = 0;
+    var newestEvent = primary.lastEvent;
+    var newestAt = primary.lastActivityAt;
     for (final duplicate in duplicates) {
       merged += ConversationReadState.shared().unreadCount(
           roomId: duplicate.id,
@@ -803,8 +840,16 @@ final class MatrixConversationCapability {
           lastEventSenderId: duplicate.lastEvent?.senderId,
           currentUserId: selfUserId,
           manualUnread: duplicate.preference.manualUnread);
+      final duplicateAt = duplicate.lastActivityAt;
+      if (duplicateAt != null &&
+          (newestAt == null || duplicateAt.isAfter(newestAt))) {
+        newestAt = duplicateAt;
+        newestEvent = duplicate.lastEvent;
+      }
     }
-    if (merged <= 0) return primary;
+    if (merged <= 0 && identical(newestEvent, primary.lastEvent)) {
+      return primary;
+    }
     return MatrixConversationRoomSnapshot(
       id: primary.id,
       displayName: primary.displayName,
@@ -812,13 +857,13 @@ final class MatrixConversationCapability {
       isDirect: primary.isDirect,
       directPeerId: primary.directPeerId,
       members: primary.members,
-      lastEvent: primary.lastEvent,
+      lastEvent: newestEvent,
       preference: primary.preference,
       notificationCount: primary.notificationCount,
       notificationsEnabled: primary.notificationsEnabled,
       name: primary.name,
       isJoined: primary.isJoined,
-      lastActivityAt: primary.lastActivityAt,
+      lastActivityAt: newestAt,
       duplicateUnreadCount: merged,
     );
   }
@@ -906,12 +951,16 @@ final class MatrixConversationCapability {
 
   /// m.direct 目录收敛：同一 peer 的多个已加入房间重写为单条目（绝不
   /// leave/forget）。canonical 查询由调用方注入（业务 API 权威目录），
+  /// [businessUserIdOf] 负责把 m.direct 键（matrixId）转换为业务 userId；
   /// 不可达时回退本地最新活跃规则；失败静默，下次 sync 重试。canonical
   /// 裁决的落选房间登记进 [DuplicateRoomRegistry]。
   Future<void> convergeDirectRoomDirectory(
-          {Future<String?> Function(String peerUserId)? canonicalRoomIdOf}) =>
+          {Future<String?> Function(String peerBusinessUserId)?
+              canonicalRoomIdOf,
+          String? Function(String matrixPeerUserId)? businessUserIdOf}) =>
       _owner._withClient((client) => convergeDirectDirectory(client,
           canonicalRoomIdOf: canonicalRoomIdOf,
+          businessUserIdOf: businessUserIdOf,
           registry: _owner._duplicateRooms));
   Future<MatrixRoomInfoSnapshot> waitForJoinedRoom(String id) =>
       _owner._withClient((client) async {
@@ -4441,6 +4490,7 @@ final class MatrixSdkE2eeClient
     _attachMemberRefreshListener(client);
   }
   Client? _client;
+
   final MatrixOutgoingWorkCoordinator Function(String accountId)
       _outgoingWorkFactory;
   late MatrixOutgoingWorkCoordinator _outgoingWork;
@@ -4494,6 +4544,28 @@ final class MatrixSdkE2eeClient
   int _decryptedEventCount(String roomId) => _decryptedTimelineEvents.keys
       .where((key) => key.$2 == roomId)
       .length;
+
+  /// 逻辑会话归并出口（缺陷 0919 项 3）：roomId 是登记在案的重复房间时
+  /// 返回其 primary 房间号，否则 null。内存同步查询（登记簿由收敛路径
+  /// ensureLoaded）；搜索/通知入口在打开前据此归一化为只读定位。
+  String? duplicateRoomPrimaryIdSync(String roomId) {
+    final registry = _duplicateRooms;
+    if (registry == null) return null;
+    final self = _client?.userID;
+    if (self == null) return null;
+    return registry.primaryRoomIdForDuplicate(self, roomId);
+  }
+
+  /// 逻辑会话归并（缺陷 0919 项 3）：roomId 是登记在案的重复房间时返回
+  /// 其 primary 房间号，否则 null（含登记簿 ensureLoaded）。
+  Future<String?> primaryRoomIdForDuplicateRoom(String roomId) =>
+      _withClient((client) async {
+        final registry = _duplicateRooms;
+        final self = client.userID;
+        if (registry == null || self == null) return null;
+        await registry.ensureLoaded(self);
+        return registry.primaryRoomIdForDuplicate(self, roomId);
+      });
   @visibleForTesting
   int get debugManagedResourceCount => _managedResources.length;
   @visibleForTesting

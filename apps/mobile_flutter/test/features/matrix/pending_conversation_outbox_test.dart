@@ -7,6 +7,7 @@ import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_chat_controller.dart';
+import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/pending_conversation_page.dart';
 
 /// Offline First 收口：pending conversation 里输入的消息**不依赖页面生命周期**。
@@ -34,6 +35,7 @@ void main() {
     required PersistentOutboxManager outbox,
     required Future<DirectChatRoom> Function() openRoom,
     void Function(PendingConversationResult?)? onResult,
+    ValueNotifier<NetworkState>? networkState,
   }) async {
     await tester.pumpWidget(CupertinoApp(
       home: Builder(
@@ -47,6 +49,7 @@ void main() {
                   contact: peer,
                   openRoom: openRoom,
                   outbox: outbox,
+                  networkState: networkState,
                 ),
               ),
             );
@@ -165,5 +168,35 @@ void main() {
     expect((await outbox.unsent()).single.roomId, '!dm:test');
     expect((await outbox.unsent()).single.content, '别丢了我');
     outbox.dispose();
+  });
+
+  testWidgets('项5-3：断网失败后网络恢复自动继续建房，无需手动重试',
+      (tester) async {
+    final network = ValueNotifier<NetworkState>(NetworkState.offline);
+    addTearDown(network.dispose);
+    var attempts = 0;
+    final outbox = PersistentOutboxManager(InMemoryOutboxStore());
+    PendingConversationResult? captured;
+    await pumpPage(
+      tester,
+      outbox: outbox,
+      networkState: network,
+      openRoom: () async {
+        attempts++;
+        if (attempts == 1) throw StateError('offline');
+        return safeRoom('!recovered:test');
+      },
+      onResult: (result) => captured = result,
+    );
+    await tester.pump();
+    expect(attempts, 1, reason: '前置：断网下首次建立失败');
+
+    // 网络恢复（offline → online）：自动继续，无需手点「重试」。
+    network.value = NetworkState.online;
+    await tester.pumpAndSettle();
+
+    expect(attempts, 2, reason: '网络恢复必须自动继续建房');
+    expect(captured?.roomId, '!recovered:test');
+    expect(find.byType(PendingConversationPage), findsNothing);
   });
 }

@@ -104,6 +104,7 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
     _outbox = injected ?? PersistentOutboxManager(InMemoryOutboxStore());
     _outbox.addListener(_onOutboxChanged);
     widget.networkState?.addListener(_onNetworkChanged);
+    _lastNetworkState = widget.networkState?.value;
     unawaited(_reloadRows());
     _start();
   }
@@ -141,8 +142,27 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
     });
   }
 
+  NetworkState? _lastNetworkState;
+
   void _onNetworkChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final state = widget.networkState?.value;
+    final previous = _lastNetworkState;
+    _lastNetworkState = state;
+    setState(() {});
+    // 项5-3（缺陷 0919）：首次建房因断网/弱网失败后，网络恢复时自动继续，
+    // 不再要求用户手点「重试」。只在「离线/弱 → online/recovering」的恢复
+    // 沿触发，且上一次尝试已失败；_opening/_settled 守卫防止风暴重试。
+    if (_error == null || _opening || _settled) return;
+    final recovered = (state == NetworkState.online ||
+            state == NetworkState.recovering) &&
+        previous != null &&
+        previous != state &&
+        (previous == NetworkState.offline || previous == NetworkState.weak);
+    if (recovered) {
+      setState(() => _error = null);
+      _start();
+    }
   }
 
   /// 后台建立会话。**绝不阻塞首帧**：本页已经可见，进度只体现在状态文案上。

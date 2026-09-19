@@ -27,7 +27,8 @@ import 'duplicate_room_registry.dart';
 /// 覆盖权威映射（解析器的 primary 优先规则只认登记簿里的 canonical）。
 Future<void> convergeDirectDirectory(
   Client client, {
-  Future<String?> Function(String peerUserId)? canonicalRoomIdOf,
+  Future<String?> Function(String peerBusinessUserId)? canonicalRoomIdOf,
+  String? Function(String matrixPeerUserId)? businessUserIdOf,
   DuplicateRoomRegistry? registry,
 }) async {
   final self = client.userID;
@@ -46,7 +47,13 @@ Future<void> convergeDirectDirectory(
       if (room != null) joined.add(room);
     }
     if (joined.length < 2) continue;
-    final canonical = await _canonicalOf(canonicalRoomIdOf, entry.key);
+    // m.direct 的键是 matrixId；canonical 目录以业务 userId 为键——查询前
+    // 必须转换（缺陷 0919 第三轮修正）。转换缺失时跳过查询，绝不误查。
+    final matrixPeer = entry.key;
+    final businessPeer = businessUserIdOf?.call(matrixPeer);
+    final canonical = (businessPeer == null || businessPeer.isEmpty)
+        ? null
+        : await _canonicalOf(canonicalRoomIdOf, businessPeer);
     final canonicalDecided =
         canonical != null && canonical.isNotEmpty;
     final winner = pickCanonicalDirectRoom(joined, canonicalRoomId: canonical);
@@ -55,7 +62,7 @@ Future<void> convergeDirectDirectory(
         if (loser.id == winner.id) continue;
         await registry.record(
           accountId: self,
-          peerId: entry.key,
+          peerId: matrixPeer,
           primaryRoomId: winner.id,
           duplicateRoomId: loser.id,
         );

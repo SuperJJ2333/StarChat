@@ -23,6 +23,7 @@ final class GlobalSearchController extends ChangeNotifier {
     this.debounce = const Duration(milliseconds: 250),
     this.sectionLimit = 3,
     this.hitLimit = 200,
+    this.primaryRoomIdOf,
   }) {
     repository?.addListener(_onLocalHistoryChanged);
   }
@@ -33,6 +34,10 @@ final class GlobalSearchController extends ChangeNotifier {
 
   /// 账号维度的本机历史仓库；提供时聊天记录检索走它（账号隔离 + 本机库回填）。
   final LocalMessageSearchRepository? repository;
+
+  /// 逻辑会话归并（缺陷 0919 项 3）：roomId 是登记在案的重复房间时返回
+  /// 其 primary 房间号，命中按逻辑会话归组；命中条目自身仍保留来源房间。
+  final Future<String?> Function(String roomId)? primaryRoomIdOf;
   final Duration debounce;
   final int sectionLimit;
   final int hitLimit;
@@ -71,6 +76,23 @@ final class GlobalSearchController extends ChangeNotifier {
 
   static List<T> _limited<T>(List<T> all, int limit) =>
       all.length > limit ? all.sublist(0, limit) : all;
+
+  /// 解析本轮命中的 roomId→primary 映射后按逻辑会话聚合。
+  Future<List<GlobalSearchConversationHit>> _aggregateConversations(
+      List<GlobalSearchMessageHit> hits) async {
+    final lookup = primaryRoomIdOf;
+    if (lookup == null) return aggregateConversationHits(hits);
+    final primaryByRoom = <String, String>{};
+    for (final hit in hits) {
+      if (primaryByRoom.containsKey(hit.roomId)) continue;
+      final primary = await lookup(hit.roomId);
+      if (primary != null && primary.isNotEmpty) {
+        primaryByRoom[hit.roomId] = primary;
+      }
+    }
+    return aggregateConversationHits(hits,
+        primaryRoomIdOf: (roomId) => primaryByRoom[roomId]);
+  }
 
   /// 关键词变化：防抖调度；立即清空结果（空查询立即生效）。
   void setQuery(String value) {
@@ -115,7 +137,7 @@ final class GlobalSearchController extends ChangeNotifier {
       final rooms = await loadRooms();
       if (epoch != _epoch || _disposed) return; // stale：旧查询不得覆盖新结果
       var contacts = results.contacts;
-      void publish() {
+      Future<void> publish() async {
         final needle = _query.trim().toLowerCase();
         final activeRepository = repository;
         final hits = activeRepository == null
@@ -130,12 +152,12 @@ final class GlobalSearchController extends ChangeNotifier {
             for (final room in rooms)
               if (!room.isDirect && _matchesRoom(room, needle)) room,
           ],
-          conversations: aggregateConversationHits(hits),
+          conversations: await _aggregateConversations(hits),
         );
       }
 
       // 先发布：本地房间/聊天记录立刻可见。
-      publish();
+      await publish();
       loading = false;
       notifyListeners();
 
@@ -143,7 +165,7 @@ final class GlobalSearchController extends ChangeNotifier {
       final fresh = await loadContacts();
       if (epoch != _epoch || _disposed) return;
       contacts = fresh;
-      publish();
+      await publish();
       notifyListeners();
     } catch (error) {
       if (epoch != _epoch || _disposed) return;

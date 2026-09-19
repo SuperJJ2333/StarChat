@@ -114,6 +114,16 @@ final class DuplicateRoomRegistry {
     return null;
   }
 
+  /// 反查：roomId 是否是登记在案的重复房间（是则返回其条目，含 peerId
+  /// 与 primaryRoomId）。收敛把旧房间移出 m.direct 后，快照/搜索/通知
+  /// 都靠它恢复旧房间的私聊身份。
+  DuplicateRoomEntry? entryForRoom(String accountId, String roomId) =>
+      _byAccount[accountId]?[roomId];
+
+  /// 反查便捷形式：重复房间的 primary 房间号（非重复房间返回 null）。
+  String? primaryRoomIdForDuplicate(String accountId, String roomId) =>
+      entryForRoom(accountId, roomId)?.primaryRoomId;
+
   List<DuplicateRoomEntry> entries(String accountId) =>
       switch (_byAccount[accountId]) {
         final entries? => List.unmodifiable(entries.values),

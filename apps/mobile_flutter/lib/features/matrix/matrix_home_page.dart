@@ -310,11 +310,16 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       await widget.matrix.conversations.autoJoinDirectInvites(
           _identityCache.contactsByMatrixId.keys.toSet(), _directJoinInFlight);
       // m.direct 目录收敛（同一好友单条目，绝不 leave）：canonical 查询走
-      // 业务 API 权威目录，断网时在收敛服务内回退本地规则；失败静默，下次
-      // sync 重试。列表唯一性另有 ConversationIdentityResolver 兜底。
-      unawaited(widget.matrix.conversations.convergeDirectRoomDirectory(
-              canonicalRoomIdOf:
-                  ApiDirectRoomCoordinator(widget.api).canonicalRoomId)
+      // 业务 API 权威目录；m.direct 键是 matrixId，先经好友目录转换为业务
+      // userId 再查询（转换缺失则跳过，只用本地规则）。失败静默，下次 sync
+      // 重试。列表唯一性另有 ConversationIdentityResolver 兜底。
+      unawaited(widget
+              .matrix.conversations.convergeDirectRoomDirectory(
+                  businessUserIdOf: (matrixPeer) => _identityCache
+                      .contactsByMatrixId[matrixPeer]?.userId,
+                  canonicalRoomIdOf: (businessUserId) =>
+                      ApiDirectRoomCoordinator(widget.api)
+                          .canonicalRoomId(businessUserId))
           .catchError((_) {}));
       await _refreshClientSnapshot();
     } catch (_) {/* Contact availability is required; retry after sync. */}

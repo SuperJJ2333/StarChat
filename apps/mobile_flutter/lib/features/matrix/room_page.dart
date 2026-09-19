@@ -170,6 +170,7 @@ class RoomPage extends StatefulWidget {
     this.initialIdentityCache,
     this.initialOutbox = const <String>[],
     this.outbox,
+    this.readOnly = false,
   });
 
   final BusinessApiClient api;
@@ -190,6 +191,10 @@ class RoomPage extends StatefulWidget {
 
   /// 正式的房间导航契约：全局搜索/深链可携带 anchorEventId 打开房间，
   /// 进入后定位并高亮该消息（不使用全局变量或 SharedPreferences 传参）。
+  /// 只读打开（缺陷 0919 项 3）：历史孤儿房间经搜索/通知定位时为 true，
+  /// 隐藏输入区与面板——保留查看与定位能力，但不提供任何发送入口。
+  final bool readOnly;
+
   final String? initialAnchorEventId;
 
   /// Offline First：pending conversation 期间输入、尚未发送的文本。
@@ -5146,8 +5151,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                             Text(videoSend.label)
                           ]),
                     ),
-                  ChatComposerBar(
-                    controller: input,
+                  if (widget.readOnly)
+                    const Padding(
+                      key: Key('room-read-only-notice'),
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: Center(
+                        child: Text('该消息来自历史会话，仅可查看',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: CupertinoColors.systemGrey)),
+                      ),
+                    )
+                  else
+                    ChatComposerBar(
+                      controller: input,
                     focusNode: inputFocusNode,
                     panel: composerPanel,
                     onMore: () => _togglePanel(ComposerPanel.more),

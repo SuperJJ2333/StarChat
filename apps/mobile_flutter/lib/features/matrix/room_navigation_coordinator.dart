@@ -85,6 +85,7 @@ final class RoomOpenRequest {
     this.onRoomReady,
     this.onRoomClosed,
     this.outbox = const <String>[],
+    this.readOnly = false,
   });
 
   /// 页面与租约的唯一键：群聊与私聊都用 Matrix roomId，绝不用名称/用户 ID。
@@ -119,6 +120,39 @@ final class RoomOpenRequest {
   /// Offline First：pending conversation 期间排队、进入房间后要自动发送的
   /// 文本（按输入顺序）。只承载数据，不含 SDK 对象。
   final List<String> outbox;
+
+  /// 只读打开（缺陷 0919 项 3）：历史孤儿房间经搜索/通知定位时只允许
+  /// 查看历史（保留 roomId+anchor 定位），不提供输入框，不得作为独立
+  /// 可发送的会话出现。
+  final bool readOnly;
+}
+
+/// 逻辑会话归一化：来源为搜索/通知、且 roomId 是登记在案的重复房间时，
+/// 强制只读打开（保留 roomId + anchorEventId 定位）。其余来源（好友资料
+/// 「发消息」、消息列表等）不受影响——它们本来就经 canonical 解析。
+RoomOpenRequest normalizeDuplicateRoomOpen(
+  RoomOpenRequest request, {
+  bool? Function(String roomId)? isDuplicateRoom,
+}) {
+  if (request.readOnly || isDuplicateRoom == null) return request;
+  final source = request.source;
+  if (source != RoomOpenSource.search &&
+      source != RoomOpenSource.notification) {
+    return request;
+  }
+  if (isDuplicateRoom(request.roomId) != true) return request;
+  return RoomOpenRequest(
+    roomId: request.roomId,
+    roomName: request.roomName,
+    initialContact: request.initialContact,
+    anchorEventId: request.anchorEventId,
+    source: request.source,
+    modeOverride: request.modeOverride,
+    onRoomReady: request.onRoomReady,
+    onRoomClosed: request.onRoomClosed,
+    outbox: request.outbox,
+    readOnly: true,
+  );
 }
 
 /// 打开流程与协调器之间的路由登记句柄。
