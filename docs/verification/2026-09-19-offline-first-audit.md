@@ -88,17 +88,19 @@
 | 朋友圈：首页 / 个人页 / 详情 / 设置 / 排除名单 / 可见范围名单 / 发动态草稿 | ✅ 已改 | `38f8ccb9`、`8d535bfb`、`aa4cdc94`、`58c3dde0` | `moment_cache_first_test.dart`、`moments_settings_cache_test.dart`、`moment_people_cache_test.dart`、`moment_draft_cache_test.dart` |
 | 全局搜索（本地结果先发布） | ✅ 已改 | `1104cf3f` | `test/features/search/global_search_cache_first_test.dart` |
 | 邀请码 / 邀请历史 | ✅ 已改 | `c1aa22f3` | `test/features/profile/invite_cache_first_test.dart`（10 例：断网进入无加载圈/无错误占位、刷新失败保留、快照往返、跨账号丢弃、作用域不可解析不落盘、损坏载荷） |
+| 红包领取明细 | ✅ 已改（会话级内存缓存，不落盘） | `d6d9cc1a` | `test/features/redpacket/red_packet_detail_cache_test.dart`（8 例：网络回来前先渲染、失败保留、按 packetId 命中、epoch 隔离、拆红包弹窗不注入缓存、断网再进入无加载圈/无重试占位、无缓存首次失败仍可重试、LRU 上限） |
 
 新增本地快照 Store（均为应用私有 SharedPreferences，按账号作用域隔离，账号切换即丢弃）：`wallet.entry.v1.<scope>`、`ledger.page.v1`、`friend.requests.v1`、`moment.draft.v1`、`invite.code.v1`。
+
+会话级（进程内、**刻意不落盘**）Store：`RedPacketDetailStore`（红包明细含群成员金额，属第三方资金展示数据；仓库的 `CacheRepository` 明确排除资金/凭据，故只做会话内复用）。
 
 ### 6.1 仍未改造（按剩余价值排序，含复核后的判定修正）
 
 | 页面 | 位置 | 复核后缺口 | 备注 |
 |---|---|---|---|
-| 红包领取明细 | `redpacket/red_packet_claim_detail_page.dart:214` | **仅 L1** | 复核：`loading && detail == null` 才整页 spinner（L2 合规），错误页只在 `detail == null` 时出现（L4 合规）。真正缺的是"同一个红包再次进入且断网"没有本地快照；需要会话级 store + 账号作用域，且属财务展示数据，改动需按资金模块标准评审 |
-| 通讯录首页 | `contacts/contacts_page.dart:66` | L1 角标 / L4 reload 回退本地投影 | **另一会话正在改**，本会话未动该文件 |
+| 通讯录首页 | `contacts/contacts_page.dart:66` | L1 角标 / L4 reload 回退本地投影 | **另一会话正在改**（该文件带未提交改动），本会话按仓库"同一文件不得并发编辑"规则未动 |
 | 通讯录标签列表持久化 | `contacts/contact_tag_pages.dart:142` | L1（标签列表本身无持久化） | 三态已就绪，只差落盘；同一文件也带其他会话的未提交改动，避免并发编辑 |
-| 日历选择页 | `ui/chat/chat_search_page.dart:738` | L1（月份 map 只留内存） | 纯性能型：命中本地索引时无网络；月份 map 提升到会话级 Store 可减少重复探测 |
+| 日历选择页 | `ui/chat/chat_search_page.dart:738` | L1（月份 map 只留内存） | **本轮确认受阻**：`ChatSearchPage` 本身没有 room 标识（只有 `loadCalendarMonth` 回调），缓存作用域只能由 `room_page.dart` 传入，而该文件正带其他会话的未提交改动。无作用域的月份缓存会造成跨会话串数据，故不做，等 `room_page.dart` 落定后再实施 |
 | 入群确认页 | `contacts/group_join_confirm_page.dart:10` | **判定下调** | 复核：`_load()` 只在 initState 与错误态重试时调用（重试按钮只在 `_info == null` 时渲染），因此"已有群信息 + 刷新失败"的组合**不可达**，L4 实际上已满足；首帧 spinner 出现在确实无数据时（模型允许）。剩余 L1（按 token 持久化扫到的群信息）价值有限：token 来自刚扫的二维码、加入动作本身必须联网，且缓存的人数/审批提示可能过期误导。**建议不开工**，除非将来支持"从聊天记录重新打开入群确认页" |
 
 ### 6.2 审计误报（结论修正）
