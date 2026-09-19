@@ -155,6 +155,20 @@ void main() {
     expect(controller.state.profile?.nickname, 'Fresh Alice');
   });
 
+  /// 微信级加载模型（2026-09-19 审计）：已有资料时的刷新失败不得变成页面红字。
+  test('a failed refresh with no cached profile still reports the failure',
+      () async {
+    final gateway = _FailingProfileGateway();
+    final controller =
+        ProfileController(gateway: gateway, avatarSource: FakeAvatarSource());
+
+    await controller.load();
+
+    expect(controller.state.profile, isNull);
+    expect(controller.state.message, isNotNull,
+        reason: '从未成功过且无数据时才提示失败');
+  });
+
   testWidgets('cached identity is visible on the profile page before refresh',
       (tester) async {
     final gateway = _HeldProfileGateway();
@@ -188,8 +202,12 @@ void main() {
 
     await controller.load();
 
-    expect(controller.state.status, ProfileStatus.failed);
+    // 契约变更（2026-09-19，微信级加载模型）：有缓存时的刷新失败**不再**进入
+    // failed/错误文案，而是保持 ready —— 资料仍在屏幕上，只有"从未有过资料"
+    // 才允许报错（见下一条用例）。
+    expect(controller.state.status, ProfileStatus.ready);
     expect(controller.state.profile?.nickname, 'Cached Alice');
+    expect(controller.state.message, isNull);
   });
 
   test('late profile load cannot overwrite a completed save', () async {

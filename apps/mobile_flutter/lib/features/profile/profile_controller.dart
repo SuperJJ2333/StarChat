@@ -186,8 +186,12 @@ final class ProfileController extends ChangeNotifier {
     } catch (_) {
       if (!_isCurrent(generation)) return;
       final current = state.profile;
-      _set(ProfileState(ProfileStatus.failed,
-          profile: current, message: '资料加载失败，请重试'));
+      // 本地优先 / 失败不覆盖：已经有资料可展示时，刷新失败不再升级成页面红字
+      // （旧行为会让"资料加载失败，请重试"盖在已经渲染出来的资料旁边）。
+      // 只有从未有过任何资料（无缓存、无初始值）才提示失败。
+      _set(current == null
+          ? const ProfileState(ProfileStatus.failed, message: '资料加载失败，请重试')
+          : ProfileState(ProfileStatus.ready, profile: current));
     }
   }
 
