@@ -433,7 +433,10 @@ final class _ContactsPageState extends State<ContactsPage> {
                             MotionPageRoute(
                               builder: (_) => ContactTagsPage(
                                   api: businessApi,
-                                  identityCache: widget.identityCache),
+                                  identityCache: widget.identityCache,
+                                  // 快照按账号隔离：解析当前账号供快照校验。
+                                  scopeResolver:
+                                      businessApi.currentMatrixUserId),
                             ),
                           ),
                         ),

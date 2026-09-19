@@ -8,29 +8,115 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../matrix/profile_repository.dart';
 import 'contact_models.dart';
 import 'contact_tag_models.dart';
+import 'contact_tag_snapshot_store.dart';
 import '../../ui/motion/motion_page_route.dart';
 
 final class ContactTagsPage extends StatefulWidget {
-  const ContactTagsPage({super.key, required this.api, this.identityCache});
+  const ContactTagsPage(
+      {super.key, required this.api, this.identityCache, this.scopeResolver});
   final ContactsGateway api;
 
   /// 本地联系人投影（`ProfileRepository.contacts`）。标签成员/选择页据此先渲染，
   /// 断网也能看到标签里的好友，而不是一个永不结束的加载圈。
   final ProfileRepository? identityCache;
+
+  /// 账号作用域解析（生产接线 `BusinessApiClient.currentMatrixUserId`）。
+  /// 快照按账号隔离：解析出的 scope 与快照不一致时立即丢弃快照，
+  /// 绝不展示上一个账号的标签。
+  final Future<String?> Function()? scopeResolver;
   @override
   State<ContactTagsPage> createState() => _ContactTagsPageState();
 }
 
 final class _ContactTagsPageState extends State<ContactTagsPage> {
-  late Future<List<ContactTagSummary>> tags = _load();
+  /// 本地优先（微信级加载模型 L1）：进入即用上次成功的标签列表（首帧就有
+  /// 内容），随后后台刷新；刷新失败保留数据（L4），只有从未有过数据才报错。
+  List<ContactTagSummary> _tags = const [];
+  Object? _error;
+  bool _loading = false;
+  int _generation = 0;
+  bool _disposed = false;
+  String? _resolvedScope;
+
+  /// 已水合快照的账号作用域：与当前账号不一致时立即丢弃（账号切换保护）。
+  String? _snapshotScope;
   bool editing = false;
   final selected = <String>{};
-  Future<List<ContactTagSummary>> _load() async => sortContactTags(
-        ((await widget.api.contactTags())['items'] as List? ?? const []).map(
-            (raw) => ContactTagSummary.fromJson(
-                Map<String, dynamic>.from(raw as Map))),
-      );
-  void reload() => setState(() => tags = _load());
+
+  @override
+  void initState() {
+    super.initState();
+    final snapshot = ContactTagSnapshotStores.shared?.read();
+    _snapshotScope = snapshot?.scope;
+    _tags = _tagsFromPayload(snapshot?.payload);
+    unawaited(_load());
+  }
+
+  static List<ContactTagSummary> _tagsFromPayload(
+      Map<String, dynamic>? payload) {
+    if (payload == null) return const [];
+    final items = payload['items'];
+    if (items is! List) return const [];
+    return sortContactTags([
+      for (final raw in items)
+        ContactTagSummary.fromJson(Map<String, dynamic>.from(raw as Map)),
+    ]);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (mounted) setState(() => _loading = true);
+    final resolver = widget.scopeResolver;
+    if (resolver != null) {
+      try {
+        _resolvedScope = await resolver();
+      } catch (_) {
+        _resolvedScope = null;
+      }
+    }
+    if (_disposed || generation != _generation) return;
+    final scope = _resolvedScope;
+    if (scope != null && _snapshotScope != null && _snapshotScope != scope) {
+      // 账号切换保护：绝不展示上一个账号的标签。
+      if (!mounted) return;
+      setState(() => _tags = const []);
+    }
+    try {
+      final payload = await widget.api.contactTags();
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _tags = _tagsFromPayload(payload);
+        _error = null;
+        _loading = false;
+      });
+      // 成功才落盘（写盘失败不算刷新失败）；scope 未知时不写，避免跨账号脏数据。
+      final store = ContactTagSnapshotStores.shared;
+      if (store != null && scope != null && scope.isNotEmpty) {
+        unawaited(store.write(ContactTagSnapshot(
+            scope: scope,
+            payload: payload,
+            savedAt: DateTime.now())).catchError((_) {}));
+      }
+    } catch (error) {
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      // 失败不清空已有标签（失败不覆盖）。
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
+  void reload() => unawaited(_load());
   Future<void> _newTag() async {
     final input = TextEditingController();
     final name = await showCupertinoDialog<String>(
@@ -88,64 +174,58 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
       child: SafeArea(
           child: Column(children: [
         Expanded(
-            child: FutureBuilder<List<ContactTagSummary>>(
-                future: tags,
-                builder: (_, snapshot) {
-                  if (snapshot.hasData) {
-                    final items = snapshot.data!;
-                    if (items.isEmpty) {
-                      return const Center(child: Text('暂无标签'));
-                    }
-                    return ListView(children: [
-                      for (final tag in items)
-                        WeChatListTile(
-                            leading: editing
-                                ? Icon(
-                                    selected.contains(tag.id)
-                                        ? CupertinoIcons.check_mark_circled_solid
-                                        : CupertinoIcons.circle,
-                                    color: WeChatColors.brandPrimary)
-                                : const Icon(CupertinoIcons.tag),
-                            title: Text(tag.name),
-                            subtitle: Text('${tag.friendCount} 位朋友'),
-                            onTap: () {
-                              if (editing) {
-                                setState(() => selected.contains(tag.id)
-                                    ? selected.remove(tag.id)
-                                    : selected.add(tag.id));
-                              } else {
-                                Navigator.push(
-                                    context,
-                                    MotionPageRoute(
-                                        builder: (_) => ContactTagMembersPage(
-                                            api: widget.api,
-                                            tag: tag,
-                                            identityCache:
-                                                widget.identityCache))).then((_) => reload());
-                              }
-                            })
-                    ]);
-                  }
-                  // 失败与加载中必须区分：旧实现把失败也画成"永不结束的加载圈"。
-                  if (snapshot.hasError) {
-                    return Center(
-                        child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                          const Text('标签加载失败',
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: WeChatColors.textSecondary)),
-                          const SizedBox(height: 8),
-                          CupertinoButton(
-                            key: const Key('contact-tags-retry'),
-                            onPressed: reload,
-                            child: const Text('重试'),
-                          ),
-                        ]));
-                  }
-                  return const Center(child: CupertinoActivityIndicator());
-                })),
+            child: Builder(builder: (context) {
+          if (_tags.isNotEmpty) {
+            return ListView(children: [
+              for (final tag in _tags)
+                WeChatListTile(
+                    leading: editing
+                        ? Icon(
+                            selected.contains(tag.id)
+                                ? CupertinoIcons.check_mark_circled_solid
+                                : CupertinoIcons.circle,
+                            color: WeChatColors.brandPrimary)
+                        : const Icon(CupertinoIcons.tag),
+                    title: Text(tag.name),
+                    subtitle: Text('${tag.friendCount} 位朋友'),
+                    onTap: () {
+                      if (editing) {
+                        setState(() => selected.contains(tag.id)
+                            ? selected.remove(tag.id)
+                            : selected.add(tag.id));
+                      } else {
+                        Navigator.push(
+                            context,
+                            MotionPageRoute(
+                                builder: (_) => ContactTagMembersPage(
+                                    api: widget.api,
+                                    tag: tag,
+                                    identityCache:
+                                        widget.identityCache))).then((_) => reload());
+                      }
+                    })
+            ]);
+          }
+          if (_loading) {
+            return const Center(child: CupertinoActivityIndicator());
+          }
+          // 失败与加载中必须区分：旧实现把失败也画成"永不结束的加载圈"。
+          if (_error != null) {
+            return Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('标签加载失败',
+                  style: TextStyle(
+                      fontSize: 14, color: WeChatColors.textSecondary)),
+              const SizedBox(height: 8),
+              CupertinoButton(
+                key: const Key('contact-tags-retry'),
+                onPressed: reload,
+                child: const Text('重试'),
+              ),
+            ]));
+          }
+          return const Center(child: Text('暂无标签'));
+        })),
         SizedBox(
             height: 56,
             child: Row(children: [

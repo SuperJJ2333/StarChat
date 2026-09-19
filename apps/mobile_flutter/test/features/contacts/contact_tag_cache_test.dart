@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_tag_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_tag_pages.dart';
+import 'package:liuhetong_mobile/features/contacts/contact_tag_snapshot_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
@@ -17,6 +18,12 @@ final class _TagGateway implements ContactsGateway {
   /// 标签接口单独可控：用于验证标签列表页"加载失败"不再伪装成空列表。
   bool tagsFail = false;
 
+  /// 标签接口的成功负载（默认空列表）。
+  Map<String, dynamic> tagsPayload = const {'items': []};
+
+  /// 标签列表页的账号作用域（生产由 BusinessApiClient 提供）。
+  String? scope;
+
   @override
   Future<List<ContactSummary>> listContacts() async {
     if (fail) throw StateError('offline');
@@ -26,7 +33,7 @@ final class _TagGateway implements ContactsGateway {
   @override
   Future<Map<String, dynamic>> contactTags() async {
     if (tagsFail) throw StateError('offline');
-    return {'items': const []};
+    return tagsPayload;
   }
 
   @override
@@ -125,6 +132,83 @@ void main() {
     expect(find.byKey(const Key('contact-tags-retry')), findsOneWidget);
     expect(find.byType(CupertinoActivityIndicator), findsNothing,
         reason: '失败不能伪装成"一直在加载"');
+  });
+
+  testWidgets('标签列表页：断网冷启动直接渲染上次快照的标签（微信级 L1 本地优先）',
+      (tester) async {
+    final store = InMemoryContactTagSnapshotStore(ContactTagSnapshot(
+        scope: 'matrix:@alice:example',
+        payload: const {
+          'items': [
+            {'id': 't1', 'name': '同学', 'friend_count': 1},
+          ],
+        },
+        savedAt: DateTime.fromMillisecondsSinceEpoch(0)));
+    addTearDown(ContactTagSnapshotStores.reset);
+    ContactTagSnapshotStores.shared = store;
+    final gateway = _TagGateway()
+      ..tagsFail = true
+      ..scope = 'matrix:@alice:example';
+
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactTagsPage(
+            api: gateway, scopeResolver: () async => gateway.scope)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('同学'), findsOneWidget,
+        reason: '断网冷启动必须展示上次成功的标签列表，而不是空白/失败页');
+    expect(find.text('标签加载失败'), findsNothing,
+        reason: '有本地快照时刷新失败保留数据，只字不提失败');
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+  });
+
+  testWidgets('标签列表页：快照属于其他账号时不展示（账号切换保护）', (tester) async {
+    final store = InMemoryContactTagSnapshotStore(ContactTagSnapshot(
+        scope: 'matrix:@bob:example',
+        payload: const {
+          'items': [
+            {'id': 't1', 'name': '同学的标签', 'friend_count': 3},
+          ],
+        },
+        savedAt: DateTime.fromMillisecondsSinceEpoch(0)));
+    addTearDown(ContactTagSnapshotStores.reset);
+    ContactTagSnapshotStores.shared = store;
+    final gateway = _TagGateway()
+      ..tagsFail = true
+      ..scope = 'matrix:@alice:example';
+
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactTagsPage(
+            api: gateway, scopeResolver: () async => gateway.scope)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('同学的标签'), findsNothing,
+        reason: '绝不展示上一个账号的标签');
+    expect(find.text('标签加载失败'), findsOneWidget);
+  });
+
+  testWidgets('标签列表页：刷新成功后把最新列表写入快照', (tester) async {
+    final store = InMemoryContactTagSnapshotStore();
+    addTearDown(ContactTagSnapshotStores.reset);
+    ContactTagSnapshotStores.shared = store;
+    final gateway = _TagGateway()
+      ..fail = false
+      ..tagsFail = false
+      ..scope = 'matrix:@alice:example'
+      ..tagsPayload = const {
+        'items': [
+          {'id': 't9', 'name': '家人', 'friend_count': 2},
+        ],
+      };
+
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactTagsPage(
+            api: gateway, scopeResolver: () async => gateway.scope)));
+    await tester.pumpAndSettle();
+
+    final saved = store.read();
+    expect(saved, isNotNull, reason: '成功刷新必须落盘，供下次断网冷启动使用');
+    expect(saved!.scope, 'matrix:@alice:example');
   });
 
   testWidgets('标签选择页：标签接口失败时提示失败与重试，而不是只显示"新建标签"',
