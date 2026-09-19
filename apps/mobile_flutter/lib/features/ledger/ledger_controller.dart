@@ -1,17 +1,36 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'ledger_gateway.dart';
+import 'ledger_page_snapshot_store.dart';
 
 final class LedgerController extends ChangeNotifier {
-  LedgerController(this.gateway) : _epoch = gateway.sessionEpoch {
+  LedgerController(this.gateway, {LedgerPageSnapshotStore? snapshots})
+      : _snapshots = snapshots,
+        _epoch = gateway.sessionEpoch {
     _subscription = gateway.sessionInvalidations.listen((_) => _endSession());
+    final snapshot = _snapshots?.read();
+    if (snapshot != null) {
+      // 本地优先：首帧就有上次成功的首页，不用先看一次空白/加载圈。
+      _items.addAll(snapshot.items);
+      _nextCursor = snapshot.nextCursor;
+      _snapshotScope = snapshot.scope;
+    }
   }
   final LedgerGateway gateway;
+  final LedgerPageSnapshotStore? _snapshots;
   late final StreamSubscription<void> _subscription;
   late final int _epoch;
   final _items = <Map<String, dynamic>>[];
   List<Map<String, dynamic>> get items => List.unmodifiable(_items);
   String? _kind, _query, _nextCursor, error;
+
+  /// 本地快照里的首页来自哪个账号作用域；与当前作用域不一致时必须丢弃。
+  String? _snapshotScope;
+
+  /// 有数据时的刷新失败：列表仍在屏幕上，只标记「这次没刷新成功」，
+  /// **不**设置 [error]（否则列表尾部会冒出错误/重试条）。
+  bool stale = false;
+
   DateTime? _startAt, _endAt;
   String? get kind => _kind;
   String? get query => _query;
@@ -26,6 +45,48 @@ final class LedgerController extends ChangeNotifier {
   Timer? _debounce;
   bool _disposed = false;
   bool _retryPage = false;
+
+  /// 账号切换保护：本地快照里的首页若属于另一个账号，先丢弃再发起请求，
+  /// 账单绝不跨账号展示。作用域无法确定时保守丢弃（宁可少显示）。
+  Future<void> _dropForeignSnapshot() async {
+    final snapshotScope = _snapshotScope;
+    if (snapshotScope == null || _items.isEmpty) return;
+    String? scope;
+    try {
+      scope = await gateway.resolveCacheScope();
+    } catch (_) {
+      scope = null;
+    }
+    if (_disposed) return;
+    if (scope == snapshotScope) return;
+    _items.clear();
+    _nextCursor = null;
+    _snapshotScope = null;
+    unawaited(_snapshots?.clear());
+  }
+
+  Future<void> _persistSnapshot() async {
+    final store = _snapshots;
+    if (store == null || _items.isEmpty || hasFilters) return;
+    String scope;
+    try {
+      scope = await gateway.resolveCacheScope();
+    } catch (_) {
+      return; // 作用域不可知时宁可不落盘，避免快照跨账号。
+    }
+    _snapshotScope = scope;
+    try {
+      await store.write(LedgerPageSnapshot(
+        scope: scope,
+        items: List<Map<String, dynamic>>.of(_items),
+        nextCursor: _nextCursor,
+        savedAt: DateTime.now(),
+      ));
+    } catch (_) {
+      // 本地快照写失败不是刷新失败。
+    }
+  }
+
   Future<void> load({bool refresh = true}) async {
     if (_disposed) return;
     if (sessionEnded || gateway.sessionEpoch != _epoch) {
@@ -36,10 +97,15 @@ final class LedgerController extends ChangeNotifier {
     final generation = refresh ? ++_generation : _generation;
     final epoch = _epoch;
     if (refresh) {
-      _items.clear();
-      _nextCursor = null;
+      // 不再清空 _items/_nextCursor：刷新期间与刷新失败后，旧数据都必须留在屏幕上。
       error = null;
       _retryPage = false;
+      // 只有真的持有本地快照时才需要等待作用域校验；没有快照就不引入额外的
+      // 异步跳转（首次请求的发起时机与旧实现完全一致）。
+      if (_snapshotScope != null && _items.isNotEmpty) {
+        await _dropForeignSnapshot();
+        if (_disposed || generation != _generation) return;
+      }
     }
     if (refresh) {
       loading = true;
@@ -74,21 +140,37 @@ final class LedgerController extends ChangeNotifier {
         }
         rows.add(Map.unmodifiable(Map<String, dynamic>.from(row)));
       }
-      final seen = _items.map((e) => e['id']).toSet();
-      for (final row in rows) {
-        if (seen.add(row['id'])) {
-          _items.add(row);
+      if (refresh) {
+        // 首页刷新成功才替换列表：失败路径完全不动已有数据。
+        _items
+          ..clear()
+          ..addAll(rows);
+      } else {
+        final seen = _items.map((e) => e['id']).toSet();
+        for (final row in rows) {
+          if (seen.add(row['id'])) {
+            _items.add(row);
+          }
         }
       }
       _nextCursor = cursor as String?;
       error = null;
+      stale = false;
       _retryPage = false;
+      if (refresh) unawaited(_persistSnapshot());
     } catch (e) {
       if (!_disposed &&
           generation == _generation &&
           epoch == gateway.sessionEpoch) {
-        error = '账单加载失败，请重试';
         _retryPage = !refresh;
+        if (_items.isEmpty) {
+          // 从未成功过且没有任何数据：唯一允许报错的失败。
+          error = '账单加载失败，请重试';
+        } else if (refresh) {
+          stale = true; // 保留列表，只留弱失败标记。
+        } else {
+          error = '账单加载失败，请重试'; // 翻页失败仍走尾部重试。
+        }
       }
     }
     if (_disposed || generation != _generation) return;

@@ -39,6 +39,7 @@ import 'core/notification/notification_usage_recorder.dart';
 import 'core/notification/system_notification_presenter.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/finance/wallet_entry_snapshot_store.dart';
+import 'features/ledger/ledger_page_snapshot_store.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -492,6 +493,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         await WalletEntrySnapshotStores.ensureLoaded();
       } catch (_) {
         // 本地快照不可用不是启动失败。
+      }
+    }());
+    // 账单首页本地快照：同样在启动时装一次，让「全部账单」首帧就有上次结果。
+    unawaited(() async {
+      try {
+        await LedgerPageSnapshotStores.ensureLoaded();
+      } catch (_) {
+        // 同上：不可用即退化为无本地数据。
       }
     }());
     // 规格§三：native_call 通道——Telecom/CallActivity 事件与控制入口。

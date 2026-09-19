@@ -9,6 +9,8 @@ final class BusinessLedgerGateway implements LedgerGateway {
   @override
   Stream<void> get sessionInvalidations => api.sessionInvalidations.map((_) {});
   @override
+  Future<String> resolveCacheScope() => api.walletIntentScope();
+  @override
   Future<Map<String, dynamic>> listLedgerTransactions(
           {String? kind,
           DateTime? startAt,

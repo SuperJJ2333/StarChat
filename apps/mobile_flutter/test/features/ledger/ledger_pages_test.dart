@@ -450,6 +450,8 @@ final class _Call {
 
 final class _Gateway implements LedgerGateway {
   final _invalidations = StreamController<void>.broadcast();
+  @override
+  Future<String> resolveCacheScope() async => 'test-account';
   final listCalls = <_Call>[];
   final _lists = <Completer<Map<String, dynamic>>>[];
   final detailIds = <String>[];

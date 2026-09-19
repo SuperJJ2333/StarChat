@@ -8,6 +8,7 @@ import '../../ui/components/wechat_empty_state.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'ledger_controller.dart';
+import 'ledger_page_snapshot_store.dart';
 import '../matrix/profile_repository.dart';
 import 'ledger_gateway.dart';
 import '../../ui/motion/motion_page_route.dart';
@@ -139,7 +140,8 @@ final class LedgerListPage extends StatefulWidget {
 }
 
 final class _LedgerListPageState extends State<LedgerListPage> {
-  late final LedgerController _controller = LedgerController(widget.gateway);
+  late final LedgerController _controller = LedgerController(widget.gateway,
+      snapshots: LedgerPageSnapshotStores.shared);
   final _search = TextEditingController();
   final _scroll = ScrollController();
   @override
@@ -720,20 +722,25 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
             child: const Text('全部账单')),
         child: ListenableBuilder(
             listenable: widget.identityCache ?? _identityRefresh,
-            builder: (context, _) => _loading
-                ? const Center(child: CupertinoActivityIndicator())
-                : _error != null
-                    ? Center(
-                        child:
-                            Column(mainAxisSize: MainAxisSize.min, children: [
-                          Text(_error!),
-                          if (!_sessionEnded &&
-                              _epoch == widget.gateway.sessionEpoch)
-                            CupertinoButton(
-                                onPressed: _load, child: const Text('重试')),
-                        ]),
-                      )
-                    : _detail()),
+            builder: (context, _) {
+              // 本地优先 / 失败不覆盖：已经拿到的账单详情永远优先展示；
+              // 只有「从未成功过」时才允许出现加载圈或错误页。
+              if (_item != null) return _detail();
+              if (_loading) {
+                return const Center(child: CupertinoActivityIndicator());
+              }
+              if (_error != null) {
+                return Center(
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(_error!),
+                  if (!_sessionEnded &&
+                      _epoch == widget.gateway.sessionEpoch)
+                    CupertinoButton(
+                        onPressed: _load, child: const Text('重试')),
+                ]));
+              }
+              return const Center(child: CupertinoActivityIndicator());
+            }),
       );
   Widget _detail() {
     final data = _item!;

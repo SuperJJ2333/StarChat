@@ -297,6 +297,8 @@ final class _DetailGateway implements ChatTransferDetailGateway {
 
 final class _LedgerGateway implements LedgerGateway {
   final _invalidations = StreamController<void>.broadcast();
+  @override
+  Future<String> resolveCacheScope() async => 'test-account';
   final detailIds = <String>[];
   var listCalls = 0;
 
