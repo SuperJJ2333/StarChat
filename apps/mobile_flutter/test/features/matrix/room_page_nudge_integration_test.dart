@@ -84,7 +84,7 @@ final class _NudgeTimeline extends Fake implements Timeline {
             originServerTs: DateTime.utc(2026, 9, 13, 0, 1),
             content: const {'msgtype': 'm.text', 'body': 'second target'},
           ),
-        ];
+        ].reversed.toList();
 
   @override
   final List<Event> events;
@@ -185,7 +185,11 @@ void main() {
     final bubbles = find.byType(WeChatMessageBubble);
     expect(bubbles, findsNWidgets(2));
     for (var index = 0; index < 3; index++) {
-      await _nudgeFromBubble(tester, bubbles.first);
+      await _nudgeFromBubble(
+          tester,
+          find.ancestor(
+              of: find.text('first target'),
+              matching: find.byType(WeChatMessageBubble)));
     }
     expect(firstClient.room.sent, hasLength(3));
     expect(
@@ -194,7 +198,11 @@ void main() {
             event.content['target_user_id'] == '@first-target:test'),
         isTrue);
 
-    await _nudgeFromBubble(tester, bubbles.last);
+    await _nudgeFromBubble(
+        tester,
+        find.ancestor(
+            of: find.text('second target'),
+            matching: find.byType(WeChatMessageBubble)));
     await tester.pump();
     expect(firstClient.room.sent, hasLength(3));
     expect(find.byKey(const Key('room-nudge-toast')), findsOneWidget);

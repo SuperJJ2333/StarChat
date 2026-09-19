@@ -10,9 +10,12 @@ from app.modules.audit.models import AuditEvent
 from app.modules.friendship.models import ContactProfile,ContactTag,DirectConversation,FriendRequest,Friendship,UserBlock
 from app.modules.identity.models import Device
 from app.modules.friendship.direct_room_coordinator import lock_pair
+from app.modules.friendship.direct_room_recovery import DirectRoomRecovery, V2_PREFIX
 
-class FriendshipService:
-    def __init__(self,factory,profile_reader):self.factory=factory;self.profile_reader=profile_reader
+class FriendshipService(DirectRoomRecovery):
+    def __init__(self,factory,profile_reader,*,matrix_gateway=None,matrix_server_name='matrix.localhost'):
+        self.factory=factory;self.profile_reader=profile_reader
+        self.matrix_gateway=matrix_gateway;self.matrix_server_name=matrix_server_name
     def _audit(self,s,actor,subject,action,reason,key):
         now=datetime.now(timezone.utc);s.add(AuditEvent(id=str(uuid4()),actor_id=actor,subject_type='friendship',subject_id=subject,action=action,result='SUCCESS',reason_code=reason,trace_id=key[:128],created_at=now));OutboxPublisher.enqueue(s,topic='friendship.events',event_type=action,aggregate_type='friendship',aggregate_id=subject,payload={'actor_id':actor})
     def _idempotency(self,s,scope,key,payload):
@@ -224,8 +227,11 @@ class FriendshipService:
             row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
             if row is None and not inserted:
                 raise AppError(code='DIRECT_ROOM_PENDING',message='私聊房间正在创建，请稍后重试',status_code=409)
-            if self._idempotency(s,f'friend.direct.register:{actor}',key,{'peer':peer,'matrix_room_id':matrix_room_id}):
+            self._idempotency(s,f'friend.direct.register:{actor}',key,{'peer':peer,'matrix_room_id':matrix_room_id})
+            if row and row.matrix_room_id==matrix_room_id:
                 return {'matrix_room_id':row.matrix_room_id,'existing':True}
+            self._verify_direct_room(actor,peer,matrix_room_id)
+            self._remember_direct_room(s,actor,peer,matrix_room_id,key)
             if row:return {'matrix_room_id':row.matrix_room_id,'existing':True}
             row=DirectConversation(id=str(uuid4()),user_low_id=low,user_high_id=high,matrix_room_id=matrix_room_id,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.direct_room_registered','DIRECT_ROOM_REGISTER',key);return {'matrix_room_id':matrix_room_id,'existing':False}
 
@@ -254,13 +260,18 @@ class FriendshipService:
         low,high=sorted((actor,peer))
         with self.factory.begin() as s:
             reservation,inserted=lock_pair(s,actor,peer,attempt_id)
-            if inserted or reservation.owner_id!=actor or reservation.attempt_id!=attempt_id:
-                raise AppError(code='DIRECT_ROOM_NOT_OWNER',message='只有创建预约持有人可以发布房间',status_code=409)
-            row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
+            row=self._canonical(s,actor,peer)
             if row:
                 if row.matrix_room_id!=matrix_room_id:
-                    raise AppError(code='DIRECT_ROOM_CONFLICT',message='规范私聊房间不可替换',status_code=409)
+                    self._verify_direct_room(actor,peer,matrix_room_id)
+                    self._remember_direct_room(s,actor,peer,matrix_room_id,attempt_id)
                 return {'matrix_room_id':row.matrix_room_id}
+            if reservation.attempt_id.startswith(V2_PREFIX):
+                raise AppError(code='DIRECT_ROOM_PENDING',message='会话正在恢复，请稍后重试',status_code=409)
+            if inserted or reservation.owner_id!=actor or reservation.attempt_id!=attempt_id:
+                raise AppError(code='DIRECT_ROOM_NOT_OWNER',message='只有创建预约持有人可以发布房间',status_code=409)
+            self._verify_direct_room(actor,peer,matrix_room_id)
+            self._remember_direct_room(s,actor,peer,matrix_room_id,attempt_id)
             row=DirectConversation(id=str(uuid4()),user_low_id=low,user_high_id=high,
                                    matrix_room_id=matrix_room_id,created_at=datetime.now(timezone.utc))
             s.add(row)

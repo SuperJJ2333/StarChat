@@ -62,6 +62,7 @@ final class _FakeLease implements OutboxLease {
   final List<String> txids = <String>[];
   final List<Future<String> Function()> responses =
       <Future<String> Function()>[];
+
   /// 按正文指定失败原因（与行顺序无关，避免测试依赖 UUID 排序）。
   final Map<String, Object> failuresByText = <String, Object>{};
   int releases = 0;
@@ -104,8 +105,7 @@ final class _LeaseFactory {
     if (failOpen) {
       throw openError ?? const SocketException('no session');
     }
-    final lease =
-        _scripted.isNotEmpty ? _scripted.removeAt(0) : _FakeLease();
+    final lease = _scripted.isNotEmpty ? _scripted.removeAt(0) : _FakeLease();
     leases.add(lease);
     return lease;
   }
@@ -152,6 +152,340 @@ void main() {
       );
 
   group('MessageSendScheduler', () {
+    test(
+        'closed pending conversation resolves once per peer and preserves durable txids',
+        () async {
+      final first =
+          await outbox.save(receiverId: '@peer:test', content: 'same');
+      final second =
+          await outbox.save(receiverId: '@peer:test', content: 'same');
+      final sender = _FakeSender('!resolved:test', outbox);
+      var resolutions = 0;
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => sender,
+          resolveUnbound: (row) async {
+            resolutions++;
+            return '!resolved:test';
+          });
+      expect(await scheduler.drain(), 2);
+      expect(resolutions, 1);
+      expect(sender.txids.toSet(), {first!.txid, second!.txid});
+      expect(await outbox.unsent(), isEmpty);
+      scheduler.dispose();
+    });
+    test('offline never resolves or creates an unbound conversation', () async {
+      network.report(transportAvailable: false);
+      final row =
+          await outbox.save(receiverId: '@peer:test', content: 'offline');
+      var resolutions = 0;
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          networkState: network,
+          senderFor: (_) => null,
+          resolveUnbound: (_) async {
+            resolutions++;
+            return '!resolved:test';
+          });
+      await scheduler.drain();
+      expect(resolutions, 0);
+      expect((await outbox.byLocalId(row!.localId))?.roomId, isNull);
+      scheduler.dispose();
+    });
+    test(
+        'resolution timeout releases other rooms but never starts a second same-peer resolution',
+        () async {
+      final pending = Completer<String?>();
+      final unresolved =
+          await outbox.save(receiverId: '@peer:test', content: 'pending');
+      await outbox.save(
+          receiverId: '@other:test', content: 'ready', roomId: '!ready:test');
+      final sender = _FakeSender('!ready:test', outbox);
+      var resolutions = 0;
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (room) => room == sender.roomId ? sender : null,
+          operationTimeout: const Duration(milliseconds: 10),
+          resolveUnbound: (_) {
+            resolutions++;
+            return pending.future;
+          });
+      expect(await scheduler.drain(), 1);
+      await scheduler.drain();
+      expect(resolutions, 1);
+      pending.complete('!late:test');
+      await pumpEventQueue();
+      expect(
+          (await outbox.byLocalId(unresolved!.localId))?.roomId, '!late:test');
+      scheduler.dispose();
+    });
+    test('disposing during resolution cannot bind or dispatch rows afterward',
+        () async {
+      final pending = Completer<String?>();
+      final row =
+          await outbox.save(receiverId: '@peer:test', content: 'pending');
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => null,
+          resolveUnbound: (_) => pending.future);
+      final draining = scheduler.drain();
+      await pumpEventQueue();
+      scheduler.dispose();
+      pending.complete('!too-late:test');
+      await draining;
+      expect((await outbox.byLocalId(row!.localId))?.roomId, isNull);
+    });
+    test(
+        'unbound network failure resumes on recovery while denial stays failed',
+        () async {
+      final row =
+          await outbox.save(receiverId: '@peer:test', content: 'pending');
+      final sender = _FakeSender('!resolved:test', outbox);
+      var unavailable = true;
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          networkState: network,
+          senderFor: (_) => sender,
+          resolveUnbound: (_) async {
+            if (unavailable) throw const SocketException('offline');
+            return '!resolved:test';
+          });
+      await scheduler.drain();
+      expect((await outbox.byLocalId(row!.localId))?.status,
+          OutboxStatus.waitingNetwork);
+      unavailable = false;
+      scheduler.start();
+      network.reportSuccess();
+      await pumpEventQueue();
+      expect(sender.txids, [row.txid]);
+      scheduler.dispose();
+      final denied =
+          await outbox.save(receiverId: '@denied:test', content: 'denied');
+      final deniedScheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => null,
+          resolveUnbound: (_) async => throw StateError('not a friend'));
+      await deniedScheduler.drain();
+      expect((await outbox.byLocalId(denied!.localId))?.status,
+          OutboxStatus.failed);
+      deniedScheduler.dispose();
+    });
+    test('authorization network failure remains recoverable with the same txid',
+        () async {
+      final row = await outbox.save(
+          receiverId: '@peer:test', roomId: '!room:test', content: 'pending');
+      final sender = _FakeSender('!room:test', outbox);
+      var unavailable = true;
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          networkState: network,
+          senderFor: (_) => sender,
+          authorizeSend: (_) async {
+            if (unavailable) throw const SocketException('offline');
+            return true;
+          });
+      await scheduler.drain();
+      expect((await outbox.byLocalId(row!.localId))?.status,
+          OutboxStatus.waitingNetwork);
+      unavailable = false;
+      scheduler.start();
+      network.reportSuccess();
+      await pumpEventQueue();
+      expect(sender.txids, [row.txid]);
+      scheduler.dispose();
+    });
+    for (final viaLease in [false, true]) {
+      for (final throws in [false, true]) {
+        test(
+            'authorization ${throws ? 'error' : 'denial'} blocks ${viaLease ? 'lease' : 'registered sender'}',
+            () async {
+          final sender = _FakeSender('!room:test', outbox);
+          final lease = _FakeLease();
+          var authorizations = 0;
+          final scheduler = MessageSendScheduler(
+            outbox: outbox,
+            senderFor: (_) => viaLease ? null : sender,
+            leaseFactory: (_) async => lease,
+            authorizeSend: (message) async {
+              authorizations++;
+              expect(message.accountId, 'me');
+              if (throws) {
+                throw const SocketException('authorization unavailable');
+              }
+              return false;
+            },
+          );
+          final row = await outbox.save(
+              receiverId: '@peer:test',
+              content: 'private',
+              roomId: '!room:test');
+          await scheduler.drain();
+          expect(authorizations, 1);
+          expect(sender.txids, isEmpty);
+          expect(lease.txids, isEmpty);
+          expect((await outbox.byLocalId(row!.localId))?.status,
+              throws ? OutboxStatus.waitingNetwork : OutboxStatus.failed);
+          scheduler.dispose();
+        });
+      }
+    }
+
+    test('allowed authorization passes the original durable identity',
+        () async {
+      final sender = _FakeSender('!room:test', outbox);
+      final seen = <String>[];
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => sender,
+          authorizeSend: (row) async {
+            seen.add(row.txid);
+            return true;
+          });
+      final row = await outbox.save(
+          receiverId: '@peer:test', content: 'private', roomId: '!room:test');
+      await scheduler.drain();
+      expect(seen, [row!.txid]);
+      expect(sender.txids, [row.txid]);
+      scheduler.dispose();
+    });
+
+    test('disposal while authorization is pending prevents transport',
+        () async {
+      final permission = Completer<bool>();
+      final lease = _FakeLease();
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => null,
+          leaseFactory: (_) async => lease,
+          authorizeSend: (_) => permission.future);
+      await outbox.save(
+          receiverId: '@peer:test', content: 'private', roomId: '!room:test');
+      final draining = scheduler.drain();
+      await Future<void>.delayed(Duration.zero);
+      scheduler.dispose();
+      permission.complete(true);
+      await draining;
+      expect(lease.txids, isEmpty);
+      expect(lease.releases, 1);
+    });
+
+    testWidgets(
+        'recovery during unresolved send is consumed after late failure',
+        (tester) async {
+      final original = Completer<String>();
+      final lease = _FakeLease()..responses.add(() => original.future);
+      final scheduler = schedulerFor(null, leaseFactory: (_) async => lease)
+        ..start();
+      final row = await outbox.save(
+          receiverId: '@peer:test', content: 'first', roomId: '!room:test');
+      unawaited(scheduler.drain());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 31));
+      network.report(transportAvailable: false);
+      network.reportSuccess();
+      await tester.pump();
+      expect(lease.txids, hasLength(1));
+      original.completeError(const SocketException('late failure'));
+      await tester.pump();
+      expect(lease.txids, hasLength(2));
+      expect(await outbox.byLocalId(row!.localId), isNull);
+      scheduler.dispose();
+    });
+
+    test('startup recovery is single flight and never resets a live claim',
+        () async {
+      final pending = Completer<String>();
+      final lease = _FakeLease()..responses.add(() => pending.future);
+      final scheduler = schedulerFor(null, leaseFactory: (_) async => lease);
+      final recovery =
+          OutboxRecoveryService(outbox: outbox, scheduler: scheduler);
+      final row = await outbox.save(
+          receiverId: '@peer:test', content: 'first', roomId: '!room:test');
+      final startup = recovery.recoverOnStartup();
+      await Future<void>.delayed(Duration.zero);
+      final second = recovery.recoverOnStartup();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+          (await outbox.byLocalId(row!.localId))?.status, OutboxStatus.sending);
+      pending.complete('event');
+      await Future.wait([startup, second]);
+      expect(lease.txids, hasLength(1));
+      scheduler.dispose();
+    });
+
+    test('drain requested during an active batch picks up newly queued rows',
+        () async {
+      final first = Completer<String>();
+      final lease = _FakeLease()..responses.add(() => first.future);
+      final scheduler = schedulerFor(null, leaseFactory: (_) async => lease);
+      await outbox.save(
+          receiverId: '@peer:test', content: 'first', roomId: '!room:test');
+      final draining = scheduler.drain();
+      await Future<void>.delayed(Duration.zero);
+      await outbox.save(
+          receiverId: '@peer:test', content: 'second', roomId: '!room:test');
+      unawaited(scheduler.drain());
+      first.complete('event-first');
+      await draining;
+      expect(lease.txids, hasLength(2));
+      scheduler.dispose();
+    });
+
+    testWidgets(
+        'hung room does not block another room and late success keeps one txid',
+        (tester) async {
+      final first = Completer<String>();
+      final stuck = _FakeLease()..responses.add(() => first.future);
+      final next = _FakeLease();
+      final scheduler = schedulerFor(null,
+          leaseFactory: (room) async => room == '!a:test' ? stuck : next);
+      final row = await outbox.save(
+          receiverId: '@peer:test', content: 'first', roomId: '!a:test');
+      await outbox.save(
+          receiverId: '@other:test', content: 'second', roomId: '!b:test');
+      var completed = false;
+      unawaited(scheduler.drain().then((_) => completed = true));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 31));
+      expect(completed, isTrue);
+      expect(next.txids, hasLength(1));
+      expect(
+          (await outbox.byLocalId(row!.localId))?.status, OutboxStatus.sending);
+      await scheduler.drain();
+      expect(stuck.txids, hasLength(1));
+      first.complete('event-late');
+      await tester.pump();
+      expect(await outbox.byLocalId(row.localId), isNull);
+      expect(stuck.releases, 1);
+      scheduler.dispose();
+    });
+
+    testWidgets(
+        'late lease after acquisition timeout is released without sending',
+        (tester) async {
+      final acquisition = Completer<OutboxLease>();
+      final late = _FakeLease();
+      final next = _FakeLease();
+      final scheduler = schedulerFor(null,
+          leaseFactory: (room) =>
+              room == '!a:test' ? acquisition.future : Future.value(next));
+      final row = await outbox.save(
+          receiverId: '@peer:test', content: 'first', roomId: '!a:test');
+      await outbox.save(
+          receiverId: '@other:test', content: 'second', roomId: '!b:test');
+      unawaited(scheduler.drain());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 31));
+      expect(next.txids, hasLength(1));
+      expect((await outbox.byLocalId(row!.localId))?.status,
+          OutboxStatus.waitingNetwork);
+      acquisition.complete(late);
+      await tester.pump();
+      expect(late.txids, isEmpty);
+      expect(late.releases, 1);
+      scheduler.dispose();
+    });
+
     test('离线：不派发，状态落到 waitingNetwork（不是 failed）', () async {
       final sender = _FakeSender('!room:test', outbox);
       final scheduler = schedulerFor(sender)..start();
@@ -202,8 +536,7 @@ void main() {
     test('没有房间号的行留给 pending conversation 绑定', () async {
       final sender = _FakeSender('!room:test', outbox);
       final scheduler = schedulerFor(sender)..start();
-      final row =
-          await outbox.save(receiverId: '@peer:test', content: 'hello');
+      final row = await outbox.save(receiverId: '@peer:test', content: 'hello');
 
       await scheduler.drain();
 
@@ -225,8 +558,7 @@ void main() {
       final secondDrain = second.drain();
       // 两个调度器都走到"认领"这一步（第一个已交给传输层并在途）。
       await pumpEventQueue();
-      expect(sender.txids, <String>[row!.txid],
-          reason: '同一行只能派发一次（原子认领是唯一闸门）');
+      expect(sender.txids, <String>[row!.txid], reason: '同一行只能派发一次（原子认领是唯一闸门）');
 
       inFlight.complete('event-1');
       await Future.wait(<Future<int>>[firstDrain, secondDrain]);
@@ -491,8 +823,7 @@ void main() {
       expect(lease.releases, 1);
       expect(lease.txids, hasLength(1));
       final remaining = await outbox.unsent();
-      expect(remaining, hasLength(1),
-          reason: 'dispose 后剩下的行不再派发，留给下次恢复');
+      expect(remaining, hasLength(1), reason: 'dispose 后剩下的行不再派发，留给下次恢复');
       expect(
         <String>{first!.txid, second!.txid}.difference(lease.txids.toSet()),
         <String>{remaining.single.txid},

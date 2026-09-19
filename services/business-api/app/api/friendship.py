@@ -25,6 +25,12 @@ class DirectConversationClaimResponse(BaseModel):
     can_publish:bool
 class DirectConversationPublishResponse(BaseModel):
     matrix_room_id:str
+class DirectConversationClaimV2Response(DirectConversationClaimResponse):
+    room_alias_localpart:str
+    reservation_id:str
+class DirectConversationAssociationsResponse(BaseModel):
+    matrix_room_id:str|None
+    room_ids:list[str]
 class FriendProjection(BaseModel):
     user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;nudge_suffix:str|None;moments_permission:str;tags:list[str]
 class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
@@ -34,8 +40,8 @@ class FriendRequestListResponse(BaseModel):items:list[FriendRequestProjection];n
 class UserSearchProjection(BaseModel):
     user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;relationship_state:str
 class UserSearchResponse(BaseModel):items:list[UserSearchProjection];next_cursor:str|None=None
-def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_limiter=None):
-    router=APIRouter(tags=['friends']);service=FriendshipService(factory,ProfileService(factory,storage=avatar_storage));tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
+def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_limiter=None,matrix_gateway=None):
+    router=APIRouter(tags=['friends']);service=FriendshipService(factory,ProfileService(factory,storage=avatar_storage),matrix_gateway=matrix_gateway,matrix_server_name=settings.matrix_server_name);tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     from app.core.rate_limits import NoopRateLimiter
     rate_limiter = rate_limiter or NoopRateLimiter()
     def actor(authorization:Annotated[str|None,Header()]=None):
@@ -120,4 +126,19 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
     @router.post('/direct-conversations/publish',response_model=DirectConversationPublishResponse)
     def publish_direct_conversation(body:DirectConversationPublishBody,user=Depends(actor)):
         return service.publish_direct_conversation(user,body.peer_user_id,body.attempt_id,body.matrix_room_id)
+    @router.post('/direct-conversations/claim-v2',response_model=DirectConversationClaimV2Response)
+    def claim_v2(body:DirectConversationClaimBody,user=Depends(actor)):
+        rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)
+        return service.claim_direct_conversation_v2(user,body.peer_user_id,body.attempt_id)
+    @router.post('/direct-conversations/recover',response_model=DirectConversationPublishResponse)
+    def recover(body:DirectConversationPublishBody,user=Depends(actor)):
+        rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)
+        return service.recover_direct_conversation(user,body.peer_user_id,body.attempt_id,body.matrix_room_id)
+    @router.get('/direct-conversations/associations',response_model=DirectConversationAssociationsResponse)
+    def associations(peer_user_id:Annotated[str,Query(min_length=1,max_length=36)],user=Depends(actor)):
+        return service.direct_conversation_associations(user,peer_user_id)
+    @router.post('/direct-conversations/associations',response_model=DirectConversationAssociationsResponse)
+    def associate(body:DirectConversationBody,user=Depends(actor)):
+        rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)
+        return service.associate_direct_conversation(user,body.peer_user_id,body.matrix_room_id)
     return router

@@ -5,6 +5,9 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
+import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
 
@@ -54,7 +57,9 @@ final class _FakeTransport
 
   @override
   Future<String> sendRedPacketReference(String packetId, String greeting,
-          {String? mode, String? recipientId, String? recipientMatrixId}) async =>
+          {String? mode,
+          String? recipientId,
+          String? recipientMatrixId}) async =>
       'event-red-packet';
 
   @override
@@ -70,6 +75,39 @@ final class _FakeTransport
 Future<String> _networkDown() =>
     Future<String>.error(const SocketException('offline'));
 
+class _HeldSettlement implements OutboxJournal {
+  _HeldSettlement(this.inner);
+  final OutboxJournal inner;
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  bool held = false;
+  @override
+  Future<OutboxMessage?> findByTxid(String txid) => inner.findByTxid(txid);
+  @override
+  Future<OutboxMessage?> persist(
+          {required String txid,
+          required String content,
+          OutboxStatus status = OutboxStatus.queued,
+          String? localId}) =>
+      inner.persist(
+          txid: txid, content: content, status: status, localId: localId);
+  @override
+  Future<bool> claim(String localId, {Set<OutboxStatus>? from}) =>
+      inner.claim(localId, from: from);
+  @override
+  Future<void> complete(String localId) => inner.complete(localId);
+  @override
+  Future<void> settle(String localId, OutboxStatus status,
+      {String? lastError}) async {
+    if (status == OutboxStatus.waitingNetwork && !held) {
+      held = true;
+      entered.complete();
+      await release.future;
+    }
+    await inner.settle(localId, status, lastError: lastError);
+  }
+}
+
 void main() {
   late NetworkStateManager manager;
 
@@ -77,6 +115,81 @@ void main() {
   tearDown(() => manager.dispose());
 
   group('离线优先发送状态机', () {
+    test('declined claim reflects durable failure and later background outcome',
+        () async {
+      final outbox =
+          PersistentOutboxManager(InMemoryOutboxStore(), accountId: 'me');
+      final journal = RoomOutboxJournal(
+          manager: outbox,
+          roomId: null,
+          receiverId: '@peer:test',
+          beforeClaim: (id) async {
+            await outbox.bindRoom(id, '!canonical:test');
+            await outbox.updateStatus(id, OutboxStatus.failed);
+            return false;
+          });
+      final transport = _FakeTransport();
+      final controller = RoomTimelineController(transport,
+          outboxJournal: journal, outboxRoomId: '!old:test');
+      await controller.sendText('keep outcome');
+      expect(transport.txids, isEmpty);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.failed);
+      final row = (await outbox.unsent()).single;
+      await outbox.updateStatus(row.localId, OutboxStatus.sent);
+      await controller.reconcileOutboxStatuses();
+      expect(controller.messages.single.deliveryState, RoomDeliveryState.sent);
+      await controller.retry(row.txid);
+      expect(transport.txids, isEmpty);
+      controller.dispose();
+      outbox.dispose();
+    });
+    test('recovery during durable failure settlement waits for claim release',
+        () async {
+      final outbox =
+          PersistentOutboxManager(InMemoryOutboxStore(), accountId: 'me');
+      final journal = _HeldSettlement(
+          outbox.journalFor(roomId: '!r:test', receiverId: '@peer:test'));
+      final transport = _FakeTransport()..responses.add(_networkDown);
+      final controller = RoomTimelineController(transport,
+          networkStateManager: manager, outboxJournal: journal);
+      final sending = controller.sendText('recover');
+      await journal.entered.future;
+      manager.reportSuccess();
+      await Future<void>.delayed(Duration.zero);
+      expect(transport.txids, hasLength(1));
+      journal.release.complete();
+      await sending;
+      await Future<void>.delayed(Duration.zero);
+      expect(transport.txids, hasLength(2));
+      expect(transport.txids.toSet(), hasLength(1));
+      expect(await outbox.unsent(), isEmpty);
+      controller.dispose();
+      outbox.dispose();
+    });
+
+    test(
+        'recovery while retry is pending is consumed once without failure storm',
+        () async {
+      final pending = Completer<String>();
+      final transport = _FakeTransport()
+        ..responses.addAll([_networkDown, () => pending.future, _networkDown]);
+      final controller =
+          RoomTimelineController(transport, networkStateManager: manager);
+      await controller.sendText('recover');
+      manager.reportSuccess();
+      await Future<void>.delayed(Duration.zero);
+      manager.report(transportAvailable: false);
+      manager.reportSuccess();
+      pending.completeError(const SocketException('stale request'));
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(transport.txids, hasLength(3));
+      await Future<void>.delayed(Duration.zero);
+      expect(transport.txids, hasLength(3));
+      controller.dispose();
+    });
+
     test('网络失败 → waitingNetwork（不是红色失败），并上报网络状态机', () async {
       final transport = _FakeTransport()..responses.add(_networkDown);
       final controller =
@@ -95,15 +208,14 @@ void main() {
 
     test('服务端拒绝（非网络错误）仍是 failed，且不降级网络状态', () async {
       final transport = _FakeTransport()
-        ..responses
-            .add(() => Future<String>.error(StateError('M_FORBIDDEN')));
+        ..responses.add(() => Future<String>.error(StateError('M_FORBIDDEN')));
       final controller =
           RoomTimelineController(transport, networkStateManager: manager);
 
       await controller.sendText('被拒绝');
 
-      expect(controller.messages.single.deliveryState,
-          RoomDeliveryState.failed);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.failed);
       expect(controller.messages.single.deliveryState,
           isNot(RoomDeliveryState.waitingNetwork));
       expect(manager.current, NetworkState.online,
@@ -118,8 +230,8 @@ void main() {
 
       await controller.sendText('非好友');
 
-      expect(controller.messages.single.deliveryState,
-          RoomDeliveryState.failed);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.failed);
       expect(transport.txids, isEmpty);
       controller.dispose();
     });
@@ -132,8 +244,8 @@ void main() {
 
       final send = controller.sendText('你好');
 
-      expect(controller.messages.single.deliveryState,
-          RoomDeliveryState.sending);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.sending);
       expect(controller.messages.single.deliveryState,
           isNot(RoomDeliveryState.local));
 
@@ -159,14 +271,12 @@ void main() {
       final local = controller.messages.single;
       expect(local.deliveryState, RoomDeliveryState.waitingNetwork,
           reason: '离线时不许空等传输层超时，必须立刻进入可自动重发的等待态');
-      expect(transport.txids, isEmpty,
-          reason: '传输层不该被调用（弱网黑洞下 SDK 队列会卡死整个房间）');
+      expect(transport.txids, isEmpty, reason: '传输层不该被调用（弱网黑洞下 SDK 队列会卡死整个房间）');
 
       manager.report(transportAvailable: true, serverReachable: true);
       await pumpEventQueue();
 
-      expect(transport.txids, [local.stableId],
-          reason: '恢复后自动重发，复用同一 txid');
+      expect(transport.txids, [local.stableId], reason: '恢复后自动重发，复用同一 txid');
       expect(controller.messages.single.deliveryState, RoomDeliveryState.sent);
       controller.dispose();
     });
@@ -187,8 +297,7 @@ void main() {
               '而不是永远停在 sending 让房间瘫痪');
 
       final second = await controller.sendText('第二条消息');
-      expect(second, isNotNull,
-          reason: '第一条悬挂后，后续消息必须仍能正常派发');
+      expect(second, isNotNull, reason: '第一条悬挂后，后续消息必须仍能正常派发');
       expect(controller.messages.last.deliveryState, RoomDeliveryState.sent);
       expect(transport.txids.length, 2);
 
@@ -258,8 +367,8 @@ void main() {
       manager.report(recovering: true);
       await pumpEventQueue();
       expect(transport.txids, hasLength(2), reason: '恢复后立刻重发一次');
-      expect(controller.messages.single.deliveryState,
-          RoomDeliveryState.sending);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.sending);
 
       // 重发仍在途时反复触发恢复信号（含转入 recovering 再进入 online）。
       manager.report(transportAvailable: true, serverReachable: true);
@@ -269,8 +378,8 @@ void main() {
       await pumpEventQueue();
 
       expect(transport.txids, hasLength(2), reason: '在途重发不得被二次派发');
-      expect(controller.messages.single.deliveryState,
-          RoomDeliveryState.sending);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.sending);
 
       second.complete(r'$server');
       await pumpEventQueue();
@@ -352,7 +461,8 @@ void main() {
       ));
     }
 
-    testWidgets('waitingNetwork 显示红色感叹号且可点击重发（2026-09-19 用户修订：'
+    testWidgets(
+        'waitingNetwork 显示红色感叹号且可点击重发（2026-09-19 用户修订：'
         '弱网/断网未发出的消息必须及时给出红色感叹号警告）', (tester) async {
       var retries = 0;
       await pumpBubble(

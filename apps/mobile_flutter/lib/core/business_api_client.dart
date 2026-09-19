@@ -315,13 +315,13 @@ final class BusinessApiClient
   @override
   Future<InviteHistoryPage> fetchInviteHistory(
       {int limit = 20, int offset = 0}) async {
-    final body = await getJson(
-        '/invitations/history?limit=$limit&offset=$offset');
+    final body =
+        await getJson('/invitations/history?limit=$limit&offset=$offset');
     final next = (body['next_offset'] as num?)?.toInt();
     return InviteHistoryPage(
       items: (body['items'] as List? ?? const [])
-          .map((value) =>
-              InviteHistoryItem.fromJson((value as Map).cast<String, dynamic>()))
+          .map((value) => InviteHistoryItem.fromJson(
+              (value as Map).cast<String, dynamic>()))
           .toList(growable: false),
       nextOffset: next,
     );
@@ -695,6 +695,7 @@ final class BusinessApiClient
     return getJson(
         '/ledger/transactions/me?${Uri(queryParameters: parameters).query}');
   }
+
   Future<Map<String, dynamic>> ledgerTransactionDetail(String id) =>
       getJson('/ledger/transactions/me/${Uri.encodeComponent(id)}');
   Future<Map<String, dynamic>> transferCaibi(
@@ -1189,6 +1190,34 @@ final class BusinessApiClient
           },
           idempotencyKey: attemptId);
 
+  Future<Map<String, dynamic>> claimRecoverableDirectConversation(
+          String peer, String attempt) =>
+      postJson('/direct-conversations/claim-v2',
+          {'peer_user_id': peer, 'attempt_id': attempt},
+          idempotencyKey: attempt);
+
+  Future<String> recoverDirectConversation(
+      String peer, String attempt, String roomId) async {
+    final result = await postJson('/direct-conversations/recover',
+        {'peer_user_id': peer, 'attempt_id': attempt, 'matrix_room_id': roomId},
+        idempotencyKey: attempt);
+    final id = result['matrix_room_id'];
+    if (id is! String || id.isEmpty) throw StateError('规范私聊登记响应不完整');
+    return id;
+  }
+
+  Future<Map<String, dynamic>> directConversationAssociations(String peer) =>
+      getJson('/direct-conversations/associations?${Uri(queryParameters: {
+            'peer_user_id': peer
+          }).query}');
+
+  Future<void> registerDirectConversationHistory(
+      String peer, String roomId) async {
+    await postJson('/direct-conversations/associations',
+        {'peer_user_id': peer, 'matrix_room_id': roomId},
+        idempotencyKey: newIdempotencyKey());
+  }
+
   Future<String> publishDirectConversation(
     String peerUserId,
     String attemptId,
@@ -1221,7 +1250,11 @@ final class BusinessApiClient
           'matrix_room_id': matrixRoomId,
         },
         idempotencyKey: newIdempotencyKey());
-    return body['matrix_room_id']?.toString() ?? matrixRoomId;
+    final canonical = body['matrix_room_id'];
+    if (canonical is! String || canonical.isEmpty) {
+      throw StateError('规范私聊登记响应不完整');
+    }
+    return canonical;
   }
 
   /// BUG 2 状态机：申请人撤销待处理申请（PENDING → CANCELLED）。
@@ -1381,12 +1414,13 @@ final class BusinessApiClient
       );
   Future<Map<String, dynamic>> personalMoments(String userId) =>
       getJson('/moments/users/$userId');
+
   /// 单条修改朋友圈可见范围（作者本人）。
   Future<Map<String, dynamic>> updateMomentVisibility(
-      String momentId, Map<String, dynamic> selection) => patchJson(
-      '/moments/${Uri.encodeComponent(momentId)}/visibility',
-      selection,
-      idempotencyKey: newIdempotencyKey());
+          String momentId, Map<String, dynamic> selection) =>
+      patchJson(
+          '/moments/${Uri.encodeComponent(momentId)}/visibility', selection,
+          idempotencyKey: newIdempotencyKey());
 
   Future<Map<String, dynamic>> momentProfilePreview(String userId) =>
       getJson('/moments/users/${Uri.encodeComponent(userId)}/preview');

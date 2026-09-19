@@ -1,5 +1,9 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
+import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
+import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,7 +121,10 @@ class _OfflineRoom extends Room {
 }
 
 Future<MatrixRoomLease> _mount(WidgetTester tester, _OfflineClient client,
-    {bool friend = false, ScrollBehavior? scrollBehavior}) async {
+    {bool friend = false,
+    ScrollBehavior? scrollBehavior,
+    ValueNotifier<RoomOpenRequest>? navigationRequests,
+    PersistentOutboxManager? outbox}) async {
   tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   SharedPreferences.setMockInitialValues({});
   final matrix = MatrixSdkE2eeClient(client,
@@ -131,6 +138,8 @@ Future<MatrixRoomLease> _mount(WidgetTester tester, _OfflineClient client,
       api: api,
       roomLease: lease,
       roomName: 'Offline fixture',
+      navigationRequests: navigationRequests,
+      outbox: outbox,
       initialIdentityCache: ProfileRepository.forTesting(
           accountKey: 'offline-fixture', store: MemoryProfileStore())
         ..contacts = [
@@ -560,6 +569,54 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('background outbox failure updates the existing bubble',
+      (tester) async {
+    final client = _OfflineClient();
+    final outbox = PersistentOutboxManager(InMemoryOutboxStore());
+    final row = await outbox.save(
+        receiverId: '@peer:offline.test',
+        roomId: client.localRoom.id,
+        content: 'background text',
+        status: OutboxStatus.failed);
+    await _mount(tester, client, outbox: outbox);
+    final controller = (tester.state(find.byType(RoomPage)) as dynamic)
+        .controller as RoomTimelineController;
+    RoomMessageViewModel message() =>
+        controller.messages.singleWhere((m) => m.transactionId == row!.txid);
+    expect(message().deliveryState, RoomDeliveryState.failed);
+    await outbox.updateStatus(row!.localId, OutboxStatus.sending);
+    await tester.pump();
+    expect(message().deliveryState, RoomDeliveryState.sending);
+    await outbox.updateStatus(row.localId, OutboxStatus.failed);
+    await tester.pump();
+    expect(message().deliveryState, RoomDeliveryState.failed);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+    await outbox.updateStatus(row.localId, OutboxStatus.sent);
+    expect(tester.takeException(), isNull);
+    outbox.dispose();
+  });
+  testWidgets('unknown anchor source reports a visible error on the same room',
+      (tester) async {
+    final client = _OfflineClient();
+    final requests = ValueNotifier(
+        RoomOpenRequest(roomId: client.localRoom.id, roomName: 'fixture'));
+    await _mount(tester, client, navigationRequests: requests);
+    requests.value = RoomOpenRequest(
+        roomId: client.localRoom.id,
+        roomName: 'fixture',
+        anchorEventId: 'cached-event',
+        anchorRoomId: '!unassociated:test');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('消息暂时无法定位'), findsOneWidget);
+    expect(find.byType(RoomPage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+    requests.dispose();
   });
 
   testWidgets('canceled account lease stops pending receipt retry',

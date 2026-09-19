@@ -58,9 +58,13 @@ final class OutboxRecoveryService {
 
   final PersistentOutboxManager outbox;
   final MessageSendScheduler? scheduler;
+  Future<OutboxRecoveryReport>? _startup;
 
   /// 应用启动：恢复未送达行。
-  Future<OutboxRecoveryReport> recoverOnStartup() async {
+  Future<OutboxRecoveryReport> recoverOnStartup() =>
+      _startup ??= _recoverOnStartup();
+
+  Future<OutboxRecoveryReport> _recoverOnStartup() async {
     final before = await outbox.unsent();
     final resetInFlight = before.where((row) => row.status.isInFlight).length;
     final rows = await outbox.recoverOnStartup();

@@ -7,6 +7,8 @@ import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/app_home.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
@@ -32,10 +34,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///   → DirectChatController + CoordinatedDirectChatGateway
 ///   → RoomNavigationCoordinator → RoomPage + MatrixRoomLease
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    PersistentOutboxManager.shared = PersistentOutboxManager(
+        InMemoryOutboxStore(),
+        accountId: _selfMatrixId);
+  });
+  tearDown(() {
+    PersistentOutboxManager.shared?.dispose();
+    PersistentOutboxManager.shared = null;
+  });
 
-  testWidgets('Test 1: 好友资料首次「发消息」只解析一次身份/房间，只开一个 RoomPage+租约',
-      (tester) async {
+  testWidgets('Test 1: 好友资料首次「发消息」只解析一次身份/房间，只开一个 RoomPage+租约', (tester) async {
     final harness = await _Harness.start(tester);
     addTearDown(harness.dispose);
 
@@ -46,8 +56,7 @@ void main() {
     expect(harness.lookedUpMatrixUserIds, [_peerMatrixId],
         reason: '身份解析用目录里的权威 Matrix ID，且只解析一次房间');
     expect(harness.canonicalRoomLookups, 1, reason: 'canonical 私聊房间只解析一次');
-    expect(harness.matrixHttpRequests, 0,
-        reason: '本地既有加密私聊足够打开，全程不得触网');
+    expect(harness.matrixHttpRequests, 0, reason: '本地既有加密私聊足够打开，全程不得触网');
     expect(find.byType(RoomPage), findsOneWidget);
     expect(harness.managedResources - leasesBefore, 1,
         reason: '只取一份 RoomLease');
@@ -103,8 +112,7 @@ void main() {
     expect(find.byType(RoomPage), findsOneWidget, reason: '已打开的房间只回到原页面');
   });
 
-  testWidgets('Test 4: 慢身份解析时并发两次「发消息」：解析与房间查找各一次，只开一个页面',
-      (tester) async {
+  testWidgets('Test 4: 慢身份解析时并发两次「发消息」：解析与房间查找各一次，只开一个页面', (tester) async {
     final harness = await _Harness.start(tester, peerInCache: false);
     addTearDown(harness.dispose);
     await harness.openContactsTab(tester);
@@ -152,26 +160,51 @@ void main() {
     // 也不等待网络仲裁完成。
     expect(find.byType(PendingConversationPage), findsOneWidget,
         reason: '本地没有会话也必须可以进入会话页面');
-    expect(find.text('无法打开加密会话'), findsNothing,
-        reason: '产品要求禁止旧口径标题');
+    expect(find.text('无法打开加密会话'), findsNothing, reason: '产品要求禁止旧口径标题');
     expect(find.byType(RoomPage), findsNothing);
 
     await tester.pumpAndSettle();
     expect(harness.businessHttpRequests, greaterThan(0),
         reason: '后台仲裁仍会查询业务侧 canonical 房间');
-    expect(find.text('重试'), findsOneWidget,
-        reason: '后台建立失败必须在页面内可见并可重试');
+    expect(find.text('重试'), findsOneWidget, reason: '后台建立失败必须在页面内可见并可重试');
 
-    // 修好本地 canonical 私聊元数据后点「重试」：闸门不得残留 opening。
+    // 恢复业务 canonical 与本地私聊元数据后重试：闸门不得残留 opening。
     harness.publishDirectChatMetadata();
-    final lookupsBeforeRetry = harness.canonicalRoomLookups;
+    final lookupsBeforeRetry = harness.businessCanonicalLookups;
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
 
     expect(find.byType(RoomPage), findsOneWidget);
     expect(find.byType(PendingConversationPage), findsNothing);
-    expect(harness.canonicalRoomLookups, greaterThan(lookupsBeforeRetry),
+    expect(harness.businessCanonicalLookups, greaterThan(lookupsBeforeRetry),
         reason: '重试必须重新解析身份 + canonical 房间');
+  });
+
+  testWidgets('同一好友并发打开在 canonical 未响应时只保留一个 pending 页面', (tester) async {
+    final harness = await _Harness.start(tester, directChatMetadata: false);
+    addTearDown(harness.dispose);
+    await harness.openContactsTab(tester);
+    harness._counters.canonicalGate = Completer<http.Response>();
+    final onMessage = harness.contactsOnMessage(tester);
+    harness.recordSend(onMessage(_friendDetails));
+    harness.recordSend(onMessage(_friendDetails));
+    await tester.pumpAndSettle();
+    expect(find.byType(PendingConversationPage, skipOffstage: false),
+        findsOneWidget);
+    expect(find.byType(RoomPage, skipOffstage: false), findsNothing);
+    // A later entry while the pending page remains open also reuses it.
+    harness.recordSend(onMessage(_friendDetails));
+    await tester.pumpAndSettle();
+    expect(find.byType(PendingConversationPage, skipOffstage: false),
+        findsOneWidget);
+    harness._counters.canonicalGate!
+        .complete(http.Response('{"detail":"unavailable"}', 503));
+    await tester.pumpAndSettle();
+    Navigator.of(tester.element(find.byType(PendingConversationPage))).pop();
+    await tester.pumpAndSettle();
+    expect(harness.allSendsCompleted, isTrue);
+    expect(find.byType(PendingConversationPage, skipOffstage: false),
+        findsNothing);
   });
 
   testWidgets('Test 6: Room A 内第二次「发消息」仍用目录里的权威 Matrix ID（过期快照不回归）',
@@ -305,6 +338,9 @@ final class _FriendProfileStub extends StatelessWidget {
 final class _Counters {
   int matrixHttp = 0;
   int businessHttp = 0;
+  int businessCanonicalLookups = 0;
+  bool canonicalAvailable = false;
+  Completer<http.Response>? canonicalGate;
 }
 
 final class _MemoryStore implements SecureKeyValueStore {
@@ -371,6 +407,16 @@ final class _Harness {
       sessionStore: session,
       client: MockClient((request) async {
         counters.businessHttp++;
+        if (request.url.path.endsWith('/direct-conversations') &&
+            request.method == 'GET') {
+          counters.businessCanonicalLookups++;
+          if (counters.canonicalGate != null) {
+            return counters.canonicalGate!.future;
+          }
+          if (counters.canonicalAvailable) {
+            return http.Response('{"matrix_room_id":"$_roomId"}', 200);
+          }
+        }
         if (request.url.path.contains('direct-conversations')) {
           return http.Response('{"detail":"unavailable"}', 503);
         }
@@ -418,6 +464,7 @@ final class _Harness {
 
   int get matrixHttpRequests => _counters.matrixHttp;
   int get businessHttpRequests => _counters.businessHttp;
+  int get businessCanonicalLookups => _counters.businessCanonicalLookups;
   int get canonicalRoomLookups => client.canonicalRoomLookups;
   List<String> get lookedUpMatrixUserIds => client.lookedUpMatrixUserIds;
   int get managedResources => matrix.debugManagedResourceCount;
@@ -445,7 +492,10 @@ final class _Harness {
     held?.complete(contactsForNextLoad);
   }
 
-  void publishDirectChatMetadata() => _publishDirectChatMetadata(client);
+  void publishDirectChatMetadata() {
+    _counters.canonicalAvailable = true;
+    _publishDirectChatMetadata(client);
+  }
 
   void recordSend(Future<void> future) {
     final send = _Send();
@@ -490,8 +540,7 @@ final class _Harness {
       {ContactDetails contact = _friendDetails}) async {
     final roomPage = tester.widget<RoomPage>(find.byType(RoomPage));
     final onMessage = _contactsOnMessage!;
-    expect(roomPage.onMessage, onMessage,
-        reason: '房间内与资料页必须是同一个「发消息」统一入口');
+    expect(roomPage.onMessage, onMessage, reason: '房间内与资料页必须是同一个「发消息」统一入口');
     final navigator = Navigator.of(tester.element(find.byType(RoomPage)),
         rootNavigator: true);
     unawaited(navigator.push(CupertinoPageRoute<void>(

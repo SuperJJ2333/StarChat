@@ -1,4 +1,3 @@
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -102,7 +101,7 @@ final class _FlashTimeline extends Fake implements Timeline {
               'body': '普通图片2',
             },
           ),
-        ];
+        ].reversed.toList();
 
   @override
   final List<Event> events;
@@ -206,8 +205,7 @@ void main() {
     row.onLongPress!();
     await tester.pump();
     await tester.pump();
-    expect(find.text('转发'), findsNothing,
-        reason: '闪照禁止转发，菜单不得出现转发入口');
+    expect(find.text('转发'), findsNothing, reason: '闪照禁止转发，菜单不得出现转发入口');
     expect(find.byKey(const Key('flash-photo-viewer')), findsNothing);
 
     await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
@@ -250,26 +248,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     final bubbles = find.byType(ContainImageBubble);
-    expect(bubbles, findsWidgets,
-        reason: '普通图片渲染普通气泡（闪照走马赛克气泡）');
+    expect(bubbles, findsWidgets, reason: '普通图片渲染普通气泡（闪照走马赛克气泡）');
     expect(find.byType(FlashPhotoBubble), findsOneWidget,
         reason: '闪照只以马赛克气泡出现');
 
     // 打开普通图片的 Gallery：交给 Gallery 的数据集必须是“只有普通图片”，
     // 邻居预取（±1）因此不可能触达闪照 loader。
-    final firstBubble =
-        tester.widget<ContainImageBubble>(bubbles.first);
+    final firstBubble = tester.widget<ContainImageBubble>(bubbles.first);
     expect(firstBubble.onTap, isNotNull);
     firstBubble.onTap!();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    final gallery = tester.widget<RoomImageGalleryPage>(
-        find.byType(RoomImageGalleryPage));
-    expect([for (final photo in gallery.images) photo.id],
-        [r'$normal-after', r'$normal-before'],
-        reason: '闪照绝不出现在普通 Gallery 数据集中（Gallery 按新→旧排列）');
+    final gallery =
+        tester.widget<RoomImageGalleryPage>(find.byType(RoomImageGalleryPage));
+    expect([
+      for (final photo in gallery.images) photo.id
+    ], [
+      r'$normal-before',
+      r'$normal-after'
+    ], reason: '闪照绝不出现在普通 Gallery 数据集中（Gallery 与时间线均按旧→新排列）');
     expect(gallery.images, hasLength(2));
-    expect(gallery.initialId, r'$normal-before');
+    expect(gallery.initialId, r'$normal-after');
 
     // 预取跑过若干帧后也不得抛错（闪照事件没有可加载的 mxc）。
     for (var i = 0; i < 5; i++) {

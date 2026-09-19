@@ -11,6 +11,8 @@ from app.core.errors import AppError
 
 
 class MatrixAdminGateway(Protocol):
+    def resolve_room_alias(self, alias: str) -> str | None: ...
+
     def ensure_user(self, localpart: str, password: str) -> str: ...
 
     def invite_room_as_user(self, inviter_id: str, matrix_user_id: str, room_id: str) -> None: ...
@@ -61,6 +63,23 @@ class MatrixCredentialCodec:
 
 
 class SynapseMatrixAdminGateway:
+    def resolve_room_alias(self, alias: str) -> str | None:
+        """Read room directory metadata only; never accepts caller-supplied URLs."""
+        try:
+            response = self._client.get(
+                f'{self._homeserver_url}/_matrix/client/v3/directory/room/{quote(alias, safe="")}',
+                headers={'Authorization': f'Bearer {self._admin_access_token}'})
+            if response.status_code == 404:
+                return None
+            if response.status_code != 200:
+                raise ValueError('directory unavailable')
+            room_id = response.json().get('room_id')
+            if not isinstance(room_id, str) or not room_id.startswith('!'):
+                raise ValueError('invalid directory result')
+            return room_id
+        except (httpx.HTTPError, ValueError, AttributeError):
+            raise AppError(code='DIRECT_ROOM_EVIDENCE_UNAVAILABLE', message='会话校验暂不可用', status_code=503) from None
+
     def complete_mobile_login(self, *, matrix_user_id, device_id, generation, display_name):
         try:
             response = self._client.post(

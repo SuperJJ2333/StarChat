@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/duplicate_room_registry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,11 +14,11 @@ void main() {
       primaryRoomId: '!canonical:test',
       duplicateRoomId: '!orphan:test',
     );
-    expect(
-        registry.primaryRoomIdForPeer('@me:test', '@peer:test'),
+    expect(registry.primaryRoomIdForPeer('@me:test', '@peer:test'),
         '!canonical:test');
     expect(registry.entries('@me:test').single.duplicateRoomId, '!orphan:test');
-    expect(registry.entries('@me:test').single.primaryRoomId, '!canonical:test');
+    expect(
+        registry.entries('@me:test').single.primaryRoomId, '!canonical:test');
     expect(registry.entries('@me:test').single.peerId, '@peer:test');
     expect(registry.entries('@me:test').single.detectedAt, isNotNull);
   });
@@ -60,11 +61,12 @@ void main() {
         peerId: '@peer:test',
         primaryRoomId: '!keep:test',
         duplicateRoomId: '!dup2:test');
-    expect(registry.primaryRoomIdForPeer('@me:test', '@peer:test'), '!keep:test');
+    expect(
+        registry.primaryRoomIdForPeer('@me:test', '@peer:test'), '!keep:test');
     expect(registry.entries('@me:test').length, 2);
   });
 
-  test('登记数量有上限（防无限膨胀），最旧的先被淘汰', () async {
+  test('权威身份不能被旧诊断容量限制淘汰，重启仍保留', () async {
     final registry = DuplicateRoomRegistry(cap: 3);
     for (var i = 0; i < 5; i++) {
       await registry.record(
@@ -73,11 +75,49 @@ void main() {
           primaryRoomId: '!keep:$i:test',
           duplicateRoomId: '!dup:$i:test');
     }
-    final peers = registry
-        .entries('@me:test')
-        .map((entry) => entry.peerId)
-        .toSet();
-    expect(peers.contains('@peer:0:test'), isFalse, reason: '最旧的登记被淘汰');
-    expect(registry.entries('@me:test').length, 3);
+    final peers =
+        registry.entries('@me:test').map((entry) => entry.peerId).toSet();
+    expect(peers.contains('@peer:0:test'), isTrue);
+    expect(registry.entries('@me:test').length, 5);
+    final restarted = DuplicateRoomRegistry(cap: 3);
+    await restarted.ensureLoaded('@me:test');
+    expect(restarted.primaryRoomIdForDuplicate('@me:test', '!dup:0:test'),
+        '!keep:0:test');
+  });
+  test('concurrent ensureLoaded callers both observe completed disk load',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'duplicate-room-registry-v1:%40me%3Atest': jsonEncode([
+        {
+          'duplicate_room_id': '!old:test',
+          'primary_room_id': '!primary:test',
+          'peer_id': '@peer:test',
+          'detected_at': '2026-09-19T00:00:00Z'
+        }
+      ])
+    });
+    final registry = DuplicateRoomRegistry();
+    final first = registry.ensureLoaded('@me:test');
+    await registry.ensureLoaded('@me:test');
+    expect(registry.entryForRoom('@me:test', '!old:test'), isNotNull);
+    await first;
+  });
+  test('record loads prior durable associations before persisting new ones',
+      () async {
+    final first = DuplicateRoomRegistry();
+    await first.record(
+        accountId: '@me:test',
+        peerId: '@peer:test',
+        primaryRoomId: '!primary:test',
+        duplicateRoomId: '!old:test');
+    final restarted = DuplicateRoomRegistry();
+    await restarted.record(
+        accountId: '@me:test',
+        peerId: '@other:test',
+        primaryRoomId: '!other:test',
+        duplicateRoomId: '!old-other:test');
+    final finalRead = DuplicateRoomRegistry();
+    await finalRead.ensureLoaded('@me:test');
+    expect(finalRead.entries('@me:test').length, 2);
   });
 }

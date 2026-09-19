@@ -1,5 +1,7 @@
 # Durable direct-room creation
 
+> 2026-09-19: V2 recovery is governed by [the accepted recovery ADR](../adr/2026-09-19-recoverable-direct-room-alias.md) and [deployment/recovery runbook](direct-room-v2-recovery.md). The once-only grant rules below remain the legacy protocol; do not apply blind TTL regrant to either protocol.
+
 The mobile client uses the authenticated business account pair, sorted by the API, to claim permission **before** asking Matrix to create a room. `direct_room_reservations` has one unique row per pair. Claims, publication and legacy registration all acquire the same database row lock.
 
 `POST /direct-conversations/claim` accepts `peer_user_id` and a persisted `attempt_id`. A first empty reservation returns `may_create=true, can_publish=true`. Replays never grant creation again. The owner can publish/recover with its same attempt; other devices wait for `matrix_room_id`. `POST /direct-conversations/publish` requires the same authenticated owner and attempt, validates immutable publication, and returns the canonical room. Legacy registration returns the first room and rejects an active pending reservation.

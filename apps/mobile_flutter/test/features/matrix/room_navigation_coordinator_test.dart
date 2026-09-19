@@ -14,6 +14,7 @@ final class _FakeRoomProcedure {
   int leases = 0;
   final opened = <String>[];
   final closed = <String>[];
+  final reopened = <RoomOpenRequest>[];
 
   /// 模拟慢租约：取租约期间挂住。
   Completer<void>? holdLease;
@@ -24,6 +25,7 @@ final class _FakeRoomProcedure {
   /// 模拟 push 阶段异常：登记后抛出且故意不释放登记，
   /// 协调器必须自己兜底清理，不能留下假 active。
   String? leakAndThrowFor;
+  String? failBeforeRegisterFor;
 
   NavigatorState? navigator;
 
@@ -32,15 +34,23 @@ final class _FakeRoomProcedure {
     opened.add(request.roomId);
     final lease = holdLease;
     if (lease != null) await lease.future;
+    if (request.roomId == failBeforeRegisterFor) {
+      throw StateError('lease unavailable');
+    }
     final route = CupertinoPageRoute<void>(
         builder: (_) => Center(child: Text('room:${request.roomId}')));
-    handle.register(route);
+    handle.register(route, onReopen: reopened.add);
     request.onRoomReady?.call();
     if (request.roomId == leakAndThrowFor) {
       throw StateError('room open failed');
     }
     try {
-      await navigator!.push(route);
+      final pushed = navigator!.push(route);
+      final previous = handle.replacedRoute;
+      if (previous != null && previous.isActive) {
+        navigator!.removeRoute(previous);
+      }
+      await pushed;
     } finally {
       handle.release(route);
       request.onRoomClosed?.call();
@@ -123,6 +133,96 @@ void main() {
     expect(procedure.opened, ['!a:test']);
     expect(find.text('room:!a:test'), findsOneWidget);
   });
+  testWidgets(
+      'opening delivers the latest source anchor when its route registers',
+      (tester) async {
+    await setUpCoordinator(tester);
+    procedure.holdLease = Completer<void>();
+    final opening = coordinator.open(request('!a:test'));
+    coordinator.open(const RoomOpenRequest(
+        roomId: '!a:test',
+        roomName: 'friend',
+        anchorEventId: 'first',
+        anchorRoomId: '!old:test'));
+    final latest = coordinator.open(const RoomOpenRequest(
+        roomId: '!a:test',
+        roomName: 'friend',
+        anchorEventId: 'latest',
+        anchorRoomId: '!older:test'));
+    expect(latest, same(opening));
+    procedure.holdLease!.complete();
+    procedure.holdLease = null;
+    await tester.pumpAndSettle();
+    expect(procedure.leases, 1);
+    expect(procedure.reopened.single.anchorEventId, 'latest');
+    expect(procedure.reopened.single.anchorRoomId, '!older:test');
+  });
+  testWidgets(
+      'canonical replacement removes old route only after the new route is ready',
+      (tester) async {
+    final navigator = await _pumpShell(tester);
+    procedure = _FakeRoomProcedure()..navigator = navigator;
+    coordinator = RoomNavigationCoordinator(
+        openRoom: procedure.open,
+        navigatorOf: () => navigator,
+        conversationKeyOf: (_) => 'dm:peer');
+    await openRoom(tester, '!old:test');
+    procedure.holdLease = Completer<void>();
+    unawaited(coordinator.open(request('!canonical:test')));
+    await tester.pump();
+    expect(find.text('room:!old:test'), findsOneWidget);
+    procedure.holdLease!.complete();
+    procedure.holdLease = null;
+    await tester.pumpAndSettle();
+    expect(procedure.opened, ['!old:test', '!canonical:test']);
+    expect(procedure.closed, ['!old:test']);
+    expect(coordinator.activeRoomIds, ['dm:peer']);
+    expect(find.text('room:!old:test', skipOffstage: false), findsNothing);
+    expect(find.text('room:!canonical:test'), findsOneWidget);
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(find.text('home'), findsOneWidget);
+    expect(coordinator.activeRoomIds, isEmpty);
+  });
+  for (final afterRegister in [false, true]) {
+    testWidgets(
+        'failed replacement restores original route and callback, afterRegister=$afterRegister',
+        (tester) async {
+      final navigator = await _pumpShell(tester);
+      procedure = _FakeRoomProcedure()..navigator = navigator;
+      coordinator = RoomNavigationCoordinator(
+          openRoom: procedure.open,
+          navigatorOf: () => navigator,
+          conversationKeyOf: (_) => 'dm:peer');
+      await openRoom(tester, '!old:test');
+      final original = coordinator.activeRoute('!old:test');
+      if (afterRegister) {
+        procedure.leakAndThrowFor = '!canonical:test';
+      } else {
+        procedure.failBeforeRegisterFor = '!canonical:test';
+      }
+      await expectLater(
+          coordinator.open(request('!canonical:test')), throwsStateError);
+      await tester.pumpAndSettle();
+      expect(coordinator.activeRoute('!old:test'), same(original));
+      expect(coordinator.isOpening('!old:test'), isFalse);
+      await coordinator.open(const RoomOpenRequest(
+          roomId: '!old:test',
+          roomName: 'friend',
+          anchorEventId: 'original-anchor',
+          anchorRoomId: '!old:test'));
+      await tester.pumpAndSettle();
+      expect(procedure.leases, 2,
+          reason:
+              'failed replacement does not orphan the original active page');
+      expect(procedure.reopened.single.anchorEventId, 'original-anchor');
+      expect(find.text('room:!old:test'), findsOneWidget);
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('home'), findsOneWidget);
+      expect(coordinator.activeRoomIds, isEmpty);
+    });
+  }
 
   testWidgets('Test 4: A → B 正常打开不同房间', (tester) async {
     await setUpCoordinator(tester);
@@ -258,5 +358,40 @@ void main() {
     await tester.pumpAndSettle();
     await opening;
     expect(events, ['ready', 'closed']);
+  });
+  testWidgets(
+      'different physical rooms reuse one peer route and deliver a new source anchor',
+      (tester) async {
+    final navigator = await _pumpShell(tester);
+    var pushes = 0;
+    RoomOpenRequest? reopened;
+    final coordinator = RoomNavigationCoordinator(
+        conversationKeyOf: (_) => 'dm:peer',
+        navigatorOf: () => navigator,
+        openRoom: (request, handle) async {
+          pushes++;
+          final route = CupertinoPageRoute<void>(
+              builder: (_) => const Text('logical conversation'));
+          handle.register(route, onReopen: (value) => reopened = value);
+          try {
+            await navigator.push(route);
+          } finally {
+            handle.release(route);
+          }
+        });
+    unawaited(coordinator.open(request('!primary:test')));
+    await tester.pumpAndSettle();
+    await coordinator.open(const RoomOpenRequest(
+        roomId: '!primary:test',
+        roomName: 'same friend',
+        anchorEventId: r'$historical',
+        anchorRoomId: '!old:test'));
+    await tester.pumpAndSettle();
+    expect(pushes, 1);
+    expect(reopened?.anchorRoomId, '!old:test');
+    expect(reopened?.anchorEventId, r'$historical');
+    navigator.pop();
+    await tester.pumpAndSettle();
+    expect(coordinator.activeRoomIds, isEmpty);
   });
 }

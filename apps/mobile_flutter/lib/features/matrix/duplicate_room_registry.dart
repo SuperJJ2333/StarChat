@@ -4,16 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 历史孤儿私聊房间登记簿（重复会话缺陷 0919 的配套设施）。
 ///
-/// `DirectRoomDirectoryConvergence` 收敛 m.direct 时，把被落选（隐藏展示）
-/// 的重复房间登记到这里；服务端 canonical 裁决的 primary 房间是唯一登记
-/// 来源——本地规则选出的落选者不登记，避免用弱证据覆盖权威映射。
+/// 保存服务端确认或账号同步的房间关联；本地活跃度不能覆盖权威映射。
+/// m.direct 保留原始历史条目，本登记簿支持同一会话读取所有来源房间。
 ///
 /// 用途（只记录、不删除）：
 /// - `ConversationIdentityResolver` 的 primary 优先规则数据源；
 /// - 未来数据迁移 / 历史检索 / 问题排查的台账。
 ///
-/// 持久化：SharedPreferences 按账号一个 JSON 列表；数量有 [cap] 上限，
-/// 超限淘汰最旧的登记。任何存储失败都不阻断调用方（登记是尽力而为）。
+/// 持久化按账号隔离。身份关联不是诊断缓存，不得按容量淘汰；业务接口与
+/// Matrix account data 提供跨设备恢复，本地存储失败保留当前内存状态。
 final class DuplicateRoomEntry {
   const DuplicateRoomEntry({
     required this.duplicateRoomId,
@@ -27,9 +26,8 @@ final class DuplicateRoomEntry {
         duplicateRoomId: json['duplicate_room_id'] as String? ?? '',
         primaryRoomId: json['primary_room_id'] as String? ?? '',
         peerId: json['peer_id'] as String? ?? '',
-        detectedAt:
-            DateTime.tryParse(json['detected_at'] as String? ?? '') ??
-                DateTime.fromMillisecondsSinceEpoch(0),
+        detectedAt: DateTime.tryParse(json['detected_at'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
       );
 
   final String duplicateRoomId;
@@ -48,33 +46,84 @@ final class DuplicateRoomEntry {
 final class DuplicateRoomRegistry {
   DuplicateRoomRegistry({this.cap = 500});
 
-  /// 每账号登记上限：防跨会话无限膨胀；超限按 detectedAt 最旧淘汰。
+  /// 兼容旧构造参数；身份映射不再受诊断缓存容量限制。
   final int cap;
 
   final Map<String, Map<String, DuplicateRoomEntry>> _byAccount = {};
   final Set<String> _loadedAccounts = {};
+  final Map<String, Future<void>> _loads = {};
+  final Map<String, Future<void>> _writes = {};
+  final Map<String, Map<String, String>> _primaries = {};
+
+  Future<void> rememberPrimary(
+      String accountId, String peerId, String roomId) async {
+    if (accountId.isEmpty || peerId.isEmpty || roomId.isEmpty) return;
+    await ensureLoaded(accountId);
+    if (_primaries[accountId]?[peerId] == roomId) return;
+    _primaries.putIfAbsent(accountId, () => {})[peerId] = roomId;
+    final entries = _byAccount[accountId];
+    if (entries != null) {
+      for (final entry in entries.values.toList()) {
+        if (entry.peerId != peerId) continue;
+        entries[entry.duplicateRoomId] = DuplicateRoomEntry(
+            duplicateRoomId: entry.duplicateRoomId,
+            primaryRoomId: roomId,
+            peerId: peerId,
+            detectedAt: entry.detectedAt);
+      }
+    }
+    await _persist(accountId);
+  }
 
   static const _prefix = 'duplicate-room-registry-v1:';
 
-  String _key(String accountId) =>
-      '$_prefix${Uri.encodeComponent(accountId)}';
+  String _key(String accountId) => '$_prefix${Uri.encodeComponent(accountId)}';
 
   /// 从持久层装载（幂等：同账号只读一次盘；record 写穿内存 + 持久层）。
-  Future<void> ensureLoaded(String accountId) async {
-    if (accountId.isEmpty || _loadedAccounts.contains(accountId)) return;
-    _loadedAccounts.add(accountId);
+  Future<void> ensureLoaded(String accountId) {
+    if (accountId.isEmpty || _loadedAccounts.contains(accountId)) {
+      return Future.value();
+    }
+    return _loads.putIfAbsent(accountId, () => _load(accountId));
+  }
+
+  Future<void> _load(String accountId) async {
     try {
       final preferences = await SharedPreferences.getInstance();
       final raw = preferences.getString(_key(accountId));
       if (raw == null || raw.isEmpty) return;
-      final list = (jsonDecode(raw) as List<dynamic>).cast<Map<String, dynamic>>();
-      _byAccount[accountId] = {
-        for (final item in list)
-          if (item['duplicate_room_id'] is String)
-            item['duplicate_room_id'] as String: DuplicateRoomEntry.fromJson(item),
-      };
+      final decoded = jsonDecode(raw);
+      final list =
+          decoded is List ? decoded : (decoded as Map)['entries'] as List;
+      final entries = _byAccount.putIfAbsent(accountId, () => {});
+      for (final item in list) {
+        if (item is! Map<String, dynamic>) continue;
+        try {
+          final entry = DuplicateRoomEntry.fromJson(item);
+          if (entry.duplicateRoomId.isEmpty ||
+              entry.primaryRoomId.isEmpty ||
+              entry.peerId.isEmpty) {
+            continue;
+          }
+          entries.putIfAbsent(entry.duplicateRoomId, () => entry);
+        } catch (_) {
+          /* One damaged record must not discard other identities. */
+        }
+      }
+      if (decoded is Map && decoded['primaries'] is Map) {
+        final primaries = _primaries.putIfAbsent(accountId, () => {});
+        for (final entry in (decoded['primaries'] as Map).entries) {
+          if (entry.key is String && entry.value is String) {
+            primaries.putIfAbsent(
+                entry.key as String, () => entry.value as String);
+          }
+        }
+      }
     } catch (_) {
       // 持久层不可用：登记退化为进程内内存（不阻断收敛/解析）。
+    } finally {
+      _loadedAccounts.add(accountId);
+      _loads.remove(accountId);
     }
   }
 
@@ -87,13 +136,18 @@ final class DuplicateRoomRegistry {
     required String duplicateRoomId,
   }) async {
     if (accountId.isEmpty ||
+        peerId.isEmpty ||
         primaryRoomId.isEmpty ||
         duplicateRoomId.isEmpty ||
         primaryRoomId == duplicateRoomId) {
       return;
     }
+    await ensureLoaded(accountId);
+    _primaries.putIfAbsent(accountId, () => {})[peerId] = primaryRoomId;
     final entries =
         _byAccount.putIfAbsent(accountId, () => <String, DuplicateRoomEntry>{});
+    final old = entries[duplicateRoomId];
+    if (old?.peerId == peerId && old?.primaryRoomId == primaryRoomId) return;
     entries.remove(duplicateRoomId);
     entries[duplicateRoomId] = DuplicateRoomEntry(
       duplicateRoomId: duplicateRoomId,
@@ -106,6 +160,8 @@ final class DuplicateRoomRegistry {
 
   /// 该 peer 当前登记的 primary 房间（无登记返回 null）。纯内存查询。
   String? primaryRoomIdForPeer(String accountId, String peerId) {
+    final known = _primaries[accountId]?[peerId];
+    if (known != null) return known;
     final entries = _byAccount[accountId];
     if (entries == null) return null;
     for (final entry in entries.values) {
@@ -120,6 +176,15 @@ final class DuplicateRoomRegistry {
   DuplicateRoomEntry? entryForRoom(String accountId, String roomId) =>
       _byAccount[accountId]?[roomId];
 
+  String? peerIdForRoom(String accountId, String roomId) {
+    final duplicate = entryForRoom(accountId, roomId);
+    if (duplicate != null) return duplicate.peerId;
+    for (final entry in (_primaries[accountId] ?? <String, String>{}).entries) {
+      if (entry.value == roomId) return entry.key;
+    }
+    return null;
+  }
+
   /// 反查便捷形式：重复房间的 primary 房间号（非重复房间返回 null）。
   String? primaryRoomIdForDuplicate(String accountId, String roomId) =>
       entryForRoom(accountId, roomId)?.primaryRoomId;
@@ -130,32 +195,38 @@ final class DuplicateRoomRegistry {
         _ => const [],
       };
 
-  Future<void> _persist(String accountId) async {
-    final entries = _byAccount[accountId];
-    if (entries == null) return;
-    // 超限淘汰最旧的登记（detectedAt 升序），保证存储有界。
-    final ordered = entries.values.toList()
-      ..sort((a, b) => a.detectedAt.compareTo(b.detectedAt));
-    while (ordered.length > cap) {
-      final evicted = ordered.removeAt(0);
-      if (identical(entries[evicted.duplicateRoomId], evicted)) {
-        entries.remove(evicted.duplicateRoomId);
-      }
-    }
+  Future<void> _persist(String accountId) {
+    final previous = _writes[accountId] ?? Future<void>.value();
+    final write = previous.then((_) => _write(accountId));
+    _writes[accountId] = write;
+    return write;
+  }
+
+  Future<void> _write(String accountId) async {
     try {
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(
         _key(accountId),
-        jsonEncode([for (final entry in ordered) entry.toJson()]),
+        jsonEncode({
+          'entries': [
+            for (final entry
+                in _byAccount[accountId]?.values ?? <DuplicateRoomEntry>[])
+              entry.toJson()
+          ],
+          'primaries': _primaries[accountId] ?? <String, String>{}
+        }),
       );
     } catch (_) {
-      // 存储失败不回滚内存：登记是排查台账，不是一致性关键数据。
+      // 存储失败不回滚内存；下一次账号/服务端同步仍能恢复关联。
     }
   }
 
   /// 测试专用：清空内存与已装载标记。
   void resetForTest() {
     _byAccount.clear();
+    _primaries.clear();
     _loadedAccounts.clear();
+    _loads.clear();
+    _writes.clear();
   }
 }

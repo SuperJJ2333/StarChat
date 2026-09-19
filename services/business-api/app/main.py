@@ -114,6 +114,7 @@ def create_app(
             session_factory,
             avatar_storage=avatar_storage,
             rate_limiter=rate_limiter,
+            matrix_gateway=matrix_gateway,
         ),
         prefix="/api/v1",
     )
@@ -241,6 +242,5 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
 
 def create_default_app() -> FastAPI:
     return create_app(Settings())
-
 
 

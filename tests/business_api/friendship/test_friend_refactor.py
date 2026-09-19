@@ -78,6 +78,7 @@ def friend_components():
                     id=user_id,
                     username=username,
                     username_normalized=username,
+                    matrix_user_id=f'@{user_id}:example.test',
                     email=f"{username}@example.com",
                     email_normalized=f"{username}@example.com",
                     password_hash="hash",
@@ -102,7 +103,8 @@ def friend_components():
             )
         )
     settings = _settings()
-    yield create_app(settings, session_factory=factory), factory
+    from test_direct_room_coordination import VerifiedPairMatrix
+    yield create_app(settings, session_factory=factory, matrix_gateway=VerifiedPairMatrix()), factory
     engine.dispose()
 
 

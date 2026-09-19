@@ -12,6 +12,7 @@ import 'package:liuhetong_mobile/ui/moments/moment_media_cache.dart';
 import 'package:liuhetong_mobile/ui/moments/moment_image_viewer_page.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_image_grid.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_viewer.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 class _RealHttp extends HttpOverrides {}
@@ -30,9 +31,10 @@ class _Paths extends PathProviderPlatform {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final oldPaths = PathProviderPlatform.instance;
-  final scratch = Directory(
-          '../../docs/verification/artifacts/2026-09-10/four-fixes-2083/media/cache-${DateTime.now().microsecondsSinceEpoch}')
-      .absolute;
+  // Directory.absolute retains '..'; normalize before Windows directory
+  // enumeration so a worktree prefix does not inflate the native search path.
+  final scratch = Directory(path.normalize(path.absolute(
+      '../../docs/verification/artifacts/2026-09-10/four-fixes-2083/media/cache-${DateTime.now().microsecondsSinceEpoch}')));
   final png = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
   setUpAll(() async {

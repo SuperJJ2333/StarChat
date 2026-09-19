@@ -58,8 +58,7 @@ final class PersistentOutboxManager extends ChangeNotifier {
     OutboxIdGenerator? newTxid,
   })  : _clock = clock ?? DateTime.now,
         _newLocalId = newLocalId ?? (() => const Uuid().v4()),
-        _newTxid =
-            newTxid ?? (() => const Uuid().v4().replaceAll('-', ''));
+        _newTxid = newTxid ?? (() => const Uuid().v4().replaceAll('-', ''));
 
   /// 组合根写入的进程级实例；测试与纯逻辑层可保持 null。
   static PersistentOutboxManager? shared;
@@ -172,11 +171,12 @@ final class PersistentOutboxManager extends ChangeNotifier {
         OutboxStatus.sending,
         incrementRetry: countRetry,
         updatedAt: _clock(),
-        from: from ?? const <OutboxStatus>{
-          OutboxStatus.queued,
-          OutboxStatus.waitingNetwork,
-          OutboxStatus.failed,
-        },
+        from: from ??
+            const <OutboxStatus>{
+              OutboxStatus.queued,
+              OutboxStatus.waitingNetwork,
+              OutboxStatus.failed,
+            },
       );
       lastError = null;
       if (changed) {
@@ -272,7 +272,8 @@ final class PersistentOutboxManager extends ChangeNotifier {
   Future<void> bindRoom(String localId, String roomId) async {
     if (_disposed) return;
     try {
-      final changed = await store.bindRoom(localId, roomId, updatedAt: _clock());
+      final changed =
+          await store.bindRoom(localId, roomId, updatedAt: _clock());
       lastError = null;
       if (changed) _notify();
     } catch (error) {
@@ -354,8 +355,7 @@ final class PersistentOutboxManager extends ChangeNotifier {
     required String roomId,
     required String receiverId,
   }) =>
-      RoomOutboxJournal(
-          manager: this, roomId: roomId, receiverId: receiverId);
+      RoomOutboxJournal(manager: this, roomId: roomId, receiverId: receiverId);
 
   void _notify() {
     if (_disposed) return;
@@ -376,10 +376,12 @@ final class RoomOutboxJournal implements OutboxJournal {
     required PersistentOutboxManager manager,
     required this.roomId,
     required this.receiverId,
+    this.beforeClaim,
   }) : _manager = manager;
 
   final PersistentOutboxManager _manager;
-  final String roomId;
+  final String? roomId;
+  final Future<bool> Function(String localId)? beforeClaim;
   final String receiverId;
 
   @override
@@ -402,8 +404,10 @@ final class RoomOutboxJournal implements OutboxJournal {
       );
 
   @override
-  Future<bool> claim(String localId, {Set<OutboxStatus>? from}) =>
-      _manager.claim(localId, from: from);
+  Future<bool> claim(String localId, {Set<OutboxStatus>? from}) async {
+    if (beforeClaim != null && !await beforeClaim!(localId)) return false;
+    return _manager.claim(localId, from: from);
+  }
 
   @override
   Future<void> settle(String localId, OutboxStatus status,

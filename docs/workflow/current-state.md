@@ -1,5 +1,16 @@
 # 移动交付恢复索引
 
+## 2026-09-19 逻辑会话与弱网可靠性修复（服务器已部署，客户端代码已验收/未打包）
+
+用户已授权直接实现、必要 ADR 决策与服务器生产修复。权威状态见
+[任务记录](tasks/2026-09-19-logical-conversation-reliability.md)，
+[恢复 ADR](../adr/2026-09-19-recoverable-direct-room-alias.md) 和
+[服务端验证](../verification/2026-09-19-direct-room-v2-server.md)。
+客户端在独立 `codex/conversation-reliability-20260919` 分支，不覆盖根工作区并行修改；
+保留所有物理房间、合并历史来源、所有入口归一、确认 canonical 后发送、持久化 outbox 原 ID 续发。
+此条取代旧记录中“仅待真机”的整体完成口径；服务器上线与客户端构建安装必须分别验收。
+
+
 ## 2026-09-18 Offline First 聊天：进入好友会话不被网络阻塞（**代码完成，未构建/未发布；待真机**）
 
 用户指令：修复弱网/无网下「无法打开加密会话」——要求审查 `_openManagedRoom*` 链路、把私聊创建改成

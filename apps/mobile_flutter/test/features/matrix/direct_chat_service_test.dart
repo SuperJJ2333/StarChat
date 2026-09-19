@@ -126,12 +126,20 @@ void main() {
       final appHome = readFile('lib/app_home.dart');
       final routeStart = appHome.indexOf('Future<void> _openManagedRoomRoute(');
       expect(routeStart, greaterThan(0));
-      final routeBody = appHome.substring(
-          routeStart, appHome.indexOf('handle.register(route);', routeStart));
+      final registerStart =
+          appHome.indexOf('handle.register(route', routeStart);
+      expect(registerStart, greaterThan(routeStart));
+      final routeBody = appHome.substring(routeStart, registerStart);
       expect(routeBody.contains('await widget.matrix.openRoomLease(roomId)'),
           isTrue);
       expect(routeBody.contains('preload()'), isFalse,
           reason: '房间打开流程不得串行等待身份预载');
+      final pushStart = appHome.indexOf('navigator.push(route)', registerStart);
+      final reconcileStart = appHome.indexOf(
+          'unawaited(_reconcileOpenedDirectRoom(', registerStart);
+      expect(pushStart, greaterThan(registerStart));
+      expect(reconcileStart, greaterThan(pushStart),
+          reason: '网络仲裁必须在页面 push 后后台进行');
     });
   });
 }

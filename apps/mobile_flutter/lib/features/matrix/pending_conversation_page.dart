@@ -16,7 +16,7 @@ import 'direct_chat_failure.dart';
 /// 结果：房间就绪时把 roomId 与 pending 期间输入的消息交回组合根。
 ///
 /// 组合根（AppHome）负责 pop 本页后按既有 `RoomNavigationCoordinator` 流程
-/// 打开 RoomPage，并把 [queued] 作为初始 outbox 交给页面自动发送。
+/// 打开 RoomPage，并按 [outboxLocalIds] 接管持久化消息。
 final class PendingConversationResult {
   const PendingConversationResult({
     required this.roomId,
@@ -26,13 +26,10 @@ final class PendingConversationResult {
 
   final String roomId;
 
-  /// 用户在等待期间输入、尚未发送的文本（保持输入顺序）。
-  ///
-  /// 只用于**降级路径**：正文已经落盘为 outbox 行时，RoomPage 按内容抵扣，
-  /// 不会再发一次。
+  /// 兼容旧调用者的展示快照；不得据此新建发送或按文本推断投递身份。
   final List<String> queued;
 
-  /// 本页写入 outbox 的本地行 ID（测试与诊断可见）。
+  /// 本页接管的持久化行身份；即使后台已完成并清理正文，身份也不变。
   final List<String> outboxLocalIds;
 }
 
@@ -78,10 +75,12 @@ final class PendingConversationPage extends StatefulWidget {
   final OutboxRecoveryService? recovery;
 
   @override
-  State<PendingConversationPage> createState() => _PendingConversationPageState();
+  State<PendingConversationPage> createState() =>
+      _PendingConversationPageState();
 }
 
-final class _PendingConversationPageState extends State<PendingConversationPage> {
+final class _PendingConversationPageState
+    extends State<PendingConversationPage> {
   final _input = TextEditingController();
 
   /// 展示用行（权威来自持久化 outbox；乐观插入先行避免输入闪烁）。
@@ -91,6 +90,13 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
   Object? _error;
   bool _opening = false;
   bool _settled = false;
+  bool _recoveryRequested = false;
+  bool _finishing = false;
+  String? _resolvedRoomId;
+  Object? _storageError;
+  final _saving = <String, Future<void>>{};
+  final _unsaved = <String, OutboxMessage>{};
+  final _handoffIds = <String>{};
 
   String get _receiverId => widget.contact.matrixUserId.trim();
 
@@ -136,9 +142,12 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
     }
     if (!mounted) return;
     setState(() {
+      _handoffIds.addAll(rows.map((row) => row.localId));
+      final byId = {for (final row in rows) row.localId: row, ..._unsaved};
       _rows
         ..clear()
-        ..addAll(rows);
+        ..addAll(byId.values.toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
     });
   }
 
@@ -153,15 +162,19 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
     // 项5-3（缺陷 0919）：首次建房因断网/弱网失败后，网络恢复时自动继续，
     // 不再要求用户手点「重试」。只在「离线/弱 → online/recovering」的恢复
     // 沿触发，且上一次尝试已失败；_opening/_settled 守卫防止风暴重试。
-    if (_error == null || _opening || _settled) return;
-    final recovered = (state == NetworkState.online ||
-            state == NetworkState.recovering) &&
-        previous != null &&
-        previous != state &&
-        (previous == NetworkState.offline || previous == NetworkState.weak);
+    if (_settled) return;
+    final recovered =
+        (state == NetworkState.online || state == NetworkState.recovering) &&
+            previous != null &&
+            previous != state &&
+            (previous == NetworkState.offline || previous == NetworkState.weak);
     if (recovered) {
-      setState(() => _error = null);
-      _start();
+      if (_opening) {
+        _recoveryRequested = true;
+      } else if (_error != null) {
+        setState(() => _error = null);
+        _start();
+      }
     }
   }
 
@@ -169,6 +182,7 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
   void _start() {
     if (_opening) return;
     _opening = true;
+    _recoveryRequested = false;
     unawaited(widget.openRoom().then<void>((room) async {
       if (!mounted || _settled) return;
       if (room.roomId.trim().isEmpty) {
@@ -178,22 +192,9 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
         });
         return;
       }
-      _settled = true;
-      final roomId = room.roomId.trim();
-      // 房间号绑定到该接收方**所有**还没有房间号的行（含上一次进程留下的），
-      // 这样"离线输入 → 杀进程 → 重开 → 建会话"也能续发。
-      //
-      // 刻意**不 await**：进入会话不能被本地写盘拖住。绑定本身是幂等的，
-      // RoomPage 打开时还会再绑一次（同一个接收方 → 同一个房间号），
-      // 因此不依赖这里的完成顺序。
-      unawaited(_bindRoomAndResume(roomId));
-      Navigator.of(context).pop(
-        PendingConversationResult(
-          roomId: roomId,
-          queued: List.of(_queuedTexts),
-          outboxLocalIds: [for (final row in _rows) row.localId],
-        ),
-      );
+      _opening = false;
+      _resolvedRoomId = room.roomId.trim();
+      await _finishReady();
     }, onError: (Object error, StackTrace stackTrace) {
       if (!mounted) return;
       widget.onFailure?.call(error);
@@ -201,22 +202,48 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
         _opening = false;
         _error = error;
       });
+      final state = widget.networkState?.value;
+      if (_recoveryRequested &&
+          (state == NetworkState.online || state == NetworkState.recovering)) {
+        _error = null;
+        _start();
+      }
     }));
   }
 
-  List<String> get _queuedTexts =>
-      [for (final row in _rows) row.content];
+  List<String> get _queuedTexts => [for (final row in _rows) row.content];
 
-  /// 房间就绪后的收尾：绑定房间号 + 让恢复服务立刻尝试派发。
-  ///
-  /// 只在后台跑（页面随即 pop）；[OutboxRecoveryService.resumeRoom] 会再做
-  /// 一次同样的绑定，两者幂等。
-  Future<void> _bindRoomAndResume(String roomId) async {
-    await _outbox.bindRoomForReceiver(_receiverId, roomId);
-    await widget.recovery?.resumeUnsent();
+  Future<void> _finishReady() async {
+    final roomId = _resolvedRoomId;
+    if (_finishing || _settled || roomId == null) return;
+    _finishing = true;
+    try {
+      do {
+        while (_saving.isNotEmpty) {
+          await Future.wait(List<Future<void>>.of(_saving.values));
+        }
+        if (!mounted || _unsaved.isNotEmpty) return;
+        await _outbox.bindRoomForReceiver(_receiverId, roomId);
+        if (_outbox.lastError != null) {
+          if (mounted) setState(() => _storageError = _outbox.lastError);
+          return;
+        }
+      } while (_saving.isNotEmpty);
+      if (!mounted || _unsaved.isNotEmpty) return;
+      _settled = true;
+      unawaited(widget.recovery?.resumeUnsent());
+      Navigator.of(context).pop(PendingConversationResult(
+        roomId: roomId,
+        queued: List.of(_queuedTexts),
+        outboxLocalIds: List.of(_handoffIds),
+      ));
+    } finally {
+      _finishing = false;
+    }
   }
 
   String get _statusLabel {
+    if (_storageError != null) return '消息保存失败，请重试；离开页面前请保留消息内容。';
     if (_error != null) return describeDirectChatFailure(_error);
     final state = widget.networkState?.value;
     return switch (state) {
@@ -229,32 +256,62 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
   }
 
   /// 用户点击发送：**先落盘**（乐观展示先行，同一 localId/txid），
-  /// 再等后台会话就绪。页面/进程在此之后任何时候消失都不丢消息。
+  /// 保存确认前显示“正在保存”，失败保留正文并阻止自动离开页面。
   void _send() {
+    if (_settled) return;
     final text = _input.text.trim();
     if (text.isEmpty) return;
     _input.clear();
     final now = DateTime.now();
     final localId = _outbox.newLocalId();
     final txid = _outbox.newTxid();
+    final row = OutboxMessage(
+      localId: localId,
+      txid: txid,
+      receiverId: _receiverId,
+      content: text,
+      createdAt: now,
+      updatedAt: now,
+    );
     setState(() {
-      _rows.add(OutboxMessage(
-        localId: localId,
-        txid: txid,
-        receiverId: _receiverId,
-        content: text,
-        createdAt: now,
-        updatedAt: now,
-      ));
+      _rows.add(row);
+      _unsaved[localId] = row;
+      _handoffIds.add(localId);
     });
-    unawaited(_outbox
-        .save(
-          receiverId: _receiverId,
-          content: text,
-          localId: localId,
-          txid: txid,
-        )
-        .then((_) => _reloadRows()));
+    _persistRow(row);
+  }
+
+  void _persistRow(OutboxMessage row) {
+    if (_saving.containsKey(row.localId)) return;
+    final save = _outbox.saveMessage(row).then<void>((saved) {
+      if (saved == null) {
+        if (mounted) {
+          setState(() => _storageError =
+              _outbox.lastError ?? StateError('Message could not be saved'));
+        }
+        return;
+      }
+      _unsaved.remove(row.localId);
+      if (mounted) {
+        setState(() => _storageError = _unsaved.isEmpty ? null : _storageError);
+      }
+    }).whenComplete(() {
+      _saving.remove(row.localId);
+      if (mounted) unawaited(_reloadRows());
+    });
+    _saving[row.localId] = save;
+  }
+
+  void _retry() {
+    if (_storageError != null) {
+      for (final row in List<OutboxMessage>.of(_unsaved.values)) {
+        _persistRow(row);
+      }
+      unawaited(_finishReady());
+      return;
+    }
+    setState(() => _error = null);
+    _start();
   }
 
   @override
@@ -281,20 +338,21 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
                     child: Text(
                       _statusLabel,
                       key: const Key('pending-conversation-status'),
-                      style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
+                      style: CupertinoTheme.of(context)
+                          .textTheme
+                          .textStyle
+                          .copyWith(
                             fontSize: 13,
-                            color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                            color: CupertinoColors.secondaryLabel
+                                .resolveFrom(context),
                           ),
                     ),
                   ),
-                  if (_error != null)
+                  if (_error != null || _storageError != null)
                     CupertinoButton(
                       padding: EdgeInsets.zero,
                       minimumSize: Size.zero,
-                      onPressed: () {
-                        setState(() => _error = null);
-                        _start();
-                      },
+                      onPressed: _retry,
                       child: const Text('重试'),
                     ),
                 ],
@@ -303,7 +361,8 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
             Expanded(
               child: ListView(
                 reverse: true,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 children: [
                   for (final row in _rows.reversed)
                     Align(
@@ -311,9 +370,11 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
                       child: Container(
                         key: ValueKey('pending-outbox-${row.localId}'),
                         margin: const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: CupertinoColors.systemGreen.withValues(alpha: 0.14),
+                          color: CupertinoColors.systemGreen
+                              .withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Column(
@@ -321,10 +382,23 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
                           children: [
                             Text(row.content),
                             const SizedBox(height: 2),
-                            // 网络问题只显示"等待发送/等待网络"，绝不显示红色感叹号
-                            // （红色只留给服务端明确拒绝的 failed）。
+                            if (_error != null ||
+                                _storageError != null ||
+                                widget.networkState?.value ==
+                                    NetworkState.offline ||
+                                row.status == OutboxStatus.failed ||
+                                row.status == OutboxStatus.waitingNetwork)
+                              const Icon(
+                                  CupertinoIcons.exclamationmark_circle_fill,
+                                  semanticLabel: '发送未成功',
+                                  color: CupertinoColors.systemRed,
+                                  size: 16),
                             Text(
-                              row.status.label,
+                              _unsaved.containsKey(row.localId)
+                                  ? (_saving.containsKey(row.localId)
+                                      ? '正在保存'
+                                      : '保存失败')
+                                  : row.status.label,
                               style: CupertinoTheme.of(context)
                                   .textTheme
                                   .textStyle
@@ -355,7 +429,8 @@ final class _PendingConversationPageState extends State<PendingConversationPage>
                   const SizedBox(width: 8),
                   CupertinoButton(
                     key: const Key('composer-send'),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     color: CupertinoColors.systemGreen,
                     onPressed: _send,
                     child: const Text('发送'),

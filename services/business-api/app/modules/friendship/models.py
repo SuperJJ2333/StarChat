@@ -41,3 +41,14 @@ class DirectRoomReservation(Base):
     owner_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
     attempt_id: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DirectConversationRoom(Base):
+    """Verified source-room metadata; never stores events or encryption keys."""
+    __tablename__ = 'direct_conversation_rooms'
+    __table_args__ = (UniqueConstraint('user_low_id', 'user_high_id', 'matrix_room_id', name='uq_direct_conversation_source'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_low_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    user_high_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    matrix_room_id: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

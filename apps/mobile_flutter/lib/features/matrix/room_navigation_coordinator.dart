@@ -86,6 +86,8 @@ final class RoomOpenRequest {
     this.onRoomClosed,
     this.outbox = const <String>[],
     this.readOnly = false,
+    this.anchorRoomId,
+    this.outboxLocalIds = const <String>[],
   });
 
   /// 页面与租约的唯一键：群聊与私聊都用 Matrix roomId，绝不用名称/用户 ID。
@@ -98,6 +100,8 @@ final class RoomOpenRequest {
   /// 正式的房间导航 anchor 契约（全局搜索/深链）：进入房间后定位并高亮
   /// 该事件。绝不通过全局变量或 SharedPreferences 传递。
   final String? anchorEventId;
+  final String? anchorRoomId;
+  final List<String> outboxLocalIds;
 
   /// 本次打开的来源（诊断 + 默认网络策略）。见 [RoomOpenSource]。
   final RoomOpenSource source;
@@ -127,31 +131,30 @@ final class RoomOpenRequest {
   final bool readOnly;
 }
 
-/// 逻辑会话归一化：来源为搜索/通知、且 roomId 是登记在案的重复房间时，
-/// 强制只读打开（保留 roomId + anchorEventId 定位）。其余来源（好友资料
-/// 「发消息」、消息列表等）不受影响——它们本来就经 canonical 解析。
+/// All entrances open the logical representative; an anchor retains its source
+/// room so that historical events can be located in the combined timeline.
 RoomOpenRequest normalizeDuplicateRoomOpen(
   RoomOpenRequest request, {
+  String? Function(String roomId)? primaryRoomIdOf,
   bool? Function(String roomId)? isDuplicateRoom,
 }) {
-  if (request.readOnly || isDuplicateRoom == null) return request;
-  final source = request.source;
-  if (source != RoomOpenSource.search &&
-      source != RoomOpenSource.notification) {
+  final primary = primaryRoomIdOf?.call(request.roomId);
+  if (primary == null || primary.isEmpty || primary == request.roomId) {
     return request;
   }
-  if (isDuplicateRoom(request.roomId) != true) return request;
   return RoomOpenRequest(
-    roomId: request.roomId,
+    roomId: primary,
     roomName: request.roomName,
     initialContact: request.initialContact,
     anchorEventId: request.anchorEventId,
+    anchorRoomId: request.anchorRoomId ?? request.roomId,
     source: request.source,
     modeOverride: request.modeOverride,
     onRoomReady: request.onRoomReady,
     onRoomClosed: request.onRoomClosed,
     outbox: request.outbox,
-    readOnly: true,
+    outboxLocalIds: request.outboxLocalIds,
+    readOnly: request.readOnly,
   );
 }
 
@@ -160,28 +163,37 @@ RoomOpenRequest normalizeDuplicateRoomOpen(
 /// 打开流程必须在 `Navigator.push` 之前调用 [register]，在页面退出/失败时
 /// 调用 [release]；协调器据此实现「同一 roomId 只有一个活动 RoomPage」。
 final class RoomRouteHandle {
-  RoomRouteHandle._(this._coordinator, this.roomId);
+  RoomRouteHandle._(
+      this._coordinator, this.roomId, this.physicalRoomId, this.replacedRoute);
 
   final RoomNavigationCoordinator _coordinator;
   final String roomId;
+  final String physicalRoomId;
+  final Route<void>? replacedRoute;
 
   /// 当前已登记的活动路由（未登记或已释放为 null）。
-  Route<void>? get route => _coordinator.activeRoute(roomId);
+  Route<void>? get route => _coordinator._active[roomId];
 
   /// 登记活动路由（push 之前调用）。
   ///
   /// 路由一旦建立就同时结束「正在打开」状态：此后同房间请求走
   /// 「已打开 → 回到原页面」，也避免页面退出后租约取消期间把新的打开
   /// 请求并进一个已经不再开新页面的 opening future。
-  void register(Route<void> route) {
+  void register(Route<void> route, {void Function(RoomOpenRequest)? onReopen}) {
+    if (onReopen != null) _coordinator._reopen[roomId] = onReopen;
     _coordinator._active[roomId] = route;
+    _coordinator._physicalRooms[roomId] = physicalRoomId;
     _coordinator._opening.remove(roomId);
+    final latest = _coordinator._openingAnchors.remove(roomId);
+    if (latest != null) onReopen?.call(latest);
   }
 
   /// 释放登记：只释放自己登记的那条路由，避免误删后来者。
   void release(Route<void> route) {
     if (identical(_coordinator._active[roomId], route)) {
       _coordinator._active.remove(roomId);
+      _coordinator._reopen.remove(roomId);
+      _coordinator._physicalRooms.remove(roomId);
     }
   }
 
@@ -209,20 +221,27 @@ final class RoomNavigationCoordinator {
   RoomNavigationCoordinator({
     required RoomOpenProcedure openRoom,
     required NavigatorState? Function() navigatorOf,
+    String Function(String roomId)? conversationKeyOf,
   })  : _openRoom = openRoom,
-        _navigatorOf = navigatorOf;
+        _navigatorOf = navigatorOf,
+        _conversationKeyOf = conversationKeyOf ?? ((id) => id);
 
   final RoomOpenProcedure _openRoom;
+  final String Function(String roomId) _conversationKeyOf;
   final NavigatorState? Function() _navigatorOf;
   final Map<String, Future<void>> _opening = {};
+  final Map<String, RoomOpenRequest> _openingAnchors = {};
   final Map<String, Route<void>> _active = {};
+  final Map<String, String> _physicalRooms = {};
   bool _disposed = false;
+  int _generation = 0;
 
   @visibleForTesting
-  bool isOpening(String roomId) => _opening.containsKey(roomId.trim());
+  bool isOpening(String roomId) =>
+      _opening.containsKey(_conversationKeyOf(roomId.trim()));
 
-  @visibleForTesting
-  Route<void>? activeRoute(String roomId) => _active[roomId.trim()];
+  Route<void>? activeRoute(String roomId) =>
+      _active[_conversationKeyOf(roomId.trim())];
 
   @visibleForTesting
   int get openingCount => _opening.length;
@@ -231,14 +250,20 @@ final class RoomNavigationCoordinator {
   List<String> get activeRoomIds => List.unmodifiable(_active.keys);
 
   /// 打开（或回到）某个房间。返回值在页面退出、打开失败或复用既有请求时完成。
+  final _reopen = <String, void Function(RoomOpenRequest)>{};
+
   Future<void> open(RoomOpenRequest request) {
-    final roomId = request.roomId.trim();
+    if (request.roomId.trim().isEmpty || _disposed) return Future<void>.value();
+    final roomId = _conversationKeyOf(request.roomId.trim());
     if (roomId.isEmpty || _disposed) return Future<void>.value();
 
     // 已打开优先于正在打开：打开流程会一直持有到页面关闭，因此「正在打开」
     // 不能覆盖「已打开」，否则再次请求会并进旧的 future 而不是回到原页面。
     final active = _active[roomId];
-    if (active != null && active.isActive) {
+    if (active != null &&
+        active.isActive &&
+        _physicalRooms[roomId] == request.roomId) {
+      _reopen[roomId]?.call(request);
       // 情况 2：房间已打开——回到原页面，绝不 push 第二层。
       _navigatorOf()?.popUntil((candidate) => identical(candidate, active));
       return Future<void>.value();
@@ -246,39 +271,76 @@ final class RoomNavigationCoordinator {
     if (active != null) _active.remove(roomId); // 失效登记兜底
 
     final opening = _opening[roomId];
-    if (opening != null) return opening; // 情况 1：合并并发打开
+    if (opening != null) {
+      if (request.anchorEventId?.isNotEmpty == true) {
+        _openingAnchors[roomId] = request;
+      }
+      return opening;
+    }
 
     // 先登记 opening 再启动流程：打开流程在第一个 await 之前会同步执行
     // 「取租约前」的一段（甚至直接 register 路由），必须先占位才能被合并。
     final completer = Completer<void>();
     final pending = completer.future;
     _opening[roomId] = pending;
-    unawaited(_run(roomId, request).then((_) {
-      if (identical(_opening[roomId], pending)) _opening.remove(roomId);
+    unawaited(_run(roomId, request, active?.isActive == true ? active : null)
+        .then((_) {
+      if (identical(_opening[roomId], pending)) {
+        _opening.remove(roomId);
+        _openingAnchors.remove(roomId);
+      }
       if (!completer.isCompleted) completer.complete();
     }, onError: (Object error, StackTrace stackTrace) {
-      if (identical(_opening[roomId], pending)) _opening.remove(roomId);
+      if (identical(_opening[roomId], pending)) {
+        _opening.remove(roomId);
+        _openingAnchors.remove(roomId);
+      }
       if (!completer.isCompleted) completer.completeError(error, stackTrace);
     }));
     return pending;
   }
 
-  Future<void> _run(String roomId, RoomOpenRequest request) async {
-    final handle = RoomRouteHandle._(this, roomId);
+  Future<void> _run(String roomId, RoomOpenRequest request,
+      Route<void>? replacedRoute) async {
+    final generation = _generation;
+    final previousPhysicalRoom = _physicalRooms[roomId];
+    final previousReopen = _reopen[roomId];
+    final handle =
+        RoomRouteHandle._(this, roomId, request.roomId, replacedRoute);
     try {
       await _openRoom(request, handle);
     } catch (_) {
       // 打开失败不得留下假 active；opening 由 open() 的 whenComplete 清理。
       final route = _active[roomId];
-      if (route == null || !route.isActive) _active.remove(roomId);
+      if (route == null || !route.isActive) {
+        _active.remove(roomId);
+        _physicalRooms.remove(roomId);
+        _reopen.remove(roomId);
+        // The old page stays usable until replacement is actually pushed.
+        // Restore all route identity after acquisition/push failure, but never
+        // resurrect a prior account's route after clear/dispose.
+        if (!_disposed &&
+            generation == _generation &&
+            replacedRoute?.isActive == true) {
+          _active[roomId] = replacedRoute!;
+          if (previousPhysicalRoom != null) {
+            _physicalRooms[roomId] = previousPhysicalRoom;
+          }
+          if (previousReopen != null) _reopen[roomId] = previousReopen;
+        }
+      }
       rethrow;
     }
   }
 
   /// 账号切换/退出登录：清空登记，旧账号的房间路由请求不得泄漏到下一个账号。
   void clear() {
+    _generation++;
     _opening.clear();
+    _openingAnchors.clear();
     _active.clear();
+    _physicalRooms.clear();
+    _reopen.clear();
   }
 
   void dispose() {

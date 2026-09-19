@@ -55,45 +55,28 @@ void main() {
     ];
     final aggregated =
         aggregateConversationHits(hits, primaryRoomIdOf: (_) => null);
-    expect(
-        aggregated.map((entry) => entry.roomId).toSet(), {'!a:test', '!b:test'});
+    expect(aggregated.map((entry) => entry.roomId).toSet(),
+        {'!a:test', '!b:test'});
   });
 
-  test('项3：normalizeDuplicateRoomOpen 仅对搜索/通知来源的孤儿房间置只读',
+  test('all entrances normalize to one logical page and retain source anchors',
       () {
-        RoomOpenRequest request(RoomOpenSource source) => RoomOpenRequest(
-            roomId: '!orphan:test',
-            roomName: '好友A',
-            anchorEventId: r'$in-orphan',
-            source: source);
-
-        final searchReadOnly = normalizeDuplicateRoomOpen(
-            request(RoomOpenSource.search),
-            isDuplicateRoom: (roomId) => roomId == '!orphan:test');
-        expect(searchReadOnly.readOnly, isTrue);
-        expect(searchReadOnly.roomId, '!orphan:test',
-            reason: '只读归一化保留 sourceRoomId 定位');
-        expect(searchReadOnly.anchorEventId, r'$in-orphan');
-
-        expect(
-            normalizeDuplicateRoomOpen(request(RoomOpenSource.notification),
-                isDuplicateRoom: (roomId) => roomId == '!orphan:test').readOnly,
-            isTrue);
-        // 非孤儿房间：不变。
-        expect(
-            normalizeDuplicateRoomOpen(request(RoomOpenSource.search),
-                    isDuplicateRoom: (_) => false)
-                .readOnly,
-            isFalse);
-        // 其他来源（好友资料/消息列表）即使命中登记表也不置只读——它们走
-        // canonical 解析，不会落在孤儿房间上。
-        expect(
-            normalizeDuplicateRoomOpen(
-                    request(RoomOpenSource.contactProfile),
-                    isDuplicateRoom: (_) => true)
-                .readOnly,
-            isFalse);
-      });
+    for (final source in RoomOpenSource.values) {
+      final result = normalizeDuplicateRoomOpen(
+          RoomOpenRequest(
+              roomId: '!orphan:test',
+              roomName: '好友A',
+              anchorEventId: r'$old',
+              source: source,
+              outboxLocalIds: const ['saved-id']),
+          primaryRoomIdOf: (_) => '!primary:test');
+      expect(result.roomId, '!primary:test');
+      expect(result.anchorRoomId, '!orphan:test');
+      expect(result.anchorEventId, r'$old');
+      expect(result.readOnly, isFalse);
+      expect(result.outboxLocalIds, ['saved-id']);
+    }
+  });
 
   test('项3：控制器接线——命中按逻辑会话归组', () async {
     final controller = GlobalSearchController(

@@ -2223,6 +2223,34 @@
         "title": "DirectCaibiGrantBody",
         "type": "object"
       },
+      "DirectConversationAssociationsResponse": {
+        "properties": {
+          "matrix_room_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix Room Id"
+          },
+          "room_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Room Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "matrix_room_id",
+          "room_ids"
+        ],
+        "title": "DirectConversationAssociationsResponse",
+        "type": "object"
+      },
       "DirectConversationBody": {
         "additionalProperties": false,
         "properties": {
@@ -2298,6 +2326,46 @@
           "can_publish"
         ],
         "title": "DirectConversationClaimResponse",
+        "type": "object"
+      },
+      "DirectConversationClaimV2Response": {
+        "properties": {
+          "can_publish": {
+            "title": "Can Publish",
+            "type": "boolean"
+          },
+          "matrix_room_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix Room Id"
+          },
+          "may_create": {
+            "title": "May Create",
+            "type": "boolean"
+          },
+          "reservation_id": {
+            "title": "Reservation Id",
+            "type": "string"
+          },
+          "room_alias_localpart": {
+            "title": "Room Alias Localpart",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matrix_room_id",
+          "may_create",
+          "can_publish",
+          "room_alias_localpart",
+          "reservation_id"
+        ],
+        "title": "DirectConversationClaimV2Response",
         "type": "object"
       },
       "DirectConversationPublishBody": {
@@ -15960,6 +16028,140 @@
         ]
       }
     },
+    "/api/v1/direct-conversations/associations": {
+      "get": {
+        "operationId": "associations_api_v1_direct_conversations_associations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "peer_user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Peer User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationAssociationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Associations",
+        "tags": [
+          "friends"
+        ]
+      },
+      "post": {
+        "operationId": "associate_api_v1_direct_conversations_associations_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationAssociationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Associate",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
     "/api/v1/direct-conversations/claim": {
       "post": {
         "operationId": "claim_direct_conversation_api_v1_direct_conversations_claim_post",
@@ -16027,6 +16229,73 @@
         ]
       }
     },
+    "/api/v1/direct-conversations/claim-v2": {
+      "post": {
+        "operationId": "claim_v2_api_v1_direct_conversations_claim_v2_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationClaimBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationClaimV2Response"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Claim V2",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
     "/api/v1/direct-conversations/publish": {
       "post": {
         "operationId": "publish_direct_conversation_api_v1_direct_conversations_publish_post",
@@ -16089,6 +16358,73 @@
           }
         ],
         "summary": "Publish Direct Conversation",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/api/v1/direct-conversations/recover": {
+      "post": {
+        "operationId": "recover_api_v1_direct_conversations_recover_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationPublishBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationPublishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Recover",
         "tags": [
           "friends"
         ]

@@ -58,12 +58,15 @@ void main() {
         final Object body = malformed
             ? {}
             : switch (request.url.path) {
-                '/api/v1/direct-conversations/claim' => {
+                '/api/v1/direct-conversations/claim-v2' => {
                     'matrix_room_id': null,
                     'may_create': true,
-                    'can_publish': true
+                    'can_publish': true,
+                    'room_alias_localpart':
+                        'chatflow_dm_0123456789abcdef0123456789abcdef',
+                    'reservation_id': 'reservation'
                   },
-                '/api/v1/direct-conversations/publish' => {
+                '/api/v1/direct-conversations/recover' => {
                     'matrix_room_id': '!one:test'
                   },
                 _ => {'matrix_room_id': null},

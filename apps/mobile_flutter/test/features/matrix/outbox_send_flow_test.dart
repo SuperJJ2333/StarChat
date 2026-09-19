@@ -49,7 +49,9 @@ final class _FakeTransport
 
   @override
   Future<String> sendRedPacketReference(String packetId, String greeting,
-          {String? mode, String? recipientId, String? recipientMatrixId}) async =>
+          {String? mode,
+          String? recipientId,
+          String? recipientMatrixId}) async =>
       'event-red-packet';
 
   @override
@@ -82,8 +84,8 @@ void main() {
   RoomTimelineController controllerFor(_FakeTransport transport) =>
       RoomTimelineController(transport,
           networkStateManager: manager,
-          outboxJournal:
-              outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+          outboxJournal: outbox.journalFor(
+              roomId: '!room:test', receiverId: '@peer:test'));
 
   group('会话内发送：先落盘再派发', () {
     test('发送中的消息已持久化（status=sending），送达后从 outbox 移除', () async {
@@ -179,20 +181,19 @@ void main() {
       controller.dispose();
     });
 
-    test('互动门禁拒绝（canSendNow=false）→ 不触达传输层，但原文仍落盘为 failed',
-        () async {
+    test('互动门禁拒绝（canSendNow=false）→ 不触达传输层，但原文仍落盘为 failed', () async {
       final transport = _FakeTransport();
       final controller = RoomTimelineController(transport,
           canSendNow: () => false,
           networkStateManager: manager,
-          outboxJournal:
-              outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+          outboxJournal: outbox.journalFor(
+              roomId: '!room:test', receiverId: '@peer:test'));
 
       await controller.sendText('非好友');
 
       expect(transport.txids, isEmpty, reason: '门禁拒绝不触达传输层');
-      expect(controller.messages.single.deliveryState,
-          RoomDeliveryState.failed);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.failed);
       final pending = await outbox.unsent();
       expect(pending.single.status, OutboxStatus.failed,
           reason: '被本地门禁拒绝的原文也要留住，重进会话仍可见并可重试');
@@ -250,8 +251,7 @@ void main() {
       await controller.sendText(row.content, outboxRow: row);
       await pumpEventQueue();
 
-      expect(transport.txids, <String>[row.txid],
-          reason: '两次尝试只允许一次真正的服务端发送');
+      expect(transport.txids, <String>[row.txid], reason: '两次尝试只允许一次真正的服务端发送');
       expect(controller.messages, hasLength(1), reason: '时间线也不能出现两条');
 
       inFlight.complete(r'$server');
@@ -275,7 +275,8 @@ void main() {
       await pumpEventQueue();
 
       expect(transport.txids, isEmpty, reason: 'failed 绝不自动重发');
-      expect(controller.messages.single.deliveryState, RoomDeliveryState.failed);
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.failed);
       expect(controller.messages.single.stableId, row.txid);
       controller.dispose();
     });
@@ -297,8 +298,7 @@ void main() {
         rows: <OutboxMessage>[row('你好'), row('只落盘了一条')],
       );
 
-      expect(orphaned, <String>['你好'],
-          reason: '两条"你好"抵扣一条落盘行，另一条走兜底；其余不重复发送');
+      expect(orphaned, <String>['你好'], reason: '两条"你好"抵扣一条落盘行，另一条走兜底；其余不重复发送');
     });
 
     test('没有落盘行时全部走兜底（降级路径），空文本被忽略', () {
@@ -308,5 +308,26 @@ void main() {
         <String>['a', 'b'],
       );
     });
+  });
+  test(
+      'historical outbox remains visible but never reroutes its transaction to primary',
+      () async {
+    final transport = _FakeTransport();
+    final controller =
+        RoomTimelineController(transport, outboxRoomId: '!primary:test');
+    final row = OutboxMessage(
+        localId: 'old-local',
+        txid: 'old-tx',
+        receiverId: '@peer:test',
+        content: 'old pending',
+        roomId: '!old:test',
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026));
+    await controller.sendText(row.content, outboxRow: row);
+    expect(controller.messages.single.text, 'old pending');
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.failed);
+    await controller.retry(row.txid);
+    expect(transport.txids, isEmpty);
+    controller.dispose();
   });
 }

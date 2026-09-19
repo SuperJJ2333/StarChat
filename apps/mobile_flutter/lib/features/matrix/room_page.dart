@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
+import 'logical_conversation_timeline.dart';
+import 'room_navigation_coordinator.dart';
 import 'timeline_scroll_anchor.dart';
 import 'nudge_rate_limiter.dart';
 // 会话聊天页（RoomPage）：私聊与群聊共用的消息时间线与交互。
@@ -171,6 +174,10 @@ class RoomPage extends StatefulWidget {
     this.initialOutbox = const <String>[],
     this.outbox,
     this.readOnly = false,
+    this.initialAnchorRoomId,
+    this.navigationRequests,
+    this.requestOutboxDrain,
+    this.initialOutboxLocalIds = const <String>[],
   });
 
   final BusinessApiClient api;
@@ -196,6 +203,10 @@ class RoomPage extends StatefulWidget {
   final bool readOnly;
 
   final String? initialAnchorEventId;
+  final String? initialAnchorRoomId;
+  final ValueListenable<RoomOpenRequest>? navigationRequests;
+  final VoidCallback? requestOutboxDrain;
+  final List<String> initialOutboxLocalIds;
 
   /// Offline First：pending conversation 期间输入、尚未发送的文本。
   /// 页面首次加载完成后按顺序自动发送（弱网/无网时由消息状态机进入
@@ -479,7 +490,43 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (mounted) _mentionRevision.value++;
   }
 
+  final Set<String> _visibleReadIds = {};
+  final Set<String> _acknowledgedVisibleIds = {};
+  bool _immediateVisibleReceipt = false;
+  void _observeVisibleReadReceipts() {
+    if (!_canSyncReadReceipt ||
+        _logicalTimeline is! RoomVisibleReadCapability ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.paused) {
+      return;
+    }
+    final viewport = _timelineViewportKey.currentContext?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return;
+    final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
+    var changed = false;
+    for (final entry in messageKeys.entries) {
+      final box = entry.value.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) continue;
+      final rect = box.localToGlobal(Offset.zero) & box.size;
+      if (!_acknowledgedVisibleIds.contains(entry.key) &&
+          rect.overlaps(bounds) &&
+          !rect.intersect(bounds).isEmpty) {
+        changed = _visibleReadIds.add(entry.key) || changed;
+      }
+    }
+    if (changed) {
+      _readReceiptDirty = true;
+      if (_immediateVisibleReceipt) {
+        _immediateVisibleReceipt = false;
+        unawaited(_trackMatrixOperation(_sendReadReceipt()));
+      } else {
+        _scheduleReadReceipt(const Duration(milliseconds: 800));
+      }
+    }
+  }
+
   void _observeVisibleMentions() {
+    _observeVisibleReadReceipts();
     final state = unreadMentions;
     if (!mounted || state == null || !state.hasPending) return;
     if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
@@ -565,12 +612,49 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 注册到发送句柄注册表，供调度器在网络恢复时把持久化行交回本会话发送。
   _RoomOutboxSender? _outboxSender;
+  PersistentOutboxManager? _observedOutbox;
+
+  void _outboxChanged() {
+    if (!mounted || _disposing || widget.roomLease.canceled) return;
+    unawaited(controller?.reconcileOutboxStatuses().catchError((Object _) {}));
+  }
 
   OutboxJournal? _buildOutboxJournal() {
     final outbox = _outbox;
     if (outbox == null) return null;
-    return outbox.journalFor(
-        roomId: roomInfo.id, receiverId: _outboxReceiverId);
+    if (_outboxReceiverId == roomInfo.id) {
+      return outbox.journalFor(
+          roomId: roomInfo.id, receiverId: _outboxReceiverId);
+    }
+    return RoomOutboxJournal(
+        manager: outbox,
+        roomId: null,
+        receiverId: _outboxReceiverId,
+        beforeClaim: (localId) async {
+          var row = await outbox.store.byLocalId(localId);
+          if (row == null || !mounted || _disposing) return false;
+          if (row.roomId == null) {
+            final contact =
+                _identityCache.contactsByMatrixId[_outboxReceiverId] ??
+                    widget.initialContact;
+            if (contact == null) throw StateError('当前不可发送消息');
+            final canonical = await widget.api
+                    .canonicalDirectRoomId(contact.userId) ??
+                await widget.api
+                    .registerDirectConversation(contact.userId, roomInfo.id);
+            if (!mounted || _disposing || widget.roomLease.canceled) {
+              return false;
+            }
+            await outbox.bindRoomForReceiver(_outboxReceiverId, canonical,
+                localIds: [localId]);
+            row = await outbox.store.byLocalId(localId);
+          }
+          if (row?.roomId != roomInfo.id) {
+            widget.requestOutboxDrain?.call();
+            return false;
+          }
+          return true;
+        });
   }
 
   /// 接收方：单聊取对端 Matrix 用户 ID（房间信息 → 身份缓存 → 入口联系人），
@@ -620,6 +704,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     MessageTextSelectionSession.dismissActive();
     callAudioActivity.addListener(_handleCallAudioActivity);
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
+    widget.navigationRequests?.addListener(_onNavigationRequest);
     roomInfo = widget.roomLease.roomInfo;
     _supportIdentities = SupportIdentityRepository(widget.api);
     peer = widget.initialContact;
@@ -643,9 +728,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       });
     }
     unawaited(_trackMatrixOperation(_refreshJoinedMemberCount()));
-    unawaited(FlashPhotoViewedStore.load(
-            'matrix:${roomInfo.currentUserId ?? ''}')
-        .then((store) {
+    unawaited(
+        FlashPhotoViewedStore.load('matrix:${roomInfo.currentUserId ?? ''}')
+            .then((store) {
       if (!mounted) return;
       setState(() => _flashViewed = store);
     }));
@@ -882,6 +967,30 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
   }
 
+  RoomTimelineCapability? _logicalTimeline;
+
+  void _onNavigationRequest() {
+    final request = widget.navigationRequests?.value;
+    final event = request?.anchorEventId;
+    if (event != null && controller != null) {
+      unawaited(_navigateToLogicalAnchor(event, request!.anchorRoomId));
+    }
+  }
+
+  Future<void> _navigateToLogicalAnchor(String event, String? source) async {
+    try {
+      if (source != null) {
+        await widget.roomLease.hintLogicalEventSource(event, source);
+      }
+      if (!mounted || _disposing) return;
+      await _scrollToMessage(event);
+    } catch (_) {
+      if (mounted && !_disposing) {
+        await _showError('消息暂时无法定位');
+      }
+    }
+  }
+
   Future<void> _load() async {
     try {
       final accountId = roomInfo.currentUserId;
@@ -901,7 +1010,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // （不等待服务器）；历史分页 requestHistory 默认 30 条/页
           // （Room.defaultHistoryCount，处于 30~50 规范区间），
           // 由上滑接近顶部时按页追加（见 _onMessageScroll）。
-          await widget.roomLease.openRoomTimeline(
+          await widget.roomLease.openLogicalRoomTimeline(
+        anchorRoomId: widget.navigationRequests?.value.anchorRoomId ??
+            widget.initialAnchorRoomId,
+        anchorEventId: widget.navigationRequests?.value.anchorEventId ??
+            widget.initialAnchorEventId,
         onUpdate: () {
           _scheduleRoomMetadataRefresh();
           controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
@@ -912,19 +1025,25 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         timeline.dispose();
         return;
       }
+      _logicalTimeline = timeline;
       controller = RoomTimelineController(
         windowed: true,
         // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
         // 发送必失败，消息进入本地 failed 状态）。拉黑状态取自业务 API
         // 投影（GET /blocks + 本地立即更新），不做写死放行。
-        canSendNow: () => InteractionPermission.resolve(
-          isFriend: _peerIsFriend(),
-          isBlocked: blockedContacts.isBlocked(_peerUserId()),
-        ).canSendMessage(),
+        canSendNow: () =>
+            !widget.readOnly &&
+            InteractionPermission.resolve(
+              isFriend: _peerIsFriend(),
+              isBlocked: blockedContacts.isBlocked(_peerUserId()),
+            ).canSendMessage(),
         // Offline First：发送前先落盘；重试/重启复用同一 txid。
         outboxJournal: _outboxJournal,
+        outboxRoomId: roomInfo.id,
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
+      _observedOutbox = _outbox;
+      _observedOutbox?.addListener(_outboxChanged);
       // 调度器只有在房间已打开时才允许派发持久化行；句柄随页面销毁注销。
       final sender = _RoomOutboxSender(this);
       _outboxSender = sender;
@@ -977,6 +1096,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 服务端明确拒绝过的 `failed` 行只恢复展示（红色感叹号 + 点击重试），
   /// 绝不自动重发。
   Future<void> _flushInitialOutbox() async {
+    if (widget.readOnly) return;
     final outbox = _outbox;
     final controller = this.controller;
     if (controller == null) return;
@@ -986,29 +1106,46 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     // 1) 先把本会话接收方还没有房间号的行绑定到本房间（幂等）：用户可能在
     //    pending conversation 里离线输入后杀掉进程，重开时由这里接手。
-    await _adoptUnboundOutboxRows(outbox);
+    // New direct messages bind only after canonical verification in the journal.
     if (!mounted || widget.roomLease.canceled) return;
     // 2) 读取本房间所有未送达行（queued / waitingNetwork / failed）。
     var rows = <OutboxMessage>[];
     try {
-      rows = await outbox.store.query(
-        unsent: true,
-        roomId: roomInfo.id,
-        accountId: outbox.accountId.isEmpty ? null : outbox.accountId,
-      );
+      final sources = widget.roomLease.owner
+          .logicalRoomSourcesSync(roomInfo.id)
+          .toSet()
+        ..add(roomInfo.id);
+      for (final source in sources) {
+        rows.addAll(await outbox.store.query(
+            unsent: true,
+            roomId: source,
+            accountId: outbox.accountId.isEmpty ? null : outbox.accountId));
+      }
+      if (_outboxReceiverId != roomInfo.id) {
+        rows.addAll((await outbox.store.query(
+                unsent: true,
+                receiverId: _outboxReceiverId,
+                accountId: outbox.accountId.isEmpty ? null : outbox.accountId))
+            .where((row) => row.roomId == null));
+      }
+      rows.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     } catch (_) {
       rows = const <OutboxMessage>[];
     }
     if (!mounted || widget.roomLease.canceled) return;
     // 3) 原文兜底：抵扣掉已经由持久化行拥有的内容。
     final orphaned = textsWithoutOutboxRows(
-        texts: widget.initialOutbox, rows: rows);
+        texts: widget.initialOutboxLocalIds.isEmpty
+            ? widget.initialOutbox
+            : const [],
+        rows: rows);
     await _sendRawOutboxTexts(controller, orphaned);
     if (!mounted || widget.roomLease.canceled) return;
     // 4) 持久化行：失败的只恢复展示，其余用原 txid 派发。
     for (final row in rows) {
       if (!mounted || widget.roomLease.canceled) return;
-      if (row.status == OutboxStatus.failed) {
+      if ((row.roomId != null && row.roomId != roomInfo.id) ||
+          row.status == OutboxStatus.failed) {
         controller.restoreOutboxMessage(row);
         continue;
       }
@@ -1028,16 +1165,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ];
 
   /// 认领本会话接收方"还没有房间号"的持久化行（幂等）。
-  Future<void> _adoptUnboundOutboxRows(PersistentOutboxManager outbox) async {
-    final receiverId = _outboxReceiverId;
-    if (receiverId == roomInfo.id) return;
-    try {
-      await outbox.bindRoomForReceiver(receiverId, roomInfo.id);
-    } catch (_) {
-      // 绑定失败不阻塞进入会话；行仍留在 outbox（下次进入再绑）。
-    }
-  }
-
   /// 降级路径：没有持久化行的原文按顺序新建发送。
   Future<void> _sendRawOutboxTexts(
       RoomTimelineController controller, List<String> texts) async {
@@ -1464,15 +1591,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
   }
 
-  MessageInteractionService? get _interaction {
-    final userId = roomInfo.currentUserId;
-    if (controller == null || userId == null) return null;
-    return MessageInteractionService(
-        backend: widget.roomLease, roomId: roomInfo.id, currentUserId: userId);
-  }
-
-  Future<DateTime?> _serverNow() => widget.roomLease.serverNow();
-
   /// 「拍摄」入口：拍摄成功即**自动加密发送**（不进入“查看照片”页）；
   /// 发送期间优先解码 200px 缩略图作为暂存内容先展示，提升发送体验。
   Future<void> _captureAndSendImage() async {
@@ -1684,8 +1802,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (!mounted) return null;
     // 会话缓存键沿用既有键形状（账号|房间|媒体|版本|规格）。
     _posterKeys.putIfAbsent(
-        messageId,
-        () => videoPosterPipeline.keyFor(messageId));
+        messageId, () => videoPosterPipeline.keyFor(messageId));
     final outcome = await videoPosterPipeline.resolve(messageId);
     if (!mounted) return null;
     if (outcome.hasPoster) {
@@ -1724,7 +1841,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _writeCachedVideoPoster(String messageId, Uint8List bytes) async {
+  Future<void> _writeCachedVideoPoster(
+      String messageId, Uint8List bytes) async {
     if (bytes.isEmpty) return;
     await MediaCache.store(
       roomInfo.id,
@@ -1753,7 +1871,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
   }
 
-
   bool _isAnimatedImage(RoomMessageViewModel message) =>
       message.mimeType?.toLowerCase().split(';').first.trim() == 'image/gif' ||
       message.text.toLowerCase().endsWith('.gif') ||
@@ -1761,10 +1878,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           imageMemoryCache.get(_mediaKey(message.id).cacheId) ?? Uint8List(0));
 
   TrustedMediaHashes? _mediaHashes(String eventId) =>
-      widget.roomLease.mediaHashes(eventId);
+      widget.roomLease.leaseForEvent(eventId).mediaHashes(eventId);
 
   MediaCacheKey _mediaKey(String eventId, {bool thumbnail = false}) =>
-      widget.roomLease.mediaCacheKey(eventId, thumbnail: thumbnail);
+      widget.roomLease
+          .leaseForEvent(eventId)
+          .mediaCacheKey(eventId, thumbnail: thumbnail);
 
   Future<Uint8List> _downloadMedia(String eventId) =>
       controller!.loadAttachment(eventId);
@@ -1854,8 +1973,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         return _cacheSentImage(
           null,
           _enqueueMedia(() async {
-            final prepared =
-                await prepareGalleryMedia(photo, original: true, isGroup: isGroup);
+            final prepared = await prepareGalleryMedia(photo,
+                original: true, isGroup: isGroup);
             // 发送端原图仅驻留内存（马赛克渲染与长按查看复用）。
             await imageMemoryCache.putIfAbsent(
               _mediaKey(transactionId).cacheId,
@@ -2540,9 +2659,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           resolveBusinessUser: isGroup ? widget.api.lookupUserByMatrixId : null,
           avatarMedia: widget.roomLease,
           // 私聊对端资料未就绪时才允许从通讯录选择；群聊永不使用通讯录。
-          contactsSource: isGroup
-              ? null
-              : BusinessChatTransferContactsSource(widget.api),
+          contactsSource:
+              isGroup ? null : BusinessChatTransferContactsSource(widget.api),
           onSent: () => Navigator.pop(pageContext),
         ),
       ),
@@ -2793,20 +2911,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             },
             mediaCategory: _ordinarySearchMediaAllowed(message)
                 ? switch (message.kind) {
-              RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
-              RoomMessageKind.image
-                  when message.mimeType?.startsWith('video/') == true =>
-                ChatSearchMediaCategory.imageVideo,
-              RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
-              RoomMessageKind.file => ChatSearchMediaCategory.file,
-              RoomMessageKind.text
-                  when RegExp(
-                    'https?://[^\\\\s<>"]+',
-                    caseSensitive: false,
-                  ).hasMatch(message.text) =>
-                ChatSearchMediaCategory.link,
-              _ => null,
-            }
+                    RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
+                    RoomMessageKind.image
+                        when message.mimeType?.startsWith('video/') == true =>
+                      ChatSearchMediaCategory.imageVideo,
+                    RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
+                    RoomMessageKind.file => ChatSearchMediaCategory.file,
+                    RoomMessageKind.text
+                        when RegExp(
+                          'https?://[^\\\\s<>"]+',
+                          caseSensitive: false,
+                        ).hasMatch(message.text) =>
+                      ChatSearchMediaCategory.link,
+                    _ => null,
+                  }
                 : null,
             hasMedia: _ordinarySearchMediaAllowed(message) &&
                 message.kind != RoomMessageKind.text,
@@ -3268,8 +3386,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           loadOriginal: () {
             _mediaPolicyFor(message)
                 .assertOrdinaryMediaAllowed('gallery.original');
-            return withMediaLoadPriority(
-                MediaLoadPriority.interactive,
+            return withMediaLoadPriority(MediaLoadPriority.interactive,
                 () => controller!.loadAttachment(message.id));
           },
           originalSize: message.attachmentSize,
@@ -3430,22 +3547,25 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         RoomMessageKind.image => message.isFlashPhoto
             ? _flashPhotoBubble(message)
             : LayoutBuilder(
-            builder: (context, constraints) => ContainImageBubble(
-              key: ValueKey('image-${message.stableId}'),
-              sourceIdentity: (message.stableId, _previewKey(message).identity),
-              initialBytes: _cachedImagePreview(message),
-              loadCached: () => _readCachedImagePreview(message),
-              load: () => _loadImagePreview(message),
-              isScrolling: messageListScrolling,
-              deferLoading:
-                  message.deliveryState == RoomDeliveryState.sending &&
-                      message.id == message.stableId,
-              sourceSize: _imageSourceSize(message),
-              availableWidth: constraints.maxWidth,
-              availableHeight: MediaQuery.of(context).size.height,
-              onTap: () => _openImageViewer(message),
-            ),
-          ),
+                builder: (context, constraints) => ContainImageBubble(
+                  key: ValueKey('image-${message.stableId}'),
+                  sourceIdentity: (
+                    message.stableId,
+                    _previewKey(message).identity
+                  ),
+                  initialBytes: _cachedImagePreview(message),
+                  loadCached: () => _readCachedImagePreview(message),
+                  load: () => _loadImagePreview(message),
+                  isScrolling: messageListScrolling,
+                  deferLoading:
+                      message.deliveryState == RoomDeliveryState.sending &&
+                          message.id == message.stableId,
+                  sourceSize: _imageSourceSize(message),
+                  availableWidth: constraints.maxWidth,
+                  availableHeight: MediaQuery.of(context).size.height,
+                  onTap: () => _openImageViewer(message),
+                ),
+              ),
         RoomMessageKind.file => WeChatAttachmentTile(
             name: message.text,
             progress: 1,
@@ -3487,8 +3607,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 senderAvatar: _avatar(message),
                 identityCache: _identityCache,
                 redPacketMode: message.redPacketMode,
-                restrictedRecipientName:
-                    _financeCounterpartyName(message.redPacketRecipientMatrixId),
+                restrictedRecipientName: _financeCounterpartyName(
+                    message.redPacketRecipientMatrixId),
               ),
         RoomMessageKind.transfer => message.transferId == null
             ? WeChatTransferCard(
@@ -3511,8 +3631,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 senderName: _senderDisplayName(message),
                 senderAvatar: _avatar(message),
                 identityCache: _identityCache,
-                restrictedRecipientName: _financeCounterpartyName(
-                    message.transferReceiverMatrixId),
+                restrictedRecipientName:
+                    _financeCounterpartyName(message.transferReceiverMatrixId),
               ),
         RoomMessageKind.system => Text(
             message.text,
@@ -4124,8 +4244,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           _selectedReplyExcerpt = overrideText;
         });
       case MessageAction.recall:
-        final interaction = _interaction;
-        final serverNow = await _serverNow();
+        final sourceLease = widget.roomLease.leaseForEvent(message.id);
+        final interaction = roomInfo.currentUserId == null
+            ? null
+            : MessageInteractionService(
+                backend: sourceLease,
+                roomId: sourceLease.roomId,
+                currentUserId: roomInfo.currentUserId!);
+        final serverNow = await sourceLease.serverNow();
         if (interaction == null || serverNow == null) return;
         recalledDrafts[message.id] = message.text;
         await interaction.recall(
@@ -4219,12 +4345,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     try {
       frozen = <MatrixOutgoingForwardMessage>[
         for (var index = 0; index < messages.length; index++)
-          matrix.snapshotForwardSource(
-            messages[index].id,
-            selectedPlainText: selectedTextOverride != null && index == 0
-                ? selectedTextOverride
-                : null,
-          ),
+          matrix.leaseForEvent(messages[index].id).snapshotForwardSource(
+                messages[index].id,
+                selectedPlainText: selectedTextOverride != null && index == 0
+                    ? selectedTextOverride
+                    : null,
+              ),
       ];
     } on StateError {
       if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
@@ -4353,14 +4479,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   bool _initialAnchorApplied = false;
 
   void _applyInitialAnchorIfNeeded() {
-    final anchor = widget.initialAnchorEventId;
+    final anchor = widget.navigationRequests?.value.anchorEventId ??
+        widget.initialAnchorEventId;
     if (_initialAnchorApplied || anchor == null || anchor.isEmpty) return;
     final timeline = controller;
     if (timeline == null || timeline.messages.isEmpty) return;
     _initialAnchorApplied = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_scrollToMessage(anchor));
+      unawaited(_navigateToLogicalAnchor(
+          anchor,
+          widget.navigationRequests?.value.anchorRoomId ??
+              widget.initialAnchorRoomId));
     });
   }
 
@@ -4383,7 +4513,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             senderName: _senderDisplayName(message),
             timestamp: message.timestamp,
             body: message.text,
-            roomId: roomInfo.id,
+            roomId: (_logicalTimeline is RoomEventSourceCapability
+                    ? (_logicalTimeline as RoomEventSourceCapability)
+                        .sourceRoomId(message.id)
+                    : null) ??
+                roomInfo.id,
             roomName: roomInfo.name,
             isGroup: isGroup,
             senderIsSelf: message.isOwn,
@@ -4429,7 +4563,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     replyResolver = null;
     _observedTimelineScrollPosition?.isScrollingNotifier
         .removeListener(_onTimelineScrollActivityChanged);
+    widget.navigationRequests?.removeListener(_onNavigationRequest);
     controller?.removeListener(_changed);
+    _observedOutbox?.removeListener(_outboxChanged);
+    _observedOutbox = null;
     controller?.dispose();
     final outboxSender = _outboxSender;
     if (outboxSender != null) {
@@ -4471,6 +4608,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// Local viewing state is independent of the SDK's server acknowledgement.
   void _syncReadReceiptWhileViewing({bool immediate = false}) {
     if (!_canSyncReadReceipt) return;
+    if (_logicalTimeline is RoomVisibleReadCapability) {
+      _immediateVisibleReceipt = _immediateVisibleReceipt || immediate;
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _observeVisibleReadReceipts());
+      return;
+    }
     final newest = controller?.newestMessage;
     if (newest == null) return;
     ConversationReadState.shared().markCleared(roomInfo.id, eventId: newest.id);
@@ -4500,7 +4643,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _readReceiptInFlight = true;
     _readReceiptDirty = false;
     try {
-      await timeline.markRead();
+      final capability = _logicalTimeline;
+      if (capability is RoomVisibleReadCapability) {
+        final ids = Set<String>.of(_visibleReadIds);
+        await (capability as RoomVisibleReadCapability).markReadVisible(ids);
+        _visibleReadIds.removeAll(ids);
+        _acknowledgedVisibleIds.addAll(ids);
+        while (_acknowledgedVisibleIds.length > 2048) {
+          _acknowledgedVisibleIds.remove(_acknowledgedVisibleIds.first);
+        }
+      } else {
+        await timeline.markRead();
+      }
       _readReceiptFailures = 0;
     } catch (_) {
       // Preserve the pending receipt for retry; only the Matrix SDK may advance
@@ -4834,8 +4988,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   bool _replySweepScheduled = false;
   final _visibleIndex = <String, int>{};
   final _rowCache = <String,
-      (RoomMessageViewModel, DateTime?, RoomMessageViewModel?, ReplyMessageStatus,
-          Widget)>{};
+      (
+    RoomMessageViewModel,
+    DateTime?,
+    RoomMessageViewModel?,
+    ReplyMessageStatus,
+    Widget
+  )>{};
 
   List<RoomMessageViewModel> _visibleMessages() {
     final all = controller?.messages ?? const <RoomMessageViewModel>[];
@@ -5165,23 +5324,23 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   else
                     ChatComposerBar(
                       controller: input,
-                    focusNode: inputFocusNode,
-                    panel: composerPanel,
-                    onMore: () => _togglePanel(ComposerPanel.more),
-                    onVoice: _toggleVoice,
-                    onEmoji: () => _togglePanel(ComposerPanel.emoji),
-                    onSend: () => _trackAction(_send),
-                    onSubmitted: (_) => _send(),
-                    voiceField: WeChatHoldToTalk(
-                      controller: voiceRecording,
-                      onStart: () => _trackAction(_onVoiceStart),
-                      onStop: (target) =>
-                          _trackAction(() => _onVoiceStop(target)),
-                      onCancel: (target) =>
-                          _trackAction(() => _onVoiceCancel(target)),
+                      focusNode: inputFocusNode,
+                      panel: composerPanel,
+                      onMore: () => _togglePanel(ComposerPanel.more),
+                      onVoice: _toggleVoice,
+                      onEmoji: () => _togglePanel(ComposerPanel.emoji),
+                      onSend: () => _trackAction(_send),
+                      onSubmitted: (_) => _send(),
+                      voiceField: WeChatHoldToTalk(
+                        controller: voiceRecording,
+                        onStart: () => _trackAction(_onVoiceStart),
+                        onStop: (target) =>
+                            _trackAction(() => _onVoiceStop(target)),
+                        onCancel: (target) =>
+                            _trackAction(() => _onVoiceCancel(target)),
+                      ),
+                      onInputTap: _dismissEmojiPanelForInput,
                     ),
-                    onInputTap: _dismissEmojiPanelForInput,
-                  ),
                   if (composerPanel == ComposerPanel.more)
                     TapRegion(
                       // 点击面板内不收起；面板外（输入框/消息列表等）任何
@@ -5331,6 +5490,7 @@ final class _RoomOutboxSender implements OutboxSender {
 
   @override
   bool get canSend =>
+      !_page.widget.readOnly &&
       _page.mounted &&
       !_page._disposing &&
       !_page.widget.roomLease.canceled &&

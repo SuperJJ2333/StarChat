@@ -59,7 +59,8 @@ import 'features/matrix/room_opening_policy.dart';
 import 'features/matrix/room_open_failure_feedback.dart';
 import 'features/statistics/statistics_room_scope.dart';
 import 'features/search/global_search_models.dart';
-import 'features/search/global_search_page.dart' show GlobalSearchRoomOpenCallback;
+import 'features/search/global_search_page.dart'
+    show GlobalSearchRoomOpenCallback;
 import 'features/matrix/coordinated_direct_chat.dart';
 import 'features/moments/moment_preview_cache.dart';
 import 'features/ledger/ledger_pages.dart';
@@ -214,6 +215,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       coordinator: ApiDirectRoomCoordinator(widget.api),
       intents: PreferencesDirectRoomIntentStore(widget.matrix.userId ?? ''),
       createOnce: widget.matrix.createDirectChatOnce,
+      createReserved: widget.matrix.createReservedDirectRoom,
       findExisting: widget.matrix.findExistingDirectChat,
       findCached: widget.matrix.findCachedDirectChat,
       businessUserIdOf: (matrixUserId) =>
@@ -228,6 +230,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       RoomNavigationCoordinator(
     openRoom: _openManagedRoomRoute,
     navigatorOf: _rootNavigatorOrNull,
+    conversationKeyOf: widget.matrix.logicalConversationKeySync,
   );
 
   /// **Room Opening Policy Engine**：所有入口进入 [_roomNavigation] 之前的
@@ -459,6 +462,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    widget.matrix.authorizeRoomSend = _authorizeRoomSend;
     WidgetsBinding.instance.addObserver(this);
     _matrixResourceSetup = _initializeMatrixResources();
     unawaited(_matrixResourceSetup);
@@ -1296,7 +1300,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     final accountId = widget.matrix.userId ?? '';
     var outbox = PersistentOutboxManager.shared;
     if (outbox == null || outbox.accountId != accountId) {
-      outbox = PersistentOutboxManager(SqliteOutboxStore(), accountId: accountId);
+      outbox =
+          PersistentOutboxManager(SqliteOutboxStore(), accountId: accountId);
       PersistentOutboxManager.shared = outbox;
     }
     _outbox = outbox;
@@ -1307,11 +1312,98 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // 房间没有打开时的后台发送路径：临时取租约发送后立即释放，
       // 不导航、不 push 页面（房间打开路径仍然唯一）。
       leaseFactory: _openOutboxLease,
-    )..start();
+      resolveUnbound: (message) async {
+        if (!mounted || _disposed || widget.matrix.userId != accountId) {
+          return null;
+        }
+        final cache = await _identityCache();
+        if (!cache.contactsByMatrixId.containsKey(message.receiverId)) {
+          return null;
+        }
+        try {
+          final room = await directChats.open(message.receiverId);
+          if (!mounted || _disposed || widget.matrix.userId != accountId) {
+            return null;
+          }
+          return room.roomId;
+        } on DirectRoomPendingException {
+          return null;
+        }
+      },
+      authorizeSend: (message) async =>
+          mounted &&
+          !_disposed &&
+          identical(_outbox, outbox) &&
+          widget.matrix.userId == accountId &&
+          message.roomId != null &&
+          await widget.matrix.authorizeSendToRoom(message.roomId!),
+    );
     _outboxScheduler = scheduler;
-    final recovery = OutboxRecoveryService(outbox: outbox, scheduler: scheduler);
+    final recovery =
+        OutboxRecoveryService(outbox: outbox, scheduler: scheduler);
     _outboxRecovery = recovery;
-    unawaited(recovery.recoverOnStartup());
+    unawaited(recovery.recoverOnStartup().then((_) {
+      if (mounted && identical(_outboxScheduler, scheduler)) {
+        scheduler.start();
+      }
+    }).catchError((Object _) {}));
+  }
+
+  Future<bool> _authorizeRoomSend(
+      String accountId, String roomId, String? peerId) async {
+    if (!mounted || _disposed || accountId != widget.matrix.userId) {
+      return false;
+    }
+    if (peerId == null || peerId.isEmpty) return true;
+    final cache = await _identityCache();
+    final peer = cache.contactsByMatrixId[peerId];
+    if (peer == null || blockedContacts.isBlocked(peer.userId)) {
+      return false;
+    }
+    final relationship = await widget.api.lookupUserByMatrixId(peerId);
+    if (relationship['relationship_state'] != 'FRIEND' ||
+        relationship['user_id'] != peer.userId) {
+      return false;
+    }
+    // Adopt an existing verified legacy room only when no reservation/canonical
+    // exists. Server fencing prevents this path from replacing a V2 decision.
+    final canonical = await widget.api.canonicalDirectRoomId(peer.userId) ??
+        await widget.api.registerDirectConversation(peer.userId, roomId);
+    return mounted &&
+        !_disposed &&
+        accountId == widget.matrix.userId &&
+        !blockedContacts.isBlocked(peer.userId) &&
+        canonical == roomId;
+  }
+
+  Future<void> _reconcileOpenedDirectRoom(
+      String roomId, ContactDetails? contact) async {
+    if (contact == null) return;
+    try {
+      final canonical = await widget.api.canonicalDirectRoomId(contact.userId);
+      if (!mounted ||
+          _disposed ||
+          canonical == null ||
+          canonical == roomId ||
+          !widget.matrix.knowsRoomLocally(canonical) ||
+          _roomNavigation.activeRoute(roomId)?.isActive != true) {
+        return;
+      }
+      await widget.matrix.conversations.convergeDirectRoomDirectory(
+          knownMatrixPeers: [contact.matrixUserId],
+          businessUserIdOf: (id) =>
+              id == contact.matrixUserId ? contact.userId : null,
+          canonicalRoomIdOf: (_) async => canonical);
+      if (!mounted ||
+          _disposed ||
+          _roomNavigation.activeRoute(roomId)?.isActive != true) {
+        return;
+      }
+      await _openManagedRoom(canonical,
+          roomName: contact.displayName,
+          initialContact: contact,
+          source: RoomOpenSource.conversationList);
+    } catch (_) {/* Local history stays open; later navigation retries. */}
   }
 
   /// 打开一条**只用于发送**的临时房间租约。
@@ -1379,10 +1471,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         callBackend = capability.createCallBackend(
             diagnostics: callDiagnostics, wakeup: callWakeup);
         // Task L：主叫/被叫共用同一套身份解析（名称 + 头像 + 授权头）。
-        callBackend.identityResolver = (matrixUserId,
-                {String? matrixDisplayName}) =>
-            callIdentity.resolve(matrixUserId,
-                matrixDisplayName: matrixDisplayName);
+        callBackend.identityResolver =
+            (matrixUserId, {String? matrixDisplayName}) => callIdentity
+                .resolve(matrixUserId, matrixDisplayName: matrixDisplayName);
         // Task G：wakeup 的显式 tombstone 只允许结束**完全匹配**的当前通话。
         callWakeup.onExplicitlyEnded = callBackend.endActiveCallIfMatching;
         // Task B：本机历史搜索数据源（只读本机加密库，零网络）。
@@ -1828,6 +1919,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   /// Offline First 第三步：本地没有会话时**立即**进入 pending conversation，
   /// 并把真实房间仲裁放到后台；房间就绪后换成 RoomPage 并发送排队消息。
+  final _pendingConversationRoutes =
+      <String, Route<PendingConversationResult>>{};
+
   Future<void> _openPendingConversation(ContactDetails contact) async {
     final cache = await _identityCache();
     final authoritative = await resolveFriendContact(cache, contact);
@@ -1838,16 +1932,28 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     Future<DirectChatRoom> openRoom() => directChats.open(matrixUserId);
 
     if (!mounted) return;
-    final result = await Navigator.of(context, rootNavigator: true)
-        .push<PendingConversationResult>(MotionPageRoute(
-      builder: (_) => PendingConversationPage(
-        contact: authoritative,
-        openRoom: openRoom,
-        networkState: NetworkStateManager.shared?.state,
-        outbox: _outbox,
-        recovery: _outboxRecovery,
-      ),
-    ));
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final existing = _pendingConversationRoutes[matrixUserId];
+    if (existing != null && existing.isActive) {
+      navigator.popUntil((route) => identical(route, existing));
+      return;
+    }
+    final route = MotionPageRoute<PendingConversationResult>(
+        builder: (_) => PendingConversationPage(
+            contact: authoritative,
+            openRoom: openRoom,
+            networkState: NetworkStateManager.shared?.state,
+            outbox: _outbox,
+            recovery: _outboxRecovery));
+    _pendingConversationRoutes[matrixUserId] = route;
+    PendingConversationResult? result;
+    try {
+      result = await navigator.push(route);
+    } finally {
+      if (identical(_pendingConversationRoutes[matrixUserId], route)) {
+        _pendingConversationRoutes.remove(matrixUserId);
+      }
+    }
     if (!mounted || result == null) return;
     if (result.roomId.isEmpty) return;
     // 房间就绪：按既有唯一入口进入 RoomPage；排队消息作为初始 outbox 发送
@@ -1856,7 +1962,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         roomName: authoritative.displayName,
         initialContact: authoritative,
         source: RoomOpenSource.contactProfile,
-        outbox: result.queued);
+        outboxLocalIds: result.outboxLocalIds);
   }
 
   /// BUG4：通讯录 → 群聊 → 群聊通讯录列表（已 join + saved=true）。
@@ -1885,13 +1991,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           {String? roomName,
           ContactDetails? initialContact,
           RoomOpenSource source = RoomOpenSource.unknown,
-          List<String> outbox = const <String>[]}) =>
+          List<String> outbox = const <String>[],
+          List<String> outboxLocalIds = const <String>[]}) =>
       _openManagedRoomRequest(RoomOpenRequest(
         roomId: roomId,
         roomName: roomName ?? '',
         initialContact: initialContact,
         source: source,
         outbox: outbox,
+        outboxLocalIds: outboxLocalIds,
       ));
 
   /// **所有入口进入房间的唯一策略路径**（唯一失败反馈点）。
@@ -1909,9 +2017,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (_roomOpenFailureVisible) return;
     // 逻辑会话归一化（缺陷 0919 项 3）：搜索/通知命中历史孤儿房间时，
     // 只允许只读定位打开（保留 roomId+anchor），不作为独立可发送会话。
+    await widget.matrix.prepareConversationAssociations();
     final normalized = normalizeDuplicateRoomOpen(request,
-        isDuplicateRoom: (roomId) =>
-            widget.matrix.duplicateRoomPrimaryIdSync(roomId) != null);
+        primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync);
     try {
       await _roomOpening.open(
         normalized,
@@ -2006,6 +2114,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       return;
     }
     final navigator = Navigator.of(context, rootNavigator: true);
+    final navigationRequests = ValueNotifier<RoomOpenRequest>(request);
     final route = MotionPageRoute<void>(
         builder: (_) => RoomPage(
               api: widget.api,
@@ -2014,6 +2123,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               initialContact: request.initialContact,
               initialAnchorEventId: request.anchorEventId,
               initialOutbox: request.outbox,
+              initialOutboxLocalIds: request.outboxLocalIds,
+              initialAnchorRoomId: request.anchorRoomId,
+              navigationRequests: navigationRequests,
+              requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
               outbox: _outbox,
               onCreateGroup: _createGroupChat,
               onMessage: _openMessage,
@@ -2023,7 +2136,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               initialIdentityCache: identityCache,
               readOnly: request.readOnly,
             ));
-    handle.register(route);
+    handle.register(route, onReopen: (next) => navigationRequests.value = next);
     // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
     // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程），
     // 且即使页面因异常未挂载也不会留下脏栈。
@@ -2036,10 +2149,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     });
     request.onRoomReady?.call();
     try {
-      await navigator.push(route);
+      final previous = handle.replacedRoute;
+      final visible = navigator.push(route);
+      if (previous != null && previous.isActive) {
+        navigator.removeRoute(previous);
+      }
+      final contact = request.initialContact ??
+          identityCache.contactsByMatrixId[lease.roomInfo.directPeerId];
+      unawaited(_reconcileOpenedDirectRoom(roomId, contact));
+      await visible;
     } finally {
       StatisticsRoomScope.leave(roomId);
       handle.release(route);
+      navigationRequests.dispose();
       notifyClosed();
       await lease.cancel();
     }
@@ -2281,8 +2403,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       source: source,
       // 真的进到房间（租约已取、页面即将 push）才记为"打开通知"，
       // 失败不会留下虚假的 opened 统计。
-      onRoomReady: () => unawaited(const SharedPreferencesNotificationUsageRecorder()
-          .count(NotificationUsageEvents.opened)),
+      onRoomReady: () => unawaited(
+          const SharedPreferencesNotificationUsageRecorder()
+              .count(NotificationUsageEvents.opened)),
     ));
   }
 
@@ -2695,8 +2818,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
                   api: widget.api,
                   onOpenAllBills: () => _openLedgerAllBills(
                       context, widget.api, widget.identityCache)))),
-      onWallet: () => Navigator.push(
-          context,
+      onWallet: () => Navigator.push(context,
           MotionPageRoute(builder: (_) => WalletPage(api: widget.api))),
       inviteGateway: widget.api,
       onInvite: () => Navigator.push(
@@ -2749,8 +2871,8 @@ final class ProfilePage extends StatelessWidget {
                   MotionPageRoute(
                     builder: (_) => CaibiPage(
                       api: api,
-                      onOpenAllBills: () => _openLedgerAllBills(
-                          context, api, identityCache),
+                      onOpenAllBills: () =>
+                          _openLedgerAllBills(context, api, identityCache),
                     ),
                   ),
                 ),
@@ -3127,7 +3249,6 @@ final class _AccountPrivacyPageState extends State<AccountPrivacyPage> {
                   )),
       );
 }
-
 
 /// 临时房间租约（只用于发送）：发送完成后由调度器释放。
 ///

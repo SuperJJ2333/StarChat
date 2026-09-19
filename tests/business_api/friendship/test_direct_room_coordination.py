@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 import os
 from threading import Barrier
 from uuid import uuid4
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, event, select, text
@@ -17,7 +18,16 @@ from app.modules.identity.enums import AccountStatus
 
 class Profiles:
     def read_public_profiles(self, ids):
-        return {user: object() for user in ids if user in {'alice', 'bob'}}
+        return {user: SimpleNamespace(matrix_user_id=f'@{user}:example.test') for user in ids if user in {'alice', 'bob'}}
+
+
+class VerifiedPairMatrix:
+    def get_room_state(self, room_id):
+        return [
+            {'type': 'm.room.encryption', 'state_key': '', 'content': {'algorithm': 'm.megolm.v1.aes-sha2'}},
+            *[{'type': 'm.room.member', 'state_key': f'@{user}:example.test',
+               'content': {'membership': 'join'}} for user in ('alice', 'bob')],
+        ]
 
 
 @pytest.fixture
@@ -46,7 +56,7 @@ def service(tmp_path):
         with engine.begin() as connection:
             connection.execute(text(f'CREATE TABLE {schema}.users (id VARCHAR(36) PRIMARY KEY)'))
             connection.execute(text(f"INSERT INTO {schema}.users (id) VALUES ('alice'), ('bob')"))
-        for name in ('direct_conversations', 'direct_room_reservations', 'audit_events',
+        for name in ('direct_conversations', 'direct_room_reservations', 'direct_conversation_rooms', 'audit_events',
                      'outbox_events', 'idempotency_records'):
             Base.metadata.tables[name].create(engine)
     else:
@@ -59,7 +69,7 @@ def service(tmp_path):
                 session.add(User(id=user, username=user, username_normalized=user,
                                  email=f'{user}@example.test', email_normalized=f'{user}@example.test',
                                  password_hash='test', status=AccountStatus.ACTIVE, created_at=now, updated_at=now))
-    yield FriendshipService(factory, Profiles())
+    yield FriendshipService(factory, Profiles(), matrix_gateway=VerifiedPairMatrix())
     if postgres_url:
         with engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA {schema} CASCADE'))
@@ -96,8 +106,8 @@ def test_publish_only_owner_and_immutable(service):
         assert exc.value.status_code == 409
     assert service.publish_direct_conversation('alice', 'bob', attempt, '!first:example.test') == {'matrix_room_id': '!first:example.test'}
     assert service.publish_direct_conversation('alice', 'bob', attempt, '!first:example.test') == {'matrix_room_id': '!first:example.test'}
-    with pytest.raises(AppError):
-        service.publish_direct_conversation('alice', 'bob', attempt, '!second:example.test')
+    assert service.publish_direct_conversation('alice', 'bob', attempt, '!second:example.test') == {'matrix_room_id': '!first:example.test'}
+    assert '!second:example.test' in service.direct_conversation_associations('alice', 'bob')['room_ids']
     assert service.claim_direct_conversation('bob', 'alice', str(uuid4())) == {
         'matrix_room_id': '!first:example.test', 'may_create': False, 'can_publish': False}
 

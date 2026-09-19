@@ -140,7 +140,9 @@ final class MatrixRoomTimelineAdapter
   /// 引用原消息的按需解析：能力侧实现（本地加密库 → 服务器单事件查询）；
   /// 未实现该能力时 [supportsMessageLookup] 为 false，控制器回退有界历史分页。
   @override
-  bool get supportsMessageLookup => _capability is RoomMessageLookupSource;
+  bool get supportsMessageLookup =>
+      _capability is RoomMessageLookupSource &&
+      (_capability as RoomMessageLookupSource).supportsMessageLookup;
 
   @override
   Future<RoomMessageViewModel?> lookupMessage(String eventId) {
@@ -183,7 +185,8 @@ final class MatrixRoomTimelineAdapter
     final date = _dateCapability;
     if (date != null) {
       date.selectLatest();
-    } else if (_window != null) {
+    }
+    if (_window != null) {
       _window!.selectLatest();
     } else {
       _fallbackWindow?.latest();
@@ -215,7 +218,8 @@ final class MatrixRoomTimelineAdapter
     String? recipientMatrixId,
   }) async =>
       _capability.sendRedPacketReference(packetId, greeting,
-          mode: mode, recipientId: recipientId,
+          mode: mode,
+          recipientId: recipientId,
           recipientMatrixId: recipientMatrixId);
 
   @override

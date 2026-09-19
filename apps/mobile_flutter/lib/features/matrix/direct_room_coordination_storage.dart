@@ -67,7 +67,7 @@ final class ApiDirectRoomCoordinator implements DirectRoomCoordinator {
 
   @override
   Future<DirectRoomClaim> claim(String peer, String attemptId) async {
-    final body = await api.claimDirectConversation(peer, attemptId);
+    final body = await api.claimRecoverableDirectConversation(peer, attemptId);
     final roomId = body['matrix_room_id'];
     if (roomId != null && (roomId is! String || roomId.isEmpty)) {
       throw StateError('Invalid canonical room response');
@@ -75,8 +75,19 @@ final class ApiDirectRoomCoordinator implements DirectRoomCoordinator {
     if (body['may_create'] is! bool || body['can_publish'] is! bool) {
       throw StateError('Direct-room coordination is unavailable');
     }
+    if (roomId == null &&
+        body['may_create'] == true &&
+        (body['room_alias_localpart'] is! String ||
+            body['reservation_id'] is! String ||
+            !RegExp(r'^chatflow_dm_[a-f0-9]{32}$')
+                .hasMatch(body['room_alias_localpart'] as String) ||
+            (body['reservation_id'] as String).isEmpty)) {
+      throw StateError('Recoverable coordination evidence is incomplete');
+    }
     return DirectRoomClaim(
       roomId: roomId as String?,
+      roomAliasLocalpart: body['room_alias_localpart'] as String?,
+      reservationId: body['reservation_id'] as String?,
       mayCreate: body['may_create'] == true,
       canPublish: body['can_publish'] == true,
     );
@@ -84,5 +95,5 @@ final class ApiDirectRoomCoordinator implements DirectRoomCoordinator {
 
   @override
   Future<String> publish(String peer, String attemptId, String roomId) =>
-      api.publishDirectConversation(peer, attemptId, roomId);
+      api.recoverDirectConversation(peer, attemptId, roomId);
 }

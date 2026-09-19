@@ -167,8 +167,8 @@ void main() {
       findCached: (_) async => room('!cached:test', '@b:test'),
       openExisting: (_, __) async => throw StateError('must not repair'),
     );
-    expect((await gateway.openOrCreateDirectChat('@b:test')).roomId,
-        '!cached:test');
+    expect(
+        (await gateway.tryLocalDirectChat('@b:test'))?.roomId, '!cached:test');
     expect(directory.canonicalCalls, 0);
   });
 

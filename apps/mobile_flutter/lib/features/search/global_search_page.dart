@@ -123,7 +123,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
       repository: repository,
       debounce: widget.debounce,
       sectionLimit: widget.sectionLimit,
-      primaryRoomIdOf: widget.matrix?.primaryRoomIdForDuplicateRoom,
+      primaryRoomIdOf: widget.matrix == null ? null : (roomId) async {
+        await widget.matrix!.prepareConversationAssociations();
+        return widget.matrix!.logicalPrimaryRoomIdSync(roomId);
+      },
     )..addListener(_changed);
     // 打开搜索页即触发一次**有界的本机库回填**（零网络、每账号一次）。
     if (repository != null && repository.isAttached) {

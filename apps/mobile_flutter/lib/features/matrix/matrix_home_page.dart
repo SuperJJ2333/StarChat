@@ -1,3 +1,4 @@
+import 'direct_room_directory_convergence.dart';
 import '../contacts/contact_actions.dart';
 import '../../ui/components/top_more_menu.dart';
 import 'dart:async';
@@ -313,13 +314,31 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       // 业务 API 权威目录；m.direct 键是 matrixId，先经好友目录转换为业务
       // userId 再查询（转换缺失则跳过，只用本地规则）。失败静默，下次 sync
       // 重试。列表唯一性另有 ConversationIdentityResolver 兜底。
-      unawaited(widget
-              .matrix.conversations.convergeDirectRoomDirectory(
-                  businessUserIdOf: (matrixPeer) => _identityCache
-                      .contactsByMatrixId[matrixPeer]?.userId,
-                  canonicalRoomIdOf: (businessUserId) =>
-                      ApiDirectRoomCoordinator(widget.api)
-                          .canonicalRoomId(businessUserId))
+      unawaited(widget.matrix.conversations
+          .convergeDirectRoomDirectory(
+              knownMatrixPeers: _identityCache.contactsByMatrixId.keys,
+              businessUserIdOf: (matrixPeer) =>
+                  _identityCache.contactsByMatrixId[matrixPeer]?.userId,
+              associationsOf: (peer) async {
+                final body =
+                    await widget.api.directConversationAssociations(peer);
+                final primary = body['matrix_room_id'];
+                if (primary is! String || primary.isEmpty) return null;
+                return DirectRoomAssociations(
+                    primaryRoomId: primary,
+                    roomIds: (body['room_ids'] as List? ?? const [])
+                        .whereType<String>()
+                        .toList());
+              },
+              publishAssociations: (peer, rooms) async {
+                for (final room in rooms) {
+                  await widget.api
+                      .registerDirectConversationHistory(peer, room);
+                }
+              },
+              canonicalRoomIdOf: (businessUserId) =>
+                  ApiDirectRoomCoordinator(widget.api)
+                      .canonicalRoomId(businessUserId))
           .catchError((_) {}));
       await _refreshClientSnapshot();
     } catch (_) {/* Contact availability is required; retry after sync. */}
@@ -1110,11 +1129,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           // （含 anchor 定位），搜索页不复制一套开会话实现；
                           // 网络姿态由 RoomOpeningPolicy 按 source=search 决定
                           // （离线优先：本地已知的会话不再等待同步）。
-                          onOpenRoom: (room, {anchorEventId}) =>
-                              _openRoomById(room.roomId,
-                                  roomName: room.displayName,
-                                  anchorEventId: anchorEventId,
-                                  source: RoomOpenSource.search),
+                          onOpenRoom: (room, {anchorEventId}) => _openRoomById(
+                              room.roomId,
+                              roomName: room.displayName,
+                              anchorEventId: anchorEventId,
+                              source: RoomOpenSource.search),
                         ))),
             child: const Icon(CupertinoIcons.search, size: 22),
           ),

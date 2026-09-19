@@ -2,8 +2,14 @@ import 'direct_chat_controller.dart';
 
 final class DirectRoomClaim {
   const DirectRoomClaim(
-      {this.roomId, this.mayCreate = false, this.canPublish = false});
+      {this.roomId,
+      this.mayCreate = false,
+      this.canPublish = false,
+      this.roomAliasLocalpart,
+      this.reservationId});
   final String? roomId;
+  final String? roomAliasLocalpart;
+  final String? reservationId;
   final bool mayCreate;
   final bool canPublish;
 }
@@ -40,6 +46,7 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     required this.findExisting,
     required this.openExisting,
     this.findCached,
+    this.createReserved,
     Future<void> Function(Duration)? wait,
     this.waitAttempts = 20,
   }) : wait = wait ?? Future<void>.delayed;
@@ -48,6 +55,8 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
   final DirectRoomIntentStore intents;
   final String? Function(String) businessUserIdOf;
   final Future<DirectChatRoom> Function(String) createOnce;
+  final Future<String> Function(
+      String peer, String aliasLocalpart, String reservationId)? createReserved;
   final Future<DirectChatRoom?> Function(String) findExisting;
 
   /// Local-only, already-validated snapshot. It must never join, repair, or
@@ -64,8 +73,8 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     if (peer == null || peer.isEmpty) {
       throw StateError('好友身份尚未就绪，请重试');
     }
-    final cached = await findCached?.call(matrixUserId);
-    if (cached != null) return _safe(cached, matrixUserId);
+    // Opening local history has a separate zero-network API. The coordination
+    // path must never accept an unregistered cached room as a sending authority.
     // Only an authoritative absence permits claiming. Network/validation
     // failures propagate; none of them is evidence that another room is needed.
     String? canonical;
@@ -75,10 +84,11 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
       // 断网降级：规范登记不可达时回退本地（意图存储的房间 + 本地
       // Matrix 库的既有私聊）。已存在的会话离线也能打开；本地完全
       // 没有房间时才把原始网络错误抛给调用方（弹“网络异常”）。
-      final localRoomId =
-          (await intents.loadOrCreate(peer)).roomId ?? (await findExisting(matrixUserId))?.roomId;
+      final localRoomId = (await intents.loadOrCreate(peer)).roomId ??
+          (await findExisting(matrixUserId))?.roomId;
       if (localRoomId != null && localRoomId.isNotEmpty) {
-        return _safe(await openExisting(localRoomId, matrixUserId), matrixUserId);
+        return _safe(
+            await openExisting(localRoomId, matrixUserId), matrixUserId);
       }
       rethrow;
     }
@@ -90,6 +100,22 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     final claimedRoom = claim.roomId;
     if (claimedRoom != null && claimedRoom.isNotEmpty) {
       return _safe(await openExisting(claimedRoom, matrixUserId), matrixUserId);
+    }
+    final alias = claim.roomAliasLocalpart;
+    final reservation = claim.reservationId;
+    if (claim.mayCreate &&
+        claim.canPublish &&
+        alias != null &&
+        reservation != null) {
+      final create = createReserved;
+      if (create == null) {
+        throw StateError('Recoverable room creation unavailable');
+      }
+      final created = await create(matrixUserId, alias, reservation);
+      await intents.saveRoom(peer, intent, created);
+      final published =
+          await coordinator.publish(peer, intent.attemptId, created);
+      return _safe(await openExisting(published, matrixUserId), matrixUserId);
     }
     DirectChatRoom? result;
     if (claim.mayCreate && claim.canPublish) {

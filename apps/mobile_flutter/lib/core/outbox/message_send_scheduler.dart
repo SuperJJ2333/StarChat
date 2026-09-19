@@ -35,9 +35,8 @@ typedef OutboxLeaseFactory = Future<OutboxLease> Function(String roomId);
 ///    进入会话。
 ///
 /// 硬约束：
-/// - **不创建任何定时器、不轮询**：唯一的驱动是网络状态通知与显式 [drain]；
-/// - **串行**：同一时刻最多一条派发路径在跑（房间之间也串行），启动恢复
-///   不会同时打开多个租约；
+/// - **不轮询**：派发由网络状态通知与显式 [drain] 驱动，仅使用操作超时；
+/// - **有界顺序处理**：超时的请求仍持有原认领，其他房间可以继续处理；
 /// - **幂等**：无论走哪条路径，派发前都必须原子认领该行
 ///   （[PersistentOutboxManager.claim]），因此同一 txid 只会真正发一次；
 /// - 网络问题一律 `waitingNetwork`，**绝不**降级为 `failed`；
@@ -48,7 +47,10 @@ final class MessageSendScheduler {
     required this.senderFor,
     this.networkState,
     this.canDispatch,
+    this.authorizeSend,
+    this.resolveUnbound,
     this.leaseFactory,
+    this.operationTimeout = const Duration(seconds: 30),
   });
 
   final PersistentOutboxManager outbox;
@@ -61,12 +63,27 @@ final class MessageSendScheduler {
   /// 附加门禁（例如互动权限）：返回 false 时该行不派发。
   final bool Function(OutboxMessage message)? canDispatch;
 
+  /// Authoritative account, canonical destination and interaction check.
+  /// Denial or unavailable evidence fails closed before invoking transport.
+  final Future<bool> Function(OutboxMessage message)? authorizeSend;
+
+  /// Resolve a durable row's peer through authoritative coordination without
+  /// opening a page. The composition root checks account/relationship identity.
+  /// Null means still pending; never rebind rows which already have a room.
+  final Future<String?> Function(OutboxMessage message)? resolveUnbound;
+
   /// 没有已打开会话时使用的临时租约工厂（可空 = 不做后台发送尝试）。
   final OutboxLeaseFactory? leaseFactory;
+  final Duration operationTimeout;
 
   final Set<String> _inFlight = <String>{};
   NetworkStateManager? _attached;
   bool _draining = false;
+  bool _drainRequested = false;
+  bool _reportingFailure = false;
+  int _recoveryRevision = 0;
+  final Set<String> _openingRooms = <String>{};
+  final Set<String> _resolvingReceivers = <String>{};
   bool _disposed = false;
   int _dispatched = 0;
 
@@ -99,8 +116,9 @@ final class MessageSendScheduler {
   }
 
   void _onNetworkStateChanged() {
-    if (_disposed) return;
+    if (_disposed || _reportingFailure) return;
     if (!_networkUsable) return;
+    _recoveryRevision++;
     unawaited(drain());
   }
 
@@ -110,47 +128,137 @@ final class MessageSendScheduler {
   /// 最多开一个临时租约。并发调用（网络恢复信号 + 显式 drain）由 [_draining]
   /// 与逐行原子认领双重去重。
   Future<int> drain() async {
-    if (_disposed || _draining) return 0;
+    if (_disposed) return 0;
+    if (_draining) {
+      _drainRequested = true;
+      return 0;
+    }
     _draining = true;
     var sent = 0;
     try {
-      final rows = await outbox.queryPending();
-      if (_disposed) return 0;
-      final offline = networkState?.current == NetworkState.offline;
-      final byRoom = <String, List<OutboxMessage>>{};
-      for (final row in rows) {
-        final roomId = row.roomId?.trim() ?? '';
-        if (roomId.isEmpty) {
-          // 会话还没建立：等 pending conversation 绑定房间号。
-          continue;
-        }
-        byRoom.putIfAbsent(roomId, () => <OutboxMessage>[]).add(row);
-      }
-      if (offline) {
-        // 离线不尝试派发：状态落到"等待网络"，恢复后由监听自动继续。
-        for (final roomRows in byRoom.values) {
-          for (final row in roomRows) {
-            await outbox.updateStatus(row.localId, OutboxStatus.waitingNetwork,
-                lastError: 'offline', countRetry: false);
-          }
-        }
-        return 0;
-      }
-      for (final entry in byRoom.entries) {
-        if (_disposed) break;
-        final sender = senderFor(entry.key);
-        if (sender != null) {
-          sent += await _dispatchViaRoomSender(sender, entry.value);
-          continue;
-        }
-        final factory = leaseFactory;
-        if (factory == null) continue;
-        sent += await _dispatchViaLease(entry.key, entry.value, factory);
-      }
+      do {
+        _drainRequested = false;
+        sent += await _drainBatch();
+      } while (!_disposed && _drainRequested);
     } finally {
       _draining = false;
     }
     return sent;
+  }
+
+  Future<int> _drainBatch() async {
+    var sent = 0;
+    var rows = await outbox.queryPending();
+    if (_disposed) return 0;
+    if (_networkUsable && resolveUnbound != null) {
+      await _resolveUnboundRows(rows);
+      if (_disposed) return 0;
+      rows = await outbox.queryPending();
+      if (_disposed) return 0;
+    }
+    final offline = networkState?.current == NetworkState.offline;
+    final byRoom = <String, List<OutboxMessage>>{};
+    for (final row in rows) {
+      final roomId = row.roomId?.trim() ?? '';
+      if (roomId.isEmpty) {
+        // 会话还没建立：等 pending conversation 绑定房间号。
+        continue;
+      }
+      byRoom.putIfAbsent(roomId, () => <OutboxMessage>[]).add(row);
+    }
+    if (offline) {
+      // 离线不尝试派发：状态落到"等待网络"，恢复后由监听自动继续。
+      for (final roomRows in byRoom.values) {
+        for (final row in roomRows) {
+          await outbox.updateStatus(row.localId, OutboxStatus.waitingNetwork,
+              lastError: 'offline', countRetry: false);
+        }
+      }
+      return 0;
+    }
+    for (final entry in byRoom.entries) {
+      if (_disposed) break;
+      final sender = senderFor(entry.key);
+      if (sender != null) {
+        sent += await _dispatchViaRoomSender(sender, entry.value);
+        continue;
+      }
+      final factory = leaseFactory;
+      if (factory == null) continue;
+      sent += await _dispatchViaLease(entry.key, entry.value, factory);
+    }
+    return sent;
+  }
+
+  Future<void> _resolveUnboundRows(List<OutboxMessage> rows) async {
+    final peers = <String, OutboxMessage>{};
+    for (final row in rows) {
+      if (!row.hasRoom) peers.putIfAbsent(row.receiverId, () => row);
+    }
+    for (final row in peers.values) {
+      if (_disposed || !_networkUsable) return;
+      if (!_resolvingReceivers.add(row.receiverId)) continue;
+      var timedOut = false;
+      final revision = _recoveryRevision;
+      final resolving = () async {
+        try {
+          final roomId = await resolveUnbound!(row);
+          if (_disposed) return;
+          if (roomId == null || roomId.trim().isEmpty) {
+            await _settleUnbound(row.receiverId, OutboxStatus.waitingNetwork,
+                'conversation_pending');
+            return;
+          }
+          await outbox.bindRoomForReceiver(row.receiverId, roomId.trim());
+        } catch (error) {
+          if (_disposed) return;
+          final networkFailure = defaultNetworkFailureClassifier(error);
+          await _settleUnbound(
+              row.receiverId,
+              networkFailure
+                  ? OutboxStatus.waitingNetwork
+                  : OutboxStatus.failed,
+              networkFailure
+                  ? 'conversation_unavailable'
+                  : 'conversation_denied');
+          if (_disposed) return;
+          if (networkFailure &&
+              revision != _recoveryRevision &&
+              _networkUsable) {
+            _drainRequested = true;
+          } else if (networkFailure) {
+            _reportFailure(error);
+          }
+        } finally {
+          _resolvingReceivers.remove(row.receiverId);
+        }
+      }();
+      unawaited(resolving.then<void>((_) {
+        if (timedOut && !_disposed && _networkUsable) unawaited(drain());
+      }));
+      await resolving.timeout(operationTimeout, onTimeout: () async {
+        timedOut = true;
+        // The underlying alias resolution remains single-flight. Only its
+        // eventual result may bind the original durable rows.
+        await _settleUnbound(row.receiverId, OutboxStatus.waitingNetwork,
+            'conversation_resolution_timeout');
+      });
+    }
+  }
+
+  Future<void> _settleUnbound(
+      String receiverId, OutboxStatus status, String reason) async {
+    final rows = await outbox.queryPending(receiverId: receiverId);
+    for (final row in rows) {
+      if (_disposed) return;
+      if (row.hasRoom) continue;
+      if (await outbox.claim(row.localId,
+          from: const {OutboxStatus.queued, OutboxStatus.waitingNetwork},
+          countRetry: false)) {
+        if (_disposed) return;
+        await outbox.updateStatus(row.localId, status, lastError: reason);
+      }
+    }
   }
 
   /// 路径 1：房间已打开 → 交回会话的发送状态机（时间线有本地气泡）。
@@ -161,10 +269,21 @@ final class MessageSendScheduler {
       if (_disposed) break;
       if (canDispatch != null && !canDispatch!(row)) continue;
       if (!_inFlight.add(row.localId)) continue;
+      var timedOut = false;
       try {
-        final eventId = await sender.send(row);
+        if (!await _authorize(row, claimed: false) || _disposed) continue;
+        final sending = sender.send(row);
+        final eventId = await sending.timeout(operationTimeout, onTimeout: () {
+          timedOut = true;
+          // The live sender still owns its claim. Do not release that
+          // claim or dispatch the same request while its outcome is unknown.
+          unawaited(sending
+              .then<void>((_) {}, onError: (Object _) {})
+              .whenComplete(() => _inFlight.remove(row.localId)));
+          return '';
+        });
         if (eventId.isEmpty) {
-          throw StateError('Matrix event was not accepted');
+          continue;
         }
         _dispatched++;
         sent++;
@@ -172,10 +291,10 @@ final class MessageSendScheduler {
         // 行内状态由会话的发送状态机与 outbox 日志落定；这里只把网络事实
         // 上报给网络状态机，让恢复信号照常产生。
         if (defaultNetworkFailureClassifier(error)) {
-          networkState?.reportFailure(error);
+          _reportFailure(error);
         }
       } finally {
-        _inFlight.remove(row.localId);
+        if (!timedOut) _inFlight.remove(row.localId);
       }
     }
     return sent;
@@ -190,10 +309,22 @@ final class MessageSendScheduler {
     List<OutboxMessage> rows,
     OutboxLeaseFactory factory,
   ) async {
+    if (!_openingRooms.add(roomId)) return 0;
     OutboxLease? lease;
+    var acquisitionExpired = false;
     try {
-      lease = await factory(roomId);
+      final acquiring = factory(roomId);
+      unawaited(acquiring.then<void>((value) async {
+        if (acquisitionExpired) await _release(value);
+      }, onError: (Object _) {}).whenComplete(
+          () => _openingRooms.remove(roomId)));
+      lease = await acquiring.timeout(operationTimeout, onTimeout: () {
+        acquisitionExpired = true;
+        throw TimeoutException(
+            'Outbox room acquisition timed out', operationTimeout);
+      });
     } catch (error) {
+      if (!acquisitionExpired) _openingRooms.remove(roomId);
       await _keepWaitingNetwork(rows, error);
       return 0;
     }
@@ -205,37 +336,72 @@ final class MessageSendScheduler {
         // （时间线有气泡），避免同一条消息在两条路径上各发一次。
         final live = senderFor(roomId);
         if (live != null) {
-          sent += await _dispatchViaRoomSender(live, rows.sublist(rows.indexOf(row)));
+          sent += await _dispatchViaRoomSender(
+              live, rows.sublist(rows.indexOf(row)));
           break;
         }
         if (canDispatch != null && !canDispatch!(row)) continue;
         if (!_inFlight.add(row.localId)) continue;
-        try {
-          // 原子认领：失败说明已被别的派发者认领/已送达。
-          if (!await outbox.claim(row.localId)) continue;
-          final eventId = await lease.send(row.content, row.txid);
-          if (eventId.isEmpty) {
-            throw StateError('Matrix event was not accepted');
+        final activeLease = lease!;
+        final recoveryRevision = _recoveryRevision;
+        var retryAfterSettlement = false;
+        final sending = () async {
+          try {
+            // 原子认领：失败说明已被别的派发者认领/已送达。
+            if (!await outbox.claim(row.localId)) return false;
+            if (_disposed) {
+              await outbox.updateStatus(row.localId, OutboxStatus.queued);
+              return false;
+            }
+            if (!await _authorize(row, claimed: true)) return false;
+            if (_disposed) {
+              await outbox.updateStatus(row.localId, OutboxStatus.queued);
+              return false;
+            }
+            final eventId = await activeLease.send(row.content, row.txid);
+            if (eventId.isEmpty) {
+              throw StateError('Matrix event was not accepted');
+            }
+            await outbox.updateStatus(row.localId, OutboxStatus.sent);
+            await outbox.removeOrArchive(row.localId);
+            _dispatched++;
+            return true;
+          } catch (error) {
+            // 网络问题 → 等待网络（自动续发）；服务端明确拒绝 → failed。
+            final networkFailure = defaultNetworkFailureClassifier(error);
+            await outbox.updateStatus(
+              row.localId,
+              networkFailure
+                  ? OutboxStatus.waitingNetwork
+                  : OutboxStatus.failed,
+              lastError: error.toString(),
+            );
+            retryAfterSettlement = networkFailure &&
+                recoveryRevision != _recoveryRevision &&
+                _networkUsable;
+            // A recovery observed after this request began supersedes its
+            // stale transport failure. Consume that edge once after settlement.
+            if (networkFailure && !retryAfterSettlement) _reportFailure(error);
+            return false;
+          } finally {
+            _inFlight.remove(row.localId);
+            if (retryAfterSettlement && !_disposed) unawaited(drain());
           }
-          await outbox.updateStatus(row.localId, OutboxStatus.sent);
-          await outbox.removeOrArchive(row.localId);
-          _dispatched++;
-          sent++;
-        } catch (error) {
-          // 网络问题 → 等待网络（自动续发）；服务端明确拒绝 → failed。
-          final networkFailure = defaultNetworkFailureClassifier(error);
-          await outbox.updateStatus(
-            row.localId,
-            networkFailure ? OutboxStatus.waitingNetwork : OutboxStatus.failed,
-            lastError: error.toString(),
-          );
-          if (networkFailure) networkState?.reportFailure(error);
-        } finally {
-          _inFlight.remove(row.localId);
+        }();
+        final outcome = await sending
+            .then<bool?>((value) => value)
+            .timeout(operationTimeout, onTimeout: () => null);
+        if (outcome == null) {
+          // Keep the row sending until the original request settles. A timeout
+          // only frees this scheduler to service other rooms, never the claim.
+          lease = null;
+          unawaited(sending.whenComplete(() => _release(activeLease)));
+          break;
         }
+        if (outcome) sent++;
       }
     } finally {
-      await lease.release();
+      if (lease != null) await _release(lease);
     }
     return sent;
   }
@@ -248,7 +414,51 @@ final class MessageSendScheduler {
           lastError: error.toString());
     }
     if (defaultNetworkFailureClassifier(error)) {
+      _reportFailure(error);
+    }
+  }
+
+  void _reportFailure(Object error) {
+    _reportingFailure = true;
+    try {
       networkState?.reportFailure(error);
+    } finally {
+      _reportingFailure = false;
+    }
+  }
+
+  Future<bool> _authorize(OutboxMessage row, {required bool claimed}) async {
+    final authorize = authorizeSend;
+    if (authorize == null) return true;
+    var reason = 'send_authorization_denied';
+    var status = OutboxStatus.failed;
+    try {
+      if (await authorize(row).timeout(operationTimeout)) return true;
+    } catch (error) {
+      // Do not store exception text: authority errors can contain private data.
+      reason = 'send_authorization_unavailable';
+      if (defaultNetworkFailureClassifier(error)) {
+        status = OutboxStatus.waitingNetwork;
+        _reportFailure(error);
+      }
+    }
+    // A registered page sender owns claiming on its successful path. On denial,
+    // claim only a still-pending row so another dispatcher's live claim is safe.
+    if (claimed ||
+        await outbox.claim(row.localId, from: const {
+          OutboxStatus.queued,
+          OutboxStatus.waitingNetwork,
+        })) {
+      await outbox.updateStatus(row.localId, status, lastError: reason);
+    }
+    return false;
+  }
+
+  Future<void> _release(OutboxLease lease) async {
+    try {
+      await lease.release().timeout(operationTimeout);
+    } catch (_) {
+      // Resource teardown must not block unrelated rooms or replace send state.
     }
   }
 

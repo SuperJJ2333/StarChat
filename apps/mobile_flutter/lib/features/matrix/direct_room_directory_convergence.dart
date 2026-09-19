@@ -2,80 +2,176 @@ import 'package:matrix/matrix.dart';
 
 import 'duplicate_room_registry.dart';
 
-/// m.direct 目录收敛：**同一好友只保留一个已加入房间条目**（重复会话缺陷
-/// 0919 的数据层修复）。
-///
-/// `m.direct` 中同一 peer 的多 roomId 是历史演化产物（协调机制上线前的旧
-/// 房间、旧版本 App 建房、`avoidRoomId` 显式新建残留），SDK 的
-/// `addToDirectChat` 只追加不清除。多 joined 房间会让消息列表出现两条
-/// "相同会话"，也让 `getDirectChatFromUserId` 的选择不确定。
-///
-/// 规则：
-/// - 只有某 peer 挂**多个本地已加入（join）房间**时才收敛该 peer；
-/// - 胜者 = 服务端 canonical 房间（[canonicalRoomIdOf] 可达且本地已加入），
-///   否则本地最新活跃（`lastEvent.originServerTs` 最新，roomId 字典序兜底）；
-/// - 收敛 = 一次 `setAccountData('m.direct', …)` 把该 peer 重写为
-///   `[胜者]`，多 peer 合并为一次写入；
-/// - **绝不 leave/forget 任何房间**：落选房间仍 joined、历史完整，只是不再
-///   登记为该好友的私聊（列表唯一性由 `ConversationIdentityResolver` 兜底）。
+/// Account-synced associations preserve every source room. m.direct is never
+/// destructively collapsed: the app projection selects one representative.
+const directConversationAssociationPrefix =
+    'com.changliao.direct_conversation.';
 
-/// 对一个已登录 client 执行目录收敛。零 trust 假设：canonical 查询失败
-/// （断网/服务端异常）只降级为本地规则，绝不抛出阻断调用方。
-///
-/// [registry] 提供时，**仅当服务端 canonical 裁决了胜者**才把落选房间登记
-/// 到 [DuplicateRoomRegistry]——本地规则选出的落选者不登记，避免弱证据
-/// 覆盖权威映射（解析器的 primary 优先规则只认登记簿里的 canonical）。
+/// The business endpoint has verified these room associations for this peer.
+/// The client retains identity even before a room arrives in local Matrix sync.
+final class DirectRoomAssociations {
+  const DirectRoomAssociations(
+      {required this.primaryRoomId, required this.roomIds});
+  final String primaryRoomId;
+  final List<String> roomIds;
+}
+
+/// Restore account metadata before projecting or navigating. No join is issued.
+Future<void> loadDirectRoomAssociations(
+    Client client, DuplicateRoomRegistry registry) async {
+  final self = client.userID;
+  if (self == null || self.isEmpty) return;
+  await registry.ensureLoaded(self);
+  for (final event in client.accountData.entries.toList()) {
+    if (client.userID != self) return;
+    if (!event.key.startsWith(directConversationAssociationPrefix)) continue;
+    final data = event.value.content;
+    final room = data['room_id'];
+    final peer = data['peer_id'];
+    final primary = data['primary_room_id'];
+    if (room is! String ||
+        peer is! String ||
+        primary is! String ||
+        !room.startsWith('!') ||
+        !primary.startsWith('!') ||
+        !peer.startsWith('@') ||
+        peer == self ||
+        event.key !=
+            '$directConversationAssociationPrefix${Uri.encodeComponent(room)}') {
+      continue;
+    }
+    await registry.rememberPrimary(self, peer, primary);
+    if (room != primary) {
+      await registry.record(
+          accountId: self,
+          peerId: peer,
+          primaryRoomId: primary,
+          duplicateRoomId: room);
+    }
+  }
+}
+
+/// Recover server-verified historical identity and publish locally known rooms.
+/// Network failure preserves existing mappings; it never elects a new authority
+/// by local activity. Publishing is metadata-only, with server-side membership
+/// verification. No room creation, join, leave, deletion or plaintext is involved.
 Future<void> convergeDirectDirectory(
   Client client, {
   Future<String?> Function(String peerBusinessUserId)? canonicalRoomIdOf,
   String? Function(String matrixPeerUserId)? businessUserIdOf,
+  Future<DirectRoomAssociations?> Function(String peerBusinessUserId)?
+      associationsOf,
+  Future<void> Function(String peerBusinessUserId, List<String> roomIds)?
+      publishAssociations,
   DuplicateRoomRegistry? registry,
+  Iterable<String> knownMatrixPeers = const [],
 }) async {
   final self = client.userID;
   if (self == null || self.isEmpty) return;
-  if (registry != null) await registry.ensureLoaded(self);
-  final directory = client.directChats;
-  final next = Map<String, dynamic>.of(directory);
-  var changed = false;
-  for (final entry in directory.entries) {
-    final roomIds = entry.value;
-    if (roomIds is! List) continue;
-    final joined = <Room>[];
-    for (final id in roomIds) {
-      if (id is! String) continue;
-      final room = _joinedRoomById(client, id);
-      if (room != null) joined.add(room);
-    }
-    if (joined.length < 2) continue;
-    // m.direct 的键是 matrixId；canonical 目录以业务 userId 为键——查询前
-    // 必须转换（缺陷 0919 第三轮修正）。转换缺失时跳过查询，绝不误查。
-    final matrixPeer = entry.key;
-    final businessPeer = businessUserIdOf?.call(matrixPeer);
-    final canonical = (businessPeer == null || businessPeer.isEmpty)
-        ? null
-        : await _canonicalOf(canonicalRoomIdOf, businessPeer);
-    final canonicalDecided =
-        canonical != null && canonical.isNotEmpty;
-    final winner = pickCanonicalDirectRoom(joined, canonicalRoomId: canonical);
-    if (canonicalDecided && winner.id == canonical && registry != null) {
-      for (final loser in joined) {
-        if (loser.id == winner.id) continue;
-        await registry.record(
-          accountId: self,
-          peerId: matrixPeer,
-          primaryRoomId: winner.id,
-          duplicateRoomId: loser.id,
-        );
-      }
-    }
-    final collapsed = <String>[winner.id];
-    if (_idsDiffer(roomIds, collapsed)) {
-      next[entry.key] = collapsed;
-      changed = true;
+  final identities = registry ?? DuplicateRoomRegistry();
+  await loadDirectRoomAssociations(client, identities);
+  if (client.userID != self) return;
+  final directory = <String, Set<String>>{
+    for (final peer in knownMatrixPeers)
+      if (peer.startsWith('@') && peer != self) peer: <String>{}
+  };
+  for (final entry in client.directChats.entries) {
+    if (entry.value is List) {
+      directory[entry.key] = (entry.value as List).whereType<String>().toSet();
     }
   }
-  if (!changed) return;
-  await client.setAccountData(self, 'm.direct', next);
+  for (final entry in identities.entries(self)) {
+    directory.putIfAbsent(entry.peerId, () => <String>{})
+      ..add(entry.duplicateRoomId)
+      ..add(entry.primaryRoomId);
+  }
+  // Primary-only metadata also identifies a peer when legacy m.direct is empty.
+  for (final event in client.accountData.entries) {
+    if (!event.key.startsWith(directConversationAssociationPrefix)) continue;
+    final peer = event.value.content['peer_id'];
+    final room = event.value.content['room_id'];
+    if (peer is String &&
+        room is String &&
+        peer != self &&
+        peer.startsWith('@') &&
+        room.startsWith('!') &&
+        event.key ==
+            '$directConversationAssociationPrefix${Uri.encodeComponent(room)}') {
+      directory.putIfAbsent(peer, () => <String>{}).add(room);
+    }
+  }
+  for (final entry in directory.entries) {
+    if (client.userID != self) return;
+    final peer = businessUserIdOf?.call(entry.key);
+    if (peer == null || peer.isEmpty) continue;
+    DirectRoomAssociations? remote;
+    try {
+      remote = await associationsOf?.call(peer);
+    } catch (_) {/* Retry next sync. */}
+    if (client.userID != self) return;
+    final remotePrimary = remote?.primaryRoomId;
+    final canonical = remotePrimary != null && remotePrimary.startsWith('!')
+        ? remotePrimary
+        : await _canonicalOf(canonicalRoomIdOf, peer);
+    if (client.userID != self) return;
+    if (canonical == null || !canonical.startsWith('!')) continue;
+    final verifiedRemote = remotePrimary == canonical
+        ? remote!.roomIds.where((id) => id.startsWith('!')).toSet()
+        : <String>{};
+    final localVerified = entry.value.where((id) {
+      final room = _joinedRoomById(client, id);
+      return room != null && room.encrypted;
+    }).toSet();
+    final retained = identities
+        .entries(self)
+        .where((known) => known.peerId == entry.key)
+        .map((known) => known.duplicateRoomId);
+    final sources = {
+      canonical,
+      ...localVerified,
+      ...verifiedRemote,
+      ...retained
+    };
+    await identities.rememberPrimary(self, entry.key, canonical);
+    for (final id in sources) {
+      if (client.userID != self) return;
+      if (id != canonical) {
+        await identities.record(
+            accountId: self,
+            peerId: entry.key,
+            primaryRoomId: canonical,
+            duplicateRoomId: id);
+      }
+      final type =
+          '$directConversationAssociationPrefix${Uri.encodeComponent(id)}';
+      final body = <String, Object?>{
+        'room_id': id,
+        'peer_id': entry.key,
+        'primary_room_id': canonical
+      };
+      final previous = client.accountData[type]?.content;
+      if (previous?['primary_room_id'] == canonical &&
+          previous?['peer_id'] == entry.key &&
+          previous?['room_id'] == id) {
+        continue;
+      }
+      try {
+        await client.setAccountData(self, type, body);
+        if (client.userID != self) return;
+        client.accountData[type] = BasicEvent(type: type, content: body);
+      } catch (_) {
+        /* Keep local identity and retry account metadata next sync. */
+      }
+    }
+    if (publishAssociations != null && localVerified.isNotEmpty) {
+      if (client.userID != self) return;
+      try {
+        await publishAssociations(peer, localVerified.toList()..sort());
+      } catch (_) {
+        /* Server revalidates rooms; failure never removes local history. */
+      }
+    }
+  }
 }
 
 Room? _joinedRoomById(Client client, String roomId) {
@@ -113,12 +209,4 @@ Room pickCanonicalDirectRoom(List<Room> joined, {String? canonicalRoomId}) {
     }
   }
   return best;
-}
-
-bool _idsDiffer(List<dynamic> current, List<String> collapsed) {
-  if (current.length != collapsed.length) return true;
-  for (var i = 0; i < current.length; i++) {
-    if (current[i] != collapsed[i]) return true;
-  }
-  return false;
 }

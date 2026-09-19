@@ -363,6 +363,7 @@ abstract interface class RoomWindowedTimelineSource {
 final class RoomTimelineController extends ChangeNotifier {
   RoomTimelineController(this.adapter,
       {this.canSendNow,
+      this.outboxRoomId,
       bool windowed = false,
       NetworkStateManager? networkStateManager,
       OutboxJournal? outboxJournal,
@@ -387,6 +388,8 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 规格§二/§三：互动权限门（非好友/拉黑 → 消息进入本地 failed，
   /// 绝不触达发送服务；UI 与服务层同一守卫）。
   final bool Function()? canSendNow;
+  final String? outboxRoomId;
+  final Set<String> _foreignOutboxTransactions = {};
 
   /// 单次派发的护栏超时（2026-09-19 房间瘫痪修复）。
   ///
@@ -585,6 +588,9 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 只保存本地乐观行，重发复用同一 txid 与捕获的发送回调。
   final _waitingNetworkIds = <String>{};
   bool _drainingWaitingNetwork = false;
+  bool _waitingDrainRequested = false;
+  bool _reportingNetworkFailure = false;
+  int _networkRecoveryRevision = 0;
 
   NetworkStateManager? get _networkState =>
       _injectedNetworkState ?? NetworkStateManager.shared;
@@ -608,13 +614,13 @@ final class RoomTimelineController extends ChangeNotifier {
     _recoveryAttached = true;
     _recoveryManager = manager;
     manager.state.addListener(_handleNetworkStateChanged);
-    // 行进入等待时管理器可能已经认为网络可用（例如失败由别的层上报）。
-    // `whenOnline()` 在此情况下立即完成且不排定时器，因此直接排水一次。
-    if (_networkIsUsable) unawaited(_drainWaitingNetwork());
+    // 只消费外部恢复通知；失败落盘后由 revision 补偿在途期间的恢复。
   }
 
   void _handleNetworkStateChanged() {
-    if (_disposed || !_networkIsUsable) return;
+    if (_disposed || _reportingNetworkFailure || !_networkIsUsable) return;
+    _networkRecoveryRevision++;
+    _waitingDrainRequested = true;
     unawaited(_drainWaitingNetwork());
   }
 
@@ -631,18 +637,22 @@ final class RoomTimelineController extends ChangeNotifier {
     }
     _drainingWaitingNetwork = true;
     try {
-      for (final tx in List<String>.of(_waitingNetworkIds)) {
-        if (_disposed) return;
-        // 重发途中再次掉线：余下的行继续等待，不做无谓的失败派发。
-        if (!_networkIsUsable) break;
-        if (!_waitingNetworkIds.contains(tx)) continue;
-        // 已经不在本地乐观行里的 txid（例如已被撤回/清空）不再重发。
-        if (!_localEchoes.containsKey(tx)) {
-          _waitingNetworkIds.remove(tx);
-          continue;
+      do {
+        _waitingDrainRequested = false;
+        for (final tx in List<String>.of(_waitingNetworkIds)) {
+          if (_disposed) return;
+          // 重发途中再次掉线：余下的行继续等待，不做无谓的失败派发。
+          if (!_networkIsUsable) break;
+          if (!_waitingNetworkIds.contains(tx)) continue;
+          if (_inFlightTxids.contains(tx) || _retrying.contains(tx)) continue;
+          // 已经不在本地乐观行里的 txid（例如已被撤回/清空）不再重发。
+          if (!_localEchoes.containsKey(tx)) {
+            _waitingNetworkIds.remove(tx);
+            continue;
+          }
+          await _retry(tx, rethrowErrors: false);
         }
-        await _retry(tx, rethrowErrors: false);
-      }
+      } while (_waitingDrainRequested && !_disposed && _networkIsUsable);
     } finally {
       _drainingWaitingNetwork = false;
     }
@@ -653,15 +663,36 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 网络失败 → [RoomDeliveryState.waitingNetwork]（并上报给网络状态机，
   /// 便于恢复时自动重发）；服务端拒绝/权限/互动门禁等非网络失败 →
   /// 终局 [RoomDeliveryState.failed]。
-  RoomDeliveryState _noteFailure(String tx, Object error) {
+  RoomDeliveryState _noteFailure(String tx, Object error,
+      {int? attemptRevision}) {
     if (_isNetworkFailure(error)) {
-      _networkState?.reportFailure(error);
+      if (attemptRevision == null ||
+          attemptRevision == _networkRecoveryRevision ||
+          !_networkIsUsable) {
+        _reportingNetworkFailure = true;
+        try {
+          _networkState?.reportFailure(error);
+        } finally {
+          _reportingNetworkFailure = false;
+        }
+      }
       _waitingNetworkIds.add(tx);
       _attachNetworkRecoveryWatch();
       return RoomDeliveryState.waitingNetwork;
     }
     _waitingNetworkIds.remove(tx);
     return RoomDeliveryState.failed;
+  }
+
+  void _resumeSettledWaiting(String tx, int attemptRevision) {
+    if (_disposed ||
+        !_waitingNetworkIds.contains(tx) ||
+        !_networkIsUsable ||
+        attemptRevision == _networkRecoveryRevision) {
+      return;
+    }
+    _waitingDrainRequested = true;
+    unawaited(_drainWaitingNetwork());
   }
 
   List<RoomMessageViewModel> _snapshot() {
@@ -854,7 +885,12 @@ final class RoomTimelineController extends ChangeNotifier {
 
   Future<void> _retry(String transactionId,
       {required bool rethrowErrors}) async {
-    if (_disposed || !(canSendNow?.call() ?? true)) return;
+    if (_disposed ||
+        _inFlightTxids.contains(transactionId) ||
+        !(canSendNow?.call() ?? true) ||
+        _foreignOutboxTransactions.contains(transactionId)) {
+      return;
+    }
     if (!_retrying.add(transactionId)) return;
     final alias = _eventTransactions[transactionId];
     final tx = _localEchoes.containsKey(transactionId)
@@ -863,6 +899,8 @@ final class RoomTimelineController extends ChangeNotifier {
             ? alias
             : null;
     if (tx != null) _waitingNetworkIds.remove(tx);
+    _attachNetworkRecoveryWatch();
+    final attemptRevision = _networkRecoveryRevision;
     try {
       if (tx != null) {
         final fresh = _localEchoes[tx]!.copyWith(
@@ -890,15 +928,15 @@ final class RoomTimelineController extends ChangeNotifier {
     } catch (error) {
       if (tx != null && _localEchoes.containsKey(tx)) {
         _echoRevision++;
-        final state = _noteFailure(tx, error);
+        final state = _noteFailure(tx, error, attemptRevision: attemptRevision);
         _localEchoes[tx] = _localEchoes[tx]!.copyWith(deliveryState: state);
         // 手动重试同样要把结果写回 outbox，否则重启后状态会漂移。
-        await _persistOutboxOutcome(tx, _localEchoes[tx]!, state,
-            error: error);
+        await _persistOutboxOutcome(tx, _localEchoes[tx]!, state, error: error);
       }
       if (rethrowErrors) rethrow;
     } finally {
       _retrying.remove(transactionId);
+      if (tx != null) _resumeSettledWaiting(tx, attemptRevision);
       await refresh();
     }
   }
@@ -1014,9 +1052,10 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   /// 该日已知 anchor（月 metadata 已给出时跳过重复 timestamp_to_event）。
-  String? anchorForDay(DateTime localDay) => adapter is RoomHistoryDateCapability
-      ? (adapter as RoomHistoryDateCapability).anchorForDay(localDay)
-      : null;
+  String? anchorForDay(DateTime localDay) =>
+      adapter is RoomHistoryDateCapability
+          ? (adapter as RoomHistoryDateCapability).anchorForDay(localDay)
+          : null;
 
   void cancelPendingDateLookup() {
     if (_disposed) return;
@@ -1046,7 +1085,8 @@ final class RoomTimelineController extends ChangeNotifier {
     String? recipientMatrixId,
   }) =>
       adapter.sendRedPacketReference(packetId, greeting,
-          mode: mode, recipientId: recipientId,
+          mode: mode,
+          recipientId: recipientId,
           recipientMatrixId: recipientMatrixId);
 
   Future<String> sendTransferReference(
@@ -1081,6 +1121,13 @@ final class RoomTimelineController extends ChangeNotifier {
     OutboxMessage? outboxRow,
   }) async {
     if (_disposed) return null;
+    if (outboxRow != null &&
+        outboxRoomId != null &&
+        outboxRow.roomId != null &&
+        outboxRow.roomId != outboxRoomId) {
+      restoreOutboxMessage(outboxRow);
+      return null;
+    }
     _restoreLatest();
     messages = _snapshot();
     _reindex();
@@ -1134,6 +1181,10 @@ final class RoomTimelineController extends ChangeNotifier {
   void restoreOutboxMessage(OutboxMessage row) {
     if (_disposed || row.content.trim().isEmpty) return;
     final tx = row.txid;
+    final foreign = outboxRoomId != null &&
+        row.roomId != null &&
+        row.roomId != outboxRoomId;
+    if (foreign) _foreignOutboxTransactions.add(tx);
     if (_localEchoes.containsKey(tx)) return;
     _restoreLatest();
     messages = _snapshot();
@@ -1145,7 +1196,8 @@ final class RoomTimelineController extends ChangeNotifier {
       text: row.content,
       isOwn: true,
       timestamp: _localTimestampFor(row.createdAt),
-      deliveryState: roomDeliveryStateOf(row.status),
+      deliveryState:
+          foreign ? RoomDeliveryState.failed : roomDeliveryStateOf(row.status),
     );
     final transport = adapter;
     _senders[tx] = () => transport is RoomOptimisticTextAdapter
@@ -1155,6 +1207,42 @@ final class RoomTimelineController extends ChangeNotifier {
     _echoRevision++;
     _localEchoes[tx] = local;
     messages = [...messages, local];
+    _publish();
+  }
+
+  /// Refresh only echoes already owned by this page; a background sender may
+  /// settle them after canonical routing declined this page's claim.
+  Future<void> reconcileOutboxStatuses() async {
+    final journal = _outboxJournal;
+    if (_disposed || journal == null) return;
+    for (final tx in _localEchoes.keys.toList()) {
+      final row = await journal.findByTxid(tx);
+      if (_disposed) return;
+      if (row != null) _reconcileOutboxMessage(row);
+    }
+  }
+
+  void _reconcileOutboxMessage(OutboxMessage row) {
+    final tx = row.txid;
+    final echo = _localEchoes[tx];
+    if (_disposed || echo == null) return;
+    if (outboxRoomId != null &&
+        row.roomId != null &&
+        row.roomId != outboxRoomId) {
+      _foreignOutboxTransactions.add(tx);
+    }
+    final state = roomDeliveryStateOf(row.status);
+    if (state == RoomDeliveryState.sent) {
+      _eventTransactions[tx] = tx;
+      _senders.remove(tx);
+    }
+    if (state != RoomDeliveryState.waitingNetwork) {
+      _waitingNetworkIds.remove(tx);
+    }
+    if (echo.deliveryState == state) return;
+    _echoRevision++;
+    _localEchoes[tx] = echo.copyWith(deliveryState: state);
+    messages = _snapshot();
     _publish();
   }
 
@@ -1196,9 +1284,7 @@ final class RoomTimelineController extends ChangeNotifier {
       final row = outboxRow ??
           await journal.findByTxid(tx) ??
           await journal.persist(
-              txid: tx,
-              content: local.text,
-              status: outboxStatusOf(state));
+              txid: tx, content: local.text, status: outboxStatusOf(state));
       if (row == null) return;
       if (state == RoomDeliveryState.sent) {
         await journal.complete(row.localId);
@@ -1231,6 +1317,8 @@ final class RoomTimelineController extends ChangeNotifier {
       messages = _snapshot();
     }
     _inFlightTxids.add(tx);
+    _attachNetworkRecoveryWatch();
+    final attemptRevision = _networkRecoveryRevision;
     final journal = _outboxJournal;
     final tracks = _tracksOutbox(inFlight);
     OutboxMessage? row = outboxRow;
@@ -1239,25 +1327,14 @@ final class RoomTimelineController extends ChangeNotifier {
       if (journal != null && tracks) {
         row ??= await journal.findByTxid(tx);
         row ??= await journal.persist(
-            txid: tx,
-            content: inFlight.text,
-            status: OutboxStatus.queued);
+            txid: tx, content: inFlight.text, status: OutboxStatus.queued);
         if (row != null) {
           // ② 原子认领：认领失败 = 这一行已被（别的派发者）认领或已送达，
           //    本次绝不再发一遍。
           final claimed = await journal.claim(row.localId);
           if (!claimed) {
             final current = await journal.findByTxid(tx);
-            if (current?.status == OutboxStatus.sent) {
-              _echoRevision++;
-              _eventTransactions[tx] = tx;
-              _localEchoes[tx] =
-                  inFlight.copyWith(deliveryState: RoomDeliveryState.sent);
-              _senders.remove(tx);
-              messages = _snapshot();
-              _publish();
-              return null;
-            }
+            if (current != null) _reconcileOutboxMessage(current);
             return null;
           }
         }
@@ -1275,10 +1352,9 @@ final class RoomTimelineController extends ChangeNotifier {
       final sendFuture = sender();
       // 护栏先到期时，底层 future 稍后的完成/失败不得成为未处理异常。
       sendFuture.ignore();
-      final eventId = await sendFuture.timeout(
-          sendDispatchTimeout,
-          onTimeout: () => throw TimeoutException(
-              '消息发送超时', sendDispatchTimeout));
+      final eventId = await sendFuture.timeout(sendDispatchTimeout,
+          onTimeout: () =>
+              throw TimeoutException('消息发送超时', sendDispatchTimeout));
       if (_disposed) return null;
       _echoRevision++;
       _eventTransactions[eventId] = tx;
@@ -1300,12 +1376,13 @@ final class RoomTimelineController extends ChangeNotifier {
       _echoRevision++;
       // 网络失败 → waitingNetwork（红叹号，保留 sender/txid 供恢复后自动重发）；
       // 其余（服务端拒绝、无权限等）→ 终局 failed。
-      final state = _noteFailure(tx, error);
+      final state = _noteFailure(tx, error, attemptRevision: attemptRevision);
       _localEchoes[tx] = inFlight.copyWith(deliveryState: state);
       await _persistOutboxOutcome(tx, inFlight, state,
           error: error, outboxRow: row);
     } finally {
       _inFlightTxids.remove(tx);
+      _resumeSettledWaiting(tx, attemptRevision);
     }
     messages = _snapshot();
     _publish();

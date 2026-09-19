@@ -1,3 +1,4 @@
+import 'logical_conversation_timeline.dart';
 import 'matrix_room_display_name.dart' as room_names;
 import 'matrix_outgoing_work_coordinator.dart';
 import 'conversation_identity_resolver.dart';
@@ -42,8 +43,7 @@ import 'avatar_url_resolver.dart';
 import 'conversation_preferences.dart';
 import 'matrix_control_rooms.dart';
 import 'direct_chat_controller.dart';
-import '../../core/network_state_manager.dart'
-    show MessageSendNetworkException;
+import '../../core/network_state_manager.dart' show MessageSendNetworkException;
 import 'decryption_state_controller.dart';
 import 'emoji_vault.dart';
 import 'group_chat_controller.dart';
@@ -132,7 +132,6 @@ abstract interface class MatrixEncryptedMediaGateway {
 abstract interface class MatrixOutgoingProgressView {
   Listenable get outgoingProgress;
 }
-
 
 @immutable
 final class MatrixClientContinuityMetadata {
@@ -748,7 +747,7 @@ final class MatrixConversationCapability {
         final selfUserId = client.userID;
         final registry = _owner._duplicateRooms;
         if (selfUserId != null && registry != null) {
-          await registry.ensureLoaded(selfUserId);
+          await loadDirectRoomAssociations(client, registry);
         }
         // 身份解析（同一好友一行）在数据源出口统一执行：m.direct 中同一
         // peer 的多个已加入房间（历史房间/旧版本建房/avoidRoomId 新建残留）
@@ -784,8 +783,7 @@ final class MatrixConversationCapability {
             for (final room in resolution.representatives)
               _mergeDuplicateConversationState(
                   room,
-                  resolution.duplicatesByRepresentativeId[room.id] ??
-                      const [],
+                  resolution.duplicatesByRepresentativeId[room.id] ?? const [],
                   selfUserId)
           ],
         );
@@ -802,14 +800,14 @@ final class MatrixConversationCapability {
   ) {
     if (registry == null || selfUserId == null) return room;
     if (room.isDirect && (room.directPeerId?.isNotEmpty ?? false)) return room;
-    final entry = registry.entryForRoom(selfUserId, room.id);
-    if (entry == null || entry.peerId.isEmpty) return room;
+    final peer = registry.peerIdForRoom(selfUserId, room.id);
+    if (peer == null || peer.isEmpty) return room;
     return MatrixConversationRoomSnapshot(
       id: room.id,
       displayName: room.displayName,
       avatar: room.avatar,
       isDirect: true,
-      directPeerId: entry.peerId,
+      directPeerId: peer,
       members: room.members,
       lastEvent: room.lastEvent,
       preference: room.preference,
@@ -957,10 +955,19 @@ final class MatrixConversationCapability {
   Future<void> convergeDirectRoomDirectory(
           {Future<String?> Function(String peerBusinessUserId)?
               canonicalRoomIdOf,
-          String? Function(String matrixPeerUserId)? businessUserIdOf}) =>
+          String? Function(String matrixPeerUserId)? businessUserIdOf,
+          Future<DirectRoomAssociations?> Function(String peerBusinessUserId)?
+              associationsOf,
+          Future<void> Function(
+                  String peerBusinessUserId, List<String> roomIds)?
+              publishAssociations,
+          Iterable<String> knownMatrixPeers = const <String>[]}) =>
       _owner._withClient((client) => convergeDirectDirectory(client,
           canonicalRoomIdOf: canonicalRoomIdOf,
           businessUserIdOf: businessUserIdOf,
+          associationsOf: associationsOf,
+          publishAssociations: publishAssociations,
+          knownMatrixPeers: knownMatrixPeers,
           registry: _owner._duplicateRooms));
   Future<MatrixRoomInfoSnapshot> waitForJoinedRoom(String id) =>
       _owner._withClient((client) async {
@@ -1009,7 +1016,6 @@ final class MatrixConversationCapability {
         }
         return count;
       });
-
 
   Future<void> markReadOnOpen(String roomId) =>
       _owner._withClient((client) async {
@@ -1292,7 +1298,8 @@ final class MatrixForwardDestinationSnapshot {
 final class MatrixRoomLease
     implements
         _ManagedClientResourceBase,
-        MatrixEncryptedMediaGateway, MatrixOutgoingProgressView,
+        MatrixEncryptedMediaGateway,
+        MatrixOutgoingProgressView,
         AvatarMediaCapability,
         NudgeBackend,
         MessageInteractionBackend {
@@ -1320,8 +1327,34 @@ final class MatrixRoomLease
         return operation(room);
       });
 
+  Future<T> _withLeaseSend<T>(Future<T> Function(Room room) operation) =>
+      _withLeaseOperation((room) async {
+        await owner._requireRoomSend(room);
+        if (canceled || !identical(_activeRoom, room)) {
+          throw StateError('Matrix room lease is not active');
+        }
+        return operation(room);
+      });
+
   /// A non-SDK snapshot valid only while this lease is active.
-  MatrixRoomInfoSnapshot get roomInfo => _snapshotRoomInfo(_activeRoom);
+  MatrixRoomInfoSnapshot get roomInfo {
+    final value = _snapshotRoomInfo(_activeRoom);
+    final peer =
+        owner._duplicateRooms?.peerIdForRoom(value.currentUserId ?? '', roomId);
+    if (peer == null) return value;
+    return MatrixRoomInfoSnapshot(
+        id: value.id,
+        name: value.name,
+        topic: value.topic,
+        isDirect: true,
+        directPeerId: peer,
+        currentUserId: value.currentUserId,
+        announcementVersion: value.announcementVersion,
+        homeserver: value.homeserver,
+        canMentionAll: value.canMentionAll,
+        preference: value.preference,
+        members: value.members);
+  }
 
   bool get _mentionsActive => !canceled && !owner._accessRevoked;
   Future<UnreadMentionTracker> openMentions() =>
@@ -1387,7 +1420,7 @@ final class MatrixRoomLease
   Future<MatrixRoomInfoSnapshot> refreshRoomInfo() =>
       _withLeaseOperation((room) async {
         await room.requestParticipants([Membership.join]);
-        return _snapshotRoomInfo(room);
+        return roomInfo;
       });
 
   Future<RoomTimelineCapability> openRoomTimeline({
@@ -1399,6 +1432,124 @@ final class MatrixRoomLease
         _timelines.add(capability);
         return capability;
       });
+
+  final Map<String, MatrixRoomLease> _historyLeases = {};
+  StreamSubscription<void>? _logicalSync;
+  LogicalConversationTimelineCapability? _logicalTimeline;
+  Future<void> Function()? _refreshLogicalSources;
+
+  MatrixRoomLease leaseForEvent(String eventId) {
+    final hinted = _logicalTimeline?.sourceRoomId(eventId);
+    if (hinted != null && _historyLeases.containsKey(hinted)) {
+      return _historyLeases[hinted]!;
+    }
+    for (final lease in _historyLeases.values) {
+      if (lease._timelines
+          .any((timeline) => timeline.eventById(eventId) != null)) {
+        return lease;
+      }
+    }
+    return this;
+  }
+
+  Future<void> hintLogicalEventSource(
+      String eventId, String sourceRoomId) async {
+    await _refreshLogicalSources?.call();
+    final timeline = _logicalTimeline;
+    if (canceled || timeline == null) {
+      throw StateError('Logical timeline unavailable');
+    }
+    if (sourceRoomId != roomId && !_historyLeases.containsKey(sourceRoomId)) {
+      throw StateError('Event source is not associated with this conversation');
+    }
+    timeline.hintSource(eventId, sourceRoomId);
+  }
+
+  Future<RoomTimelineCapability> openLogicalRoomTimeline({
+    required void Function() onUpdate,
+    String? anchorRoomId,
+    String? anchorEventId,
+  }) async {
+    final primary = await openRoomTimeline(onUpdate: onUpdate);
+    late final LogicalConversationTimelineCapability merged;
+    merged = LogicalConversationTimelineCapability(
+      primaryRoomId: roomId,
+      primary: primary,
+      sources: {},
+      onDispose: () {
+        if (!identical(_logicalTimeline, merged)) return;
+        _logicalTimeline = null;
+        _refreshLogicalSources = null;
+        unawaited(_logicalSync?.cancel());
+        _logicalSync = null;
+        for (final lease in _historyLeases.values.toList()) {
+          unawaited(lease.cancel());
+        }
+        _historyLeases.clear();
+      },
+    );
+    _logicalTimeline = merged;
+    Future<void>? attaching;
+    bool attachAgain = false;
+    Future<void> attachPass() async {
+      do {
+        attachAgain = false;
+        if (canceled || !identical(_logicalTimeline, merged)) return;
+        await owner.prepareConversationAssociations();
+        for (final sourceId in owner.logicalRoomSourcesSync(roomId)) {
+          if (canceled || !identical(_logicalTimeline, merged)) return;
+          if (sourceId == roomId || _historyLeases.containsKey(sourceId)) {
+            continue;
+          }
+          final source = await owner.openRoomLease(sourceId);
+          try {
+            final timeline = await source.openRoomTimeline(onUpdate: onUpdate);
+            if (canceled || !identical(_logicalTimeline, merged)) {
+              timeline.dispose();
+              await source.cancel();
+              return;
+            }
+            merged.addSource(sourceId, timeline);
+            _historyLeases[sourceId] = source;
+          } catch (_) {
+            await source.cancel();
+            rethrow;
+          }
+        }
+        if (anchorEventId != null &&
+            anchorRoomId != null &&
+            (anchorRoomId == roomId ||
+                _historyLeases.containsKey(anchorRoomId))) {
+          merged.hintSource(anchorEventId, anchorRoomId);
+        }
+        onUpdate();
+      } while (attachAgain);
+    }
+
+    Future<void> attachSources() {
+      final current = attaching;
+      if (current != null) {
+        attachAgain = true;
+        return current;
+      }
+      return attaching = attachPass().whenComplete(() => attaching = null);
+    }
+
+    _refreshLogicalSources = attachSources;
+    try {
+      await attachSources();
+      if (canceled || !identical(_logicalTimeline, merged)) {
+        throw StateError('Logical timeline unavailable');
+      }
+      _logicalSync = owner.syncEvents.listen((_) {
+        unawaited(attachSources().catchError((Object _) {}));
+      });
+      return merged;
+    } catch (_) {
+      merged.dispose();
+      rethrow;
+    }
+  }
 
   Future<MatrixEmojiVaultBackend> openEmojiVaultBackend() async {
     _activeRoom;
@@ -1421,8 +1572,8 @@ final class MatrixRoomLease
     required Iterable<String> messageIds,
     required DateTime cutoff,
   }) =>
-      owner.conversations.clearLocalHistory(roomId,
-          messageIds: messageIds, cutoff: cutoff);
+      owner.conversations
+          .clearLocalHistory(roomId, messageIds: messageIds, cutoff: cutoff);
 
   Future<DateTime?> serverNow() => _withLeaseOperation((room) async {
         final homeserver = room.client.homeserver;
@@ -1545,7 +1696,7 @@ final class MatrixRoomLease
           MatrixGroupAnnouncementService(room).uploadImage(bytes, name));
   Future<String> sendMessageContent(Map<String, Object?> content,
           {required String txid}) =>
-      _withLeaseOperation((room) async =>
+      _withLeaseSend((room) async =>
           await room.sendEvent(Map<String, dynamic>.from(content),
               txid: txid) ??
           (throw StateError('Matrix room event was not accepted')));
@@ -1555,7 +1706,7 @@ final class MatrixRoomLease
     required String name,
     required String mimeType,
   }) =>
-      _withLeaseOperation((room) => room.sendFileEvent(
+      _withLeaseSend((room) => room.sendFileEvent(
             MatrixFile.fromMimeType(
               bytes: bytes,
               name: name,
@@ -1625,7 +1776,7 @@ final class MatrixRoomLease
     Map<String, Object?> content, {
     String? type,
   }) =>
-      _withLeaseOperation((room) async {
+      _withLeaseSend((room) async {
         final payload = Map<String, dynamic>.from(content);
         final eventId = type == null
             ? await room.sendEvent(payload)
@@ -1761,6 +1912,10 @@ final class MatrixRoomLease
         if (event.messageType != MessageTypes.Text) {
           throw StateError('该消息类型不能转发');
         }
+        await owner._requireRoomSend(target);
+        if (canceled || !identical(_activeRoom, source)) {
+          throw StateError('Matrix source room lease is no longer active');
+        }
         await target.sendEvent({
           'msgtype': MessageTypes.Text,
           'body': event.body,
@@ -1785,6 +1940,10 @@ final class MatrixRoomLease
         final target = source.client.getRoomById(targetRoomId);
         if (target == null || !target.encrypted) {
           throw StateError('只能转发到端到端加密会话');
+        }
+        await owner._requireRoomSend(target);
+        if (canceled || !identical(_activeRoom, source)) {
+          throw StateError('Matrix source room lease is no longer active');
         }
         final eventId =
             await target.sendEvent({'msgtype': 'm.text', 'body': text});
@@ -1877,10 +2036,17 @@ final class MatrixRoomLease
 
   void revokeNow() {
     if (_room == null) return;
+    _logicalTimeline?.dispose();
     for (final timeline in _timelines.toList(growable: false)) {
       timeline.dispose();
     }
     _timelines.clear();
+    unawaited(_logicalSync?.cancel());
+    _logicalSync = null;
+    for (final source in _historyLeases.values.toList()) {
+      unawaited(source.cancel());
+    }
+    _historyLeases.clear();
     _room = null;
     final callback = _onRevoked;
     if (callback != null) {
@@ -1912,7 +2078,6 @@ final class MatrixRoomLease
     if (drain == null) return;
     try {
       await Future<void>.sync(drain).timeout(owner.lifecycleDrainTimeout);
-    
     } on TimeoutException {
       owner.securityLogger.record(
         stage: MatrixSecurityStage.roomLeaseDrain,
@@ -1986,6 +2151,7 @@ final class _LeaseAnnouncementService implements GroupAnnouncementService {
 
 final class _SdkRoomTimelineCapability
     implements
+        RoomVisibleReadCapability,
         RoomTimelineCapability,
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
@@ -2200,6 +2366,7 @@ final class _SdkRoomTimelineCapability
     MessageTimelineCache.shared.remember(accountId, _lease.roomId, message);
     return message;
   }
+
   @override
   RoomMessageViewModel? get newestMessage {
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
@@ -2240,6 +2407,12 @@ final class _SdkRoomTimelineCapability
 
   Future<T> _withOperation<T>(Future<T> Function() operation) =>
       _lease._withLeaseOperation((_) async {
+        _ensureActive();
+        return operation();
+      });
+
+  Future<T> _withSendOperation<T>(Future<T> Function() operation) =>
+      _lease._withLeaseSend((_) async {
         _ensureActive();
         return operation();
       });
@@ -2596,7 +2769,7 @@ final class _SdkRoomTimelineCapability
   }
 
   @override
-  Future<String> sendText(String text) => _withOperation(() async =>
+  Future<String> sendText(String text) => _withSendOperation(() async =>
       await _lease._activeRoom.sendTextEvent(text, parseCommands: false) ??
       // SDK 耗尽重试窗口才返回 null（只有网络类错误会走到这里；服务端拒绝
       // 以 MatrixException 抛出）→ 类型化网络异常 → waitingNetwork 自动重发。
@@ -2604,7 +2777,7 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<String> sendTextWithTransaction(String text, String transactionId) =>
-      _withOperation(() async =>
+      _withSendOperation(() async =>
           await _lease._activeRoom
               .sendTextEvent(text, txid: transactionId, parseCommands: false) ??
           (throw const MessageSendNetworkException('消息发送失败')));
@@ -2613,7 +2786,7 @@ final class _SdkRoomTimelineCapability
   Future<String> sendTransferReference(
           String transferId, String amount, String? note,
           {String? receiverId, String? receiverMatrixId}) =>
-      _withOperation(() async =>
+      _withSendOperation(() async =>
           await _lease._activeRoom.sendEvent({
             'msgtype': changliaoTransferMessageType,
             'body': '[畅聊点钻转账]',
@@ -2642,7 +2815,7 @@ final class _SdkRoomTimelineCapability
   @override
   Future<String> sendRedPacketReference(String packetId, String greeting,
           {String? mode, String? recipientId, String? recipientMatrixId}) =>
-      _withOperation(() async =>
+      _withSendOperation(() async =>
           await _lease._activeRoom.sendEvent({
             'msgtype': changliaoRedPacketMessageType,
             'body': '[畅聊点钻红包]',
@@ -2666,7 +2839,7 @@ final class _SdkRoomTimelineCapability
       });
 
   @override
-  Future<void> retry(String transactionId) => _withOperation(() async {
+  Future<void> retry(String transactionId) => _withSendOperation(() async {
         if (await _outgoingWork.retryTransaction(transactionId)) return;
         if (!_retrying.add(transactionId)) return;
         try {
@@ -2755,6 +2928,49 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<void> markRead() => _withOperation(_liveTimeline.setReadMarker);
+
+  Future<void> _visibleReadTail = Future.value();
+  DateTime? _visibleReadThrough;
+
+  @override
+  Future<void> markReadVisible(Iterable<String> eventIds) {
+    final visible = eventIds.toSet();
+    final operation = _visibleReadTail.then((_) => _withOperation(() async {
+          Event? newest;
+          for (final id in visible) {
+            final event = eventById(id);
+            if (event == null) continue;
+            if (newest == null ||
+                event.originServerTs.isAfter(newest.originServerTs)) {
+              newest = event;
+            }
+          }
+          if (newest == null) return;
+          final currentReceipt =
+              _lease._activeRoom.receiptState.global.latestOwnReceipt;
+          final acknowledgedEvent =
+              currentReceipt == null ? null : eventById(currentReceipt.eventId);
+          final acknowledgedAt = acknowledgedEvent?.originServerTs;
+          if (acknowledgedAt != null &&
+              (_visibleReadThrough == null ||
+                  acknowledgedAt.isAfter(_visibleReadThrough!))) {
+            _visibleReadThrough = acknowledgedAt;
+          }
+          if (_visibleReadThrough != null &&
+              !newest.originServerTs.isAfter(_visibleReadThrough!)) {
+            return;
+          }
+          await _liveTimeline.setReadMarker(eventId: newest.eventId);
+          _visibleReadThrough = newest.originServerTs;
+          // Only clear the local aggregate when the actual latest source event was read.
+          if (_lease._activeRoom.lastEvent?.eventId == newest.eventId) {
+            ConversationReadState.shared()
+                .markCleared(_lease.roomId, eventId: newest.eventId);
+          }
+        }));
+    _visibleReadTail = operation.catchError((Object _) {});
+    return operation;
+  }
 
   DateTime _localDay(DateTime timestamp) {
     final local = timestamp.toLocal();
@@ -3043,12 +3259,13 @@ final class _SdkRoomTimelineCapability
       final firstEvent = first;
       final firstDay = firstEvent == null
           ? null
-          : DateTime(firstEvent.$2.year, firstEvent.$2.month, firstEvent.$2.day);
+          : DateTime(
+              firstEvent.$2.year, firstEvent.$2.month, firstEvent.$2.day);
       if (firstDay == null || firstDay.isAfter(monthEnd)) {
         // 服务端确认：该月起点之后最早的事件已在下个月 → 整月为空。
         for (var day = 1; day <= month.daysInMonth; day++) {
-          index.recordDayProbe(_lease.roomId,
-              DateTime(month.year, month.month, day),
+          index.recordDayProbe(
+              _lease.roomId, DateTime(month.year, month.month, day),
               present: false, contributeToCoverage: true);
         }
       } else {
@@ -3065,8 +3282,8 @@ final class _SdkRoomTimelineCapability
             anchorTimestamp: firstEvent.$2);
         final lastEvent = last;
         if (lastEvent != null) {
-          final lastDay = DateTime(
-              lastEvent.$2.year, lastEvent.$2.month, lastEvent.$2.day);
+          final lastDay =
+              DateTime(lastEvent.$2.year, lastEvent.$2.month, lastEvent.$2.day);
           if (!lastDay.isBefore(monthStart)) {
             index.recordDayProbe(_lease.roomId, lastDay,
                 present: true,
@@ -4491,6 +4708,65 @@ final class MatrixSdkE2eeClient
   }
   Client? _client;
 
+  Future<bool> Function(String accountId, String roomId, String? peerId)?
+      authorizeRoomSend;
+
+  Future<bool> authorizeSendToRoom(String roomId) =>
+      _withClient((active) async {
+        final room = active.getRoomById(roomId);
+        if (room == null) throw StateError('Matrix room is unavailable');
+        return _authorizeRoom(room);
+      });
+
+  Future<bool> _authorizeRoom(Room room) async {
+    final client = room.client;
+    final account = client.userID;
+    void validate() {
+      _requireLifecycleAccess();
+      if (!identical(_client, client) ||
+          account != client.userID ||
+          !identical(client.getRoomById(room.id), room)) {
+        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+      }
+    }
+
+    validate();
+    final authorize = authorizeRoomSend;
+    if (authorize == null) return true;
+    if (account == null || account.isEmpty) return false;
+    await _duplicateRooms?.ensureLoaded(account);
+    validate();
+    final peer = _duplicateRooms?.peerIdForRoom(account, room.id) ??
+        room.directChatMatrixID;
+    final allowed = await authorize(account, room.id, peer);
+    validate();
+    if (!allowed ||
+        room.membership != Membership.join ||
+        !room.encrypted ||
+        !room.canSendDefaultMessages) {
+      return false;
+    }
+    if (peer != null) {
+      final members = room
+          .getParticipants([Membership.join, Membership.invite])
+          .map((member) => member.id)
+          .toSet();
+      if (!room.participantListComplete ||
+          members.length != 2 ||
+          !members.contains(account) ||
+          !members.contains(peer)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<void> _requireRoomSend(Room room) async {
+    if (!await _authorizeRoom(room)) {
+      throw StateError('当前会话不允许发送消息');
+    }
+  }
+
   final MatrixOutgoingWorkCoordinator Function(String accountId)
       _outgoingWorkFactory;
   late MatrixOutgoingWorkCoordinator _outgoingWork;
@@ -4541,13 +4817,81 @@ final class MatrixSdkE2eeClient
 
   /// 规则二数据源：本会话已解密消息缓存条数（"本地消息数量"的保守代理）。
   /// 只读内存映射，零 SDK 副作用；仅在同一身份出现多个候选房间时参与比较。
-  int _decryptedEventCount(String roomId) => _decryptedTimelineEvents.keys
-      .where((key) => key.$2 == roomId)
-      .length;
+  int _decryptedEventCount(String roomId) =>
+      _decryptedTimelineEvents.keys.where((key) => key.$2 == roomId).length;
 
   /// 逻辑会话归并出口（缺陷 0919 项 3）：roomId 是登记在案的重复房间时
   /// 返回其 primary 房间号，否则 null。内存同步查询（登记簿由收敛路径
   /// ensureLoaded）；搜索/通知入口在打开前据此归一化为只读定位。
+  Future<void> prepareConversationAssociations() => _withClient((client) async {
+        final registry = _duplicateRooms;
+        if (registry != null) {
+          await loadDirectRoomAssociations(client, registry);
+        }
+      });
+
+  String? logicalPrimaryRoomIdSync(String roomId) {
+    final client = _client;
+    final self = client?.userID;
+    if (client == null || self == null) return null;
+    final registry = _duplicateRooms;
+    final peer = registry?.peerIdForRoom(self, roomId) ??
+        client.getRoomById(roomId)?.directChatMatrixID;
+    if (peer == null) return null;
+    // Display preferences may select a visible list representative, but cannot
+    // change the server's sending destination (including hidden primaries).
+    final confirmed = registry?.primaryRoomIdForPeer(self, peer);
+    if (confirmed != null &&
+        client.getRoomById(confirmed)?.membership == Membership.join) {
+      return confirmed;
+    }
+
+    final candidates = [
+      for (final id in logicalRoomSourcesSync(roomId))
+        if (client.getRoomById(id) case final Room room)
+          conversations._reassociateDuplicate(
+              conversations._snapshotRoom(room, _localHistoryStore),
+              registry,
+              self)
+    ];
+    final representatives = resolveConversationIdentities(candidates,
+        selfUserId: self,
+        primaryRoomIdOf: (peerId) =>
+            registry?.primaryRoomIdForPeer(self, peerId),
+        localMessageCountOf: (room) => _decryptedEventCount(room.id));
+    return representatives.firstOrNull?.id;
+  }
+
+  String logicalConversationKeySync(String roomId) {
+    final client = _client;
+    final self = client?.userID;
+    final peer = self == null
+        ? null
+        : _duplicateRooms?.peerIdForRoom(self, roomId) ??
+            client?.getRoomById(roomId)?.directChatMatrixID;
+    return peer == null || peer.isEmpty ? 'room:$roomId' : 'dm:$peer';
+  }
+
+  Set<String> logicalRoomSourcesSync(String roomId) {
+    final client = _client;
+    final self = client?.userID;
+    if (client == null || self == null) return {roomId};
+    final registry = _duplicateRooms;
+    final peer = registry?.peerIdForRoom(self, roomId) ??
+        client.getRoomById(roomId)?.directChatMatrixID;
+    if (peer == null) return {roomId};
+    return {
+      roomId,
+      if (registry?.primaryRoomIdForPeer(self, peer) case final String primary)
+        primary,
+      ...?(client.directChats[peer] as List?)?.whereType<String>(),
+      for (final old in registry?.entries(self) ?? <DuplicateRoomEntry>[])
+        if (old.peerId == peer) ...[old.duplicateRoomId, old.primaryRoomId],
+    }
+        .where((id) => client.getRoomById(id)?.membership == Membership.join)
+        .toSet();
+  }
+
   String? duplicateRoomPrimaryIdSync(String roomId) {
     final registry = _duplicateRooms;
     if (registry == null) return null;
@@ -4563,7 +4907,7 @@ final class MatrixSdkE2eeClient
         final registry = _duplicateRooms;
         final self = client.userID;
         if (registry == null || self == null) return null;
-        await registry.ensureLoaded(self);
+        await loadDirectRoomAssociations(client, registry);
         return registry.primaryRoomIdForDuplicate(self, roomId);
       });
   @visibleForTesting
@@ -4571,7 +4915,8 @@ final class MatrixSdkE2eeClient
   @visibleForTesting
   bool get debugHasActiveClient => _client != null;
   @visibleForTesting
-  MatrixSuspendedContinuity get debugSuspendedContinuity => _suspendedContinuity;
+  MatrixSuspendedContinuity get debugSuspendedContinuity =>
+      _suspendedContinuity;
 
   MatrixDiagnosticIdentity? _identity({
     String? matrixUserId,
@@ -4987,6 +5332,7 @@ final class MatrixSdkE2eeClient
             !target.canSendDefaultMessages) {
           throw StateError('当前会话不可发送消息');
         }
+        await _requireRoomSend(target);
         _ensureOutgoingSession(session, attempt);
         final eventId = await target.sendEvent(
           Map<String, dynamic>.from(content),
@@ -6172,7 +6518,8 @@ final class MatrixSdkE2eeClient
     }
     try {
       await _attachManagedResources(resumed);
-      await _attachManagedSubscriptions(resumed);    } catch (error, stackTrace) {
+      await _attachManagedSubscriptions(resumed);
+    } catch (error, stackTrace) {
       await _detachManagedSubscriptions();
       await _detachManagedResources();
       await _rejectResumeClient(resumed);
@@ -6324,6 +6671,7 @@ final class MatrixSdkE2eeClient
       _withClient((active) async {
         final room = active.getRoomById(roomId);
         if (room == null) throw StateError('Matrix room is not joined');
+        await _requireRoomSend(room);
         final eventId =
             await room.sendTextEvent(plaintext, parseCommands: false);
         if (eventId == null) throw StateError('Matrix event was not accepted');
@@ -6410,6 +6758,7 @@ final class MatrixSdkE2eeClient
       }
     }
 
+    await _requireRoomSend(room);
     validateSendAccess();
     if (!room.isDirectChat && mimeType.startsWith('video/')) {
       validateGroupVideoSize(plaintext.length);
@@ -6469,6 +6818,7 @@ final class MatrixSdkE2eeClient
     );
     // Preparation yields to worker isolates. Revoke/room replacement can happen
     // meanwhile; check both owner and originating lease before any SDK upload.
+    await _requireRoomSend(room);
     validateSendAccess();
     final eventId = await room.sendFileEvent(
       prepared.file,
@@ -6495,8 +6845,7 @@ final class MatrixSdkE2eeClient
   ///
   /// 供 `RoomOpeningPolicy` 的离线优先判定使用：不触发 `/sync`、不等待同步、
   /// 不发起任何网络请求（与 `waitForRoom` 的区别就在于此）。
-  bool knowsRoomLocally(String roomId) =>
-      _client?.getRoomById(roomId) != null;
+  bool knowsRoomLocally(String roomId) => _client?.getRoomById(roomId) != null;
 
   /// **本地只读**：该房间在本机 SDK store 中是否为我方已加入。
   bool isRoomJoinedLocally(String roomId) =>
@@ -6562,6 +6911,51 @@ final class MatrixSdkE2eeClient
 
   /// The caller owns one durable creation grant. Never repair an uncertain
   /// existing room or retry a Matrix create inside this operation.
+  Future<String> createReservedDirectRoom(
+          String peer, String aliasLocalpart, String reservationId) =>
+      _withClient((client) async {
+        if (!RegExp(r'^chatflow_dm_[a-f0-9]{32}$').hasMatch(aliasLocalpart)) {
+          throw StateError('Invalid reserved alias');
+        }
+        final self = client.userID;
+        if (self == null || !self.contains(':')) {
+          throw StateError('Account unavailable');
+        }
+        final alias =
+            '#$aliasLocalpart:${self.substring(self.indexOf(':') + 1)}';
+        Future<String?> resolve() async {
+          try {
+            return (await client.getRoomIdByAlias(alias)).roomId;
+          } on MatrixException catch (error) {
+            if (error.errcode == 'M_NOT_FOUND') return null;
+            rethrow;
+          }
+        }
+
+        final existing = await resolve();
+        if (existing != null) return existing;
+        try {
+          return await client.createRoom(
+              roomAliasName: aliasLocalpart,
+              invite: [peer],
+              isDirect: true,
+              preset: CreateRoomPreset.trustedPrivateChat,
+              initialState: [
+                StateEvent(type: EventTypes.Encryption, content: {
+                  'algorithm': Client.supportedGroupEncryptionAlgorithms.first
+                }),
+                StateEvent(
+                    type: 'com.chatflow.direct_reservation',
+                    stateKey: '',
+                    content: {'reservation_id': reservationId}),
+              ]);
+        } catch (_) {
+          final recovered = await resolve();
+          if (recovered != null) return recovered;
+          rethrow;
+        }
+      });
+
   Future<DirectChatRoom> createDirectChatOnce(String peer) =>
       _withClient((client) async {
         final backend = MatrixDirectChatBackend(client);
@@ -6576,6 +6970,7 @@ final class MatrixSdkE2eeClient
       _withClient((client) async {
         final room = client.getRoomById(roomId);
         if (room == null || !room.encrypted) throw StateError('加密私聊尚未就绪');
+        await _requireRoomSend(room);
         final id = await room.sendEvent(
             friendAcceptedEventContent(
               requesterMatrixUserId: peerId,
@@ -6592,6 +6987,7 @@ final class MatrixSdkE2eeClient
       });
 
   @override
+
   /// **LEGACY（生产禁用）**：无 canonical 仲裁的私聊创建便捷方法。
   ///
   /// 生产私聊创建只经 `DirectChatController` → `CoordinatedDirectChatGateway`
@@ -6616,6 +7012,7 @@ final class MatrixSdkE2eeClient
         );
       });
 }
+
 /// Task B：把本机 Matrix 加密库投影成只读搜索来源。
 ///
 /// 安全与边界：
