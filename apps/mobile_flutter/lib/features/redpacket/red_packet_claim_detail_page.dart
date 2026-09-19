@@ -6,6 +6,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'red_packet_controller.dart';
+import 'red_packet_detail_store.dart';
 
 final class RedPacketClaimRecord {
   const RedPacketClaimRecord({
@@ -134,7 +135,11 @@ final class RedPacketClaimDetailPage extends StatefulWidget {
 
 final class _RedPacketClaimDetailPageState
     extends State<RedPacketClaimDetailPage> {
-  late final RedPacketController controller = RedPacketController(widget.api)
+  /// 只读明细页注入会话级明细缓存：再次进入先用上次明细渲染，再后台刷新
+  /// （拆红包弹窗刻意不注入，资金动作一律以服务端实时状态为准）。
+  late final RedPacketController controller = RedPacketController(
+          widget.api,
+          details: RedPacketDetailStores.shared)
     ..addListener(_changed);
   List<ContactSummary> contacts = const [];
   bool contactsLoaded = false;

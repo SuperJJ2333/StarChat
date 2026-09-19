@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/business_auth_contracts.dart';
 import '../contacts/contact_models.dart';
+import 'red_packet_detail_store.dart';
 
 abstract interface class RedPacketViewGateway {
   Future<Map<String, dynamic>> redPacketDetail(String id);
@@ -32,7 +33,10 @@ String? effectiveRedPacketStatus(Map<String, dynamic>? detail) {
 }
 
 final class RedPacketController extends ChangeNotifier {
-  RedPacketController(this.api) {
+  /// [details] 传入会话级明细缓存后，本控制器会「本地优先 → 立即展示 →
+  /// 后台同步 → 失败不覆盖」；不传（如拆红包弹窗）则每个请求都以服务端为准。
+  RedPacketController(this.api, {RedPacketDetailStore? details})
+      : _details = details {
     final monitor =
         api is BusinessSessionMonitor ? api as BusinessSessionMonitor : null;
     _monitor = monitor;
@@ -40,6 +44,9 @@ final class RedPacketController extends ChangeNotifier {
     _sessionSubscription = monitor?.sessionInvalidations.listen((_) => _end());
   }
   final RedPacketViewGateway api;
+
+  /// 会话级本地明细缓存；只读明细页注入，资金动作弹窗不注入。
+  final RedPacketDetailStore? _details;
   late final BusinessSessionMonitor? _monitor;
   late final int? _epoch;
   StreamSubscription<BusinessSessionInvalidation>? _sessionSubscription;
@@ -49,6 +56,12 @@ final class RedPacketController extends ChangeNotifier {
   int _generation = 0;
   bool _disposed = false;
   bool _ended = false;
+
+  /// [detail] 属于哪个红包：控制器被复用于另一个红包时不得沿用旧明细。
+  String? _loadedId;
+
+  /// 本地缓存的账号/会话作用域：登录态切换后 epoch 变化，旧明细不复用。
+  String get _scope => '${_epoch ?? 0}';
   bool get isAlive => _live;
   bool get ended => _ended;
 
@@ -66,6 +79,7 @@ final class RedPacketController extends ChangeNotifier {
     _ended = true;
     _generation++;
     detail = null;
+    _loadedId = null;
     loading = false;
     error = '会话已结束';
     notifyListeners();
@@ -77,15 +91,23 @@ final class RedPacketController extends ChangeNotifier {
       return;
     }
     final generation = ++_generation;
-    loading = true;
+    // 本地优先 / 立即展示：本次会话已经拿到过这个红包的明细就先用它渲染，
+    // 网络刷新在后台进行；有本地数据时不再进入整页 loading（L1/L2/L3）。
+    final cached = _loadedId == id ? detail : _details?.read(_scope, id);
+    if (cached != null) detail = cached;
+    _loadedId = id;
+    loading = cached == null;
     error = null;
     notifyListeners();
     try {
       final loaded = await api.redPacketDetail(id);
       if (!_live || generation != _generation) return;
       detail = loaded;
+      _loadedId = id;
+      _details?.write(_scope, id, loaded);
     } catch (e) {
       if (!_live || generation != _generation) return;
+      // 失败不覆盖：detail 仍指向本地明细，页面继续渲染旧数据（L4）。
       error = e.toString();
     }
     if (!_live || generation != _generation) return;
@@ -114,6 +136,7 @@ final class RedPacketController extends ChangeNotifier {
     _disposed = true;
     _generation++;
     detail = null;
+    _loadedId = null;
     _sessionSubscription?.cancel();
     super.dispose();
   }

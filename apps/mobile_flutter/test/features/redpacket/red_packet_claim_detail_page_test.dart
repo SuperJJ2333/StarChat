@@ -6,6 +6,7 @@ import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/redpacket/red_packet_claim_detail_page.dart';
 import 'package:liuhetong_mobile/features/redpacket/red_packet_controller.dart';
+import 'package:liuhetong_mobile/features/redpacket/red_packet_detail_store.dart';
 
 final class FakeGateway implements RedPacketViewGateway {
   FakeGateway({required this.detail, this.contacts = const []});
@@ -128,6 +129,12 @@ Future<void> _pumpPage(WidgetTester tester, FakeGateway gateway) async {
 }
 
 void main() {
+  // 明细页现在会读写会话级明细缓存（RedPacketDetailStores.shared）。缓存是
+  // 进程级的，必须在每个用例前重置，否则前一个用例的成功明细会被后一个用例
+  // 当作"本地优先"数据渲染出来（例如 error-retry 用例的首帧错误页会被跳过）。
+  setUp(RedPacketDetailStores.reset);
+  tearDown(RedPacketDetailStores.reset);
+
   test('单份红包即使领完也不显示手气最佳（微信对齐）', () {
     final records = parseRedPacketClaims({
       'claims': [
