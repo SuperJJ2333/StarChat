@@ -171,3 +171,26 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
   the reconstruction storm starves the event loop, which is the production
   failure itself; with the guard it passes in under a second. Device-level
   verification is recorded in `docs/verification/2026-09-19-mi6-anr-forensics.md`.
+2026-09-19 bounded HTTP send lifecycle (weak-network room paralysis):
+
+- `lib/src/utils/http_timeout.dart` now applies its timeout to
+  `inner.send(request)` itself, not only to the response body stream. Before,
+  a black-holed connection (TCP established, gateway silently dropping
+  packets) could hang `inner.send()` forever; because every
+  `Room.sendEvent` waits for the head of `Room._sendingQueue`
+  (`room.dart:1069-1073`), one hung send permanently blocked all later sends
+  of that room - and `Room` objects live in `client.rooms` across page
+  navigation, so only killing the process recovered it. With the timeout, the
+  retry loop's own `timeoutDate` check is guaranteed to run and the request
+  fails as a network error within the configured window.
+- The application additionally tightens `Client.sendTimelineEventTimeout`
+  from 1 minute to 20 s (composition root) so text sends surface their
+  failure (typed `MessageSendNetworkException` -> red exclamation + automatic
+  resend on recovery) promptly instead of queueing behind a one-minute serial
+  retry window. The `event.dart` stale-send self-heal window follows the same
+  field and therefore heals earlier; its once-per-window claim is unchanged.
+- Transport, encryption, key handling and outgoing payloads are untouched.
+- Regression coverage lives in the application:
+  `test/features/matrix/offline_send_state_test.dart` (offline fast-fail and
+  hung-dispatch guard) and `test/core/network_state_manager_test.dart`
+  (typed exception classified as network failure).

@@ -29,8 +29,22 @@ enum NetworkState {
 /// never degrade connectivity state.
 typedef NetworkFailureClassifier = bool Function(Object error);
 
+/// 「消息确认因网络原因未发出」的类型化异常（2026-09-19 房间瘫痪修复）。
+///
+/// Matrix 发送路径在 SDK 耗尽重试窗口后拿到 null——只有网络类错误
+/// （Socket/超时/连接中断）才会走到重试耗尽，服务端拒绝会以
+/// `MatrixException` 直接抛出。因此该路径必须抛本类型而不是通用
+/// `StateError`，[defaultNetworkFailureClassifier] 才能把它归类为网络失败
+/// → `waitingNetwork`（恢复后自动重发），而不是终局失败。
+final class MessageSendNetworkException implements Exception {
+  const MessageSendNetworkException(this.message);
+  final String message;
+  @override
+  String toString() => 'MessageSendNetworkException: $message';
+}
+
 /// 默认分类器：SocketException / TimeoutException / HttpException /
-/// package:http 的 ClientException / HTTP 5xx。
+/// package:http 的 ClientException / HTTP 5xx / [MessageSendNetworkException]。
 ///
 /// 该默认实现刻意不导入 `package:http`：`ClientException` 通过运行时类型名
 /// 识别，HTTP 响应通过整数 `statusCode` 鸭子类型读取（2xx/3xx/4xx 一律不算
@@ -40,6 +54,7 @@ bool defaultNetworkFailureClassifier(Object error) {
   if (error is SocketException) return true; // DNS/连接/重置失败
   if (error is TimeoutException) return true; // 请求超时
   if (error is HttpException) return true; // 连接中途被关闭
+  if (error is MessageSendNetworkException) return true; // 发送重试耗尽
   final status = _statusCodeOf(error);
   if (status != null) return status >= 500 && status < 600;
   return error.runtimeType.toString() == 'ClientException';

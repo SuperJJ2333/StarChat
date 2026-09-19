@@ -41,6 +41,7 @@ import 'features/caibi/caibi_page.dart';
 import 'features/finance/wallet_entry_snapshot_store.dart';
 import 'features/ledger/ledger_page_snapshot_store.dart';
 import 'features/friendship/friend_request_snapshot_store.dart';
+import 'features/contacts/contact_tag_snapshot_store.dart';
 import 'features/moments/moment_draft_store.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/scan_qr_page.dart';
@@ -509,6 +510,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(() async {
       try {
         await FriendRequestSnapshotStores.ensureLoaded();
+      } catch (_) {
+        // 同上。
+      }
+    }());
+    // 通讯录标签本地快照：断网冷启动仍能看到上次的标签列表。
+    unawaited(() async {
+      try {
+        await ContactTagSnapshotStores.ensureLoaded();
       } catch (_) {
         // 同上。
       }
@@ -1243,20 +1252,25 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _bindNetworkState() {
     final manager = NetworkStateManager.shared ??= NetworkStateManager();
     void listener() {
+      // 2026-09-19 修正：`serviceUnavailable`（sync 明确报错/服务端不可达）
+      // 不再把传输层事实翻成 `true`——那会让网络状态机在服务器失联时仍认为
+      // 可用。服务不可达按 `serverReachable: false` 上报（传输态不动，由
+      // connectivity/watchdog 的 offline 判定负责），连续两次即进入 offline，
+      // 发送侧据此快速失败并转红叹号等待恢复。
+      final status = syncWatchdog.connectionStatus.value;
       manager.report(
-        transportAvailable: switch (syncWatchdog.connectionStatus.value) {
+        transportAvailable: switch (status) {
           MatrixConnectionStatus.offline => false,
           MatrixConnectionStatus.unknown => null,
+          MatrixConnectionStatus.serviceUnavailable => null,
           _ => true,
         },
-        serverReachable:
-            syncWatchdog.connectionStatus.value == MatrixConnectionStatus.connected
-                ? true
+        serverReachable: status == MatrixConnectionStatus.connected
+            ? true
+            : status == MatrixConnectionStatus.serviceUnavailable
+                ? false
                 : null,
-        recovering:
-            syncWatchdog.connectionStatus.value == MatrixConnectionStatus.connecting
-                ? true
-                : null,
+        recovering: status == MatrixConnectionStatus.connecting ? true : null,
       );
     }
 
@@ -1887,10 +1901,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 失败一律以 [RoomOpenFailure] 抛出并由这里转成用户可见提示——
   /// **不再有任何 `catch (_) {}` 让打开失败静默消失**。
   ///
-  /// 反馈是 **single-flight** 的：对话框存在期间不再弹第二个（用户连点失败
-  /// 入口、或推送与点击同时到达时不会叠出多层对话框）。
-  /// 可重试失败给「重试」按钮，选择后按**同一个请求**重跑（幂等，协调器与
-  /// 网关都保证不会重复建房）。
+  /// 反馈是**非阻断 toast**（2026-09-19 用户修订：不再弹警告弹窗）：失败
+  /// 原因自动消失式提示，重试由用户再次点击入口完成——按**同一个请求**
+  /// 重跑（幂等，协调器与网关都保证不会重复建房）。`_roomOpenFailureVisible`
+  /// 仍作 short-window single-flight：toast 显示期间连点不会叠出多条提示。
   Future<void> _openManagedRoomRequest(RoomOpenRequest request) async {
     if (_roomOpenFailureVisible) return;
     try {
@@ -1902,14 +1916,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     } on RoomOpenFailure catch (failure) {
       if (!mounted) return;
       _roomOpenFailureVisible = true;
-      var retry = false;
       try {
-        retry = await showRoomOpenFailureDialog(context, failure);
+        showRoomOpenFailureToast(context, failure);
       } finally {
-        _roomOpenFailureVisible = false;
-      }
-      if (retry && mounted) {
-        await _openManagedRoomRequest(request);
+        Future<void>.delayed(const Duration(seconds: 2), () {
+          if (mounted) _roomOpenFailureVisible = false;
+        });
       }
     }
   }

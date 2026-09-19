@@ -459,6 +459,12 @@ final class MatrixClientFactory {
     final client = Client(
       clientName,
       preserveStoreOnInvalidToken: true,
+      // 弱网发送及时反馈（2026-09-19）：SDK 发送重试窗口从 1 分钟调紧到 20s，
+      // 与 RoomTimelineController.sendDispatchTimeout 对齐——网络类失败在
+      // ~20s 内转为红叹号（waitingNetwork，恢复后自动重发），而不是让
+      // 房间发送队列的队首悬挂一分钟。上传大媒体的极端慢链路会提前失败
+      // 并在恢复后自动重传（字节已在 cacheOutgoingMedia 落盘）。
+      sendTimelineEventTimeout: const Duration(seconds: 20),
       // Broker-only login gate advertises token (and legacy password) flows;
       // declaring the token type here keeps checkHomeserver from rejecting the
       // homeserver when the legacy password advertisement is dropped.

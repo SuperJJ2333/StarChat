@@ -6,14 +6,13 @@ enum MessageDirection { incoming, outgoing }
 
 /// 气泡右侧的发送状态标识。
 ///
-/// 用户可见文案统一词表（UI_DESIGN.md §7 消息，与 `OutboxStatus.label` 逐字一致）：
-/// [waitingNetwork] →「等待网络」（灰色小时钟 + 点击立即重试）；[failed] →
-/// 红色感叹号（**仅**服务端明确拒绝）；[sending] / [sent] 不显示多余标记；
-///「等待发送」保留给 outbox `queued`（本地排队待发）行，不得与 [waitingNetwork]
-/// 混用。
-///
-/// [waitingNetwork] 表示「因网络原因暂未发出，等网络恢复后自动重发」——
-/// 弱网/无网绝不显示成红色感叹号（那会让用户以为消息已经彻底失败）。
+/// 用户可见文案统一词表（UI_DESIGN.md §7 消息，2026-09-19 用户修订）：
+/// [waitingNetwork] 与 [failed] 视觉一致——红色感叹号（**未发出必须及时
+/// 警告**），点击立即重发；区别在行为：[waitingNetwork] 是网络原因暂未
+/// 发出，网络恢复后自动重发（感叹号在重发期间保持，成功后消失），
+/// [failed] 是服务端明确拒绝，仅点击重发；[sending] / [sent] 不显示多余
+/// 标记（发送中不增加加载感知）；「等待发送」保留给 outbox `queued`
+/// （本地排队待发）行，不得与本状态混用。
 enum MessageDeliveryState { sending, sent, waitingNetwork, failed }
 
 final class WeChatMessageBubble extends StatelessWidget {
@@ -93,38 +92,18 @@ final class WeChatMessageBubble extends StatelessWidget {
               ),
             )
           else if (state == MessageDeliveryState.waitingNetwork)
-            // 等待网络：小时钟 + 文案，绝不出现红色感叹号；点击立即重试。
-            //
-            // 状态词表统一（UI_DESIGN.md §7 消息）：queued →「等待发送」、
-            // waitingNetwork →「等待网络」。网络原因未发出的消息必须显示
-            // 「等待网络」，不得再混用「等待发送」。
+            // 网络原因暂未发出（2026-09-19 用户修订）：与终局失败一样显示
+            // 红色感叹号 + 点击立即重发；区别在行为——网络恢复后自动重发。
             CupertinoButton(
               key: const Key('message-delivery-waiting'),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              minimumSize: Size.zero,
+              padding: const EdgeInsets.all(4),
               onPressed: onRetry,
               child: Semantics(
                 button: true,
-                label: '立即重试',
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      CupertinoIcons.clock,
-                      size: 14,
-                      color: WeChatColors.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      state == MessageDeliveryState.waitingNetwork
-                          ? '等待网络'
-                          : '等待发送',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: WeChatColors.textSecondary,
-                      ),
-                    ),
-                  ],
+                label: '立即重发',
+                child: const Icon(
+                  CupertinoIcons.exclamationmark_circle_fill,
+                  color: WeChatColors.danger,
                 ),
               ),
             ),

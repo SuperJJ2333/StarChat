@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'room_history_date_capability.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -14,7 +16,9 @@ import '../../core/performance_metrics.dart';
 /// - [local]：乐观行已创建，但派发尚未开始；
 /// - [sending]：已交给传输层，等待服务端确认；
 /// - [waitingNetwork]：因**网络**原因（[defaultNetworkFailureClassifier]）
-///   发送失败，等待网络恢复后自动重发——弱网/无网绝不显示成硬失败；
+///   暂未发出。UI 呈现红色感叹号（2026-09-19 用户修订：未发出必须及时
+///   警告）+ 点击立即重发；与 [failed] 的区别在于行为——网络恢复后
+///   `_drainWaitingNetwork` 会用同一 txid 自动重发；
 /// - [failed]：终局失败（服务端拒绝、无权限、互动门禁等），只能手动重试；
 /// - [sent]：服务端已确认。
 ///
@@ -361,7 +365,8 @@ final class RoomTimelineController extends ChangeNotifier {
       {this.canSendNow,
       bool windowed = false,
       NetworkStateManager? networkStateManager,
-      OutboxJournal? outboxJournal})
+      OutboxJournal? outboxJournal,
+      this.sendDispatchTimeout = const Duration(seconds: 20)})
       : _injectedNetworkState = networkStateManager,
         _outboxJournal = outboxJournal {
     if (windowed && adapter is RoomWindowedTimelineSource) {
@@ -382,6 +387,14 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 规格§二/§三：互动权限门（非好友/拉黑 → 消息进入本地 failed，
   /// 绝不触达发送服务；UI 与服务层同一守卫）。
   final bool Function()? canSendNow;
+
+  /// 单次派发的护栏超时（2026-09-19 房间瘫痪修复）。
+  ///
+  /// 传输层悬挂（弱网黑洞）时，行在护栏到期后转 `waitingNetwork`
+  /// （气泡红叹号 + 恢复自动重发），`_inFlightTxids` 不再被永久占用，
+  /// 后续消息照常派发——房间不再瘫痪。默认 20 秒与 SDK 的发送重试窗口
+  /// （组合根调紧为 20s）对齐，保证红叹号「及时」出现。
+  final Duration sendDispatchTimeout;
   late List<RoomMessageViewModel> messages;
   RoomWindowedTimelineSource? _windowSource;
   bool get hasEarlierWindow => _windowSource?.hasEarlierWindow ?? false;
@@ -1249,8 +1262,23 @@ final class RoomTimelineController extends ChangeNotifier {
           }
         }
       }
-      // ③ 派发。
-      final eventId = await _senders[tx]!();
+      // ③ 派发前快速失败（2026-09-19 房间瘫痪修复）：网络状态机已明确离线
+      //    时不进入传输层空等——弱网黑洞连接会让 SDK 房间发送队列的队首
+      //    永久卡死，该房间后续消息全部排队。抛网络类错误 → waitingNetwork，
+      //    恢复后 `_drainWaitingNetwork` 用同一 txid 自动重发。
+      final networkNow = _networkState?.current;
+      if (networkNow == NetworkState.offline) {
+        throw const SocketException('设备当前离线，消息暂缓派发');
+      }
+      final sender = _senders[tx];
+      if (sender == null) return null;
+      final sendFuture = sender();
+      // 护栏先到期时，底层 future 稍后的完成/失败不得成为未处理异常。
+      sendFuture.ignore();
+      final eventId = await sendFuture.timeout(
+          sendDispatchTimeout,
+          onTimeout: () => throw TimeoutException(
+              '消息发送超时', sendDispatchTimeout));
       if (_disposed) return null;
       _echoRevision++;
       _eventTransactions[eventId] = tx;
@@ -1270,7 +1298,7 @@ final class RoomTimelineController extends ChangeNotifier {
     } catch (error) {
       if (_disposed) return null;
       _echoRevision++;
-      // 网络失败 → 等待发送（保留 sender/txid 供恢复后自动重发）；
+      // 网络失败 → waitingNetwork（红叹号，保留 sender/txid 供恢复后自动重发）；
       // 其余（服务端拒绝、无权限等）→ 终局 failed。
       final state = _noteFailure(tx, error);
       _localEchoes[tx] = inFlight.copyWith(deliveryState: state);

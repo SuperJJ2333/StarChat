@@ -39,6 +39,8 @@ import 'avatar_url_resolver.dart';
 import 'conversation_preferences.dart';
 import 'matrix_control_rooms.dart';
 import 'direct_chat_controller.dart';
+import '../../core/network_state_manager.dart'
+    show MessageSendNetworkException;
 import 'decryption_state_controller.dart';
 import 'emoji_vault.dart';
 import 'group_chat_controller.dart';
@@ -2444,14 +2446,16 @@ final class _SdkRoomTimelineCapability
   @override
   Future<String> sendText(String text) => _withOperation(() async =>
       await _lease._activeRoom.sendTextEvent(text, parseCommands: false) ??
-      (throw StateError('消息发送失败')));
+      // SDK 耗尽重试窗口才返回 null（只有网络类错误会走到这里；服务端拒绝
+      // 以 MatrixException 抛出）→ 类型化网络异常 → waitingNetwork 自动重发。
+      (throw const MessageSendNetworkException('消息发送失败')));
 
   @override
   Future<String> sendTextWithTransaction(String text, String transactionId) =>
       _withOperation(() async =>
           await _lease._activeRoom
               .sendTextEvent(text, txid: transactionId, parseCommands: false) ??
-          (throw StateError('消息发送失败')));
+          (throw const MessageSendNetworkException('消息发送失败')));
 
   @override
   Future<String> sendTransferReference(
@@ -2470,7 +2474,7 @@ final class _SdkRoomTimelineCapability
             if (receiverMatrixId != null && receiverMatrixId.isNotEmpty)
               'transfer_receiver_matrix_id': receiverMatrixId,
           }) ??
-          (throw StateError('转账消息发送失败')));
+          (throw const MessageSendNetworkException('转账消息发送失败')));
 
   @override
   Future<Uint8List?> loadThumbnail(String eventId) => _withOperation(() async {
@@ -2499,7 +2503,7 @@ final class _SdkRoomTimelineCapability
             if (recipientMatrixId != null && recipientMatrixId.isNotEmpty)
               'red_packet_recipient_matrix_id': recipientMatrixId,
           }) ??
-          (throw StateError('红包消息发送失败')));
+          (throw const MessageSendNetworkException('红包消息发送失败')));
 
   @override
   Future<Uint8List> loadAttachment(String eventId) => _withOperation(() async {
@@ -2554,7 +2558,9 @@ final class _SdkRoomTimelineCapability
                   Map<String, dynamic>.from(event.content),
                   type: event.type,
                   txid: txid);
-          if (result == null) throw StateError('消息发送失败');
+          if (result == null) {
+            throw const MessageSendNetworkException('消息发送失败');
+          }
         } finally {
           _retrying.remove(transactionId);
         }
@@ -6284,7 +6290,9 @@ final class MatrixSdkE2eeClient
       txid: txid,
     );
     if (eventId == null) {
-      throw StateError('Matrix media event was not accepted');
+      // 上传/发送重试耗尽（网络类）→ waitingNetwork 自动重发；见
+      // MessageSendNetworkException 的文档。
+      throw const MessageSendNetworkException('媒体消息发送失败');
     }
     return eventId;
   }

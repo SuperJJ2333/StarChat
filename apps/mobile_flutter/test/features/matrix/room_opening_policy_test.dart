@@ -97,8 +97,8 @@ void main() {
       expect(appHome, contains('RoomOpeningPolicy('));
       expect(appHome, contains('_roomOpening.open('));
       expect(appHome, contains('probe: _MatrixRoomOpenProbe('));
-      // 打开失败只有一个反馈点。
-      expect(appHome, contains('showRoomOpenFailureDialog('));
+      // 打开失败只有一个反馈点（2026-09-19 用户修订：非阻断 toast，不再弹窗）。
+      expect(appHome, contains('showRoomOpenFailureToast('));
       // 通知/推送/横幅路径不得再有静默吞错。
       final notification = appHome.substring(
         appHome.indexOf('Future<void> _openConversationFromNotification('),
@@ -282,14 +282,15 @@ void main() {
       );
     });
 
-    testWidgets('失败通过统一对话框对用户可见', (tester) async {
+    testWidgets('失败通过统一非阻断 toast 对用户可见（2026-09-19 用户修订：不再弹警告弹窗）',
+        (tester) async {
       var shown = false;
       await tester.pumpWidget(CupertinoApp(
         home: Builder(
           builder: (context) => CupertinoButton(
             onPressed: () async {
               shown = true;
-              await showRoomOpenFailureDialog(
+              showRoomOpenFailureToast(
                 context,
                 const RoomOpenFailure(RoomOpenFailureKind.networkUnavailable,
                     roomId: '!room:test', source: RoomOpenSource.notification),
@@ -302,8 +303,14 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       expect(shown, isTrue);
-      expect(find.byKey(const Key('room-open-failure')), findsOneWidget);
       expect(find.text('网络不可用，请稍后重试'), findsOneWidget);
+      // 关键契约：绝不再弹模态警告弹窗。
+      expect(find.byType(CupertinoAlertDialog), findsNothing);
+      expect(find.byKey(const Key('room-open-failure')), findsNothing);
+
+      // toast 挂在根 Overlay 且自动消失：排空计时器避免悬挂 Timer。
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
     });
 
     test('本地打开失败（房间不可用）也被分类为可见失败', () async {
@@ -334,19 +341,16 @@ void main() {
       expect(denied.isRetryable, isFalse);
     });
 
-    testWidgets('可重试失败给出「重试」按钮并回传 true（组合根据此重跑同一请求）',
+    testWidgets('toast 不提供弹窗按钮：重试由用户再次点入口完成（幂等）',
         (tester) async {
-      bool? retried;
       await tester.pumpWidget(CupertinoApp(
         home: Builder(
           builder: (context) => CupertinoButton(
-            onPressed: () async {
-              retried = await showRoomOpenFailureDialog(
-                context,
-                const RoomOpenFailure(RoomOpenFailureKind.notJoined,
-                    roomId: '!room:test', source: RoomOpenSource.scan),
-              );
-            },
+            onPressed: () => showRoomOpenFailureToast(
+              context,
+              const RoomOpenFailure(RoomOpenFailureKind.notJoined,
+                  roomId: '!room:test', source: RoomOpenSource.scan),
+            ),
             child: const Text('open'),
           ),
         ),
@@ -354,35 +358,12 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       expect(find.text('尚未加入该会话，请稍后重试'), findsOneWidget);
-      expect(find.text('重试'), findsOneWidget);
+      expect(find.text('重试'), findsNothing,
+          reason: '非阻断 toast 不携带按钮；再次点入口即按同一请求幂等重跑');
+      expect(find.text('知道了'), findsNothing);
 
-      await tester.tap(find.text('重试'));
+      await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
-      expect(retried, isTrue);
-    });
-
-    testWidgets('不可重试失败只给「知道了」', (tester) async {
-      bool? retried;
-      await tester.pumpWidget(CupertinoApp(
-        home: Builder(
-          builder: (context) => CupertinoButton(
-            onPressed: () async {
-              retried = await showRoomOpenFailureDialog(
-                context,
-                const RoomOpenFailure(RoomOpenFailureKind.roomNotFound,
-                    roomId: '!room:test', source: RoomOpenSource.search),
-              );
-            },
-            child: const Text('open'),
-          ),
-        ),
-      ));
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-      expect(find.text('重试'), findsNothing);
-      await tester.tap(find.text('知道了'));
-      await tester.pumpAndSettle();
-      expect(retried, isFalse);
     });
   });
 
@@ -513,19 +494,22 @@ void main() {
       expect(route, contains('StatisticsRoomScope.leave(roomId)'));
     });
 
-    test('打开失败反馈是 single-flight、可重试、且等待有上限与可见进度', () {
+    test('打开失败反馈是 single-flight、非阻断 toast（不弹窗）、且等待有上限与可见进度', () {
       final appHome =
           _stripComments(File('lib/app_home.dart').readAsStringSync());
       expect(appHome, contains('_roomOpenFailureVisible'));
       expect(appHome, contains('if (_roomOpenFailureVisible) return;'));
-      expect(appHome, contains('if (retry && mounted)'));
+      // 2026-09-19 用户修订：不再弹模态对话框、不再有弹窗内「重试」按钮；
+      // 反馈走非阻断 toast，重试由再次点击入口幂等完成。
+      expect(appHome, contains('showRoomOpenFailureToast('));
+      expect(appHome, isNot(contains('showRoomOpenFailureDialog(')));
       // 等待上限从 12 秒收紧，并且等待期间有可见进度。
       expect(appHome, contains('_roomOpenWaitTimeout = Duration(seconds: 5)'));
       expect(appHome, contains('room-open-waiting'));
       final feedback = File('lib/features/matrix/room_open_failure_feedback.dart')
           .readAsStringSync();
-      expect(feedback, contains('failure.isRetryable'));
-      expect(feedback, contains("'重试'"));
+      expect(feedback, contains('showWeChatToast'));
+      expect(feedback, isNot(contains('CupertinoAlertDialog')));
     });
   });
 }

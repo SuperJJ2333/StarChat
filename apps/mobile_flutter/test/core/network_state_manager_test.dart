@@ -9,6 +9,21 @@ import 'package:liuhetong_mobile/core/network_state_manager.dart';
 // http.ClientException / 5xx 响应的鸭子类型判定；实现文件本身不导入它。
 
 void main() {
+  group('发送失败类型化（2026-09-19 房间瘫痪修复）', () {
+    test('MessageSendNetworkException（SDK 发送重试耗尽）判定为网络失败', () {
+      expect(defaultNetworkFailureClassifier(
+          const MessageSendNetworkException('消息发送失败')), isTrue,
+          reason: 'SDK 只有网络类错误才会耗尽重试窗口并返回 null，'
+              '该异常必须归类为网络失败 → waitingNetwork（自动重发）');
+      final manager = NetworkStateManager();
+      addTearDown(manager.dispose);
+      manager.report(transportAvailable: true);
+      manager.reportFailure(const MessageSendNetworkException('消息发送失败'));
+      expect(manager.current, NetworkState.weak,
+          reason: '上报网络状态机，供恢复判定使用');
+    });
+  });
+
   group('NetworkStateManager 基础状态', () {
     test('初始状态为 online，shared 是可写的组合根槽位', () {
       expect(NetworkStateManager.shared, isNull);

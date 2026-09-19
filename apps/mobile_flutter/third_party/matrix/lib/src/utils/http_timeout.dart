@@ -44,7 +44,13 @@ abstract class TimeoutHttpClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    final response = await inner.send(request);
+    // ChatFlow patch (2026-09-19, weak-network send recovery): bound the
+    // request lifecycle itself. Only the response body stream was
+    // timeout-protected before, so a black-holed connection (TCP established,
+    // gateway silently dropping packets) could hang `inner.send()` forever,
+    // which permanently blocked the head of `Room._sendingQueue` and paralyzed
+    // every later send in that room until the process was killed.
+    final response = await inner.send(request).timeout(timeout);
     return replaceStream(response, response.stream.timeout(timeout));
   }
 }

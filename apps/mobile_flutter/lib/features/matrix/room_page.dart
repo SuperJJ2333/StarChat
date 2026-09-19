@@ -3670,9 +3670,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _setComposerText(mentionComposer.text, caret);
     }
 
-    // 即时反馈语义：本地/发送中的消息视觉上等同已发出（无转圈/半透明）；
-    // 网络原因的失败显示「等待发送」（弱网不是硬失败，网络恢复后自动重发，
-    // 点击即立即重试）；仅服务端拒绝/无权限等终局失败显示红色重试标识。
+    // 即时反馈语义：本地/发送中的消息视觉上等同已发出（无转圈/半透明，
+    // 不增加加载感知）；网络原因的失败与终局失败同样显示红色感叹号
+    // （2026-09-19 用户修订：未发出必须及时警告，点击立即重发），区别在
+    // waitingNetwork 会在网络恢复后自动重发，failed 仅点击重试。
     final deliveryState = switch (message.deliveryState) {
       RoomDeliveryState.local ||
       RoomDeliveryState.sending ||
