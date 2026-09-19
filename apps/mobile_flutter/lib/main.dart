@@ -20,6 +20,7 @@ import 'core/session_store.dart';
 import 'features/auth/login_controller.dart';
 import 'features/auth/authentication_flow.dart';
 import 'features/matrix/call_ui_manager.dart' show callNavigatorKey;
+import 'features/matrix/duplicate_room_registry.dart';
 import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
@@ -81,6 +82,8 @@ Future<void> main() async {
       readContinuityMetadata: matrixFactory.continuityMetadata,
       rotateDeviceBinding: matrixFactory.rotateDeviceBinding,
       diagnosticHasher: diagnosticHasher,
+      // 历史孤儿房间登记簿：primary 规则数据源 + 收敛台账（只记录不删除）。
+      duplicateRooms: DuplicateRoomRegistry(),
     );
     final session = SessionBootstrapController(
       business: api,

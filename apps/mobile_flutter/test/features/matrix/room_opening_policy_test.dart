@@ -433,7 +433,10 @@ void main() {
       final lib = Directory('lib');
       // 只把**真正绕过仲裁的入口**当 legacy：
       // - 构造旧服务/旧网关；
-      // - 客户端上那个无 canonical 仲裁的便捷方法（带点调用）。
+      // - 客户端上那个无 canonical 仲裁的便捷方法（带点调用）；
+      // - 旧门面 `createOrGetDirectChat`（无跨设备仲裁的 check-then-create）；
+      // - SDK 的 `startDirectChat`（建房/复用原语，只能被持一次性建房授权的
+      //   MatrixDirectChatBackend 调用，泄漏到其他生产文件即绕过仲裁）。
       // 注意 `openOrCreateDirectChat` 本身是 DirectChatGateway 的接口方法名，
       // 三个网关都实现它，因此不作为 legacy 标记。
       const legacyMarkers = <String>[
@@ -441,11 +444,14 @@ void main() {
         'CanonicalDirectChatGateway(',
         '.openOrCreateDirectChat(',
         'openOrCreateViaGateway(',
+        'createOrGetDirectChat(',
+        'startDirectChat(',
       ];
       const definitionSites = <String>[
         'direct_chat_controller.dart',
         'direct_chat_service.dart',
         'matrix_e2ee_client.dart',
+        'matrix_direct_chat_adapter.dart',
       ];
       final offenders = <String>[];
       for (final entity in lib.listSync(recursive: true)) {

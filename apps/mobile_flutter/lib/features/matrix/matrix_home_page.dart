@@ -28,6 +28,7 @@ import 'conversation_preferences.dart';
 import 'conversation_read_state.dart';
 import 'conversation_presentation.dart';
 import 'decryption_state_controller.dart';
+import 'direct_room_coordination_storage.dart';
 export 'conversation_presentation.dart'
     show directRoomNavigationTitle, groupRoomNavigationTitle;
 export 'room_page.dart' show RoomPage;
@@ -308,6 +309,13 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       await _identityCache.preload();
       await widget.matrix.conversations.autoJoinDirectInvites(
           _identityCache.contactsByMatrixId.keys.toSet(), _directJoinInFlight);
+      // m.direct 目录收敛（同一好友单条目，绝不 leave）：canonical 查询走
+      // 业务 API 权威目录，断网时在收敛服务内回退本地规则；失败静默，下次
+      // sync 重试。列表唯一性另有 ConversationIdentityResolver 兜底。
+      unawaited(widget.matrix.conversations.convergeDirectRoomDirectory(
+              canonicalRoomIdOf:
+                  ApiDirectRoomCoordinator(widget.api).canonicalRoomId)
+          .catchError((_) {}));
       await _refreshClientSnapshot();
     } catch (_) {/* Contact availability is required; retry after sync. */}
   }

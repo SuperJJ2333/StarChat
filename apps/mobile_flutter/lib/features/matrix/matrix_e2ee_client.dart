@@ -1,6 +1,9 @@
 import 'matrix_room_display_name.dart' as room_names;
 import 'matrix_outgoing_work_coordinator.dart';
+import 'conversation_identity_resolver.dart';
 import 'conversation_read_state.dart';
+import 'direct_room_directory_convergence.dart';
+import 'duplicate_room_registry.dart';
 export 'matrix_room_timeline_adapter.dart' show changliaoRedPacketMessageType;
 import 'call_diagnostics.dart';
 import 'call_wakeup_client.dart';
@@ -735,6 +738,14 @@ final class MatrixConversationCapability {
           for (final room in client.rooms)
             if (room.membership == Membership.join) room.id,
         });
+        final selfUserId = client.userID;
+        final registry = _owner._duplicateRooms;
+        if (selfUserId != null && registry != null) {
+          await registry.ensureLoaded(selfUserId);
+        }
+        // 身份解析（同一好友一行）在数据源出口统一执行：m.direct 中同一
+        // peer 的多个已加入房间（历史房间/旧版本建房/avoidRoomId 新建残留）
+        // 不再各自渲染一条。落选房间仅从列表隐藏，绝不 leave。
         return MatrixConversationSnapshot(
           vaultRoomId: client
               .accountData[emojiVaultAccountDataType]?.content['room_id']
@@ -742,11 +753,21 @@ final class MatrixConversationCapability {
           reminderRoomId: client
               .accountData[messageReminderAccountDataType]?.content['room_id']
               ?.toString(),
-          rooms: [
-            for (final room in client.rooms)
-              if (room.membership == Membership.join)
-                _snapshotRoom(room, localHistory)
-          ],
+          rooms: resolveConversationIdentities(
+            [
+              for (final room in client.rooms)
+                if (room.membership == Membership.join)
+                  _snapshotRoom(room, localHistory)
+            ],
+            selfUserId: selfUserId,
+            // 规则一数据源：收敛服务登记的服务端 canonical（未注入登记簿时
+            // 自动退回消息数/活跃度规则）。
+            primaryRoomIdOf: (registry == null || selfUserId == null)
+                ? null
+                : (peer) => registry.primaryRoomIdForPeer(selfUserId, peer),
+            // 规则二数据源：本会话已解密缓存条数（本地消息量的保守代理）。
+            localMessageCountOf: (room) => _owner._decryptedEventCount(room.id),
+          ),
         );
       });
 
@@ -830,6 +851,16 @@ final class MatrixConversationCapability {
           client: client,
           friendMatrixIds: friendMatrixIds,
           inFlight: inFlight));
+
+  /// m.direct 目录收敛：同一 peer 的多个已加入房间重写为单条目（绝不
+  /// leave/forget）。canonical 查询由调用方注入（业务 API 权威目录），
+  /// 不可达时回退本地最新活跃规则；失败静默，下次 sync 重试。canonical
+  /// 裁决的落选房间登记进 [DuplicateRoomRegistry]。
+  Future<void> convergeDirectRoomDirectory(
+          {Future<String?> Function(String peerUserId)? canonicalRoomIdOf}) =>
+      _owner._withClient((client) => convergeDirectDirectory(client,
+          canonicalRoomIdOf: canonicalRoomIdOf,
+          registry: _owner._duplicateRooms));
   Future<MatrixRoomInfoSnapshot> waitForJoinedRoom(String id) =>
       _owner._withClient((client) async {
         if (client.getRoomById(id)?.membership != Membership.join) {
@@ -877,6 +908,7 @@ final class MatrixConversationCapability {
         }
         return count;
       });
+
 
   Future<void> markReadOnOpen(String roomId) =>
       _owner._withClient((client) async {
@@ -1310,7 +1342,7 @@ final class MatrixRoomLease
         // 控制房间过滤统一走 RoomVisibilityPolicy（accountData + roomId），
         // 不再按展示名判定。
         final visibility = roomVisibilityFromAccountData(client);
-        return [
+        final destinations = [
           for (final target in client.rooms)
             if (target.encrypted &&
                 target.membership == Membership.join &&
@@ -1326,6 +1358,25 @@ final class MatrixRoomLease
                 members: _snapshotRoomInfo(target).members,
               ),
         ];
+        // 转发/分享/群发目标与消息列表共用同一套身份规则：一个私聊关系
+        // （userA+userB）只允许一个入口；落选房间仅隐藏，绝不 leave。
+        final me = client.userID;
+        final registry = owner._duplicateRooms;
+        if (me != null && registry != null) await registry.ensureLoaded(me);
+        return resolveIdentityRepresentatives<MatrixForwardDestinationSnapshot>(
+          destinations,
+          selfUserId: me,
+          isDirectOf: (destination) => destination.isDirect,
+          directPeerIdOf: (destination) => destination.directPeerId,
+          roomIdOf: (destination) => destination.id,
+          isHiddenOf: (_) => false,
+          messageCountOf: (destination) =>
+              owner._decryptedEventCount(destination.id),
+          lastActivityOf: (_) => null,
+          primaryRoomIdOf: (registry == null || me == null)
+              ? null
+              : (peer) => registry.primaryRoomIdForPeer(me, peer),
+        );
       });
 
   /// Captures this lease's active account before page-owned picker/camera work
@@ -4273,6 +4324,10 @@ final class MatrixSdkE2eeClient
   Future<void>? _memberRefresh;
   late final _MemberRefreshPolicy _memberRefreshPolicy;
   late final _ConversationMemberProjectionCache _memberProjectionCache;
+
+  /// 历史孤儿房间登记簿（primary 规则数据源）。生产在组合根注入；测试
+  /// 不注入时解析器自动退回消息数/活跃度规则（保持用例封闭）。
+  final DuplicateRoomRegistry? _duplicateRooms;
   StreamSubscription<EventUpdate>? _memberRefreshListener;
   SharedPreferencesLocalHiddenEvents? _localHistoryStore;
 
@@ -4306,6 +4361,7 @@ final class MatrixSdkE2eeClient
     DateTime Function()? memberRefreshNow,
     Duration memberRefreshTtl = const Duration(minutes: 10),
     Duration memberRefreshRetryDelay = const Duration(seconds: 15),
+    DuplicateRoomRegistry? duplicateRooms,
   })  : _client = client,
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
@@ -4321,6 +4377,7 @@ final class MatrixSdkE2eeClient
           retryDelay: memberRefreshRetryDelay,
         ),
         _memberProjectionCache = _ConversationMemberProjectionCache(),
+        _duplicateRooms = duplicateRooms,
         _outgoingWorkFactory = outgoingWorkFactory ??
             ((accountId) =>
                 MatrixOutgoingWorkCoordinator(accountId: accountId)),
@@ -4379,6 +4436,12 @@ final class MatrixSdkE2eeClient
       MatrixConversationCapability._(this);
   @visibleForTesting
   int get debugDecryptedPreviewCount => _decryptedTimelineEvents.length;
+
+  /// 规则二数据源：本会话已解密消息缓存条数（"本地消息数量"的保守代理）。
+  /// 只读内存映射，零 SDK 副作用；仅在同一身份出现多个候选房间时参与比较。
+  int _decryptedEventCount(String roomId) => _decryptedTimelineEvents.keys
+      .where((key) => key.$2 == roomId)
+      .length;
   @visibleForTesting
   int get debugManagedResourceCount => _managedResources.length;
   @visibleForTesting
