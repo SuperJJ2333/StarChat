@@ -1514,17 +1514,16 @@ final class _AddFriendState extends State<AddFriendPage> {
       });
     } on BusinessApiException catch (error) {
       if (!mounted) return;
+      // 失败不覆盖：保留上一次成功的结果，只更新提示（微信级加载模型）。
       setState(() {
-        items = [];
         searching = false;
         hint = error.message;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        items = [];
         searching = false;
-        hint = '搜索失败，请稍后重试';
+        hint = '搜索失败，正在显示上次结果';
       });
     }
   }

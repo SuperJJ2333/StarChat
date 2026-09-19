@@ -9,9 +9,14 @@ final class FakeAddFriendGateway implements AddFriendGateway {
   final queries = <String>[];
   final requestedUserIds = <String>[];
 
+  /// 置为非 null 时下一次搜索抛错（模拟断网/服务端失败）。
+  Object? failure;
+
   @override
   Future<Map<String, dynamic>> searchUsers(String query) async {
     queries.add(query);
+    final pending = failure;
+    if (pending != null) throw pending;
     return {'items': results};
   }
 
@@ -92,8 +97,7 @@ void main() {
     expect(find.text('未找到匹配的用户'), findsOneWidget);
   });
 
-  testWidgets('BUG 2：搜索行不再提供快捷发送；点击行进入用户资料页', (tester) async {
-    final gateway = FakeAddFriendGateway(results: [
+  testWidgets('BUG 2：搜索行不再提供快捷发送；点击行进入用户资料页', (tester) async {    final gateway = FakeAddFriendGateway(results: [
       _user('u-alice', 'alice', '艾莉丝'),
     ]);
     await _pumpPage(tester, gateway);
@@ -114,5 +118,23 @@ void main() {
     final labelRect = tester.getRect(find.text('添加到通讯录'));
     expect((actionRect.center - labelRect.center).distance, lessThan(2));
     expect(actionRect.contains(labelRect.bottomRight), isTrue);
+  });
+
+  /// 微信级加载模型（2026-09-19 审计）：加好友搜索失败时原先把 `items` 清空，
+  /// 于是屏幕上的搜索结果凭空消失，只剩一句错误提示。
+  testWidgets('搜索失败不覆盖上次结果：保留已有行并给出提示', (tester) async {
+    final gateway = FakeAddFriendGateway(results: [
+      _user('u-alice', 'alice', '艾莉丝'),
+    ]);
+    await _pumpPage(tester, gateway);
+    await _type(tester, 'alice');
+    expect(find.byKey(const Key('add-friend-u-alice')), findsOneWidget);
+
+    gateway.failure = StateError('offline');
+    await _type(tester, 'alice2');
+
+    expect(find.byKey(const Key('add-friend-u-alice')), findsOneWidget,
+        reason: '失败不得清空上一次成功的搜索结果');
+    expect(find.textContaining('搜索失败'), findsOneWidget);
   });
 }
