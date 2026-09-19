@@ -54,15 +54,46 @@ final class DuplicateRoomRegistry {
   final Map<String, Future<void>> _loads = {};
   final Map<String, Future<void>> _writes = {};
   final Map<String, Map<String, String>> _primaries = {};
+  final Map<String, Map<String, int>> _revisions = {};
 
-  Future<void> rememberPrimary(
-      String accountId, String peerId, String roomId) async {
-    if (accountId.isEmpty || peerId.isEmpty || roomId.isEmpty) return;
+  Future<bool> rememberPrimary(String accountId, String peerId, String roomId,
+      {int? revision}) async {
+    if (accountId.isEmpty ||
+        peerId.isEmpty ||
+        roomId.isEmpty ||
+        (revision != null && revision < 0)) {
+      return false;
+    }
     await ensureLoaded(accountId);
-    if (_primaries[accountId]?[peerId] == roomId) return;
+    final previousRoom = _primaries[accountId]?[peerId];
+    final previousRevision = _revisions[accountId]?[peerId];
+    if (previousRevision != null &&
+        ((revision == null && previousRoom != roomId) ||
+            (revision != null &&
+                (revision < previousRevision ||
+                    (revision == previousRevision &&
+                        previousRoom != roomId))))) {
+      return false;
+    }
+    if (previousRoom == roomId &&
+        (revision == null || revision == previousRevision)) {
+      return true;
+    }
     _primaries.putIfAbsent(accountId, () => {})[peerId] = roomId;
+    if (revision != null) {
+      _revisions.putIfAbsent(accountId, () => {})[peerId] = revision;
+    }
+    if (previousRoom != null && previousRoom != roomId) {
+      _byAccount.putIfAbsent(accountId, () => {})[previousRoom] =
+          DuplicateRoomEntry(
+              duplicateRoomId: previousRoom,
+              primaryRoomId: roomId,
+              peerId: peerId,
+              detectedAt: DateTime.now().toUtc());
+    }
     final entries = _byAccount[accountId];
     if (entries != null) {
+      entries.remove(roomId);
       for (final entry in entries.values.toList()) {
         if (entry.peerId != peerId) continue;
         entries[entry.duplicateRoomId] = DuplicateRoomEntry(
@@ -73,7 +104,11 @@ final class DuplicateRoomRegistry {
       }
     }
     await _persist(accountId);
+    return true;
   }
+
+  int? revisionForPeer(String accountId, String peerId) =>
+      _revisions[accountId]?[peerId];
 
   static const _prefix = 'duplicate-room-registry-v1:';
 
@@ -119,6 +154,18 @@ final class DuplicateRoomRegistry {
           }
         }
       }
+      if (decoded is Map && decoded['revisions'] is Map) {
+        final revisions = _revisions.putIfAbsent(accountId, () => {});
+        for (final entry in (decoded['revisions'] as Map).entries) {
+          if (entry.key is String &&
+              entry.value is int &&
+              entry.value >= 0 &&
+              _primaries[accountId]?.containsKey(entry.key) == true) {
+            revisions.putIfAbsent(
+                entry.key as String, () => entry.value as int);
+          }
+        }
+      }
     } catch (_) {
       // 持久层不可用：登记退化为进程内内存（不阻断收敛/解析）。
     } finally {
@@ -134,6 +181,7 @@ final class DuplicateRoomRegistry {
     required String peerId,
     required String primaryRoomId,
     required String duplicateRoomId,
+    int? revision,
   }) async {
     if (accountId.isEmpty ||
         peerId.isEmpty ||
@@ -143,15 +191,17 @@ final class DuplicateRoomRegistry {
       return;
     }
     await ensureLoaded(accountId);
-    _primaries.putIfAbsent(accountId, () => {})[peerId] = primaryRoomId;
+    await rememberPrimary(accountId, peerId, primaryRoomId, revision: revision);
+    final effectivePrimary = _primaries[accountId]?[peerId];
+    if (effectivePrimary == null || duplicateRoomId == effectivePrimary) return;
     final entries =
         _byAccount.putIfAbsent(accountId, () => <String, DuplicateRoomEntry>{});
     final old = entries[duplicateRoomId];
-    if (old?.peerId == peerId && old?.primaryRoomId == primaryRoomId) return;
+    if (old?.peerId == peerId && old?.primaryRoomId == effectivePrimary) return;
     entries.remove(duplicateRoomId);
     entries[duplicateRoomId] = DuplicateRoomEntry(
       duplicateRoomId: duplicateRoomId,
-      primaryRoomId: primaryRoomId,
+      primaryRoomId: effectivePrimary,
       peerId: peerId,
       detectedAt: DateTime.now().toUtc(),
     );
@@ -213,7 +263,8 @@ final class DuplicateRoomRegistry {
                 in _byAccount[accountId]?.values ?? <DuplicateRoomEntry>[])
               entry.toJson()
           ],
-          'primaries': _primaries[accountId] ?? <String, String>{}
+          'primaries': _primaries[accountId] ?? <String, String>{},
+          'revisions': _revisions[accountId] ?? <String, int>{},
         }),
       );
     } catch (_) {
@@ -225,6 +276,7 @@ final class DuplicateRoomRegistry {
   void resetForTest() {
     _byAccount.clear();
     _primaries.clear();
+    _revisions.clear();
     _loadedAccounts.clear();
     _loads.clear();
     _writes.clear();

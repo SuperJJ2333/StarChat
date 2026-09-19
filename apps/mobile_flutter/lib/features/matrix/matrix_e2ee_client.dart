@@ -513,7 +513,13 @@ final class MatrixGroupInviteSnapshot {
   final String name;
 }
 
-enum MatrixConversationMutation { markUnread, clearUnread, togglePin, hide, delete }
+enum MatrixConversationMutation {
+  markUnread,
+  clearUnread,
+  togglePin,
+  hide,
+  delete
+}
 
 @immutable
 final class MatrixMemberSnapshot {
@@ -4739,6 +4745,67 @@ final class MatrixSdkE2eeClient
         return _authorizeRoom(room);
       });
 
+  /// Admission only: existing transactions and encrypted payloads never call this.
+  Object get sendPreparationIdentity => (
+        _client,
+        _client?.userID,
+        _client?.deviceID,
+        _outgoingWork,
+        _accessRevoked
+      );
+
+  Future<String> Function(String accountId, String roomId, String peerId)?
+      prepareRoomSend;
+
+  Future<String> prepareNewSendToRoom(String roomId) =>
+      _withClient((client) async {
+        final account = client.userID;
+        final room = client.getRoomById(roomId);
+        if (account == null || room == null) {
+          throw StateError('Conversation unavailable');
+        }
+        await _duplicateRooms?.ensureLoaded(account);
+        _requireLifecycleAccess();
+        if (!identical(_client, client) || client.userID != account) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        final peer = _duplicateRooms?.peerIdForRoom(account, roomId) ??
+            room.directChatMatrixID;
+        final prepare = prepareRoomSend;
+        if (peer == null || prepare == null) return roomId;
+        final target = await prepare(account, roomId, peer);
+        _requireLifecycleAccess();
+        if (!identical(_client, client) ||
+            client.userID != account ||
+            !identical(client.getRoomById(roomId), room)) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        final targetRoom = client.getRoomById(target);
+        if (targetRoom == null) {
+          throw StateError('Conversation is still synchronizing');
+        }
+        final targetPeer = _duplicateRooms?.peerIdForRoom(account, target) ??
+            targetRoom.directChatMatrixID;
+        if (targetPeer != peer) {
+          throw StateError('Resolved conversation identity mismatch');
+        }
+        return target;
+      });
+
+  Future<List<String>> _prepareNewTargets(
+      List<String> roomIds, _OutgoingSession session) async {
+    if (roomIds.any((id) => id.isEmpty) ||
+        roomIds.toSet().length != roomIds.length) {
+      throw ArgumentError('Targets must be non-empty and unique');
+    }
+    final targets = <String>[];
+    for (final roomId in roomIds) {
+      targets.add(await prepareNewSendToRoom(roomId));
+      _ensureOutgoingSessionCurrent(session);
+    }
+    return List<String>.unmodifiable(targets.toSet());
+  }
+
   Future<bool> _authorizeRoom(Room room) async {
     final client = room.client;
     final account = client.userID;
@@ -4803,6 +4870,7 @@ final class MatrixSdkE2eeClient
     if (client == null) return Future<void>.value();
     return client.unignoreUser(userId);
   }
+
   final MatrixOutgoingWorkCoordinator Function(String accountId)
       _outgoingWorkFactory;
   late MatrixOutgoingWorkCoordinator _outgoingWork;
@@ -4996,7 +5064,17 @@ final class MatrixSdkE2eeClient
     if (batchId.isEmpty || messages.isEmpty || targetRoomIds.isEmpty) {
       throw ArgumentError('Forwarding requires a batch, messages, and targets');
     }
-    final targets = List<String>.unmodifiable(targetRoomIds);
+    final existing = [
+      for (var i = 0; i < messages.length; i++)
+        session.coordinator.job('$batchId-$i')
+    ];
+    if (existing.every((job) => job != null)) {
+      return existing.cast<MatrixOutgoingWorkJob>();
+    }
+    if (existing.any((job) => job != null)) {
+      throw StateError('Forward batch already partially admitted');
+    }
+    final targets = await _prepareNewTargets(targetRoomIds, session);
     if (targets.any((target) => target.isEmpty) ||
         targets.toSet().length != targets.length) {
       throw ArgumentError('Forwarding targets must be non-empty and unique');
@@ -5118,14 +5196,14 @@ final class MatrixSdkE2eeClient
     if (jobId.isEmpty || media.id.isEmpty || targetRoomIds.isEmpty) {
       throw ArgumentError('Media forwarding requires an id and targets');
     }
-    final targets = List<String>.unmodifiable(targetRoomIds);
+    final existing = session.coordinator.job(jobId);
+    if (existing != null) return existing;
+    final targets = await _prepareNewTargets(targetRoomIds, session);
     if (targets.any((target) => target.isEmpty) ||
         targets.toSet().length != targets.length) {
       throw ArgumentError(
           'Media forwarding targets must be non-empty and unique');
     }
-    final existing = session.coordinator.job(jobId);
-    if (existing != null) return existing;
     final snapshot = _DeferredOutgoingMediaSnapshot(media);
     final createdAt = DateTime.now();
     final job = MatrixOutgoingWorkJob(
@@ -5200,9 +5278,10 @@ final class MatrixSdkE2eeClient
     if (video._admitted) {
       throw ArgumentError('Video forwarding source was already admitted');
     }
-    final targets = _freezeVideoTargets(targetRoomIds);
     final existing = session.coordinator.job(jobId);
     if (existing != null) return existing;
+    final targets =
+        _freezeVideoTargets(await _prepareNewTargets(targetRoomIds, session));
     await video._waitForSourceMetadata();
     _ensureOutgoingSessionCurrent(session);
     final job = _buildVideoJob(
@@ -5238,7 +5317,8 @@ final class MatrixSdkE2eeClient
       frozen.add(MatrixOutgoingVideoFileRequest(
         jobId: request.jobId,
         video: request.video,
-        targetRoomIds: _freezeVideoTargets(request.targetRoomIds),
+        targetRoomIds: _freezeVideoTargets(
+            await _prepareNewTargets(request.targetRoomIds, session)),
       ));
     }
     await Future.wait([

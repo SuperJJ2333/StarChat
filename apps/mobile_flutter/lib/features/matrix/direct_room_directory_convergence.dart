@@ -11,9 +11,10 @@ const directConversationAssociationPrefix =
 /// The client retains identity even before a room arrives in local Matrix sync.
 final class DirectRoomAssociations {
   const DirectRoomAssociations(
-      {required this.primaryRoomId, required this.roomIds});
+      {required this.primaryRoomId, required this.roomIds, this.revision});
   final String primaryRoomId;
   final List<String> roomIds;
+  final int? revision;
 }
 
 /// Restore account metadata before projecting or navigating. No join is issued.
@@ -40,13 +41,20 @@ Future<void> loadDirectRoomAssociations(
             '$directConversationAssociationPrefix${Uri.encodeComponent(room)}') {
       continue;
     }
-    await registry.rememberPrimary(self, peer, primary);
-    if (room != primary) {
+    final rawRevision = data['revision'];
+    final revision =
+        rawRevision is int && rawRevision >= 0 ? rawRevision : null;
+    await registry.rememberPrimary(self, peer, primary, revision: revision);
+    if (client.userID != self) return;
+    final effectivePrimary =
+        registry.primaryRoomIdForPeer(self, peer) ?? primary;
+    if (room != effectivePrimary) {
       await registry.record(
           accountId: self,
           peerId: peer,
-          primaryRoomId: primary,
-          duplicateRoomId: room);
+          primaryRoomId: effectivePrimary,
+          duplicateRoomId: room,
+          revision: registry.revisionForPeer(self, peer));
     }
   }
 }
@@ -110,7 +118,7 @@ Future<void> convergeDirectDirectory(
     } catch (_) {/* Retry next sync. */}
     if (client.userID != self) return;
     final remotePrimary = remote?.primaryRoomId;
-    final canonical = remotePrimary != null && remotePrimary.startsWith('!')
+    var canonical = remotePrimary != null && remotePrimary.startsWith('!')
         ? remotePrimary
         : await _canonicalOf(canonicalRoomIdOf, peer);
     if (client.userID != self) return;
@@ -118,6 +126,12 @@ Future<void> convergeDirectDirectory(
     final verifiedRemote = remotePrimary == canonical
         ? remote!.roomIds.where((id) => id.startsWith('!')).toSet()
         : <String>{};
+    await identities.rememberPrimary(self, entry.key, canonical,
+        revision: remotePrimary == canonical ? remote?.revision : null);
+    // A delayed response can add historical sources, but cannot roll back the
+    // current sending destination or republish stale account metadata.
+    canonical = identities.primaryRoomIdForPeer(self, entry.key) ?? canonical;
+    final revision = identities.revisionForPeer(self, entry.key);
     final localVerified = entry.value.where((id) {
       final room = _joinedRoomById(client, id);
       return room != null && room.encrypted;
@@ -132,32 +146,47 @@ Future<void> convergeDirectDirectory(
       ...verifiedRemote,
       ...retained
     };
-    await identities.rememberPrimary(self, entry.key, canonical);
     for (final id in sources) {
       if (client.userID != self) return;
+      if (identities.primaryRoomIdForPeer(self, entry.key) != canonical ||
+          identities.revisionForPeer(self, entry.key) != revision) {
+        break;
+      }
       if (id != canonical) {
         await identities.record(
             accountId: self,
             peerId: entry.key,
             primaryRoomId: canonical,
-            duplicateRoomId: id);
+            duplicateRoomId: id,
+            revision: revision);
+      }
+      if (client.userID != self) return;
+      if (identities.primaryRoomIdForPeer(self, entry.key) != canonical ||
+          identities.revisionForPeer(self, entry.key) != revision) {
+        break;
       }
       final type =
           '$directConversationAssociationPrefix${Uri.encodeComponent(id)}';
       final body = <String, Object?>{
         'room_id': id,
         'peer_id': entry.key,
-        'primary_room_id': canonical
+        'primary_room_id': canonical,
+        if (revision != null) 'revision': revision,
       };
       final previous = client.accountData[type]?.content;
       if (previous?['primary_room_id'] == canonical &&
           previous?['peer_id'] == entry.key &&
-          previous?['room_id'] == id) {
+          previous?['room_id'] == id &&
+          previous?['revision'] == revision) {
         continue;
       }
       try {
         await client.setAccountData(self, type, body);
         if (client.userID != self) return;
+        if (identities.primaryRoomIdForPeer(self, entry.key) != canonical ||
+            identities.revisionForPeer(self, entry.key) != revision) {
+          break;
+        }
         client.accountData[type] = BasicEvent(type: type, content: body);
       } catch (_) {
         /* Keep local identity and retry account metadata next sync. */

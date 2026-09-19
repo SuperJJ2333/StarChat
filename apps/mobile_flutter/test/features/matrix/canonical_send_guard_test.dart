@@ -42,6 +42,7 @@ class _Room extends Room {
   Membership membershipValue = Membership.join;
   bool sendAllowed = true;
   int sends = 0;
+  bool failSend = false;
   bool failTimeline = false;
   final timeline = _Timeline();
   @override
@@ -75,6 +76,7 @@ class _Room extends Room {
       String? threadRootEventId,
       String? threadLastEventId}) async {
     sends++;
+    if (failSend) throw StateError('synthetic uncertain send');
     return r'$sent';
   }
 }
@@ -82,6 +84,73 @@ class _Room extends Room {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('new target preparation resolves direct rooms only and never sends',
+      () async {
+    final client = _Client();
+    final old = _Room(client, '!old:test', peer: '@peer:test');
+    final next = _Room(client, '!next:test', peer: '@peer:test');
+    final group = _Room(client, '!group:test');
+    for (final room in [old, next, group]) {
+      client.roomsById[room.id] = room;
+    }
+    final owner =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    var calls = 0;
+    owner.prepareRoomSend = (String account, String room, String peer) async {
+      calls++;
+      expect(account, '@me:test');
+      expect(peer, '@peer:test');
+      return next.id;
+    };
+    expect(await owner.prepareNewSendToRoom(old.id), next.id);
+    expect(await owner.prepareNewSendToRoom(group.id), group.id);
+    expect(calls, 1);
+    expect(old.sends + next.sends + group.sends, 0);
+    // Already-bound transport remains pinned even after preparation found a new primary.
+    await owner.sendEncryptedText(old.id, 'existing operation');
+    expect(old.sends, 1);
+    expect(next.sends, 0);
+    expect(calls, 1);
+  });
+
+  test(
+      'new forward freezes recovered target before admission; retry never resolves again',
+      () async {
+    final client = _Client();
+    final old = _Room(client, '!old:test', peer: '@peer:test');
+    final next = _Room(client, '!next:test', peer: '@peer:test');
+    for (final room in [old, next]) {
+      client.roomsById[room.id] = room;
+    }
+    final owner =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    var calls = 0;
+    owner.prepareRoomSend = (_, __, ___) async {
+      calls++;
+      return next.id;
+    };
+    next.failSend = true;
+    final jobs = await owner.enqueueForward(
+        batchId: 'new-forward',
+        messages: [MatrixOutgoingForwardText(id: 'message', body: 'forward')],
+        targetRoomIds: [old.id]);
+    expect(jobs.single.items.single.targetRoomId, next.id);
+    await owner.outgoingWork.drain();
+    expect(old.sends, 0);
+    expect(next.sends, 1);
+    expect(calls, 1);
+    next.failSend = false;
+    owner.prepareRoomSend = (_, __, ___) async {
+      calls++;
+      return old.id;
+    };
+    await owner.outgoingWork.retryFailed(jobs.single.id);
+    await owner.outgoingWork.drain();
+    expect(next.sends, 2);
+    expect(old.sends, 0);
+    expect(calls, 1);
+  });
 
   test('production gate rejects unsafe room state despite business approval',
       () async {
@@ -126,6 +195,68 @@ void main() {
     expect(room.sends, 1);
     expect(lease.roomInfo.id, room.id);
     await lease.cancel();
+  });
+
+  test(
+      'prepared attachment freezes resolved room and existing job is never rebound',
+      () async {
+    final client = _Client();
+    final old = _Room(client, '!old:test', peer: '@peer:test');
+    final next = _Room(client, '!next:test', peer: '@peer:test');
+    for (final room in [old, next]) {
+      client.roomsById[room.id] = room;
+    }
+    final owner =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    var calls = 0;
+    owner.prepareRoomSend = (_, __, ___) async {
+      calls++;
+      return next.id;
+    };
+    owner.authorizeRoomSend = (_, __, ___) async => false;
+    MatrixOutgoingPreparedMedia media() => MatrixOutgoingPreparedMedia(
+        id: 'photo',
+        bytes: [1, 2],
+        mimeType: 'image/jpeg',
+        filename: 'photo.jpg',
+        body: 'photo');
+    final job = await owner.enqueuePreparedMedia(
+        jobId: 'attachment', media: media(), targetRoomIds: [old.id]);
+    expect(job.items.single.targetRoomId, next.id);
+    await owner.outgoingWork.drain();
+    owner.prepareRoomSend = (_, __, ___) async {
+      calls++;
+      return old.id;
+    };
+    final existing = await owner.enqueuePreparedMedia(
+        jobId: 'attachment', media: media(), targetRoomIds: [old.id]);
+    expect(identical(job, existing), isTrue);
+    expect(existing.items.single.targetRoomId, next.id);
+    expect(calls, 1);
+    expect(old.sends + next.sends, 0);
+  });
+
+  test(
+      'room session replacement during target preparation cancels before transport',
+      () async {
+    final client = _Client();
+    final old = _Room(client, '!old:test', peer: '@peer:test');
+    client.roomsById[old.id] = old;
+    final owner =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    final target = Completer<String>();
+    final started = Completer<void>();
+    owner.prepareRoomSend = (_, __, ___) {
+      started.complete();
+      return target.future;
+    };
+    final preparing = owner.prepareNewSendToRoom(old.id);
+    await started.future;
+    client.roomsById[old.id] = _Room(client, old.id, peer: '@peer:test');
+    final rejected = expectLater(preparing, throwsStateError);
+    target.complete(old.id);
+    await rejected;
+    expect(old.sends, 0);
   });
 
   test(

@@ -328,6 +328,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                 if (primary is! String || primary.isEmpty) return null;
                 return DirectRoomAssociations(
                     primaryRoomId: primary,
+                    revision: body['revision'] as int?,
                     roomIds: (body['room_ids'] as List? ?? const [])
                         .whereType<String>()
                         .toList());

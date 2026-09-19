@@ -189,8 +189,10 @@ final class DirectChatController extends ChangeNotifier {
   Object? error;
   String? _lastMatrixUserId;
   final Map<String, Future<DirectChatRoom>> _openings = {};
+  bool _disposed = false;
 
   Future<DirectChatRoom> open(String matrixUserId) async {
+    if (_disposed) throw StateError('Conversation owner disposed');
     final pending = _openings[matrixUserId];
     if (pending != null) return pending;
     _lastMatrixUserId = matrixUserId;
@@ -201,13 +203,14 @@ final class DirectChatController extends ChangeNotifier {
     _openings[matrixUserId] = opening;
     try {
       final room = await opening;
+      if (_disposed) throw StateError('Conversation owner disposed');
       state = DirectChatState.ready;
       notifyListeners();
       return room;
     } catch (failure) {
       state = DirectChatState.failed;
       error = failure;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
       rethrow;
     } finally {
       if (identical(_openings[matrixUserId], opening)) {
@@ -245,5 +248,11 @@ final class DirectChatController extends ChangeNotifier {
     final matrixUserId = _lastMatrixUserId;
     if (matrixUserId == null) throw StateError('No direct chat to retry');
     return open(matrixUserId);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

@@ -20,6 +20,30 @@ abstract interface class DirectRoomCoordinator {
   Future<String> publish(String peer, String attemptId, String roomId);
 }
 
+/// Server authority for both initial creation and later physical generations.
+abstract interface class DirectRoomLifecycleCoordinator {
+  Future<DirectRoomResolution> resolve(String peer, String attemptId);
+  Future<void> offerExistingRoom(String peer, String roomId);
+  Future<DirectRoomResolution> publishRecovery(String peer, String attemptId,
+      DirectRoomResolution resolution, String roomId);
+}
+
+final class DirectRoomResolution {
+  const DirectRoomResolution(
+      {required this.status,
+      required this.generation,
+      required this.revision,
+      this.roomIds = const [],
+      this.roomId,
+      this.alias,
+      this.reservationId});
+  final String status;
+  final int generation;
+  final int revision;
+  final List<String> roomIds;
+  final String? roomId, alias, reservationId;
+}
+
 final class DirectRoomIntent {
   const DirectRoomIntent({required this.attemptId, this.roomId});
   final String attemptId;
@@ -47,11 +71,16 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     required this.openExisting,
     this.findCached,
     this.createReserved,
+    this.onResolved,
+    this.ownerToken,
     Future<void> Function(Duration)? wait,
     this.waitAttempts = 20,
   }) : wait = wait ?? Future<void>.delayed;
 
   final DirectRoomCoordinator coordinator;
+  final Future<void> Function(
+      String matrixPeer, DirectRoomResolution resolution)? onResolved;
+  final Object? Function()? ownerToken;
   final DirectRoomIntentStore intents;
   final String? Function(String) businessUserIdOf;
   final Future<DirectChatRoom> Function(String) createOnce;
@@ -69,9 +98,60 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
 
   @override
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) async {
+    final token = ownerToken?.call();
+    void validateOwner() {
+      if (token != ownerToken?.call()) {
+        throw StateError('Conversation owner changed');
+      }
+    }
+
     final peer = businessUserIdOf(matrixUserId);
     if (peer == null || peer.isEmpty) {
       throw StateError('好友身份尚未就绪，请重试');
+    }
+    if (coordinator is DirectRoomLifecycleCoordinator) {
+      final lifecycle = coordinator as DirectRoomLifecycleCoordinator;
+      final intent = await intents.loadOrCreate(peer);
+      validateOwner();
+      var resolution = await lifecycle.resolve(peer, intent.attemptId);
+      validateOwner();
+      if (resolution.status == 'create_required' && findCached != null) {
+        final cached = await findCached!(matrixUserId);
+        validateOwner();
+        if (cached != null && _isSafeLocally(cached, matrixUserId)) {
+          await lifecycle.offerExistingRoom(peer, cached.roomId);
+          validateOwner();
+          resolution = await lifecycle.resolve(peer, intent.attemptId);
+          validateOwner();
+        }
+      }
+      if (resolution.status == 'unavailable') {
+        throw const DirectRoomPendingException();
+      }
+      var roomId = resolution.roomId;
+      if (resolution.status == 'create_required') {
+        final create = createReserved;
+        if (create == null) {
+          throw StateError('Recoverable room creation unavailable');
+        }
+        final created = await create(
+            matrixUserId, resolution.alias!, resolution.reservationId!);
+        validateOwner();
+        resolution = await lifecycle.publishRecovery(
+            peer, intent.attemptId, resolution, created);
+        validateOwner();
+        roomId = resolution.roomId;
+      }
+      if (roomId == null || roomId.isEmpty) {
+        throw const DirectRoomPendingException();
+      }
+      final room =
+          _safe(await openExisting(roomId, matrixUserId), matrixUserId);
+      validateOwner();
+      await onResolved?.call(matrixUserId, resolution);
+      validateOwner();
+      await intents.saveRoom(peer, intent, room.roomId);
+      return room;
     }
     // Opening local history has a separate zero-network API. The coordination
     // path must never accept an unregistered cached room as a sending authority.

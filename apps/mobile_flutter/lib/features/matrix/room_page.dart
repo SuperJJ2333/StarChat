@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'logical_conversation_timeline.dart';
 import 'room_navigation_coordinator.dart';
+import 'coordinated_direct_chat.dart';
 import 'timeline_scroll_anchor.dart';
 import 'nudge_rate_limiter.dart';
 // 会话聊天页（RoomPage）：私聊与群聊共用的消息时间线与交互。
@@ -178,6 +179,8 @@ class RoomPage extends StatefulWidget {
     this.initialAnchorRoomId,
     this.navigationRequests,
     this.requestOutboxDrain,
+    this.resolveDirectSendTarget,
+    this.onDirectTargetChanged,
     this.initialOutboxLocalIds = const <String>[],
   });
 
@@ -212,6 +215,8 @@ class RoomPage extends StatefulWidget {
   final String? initialAnchorRoomId;
   final ValueListenable<RoomOpenRequest>? navigationRequests;
   final VoidCallback? requestOutboxDrain;
+  final Future<String> Function(String matrixPeer)? resolveDirectSendTarget;
+  final void Function(String roomId)? onDirectTargetChanged;
   final List<String> initialOutboxLocalIds;
 
   /// Offline First：pending conversation 期间输入、尚未发送的文本。
@@ -645,17 +650,32 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             final contact =
                 _identityCache.contactsByMatrixId[_outboxReceiverId] ??
                     widget.initialContact;
-            if (contact == null) throw StateError('当前不可发送消息');
-            final canonical = await widget.api
-                    .canonicalDirectRoomId(contact.userId) ??
-                await widget.api
-                    .registerDirectConversation(contact.userId, roomInfo.id);
+            final resolver = widget.resolveDirectSendTarget;
+            if (resolver == null && contact == null) {
+              throw StateError('当前不可发送消息');
+            }
+            final String canonical;
+            try {
+              canonical = resolver != null
+                  ? await resolver(_outboxReceiverId)
+                  : await widget.api.canonicalDirectRoomId(contact!.userId) ??
+                      await widget.api.registerDirectConversation(
+                          contact.userId, roomInfo.id);
+            } on DirectRoomPendingException {
+              await outbox.updateStatus(localId, OutboxStatus.waitingNetwork,
+                  lastError: 'conversation_recovery_pending');
+              widget.requestOutboxDrain?.call();
+              return false;
+            }
             if (!mounted || _disposing || widget.roomLease.canceled) {
               return false;
             }
             await outbox.bindRoomForReceiver(_outboxReceiverId, canonical,
                 localIds: [localId]);
             row = await outbox.store.byLocalId(localId);
+            if (canonical != roomInfo.id) {
+              widget.onDirectTargetChanged?.call(canonical);
+            }
           }
           if (row?.roomId != roomInfo.id) {
             widget.requestOutboxDrain?.call();
@@ -663,6 +683,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           }
           return true;
         });
+  }
+
+  Future<bool> _prepareNewDirectOperation() async {
+    if (isGroup || widget.resolveDirectSendTarget == null) return true;
+    try {
+      final target = await widget.resolveDirectSendTarget!(_outboxReceiverId);
+      if (!mounted || _disposing || widget.roomLease.canceled) return false;
+      if (target == roomInfo.id) return true;
+      widget.onDirectTargetChanged?.call(target);
+      _showMediaMessage('连接已恢复，请重试刚才的操作');
+    } catch (_) {
+      if (mounted && !_disposing) _showMediaMessage('会话暂时无法发送，请稍后重试');
+    }
+    return false;
   }
 
   /// 接收方：单聊取对端 Matrix 用户 ID（房间信息 → 身份缓存 → 入口联系人），
@@ -1296,6 +1330,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendCustomEmoji(CustomEmojiItem item) async {
+    if (!await _prepareNewDirectOperation()) return;
     final session = emojiVault;
     final timeline = controller;
     if (session == null || timeline == null) return;
@@ -1602,6 +1637,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 「拍摄」入口：拍摄成功即**自动加密发送**（不进入“查看照片”页）；
   /// 发送期间优先解码 200px 缩略图作为暂存内容先展示，提升发送体验。
   Future<void> _captureAndSendImage() async {
+    if (!await _prepareNewDirectOperation()) return;
     final matrix = widget.roomLease;
     final targetRoomId = roomInfo.id;
     final timeline = controller;
@@ -1639,6 +1675,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendMedia({required bool image}) async {
+    if (!await _prepareNewDirectOperation()) return;
     final matrix = widget.roomLease;
     final targetRoomId = roomInfo.id;
     final factory = widget.mediaSenderFactory;
@@ -2005,6 +2042,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 统一图片选择页（微信式九宫格多选）：默认发送压缩图，
   /// "原图"开关打开后逐张发送原图；逐张加密上传。
   Future<void> _pickAndSendImages() async {
+    if (!await _prepareNewDirectOperation()) return;
+    if (!mounted) return;
     final matrix = widget.roomLease;
     final targetRoomId = roomInfo.id;
     final timeline = controller;
@@ -2238,6 +2277,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// Camera completion admits the controlled capture before compression. The
   /// account owner continues preparation after this page is left.
   Future<void> _startVideoCapture() async {
+    if (!await _prepareNewDirectOperation()) return;
     if (_capturingVideo) return;
     final matrix = widget.roomLease;
     final targetRoomId = roomInfo.id;
@@ -2356,6 +2396,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     _startingVoice = true;
     _voiceStartCancelled = false;
+    if (!await _prepareNewDirectOperation() ||
+        _voiceStartCancelled ||
+        !mounted ||
+        _disposing) {
+      _startingVoice = false;
+      return;
+    }
     final service = MediaMessageService(
       widget.roomLease,
     );
@@ -3672,15 +3719,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 ? null
                 : () {
                     // BUG-14 真机回归修订：拨打是异步的，立即给出可见反馈。
-                    _showMediaMessage(message.callVideo
-                        ? '正在发起视频通话…'
-                        : '正在发起语音通话…');
+                    _showMediaMessage(
+                        message.callVideo ? '正在发起视频通话…' : '正在发起语音通话…');
                     if (message.callVideo) {
-                      unawaited(widget.onVideo?.call(peer!) ??
-                          Future<void>.value());
+                      unawaited(
+                          widget.onVideo?.call(peer!) ?? Future<void>.value());
                     } else {
-                      unawaited(widget.onVoice?.call(peer!) ??
-                          Future<void>.value());
+                      unawaited(
+                          widget.onVoice?.call(peer!) ?? Future<void>.value());
                     }
                   },
           ),

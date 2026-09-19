@@ -62,6 +62,7 @@ import 'features/search/global_search_models.dart';
 import 'features/search/global_search_page.dart'
     show GlobalSearchRoomOpenCallback;
 import 'features/matrix/coordinated_direct_chat.dart';
+import 'features/matrix/direct_room_directory_convergence.dart';
 import 'features/moments/moment_preview_cache.dart';
 import 'features/ledger/ledger_pages.dart';
 import 'features/ledger/ledger_business_gateway.dart';
@@ -221,6 +222,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       businessUserIdOf: (matrixUserId) =>
           _chatIdentityCache?.contactsByMatrixId[matrixUserId]?.userId,
       openExisting: _openCanonicalDirectRoom,
+      onResolved: _rememberResolvedDirectRoom,
+      ownerToken: () => (
+        widget.matrix.sendPreparationIdentity,
+        widget.api.sessionEpoch,
+        _disposed
+      ),
     ),
   );
 
@@ -261,6 +268,71 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 且后续 invite 扫描无法识别）；最后做加密+双人校验。
   Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId, String peer) =>
       widget.matrix.openCanonicalDirectRoom(roomId, matrixUserId: peer);
+
+  Future<void> _rememberResolvedDirectRoom(
+      String peer, DirectRoomResolution resolution) async {
+    if (!mounted || _disposed) throw StateError('Conversation owner disposed');
+    final contact = _chatIdentityCache?.contactsByMatrixId[peer];
+    if (contact == null) throw StateError('Conversation identity unavailable');
+    widget.api.acceptDirectConversationSnapshot(contact.userId,
+        {'matrix_room_id': resolution.roomId, 'revision': resolution.revision},
+        epoch: widget.api.sessionEpoch);
+    await widget.matrix.conversations.convergeDirectRoomDirectory(
+        knownMatrixPeers: [peer],
+        businessUserIdOf: (id) => id == peer ? peer : null,
+        associationsOf: (_) async => DirectRoomAssociations(
+            primaryRoomId: resolution.roomId!,
+            roomIds: resolution.roomIds,
+            revision: resolution.revision));
+    if (!mounted ||
+        _disposed ||
+        widget.matrix.logicalPrimaryRoomIdSync(resolution.roomId!) !=
+            resolution.roomId) {
+      throw const DirectRoomPendingException();
+    }
+  }
+
+  Future<String> _resolveNewDirectSend(String peer) async {
+    final account = widget.matrix.userId;
+    final owner = widget.matrix.sendPreparationIdentity;
+    final epoch = widget.api.sessionEpoch;
+    final cache = await _identityCache();
+    final contact = cache.contactsByMatrixId[peer];
+    if (!mounted ||
+        _disposed ||
+        account == null ||
+        account != widget.matrix.userId ||
+        owner != widget.matrix.sendPreparationIdentity ||
+        epoch != widget.api.sessionEpoch ||
+        contact == null ||
+        blockedContacts.isBlocked(contact.userId)) {
+      throw StateError('当前不可发送消息');
+    }
+    final room = await directChats.open(peer);
+    if (!mounted ||
+        _disposed ||
+        account != widget.matrix.userId ||
+        owner != widget.matrix.sendPreparationIdentity ||
+        epoch != widget.api.sessionEpoch ||
+        blockedContacts.isBlocked(contact.userId)) {
+      throw StateError('会话状态已变化');
+    }
+    return room.roomId;
+  }
+
+  void _replaceRecoveredPage(
+      String oldRoom, String target, ContactDetails? contact) {
+    if (!mounted ||
+        _disposed ||
+        target == oldRoom ||
+        _roomNavigation.activeRoute(oldRoom)?.isCurrent != true) {
+      return;
+    }
+    unawaited(_openManagedRoom(target,
+        roomName: contact?.displayName ?? '',
+        initialContact: contact,
+        source: RoomOpenSource.conversationList));
+  }
 
   /// 同一好友「发消息」的单飞闸门：只锁「权威身份 + canonical roomId」解析，
   /// RoomPage/租约/复用由 [RoomNavigationCoordinator] 按 roomId 负责
@@ -463,6 +535,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     widget.matrix.authorizeRoomSend = _authorizeRoomSend;
+    widget.matrix.prepareRoomSend = (account, room, peer) async {
+      if (account != widget.matrix.userId) throw StateError('Account changed');
+      return _resolveNewDirectSend(peer);
+    };
     WidgetsBinding.instance.addObserver(this);
     _matrixResourceSetup = _initializeMatrixResources();
     unawaited(_matrixResourceSetup);
@@ -1422,23 +1498,17 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       String roomId, ContactDetails? contact) async {
     if (contact == null) return;
     try {
-      final canonical = await widget.api.canonicalDirectRoomId(contact.userId);
+      final canonical = await _resolveNewDirectSend(contact.matrixUserId);
       if (!mounted ||
           _disposed ||
-          canonical == null ||
           canonical == roomId ||
           !widget.matrix.knowsRoomLocally(canonical) ||
-          _roomNavigation.activeRoute(roomId)?.isActive != true) {
+          _roomNavigation.activeRoute(roomId)?.isCurrent != true) {
         return;
       }
-      await widget.matrix.conversations.convergeDirectRoomDirectory(
-          knownMatrixPeers: [contact.matrixUserId],
-          businessUserIdOf: (id) =>
-              id == contact.matrixUserId ? contact.userId : null,
-          canonicalRoomIdOf: (_) async => canonical);
       if (!mounted ||
           _disposed ||
-          _roomNavigation.activeRoute(roomId)?.isActive != true) {
+          _roomNavigation.activeRoute(roomId)?.isCurrent != true) {
         return;
       }
       await _openManagedRoom(canonical,
@@ -2172,6 +2242,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               initialAnchorRoomId: request.anchorRoomId,
               navigationRequests: navigationRequests,
               requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
+              resolveDirectSendTarget: _resolveNewDirectSend,
+              onDirectTargetChanged: (target) => _replaceRecoveredPage(
+                  roomId,
+                  target,
+                  request.initialContact ??
+                      identityCache
+                          .contactsByMatrixId[lease.roomInfo.directPeerId]),
               outbox: _outbox,
               onCreateGroup: _createGroupChat,
               // BUG-16：聊天信息页入口携带当前对端，发起群聊默认选中。
@@ -2205,6 +2282,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           identityCache.contactsByMatrixId[lease.roomInfo.directPeerId];
       unawaited(_reconcileOpenedDirectRoom(roomId, contact));
       await visible;
+      // A removed/replaced route completes its pop before its widgets finish
+      // their final frame. Keep their timeline and lease alive until disposal.
+      await route.completed;
     } finally {
       StatisticsRoomScope.leave(roomId);
       handle.release(route);

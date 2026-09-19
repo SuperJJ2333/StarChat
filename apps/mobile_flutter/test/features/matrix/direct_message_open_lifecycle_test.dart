@@ -12,6 +12,7 @@ import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/duplicate_room_registry.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/features/matrix/pending_conversation_page.dart';
@@ -43,6 +44,40 @@ void main() {
   tearDown(() {
     PersistentOutboxManager.shared?.dispose();
     PersistentOutboxManager.shared = null;
+  });
+
+  testWidgets(
+      'new text on stale page binds recovered room and replaces one logical page',
+      (tester) async {
+    final harness = await _Harness.start(tester);
+    addTearDown(harness.dispose);
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    final next = _DirectRoom(harness.client, id: '!dm-b:test');
+    harness.client.rooms.add(next);
+    _setMember(next, _selfMatrixId, 'join');
+    _setMember(next, _peerMatrixId, 'join');
+    _setEncryption(next);
+    harness.client.accountData['m.direct'] = BasicEvent.fromJson({
+      'type': 'm.direct',
+      'content': {
+        _peerMatrixId: [_roomId, next.id]
+      }
+    });
+    harness._counters.canonicalAvailable = true;
+    harness._counters.canonicalRoomId = next.id;
+    final dynamic state = tester.state(find.byType(RoomPage));
+    final Future<dynamic> sending =
+        state.controller.sendText('new recovery text');
+    await tester.pumpAndSettle();
+    await sending;
+    final rows = await PersistentOutboxManager.shared!.unsent();
+    expect(rows.single.roomId, next.id, reason: rows.single.lastError);
+    expect(find.byType(RoomPage, skipOffstage: false), findsOneWidget);
+    expect(harness.roomLeaseOf(tester).roomId, next.id);
+    Navigator.of(tester.element(find.byType(RoomPage))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage, skipOffstage: false), findsNothing);
   });
 
   testWidgets('Test 1: 好友资料首次「发消息」只解析一次身份/房间，只开一个 RoomPage+租约', (tester) async {
@@ -301,6 +336,10 @@ final class _DirectRoom extends Room {
 
 final class _EmptyTimeline extends Fake implements Timeline {
   @override
+  bool get isFragmentedTimeline => false;
+  @override
+  bool get canRequestFuture => false;
+  @override
   List<Event> get events => const [];
   @override
   bool get canRequestHistory => false;
@@ -340,6 +379,7 @@ final class _Counters {
   int businessHttp = 0;
   int businessCanonicalLookups = 0;
   bool canonicalAvailable = false;
+  String canonicalRoomId = _roomId;
   Completer<http.Response>? canonicalGate;
 }
 
@@ -397,7 +437,8 @@ final class _Harness {
     if (directChatMetadata) _publishDirectChatMetadata(client);
 
     final matrix = MatrixSdkE2eeClient(client,
-        homeserver: Uri.parse('https://matrix.test'));
+        homeserver: Uri.parse('https://matrix.test'),
+        duplicateRooms: DuplicateRoomRegistry());
 
     final session = SecureSessionStore(_MemoryStore());
     await session.saveSession(
@@ -407,14 +448,17 @@ final class _Harness {
       sessionStore: session,
       client: MockClient((request) async {
         counters.businessHttp++;
-        if (request.url.path.endsWith('/direct-conversations') &&
-            request.method == 'GET') {
+        if ((request.url.path.endsWith('/direct-conversations') &&
+                request.method == 'GET') ||
+            request.url.path.endsWith('/direct-conversations/resolve')) {
           counters.businessCanonicalLookups++;
           if (counters.canonicalGate != null) {
             return counters.canonicalGate!.future;
           }
           if (counters.canonicalAvailable) {
-            return http.Response('{"matrix_room_id":"$_roomId"}', 200);
+            return http.Response(
+                '{"status":"ready","matrix_room_id":"${counters.canonicalRoomId}","room_ids":["$_roomId","${counters.canonicalRoomId}"],"generation":0,"revision":1}',
+                200);
           }
         }
         if (request.url.path.contains('direct-conversations')) {

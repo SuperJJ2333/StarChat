@@ -35,7 +35,7 @@ typedef OutboxLeaseFactory = Future<OutboxLease> Function(String roomId);
 ///    进入会话。
 ///
 /// 硬约束：
-/// - **不轮询**：派发由网络状态通知与显式 [drain] 驱动，仅使用操作超时；
+/// - 已绑定发送由网络通知与显式 [drain] 驱动；未绑定会话解析额外有界重试；
 /// - **有界顺序处理**：超时的请求仍持有原认领，其他房间可以继续处理；
 /// - **幂等**：无论走哪条路径，派发前都必须原子认领该行
 ///   （[PersistentOutboxManager.claim]），因此同一 txid 只会真正发一次；
@@ -84,6 +84,13 @@ final class MessageSendScheduler {
   int _recoveryRevision = 0;
   final Set<String> _openingRooms = <String>{};
   final Set<String> _resolvingReceivers = <String>{};
+  static const _resolutionRetryDelays = <Duration>[
+    Duration(seconds: 2),
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+  ];
+  final Map<String, Timer> _resolutionTimers = <String, Timer>{};
+  final Map<String, int> _resolutionRetries = <String, int>{};
   bool _disposed = false;
   int _dispatched = 0;
 
@@ -119,6 +126,10 @@ final class MessageSendScheduler {
     if (_disposed || _reportingFailure) return;
     if (!_networkUsable) return;
     _recoveryRevision++;
+    for (final timer in _resolutionTimers.values) {
+      timer.cancel();
+    }
+    _resolutionTimers.clear();
     unawaited(drain());
   }
 
@@ -195,8 +206,12 @@ final class MessageSendScheduler {
     for (final row in rows) {
       if (!row.hasRoom) peers.putIfAbsent(row.receiverId, () => row);
     }
+    for (final peer in _resolutionRetries.keys.toList()) {
+      if (!peers.containsKey(peer)) _clearResolutionRetry(peer);
+    }
     for (final row in peers.values) {
       if (_disposed || !_networkUsable) return;
+      if (_resolutionTimers.containsKey(row.receiverId)) continue;
       if (!_resolvingReceivers.add(row.receiverId)) continue;
       var timedOut = false;
       final revision = _recoveryRevision;
@@ -207,9 +222,11 @@ final class MessageSendScheduler {
           if (roomId == null || roomId.trim().isEmpty) {
             await _settleUnbound(row.receiverId, OutboxStatus.waitingNetwork,
                 'conversation_pending');
+            await _retryUnbound(row.receiverId);
             return;
           }
           await outbox.bindRoomForReceiver(row.receiverId, roomId.trim());
+          _clearResolutionRetry(row.receiverId);
         } catch (error) {
           if (_disposed) return;
           final networkFailure = defaultNetworkFailureClassifier(error);
@@ -222,6 +239,11 @@ final class MessageSendScheduler {
                   ? 'conversation_unavailable'
                   : 'conversation_denied');
           if (_disposed) return;
+          if (networkFailure) {
+            await _retryUnbound(row.receiverId);
+          } else {
+            _clearResolutionRetry(row.receiverId);
+          }
           if (networkFailure &&
               revision != _recoveryRevision &&
               _networkUsable) {
@@ -244,6 +266,30 @@ final class MessageSendScheduler {
             'conversation_resolution_timeout');
       });
     }
+  }
+
+  /// Only rows without a physical destination are eligible. No transport has
+  /// been admitted, so exhausting this budget can safely expose manual retry.
+  /// Timers are per peer and never start a second unresolved operation.
+  Future<void> _retryUnbound(String peer) async {
+    if (_disposed || _resolutionTimers.containsKey(peer)) return;
+    final attempt = _resolutionRetries[peer] ?? 0;
+    if (attempt >= _resolutionRetryDelays.length) {
+      await _settleUnbound(
+          peer, OutboxStatus.failed, 'conversation_resolution_retry_exhausted');
+      _clearResolutionRetry(peer);
+      return;
+    }
+    _resolutionRetries[peer] = attempt + 1;
+    _resolutionTimers[peer] = Timer(_resolutionRetryDelays[attempt], () {
+      _resolutionTimers.remove(peer);
+      if (!_disposed && _networkUsable) unawaited(drain());
+    });
+  }
+
+  void _clearResolutionRetry(String peer) {
+    _resolutionTimers.remove(peer)?.cancel();
+    _resolutionRetries.remove(peer);
   }
 
   Future<void> _settleUnbound(
@@ -467,6 +513,11 @@ final class MessageSendScheduler {
     _disposed = true;
     _attached?.state.removeListener(_onNetworkStateChanged);
     _attached = null;
+    for (final timer in _resolutionTimers.values) {
+      timer.cancel();
+    }
+    _resolutionTimers.clear();
+    _resolutionRetries.clear();
     _inFlight.clear();
   }
 }

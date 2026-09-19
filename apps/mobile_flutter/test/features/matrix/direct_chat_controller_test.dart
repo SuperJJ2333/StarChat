@@ -52,6 +52,18 @@ final class FakeDirectChatBackend implements DirectChatBackend {
 }
 
 void main() {
+  test(
+      'disposed owner rejects late opening without notifying disposed listeners',
+      () async {
+    final backend = FakeDirectChatBackend()..gateCreate = true;
+    final controller = DirectChatController(DirectChatService(backend));
+    final opening = controller.open('@alice:example.test');
+    await backend.createStarted.future;
+    controller.dispose();
+    final rejected = expectLater(opening, throwsStateError);
+    backend.allowCreate.complete();
+    await rejected;
+  });
   test('reuses an encrypted two-person m.direct room', () async {
     final backend = FakeDirectChatBackend()
       ..existing = const DirectChatRoom(

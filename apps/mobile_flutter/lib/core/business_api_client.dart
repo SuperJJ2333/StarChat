@@ -1188,6 +1188,7 @@ final class BusinessApiClient
   /// Canonical Direct Conversation（好友系统重构 Phase E）：
   /// 创建私聊前先查询规范房间，存在即复用。
   Future<String?> canonicalDirectRoomId(String peerUserId) async {
+    final epoch = sessionEpoch;
     final body = await getJson(
       '/direct-conversations?peer_user_id=$peerUserId',
     );
@@ -1198,7 +1199,44 @@ final class BusinessApiClient
     if (roomId != null && (roomId is! String || roomId.isEmpty)) {
       throw StateError('规范私聊查询响应无效');
     }
+    acceptDirectConversationSnapshot(peerUserId, body, epoch: epoch);
     return roomId as String?;
+  }
+
+  final Map<String, (int, String?)> _directRevisions = {};
+  int? _directRevisionEpoch;
+
+  /// One monotonic view shared by sending, directory sync, and recovery.
+  void acceptDirectConversationSnapshot(String peer, Map<String, dynamic> body,
+      {required int epoch}) {
+    if (epoch != sessionEpoch) {
+      throw StateError('Direct conversation account changed');
+    }
+    if (_directRevisionEpoch != epoch) {
+      _directRevisions.clear();
+      _directRevisionEpoch = epoch;
+    }
+    final revision = body['revision'];
+    final room = body['matrix_room_id'];
+    if (revision != null && (revision is! int || revision < 0)) {
+      throw StateError('Invalid direct conversation revision');
+    }
+    if (room != null && (room is! String || room.isEmpty)) {
+      throw StateError('Invalid direct conversation room');
+    }
+    final previous = _directRevisions[peer];
+    if (previous != null &&
+        (revision == null ||
+            revision < previous.$1 ||
+            (revision == previous.$1 &&
+                room != null &&
+                previous.$2 != null &&
+                room != previous.$2))) {
+      throw StateError('Stale direct conversation response');
+    }
+    if (revision is int) {
+      _directRevisions[peer] = (revision, room as String? ?? previous?.$2);
+    }
   }
 
   Future<Map<String, dynamic>> claimDirectConversation(
@@ -1229,10 +1267,16 @@ final class BusinessApiClient
     return id;
   }
 
-  Future<Map<String, dynamic>> directConversationAssociations(String peer) =>
-      getJson('/direct-conversations/associations?${Uri(queryParameters: {
-            'peer_user_id': peer
-          }).query}');
+  Future<Map<String, dynamic>> directConversationAssociations(
+      String peer) async {
+    final epoch = sessionEpoch;
+    final body = await getJson(
+        '/direct-conversations/associations?${Uri(queryParameters: {
+          'peer_user_id': peer
+        }).query}');
+    acceptDirectConversationSnapshot(peer, body, epoch: epoch);
+    return body;
+  }
 
   Future<void> registerDirectConversationHistory(
       String peer, String roomId) async {

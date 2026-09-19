@@ -4,6 +4,7 @@ import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
+import 'package:liuhetong_mobile/features/matrix/coordinated_direct_chat.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -124,6 +125,8 @@ Future<MatrixRoomLease> _mount(WidgetTester tester, _OfflineClient client,
     {bool friend = false,
     ScrollBehavior? scrollBehavior,
     ValueNotifier<RoomOpenRequest>? navigationRequests,
+    Future<String> Function(String)? resolveDirectSendTarget,
+    void Function(String)? onDirectTargetChanged,
     PersistentOutboxManager? outbox}) async {
   tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   SharedPreferences.setMockInitialValues({});
@@ -139,6 +142,8 @@ Future<MatrixRoomLease> _mount(WidgetTester tester, _OfflineClient client,
       roomLease: lease,
       roomName: 'Offline fixture',
       navigationRequests: navigationRequests,
+      resolveDirectSendTarget: resolveDirectSendTarget,
+      onDirectTargetChanged: onDirectTargetChanged,
       outbox: outbox,
       initialIdentityCache: ProfileRepository.forTesting(
           accountKey: 'offline-fixture', store: MemoryProfileStore())
@@ -569,6 +574,54 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'unbound text resolves recovered target and requests page replacement',
+      (tester) async {
+    final client = _OfflineClient();
+    final outbox = PersistentOutboxManager(InMemoryOutboxStore());
+    final changed = <String>[];
+    var resolves = 0;
+    await _mount(tester, client, friend: true, outbox: outbox,
+        resolveDirectSendTarget: (peer) async {
+      resolves++;
+      return '!recovered:offline.test';
+    }, onDirectTargetChanged: changed.add);
+    final controller = (tester.state(find.byType(RoomPage)) as dynamic)
+        .controller as RoomTimelineController;
+    final sending = controller.sendText('new text');
+    await tester.pump();
+    await sending;
+    final rows = await outbox.unsent();
+    expect(rows.single.roomId, '!recovered:offline.test',
+        reason: 'resolves=$resolves error=${rows.single.lastError}');
+    expect(changed, ['!recovered:offline.test']);
+    expect(resolves, 1);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+    outbox.dispose();
+  });
+  testWidgets('recovery unavailable keeps new text unbound and recoverable',
+      (tester) async {
+    final client = _OfflineClient();
+    final outbox = PersistentOutboxManager(InMemoryOutboxStore());
+    await _mount(tester, client,
+        friend: true,
+        outbox: outbox,
+        resolveDirectSendTarget: (_) async =>
+            throw const DirectRoomPendingException());
+    final controller = (tester.state(find.byType(RoomPage)) as dynamic)
+        .controller as RoomTimelineController;
+    final sending = controller.sendText('waiting for recovery');
+    await tester.pump();
+    await sending;
+    final row = (await outbox.unsent()).single;
+    expect(row.roomId, isNull);
+    expect(row.status, OutboxStatus.waitingNetwork);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+    outbox.dispose();
   });
 
   testWidgets('background outbox failure updates the existing bubble',
