@@ -89,6 +89,7 @@
 | 全局搜索（本地结果先发布） | ✅ 已改 | `1104cf3f` | `test/features/search/global_search_cache_first_test.dart` |
 | 邀请码 / 邀请历史 | ✅ 已改 | `c1aa22f3` | `test/features/profile/invite_cache_first_test.dart`（10 例：断网进入无加载圈/无错误占位、刷新失败保留、快照往返、跨账号丢弃、作用域不可解析不落盘、损坏载荷） |
 | 红包领取明细 | ✅ 已改（会话级内存缓存，不落盘） | `d6d9cc1a` | `test/features/redpacket/red_packet_detail_cache_test.dart`（8 例：网络回来前先渲染、失败保留、按 packetId 命中、epoch 隔离、拆红包弹窗不注入缓存、断网再进入无加载圈/无重试占位、无缓存首次失败仍可重试、LRU 上限） |
+| 提现页「申请状态卡」（真机发现） | ✅ 已改 | `3362e4b8` | `test/features/wallet/manual_wallet_payout_status_cache_test.dart`（6 例：断网冷启动显示缓存状态卡、无快照不伪造、跨账号忽略、store 往返、未登记字段/损坏/id 不符按无本地数据、落盘字段全在白名单内）；`flutter test test/features/wallet` 113 例全绿 |
 
 新增本地快照 Store（均为应用私有 SharedPreferences，按账号作用域隔离，账号切换即丢弃）：`wallet.entry.v1.<scope>`、`ledger.page.v1`、`friend.requests.v1`、`moment.draft.v1`、`invite.code.v1`。
 
@@ -98,7 +99,6 @@
 
 | 页面 | 位置 | 复核后缺口 | 备注 |
 |---|---|---|---|
-| **提现页「申请状态卡」**（真机新发现） | `wallet/manual_wallet_page.dart:312-315`、渲染条件 `:1945-1973` | **L1**：状态对象 `ManualPayout` 只来自 `api.payout(id)`，无本地快照；已持久化的只有申请操作记录 `ManualOperationStore` | Mi 6 真机 A/B：断网冷启动后余额/步骤条仍在，**状态卡消失**；联网刷新后恢复（`docs/verification/2026-09-19-wallet-offline-device-verification.md` §2，截图 `withdraw-A-offline.png` vs `withdraw-C-online-refreshed.png`）。**实施约束**：不能直接复用 `ManualOperationStore`——它的 `save` 有安全白名单（`manual_operation_store.dart:43-68`，仅 `key/amount/version/id/quote_id/address/method/confirm_key/funding_asset`），写入 `status/review_reason/settlement_txid` 会抛 `ArgumentError`；应新增独立的状态快照 store（键按 `<scope>:payout:<id>`，自带显式非密字段白名单、账号作用域校验），进入先渲染、后台刷新覆盖、失败不覆盖 |
 | 通讯录首页 | `contacts/contacts_page.dart:66`、`reload()` `:201-207` | L1 角标 / L4 reload 回退本地投影（`reload()` 仍直接替换为网络 future，builder 无 error 分支） | 原"另一会话正在改"的并发占用**已解除**（该会话的改动已于 `9c68eea6`/`130c7741` 前后落库，工作树仅剩一个 gradle lock）；该项仍未实施，可安全接手 |
 | 日历选择页 | `ui/chat/chat_search_page.dart:738` | L1（月份 map 只留内存） | 原阻塞原因（`room_page.dart` 带未提交改动）**已解除**；实施时仍需由 `room_page.dart` 传入 room 作用域再建会话级月份缓存，无作用域会造成跨会话串数据 |
 | 入群确认页 | `contacts/group_join_confirm_page.dart:10` | **判定下调** | 复核：`_load()` 只在 initState 与错误态重试时调用（重试按钮只在 `_info == null` 时渲染），因此"已有群信息 + 刷新失败"的组合**不可达**，L4 实际上已满足；首帧 spinner 出现在确实无数据时（模型允许）。剩余 L1（按 token 持久化扫到的群信息）价值有限：token 来自刚扫的二维码、加入动作本身必须联网，且缓存的人数/审批提示可能过期误导。**建议不开工**，除非将来支持"从聊天记录重新打开入群确认页" |

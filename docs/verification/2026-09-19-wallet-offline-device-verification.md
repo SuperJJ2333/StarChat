@@ -23,6 +23,8 @@
 
 ## 2. 仍未覆盖：提现页的「申请状态卡」断网消失（新发现）
 
+> **后续（同一会话，提交 `3362e4b8`）：已修复。** 新增 `lib/features/wallet/manual_payout_status_store.dart`（按 `walletIntentScope + payout id` 的本地快照，显式九字段非密白名单；读取拒绝未登记字段/id 不符/损坏内容；作用域每次访问重新校验），`ManualWalletPage.refresh()` 改为「先渲染快照 → 后台刷新 → 失败保留」。测试 `test/features/wallet/manual_wallet_payout_status_cache_test.dart` 6 例 + 反向对照，`flutter test test/features/wallet` 113 例全绿。**注意：该修复尚未在真机复验**（本节 A/B 证据是修复前的现状），真机复验需要重新构建安装。
+
 受控 A/B（**同一个待处理提现申请**，`payout` 操作记录确认仍存在，见 §2.2）：
 
 | 截图 | 网络 | 观察 |
