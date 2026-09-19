@@ -16,7 +16,7 @@ Root cause: blanket immutability of physical canonical had no operations correct
 
 Root owns plan/ADR/task/evidence/review. Implementation agent owns recovery service, strict metadata gateway and new regression tests. Production agent owns metadata/release scripts and execution after review. Client-review agent verified current2136 fallback: both directory endpoints must reflect newcanonical, preserve old source, reopen after sync, new unbound messages bind newtarget; old bound failed/uncertain messages never retarget.
 
-Status at21:14+08: source implementation, focused tests/reviews, full repository gate and isolated PostgreSQL passed. Production deployment authorized and in progress; corrective write not yet confirmed. Candidate repair only explicitly selected pair, not all exited rooms. Existing Android/iOS binaries and update settings stay unchanged. [Evidence](../../verification/2026-09-19-retired-direct-room-repair.md), [operations runbook](../../runbooks/retired-direct-room-repair.md).
+Status at21:18+08: server deployed and selected-pair correction verified; device new-message feedback pending. Source c7534a33, main integration based on dc48cb95; source hashes unchanged from candidate. Candidate repair only explicitly selected pair, not all exited rooms. Existing Android/iOS binaries and update settings stay unchanged. [Evidence](../../verification/2026-09-19-retired-direct-room-repair.md), [operations runbook](../../runbooks/retired-direct-room-repair.md).
 
 ## Acceptance
 
@@ -24,11 +24,13 @@ Status at21:14+08: source implementation, focused tests/reviews, full repository
 - [x] Operations-only public service CAS, checked source/join/encryption/relationship/old-room retirement, actual-operator audit/idempotency/outbox; no HTTP/schema change.
 - [x] Tests red/green, spec review then quality/security; applicable repository gates. Latest-main unrelated baseline failure remains separately recorded.
 - [x] Isolated PostgreSQL correction/replay and rollback-source backup.
-- [ ] API overlay, selected-pair public-service correction, both directory readbacks, old room/source preserved, replay0newwrites.
+- [x] API overlay, selected-pair public-service correction, both directory readbacks, old room/source preserved, replay0newwrites.
 - [ ] Device confirmation: reopen synchronized friendship and send a NEW text; old red bubble is not a valid fresh-send test.
 
 ## Timing and next step
 
-First current-clock capture20:37:36+08. Pair read-only investigation and independent membership confirmation20:38–20:43 approximately; precise artifact timestamps supersede estimates. No invented total tool time. Continue implementation/review and bounded API repair; then give user fresh-message retest instructions. Do not claim handset success without feedback.
+First current-clock capture20:37:36+08. Pair read-only investigation and independent membership confirmation20:38–20:43 approximately; precise artifact timestamps supersede estimates. No invented total tool time. Implementation, review and bounded API repair are complete; fresh-message retest instructions were provided. Do not claim handset success without feedback.
 
-By20:58+08,51 dedicated regressions and30 neighboring tests passed (35.67s), independent specification then quality/security reviews passed after three corrections. Candidate and isolated PostgreSQL preparation also passed. Full gate runs on Windows with Python3.12.10, basea9034b73 plus the frozen repair; requirements.lock SHA256029a0a13294bc678fe9e8f93b85ad74c0c78aa775f0bae4f1802503e29d9350e. Source hashes and exact image are in the evidence page. Main advanced concurrently to dc48cb95; independent integration tests are required and base full-gate results must not be represented as a full run on that newer main.
+By20:58+08,51 dedicated regressions and30 neighboring tests passed (35.67s), independent specification then quality/security reviews passed after three corrections. Candidate and isolated PostgreSQL preparation also passed. Full gate ran on Windows with Python3.12.10, basea9034b73 plus the frozen repair; requirements.lock SHA256029a0a13294bc678fe9e8f93b85ad74c0c78aa775f0bae4f1802503e29d9350e. Source hashes and exact image are in the evidence page. Main advanced concurrently to dc48cb95; independent integration tests were completed and base full-gate results must not be represented as a full run on that newer main.
+
+Full gate20:53–21:14+08 completed exit0 (API/Worker2146 passed,58 skipped,1222.91s); separate latest-main friendship integration102 passed. The unrelated redpacket default assertion fails on pure main too and is recorded, not hidden. Deployment21:15:12, correction/replay21:15–21:16, independent readback21:16:48, dual-side TLS validation finished21:17:22; all timestamps+08. No ongoing command or owned tunnel remains. Next executable step is user fresh-text device verification after reentering the synchronized conversation; do not retry/retarget old uncertain bubbles as acceptance.

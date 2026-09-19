@@ -12,7 +12,7 @@ Files owned: implementation agent direct_room_recovery.py / matrix_admin.py / de
 - [x] Add failing tests for expected correction, active/malformed old evidence rejection, target membership/source/friendship/block rejection, CAS conflict, replay and concurrent correction.
 - [x] Implement minimal public service and strict read-only gateway detail method; no API or schema change.
 - [x] Specification review then independent quality/security review; preserve immutability for all ordinary client APIs.
-- [ ] Focused tests, applicable verify.ps1 with environment preflight/evidence accounting; isolated PG correction/replay rehearsal.
-- [ ] Build exact overlay atop freshly checked live image; protect source/config/database rollback evidence; deploy only API.
-- [ ] Invoke public service for this user-authorized pair with fresh evidence; read back canonical/source/audit/idempotency and preserve all physical rooms.
-- [ ] Explain fresh-message retest vs existing ambiguous failed rows; do not claim device acceptance from metadata.
+- [x] Focused tests, applicable verify.ps1 with environment preflight/evidence accounting; isolated PG correction/replay rehearsal.
+- [x] Build exact overlay atop freshly checked live image; protect source/config/database rollback evidence; deploy only API.
+- [x] Invoke public service for this user-authorized pair with fresh evidence; read back canonical/source/audit/idempotency and preserve all physical rooms.
+- [x] Explain fresh-message retest vs existing ambiguous failed rows; do not claim device acceptance from metadata.
