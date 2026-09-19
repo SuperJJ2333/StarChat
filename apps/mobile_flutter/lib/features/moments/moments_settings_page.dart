@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
+import '../../core/cache/cache_repository.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -18,6 +21,10 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
   String _range = 'ALL';
   bool _personalized = true, _entry = true, _loading = true, _saving = false;
   List<String> _excluded = [];
+
+  /// 是否已经拿到过可展示的权威值（本地快照或服务端）。只有"从未有过值"
+  /// 才允许整页错误——失败不覆盖已渲染的表单。
+  bool _hasValues = false;
   String? _error;
   @override
   void initState() {
@@ -26,19 +33,63 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
   }
 
   Future<void> _load() async {
+    // 本地优先：朋友圈首页已经把 `momentsPreferences()` 的完整负载写入本地
+    // 快照（`CacheRepository` 的 `preferencesSnapshot`），这里先用它渲染表单，
+    // 再后台刷新；断网时表单照样可用，而不是整页加载圈。
+    try {
+      final userId = await widget.api.currentMatrixUserId();
+      final snapshot = userId == null || userId.isEmpty
+          ? null
+          : CacheRepository.current
+              ?.momentsFor('matrix:$userId')
+              .preferencesSnapshot;
+      if (!mounted) return;
+      if (snapshot != null && snapshot['history_range'] != null) {
+        setState(() {
+          _applyPreferences(snapshot);
+          _loading = false;
+          _hasValues = true;
+        });
+      }
+    } catch (_) {
+      // 本地快照不可用不阻塞网络刷新。
+    }
     try {
       final r = await widget.api.momentsPreferences();
       if (!mounted) return;
       setState(() {
-        _range = r['history_range'] as String? ?? 'ALL';
-        _personalized = r['personalized_recommendations'] != false;
-        _entry = r['profile_entry_enabled'] != false;
-        _excluded = List<String>.from(r['excluded_user_ids'] ?? []);
+        _applyPreferences(r);
         _error = null;
         _loading = false;
+        _hasValues = true;
       });
+      // 回写快照：设置页自己的读取也要让本地缓存保持最新。
+      unawaited(_persistPreferences(r));
     } catch (_) {
-      if (mounted) setState(() => _error = '权限加载失败，请重试');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        // 失败不覆盖：已有权威值（缓存或此前成功）时保留表单，不弹整页错误。
+        if (!_hasValues) _error = '权限加载失败，请重试';
+      });
+    }
+  }
+
+  void _applyPreferences(Map<String, dynamic> r) {
+    _range = r['history_range'] as String? ?? 'ALL';
+    _personalized = r['personalized_recommendations'] != false;
+    _entry = r['profile_entry_enabled'] != false;
+    _excluded = List<String>.from(r['excluded_user_ids'] ?? []);
+  }
+
+  Future<void> _persistPreferences(Map<String, dynamic> value) async {
+    try {
+      final userId = await widget.api.currentMatrixUserId();
+      if (userId == null || userId.isEmpty) return;
+      final cache = CacheRepository.current?.momentsFor('matrix:$userId');
+      await cache?.savePreferences({...?cache.preferencesSnapshot, ...value});
+    } catch (_) {
+      // 本地快照写失败不是刷新失败。
     }
   }
 
@@ -55,6 +106,12 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
           profileEntryEnabled: _entry,
           excludedUserIds: _excluded);
       momentsPrivacyChanges.changed();
+      unawaited(_persistPreferences({
+        'history_range': _range,
+        'personalized_recommendations': _personalized,
+        'profile_entry_enabled': _entry,
+        'excluded_user_ids': _excluded,
+      }));
     } catch (_) {
       if (mounted) setState(() => _error = '保存失败，请重试');
     } finally {
