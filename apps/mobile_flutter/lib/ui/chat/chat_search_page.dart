@@ -332,6 +332,24 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         ),
       );
     }
+    // 本地优先 / 失败不覆盖（微信级加载模型）：已经拿到的结果永远优先渲染，
+    // 加载与失败降级为内联状态条，绝不用整页 spinner/错误页把结果顶掉。
+    final page = _lastPage;
+    if (page != null && page.items.isEmpty == false) {
+      return Column(children: [
+        if (_state is ChatSearchLoadingState)
+          _inlineStatus(const Text('正在查询…',
+              style:
+                  TextStyle(fontSize: 13, color: WeChatColors.textSecondary))),
+        Expanded(child: _results(controller, page)),
+        if (_state is ChatSearchFailedState)
+          _inlineStatus(CupertinoButton(
+            key: const Key('chat-search-retry'),
+            onPressed: _execute,
+            child: const Text('重试'),
+          )),
+      ]);
+    }
     if (_state is ChatSearchLoadingState) {
       return const Center(child: CupertinoActivityIndicator());
     }
@@ -353,16 +371,22 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         ),
       );
     }
-    // 翻页修复：渲染只读 _lastPage（不在 build 中被 _state 覆盖）；
-    // _lastPage 由 executeNow 的 loaded 回调和 _loadMore 共同维护。
-    final page = _lastPage;
-    if (page == null || page.items.isEmpty) {
-      return const Center(
-        key: Key('chat-search-no-results'),
-        child: Text('未找到符合条件的聊天记录',
-            style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
+    return const Center(
+      key: Key('chat-search-no-results'),
+      child: Text('未找到符合条件的聊天记录',
+          style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
+    );
+  }
+
+  /// 内联状态条：加载/失败提示不占用结果区域，也不遮挡已渲染的行。
+  Widget _inlineStatus(Widget child) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Center(child: child),
       );
-    }
+
+  /// 渲染只读 _lastPage（不在 build 中被 _state 覆盖）；
+  /// _lastPage 由 executeNow 的 loaded 回调和 _loadMore 共同维护。
+  Widget _results(ChatSearchQueryController controller, ChatSearchResultPage page) {
     if (controller.activeFilters.any((filter) =>
         filter.kind == ChatSearchFilterKind.media &&
         filter.value == ChatSearchMediaCategory.imageVideo.name)) {
