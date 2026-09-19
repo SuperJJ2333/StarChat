@@ -166,6 +166,7 @@ class RoomPage extends StatefulWidget {
     this.initialContact,
     this.initialAnchorEventId,
     required this.onCreateGroup,
+    this.onCreateGroupWithPeer,
     this.reminderService,
     this.onMessage,
     this.onVoice,
@@ -187,6 +188,10 @@ class RoomPage extends StatefulWidget {
       mediaSenderFactory;
   final ContactDetails? initialContact;
   final VoidCallback onCreateGroup;
+
+  /// BUG-16：携带当前会话对端发起群聊（进入发起页即默认选中该对端，
+  /// 可取消）；为 null 的入口保持原 [onCreateGroup] 行为。
+  final ValueChanged<String?>? onCreateGroupWithPeer;
   final MessageReminderService? reminderService;
   final ContactAction? onMessage;
   final ContactAction? onVoice;
@@ -198,11 +203,12 @@ class RoomPage extends StatefulWidget {
 
   /// 正式的房间导航契约：全局搜索/深链可携带 anchorEventId 打开房间，
   /// 进入后定位并高亮该消息（不使用全局变量或 SharedPreferences 传参）。
+  final String? initialAnchorEventId;
+
   /// 只读打开（缺陷 0919 项 3）：历史孤儿房间经搜索/通知定位时为 true，
   /// 隐藏输入区与面板——保留查看与定位能力，但不提供任何发送入口。
   final bool readOnly;
 
-  final String? initialAnchorEventId;
   final String? initialAnchorRoomId;
   final ValueListenable<RoomOpenRequest>? navigationRequests;
   final VoidCallback? requestOutboxDrain;
@@ -368,6 +374,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _draftRevision++;
     RoomDraftStore.shared
         .save(_draftKey, RoomDraft(input.text, tokens: mentionComposer.tokens));
+    // BUG-20：同步登记列表草稿预览（空文本即清除）。
+    RoomDraftStore.shared.recordDraftPreview(roomInfo.id, input.text);
   }
 
   Future<void> _restoreDraft() async {
@@ -2798,7 +2806,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           avatarMedia: widget.roomLease,
           peerAvatarUrl: avatarUrl,
           preference: roomInfo.preference,
-          onAddMember: widget.onCreateGroup,
+          // BUG-16：聊天信息页的「添加」携带对端账号进入发起群聊。
+          onAddMember: () {
+            final withPeer = widget.onCreateGroupWithPeer;
+            if (withPeer != null) {
+              withPeer(peer?.matrixUserId ?? roomInfo.directPeerId);
+            } else {
+              widget.onCreateGroup();
+            }
+          },
           onSearchHistory: () => _trackAction(_openHistorySearch),
           onClearLocalHistory: () => _trackAction(_clearLocalHistory),
           onPreferenceChanged: (preference) =>
@@ -3650,6 +3666,23 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             video: message.callVideo,
             connected: message.callConnected,
             duration: message.callDuration,
+            // BUG-14：点击通话摘要直接按原类型回拨；无对端资料
+            // （群聊/资料未加载）时不动作。
+            onRedial: peer == null
+                ? null
+                : () {
+                    // BUG-14 真机回归修订：拨打是异步的，立即给出可见反馈。
+                    _showMediaMessage(message.callVideo
+                        ? '正在发起视频通话…'
+                        : '正在发起语音通话…');
+                    if (message.callVideo) {
+                      unawaited(widget.onVideo?.call(peer!) ??
+                          Future<void>.value());
+                    } else {
+                      unawaited(widget.onVoice?.call(peer!) ??
+                          Future<void>.value());
+                    }
+                  },
           ),
         RoomMessageKind.text => KeyedSubtree(
             key: _messageTextKeys.putIfAbsent(message.stableId, GlobalKey.new),

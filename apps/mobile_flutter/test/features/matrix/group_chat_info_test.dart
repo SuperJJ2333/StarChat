@@ -32,6 +32,9 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   Future<void> invite(String matrixUserId) async => invited.add(matrixUserId);
 
   @override
+  Future<void> withdrawInvite(String matrixUserId) async {}
+
+  @override
   Future<void> leave() async => left = true;
 
   @override
@@ -91,6 +94,56 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
 }
 
 void main() {
+  test('BUG-29 群主退出前先把群主转移给最早加入的其他成员', () async {
+    final gateway = _OwnerGroupInfoGateway();
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+
+    final left = await controller.leave();
+
+    expect(left, isTrue);
+    expect(gateway.transferredTo, '@member0:example.test',
+        reason: '群主退出必须先把群主转移给最早加入的其他成员');
+    expect(gateway.left, isTrue, reason: '转移成功后才执行退出');
+  });
+
+  test('BUG-29 非群主退出不转移', () async {
+    final gateway = _OwnerGroupInfoGateway();
+    gateway.snapshot = GroupChatInfoSnapshot(
+      name: '项目讨论组',
+      members: gateway.snapshot.members,
+      ownerId: '@owner:example.test',
+      currentUserId: '@someone:example.test',
+    );
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+
+    await controller.leave();
+
+    expect(gateway.transferredTo, isNull, reason: '非群主退出不得转移群主');
+    expect(gateway.left, isTrue);
+  });
+
+  test('BUG-29 群内只剩群主一人时退出不转移', () async {
+    final gateway = _OwnerGroupInfoGateway();
+    gateway.snapshot = GroupChatInfoSnapshot(
+      name: '项目讨论组',
+      members: [
+        GroupChatMember(
+            matrixUserId: '@owner:example.test', displayName: '群主'),
+      ],
+      ownerId: '@owner:example.test',
+      currentUserId: '@owner:example.test',
+    );
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+
+    await controller.leave();
+
+    expect(gateway.transferredTo, isNull, reason: '没有其他成员时无从转移');
+    expect(gateway.left, isTrue);
+  });
+
   test('blank explicit group names display as unnamed', () {
     expect(groupInfoDisplayName(''), '未命名');
     expect(groupInfoDisplayName('   '), '未命名');
@@ -424,4 +477,32 @@ void main() {
       '@zoe:test',
     ]);
   });
+}
+
+final class _OwnerGroupInfoGateway extends FakeGroupChatInfoGateway
+    implements GroupOwnershipGateway {
+  _OwnerGroupInfoGateway() {
+    // 当前用户 = 群主；成员列表不含群主本人（按加入顺序）。
+    snapshot = GroupChatInfoSnapshot(
+      name: '项目讨论组',
+      members: [
+        for (var i = 0; i < 4; i++)
+          GroupChatMember(
+              matrixUserId: '@member$i:example.test', displayName: '成员$i'),
+      ],
+      ownerId: '@owner:example.test',
+      currentUserId: '@owner:example.test',
+    );
+  }
+
+  @override
+  Future<void> transferOwnership(String userId) {
+    transferredTo = userId;
+    return Future<void>.value();
+  }
+
+  @override
+  Future<void> dissolve() async {}
+
+  String? transferredTo;
 }

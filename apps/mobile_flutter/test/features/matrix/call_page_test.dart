@@ -107,6 +107,181 @@ void main() {
     await backend.events.close();
   });
 
+  testWidgets('BUG-22 视频来电的接听按钮使用视频图标', (tester) async {
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    await _emit(
+      tester,
+      backend,
+      const CallBackendEvent.incoming(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.video,
+      ),
+    );
+
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: CallPage(
+          controller: controller,
+          displayName: '周然',
+          fallbackSeed: 'alice',
+          incoming: true,
+        ),
+      ),
+    );
+
+    expect(find.text('周然 视频通话'), findsOneWidget);
+    expect(find.byKey(const Key('call-control-answer')), findsOneWidget);
+    expect(find.byIcon(ChangliaoIcons.videoCallFilled), findsOneWidget,
+        reason: '视频来电的接听必须是视频图标，让用户一眼区分来电类型');
+    expect(find.byIcon(ChangliaoIcons.voiceCallFilled), findsNothing,
+        reason: '接听按钮不得与语音来电共用话筒图标');
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    await backend.events.close();
+  });
+
+  testWidgets('BUG-23 通话结束自动关闭时回调 onEnded(roomId) 且仅一次',
+      (tester) async {
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    final endedRoomIds = <String>[];
+    await _emit(
+      tester,
+      backend,
+      const CallBackendEvent.incoming(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.audio,
+      ),
+    );
+
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: CallPage(
+          controller: controller,
+          displayName: '周然',
+          fallbackSeed: 'alice',
+          incoming: true,
+          autoCloseOnEnd: true,
+          onEnded: endedRoomIds.add,
+        ),
+      ),
+    );
+
+    // 接通再挂断：结束路径带缓冲，回调必须在关闭时携带 roomId 触发。
+    await _emit(tester, backend, const CallBackendEvent.connected());
+    await tester.pump();
+    await _emit(tester, backend, const CallBackendEvent.ended());
+    await tester.pump(const Duration(seconds: 4));
+
+    expect(endedRoomIds, ['!dm:example.test'],
+        reason: '结束后应回调一次 roomId，供会话层推进已读（消除通话虚增未读）');
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    await backend.events.close();
+  });
+
+  testWidgets('BUG-23 回归：来电页不自动关闭时终态仍触发 onEnded 一次',
+      (tester) async {
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    final endedRoomIds = <String>[];
+    await _emit(
+      tester,
+      backend,
+      const CallBackendEvent.incoming(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.audio,
+      ),
+    );
+
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: CallPage(
+          controller: controller,
+          displayName: '周然',
+          fallbackSeed: 'alice',
+          incoming: true,
+          onEnded: endedRoomIds.add,
+        ),
+      ),
+    );
+
+    await _emit(tester, backend, const CallBackendEvent.ended());
+    await tester.pump();
+
+    expect(endedRoomIds, ['!dm:example.test'],
+        reason: 'autoCloseOnEnd=false（来电/最小化路径）也必须通知会话层推进已读');
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    await backend.events.close();
+  });
+
+  testWidgets('BUG-23 抖动恢复后再次终态会再次通知（幂等推进已读）',
+      (tester) async {
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    final endedRoomIds = <String>[];
+    await _emit(
+      tester,
+      backend,
+      const CallBackendEvent.incoming(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.audio,
+      ),
+    );
+
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: CallPage(
+          controller: controller,
+          displayName: '周然',
+          fallbackSeed: 'alice',
+          incoming: true,
+          onEnded: endedRoomIds.add,
+        ),
+      ),
+    );
+
+    // 先接通，再终态。控制器对终态后的 connected 是粘性的（忽略恢复），
+    // 因此 onEnded 只应触发一次。
+    await _emit(tester, backend, const CallBackendEvent.connected());
+    await tester.pump();
+    await _emit(tester, backend, const CallBackendEvent.ended());
+    await tester.pump();
+    await _emit(tester, backend, const CallBackendEvent.connected());
+    await tester.pump();
+    await _emit(tester, backend, const CallBackendEvent.ended());
+    await tester.pump();
+
+    expect(endedRoomIds, ['!dm:example.test'],
+        reason: '终态粘性：无论后续 connected/ended 事件如何，onEnded 只通知一次'
+            '（markRoomRead 幂等，重复推进无意义）');
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    await backend.events.close();
+  });
+
   testWidgets('connected call shows encrypted controls and toggled state',
       (tester) async {
     final backend = _FakeCallBackend();

@@ -475,6 +475,39 @@ def create_identity_router(
         )
         return {"status": result.status}
 
+    class RegistrationEmailChangeRequest(StrictModel):
+        email: str = Field(min_length=3, max_length=320)
+
+    @router.post("/auth/registrations/{registration_session}/email", status_code=202)
+    async def change_registration_email(
+        registration_session: str,
+        body: RegistrationEmailChangeRequest,
+        request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=128),
+        ],
+        device_key: Annotated[str | None, Header(alias="X-Device-Key")] = None,
+    ) -> dict:
+        # BUG-12（D4 已批准）：验证完成前允许更换注册邮箱。
+        rate_limiter.hit(public_rate_limit_key("auth:registration:change-email", request.client.host if request.client else "unknown", device_key or registration_session), limit=10, window_seconds=3600)
+        result = email_verification.change_email(
+            registration_session=registration_session,
+            new_email=body.email,
+            idempotency_key=idempotency_key,
+        )
+        record_audit(
+            request,
+            actor_id=email_verification.user_id_for_session(registration_session),
+            subject_id=email_verification.user_id_for_session(registration_session),
+            action="identity.email.changed",
+            reason_code="REGISTRATION_EMAIL_CHANGE",
+        )
+        return {
+            "status": result.status,
+            "resend_after_seconds": result.resend_after_seconds,
+        }
+
     @router.post("/auth/email-verifications/resend", status_code=202)
     async def resend_email_verification(
         body: RegistrationSessionRequest,
@@ -623,11 +656,17 @@ def create_identity_router(
                     user = session.scalar(select(User).where(User.username_normalized == normalized))
                 if (
                     user is None
-                    or user.status != AccountStatus.ACTIVE
                     or not password_hasher.verify(user.password_hash, body.password)
                 ):
                     raise AppError(
                         code="CREDENTIALS_INVALID", message="账号或密码错误", status_code=401
+                    )
+                # BUG-19（D2 已拍板）：密码正确但账号被封禁/禁用时返回专用
+                # 403，客户端如实提示；密码错误仍统一 401（防枚举——只有
+                # 猜中密码才能得知账号受限）。
+                if user.status != AccountStatus.ACTIVE:
+                    raise AppError(
+                        code="ACCOUNT_SUSPENDED", message="账号已被限制，请联系客服", status_code=403
                     )
                 pair = tokens.issue_pair(
                     user_id=user.id,

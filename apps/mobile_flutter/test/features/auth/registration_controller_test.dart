@@ -59,6 +59,18 @@ final class FakeRegistrationGateway implements RegistrationGateway {
 
   @override
   Future<int> resendVerification(String registrationSession) async => 60;
+
+  String? changedTo;
+  Object? changeFailure;
+  @override
+  Future<int> changeRegistrationEmail({
+    required String registrationSession,
+    required String email,
+  }) async {
+    if (changeFailure != null) throw changeFailure!;
+    changedTo = email;
+    return 45;
+  }
 }
 
 void main() {

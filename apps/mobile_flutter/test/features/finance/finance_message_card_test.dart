@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_error.dart';
 import 'package:liuhetong_mobile/features/finance/finance_card_store.dart';
 import 'package:liuhetong_mobile/features/finance/finance_message_card.dart';
+import 'package:liuhetong_mobile/ui/finance/wechat_transfer_card.dart';
 
 void main() {
   testWidgets('transfer wrapper renders neutral unknown state without a tap',
@@ -116,9 +117,10 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump();
-    expect(find.text('重试'), findsOneWidget);
     expect(gateway.transferCalls, 1);
-    await tester.tap(find.text('重试'));
+    // BUG-41 回归（用户指令）：「重试」按钮移除——点击卡片本身即重试。
+    expect(find.text('重试'), findsNothing);
+    await tester.tap(find.byType(WeChatTransferCard));
     await tester.pump();
     await tester.pump();
     expect(gateway.transferCalls, 2);

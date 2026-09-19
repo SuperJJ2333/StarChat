@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -271,6 +272,20 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
   List<ImageEditMark>? _movingMarks;
   bool _busy = false;
   String? _error;
+
+  /// BUG-25：操作成功的瞬态提示（3 秒自动消失），与常驻错误 [_error] 分离，
+  /// 不再复用错误字段导致「已收藏/已保存到相册」永远挂在画布上。
+  String? _status;
+  Timer? _statusTimer;
+
+  void _showTransient(String message) {
+    if (!mounted) return;
+    setState(() => _status = message);
+    _statusTimer?.cancel();
+    _statusTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _status = null);
+    });
+  }
   ImageEditDocument get _doc => _history[_cursor];
   double get _strokeWidth => _image!.width / 350 * _width;
 
@@ -347,6 +362,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _image?.dispose();
     _mosaic?.dispose();
     super.dispose();
@@ -784,11 +800,14 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
         }
       }
       if (mounted && done) {
-        setState(() => _error = switch (action) {
-              'forward' => '正在发送',
-              'favorite' => '已收藏',
-              _ => '已保存到相册',
-            });
+        // BUG-27：转发被会话页接受后不再滞留「正在发送」——与收藏/保存
+        // 一样给出瞬态提示（3 秒自动消失，BUG-25），编辑器保持打开以继续
+        // 编辑；投递结果由会话页 toast 跟进报告。
+        _showTransient(switch (action) {
+          'forward' => '已转发',
+          'favorite' => '已收藏',
+          _ => '已保存到相册',
+        });
       }
     } catch (error) {
       if (mounted) {
@@ -905,10 +924,10 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                                         viewOffset: _viewOffset,
                                         activeHandle: _activeHandle)))));
                   })),
-        if (_error != null && _image != null)
+        if (_image != null && (_error != null || _status != null))
           Padding(
               padding: const EdgeInsets.all(8),
-              child: Text(_error!,
+              child: Text(_error ?? _status!,
                   style: const TextStyle(color: CupertinoColors.white))),
         if (_image != null) ...[
           if (_cropping)

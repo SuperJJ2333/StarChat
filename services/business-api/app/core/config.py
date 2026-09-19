@@ -46,7 +46,8 @@ class Settings(BaseSettings):
             raise ValueError('wallet TOTP requires an issuer')
         return self
     adjustment_admin_threshold: str = "10000.00"
-    red_packet_max_total: str = "20000.00"
+    # BUG-41 追加（用户指令）：单个红包上限 200.00 点钻，前后端统一。
+    red_packet_max_total: str = "200.00"
     wallet_webhook_secret: str | None = None
     # A04：托管模式门禁——生产启用资金功能必须显式 production provider
     # （真实实现未接入前生产资金入口关闭，绝不回退沙箱）。

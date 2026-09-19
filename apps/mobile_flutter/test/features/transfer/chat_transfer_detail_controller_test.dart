@@ -58,6 +58,55 @@ Map<String, dynamic> _detail(String status, {String? billId}) => {
     };
 
 void main() {
+  test('BUG-39 对方处理后详情自动刷新并提示（无需本机操作/重进）', () async {
+    final gateway = FakeGateway();
+    gateway.details.addAll([
+      _detail('PENDING'),
+      _detail('PENDING'),
+      _detail('ACCEPTED'),
+    ]);
+    var peerSettled = 0;
+    final controller = ChatTransferDetailController(
+      gateway: gateway,
+      transferId: 'transfer-1',
+      viewerId: 'receiver-1',
+      onPeerSettled: () => peerSettled++,
+      pollInterval: const Duration(milliseconds: 10),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+    expect(controller.state.detail?['status'], 'PENDING');
+
+    // 轮询周期内对方完成收款：状态自动变为 ACCEPTED 并提示一次。
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(controller.state.detail?['status'], 'ACCEPTED',
+        reason: '对方收款后页面必须自动变为已收款');
+    expect(peerSettled, 1, reason: '对方处理提示只发一次');
+    expect(gateway.detailCalls, greaterThanOrEqualTo(3),
+        reason: 'PENDING 期间持续轮询');
+  });
+
+  test('BUG-39 终态后停止轮询', () async {
+    final gateway = FakeGateway();
+    gateway.details.addAll([_detail('ACCEPTED')]);
+    final controller = ChatTransferDetailController(
+      gateway: gateway,
+      transferId: 'transfer-1',
+      viewerId: 'receiver-1',
+      pollInterval: const Duration(milliseconds: 10),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.load();
+    final callsAfterLoad = gateway.detailCalls;
+
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(gateway.detailCalls, callsAfterLoad,
+        reason: '终态不再轮询');
+  });
+
   test('initial-load failure retries with the server amount string intact',
       () async {
     final gateway = FakeGateway()

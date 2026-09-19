@@ -513,7 +513,7 @@ final class MatrixGroupInviteSnapshot {
   final String name;
 }
 
-enum MatrixConversationMutation { markUnread, togglePin, hide, delete }
+enum MatrixConversationMutation { markUnread, clearUnread, togglePin, hide, delete }
 
 @immutable
 final class MatrixMemberSnapshot {
@@ -1017,6 +1017,19 @@ final class MatrixConversationCapability {
         return count;
       });
 
+  /// BUG-23：通话结束后把会话推进到最新已读（消除通话信令虚增的未读）。
+  Future<void> markRoomRead(String roomId) =>
+      _owner._withClient((client) async {
+        final room = client.getRoomById(roomId);
+        if (room == null) return;
+        final lastEvent = room.lastEvent;
+        if (lastEvent != null) {
+          await room.setReadMarker(lastEvent.eventId,
+              mRead: lastEvent.eventId, public: false);
+        }
+        await markReadOnOpen(roomId);
+      });
+
   Future<void> markReadOnOpen(String roomId) =>
       _owner._withClient((client) async {
         final room = client.getRoomById(roomId);
@@ -1040,6 +1053,9 @@ final class MatrixConversationCapability {
         switch (mutation) {
           case MatrixConversationMutation.markUnread:
             await _savePreference(room, markUnread(preference));
+          case MatrixConversationMutation.clearUnread:
+            // BUG-15：手动取消未读（清除 manualUnread 标记）。
+            await _savePreference(room, clearUnreadOnOpen(preference));
           case MatrixConversationMutation.togglePin:
             final next = preference.pinned
                 ? preference.copyWith(pinned: false, clearPinnedAt: true)
@@ -3821,6 +3837,11 @@ final class _SdkGroupChatInfoGateway
       });
 
   @override
+  @override
+  Future<void> withdrawInvite(String matrixUserId) =>
+      _withOperation(() => room.kick(matrixUserId));
+
+  @override
   Future<void> invite(String matrixUserId) =>
       _withOperation(() => room.invite(matrixUserId));
 
@@ -4767,6 +4788,21 @@ final class MatrixSdkE2eeClient
     }
   }
 
+  /// BUG-11 回归：Matrix 忽略列表投影（被拉黑账号的消息在同步层过滤，
+  /// 不再送达本机）。委托给当前登录的 SDK client。
+  List<String> get ignoredUsers => _client?.ignoredUsers ?? const [];
+
+  Future<void> ignoreUser(String userId) {
+    final client = _client;
+    if (client == null) return Future<void>.value();
+    return client.ignoreUser(userId);
+  }
+
+  Future<void> unignoreUser(String userId) {
+    final client = _client;
+    if (client == null) return Future<void>.value();
+    return client.unignoreUser(userId);
+  }
   final MatrixOutgoingWorkCoordinator Function(String accountId)
       _outgoingWorkFactory;
   late MatrixOutgoingWorkCoordinator _outgoingWork;

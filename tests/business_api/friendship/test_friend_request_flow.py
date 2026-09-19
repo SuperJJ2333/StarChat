@@ -87,6 +87,52 @@ async def test_request_after_reject_creates_a_fresh_record(context):
         assert len(pending) == 1 and pending[0]["message"] == "重新申请"
 
 
+def test_blocks_projection_includes_matrix_user_id(context):
+    """BUG-11 回归：/blocks 返回 matrix_user_id，供客户端同步忽略列表。"""
+    app, factory, settings = context
+    from app.modules.friendship.service import FriendshipService
+    def _profile_reader(owner_id, contact_id):
+        return None
+    service = FriendshipService(factory, _profile_reader)
+    service.block("u-admin", "u-bob", key="block-1")
+    items = service.blocks("u-admin")
+    assert items and items[0]["user_id"] == "u-bob"
+    assert items[0]["matrix_user_id"] is None or items[0][
+        "matrix_user_id"] == "", "测试夹具用户未 provision Matrix 账号时允许为 None"
+
+
+@pytest.mark.asyncio
+async def test_mutual_requests_both_acceptable_without_conflict(context):
+    """BUG-21：互为好友申请，先后通过都应成功（幂等合并，不再 500）。"""
+    app, _factory, settings = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        forward = await send(client, settings, "u-admin", "正向申请", "idem-m1")
+        assert forward.status_code == 201
+
+        reverse = await client.post(
+            "/api/v1/friends/requests",
+            headers={**bearer(settings, "u-bob"), "Idempotency-Key": "idem-m2"},
+            json={"target_user_id": "u-admin", "message": "反向申请"},
+        )
+        assert reverse.status_code == 201
+        reverse_id = reverse.json()["id"]
+
+        # bob 先通过 admin 的正向申请 → 好友关系建立。
+        first = await client.post(
+            f"/api/v1/friends/requests/{forward.json()['id']}/accept",
+            headers={**bearer(settings, "u-bob"), "Idempotency-Key": "acc-m1"},
+        )
+        assert first.status_code == 200
+
+        # admin 再通过 bob 的反向申请：好友已存在，必须幂等成功而不是 500。
+        second = await client.post(
+            f"/api/v1/friends/requests/{reverse_id}/accept",
+            headers={**bearer(settings, "u-admin"), "Idempotency-Key": "acc-m2"},
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["status"] == "ACCEPTED"
+
+
 @pytest.mark.asyncio
 async def test_accept_applies_requester_contact_preferences(context):
     app, factory, settings = context

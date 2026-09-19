@@ -54,11 +54,29 @@ final class MessageBubbleMenu extends StatelessWidget {
       key: const Key('message-bubble-menu'),
       items: [
         for (final action in ordered)
-          AnchoredMenuItem(
-              value: action,
-              icon: _presentation[action]!.$1,
-              label: _presentation[action]!.$2,
-              key: Key('message-action-${action.name}'))
+          if (action == MessageAction.reply)
+            // BUG-32（真机回归修订）：引用为双引号字形（微信式），不是回复箭头。
+            AnchoredMenuItem(
+                value: action,
+                icon: CupertinoIcons.reply,
+                iconWidget: const Text(
+                  '””',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    height: 20 / 16,
+                    fontWeight: FontWeight.w800,
+                    color: CupertinoColors.white,
+                  ),
+                ),
+                label: '引用',
+                key: Key('message-action-${action.name}'))
+          else
+            AnchoredMenuItem(
+                value: action,
+                icon: _presentation[action]!.$1,
+                label: _presentation[action]!.$2,
+                key: Key('message-action-${action.name}'))
       ],
       onSelected: onSelected,
       arrowAtTop: arrowAtTop,

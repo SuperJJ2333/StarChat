@@ -479,14 +479,56 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     try {
       final body = await widget.api.blockList();
       final items = (body['items'] as List?) ?? const [];
-      blockedContacts.replaceAll([
-        for (final item in items)
-          if (item is Map && item['user_id'] != null)
-            item['user_id'].toString(),
-      ]);
+      final businessIds = <String>[];
+      final matrixIdByUser = <String, String>{};
+      for (final item in items) {
+        if (item is Map && item['user_id'] != null) {
+          final businessId = item['user_id'].toString();
+          businessIds.add(businessId);
+          final matrixId = item['matrix_user_id']?.toString();
+          if (matrixId != null && matrixId.startsWith('@')) {
+            matrixIdByUser[businessId] = matrixId;
+          }
+        }
+      }
+      blockedContacts.replaceAll(businessIds,
+          fromServer: true, matrixIdByUser: matrixIdByUser);
+      _syncMatrixIgnoreList(blockedContacts.matrixUserIds);
+      blockedContacts.addListener(_onBlockedContactsChanged);
     } catch (_) {
       // 网络失败保持上次已知状态；好友设置页仍会以服务端结果刷新。
     }
+  }
+
+  /// 由本 App 的拉黑操作自动加入 Matrix 忽略列表的账号。取消拉黑时只有
+  /// 这些账号会被移出忽略列表（用户因其他原因忽略的账号不受影响）。
+  final _blockAutoIgnored = <String>{};
+
+  /// BUG-11 回归：把拉黑投影同步为 Matrix 忽略列表——被拉黑用户的消息
+  /// 在同步层即被过滤（不再送达本机），而非仅隐藏提醒。
+  void _syncMatrixIgnoreList(Set<String> matrixIds) {
+    // BUG-11 回归（真机反馈 2）：忽略列表与拉黑列表**严格镜像**——
+    // 取消拉黑（哪怕跨重启）必须把账号移出忽略列表，否则对方的消息、
+    // 语音通话邀请、消息提醒永远无法恢复。
+    for (final id in widget.matrix.ignoredUsers.toSet().difference(matrixIds)) {
+      _blockAutoIgnored.remove(id);
+      unawaited(widget.matrix
+          .unignoreUser(id)
+          .catchError((_) => _blockAutoIgnored.add(id)));
+    }
+    for (final id in matrixIds.difference(widget.matrix.ignoredUsers.toSet())) {
+      _blockAutoIgnored.add(id);
+      unawaited(widget.matrix
+          .ignoreUser(id)
+          .catchError((_) => _blockAutoIgnored.remove(id)));
+    }
+  }
+
+  void _onBlockedContactsChanged() {
+    if (!mounted) return;
+    // 登出时投影被清空是账号切换语义，不得反向清空服务端忽略列表。
+    if (!widget.matrix.isLoggedIn) return;
+    _syncMatrixIgnoreList(blockedContacts.matrixUserIds);
   }
 
   void _startHomeResources() {
@@ -1809,6 +1851,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             avatarUrl: authoritative.avatarUrl,
             mediaBackend: callBackend,
             autoCloseOnEnd: true,
+            // BUG-23：通话结束后推进该会话已读（消除虚增未读）。
+            onEnded: (roomId) =>
+                unawaited(widget.matrix.conversations.markRoomRead(roomId)),
             onMinimize: () {
               releasePresentation();
               callUi.minimizeCall();
@@ -2129,6 +2174,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
               outbox: _outbox,
               onCreateGroup: _createGroupChat,
+              // BUG-16：聊天信息页入口携带当前对端，发起群聊默认选中。
+              onCreateGroupWithPeer: _createGroupChat,
               onMessage: _openMessage,
               onVoice: (contact) => _openCall(contact, CallMediaType.audio),
               onVideo: (contact) => _openCall(contact, CallMediaType.video),
@@ -2194,7 +2241,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     ));
   }
 
-  Future<void> _createGroupChat() async {
+  /// BUG-16：[preselectedMatrixUserId] 来自聊天信息页入口——发起群聊时
+  /// 默认选中当前会话对端（可取消）；其他入口不传即为空。
+  Future<void> _createGroupChat([String? preselectedMatrixUserId]) async {
     final matrix = widget.matrix;
     String currentUserDisplayName = '我';
     try {
@@ -2214,6 +2263,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       contacts: widget.api,
       groups: ServerAutoJoinGroupGateway(api: widget.api, matrix: matrix),
       currentUserDisplayName: currentUserDisplayName,
+      preselectedMatrixUserIds: {
+        if (preselectedMatrixUserId != null) preselectedMatrixUserId,
+      },
     );
     final roomId = await Navigator.push<String>(
       context,

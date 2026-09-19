@@ -7,6 +7,20 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 
 void main() {
+  test('BUG-19 封禁账号登录（403 ACCOUNT_SUSPENDED）如实提示服务端文案',
+      () async {
+    final controller = LoginController(operation: (username, password) async {
+      throw const BusinessApiException(
+        statusCode: 403,
+        code: 'ACCOUNT_SUSPENDED',
+        message: '账号已被限制，请联系客服',
+      );
+    });
+    expect(await controller.submit('alice', 'password'), isFalse);
+    expect(controller.state.message, '账号已被限制，请联系客服',
+        reason: '不得把封禁提示吞成「账号或密码错误」');
+  });
+
   test('cancel holds operation guard until local logout completes', () async {
     final business = FakeDualDomainBusiness()..logoutGate = Completer<void>();
     final service = DualDomainLoginService(

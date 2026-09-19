@@ -1195,7 +1195,10 @@ final class RoomTimelineController extends ChangeNotifier {
       senderId: '',
       text: row.content,
       isOwn: true,
-      timestamp: _localTimestampFor(row.createdAt),
+      // BUG 回归（真机）：恢复失败行必须保留原始 createdAt——
+      // `_localTimestampFor` 的"钳位到最新之后"只适用于乐观新发送；
+      // 失败行被钳位后会退回重进时永远排在最底部。
+      timestamp: row.createdAt,
       deliveryState:
           foreign ? RoomDeliveryState.failed : roomDeliveryStateOf(row.status),
     );
@@ -1206,7 +1209,13 @@ final class RoomTimelineController extends ChangeNotifier {
         : adapter.sendText(row.content);
     _echoRevision++;
     _localEchoes[tx] = local;
-    messages = [...messages, local];
+    // BUG 回归（真机）：按原始时间戳插入历史位置，而不是 append 到底——
+    // 失败行重进房间后必须停留在它原本的 Chronological 位置。
+    final insertIndex =
+        messages.indexWhere((m) => m.timestamp.isAfter(local.timestamp));
+    messages = insertIndex >= 0
+        ? [...messages.sublist(0, insertIndex), local, ...messages.sublist(insertIndex)]
+        : [...messages, local];
     _publish();
   }
 

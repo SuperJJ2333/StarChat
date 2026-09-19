@@ -90,6 +90,13 @@ abstract interface class RegistrationGateway {
     String? token,
   });
   Future<int> resendVerification(String registrationSession);
+
+  /// BUG-12：验证完成前更换注册邮箱（服务端作废旧挑战并把验证码发到新邮箱）。
+  /// 返回新的重发冷却秒数。
+  Future<int> changeRegistrationEmail({
+    required String registrationSession,
+    required String email,
+  });
   Future<RegistrationStatusReceipt> registrationStatus(
     String registrationSession,
   );

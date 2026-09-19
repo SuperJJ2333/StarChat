@@ -35,6 +35,7 @@ final class CallPage extends StatefulWidget {
     this.incoming = false,
     this.mediaBackend,
     this.autoCloseOnEnd = false,
+    this.onEnded,
     this.onMinimize,
   });
 
@@ -52,6 +53,10 @@ final class CallPage extends StatefulWidget {
   /// “通话已结束”独立页面）。来电覆盖层场景保持 false（由覆盖层
   /// 自身的可见性逻辑驱动）。
   final bool autoCloseOnEnd;
+
+  /// BUG-23：通话终态自动关闭时回调一次 roomId，供会话层推进已读
+  /// （否则通话信令虚增未读且不会消除）。
+  final ValueChanged<String>? onEnded;
   final VoidCallback? onMinimize;
 
   @override
@@ -123,10 +128,32 @@ final class _CallPageState extends State<CallPage> {
   /// 接通过一次后的终态→退出缓冲窗口。
   static const _endGrace = Duration(seconds: 3);
 
+  bool _endedNotified = false;
+
+  /// BUG-23（真机回归修订）：终态首次出现即回调 onEnded——不再挂在
+  /// _popOnce 上（来电页 autoCloseOnEnd=false、最小化挂起等路径此前
+  /// 永远不会触发，未读虚增不消除）。抖动恢复后再次终态会重新通知
+  /// （markRoomRead 幂等）。
+  void _notifyEndedOnce() {
+    final phase = widget.controller.state.phase;
+    final terminal =
+        phase == CallPhase.ended || phase == CallPhase.failed;
+    if (!terminal) {
+      _endedNotified = false;
+      return;
+    }
+    if (_endedNotified) return;
+    final roomId = widget.controller.state.roomId;
+    if (roomId == null) return;
+    _endedNotified = true;
+    widget.onEnded?.call(roomId);
+  }
+
   void _changed() {
     if (widget.controller.state.phase == CallPhase.connected) {
       _hasConnectedOnce = true;
     }
+    _notifyEndedOnce();
     _updateStreams();
     _syncDurationTicker();
     if (mounted) setState(() {});
@@ -526,7 +553,10 @@ final class _CallPageState extends State<CallPage> {
           ),
           CallControlButton(
             key: const Key('call-control-answer'),
-            icon: ChangliaoIcons.voiceCallFilled,
+            // BUG-22：按来电类型区分接听图标——视频来电用视频图标。
+            icon: widget.controller.state.type == CallMediaType.video
+                ? ChangliaoIcons.videoCallFilled
+                : ChangliaoIcons.voiceCallFilled,
             label: '接听',
             kind: CallControlKind.accept,
             onPressed: widget.controller.accept,

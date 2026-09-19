@@ -242,6 +242,13 @@ final class _ContactsPageState extends State<ContactsPage> {
     return result;
   }
 
+  final _sectionKeys = <String, GlobalKey>{};
+
+  GlobalKey _sectionKey(String label) =>
+      _sectionKeys.putIfAbsent(label, () => GlobalKey());
+
+  /// BUG-03（真机回归修订）：两段式精确跳转——先按估算偏移动画，
+  /// 目标分组头懒加载完成后用其真实位置二次校正，保证落在对应字母。
   Future<void> _jumpTo(String label) async {
     final offset = sectionOffsets[label];
     if (offset == null || !scrollController.hasClients) return;
@@ -250,6 +257,15 @@ final class _ContactsPageState extends State<ContactsPage> {
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
     );
+    if (!mounted) return;
+    final sectionContext = _sectionKeys[label]?.currentContext;
+    if (sectionContext != null && sectionContext.mounted) {
+      await Scrollable.ensureVisible(
+        sectionContext,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   @override
@@ -444,8 +460,11 @@ final class _ContactsPageState extends State<ContactsPage> {
                     ],
                     for (final label in ContactIndex.labels)
                       if (grouped[label]?.isNotEmpty ?? false) ...[
-                        _ContactSectionHeader(
-                          label: label == '★' ? '星标好友' : label,
+                        KeyedSubtree(
+                          key: _sectionKey(label),
+                          child: _ContactSectionHeader(
+                            label: label == '★' ? '星标好友' : label,
+                          ),
                         ),
                         for (var i = 0;
                             i < (grouped[label]?.length ?? 0);
@@ -499,8 +518,10 @@ final class _ContactsPageState extends State<ContactsPage> {
                 ),
                 // BUG-03：索引列宽度取设计 token，且整列留白后垂直居中，
                 // 不覆盖顶部导航/底部安全区（SafeArea 已由外层保证）。
+                // 真机回归修订：索引条从「新的朋友/群聊/标签」三个入口行
+                // 之下开始展示（微信语义），不再与功能入口同一高度。
                 Positioned(
-                  top: 0,
+                  top: WeChatDimensions.contactTileHeight * 3,
                   right: 0,
                   bottom: 0,
                   width: WeChatDimensions.contactIndexWidth,
@@ -928,12 +949,20 @@ final class _ContactMorePageState extends State<ContactMorePage> {
     try {
       final body = await widget.api.blockList();
       final items = (body['items'] as List?) ?? const [];
-      final ids = <String>{
-        for (final item in items)
-          if (item is Map && item['user_id'] != null)
-            item['user_id'].toString(),
-      };
-      blockedContacts.replaceAll(ids, fromServer: true);
+      final ids = <String>{};
+      final matrixIdByUser = <String, String>{};
+      for (final item in items) {
+        if (item is Map && item['user_id'] != null) {
+          final businessId = item['user_id'].toString();
+          ids.add(businessId);
+          final matrixId = item['matrix_user_id']?.toString();
+          if (matrixId != null && matrixId.startsWith('@')) {
+            matrixIdByUser[businessId] = matrixId;
+          }
+        }
+      }
+      blockedContacts.replaceAll(ids,
+          fromServer: true, matrixIdByUser: matrixIdByUser);
       if (mounted) setState(() => blocked = ids.contains(widget.contact.userId));
     } catch (_) {
       // 失败时只有「确实读过服务端」的本地投影才可作为已知状态；
@@ -1086,7 +1115,8 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       final confirmed = await _confirm(
         '加入黑名单',
         '加入后将不再接收对方的好友互动，聊天中也将无法继续发送消息。',
-        confirmLabel: '加入',
+        // BUG-11（用户拍板 D1）：确认框按钮为「取消/确定」。
+        confirmLabel: '确定',
       );
       if (!confirmed) return;
     }
@@ -1097,8 +1127,14 @@ final class _ContactMorePageState extends State<ContactMorePage> {
     try {
       if (value) {
         await widget.api.blockContact(widget.contact.userId);
+        // BUG-11 回归：运行时立即补记 Matrix ID（忽略列表同步/通知与
+        // 未读抑制都按 Matrix ID 判定），不等下次 /blocks 水合。
+        blockedContacts.markBlocked(widget.contact.userId,
+            matrixUserId: widget.contact.matrixUserId);
       } else {
         await widget.api.unblockContact(widget.contact.userId);
+        blockedContacts.markUnblocked(widget.contact.userId,
+            matrixUserId: widget.contact.matrixUserId);
       }
       if (!mounted) return;
       // 立即生效：本地投影与聊天发送门读同一份状态，不必等下一次整表刷新。

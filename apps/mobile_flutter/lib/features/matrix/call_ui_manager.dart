@@ -41,12 +41,16 @@ final class CallUiManager {
     this.onPhaseChanged,
     this.onMinimized,
     this.onRestored,
+    this.onCallEnded,
   });
 
   /// 根 Navigator 全局键（main.dart 的 callNavigatorKey）。
   final GlobalKey<NavigatorState> navigatorKey;
   final CallNotificationGateway notifications;
   final bool Function() isAppResumed;
+
+  /// BUG-23：通话终态关闭来电页时回调 roomId，供会话层推进已读。
+  final ValueChanged<String>? onCallEnded;
 
   /// 终态→关闭的缓冲（抖动容忍窗口）。
   final Duration closeDelay;
@@ -362,6 +366,7 @@ final class CallUiManager {
           incoming: !_outgoingSession,
           onMinimize: minimizeCall,
           mediaBackend: _mediaBackend,
+          onEnded: onCallEnded,
         ),
       ),
     );

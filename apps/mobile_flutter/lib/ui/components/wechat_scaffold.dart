@@ -11,7 +11,8 @@ final class WeChatPageScaffold extends StatelessWidget {
     this.trailing,
     // Null uses the theme; explicit product surfaces are resolved at build.
     this.backgroundColor,
-  }) : navigationBar = null;
+  })  : navigationBar = null,
+        showNetworkCapsule = true;
 
   const WeChatPageScaffold.bare({
     super.key,
@@ -19,13 +20,18 @@ final class WeChatPageScaffold extends StatelessWidget {
     this.backgroundColor = WeChatColors.lightPageBackground,
   })  : title = null,
         trailing = null,
-        navigationBar = null;
+        navigationBar = null,
+        showNetworkCapsule = true;
 
   const WeChatPageScaffold.navigation({
     super.key,
     required this.navigationBar,
     required this.child,
     this.backgroundColor,
+    // BUG-41（真机回归修订）：朋友圈等离线优先页面设为 false——
+    // 内容来自本地缓存也能完整使用，网络状态由页内提示承担，
+    // 不再出现常驻的「正在加载/网络不可用」状态栏。
+    this.showNetworkCapsule = true,
   })  : title = null,
         trailing = null;
 
@@ -34,6 +40,9 @@ final class WeChatPageScaffold extends StatelessWidget {
   final Widget? trailing;
   final ObstructingPreferredSizeWidget? navigationBar;
   final Color? backgroundColor;
+
+  /// 是否渲染顶部网络状态胶囊。
+  final bool showNetworkCapsule;
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
@@ -60,7 +69,7 @@ final class WeChatPageScaffold extends StatelessWidget {
             child: Column(children: [
           // 顶部状态胶囊仅在真正离线/服务不可用时出现；
           // “正在连接”由首页行内提示承担，避免导航栏下方常驻加载感。
-          WeChatNetworkStatusCapsule(showConnecting: false),
+          if (showNetworkCapsule) WeChatNetworkStatusCapsule(showConnecting: false),
           Expanded(child: child),
         ])),
       );

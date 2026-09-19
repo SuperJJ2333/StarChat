@@ -176,7 +176,7 @@ void main() {
         reason: '导出必须发生在转发确认之后，选择器不能先等 PNG 编码');
   });
 
-  testWidgets('successful editor forward reports queued sending state',
+  testWidgets('BUG-27 转发被接受后显示瞬态「已转发」，不再滞留「正在发送」',
       (tester) async {
     final source = (await tester.runAsync(_patternPng))!;
     final exports = <Uint8List>[];
@@ -191,9 +191,45 @@ void main() {
     ));
     await _waitForEditor(tester);
     await _exportThroughForward(tester, exports);
+    // 导出 PNG 是真实异步，需要 runAsync 等任务接受完成后提示才出现。
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('正在发送'), findsOneWidget);
-    expect(find.text('已转发'), findsNothing);
+    expect(exports, isNotEmpty);
+    expect(find.text('正在发送'), findsNothing,
+        reason: '不得再显示永远不会更新的「正在发送」');
+    expect(find.text('已转发'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    expect(find.text('已转发'), findsNothing, reason: '瞬态提示自动消失');
+  });
+
+  testWidgets('BUG-25 收藏成功提示 3 秒后自动消失', (tester) async {
+    final source = (await tester.runAsync(_patternPng))!;
+    await tester.pumpWidget(CupertinoApp(
+      home: WeChatImageEditorPage(
+        bytes: source,
+        onFavorite: (_) async {},
+      ),
+    ));
+    await _waitForEditor(tester);
+    await tester.tap(find.byKey(const Key('image-editor-done')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('收藏'));
+    // 导出 PNG 是真实异步，需要 runAsync 等它完成。
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('已收藏'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    expect(find.text('已收藏'), findsNothing,
+        reason: '成功提示必须自动消失，不得常驻画布');
   });
   testWidgets(
       'eraser removes only its touched edit layer and undo redo exports it',

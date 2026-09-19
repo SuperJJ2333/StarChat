@@ -28,6 +28,24 @@ void main() {
     expect(selected, MessageAction.deleteLocal);
   });
 
+  testWidgets('BUG-32 引用动作使用双引号字形（微信式），而不是回复箭头',
+      (tester) async {
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: MessageActionSheet(
+          actions: const {MessageAction.reply},
+          onSelected: (_) {},
+        ),
+      ),
+    );
+
+    expect(find.text('引用'), findsOneWidget);
+    // 双引号字形（真机回归修订：引用气泡不像微信，用户指定双引号样式）。
+    expect(find.text('””'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.reply), findsNothing);
+    expect(find.byIcon(CupertinoIcons.quote_bubble), findsNothing);
+  });
+
   testWidgets('multi-select bar exposes count, forward, delete and cancel',
       (tester) async {
     var forwarded = 0;

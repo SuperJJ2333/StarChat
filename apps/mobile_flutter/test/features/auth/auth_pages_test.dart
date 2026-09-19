@@ -42,6 +42,13 @@ final class PageGateway implements RegistrationGateway {
         );
   @override
   Future<int> resendVerification(String registrationSession) async => 60;
+
+  @override
+  Future<int> changeRegistrationEmail({
+    required String registrationSession,
+    required String email,
+  }) async =>
+      60;
   @override
   Future<RegistrationStatusReceipt> registrationStatus(
     String registrationSession,
@@ -87,7 +94,6 @@ void main() {
         ),
         VerificationPage(
           controller: controller,
-          onChangeEmail: () {},
           onCompleted: () {},
         ),
       ];
@@ -737,8 +743,7 @@ void main() {
         CupertinoApp(
           home: VerificationPage(
             controller: controller,
-            onChangeEmail: () {},
-            onCompleted: () {},
+              onCompleted: () {},
           ),
         ),
       );
@@ -776,7 +781,6 @@ void main() {
       CupertinoApp(
         home: VerificationPage(
           controller: controller,
-          onChangeEmail: () {},
           onCompleted: () {},
         ),
       ),
@@ -901,7 +905,6 @@ void main() {
       CupertinoApp(
         home: VerificationPage(
           controller: controller,
-          onChangeEmail: () {},
           onCompleted: () {},
         ),
       ),
@@ -920,7 +923,6 @@ void main() {
       CupertinoApp(
         home: VerificationPage(
           controller: controller,
-          onChangeEmail: () {},
           onCompleted: () {},
         ),
       ),

@@ -13,6 +13,7 @@ import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:image_picker/image_picker.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/user_avatar.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
@@ -846,6 +847,9 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
+        // BUG-41（真机回归修订）：朋友圈内容离线优先（缓存可完整呈现），
+        // 不再渲染常驻网络状态栏；网络异常由页内「加载失败，点击重试」承担。
+        showNetworkCapsule: false,
         navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
@@ -1130,33 +1134,49 @@ final class _MomentsPageState extends State<MomentsPage> {
         : extension == 'webp'
             ? 'image/webp'
             : 'image/jpeg';
-    final begun = await api.beginMomentCoverUpload(
-      fileName: image.name,
-      mimeType: mimeType,
-      byteSize: bytes.length,
-    );
-    final uploadId = begun['id'].toString();
-    await api.putMomentCoverUpload(uploadId, bytes, mimeType);
-    await api.completeMomentCoverUpload(uploadId);
-    final saved = await api.setMomentCover(uploadId);
-    final coverUrl = saved['cover_url']?.toString();
-    if (!await _stillSameAccount() || epoch != _accountEpoch) return null;
-    ++_preferencesRequest;
-    final cache = _moments;
-    if (cache != null) {
-      unawaited(
-        cache.savePreferences({
-          ...?cache.preferencesSnapshot,
-          ...saved
-        }).catchError((Object _) {}),
-      );
+    // BUG-38：四步链路（begin→put→complete→set）整体最多重试一次，
+    // 失败给出友好提示而非原始报错；中途失败不再向查看器裸抛异常。
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final begun = await api.beginMomentCoverUpload(
+          fileName: image.name,
+          mimeType: mimeType,
+          byteSize: bytes.length,
+        );
+        final uploadId = begun['id'].toString();
+        await api.putMomentCoverUpload(uploadId, bytes, mimeType);
+        await api.completeMomentCoverUpload(uploadId);
+        final saved = await api.setMomentCover(uploadId);
+        final coverUrl = saved['cover_url']?.toString();
+        if (!await _stillSameAccount() || epoch != _accountEpoch) return null;
+        ++_preferencesRequest;
+        final cache = _moments;
+        if (cache != null) {
+          unawaited(
+            cache.savePreferences({
+              ...?cache.preferencesSnapshot,
+              ...saved
+            }).catchError((Object _) {}),
+          );
+        }
+        if (mounted) {
+          setState(() {
+            _coverUrl = coverUrl;
+            _coverCacheKey = saved['cover_cache_key']?.toString();
+          });
+        }
+        return coverUrl;
+      } catch (_) {
+        if (attempt == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 800));
+          if (epoch != _accountEpoch || !mounted) return null;
+        }
+      }
     }
     if (mounted) {
-      setState(() {
-        _coverUrl = coverUrl;
-        _coverCacheKey = saved['cover_cache_key']?.toString();
-      });
+      showWeChatToast(context, '封面更换失败，请重试',
+          semanticType: WeChatToastSemanticType.error);
     }
-    return coverUrl;
+    return null;
   }
 }

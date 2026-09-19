@@ -150,6 +150,36 @@ void main() {
     expect(controller.state.status, GroupChatStatus.created);
   });
 
+  test('BUG-16 发起群聊默认预选当前会话对端，且可取消', () async {
+    final controller = GroupChatController(
+      contacts: FakeContactsGateway(),
+      groups: FakeGroupChatGateway(),
+      currentUserDisplayName: 'Alice',
+      preselectedMatrixUserIds: const {'@bob:example.test'},
+    );
+
+    await controller.load();
+    expect(controller.state.selectedMatrixUserIds, {'@bob:example.test'},
+        reason: '从聊天信息页进入发起群聊时，当前会话对端应默认选中');
+
+    controller.toggle('@bob:example.test');
+    expect(controller.state.selectedMatrixUserIds, isEmpty,
+        reason: '预选只是默认值，用户可以取消勾选');
+  });
+
+  test('BUG-16 预选的账号不在通讯录中时不生效', () async {
+    final controller = GroupChatController(
+      contacts: FakeContactsGateway(),
+      groups: FakeGroupChatGateway(),
+      currentUserDisplayName: 'Alice',
+      preselectedMatrixUserIds: const {'@stranger:example.test'},
+    );
+
+    await controller.load();
+    expect(controller.state.selectedMatrixUserIds, isEmpty,
+        reason: '预选必须与通讯录求交，避免选中不可建聊的账号');
+  });
+
   test('group name is limited to twenty unicode characters', () async {
     final groups = FakeGroupChatGateway();
     final controller = GroupChatController(

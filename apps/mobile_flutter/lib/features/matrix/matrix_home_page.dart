@@ -36,6 +36,8 @@ export 'room_page.dart' show RoomPage;
 import '../search/global_search_page.dart';
 import 'room_navigation_coordinator.dart';
 import 'room_visibility_policy.dart';
+import 'room_draft_store.dart';
+import '../../core/permissions/blocked_contacts.dart';
 import 'room_mention_store.dart';
 import 'message_reminder_service.dart';
 import '../statistics/statistics_state_store.dart';
@@ -397,6 +399,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     _identityCache = widget.identityCache ?? ProfileRepository(widget.api);
     _supportIdentities = SupportIdentityRepository(widget.api);
     conversationPreferencesChanged.addListener(_preferencesChanged);
+    // BUG-20（真机回归修订）：仅当房间进入/离开草稿态时重排列表
+    // （文本编辑由逐 tile 通知器处理，不重建列表）。
+    RoomDraftStore.shared.draftMembershipRevision.addListener(_draftsChanged);
     if (widget.previewOnly) {
       unawaited(_refreshClientSnapshot());
       return;
@@ -605,8 +610,14 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     unawaited(widget.matrix.scanMentions().catchError((_) {}));
   }
 
+  void _draftsChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    RoomDraftStore.shared.draftMembershipRevision
+        .removeListener(_draftsChanged);
     _snapshotOwnerEpoch++;
     conversationPreferencesChanged.removeListener(_preferencesChanged);
     RoomMentionStore.shared.removeListener(_mentionsChanged);
@@ -746,6 +757,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   int _conversationUnread(MatrixConversationRoomSnapshot room) {
+    // BUG-11 回归：黑名单用户的会话不产生未读徽标/不因新消息上浮。
+    if (blockedContacts.isMatrixIdBlocked(room.directPeerId)) return 0;
     final preference = room.preference;
     final unread = _readState.unreadCount(
       roomId: room.id,
@@ -964,6 +977,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       child: ConversationListTile(
         key: ValueKey<String>('conversation-${room.id}'),
         title: room.title,
+        draftListenable: RoomDraftStore.shared.draftListenable(room.id),
         supportIdentities: room.isDirect ? _supportIdentities : null,
         matrixUserId: room.isDirect ? room.directPeerId : null,
         subtitle: room.subtitle,
@@ -1018,6 +1032,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final action = await showConversationActionSheet(
       context,
       pinned: snapshot.preference.pinned,
+      manualUnread: snapshot.preference.manualUnread,
       anchor: anchor,
       onAction: (_) {},
     );
@@ -1047,6 +1062,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
     final mutation = switch (action) {
       ConversationAction.markUnread => MatrixConversationMutation.markUnread,
+      ConversationAction.clearUnread => MatrixConversationMutation.clearUnread,
       ConversationAction.togglePin => MatrixConversationMutation.togglePin,
       ConversationAction.hide => MatrixConversationMutation.hide,
       ConversationAction.delete => MatrixConversationMutation.delete,
@@ -1089,7 +1105,25 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           preference: room.preference,
         ),
     ]);
-    final orderedRooms = [for (final item in ordered) roomById[item.roomId]!];
+    // BUG-20（真机回归修订）：有草稿的会话上浮——位置在置顶会话之下、
+    // 其余普通会话之前（微信语义：写了草稿的聊天置顶于未读/普通区之上）。
+    final draftRoomIds = RoomDraftStore.shared.draftRoomIds;
+    final pinnedPart = <ConversationProjection>[];
+    final draftPart = <ConversationProjection>[];
+    final restPart = <ConversationProjection>[];
+    for (final item in ordered) {
+      if (item.preference.pinned) {
+        pinnedPart.add(item);
+      } else if (draftRoomIds.contains(item.roomId)) {
+        draftPart.add(item);
+      } else {
+        restPart.add(item);
+      }
+    }
+    final orderedRooms = [
+      for (final item in [...pinnedPart, ...draftPart, ...restPart])
+        roomById[item.roomId]!
+    ];
     final activeRooms = orderedRooms
         .where((room) => !room.preference.hidden)
         .toList(growable: false);

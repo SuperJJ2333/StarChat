@@ -49,7 +49,6 @@ final class _AuthenticationFlowState extends State<AuthenticationFlow> {
             onBack: () => setState(() => page = _AuthPage.login)),
         _AuthPage.verify => VerificationPage(
             controller: registration,
-            onChangeEmail: () => setState(() => page = _AuthPage.register),
             onCompleted: () => setState(() => page = _AuthPage.login))
       };
 }

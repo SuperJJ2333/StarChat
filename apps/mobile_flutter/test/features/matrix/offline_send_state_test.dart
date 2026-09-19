@@ -114,6 +114,52 @@ void main() {
   setUp(() => manager = NetworkStateManager());
   tearDown(() => manager.dispose());
 
+  group('BUG 回归：失败消息重进房间后停留在原时间位置', () {
+    test('restoreOutboxMessage 用原始 createdAt 定位，不钳位到最新之后',
+        () async {
+      final base = DateTime(2026, 9, 19, 10, 0);
+      final transport = _FakeTransport();
+      // 服务器已有两条消息：失败行 createdAt 夹在两者之间。
+      transport.events.addAll([
+        RoomMessageViewModel(
+            id: r'$srv-1',
+            senderId: '@peer',
+            text: '服务器消息一',
+            isOwn: false,
+            deliveryState: RoomDeliveryState.sent,
+            timestamp: base.add(const Duration(minutes: 1))),
+        RoomMessageViewModel(
+            id: r'$srv-2',
+            senderId: '@peer',
+            text: '服务器消息二',
+            isOwn: false,
+            deliveryState: RoomDeliveryState.sent,
+            timestamp: base.add(const Duration(minutes: 3))),
+      ]);
+      final controller =
+          RoomTimelineController(transport, networkStateManager: manager);
+
+      final failedAt = base.add(const Duration(minutes: 2));
+      controller.restoreOutboxMessage(OutboxMessage(
+        localId: 'local-1',
+        txid: 'tx-failed',
+        receiverId: '!room:example',
+        content: '发送失败的红色感叹号消息',
+        createdAt: failedAt,
+        updatedAt: failedAt,
+        status: OutboxStatus.failed,
+      ));
+
+      expect(controller.messages, hasLength(3));
+      expect(controller.messages[1].text, '发送失败的红色感叹号消息',
+          reason: '失败消息必须按原始时间插入（夹在服务器消息一二之间），'
+              '而不是被钳位到最新消息之后出现在最底部');
+      expect(controller.messages.last.text, '服务器消息二');
+      controller.dispose();
+    });
+  });
+
+
   group('离线优先发送状态机', () {
     test('declined claim reflects durable failure and later background outcome',
         () async {

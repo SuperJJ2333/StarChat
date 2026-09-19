@@ -86,9 +86,11 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
         state.error == null &&
         !state.ended &&
         !restricted;
-    final retry = !restricted && state.error != null && !state.ended;
+    // BUG-41 回归（用户指令）：弱网/断网下的「重试」按钮移除——
+    // 卡片按消息公开信息只读呈现（状态未知），点击卡片即可重新拉取明细。
     if (widget.kind == FinanceCardKind.redPacket) {
-      final card = WeChatRedPacketCard(
+      // 点击卡片即可重新拉取明细（原「重试」按钮移除）。
+      return WeChatRedPacketCard(
           greeting: widget.greeting,
           state: redPacketVisualState(state.detail),
           labelOverride: restricted
@@ -100,13 +102,11 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
                       ? '会话已结束'
                       : state.error ?? (state.loading ? '加载中' : '状态未知')
                   : null,
-          onTap: enabled ? widget.onTap : null);
-      return retry
-          ? Column(mainAxisSize: MainAxisSize.min, children: [
-              card,
-              CupertinoButton(onPressed: _lease.retry, child: const Text('重试'))
-            ])
-          : card;
+          onTap: enabled
+              ? widget.onTap
+              : (!restricted && state.error != null && !state.ended)
+                  ? _lease.retry
+                  : null);
     }
     final detail = state.detail;
     final status = '${detail?['status'] ?? ''}';
@@ -123,7 +123,7 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
             viewerId: state.viewerId,
             senderId: sender,
             receiverId: receiver);
-    final card = WeChatTransferCard(
+    return WeChatTransferCard(
         // 明细不可见时用会话消息里的金额（本来就发给了整个房间）。
         amount: detail?['amount'] is String
             ? detail!['amount'] as String
@@ -138,12 +138,10 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
         // 第三方视角状态未知：底部左侧「转账」，右侧不臆造状态。
         footerLabel: restricted ? '转账' : null,
         statusLabel: restricted ? '' : null,
-        onTap: enabled ? widget.onTap : null);
-    return retry
-        ? Column(mainAxisSize: MainAxisSize.min, children: [
-            card,
-            CupertinoButton(onPressed: _lease.retry, child: const Text('重试'))
-          ])
-        : card;
+        onTap: enabled
+            ? widget.onTap
+            : (!restricted && state.error != null && !state.ended)
+                ? _lease.retry
+                : null);
   }
 }

@@ -93,7 +93,8 @@ void main() {
     expect(find.text('总金额'), findsOneWidget);
     expect(find.text('祝福语'), findsOneWidget);
     expect(find.text('塞钱进红包'), findsOneWidget);
-    expect(find.text('单个红包金额不可超过 20000.00 点钻'), findsOneWidget);
+    expect(find.textContaining('200.00 点钻'), findsOneWidget,
+        reason: '单个红包上限 200.00 点钻（前后端统一，BUG-41 追加）');
     expect(find.text('未领取的红包，将于24小时后发起退款'), findsOneWidget);
     final totalField = tester.widget<CupertinoTextField>(
       find.byKey(const Key('chat-red-packet-total')),

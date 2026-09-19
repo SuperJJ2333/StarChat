@@ -67,11 +67,16 @@ final class GroupChatController extends ChangeNotifier {
     required this.contacts,
     required this.groups,
     required this.currentUserDisplayName,
+    this.preselectedMatrixUserIds = const {},
   });
 
   final ContactsGateway contacts;
   final GroupChatGateway groups;
   final String currentUserDisplayName;
+
+  /// BUG-16：从聊天信息页发起群聊时预选当前会话对端（仅默认值，
+  /// 用户可取消）。load 时与通讯录求交，避免选中不可建聊的账号。
+  final Set<String> preselectedMatrixUserIds;
   GroupChatState state = const GroupChatState();
 
   bool get canCreate =>
@@ -85,10 +90,16 @@ final class GroupChatController extends ChangeNotifier {
       selectedMatrixUserIds: state.selectedMatrixUserIds,
     ));
     try {
+      final loaded = await contacts.listContacts();
+      final available = {for (final contact in loaded) contact.matrixUserId};
       _set(GroupChatState(
         status: GroupChatStatus.ready,
-        contacts: await contacts.listContacts(),
-        selectedMatrixUserIds: state.selectedMatrixUserIds,
+        contacts: loaded,
+        selectedMatrixUserIds: <String>{
+          ...state.selectedMatrixUserIds,
+          for (final id in preselectedMatrixUserIds)
+            if (available.contains(id)) id,
+        },
       ));
     } catch (_) {
       _set(const GroupChatState(

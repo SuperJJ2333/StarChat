@@ -113,14 +113,66 @@ void main() {
     });
     expect(outcome.joinedUserIds, ['u1']);
     expect(outcome.pendingUserIds, ['u2']);
-    expect(outcome.failed, ['u3']);
+    expect(outcome.failed.single.userId, 'u3');
+    expect(outcome.failed.single.code, 'MATRIX_GROUP_JOIN_FAILED');
     expect(outcome.hasFailures, isTrue);
+  });
+
+  test('BUG-24 补齐：封禁成员失败桶被识别（GROUP_INVITEE_UNAVAILABLE）',
+      () {
+    final outcome = GroupAutoJoinOutcome.fromJson({
+      'failed': [
+        {'user_id': 'u7', 'code': 'GROUP_INVITEE_UNAVAILABLE'},
+      ],
+    });
+    expect(outcome.hasUnavailableInvitee, isTrue,
+        reason: '被限制账号必须能被单独识别，给出如实文案');
+  });
+
+  test('BUG-24 补齐：拉黑/封禁成员邀请失败时给出如实文案并撤回邀请',
+      () async {
+    final gateway = _RecordingGateway();
+    final controller = GroupChatInfoController(
+      gateway,
+      serverAutoJoin: (roomId, ids) async => GroupAutoJoinOutcome.fromJson({
+        'failed': [
+          {'user_id': 'u9', 'code': 'GROUP_INVITEE_UNAVAILABLE'},
+        ],
+      }),
+    );
+    await controller.invite('@new:x', businessUserId: 'u9');
+
+    expect(controller.state.message, '该账号已被限制，无法加入群聊',
+        reason: '不得谎报「等待对方确认」——被限制账号永远不会加入');
+    expect(gateway.withdrawn, ['@new:x'],
+        reason: '必须撤回已发出的 Matrix 邀请（kick 即撤回）');
+  });
+
+  test('BUG-24 补齐：非限制类失败保持等待确认文案，不撤回', () async {
+    final gateway = _RecordingGateway();
+    final controller = GroupChatInfoController(
+      gateway,
+      serverAutoJoin: (roomId, ids) async => GroupAutoJoinOutcome.fromJson({
+        'failed': [
+          {'user_id': 'u9', 'code': 'MATRIX_GROUP_JOIN_FAILED'},
+        ],
+      }),
+    );
+    await controller.invite('@new:x', businessUserId: 'u9');
+
+    expect(controller.state.message, contains('等待对方确认'));
+    expect(gateway.withdrawn, isEmpty);
   });
 }
 
 final class _RecordingGateway implements GroupChatInfoGateway {
   final invited = <String>[];
+  final withdrawn = <String>[];
   var failInvite = false;
+
+  @override
+  Future<void> withdrawInvite(String matrixUserId) async =>
+      withdrawn.add(matrixUserId);
 
   @override
   String? get roomId => '!g:x';

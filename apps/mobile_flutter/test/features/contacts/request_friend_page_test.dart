@@ -16,6 +16,9 @@ final class FakeGateway implements AddFriendGateway, ProfileGateway {
       fallbackSeed: 'alice');
   FakeAddRequestRecorder? recorder;
 
+  /// BUG-30：服务端 duplicate=true（重复申请被合并）时的响应开关。
+  bool duplicate = false;
+
   @override
   Future<Map<String, dynamic>> searchUsers(String query) async => {'items': []};
 
@@ -34,7 +37,11 @@ final class FakeGateway implements AddFriendGateway, ProfileGateway {
       tags: tags,
       momentsPermission: momentsPermission,
     ));
-    return {'id': 'req-1', 'status': 'PENDING', 'duplicate': false};
+    return {
+      'id': 'req-1',
+      'status': 'PENDING',
+      'duplicate': duplicate,
+    };
   }
 
   @override
@@ -180,6 +187,23 @@ void main() {
     expect(call.tags, ['球友']);
     expect(call.momentsPermission, 'HIDE_THEIRS');
     expect(find.text('申请已发送'), findsOneWidget);
+  });
+
+  testWidgets('BUG-30 服务端返回 duplicate 时提示已申请过，而不是申请已发送',
+      (tester) async {
+    final recorder = FakeAddRequestRecorder();
+    await _pump(tester, FakeGateway()
+      ..recorder = recorder
+      ..duplicate = true);
+
+    await _scrollToSubmit(tester);
+    await tester.tap(find.byKey(const Key('request-friend-submit')));
+    await _settle(tester, 300);
+
+    expect(recorder.calls, hasLength(1));
+    expect(find.text('已申请过'), findsOneWidget,
+        reason: '重复申请必须如实提示，不得谎报「申请已发送」');
+    expect(find.text('申请已发送'), findsNothing);
   });
 
   testWidgets('hide switches combine and chat only is mutually exclusive',

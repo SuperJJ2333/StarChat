@@ -31,6 +31,13 @@ final class _InvalidInvitationGateway implements RegistrationGateway {
   Future<int> resendVerification(String registrationSession) async => 60;
 
   @override
+  Future<int> changeRegistrationEmail({
+    required String registrationSession,
+    required String email,
+  }) async =>
+      60;
+
+  @override
   Future<RegistrationStatusReceipt> registrationStatus(
           String registrationSession) async =>
       const RegistrationStatusReceipt(status: 'ACTIVE', resendAfterSeconds: 0);

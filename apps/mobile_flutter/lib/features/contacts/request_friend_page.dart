@@ -205,11 +205,16 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
         // 申请已成功，不能把本地记录失败显示为提交失败；巡检仍可观察待处理申请。
       }
       if (!mounted) return;
+      // BUG-30：服务端把重复申请合并进既有申请时返回 duplicate=true，
+      // 必须如实提示，不得再显示「申请已发送」。
+      final duplicate = result['duplicate'] == true;
       await showCupertinoDialog<void>(
         context: context,
         builder: (dialogContext) => CupertinoAlertDialog(
-          title: const Text('申请已发送'),
-          content: const Text('等待对方验证通过后即可开始聊天'),
+          title: Text(duplicate ? '已申请过' : '申请已发送'),
+          content: Text(duplicate
+              ? '之前提交的申请仍在等待对方验证，无需重复提交'
+              : '等待对方验证通过后即可开始聊天'),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(dialogContext),

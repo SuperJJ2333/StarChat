@@ -272,6 +272,30 @@ final class RegistrationController extends ChangeNotifier {
     _startCooldown();
   }
 
+  /// BUG-12：验证完成前更换注册邮箱。成功后服务端把验证码发到新邮箱，
+  /// 注册会话不变；失败返回 false 并把可读原因写进 state.message。
+  Future<bool> changeEmail(String newEmail) async {
+    final session = state.registrationSession;
+    if (session == null || newEmail.trim().isEmpty) return false;
+    try {
+      final seconds = await _retryNetwork(() => gateway.changeRegistrationEmail(
+          registrationSession: session, email: newEmail.trim()));
+      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+          registrationSession: session,
+          resendAfterSeconds: seconds,
+          message: '验证邮件已发送至新邮箱'));
+      _startCooldown();
+      return true;
+    } on BusinessApiException catch (error) {
+      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+          registrationSession: session,
+          message: error.statusCode == 409
+              ? '该邮箱已被使用'
+              : (error.message.isEmpty ? '修改邮箱失败，请稍后重试' : error.message)));
+      return false;
+    }
+  }
+
   void tickSecond() {
     if (state.resendAfterSeconds <= 0) return;
     _set(RegistrationState(state.status,

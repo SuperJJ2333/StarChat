@@ -386,6 +386,26 @@ final class BusinessApiClient
   }
 
   @override
+  Future<int> changeRegistrationEmail({
+    required String registrationSession,
+    required String email,
+  }) async {
+    final operation = 'change-email:$registrationSession:$email';
+    final response = await _client.post(
+      _uri('/auth/registrations/$registrationSession/email'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Key': await sessionStore.registrationDeviceKey(),
+        'Idempotency-Key': _pendingIdempotencyKey(operation),
+      },
+      body: jsonEncode({'email': email}),
+    );
+    final body = _decode(response);
+    _pendingIdempotencyKeys.remove(operation);
+    return body['resend_after_seconds'] as int;
+  }
+
+  @override
   Future<int> resendVerification(String registrationSession) async {
     final operation = 'resend:$registrationSession';
     final response = await _client.post(
@@ -568,7 +588,10 @@ final class BusinessApiClient
     try {
       body = _decode(response);
     } on BusinessApiException catch (error) {
-      if (error.statusCode == 401 || error.statusCode == 403) {
+      // BUG-19：登录端点的 403（ACCOUNT_SUSPENDED，密码正确但账号受限）
+      // 不携带会话语义，不得触发会话失效；其余 403 维持原防御。
+      if (error.statusCode == 401 ||
+          (error.statusCode == 403 && error.code != 'ACCOUNT_SUSPENDED')) {
         await _invalidateSession(epoch, error.code);
       }
       rethrow;

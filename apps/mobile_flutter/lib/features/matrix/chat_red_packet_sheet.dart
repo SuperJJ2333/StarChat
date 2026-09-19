@@ -36,7 +36,7 @@ final class BusinessChatRedPacketSupport implements ChatRedPacketSupport {
     final body = await api.redPacketLimits();
     return RedPacketLimits(
         maxTotal:
-            double.tryParse(body['max_total']?.toString() ?? '') ?? 20000);
+            double.tryParse(body['max_total']?.toString() ?? '') ?? 200);
   }
 }
 
@@ -121,7 +121,8 @@ final class _State extends State<ChatRedPacketSheet> {
   String? recipientName;
   String? recipientMatrixUserId;
   double? balance;
-  double maxTotal = 20000;
+  /// BUG-41 追加（用户指令）：单个红包上限 200.00 点钻（前后端统一）。
+  double maxTotal = 200;
   bool resolvingRecipient = false;
   int _resolutionGeneration = 0;
 

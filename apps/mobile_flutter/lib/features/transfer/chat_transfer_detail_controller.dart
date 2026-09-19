@@ -75,6 +75,8 @@ final class ChatTransferDetailController extends ChangeNotifier {
     required this.transferId,
     required this.viewerId,
     this.onSettled,
+    this.onPeerSettled,
+    this.pollInterval = const Duration(seconds: 5),
   }) : _epoch = gateway.sessionEpoch {
     _invalidations = gateway.sessionInvalidations.listen((_) => _end());
   }
@@ -83,6 +85,12 @@ final class ChatTransferDetailController extends ChangeNotifier {
   final String transferId;
   final String viewerId;
   final VoidCallback? onSettled;
+
+  /// BUG-39（D6 一期）：对方收款/拒收后的**准实时**刷新——本机操作以外，
+  /// 详情页打开期间每隔 [pollInterval] 静默查询一次；状态由 PENDING 变化
+  /// 时回调 [onPeerSettled]（页面可据此提示）。失败静默，不打扰用户。
+  final VoidCallback? onPeerSettled;
+  final Duration pollInterval;
   final int _epoch;
   late final StreamSubscription<void> _invalidations;
 
@@ -91,6 +99,8 @@ final class ChatTransferDetailController extends ChangeNotifier {
   int _generation = 0;
   bool _disposed = false;
   bool _ended = false;
+  Timer? _pollTimer;
+  bool _peerSettledNotified = false;
 
   bool get isAlive => _live();
 
@@ -233,12 +243,70 @@ final class ChatTransferDetailController extends ChangeNotifier {
     if (!_live()) return;
     state = next;
     notifyListeners();
+    _updatePolling();
+  }
+
+  /// PENDING 期间开启静默轮询；终态/会话失效即停。
+  void _updatePolling() {
+    final shouldPoll = !_ended &&
+        !_disposed &&
+        state.phase == ChatTransferDetailPhase.ready &&
+        state.detail?['status']?.toString() == 'PENDING';
+    if (shouldPoll && _pollTimer == null) {
+      _pollTimer = Timer.periodic(pollInterval, (_) => unawaited(_pollOnce()));
+    } else if (!shouldPoll && _pollTimer != null) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+    }
+  }
+
+  Future<void> _pollOnce() async {
+    if (_operation != null ||
+        _disposed ||
+        _ended ||
+        state.phase != ChatTransferDetailPhase.ready) {
+      return;
+    }
+    final generation = _generation;
+    try {
+      final detail = await gateway.detail(transferId);
+      if (_disposed || _ended || generation != _generation) return;
+      final previous = state.detail?['status']?.toString();
+      final next = detail['status']?.toString();
+      _set(ChatTransferDetailState(
+        phase: ChatTransferDetailPhase.ready,
+        detail: _immutableDetail(detail),
+      ));
+      if (previous == 'PENDING' &&
+          next != null &&
+          next != 'PENDING' &&
+          !_peerSettledNotified) {
+        _peerSettledNotified = true;
+        _notifyPeerSettled();
+      }
+    } catch (_) {
+      // 静默：单次轮询失败不打扰用户，下个周期继续。
+    }
+  }
+
+  void _notifyPeerSettled() {
+    try {
+      onPeerSettled?.call();
+    } catch (error, stackTrace) {
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'chat transfer detail controller',
+        context: ErrorDescription('while notifying a peer-settled transfer'),
+      ));
+    }
   }
 
   @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _pollTimer?.cancel();
     _end();
     super.dispose();
   }

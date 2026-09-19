@@ -1,3 +1,4 @@
+import '../../core/permissions/blocked_contacts.dart';
 import 'dart:async';
 
 import 'package:matrix/matrix.dart';
@@ -123,6 +124,8 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
     // a real message does not discard that message's notification.
     final type =
         resolved?.eventId == event.eventId ? resolved!.type : event.type;
+    // BUG-11 回归：黑名单用户的消息不提醒（入站抑制）。
+    if (blockedContacts.isMatrixIdBlocked(event.senderId)) return false;
     return type == EventTypes.Message ||
         type == EventTypes.Encrypted ||
         type == changliaoNudgeEventType;

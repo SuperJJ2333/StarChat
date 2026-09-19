@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/changliao_icons.dart';
@@ -64,6 +65,9 @@ final class _ChatTransferDetailSheetState
       transferId: widget.transferId,
       viewerId: widget.viewerId,
       onSettled: widget.onSettled,
+      // BUG-39：对方收款/拒收后的准实时提示（toast），详情内容随之刷新。
+      onPeerSettled: () => showWeChatToast(
+          context, '这笔转账对方已处理', semanticType: WeChatToastSemanticType.info),
     );
     _ledgerGateway = widget.ledgerGateway ??
         (api == null ? null : BusinessLedgerGateway(api));

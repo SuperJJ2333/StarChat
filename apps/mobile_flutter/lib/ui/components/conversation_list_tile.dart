@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart'
+    show ValueListenable;
 
 import '../chat/wechat_unread_badge.dart';
 import '../chat/conversation_mention_banner.dart';
@@ -23,6 +25,7 @@ final class ConversationListTile extends StatelessWidget {
     this.supportIdentities,
     this.userId,
     this.matrixUserId,
+    this.draftListenable,
   });
 
   final String title;
@@ -38,6 +41,21 @@ final class ConversationListTile extends StatelessWidget {
   final SupportIdentityRepository? supportIdentities;
   final String? userId;
   final String? matrixUserId;
+
+  /// BUG-20：未发送的草稿正文通知器；非空时副标题渲染为红色「草稿：」
+  /// 前缀。逐 tile 监听，草稿更新只重建本 tile。
+  final ValueListenable<String?>? draftListenable;
+
+  Widget _summary(BuildContext context) =>
+      ConversationSummaryWithMention(
+        summary: subtitle,
+        hasPendingMention: hasPendingMention,
+        maxLines: 1,
+        style: const TextStyle(
+          color: WeChatColors.textSecondary,
+          fontSize: WeChatTypography.subhead,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -84,15 +102,35 @@ final class ConversationListTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: WeChatSpacing.xs),
-                    ConversationSummaryWithMention(
-                      summary: subtitle,
-                      hasPendingMention: hasPendingMention,
-                      maxLines: 1,
-                      style: const TextStyle(
-                        color: WeChatColors.textSecondary,
-                        fontSize: WeChatTypography.subhead,
-                      ),
-                    ),
+                    if (draftListenable != null)
+                      ValueListenableBuilder<String?>(
+                        valueListenable: draftListenable!,
+                        builder: (context, draft, _) => (draft == null ||
+                                draft.isEmpty)
+                            ? _summary(context)
+                            : Text.rich(
+                                TextSpan(
+                                  text: '草稿：',
+                                  style: const TextStyle(
+                                    color: WeChatColors.danger,
+                                    fontSize: WeChatTypography.subhead,
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: draft,
+                                      style: const TextStyle(
+                                        color: WeChatColors.textSecondary,
+                                        fontSize: WeChatTypography.subhead,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                      )
+                    else
+                      _summary(context),
                   ],
                 ),
               ),

@@ -261,6 +261,52 @@ async def test_login_accepts_email_address_and_clear_error(api_components) -> No
 
 
 @pytest.mark.asyncio
+async def test_login_suspended_account_with_correct_password_returns_403(api_components) -> None:
+    """BUG-19（D2 已拍板）：密码正确但账号被封禁 → 专用 403 如实提示；
+    密码错误仍 401 统一口径（不泄露账号是否存在）。"""
+    app, factory = api_components
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add(
+            User(
+                id="suspended-user",
+                username="suspended",
+                username_normalized="suspended",
+                email="suspended@example.com",
+                email_normalized="suspended@example.com",
+                password_hash=PasswordHasher().hash("correct horse battery staple"),
+                status=AccountStatus.SUSPENDED,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        blocked = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "suspended",
+                "password": "correct horse battery staple",
+                "device_key": "device-suspended-1",
+                "device_name": "Test Phone",
+            },
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["error"]["code"] == "ACCOUNT_SUSPENDED"
+
+        wrong_password = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "suspended",
+                "password": "wrong horse battery staple",
+                "device_key": "device-suspended-2",
+                "device_name": "Test Phone",
+            },
+        )
+        assert wrong_password.status_code == 401
+        assert wrong_password.json()["error"]["message"] == "账号或密码错误"
+
+
+@pytest.mark.asyncio
 async def test_login_refresh_devices_and_logout(api_components) -> None:
     app, _ = api_components
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

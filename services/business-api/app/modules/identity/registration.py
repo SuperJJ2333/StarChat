@@ -655,6 +655,117 @@ class EmailVerificationService:
             raise RuntimeError("email verification resend completed without a result")
         return result
 
+    def change_email(
+        self,
+        *,
+        registration_session: str,
+        new_email: str,
+        idempotency_key: str,
+    ) -> RegistrationStatusResult:
+        """BUG-12（D4 已批准）：邮箱验证完成前允许更换邮箱。
+
+        作废旧验证挑战、更新账号邮箱，并把新验证码发到新邮箱；
+        同一 registration_session 继续有效（客户端无感）。邮箱验证
+        通过（账号离开 PENDING_EMAIL）后不再支持在此换邮箱。
+        """
+        now = self._now_factory()
+        email_clean = new_email.strip()
+        email_normalized = email_clean.casefold()
+        request_hash = self._token_codec.digest(
+            purpose="identity.email-verification.change-email",
+            value=f"{registration_session}:{email_normalized}",
+        )
+        deferred_error: AppError | None = None
+        result: RegistrationStatusResult | None = None
+        with self._session_factory.begin() as session:
+            record = RegistrationService._claim_idempotency_key(
+                session,
+                scope="identity.email-verification.change-email",
+                key=idempotency_key.strip(),
+                request_hash=request_hash,
+                now=now,
+            )
+            if record.status == "COMPLETED":
+                return self._status_replay(record)
+            if not email_clean or len(email_clean) > 320 or "@" not in email_clean:
+                deferred_error = self._error("EMAIL_INVALID", "邮箱格式无效")
+            else:
+                challenge = self._find_challenge(session, registration_session, for_update=True)
+                if challenge is None or challenge.consumed_at is not None:
+                    deferred_error = self._error("EMAIL_VERIFICATION_INVALID", "注册会话无效")
+                else:
+                    user = session.get(User, challenge.user_id)
+                    if user is None or user.status != AccountStatus.PENDING_EMAIL:
+                        # 已验证/已进入后续阶段的账号不能在此换邮箱（走换绑流程）。
+                        deferred_error = self._error("EMAIL_VERIFICATION_INVALID", "注册会话无效")
+                    elif session.scalar(
+                        select(User.id).where(
+                            User.email_normalized == email_normalized,
+                            User.id != user.id,
+                        )
+                    ):
+                        deferred_error = AppError(
+                            code="EMAIL_ALREADY_REGISTERED",
+                            message="该邮箱已被使用",
+                            status_code=409,
+                        )
+            if deferred_error is None:
+                # 作废旧挑战并更新邮箱，然后给同一注册会话签发新挑战。
+                challenge.invalidated_at = now
+                challenge.registration_session_hash = None
+                user.email = email_clean
+                user.email_normalized = email_normalized
+                user.updated_at = now
+                session.flush()
+                challenge_id = str(uuid4())
+                code = self._token_codec.verification_code(challenge_id)
+                token = self._token_codec.link_token(challenge_id)
+                session.add(
+                    EmailVerificationChallenge(
+                        id=challenge_id,
+                        user_id=user.id,
+                        token_hash=self._token_codec.link_token_hash(token),
+                        registration_session_hash=self._token_codec.registration_session_hash(
+                            registration_session
+                        ),
+                        code_hash=self._token_codec.code_hash(code),
+                        link_token_hash=self._token_codec.link_token_hash(token),
+                        expires_at=now + timedelta(minutes=10),
+                        resend_available_at=now + timedelta(seconds=60),
+                        attempt_count=0,
+                        created_at=now,
+                    )
+                )
+                OutboxPublisher.enqueue(
+                    session,
+                    topic="identity.email",
+                    event_type="identity.email.verification.requested",
+                    aggregate_type="email_verification_challenge",
+                    aggregate_id=challenge_id,
+                    payload={"user_id": user.id, "challenge_id": challenge_id},
+                    now=now,
+                )
+                result = RegistrationStatusResult(
+                    status=AccountStatus.PENDING_EMAIL,
+                    resend_after_seconds=60,
+                )
+            if deferred_error is not None:
+                self._complete_error(record, deferred_error, now)
+            else:
+                self._complete_success(
+                    record,
+                    {
+                        "status": result.status.value,
+                        "resend_after_seconds": result.resend_after_seconds,
+                    },
+                    now,
+                )
+        if deferred_error is not None:
+            raise deferred_error
+        if result is None:
+            raise RuntimeError("email change completed without a result")
+        return result
+
     def status(self, registration_session: str) -> RegistrationStatusResult:
         now = self._now_factory()
         with self._session_factory() as session:

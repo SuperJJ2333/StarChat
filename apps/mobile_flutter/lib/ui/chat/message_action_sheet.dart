@@ -12,16 +12,36 @@ final class MessageActionSheet extends StatelessWidget {
   final Set<MessageAction> actions;
   final ValueChanged<MessageAction> onSelected;
 
-  static const _presentation = <MessageAction, (IconData, String)>{
-    MessageAction.voiceEarpiece: (CupertinoIcons.phone, '听筒播放'),
-    MessageAction.voiceSpeaker: (CupertinoIcons.speaker_2, '扬声器播放'),
-    MessageAction.addToEmoji: (CupertinoIcons.star, '收藏'),
-    MessageAction.forward: (CupertinoIcons.arrowshape_turn_up_right, '转发'),
-    MessageAction.deleteLocal: (CupertinoIcons.delete, '删除'),
-    MessageAction.multiSelect: (CupertinoIcons.checkmark_square, '多选'),
-    MessageAction.reply: (CupertinoIcons.reply, '引用'),
-    MessageAction.reminder: (CupertinoIcons.alarm, '提醒'),
-    MessageAction.recall: (CupertinoIcons.arrow_uturn_left, '撤回'),
+  // BUG-32（真机回归修订）：引用图标为双引号字形（微信式），不是回复箭头
+  // 或引用气泡。撤回的红色在此一并给出（图标改为 Widget 后不再走特殊分支）。
+  static const _presentation = <MessageAction, (Widget, String)>{
+    MessageAction.voiceEarpiece: (Icon(CupertinoIcons.phone), '听筒播放'),
+    MessageAction.voiceSpeaker: (Icon(CupertinoIcons.speaker_2), '扬声器播放'),
+    MessageAction.addToEmoji: (Icon(CupertinoIcons.star), '收藏'),
+    MessageAction.forward:
+        (Icon(CupertinoIcons.arrowshape_turn_up_right), '转发'),
+    MessageAction.deleteLocal: (Icon(CupertinoIcons.delete), '删除'),
+    MessageAction.multiSelect: (Icon(CupertinoIcons.checkmark_square), '多选'),
+    MessageAction.reply: (
+      Text(
+        '””',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 18,
+          height: 26 / 18,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      '引用'
+    ),
+    MessageAction.reminder: (Icon(CupertinoIcons.alarm), '提醒'),
+    MessageAction.recall: (
+      Icon(
+        CupertinoIcons.arrow_uturn_left,
+        color: CupertinoColors.systemRed,
+      ),
+      '撤回'
+    ),
   };
 
   @override
@@ -56,12 +76,12 @@ final class _ActionButton extends StatelessWidget {
   });
 
   final MessageAction action;
-  final (IconData, String) presentation;
+  final (Widget, String) presentation;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final (icon, label) = presentation;
+    final (iconWidget, label) = presentation;
     final destructive = action == MessageAction.recall;
     return CupertinoButton(
       key: Key('message-action-${action.name}'),
@@ -71,7 +91,7 @@ final class _ActionButton extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: destructive ? CupertinoColors.systemRed : null),
+          SizedBox.square(dimension: 26, child: Center(child: iconWidget)),
           const SizedBox(height: 5),
           Text(
             label,

@@ -4,6 +4,7 @@ import json
 from uuid import uuid4
 from sqlalchemy import and_,delete,func,or_,select
 from app.core.errors import AppError
+from app.modules.identity.models import User
 from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
@@ -59,7 +60,21 @@ class FriendshipService(DirectRoomRecovery):
             if not row or row.target_id!=actor:raise AppError(code='FRIEND_REQUEST_NOT_FOUND',message='好友申请不存在',status_code=404)
             if row.status=='ACCEPTED':return row
             if row.status!='PENDING':raise AppError(code='FRIEND_REQUEST_RESOLVED',message='好友申请已处理',status_code=409)
-            low,high=sorted((row.requester_id,row.target_id));friend=Friendship(id=str(uuid4()),user_low_id=low,user_high_id=high,created_at=datetime.now(timezone.utc));s.add(friend);row.status='ACCEPTED';row.resolved_at=datetime.now(timezone.utc)
+            low,high=sorted((row.requester_id,row.target_id))
+            # BUG-21：互为好友申请时，通过任意一边即已建立好友关系。
+            # 此时通过另一边必须幂等合并（不再插入第二行触发唯一约束 500），
+            # 申请状态照常置为 ACCEPTED，联系方式偏好仍按本条申请落库。
+            existing_friendship=s.scalar(select(Friendship.id).where(Friendship.user_low_id==low,Friendship.user_high_id==high))
+            if existing_friendship:
+                row.status='ACCEPTED';row.resolved_at=datetime.now(timezone.utc)
+                profile=s.scalar(select(ContactProfile).where(ContactProfile.owner_id==row.requester_id,ContactProfile.contact_id==row.target_id))
+                if profile is None:
+                    profile=ContactProfile(id=str(uuid4()),owner_id=row.requester_id,contact_id=row.target_id);s.add(profile)
+                if row.contact_remark:profile.remark=row.contact_remark
+                if row.contact_tags:profile.tags=row.contact_tags
+                if row.contact_moments_permission and row.contact_moments_permission!='DEFAULT':profile.moments_permission=row.contact_moments_permission
+                self._audit(s,actor,row.id,'friend.accepted.merged','FRIEND_ACCEPT',key);return row
+            friend=Friendship(id=str(uuid4()),user_low_id=low,user_high_id=high,created_at=datetime.now(timezone.utc));s.add(friend);row.status='ACCEPTED';row.resolved_at=datetime.now(timezone.utc)
             profile=s.scalar(select(ContactProfile).where(ContactProfile.owner_id==row.requester_id,ContactProfile.contact_id==row.target_id))
             if profile is None:
                 profile=ContactProfile(id=str(uuid4()),owner_id=row.requester_id,contact_id=row.target_id);s.add(profile)
@@ -133,7 +148,13 @@ class FriendshipService(DirectRoomRecovery):
             if row:return row
             row=UserBlock(id=str(uuid4()),blocker_id=actor,blocked_id=target,idempotency_key=key,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.blocked','USER_BLOCK',key);return row
     def blocks(self,actor):
-        with self.factory() as s:return [{'id':row.id,'user_id':row.blocked_id} for row in s.scalars(select(UserBlock).where(UserBlock.blocker_id==actor).order_by(UserBlock.created_at,UserBlock.id)).all()]
+        # BUG-11 回归：附带 matrix_user_id，客户端据此同步 Matrix 忽略列表，
+        # 让被拉黑用户的消息在同步层就被过滤（不再送达）。
+        with self.factory() as s:
+            rows=s.scalars(select(UserBlock).where(UserBlock.blocker_id==actor).order_by(UserBlock.created_at,UserBlock.id)).all()
+            ids=[row.blocked_id for row in rows]
+            users={u.id:u for u in s.scalars(select(User).where(User.id.in_(ids))).all()} if ids else {}
+            return [{'id':row.id,'user_id':row.blocked_id,'matrix_user_id':(users[row.blocked_id].matrix_user_id if row.blocked_id in users else None)} for row in rows]
     def unblock(self,actor,target,key):
         with self.factory.begin() as s:
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))

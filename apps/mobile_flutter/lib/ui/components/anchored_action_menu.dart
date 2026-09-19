@@ -4,9 +4,17 @@ import '../chat/message_menu_placement.dart';
 
 final class AnchoredMenuItem<T> {
   const AnchoredMenuItem(
-      {required this.value, required this.icon, required this.label, this.key});
+      {required this.value,
+      required this.icon,
+      this.iconWidget,
+      required this.label,
+      this.key});
   final T value;
   final IconData icon;
+
+  /// BUG-32（真机回归修订）：引用等需要字形（双引号）而非图标字体的场景，
+  /// 提供 [iconWidget] 时优先于 [icon] 渲染。
+  final Widget? iconWidget;
   final String label;
   final Key? key;
 }
@@ -127,7 +135,8 @@ final class _MenuItem<T> extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: CupertinoColors.white),
+            item.iconWidget ??
+                Icon(icon, size: 20, color: CupertinoColors.white),
             const SizedBox(height: 3),
             Text(
               label,

@@ -187,9 +187,12 @@ void main() {
     expect(tester.widget<CupertinoSwitch>(switchFinder).value, isFalse);
 
     // 加入黑名单：确认框后立即生效，并同步全局投影（聊天发送门读它）。
+    // BUG-11（D1 已拍板）：确认框按钮为「取消/确定」，确认键是字面「确定」。
     await tester.tap(switchFinder);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('加入'));
+    expect(find.text('取消'), findsOneWidget);
+    expect(find.text('加入'), findsNothing, reason: '确认按钮不得再显示「加入/删除」');
+    await tester.tap(find.text('确定'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(api.blockedCalls, ['peer-id']);

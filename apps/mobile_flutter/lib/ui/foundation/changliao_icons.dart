@@ -17,6 +17,9 @@ abstract final class ChangliaoIcons {
   static const IconData voiceCall = CupertinoIcons.phone;
   static const IconData voiceCallFilled = CupertinoIcons.phone_fill;
   static const IconData videoCall = CupertinoIcons.video_camera;
+
+  /// BUG-22：视频来电接听按钮的填充图标（与语音话筒图标区分来电类型）。
+  static const IconData videoCallFilled = CupertinoIcons.video_camera_solid;
   static const IconData microphone = CupertinoIcons.mic;
   static const IconData microphoneOff = CupertinoIcons.mic_slash;
   static const IconData camera = CupertinoIcons.camera;

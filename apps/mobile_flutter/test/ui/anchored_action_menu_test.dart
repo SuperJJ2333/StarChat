@@ -58,7 +58,9 @@ void main() {
                     child: CupertinoButton(
                         child: const Text('打开'),
                         onPressed: () => showConversationActionSheet(context,
-                            pinned: true, onAction: (_) => calls++)))))));
+                            pinned: true,
+                            manualUnread: false,
+                            onAction: (_) => calls++)))))));
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
     for (final label in ['取消置顶', '标记未读', '不显示该聊天', '删除该聊天']) {

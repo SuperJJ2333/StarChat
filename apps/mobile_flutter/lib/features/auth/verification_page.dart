@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../core/business_api_error.dart';
 import '../../ui/components/auth_surface_card.dart';
 import '../../ui/components/immersive_auth_scaffold.dart';
 import '../../ui/components/modern_action_button.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'registration_controller.dart';
 
@@ -10,12 +12,10 @@ final class VerificationPage extends StatefulWidget {
   const VerificationPage({
     super.key,
     required this.controller,
-    required this.onChangeEmail,
     required this.onCompleted,
   });
 
   final RegistrationController controller;
-  final VoidCallback onChangeEmail;
   final VoidCallback onCompleted;
 
   @override
@@ -54,6 +54,49 @@ final class _VerificationPageState extends State<VerificationPage> {
     }
     if (await widget.controller.pollUntilActive() && mounted) {
       widget.onCompleted();
+    }
+  }
+
+  Future<void> _changeEmail() async {
+    final input = TextEditingController();
+    final newEmail = await showCupertinoDialog<String>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('修改邮箱'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('新的验证码将发送到新邮箱'),
+          const SizedBox(height: WeChatSpacing.sm),
+          CupertinoTextField(
+            controller: input,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            placeholder: '新邮箱地址',
+          ),
+        ]),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+          CupertinoDialogAction(
+              onPressed: () =>
+                  Navigator.pop(dialogContext, input.text.trim()),
+              child: const Text('确定')),
+        ],
+      ),
+    );
+    input.dispose();
+    if (newEmail == null || newEmail.isEmpty || !mounted) return;
+    try {
+      await widget.controller.changeEmail(newEmail);
+      if (!mounted) return;
+      showWeChatToast(context, '验证邮件已发送至新邮箱',
+          semanticType: WeChatToastSemanticType.success);
+    } on BusinessApiException catch (failure) {
+      if (!mounted) return;
+      showWeChatToast(context,
+          failure.statusCode == 409
+              ? '该邮箱已被使用'
+              : (failure.message.isEmpty ? '修改邮箱失败，请稍后重试' : failure.message),
+          semanticType: WeChatToastSemanticType.error);
     }
   }
 
@@ -135,7 +178,9 @@ final class _VerificationPageState extends State<VerificationPage> {
                       icon: CupertinoIcons.pencil,
                       label: '修改邮箱',
                       kind: ModernActionKind.secondary,
-                      onPressed: widget.onChangeEmail,
+                      // BUG-12：验证完成前可在原地更换邮箱（服务端把验证码
+                      // 发到新邮箱，注册会话保持不变），不再退回注册页。
+                      onPressed: _changeEmail,
                     ),
                   ),
                   if (state.status == RegistrationFlowStatus.provisioning ||

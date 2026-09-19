@@ -186,6 +186,9 @@ abstract interface class GroupChatInfoGateway {
   Future<void> setPreference(GroupChatPreference preference, bool value);
   Future<void> setFollowedMemberIds(List<String> matrixUserIds);
   Future<void> invite(String matrixUserId);
+
+  /// BUG-24：撤回已发出的入群邀请（Matrix kick 对 invite 成员即撤回）。
+  Future<void> withdrawInvite(String matrixUserId);
   Future<void> leave();
   Future<void> setGroupSetting(String key, Object value);
   Future<void> setAdminIds(List<String> matrixUserIds);
@@ -246,6 +249,16 @@ final class GroupChatInfoState {
   String get title => '聊天信息(${snapshot?.joinedCount ?? 0})';
 }
 
+/// /groups/auto-join 失败桶条目（BUG-24：失败原因必须保留，用于如实提示）。
+final class GroupAutoJoinFailure {
+  const GroupAutoJoinFailure({required this.userId, this.code});
+  final String userId;
+
+  /// `GROUP_INVITEE_UNAVAILABLE` = 账号被限制（封禁/禁用），永远无法加入。
+  final String? code;
+  bool get isUnavailable => code == 'GROUP_INVITEE_UNAVAILABLE';
+}
+
 /// 服务端自动入群结果（/groups/auto-join 响应分桶）。
 final class GroupAutoJoinOutcome {
   const GroupAutoJoinOutcome({
@@ -264,15 +277,25 @@ final class GroupAutoJoinOutcome {
             .toList(growable: false),
         failed: (json['failed'] as List? ?? const [])
             .whereType<Map>()
-            .map((entry) => entry['user_id']?.toString() ?? '')
-            .where((id) => id.isNotEmpty)
+            .map((entry) => GroupAutoJoinFailure(
+                  userId: entry['user_id']?.toString() ?? '',
+                  code: entry['code']?.toString(),
+                ))
+            .where((failure) => failure.userId.isNotEmpty)
             .toList(growable: false),
       );
 
   final List<String> joinedUserIds;
   final List<String> pendingUserIds;
-  final List<String> failed;
+  final List<GroupAutoJoinFailure> failed;
   bool get hasFailures => failed.isNotEmpty;
+
+  /// 有被限制（封禁/禁用）的受邀人：邀请永远无法兑现，必须如实提示并撤回。
+  bool get hasUnavailableInvitee => failed.any((failure) => failure.isUnavailable);
+  List<String> get unavailableUserIds => [
+        for (final failure in failed)
+          if (failure.isUnavailable) failure.userId,
+      ];
 }
 
 final class GroupChatInfoController extends ChangeNotifier {
@@ -474,6 +497,14 @@ final class GroupChatInfoController extends ChangeNotifier {
         final outcome = await autoJoin(gateway.roomId ?? '', [businessUserId]);
         if (outcome == null) {
           joinMessage = '已发送邀请，等待对方确认';
+        } else if (outcome.hasUnavailableInvitee) {
+          // BUG-24 补齐：被限制账号永远无法加入，不得谎报「等待对方确认」；
+          // 同时撤回已发出的 Matrix 邀请（kick 即撤回）。
+          joinMessage = '该账号已被限制，无法加入群聊';
+          // 撤回对象是本次被邀的 Matrix 账号（outcome 里的 id 是业务 id）。
+          try {
+            await gateway.withdrawInvite(matrixUserId);
+          } catch (_) {/* 撤回失败不改变提示；成员事件会修正列表 */}
         } else if (outcome.hasFailures) {
           joinMessage = '邀请已发送；部分成员需等待对方确认加入';
         } else if (outcome.joinedUserIds.isNotEmpty) {
@@ -499,6 +530,22 @@ final class GroupChatInfoController extends ChangeNotifier {
 
   Future<bool> leave() async {
     try {
+      // BUG-29：群主退出且群内仍有其他成员时，先把群主转移给（列表序
+      // 最早的）其他成员，避免群因退出而失去群主；转移失败则不退出。
+      final snapshot = state.snapshot;
+      if (snapshot != null &&
+          snapshot.ownerId == snapshot.currentUserId &&
+          gateway is GroupOwnershipGateway) {
+        final successor = snapshot.members
+            .where((member) =>
+                member.isJoined &&
+                member.matrixUserId != snapshot.currentUserId)
+            .map((member) => member.matrixUserId)
+            .firstOrNull;
+        if (successor != null) {
+          await (gateway as GroupOwnershipGateway).transferOwnership(successor);
+        }
+      }
       await gateway.leave();
       return true;
     } catch (_) {
