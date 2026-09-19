@@ -1,15 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../matrix/profile_repository.dart';
 import 'contact_models.dart';
 import 'contact_tag_models.dart';
 import '../../ui/motion/motion_page_route.dart';
 
 final class ContactTagsPage extends StatefulWidget {
-  const ContactTagsPage({super.key, required this.api});
+  const ContactTagsPage({super.key, required this.api, this.identityCache});
   final ContactsGateway api;
+
+  /// 本地联系人投影（`ProfileRepository.contacts`）。标签成员/选择页据此先渲染，
+  /// 断网也能看到标签里的好友，而不是一个永不结束的加载圈。
+  final ProfileRepository? identityCache;
   @override
   State<ContactTagsPage> createState() => _ContactTagsPageState();
 }
@@ -112,7 +119,9 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
                                   MotionPageRoute(
                                       builder: (_) => ContactTagMembersPage(
                                           api: widget.api,
-                                          tag: tag))).then((_) => reload());
+                                          tag: tag,
+                                          identityCache:
+                                              widget.identityCache))).then((_) => reload());
                             }
                           })
                   ]);
@@ -141,19 +150,68 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
 
 final class ContactTagMembersPage extends StatefulWidget {
   const ContactTagMembersPage(
-      {super.key, required this.api, required this.tag});
+      {super.key,
+      required this.api,
+      required this.tag,
+      this.identityCache});
   final ContactsGateway api;
   final ContactTagSummary tag;
+  final ProfileRepository? identityCache;
   @override
   State<ContactTagMembersPage> createState() => _ContactTagMembersPageState();
 }
 
 final class _ContactTagMembersPageState extends State<ContactTagMembersPage> {
-  late Future<List<ContactSummary>> contacts = widget.api.listContacts();
+  /// 本地优先：先用已水合的联系人投影渲染（`ProfileRepository.contacts`），
+  /// 再后台刷新；刷新失败保留已有列表（微信级加载模型）。
+  List<ContactSummary> _contacts = const [];
+  bool _loading = false;
+  Object? _error;
+  int _generation = 0;
+  bool _disposed = false;
   final query = TextEditingController();
   bool removing = false;
   final selected = <String>{};
-  void reload() => setState(() => contacts = widget.api.listContacts());
+
+  @override
+  void initState() {
+    super.initState();
+    final cache = widget.identityCache;
+    if (cache != null) _contacts = cache.contacts;
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    query.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (mounted) setState(() => _loading = true);
+    try {
+      final all = await widget.api.listContacts();
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _contacts = all;
+        _error = null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
+  void reload() => unawaited(_load());
   Future<void> _remove() async {
     if (!removing) {
       setState(() => removing = true);
@@ -257,32 +315,50 @@ final class _ContactTagMembersPageState extends State<ContactTagMembersPage> {
             controller: query,
             onChanged: (_) => setState(() {})),
         Expanded(
-            child: FutureBuilder<List<ContactSummary>>(
-                future: contacts,
-                builder: (_, snapshot) {
-                  final items =
-                      contactsForTag(snapshot.data ?? const [], widget.tag.name)
-                          .where((c) => c.displayName
-                              .toLowerCase()
-                              .contains(query.text.toLowerCase()))
-                          .toList();
-                  return ListView(children: [
-                    for (final c in items)
-                      WeChatListTile(
-                          title: Text(c.displayName),
-                          trailing: removing
-                              ? Icon(selected.contains(c.userId)
-                                  ? CupertinoIcons.check_mark_circled_solid
-                                  : CupertinoIcons.circle)
-                              : null,
-                          onTap: removing
-                              ? () => setState(() => selected.contains(c.userId)
-                                  ? selected.remove(c.userId)
-                                  : selected.add(c.userId))
-                              : null)
-                  ]);
-                })),
-        Row(children: [
+            child: Builder(builder: (context) {
+          final items = contactsForTag(_contacts, widget.tag.name)
+              .where((c) => c.displayName
+                  .toLowerCase()
+                  .contains(query.text.toLowerCase()))
+              .toList();
+          if (items.isEmpty) {
+            if (_loading) {
+              return const Center(child: CupertinoActivityIndicator());
+            }
+            // 只有「从未成功过且无本地联系人」才提示失败；有本地数据时即使
+            // 刷新失败也继续展示（失败不覆盖）。
+            if (_error != null && _contacts.isEmpty) {
+              return Center(
+                  child:
+                      Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text('联系人加载失败',
+                    style: TextStyle(
+                        fontSize: 14, color: WeChatColors.textSecondary)),
+                const SizedBox(height: 8),
+                CupertinoButton(
+                  key: const Key('tag-members-retry'),
+                  onPressed: reload,
+                  child: const Text('重试'),
+                ),
+              ]));
+            }
+          }
+          return ListView(children: [
+            for (final c in items)
+              WeChatListTile(
+                  title: Text(c.displayName),
+                  trailing: removing
+                      ? Icon(selected.contains(c.userId)
+                          ? CupertinoIcons.check_mark_circled_solid
+                          : CupertinoIcons.circle)
+                      : null,
+                  onTap: removing
+                      ? () => setState(() => selected.contains(c.userId)
+                          ? selected.remove(c.userId)
+                          : selected.add(c.userId))
+                      : null)
+          ]);
+        })),        Row(children: [
           Expanded(
               child: CupertinoButton(
                   onPressed: () => Navigator.push(
@@ -290,7 +366,8 @@ final class _ContactTagMembersPageState extends State<ContactTagMembersPage> {
                       MotionPageRoute(
                           builder: (_) => ContactTagFriendPickerPage(
                               api: widget.api,
-                              tag: widget.tag))).then((_) => reload()),
+                              tag: widget.tag,
+                              identityCache: widget.identityCache))).then((_) => reload()),
                   child: const Text('添加'))),
           Expanded(
               child:
@@ -301,17 +378,64 @@ final class _ContactTagMembersPageState extends State<ContactTagMembersPage> {
 
 final class ContactTagFriendPickerPage extends StatefulWidget {
   const ContactTagFriendPickerPage(
-      {super.key, required this.api, required this.tag});
+      {super.key,
+      required this.api,
+      required this.tag,
+      this.identityCache});
   final ContactsGateway api;
   final ContactTagSummary tag;
+  final ProfileRepository? identityCache;
   @override
   State<ContactTagFriendPickerPage> createState() => _PickerState();
 }
 
 final class _PickerState extends State<ContactTagFriendPickerPage> {
-  late Future<List<ContactSummary>> contacts = widget.api.listContacts();
+  /// 本地优先：先渲染已水合的联系人投影，失败保留（同成员页）。
+  List<ContactSummary> _contacts = const [];
+  bool _loading = false;
+  Object? _error;
+  int _generation = 0;
+  bool _disposed = false;
   final query = TextEditingController();
   final selected = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    final cache = widget.identityCache;
+    if (cache != null) _contacts = cache.contacts;
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    query.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (mounted) setState(() => _loading = true);
+    try {
+      final all = await widget.api.listContacts();
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _contacts = all;
+        _error = null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (_disposed || generation != _generation) return;
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
   Future<void> add() async {
     final all = await widget.api.listContacts();
     for (final c in all.where((c) => selected.contains(c.userId))) {
@@ -337,31 +461,47 @@ final class _PickerState extends State<ContactTagFriendPickerPage> {
         WeChatListTile(title: const Text('导入群聊中的朋友'), onTap: () {}),
         WeChatListTile(title: const Text('导入标签中的朋友'), onTap: () {}),
         Expanded(
-            child: FutureBuilder<List<ContactSummary>>(
-                future: contacts,
-                builder: (_, s) {
-                  final items = (s.data ?? const [])
-                      .where((c) =>
-                          !c.tags.contains(widget.tag.name) &&
-                          c.displayName
-                              .toLowerCase()
-                              .contains(query.text.toLowerCase()))
-                      .toList()
-                    ..sort((a, b) => a.displayName
-                        .toLowerCase()
-                        .compareTo(b.displayName.toLowerCase()));
-                  return ListView(children: [
-                    for (final c in items)
-                      WeChatListTile(
-                          title: Text(c.displayName),
-                          trailing: Icon(selected.contains(c.userId)
-                              ? CupertinoIcons.check_mark_circled_solid
-                              : CupertinoIcons.circle),
-                          onTap: () => setState(() =>
-                              selected.contains(c.userId)
-                                  ? selected.remove(c.userId)
-                                  : selected.add(c.userId)))
-                  ]);
-                }))
-      ])));
+            child: Builder(builder: (context) {
+          final items = _contacts
+              .where((c) =>
+                  !c.tags.contains(widget.tag.name) &&
+                  c.displayName
+                      .toLowerCase()
+                      .contains(query.text.toLowerCase()))
+              .toList()
+            ..sort((a, b) => a.displayName
+                .toLowerCase()
+                .compareTo(b.displayName.toLowerCase()));
+          if (items.isEmpty) {
+            if (_loading) {
+              return const Center(child: CupertinoActivityIndicator());
+            }
+            if (_error != null && _contacts.isEmpty) {
+              return Center(
+                  child:
+                      Column(mainAxisSize: MainAxisSize.min, children: [
+                const Text('联系人加载失败',
+                    style: TextStyle(
+                        fontSize: 14, color: WeChatColors.textSecondary)),
+                const SizedBox(height: 8),
+                CupertinoButton(
+                  key: const Key('tag-picker-retry'),
+                  onPressed: () => unawaited(_load()),
+                  child: const Text('重试'),
+                ),
+              ]));
+            }
+          }
+          return ListView(children: [
+            for (final c in items)
+              WeChatListTile(
+                  title: Text(c.displayName),
+                  trailing: Icon(selected.contains(c.userId)
+                      ? CupertinoIcons.check_mark_circled_solid
+                      : CupertinoIcons.circle),
+                  onTap: () => setState(() => selected.contains(c.userId)
+                      ? selected.remove(c.userId)
+                      : selected.add(c.userId)))
+          ]);
+        }))      ])));
 }

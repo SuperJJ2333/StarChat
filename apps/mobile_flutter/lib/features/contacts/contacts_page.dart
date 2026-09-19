@@ -430,7 +430,9 @@ final class _ContactsPageState extends State<ContactsPage> {
                           onTap: () => Navigator.push(
                             context,
                             MotionPageRoute(
-                              builder: (_) => ContactTagsPage(api: businessApi),
+                              builder: (_) => ContactTagsPage(
+                                  api: businessApi,
+                                  identityCache: widget.identityCache),
                             ),
                           ),
                         ),
