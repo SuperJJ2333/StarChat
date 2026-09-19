@@ -67,3 +67,54 @@
 2. **同构缺陷重复出现**：`load(refresh:true)` 先清空、失败即错误页/空态（账本、标签、新的朋友、加好友搜索、邀请码、朋友圈个人页/详情）。
 3. **已有本地数据未被使用**：`ProfileRepository.contacts`、`CacheRepository.preferencesSnapshot`、`FamilyCardStore`、本地消息索引都已存在，但标签页/朋友圈设置页/搜索回退仍在走网络。
 4. **修复顺序**：钱包（用户直接受影响）→ 账本/账单 → 聊天记录搜索 → 新的朋友/标签 → 邀请码/入群 → 朋友圈四个页面 → 其余 Partial。
+
+---
+
+## 6. 改造进度（逐页落地，每项都有测试 + 反向对照）
+
+模型不变：L1 本地优先 → L2 立即展示 → L3 后台同步 → L4 失败不覆盖。下表"证据"列给出提交与测试文件，测试均做过**反向对照**（临时关掉新分支确认变红，再恢复）。
+
+| 页面 | 状态 | 提交 | 测试 |
+|---|---|---|---|
+| 钱包充值/提现/绑定（用户报告 #1） | ✅ 已改 | `05fabb3a` | `test/features/wallet/wallet_entry_cache_test.dart`、`manual_wallet_capabilities_test.dart` |
+| 钱包「全部账单」 | ✅ 已改 | `af02dc70` | `test/features/ledger/ledger_controller_test.dart`、`ledger_pages_test.dart` |
+| 查找聊天记录 | ✅ 已改 | `dd67fdd9` | `test/ui/chat/chat_search_offline_test.dart` |
+| 新的朋友 | ✅ 已改 | `cdd0d422` | `test/features/contacts/friend_requests_cache_test.dart` |
+| 通讯录标签（成员/选择器/标签列表） | ✅ 三态已改，标签列表持久化未做 | `e8f6f557`、`85bf990e` | `contact_tag_cache_test.dart` |
+| 加好友搜索 | ✅ 已改 | `e4fb87ee` | `add_friend_search_test.dart` |
+| 扫一扫 → 我的二维码 | ✅ 已改 | `7d8f0cba` | `scan_qr_page_test.dart` |
+| 资料页后台刷新失败 | ✅ 已改（保留 `ready` 与旧资料） | `3284fa27` | `profile_controller_test.dart` |
+| 通话权限清单 | ✅ 已改（按字段合并，未知不覆盖已知） | `3bedc5ff` | `test/call_permission_readiness_test.dart` |
+| 朋友圈：首页 / 个人页 / 详情 / 设置 / 排除名单 / 可见范围名单 / 发动态草稿 | ✅ 已改 | `38f8ccb9`、`8d535bfb`、`aa4cdc94`、`58c3dde0` | `moment_cache_first_test.dart`、`moments_settings_cache_test.dart`、`moment_people_cache_test.dart`、`moment_draft_cache_test.dart` |
+| 全局搜索（本地结果先发布） | ✅ 已改 | `1104cf3f` | `test/features/search/global_search_cache_first_test.dart` |
+| 邀请码 / 邀请历史 | ✅ 已改 | `c1aa22f3` | `test/features/profile/invite_cache_first_test.dart`（10 例：断网进入无加载圈/无错误占位、刷新失败保留、快照往返、跨账号丢弃、作用域不可解析不落盘、损坏载荷） |
+
+新增本地快照 Store（均为应用私有 SharedPreferences，按账号作用域隔离，账号切换即丢弃）：`wallet.entry.v1.<scope>`、`ledger.page.v1`、`friend.requests.v1`、`moment.draft.v1`、`invite.code.v1`。
+
+### 6.1 仍未改造（按剩余价值排序）
+
+| 页面 | 位置 | 缺口 | 备注 |
+|---|---|---|---|
+| 入群确认页 | `contacts/group_join_confirm_page.dart:10` | L1 L2（`_loading` 整页 gate） | 建议按 token 持久化群信息 |
+| 红包领取明细 | `redpacket/red_packet_claim_detail_page.dart:214` | L1 L2（每页新建控制器，无共享 store） | 需要会话级共享 store |
+| 通讯录首页 | `contacts/contacts_page.dart:66` | L1 角标 / L4 reload 回退本地投影 | **另一会话正在改**，本会话未动该文件 |
+| 日历选择页 | `ui/chat/chat_search_page.dart:738` | L1（月份 map 只留内存） | 提升到会话级 Store |
+| 通讯录标签列表持久化 | `contacts/contact_tag_pages.dart:142` | L1（标签列表本身无持久化） | 三态已就绪，只差落盘 |
+
+### 6.2 审计误报（结论修正）
+
+- **推荐内容**（`discovery/discovery_page.dart:195`）：原判定 L1/L3 不成立。该页 `_RecommendedContentPage`（`:199-226`）是**纯静态空态**，没有任何数据源、不发起任何请求，因此"无缓存/无刷新"不构成缺陷。若将来接入真实推荐流，再按 `MomentsUnreadController` 模式补持久化缓存。
+
+### 6.3 复现命令
+
+```powershell
+# 单页证据（示例）
+cd apps/mobile_flutter
+C:/src/flutter/bin/flutter.bat test test/features/profile/invite_cache_first_test.dart
+C:/src/flutter/bin/flutter.bat test test/features/search/global_search_cache_first_test.dart
+# 静态检查（按改动范围）
+C:/src/flutter/bin/flutter.bat analyze lib/features/profile lib/core/business_api_client.dart
+```
+
+**并发提示**：本仓库同一工作树有多个会话同时改码。`test/features/profile/invite_history_controller_test.dart`、`lib/features/contacts/contact_tag_pages.dart`、`contacts_page.dart`、`app_home.dart`、`lib/features/matrix/*` 等文件在写作时带有**其他会话的未提交改动**，不属于本次提交；本轮提交只包含上表所列文件（逐条 `git add -- <path>`）。
+
