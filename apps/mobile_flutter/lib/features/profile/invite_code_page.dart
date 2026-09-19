@@ -35,9 +35,9 @@ final class _InviteCodePageState extends State<InviteCodePage> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onChange);
-    if (widget.controller.state.status == InviteCodeStatus.idle) {
-      widget.controller.load();
-    }
+    // 本地优先：控制器构造时已水合上次成功的邀请码，这里始终做一次后台刷新；
+    // 有本地数据时不进入 loading（不闪加载圈），失败也不会清空已有内容。
+    widget.controller.load();
     // 邀请历史（规格 #4）：与邀请码同页加载，独立失败可重试。
     widget.controller.loadHistory();
   }
@@ -130,7 +130,7 @@ final class _InviteCodePageState extends State<InviteCodePage> {
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const WeChatNavTitle('邀请码'),
-        trailing: state.status == InviteCodeStatus.ready
+        trailing: state.invite != null
             ? CupertinoButton(
                 key: const Key('invite-refresh'),
                 padding: EdgeInsets.zero,
@@ -142,9 +142,13 @@ final class _InviteCodePageState extends State<InviteCodePage> {
       ),
       child: SafeArea(
         child: switch (state.status) {
+          // 刷新期间只要手里有数据（本地快照或上次成功结果）就继续渲染内容，
+          // 绝不把已知的邀请码换成加载圈（微信级加载模型 L2）。
           InviteCodeStatus.idle ||
           InviteCodeStatus.loading =>
-            const Center(child: CupertinoActivityIndicator()),
+            state.invite == null
+                ? const Center(child: CupertinoActivityIndicator())
+                : _body(context, state),
           InviteCodeStatus.failed => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,

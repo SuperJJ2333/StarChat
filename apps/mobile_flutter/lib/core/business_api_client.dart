@@ -9,6 +9,7 @@ import 'business_api_error.dart';
 import 'business_auth_contracts.dart';
 import '../features/profile/profile_controller.dart';
 import '../features/profile/invite_controller.dart';
+import '../features/profile/invite_snapshot_store.dart';
 import '../features/contacts/contact_models.dart';
 import '../features/profile/complaint_models.dart';
 import '../features/redpacket/red_packet_controller.dart';
@@ -55,6 +56,7 @@ final class BusinessApiClient
         RedPacketViewGateway,
         PersonalInvitationGateway,
         InviteHistoryGateway,
+        InviteCacheScopeProvider,
         SupportIdentityGateway {
   BusinessApiClient({
     required this.baseUri,
@@ -297,6 +299,17 @@ final class BusinessApiClient
       useCount: (body['use_count'] as num?)?.toInt() ?? 0,
       shareUrl: body['share_url'] as String,
     );
+  }
+
+  /// 邀请码本地快照的账号作用域；未登录或令牌不可解析时返回 null，
+  /// 调用方据此保守处理（不落盘并丢弃无法校验的旧快照）。
+  @override
+  Future<String?> inviteCacheScope() async {
+    try {
+      return await walletIntentScope();
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
