@@ -9,15 +9,24 @@ import 'package:flutter/foundation.dart';
 /// 说明：拉黑是账号级关系，登出时会清空（见 SessionBootstrapController）。
 final class BlockedContacts extends ChangeNotifier {
   Set<String> _userIds = const <String>{};
+  bool _hasSnapshot = false;
 
   Set<String> get userIds => _userIds;
+
+  /// 是否已经拿到过一份服务端来源的黑名单快照。
+  ///
+  /// 「好友设置」页据此判断能否**在断网/请求未回来之前**先用本地投影渲染开关：
+  /// 只有真的读过服务端，才允许把 `isBlocked == false` 当成已知状态，
+  /// 否则会用一个默认 false 冒充权威结果（BUG-10 的教训）。
+  bool get hasSnapshot => _hasSnapshot;
 
   bool isBlocked(String? userId) =>
       userId != null && userId.isNotEmpty && _userIds.contains(userId);
 
   /// 用 `GET /blocks` 的结果替换本地投影。
-  void replaceAll(Iterable<String> userIds) {
+  void replaceAll(Iterable<String> userIds, {bool fromServer = false}) {
     final next = userIds.where((id) => id.isNotEmpty).toSet();
+    if (fromServer) _hasSnapshot = true;
     if (setEquals(next, _userIds)) return;
     _userIds = Set.unmodifiable(next);
     notifyListeners();
@@ -28,7 +37,11 @@ final class BlockedContacts extends ChangeNotifier {
   void markUnblocked(String userId) =>
       replaceAll(_userIds.where((id) => id != userId));
 
-  void clear() => replaceAll(const <String>[]);
+  /// 登出：清空投影并作废快照标记（下一个账号不得继承）。
+  void clear() {
+    _hasSnapshot = false;
+    replaceAll(const <String>[]);
+  }
 }
 
 /// 进程级单例；与 `momentsPrivacyChanges` 等既有跨页面投影保持一致。

@@ -911,6 +911,11 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   @override
   void initState() {
     super.initState();
+    // 本地优先：已经读过服务端黑名单时，先用本地投影把开关渲染成已知状态，
+    // 断网/请求未回来时也能看到真实拉黑状态（而不是一个禁用的开关）。
+    if (blockedContacts.hasSnapshot) {
+      blocked = blockedContacts.isBlocked(widget.contact.userId);
+    }
     unawaited(_loadBlockState());
   }
 
@@ -924,10 +929,12 @@ final class _ContactMorePageState extends State<ContactMorePage> {
           if (item is Map && item['user_id'] != null)
             item['user_id'].toString(),
       };
-      blockedContacts.replaceAll(ids);
+      blockedContacts.replaceAll(ids, fromServer: true);
       if (mounted) setState(() => blocked = ids.contains(widget.contact.userId));
     } catch (_) {
-      if (mounted) {
+      // 失败时只有「确实读过服务端」的本地投影才可作为已知状态；
+      // 从未读过就保持 null（未知），不用默认 false 冒充权威结果。
+      if (mounted && blockedContacts.hasSnapshot) {
         setState(() =>
             blocked = blockedContacts.isBlocked(widget.contact.userId));
       }
@@ -1296,6 +1303,9 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
             future: tags,
             builder: (_, snapshot) {
               final items = (snapshot.data?['items'] as List?) ?? const [];
+              final loading = snapshot.connectionState ==
+                      ConnectionState.waiting &&
+                  !snapshot.hasData;
               return ListView(
                 children: [
                   WeChatListTile(
@@ -1303,6 +1313,29 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
                     leading: const Icon(CupertinoIcons.add_circled),
                     onTap: _create,
                   ),
+                  // 加载中与失败必须区分：旧实现失败时只剩「新建标签」一行，
+                  // 用户看不出标签列表是空的还是没加载出来。
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CupertinoActivityIndicator()),
+                    ),
+                  if (snapshot.hasError)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Column(children: [
+                        const Text('标签加载失败',
+                            style: TextStyle(
+                                fontSize: 14, color: WeChatColors.textSecondary)),
+                        const SizedBox(height: 8),
+                        CupertinoButton(
+                          key: const Key('tag-picker-tags-retry'),
+                          onPressed: () =>
+                              setState(() => tags = widget.api.contactTags()),
+                          child: const Text('重试'),
+                        ),
+                      ]),
+                    ),
                   for (final raw in items)
                     WeChatListTile(
                       title: Text(raw['name'].toString()),

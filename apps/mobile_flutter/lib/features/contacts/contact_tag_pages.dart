@@ -91,40 +91,60 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
             child: FutureBuilder<List<ContactTagSummary>>(
                 future: tags,
                 builder: (_, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CupertinoActivityIndicator());
+                  if (snapshot.hasData) {
+                    final items = snapshot.data!;
+                    if (items.isEmpty) {
+                      return const Center(child: Text('暂无标签'));
+                    }
+                    return ListView(children: [
+                      for (final tag in items)
+                        WeChatListTile(
+                            leading: editing
+                                ? Icon(
+                                    selected.contains(tag.id)
+                                        ? CupertinoIcons.check_mark_circled_solid
+                                        : CupertinoIcons.circle,
+                                    color: WeChatColors.brandPrimary)
+                                : const Icon(CupertinoIcons.tag),
+                            title: Text(tag.name),
+                            subtitle: Text('${tag.friendCount} 位朋友'),
+                            onTap: () {
+                              if (editing) {
+                                setState(() => selected.contains(tag.id)
+                                    ? selected.remove(tag.id)
+                                    : selected.add(tag.id));
+                              } else {
+                                Navigator.push(
+                                    context,
+                                    MotionPageRoute(
+                                        builder: (_) => ContactTagMembersPage(
+                                            api: widget.api,
+                                            tag: tag,
+                                            identityCache:
+                                                widget.identityCache))).then((_) => reload());
+                              }
+                            })
+                    ]);
                   }
-                  final items = snapshot.data!;
-                  if (items.isEmpty) return const Center(child: Text('暂无标签'));
-                  return ListView(children: [
-                    for (final tag in items)
-                      WeChatListTile(
-                          leading: editing
-                              ? Icon(
-                                  selected.contains(tag.id)
-                                      ? CupertinoIcons.check_mark_circled_solid
-                                      : CupertinoIcons.circle,
-                                  color: WeChatColors.brandPrimary)
-                              : const Icon(CupertinoIcons.tag),
-                          title: Text(tag.name),
-                          subtitle: Text('${tag.friendCount} 位朋友'),
-                          onTap: () {
-                            if (editing) {
-                              setState(() => selected.contains(tag.id)
-                                  ? selected.remove(tag.id)
-                                  : selected.add(tag.id));
-                            } else {
-                              Navigator.push(
-                                  context,
-                                  MotionPageRoute(
-                                      builder: (_) => ContactTagMembersPage(
-                                          api: widget.api,
-                                          tag: tag,
-                                          identityCache:
-                                              widget.identityCache))).then((_) => reload());
-                            }
-                          })
-                  ]);
+                  // 失败与加载中必须区分：旧实现把失败也画成"永不结束的加载圈"。
+                  if (snapshot.hasError) {
+                    return Center(
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                          const Text('标签加载失败',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  color: WeChatColors.textSecondary)),
+                          const SizedBox(height: 8),
+                          CupertinoButton(
+                            key: const Key('contact-tags-retry'),
+                            onPressed: reload,
+                            child: const Text('重试'),
+                          ),
+                        ]));
+                  }
+                  return const Center(child: CupertinoActivityIndicator());
                 })),
         SizedBox(
             height: 56,

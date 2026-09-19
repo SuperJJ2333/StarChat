@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_tag_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_tag_pages.dart';
+import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 
@@ -13,6 +14,9 @@ import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 final class _TagGateway implements ContactsGateway {
   bool fail = true;
 
+  /// 标签接口单独可控：用于验证标签列表页"加载失败"不再伪装成空列表。
+  bool tagsFail = false;
+
   @override
   Future<List<ContactSummary>> listContacts() async {
     if (fail) throw StateError('offline');
@@ -20,7 +24,10 @@ final class _TagGateway implements ContactsGateway {
   }
 
   @override
-  Future<Map<String, dynamic>> contactTags() async => {'items': const []};
+  Future<Map<String, dynamic>> contactTags() async {
+    if (tagsFail) throw StateError('offline');
+    return {'items': const []};
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future<dynamic>.value();
@@ -105,5 +112,36 @@ void main() {
     expect(find.text('联系人加载失败'), findsOneWidget);
     expect(find.byKey(const Key('tag-members-retry')), findsOneWidget);
     expect(find.byType(CupertinoActivityIndicator), findsNothing);
+  });
+
+  testWidgets('标签列表页：加载失败显示失败与重试，而不是永久加载圈',
+      (tester) async {
+    final gateway = _TagGateway()..tagsFail = true;
+
+    await tester.pumpWidget(CupertinoApp(home: ContactTagsPage(api: gateway)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('标签加载失败'), findsOneWidget);
+    expect(find.byKey(const Key('contact-tags-retry')), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing,
+        reason: '失败不能伪装成"一直在加载"');
+  });
+
+  testWidgets('标签选择页：标签接口失败时提示失败与重试，而不是只显示"新建标签"',
+      (tester) async {
+    final gateway = _TagGateway()..tagsFail = true;
+
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactTagPickerPage(
+            api: gateway,
+            contact: const ContactDetails(
+                userId: 'u1',
+                username: 'xiaohong',
+                matrixUserId: '@x:example',
+                nickname: '小鸿'))));
+    await tester.pumpAndSettle();
+
+    expect(find.text('标签加载失败'), findsOneWidget);
+    expect(find.byKey(const Key('tag-picker-tags-retry')), findsOneWidget);
   });
 }
