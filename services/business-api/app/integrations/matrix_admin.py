@@ -27,6 +27,10 @@ class MatrixAdminGateway(Protocol):
 
     def get_room_state(self, room_id: str) -> list[dict]: ...
 
+    def get_room_details(self, room_id: str) -> dict: ...
+
+    def get_room_state_strict(self, room_id: str) -> list[dict]: ...
+
     def get_room_members(self, room_id: str) -> set[str]: ...
 
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
@@ -63,6 +67,35 @@ class MatrixCredentialCodec:
 
 
 class SynapseMatrixAdminGateway:
+    def _strict_room_metadata(self, room_id: str, suffix: str = ''):
+        """Operations evidence: an absent room is never proof of retirement."""
+        try:
+            response = self._client.get(
+                f'{self._homeserver_url}/_synapse/admin/v1/rooms/{quote(room_id, safe="")}{suffix}',
+                headers={'Authorization': f'Bearer {self._admin_access_token}'})
+            if response.status_code != 200:
+                raise ValueError('metadata unavailable')
+            return response.json()
+        except (httpx.HTTPError, ValueError):
+            raise AppError(code='DIRECT_ROOM_EVIDENCE_UNAVAILABLE', message='会话校验暂不可用', status_code=503) from None
+
+    def get_room_details(self, room_id: str) -> dict:
+        body = self._strict_room_metadata(room_id)
+        if (not isinstance(body, dict) or body.get('room_id') != room_id
+                or type(body.get('joined_members')) is not int or body['joined_members'] < 0):
+            raise AppError(code='DIRECT_ROOM_INVALID_EVIDENCE', message='房间详情不完整', status_code=409)
+        return body
+
+    def get_room_state_strict(self, room_id: str) -> list[dict]:
+        body = self._strict_room_metadata(room_id, '/state')
+        events = body.get('state') if isinstance(body, dict) else body
+        if (not isinstance(events, list) or any(not isinstance(event, dict)
+                or not isinstance(event.get('type'), str)
+                or not isinstance(event.get('state_key'), str)
+                or not isinstance(event.get('content'), dict) for event in events)):
+            raise AppError(code='DIRECT_ROOM_INVALID_EVIDENCE', message='房间状态不完整', status_code=409)
+        return events
+
     def resolve_room_alias(self, alias: str) -> str | None:
         """Read room directory metadata only; never accepts caller-supplied URLs."""
         try:
