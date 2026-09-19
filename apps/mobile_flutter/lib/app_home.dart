@@ -40,6 +40,7 @@ import 'core/notification/system_notification_presenter.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/finance/wallet_entry_snapshot_store.dart';
 import 'features/ledger/ledger_page_snapshot_store.dart';
+import 'features/friendship/friend_request_snapshot_store.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -501,6 +502,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         await LedgerPageSnapshotStores.ensureLoaded();
       } catch (_) {
         // 同上：不可用即退化为无本地数据。
+      }
+    }());
+    // 「新的朋友」列表本地快照：断网进入时不再谎报「暂无新的朋友」。
+    unawaited(() async {
+      try {
+        await FriendRequestSnapshotStores.ensureLoaded();
+      } catch (_) {
+        // 同上。
       }
     }());
     // 规格§三：native_call 通道——Telecom/CallActivity 事件与控制入口。

@@ -25,6 +25,7 @@ import 'contact_profile_sections.dart';
 import '../moments/moment_profile_preview.dart';
 import '../search/global_search_page.dart';
 import '../friendship/friend_acceptance_coordinator.dart';
+import '../friendship/friend_request_snapshot_store.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/direct_chat_controller.dart';
 import '../../ui/motion/motion_page_route.dart';
@@ -1680,11 +1681,84 @@ final class FriendRequestsPage extends StatefulWidget {
 }
 
 final class _FriendRequestsPageState extends State<FriendRequestsPage> {
-  late Future<Map<String, dynamic>> requests = widget.api.friendRequests();
+  /// 本地优先：进入即用上次成功的列表（首帧就有内容），随后后台刷新。
+  FriendRequestSnapshot? _snapshot;
+  Map<String, dynamic>? _payload;
+  Object? _error;
+  bool _loading = false;
+  int _generation = 0;
+  bool _disposed = false;
 
-  void _reload() => setState(() {
-        requests = widget.api.friendRequests();
+  @override
+  void initState() {
+    super.initState();
+    _snapshot = FriendRequestSnapshotStores.shared?.read();
+    _payload = _snapshot?.payload;
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _generation++;
+    super.dispose();
+  }
+
+  void _reload() => unawaited(_load());
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (mounted) setState(() => _loading = true);
+    String? scope;
+    try {
+      final userId = await widget.api.currentMatrixUserId();
+      scope = userId == null || userId.isEmpty ? null : 'matrix:$userId';
+    } catch (_) {
+      scope = null;
+    }
+    if (_disposed || generation != _generation) return;
+    final cached = _snapshot;
+    if (scope != null && cached != null && cached.scope != scope) {
+      // 账号切换保护：绝不展示上一个账号的申请列表。
+      setState(() {
+        _snapshot = null;
+        _payload = null;
       });
+      unawaited(FriendRequestSnapshotStores.shared?.clear());
+    }
+    try {
+      final body = await widget.api.friendRequests();
+      if (_disposed || generation != _generation) return;
+      if (mounted) {
+        setState(() {
+          _payload = body;
+          _error = null;
+          _loading = false;
+        });
+      }
+      if (scope != null) {
+        final snapshot = FriendRequestSnapshot(
+            scope: scope, payload: body, savedAt: DateTime.now());
+        _snapshot = snapshot;
+        final store = FriendRequestSnapshotStores.shared;
+        if (store != null) {
+          try {
+            await store.write(snapshot);
+          } catch (_) {
+            // 本地快照写失败不是刷新失败。
+          }
+        }
+      }
+    } catch (error) {
+      if (_disposed || generation != _generation) return;
+      if (mounted) {
+        setState(() {
+          _error = error;
+          _loading = false;
+        });
+      }
+    }
+  }
 
   /// BUG 2：点击申请进入"通过朋友验证"页；accept/reject 只在该页触发。
   Future<void> _openReview(Map request) async {
@@ -1838,29 +1912,49 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
             enableBackgroundFilterBlur: false,
             middle: Text('新的朋友')),
         child: SafeArea(
-          child: FutureBuilder<Map<String, dynamic>>(
-            future: requests,
-            builder: (_, snapshot) {
-              final items = ((snapshot.data?['items'] as List?) ?? const [])
-                  .where(
-                      (item) => item is Map && item['direction'] != 'OUTGOING')
-                  .toList();
-              return ListView(
-                children: [
-                  for (final request in items)
-                    _FriendRequestTile(
-                      request: request as Map,
-                      onTap: () => _openReview(request),
-                    ),
-                  if (items.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: WeChatSpacing.xxl),
-                      child: Center(child: Text('暂无新的朋友')),
-                    ),
-                ],
-              );
-            },
-          ),
+          child: Builder(builder: (context) {
+            final items = ((_payload?['items'] as List?) ?? const [])
+                .where(
+                    (item) => item is Map && item['direction'] != 'OUTGOING')
+                .toList();
+            return ListView(
+              children: [
+                for (final request in items)
+                  _FriendRequestTile(
+                    request: request as Map,
+                    onTap: () => _openReview(request),
+                  ),
+                // 三种"没有行"的情形必须区分：加载中 / 加载失败 / 真的没有。
+                // 旧实现把前两种都渲染成「暂无新的朋友」，断网时会把上一份真实
+                // 列表丢掉并谎报"没有新朋友"。
+                if (items.isEmpty && _loading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: WeChatSpacing.xxl),
+                    child: Center(child: CupertinoActivityIndicator()),
+                  ),
+                if (items.isEmpty && !_loading && _error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: WeChatSpacing.xxl),
+                    child: Column(children: [
+                      const Text('新的朋友加载失败',
+                          style: TextStyle(
+                              fontSize: 14, color: WeChatColors.textSecondary)),
+                      const SizedBox(height: 8),
+                      CupertinoButton(
+                        key: const Key('friend-requests-retry'),
+                        onPressed: _reload,
+                        child: const Text('重试'),
+                      ),
+                    ]),
+                  ),
+                if (items.isEmpty && !_loading && _error == null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: WeChatSpacing.xxl),
+                    child: Center(child: Text('暂无新的朋友')),
+                  ),
+              ],
+            );
+          }),
         ),
       );
 }
