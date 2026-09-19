@@ -176,6 +176,28 @@ void main() {
         twice.map((room) => room.id).toList());
   });
 
+  test('详细解析返回落选房间按主房间分组（未读并入主行的数据源）', () {
+    final rooms = [
+      directRoom('!old:test', '@peer:test',
+          lastActivity: DateTime.utc(2026, 9, 1)),
+      directRoom('!new:test', '@peer:test',
+          lastActivity: DateTime.utc(2026, 9, 18)),
+      groupRoom('!group:test'),
+    ];
+    final resolution = resolveConversationIdentitiesDetailed(
+      rooms,
+      selfUserId: '@me:test',
+    );
+    expect(resolution.representatives.map((room) => room.id).toList(),
+        ['!new:test', '!group:test']);
+    expect(
+        resolution.duplicatesByRepresentativeId['!new:test']!.single.id,
+        '!old:test',
+        reason: '落选房间必须挂在其主房间名下，供未读并入');
+    expect(resolution.duplicatesByRepresentativeId.containsKey('!group:test'),
+        isFalse, reason: '无落选者的主房间不得出现空分组');
+  });
+
   test('被本机隐藏（删除该聊天）的重复房间不得压制可见房间', () {
     final rooms = [
       directRoom('!new:test', '@peer:test',

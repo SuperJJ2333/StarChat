@@ -572,6 +572,7 @@ final class MatrixConversationRoomSnapshot {
     String name = '',
     bool isJoined = true,
     DateTime? lastActivityAt,
+    int duplicateUnreadCount = 0,
   }) : this._trusted(
             id: id,
             displayName: displayName,
@@ -585,7 +586,8 @@ final class MatrixConversationRoomSnapshot {
             notificationsEnabled: notificationsEnabled,
             name: name,
             isJoined: isJoined,
-            lastActivityAt: lastActivityAt);
+            lastActivityAt: lastActivityAt,
+            duplicateUnreadCount: duplicateUnreadCount);
 
   const MatrixConversationRoomSnapshot._trusted({
     required this.id,
@@ -601,6 +603,7 @@ final class MatrixConversationRoomSnapshot {
     required this.name,
     required this.isJoined,
     this.lastActivityAt,
+    this.duplicateUnreadCount = 0,
   });
   final String id;
   final String displayName;
@@ -619,6 +622,10 @@ final class MatrixConversationRoomSnapshot {
   /// 隐藏时沿用**清空前**的最后活动时间，使该会话在列表中原地不动，而不是
   /// 因为缺少可见事件被排到末尾（用户报的位置变化）。
   final DateTime? lastActivityAt;
+
+  /// 身份解析落选房间（同好友重复房间）并入本行的未读数（方案 A）。
+  /// 落选房间不渲染行，其未读不能凭空消失；显示时由 UI 层加到总未读上。
+  final int duplicateUnreadCount;
 }
 
 @immutable
@@ -746,6 +753,21 @@ final class MatrixConversationCapability {
         // 身份解析（同一好友一行）在数据源出口统一执行：m.direct 中同一
         // peer 的多个已加入房间（历史房间/旧版本建房/avoidRoomId 新建残留）
         // 不再各自渲染一条。落选房间仅从列表隐藏，绝不 leave。
+        final resolution = resolveConversationIdentitiesDetailed(
+          [
+            for (final room in client.rooms)
+              if (room.membership == Membership.join)
+                _snapshotRoom(room, localHistory)
+          ],
+          selfUserId: selfUserId,
+          // 规则一数据源：收敛服务登记的服务端 canonical（未注入登记簿时
+          // 自动退回消息数/活跃度规则）。
+          primaryRoomIdOf: (registry == null || selfUserId == null)
+              ? null
+              : (peer) => registry.primaryRoomIdForPeer(selfUserId, peer),
+          // 规则二数据源：本会话已解密缓存条数（本地消息量的保守代理）。
+          localMessageCountOf: (room) => _owner._decryptedEventCount(room.id),
+        );
         return MatrixConversationSnapshot(
           vaultRoomId: client
               .accountData[emojiVaultAccountDataType]?.content['room_id']
@@ -753,23 +775,53 @@ final class MatrixConversationCapability {
           reminderRoomId: client
               .accountData[messageReminderAccountDataType]?.content['room_id']
               ?.toString(),
-          rooms: resolveConversationIdentities(
-            [
-              for (final room in client.rooms)
-                if (room.membership == Membership.join)
-                  _snapshotRoom(room, localHistory)
-            ],
-            selfUserId: selfUserId,
-            // 规则一数据源：收敛服务登记的服务端 canonical（未注入登记簿时
-            // 自动退回消息数/活跃度规则）。
-            primaryRoomIdOf: (registry == null || selfUserId == null)
-                ? null
-                : (peer) => registry.primaryRoomIdForPeer(selfUserId, peer),
-            // 规则二数据源：本会话已解密缓存条数（本地消息量的保守代理）。
-            localMessageCountOf: (room) => _owner._decryptedEventCount(room.id),
-          ),
+          // 方案 A：落选房间不渲染行，其未读并入主行，不能凭空消失。
+          rooms: [
+            for (final room in resolution.representatives)
+              _mergeDuplicateUnread(
+                  room,
+                  resolution.duplicatesByRepresentativeId[room.id] ??
+                      const [],
+                  selfUserId)
+          ],
         );
       });
+
+  /// 把落选房间的未读（与本页一致的读态公式）并进主行快照。
+  MatrixConversationRoomSnapshot _mergeDuplicateUnread(
+    MatrixConversationRoomSnapshot primary,
+    List<MatrixConversationRoomSnapshot> duplicates,
+    String? selfUserId,
+  ) {
+    if (duplicates.isEmpty) return primary;
+    var merged = 0;
+    for (final duplicate in duplicates) {
+      merged += ConversationReadState.shared().unreadCount(
+          roomId: duplicate.id,
+          serverUnreadCount: duplicate.notificationCount,
+          lastEventId: duplicate.lastEvent?.eventId,
+          lastEventSenderId: duplicate.lastEvent?.senderId,
+          currentUserId: selfUserId,
+          manualUnread: duplicate.preference.manualUnread);
+    }
+    if (merged <= 0) return primary;
+    return MatrixConversationRoomSnapshot(
+      id: primary.id,
+      displayName: primary.displayName,
+      avatar: primary.avatar,
+      isDirect: primary.isDirect,
+      directPeerId: primary.directPeerId,
+      members: primary.members,
+      lastEvent: primary.lastEvent,
+      preference: primary.preference,
+      notificationCount: primary.notificationCount,
+      notificationsEnabled: primary.notificationsEnabled,
+      name: primary.name,
+      isJoined: primary.isJoined,
+      lastActivityAt: primary.lastActivityAt,
+      duplicateUnreadCount: merged,
+    );
+  }
 
   Future<void> refreshMembers() =>
       _owner._memberRefresh ??= _owner._withClient((client) async {

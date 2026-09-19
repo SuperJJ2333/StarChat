@@ -159,3 +159,22 @@ canonical 裁决时登记——本地规则选出的落选者不登记，避免�
 
 `MatrixSdkE2eeClient` 新增可选 `duplicateRooms` 参数（测试不注入 → 用例封闭）；
 `lib/main.dart` 生产构造点注入 `DuplicateRoomRegistry()`。
+
+## 七、方案 A：落选房间未读并入主行（2026-09-19 第三轮，用户批准）
+
+**背景**：身份解析隐藏落选房间后，对方（尤其旧版本 App）写进落选房间的消息
+有系统通知、计入总未读角标，但列表无行——用户可感知为"丢消息"。
+
+**设计**：
+- `resolveConversationIdentitiesDetailed` / `resolveIdentityResolution`：
+  返回 `ConversationIdentityResolution{representatives, duplicatesByRepresentativeId}`
+  （代表 + 按代表 roomId 分组的落选者）；原列表出口保持不变。
+- `MatrixConversationRoomSnapshot` 新增 `duplicateUnreadCount`（默认 0）。
+- `snapshot()`：对每个落选者用与消息页一致的读态公式
+  （`ConversationReadState.unreadCount`）计算未读并求和，生成带
+  `duplicateUnreadCount` 的主行快照副本（纯函数，逐快照独立计算不叠加）。
+- 消息页 `_conversationUnread`：末尾 `+ room.duplicateUnreadCount`
+  （在 BUG-11 黑名单早退**之后**，屏蔽语义不被合并值穿透）。
+
+**测试**：resolver 详细分组用例 + `duplicate_unread_merge_test.dart`
+（合并 5 条/不叠加/无落选为 0）。

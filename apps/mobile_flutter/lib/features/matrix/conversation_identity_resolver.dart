@@ -66,22 +66,78 @@ List<MatrixConversationRoomSnapshot> resolveConversationIdentities(
   String? Function(String peerUserId)? primaryRoomIdOf,
   int Function(MatrixConversationRoomSnapshot room)? localMessageCountOf,
 }) =>
-    resolveIdentityRepresentatives<MatrixConversationRoomSnapshot>(
+    resolveConversationIdentitiesDetailed(
       rooms,
       selfUserId: selfUserId,
-      isDirectOf: (room) => room.isDirect,
-      directPeerIdOf: (room) => room.directPeerId,
-      roomIdOf: (room) => room.id,
-      isHiddenOf: (room) => room.preference.hidden,
-      messageCountOf:
-          localMessageCountOf == null ? null : (room) => localMessageCountOf(room),
-      lastActivityOf: (room) => room.lastActivityAt,
       primaryRoomIdOf: primaryRoomIdOf,
-    );
+      localMessageCountOf: localMessageCountOf,
+    ).representatives;
+
+/// 身份解析的完整结果：代表列表 + 按代表 roomId 分组的落选房间。
+///
+/// 落选分组是"落选房间未读并入主行"（方案 A）的数据源：身份解析隐藏了
+/// 落选房间的行，但它们的未读不能凭空消失。
+final class ConversationIdentityResolution<T> {
+  const ConversationIdentityResolution({
+    required this.representatives,
+    required this.duplicatesByRepresentativeId,
+  });
+
+  /// 各身份的 primary 代表，保持输入相对顺序。
+  final List<T> representatives;
+
+  /// representative 的 roomId → 该身份下被隐藏展示的房间（不含代表本身）。
+  final Map<String, List<T>> duplicatesByRepresentativeId;
+}
+
+ConversationIdentityResolution<MatrixConversationRoomSnapshot>
+    resolveConversationIdentitiesDetailed(
+  List<MatrixConversationRoomSnapshot> rooms, {
+  required String? selfUserId,
+  String? Function(String peerUserId)? primaryRoomIdOf,
+  int Function(MatrixConversationRoomSnapshot room)? localMessageCountOf,
+}) =>
+        resolveIdentityResolution<MatrixConversationRoomSnapshot>(
+          rooms,
+          selfUserId: selfUserId,
+          isDirectOf: (room) => room.isDirect,
+          directPeerIdOf: (room) => room.directPeerId,
+          roomIdOf: (room) => room.id,
+          isHiddenOf: (room) => room.preference.hidden,
+          messageCountOf: localMessageCountOf == null
+              ? null
+              : (room) => localMessageCountOf(room),
+          lastActivityOf: (room) => room.lastActivityAt,
+          primaryRoomIdOf: primaryRoomIdOf,
+        );
 
 /// 任意"会话条目"类型的身份代表选举：私聊按排序 userPair 分组，群聊按
 /// roomId 分组，每组按 primary 规则选出一个代表。输出保持输入相对顺序。
 List<T> resolveIdentityRepresentatives<T>(
+  List<T> items, {
+  required String? selfUserId,
+  required bool Function(T) isDirectOf,
+  required String? Function(T) directPeerIdOf,
+  required String Function(T) roomIdOf,
+  required bool Function(T) isHiddenOf,
+  required int Function(T)? messageCountOf,
+  required DateTime? Function(T) lastActivityOf,
+  String? Function(String peerUserId)? primaryRoomIdOf,
+}) =>
+    resolveIdentityResolution<T>(
+      items,
+      selfUserId: selfUserId,
+      isDirectOf: isDirectOf,
+      directPeerIdOf: directPeerIdOf,
+      roomIdOf: roomIdOf,
+      isHiddenOf: isHiddenOf,
+      messageCountOf: messageCountOf,
+      lastActivityOf: lastActivityOf,
+      primaryRoomIdOf: primaryRoomIdOf,
+    ).representatives;
+
+/// 完整解析：代表 + 落选分组（见 [ConversationIdentityResolution]）。
+ConversationIdentityResolution<T> resolveIdentityResolution<T>(
   List<T> items, {
   required String? selfUserId,
   required bool Function(T) isDirectOf,
@@ -123,10 +179,23 @@ List<T> resolveIdentityRepresentatives<T>(
             ? candidate
             : incumbent);
   }
-  return [
-    for (final item in items)
-      if (identical(winners[keys[item]], item)) item
-  ];
+  final duplicates = <String, List<T>>{};
+  for (final entry in groups.entries) {
+    final winner = winners[entry.key];
+    if (winner == null) continue;
+    final losers = [
+      for (final item in entry.value)
+        if (!identical(item, winner)) item
+    ];
+    if (losers.isNotEmpty) duplicates[roomIdOf(winner)] = losers;
+  }
+  return ConversationIdentityResolution(
+    representatives: [
+      for (final item in items)
+        if (identical(winners[keys[item]], item)) item
+    ],
+    duplicatesByRepresentativeId: duplicates,
+  );
 }
 
 bool _preferCandidate<T>(

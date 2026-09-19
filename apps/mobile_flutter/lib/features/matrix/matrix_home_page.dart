@@ -723,7 +723,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   int _conversationUnread(MatrixConversationRoomSnapshot room) {
     final preference = room.preference;
-    return _readState.unreadCount(
+    final unread = _readState.unreadCount(
       roomId: room.id,
       serverUnreadCount: room.notificationCount,
       lastEventId: room.lastEvent?.eventId,
@@ -731,6 +731,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       currentUserId: widget.matrix.userId,
       manualUnread: preference.manualUnread,
     );
+    // 身份解析落选房间（同好友重复房间）的未读并入主行（方案 A）：
+    // 落选房间不渲染行，其未读不能凭空消失。
+    return unread + room.duplicateUnreadCount;
   }
 
   String _conversationSubtitle(MatrixConversationRoomSnapshot room) {

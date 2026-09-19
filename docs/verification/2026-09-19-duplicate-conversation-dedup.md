@@ -96,3 +96,26 @@
 提交方式说明：工作树同时承载 0917 批次的在途改动，本提交对 `matrix_e2ee_client.dart`
 与 `matrix_home_page.dart` 两个共享文件做了**逐 hunk 分离**（暂存内容 = HEAD + 本任务
 改动，已断言不含 BUG-11/15/20/23/32 等并行任务行），其余文件为整文件暂存。
+
+## 第三轮记录（方案 A：落选房间未读并入主行，用户批准后实施）
+
+改动：`resolveConversationIdentitiesDetailed`/`resolveIdentityResolution`（代表+落选分组）、
+`MatrixConversationRoomSnapshot.duplicateUnreadCount`（默认 0）、snapshot() 合并落选未读
+（读态公式与消息页一致，逐快照独立计算）、消息页 `_conversationUnread` 末尾累加
+（在 BUG-11 黑名单早退之后，屏蔽语义不被穿透）。
+
+TDD：resolver 详细分组用例 + `duplicate_unread_merge_test.dart`（合并 5/不叠加/无落选 0）
+先红后绿。
+
+第三轮门禁（真实退出码）：
+
+| 门禁 | 结果 |
+| --- | --- |
+| `flutter analyze` | No issues found!（exit 0） |
+| `flutter test test/features/matrix --timeout 120s` | 1722 通过，0 失败（exit 0） |
+| `flutter test --timeout 120s`（全量） | **3496 通过，0 失败（exit 0）**（首轮跑出并行批次在途文件的 loading 失败，复跑时该任务已自修） |
+| `pwsh -NoProfile -File scripts/verify.ps1` | **未过，基线在案**：唯一失败 `test_openapi_contract`（已提交 OpenAPI 与生成文档漂移），源于并行批次任务对 `services/business-api/app/api/identity.py`、`app/modules/identity/registration.py` 的在途改动（本任务零服务端文件，暂存清单可证；同日早些时候同套件 PASS）。该套件其余 **2077 通过，58 跳过** |
+
+选择性提交说明：`matrix_e2ee_client.dart` 暂存内容额外剔除并行任务新写入的
+BUG-23 `markRoomRead`、withdrawInvite（含重复 `@override`）等在途行；`matrix_home_page.dart`
+同前剔除 BUG-11/draft 等。

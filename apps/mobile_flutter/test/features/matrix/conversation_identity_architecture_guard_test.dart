@@ -72,8 +72,8 @@ void main() {
   test('用户可见会话展示出口必须经过 ConversationIdentityResolver', () {
     final e2ee = _stripComments(
         File('lib/features/matrix/matrix_e2ee_client.dart').readAsStringSync());
-    expect(e2ee, contains('resolveConversationIdentities('),
-        reason: '消息列表数据源出口（snapshot）必须接入身份解析');
+    expect(e2ee, contains('resolveConversationIdentitiesDetailed('),
+        reason: '消息列表数据源出口（snapshot）必须接入身份解析（含落选分组，供未读并入主行）');
     expect(e2ee, contains('resolveIdentityRepresentatives<MatrixForwardDestinationSnapshot>('),
         reason: '转发/分享/群发目标（forwardingDestinations）必须接入身份解析');
     // 身份解析规则本体必须存在且暴露 primary 规则注入点。

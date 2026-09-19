@@ -22,6 +22,7 @@
 | B2 | 旧 room 消息更多 → 选消息多的 room（规则二） | localMessageCountOf（解密缓存代理） | resolver 测试 2 用例绿 | — | 待真机 |
 | B3 | 转发/分享/群发目标同好友唯一入口 | forwardingDestinations 接入 resolveIdentityRepresentatives | forward_destination_dedup_test 2 用例绿；架构守卫 `.rooms` 允许清单 | — | 待真机 |
 | B4 | 生产代码禁止直接展示 client.rooms | conversation_identity_architecture_guard_test | 2 用例绿（清单完备 + 出口接线断言） | — | — |
+| B5 | 落选房间未读并入主行（方案 A） | detailed resolution + duplicateUnreadCount + 消息页累加 | duplicate_unread_merge_test 3 用例 + resolver 详细分组用例绿 | — | 待真机 |
 
 门禁（2026-09-19，混合工作树）：`flutter analyze` 0 issue（exit 0）；`flutter test test/features/matrix --timeout 120s` 1696 通过（exit 0）；`flutter test --timeout 120s` 3469 通过（exit 0）；`pwsh -NoProfile -File scripts/verify.ps1` → `Verification: PASS`（exit 0）。证据：`docs/verification/2026-09-19-duplicate-conversation-dedup.md`。
 
