@@ -109,27 +109,41 @@ final class GlobalSearchController extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final contacts = await loadContacts();
-      if (epoch != _epoch || _disposed) return; // stale：旧查询不得覆盖新结果
+      // 本地优先 / 立即展示：房间来自本机会话快照、聊天记录来自本机索引，先把它们
+      // 发布出来；联系人加载器在接线缺缓存时可能要走网络，绝不能把已经完全本地的
+      // 结果卡在它后面（微信级加载模型 L2）。
       final rooms = await loadRooms();
-      if (epoch != _epoch || _disposed) return;
-      final needle = _query.trim().toLowerCase();
-      final activeRepository = repository;
-      final hits = activeRepository == null
-          ? index.search(needle, limit: hitLimit)
-          : activeRepository.search(needle, limit: hitLimit);
-      results = GlobalSearchResults(
-        contacts: [
-          for (final contact in contacts)
-            if (_matchesContact(contact, needle)) contact,
-        ],
-        rooms: [
-          for (final room in rooms)
-            if (!room.isDirect && _matchesRoom(room, needle)) room,
-        ],
-        conversations: aggregateConversationHits(hits),
-      );
+      if (epoch != _epoch || _disposed) return; // stale：旧查询不得覆盖新结果
+      var contacts = results.contacts;
+      void publish() {
+        final needle = _query.trim().toLowerCase();
+        final activeRepository = repository;
+        final hits = activeRepository == null
+            ? index.search(needle, limit: hitLimit)
+            : activeRepository.search(needle, limit: hitLimit);
+        results = GlobalSearchResults(
+          contacts: [
+            for (final contact in contacts)
+              if (_matchesContact(contact, needle)) contact,
+          ],
+          rooms: [
+            for (final room in rooms)
+              if (!room.isDirect && _matchesRoom(room, needle)) room,
+          ],
+          conversations: aggregateConversationHits(hits),
+        );
+      }
+
+      // 先发布：本地房间/聊天记录立刻可见。
+      publish();
       loading = false;
+      notifyListeners();
+
+      // 联系人到位后再补一次（此时才可能出现网络等待）。
+      final fresh = await loadContacts();
+      if (epoch != _epoch || _disposed) return;
+      contacts = fresh;
+      publish();
       notifyListeners();
     } catch (error) {
       if (epoch != _epoch || _disposed) return;
