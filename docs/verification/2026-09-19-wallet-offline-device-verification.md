@@ -44,6 +44,8 @@
 
 **判定：** 这正是用户所说「提现页（余额/申请/状态）」里"申请状态"那一项没被缓存覆盖。最小改动方向：把最后一次成功的 `ManualPayout` 按 `<scope>:payout:<id>` 落本地（与 `ManualOperationStore` 同层或钱包快照内），进入时先渲染、后台刷新覆盖；失败不覆盖。
 
+**实施约束（为什么不是一行改动）：** 不能直接往 `ManualOperationStore` 里塞状态对象——它的 `save` 有安全白名单（`lib/features/wallet/manual_operation_store.dart:43-68`，仅允许 `key/amount/version/id/quote_id/address/method/confirm_key/funding_asset`），写入 `status`/`review_reason`/`settlement_txid` 会抛 `ArgumentError('Secret or unsupported operation metadata')`。正确做法是新增独立的状态快照 store（自带显式非密字段白名单 + 账号作用域校验 + 账号切换丢弃），因此本轮只取证、不改动该资金边界。
+
 ### 2.2 证据：申请记录确实还在本地（排除"操作被我点没了"）
 ```
 adb shell run-as com.liuhetong.mobile cat .../shared_prefs/FlutterSharedPreferences.xml
