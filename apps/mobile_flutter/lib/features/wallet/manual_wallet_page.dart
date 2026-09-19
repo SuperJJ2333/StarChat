@@ -11,6 +11,7 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../finance/wallet_entry_store.dart';
 import 'manual_mfa_page.dart';
 import 'manual_operation_store.dart';
+import 'manual_payout_status_store.dart';
 import 'manual_wallet_api.dart';
 import 'wallet_display.dart';
 import 'wallet_notice_store.dart';
@@ -43,6 +44,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     with WidgetsBindingObserver {
   late final api = ManualWalletApi(widget.client);
   late final store = ManualOperationStore(widget.client);
+
+  /// 提现申请状态的本地快照：断网时状态卡（订单/金额/「处理中」）仍要可见。
+  late final payoutStatusStore = ManualPayoutStatusStore(widget.client);
 
   /// 钱包进入态共享 Store（缓存优先 + 后台刷新）。持有者是会话级
   /// [WalletEntryStores]；页面只借用，[dispose] 里只 removeListener。
@@ -184,6 +188,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       shared.view.addListener(_applyEntryState);
       _applyEntryState(); // 命中缓存：能力配置/余额立刻就位，不等网络
       await store.initialize();
+      await payoutStatusStore.initialize();
       try {
         await noticeStore.initialize();
         ignoredDepositNotice = await noticeStore.ignoredIdentity('deposit');
@@ -311,7 +316,24 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     }
     if (widget.section == ManualWalletSection.payout &&
         payoutOp?['id'] != null) {
-      payout = await api.payout(payoutOp!['id'] as String);
+      final payoutId = payoutOp!['id'].toString();
+      // 本地优先 / 立即展示：本次申请的状态卡先用上次成功的快照渲染（断网冷启动
+      // 也能看到「管理员人工付款处理中 / 订单 / 提现 USDT」），再后台刷新。
+      if (payout == null || payout!.id != payoutId) {
+        final cached = await payoutStatusStore.read(payoutId);
+        if (cached != null && mounted) {
+          setState(() => payout = cached);
+        }
+      }
+      try {
+        final fresh = await api.payout(payoutId);
+        payout = fresh;
+        await payoutStatusStore.save(fresh);
+      } catch (_) {
+        // 失败不覆盖：有本地状态卡就保留它；没有本地数据时保持原行为
+        // （异常继续上抛，由 run() 统一呈现失败）。
+        if (payout == null) rethrow;
+      }
     }
     if (widget.section == ManualWalletSection.payout && payout == null) {
       final quoteId = payoutOp?['quote_id'] ?? quoteOp?['id'];
