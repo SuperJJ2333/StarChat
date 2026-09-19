@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,6 +11,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../matrix/profile_repository.dart';
 import 'moment_visibility_page.dart';
+import 'moment_draft_store.dart';
 import 'moment_image_preprocessor.dart';
 import '../../ui/motion/motion_page_route.dart';
 
@@ -60,47 +62,89 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   void initState() {
     super.initState();
     images.addAll(widget.initialImages.take(9));
+    // 本地优先：先用本地草稿渲染，再与服务端对齐。
+    unawaited(_hydrateLocalDraft());
     _loadDraft();
+  }
+
+  /// 本地草稿（账号作用域）：断网也能接着上次写；跨账号一律丢弃。
+  Future<void> _hydrateLocalDraft() async {
+    final store = MomentDraftStores.shared;
+    final snapshot = store?.read();
+    if (snapshot == null || mounted == false) return;
+    String? scope;
+    try {
+      final userId = await widget.api.currentMatrixUserId();
+      scope = userId == null || userId.isEmpty ? null : 'matrix:$userId';
+    } catch (_) {
+      scope = null;
+    }
+    if (scope == null || scope != snapshot.scope) {
+      unawaited(store?.clear());
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _applyDraft(snapshot.payload));
+  }
+
+  void _applyDraft(Map<String, dynamic> draft) {
+    final mode = draft['visibility']?.toString() ?? 'PUBLIC';
+    final users = Set<String>.from(
+      mode == 'EXCLUDE'
+          ? draft['exclude_user_ids'] ?? const []
+          : draft['include_user_ids'] ?? const [],
+    );
+    final tags = Set<String>.from(
+      mode == 'EXCLUDE'
+          ? draft['exclude_tag_ids'] ?? const []
+          : draft['include_tag_ids'] ?? const [],
+    );
+    text.text = draft['text']?.toString() ?? '';
+    linkUrl = draft['link_url']?.toString();
+    remoteImageUrls
+      ..clear()
+      ..addAll(
+        (draft['image_urls'] as List? ?? const [])
+            .map((value) => value.toString())
+            .where((value) => value.trim().isNotEmpty)
+            .take(9),
+      );
+    visibility = MomentVisibilitySelection(
+      visibility: mode,
+      userIds: users,
+      tagIds: tags,
+    );
   }
 
   Future<void> _loadDraft() async {
     try {
       final draft = await widget.api.momentDraft();
       if (!mounted) return;
-      final mode = draft['visibility']?.toString() ?? 'PUBLIC';
-      final users = Set<String>.from(
-        mode == 'EXCLUDE'
-            ? draft['exclude_user_ids'] ?? const []
-            : draft['include_user_ids'] ?? const [],
-      );
-      final tags = Set<String>.from(
-        mode == 'EXCLUDE'
-            ? draft['exclude_tag_ids'] ?? const []
-            : draft['include_tag_ids'] ?? const [],
-      );
-      setState(() {
-        text.text = draft['text']?.toString() ?? '';
-        linkUrl = draft['link_url']?.toString();
-        remoteImageUrls
-          ..clear()
-          ..addAll(
-            (draft['image_urls'] as List? ?? const [])
-                .map((value) => value.toString())
-                .where((value) => value.trim().isNotEmpty)
-                .take(9),
-          );
-        visibility = MomentVisibilitySelection(
-          visibility: mode,
-          userIds: users,
-          tagIds: tags,
-        );
-      });
+      // 服务端草稿优先（本地草稿只是离线兜底）。
+      setState(() => _applyDraft(draft));
+      unawaited(_persistLocalDraft());
     } on BusinessApiException catch (error) {
       if (!mounted || error.code == 'MOMENT_DRAFT_NOT_FOUND') return;
       setState(() => errorMessage = error.message);
     } catch (_) {
       if (!mounted) return;
       setState(() => errorMessage = '草稿加载失败，可继续编辑并稍后重试');
+    }
+  }
+
+  Future<void> _persistLocalDraft() async {
+    final store = MomentDraftStores.shared;
+    if (store == null) return;
+    try {
+      final userId = await widget.api.currentMatrixUserId();
+      if (userId == null || userId.isEmpty) return;
+      await store.write(MomentDraftSnapshot(
+        scope: 'matrix:$userId',
+        payload: _payload(),
+        savedAt: DateTime.now(),
+      ));
+    } catch (_) {
+      // 本地草稿写失败不是保存失败。
     }
   }
 
@@ -131,6 +175,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
 
   Future<void> _saveDraft() async {
     await _uploadPendingImages();
+    // 先落本地：断网/服务端拒绝时草稿也不丢（微信级加载模型 L1）。
+    await _persistLocalDraft();
     await widget.api.saveMomentDraft(_payload());
   }
 
@@ -219,6 +265,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     }
     if (result == 'discard') {
       _allowPop = true;
+      unawaited(MomentDraftStores.shared?.clear());
       try {
         await widget.api.deleteMomentDraft();
       } catch (_) {
@@ -336,6 +383,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         linkUrl: linkUrl,
       );
       await widget.api.deleteMomentDraft();
+      unawaited(MomentDraftStores.shared?.clear());
       _published = true;
       _allowPop = true;
       if (mounted && Navigator.canPop(context)) Navigator.pop(context, true);

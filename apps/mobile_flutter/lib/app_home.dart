@@ -41,6 +41,7 @@ import 'features/caibi/caibi_page.dart';
 import 'features/finance/wallet_entry_snapshot_store.dart';
 import 'features/ledger/ledger_page_snapshot_store.dart';
 import 'features/friendship/friend_request_snapshot_store.dart';
+import 'features/moments/moment_draft_store.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -508,6 +509,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(() async {
       try {
         await FriendRequestSnapshotStores.ensureLoaded();
+      } catch (_) {
+        // 同上。
+      }
+    }());
+    // 朋友圈草稿本地快照：断网也能接着上次写。
+    unawaited(() async {
+      try {
+        await MomentDraftStores.ensureLoaded();
       } catch (_) {
         // 同上。
       }
