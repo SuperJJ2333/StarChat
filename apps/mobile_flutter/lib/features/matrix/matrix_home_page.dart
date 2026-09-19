@@ -773,6 +773,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
               builder: (_) => ScanQrPage(
                   api: widget.api,
                   groupJoinApi: widget.api,
+                  identityCache: _identityCache,
                   onGroupJoined: (roomId) => unawaited(
                       _openRoomById(roomId, source: RoomOpenSource.scan))))),
       onAppearance: () => showThemePickerSheet(context, widget.themeController),

@@ -2024,6 +2024,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       builder: (_) => ScanQrPage(
           api: widget.api,
           groupJoinApi: widget.api,
+          identityCache: _chatIdentityCache,
           onGroupJoined: (roomId) => unawaited(
               _openConversationFromNotification(roomId,
                   source: RoomOpenSource.scan))),

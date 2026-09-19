@@ -315,7 +315,8 @@ final class _ContactsPageState extends State<ContactsPage> {
                             MotionPageRoute(
                                 builder: (_) => ScanQrPage(
                                     api: businessApi,
-                                    groupJoinApi: businessApi))),
+                                    groupJoinApi: businessApi,
+                                    identityCache: widget.identityCache))),
                     onAppearance: () => widget.onAppearance?.call(),
                   ),
                   child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),

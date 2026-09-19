@@ -84,7 +84,10 @@ final class DiscoveryPage extends StatelessWidget {
                         () => Navigator.of(context, rootNavigator: true).push(
                             MotionPageRoute(
                                 builder: (_) =>
-                                    ScanQrPage(api: api, groupJoinApi: api))),
+                                    ScanQrPage(
+                                        api: api,
+                                        groupJoinApi: api,
+                                        identityCache: identityCache))),
                     onAppearance: () => onAppearance?.call()),
                 child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),
               ),
@@ -159,6 +162,7 @@ final class DiscoveryPage extends StatelessWidget {
                     builder: (_) => ScanQrPage(
                       api: api,
                       groupJoinApi: api,
+                      identityCache: identityCache,
                       // 发现页扫码入群：加入后返回消息列表可见新会话，
                       // 不做自动跳转（保持发现页轻量）。
                     ),

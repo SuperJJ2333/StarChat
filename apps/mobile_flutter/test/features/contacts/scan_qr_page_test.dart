@@ -13,6 +13,7 @@ import 'package:liuhetong_mobile/features/profile/my_qr_code_page.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/discovery/discovery_page.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/image_picker_page.dart';
 import 'package:liuhetong_mobile/features/contacts/request_friend_page.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -72,8 +73,7 @@ class ScannerPlatformFake extends MobileScannerPlatform {
   Future<void> dispose() async {}
 }
 
-class ProfileFake implements AddFriendGateway, ProfileGateway {
-  bool fail = false;
+class ProfileFake implements AddFriendGateway, ProfileGateway {  bool fail = false;
   int requests = 0;
   @override
   Future<Map<String, dynamic>> searchUsers(String query) async => {
@@ -270,6 +270,34 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  /// 微信级加载模型（2026-09-19 审计）："我的二维码"原先把 `loadProfile()` 的
+  /// 网络往返放在打开页面前，断网就只剩失败提示；本地已有资料投影时应立即出示。
+  testWidgets('own QR uses the local profile projection without a network trip',
+      (tester) async {
+    final repository = ProfileRepository.forTesting(
+        accountKey: 'matrix:@alice:test', store: _NullProfileStore())
+      ..profile = const ProfileData(
+          username: 'alice',
+          nickname: 'Alice',
+          maskedEmail: 'a***@example.com',
+          fallbackSeed: 'alice');
+
+    await tester.pumpWidget(CupertinoApp(
+        home: ScanQrPage(
+            api: ProfileFake()..fail = true, identityCache: repository)));
+    await advance(tester);
+    await tester.tap(find.byKey(const Key('scan-my-qr')));
+    await advance(tester);
+
+    expect(find.byType(MyQrCodePage), findsOneWidget,
+        reason: '有本地资料时断网也要能打开自己的二维码');
+    expect(find.text('个人二维码加载失败，请重试'), findsNothing);
+    Navigator.of(tester.element(find.byType(MyQrCodePage))).pop();
+    await advance(tester);
+    await tester.pumpWidget(const SizedBox());
+    repository.dispose();
+  });
+
   testWidgets('own QR profile failure is visible and scanner recovers',
       (tester) async {
     await tester.pumpWidget(
@@ -314,4 +342,13 @@ void main() {
     expect(find.byType(CupertinoTabBar).hitTestable(), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
+}
+
+/// 资料投影的存储替身：本用例只验证"有本地投影时不等网络"，不需要落盘。
+final class _NullProfileStore implements ProfileStore {
+  @override
+  Future<ProfileSnapshot?> read(String accountKey) async => null;
+
+  @override
+  Future<void> write(String accountKey, ProfileSnapshot snapshot) async {}
 }

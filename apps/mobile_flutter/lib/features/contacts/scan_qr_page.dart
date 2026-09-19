@@ -16,6 +16,7 @@ import '../../core/business_api_client.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
 import '../matrix/image_picker_page.dart';
+import '../matrix/profile_repository.dart';
 import '../profile/profile_controller.dart';
 import '../profile/my_qr_code_page.dart';
 import '../../ui/motion/motion_page_route.dart';
@@ -30,6 +31,7 @@ final class ScanQrPage extends StatefulWidget {
     required this.api,
     this.groupJoinApi,
     this.onGroupJoined,
+    this.identityCache,
   });
 
   final AddFriendGateway api;
@@ -39,6 +41,10 @@ final class ScanQrPage extends StatefulWidget {
 
   /// 群码加入成功回调（roomId）：组合根同步并打开会话。
   final void Function(String roomId)? onGroupJoined;
+
+  /// 本地资料投影（`ProfileRepository.profile`）：已水合时直接出示自己的二维码，
+  /// 不再等一次网络往返（断网也能打开"我的二维码"）。
+  final ProfileRepository? identityCache;
 
   @override
   State<ScanQrPage> createState() => _ScanQrPageState();
@@ -219,9 +225,16 @@ final class _ScanQrPageState extends State<ScanQrPage>
     });
     await _pauseCamera();
     try {
-      final gateway = widget.api;
-      if (gateway is! ProfileGateway) throw StateError('Profile unavailable');
-      final profile = await (gateway as ProfileGateway).loadProfile();
+      // 本地优先：已经水合过自己的资料时立刻出示二维码，不再等网络往返。
+      final cached = widget.identityCache?.profile;
+      final ProfileData profile;
+      if (cached != null) {
+        profile = cached;
+      } else {
+        final gateway = widget.api;
+        if (gateway is! ProfileGateway) throw StateError('Profile unavailable');
+        profile = await (gateway as ProfileGateway).loadProfile();
+      }
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
         builder: (_) => MyQrCodePage(profile: profile),
