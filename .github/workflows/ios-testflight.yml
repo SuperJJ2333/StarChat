@@ -1,23 +1,58 @@
 name: iOS TestFlight
 on:
   workflow_dispatch:
+    inputs:
+      preflight-only:
+        description: Check Apple access and next build without building or uploading
+        type: boolean
+        default: false
+      status-only:
+        description: Read an already uploaded build without rebuilding
+        type: boolean
+        default: false
+      build-number:
+        description: Existing build number for status-only
+        type: string
+        default: ''
   pull_request:
-    paths:
-      - "apps/mobile_flutter/**"
-      - ".github/workflows/ios-testflight.yml"
-  push:
-    tags: ["v*.*.*"]
-# 连续 dispatch 时取消旧 run，避免排队叠加出几十分钟的僵尸任务。
+    paths: ['apps/mobile_flutter/**', '.github/workflows/ios-testflight.yml']
+permissions:
+  contents: read
 concurrency:
   group: ios-testflight-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
-  # analyze/test 统一在 ubuntu 执行：macOS runner 只有 2 核，全量套件约 45 分钟
-  # 且存在平台差异失败；ubuntu 约 8 分钟。macOS job 只负责真实 iOS 构建。
-  flutter-checks:
-    runs-on: ubuntu-latest
+  apple-preflight:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.apple.outputs.build }}
     steps:
       - uses: actions/checkout@v4
+      - name: Read App Store Connect app, builds and existing groups
+        id: apple
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: node scripts/testflight_status.mjs preflight
+      - name: Read uploaded TestFlight status
+        if: inputs.status-only
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TESTFLIGHT_BUILD: ${{ inputs.build-number }}
+        run: node scripts/testflight_status.mjs status
+  flutter-checks:
+    if: ${{ !inputs.preflight-only && !inputs.status-only }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.44.9"
@@ -29,6 +64,11 @@ jobs:
           flutter pub get
           flutter analyze
           flutter test
+      - name: Permission and TestFlight contract tests
+        run: |
+          python3 -m pip install pytest==8.4.2
+          python3 -m pytest tests/mobile/test_ios_permission_capabilities.py tests/mobile/test_testflight_delivery.py -q
+          node --test tests/mobile/test_testflight_status.mjs
 
   simulator-build:
     needs: flutter-checks
@@ -75,132 +115,224 @@ jobs:
         working-directory: apps/mobile_flutter
         run: flutter build ios --simulator --no-codesign
 
-  # BUG 交付（企业签名流程）：产出未签名 IPA 供外部企业证书重签。
-  # 不需要任何 Apple secrets；使用 --no-codesign，打包 Payload/<app> 为 IPA。
-  build-unsigned-ipa:
-    if: github.event_name == 'workflow_dispatch'
-    needs: flutter-checks
-    runs-on: macos-14
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.44.9"
-          channel: stable
-          cache: true
-      - name: Select newest Xcode (Firebase 12 needs Swift 6)
-        run: |
-          ls -d /Applications/Xcode*.app | sort -V
-          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
-          sudo xcode-select -s "$LATEST_XCODE"
-          xcodebuild -version
-      - name: Disable Flutter SPM (firebase_messaging SPM tools need newer Xcode)
-        run: flutter config --no-enable-swift-package-manager
-      - name: Prepare iOS package directories
-        working-directory: apps/mobile_flutter
-        run: mkdir -p build/ios/SourcePackages
-      - name: Flutter pub get
-        working-directory: apps/mobile_flutter
-        run: flutter pub get
-      - name: Build unsigned iOS app (device, release)
-        working-directory: apps/mobile_flutter
-        run: flutter build ios --release --no-codesign
-      - name: Package unsigned IPA
-        working-directory: apps/mobile_flutter
-        run: |
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -qry liuhetong_mobile_unsigned.ipa Payload
-          mkdir -p build/ios/iphoneos
-          cp liuhetong_mobile_unsigned.ipa build/ios/iphoneos/
-          shasum -a 256 liuhetong_mobile_unsigned.ipa
-      - name: Upload unsigned IPA artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: liuhetong-mobile-unsigned-ipa
-          path: apps/mobile_flutter/liuhetong_mobile_unsigned.ipa
-          if-no-files-found: error
-
   build-upload:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-    needs: flutter-checks
-    runs-on: macos-14
-    timeout-minutes: 45
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.preflight-only && !inputs.status-only }}
+    needs: [apple-preflight, flutter-checks]
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      IOS_CANDIDATE_BUILD: ${{ needs.apple-preflight.outputs.build }}
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.44.9"
+          flutter-version: '3.44.9'
           channel: stable
           cache: true
-      # 与 build-unsigned-ipa 相同：默认 Xcode 过旧，无法编译 Firebase 12 的 Swift 6 语法。
-      - name: Select newest Xcode (Firebase 12 needs Swift 6)
+      - name: Record toolchain
         run: |
-          ls -d /Applications/Xcode*.app | sort -V
-          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
-          sudo xcode-select -s "$LATEST_XCODE"
+          flutter --version
           xcodebuild -version
-      - name: Generate iOS project
-        working-directory: apps/mobile_flutter
-        run: flutter create --platforms=ios --project-name=liuhetong_mobile .
-      # flutter create 之后 pub get 会拷贝 firebase_messaging 插件；
-      # 与 simulator-build 相同：预建 SourcePackages 并保持 SPM 关闭。
-      - name: Prepare iOS dependency directories
-        working-directory: apps/mobile_flutter
-        run: |
-          flutter config --no-enable-swift-package-manager
-          mkdir -p build/ios/SourcePackages
-      - name: Flutter pub get
+          pod --version
+      - name: Disable SPM for CocoaPods permission capabilities
+        run: flutter config --no-enable-swift-package-manager
+      - name: Resolve Flutter dependencies
         working-directory: apps/mobile_flutter
         run: flutter pub get
-      - name: Install signing assets
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
-          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
-          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+      - name: Evaluate actual CocoaPods permission hook
         run: |
-          security create-keychain -p "$RUNNER_TEMP" build.keychain
-          security set-keychain-settings -lut 21600 build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$RUNNER_TEMP" build.keychain
-          echo "$CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
-          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          # 不设置 partition list 时 codesign 会在 CI 里静默挂起（等待无法出现的授权 UI）。
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$RUNNER_TEMP" build.keychain
-          security list-keychains -d user -s build.keychain "$HOME/Library/Keychains/login.keychain-db"
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/liuhetong.mobileprovision"
-      - name: Generate export options and build IPA
+          python3 -m venv "$RUNNER_TEMP/permission-tests"
+          "$RUNNER_TEMP/permission-tests/bin/pip" install pytest==8.4.2
+          "$RUNNER_TEMP/permission-tests/bin/python" -m pytest tests/mobile/test_ios_permission_capabilities.py -q
+      - name: Record candidate source identity
+        run: |
+          python3 <<'PY'
+          import hashlib, os, pathlib, re
+          root = pathlib.Path('apps/mobile_flutter')
+          version = re.search(r'^version:\s*(\S+)\s*$', (root / 'pubspec.yaml').read_text(), re.M)
+          assert version, 'Missing candidate version'
+          name, source_build = version.group(1).split('+')
+          build = os.environ['IOS_CANDIDATE_BUILD']
+          assert build.isdigit(), 'Candidate build must be numeric'
+          digest = hashlib.sha256((root / 'assets/html/statistics_tools_combined_v2.html').read_bytes()).hexdigest()
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'IOS_CANDIDATE_VERSION={name}\nIOS_CANDIDATE_BUILD={build}\nIOS_CANDIDATE_STATISTICS_SHA256={digest}\n')
+          print(f'Candidate source: {name}+{build}, statistics SHA256={digest}')
+          PY
+      - name: Test push integration
         working-directory: apps/mobile_flutter
+        run: flutter test test/features/push test/core/ios_secure_session_test.dart test/features/matrix/ios_call_coordinator_test.dart test/features/matrix/call_wakeup_client_test.dart test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart
+      - name: Test native call and Keychain core
+        run: |
+          python3 <<'PY'
+          import os, pathlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-core-tests'
+          source = root / 'Sources/NativeCore'
+          tests = root / 'Tests/NativeCoreTests'
+          source.mkdir(parents=True)
+          tests.mkdir(parents=True)
+          ios = pathlib.Path('apps/mobile_flutter/ios')
+          for name in ['IOSCallState.swift', 'IOSSecureSession.swift']:
+              (source / name).write_bytes((ios / 'Runner' / name).read_bytes())
+          (tests / 'NativeCoreTests.swift').write_text((ios / 'RunnerTests/RunnerTests.swift').read_text().replace('@testable import Runner', '@testable import NativeCore'))
+          (root / 'Package.swift').write_text('// swift-tools-version: 5.9\nimport PackageDescription\nlet package = Package(name: "NativeCore", platforms: [.macOS(.v13)], targets: [.target(name: "NativeCore"), .testTarget(name: "NativeCoreTests", dependencies: ["NativeCore"])])\n')
+          PY
+          set -o pipefail
+          swift test --package-path "$RUNNER_TEMP/native-core-tests" 2>&1 | tee "$RUNNER_TEMP/native-tests.log"
+      - name: Generate export options and install distribution signing identity
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
-          IOS_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
         run: |
-          test -n "$APPLE_TEAM_ID" && test -n "$IOS_BUNDLE_ID" && test -n "$IOS_PROVISIONING_PROFILE_NAME"
-          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*/PRODUCT_BUNDLE_IDENTIFIER = $IOS_BUNDLE_ID/g" ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' "s/DEVELOPMENT_TEAM = [^;]*/DEVELOPMENT_TEAM = $APPLE_TEAM_ID/g" ios/Runner.xcodeproj/project.pbxproj
+          python3 <<'PY'
+          import base64, datetime, os, pathlib, plistlib, secrets, subprocess
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'signing'
+          folder.mkdir(mode=0o700)
+          keychain = folder / 'build.keychain-db'
+          def run(*args):
+              result = subprocess.run(args, capture_output=True)
+              if result.returncode:
+                  raise RuntimeError('Signing command failed: ' + args[1])
+              return result.stdout
+          p12 = folder / 'distribution.p12'
+          p12.write_bytes(base64.b64decode(os.environ['IOS_CERTIFICATE_BASE64'], validate=True))
+          profile = folder / 'app.mobileprovision'
+          profile.write_bytes(base64.b64decode(os.environ['IOS_PROFILE_BASE64'], validate=True))
+          p12.chmod(0o600)
+          profile.chmod(0o600)
+          data = plistlib.loads(run('security', 'cms', '-D', '-i', str(profile)))
+          assert os.environ['APPLE_TEAM_ID'] == 'HY9Q7Q35S5'
+          assert os.environ['IOS_BUNDLE_ID'] == 'com.liuhetong.liuhetongMobile'
+          assert data['ExpirationDate'] > datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+          assert not data.get('ProvisionedDevices') and not data.get('ProvisionsAllDevices')
+          assert not data['Entitlements'].get('get-task-allow', False)
+          assert data['TeamIdentifier'] == ['HY9Q7Q35S5']
+          assert data['Name'] == 'ChatFlow_AppStore'
+          assert data['Entitlements']['aps-environment'] == 'production'
+          assert data['Entitlements']['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
+          password = secrets.token_urlsafe(40)
+          run('security', 'create-keychain', '-p', password, str(keychain))
+          run('security', 'set-keychain-settings', '-lut', '21600', str(keychain))
+          run('security', 'unlock-keychain', '-p', password, str(keychain))
+          run('security', 'import', str(p12), '-k', str(keychain), '-P', os.environ['IOS_CERTIFICATE_PASSWORD'], '-T', '/usr/bin/codesign')
+          run('security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password, str(keychain))
+          run('security', 'list-keychains', '-d', 'user', '-s', str(keychain), str(pathlib.Path.home() / 'Library/Keychains/login.keychain-db'))
+          for relative in ['Library/MobileDevice/Provisioning Profiles', 'Library/Developer/Xcode/UserData/Provisioning Profiles']:
+              target = pathlib.Path.home() / relative
+              target.mkdir(parents=True, exist_ok=True)
+              (target / (data['UUID'] + '.mobileprovision')).write_bytes(profile.read_bytes())
+          options = dict(method='app-store-connect', teamID='HY9Q7Q35S5', signingStyle='manual', signingCertificate='Apple Distribution', provisioningProfiles={'com.liuhetong.liuhetongMobile': data['Name']}, uploadSymbols=True, manageAppVersionAndBuildNumber=False)
+          (folder / 'ExportOptions.plist').write_bytes(plistlib.dumps(options))
+          print('Distribution identity and production APNs profile installed')
+          PY
+      - name: Build signed IPA
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+        working-directory: apps/mobile_flutter
+        run: |
+          set -o pipefail
           export DEVELOPMENT_TEAM=$APPLE_TEAM_ID
           export PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID
-          cat > ios/ExportOptions.plist <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store-connect</string>
-            <key>teamID</key><string>$APPLE_TEAM_ID</string>
-            <key>signingStyle</key><string>manual</string>
-            <key>provisioningProfiles</key><dict>
-              <key>$IOS_BUNDLE_ID</key><string>$IOS_PROVISIONING_PROFILE_NAME</string>
-            </dict>
-          </dict></plist>
-          EOF
-          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
-      - name: Upload TestFlight
-        uses: apple-actions/upload-testflight-build@v1
+          flutter build ipa --release --build-number="$IOS_CANDIDATE_BUILD"  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+      - name: Verify signed IPA
+        working-directory: apps/mobile_flutter
+        run: |
+          python3 <<'PY'
+          import hashlib, pathlib, plistlib, subprocess, zipfile, os
+          ipas = list(pathlib.Path('build/ios/ipa').glob('*.ipa'))
+          assert len(ipas) == 1, 'Expected one exported IPA'
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ipa-check'
+          with zipfile.ZipFile(ipas[0]) as archive:
+              archive.extractall(target)
+          apps = list((target / 'Payload').glob('*.app'))
+          assert len(apps) == 1
+          app = apps[0]
+          subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+          result = subprocess.run(['codesign', '-d', '--entitlements', ':-', str(app)], capture_output=True, check=True)
+          ent = plistlib.loads(result.stdout)
+          assert ent['aps-environment'] == 'production'
+          assert ent['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
+          assert not ent.get('get-task-allow', False)
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          html = app / 'Frameworks/App.framework/flutter_assets/assets/html/statistics_tools_combined_v2.html'
+          assert hashlib.sha256(html.read_bytes()).hexdigest() == os.environ['IOS_CANDIDATE_STATISTICS_SHA256']
+          linked = subprocess.check_output(['otool', '-L', str(app / info['CFBundleExecutable'])], text=True)
+          libraries = [line.strip().split(' (', 1)[0] for line in linked.splitlines()[1:]]
+          cipher = '@rpath/SQLCipher.framework/SQLCipher'
+          sqlite = '/usr/lib/libsqlite3.dylib'
+          assert (app / 'Frameworks/SQLCipher.framework/SQLCipher').is_file(), 'Bundled SQLCipher missing'
+          assert cipher in libraries, 'Runner does not load SQLCipher'
+          assert sqlite not in libraries or libraries.index(cipher) < libraries.index(sqlite), 'System SQLite shadows SQLCipher'
+          print('SQLCIPHER_LOAD_ORDER_PASS')
+          assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
+          assert 2 in info['UIDeviceFamily'], 'iPad support required'
+          assert info['CFBundleShortVersionString'] == os.environ['IOS_CANDIDATE_VERSION']
+          assert info['CFBundleVersion'] == os.environ['IOS_CANDIDATE_BUILD']
+          assert {'audio', 'voip', 'remote-notification'} <= set(info['UIBackgroundModes'])
+          assert float(info['MinimumOSVersion']) >= 16.0
+          for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:
+              assert info.get(key)
+          subprocess.run(['python3', '../../scripts/check_ios_permission_binary.py', str(app / info['CFBundleExecutable'])], check=True)
+          print('IPA signature, production APNs, iPad and permission declarations verified')
+          print('IPA_SHA256=' + hashlib.sha256(ipas[0].read_bytes()).hexdigest())
+          PY
+      - name: Preserve signed IPA
+        uses: actions/upload-artifact@v4
         with:
-          app-path: apps/mobile_flutter/build/ios/ipa/liuhetong_mobile.ipa
-          issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
-          api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
-          api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          name: ChatFlow-iOS-signed
+          path: apps/mobile_flutter/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload to App Store Connect for TestFlight
+        working-directory: apps/mobile_flutter
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          chmod 700 "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APPSTORE_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          xcrun altool --upload-app --type ios -f build/ios/ipa/*.ipa --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$RUNNER_TEMP/ios-upload.log"
+      - name: Read Apple processing and TestFlight status
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TESTFLIGHT_BUILD: ${{ needs.apple-preflight.outputs.build }}
+        run: |
+          for attempt in $(seq 1 12); do
+            rc=0
+            node scripts/testflight_status.mjs status > "$RUNNER_TEMP/testflight-status.json" || rc=$?
+            cat "$RUNNER_TEMP/testflight-status.json"
+            if [ "$rc" -eq 0 ]; then exit 0; fi
+            if [ "$rc" -ne 75 ]; then exit "$rc"; fi
+            sleep 20
+          done
+          echo 'Apple processing pending; use status-only dispatch, do not rebuild.'
+          exit 75
+      - name: Remove temporary signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing/build.keychain-db" || true
+          rm -rf "$RUNNER_TEMP/signing" "$HOME/.appstoreconnect/private_keys"
+      - name: Preserve build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-preflight-diagnostics
+          path: |
+            ${{ runner.temp }}/ios-build.log
+            ${{ runner.temp }}/ios-upload.log
+            ${{ runner.temp }}/native-tests.log
+            ${{ runner.temp }}/testflight-status.json
+          if-no-files-found: ignore
+          retention-days: 7
+
