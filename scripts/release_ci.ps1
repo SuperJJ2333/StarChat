@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     CI 发布（本地只触发）：tag 推送 → GitHub Actions 签名构建 → GitHub
-    Release → 服务器下行拉取部署 →（人工确认后）publish 更新弹窗 → 公网回拉验证。
+    Release → 服务器下行拉取部署 →（人工确认后）publish 更新弹窗 → 公网 HEAD 检查。
 
 .DESCRIPTION
     替代 release.ps1 的"本地上传 180MB"环节：GitHub Actions 在云端构建
@@ -12,7 +12,7 @@
     - 本机：版本预检 → tag v<X.Y.Z> 推送（触发 android-release.yml）→
       轮询 Release 资产就绪 → scp 三个脚本到服务器 → ssh 执行
       server_pull_release.sh（sha256 校验+部署+别名+可选 publish）→
-      本地公网回拉 SHA256+aapt 双验。
+      本地公网 HEAD 检查（不下载安装包）。
     - GitHub：签名构建（含 origin/aapt/libapp 守卫）+ Release 创建。
     - 服务器：下行拉取 + 部署 + publish（business API）。
 
@@ -41,6 +41,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $SkipPublish) {
+    throw 'Legacy popup publication retired. Use -SkipPublish for artifact preparation, then scripts/release_metadata.py publish with a release record (docs/runbooks/release-metadata.md).'
+}
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -158,29 +161,13 @@ if ((($output -join "`n") -notmatch 'PULL_DEPLOY_OK') -or
     throw '服务器侧结果缺少 PULL_DEPLOY_OK / PUBLISH_RESULT PASS——检查上方输出'
 }
 
-# ── 3) 公网回拉验证（SHA256 对照 GitHub Release + aapt versionCode）──
-Write-Step '公网回拉验证'
-$releaseSums = Invoke-RestMethod -Uri "https://github.com/$repoSlug/releases/download/$tag/SHA256SUMS"
-$arm64Hash = ($releaseSums -split "`n" | Where-Object { $_ -match "ChatFlow-$Version-arm64\.apk" }) -split '\s+' | Select-Object -First 1
-if (-not $arm64Hash) { throw 'SHA256SUMS 缺 arm64 条目' }
-
-$pullback = Join-Path $env:TEMP "pullback-ci-$Version-arm64.apk"
-Invoke-Remote -Label 'pullback' -Action {
-    & curl.exe -sS -o $pullback -C - "$publicBase/ChatFlow-$Version-arm64.apk" --max-time 480
-    if ($LASTEXITCODE -ne 0) { throw '公网下载失败' }
-} | Out-Null
-$pullbackHash = (Get-FileHash -Algorithm SHA256 $pullback).Hash.ToLower()
-if ($pullbackHash -ne $arm64Hash) { throw "回拉 SHA256 与 GitHub Release 不一致：$pullbackHash ≠ $arm64Hash" }
-Write-Host "  SHA256 与 GitHub Release 一致：$pullbackHash"
-
-$aapt = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools') -Filter 'aapt.exe' -Recurse -ErrorAction SilentlyContinue |
-    Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-$badging = & $aapt dump badging $pullback 2>$null | Select-Object -First 1
-$versionCodeArm64 = 2000 + $pubBuild
-if ($badging -notmatch "versionCode='$versionCodeArm64' versionName='$Version'") {
-    throw "回拉 aapt 版本不符：$badging"
+# Public availability check only: user retired binary pull-back inspection.
+Write-Step '公网轻量检查（HEAD，不下载安装包）'
+$head = Invoke-WebRequest -Uri "$publicBase/ChatFlow-$Version-arm64.apk" -Method Head -TimeoutSec 15
+if ($head.StatusCode -ne 200 -or [long]$head.Headers['Content-Length'][0] -le 0) {
+    throw '公开安装包 HEAD 状态或长度异常'
 }
-Write-Host "  aapt：versionCode=$versionCodeArm64 versionName=$Version"
+Write-Host 'HEAD 可访问；未执行公网下载验包。'
 
 # ── 4) 落档 ──────────────────────────────────────────────────────────
 $stamp = Get-Date -Format 'yyyy-MM-dd'
@@ -189,10 +176,10 @@ New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 $summary = @"
 RELEASE-CI $Version+$pubBuild ($stamp)
 Path: tag $tag -> GitHub Actions build -> GH Release -> server pull
-GitHub Release arm64 SHA256: $arm64Hash
+Artifact source: GitHub Release; server-side upload integrity retained
 Publish: $(if ($SkipPublish) { 'SKIPPED' } else { 'PASS' })
-Pull-back: SHA256(vs GH Release) + aapt ${versionCodeArm64}/$Version VERIFIED
+Public check: HEAD only; binary download/inspection NOT performed
 "@
 $summary | Tee-Object -FilePath (Join-Path $artifactDir "release-ci-$Version.log") | Write-Host
 
-Write-Step "CI 发布完成：$Version（build $pubBuild / arm64 $versionCodeArm64）"
+Write-Step "CI 发布完成：$Version（build $pubBuild）"

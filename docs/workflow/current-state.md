@@ -1,5 +1,8 @@
 # 移动交付恢复索引
 
+## 2026-09-20 发布流程轻量加固
+用户确认2144签名已解决；取消整包回拉验包。新release_metadata.py统一页面/XML/平台设置，HEAD及小元数据门禁；旧unchecked弹窗入口停用。87+6测试通过，无生产更新。入口：[新发布规范](../runbooks/release-metadata.md)；[任务](tasks/2026-09-20-release-metadata-gates.md)。
+
 ## 2026-09-20 移除消息列表恢复提示（代码完成，debug2142待安装）
 
 按用户明确要求移除“正在恢复会话”、副文案、重试行及读屏播报；保留后台自动恢复和身份/重复归并守卫。Flutter3655/analyze0/HTML218/mobile70/contract375通过；HTMLdemo同步。debug3/2142已重建验包，Mi6连接再次offline，尚未安装。无服务器或更新弹窗改动。以[任务](tasks/2026-09-20-quiet-conversation-recovery.md)与[证据](../verification/2026-09-20-quiet-conversation-recovery.md)为准。

@@ -15,7 +15,8 @@ class EnterpriseDownloadTest(unittest.TestCase):
         self.assertIn('itms-services://?action=download-manifest&amp;url=https://www.liuhetong888.com/downloads/ios/manifest.plist', page)
         self.assertIn('/downloads/latest-arm64.apk', page)
         self.assertIn('/assets/download-qr.png', page)
-        self.assertIn('安装验证中', page)
+        self.assertIn('download-install', page)
+        self.assertIn('勿卸载应用', page)
         self.assertIn('Safari', page)
 
     def test_install_link_uses_https_manifest_served_by_download_routes(self):

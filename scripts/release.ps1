@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    一键发布 ChatFlow Android 版本（构建 → 上传 → 别名 → 发布 → 回拉验证）。
+    一键发布 ChatFlow Android 版本（构建 → 上传 → 别名 → 发布 → HEAD 检查）。
 
 .DESCRIPTION
     把过去十几步手动 SSH 发布固化为一条命令。SSH 限流对策：所有远程
@@ -16,7 +16,7 @@
 
 .PARAMETER SkipBuild
     跳过预检+构建，直接使用 build 输出目录中的现有产物（发布重放/修复
-    场景）。仍执行上传/发布/回拉。
+    场景）。仍执行上传/发布准备/HEAD。
 
 .PARAMETER SkipPublish
     完成上传+别名但不调 publish API（准备模式：先传包，稍后人工确认发布）。
@@ -36,6 +36,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $SkipPublish) {
+    throw 'Legacy popup publication retired. Use -SkipPublish for artifact preparation, then scripts/release_metadata.py publish with a release record (docs/runbooks/release-metadata.md).'
+}
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -259,24 +262,13 @@ if not ok: raise SystemExit(1)
     Write-Host '已按 -SkipPublish 跳过发布（包已上传+别名就绪）' -ForegroundColor Yellow
 }
 
-# ── 4) 公网回拉三重验证 ──────────────────────────────────────────────
-Write-Step '公网回拉验证（SHA256 + aapt versionCode）'
-$pullback = Join-Path $env:TEMP "pullback-$Version-arm64.apk"
-Invoke-Remote -Label 'pullback' -Action {
-    & curl.exe -sS -o $pullback -C - "$publicBase/ChatFlow-$Version-arm64.apk" --max-time 480
-    if ($LASTEXITCODE -ne 0) { throw '公网下载失败' }
-} | Out-Null
-$pullbackHash = (Get-FileHash -Algorithm SHA256 $pullback).Hash.ToLower()
-if ($pullbackHash -ne $localHashes['arm64']) { throw "回拉 SHA256 不一致：$pullbackHash" }
-Write-Host "  SHA256 一致：$pullbackHash"
-
-$aapt = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools') -Filter 'aapt.exe' -Recurse -ErrorAction SilentlyContinue |
-    Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-$badging = & $aapt dump badging $pullback 2>$null | Select-Object -First 1
-if ($badging -notmatch "versionCode='$versionCodeArm64' versionName='$Version'") {
-    throw "回拉 aapt 版本不符：$badging"
+# Public availability check only: user retired binary pull-back inspection.
+Write-Step '公网轻量检查（HEAD，不下载安装包）'
+$head = Invoke-WebRequest -Uri "$publicBase/ChatFlow-$Version-arm64.apk" -Method Head -TimeoutSec 15
+if ($head.StatusCode -ne 200 -or [long]$head.Headers['Content-Length'][0] -le 0) {
+    throw '公开安装包 HEAD 状态或长度异常'
 }
-Write-Host "  aapt：versionCode=$versionCodeArm64 versionName=$Version"
+Write-Host 'HEAD 可访问；未执行公网下载验包。'
 
 # ── 5) 摘要与落档 ────────────────────────────────────────────────────
 $stamp = Get-Date -Format 'yyyy-MM-dd'
@@ -289,7 +281,7 @@ arm32 SHA256: $($localHashes['arm32'])
 x86_64 SHA256: $($localHashes['x86_64'])
 Idempotency-Key: $idempotencyKey
 Publish: $(if ($SkipPublish) { 'SKIPPED (-SkipPublish)' } else { 'PASS' })
-Pull-back: SHA256 + aapt ${versionCodeArm64}/${Version} VERIFIED
+Public check: HEAD only; binary download/inspection NOT performed
 Rollback: 上一版保留于 $downloadsDir（PUT 回上一版 + ln -sfn 指回即可回滚）
 "@
 $summary | Tee-Object -FilePath (Join-Path $artifactDir "release-$Version.log") | Write-Host

@@ -1,5 +1,7 @@
 # Runbook: Mobile app release deployment (Android APK / iOS enterprise OTA)
 
+> **2026-09-20 用户批准的现行覆盖规则：** 发布改用[轻量发布门禁](release-metadata.md)；取消发布阶段的完整安装包回拉下载与重复验包。下文历史完整下载/回拉验证要求由此替代。保留构建阶段校验、上传完整性、元数据解析、平台隔离、审计及回退；最终签名依据交接确认，不能声称已重新验签。
+
 Scope: publishing a mobile release to `www.liuhetong888.com` and publishing the in-app update popup via the business API. Proven by the 0.3.69 iOS release (`docs/verification/2026-09-09-ios-0369-enterprise-ota.md`) and the 0.3.73 Android release (`docs/verification/2026-09-10-android-0373-2077-release.md`). Read together with `docs/runbooks/android-apk-rebuild.md` for packaging gates.
 
 Cross-session entry: [mobile delivery workflow](mobile-delivery-workflow.md) and [last observed state](../workflow/current-state.md). Re-read live state before publication; historical package and image values below are not current-state guarantees.

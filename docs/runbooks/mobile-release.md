@@ -1,6 +1,8 @@
 # Mobile release runbook
 
-**Status: Current platform entry; iOS CI details retained pending runtime revalidation.**
+> **2026-09-20 用户批准的现行覆盖规则：** 发布改用[轻量发布门禁](release-metadata.md)；取消发布阶段的完整安装包回拉下载与重复验包。下文历史完整下载/回拉验证要求由此替代。保留构建阶段校验、上传完整性、元数据解析、平台隔离、审计及回退；最终签名依据交接确认，不能声称已重新验签。
+
+**Status: 构建入口；生产发布以 release-metadata.md 为准。**
 
 **owner:** 项目维护者；**last_verified:** 2026-09-10（文档状态与链接核对，不代表当前生产验收）。
 
@@ -56,3 +58,9 @@ flutter build apk --release --split-per-abi --flavor standard `
 Do not append `/api/v1` to `LIUHETONG_BUSINESS_API_URL`; the typed client owns
 that path. Do not publish an APK containing `localhost`, a LAN address, or an
 HTTP production endpoint.
+
+## 当前 Actions 对照（2026-09-20）
+- android-ci.yml：代码/构建检查；android-release.yml：Android候选构建。原始CI产物仍须符合固定签名/重建规范。
+- ios-0353.yml：iOS signed compatibility candidate，上传TestFlight关闭；企业重签交接后走上述轻量发布。
+- ios-testflight.yml：手动运行同时启动unsigned IPA和TestFlight上传任务，不是单纯企业包发布。
+- release-metadata.yml：只读轻量分发检查，无整包下载。

@@ -40,6 +40,11 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
+if [ "$PUBLISH" -eq 1 ]; then
+  echo 'Legacy --publish retired. Prepare artifacts without --publish, then use release_metadata.py publish.' >&2
+  exit 2
+fi
+
 BASE="https://github.com/${REPO}/releases/download/v${VERSION}"
 TMP="$(mktemp -d /tmp/starchat-release.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT

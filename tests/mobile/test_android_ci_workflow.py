@@ -144,29 +144,19 @@ def test_release_ci_trigger_follows_hard_rules():
     assert "工作树有未提交变更" in script
     # 版本三方一致预检
     assert "app_config.dart" in script
-    # 回拉验证对照 GitHub Release 的 SHA256SUMS
+    # 用户取消整包回拉；保留服务器传输完整性，公网仅HEAD
     assert "SHA256SUMS" in script
-    assert "aapt" in script
+    assert "-Method Head" in script
+    assert "$pullback =" not in script
     # 幂等发布契约
     assert "PUBLISH_RESULT PASS" in script
     # SSH 限流退避
     assert "Invoke-Remote" in script
 
 
-def test_publish_app_update_script_is_parameterized_and_safe():
-    """publish 脚本（release.ps1 内嵌版抽出）：只写 app 更新设置。"""
-    script = (ROOT / "scripts" / "publish_app_update.py").read_text(encoding="utf-8")
-    assert "app-update-settings" in script
-    assert "RELEASE_VERSION" in script
-    assert "NOTES_FILE" in script
-    assert "PUBLISH_RESULT" in script
-    # 幂等键约定与 release.ps1 一致
-    assert "app-update-publish-" in script
-    # 唯一 SQL 是 super-admin 会话查询（绝不直接 UPDATE 其他业务表）
-    import re as _re
-
-    sqls = _re.findall(r'execute\(text\(\s*"([^"]+)"', script)
-    assert sqls, "应包含 super-admin 会话查询 SQL"
-    assert all(
-        stmt.lstrip().lower().startswith("select") for stmt in sqls
-    ), f"publish 脚本不得直接改业务表：{sqls}"
+def test_legacy_publisher_refuses_unchecked_publication():
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, str(ROOT / "scripts/publish_app_update.py")], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "release_metadata.py publish" in result.stderr
