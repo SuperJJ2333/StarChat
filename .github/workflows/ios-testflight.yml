@@ -76,7 +76,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: liuhetong-mobile-unsigned-ipa
-          path: liuhetong_mobile_unsigned.ipa
+          path: apps/mobile_flutter/liuhetong_mobile_unsigned.ipa
           if-no-files-found: error
 
   build-upload:
