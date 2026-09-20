@@ -63,3 +63,6 @@ Apple预检与完整CI分开运行；23:31:44+08已dispatch完整TestFlight工�
 ## 2026-09-21 02:47 +08 等待用户申报
 用户明确答复“我在 App Store Connect 完成申报后告诉你”。保留2145，等待确认；不要误认为申报已完成。分发查询已改用Apple官方betaGroups/{id}/builds路径，精确资源ID判断关联；新增4个真实main/fetch模拟回归先403红后绿，Node共7通过，交付契约Python4通过。规格复审通过；质量复审后提交。仅脚本和文档变更，不需重建应用或重跑Flutter全量。
 主工作区仅新增交接task及current-state索引，保留其他任务；未合并或发布main无关批次。相关文档链接检查通过。
+
+## 2026-09-21 02:49 +08 分发查询线上复核完成
+62758eae已推送，规格与质量安全复审均无阻塞。仅status运行35530270567确认新group/builds路径成功，403消除；build2145仍VALID/未过期/MISSING_EXPORT_COMPLIANCE，assignedGroupIds=[]，正确exit75，无写入。证据apple-status-4.log。当前无运行中CI；等待用户申报完成。临时SSH SOCKS将在本轮结束前关闭，不遗留后台监听。
