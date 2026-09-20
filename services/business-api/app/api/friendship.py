@@ -162,6 +162,7 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
         return service.direct_conversation_associations(user,peer_user_id)
     @router.post('/direct-conversations/associations',response_model=DirectConversationAssociationsResponse)
     def associate(body:DirectConversationBody,user=Depends(actor)):
-        rate_limiter.hit(f'direct-recovery:{user}',limit=60,window_seconds=60)
+        # Background history registration must not consume foreground recovery capacity.
+        rate_limiter.hit(f'direct-association:{user}',limit=60,window_seconds=60)
         return service.associate_direct_conversation(user,body.peer_user_id,body.matrix_room_id)
     return router

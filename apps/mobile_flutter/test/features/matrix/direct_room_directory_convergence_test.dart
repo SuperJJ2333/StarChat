@@ -19,6 +19,58 @@ AssociationClient fixture() {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test('acknowledged associations are not republished on each sync', () async {
+    final client = fixture();
+    final registry = DuplicateRoomRegistry();
+    final acknowledged = <String>{'!primary:test'};
+    final writes = <List<String>>[];
+    Future<void> converge() => convergeDirectDirectory(client,
+        registry: registry,
+        businessUserIdOf: (_) => 'peer-business',
+        associationsOf: (_) async => DirectRoomAssociations(
+            primaryRoomId: '!primary:test', roomIds: acknowledged.toList()),
+        publishAssociations: (_, rooms) async {
+          writes.add(rooms);
+          acknowledged.addAll(rooms);
+        });
+    await converge();
+    expect(writes, [
+      ['!old:test']
+    ]);
+    for (var i = 0; i < 20; i++) {
+      await converge();
+    }
+    expect(
+        writes,
+        [
+          ['!old:test']
+        ],
+        reason:
+            'unchanged background sync must not consume send recovery quota');
+  });
+
+  test('failed missing association remains retryable until acknowledged',
+      () async {
+    final client = fixture();
+    final registry = DuplicateRoomRegistry();
+    final writes = <List<String>>[];
+    for (var i = 0; i < 2; i++) {
+      await convergeDirectDirectory(client,
+          registry: registry,
+          businessUserIdOf: (_) => 'peer-business',
+          associationsOf: (_) async => const DirectRoomAssociations(
+              primaryRoomId: '!primary:test', roomIds: ['!primary:test']),
+          publishAssociations: (_, rooms) async {
+            writes.add(rooms);
+            throw StateError('temporary failure');
+          });
+    }
+    expect(writes, [
+      ['!old:test'],
+      ['!old:test']
+    ]);
+  });
+
   test('slow peer does not block other peer identity recovery', () async {
     final client = AssociationClient();
     final registry = DuplicateRoomRegistry();

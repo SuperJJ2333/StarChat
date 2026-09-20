@@ -206,10 +206,14 @@ Future<void> convergeDirectDirectory(
         /* Keep local identity and retry account metadata next sync. */
       }
     }
-    if (publishAssociations != null && localVerified.isNotEmpty) {
+    // Sync, navigation and recovery may revisit the same peer many times.
+    // Only publish missing associations; acknowledged rooms must not consume
+    // the server's recovery budget again on every Matrix update.
+    final missingAssociations = localVerified.difference(verifiedRemote);
+    if (publishAssociations != null && missingAssociations.isNotEmpty) {
       if (client.userID != self) return;
       try {
-        await publishAssociations(peer, localVerified.toList()..sort());
+        await publishAssociations(peer, missingAssociations.toList()..sort());
       } catch (_) {
         /* Server revalidates rooms; failure never removes local history. */
       }

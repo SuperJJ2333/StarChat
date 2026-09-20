@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/business_api_error.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_chat_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/coordinated_direct_chat.dart';
 
@@ -27,6 +28,28 @@ class Store implements DirectRoomIntentStore {
 
 // Models the server's atomic pair decision; backend contention is tested
 // separately against real database transactions, not inferred from this fake.
+class LifecycleDirectory extends Directory
+    implements DirectRoomLifecycleCoordinator {
+  final attempts = <String>[];
+  final failures = <Object>[];
+  @override
+  Future<DirectRoomResolution> resolve(String peer, String attemptId) async {
+    attempts.add(attemptId);
+    if (failures.isNotEmpty) throw failures.removeAt(0);
+    return const DirectRoomResolution(
+        status: 'ready', generation: 0, revision: 1, roomId: '!ready:test');
+  }
+
+  @override
+  Future<void> offerExistingRoom(String peer, String roomId) async =>
+      throw StateError('unexpected offer');
+
+  @override
+  Future<DirectRoomResolution> publishRecovery(String peer, String attemptId,
+          DirectRoomResolution resolution, String roomId) async =>
+      throw StateError('unexpected publication');
+}
+
 class Directory implements DirectRoomCoordinator {
   var canonicalCalls = 0;
   String? owner;
@@ -57,6 +80,123 @@ class Directory implements DirectRoomCoordinator {
 }
 
 void main() {
+  const rateLimit = BusinessApiException(
+      statusCode: 429,
+      code: 'rate_limited',
+      message: 'slow down',
+      retryAfterSeconds: 3);
+  CoordinatedDirectChatGateway lifecycleGateway(LifecycleDirectory directory,
+          {required Future<void> Function(Duration) wait,
+          Object? Function()? ownerToken}) =>
+      CoordinatedDirectChatGateway(
+          coordinator: directory,
+          intents: Store('durable-attempt'),
+          businessUserIdOf: (_) => 'peer',
+          createOnce: (_) async => throw StateError('unexpected create'),
+          findExisting: (_) async => null,
+          openExisting: (id, peer) async => room(id, peer),
+          ownerToken: ownerToken,
+          wait: wait);
+
+  test('short resolve rate limit remains pending and retries the same intent',
+      () async {
+    final directory = LifecycleDirectory()..failures.add(rateLimit);
+    final pause = Completer<void>();
+    final waiting = Completer<void>();
+    var completed = false;
+    final opening = lifecycleGateway(directory, wait: (delay) {
+      expect(delay, const Duration(seconds: 3));
+      waiting.complete();
+      return pause.future;
+    }).openOrCreateDirectChat('@b:test');
+    opening.then((_) => completed = true).ignore();
+    await waiting.future.timeout(const Duration(seconds: 1));
+    expect(completed, isFalse);
+    expect(directory.attempts, ['durable-attempt']);
+    pause.complete();
+    expect((await opening).roomId, '!ready:test');
+    expect(directory.attempts, ['durable-attempt', 'durable-attempt']);
+  });
+
+  test('resolve rate limit has bounded attempts and preserves final error',
+      () async {
+    final directory = LifecycleDirectory()
+      ..failures.addAll([rateLimit, rateLimit, rateLimit]);
+    final waits = <Duration>[];
+    await expectLater(
+        lifecycleGateway(directory, wait: (d) async => waits.add(d))
+            .openOrCreateDirectChat('@b:test'),
+        throwsA(same(rateLimit)));
+    expect(directory.attempts, hasLength(3));
+    expect(waits, [const Duration(seconds: 3), const Duration(seconds: 3)]);
+  });
+
+  test('resolve without retry-after waits one second before retry', () async {
+    final directory = LifecycleDirectory()
+      ..failures.add(const BusinessApiException(
+          statusCode: 429, code: 'rate_limited', message: 'slow down'));
+    final waits = <Duration>[];
+    expect(
+        (await lifecycleGateway(directory, wait: (d) async => waits.add(d))
+                .openOrCreateDirectChat('@b:test'))
+            .roomId,
+        '!ready:test');
+    expect(waits, [const Duration(seconds: 1)]);
+    expect(directory.attempts, ['durable-attempt', 'durable-attempt']);
+  });
+
+  test('resolve retry-after delays cannot exceed total wait budget', () async {
+    const limit = BusinessApiException(
+        statusCode: 429,
+        code: 'rate_limited',
+        message: 'slow down',
+        retryAfterSeconds: 6);
+    final directory = LifecycleDirectory()..failures.addAll([limit, limit]);
+    final waits = <Duration>[];
+    await expectLater(
+        lifecycleGateway(directory, wait: (d) async => waits.add(d))
+            .openOrCreateDirectChat('@b:test'),
+        throwsA(same(limit)));
+    expect(waits, [const Duration(seconds: 6)]);
+    expect(directory.attempts, hasLength(2));
+  });
+
+  test('resolve does not retry before long retry-after or retry other errors',
+      () async {
+    for (final error in [
+      const BusinessApiException(
+          statusCode: 429,
+          code: 'rate_limited',
+          message: 'long wait',
+          retryAfterSeconds: 60),
+      const BusinessApiException(
+          statusCode: 403, code: 'forbidden', message: 'permission denied'),
+      StateError('invalid resolution'),
+    ]) {
+      final directory = LifecycleDirectory()..failures.add(error);
+      await expectLater(
+          lifecycleGateway(directory, wait: (_) async {
+            fail('must not wait');
+          }).openOrCreateDirectChat('@b:test'),
+          throwsA(same(error)));
+      expect(directory.attempts, hasLength(1));
+    }
+  });
+
+  test('owner change during rate limit wait prevents another resolve',
+      () async {
+    final directory = LifecycleDirectory()..failures.add(rateLimit);
+    var owner = 1;
+    await expectLater(
+        lifecycleGateway(directory,
+            ownerToken: () => owner,
+            wait: (_) async {
+              owner++;
+            }).openOrCreateDirectChat('@b:test'),
+        throwsStateError);
+    expect(directory.attempts, hasLength(1));
+  });
+
   for (final resumed in [false, true]) {
     test('repairs an unregistered single-member room, resumed=$resumed',
         () async {

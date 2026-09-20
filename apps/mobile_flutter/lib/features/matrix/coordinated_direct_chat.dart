@@ -1,3 +1,4 @@
+import '../../core/business_api_error.dart';
 import 'direct_chat_controller.dart';
 
 final class DirectRoomClaim {
@@ -113,7 +114,35 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
       final lifecycle = coordinator as DirectRoomLifecycleCoordinator;
       final intent = await intents.loadOrCreate(peer);
       validateOwner();
-      var resolution = await lifecycle.resolve(peer, intent.attemptId);
+      // Resolve is an idempotent, non-financial preparation step. Keep the
+      // original intent and pending send alive for brief throttling, without
+      // replaying Matrix creation, publication, or the actual message send.
+      // Share this small budget across both resolutions in this opening.
+      var retries = 0;
+      var waited = Duration.zero;
+      Future<DirectRoomResolution> resolve() async {
+        while (true) {
+          validateOwner();
+          try {
+            return await lifecycle.resolve(peer, intent.attemptId);
+          } on BusinessApiException catch (error) {
+            validateOwner();
+            if (error.statusCode != 429 || retries >= 2) rethrow;
+            final seconds = error.retryAfterSeconds;
+            final delay =
+                Duration(seconds: seconds != null && seconds > 0 ? seconds : 1);
+            // Never shorten Retry-After. Longer throttles remain visible;
+            // waiting here must not consume the outer send timeout budget.
+            if (waited + delay > const Duration(seconds: 10)) rethrow;
+            retries++;
+            waited += delay;
+            await wait(delay);
+            validateOwner();
+          }
+        }
+      }
+
+      var resolution = await resolve();
       validateOwner();
       if (resolution.status == 'create_required' && findCached != null) {
         final cached = await findCached!(matrixUserId);
@@ -121,7 +150,7 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
         if (cached != null && _isSafeLocally(cached, matrixUserId)) {
           await lifecycle.offerExistingRoom(peer, cached.roomId);
           validateOwner();
-          resolution = await lifecycle.resolve(peer, intent.attemptId);
+          resolution = await resolve();
           validateOwner();
         }
       }
