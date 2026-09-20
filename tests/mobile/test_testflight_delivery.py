@@ -18,22 +18,6 @@ def test_testflight_signing_uses_profile_contents_and_preserves_app_identity():
     assert 'scripts/check_ios_permission_binary.py' in workflow
 
 
-def test_permission_binary_gate_rejects_placeholder_classes_and_requires_each_capability():
-    path = ROOT / 'scripts/check_ios_permission_binary.py'
-    spec = importlib.util.spec_from_file_location('permission_binary', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    assert '-[AudioVideoPermissionStrategy checkPermissionStatus:]' in module.REQUIRED_METHODS
-    empty_classes = b'AudioVideoPermissionStrategy\0PhotoPermissionStrategy\0NotificationPermissionStrategy'
-    with pytest.raises(ValueError):
-        module.verify_permission_binary(empty_classes)
-    complete = b'\0'.join(item.encode() for item in module.REQUIRED_METHODS)
-    module.verify_permission_binary(complete)
-    for missing in module.REQUIRED_METHODS:
-        with pytest.raises(ValueError):
-            module.verify_permission_binary(b'\0'.join(item.encode() for item in module.REQUIRED_METHODS if item != missing))
-
-
 def test_simulator_validates_real_permission_plugin_without_importing_excluded_scanner():
     workflow = (ROOT / '.github/workflows/ios-testflight.yml').read_text(encoding='utf-8')
     simulator = workflow.split('  simulator-build:', 1)[1].split('  build-upload:', 1)[0]
@@ -64,3 +48,24 @@ def test_reused_checks_require_success_and_exact_repository_workflow():
         module.verified_sha({**run, 'head_sha': 'b' * 40}, jobs)
     with pytest.raises(ValueError):
         module.verified_sha(run, {'jobs': [{'name': 'flutter-checks', 'conclusion': 'success', 'steps': []}]})
+
+
+def test_native_reuse_requires_completed_assertions_and_unchanged_job():
+    spec = importlib.util.spec_from_file_location('native_reuse', ROOT / 'scripts/reuse_native_checks.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    run = {'id': module.EVIDENCE_RUN, 'head_sha': module.EVIDENCE_SHA,
+           'repository': {'full_name': 'SuperJJ2333/StarChat'}, 'path': module.WORKFLOW}
+    job = {'name': 'simulator-build', 'conclusion': 'success',
+           'steps': [{'name': 'Exercise real native permission strategies', 'conclusion': 'success'}]}
+    module.verify_native_evidence(run, {'jobs': [job]})
+    for patch in [{'head_sha': 'a' * 40}, {'id': 1}, {'path': 'other.yml'}, {'repository': {}}]:
+        with pytest.raises(ValueError):
+            module.verify_native_evidence({**run, **patch}, {'jobs': [job]})
+    for patch in [{'conclusion': 'failure'}, {'steps': []}]:
+        with pytest.raises(ValueError):
+            module.verify_native_evidence(run, {'jobs': [{**job, **patch}]})
+    source = '  simulator-build:\n    runs-on: macos-15\n    steps:\n      - run: native-check\n  build-upload:\n'
+    current = source.replace('    runs-on:', '    if: ${{ !inputs.reuse-native-run }}\n    runs-on:')
+    assert module.native_job(source) == module.native_job(current)
+    assert module.native_job(source) != module.native_job(current.replace('native-check', 'different-check'))

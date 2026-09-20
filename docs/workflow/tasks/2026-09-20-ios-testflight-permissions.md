@@ -38,3 +38,12 @@ Apple预检与完整CI分开运行；23:31:44+08已dispatch完整TestFlight工�
 
 ## 2026-09-21 01:45 +08 原生通道测试执行器
 35526014082/04c08893仍在WidgetTester语义资源审计失败，权限断言已完成，完整run仍失败且无上传。原生通道测试没有widget树或测试自有语义句柄；改用普通test包围IntegrationTestWidgetsFlutterBinding.runTest，保留SDK标准reportTestException/results及postTest清理，去除不适用的WidgetTester包装器。不得手写成功结果或吞异常；SDK源码已核实runTest记录Failure优先于_success。native-ci-7.log保留；Dart format/analyze通过。
+
+## 2026-09-21 02:01–02:09 +08 原生门禁通过，签名构建中
+运行35526915961，候选f25ffee9：Apple预检、Flutter checks、simulator-build/job106120745319均success；原生driver日志All tests passed，保存native-ci-pass.log。Camera与Photos现代读写首次授权明确真机待验收，未计入模拟器通过范围。
+签名作业106122715943已通过推送、原生通话/Keychain、分发证书与profile检查，进入Build signed IPA。尚未取得最终IPA哈希、上传或内部可安装结论。间歇GitHub TLS EOF仅影响本地状态读取，未重启CI或关闭证书验证。
+
+## 2026-09-21 02:11–02:19 +08 签名包门禁修正
+35526915961的build-upload实际已导出0.3.103/2145 App Store IPA，codesign/APNs/SQLCipher/版本检查通过；权限门禁依赖完整本地符号名，App Store导出裁剪符号后假阴性，上传未执行。旧workflow失败时未保存IPA，只有signed-ci.log，因此本次需要重建一次。
+二进制门禁改读Mach-O ObjC运行时类/实例方法表，指定selector必须绑定指定类且IMP位于可执行段；不改变签名或关闭strip。新增19测试，最终专项29通过/1Windows Ruby跳过、Node3通过，规格通过。旧2144与清空符号表副本均正确拒绝；Unknown策略真实正方法表解码不变，证据metadata-gate/real-metadata-evidence.log。
+增加native-evidence固定35526915961/f25ffee9与实际成功job/断言步骤；完整mobile目录零差异、原生job除调度if完全一致才复用。原生复用规格及安全review通过，避免再重复模拟器编译。新workflow失败时保留needs-verification候选，不绕过校验上传。

@@ -2,6 +2,10 @@ name: iOS TestFlight
 on:
   workflow_dispatch:
     inputs:
+      reuse-native-run:
+        description: Reviewed successful native job to reuse (validated, optional)
+        type: string
+        default: ''
       reuse-checks-run:
         description: Successful same-source Flutter checks to reuse (validated, optional)
         type: string
@@ -92,11 +96,24 @@ jobs:
       - name: Permission and TestFlight contract tests
         run: |
           python3 -m pip install pytest==8.4.2
-          python3 -m pytest tests/mobile/test_ios_permission_capabilities.py tests/mobile/test_testflight_delivery.py -q
+          python3 -m pytest tests/mobile/test_ios_permission_capabilities.py tests/mobile/test_testflight_delivery.py tests/mobile/test_ios_permission_metadata.py -q
           node --test tests/mobile/test_testflight_status.mjs
+
+  native-evidence:
+    needs: flutter-checks
+    if: inputs.reuse-native-run
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify identical successful native evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_NATIVE_RUN: ${{ inputs.reuse-native-run }}
+        run: python3 scripts/reuse_native_checks.py
 
   simulator-build:
     needs: flutter-checks
+    if: ${{ !inputs.reuse-native-run }}
     runs-on: macos-15
     timeout-minutes: 35
     env:
@@ -205,8 +222,8 @@ jobs:
           path: ${{ runner.temp }}/permissions-*.log
           if-no-files-found: ignore
   build-upload:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.preflight-only && !inputs.status-only && !inputs.distribute-only }}
-    needs: [apple-preflight, flutter-checks, simulator-build]
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && !inputs.preflight-only && !inputs.status-only && !inputs.distribute-only && needs.apple-preflight.result == 'success' && needs.flutter-checks.result == 'success' && (needs.simulator-build.result == 'success' || needs.native-evidence.result == 'success') }}
+    needs: [apple-preflight, flutter-checks, simulator-build, native-evidence]
     runs-on: macos-15
     timeout-minutes: 40
     env:
@@ -409,6 +426,14 @@ jobs:
           done
           echo 'Apple processing pending; use status-only dispatch, do not rebuild.'
           exit 75
+      - name: Preserve candidate when a later verification or upload fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatFlow-iOS-candidate-needs-verification
+          path: apps/mobile_flutter/build/ios/ipa/*.ipa
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Remove temporary signing credentials
         if: always()
         run: |
