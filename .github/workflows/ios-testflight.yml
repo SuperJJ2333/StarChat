@@ -154,9 +154,15 @@ jobs:
             echo 'Camera pre-grant is not supported by this simctl; Pod/IPA camera gates and device acceptance remain mandatory.'
           fi
           echo "SIMULATOR_CAMERA_SUPPORTED=$camera_supported" >> "$GITHUB_ENV"
-          for permission in microphone photos photos-add; do
+          # Full Photos access covers read/write and add-only queries. Applying
+          # an add-only fixture afterwards can replace the full-access state.
+          for permission in microphone photos; do
             xcrun simctl privacy "$device" grant "$permission" com.liuhetong.liuhetongMobile
           done
+          tcc="$HOME/Library/Developer/CoreSimulator/Devices/$device/data/Library/TCC/TCC.db"
+          if [ -f "$tcc" ]; then
+            sqlite3 -readonly "$tcc" "SELECT service,auth_value FROM access WHERE client='com.liuhetong.liuhetongMobile';"
+          fi
       - name: Exercise real native permission strategies
         working-directory: apps/mobile_flutter
         run: |
