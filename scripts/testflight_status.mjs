@@ -97,7 +97,12 @@ export async function main(mode) {
     return;
   }
   const build = matches[0];
+  console.log(JSON.stringify({ build: wanted, buildId: build.id,
+    processingState: build.attributes.processingState, expired: build.attributes.expired,
+    stage: 'READ_BUILD_BETA_DETAIL' }));
   const detail = await request(`/v1/builds/${build.id}/buildBetaDetail`);
+  console.log(JSON.stringify({ build: wanted, beta: detail.data?.attributes,
+    stage: 'READ_BUILD_BETA_GROUPS' }));
   const assigned = await list(`/v1/builds/${build.id}/betaGroups?limit=200`);
   console.log(JSON.stringify({ build: wanted, buildId: build.id, processingState: build.attributes.processingState,
     expired: build.attributes.expired, beta: detail.data?.attributes,
