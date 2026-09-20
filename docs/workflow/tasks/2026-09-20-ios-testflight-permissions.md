@@ -35,3 +35,6 @@ Apple预检与完整CI分开运行；23:31:44+08已dispatch完整TestFlight工�
 
 ## 2026-09-21 01:29 +08 原生断言通过后的测试框架清理
 运行35525177449/45613c38完成实际权限断言，但测试末尾报A SemanticsHandle was active；不是权限断言失败，整轮仍failure，未上传。原生channel-only测试无widget，改用testWidgets公开参数semanticsEnabled:false，避免默认测试语义切换与iOS实时辅助功能句柄相互作用；权限断言和driver失败退出码均不变。日志native-ci-6.log已保留。
+
+## 2026-09-21 01:45 +08 原生通道测试执行器
+35526014082/04c08893仍在WidgetTester语义资源审计失败，权限断言已完成，完整run仍失败且无上传。原生通道测试没有widget树或测试自有语义句柄；改用普通test包围IntegrationTestWidgetsFlutterBinding.runTest，保留SDK标准reportTestException/results及postTest清理，去除不适用的WidgetTester包装器。不得手写成功结果或吞异常；SDK源码已核实runTest记录Failure优先于_success。native-ci-7.log保留；Dart format/analyze通过。
