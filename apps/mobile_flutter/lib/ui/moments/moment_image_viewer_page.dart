@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'moment_media_cache.dart';
 import 'moment_image_prefetcher.dart';
 import 'moment_viewer_source.dart';
-import '../components/network_status_capsule.dart';
 import '../components/operation_failure_dialog.dart';
 
 /// 朋友圈图片全屏查看页：网络大图 + 双指缩放 + 左右切换 + 点击关闭。
@@ -231,15 +230,9 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                   ),
                 ),
               ),
-            // BUG-41（真机回归修订）：大图查看弱网时不再出现「正在连接…」
-            // 状态栏——图片加载中已有自带进度指示，网络异常由重载点击承担。
-            Positioned(
-              top: 48,
-              left: 16,
-              right: 16,
-              child: Center(
-                  child: WeChatNetworkStatusCapsule(showConnecting: false)),
-            ),
+            // BUG-41（真机回归修订）：大图查看器不再渲染任何网络状态胶囊——
+            // 图片加载中已有自带进度指示，加载失败可点击重载；
+            // 弱网下任何状态条都会被误读为"卡死"，一律不显示。
             Positioned(
               top: 12,
               right: 16,
