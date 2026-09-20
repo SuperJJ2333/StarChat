@@ -102,13 +102,16 @@ export async function main(mode) {
     stage: 'READ_BUILD_BETA_DETAIL' }));
   const detail = await request(`/v1/builds/${build.id}/buildBetaDetail`);
   console.log(JSON.stringify({ build: wanted, beta: detail.data?.attributes,
-    stage: 'READ_BUILD_BETA_GROUPS' }));
-  const assigned = await list(`/v1/builds/${build.id}/betaGroups?limit=200`);
+    groupId: existingInternalGroup, stage: 'READ_INTERNAL_GROUP_BUILDS' }));
+  const group = safeGroups.find(g => g.id === existingInternalGroup && g.internal);
+  if (!group) throw new Error('APPLE_GROUP: EXPECTED_INTERNAL_GROUP_UNAVAILABLE');
+  const groupBuilds = await list(`/v1/betaGroups/${existingInternalGroup}/builds?limit=200`);
+  // Group membership is identified by Apple's build resource ID, not its
+  // display version, which may also occur in another version train.
+  const assigned = groupBuilds.some(item => item.id === build.id) ? [{ id: group.id }] : [];
   console.log(JSON.stringify({ build: wanted, buildId: build.id, processingState: build.attributes.processingState,
     expired: build.attributes.expired, beta: detail.data?.attributes,
     assignedGroupIds: assigned.map(g => g.id), groups: safeGroups }));
-  const group = safeGroups.find(g => g.id === existingInternalGroup && g.internal);
-  if (!group) throw new Error('APPLE_GROUP: EXPECTED_INTERNAL_GROUP_UNAVAILABLE');
   if (installable(build, detail.data?.attributes ?? {}, assigned)) return;
   if (build.attributes.processingState === 'PROCESSING') { process.exitCode = 75; return; }
   if (build.attributes.processingState !== 'VALID' || build.attributes.expired) {

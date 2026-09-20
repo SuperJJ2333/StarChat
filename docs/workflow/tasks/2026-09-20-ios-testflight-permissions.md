@@ -47,3 +47,19 @@ Apple预检与完整CI分开运行；23:31:44+08已dispatch完整TestFlight工�
 35526915961的build-upload实际已导出0.3.103/2145 App Store IPA，codesign/APNs/SQLCipher/版本检查通过；权限门禁依赖完整本地符号名，App Store导出裁剪符号后假阴性，上传未执行。旧workflow失败时未保存IPA，只有signed-ci.log，因此本次需要重建一次。
 二进制门禁改读Mach-O ObjC运行时类/实例方法表，指定selector必须绑定指定类且IMP位于可执行段；不改变签名或关闭strip。新增19测试，最终专项29通过/1Windows Ruby跳过、Node3通过，规格通过。旧2144与清空符号表副本均正确拒绝；Unknown策略真实正方法表解码不变，证据metadata-gate/real-metadata-evidence.log。
 增加native-evidence固定35526915961/f25ffee9与实际成功job/断言步骤；完整mobile目录零差异、原生job除调度if完全一致才复用。原生复用规格及安全review通过，避免再重复模拟器编译。新workflow失败时保留needs-verification候选，不绕过校验上传。
+
+## 2026-09-21 02:30–02:38 +08 最终包校验与上传完成
+运行35528706992，源码2de62b75bd5f01b2c4268f875984f61b94a65233，iOS 0.3.103/2145；最终IPA SHA256 4fdef120e186630032066d8a4110092b81c506849291a27907d3cc5626e27855。02:30:12签名、生产APNs、iPad、权限声明、SQLCipher及原生权限运行时方法表全部通过，证据final-signed-ci.log。GitHub已验证产物ChatFlow-iOS-signed ID10610573233（14天保留），无需重复回拉整包。
+02:32:00 altool返回UPLOAD SUCCEEDED with no errors。02:36首次Apple轮询窗口结束，最后状态NOT_YET_VISIBLE，exit75；整轮CI为failure，不能表述全部通过或内部已可安装。02:37启动仅分发/查询运行35529655259（distribute-only=true，build-number=2145），未重建、未重复上传。
+证据final-diagnostics/testflight-status.json及final-diagnostics/ios-upload.log。下步读取35529655259的Apple状态，构建VALID且内部可测试才关联既有内部TEST组并读回。Camera/Photos首次弹窗、设置跳转及iOS16.7.16整机重启仍待真机验收。
+
+## 2026-09-21 02:43 +08 Apple处理完成，出口合规阻断
+仅状态运行35529991314/4abb0ce0：build ID b6ac0d45-b5d4-41f8-a852-e9cda0dacbde，VALID、未过期，internalBuildState/externalBuildState均MISSING_EXPORT_COMPLIANCE。明确不是上传失败或待处理，用户需完成实际加密申报或提供既有有效口径；已通过异步问题请求，不能自动填“不使用加密”。
+另一独立脚本问题：buildBetaDetail读取成功后，GET builds/{id}/betaGroups返回403。准备改为Apple文档支持的betaGroups/{id}/builds并用精确build ID比较，保留所有安装条件；只改分发查询脚本，不重建IPA。
+本地TLS EOF后使用项目既有jumper建立loopback SOCKS 127.0.0.1:18745（exec session8935），恢复GitHub读取；不关闭证书校验、不改全局代理。35529655259仍NOT_YET_VISIBLE/exit75，35529887999读组403，均保留失败日志。后续查询4abb0ce0仅加安全阶段诊断，未改包。
+时间：本次连续恢复窗口从23:12到02:43约3小时31分，包含00:09–02:19原生夹具/二进制门禁返工，02:24–02:30最后签名构建、02:30–02:32上传、02:32–02:43 Apple等待及查询。主动/工具精确拆分未知，不虚构精确工时。更早会话修复用时未知。
+下一步：确认合规申报后运行ios-testflight.yml distribute-only=true/build-number=2145，无需重建；读回VALID、未过期、内部可测试和固定内部组关联。设备验收独立等待。
+
+## 2026-09-21 02:47 +08 等待用户申报
+用户明确答复“我在 App Store Connect 完成申报后告诉你”。保留2145，等待确认；不要误认为申报已完成。分发查询已改用Apple官方betaGroups/{id}/builds路径，精确资源ID判断关联；新增4个真实main/fetch模拟回归先403红后绿，Node共7通过，交付契约Python4通过。规格复审通过；质量复审后提交。仅脚本和文档变更，不需重建应用或重跑Flutter全量。
+主工作区仅新增交接task及current-state索引，保留其他任务；未合并或发布main无关批次。相关文档链接检查通过。
