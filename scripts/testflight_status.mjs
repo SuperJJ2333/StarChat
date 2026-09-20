@@ -4,11 +4,11 @@ import { pathToFileURL } from 'node:url';
 
 const origin = 'https://api.appstoreconnect.apple.com';
 const bundle = 'com.liuhetong.liuhetongMobile';
-const existingPublicGroup = '575f1470-dc5c-486a-8da4-609762010f66';
+const existingInternalGroup = '6c3548a1-b45d-41c7-b4b1-e7a567d15081';
 
-export function installable(build, detail, assigned, group = existingPublicGroup) {
+export function installable(build, detail, assigned, group = existingInternalGroup) {
   return build.attributes.processingState === 'VALID' && build.attributes.expired === false &&
-    detail.externalBuildState === 'IN_BETA_TESTING' &&
+    ['READY_FOR_BETA_TESTING', 'IN_BETA_TESTING'].includes(detail.internalBuildState) &&
     assigned.some(item => item.id === group);
 }
 
@@ -102,39 +102,25 @@ export async function main(mode) {
   console.log(JSON.stringify({ build: wanted, buildId: build.id, processingState: build.attributes.processingState,
     expired: build.attributes.expired, beta: detail.data?.attributes,
     assignedGroupIds: assigned.map(g => g.id), groups: safeGroups }));
-  const group = safeGroups.find(g => g.id === existingPublicGroup && !g.internal && g.publicLinkEnabled);
-  if (!group) throw new Error('APPLE_GROUP: EXPECTED_PUBLIC_GROUP_UNAVAILABLE');
+  const group = safeGroups.find(g => g.id === existingInternalGroup && g.internal);
+  if (!group) throw new Error('APPLE_GROUP: EXPECTED_INTERNAL_GROUP_UNAVAILABLE');
   if (installable(build, detail.data?.attributes ?? {}, assigned)) return;
   if (build.attributes.processingState === 'PROCESSING') { process.exitCode = 75; return; }
   if (build.attributes.processingState !== 'VALID' || build.attributes.expired) {
     throw new Error('APPLE_BUILD: INVALID_OR_EXPIRED');
   }
   if (mode === 'distribute') {
-    const state = detail.data?.attributes?.externalBuildState;
-    if (['READY_FOR_BETA_SUBMISSION', 'READY_FOR_BETA_TESTING', 'IN_BETA_TESTING'].includes(state)) {
-      const localizations = await list(`/v1/builds/${build.id}/betaBuildLocalizations?limit=200`);
-      if (!localizations.some(item => item.attributes.locale === 'zh-Hans')) {
-        await request('/v1/betaBuildLocalizations', { method: 'POST', body: { data: {
-          type: 'betaBuildLocalizations', attributes: { locale: 'zh-Hans',
-            whatsNew: '请验证相机、麦克风和相册授权；拒绝授权后的设置跳转；手机重启后的登录状态和聊天历史保留。' },
-          relationships: { build: { data: { type: 'builds', id: build.id } } },
-        } } });
-      }
-      if (!assigned.some(item => item.id === existingPublicGroup)) {
-        await request(`/v1/betaGroups/${existingPublicGroup}/relationships/builds`, {
+    const state = detail.data?.attributes?.internalBuildState;
+    if (['READY_FOR_BETA_TESTING', 'IN_BETA_TESTING'].includes(state)) {
+      if (!assigned.some(item => item.id === existingInternalGroup)) {
+        await request(`/v1/betaGroups/${existingInternalGroup}/relationships/builds`, {
           method: 'POST', body: { data: [{ type: 'builds', id: build.id }] },
         });
-        console.log('APPLE_GROUP: EXISTING_PUBLIC_TEST_GROUP_ASSIGNED');
-      }
-      if (state === 'READY_FOR_BETA_SUBMISSION') {
-        await request('/v1/betaAppReviewSubmissions', { method: 'POST', body: { data: {
-          type: 'betaAppReviewSubmissions', relationships: { build: { data: { type: 'builds', id: build.id } } },
-        } } });
-        console.log('APPLE_REVIEW: BETA_REVIEW_REQUESTED');
+        console.log('APPLE_GROUP: EXISTING_INTERNAL_TEST_GROUP_ASSIGNED');
       }
     }
   }
-  // Apple review/compliance and group availability are separate from upload success.
+  // Apple processing/compliance and internal group availability are separate from upload success.
   // In particular, never invent an encryption declaration to make a build available.
   process.exitCode = 75;
 }

@@ -13,8 +13,8 @@ test('ambiguous dotted build fails instead of reusing a number', () => {
 test('processed alone is not TestFlight installation readiness', () => {
   const build = {attributes:{processingState:'VALID', expired:false}};
   const groups = [{id:'test'}];
-  assert.equal(installable(build, {externalBuildState:'READY_FOR_BETA_SUBMISSION'}, groups, 'test'), false);
-  assert.equal(installable(build, {externalBuildState:'IN_BETA_TESTING'}, [], 'test'), false);
-  assert.equal(installable({...build, attributes:{...build.attributes, expired:true}}, {externalBuildState:'IN_BETA_TESTING'}, groups, 'test'), false);
-  assert.equal(installable(build, {externalBuildState:'IN_BETA_TESTING'}, groups, 'test'), true);
+  assert.equal(installable(build, {internalBuildState:'MISSING_EXPORT_COMPLIANCE'}, groups, 'test'), false);
+  assert.equal(installable(build, {internalBuildState:'IN_BETA_TESTING'}, [], 'test'), false);
+  assert.equal(installable({...build, attributes:{...build.attributes, expired:true}}, {internalBuildState:'IN_BETA_TESTING'}, groups, 'test'), false);
+  assert.equal(installable(build, {internalBuildState:'IN_BETA_TESTING'}, groups, 'test'), true);
 });

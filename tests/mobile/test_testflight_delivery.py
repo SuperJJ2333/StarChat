@@ -40,3 +40,26 @@ def test_simulator_validates_real_permission_plugin_without_importing_excluded_s
     assert '-t integration_test/ios_permission_capabilities_test.dart' in simulator
     assert 'simctl privacy' in simulator
     assert 'flutter test integration_test/ios_permission_capabilities_test.dart' in simulator
+
+
+def test_reused_checks_require_success_and_exact_repository_workflow():
+    spec = importlib.util.spec_from_file_location('reuse', ROOT / 'scripts/reuse_flutter_checks.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    run = {'repository': {'full_name': 'SuperJJ2333/StarChat'}, 'path': '.github/workflows/ios-testflight.yml', 'head_sha': module.EVIDENCE_SHA, 'id': int(module.EVIDENCE_RUN)}
+    jobs = {'jobs': [{'name': 'flutter-checks', 'conclusion': 'success', 'steps': [{'name': 'Flutter checks', 'conclusion': 'success'}]}]}
+    assert module.verified_sha(run, jobs) == module.EVIDENCE_SHA
+    for status in ['failure', 'cancelled', None]:
+        with pytest.raises(ValueError):
+            module.verified_sha(run, {'jobs': [{'name': 'flutter-checks', 'conclusion': status}]})
+    with pytest.raises(ValueError):
+        module.verified_sha({**run, 'repository': {'full_name': 'other/repo'}}, jobs)
+    with pytest.raises(ValueError):
+        module.verified_sha({**run, 'path': 'different.yml'}, jobs)
+
+    with pytest.raises(ValueError):
+        module.verified_sha({**run, 'id': 123}, jobs)
+    with pytest.raises(ValueError):
+        module.verified_sha({**run, 'head_sha': 'b' * 40}, jobs)
+    with pytest.raises(ValueError):
+        module.verified_sha(run, {'jobs': [{'name': 'flutter-checks', 'conclusion': 'success', 'steps': []}]})

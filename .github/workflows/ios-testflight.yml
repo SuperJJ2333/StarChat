@@ -2,6 +2,10 @@ name: iOS TestFlight
 on:
   workflow_dispatch:
     inputs:
+      reuse-checks-run:
+        description: Successful same-source Flutter checks to reuse (validated, optional)
+        type: string
+        default: ''
       preflight-only:
         description: Check Apple access and next build without building or uploading
         type: boolean
@@ -11,7 +15,7 @@ on:
         type: boolean
         default: false
       distribute-only:
-        description: Associate existing processed build with the existing public TEST group
+        description: Associate existing processed build with the existing internal TEST group
         type: boolean
         default: false
       build-number:
@@ -22,6 +26,7 @@ on:
     paths: ['apps/mobile_flutter/**', '.github/workflows/ios-testflight.yml']
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: ios-testflight-${{ github.ref }}
   cancel-in-progress: false
@@ -70,12 +75,20 @@ jobs:
           flutter-version: "3.44.9"
           channel: stable
           cache: true
+      - name: Validate equivalent completed Flutter checks
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_CHECKS_RUN: ${{ inputs.reuse-checks-run }}
+        run: python3 scripts/reuse_flutter_checks.py
       - name: Flutter checks
         working-directory: apps/mobile_flutter
+        env:
+          REUSED_FLUTTER_CHECKS: ${{ steps.reuse.outputs.reused }}
         run: |
           flutter pub get
           flutter analyze
-          flutter test
+          if [ "$REUSED_FLUTTER_CHECKS" != true ]; then flutter test; fi
       - name: Permission and TestFlight contract tests
         run: |
           python3 -m pip install pytest==8.4.2
@@ -131,14 +144,24 @@ jobs:
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" build/ios/iphonesimulator/Runner.app
-          for permission in camera microphone photos photos-add; do
+          privacy_help=$(xcrun simctl help privacy 2>&1 || true)
+          printf '%s\n' "$privacy_help"
+          camera_supported=false
+          if printf '%s\n' "$privacy_help" | grep -Eq '^[[:space:]]+camera([[:space:]:]|$)'; then
+            xcrun simctl privacy "$device" grant camera com.liuhetong.liuhetongMobile
+            camera_supported=true
+          else
+            echo 'Camera pre-grant is not supported by this simctl; Pod/IPA camera gates and device acceptance remain mandatory.'
+          fi
+          echo "SIMULATOR_CAMERA_SUPPORTED=$camera_supported" >> "$GITHUB_ENV"
+          for permission in microphone photos photos-add; do
             xcrun simctl privacy "$device" grant "$permission" com.liuhetong.liuhetongMobile
           done
       - name: Exercise real native permission strategies
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter test integration_test/ios_permission_capabilities_test.dart -d "$PERMISSION_SIMULATOR" --no-uninstall --timeout=2m --reporter expanded 2>&1 | tee "$RUNNER_TEMP/permissions-native.log"
+          flutter test integration_test/ios_permission_capabilities_test.dart -d "$PERMISSION_SIMULATOR" --no-uninstall --dart-define=SIMULATOR_CAMERA_SUPPORTED="$SIMULATOR_CAMERA_SUPPORTED" --timeout=2m --reporter expanded 2>&1 | tee "$RUNNER_TEMP/permissions-native.log"
       - name: Preserve native permission result
         if: always()
         uses: actions/upload-artifact@v4
