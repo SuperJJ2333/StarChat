@@ -33,6 +33,7 @@ jobs:
   simulator-build:
     needs: flutter-checks
     runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -54,6 +55,19 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           mkdir -p build/ios/SourcePackages
+      # mobile_scanner 6.0.11 的 MLKit 二进制没有 arm64 模拟器切片，模拟器构建必然
+      # 失败；与 compat 工作流一致地临时摘除（扫描能力由真机构建覆盖）。
+      - name: Exclude mobile_scanner for simulator build
+        working-directory: apps/mobile_flutter
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('pubspec.yaml')
+          content = p.read_text()
+          assert content.count('  mobile_scanner: 6.0.11\n') == 1
+          p.write_text(content.replace('  mobile_scanner: 6.0.11\n', ''))
+          PY
+          echo 'Simulator-build exclusion: mobile_scanner 6.0.11 (MLKit lacks arm64 simulator slice); scanning is covered by device builds.'
       - name: Flutter pub get
         working-directory: apps/mobile_flutter
         run: flutter pub get
@@ -67,6 +81,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     needs: flutter-checks
     runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -111,6 +126,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: flutter-checks
     runs-on: macos-14
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -141,15 +157,19 @@ jobs:
       - name: Install signing assets
         env:
           CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
-          PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
           CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
         run: |
           security create-keychain -p "$RUNNER_TEMP" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "$RUNNER_TEMP" build.keychain
           echo "$CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
           security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          # 不设置 partition list 时 codesign 会在 CI 里静默挂起（等待无法出现的授权 UI）。
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$RUNNER_TEMP" build.keychain
+          security list-keychains -d user -s build.keychain "$HOME/Library/Keychains/login.keychain-db"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/liuhetong.mobileprovision"
       - name: Generate export options and build IPA

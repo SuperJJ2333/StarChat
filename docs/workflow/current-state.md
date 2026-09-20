@@ -3,6 +3,11 @@
 ## 2026-09-20 iOS 重启会话恢复（代码及原生检查通过，真机待验收）
 
 用户已批准执行。保护数据/安装判据加固、有效业务会话保留与同身份聊天恢复、登录前本地只读预检及具体安全错误文案已实现；Flutter 3681/analyze 通过，独立规格及安全审查通过。独立分支2d463207未合并/发布；仓库verify、完整原生编译、iOS18/26模拟器CI35510017099均通过，iOS16.7.16真机未验收。以[任务](tasks/2026-09-20-ios-reboot-session.md)与[证据](../verification/2026-09-20-ios-reboot-session.md)为准。
+## 2026-09-20 docs根目录与runbooks归并
+22份历史正文归档、6份专题资料归位；保留旧路径跳转。发布入口与当前轻量流程对齐，钱包/通信按分类索引进入。本地链接和内容保留检查通过，无代码或生产变更。[任务](tasks/2026-09-20-docs-consolidation.md) · [验证](../verification/2026-09-20-docs-consolidation.md)。
+
+## 2026-09-20 发布流程轻量加固
+用户确认2144签名已解决；取消整包回拉验包。新release_metadata.py统一页面/XML/平台设置，HEAD及小元数据门禁；旧unchecked弹窗入口停用。87+6测试通过，无生产更新。入口：[新发布规范](../runbooks/release-metadata.md)；[任务](tasks/2026-09-20-release-metadata-gates.md)。
 
 ## 2026-09-20 移除消息列表恢复提示（代码完成，debug2142待安装）
 
