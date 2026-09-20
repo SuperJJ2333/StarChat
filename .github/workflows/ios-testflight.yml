@@ -10,6 +10,10 @@ on:
         description: Read an already uploaded build without rebuilding
         type: boolean
         default: false
+      distribute-only:
+        description: Associate existing processed build with the existing public TEST group
+        type: boolean
+        default: false
       build-number:
         description: Existing build number for status-only
         type: string
@@ -45,8 +49,16 @@ jobs:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           TESTFLIGHT_BUILD: ${{ inputs.build-number }}
         run: node scripts/testflight_status.mjs status
+      - name: Finish existing TestFlight distribution without rebuilding
+        if: inputs.distribute-only
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TESTFLIGHT_BUILD: ${{ inputs.build-number }}
+        run: node scripts/testflight_status.mjs distribute
   flutter-checks:
-    if: ${{ !inputs.preflight-only && !inputs.status-only }}
+    if: ${{ !inputs.preflight-only && !inputs.status-only && !inputs.distribute-only }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -72,8 +84,10 @@ jobs:
 
   simulator-build:
     needs: flutter-checks
-    runs-on: macos-14
-    timeout-minutes: 30
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -81,13 +95,6 @@ jobs:
           flutter-version: "3.44.9"
           channel: stable
           cache: true
-      # 与 build-unsigned-ipa 相同：默认 Xcode 过旧，无法编译 Firebase 12 的 Swift 6 语法。
-      - name: Select newest Xcode (Firebase 12 needs Swift 6)
-        run: |
-          ls -d /Applications/Xcode*.app | sort -V
-          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
-          sudo xcode-select -s "$LATEST_XCODE"
-          xcodebuild -version
       # firebase_messaging 插件拷贝需要 build/ios/SourcePackages 父目录已存在；
       # SPM 集成必须保持关闭（firebase_messaging SPM 工具需要更新版 Xcode）。
       - name: Prepare iOS dependency directories
@@ -113,11 +120,35 @@ jobs:
         run: flutter pub get
       - name: Build iOS simulator app
         working-directory: apps/mobile_flutter
-        run: flutter build ios --simulator --no-codesign
+        run: flutter build ios --simulator --no-codesign -t integration_test/ios_permission_capabilities_test.dart
 
+      - name: Create fresh simulator and grant native permission fixtures
+        working-directory: apps/mobile_flutter
+        run: |
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable") and "iOS" in x["name"]]; print(sorted(r,key=lambda x:tuple(map(int,x["version"].split("."))))[-1]["identifier"])')
+          device=$(xcrun simctl create TestFlightPermissions com.apple.CoreSimulator.SimDeviceType.iPhone-15 "$runtime")
+          echo "PERMISSION_SIMULATOR=$device" >> "$GITHUB_ENV"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" build/ios/iphonesimulator/Runner.app
+          for permission in camera microphone photos photos-add; do
+            xcrun simctl privacy "$device" grant "$permission" com.liuhetong.liuhetongMobile
+          done
+      - name: Exercise real native permission strategies
+        working-directory: apps/mobile_flutter
+        run: |
+          set -o pipefail
+          flutter test integration_test/ios_permission_capabilities_test.dart -d "$PERMISSION_SIMULATOR" --no-uninstall --timeout=2m --reporter expanded 2>&1 | tee "$RUNNER_TEMP/permissions-native.log"
+      - name: Preserve native permission result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-native-permission-check
+          path: ${{ runner.temp }}/permissions-native.log
+          if-no-files-found: ignore
   build-upload:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.preflight-only && !inputs.status-only }}
-    needs: [apple-preflight, flutter-checks]
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.preflight-only && !inputs.status-only && !inputs.distribute-only }}
+    needs: [apple-preflight, flutter-checks, simulator-build]
     runs-on: macos-15
     timeout-minutes: 40
     env:
@@ -136,7 +167,9 @@ jobs:
           xcodebuild -version
           pod --version
       - name: Disable SPM for CocoaPods permission capabilities
-        run: flutter config --no-enable-swift-package-manager
+        run: |
+          flutter config --no-enable-swift-package-manager
+          mkdir -p apps/mobile_flutter/build/ios/SourcePackages
       - name: Resolve Flutter dependencies
         working-directory: apps/mobile_flutter
         run: flutter pub get
@@ -310,7 +343,7 @@ jobs:
         run: |
           for attempt in $(seq 1 12); do
             rc=0
-            node scripts/testflight_status.mjs status > "$RUNNER_TEMP/testflight-status.json" || rc=$?
+            node scripts/testflight_status.mjs distribute > "$RUNNER_TEMP/testflight-status.json" || rc=$?
             cat "$RUNNER_TEMP/testflight-status.json"
             if [ "$rc" -eq 0 ]; then exit 0; fi
             if [ "$rc" -ne 75 ]; then exit "$rc"; fi

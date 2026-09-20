@@ -31,3 +31,11 @@ def test_permission_binary_gate_rejects_placeholder_classes_and_requires_each_ca
     for missing in module.REQUIRED_METHODS:
         with pytest.raises(ValueError):
             module.verify_permission_binary(b'\0'.join(item.encode() for item in module.REQUIRED_METHODS if item != missing))
+
+
+def test_simulator_validates_real_permission_plugin_without_importing_excluded_scanner():
+    workflow = (ROOT / '.github/workflows/ios-testflight.yml').read_text(encoding='utf-8')
+    simulator = workflow.split('  simulator-build:', 1)[1].split('  build-upload:', 1)[0]
+    assert '-t integration_test/ios_permission_capabilities_test.dart' in simulator
+    assert 'simctl privacy' in simulator
+    assert 'flutter test integration_test/ios_permission_capabilities_test.dart' in simulator

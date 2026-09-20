@@ -119,7 +119,10 @@ final class SystemCallPermissionReadinessGateway
             action == CallPermissionAction.notifications) {
           return _open('openNotificationSettings');
         }
-        return true;
+        if (requested.isPermanentlyDenied) {
+          return openAppSettings();
+        }
+        return requested.isGranted;
       }
       return switch (action) {
         CallPermissionAction.callChannel =>

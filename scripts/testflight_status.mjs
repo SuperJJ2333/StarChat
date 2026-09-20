@@ -4,6 +4,13 @@ import { pathToFileURL } from 'node:url';
 
 const origin = 'https://api.appstoreconnect.apple.com';
 const bundle = 'com.liuhetong.liuhetongMobile';
+const existingPublicGroup = '575f1470-dc5c-486a-8da4-609762010f66';
+
+export function installable(build, detail, assigned, group = existingPublicGroup) {
+  return build.attributes.processingState === 'VALID' && build.attributes.expired === false &&
+    detail.externalBuildState === 'IN_BETA_TESTING' &&
+    assigned.some(item => item.id === group);
+}
 
 export function nextBuild(builds, minimum = 2145) {
   return Math.max(minimum, ...builds.map(b => {
@@ -31,17 +38,24 @@ function token() {
   return input + '.' + crypto.sign('sha256', Buffer.from(input), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
 }
 
-async function request(path) {
+async function request(path, options = {}) {
   const url = new URL(path, origin);
   if (url.origin !== origin) throw new Error('APPLE_API: UNEXPECTED_ORIGIN');
   let response;
   try {
     response = await fetch(url, {
-      headers: { Authorization: 'Bearer ' + token() },
+      method: options.method ?? 'GET',
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      headers: { Authorization: 'Bearer ' + token(), 'Content-Type': 'application/json' },
       redirect: 'error', signal: AbortSignal.timeout(30000),
     });
   } catch { throw new Error('APPLE_API: NETWORK_OR_AUTH_CONFIGURATION_ERROR'); }
-  if (!response.ok) throw new Error('APPLE_API: HTTP_' + response.status);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const code = String(body.errors?.[0]?.code ?? '').replace(/[^A-Z0-9_]/g, '_');
+    throw new Error('APPLE_API: HTTP_' + response.status + (code ? '_' + code : ''));
+  }
+  if (response.status === 204) return {};
   try { return await response.json(); }
   catch { throw new Error('APPLE_API: INVALID_JSON'); }
 }
@@ -73,7 +87,7 @@ export async function main(mode) {
     if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `app_id=${appId}\nbuild=${build}\n`);
     return;
   }
-  if (mode !== 'status') throw new Error('APPLE_MODE: INVALID');
+  if (!['status', 'distribute'].includes(mode)) throw new Error('APPLE_MODE: INVALID');
   const wanted = process.env.TESTFLIGHT_BUILD;
   if (!/^\d+$/.test(wanted ?? '')) throw new Error('APPLE_BUILD: REQUIRED');
   const matches = builds.filter(b => b.attributes.version === wanted);
@@ -88,8 +102,41 @@ export async function main(mode) {
   console.log(JSON.stringify({ build: wanted, buildId: build.id, processingState: build.attributes.processingState,
     expired: build.attributes.expired, beta: detail.data?.attributes,
     assignedGroupIds: assigned.map(g => g.id), groups: safeGroups }));
-  if (build.attributes.processingState === 'PROCESSING') process.exitCode = 75;
-  else if (build.attributes.processingState !== 'VALID') process.exitCode = 1;
+  const group = safeGroups.find(g => g.id === existingPublicGroup && !g.internal && g.publicLinkEnabled);
+  if (!group) throw new Error('APPLE_GROUP: EXPECTED_PUBLIC_GROUP_UNAVAILABLE');
+  if (installable(build, detail.data?.attributes ?? {}, assigned)) return;
+  if (build.attributes.processingState === 'PROCESSING') { process.exitCode = 75; return; }
+  if (build.attributes.processingState !== 'VALID' || build.attributes.expired) {
+    throw new Error('APPLE_BUILD: INVALID_OR_EXPIRED');
+  }
+  if (mode === 'distribute') {
+    const state = detail.data?.attributes?.externalBuildState;
+    if (['READY_FOR_BETA_SUBMISSION', 'READY_FOR_BETA_TESTING', 'IN_BETA_TESTING'].includes(state)) {
+      const localizations = await list(`/v1/builds/${build.id}/betaBuildLocalizations?limit=200`);
+      if (!localizations.some(item => item.attributes.locale === 'zh-Hans')) {
+        await request('/v1/betaBuildLocalizations', { method: 'POST', body: { data: {
+          type: 'betaBuildLocalizations', attributes: { locale: 'zh-Hans',
+            whatsNew: '请验证相机、麦克风和相册授权；拒绝授权后的设置跳转；手机重启后的登录状态和聊天历史保留。' },
+          relationships: { build: { data: { type: 'builds', id: build.id } } },
+        } } });
+      }
+      if (!assigned.some(item => item.id === existingPublicGroup)) {
+        await request(`/v1/betaGroups/${existingPublicGroup}/relationships/builds`, {
+          method: 'POST', body: { data: [{ type: 'builds', id: build.id }] },
+        });
+        console.log('APPLE_GROUP: EXISTING_PUBLIC_TEST_GROUP_ASSIGNED');
+      }
+      if (state === 'READY_FOR_BETA_SUBMISSION') {
+        await request('/v1/betaAppReviewSubmissions', { method: 'POST', body: { data: {
+          type: 'betaAppReviewSubmissions', relationships: { build: { data: { type: 'builds', id: build.id } } },
+        } } });
+        console.log('APPLE_REVIEW: BETA_REVIEW_REQUESTED');
+      }
+    }
+  }
+  // Apple review/compliance and group availability are separate from upload success.
+  // In particular, never invent an encryption declaration to make a build available.
+  process.exitCode = 75;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

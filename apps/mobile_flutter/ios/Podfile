@@ -46,7 +46,24 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  require 'shellwords'
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    next unless target.name == 'permission_handler_apple'
+
+    # CocoaPods defaults these permission_handler strategies to disabled.
+    # Enable only capabilities already used and declared by this app.
+    target.build_configurations.each do |config|
+      definitions = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS']
+      definitions = definitions.is_a?(String) ? Shellwords.split(definitions) : Array(definitions)
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = (definitions + [
+        '$(inherited)',
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_PHOTOS=1',
+        'PERMISSION_PHOTOS_ADD_ONLY=1',
+        'PERMISSION_NOTIFICATIONS=1',
+      ]).uniq
+    end
   end
 end

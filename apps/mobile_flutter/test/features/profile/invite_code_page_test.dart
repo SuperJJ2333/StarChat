@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/profile/invite_code_page.dart';
 import 'package:liuhetong_mobile/features/profile/invite_controller.dart';
+import 'package:liuhetong_mobile/features/profile/invite_snapshot_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 统一邀请码（规格 §6.2）：固定个人注册邀请码，不轮换。
 final class FakePersonalInvitationGateway implements PersonalInvitationGateway {
@@ -30,6 +32,9 @@ void main() {
   String? clipboardText;
   testerBinding() => TestDefaultBinaryMessengerBinding.instance;
   setUp(() {
+    // The controller hydrates its shared local snapshot during construction.
+    SharedPreferences.setMockInitialValues({});
+    InviteSnapshotStores.reset();
     clipboardText = null;
     testerBinding().defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
@@ -47,6 +52,7 @@ void main() {
     );
   });
   tearDown(() {
+    InviteSnapshotStores.reset();
     testerBinding()
         .defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
