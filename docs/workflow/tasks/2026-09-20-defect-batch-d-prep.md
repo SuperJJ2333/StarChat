@@ -73,5 +73,6 @@
 
 ### 4. 门禁
 - `flutter analyze lib test`：No issues found（7 个 lint 全部清零）。
-- 全量 `flutter test --timeout 120s`：见下方回填。
-- 未提交/推送状态：见交接节。
+- 全量 `flutter test --timeout 120s`：**3675 通过 / 0 失败（退出码 0）**。
+- 提交：9a77f825（批次 D 全量，22 文件）；89606cad（caibi 储备策略落主干）。均已推送 origin/main（060097ef..9a77f825）。
+- 并行会话未提交改动（frontend 管理页、pubspec.lock 等）未被纳入本任务提交。
