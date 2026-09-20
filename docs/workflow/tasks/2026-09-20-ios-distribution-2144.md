@@ -13,3 +13,7 @@
 证据 docs/verification/artifacts/2026-09-20/ios-distribution-2144/。备份服务器同路径加 /opt/starchat/ 前缀，rollback.md描述恢复。API镜像fb41d7fa未更改；IPA与manifest未更改。
 发布约2026-09-20 19:53+08；准备约19:49+08，精确主动时间未计量。前端测试1.75秒。
 下一步：用户在iPhone重新检查更新，Safari确认系统安装；真机企业签名信任/安装尚待反馈，不能以服务器验证替代。
+
+## 20:04+08 后续安装失败排查
+用户确认iPhone8/iOS16.7.16，系统协议提示后无安装确认。生产appstored日志显示清单200后没有IPA安装请求。发现线上manifest缺少关闭plist标签，plistlib失败 no element found line31；补齐后服务器和工作站HTTPS实际内容均解析通过，SHA a7b89bf847cdfe413c9ad2cb50eab3ffa897d5c363e472aa92cab5c2bfc4de6f。旧清单备份到发布目录manifest-malformed-before.plist。本次未改变任何更新设置。
+独立阻碍：用户提供IPA及生产IPA SHA48721e9c一致；Info.plist bundle ID=com.liuhetong.liuhetongMobile，但主程序签名entitlements和embedded.mobileprovision的application-identifier均为ZXB3TS7QD4.cn.edu.buaa.wxwork.notifyext，不匹配。本次确认enterprise标记并不足以证明签名有效；不得声称安装验收通过。需合法匹配该bundle ID的签名配置重新签名，不能更改bundle ID来绕过并破坏覆盖升级。下一步用户重试以确认清单阶段恢复，签名包待重新提供及验签。
