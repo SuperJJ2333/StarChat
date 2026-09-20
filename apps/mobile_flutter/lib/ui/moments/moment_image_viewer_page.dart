@@ -231,11 +231,14 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                   ),
                 ),
               ),
+            // BUG-41（真机回归修订）：大图查看弱网时不再出现「正在连接…」
+            // 状态栏——图片加载中已有自带进度指示，网络异常由重载点击承担。
             Positioned(
               top: 48,
               left: 16,
               right: 16,
-              child: Center(child: WeChatNetworkStatusCapsule()),
+              child: Center(
+                  child: WeChatNetworkStatusCapsule(showConnecting: false)),
             ),
             Positioned(
               top: 12,
