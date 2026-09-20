@@ -1,0 +1,27 @@
+# Mi6 debug reliability verification
+
+Final recorded 2026-09-20T09:25:08.262878+08:00. Base8ebaa334, isolated conversation-reliability worktree; three client bugs repaired. User explicitly prohibited new update popups: no production settings writes, no public APK upload, no new release version. Debug name0.3.100-debug/build2140/packagecom.liuhetong.mobile preserves current build sequence; Mi6 was subsequently updated with the verified debug APK, preserving app data.
+
+## Causes and repaired behavior
+
+1. Red-packet sheet initialized max200, loaded balance before limits and retained200 on failures/invalid response. Runtime API itself reads configured maximum; no production incident HTTP result was available. Independent balance/limits loading, no fabricated cap, functional retry, entry/resume/submit-time fresh reads, single-flight and duplicate-submit guard. Input retained; POST/server errors authoritative. No ledger/formula/auth/idempotency changes.
+2. RoomTimelineController returned after view disposal before persisting transport outcome; historical-source outbox restoration forced any row tofailed. Results now persist independently of the view; true source status retained, cross-room retry guard/txid ownership unchanged. Existing offline waitingNetwork red-exclamation behavior deliberately retained. Exact user's ten-second symptom remains to be reproduced on device; code defects are deterministic and redgreen proven.
+3. Recovery relied on sync/profile refresh and serial per-peer lookups. Added scheduled2/5/15/30/60second retries while unresolved, pauseoffline/background, reconnect/resume triggers, single-flight/account/dispose fences, three bounded peer workers and incremental identity refresh. Weak/online noise no longer resets backoff (review P2 reproduced and fixed). Strong identity evidence remains required; rooms without any corroborating association cannot be safely guessed from same names or two members. No room deletion/key weakening.
+
+## Test and review evidence
+
+Artifacts `artifacts/2026-09-20/mi6-chat-reliability/`: outbox6 expectedRED→48focusedPASS and44adjacentPASS; redpacket5RED then2refreshRED→35PASS; identity2RED then network-noise1RED→32focusedPASS. Final Flutter3647PASS123s exit0; analyze0issues7.2s; mobileboundary70PASS32.70s; repository/deployment policiesPASS; UIcontract32components/375screens; frontend218PASS. Spec then independent quality review approved after network-backoff issue correction. Initial analyzer2brace lint fixed without behaviorchange.
+
+Fullverify reuse: previous `conversation-identity-admission/verify.log` exit0 at2026-09-19T23:55+08 (API2206/58environmentgatedskips, infra143,bridge28,bot9,migrations/OpenAPI/renderPASS). `git diff 8ebaa334 -- services tests/business_api tests/business_worker tests/getui_bridge tests/matrix_bot tests/infra infra scripts/verify.ps1` is empty; backend inputs unchanged. Applicable changed client/UI/policy gates run fresh above; no duplicate22minute server suite or unrelated iOS rerun. Previous iOS18 debug-host discovery gap remains separate/open.
+
+HTML demo: `frontend/index.html?screen=redpacket-create-limits-failed` and `redpacket-create-limits-loading`; registry `packages/ui-contracts/changliao-component-registry.json`,375screens, existingtokens. Figma已退役，本次仅HTMLdemo。 Parent verified via Playwright actual page: enter300→retry→500.00limit, input remains300. Screenshots redpacket-demo.png/redpacket-retry-success.png and snapshot recorded. Browser console onlyfavicon404, no functionalJS error. Agent compound-shell screenshot was denied by automatic review; safer purpose-built Playwright succeeded, no approval bypass or outstanding screenshot block.
+
+## Debug artifact and device gate
+
+Source Gradle124.2s; conventional Apktool2.12.1 rebuild, zipalign36.0.0 and fixed signing;27317classes/339nativeassets unchanged, manifestsemantics identical,25DEX/resources rebuilt. Final145281323bytes SHA256 `2670dcba78ee90479a475e7e54139b5375368aac3ac994d667cd98a42ab6deb2`; certificate `75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff`,v2/v3PASS;ARM64/debuggable, minSDK24. All tracked mobile input hashes unchanged since fulltests; JSON evidence retains exact hashes.
+
+Stable delivery: `artifacts/2026-09-20/mi6-chat-reliability/android-debug/ChatFlow-0.3.100-build2140-mi6-debug.apk`. Exact source/final content verified, root-workspace copy hash identical. `install-mi6.ps1` executed successfully: requires exactlyoneMi6, installed signer/version check, no downgrade/uninstall/clear-data, install-r-t and full installed-APKhash readback.
+
+Mi6 connected and authorized after initial empty-device probes. Installation completed at 2026-09-20T09:35:30.7722458+08:00: existing signer/version checked, adb install -r -t succeeded, installed version0.3.100-debug/build2140 and DEBUGGABLE verified, full installed APK readback SHA256 matches the delivery artifact. No uninstall or data clear. Evidence: android-debug/installed-verification.json. Actual rapid-switch/network/limit user acceptance remains pending; do not equate installation verification with reproducing the user's ten-second symptom.
+
+Telegram public comparison: https://core.telegram.org/api/updates and https://core.telegram.org/method/messages.sendMessage describe stablepeer,random_id dedup and updateMessageID/getDifference result reconciliation. WeChat proprietary implementation not asserted; TencentCloud IM is not WeChat proof.

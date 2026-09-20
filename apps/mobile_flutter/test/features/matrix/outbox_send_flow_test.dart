@@ -87,6 +87,54 @@ void main() {
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
 
+  group('room switch during dispatch', () {
+    test('late server acknowledgement settles outbox after page disposal',
+        () async {
+      final response = Completer<String>();
+      final transport = _FakeTransport()..responses.add(() => response.future);
+      final controller = controllerFor(transport);
+      final send = controller.sendText('in flight');
+      await pumpEventQueue();
+      final row = (await outbox.unsent()).single;
+      controller.dispose();
+      final reopenedTransport = _FakeTransport();
+      final reopened = controllerFor(reopenedTransport);
+      await reopened.sendText(row.content, outboxRow: row);
+      expect(reopened.messages.single.deliveryState, RoomDeliveryState.sending);
+      response.complete(r'$accepted');
+      expect(await send, r'$accepted');
+      expect(await outbox.unsent(), isEmpty);
+      expect(transport.txids, [row.txid]);
+      expect(reopenedTransport.txids, isEmpty);
+      reopened.dispose();
+    });
+
+    for (final networkFailure in [false, true]) {
+      test(
+          'late ${networkFailure ? "network" : "server"} failure survives page disposal',
+          () async {
+        final response = Completer<String>();
+        final transport = _FakeTransport()
+          ..responses.add(() => response.future);
+        final controller = controllerFor(transport);
+        final send = controller.sendText('in flight');
+        await pumpEventQueue();
+        final original = (await outbox.unsent()).single;
+        controller.dispose();
+        response.completeError(networkFailure
+            ? const SocketException('offline')
+            : StateError('M_FORBIDDEN'));
+        await send;
+        final row = (await outbox.unsent()).single;
+        expect(row.txid, original.txid);
+        expect(row.status,
+            networkFailure ? OutboxStatus.waitingNetwork : OutboxStatus.failed);
+        expect(row.lastError,
+            contains(networkFailure ? 'offline' : 'M_FORBIDDEN'));
+      });
+    }
+  });
+
   group('会话内发送：先落盘再派发', () {
     test('发送中的消息已持久化（status=sending），送达后从 outbox 移除', () async {
       final inFlight = Completer<String>();
@@ -309,6 +357,33 @@ void main() {
       );
     });
   });
+  for (final status in [
+    OutboxStatus.sending,
+    OutboxStatus.waitingNetwork,
+    OutboxStatus.failed
+  ]) {
+    test('historical source preserves $status without rerouting retries',
+        () async {
+      final transport = _FakeTransport();
+      final controller =
+          RoomTimelineController(transport, outboxRoomId: '!primary:test');
+      final row = OutboxMessage(
+          localId: 'old-local',
+          txid: 'old-tx',
+          receiverId: '@peer:test',
+          content: 'in source',
+          roomId: '!old:test',
+          status: status,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026));
+      controller.restoreOutboxMessage(row);
+      expect(controller.messages.single.deliveryState,
+          roomDeliveryStateOf(status));
+      await controller.retry(row.txid);
+      expect(transport.txids, isEmpty);
+      controller.dispose();
+    });
+  }
   test(
       'historical outbox remains visible but never reroutes its transaction to primary',
       () async {
@@ -325,7 +400,7 @@ void main() {
         updatedAt: DateTime.utc(2026));
     await controller.sendText(row.content, outboxRow: row);
     expect(controller.messages.single.text, 'old pending');
-    expect(controller.messages.single.deliveryState, RoomDeliveryState.failed);
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.local);
     await controller.retry(row.txid);
     expect(transport.txids, isEmpty);
     controller.dispose();

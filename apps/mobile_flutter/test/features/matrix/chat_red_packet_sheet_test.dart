@@ -1,3 +1,8 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
@@ -81,6 +86,163 @@ Future<void> _pump(
 
 void main() {
   testWidgets(
+      'submit refreshes an old cap before local rejection and keeps server errors',
+      (tester) async {
+    final support = MutableLimitsSupport()..value = 200;
+    final business = FakeRedPacketBusiness()
+      ..error = BusinessApiException(
+          statusCode: 422,
+          code: 'RED_PACKET_LIMIT_EXCEEDED',
+          message: '单个红包金额不能超过 400.00 点钻');
+    final controller = ChatRedPacketController(
+        business: business,
+        references: FakeRedPacketReference(),
+        recipientId: 'user-bob');
+    await _pump(tester, controller: controller, support: support);
+    expect(find.textContaining('200.00 点钻'), findsOneWidget);
+    support.value = 500;
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '300');
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+    expect(support.calls, 2);
+    expect(business.creates, 1);
+    expect(business.total, '300');
+    expect(find.text('单个红包金额不能超过 400.00 点钻'), findsOneWidget);
+    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+  });
+
+  testWidgets('resume refreshes cap preserving input and coalesces with submit',
+      (tester) async {
+    final support = DeferredLimitsSupport();
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(
+        business: business,
+        references: FakeRedPacketReference(),
+        recipientId: 'user-bob');
+    await _pump(tester, controller: controller, support: support);
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '300');
+    support.pending = Completer<RedPacketLimits>();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(support.calls, 2);
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pump();
+    expect(support.calls, 2);
+    expect(business.creates, 0);
+    expect(
+        tester
+            .widget<CupertinoTextField>(
+                find.byKey(const Key('chat-red-packet-total')))
+            .controller!
+            .text,
+        '300');
+    support.pending!.complete(const RedPacketLimits(maxTotal: 500));
+    await tester.pumpAndSettle();
+    expect(business.creates, 1);
+    expect(business.total, '300');
+    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+  });
+
+  testWidgets(
+      'unavailable cap still shows authoritative server limit rejection',
+      (tester) async {
+    final business = FakeRedPacketBusiness()
+      ..error = BusinessApiException(
+          statusCode: 422,
+          code: 'RED_PACKET_LIMIT_EXCEEDED',
+          message: '单个红包金额不能超过 250.00 点钻');
+    final controller = ChatRedPacketController(
+        business: business,
+        references: FakeRedPacketReference(),
+        recipientId: 'user-bob');
+    await _pump(tester,
+        controller: controller, support: UnavailableLimitsSupport());
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '300');
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+    expect(business.creates, 1);
+    expect(find.text('单个红包金额不能超过 250.00 点钻'), findsOneWidget);
+  });
+
+  test(
+      'business limits reject missing or invalid runtime cap instead of defaulting',
+      () async {
+    final store = SecureSessionStore(_MemoryStore());
+    await store.saveSession(
+        accessToken: 'test-token', refreshToken: 'r', deviceKey: 'test-device');
+    for (final value in [null, 'bad', 'NaN', 'Infinity', '-1', '0']) {
+      final api = BusinessApiClient(
+          baseUri: Uri.parse('https://business.example'),
+          sessionStore: store,
+          client: MockClient((request) async {
+            expect(request.url.path, '/api/v1/red-packets/limits');
+            return http.Response(jsonEncode({'max_total': value}), 200);
+          }));
+      await expectLater(
+          BusinessChatRedPacketSupport(api).limits(), throwsFormatException);
+    }
+  });
+
+  testWidgets('failed limits can retry and reopening fetches changed config',
+      (tester) async {
+    final support = MutableLimitsSupport();
+    final controller = ChatRedPacketController(
+        business: FakeRedPacketBusiness(),
+        references: FakeRedPacketReference(),
+        recipientId: 'user-bob');
+    await _pump(tester, controller: controller, support: support);
+    support.value = 500;
+    await tester.tap(find.byKey(const Key('chat-red-packet-retry-limits')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+    expect(support.calls, 2);
+    await tester.pumpWidget(const SizedBox());
+    support.value = 750;
+    await _pump(tester, controller: controller, support: support);
+    expect(find.textContaining('750.00 点钻'), findsOneWidget);
+    expect(support.calls, 3);
+  });
+
+  testWidgets('runtime limit loads even while balance remains pending',
+      (tester) async {
+    final support = PendingSupport();
+    final controller = ChatRedPacketController(
+      business: FakeRedPacketBusiness(),
+      references: FakeRedPacketReference(),
+      recipientId: 'user-bob',
+    );
+    await _pump(tester, controller: controller, support: support);
+    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+    expect(find.textContaining('200.00 点钻'), findsNothing);
+    support.pendingBalance.complete(1000);
+    await tester.pump();
+  });
+
+  testWidgets('failed limits never invent a local cap and defer to the server',
+      (tester) async {
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(
+      business: business,
+      references: FakeRedPacketReference(),
+      recipientId: 'user-bob',
+    );
+    await _pump(tester,
+        controller: controller, support: UnavailableLimitsSupport());
+    expect(find.textContaining('200.00 点钻'), findsNothing);
+    expect(find.text('红包限额暂未获取，以提交时校验为准'), findsOneWidget);
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '300');
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+    expect(business.creates, 1);
+  });
+
+  testWidgets(
       'send page shows wechat-style labeled rows with right aligned numeric input',
       (tester) async {
     final controller = ChatRedPacketController(
@@ -93,8 +255,8 @@ void main() {
     expect(find.text('总金额'), findsOneWidget);
     expect(find.text('祝福语'), findsOneWidget);
     expect(find.text('塞钱进红包'), findsOneWidget);
-    expect(find.textContaining('200.00 点钻'), findsOneWidget,
-        reason: '单个红包上限 200.00 点钻（前后端统一，BUG-41 追加）');
+    expect(find.textContaining('200.00 点钻'), findsNothing,
+        reason: 'Only the runtime business configuration can supply the cap');
     expect(find.text('未领取的红包，将于24小时后发起退款'), findsOneWidget);
     final totalField = tester.widget<CupertinoTextField>(
       find.byKey(const Key('chat-red-packet-total')),
@@ -378,40 +540,126 @@ void main() {
     expect(gradient.colors.last, WeChatColors.redPacketCreateGradientBottom);
   });
 
-  testWidgets('exclusive nonfriend resolves and submits its business user ID', (tester) async {
+  testWidgets('exclusive nonfriend resolves and submits its business user ID',
+      (tester) async {
     final business = FakeRedPacketBusiness();
-    final controller = ChatRedPacketController(business: business, references: FakeRedPacketReference(), roomId: '!room:test');
-    await tester.pumpWidget(CupertinoApp(home: ChatRedPacketSheet(
-      controller: controller, isGroup: true, onSent: () {}, avatarMedia: _AvatarMedia(),
+    final controller = ChatRedPacketController(
+        business: business,
+        references: FakeRedPacketReference(),
+        roomId: '!room:test');
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatRedPacketSheet(
+      controller: controller,
+      isGroup: true,
+      onSent: () {},
+      avatarMedia: _AvatarMedia(),
       members: const [ChatRoomMember('@guest:test', '群成员')],
-      resolveBusinessUser: (_) async => {'matrix_user_id': '@guest:test', 'user_id': 'user-guest'},
+      resolveBusinessUser: (_) async =>
+          {'matrix_user_id': '@guest:test', 'user_id': 'user-guest'},
     )));
     await tester.enterText(find.byKey(const Key('chat-red-packet-total')), '8');
-    await tester.tap(find.byKey(const Key('chat-red-packet-type'))); await tester.pumpAndSettle();
-    await tester.tap(find.text('专属红包').last); await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-red-packet-recipient'))); await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-red-packet-member-@guest:test'))); await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-red-packet-send'))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('专属红包').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const Key('chat-red-packet-member-@guest:test')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
     expect(business.exclusiveRecipientId, 'user-guest');
   });
 
-  testWidgets('exclusive mismatched lookup cannot submit Matrix ID', (tester) async {
+  testWidgets('exclusive mismatched lookup cannot submit Matrix ID',
+      (tester) async {
     final business = FakeRedPacketBusiness();
-    final controller = ChatRedPacketController(business: business, references: FakeRedPacketReference(), roomId: '!room:test');
-    await tester.pumpWidget(CupertinoApp(home: ChatRedPacketSheet(
-      controller: controller, isGroup: true, onSent: () {}, avatarMedia: _AvatarMedia(),
+    final controller = ChatRedPacketController(
+        business: business,
+        references: FakeRedPacketReference(),
+        roomId: '!room:test');
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatRedPacketSheet(
+      controller: controller,
+      isGroup: true,
+      onSent: () {},
+      avatarMedia: _AvatarMedia(),
       members: const [ChatRoomMember('@guest:test', '群成员')],
-      resolveBusinessUser: (_) async => {'matrix_user_id': '@other:test', 'user_id': 'user-other'},
+      resolveBusinessUser: (_) async =>
+          {'matrix_user_id': '@other:test', 'user_id': 'user-other'},
     )));
-    await tester.tap(find.byKey(const Key('chat-red-packet-type'))); await tester.pumpAndSettle();
-    await tester.tap(find.text('专属红包').last); await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-red-packet-recipient'))); await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-red-packet-member-@guest:test'))); await tester.pump(); await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const Key('chat-red-packet-type')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('专属红包').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const Key('chat-red-packet-member-@guest:test')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('无法确认红包账号'), findsOneWidget);
     expect(business.creates, 0);
   });
 }
 
 final class _AvatarMedia implements AvatarMediaCapability {
-  @override Future<ResolvedAvatarUrl?> resolveAvatar({required Uri? avatarUri, required double size}) async => null;
+  @override
+  Future<ResolvedAvatarUrl?> resolveAvatar(
+          {required Uri? avatarUri, required double size}) async =>
+      null;
+}
+
+final class PendingSupport implements ChatRedPacketSupport {
+  final pendingBalance = Completer<double>();
+  @override
+  Future<double> balance() => pendingBalance.future;
+  @override
+  Future<RedPacketLimits> limits() async =>
+      const RedPacketLimits(maxTotal: 500);
+}
+
+final class UnavailableLimitsSupport implements ChatRedPacketSupport {
+  @override
+  Future<double> balance() async => 1000;
+  @override
+  Future<RedPacketLimits> limits() async => throw StateError('offline');
+}
+
+final class MutableLimitsSupport implements ChatRedPacketSupport {
+  double? value;
+  int calls = 0;
+  @override
+  Future<double> balance() async => 1000;
+  @override
+  Future<RedPacketLimits> limits() async {
+    calls++;
+    final current = value;
+    if (current == null) throw StateError('offline');
+    return RedPacketLimits(maxTotal: current);
+  }
+}
+
+final class _MemoryStore implements SecureKeyValueStore {
+  final values = <String, String>{};
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+}
+
+final class DeferredLimitsSupport implements ChatRedPacketSupport {
+  Completer<RedPacketLimits>? pending;
+  int calls = 0;
+  @override
+  Future<double> balance() async => 1000;
+  @override
+  Future<RedPacketLimits> limits() {
+    calls++;
+    return pending?.future ??
+        Future.value(const RedPacketLimits(maxTotal: 200));
+  }
 }

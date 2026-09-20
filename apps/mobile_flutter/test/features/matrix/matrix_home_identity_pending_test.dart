@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +17,108 @@ import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 
 void main() {
+  testWidgets('retry reacts to restored connectivity, not online weak noise',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final network = NetworkStateManager();
+    NetworkStateManager.shared = network;
+    final client = _HeldSyncClient('@self:matrix.example');
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://matrix.example'));
+    var calls = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://business.example'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        client: MockClient((request) async {
+          if (request.url.path.contains('/associations')) calls++;
+          return http.Response('{}', 503);
+        }));
+    final identities = _identities();
+    await identities.preload();
+    try {
+      await tester.pumpWidget(_home(
+          matrix: matrix,
+          api: api,
+          identityCache: identities,
+          previewOnly: false,
+          snapshotLoader: () async => _snapshot('local', pending: 1)));
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      network.report(
+          serverReachable: true, lastRoundTrip: const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(calls, 1, reason: 'weak is still usable, preserve retry backoff');
+      network.report(
+          serverReachable: true,
+          lastRoundTrip: const Duration(milliseconds: 10));
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      network.report(transportAvailable: false);
+      await tester.pump(const Duration(seconds: 10));
+      expect(calls, 1, reason: 'offline does not send recovery requests');
+      network.report(transportAvailable: true, serverReachable: true);
+      await tester.pumpAndSettle();
+      expect(calls, 2,
+          reason: 'reconnect repairs without waiting for Matrix sync');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump(const Duration(seconds: 10));
+      expect(calls, 2);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(calls, 3, reason: 'resume immediately repairs pending identity');
+    } finally {
+      await tester.pumpWidget(const SizedBox());
+      client.completeSync();
+      await tester.pump();
+      identities.dispose();
+      NetworkStateManager.shared = null;
+      network.dispose();
+    }
+  });
+
+  testWidgets('pending identity retries without another sync or user tap',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _HeldSyncClient('@self:matrix.example');
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://matrix.example'));
+    var calls = 0;
+    var pending = 1;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://business.example'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        client: MockClient((request) async {
+          if (request.url.path.contains('/associations')) {
+            calls++;
+            if (calls >= 2) pending = 0;
+          }
+          return http.Response('{}', 503);
+        }));
+    final identities = _identities();
+    await identities.preload();
+    await tester.pumpWidget(_home(
+        matrix: matrix,
+        api: api,
+        identityCache: identities,
+        previewOnly: false,
+        snapshotLoader: () async => _snapshot('local', pending: pending)));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    try {
+      expect(calls, 2);
+      expect(find.text('正在恢复会话'), findsNothing);
+      await tester.pump(const Duration(seconds: 5));
+      expect(calls, 2, reason: 'stop scheduled retries after recovery');
+    } finally {
+      await tester.pumpWidget(const SizedBox());
+      client.completeSync();
+      await tester.pump();
+      identities.dispose();
+    }
+  });
+
   testWidgets(
       'only pending rooms are recovery rather than an empty conversation list',
       (tester) async {

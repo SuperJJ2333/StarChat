@@ -34,9 +34,11 @@ final class BusinessChatRedPacketSupport implements ChatRedPacketSupport {
   @override
   Future<RedPacketLimits> limits() async {
     final body = await api.redPacketLimits();
-    return RedPacketLimits(
-        maxTotal:
-            double.tryParse(body['max_total']?.toString() ?? '') ?? 200);
+    final maximum = double.tryParse(body['max_total']?.toString() ?? '');
+    if (maximum == null || !maximum.isFinite || maximum <= 0) {
+      throw const FormatException('Invalid red packet runtime limit');
+    }
+    return RedPacketLimits(maxTotal: maximum);
   }
 }
 
@@ -112,7 +114,8 @@ final class ChatRedPacketSheet extends StatefulWidget {
   State<ChatRedPacketSheet> createState() => _State();
 }
 
-final class _State extends State<ChatRedPacketSheet> {
+final class _State extends State<ChatRedPacketSheet>
+    with WidgetsBindingObserver {
   final total = TextEditingController();
   final shares = TextEditingController(); // 规格要求：默认空，避免忘记设置
   final greeting = TextEditingController(text: '恭喜发财，大吉大利');
@@ -121,8 +124,11 @@ final class _State extends State<ChatRedPacketSheet> {
   String? recipientName;
   String? recipientMatrixUserId;
   double? balance;
-  /// BUG-41 追加（用户指令）：单个红包上限 200.00 点钻（前后端统一）。
-  double maxTotal = 200;
+  // Only the business configuration supplies a cap; missing data is unknown.
+  double? maxTotal;
+  bool loadingLimits = false;
+  Future<void>? _limitLoad;
+  bool _submitting = false;
   bool resolvingRecipient = false;
   int _resolutionGeneration = 0;
 
@@ -130,11 +136,14 @@ final class _State extends State<ChatRedPacketSheet> {
   void initState() {
     super.initState();
     widget.controller.addListener(_change);
-    _loadSupport();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadBalance());
+    unawaited(_loadLimits());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_change);
     total.dispose();
     shares.dispose();
@@ -142,11 +151,16 @@ final class _State extends State<ChatRedPacketSheet> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_loadLimits());
+  }
+
   void _change() {
     if (mounted) setState(() {});
   }
 
-  Future<void> _loadSupport() async {
+  Future<void> _loadBalance() async {
     final support = widget.support;
     if (support == null) return;
     try {
@@ -155,11 +169,23 @@ final class _State extends State<ChatRedPacketSheet> {
     } catch (_) {
       // Balance is a hint only; the server remains authoritative.
     }
+  }
+
+  Future<void> _loadLimits() {
+    return _limitLoad ??= _fetchLimits().whenComplete(() => _limitLoad = null);
+  }
+
+  Future<void> _fetchLimits() async {
+    final support = widget.support;
+    if (support == null || !mounted) return;
+    setState(() => loadingLimits = true);
     try {
       final limits = await support.limits();
       if (mounted) setState(() => maxTotal = limits.maxTotal);
     } catch (_) {
-      // Limits fall back to the compiled-in default.
+      if (mounted) setState(() => maxTotal = null);
+    } finally {
+      if (mounted) setState(() => loadingLimits = false);
     }
   }
 
@@ -171,15 +197,29 @@ final class _State extends State<ChatRedPacketSheet> {
   }
 
   Future<void> _send() async {
-    if (resolvingRecipient) return;
+    if (resolvingRecipient || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      // Refresh before a cached cap can reject a newly permitted amount.
+      // Concurrent resume/retry loads share the same bounded API request.
+      await _loadLimits();
+      if (!mounted) return;
+      await _submit();
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _submit() async {
     final amountError = AmountRules.validate(total.text.trim());
     if (amountError != null) {
       await _alert(amountError);
       return;
     }
     final amount = double.parse(total.text.trim());
-    if (amount > maxTotal) {
-      await _alert('单个红包金额不能超过 ${maxTotal.toStringAsFixed(2)} 点钻');
+    final maximum = maxTotal;
+    if (maximum != null && amount > maximum) {
+      await _alert('单个红包金额不能超过 ${maximum.toStringAsFixed(2)} 点钻');
       return;
     }
     var shareCount = 1; // 私聊固定 1 个；群聊取输入框（空=未设置）
@@ -388,7 +428,8 @@ final class _State extends State<ChatRedPacketSheet> {
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
-    final busy = state.status == ChatRedPacketStatus.creating ||
+    final busy = _submitting ||
+        state.status == ChatRedPacketStatus.creating ||
         state.status == ChatRedPacketStatus.sharing ||
         resolvingRecipient;
     final exclusive = mode == 'EXCLUSIVE';
@@ -536,12 +577,24 @@ final class _State extends State<ChatRedPacketSheet> {
               },
             ),
             Text(
-              '单个红包金额不可超过 ${maxTotal.toStringAsFixed(2)} 点钻',
+              maxTotal != null
+                  ? '单个红包金额不可超过 ${maxTotal!.toStringAsFixed(2)} 点钻'
+                  : loadingLimits
+                      ? '正在获取红包限额…'
+                      : '红包限额暂未获取，以提交时校验为准',
               key: const Key('chat-red-packet-limit-hint'),
               textAlign: TextAlign.center,
               style: const TextStyle(
                   color: WeChatColors.textSecondary, fontSize: 12),
             ),
+            if (maxTotal == null && !loadingLimits && widget.support != null)
+              CupertinoButton(
+                key: const Key('chat-red-packet-retry-limits'),
+                padding: const EdgeInsets.all(4),
+                minimumSize: Size.zero,
+                onPressed: _loadLimits,
+                child: const Text('重试获取限额', style: TextStyle(fontSize: 12)),
+              ),
             if (widget.isGroup && !exclusive)
               Padding(
                 padding: const EdgeInsets.only(top: 4),

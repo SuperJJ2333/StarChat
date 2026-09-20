@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Red packet limits pending</title><link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/primitives.css"><link rel="stylesheet" href="/src/styles/components.css"></head>
+<body data-test-result="pending"><main id="test-root"></main><script type="module">
+try {
+  const [{registerComponents},{getScreen}] = await Promise.all([import('/src/components/register.js'),import('/src/catalog/screens.js')]);
+  registerComponents();
+  const screen = await getScreen('redpacket-create-limits-failed').component();
+  document.querySelector('#test-root').append(screen);
+  const hint = screen.querySelector('[data-redpacket-limit]');
+  const amount = screen.querySelector('input[aria-label="总金额"]');
+  amount.value = '300.00';
+  if (hint.dataset.state !== 'unavailable' || hint.textContent.includes('200')) throw new Error('unknown cap invented');
+  screen.querySelector('app-action-button[action="redpacket:retry-limits"]').click();
+  if (hint.dataset.state !== 'loading') throw new Error('retry did not load');
+  await new Promise(resolve => setTimeout(resolve, 500));
+  if (!hint.textContent.includes('500.00') || amount.value !== '300.00') throw new Error('retry cap/draft mismatch');
+  document.body.dataset.testResult = 'passed'; document.title = 'Red packet limits passed';
+} catch(error) { document.body.dataset.testResult = 'failed'; document.body.dataset.testMessage = error.message; }
+</script></body></html>

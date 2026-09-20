@@ -1199,8 +1199,8 @@ final class RoomTimelineController extends ChangeNotifier {
       // `_localTimestampFor` 的"钳位到最新之后"只适用于乐观新发送；
       // 失败行被钳位后会退回重进时永远排在最底部。
       timestamp: row.createdAt,
-      deliveryState:
-          foreign ? RoomDeliveryState.failed : roomDeliveryStateOf(row.status),
+      // Source routing limits retries, not the actual delivery outcome.
+      deliveryState: roomDeliveryStateOf(row.status),
     );
     final transport = adapter;
     _senders[tx] = () => transport is RoomOptimisticTextAdapter
@@ -1214,7 +1214,11 @@ final class RoomTimelineController extends ChangeNotifier {
     final insertIndex =
         messages.indexWhere((m) => m.timestamp.isAfter(local.timestamp));
     messages = insertIndex >= 0
-        ? [...messages.sublist(0, insertIndex), local, ...messages.sublist(insertIndex)]
+        ? [
+            ...messages.sublist(0, insertIndex),
+            local,
+            ...messages.sublist(insertIndex)
+          ]
         : [...messages, local];
     _publish();
   }
@@ -1364,7 +1368,11 @@ final class RoomTimelineController extends ChangeNotifier {
       final eventId = await sendFuture.timeout(sendDispatchTimeout,
           onTimeout: () =>
               throw TimeoutException('消息发送超时', sendDispatchTimeout));
-      if (_disposed) return null;
+      // The account-scoped journal outlives this page. A room switch must not
+      // discard a transport result or leave an acknowledged row in sending.
+      await _persistOutboxOutcome(tx, inFlight, RoomDeliveryState.sent,
+          error: null, outboxRow: row);
+      if (_disposed) return eventId;
       _echoRevision++;
       _eventTransactions[eventId] = tx;
       if (_localEchoes.containsKey(tx)) {
@@ -1374,21 +1382,21 @@ final class RoomTimelineController extends ChangeNotifier {
       _waitingNetworkIds.remove(tx);
       _senders.remove(tx);
       NotificationFeedback.shared.play(SoundType.messageSent);
-      // ④ 服务端已确认：outbox 行记 sent 并移除（不保留正文副本）。
-      await _persistOutboxOutcome(tx, inFlight, RoomDeliveryState.sent,
-          error: null, outboxRow: row);
       messages = _snapshot();
       _publish();
       return eventId;
     } catch (error) {
-      if (_disposed) return null;
-      _echoRevision++;
-      // 网络失败 → waitingNetwork（红叹号，保留 sender/txid 供恢复后自动重发）；
-      // 其余（服务端拒绝、无权限等）→ 终局 failed。
-      final state = _noteFailure(tx, error, attemptRevision: attemptRevision);
-      _localEchoes[tx] = inFlight.copyWith(deliveryState: state);
+      // Preserve real failures after disposal without reattaching page listeners.
+      final state = _disposed
+          ? (_isNetworkFailure(error)
+              ? RoomDeliveryState.waitingNetwork
+              : RoomDeliveryState.failed)
+          : _noteFailure(tx, error, attemptRevision: attemptRevision);
       await _persistOutboxOutcome(tx, inFlight, state,
           error: error, outboxRow: row);
+      if (_disposed) return null;
+      _echoRevision++;
+      _localEchoes[tx] = inFlight.copyWith(deliveryState: state);
     } finally {
       _inFlightTxids.remove(tx);
       _resumeSettledWaiting(tx, attemptRevision);

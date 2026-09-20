@@ -1,3 +1,4 @@
+import '../../core/network_state_manager.dart';
 import 'direct_room_directory_convergence.dart';
 import '../contacts/contact_actions.dart';
 import '../../ui/components/top_more_menu.dart';
@@ -257,7 +258,8 @@ class MatrixHomePage extends StatefulWidget {
   State<MatrixHomePage> createState() => _MatrixHomePageState();
 }
 
-class _MatrixHomePageState extends State<MatrixHomePage> {
+class _MatrixHomePageState extends State<MatrixHomePage>
+    with WidgetsBindingObserver {
   bool syncing = false;
   StreamSubscription<Object?>? syncSubscription;
   StreamSubscription<MatrixDecryptionUpdate>? decryptionSubscription;
@@ -266,6 +268,74 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   var _snapshotOwnerEpoch = 0;
   int _unresolvedRoomCount = 0;
   Object? _directRecoveryJob;
+  Timer? _identityRecoveryRetry;
+  int _identityRecoveryAttempt = 0;
+  NetworkStateManager? _recoveryNetwork;
+  NetworkState? _lastRecoveryNetwork;
+  bool _recoveryForeground = true;
+
+  bool get _canRecoverIdentity =>
+      _recoveryForeground &&
+      _recoveryNetwork?.current != NetworkState.offline &&
+      _recoveryNetwork?.current != NetworkState.recovering;
+
+  void _scheduleIdentityRecovery() {
+    if (!mounted || widget.previewOnly || _unresolvedRoomCount == 0) {
+      _identityRecoveryRetry?.cancel();
+      _identityRecoveryRetry = null;
+      _identityRecoveryAttempt = 0;
+      return;
+    }
+    if (!_canRecoverIdentity ||
+        _directRecoveryJob != null ||
+        _identityRecoveryRetry != null) {
+      return;
+    }
+    const delays = [2, 5, 15, 30, 60];
+    final index = _identityRecoveryAttempt.clamp(0, delays.length - 1);
+    _identityRecoveryRetry = Timer(Duration(seconds: delays[index]), () {
+      _identityRecoveryRetry = null;
+      _identityRecoveryAttempt++;
+      unawaited(_processPendingDirectInvites());
+    });
+  }
+
+  void _cancelIdentityRetry() {
+    _identityRecoveryRetry?.cancel();
+    _identityRecoveryRetry = null;
+  }
+
+  void _restartIdentityRecovery() {
+    _cancelIdentityRetry();
+    if (_canRecoverIdentity && _unresolvedRoomCount > 0) {
+      _identityRecoveryAttempt = 0;
+      unawaited(_processPendingDirectInvites());
+    }
+  }
+
+  void _identityNetworkChanged() {
+    final previous = _lastRecoveryNetwork;
+    _lastRecoveryNetwork = _recoveryNetwork?.current;
+    if (!_canRecoverIdentity) {
+      _cancelIdentityRetry();
+    } else if (previous == NetworkState.offline ||
+        previous == NetworkState.recovering) {
+      _restartIdentityRecovery();
+    }
+    // online <-> weak is not reconnect: preserve the bounded retry schedule.
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final wasForeground = _recoveryForeground;
+    _recoveryForeground = state == AppLifecycleState.resumed;
+    if (!_recoveryForeground) {
+      _cancelIdentityRetry();
+    } else if (!wasForeground) {
+      _restartIdentityRecovery();
+    }
+  }
+
   late DecryptionStateController decryptionStates;
   List<_RoomSnapshot> _rooms = const [];
   final Map<String, _RoomProjectionCacheEntry> _roomProjectionCache = {};
@@ -309,7 +379,14 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   Future<void> _processPendingDirectInvites() async {
-    if (!mounted || widget.previewOnly || _directRecoveryJob != null) return;
+    if (!mounted ||
+        widget.previewOnly ||
+        !_canRecoverIdentity ||
+        _directRecoveryJob != null) {
+      return;
+    }
+    _identityRecoveryRetry?.cancel();
+    _identityRecoveryRetry = null;
     final matrix = widget.matrix;
     final api = widget.api;
     final identities = _identityCache;
@@ -334,6 +411,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       // directory convergence completes, so resolved identities appear promptly.
       await matrix.conversations.convergeDirectRoomDirectory(
         knownMatrixPeers: identities.contactsByMatrixId.keys,
+        onChanged: () {
+          if (current()) unawaited(_refreshClientSnapshot());
+        },
         businessUserIdOf: (peer) =>
             current() ? identities.contactsByMatrixId[peer]?.userId : null,
         associationsOf: (peer) async {
@@ -369,6 +449,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     } finally {
       if (mounted && identical(_directRecoveryJob, job)) {
         setState(() => _directRecoveryJob = null);
+        _scheduleIdentityRecovery();
       }
     }
   }
@@ -422,6 +503,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     decryptionStates = DecryptionStateController();
     _identityCache = widget.identityCache ?? ProfileRepository(widget.api);
     _supportIdentities = SupportIdentityRepository(widget.api);
@@ -456,6 +538,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   void _attachMatrixListeners() {
+    _recoveryNetwork = NetworkStateManager.shared;
+    _lastRecoveryNetwork = _recoveryNetwork?.current;
+    _recoveryNetwork?.state.addListener(_identityNetworkChanged);
     final matrix = widget.matrix;
     syncSubscription = matrix.syncEvents.listen((_) {
       if (!mounted || !identical(widget.matrix, matrix)) return;
@@ -485,6 +570,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   void _detachMatrixListeners() {
+    _recoveryNetwork?.state.removeListener(_identityNetworkChanged);
+    _recoveryNetwork = null;
+    _lastRecoveryNetwork = null;
+    _identityRecoveryRetry?.cancel();
+    _identityRecoveryRetry = null;
+    _identityRecoveryAttempt = 0;
     unawaited(syncSubscription?.cancel() ?? Future<void>.value());
     syncSubscription = null;
     unawaited(decryptionSubscription?.cancel() ?? Future<void>.value());
@@ -555,13 +646,17 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             _vaultRoomId != snapshot.vaultRoomId ||
             _reminderRoomId != snapshot.reminderRoomId ||
             !_sameRoomSnapshots(_rooms, nextRooms);
-        if (!changed) return;
+        if (!changed) {
+          _scheduleIdentityRecovery();
+          return;
+        }
         setState(() {
           _unresolvedRoomCount = snapshot.unresolvedRoomCount;
           _vaultRoomId = snapshot.vaultRoomId;
           _reminderRoomId = snapshot.reminderRoomId;
           _rooms = List.unmodifiable(nextRooms);
         });
+        _scheduleIdentityRecovery();
         _warmSupportIdentities(nextRooms);
       });
     } catch (_) {/* Keep cached presentation during sync/revocation. */}
@@ -645,6 +740,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     RoomDraftStore.shared.draftMembershipRevision
         .removeListener(_draftsChanged);
     _snapshotOwnerEpoch++;

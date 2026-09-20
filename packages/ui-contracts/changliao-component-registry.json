@@ -1504,7 +1504,7 @@
     }
   },
   "screens": {
-    "expectedCount": 373
+    "expectedCount": 375
   },
   "adminCompletion20260910": {
     "html": [
@@ -1600,6 +1600,16 @@
     "acceptance": "Title stays 钱包; rebind icon inside TRON card; deposit/withdraw disabled until ACTIVE and ready; current point balance and full amount; 1 point = 1 USDT, zero fee, minimum 10 USDT; explicit PIN confirm/cancel/error.",
     "demoBoundary": "Fixture-only, no network financial writes, PIN 123456 only, completion never represents submitted payment.",
     "verification": "Static source review only; user no-self-test authorization retained. Figma retired; HTML demo only."
+  },
+  "redPacketRuntimeLimits20260920": {
+    "flutter": ["lib/features/matrix/chat_red_packet_sheet.dart"],
+    "html": ["frontend/src/screens/finance.js"],
+    "tags": ["app-action-button"],
+    "props": ["support", "controller"],
+    "demo": ["redpacket-create-limits-loading", "redpacket-create-limits-failed"],
+    "states": ["loading", "unavailable", "retrying", "ready"],
+    "tokens": ["WeChatColors.textSecondary = --color-text-secondary", "existing finance field and action-button tokens"],
+    "acceptance": "Unknown cap never fabricates 200. Retry keeps amount/count/greeting drafts and resolves the fixture business maximum 500.00. Flutter fetches at page entry, resume and before submit; requests coalesce. Demo has no financial network writes."
   },
   "financeSixRemediation20260913": {
     "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js", "frontend/src/styles/components.css"],

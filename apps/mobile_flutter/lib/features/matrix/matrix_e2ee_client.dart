@@ -1048,6 +1048,7 @@ final class MatrixConversationCapability {
           Future<void> Function(
                   String peerBusinessUserId, List<String> roomIds)?
               publishAssociations,
+          void Function()? onChanged,
           Iterable<String> knownMatrixPeers = const <String>[]}) =>
       _owner._withClient((client) => convergeDirectDirectory(client,
           canonicalRoomIdOf: canonicalRoomIdOf,
@@ -1055,6 +1056,7 @@ final class MatrixConversationCapability {
           associationsOf: associationsOf,
           publishAssociations: publishAssociations,
           knownMatrixPeers: knownMatrixPeers,
+          onChanged: onChanged,
           registry: _owner._duplicateRooms));
   Future<MatrixRoomInfoSnapshot> waitForJoinedRoom(String id) =>
       _owner._withClient((client) async {

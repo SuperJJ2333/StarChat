@@ -251,6 +251,34 @@ function redpacket(definition) {
       }
     }
   } else {
+    // Fixture-only gateway: the production Flutter page reads business limits.
+    const limitsGateway = { load: () => new Promise(resolve => setTimeout(() => resolve({ max_total: "500.00" }), 400)) };
+    const limitHint = element("p", "c-ledger-page-note", "");
+    limitHint.dataset.redpacketLimit = "true";
+    const retryLimits = component("app-action-button", { label: "重试获取限额", action: "redpacket:retry-limits" });
+    let limitRequest;
+    const showLimit = (state, maximum) => {
+      limitHint.dataset.state = state;
+      limitHint.textContent = state === "loading" ? "正在获取红包限额…"
+        : state === "unavailable" ? "红包限额暂未获取，以提交时校验为准"
+        : `单个红包金额不可超过 ${maximum} 点钻`;
+      retryLimits.hidden = state !== "unavailable";
+    };
+    const loadLimits = () => {
+      if (limitRequest) return limitRequest;
+      showLimit("loading");
+      limitRequest = limitsGateway.load().then(({ max_total }) => showLimit("ready", max_total))
+        .catch(() => showLimit("unavailable")).finally(() => { limitRequest = null; });
+      return limitRequest;
+    };
+    retryLimits.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      void loadLimits();
+    });
+    if (definition.state === "limits-loading") void loadLimits();
+    else if (definition.state === "limits-failed") showLimit("unavailable");
+    else showLimit("ready", "500.00");
     const typeLabels = { "group-equal": "普通红包", "group-random": "拼手气红包", "group-exclusive": "专属红包", "direct-equal": "私聊普通红包" };
     const directCreate = definition.state === "direct-equal";
     const exclusiveCreate = definition.state === "group-exclusive";
@@ -277,7 +305,9 @@ function redpacket(definition) {
       }
     });
     content.append(element("div", "c-segmented-control", typeLabels[definition.state] ?? "群聊拼手气"));
-    content.append(field("总金额", "88.00", "最高 20000.00 点钻"), count, field("祝福语", "周末愉快", "恭喜发财，大吉大利"), validation);
+    const amountField = field("总金额", "88.00", "请输入金额");
+    amountField.querySelector("input").setAttribute("aria-label", "总金额");
+    content.append(amountField, count, field("祝福语", "周末愉快", "恭喜发财，大吉大利"), limitHint, retryLimits, validation);
     const invalidMessage = definition.state === "count-invalid"
       ? (fixedSinglePart ? "私聊或专属红包只能创建 1 份" : `红包份数不能超过当前群聊人数（含发送者）：${maxParts}`)
       : definition.state === "minimum-invalid" ? "每份至少 0.01 点钻"

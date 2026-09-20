@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_room_directory_convergence.dart';
 import 'package:liuhetong_mobile/features/matrix/duplicate_room_registry.dart';
@@ -18,6 +19,32 @@ AssociationClient fixture() {
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  test('slow peer does not block other peer identity recovery', () async {
+    final client = AssociationClient();
+    final registry = DuplicateRoomRegistry();
+    final held = Completer<DirectRoomAssociations?>();
+    final queried = <String>[];
+    final done = convergeDirectDirectory(client,
+        registry: registry,
+        knownMatrixPeers: ['@slow:test', '@fast:test'],
+        businessUserIdOf: (id) => id,
+        associationsOf: (peer) async {
+          queried.add(peer);
+          if (peer == '@slow:test') return held.future;
+          return const DirectRoomAssociations(
+              primaryRoomId: '!fast:test', roomIds: ['!fast:test']);
+        });
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(queried, contains('@fast:test'));
+      expect(registry.primaryRoomIdForPeer('@me:test', '@fast:test'),
+          '!fast:test');
+    } finally {
+      held.complete(null);
+      await done;
+    }
+  });
+
   test('canonical unavailable leaves original cross-device directory untouched',
       () async {
     final client = fixture();

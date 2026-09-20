@@ -73,6 +73,7 @@ Future<void> convergeDirectDirectory(
   Future<void> Function(String peerBusinessUserId, List<String> roomIds)?
       publishAssociations,
   DuplicateRoomRegistry? registry,
+  void Function()? onChanged,
   Iterable<String> knownMatrixPeers = const [],
 }) async {
   final self = client.userID;
@@ -117,10 +118,10 @@ Future<void> convergeDirectDirectory(
       directory.putIfAbsent(peer, () => <String>{}).add(room);
     }
   }
-  for (final entry in directory.entries) {
+  Future<void> recoverPeer(MapEntry<String, Set<String>> entry) async {
     if (client.userID != self) return;
     final peer = businessUserIdOf?.call(entry.key);
-    if (peer == null || peer.isEmpty) continue;
+    if (peer == null || peer.isEmpty) return;
     DirectRoomAssociations? remote;
     try {
       remote = await associationsOf?.call(peer);
@@ -131,7 +132,7 @@ Future<void> convergeDirectDirectory(
         ? remotePrimary
         : await _canonicalOf(canonicalRoomIdOf, peer);
     if (client.userID != self) return;
-    if (canonical == null || !canonical.startsWith('!')) continue;
+    if (canonical == null || !canonical.startsWith('!')) return;
     final verifiedRemote = remotePrimary == canonical
         ? remote!.roomIds.where((id) => id.startsWith('!')).toSet()
         : <String>{};
@@ -141,6 +142,7 @@ Future<void> convergeDirectDirectory(
     // current sending destination or republish stale account metadata.
     canonical = identities.primaryRoomIdForPeer(self, entry.key) ?? canonical;
     final revision = identities.revisionForPeer(self, entry.key);
+    onChanged?.call();
     final localVerified = entry.value.where((id) {
       final room = _joinedRoomById(client, id);
       return room != null &&
@@ -170,6 +172,7 @@ Future<void> convergeDirectDirectory(
             primaryRoomId: canonical,
             duplicateRoomId: id,
             revision: revision);
+        if (client.userID == self) onChanged?.call();
       }
       if (client.userID != self) return;
       if (identities.primaryRoomIdForPeer(self, entry.key) != canonical ||
@@ -212,6 +215,20 @@ Future<void> convergeDirectDirectory(
       }
     }
   }
+
+  // One slow peer must not stall all other identities. Bound requests to avoid
+  // a contacts-sized burst, retaining each peer's revision/account fences.
+  final entries = directory.entries.toList(growable: false);
+  var next = 0;
+  Future<void> worker() async {
+    while (next < entries.length && client.userID == self) {
+      await recoverPeer(entries[next++]);
+    }
+  }
+
+  await Future.wait([
+    for (var index = 0; index < 3 && index < entries.length; index++) worker(),
+  ]);
 }
 
 Room? _joinedRoomById(Client client, String roomId) {
