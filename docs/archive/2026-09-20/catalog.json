@@ -1,0 +1,198 @@
+[
+  {
+    "original": "docs/ANDROID_SECURITY_AUDIT.md",
+    "body": "docs/archive/2026-09-20/root/ANDROID_SECURITY_AUDIT.md",
+    "status": "Historical / 已归档",
+    "current": "docs/runbooks/android-apk-rebuild.md",
+    "original_sha256": "04004060e86247144ab2b79d1093d054b34d4e2abf34f1d206b0ec6f26adcda6"
+  },
+  {
+    "original": "docs/ChatFlow_Codex_审计修复Prompt.md",
+    "body": "docs/archive/2026-09-20/root/ChatFlow_Codex_审计修复Prompt.md",
+    "status": "Historical / 已归档",
+    "current": "docs/reports/chatflow-audit-remediation-result.md",
+    "original_sha256": "6f0aac9bd96cb170ff7ad4364791c806acefbd48167ac9dac64258ccf4ad4fab"
+  },
+  {
+    "original": "docs/DIRECT_CHAT_ANDROID_COMPATIBILITY.md",
+    "body": "docs/archive/2026-09-20/root/DIRECT_CHAT_ANDROID_COMPATIBILITY.md",
+    "status": "Historical / 已归档",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "1ac295630e249ac4d203e627658c983f1c57ab6d0ba042d6bcd160a8a7981b50"
+  },
+  {
+    "original": "docs/FRIEND_SYSTEM_REFACTOR.md",
+    "body": "docs/archive/2026-09-20/root/FRIEND_SYSTEM_REFACTOR.md",
+    "status": "Historical / 已归档",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "7dc57e783e2e882af96813ab12f90c0a1b4c13491ff0ebadc0fa63e908f0156e"
+  },
+  {
+    "original": "docs/MEDIA_PICKER_FIX.md",
+    "body": "docs/archive/2026-09-20/root/MEDIA_PICKER_FIX.md",
+    "status": "Historical / 已归档",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "a1e4bcaa32a03bc97807546e213bc3b0eb8f061f361d367dd3ec077f8cfad176"
+  },
+  {
+    "original": "docs/PERFORMANCE_AND_CACHE_AUDIT.md",
+    "body": "docs/archive/2026-09-20/root/PERFORMANCE_AND_CACHE_AUDIT.md",
+    "status": "Historical / 已归档",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "d2aab5db9c509845b57e6bd736fbd1e16cb3b6bb3c27bbf30e835c650c2c1d71"
+  },
+  {
+    "original": "docs/ui-development-figma-workflow.md",
+    "body": "docs/archive/2026-09-20/root/ui-development-figma-workflow.md",
+    "status": "Historical / 已归档",
+    "current": "docs/runbooks/ui-development.md",
+    "original_sha256": "5c4d8ebeeef1089c1c3d8f61c06b8914b6a44b2d810e4bc6bacc9c07dc076fa5"
+  },
+  {
+    "original": "docs/NOTIFICATION_SYSTEM.md",
+    "body": "docs/architecture/notification-system.md",
+    "status": "Reference / 按专题核对",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "510040931dcf6cb603c2352cedea5f183b285f8414f5d55b0acf62f79283d7ce"
+  },
+  {
+    "original": "docs/NOTIFICATION_QA_MATRIX.md",
+    "body": "docs/testing/notification-qa-matrix.md",
+    "status": "Reference / 按专题核对",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "a62eeb25aa1d065f10eda173cb972fe7448f2225cdb6cca1cd779b19970007f7"
+  },
+  {
+    "original": "docs/VIDEO_SEND_PIPELINE.md",
+    "body": "docs/architecture/video-send-pipeline.md",
+    "status": "Reference / 按专题核对",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "213af882c99136b5748a4337a6a3e9371cef3bb4d7d32b1a1059dae63d31e23b"
+  },
+  {
+    "original": "docs/PUSH_SETUP.md",
+    "body": "docs/runbooks/push-setup.md",
+    "status": "Reference / 按专题核对",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "3208f17f515dcfad0838d548fdc15759ab9f5de2b5c4d2d305c2dee413b602ba"
+  },
+  {
+    "original": "docs/TURN.md",
+    "body": "docs/runbooks/turn.md",
+    "status": "Reference / 按专题核对",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "90e29bbb012747df596c89d59d108eca5fb0a3e8b79be73cf9512f029debe734"
+  },
+  {
+    "original": "docs/ui-development-html-demo-workflow.md",
+    "body": "docs/runbooks/ui-development.md",
+    "status": "Reference / 按专题核对",
+    "current": "docs/runbooks/ui-development.md",
+    "original_sha256": "bd2a7b8db7b7ff549425fbbbb3820916501c661be19c920d50a6e9c9a2fb5a56"
+  },
+  {
+    "original": "docs/runbooks/admin-completion-deployment.md",
+    "body": "docs/archive/2026-09-20/runbooks/admin-completion-deployment.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/admin-production-workflow.md",
+    "original_sha256": "ec46c8be40416cccd77a1680deddb81b5c6669e27745f227bb8abb2cf6212a28"
+  },
+  {
+    "original": "docs/runbooks/admin-readability-deployment.md",
+    "body": "docs/archive/2026-09-20/runbooks/admin-readability-deployment.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/admin-production-workflow.md",
+    "original_sha256": "6bf8815dfd7bae42edd786a426bc0f1791e694fc07fd486c90e830721d9fa4f0"
+  },
+  {
+    "original": "docs/runbooks/moments-comment-privacy-deployment.md",
+    "body": "docs/archive/2026-09-20/runbooks/moments-comment-privacy-deployment.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/admin-production-workflow.md",
+    "original_sha256": "34537bf61fe25cf7c55a7b17b300f5514c168d759e0314a067ad87391909b336"
+  },
+  {
+    "original": "docs/runbooks/wallet-access-deployment.md",
+    "body": "docs/archive/2026-09-20/runbooks/wallet-access-deployment.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/wallet.md",
+    "original_sha256": "9fdfe47f638d278dd403ade56d48f0f98df752f5e268568cf6bf86728b3a8137"
+  },
+  {
+    "original": "docs/runbooks/wallet-binding-deployment.md",
+    "body": "docs/archive/2026-09-20/runbooks/wallet-binding-deployment.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/wallet.md",
+    "original_sha256": "d88257183b3693ae24f619b92c9637a2eff96144503a06904b2532903ab9ae0a"
+  },
+  {
+    "original": "docs/runbooks/wallet-production-release.md",
+    "body": "docs/archive/2026-09-20/runbooks/wallet-production-release.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/wallet.md",
+    "original_sha256": "f314726aba4b3f6bd038d7d56c3c4d2e0842059bd5dc4da54515d742ea892c2a"
+  },
+  {
+    "original": "docs/runbooks/wallet-reserve-resampling-deployment.md",
+    "body": "docs/archive/2026-09-20/runbooks/wallet-reserve-resampling-deployment.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/wallet-incident-recovery.md",
+    "original_sha256": "ce7dbbd22ea209ea86f604809abe555c57dd7c94280f373bf20ea6e77d7588e2"
+  },
+  {
+    "original": "docs/runbooks/wallet-client-server-release.md",
+    "body": "docs/archive/2026-09-20/runbooks/wallet-client-server-release.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/wallet.md",
+    "original_sha256": "e2b1cb48d9cf3af899194f665c1e9293c1f6ab931383bc0de48733a5fb62d81a"
+  },
+  {
+    "original": "docs/runbooks/ios-windows-testflight-setup.md",
+    "body": "docs/archive/2026-09-20/runbooks/ios-windows-testflight-setup.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/mobile-release.md",
+    "original_sha256": "0df94ba0f64af259c60de8d9d275b6eb4a858bdebf304e475c53967a6e565c3f"
+  },
+  {
+    "original": "docs/runbooks/direct-room-coordination.md",
+    "body": "docs/archive/2026-09-20/runbooks/direct-room-coordination.md",
+    "status": "Historical / 一次性发布或旧协议",
+    "current": "docs/runbooks/communications.md",
+    "original_sha256": "86dccf37195b41e11fa6bcef61abbeb30d489a953b7680fd19a6ee5f88cdaa9f"
+  },
+  {
+    "original": "docs/RUNBOOK_RELEASE.md",
+    "body": "docs/archive/2026-09-20/root/RUNBOOK_RELEASE.md",
+    "status": "Historical / 已由新入口替代",
+    "current": "docs/runbooks/release-metadata.md",
+    "original_sha256": "b28104eb6e32f32b7be26baa4550cd69966321593729dfb68eee760e1e16642c"
+  },
+  {
+    "original": "docs/RUNBOOK_PRODUCTION_CONFIG.md",
+    "body": "docs/archive/2026-09-20/root/RUNBOOK_PRODUCTION_CONFIG.md",
+    "status": "Historical / 已由新入口替代",
+    "current": "docs/runbooks/production-config.md",
+    "original_sha256": "741af6a9337d38ceb96d17e64a2a08749529acd6e5a9cac9b3ca53b201ad2a1c"
+  },
+  {
+    "original": "docs/runbooks/app-update-publication.md",
+    "body": "docs/archive/2026-09-20/runbooks/app-update-publication.md",
+    "status": "Historical / 已由新入口替代",
+    "current": "docs/runbooks/release-metadata.md",
+    "original_sha256": "1e1f3512d58b4abc8826bda6fdffa609bd2d9f6b9554384f6dac934c1e43c2b8"
+  },
+  {
+    "original": "docs/runbooks/app-release-deployment.md",
+    "body": "docs/archive/2026-09-20/runbooks/app-release-deployment.md",
+    "status": "Historical / 已由新入口替代",
+    "current": "docs/runbooks/release-metadata.md",
+    "original_sha256": "126fa8041005913bfcd89decd50356bb39650250dd0d7e48a8361377d8e38a78"
+  },
+  {
+    "original": "docs/runbooks/mobile-release.md",
+    "body": "docs/archive/2026-09-20/runbooks/mobile-release.md",
+    "status": "Historical / 已由新入口替代",
+    "current": "docs/runbooks/mobile-release.md",
+    "original_sha256": "327c07a6978730c63acdca0dd758c2f9eb3a21650c4a226f7b3c7d66b4a5318e"
+  }
+]

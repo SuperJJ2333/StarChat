@@ -1,5 +1,8 @@
 # 移动交付恢复索引
 
+## 2026-09-20 docs根目录与runbooks归并
+22份历史正文归档、6份专题资料归位；保留旧路径跳转。发布入口与当前轻量流程对齐，钱包/通信按分类索引进入。本地链接和内容保留检查通过，无代码或生产变更。[任务](tasks/2026-09-20-docs-consolidation.md) · [验证](../verification/2026-09-20-docs-consolidation.md)。
+
 ## 2026-09-20 发布流程轻量加固
 用户确认2144签名已解决；取消整包回拉验包。新release_metadata.py统一页面/XML/平台设置，HEAD及小元数据门禁；旧unchecked弹窗入口停用。87+6测试通过，无生产更新。入口：[新发布规范](../runbooks/release-metadata.md)；[任务](tasks/2026-09-20-release-metadata-gates.md)。
 
