@@ -167,7 +167,32 @@ jobs:
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter test integration_test/ios_permission_capabilities_test.dart -d "$PERMISSION_SIMULATOR" --no-uninstall --dart-define=SIMULATOR_CAMERA_SUPPORTED="$SIMULATOR_CAMERA_SUPPORTED" --timeout=2m --reporter expanded 2>&1 | tee "$RUNNER_TEMP/permissions-native.log"
+          xcodebuild -project ios/Pods/Pods.xcodeproj -target permission_handler_apple -configuration Debug -showBuildSettings | grep GCC_PREPROCESSOR_DEFINITIONS
+          fixture="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          flutter test integration_test/ios_permission_capabilities_test.dart -d "$PERMISSION_SIMULATOR" --no-uninstall --dart-define=PERMISSION_FIXTURE_ID="$fixture" --dart-define=SIMULATOR_CAMERA_SUPPORTED="$SIMULATOR_CAMERA_SUPPORTED" --timeout=2m --reporter expanded > "$RUNNER_TEMP/permissions-native.log" 2>&1 &
+          test_pid=$!
+          trap 'kill "$test_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 420); do
+            if grep -q "PERMISSION_FIXTURE_READY:$fixture" "$RUNNER_TEMP/permissions-native.log"; then ready=true; break; fi
+            if ! kill -0 "$test_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then cat "$RUNNER_TEMP/permissions-native.log"; exit 1; fi
+          for permission in microphone photos-add photos; do
+            xcrun simctl privacy "$PERMISSION_SIMULATOR" grant "$permission" com.liuhetong.liuhetongMobile
+          done
+          if [ "$SIMULATOR_CAMERA_SUPPORTED" = true ]; then
+            xcrun simctl privacy "$PERMISSION_SIMULATOR" grant camera com.liuhetong.liuhetongMobile
+          fi
+          container=$(xcrun simctl get_app_container "$PERMISSION_SIMULATOR" com.liuhetong.liuhetongMobile data)
+          tcc="$HOME/Library/Developer/CoreSimulator/Devices/$PERMISSION_SIMULATOR/data/Library/TCC/TCC.db"
+          sqlite3 -readonly "$tcc" "SELECT service,auth_value FROM access WHERE client='com.liuhetong.liuhetongMobile';"
+          touch "$container/tmp/permission-fixture-$fixture"
+          rc=0
+          wait "$test_pid" || rc=$?
+          cat "$RUNNER_TEMP/permissions-native.log"
+          exit "$rc"
       - name: Preserve native permission result
         if: always()
         uses: actions/upload-artifact@v4
