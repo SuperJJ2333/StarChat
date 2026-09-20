@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-20 iOS 重启会话恢复（实现与 Flutter 检查完成，原生/真机待验收）
+
+用户已批准执行。保护数据/安装判据加固、有效业务会话保留与同身份聊天恢复、登录前本地只读预检及具体安全错误文案已实现；Flutter 3681/analyze 通过，独立规格及安全审查通过。独立分支未发布，仓库 verify 与原生 CI 待记录，iOS 16.7.16 真机未验收。以[任务](tasks/2026-09-20-ios-reboot-session.md)与[证据](../verification/2026-09-20-ios-reboot-session.md)为准。
+
 ## 2026-09-20 移除消息列表恢复提示（代码完成，debug2142待安装）
 
 按用户明确要求移除“正在恢复会话”、副文案、重试行及读屏播报；保留后台自动恢复和身份/重复归并守卫。Flutter3655/analyze0/HTML218/mobile70/contract375通过；HTMLdemo同步。debug3/2142已重建验包，Mi6连接再次offline，尚未安装。无服务器或更新弹窗改动。以[任务](tasks/2026-09-20-quiet-conversation-recovery.md)与[证据](../verification/2026-09-20-quiet-conversation-recovery.md)为准。

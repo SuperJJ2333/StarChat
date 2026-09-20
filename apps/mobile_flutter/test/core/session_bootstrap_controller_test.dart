@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -96,6 +98,189 @@ final class FakeMatrix implements MatrixSessionGateway {
 }
 
 void main() {
+  test(
+      'incomplete restore is retried even after local client becomes logged in',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    var restores = 0;
+    final controller = SessionBootstrapController(
+        business: business,
+        matrix: matrix,
+        restoreLocalMatrixSession: (identity) async {
+          matrix.isLoggedIn = true;
+          matrix.userId = identity;
+          if (++restores == 1) {
+            throw StateError('session completion unavailable');
+          }
+        });
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.fatalError);
+    expect(matrix.syncCalls, 0);
+    await controller.bootstrap();
+    expect(restores, 2);
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+    expect(business.localClearCalls, 0);
+    controller.dispose();
+  });
+
+  test('wrapped protected-data restore failure keeps its specific guidance',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    final controller = SessionBootstrapController(
+        business: business,
+        matrix: matrix,
+        restoreLocalMatrixSession: (_) async {
+          throw LoginStageException.fromCause(
+              'account_storage', PlatformException(code: '-25308'));
+        });
+    await controller.bootstrap();
+    expect(controller.state.message, contains('安全存储'));
+    expect(controller.state.message, contains('解锁'));
+    expect(business.localClearCalls, 0);
+    controller.dispose();
+  });
+  test('offline business session never requests a new Matrix authorization',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.offline,
+        matrixUserId: '@alice:matrix.localhost');
+    var requests = 0;
+    final controller = SessionBootstrapController(
+        business: business,
+        matrix: FakeMatrix(isLoggedIn: false),
+        restoreLocalMatrixSession: (_) async {
+          requests++;
+        });
+    await controller.bootstrap();
+    expect(requests, 0);
+    expect(business.localClearCalls, 0);
+    expect(controller.state.status, SessionBootstrapStatus.fatalError);
+    controller.dispose();
+  });
+  test('logout wins over an in-flight local restore and suspends late client',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    final entered = Completer<void>();
+    final finish = Completer<void>();
+    final controller = SessionBootstrapController(
+        business: business,
+        matrix: matrix,
+        restoreLocalMatrixSession: (identity) async {
+          entered.complete();
+          await finish.future;
+          matrix.isLoggedIn = true;
+          matrix.userId = identity;
+        });
+    final bootstrap = controller.bootstrap();
+    await entered.future;
+    await controller.logout();
+    finish.complete();
+    await bootstrap;
+    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    expect(matrix.syncCalls, 0);
+    expect(matrix.suspendCalls, 2);
+    controller.dispose();
+  });
+
+  test('logout also suspends a late client when restoration then throws',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    final entered = Completer<void>();
+    final finish = Completer<void>();
+    final controller = SessionBootstrapController(
+        business: business,
+        matrix: matrix,
+        restoreLocalMatrixSession: (identity) async {
+          entered.complete();
+          await finish.future;
+          matrix.isLoggedIn = true;
+          matrix.userId = identity;
+          throw StateError('late completion failed');
+        });
+    final bootstrap = controller.bootstrap();
+    await entered.future;
+    await controller.logout();
+    finish.complete();
+    await bootstrap;
+    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    expect(matrix.syncCalls, 0);
+    expect(matrix.suspendCalls, 2);
+    controller.dispose();
+  });
+
+  test(
+      'valid business session reopens its retained Matrix store without password login',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    var restores = 0;
+    final controller = SessionBootstrapController(
+        business: business,
+        matrix: matrix,
+        restoreLocalMatrixSession: (identity) async {
+          expect(identity, '@alice:matrix.localhost');
+          restores++;
+          matrix.isLoggedIn = true;
+          matrix.userId = identity;
+        });
+    await controller.bootstrap();
+    expect(restores, 1);
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+    expect(business.localClearCalls, 0);
+    expect(matrix.clearCalls, 0);
+    controller.dispose();
+  });
+  test('local restore error retains credentials and a later retry can reopen',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    var restores = 0;
+    final controller = SessionBootstrapController(
+        business: business,
+        matrix: matrix,
+        restoreLocalMatrixSession: (identity) async {
+          if (++restores == 1) throw const FileSystemException('secret-path');
+          matrix.isLoggedIn = true;
+          matrix.userId = identity;
+        });
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.fatalError);
+    expect(controller.state.message, isNot(contains('secret-path')));
+    expect(business.localClearCalls, 0);
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+    controller.dispose();
+  });
+
+  test(
+      'unavailable local Matrix session preserves valid business credentials and retries',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    final controller =
+        SessionBootstrapController(business: business, matrix: matrix);
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.fatalError);
+    expect(business.localClearCalls, 0);
+    expect(business.logoutCalls, 0);
+    expect(matrix.clearCalls, 0);
+    matrix.isLoggedIn = true;
+    matrix.userId = '@alice:matrix.localhost';
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+    controller.dispose();
+  });
+
   test('authenticated listener logout prevents Matrix authorization', () async {
     final matrix =
         FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost');

@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
 import 'installation_container_probe.dart';
 import 'installation_marker.dart';
 import 'session_store.dart';
@@ -36,6 +39,13 @@ final class InstallationReconciler {
   final InstallationContainerProbe probe;
   final SecureSessionStore store;
 
+  Future<bool> _canInspectUnregisteredInstallation() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return true;
+    return await const MethodChannel('chatflow/ios_secure_session')
+            .invokeMethod<bool>('protectedDataAvailable') ==
+        true;
+  }
+
   Future<InstallationResetOutcome> reconcile() async {
     final bool registered;
     try {
@@ -46,6 +56,16 @@ final class InstallationReconciler {
     }
     if (registered) return InstallationResetOutcome.notNeeded;
 
+    // A missing NSUserDefaults value while iOS data is protected is not
+    // evidence of a reinstall. Registered installations keep the existing
+    // AfterFirstUnlock background-call path without requiring an unlocked UI.
+    try {
+      if (!await _canInspectUnregisteredInstallation()) {
+        return InstallationResetOutcome.failed;
+      }
+    } catch (_) {
+      return InstallationResetOutcome.failed;
+    }
     final bool continuation;
     try {
       continuation = await probe.hasPreviousMatrixStore();
@@ -64,6 +84,9 @@ final class InstallationReconciler {
     }
 
     try {
+      if (!await _canInspectUnregisteredInstallation()) {
+        return InstallationResetOutcome.failed;
+      }
       await store.clearInstallation();
     } catch (_) {
       // 清除未完成就不写标记，否则残留会被永久化，下次启动不再重试。

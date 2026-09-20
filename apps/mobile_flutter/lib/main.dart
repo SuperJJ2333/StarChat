@@ -65,12 +65,16 @@ Future<void> main() async {
     );
     // 本地生命周期诊断只记录加盐哈希后的标识，原始 Matrix user/device id 与
     // token 永远不出现在日志里。
-    final diagnosticHasher = MatrixDiagnosticHasher(await store.diagnosticSalt());
+    final diagnosticHasher =
+        MatrixDiagnosticHasher(await store.diagnosticSalt());
     final matrixFactory = MatrixClientFactory(
       sessionStore: store,
       homeserver: Uri.parse(AppConfig.matrixHomeserver),
       diagnosticHasher: diagnosticHasher,
     );
+    // Read/create the installation identifier before opening a DB handle so a
+    // locked keychain cannot leave an initialized client behind on startup retry.
+    final installationDeviceKey = await store.registrationDeviceKey();
     final sdkClient = await matrixFactory.create();
     final matrix = MatrixSdkE2eeClient(
       sdkClient,
@@ -85,14 +89,19 @@ Future<void> main() async {
       // 历史孤儿房间登记簿：primary 规则数据源 + 收敛台账（只记录不删除）。
       duplicateRooms: DuplicateRoomRegistry(),
     );
+    late final DualDomainLoginService login;
     final session = SessionBootstrapController(
       business: api,
       matrix: matrix,
       securityLogger: matrix.securityLogger,
+      restoreLocalMatrixSession: (identity) async {
+        await store.validateLocalLoginStorage();
+        await login.restoreAuthenticatedSession(identity);
+      },
     );
     final recovery = MatrixRecoveryService(matrix);
-    final installationDeviceKey = await store.registrationDeviceKey();
-    final login = DualDomainLoginService(
+    login = DualDomainLoginService(
+      prepareLocalLogin: store.validateLocalLoginStorage,
       business: api,
       matrix: matrix,
       deviceKey: () => installationDeviceKey,
@@ -121,8 +130,7 @@ Future<void> main() async {
               icon: Icon(ChangliaoIcons.discover),
               label: '发现',
             ),
-            BottomNavigationBarItem(
-                icon: Icon(ChangliaoIcons.me), label: '我'),
+            BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
           ],
         ),
         tabBuilder: (_, index) => MatrixHomePage(
@@ -215,7 +223,8 @@ final class _LiuhetongAppState extends State<LiuhetongApp>
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: Listenable.merge([widget.themeController, motionPreferences]),
+        animation:
+            Listenable.merge([widget.themeController, motionPreferences]),
         builder: (context, _) => CupertinoApp(
           navigatorKey: callNavigatorKey,
           title: '畅聊 ChatFlow',

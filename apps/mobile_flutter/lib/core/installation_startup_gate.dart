@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../ui/foundation/wechat_tokens.dart';
 import 'installation_reconciler.dart';
+import 'session_failure.dart';
 
 /// Delays application composition until the installation check has settled.
 final class InstallationStartupGate extends StatefulWidget {
@@ -21,17 +22,33 @@ final class InstallationStartupGate extends StatefulWidget {
       _InstallationStartupGateState();
 }
 
-final class _InstallationStartupGateState
-    extends State<InstallationStartupGate> {
+final class _InstallationStartupGateState extends State<InstallationStartupGate>
+    with WidgetsBindingObserver {
   _GatePhase _phase = _GatePhase.checking;
   Widget? _child;
   var _checking = false;
   var _started = false;
+  String? _startFailure;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_reconcileAndStart());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        (_phase == _GatePhase.failed || _phase == _GatePhase.startFailed)) {
+      unawaited(_reconcileAndStart());
+    }
   }
 
   Future<void> _reconcileAndStart() async {
@@ -62,9 +79,13 @@ final class _InstallationStartupGateState
         _child = child;
         _phase = _GatePhase.ready;
       });
-    } catch (_) {
+    } catch (error) {
+      _started = false;
       if (!mounted) return;
-      setState(() => _phase = _GatePhase.startFailed);
+      setState(() {
+        _startFailure = sessionFailureMessage(error, stage: 'startup');
+        _phase = _GatePhase.startFailed;
+      });
     }
   }
 
@@ -96,11 +117,11 @@ final class _InstallationStartupGateState
                   failed
                       ? '启动检查未完成，请重试'
                       : startFailed
-                          ? '启动初始化失败，请关闭后重试'
+                          ? (_startFailure ?? '本地聊天初始化失败，请解锁设备后重试')
                           : '正在检查启动状态…',
                   textAlign: TextAlign.center,
                 ),
-                if (failed) ...[
+                if (failed || startFailed) ...[
                   const SizedBox(height: WeChatSpacing.lg),
                   CupertinoButton.filled(
                     key: const Key('installation-startup-retry'),

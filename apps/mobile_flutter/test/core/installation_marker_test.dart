@@ -4,6 +4,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'retry reloads marker instead of retaining a protected startup empty cache',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final marker = SharedPreferencesInstallationMarker(
+        await SharedPreferences.getInstance());
+    SharedPreferences.setMockInitialValues(
+        {SharedPreferencesInstallationMarker.key: 'retained-install'});
+    expect(await marker.isRegistered(), isTrue);
+  });
 
   test('无标记时报告为未注册', () async {
     SharedPreferences.setMockInitialValues({});

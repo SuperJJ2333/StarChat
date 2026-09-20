@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../core/business_api_error.dart';
+import '../../core/session_failure.dart';
 import '../../core/business_auth_contracts.dart';
 
 typedef LoginOperation = Future<void> Function(
@@ -54,6 +55,7 @@ final class DualDomainLoginService {
     required this.deviceKey,
     this.retainedHomeserver,
     this.completeMatrixSession,
+    this.prepareLocalLogin,
     DateTime Function()? now,
   }) : now = now ?? DateTime.now;
   final DualDomainBusinessGateway business;
@@ -61,6 +63,7 @@ final class DualDomainLoginService {
   final String Function() deviceKey;
   final Uri? retainedHomeserver;
   final Future<void> Function()? completeMatrixSession;
+  final Future<void> Function()? prepareLocalLogin;
   String get _retainedHomeserver =>
       retainedHomeserver?.toString() ??
       (throw StateError('Account homeserver is not configured'));
@@ -141,11 +144,7 @@ final class DualDomainLoginService {
       rethrow;
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(
-          LoginStageException(_stage,
-              network: error is SocketException ||
-                  error is TimeoutException ||
-                  error is http.ClientException),
-          stackTrace);
+          LoginStageException.fromCause(_stage, error), stackTrace);
     }
   }
 
@@ -163,6 +162,14 @@ final class DualDomainLoginService {
 
   Future<void> _login(String username, String password) async {
     _forgetPending();
+    _stage = 'account_storage';
+    try {
+      await prepareLocalLogin?.call();
+    } catch (error, stackTrace) {
+      // No remote login has happened; do not compensate or mutate local state.
+      Error.throwWithStackTrace(
+          LoginStageException.fromCause(_stage, error), stackTrace);
+    }
     _stage = 'business_login';
     await business.loginBusiness(
       username: username,
@@ -233,14 +240,36 @@ final class DualDomainLoginService {
       }
       // Only fixed stage names are exposed. Never stringify the original error.
       Error.throwWithStackTrace(
-          LoginStageException(_stage, network: network), stackTrace);
+          LoginStageException.fromCause(_stage, error), stackTrace);
     }
   }
 
-  Future<void> _loginRetained() async {
+  /// Caller must first validate the retained business session with the server.
+  /// Recover its existing family through the broker without a password login.
+  Future<void> restoreAuthenticatedSession(String expectedMatrixUserId) =>
+      _run(() async {
+        _forgetPending();
+        _stage = 'local_identity';
+        try {
+          await _loginRetained(expectedMatrixUserId: expectedMatrixUserId);
+        } catch (error, stackTrace) {
+          _forgetPending();
+          // A local recovery failure does not revoke an authenticated family.
+          if (error is BusinessApiException || error is LoginStageException) {
+            Error.throwWithStackTrace(error, stackTrace);
+          }
+          Error.throwWithStackTrace(
+              LoginStageException.fromCause(_stage, error), stackTrace);
+        }
+      });
+
+  Future<void> _loginRetained({String? expectedMatrixUserId}) async {
     final selector = matrix as MatrixAccountSelectionGateway;
     _stage = 'local_identity';
     var target = await business.currentMatrixUserId();
+    if (expectedMatrixUserId != null && target != expectedMatrixUserId) {
+      throw StateError('Matrix login returned an unexpected identity');
+    }
     MatrixLoginGrant? grant;
     if (target == null) {
       grant = await _issueGrant();
@@ -330,7 +359,7 @@ final class DualDomainLoginService {
             Error.throwWithStackTrace(error, stackTrace);
           }
           Error.throwWithStackTrace(
-              LoginStageException(_stage, network: network), stackTrace);
+              LoginStageException.fromCause(_stage, error), stackTrace);
         }
       });
 
@@ -348,7 +377,16 @@ final class DualDomainLoginService {
 }
 
 final class LoginStageException implements Exception {
-  const LoginStageException(this.stage, {this.network = false});
+  const LoginStageException(this.stage,
+      {this.network = false, this.category = SessionFailureCategory.unknown});
+  factory LoginStageException.fromCause(String stage, Object error) {
+    if (error is LoginStageException) return error;
+    final category = classifySessionFailure(error);
+    return LoginStageException(stage,
+        network: category == SessionFailureCategory.network,
+        category: category);
+  }
+  final SessionFailureCategory category;
   final String stage;
   final bool network;
   String get diagnosticCode =>
@@ -363,9 +401,9 @@ final class LoginStageException implements Exception {
         'matrix_session': 'L08',
       }[stage] ??
       'L00';
-  String get message => network
-      ? '聊天登录连接中断，请重试（$diagnosticCode）'
-      : '聊天登录未完成，请重试（$diagnosticCode）';
+  String get message => sessionFailureCategoryMessage(
+      network ? SessionFailureCategory.network : category,
+      stage: stage);
 }
 
 enum LoginStatus { idle, loading, succeeded, failed }
