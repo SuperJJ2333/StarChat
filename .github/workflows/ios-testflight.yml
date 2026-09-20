@@ -17,6 +17,13 @@ jobs:
           flutter-version: "3.44.9"
           channel: stable
           cache: true
+      # firebase_messaging 插件拷贝需要 build/ios/SourcePackages 父目录已存在；
+      # SPM 集成必须保持关闭（firebase_messaging SPM 工具需要更新版 Xcode）。
+      - name: Prepare iOS dependency directories
+        working-directory: apps/mobile_flutter
+        run: |
+          flutter config --no-enable-swift-package-manager
+          mkdir -p build/ios/SourcePackages
       - name: Flutter checks
         working-directory: apps/mobile_flutter
         run: |
@@ -39,6 +46,12 @@ jobs:
           flutter-version: "3.44.9"
           channel: stable
           cache: true
+      - name: Select newest Xcode (Firebase 12 needs Swift 6)
+        run: |
+          ls -d /Applications/Xcode*.app | sort -V
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$LATEST_XCODE"
+          xcodebuild -version
       - name: Disable Flutter SPM (firebase_messaging SPM tools need newer Xcode)
         run: flutter config --no-enable-swift-package-manager
       - name: Prepare iOS package directories
@@ -78,6 +91,13 @@ jobs:
       - name: Generate iOS project
         working-directory: apps/mobile_flutter
         run: flutter create --platforms=ios --project-name=liuhetong_mobile .
+      # flutter create 之后 pub get 会拷贝 firebase_messaging 插件；
+      # 与 simulator-build 相同：预建 SourcePackages 并保持 SPM 关闭。
+      - name: Prepare iOS dependency directories
+        working-directory: apps/mobile_flutter
+        run: |
+          flutter config --no-enable-swift-package-manager
+          mkdir -p build/ios/SourcePackages
       - name: Flutter checks
         working-directory: apps/mobile_flutter
         run: |
