@@ -37,5 +37,7 @@ void main() {
     debugPrint('Photos device acceptance pending: '
         'readWrite=${await Permission.photos.status}, '
         'addOnly=${await Permission.photosAddOnly.status}');
-  });
+  // This channel-only test creates no widgets. Do not enable test semantics:
+  // live iOS accessibility can acquire an engine handle during that toggle.
+  }, semanticsEnabled: false);
 }

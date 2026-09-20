@@ -32,3 +32,6 @@ Apple预检与完整CI分开运行；23:31:44+08已dispatch完整TestFlight工�
 ## 2026-09-21 01:13 +08 PhotoKit夹具边界证据
 第四轮35523568850未从simctl console发现VM；依据Flutter SDK改用unified log后第五轮35524470548成功连接并执行原生调用。仍photos denied。决定性证据native5/permissions-native.log 1524–1550：现代PhotoKit read-write preflight返回Unknown/auth_version2，而legacy查询Allowed/auth_version1；不能将simctl授权表auth_value2等同现代访问级别已授权。五宏实际均1，mic status/request持续通过。
 规格审查批准纠正无效夹具前提：保留mic及可支持camera严格运行时断言；Photos两种status只记录诊断、首次授权明确真机待验收；五宏、原生编译及最终IPA策略符号检查仍强制。第五轮失败原样保存，不能改写为相册通过；二进制仅证明策略编入，不证明授权交互已验收。此证据范围允许继续用户授权的内部TestFlight测试交付。专项10/1Windows Ruby跳过、analyze通过。此前工作流返工不属于生产权限功能变更。
+
+## 2026-09-21 01:29 +08 原生断言通过后的测试框架清理
+运行35525177449/45613c38完成实际权限断言，但测试末尾报A SemanticsHandle was active；不是权限断言失败，整轮仍failure，未上传。原生channel-only测试无widget，改用testWidgets公开参数semanticsEnabled:false，避免默认测试语义切换与iOS实时辅助功能句柄相互作用；权限断言和driver失败退出码均不变。日志native-ci-6.log已保留。
