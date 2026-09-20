@@ -63,6 +63,9 @@ class StatementPage(StrictModel):
 def create_ledger_router(settings: Settings, session_factory, *, avatar_storage=None) -> APIRouter:
     router = APIRouter(prefix="/ledger", tags=["ledger"])
     ledger = LedgerService(session_factory)
+    # 与 admin 直发同口径：遵循全局储备策略，生产 manual_liquidity 下不得用默认
+    # full_backing 把储备缺口误判为执行失败。
+    ledger.reserve_policy = getattr(settings, "wallet_reserve_policy", "full_backing")
     statements = StatementService(session_factory, profile_reader=ProfileService(session_factory, storage=avatar_storage))
     transfers = PointTransferService(ledger)
     payment_pin = PaymentPinService(session_factory, require_all=settings.payment_pin_require_all)

@@ -95,6 +95,17 @@ class AppUpdateSettingsBody(BaseModel):
 class RedPacketSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     max_total: Decimal = Field(gt=0, decimal_places=2)
+# 点钻派发账本 ValueError → 对外错误码/文案。储备类失败是系统状态问题，
+# 不得笼统报"请求无效"；键为 ledger/reserve 模块的 ValueError 消息原文。
+CAIBI_GRANT_ERROR_DETAILS = {
+    "insufficient reserve coverage": ("RESERVE_COVERAGE_INSUFFICIENT", "点钻储备覆盖不足，发放已被风控阻断，请联系技术核查储备"),
+    "reserve evidence stale": ("RESERVE_EVIDENCE_STALE", "点钻储备证据已过期，请稍后重试；若持续出现请联系技术核查"),
+    "reserve issuance blocked during unresolved payouts": ("RESERVE_PAYOUT_PENDING", "存在未决赔付，点钻发放暂被阻断，请稍后重试"),
+    "reserve evidence missing": ("RESERVE_EVIDENCE_MISSING", "点钻储备证据缺失，请联系技术核查"),
+    "redeemable outgoing globally restricted": ("LEDGER_OUTGOING_RESTRICTED", "点钻流出已被全局限制，请联系技术核查"),
+    "idempotency key reused with different payload": ("IDEMPOTENCY_PAYLOAD_CONFLICT", "发放请求与已提交记录不一致，请刷新页面后重新填写"),
+    "adjustment amount must be non-zero": ("CAIBI_GRANT_AMOUNT_INVALID", "发放金额无效，请填写大于 0 且最多两位小数的金额"),
+}
 MODULE_PERMISSIONS = {
     "finance": Permission.FINANCE_REVIEW,
     "security": Permission.SYSTEM_ADMIN,
@@ -114,6 +125,9 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     audit = AuditWriter(session_factory)
     controls = AdminControlService(session_factory)
     adjustment_workflow = AdjustmentWorkflow(session_factory, LedgerService(session_factory), admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
+    # 派发遵循全局储备策略：生产配置 manual_liquidity（记录缺口、保留待决赔付与
+    # 证据时效守卫）时不得沿用默认 full_backing 把缺口误判为请求无效。
+    adjustment_workflow.ledger.reserve_policy = getattr(settings, "wallet_reserve_policy", "full_backing")
     wallet_provider, _wallet_mode = create_custody_provider(settings)
     wallet_service = WalletService(session_factory, wallet_provider,
         confirmation_threshold=settings.wallet_confirmation_threshold,
@@ -266,7 +280,8 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         try:
             transaction = adjustment_workflow.ledger.adjust(user_id=target_user_id, amount=body.amount, actor_id=user_id, reason_code=body.reason_code, idempotency_key=idempotency_key)
         except ValueError as exc:
-            raise AppError(code="CAIBI_GRANT_INVALID", message="点钻发放请求无效", status_code=422) from exc
+            code, message = CAIBI_GRANT_ERROR_DETAILS.get(str(exc), ("CAIBI_GRANT_INVALID", "点钻发放请求无效，请检查输入或稍后重试"))
+            raise AppError(code=code, message=message, status_code=422) from exc
         audit.record(actor_id=user_id, subject_type="ledger_transaction", subject_id=transaction.id, action="admin.caibi.granted", result="SUCCESS", reason_code=body.reason_code, trace_id=trace(request))
         return {"transaction_id": transaction.id, "user_id": target_user_id, "amount": f"{body.amount:.2f}", "status": "POSTED", "idempotency_key": idempotency_key}
 
