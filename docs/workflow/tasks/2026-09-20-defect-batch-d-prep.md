@@ -81,3 +81,6 @@
 版本 0.3.103+2145（4cb19c83，契约门禁 PASS 已推送）。固定流程：debug arm64 源码构建（三项 HTTPS dart-define）→ Apktool 2.12.1 重建 → zipalign 36.0.0 -P 16 -f 4 → 固定身份签名（75b31c66…）→ 全门禁通过（aapt 2145/0.3.103；清单语义 0 差异；资产 339/339 identical；apksigner/zipalign PASS）。最终包 SHA256 `E6B85E2E…95E00`（145,297,707 字节）。
 
 Mi 6（cbd0156b）`adb install -r` Success；设备回读 base.apk SHA256 与本地一致；firstInstallTime=2026-09-20 09:35:24 未变（数据保留）。待用户真机验收：E1 打字卡死、E2 气泡闪烁、BUG-40 连播、BUG-35 视频进度、BUG-28 尺寸、BUG-23 残余。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2145/`。
+## E2 二轮（2026-09-21，真机 2145 复验仍闪「加载中」）
+
+真根因：RoomPage dispose 误杀共享 store（提升共享后未移除旧 dispose 钩子）→ 每次退出房间缓存清零。修复 + 微信式交互：暖缓存点击立即路由（不再强制预取往返）、领取/收款乐观翻转（patchDetail 立即补丁 viewer_claim/status，后台 invalidate 确认）、多红包并发隔离测试。旧 epoch 守卫契约测试改在冷路径回归（保留原回归价值）。finance 74 绿、全量 3680/0、analyze 0。commit eff2cf50；debug 2146（SHA256 dcb1bacf…）已覆盖安装 Mi 6（数据保留，设备哈希一致），待用户真机复验。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2146/`。
