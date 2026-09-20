@@ -40,6 +40,13 @@ jobs:
           flutter-version: "3.44.9"
           channel: stable
           cache: true
+      # 与 build-unsigned-ipa 相同：默认 Xcode 过旧，无法编译 Firebase 12 的 Swift 6 语法。
+      - name: Select newest Xcode (Firebase 12 needs Swift 6)
+        run: |
+          ls -d /Applications/Xcode*.app | sort -V
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$LATEST_XCODE"
+          xcodebuild -version
       # firebase_messaging 插件拷贝需要 build/ios/SourcePackages 父目录已存在；
       # SPM 集成必须保持关闭（firebase_messaging SPM 工具需要更新版 Xcode）。
       - name: Prepare iOS dependency directories
@@ -111,6 +118,13 @@ jobs:
           flutter-version: "3.44.9"
           channel: stable
           cache: true
+      # 与 build-unsigned-ipa 相同：默认 Xcode 过旧，无法编译 Firebase 12 的 Swift 6 语法。
+      - name: Select newest Xcode (Firebase 12 needs Swift 6)
+        run: |
+          ls -d /Applications/Xcode*.app | sort -V
+          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$LATEST_XCODE"
+          xcodebuild -version
       - name: Generate iOS project
         working-directory: apps/mobile_flutter
         run: flutter create --platforms=ios --project-name=liuhetong_mobile .
