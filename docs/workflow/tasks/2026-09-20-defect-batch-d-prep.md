@@ -76,3 +76,8 @@
 - 全量 `flutter test --timeout 120s`：**3675 通过 / 0 失败（退出码 0）**。
 - 提交：9a77f825（批次 D 全量，22 文件）；89606cad（caibi 储备策略落主干）。均已推送 origin/main（060097ef..9a77f825）。
 - 并行会话未提交改动（frontend 管理页、pubspec.lock 等）未被纳入本任务提交。
+## Mi 6 debug 2145 交付（2026-09-21，用户指令）
+
+版本 0.3.103+2145（4cb19c83，契约门禁 PASS 已推送）。固定流程：debug arm64 源码构建（三项 HTTPS dart-define）→ Apktool 2.12.1 重建 → zipalign 36.0.0 -P 16 -f 4 → 固定身份签名（75b31c66…）→ 全门禁通过（aapt 2145/0.3.103；清单语义 0 差异；资产 339/339 identical；apksigner/zipalign PASS）。最终包 SHA256 `E6B85E2E…95E00`（145,297,707 字节）。
+
+Mi 6（cbd0156b）`adb install -r` Success；设备回读 base.apk SHA256 与本地一致；firstInstallTime=2026-09-20 09:35:24 未变（数据保留）。待用户真机验收：E1 打字卡死、E2 气泡闪烁、BUG-40 连播、BUG-35 视频进度、BUG-28 尺寸、BUG-23 残余。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2145/`。
