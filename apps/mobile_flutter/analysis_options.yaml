@@ -27,7 +27,9 @@ linter:
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
 
-# 第三方 vendored 源码（matrix web 分支的 indexeddb 等）不参与应用分析。
+# 第三方 vendored 源码（matrix web 分支的 indexeddb 等）与构建产物
+# （pub get / 构建过程拷入 build/ 的插件源码）不参与应用分析。
 analyzer:
   exclude:
     - third_party/**
+    - build/**

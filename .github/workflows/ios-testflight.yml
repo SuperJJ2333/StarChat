@@ -7,8 +7,31 @@ on:
       - ".github/workflows/ios-testflight.yml"
   push:
     tags: ["v*.*.*"]
+# 连续 dispatch 时取消旧 run，避免排队叠加出几十分钟的僵尸任务。
+concurrency:
+  group: ios-testflight-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
+  # analyze/test 统一在 ubuntu 执行：macOS runner 只有 2 核，全量套件约 45 分钟
+  # 且存在平台差异失败；ubuntu 约 8 分钟。macOS job 只负责真实 iOS 构建。
+  flutter-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.9"
+          channel: stable
+          cache: true
+      - name: Flutter checks
+        working-directory: apps/mobile_flutter
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
   simulator-build:
+    needs: flutter-checks
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -24,12 +47,9 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           mkdir -p build/ios/SourcePackages
-      - name: Flutter checks
+      - name: Flutter pub get
         working-directory: apps/mobile_flutter
-        run: |
-          flutter pub get
-          flutter analyze
-          flutter test
+        run: flutter pub get
       - name: Build iOS simulator app
         working-directory: apps/mobile_flutter
         run: flutter build ios --simulator --no-codesign
@@ -38,6 +58,7 @@ jobs:
   # 不需要任何 Apple secrets；使用 --no-codesign，打包 Payload/<app> 为 IPA。
   build-unsigned-ipa:
     if: github.event_name == 'workflow_dispatch'
+    needs: flutter-checks
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +102,7 @@ jobs:
 
   build-upload:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: flutter-checks
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -99,12 +121,9 @@ jobs:
         run: |
           flutter config --no-enable-swift-package-manager
           mkdir -p build/ios/SourcePackages
-      - name: Flutter checks
+      - name: Flutter pub get
         working-directory: apps/mobile_flutter
-        run: |
-          flutter pub get
-          flutter analyze
-          flutter test
+        run: flutter pub get
       - name: Install signing assets
         env:
           CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
