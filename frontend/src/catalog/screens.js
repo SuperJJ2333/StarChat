@@ -79,7 +79,7 @@ register("auth", "layout", [["keyboard", "认证 / 键盘布局"], ["reduced-mot
 
 register("messages", "inbox", [
   ["default", "消息 / 默认"], ["syncing", "消息 / 同步中"], ["empty", "消息 / 空状态"],
-  ["offline", "消息 / 离线"], ["reconnecting", "消息 / 重连中"], ["sync-failed", "消息 / 同步失败"], ["identity-pending", "消息 / 正在恢复会话"]
+  ["offline", "消息 / 离线"], ["reconnecting", "消息 / 重连中"], ["sync-failed", "消息 / 同步失败"], ["identity-pending", "消息 / 后台身份同步"]
 ]);
 register("messages", "conversation", [
   ["direct", "会话单元 / 单聊"], ["group", "会话单元 / 群聊"], ["support", "会话单元 / 官方客服"],

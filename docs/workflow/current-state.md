@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-20 移除消息列表恢复提示（代码完成，debug2142待安装）
+
+按用户明确要求移除“正在恢复会话”、副文案、重试行及读屏播报；保留后台自动恢复和身份/重复归并守卫。Flutter3655/analyze0/HTML218/mobile70/contract375通过；HTMLdemo同步。debug3/2142已重建验包，Mi6连接再次offline，尚未安装。无服务器或更新弹窗改动。以[任务](tasks/2026-09-20-quiet-conversation-recovery.md)与[证据](../verification/2026-09-20-quiet-conversation-recovery.md)为准。
+
 ## 2026-09-20 Mi6 第7次切房发送失败：业务限流修复已上线，debug2141已安装
 
 真机outbox与生产429证据确认后台历史关联登记重复提交，并与前台resolve共享账号额度。客户端停止重复登记、resolve短暂429重试；服务端拆分后台额度，均已专项与Flutter3655测试通过。debug2/2141已保留数据安装Mi6；完整verify通过（API2209/58环境跳过），服务端fb41d7fa已上线，运行配置及双侧HTTPS核验通过，待用户超过第7次切房真机复验。用户确认红包上限200，生产已通过审计设置为200.00，接口投影核验通过，无更新弹窗。以[任务](tasks/2026-09-20-mi6-rate-limit-followup.md)与[证据](../verification/2026-09-20-mi6-rate-limit-followup.md)为准。上一轮2140修复不足以解决该实际症状。

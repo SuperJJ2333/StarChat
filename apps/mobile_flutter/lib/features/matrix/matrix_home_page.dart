@@ -1415,21 +1415,6 @@ class _MatrixHomePageState extends State<MatrixHomePage>
                     ],
                   ),
                 ),
-              if (_unresolvedRoomCount > 0)
-                Semantics(
-                  liveRegion: true,
-                  child: ConversationListTile(
-                    key: const Key('conversation-identity-recovery'),
-                    title: '正在恢复会话',
-                    subtitle: '聊天记录已保留，联网后自动重试',
-                    timeLabel: _directRecoveryJob == null ? '重试' : '',
-                    avatar: const Icon(CupertinoIcons.arrow_clockwise,
-                        color: WeChatColors.textSecondary),
-                    onTap: widget.previewOnly || _directRecoveryJob != null
-                        ? null
-                        : () => unawaited(_processPendingDirectInvites()),
-                  ),
-                ),
               Expanded(child: body),
             ],
           );

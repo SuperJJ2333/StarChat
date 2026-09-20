@@ -120,7 +120,7 @@ void main() {
   });
 
   testWidgets(
-      'only pending rooms are recovery rather than an empty conversation list',
+      'pending-only snapshot has no recovery notice or false empty label',
       (tester) async {
     final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
         homeserver: Uri.parse('https://matrix.example'));
@@ -132,13 +132,12 @@ void main() {
             rooms: [],
             unresolvedRoomCount: 3)));
     await tester.pumpAndSettle();
-    expect(find.text('正在恢复会话'), findsOneWidget);
+    expect(find.text('正在恢复会话'), findsNothing);
     expect(find.text('暂无消息'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets(
-      'pending identity uses one recovery notice beside known local rooms',
+  testWidgets('pending identity stays silent beside usable known local rooms',
       (tester) async {
     final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
         homeserver: Uri.parse('https://matrix.example'));
@@ -146,16 +145,15 @@ void main() {
         matrix: matrix,
         snapshotLoader: () async => _snapshot('本地群聊', pending: 4)));
     await tester.pumpAndSettle();
-    expect(find.text('正在恢复会话'), findsOneWidget);
-    expect(find.text('聊天记录已保留，联网后自动重试'), findsOneWidget);
+    expect(find.text('正在恢复会话'), findsNothing);
+    expect(find.text('聊天记录已保留，联网后自动重试'), findsNothing);
     expect(find.text('本地群聊'), findsOneWidget);
     expect(find.text('暂无消息'), findsNothing);
     expect(find.text('4'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets(
-      'resolved snapshot removes status even when known rows are unchanged',
+  testWidgets('known rows stay unchanged across silent identity resolution',
       (tester) async {
     final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
         homeserver: Uri.parse('https://matrix.example'));
@@ -164,7 +162,7 @@ void main() {
         matrix: matrix,
         snapshotLoader: () async => _snapshot('本地群聊', pending: pending)));
     await tester.pumpAndSettle();
-    expect(find.text('正在恢复会话'), findsOneWidget);
+    expect(find.text('正在恢复会话'), findsNothing);
     pending = 0;
     conversationPreferencesChanged.publish();
     await tester.pumpAndSettle();
@@ -204,13 +202,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(associationCalls, 1);
     expect(find.text('本地群聊'), findsOneWidget);
-    await tester.tap(find.byKey(const Key('conversation-identity-recovery')));
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(associationCalls, 2);
-    await tester.tap(find.byKey(const Key('conversation-identity-recovery')));
+    await tester.pump(const Duration(seconds: 5));
     await tester.pump();
     expect(associationCalls, 2);
-    expect(find.text('正在恢复会话'), findsOneWidget);
+    expect(find.text('正在恢复会话'), findsNothing);
     pending = 0;
     held.complete(http.Response('{}', 503));
     await tester.pumpAndSettle();

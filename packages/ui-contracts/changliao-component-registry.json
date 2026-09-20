@@ -23,7 +23,7 @@
             "WeChatSpacing.md",
             "WeChatDimensions.conversationAvatar"
       ],
-      "behavior": "One generic recovery notice without physical room identities/counts; retained local rows remain usable; retry invokes existing directory convergence and refreshes only the current account on completion."
+      "behavior": "Silent background identity recovery: no notice, retry row or live announcement; retained local rows remain usable. Automatic network/resume/backoff recovery and current-account refresh continue."
 },
     "2026-09-09-shared-media-identity": {
       "comments": "Reuse ChatEmojiPanel and ImagePickerPage; prepareGalleryMedia shared with chat; preserve GIF animation and actual MIME",
