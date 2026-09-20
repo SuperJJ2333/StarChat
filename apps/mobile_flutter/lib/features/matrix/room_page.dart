@@ -4689,7 +4689,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         .clearAll()
         .whenComplete(_posterDisk.dispose)
         .catchError((Object _) {}));
-    _financeCardStore.dispose();
     _identityCache.removeListener(_identityChanged);
     _nudgeToastTimer?.cancel();
     _nudgeToast?.remove();

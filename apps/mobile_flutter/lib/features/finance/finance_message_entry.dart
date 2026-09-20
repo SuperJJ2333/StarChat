@@ -74,9 +74,6 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
     final kind = widget.kind;
     final id = widget.id;
     final key = FinanceCardKey(kind, id);
-    final greeting = widget.greeting;
-    final senderName = widget.senderName;
-    final senderAvatar = widget.senderAvatar;
     final epoch = api.sessionEpoch;
     final operation = _operationGeneration;
     bool live() =>
@@ -89,6 +86,16 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
         _operationGeneration == operation;
     final lease = store.lease(key);
     try {
+      // E2-C（微信式）：暖缓存点击**立即**路由——弹层/详情页自带加载，
+      // 不再先等一轮强制明细往返（领取卡顿根因）。只有冷缓存才先取明细。
+      final cached = lease.notifier.value;
+      if (cached.hasData && !cached.ended && !cached.restricted) {
+        if (!live()) return;
+        await _route(
+            kind: kind, id: id, state: cached, store: store, live: live);
+        if (live()) store.invalidate(key);
+        return;
+      }
       final state = await lease.ensureFresh();
       if (!live() ||
           state.ended ||
@@ -97,53 +104,72 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
           state.detail == null) {
         return;
       }
-      if (kind == FinanceCardKind.redPacket) {
-        final detail = state.detail!;
-        final ownPrivatePacket = detail.containsKey('room_id') &&
-            detail['room_id'] == null &&
-            detail['sender_id']?.toString() == state.viewerId;
-        if (detail['viewer_claim'] != null || ownPrivatePacket) {
-          if (!mounted) return;
-          if (!live()) return;
-          await Navigator.of(context).push<void>(MotionPageRoute<void>(
-            builder: (_) => RedPacketClaimDetailPage(api: api, packetId: id),
-          ));
-        } else {
-          if (!mounted) return;
-          if (!live()) return;
-          await showRedPacketClaimDialog(
-            context,
-            api: api,
-            packetId: id,
-            senderName: senderName,
-            greeting: greeting,
-            senderAvatar: senderAvatar,
-            onClaimed: () {
-              if (live()) store.invalidate(key);
-            },
-          );
-        }
-      } else {
-        final viewerId = state.viewerId;
-        if (viewerId == null || viewerId.isEmpty || !mounted) return;
-        if (!live()) return;
-        await Navigator.of(context).push<void>(MotionPageRoute<void>(
-          builder: (_) => ChatTransferDetailSheet(
-            api: api,
-            transferId: id,
-            viewerId: viewerId,
-            onSettled: () {
-              if (live()) store.invalidate(key);
-            },
-            identityCache: widget.identityCache,
-          ),
-        ));
-      }
+      if (!live()) return;
+      await _route(kind: kind, id: id, state: state, store: store, live: live);
       if (live()) store.invalidate(key);
     } finally {
       lease.dispose();
       if (live()) _routing = false;
     }
+  }
+
+  Future<void> _route({
+    required FinanceCardKind kind,
+    required String id,
+    required FinanceCardState state,
+    required FinanceCardStore store,
+    required bool Function() live,
+  }) async {
+    final api = widget.api;
+    final key = FinanceCardKey(kind, id);
+    if (kind == FinanceCardKind.redPacket) {
+      final detail = state.detail!;
+      final ownPrivatePacket = detail.containsKey('room_id') &&
+          detail['room_id'] == null &&
+          detail['sender_id']?.toString() == state.viewerId;
+      if (detail['viewer_claim'] != null || ownPrivatePacket) {
+        if (!mounted) return;
+        await Navigator.of(context).push<void>(MotionPageRoute<void>(
+          builder: (_) => RedPacketClaimDetailPage(api: api, packetId: id),
+        ));
+        return;
+      }
+      if (!mounted) return;
+      await showRedPacketClaimDialog(
+        context,
+        api: api,
+        packetId: id,
+        senderName: widget.senderName,
+        greeting: widget.greeting,
+        senderAvatar: widget.senderAvatar,
+        onClaimed: () {
+          if (!live()) return;
+          // E2-C：乐观翻转（已领取），权威数据随后由 invalidate 刷新。
+          store.patchDetail(key, (detail) => {
+                ...detail,
+                'viewer_claim': const <String, dynamic>{'amount': ''},
+              });
+          store.invalidate(key);
+        },
+      );
+      return;
+    }
+    final viewerId = state.viewerId;
+    if (viewerId == null || viewerId.isEmpty || !mounted) return;
+    await Navigator.of(context).push<void>(MotionPageRoute<void>(
+      builder: (_) => ChatTransferDetailSheet(
+        api: api,
+        transferId: id,
+        viewerId: viewerId,
+        onSettled: () {
+          if (!live()) return;
+          store.patchDetail(
+              key, (detail) => {...detail, 'status': 'ACCEPTED'});
+          store.invalidate(key);
+        },
+        identityCache: widget.identityCache,
+      ),
+    ));
   }
 
   @override

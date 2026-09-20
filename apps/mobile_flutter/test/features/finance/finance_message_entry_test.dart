@@ -266,15 +266,15 @@ void main() {
   testWidgets(
       'rebound entry rejects the old held read and the new id remains tappable',
       (tester) async {
+    // E2-C 契约更新：旧条目持有的**冷**读取在换绑后完成，绝不允许路由；
+    // 新条目暖缓存后照常点击直达。
     final oldHeld = Completer<http.Response>();
     var oldReads = 0;
     final observer = _RouteObserver();
     final api = await _api((request) async {
       if (request.url.path == '/api/v1/chat-transfers/old') {
         oldReads++;
-        return oldReads == 1
-            ? _json({..._transfer(), 'id': 'old'})
-            : oldHeld.future;
+        return oldHeld.future;
       }
       if (request.url.path == '/api/v1/chat-transfers/new') {
         return _json({..._transfer(), 'id': 'new'});
@@ -296,7 +296,7 @@ void main() {
     observer.pushes = 0;
     await tester.tap(find.byKey(const Key('wechat-transfer-card')));
     await tester.pump();
-    expect(oldReads, 2);
+    expect(oldReads, 1, reason: 'tap 复用在途的冷读取');
 
     await _pumpEntry(tester,
         store: store,
@@ -308,7 +308,7 @@ void main() {
     await tester.pump();
     oldHeld.complete(_json({..._transfer(), 'id': 'old'}));
     await tester.pumpAndSettle();
-    expect(observer.pushes, 0);
+    expect(observer.pushes, 0, reason: '换绑后完成的旧读取不得打开路由');
 
     await tester.tap(find.byKey(const Key('wechat-transfer-card')));
     await tester.pumpAndSettle();
@@ -322,12 +322,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   testWidgets('held old-epoch card read creates no route', (tester) async {
+    // E2-C 契约更新：暖缓存点击立即路由；旧 epoch 守卫因此改在**冷路径**
+    // 上回归——首次明细读取保持挂起（缓存始终为冷），会话失效后完成的
+    // 读取绝不允许打开路由。
     final held = Completer<http.Response>();
     var reads = 0;
     final api = await _api((request) async {
       if (request.url.path == '/api/v1/chat-transfers/transfer-1') {
         reads++;
-        return reads == 1 ? _json(_transfer()) : held.future;
+        return held.future;
       }
       if (request.url.path == '/api/v1/friends') return _json({'items': []});
       return http.Response('not found', 404);
@@ -344,7 +347,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('wechat-transfer-card')));
     await tester.pump();
-    expect(reads, 2);
+    expect(reads, 1, reason: 'tap 复用在途的冷读取，不再强制第二个请求');
 
     await api.clearLocalSession();
     held.complete(_json(_transfer()));

@@ -182,6 +182,21 @@ final class FinanceCardStore {
     return FinanceCardLease._(this, key, entry);
   }
 
+  /// E2-C（微信式乐观翻转）：领取/收款成功后立即补丁缓存明细，气泡
+  /// 不等待后台确认刷新即可翻转状态；调用方随后仍应 invalidate 以
+  /// 权威刷新。无缓存的 key 静默忽略（无数据可补丁）。
+  void patchDetail(FinanceCardKey key,
+      Map<String, dynamic> Function(Map<String, dynamic> detail) patch) {
+    if (!_live()) return;
+    final entry = _entries[key];
+    if (entry == null) return;
+    final detail = entry.notifier.value.detail;
+    if (detail == null) return;
+    _touch(entry);
+    entry.notifier.value = entry.notifier.value
+        .copyWith(detail: Map.unmodifiable(patch(Map<String, dynamic>.of(detail))));
+  }
+
   void invalidate(FinanceCardKey key) {
     if (_live()) {
       final entry = _entries[key];
