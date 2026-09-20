@@ -23,6 +23,7 @@ def test_permission_binary_gate_rejects_placeholder_classes_and_requires_each_ca
     spec = importlib.util.spec_from_file_location('permission_binary', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    assert '-[AudioVideoPermissionStrategy checkPermissionStatus:]' in module.REQUIRED_METHODS
     empty_classes = b'AudioVideoPermissionStrategy\0PhotoPermissionStrategy\0NotificationPermissionStrategy'
     with pytest.raises(ValueError):
         module.verify_permission_binary(empty_classes)

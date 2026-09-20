@@ -4,7 +4,7 @@ import sys
 
 REQUIRED_METHODS = (
     "-[AudioVideoPermissionStrategy requestPermission:completionHandler:errorHandler:]",
-    "+[AudioVideoPermissionStrategy checkPermissionStatus:]",
+    "-[AudioVideoPermissionStrategy checkPermissionStatus:]",
     "-[PhotoPermissionStrategy requestPermission:completionHandler:errorHandler:]",
     "-[NotificationPermissionStrategy requestPermission:completionHandler:errorHandler:]",
 )
