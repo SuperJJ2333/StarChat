@@ -174,11 +174,15 @@ jobs:
           xcodebuild -project ios/Pods/Pods.xcodeproj -target permission_handler_apple -configuration Debug -showBuildSettings | grep GCC_PREPROCESSOR_DEFINITIONS
           # Attach to the installed app: flutter test rebuilds/reinstalls it,
           # while granting Photos to an already-running app terminates it.
-          xcrun simctl launch --console "$PERMISSION_SIMULATOR" com.liuhetong.liuhetongMobile --enable-dart-profiling --enable-checked-mode --verify-entry-points > "$RUNNER_TEMP/permissions-native.log" 2>&1 &
-          launch_pid=$!
-          trap 'kill "$launch_pid" 2>/dev/null || true' EXIT
+          # Flutter's simulator reader uses unified logging; VM-service messages
+          # do not necessarily appear in simctl launch's console output.
+          xcrun simctl spawn "$PERMISSION_SIMULATOR" log stream --style compact --level debug --predicate 'process == "Runner"' > "$RUNNER_TEMP/permissions-native.log" 2>&1 &
+          log_pid=$!
+          trap 'kill "$log_pid" 2>/dev/null || true' EXIT
+          sleep 1
+          xcrun simctl launch "$PERMISSION_SIMULATOR" com.liuhetong.liuhetongMobile --enable-dart-profiling --enable-checked-mode --verify-entry-points
           vm_uri=$(python3 - <<'PY'
-          import os, pathlib, re, time
+          import os, pathlib, re, sys, time
           log = pathlib.Path(os.environ['RUNNER_TEMP']) / 'permissions-native.log'
           for _ in range(120):
               match = re.search(r'Dart VM service is listening on (http://[^\s]+)', log.read_text(errors='replace'))
@@ -187,7 +191,7 @@ jobs:
                   break
               time.sleep(1)
           else:
-              print(log.read_text(errors='replace'))
+              print(log.read_text(errors='replace'), file=sys.stderr)
               raise SystemExit('No simulator VM service found')
           PY
           )
