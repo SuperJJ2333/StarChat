@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../../features/settings/voice_auto_play_preferences.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -110,7 +111,16 @@ final class _NotificationSettingsPageState
             padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
             children: [
               if (_permission == NotificationAuthorizationStatus.denied)
-                _permissionWarning(context),
+                _permissionWarning(context),              // BUG-40（D7 默认开）：同会话语音连播开关。
+              ListenableBuilder(
+                  listenable: voiceAutoPlayPreferences,
+                  builder: (context, _) => _switchTile(
+                      '语音自动连播',
+                      voiceAutoPlayPreferences.autoPlayNext,
+                      (v) =>
+                          unawaited(voiceAutoPlayPreferences
+                              .setAutoPlayNext(v)))),
+
               _section(context, notificationSettingsNewMessagesSection, [
                 _switchTile(
                     '消息通知',

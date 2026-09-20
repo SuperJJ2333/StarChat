@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'logical_conversation_timeline.dart';
 import 'room_navigation_coordinator.dart';
+import '../settings/voice_auto_play_preferences.dart';
 import 'coordinated_direct_chat.dart';
 import 'timeline_scroll_anchor.dart';
 import 'nudge_rate_limiter.dart';
@@ -58,7 +59,6 @@ import '../../ui/chat/message_scroll_locator.dart';
 import '../../ui/chat/latest_message_anchor.dart';
 import 'room_image_preview_cache.dart';
 import 'group_announcement_page.dart';
-import 'video_send_stage.dart';
 import 'video_transcode.dart';
 import '../../ui/chat/message_action_sheet.dart' show MessageSelectionBar;
 import '../../ui/chat/wechat_attachment_tile.dart';
@@ -139,6 +139,7 @@ import '../finance/finance_message_presentation.dart';
 import 'media_message_access_policy.dart';
 import 'room_media_gallery_projection.dart';
 import '../search/local_message_search_repository.dart';
+import '../search/room_search_index_scheduler.dart';
 import '../../ui/motion/motion_page_route.dart';
 
 /// Counts the authoritative joined snapshot exactly once per Matrix member.
@@ -442,7 +443,28 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         canPlay: () => _canPlayVoice,
         // 语音附件经本地缓存：首次解密下载，重播直接读缓存（无重复网络）。
         loadAttachment: (eventId) => controller!.loadAttachment(eventId),
+        // BUG-40（D7 默认开）：同会话连播——上一条自然播完后自动播下一条未读语音。
+        autoPlayNextVoiceEnabled: () => voiceAutoPlayPreferences.autoPlayNext,
+        nextAutoPlayVoice: _nextUnreadVoiceAfter,
       );
+  /// BUG-40：同会话内 [eventId] 之后最近的一条**未播过**的非本人语音。
+  RoomMessageViewModel? _nextUnreadVoiceAfter(String eventId) {
+    final timeline = controller;
+    if (timeline == null) return null;
+    final current = timeline.findMessage(eventId);
+    if (current == null) return null;
+    RoomMessageViewModel? best;
+    for (final message in timeline.allMessages) {
+      if (message.isOwn || message.kind != RoomMessageKind.voice) continue;
+      if (voicePlayback.isPlayed(message.id)) continue;
+      if (!message.timestamp.isAfter(current.timestamp)) continue;
+      if (best == null || message.timestamp.isBefore(best.timestamp)) {
+        best = message;
+      }
+    }
+    return best;
+  }
+
   final messageKeys = <String, GlobalKey>{};
   final recalledDrafts = <String, String>{};
   final selection = MessageSelectionController();
@@ -504,6 +526,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   final Set<String> _visibleReadIds = {};
+  // E1：搜索索引增量调度与突发去抖。
+  final RoomSearchIndexScheduler _searchIndexScheduler =
+      RoomSearchIndexScheduler();
+  Timer? _searchIndexDebounce;
   final Set<String> _acknowledgedVisibleIds = {};
   bool _immediateVisibleReceipt = false;
   void _observeVisibleReadReceipts() {
@@ -709,8 +735,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       roomInfo.id;
   late SupportIdentityRepository _supportIdentities;
   Timer? _supportTimer;
+  /// E2：金融卡片缓存提升到会话级（进程共享、会话失效才重建），
+  /// 每次进入房间不再清零重拉——气泡状态稳定不闪烁（微信式机制）。
   late final FinanceCardStore _financeCardStore =
-      FinanceCardStore(BusinessFinanceCardGateway(widget.api));
+      sessionFinanceCardStore(() => BusinessFinanceCardGateway(widget.api));
   ContactDetails? peer;
   bool loading = true;
 
@@ -719,7 +747,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 视频发送阶段（转码→加密→上传→发送事件；转码有真实进度，
   /// 其余阶段按 SDK 上传伪事件状态显示）。
-  VideoSendState videoSend = const VideoSendState();
   ComposerPanel composerPanel = ComposerPanel.none;
   String? errorMessage;
   String? mediaMessage;
@@ -2332,7 +2359,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         if (mounted && !_disposing) {
           setState(() {
             _capturingVideo = false;
-            videoSend = const VideoSendState();
           });
         }
       }
@@ -4578,14 +4604,42 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   ///
   /// Task B：写入账号维度的 [LocalMessageSearchRepository]（默认**合并**，
   /// 不再按房间覆盖式截断），因此回填来的更早历史不会被当前时间线丢掉。
+  /// E1：搜索索引**增量**投影——旧实现在每次时间线变化时把房间全部
+  /// 消息重建进索引（O(N log N) 分配+排序，UI 线程执行）。活跃群聊里
+  /// 每条新消息都触发一遍，低端机在键盘输入时直接卡死数秒。现在只为
+  /// 新出现的消息构建条目，突发合并为一次提交（400ms 去抖），撤回联动删除。
   void _recordGlobalSearchIndex() {
     final timeline = controller;
     if (timeline == null) return;
-    LocalMessageSearchRepository.shared.recordRoomMessages([
-      for (final message in timeline.allMessages)
-        if (!message.isRecalled &&
-            !message.isFlashPhoto &&
-            message.text.trim().isNotEmpty)
+    final seenIds = <String>[];
+    final indexableIds = <String>{};
+    final recalledIds = <String>{};
+    final freshById = <String, RoomMessageViewModel>{};
+    for (final message in timeline.allMessages) {
+      seenIds.add(message.stableId);
+      if (message.isRecalled) {
+        recalledIds.add(message.stableId);
+        continue;
+      }
+      if (message.isFlashPhoto ||
+          message.isSdkLocalEcho ||
+          message.text.trim().isEmpty) {
+        continue;
+      }
+      indexableIds.add(message.stableId);
+      if (!freshById.containsKey(message.stableId)) {
+        freshById[message.stableId] = message;
+      }
+    }
+    final observation = _searchIndexScheduler.observe(
+      seenIds: seenIds,
+      indexableIds: indexableIds,
+      recalledIds: recalledIds,
+    );
+    if (observation.toIndex.isEmpty && observation.toRemove.isEmpty) return;
+    final fresh = [
+      for (final id in observation.toIndex)
+        if (freshById[id] case final RoomMessageViewModel message)
           LocalSearchMessage(
             eventId: message.id,
             senderId: message.senderId,
@@ -4603,7 +4657,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             roomAvatarSeed: roomInfo.id,
             isFlashPhoto: message.isFlashPhoto,
           ),
-    ]);
+    ];
+    final removed = List<String>.of(observation.toRemove);
+    _searchIndexDebounce?.cancel();
+    _searchIndexDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (_disposing) return;
+      if (fresh.isNotEmpty) {
+        LocalMessageSearchRepository.shared.recordRoomMessages(fresh);
+      }
+      if (removed.isNotEmpty) {
+        LocalMessageSearchRepository.shared.removeMessages(removed);
+      }
+    });
   }
 
   @override
@@ -4663,6 +4728,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     inputFocusNode.dispose();
     input.dispose();
     messageScrollController.removeListener(_onMessageScroll);
+    _searchIndexDebounce?.cancel();
     ConversationReadState.shared().setRoomOpen(roomInfo.id, open: false);
     messageScrollController.dispose();
     super.dispose();
@@ -5376,19 +5442,36 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     onCancel: () => setState(selection.exit),
                   )
                 else ...[
-                  // Automatic camera compression progress; no confirmation step.
-                  if (_capturingVideo && videoSend.busy)
-                    Padding(
-                      key: const Key('video-automatic-compression-progress'),
-                      padding: const EdgeInsets.all(8),
-                      child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const CupertinoActivityIndicator(radius: 7),
-                            const SizedBox(width: 8),
-                            Text(videoSend.label)
-                          ]),
-                    ),
+                  // BUG-35：视频发送工作胶囊（转码百分比/上传中/失败可重试），
+                  // 覆盖相册与拍摄两条路径；进度由后台协调器驱动。
+                  ListenableBuilder(
+                      listenable: (widget.roomLease
+                              as MatrixOutgoingProgressView)
+                          .outgoingProgress,
+                      builder: (context, _) {
+                        final summary = (widget.roomLease
+                                as MatrixOutgoingVideoWorkView)
+                            .videoWorkSummaryForRoom(roomInfo.id);
+                        if (!summary.busy && summary.failed == 0) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          key: const Key('video-automatic-compression-progress'),
+                          padding: const EdgeInsets.all(8),
+                          child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const CupertinoActivityIndicator(radius: 7),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(summary.label,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          color: CupertinoColors.systemGrey))),
+                              ]),
+                        );
+                      }),
                   if (widget.readOnly)
                     const Padding(
                       key: Key('room-read-only-notice'),

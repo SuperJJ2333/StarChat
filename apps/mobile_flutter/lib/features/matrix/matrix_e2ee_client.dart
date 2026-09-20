@@ -134,6 +134,11 @@ abstract interface class MatrixOutgoingProgressView {
   Listenable get outgoingProgress;
 }
 
+/// BUG-35：单房间视频发送工作投影（转码/上传/失败，见协调器同名方法）。
+abstract interface class MatrixOutgoingVideoWorkView {
+  MatrixRoomVideoWorkSummary videoWorkSummaryForRoom(String roomId);
+}
+
 @immutable
 final class MatrixClientContinuityMetadata {
   const MatrixClientContinuityMetadata({
@@ -850,6 +855,17 @@ final class MatrixConversationCapability {
           // 规则二数据源：本会话已解密缓存条数（本地消息量的保守代理）。
           localMessageCountOf: (room) => _owner._decryptedEventCount(room.id),
         );
+        // BUG-23 残余自愈：通话中进程被杀 → 重启后尾部是通话终态信令而
+        // 服务器未读仍虚增（服务器只见 m.room.encrypted，无法区分信令）。
+        // 快照观察到该组合即静默推进一次已读（详见 _healCallSignalingTails）。
+        _healCallSignalingTails(
+          client: client,
+          rooms: {
+            ...resolution.representatives,
+            ...resolution.duplicatesByRepresentativeId.values
+                .expand((rooms) => rooms),
+          },
+        );
         return MatrixConversationSnapshot(
           unresolvedRoomCount: unresolved,
           vaultRoomId: client
@@ -869,6 +885,60 @@ final class MatrixConversationCapability {
           ],
         );
       });
+  /// BUG-23 残余自愈去重：每个 (账号, 房间, 尾部事件) 只推进一次已读。
+  // 类暴露 const 构造器，去重状态放静态（键含账号，进程级共享安全）。
+  static final Set<String> _callTailHealedMarkers = {};
+  static final Set<String> _callTailHealInFlight = {};
+
+  /// invite/candidates/negotiate 不是通话终态——通话可能仍在进行；
+  /// 其余 m.call.*（answer/hangup/reject 等）表示这通电话已经收尾。
+  static bool _isTerminalCallSignalingType(String? type) {
+    if (type == null || !type.startsWith('m.call.')) return false;
+    const nonTerminal = {
+      'm.call.invite',
+      'm.call.candidates',
+      'm.call.negotiate',
+    };
+    return !nonTerminal.contains(type);
+  }
+
+  /// 尾部事件为通话终态信令且仍有服务器未读 → 推进一次已读。
+  ///
+  /// E2EE 房间里信令加密后服务器只见 m.room.encrypted，未读计数被信令
+  /// 虚增且服务器无法自行区分；通话页内的 onEnded → markRoomRead 已覆盖
+  /// 正常路径，这里补上进程在通话中被杀、重启后不再进入通话页的场景。
+  /// 手动未读（BUG-15）与查看中的房间不碰；失败允许下轮快照重试。
+  /// 必须在 _withClient 的 client 上下文内调用（内联写入，不再排队）。
+  void _healCallSignalingTails({
+    required Client client,
+    required Iterable<MatrixConversationRoomSnapshot> rooms,
+  }) {
+    for (final room in rooms) {
+      final tail = room.lastEvent;
+      if (tail == null || !_isTerminalCallSignalingType(tail.type)) continue;
+      if (room.notificationCount <= 0) continue;
+      if (room.preference.manualUnread) continue;
+      if (ConversationReadState.shared().isRoomOpen(room.id)) continue;
+      final key = '${client.userID}|${room.id}|${tail.eventId}';
+      if (!_callTailHealedMarkers.add(key)) continue;
+      if (!_callTailHealInFlight.add(key)) continue;
+      final target = client.getRoomById(room.id);
+      final tailEvent = target?.lastEvent;
+      if (target == null || tailEvent == null) {
+        _callTailHealedMarkers.remove(key);
+        _callTailHealInFlight.remove(key);
+        continue;
+      }
+      target
+          .setReadMarker(tailEvent.eventId,
+              mRead: tailEvent.eventId, public: false)
+          .then(
+            (_) {},
+            onError: (_) => _callTailHealedMarkers.remove(key),
+          )
+          .whenComplete(() => _callTailHealInFlight.remove(key));
+    }
+  }
 
   /// 项2 修正：收敛把旧房间移出 m.direct 后，真实 SDK 计算的
   /// isDirectChat/directPeerId 会丢失——若不补救，旧房间会以"普通房间"
@@ -1405,6 +1475,7 @@ final class MatrixRoomLease
         _ManagedClientResourceBase,
         MatrixEncryptedMediaGateway,
         MatrixOutgoingProgressView,
+        MatrixOutgoingVideoWorkView,
         AvatarMediaCapability,
         NudgeBackend,
         MessageInteractionBackend {
@@ -1826,6 +1897,9 @@ final class MatrixRoomLease
 
   @override
   Listenable get outgoingProgress => owner.outgoingWork;
+  @override
+  MatrixRoomVideoWorkSummary videoWorkSummaryForRoom(String roomId) =>
+      owner.outgoingWork.videoWorkSummaryForRoom(roomId);
 
   @override
   Future<String> sendEncryptedMedia(
@@ -2794,8 +2868,17 @@ final class _SdkRoomTimelineCapability
     return RoomMessageViewModel(
       id: event.eventId,
       transactionId: event.unsigned?['transaction_id'] as String?,
-      imageWidth: info is Map ? int.tryParse('${info['w']}') : null,
-      imageHeight: info is Map ? int.tryParse('${info['h']}') : null,
+      // BUG-28：顶层宽高缺失（旧事件）回退 thumbnail_info，占位框宽高比稳定。
+      imageWidth: _intValue(info is Map ? info['w'] : null) ??
+          _intValue(
+              info is Map && info['thumbnail_info'] is Map
+                  ? (info['thumbnail_info'] as Map)['w']
+                  : null),
+      imageHeight: _intValue(info is Map ? info['h'] : null) ??
+          _intValue(
+              info is Map && info['thumbnail_info'] is Map
+                  ? (info['thumbnail_info'] as Map)['h']
+                  : null),
       senderId: event.senderId,
       text: event.redacted
           ? ''
@@ -4510,6 +4593,8 @@ final class MatrixOutgoingVideoFile {
   final Future<MatrixOutgoingPreparedMedia> Function(File source)?
       _prepareMedia;
   final Future<int> Function(File source)? _sourceCost;
+  /// BUG-35：转码进度回报（由 _buildVideoJob 注入协调器上报）。
+  void Function(double progress)? _progressSink;
   bool _admitted = false;
 
   void _markAdmitted() {
@@ -4552,8 +4637,9 @@ final class MatrixOutgoingVideoFile {
     if (testPreparation != null) return testPreparation(source);
     // Keep an app-owned capture through preparation failures so retry uses the
     // same original. Terminal source release owns deletion instead.
-    final prepared =
-        await prepareLocalChatVideo(source, deleteSourceWhenDone: false);
+    final prepared = await prepareLocalChatVideo(source,
+        deleteSourceWhenDone: false,
+        onProgress: (progress) => _progressSink?.call(progress));
     final poster = prepared.poster?.lengthInBytes == null ||
             prepared.poster!.lengthInBytes > _maxOutgoingVideoPosterBytes
         ? null
@@ -6984,10 +7070,13 @@ final class MatrixSdkE2eeClient
       mimeType: mimeType,
       extraContent: extraContent,
     );
+    // BUG-28：自带缩略图的路径会跳过下面的缩略图生成，事件顶层可能缺
+    // info.w/h——同一张图两次连发落入不同布局。在聚合点补齐解码尺寸。
+    final sizedFile = await ensureImageDimensionsForSend(media.file);
     // The original is already processed by the image/video picker. Generate
     // only a missing thumbnail before hashing; the SDK must not transform a
     // prepared envelope after this point.
-    final image = media.file;
+    final image = sizedFile;
     if (image is MatrixImageFile && thumbnail == null) {
       try {
         thumbnail = await OutgoingMediaThumbnailCache.load(
@@ -7006,7 +7095,7 @@ final class MatrixSdkE2eeClient
     await cacheOutgoingMedia(
       accountId: room.client.userID ?? '',
       roomId: room.id,
-      bytes: media.file.bytes,
+      bytes: sizedFile.bytes,
     );
     if (thumbnail != null) {
       await cacheOutgoingMedia(
@@ -7017,7 +7106,7 @@ final class MatrixSdkE2eeClient
     }
     validateSendAccess();
     final prepared = await prepareContentAddressedMedia(
-      file: media.file,
+      file: sizedFile,
       thumbnail: thumbnail,
       extraContent: media.extraContent,
     );

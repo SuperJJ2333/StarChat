@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:matrix/matrix.dart';
 
@@ -50,4 +51,36 @@ import 'package:matrix/matrix.dart';
     file = MatrixFile(bytes: bytes, name: name, mimeType: mimeType);
   }
   return (file: file, extraContent: remaining.isEmpty ? null : remaining);
+}
+
+/// BUG-28：补齐图片信封的顶层宽高（info.w/h）。
+///
+/// 编辑器路径自带缩略图时发送聚合点会跳过缩略图生成，事件顶层可能缺
+/// w/h——同一张图两次连续发送会落入不同布局。这里在发送聚合点用解码
+/// 尺寸兜底，保证无论缩略图有无，事件 info.w/h 恒存在；调用方声明的
+/// 尺寸是权威，已有值时不做任何解码。
+Future<MatrixFile> ensureImageDimensionsForSend(MatrixFile file) async {
+  if (file is! MatrixImageFile) return file;
+  if (file.width != null && file.height != null) return file;
+  final bytes = file.bytes;
+  if (bytes.isEmpty) return file;
+  final ui.Codec codec;
+  try {
+    codec = await ui.instantiateImageCodec(bytes);
+  } catch (_) {
+    // 解不出尺寸时保持原样（展示层另有 thumbnail_info 回退）。
+    return file;
+  }
+  final frame = await codec.getNextFrame();
+  final width = frame.image.width;
+  final height = frame.image.height;
+  frame.image.dispose();
+  codec.dispose();
+  return MatrixImageFile(
+    bytes: bytes,
+    name: file.name,
+    mimeType: file.mimeType,
+    width: width,
+    height: height,
+  );
 }

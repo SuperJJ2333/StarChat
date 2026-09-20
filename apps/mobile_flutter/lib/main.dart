@@ -29,6 +29,7 @@ import 'ui/foundation/changliao_icons.dart';
 import 'features/matrix/matrix_recovery_service.dart';
 import 'session_gate.dart';
 import 'ui/motion/motion_preferences.dart';
+import 'features/settings/voice_auto_play_preferences.dart';
 import 'ui/theme/wechat_theme.dart';
 import 'ui/theme/theme_controller.dart';
 
@@ -49,6 +50,11 @@ Future<void> main() async {
     await SharedPreferences.getInstance(),
   ));
   await motionPreferences.load();
+  // BUG-40：「语音自动连播」（默认开）本地设置启动即读取。
+  voiceAutoPlayPreferences.attachStore(SharedPreferencesVoiceAutoPlayStore(
+    await SharedPreferences.getInstance(),
+  ));
+  await voiceAutoPlayPreferences.load();
   final store = SecureSessionStore();
   final installationReconciler = InstallationReconciler(
     marker: SharedPreferencesInstallationMarker(

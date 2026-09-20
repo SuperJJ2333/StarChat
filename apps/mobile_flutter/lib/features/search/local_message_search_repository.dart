@@ -324,6 +324,11 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     return indexed;
   }
 
+  /// E1：按 eventId 删除（消息撤回联动）。命中删除时通知监听者。
+  void removeMessages(Iterable<String> eventIds) {
+    if (index.removeMessages(eventIds) > 0) notifyListeners();
+  }
+
   /// 账号维度的检索：完全走内存索引，有界且无 I/O。
   List<GlobalSearchMessageHit> search(String query, {int limit = 200}) =>
       index.search(query, limit: limit);

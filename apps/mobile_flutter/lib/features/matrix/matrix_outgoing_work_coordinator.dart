@@ -17,6 +17,39 @@ enum MatrixOutgoingTargetState { pending, sent, failed, partial, canceled }
 /// Immutable route-independent metadata for a pending outgoing bubble.
 enum MatrixOutgoingPresentationKind { text, image, video, voice, file }
 
+/// BUG-35：单房间视频发送工作投影（转码/上传/失败计数 + 最佳转码进度）。
+final class MatrixRoomVideoWorkSummary {
+  const MatrixRoomVideoWorkSummary({
+    this.preparing = 0,
+    this.sending = 0,
+    this.failed = 0,
+    this.progress,
+  });
+
+  final int preparing;
+  final int sending;
+  final int failed;
+
+  /// 准备中任务的最佳已知转码进度 0..1；未知为 null（显示不定进度）。
+  final double? progress;
+
+  bool get busy => preparing > 0 || sending > 0;
+
+  /// 顶部胶囊文案；无工作时为空。失败优先于进行中（提示可重试）。
+  String get label {
+    if (failed > 0) return '视频发送失败，可重试';
+    if (preparing > 0) {
+      final p = progress;
+      final count = preparing > 1 ? '（$preparing）' : '';
+      return p == null
+          ? '视频转码中…$count'
+          : '视频转码中 ${(p * 100).round()}%$count';
+    }
+    if (sending > 0) return '视频上传中…';
+    return '';
+  }
+}
+
 final class MatrixOutgoingWorkPresentation {
   MatrixOutgoingWorkPresentation({
     required this.kind,
@@ -268,6 +301,9 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
   int _activeReleases = 0;
   int _retainedSourceBytes = 0;
   Completer<void>? _progress;
+
+  /// BUG-35：按 jobId 记录的准备阶段（转码）进度 0..1。
+  final Map<String, double> _preparationProgress = {};
   final Map<String, Set<String>> _earlyEchoEventIdsByRoom = {};
   int _earlyEchoEventCount = 0;
 
@@ -279,6 +315,61 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
   int get readySourceCount => _jobs.values.where(_isReadySource).length;
 
   MatrixOutgoingWorkJob? job(String id) => _jobs[id];
+
+  /// BUG-35：准备阶段（转码）进度 0..1；未知/无工作返回 null。
+  double? preparationProgressOf(String jobId) => _preparationProgress[jobId];
+
+  /// BUG-35：视频准备管线回报转码进度（应用内部接口）。
+  /// 小步进只记录不广播，避免高频 notify。
+  void reportPreparationProgress(String jobId, double progress) {
+    if (progress.isNaN || progress.isInfinite) return;
+    final clamped = progress.clamp(0.0, 1.0);
+    final previous = _preparationProgress[jobId];
+    _preparationProgress[jobId] = clamped;
+    if (previous != null &&
+        clamped < 1.0 &&
+        (clamped - previous).abs() < 0.02) {
+      return;
+    }
+    notifyListeners();
+  }
+
+  /// BUG-35：单房间视频工作投影（跨任务聚合，见 [MatrixRoomVideoWorkSummary]）。
+  MatrixRoomVideoWorkSummary videoWorkSummaryForRoom(String roomId) {
+    var preparing = 0;
+    var sending = 0;
+    var failed = 0;
+    double? progress;
+    for (final job in _jobs.values) {
+      for (final item in job.items) {
+        if (item.targetRoomId != roomId) continue;
+        if (item.presentation.kind != MatrixOutgoingPresentationKind.video) {
+          continue;
+        }
+        switch (item.state) {
+          case MatrixOutgoingWorkState.queued:
+          case MatrixOutgoingWorkState.preparing:
+          case MatrixOutgoingWorkState.ready:
+            preparing++;
+            final p = _preparationProgress[job.id];
+            if (p != null && (progress == null || p > progress)) progress = p;
+          case MatrixOutgoingWorkState.sending:
+            sending++;
+          case MatrixOutgoingWorkState.failed:
+            failed++;
+          case MatrixOutgoingWorkState.sent:
+          case MatrixOutgoingWorkState.canceled:
+            break;
+        }
+      }
+    }
+    return MatrixRoomVideoWorkSummary(
+      preparing: preparing,
+      sending: sending,
+      failed: failed,
+      progress: progress,
+    );
+  }
 
   List<MatrixOutgoingWorkItem> itemsForRoom(String roomId) =>
       List.unmodifiable([
@@ -860,6 +951,7 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
   }
 
   void _releaseSourceIfTerminal(MatrixOutgoingWorkJob job) {
+    _preparationProgress.remove(job.id);
     if (!job.items.every((item) =>
         item._state == MatrixOutgoingWorkState.sent ||
         item._state == MatrixOutgoingWorkState.canceled)) {

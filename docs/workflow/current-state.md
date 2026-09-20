@@ -1,5 +1,16 @@
 # 移动交付恢复索引
 
+## 2026-09-20 客服点钻派发修复（后端+admin静态已上线，待管理员复验）
+
+用户报"派发点钻显示 发放失败：点钻发放请求无效"。根因：生产储备策略为 manual_liquidity（储备 40 USDT vs 负债 4567.02=点钻 4508.11+USDT 58.91，缺口 4527.02 按记录放行），但 admin 派发与审批执行路径的 `LedgerService` 硬编码 `full_backing` 未接 `settings.wallet_reserve_policy`，每次派发 `require_coverage` 抛 `insufficient reserve coverage` 被笼统映射为"请求无效"。**不是输入框问题**（422 发生在目标解析与客服角色校验之后）。修复：两路径接入全局策略；7 类 ValueError 细分为独立错误码/中文文案；前端金额本地校验 + 错误红字icon(role=alert)/成功绿字icon(role=status)。门禁：新增 6 测先红后绿、verify PASS（API/Worker 2215/58）、npm 222。生产切换 `starchat-business-api:caibi-grant-20260920`（23:36+08 healthy），**23:42 管理员即成功派发 1550+2000 两笔（审计在案）**；**顺带发现并恢复生产容器被回退到陈旧 fb41d7fa（缺批次B三文件）的漂移**；admin 静态 `?v=20260920-grant` 公网哈希核验通过。改动待用户指示 commit/push。以[任务](tasks/2026-09-20-caibi-grant-fix.md)与[验证](../verification/2026-09-20-caibi-grant-fix.md)为准。
+
+## 2026-09-20 缺陷批次 D 准备 + 生产服务端修复恢复（BUG-19/12 曾丢失，已恢复）
+
+BUG-23 服务端剔除 m.call.* 在 E2EE 下结构性不可行（服务器只见 m.room.encrypted），已记录决策；客户端治本已随 0.3.102/2144 发布。核验发现缺陷批次 B 服务端修复（403 ACCOUNT_SUSPENDED、换邮箱端点）随容器镜像重建（fb41d7fa 构建自陈旧脏树）丢失——已按 admin 流程用 main 三文件覆盖恢复并重启验证（端点探测/401 原口径/日志 0 error），固化镜像 `starchat-business-api:defect-restore-20260920`（333c6727）；BUG-21/11 与红包限额 200（DB 覆盖行）确认在位。生产 business-api 与 main 存在 77 文件结构性漂移，根治需干净镜像重建（待用户立项授权）。CSV 41 项核对完毕：仅 BUG-28/35/40 未修复，10 行状态已回填。批次 D 计划（媒体与连播增强+BUG-23 自愈，D5/D7 已拍板口径）待批准。以[任务](tasks/2026-09-20-defect-batch-d-prep.md)、[批次 D 计划](../superpowers/plans/2026-09-20-defect-batch-d-media-plan.md)与[核验工件](../verification/artifacts/2026-09-20/bug23-prod-verify/)为准。
+
+## 2026-09-20/21 批次 D 实施 + 干净 main 镜像上线 + 新缺陷 E1/E2（本地完成，待提交/真机）
+服务端：caibi 增量先落 main（89606cad）后重建 business-api 镜像（main-clean-20260920，215/215 文件一致，迁移 0071==0071 无变更，回退=caibi-grant 镜像）。客户端 TDD 全绿：BUG-23 残余自愈（通话终态信令+未读→自动推进已读）、BUG-28（发送补解码宽高+展示 thumbnail_info 回退）、BUG-35（视频转码百分比/上传/失败胶囊，覆盖相册+拍摄）、BUG-40（语音连播+设置开关，默认开 D7）、E1 打字卡死（搜索索引每次全量重建→增量+400ms 去抖+撤回联动删除）、E2 红包/转账闪烁（FinanceCardStore 提升进程级会话共享）。flutter analyze 0；全量测试与提交状态见[任务](tasks/2026-09-20-defect-batch-d-prep.md)、[计划](../superpowers/plans/2026-09-20-defect-batch-d-media-plan.md)。E1 真机（荣耀50Plus）与 E2 真机验收待用户。
+
 ## 2026-09-20 docs根目录与runbooks归并
 22份历史正文归档、6份专题资料归位；保留旧路径跳转。发布入口与当前轻量流程对齐，钱包/通信按分类索引进入。本地链接和内容保留检查通过，无代码或生产变更。[任务](tasks/2026-09-20-docs-consolidation.md) · [验证](../verification/2026-09-20-docs-consolidation.md)。
 

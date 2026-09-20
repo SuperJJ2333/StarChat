@@ -99,6 +99,40 @@ final class GlobalSearchIndex {
     }
   }
 
+  /// E1：按 eventId 删除记录（消息撤回后不得再被搜索到）。
+  /// 未知 id 静默忽略；受影响房间保持 LRU 位置不变。
+  int removeMessages(Iterable<String> eventIds) {
+    final ids = Set<String>.of(eventIds);
+    if (ids.isEmpty) return 0;
+    var removed = 0;
+    final rebuilt = <String, _IndexedRoom>{};
+    final emptied = <String>[];
+    _rooms.removeWhere((roomId, room) {
+      final kept =
+          room.records.where((record) => !ids.contains(record.eventId));
+      if (kept.length == room.records.length) return false;
+      removed += room.records.length - kept.length;
+      if (kept.isEmpty) {
+        emptied.add(roomId); // 整个房间的记录都被删光：移除房间。
+        return true;
+      }
+      rebuilt[roomId] = _IndexedRoom(
+        roomId: room.roomId,
+        roomName: room.roomName,
+        isGroup: room.isGroup,
+        records: kept.toList(),
+        avatarSeed: room.avatarSeed,
+        avatarUrl: room.avatarUrl,
+      );
+      return true; // 移除后立即按原字段重插，保持 LRU 顺序不变。
+    });
+    _rooms.addAll(rebuilt);
+    for (final roomId in emptied) {
+      _rooms.remove(roomId);
+    }
+    return removed;
+  }
+
   static List<GlobalSearchMessageRecord> _normalize(
           Iterable<GlobalSearchMessageRecord> messages) =>
       messages

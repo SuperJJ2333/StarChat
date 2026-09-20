@@ -193,8 +193,12 @@ final class VoicePlaybackController extends ChangeNotifier {
     required Future<Uint8List> Function(String eventId) loadAttachment,
     VoiceAudioEngine? engine,
     bool Function()? canPlay,
+    bool Function()? autoPlayNextVoiceEnabled,
+    RoomMessageViewModel? Function(String currentId)? nextAutoPlayVoice,
   })  : _loadAttachment = loadAttachment,
         _canPlay = canPlay ?? _alwaysAllowPlayback,
+        _autoPlayNextVoiceEnabled = autoPlayNextVoiceEnabled,
+        _nextAutoPlayVoice = nextAutoPlayVoice,
         engine = engine ?? AudioplayersVoiceEngine() {
     // 播放自然结束时复位气泡（QQ 式播放体验）。
     _completedSubscription = this
@@ -214,6 +218,13 @@ final class VoicePlaybackController extends ChangeNotifier {
   final VoiceAudioEngine engine;
   final bool Function() _canPlay;
   static bool _alwaysAllowPlayback() => true;
+
+  /// BUG-40（D7 已拍板：默认开启）：自然播完后自动连播同会话下一条
+  /// 未读语音。开关与下一条来源由页面注入；null 供应商=没有下一条。
+  final bool Function()? _autoPlayNextVoiceEnabled;
+  final RoomMessageViewModel? Function(String currentId)? _nextAutoPlayVoice;
+  final Set<String> _playedIds = <String>{};
+  bool isPlayed(String eventId) => _playedIds.contains(eventId);
 
   final Set<String> _playingIds = <String>{};
   final Set<String> _pausedIds = <String>{};
@@ -259,10 +270,22 @@ final class VoicePlaybackController extends ChangeNotifier {
   void _handleCompleted() {
     if (_disposed || _loadingId != null) return;
     if (_playingIds.isEmpty && _pausedIds.isEmpty) return;
+    final completedId = _playingIds.firstOrNull;
+    if (completedId != null) _playedIds.add(completedId);
     _playingIds.clear();
     _pausedIds.clear();
     _positions.clear();
     notifyListeners();
+    // BUG-40：只有**自然播完**才连播；暂停/手动停止不在此路径。
+    _maybeAutoAdvanceAfter(completedId);
+  }
+
+  void _maybeAutoAdvanceAfter(String? completedId) {
+    if (_disposed || completedId == null) return;
+    if (!(_autoPlayNextVoiceEnabled?.call() ?? true)) return;
+    final next = _nextAutoPlayVoice?.call(completedId);
+    if (next == null || next.id == completedId) return;
+    unawaited(toggle(next));
   }
 
   void _handlePlaybackError(Object error, StackTrace stackTrace) {

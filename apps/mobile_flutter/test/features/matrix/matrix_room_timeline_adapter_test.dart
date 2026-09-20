@@ -820,4 +820,35 @@ void main() {
     expect(packet.redPacketRecipientMatrixId, '@bob:test');
     adapter.dispose();
   });
+
+  test('BUG-28：顶层宽高缺失时回退 thumbnail_info 宽高（旧事件占位框稳定）',
+      () async {
+    final client = RetryClient();
+    final room = RetryRoom(client: client);
+    final timeline = Timeline(
+        room: room,
+        chunk: TimelineChunk(events: [
+          Event.fromJson({
+            'event_id': 'event',
+            'type': EventTypes.Message,
+            'sender': '@peer:test',
+            'origin_server_ts': 1000,
+            'content': {
+              'msgtype': 'm.image',
+              'body': 'legacy.png',
+              'info': {
+                'mimetype': 'image/png',
+                'size': 900,
+                'thumbnail_info': {'w': 40, 'h': 30},
+              },
+            },
+          }, room)
+        ]));
+    final adapter = await openAdapter(room, timeline);
+    final message = adapter.snapshot().single;
+    expect(message.imageWidth, 40,
+        reason: '顶层 info.w/h 缺失时必须回退 thumbnail_info，占位框才稳定');
+    expect(message.imageHeight, 30);
+    adapter.dispose();
+  });
 }

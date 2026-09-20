@@ -167,6 +167,8 @@ final class FinanceCardStore {
 
   @visibleForTesting
   int get cacheEntryCount => _entries.length;
+  bool get isEnded => _ended;
+  bool get isDisposed => _disposed;
 
   FinanceCardLease lease(FinanceCardKey key) {
     if (!_live()) {
@@ -464,3 +466,21 @@ final class _Entry {
 bool _viewRestricted(Object error) =>
     error is BusinessApiException &&
     (error.statusCode == 403 || error.statusCode == 404);
+
+/// E2：进程级、按登录会话共享的金融卡片缓存。
+///
+/// 旧行为把 [FinanceCardStore] 挂在 RoomPage State 上——每次进入房间都
+/// 重建 store，缓存清零，红包/转账气泡每次进入都重新拉取并闪烁。共享
+/// 缓存提升到登录会话级：只有会话失效（登出/换号/401 终结旧 store）
+/// 才重建，跨房间、跨页面进出都命中同一份状态（微信式机制）。
+FinanceCardStore? _sharedSessionStore;
+FinanceCardStore sessionFinanceCardStore(
+        FinanceCardGateway Function() createGateway) {
+  final existing = _sharedSessionStore;
+  if (existing != null && !existing.isEnded && !existing.isDisposed) {
+    return existing;
+  }
+  existing?.dispose();
+  _sharedSessionStore = FinanceCardStore(createGateway());
+  return _sharedSessionStore!;
+}
