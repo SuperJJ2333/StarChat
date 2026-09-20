@@ -39,7 +39,8 @@ def test_simulator_validates_real_permission_plugin_without_importing_excluded_s
     simulator = workflow.split('  simulator-build:', 1)[1].split('  build-upload:', 1)[0]
     assert '-t integration_test/ios_permission_capabilities_test.dart' in simulator
     assert 'simctl privacy' in simulator
-    assert 'flutter test integration_test/ios_permission_capabilities_test.dart' in simulator
+    assert 'flutter drive --driver=integration_test/permission_driver.dart' in simulator
+    assert '--use-existing-app="$vm_uri"' in simulator
 
 
 def test_reused_checks_require_success_and_exact_repository_workflow():

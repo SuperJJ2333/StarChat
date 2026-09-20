@@ -24,3 +24,7 @@ Apple预检与完整CI分开运行；23:31:44+08已dispatch完整TestFlight工�
 
 ## 2026-09-21 00:20 +08 夹具生命周期诊断
 35521565834仍photos denied，未上传。新增TCC诊断在重装前显示Microphone2/Photos2，排除了单纯末次photos-add覆盖假设。Flutter3.44.9的_setupUpdatedApplicationBundle源码确认测试前重新simctl install。现改为最终测试进程READY后，由宿主授权并通过本次run唯一tmp文件确认；不修改生产代码、不放宽权限断言。同时输出实际Pod预处理宏和授权后TCC状态。两个原生失败均保留，不声称相册已经通过。
+
+## 2026-09-21 00:40 +08 连接既有测试应用
+运行35522440426/5de2c16a原生宏诊断证明五项PERMISSION均1；READY后host授权显示三项TCC均2，但运行中app被终止，Flutter79测试未完成，上传未执行。日志native-ci-3.log。
+依据Flutter drive源码reuseApplication路径与integration_test SDK适配器，改为一次安装→停止态grant→simctl launch→flutter drive --use-existing-app，避免重装或运行中授权。相册与麦克风status/request严格granted断言保留。专项9和两个Dart文件analyze通过；准备本次最终安装生命周期复验，未宣称原生通过。
