@@ -154,3 +154,13 @@ ModalRoute.of/findRenderObject，异常以 10 次/秒轰炸 UI 线程（logcat
 settled 日志 + 协调器 STUCK cleared 日志（含挂起毫秒数）。debug 2153
 （SHA256 ed52af2f…）已装 Mi 6。待用户复现后抓 logcat 定位挂起层。
 证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2153/`。
+## 2154 E1 根因修复完整轮（2026-09-21 深夜，用户 USB 重连后复验）
+
+实机日志（22:42 窗口）完整确诊：进入哥们测试群后守卫持有至退出后 ~12s，
+期间重进点击全部 BLOCKED（日志铁证）。修复=onRoomReady 即解锁列表守卫
+（守卫只保护打开中几百毫秒；退出重进的重复委托由协调器「已打开优先」
+路径兜底）。委派套件契约同步更新（打开中重复点击改为允许再委托，页面
+级去重由协调器保证）。全量 3685/0、analyze 0。commit 5b24e340；debug
+2154（SHA256 b61c1c15…）已装 Mi 6（数据保留，设备哈希一致）。证据：
+`docs/verification/artifacts/2026-09-21/mi6-debug-2154/`。待用户复验：
+快速进出哥们测试群不再出现 ~10s 死窗口。
