@@ -127,3 +127,13 @@ push/landed/FAILED，logcat 可见）供下一次卡死复现定位。finance 75
 commit ca12407a + bc8914c5；debug 2150（SHA256 9a38e3b1…）已装 Mi 6
 （数据保留，设备哈希一致）。证据：
 `docs/verification/artifacts/2026-09-21/mi6-debug-2150/`。待用户真机复验。
+## 2151 滑动历史红框防护轮（2026-09-21 深夜，实机复现抓栈）
+
+2150 上实机复现：哥们测试群滑动历史 → 整个消息区域红色 ErrorWidget
+（用户报的「红包气泡下方红色BUG显示」）。logcat 抓到 4+1 条元素生命周期
+未处理异常，全部来自 100ms _mentionVisibilityTimer 回调在元素 deactivate
+窗口内调用 findRenderObject/ModalRoute.of。修复=mounted 早退 + 逐元素
+ctx.mounted 检查 + findRenderObject try/catch。全量 3685/0、analyze 0。
+commit 5bd6dea9；debug 2151（SHA256 eabebdfa…）已装 Mi 6（数据保留，
+设备哈希一致）。证据：
+`docs/verification/artifacts/2026-09-21/mi6-debug-2151/`。待用户复验。
