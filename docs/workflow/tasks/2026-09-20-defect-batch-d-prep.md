@@ -96,3 +96,13 @@ ROOM_PUSH_SWALLOWED 收尾解锁）。②自己发的红包被领完不翻转：
 commit 44ba70ef；debug 2147（SHA256 0f0b96cf…）已装 Mi 6（数据保留，设备
 哈希一致）。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2147/`。
 待用户真机复验三问题。
+## 2148 点击驱动刷新轮（2026-09-21 下午，用户指令）
+
+按用户指令将红包/转账状态切换改为**用户点击驱动**：移除 15s 周期轮询；
+进入会话只对冷卡片做一次静默拉取（乐观渲染默认封面，不再出现加载中/
+状态未知）；点击卡片才强制刷新翻转（已领完/已领取/转账已收款），封面
+颜色同步灰粉。同时给 AppHome 打开流程加阶段日志（identity/lease/ready/
+push/landed/FAILED，logcat 可见）供下一次卡死复现定位。finance 75 绿；
+全量 3684/0；analyze 0。commit e7e46615 + 6ef6824e；debug 2148
+（SHA256 aeccd10e…）已装 Mi 6（数据保留，设备哈希一致）。证据：
+`docs/verification/artifacts/2026-09-21/mi6-debug-2148/`。待用户真机复验。
