@@ -117,3 +117,13 @@ push/landed/FAILED，logcat 可见）供下一次卡死复现定位。finance 75
 （SHA256 edf4a603…）已装 Mi 6（数据保留，设备哈希一致）。AppHome 阶段日志
 （identity/lease/ready/push/landed/FAILED）留存用于下次复现定位。证据：
 `docs/verification/artifacts/2026-09-21/mi6-debug-2149/`。待用户真机复验。
+## 2150 三层卡死自愈完整轮（2026-09-21 深夜，2149 复验 15s 兜底外仍卡死）
+
+2149 的协调器兜底只在合并路径生效，最外层列表守卫仍可能被挂死流程永占。
+本轮补齐第三层：会话列表打开等待 15s 上限（超时解锁守卫可重试，底层完成
+仍走 onRoomClosed 收尾）。三层自愈=AppHome push 看门狗 + 协调器惰性卡死
+清理 + 列表 15s 上限。红包/转账点击驱动刷新（E2-F4）完整落地：无轮询、
+进会话零重复加载、点击才刷新翻转、封面颜色同步。全量 3685/0、analyze 0。
+commit ca12407a + bc8914c5；debug 2150（SHA256 9a38e3b1…）已装 Mi 6
+（数据保留，设备哈希一致）。证据：
+`docs/verification/artifacts/2026-09-21/mi6-debug-2150/`。待用户真机复验。
