@@ -84,3 +84,15 @@ Mi 6（cbd0156b）`adb install -r` Success；设备回读 base.apk SHA256 与本
 ## E2 二轮（2026-09-21，真机 2145 复验仍闪「加载中」）
 
 真根因：RoomPage dispose 误杀共享 store（提升共享后未移除旧 dispose 钩子）→ 每次退出房间缓存清零。修复 + 微信式交互：暖缓存点击立即路由（不再强制预取往返）、领取/收款乐观翻转（patchDetail 立即补丁 viewer_claim/status，后台 invalidate 确认）、多红包并发隔离测试。旧 epoch 守卫契约测试改在冷路径回归（保留原回归价值）。finance 74 绿、全量 3680/0、analyze 0。commit eff2cf50；debug 2146（SHA256 dcb1bacf…）已覆盖安装 Mi 6（数据保留，设备哈希一致），待用户真机复验。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2146/`。
+## 2146 进房卡死 + 红包三问题修复轮（2026-09-21，debug 2147 已装 Mi 6）
+
+用户复验 2146 报三问题。①**进房卡死**：adb logcat + VM service 抓栈 + 实机
+复现确诊——AppHome 房间打开的 push 在同帧竞态下被吞（既有已知问题），
+`visible` 永挂 → `_openingRooms` 守卫永占（特定房间永远点不开、无日志、
+isolate 空闲）。修复=push 落地看门狗（首帧校验+1.2s 限时，失败按
+ROOM_PUSH_SWALLOWED 收尾解锁）。②自己发的红包被领完不翻转：可见轮询 15s
+自动翻转+终止（FakeAsync 测试证明）。③新增领取提示事件（仅双方可见，
+文案按查看者身份区分，事件只带账号标识）。全量 3684/0、analyze 0。
+commit 44ba70ef；debug 2147（SHA256 0f0b96cf…）已装 Mi 6（数据保留，设备
+哈希一致）。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2147/`。
+待用户真机复验三问题。
