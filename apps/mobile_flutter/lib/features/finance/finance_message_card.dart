@@ -100,7 +100,9 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
               : state.detail == null
                   ? state.ended
                       ? '会话已结束'
-                      : state.error ?? (state.loading ? '加载中' : '状态未知')
+                      // E2-F4：冷卡片乐观渲染为「领取红包」，静默拉取后
+                      // 才显示真实状态；不再出现「加载中/状态未知」。
+                      : state.error
                   : null,
           onTap: enabled
               ? widget.onTap
@@ -117,7 +119,9 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
             ? transferCounterpartyLabel(widget.restrictedRecipientName)
             : state.ended
                 ? '会话已结束'
-                : state.error ?? (state.loading ? '加载中' : '状态未知')
+                // E2-F4：冷卡片乐观渲染为「点击收款」，静默拉取后翻转。
+                : state.error
+
         : transferLabel(
             status: status,
             viewerId: state.viewerId,

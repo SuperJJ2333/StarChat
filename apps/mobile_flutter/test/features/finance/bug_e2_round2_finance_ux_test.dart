@@ -249,7 +249,7 @@ void main() {
   });
 
   
-testWidgets('E2-F2：自己发的红包被领完后，可见轮询自动翻转封面（无需重进）',
+testWidgets('E2-F2：自己发的红包被领完后，用户点击卡片才刷新为「已领完」',
     (tester) async {
   var completed = false;
   final gateway = _GatedGateway((id) {
@@ -272,20 +272,23 @@ testWidgets('E2-F2：自己发的红包被领完后，可见轮询自动翻转�
   await lease.ensureFresh();
   expect(redPacketVisualState(lease.notifier.value.detail),
       RedPacketVisualState.available);
-  expect(lease.notifier.value.terminal, isFalse, reason: '未领完时不停止轮询');
+  expect(lease.notifier.value.terminal, isFalse);
 
+  // 长时间停留不再周期轮询（E2-F4 用户指令）。
+  await tester.pump(const Duration(seconds: 31));
+  expect(gateway.detailCalls, 1, reason: '无轮询：停留不产生新的拉取');
+
+  // 用户点击卡片（open 流程）→ 强制刷新 → 已领完翻转 + 终态。
   completed = true;
-  // 可见轮询周期（15s）到达后强制刷新一次 → 状态翻转并终止轮询。
-  await tester.pump(const Duration(seconds: 16));
-  await tester.pumpAndSettle();
-
+  await lease.ensureFresh(force: true);
   expect(lease.notifier.value.detail?['status'], 'COMPLETED');
   expect(lease.notifier.value.terminal, isTrue);
   expect(redPacketVisualState(lease.notifier.value.detail),
-      RedPacketVisualState.exhausted, reason: '封面自动切换为「已领完」');
+      RedPacketVisualState.exhausted, reason: '封面切换为「已领完」');
   lease.setVisible(false);
   lease.dispose();
 });
+
 test('E2-D：多红包并发缓存互不串扰、补丁只影响自身', () async {
     final gates = <String, Completer<http.Response>>{};
     final counts = <String, int>{};
@@ -392,6 +395,7 @@ final class _FakeGateway implements FinanceCardGateway {
 final class _GatedGateway implements FinanceCardGateway {
   _GatedGateway(this.detailOf);
   final Future<Map<String, dynamic>> Function(String id) detailOf;
+  int detailCalls = 0;
   @override
   int get sessionEpoch => 1;
   @override
@@ -399,7 +403,10 @@ final class _GatedGateway implements FinanceCardGateway {
   @override
   Future<String?> currentUserId() async => 'receiver-1';
   @override
-  Future<Map<String, dynamic>> redPacketDetail(String id) => detailOf(id);
+  Future<Map<String, dynamic>> redPacketDetail(String id) {
+    detailCalls++;
+    return detailOf(id);
+  }
   @override
   Future<Map<String, dynamic>> chatTransferDetail(String id) => detailOf(id);
 }

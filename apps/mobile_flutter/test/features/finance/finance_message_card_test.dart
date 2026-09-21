@@ -23,7 +23,10 @@ void main() {
         onTap: () => taps++,
       ),
     ));
-    expect(find.text('状态未知'), findsOneWidget);
+    // E2-F4：冷卡片乐观渲染默认封面（不出现「状态未知/加载中」文案）。
+    expect(find.text('状态未知'), findsNothing);
+    expect(find.text('加载中'), findsNothing);
+    expect(find.byKey(const Key('wechat-transfer-card')), findsOneWidget);
     await tester.tap(find.byKey(const Key('wechat-transfer-card')));
     expect(taps, 0);
     await tester.pumpWidget(CupertinoApp(
@@ -65,8 +68,9 @@ void main() {
           onTap: () => taps++),
     ])));
     await tester.pump();
-    expect(find.text('领取红包'), findsNothing);
-    expect(find.text('点击收款'), findsNothing);
+    // E2-F4：冷卡片乐观渲染默认封面文案（微信式），但点击在明细就绪前禁用。
+    expect(find.text('领取红包'), findsOneWidget);
+    expect(find.text('点击收款'), findsOneWidget);
     await tester.tap(find.byKey(const Key('wechat-red-packet-card')));
     await tester.tap(find.byKey(const Key('wechat-transfer-card')));
     expect(taps, 0);
@@ -147,12 +151,18 @@ void main() {
     expect(find.text('new 点钻'), findsOneWidget); expect(find.text('old 点钻'), findsNothing); store.dispose();
   });
 
-  testWidgets('paused visibility stops refresh and resumed visibility restores it', (tester) async {
-    final gateway = _RefreshGateway(); final store = FinanceCardStore(gateway, refreshPeriod: const Duration(seconds: 15));
+  testWidgets('E2-F4：进入会话只冷拉取一次；长时间停留不再周期轮询',
+      (tester) async {
+    final gateway = _RefreshGateway();
+    final store = FinanceCardStore(gateway);
     await tester.pumpWidget(CupertinoApp(home: FinanceMessageCard(store: store, kind: FinanceCardKind.transfer, id: 'life', greeting: 'hi', amount: '1', isOwn: false)));
     await tester.pump(); await tester.pump(); expect(gateway.calls, 1);
+    // 长时间停留（原先 15s 轮询已按用户指令移除）：不再产生新的拉取。
+    await tester.pump(const Duration(seconds: 31)); expect(gateway.calls, 1);
+    await tester.pump(const Duration(seconds: 31)); expect(gateway.calls, 1);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused); await tester.pump(const Duration(seconds: 31)); expect(gateway.calls, 1);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed); await tester.pump(); await tester.pump(const Duration(seconds: 15)); expect(gateway.calls, 2); store.dispose();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed); await tester.pump(); await tester.pump(const Duration(seconds: 31)); expect(gateway.calls, 1);
+    store.dispose();
   });
 
   testWidgets(

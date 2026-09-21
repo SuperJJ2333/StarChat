@@ -33,9 +33,11 @@ final class WeChatRedPacketCard extends StatelessWidget {
           width: 220,
           height: 96,
           decoration: BoxDecoration(
-              color: state == RedPacketVisualState.claimed
-                  ? WeChatColors.redPacketMuted
-                  : WeChatColors.warning,
+              // E2-F4：非可领状态（已领取/已领完/已过期/已撤回）统一
+              // 灰粉色封面；仅「可领取」保持红色。
+              color: state == RedPacketVisualState.available
+                  ? WeChatColors.warning
+                  : WeChatColors.redPacketMuted,
               borderRadius: BorderRadius.circular(WeChatRadius.redPacket)),
           child: Column(children: [
             Expanded(

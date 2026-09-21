@@ -144,17 +144,13 @@ final class FinanceCardLease {
 }
 
 final class FinanceCardStore {
-  FinanceCardStore(this.gateway,
-      {this.refreshPeriod = const Duration(seconds: 15),
-      this.maxEntries = 200,
-      DateTime Function()? now})
+  FinanceCardStore(this.gateway, {this.maxEntries = 200, DateTime Function()? now})
       : assert(maxEntries > 0),
         _now = now ?? DateTime.now,
         _epoch = gateway.sessionEpoch {
     _sub = gateway.sessionInvalidations.listen((_) => _end());
   }
   final FinanceCardGateway gateway;
-  final Duration refreshPeriod;
   final int maxEntries;
   final DateTime Function() _now;
   final int _epoch;
@@ -243,7 +239,6 @@ final class FinanceCardStore {
     lease._visible = visible;
     entry.visibleLeases += visible ? 1 : -1;
     if (!visible && entry.visibleLeases == 0) {
-      entry.timer?.cancel();
       if (entry.explicitReaders == 0) _removeQueued(entry);
       entry.notifier.value =
           entry.notifier.value.copyWith(loading: false, keepError: true);
@@ -253,8 +248,12 @@ final class FinanceCardStore {
       }
       return;
     }
-    if (visible) _ensureRequest(entry, force: force);
-  }
+    // E2-F4（用户指令）：进入会话不再持续加载——只有**从未拉取过**的冷
+    // 卡片做一次静默拉取（乐观渲染，不显示加载文案）；已缓存的卡片仅在
+    // 用户点击（force）或领取/收款回写（invalidate）时刷新。
+    if (visible && (!entry.notifier.value.hasData || entry.dirty)) {
+      _ensureRequest(entry, force: false);
+    }  }
 
   Future<FinanceCardState> _ensure(FinanceCardLease lease,
       {required bool force}) async {
@@ -290,16 +289,13 @@ final class FinanceCardStore {
       return;
     }
     if (entry.inFlight || entry.queued) return;
-    final stale = entry.notifier.value.updatedAt == null ||
-        _now().difference(entry.notifier.value.updatedAt!) >= refreshPeriod;
-    if (force ||
-        entry.dirty ||
-        ((entry.visibleLeases > 0 || entry.explicitReaders > 0) &&
-            !entry.notifier.value.terminal &&
-            stale)) {
-      _invalidate(entry);
+    // E2-F4：只有三类动作触发拉取——①冷卡片首次可见（一次静默拉取）；
+    // ②用户点击/重试（force）；③领取/收款回写（dirty=invalidate）。
+    // 终态卡片（已领完/已过期/已退回）与已缓存warm卡片不再周期轮询。
+    final cold = !entry.notifier.value.hasData;
+    if (force || entry.dirty || (cold && !entry.notifier.value.terminal)) {
+      if (!entry.notifier.value.terminal || force) _invalidate(entry);
     }
-    _scheduleTimer(entry);
   }
 
   void _enqueue(_Entry entry) {
@@ -377,25 +373,11 @@ final class FinanceCardStore {
           entry.notifier.value =
               entry.notifier.value.copyWith(loading: false, keepError: true);
           _settle(entry);
-          if (!entry.dirty) _scheduleTimer(entry);
         }
         _trim();
         _drain();
       }
     }
-  }
-
-  void _scheduleTimer(_Entry entry) {
-    entry.timer?.cancel();
-    if (!_live() ||
-        entry.inFlight ||
-        entry.queued ||
-        entry.visibleLeases == 0 ||
-        entry.notifier.value.terminal) {
-      return;
-    }
-    entry.timer =
-        Timer(refreshPeriod, () => _ensureRequest(entry, force: true));
   }
 
   void _settle(_Entry entry) {
@@ -426,7 +408,6 @@ final class FinanceCardStore {
         }
       }
       if (candidate == null) return;
-      candidate.timer?.cancel();
       candidate.notifier.dispose();
       _entries.remove(candidate.key);
     }
@@ -437,7 +418,6 @@ final class FinanceCardStore {
     _ended = true;
     _queue.clear();
     for (final entry in _entries.values) {
-      entry.timer?.cancel();
       entry.notifier.value =
           const FinanceCardState(error: '会话已结束', ended: true);
       _settle(entry);
@@ -449,7 +429,6 @@ final class FinanceCardStore {
     _disposed = true;
     _sub.cancel();
     for (final entry in _entries.values) {
-      entry.timer?.cancel();
       entry.notifier.dispose();
       _settle(entry);
     }
@@ -472,7 +451,6 @@ final class _Entry {
   bool inFlight = false;
   bool dirty = false;
   int explicitReaders = 0;
-  Timer? timer;
   Completer<void>? settled;
 }
 

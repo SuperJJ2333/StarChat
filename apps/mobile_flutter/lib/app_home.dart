@@ -2212,11 +2212,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _openManagedRoomRoute(
       RoomOpenRequest request, RoomRouteHandle handle) async {
     final roomId = request.roomId;
-    final identityCache = await _identityCache();
-    final name = request.roomName.trim().isEmpty
-        ? await widget.matrix.conversations.roomDisplayName(roomId)
-        : request.roomName.trim();
-    final lease = await widget.matrix.openRoomLease(roomId);
+    var stage = 'identity';
+    debugPrint('[room-open-flow] stage=$stage room=$roomId');
+    MotionPageRoute<void>? route;
+    ValueNotifier<RoomOpenRequest>? navigationRequests;
     var closed = false;
     void notifyClosed() {
       if (closed) return;
@@ -2224,83 +2223,97 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       request.onRoomClosed?.call();
     }
 
-    if (!mounted) {
-      await lease.cancel();
-      return;
-    }
-    final navigator = Navigator.of(context, rootNavigator: true);
-    final navigationRequests = ValueNotifier<RoomOpenRequest>(request);
-    final route = MotionPageRoute<void>(
-        builder: (_) => RoomPage(
-              api: widget.api,
-              roomLease: lease,
-              roomName: name,
-              initialContact: request.initialContact,
-              initialAnchorEventId: request.anchorEventId,
-              initialOutbox: request.outbox,
-              initialOutboxLocalIds: request.outboxLocalIds,
-              initialAnchorRoomId: request.anchorRoomId,
-              navigationRequests: navigationRequests,
-              requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
-              resolveDirectSendTarget: _resolveNewDirectSend,
-              onDirectTargetChanged: (target) => _replaceRecoveredPage(
-                  roomId,
-                  target,
-                  request.initialContact ??
-                      identityCache
-                          .contactsByMatrixId[lease.roomInfo.directPeerId]),
-              outbox: _outbox,
-              onCreateGroup: _createGroupChat,
-              // BUG-16：聊天信息页入口携带当前对端，发起群聊默认选中。
-              onCreateGroupWithPeer: _createGroupChat,
-              onMessage: _openMessage,
-              onVoice: (contact) => _openCall(contact, CallMediaType.audio),
-              onVideo: (contact) => _openCall(contact, CallMediaType.video),
-              reminderService: reminderService,
-              initialIdentityCache: identityCache,
-              readOnly: request.readOnly,
-            ));
-    handle.register(route, onReopen: (next) => navigationRequests.value = next);
-    // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
-    // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程），
-    // 且即使页面因异常未挂载也不会留下脏栈。
-    StatisticsRoomScope.enter(roomId);
-    lease.setOnRevoked(() async {
-      if (route.isActive) {
-        navigator.popUntil((candidate) => identical(candidate, route));
-        if (route.isCurrent) navigator.pop();
-      }
-    });
-    request.onRoomReady?.call();
-    // 已知竞态兜底（低端机）：同帧 modal→pop→push 会吞掉房间 push——路由
-    // 从未进栈，`visible` 永不完成 → 列表侧 `_openingRooms` 守卫被永久占住，
-    // 该房间永远点不开。落地校验：限时未进栈则按失败收尾，列表解锁可重试。
-    final landed = Completer<void>();
-    Timer? landingWatch;
-    // 首帧落地检查通过则不建定时器（测试的 FakeAsync 不残留 pending Timer）。
-    void verifyLanded() {
-      if (closed || landed.isCompleted) return;
-      if (route.isActive || route.isCurrent) {
-        landed.complete();
+    try {
+      final identityCache = await _identityCache();
+      final name = request.roomName.trim().isEmpty
+          ? await widget.matrix.conversations.roomDisplayName(roomId)
+          : request.roomName.trim();
+      stage = 'lease';
+      debugPrint('[room-open-flow] stage=lease room=$roomId');
+      final lease = await widget.matrix.openRoomLease(roomId);
+
+      if (!mounted) {
+        await lease.cancel();
         return;
       }
-      landingWatch ??= Timer(const Duration(milliseconds: 1200), () {
-        if (closed || landed.isCompleted) return;
-        if (route.isActive || route.isCurrent) {
+      final navigator = Navigator.of(context, rootNavigator: true);
+      navigationRequests = ValueNotifier<RoomOpenRequest>(request);
+      route = MotionPageRoute<void>(
+          builder: (_) => RoomPage(
+                api: widget.api,
+                roomLease: lease,
+                roomName: name,
+                initialContact: request.initialContact,
+                initialAnchorEventId: request.anchorEventId,
+                initialOutbox: request.outbox,
+                initialOutboxLocalIds: request.outboxLocalIds,
+                initialAnchorRoomId: request.anchorRoomId,
+                navigationRequests: navigationRequests,
+                requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
+                resolveDirectSendTarget: _resolveNewDirectSend,
+                onDirectTargetChanged: (target) => _replaceRecoveredPage(
+                    roomId,
+                    target,
+                    request.initialContact ??
+                        identityCache
+                            .contactsByMatrixId[lease.roomInfo.directPeerId]),
+                outbox: _outbox,
+                onCreateGroup: _createGroupChat,
+                // BUG-16：聊天信息页入口携带当前对端，发起群聊默认选中。
+                onCreateGroupWithPeer: _createGroupChat,
+                onMessage: _openMessage,
+                onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+                onVideo: (contact) => _openCall(contact, CallMediaType.video),
+                reminderService: reminderService,
+                initialIdentityCache: identityCache,
+                readOnly: request.readOnly,
+              ));
+      handle.register(route, onReopen: (next) => navigationRequests!.value = next);
+      // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
+      // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程）。
+      StatisticsRoomScope.enter(roomId);
+      lease.setOnRevoked(() async {
+        final r = route;
+        if (r == null) return;
+        if (r.isActive) {
+          navigator.popUntil((candidate) => identical(candidate, r));
+          if (r.isCurrent) navigator.pop();
+        }
+      });
+      stage = 'ready';
+      debugPrint('[room-open-flow] stage=ready room=$roomId');
+      request.onRoomReady?.call();
+      // 已知竞态兜底（低端机）：同帧 modal→pop→push 会吞掉房间 push——路由
+      // 从未进栈，`visible` 永不完成 → 列表侧 `_openingRooms` 守卫被永久占住，
+      // 该房间永远点不开。落地校验：限时未进栈则按失败收尾，列表解锁可重试。
+      final landed = Completer<void>();
+      Timer? landingWatch;
+      // 首帧落地检查通过则不建定时器（测试的 FakeAsync 不残留 pending Timer）。
+      void verifyLanded() {
+        final r = route;
+        if (r == null || closed || landed.isCompleted) return;
+        if (r.isActive || r.isCurrent) {
           landed.complete();
           return;
         }
-        try {
-          navigator.removeRoute(route);
-        } catch (_) {}
-        landed.completeError(StateError('ROOM_PUSH_SWALLOWED'));
-      });
-    }
+        landingWatch ??= Timer(const Duration(milliseconds: 1200), () {
+          final r2 = route;
+          if (r2 == null || closed || landed.isCompleted) return;
+          if (r2.isActive || r2.isCurrent) {
+            landed.complete();
+            return;
+          }
+          try {
+            navigator.removeRoute(r2);
+          } catch (_) {}
+          landed.completeError(StateError('ROOM_PUSH_SWALLOWED'));
+        });
+      }
 
-    try {
-      final previous = handle.replacedRoute;
+      stage = 'push';
       final visible = navigator.push(route);
       WidgetsBinding.instance.addPostFrameCallback((_) => verifyLanded());
+      final previous = handle.replacedRoute;
       if (previous != null && previous.isActive) {
         navigator.removeRoute(previous);
       }
@@ -2308,17 +2321,20 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           identityCache.contactsByMatrixId[lease.roomInfo.directPeerId];
       unawaited(_reconcileOpenedDirectRoom(roomId, contact));
       await landed.future;
+      stage = 'landed';
       // A removed/replaced route completes its pop before its widgets finish
       // their final frame. Keep their timeline and lease alive until disposal.
       await visible;
       await route.completed;
+    } catch (error) {
+      debugPrint('[room-open-flow] FAILED stage=$stage room=$roomId error=$error');
+      rethrow;
     } finally {
-      landingWatch?.cancel();
       StatisticsRoomScope.leave(roomId);
-      handle.release(route);
-      navigationRequests.dispose();
+      final finalRoute = route;
+      if (finalRoute != null) handle.release(finalRoute);
+      navigationRequests?.dispose();
       notifyClosed();
-      await lease.cancel();
     }
   }
 

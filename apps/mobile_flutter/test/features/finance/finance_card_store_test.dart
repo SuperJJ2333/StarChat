@@ -10,17 +10,18 @@ void main() {
     fakeAsync((async) {
       final gateway = _Gateway.immediate();
       final store =
-          FinanceCardStore(gateway, refreshPeriod: const Duration(seconds: 1));
+          FinanceCardStore(gateway);
       final first = store.lease(FinanceCardKey.redPacket('shared'));
       final second = store.lease(FinanceCardKey.redPacket('shared'));
       expect(identical(first.notifier, second.notifier), isTrue);
       first.setVisible(true);
       second.setVisible(true);
       async.flushMicrotasks();
+      expect(gateway.redCalls, 1, reason: 'E2-F4：冷卡片仅静默拉取一次');
       first.setVisible(false);
       async.elapse(const Duration(seconds: 1));
       async.flushMicrotasks();
-      expect(gateway.redCalls, 2);
+      expect(gateway.redCalls, 1, reason: '不再周期轮询');
       first.dispose();
       second.dispose();
       store.dispose();
@@ -94,13 +95,14 @@ void main() {
       final lease = store.lease(FinanceCardKey.redPacket('timer'));
       lease.setVisible(true);
       async.flushMicrotasks();
+      expect(gateway.redCalls, 1, reason: 'E2-F4：冷卡片静默拉取一次');
       async.elapse(const Duration(seconds: 15));
       async.flushMicrotasks();
-      expect(gateway.redCalls, 2);
+      expect(gateway.redCalls, 1, reason: '不再周期轮询');
       lease.setVisible(false);
       async.elapse(const Duration(seconds: 30));
       async.flushMicrotasks();
-      expect(gateway.redCalls, 2);
+      expect(gateway.redCalls, 1);
       lease.dispose();
       store.dispose();
     });
@@ -304,7 +306,7 @@ void main() {
       async.flushMicrotasks();
       async.elapse(const Duration(seconds: 15));
       async.flushMicrotasks();
-      expect(gateway.redCalls, 2);
+      expect(gateway.redCalls, 1, reason: 'E2-F4：已缓存卡片不再周期轮询，刷新仅由点击触发');
       lease.dispose();
       store.dispose();
     });
