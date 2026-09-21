@@ -533,6 +533,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final Set<String> _acknowledgedVisibleIds = {};
   bool _immediateVisibleReceipt = false;
   void _observeVisibleReadReceipts() {
+    // E1：滑动加载历史时元素会经历 deactivated 窗口，此时任何
+    // findRenderObject/ModalRoute.of 都会抛断言（debug 红框）。整体跳过。
+    if (!mounted) return;
     if (!_canSyncReadReceipt ||
         _logicalTimeline is! RoomVisibleReadCapability ||
         ModalRoute.of(context)?.isCurrent != true ||
@@ -544,7 +547,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
     var changed = false;
     for (final entry in messageKeys.entries) {
-      final box = entry.value.currentContext?.findRenderObject();
+      final ctx = entry.value.currentContext;
+      if (ctx == null || !ctx.mounted) continue;
+      final RenderObject? ro;
+      try {
+        ro = ctx.findRenderObject();
+      } catch (_) {
+        continue; // 元素正处于 deactivate/activate 过渡，跳过本轮。
+      }
+      final box = ro;
       if (box is! RenderBox || !box.hasSize) continue;
       final rect = box.localToGlobal(Offset.zero) & box.size;
       if (!_acknowledgedVisibleIds.contains(entry.key) &&
@@ -1129,7 +1140,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (!mounted) return;
       _mentionVisibilityTimer = Timer.periodic(
         const Duration(milliseconds: 100),
-        (_) => _observeVisibleMentions(),
+        (_) {
+          if (!mounted || _disposing) return;
+          _observeVisibleMentions();
+        },
       );
       WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
       setState(() => loading = false);
