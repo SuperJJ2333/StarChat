@@ -43,6 +43,39 @@ def payload():
          'elapsed_ms': 5000, 'count': 1, 'status': None}]}
 
 
+@pytest.mark.parametrize('stage', [
+    'pending_write_failed', 'request_uncertain', 'result_write_failed',
+    'retry_recovered', 'terminal_invalidated', 'result_superseded',
+])
+def test_refresh_diagnostics_closed_metadata(endpoint, capsys, stage):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage=stage, error='recovered',
+                             retry_count=1, lifecycle='foreground')
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    assert logged['events'][0]['stage'] == stage
+    assert logged['events'][0]['retry_count'] == 1
+    assert headers['Authorization'] not in json.dumps(logged)
+
+
+@pytest.mark.parametrize('extra', [
+    {'refresh_token': 'PRIVATE_CREDENTIAL'},
+    {'pending_refresh_operation': 'PRIVATE_CREDENTIAL'},
+    {'retry_count': 21}, {'retry_count': -1}, {'retry_count': True},
+    {'lifecycle': 'PRIVATE_CREDENTIAL'},
+])
+def test_refresh_diagnostics_reject_sensitive_or_unbounded_fields(endpoint, capsys, extra):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(extra)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert 'PRIVATE_CREDENTIAL' not in response.text
+    assert capsys.readouterr().out == ''
+
+
 def test_authenticated_safe_log_and_two_independent_limits(endpoint, capsys):
     client, limiter, headers = endpoint
     data = payload()

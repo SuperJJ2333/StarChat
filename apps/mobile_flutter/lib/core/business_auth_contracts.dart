@@ -51,6 +51,10 @@ abstract interface class BusinessSessionMonitor {
   Future<void> checkSessionValidity();
 }
 
+abstract interface class BusinessSessionLifecycle {
+  void setSessionForeground(bool foreground);
+}
+
 final class RegistrationReceipt {
   const RegistrationReceipt({
     required this.registrationSession,

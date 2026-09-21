@@ -94,6 +94,17 @@ class RefreshRequest(StrictModel):
     refresh_token: str
 
 
+class MobileRefreshRequest(StrictModel):
+    refresh_token: str = Field(repr=False)
+    operation_id: str | None = Field(default=None, repr=False)
+
+    @model_validator(mode='after')
+    def validate_operation(self):
+        if self.operation_id is not None:
+            TokenService.decode_operation_id(self.operation_id)
+        return self
+
+
 class MatrixSessionRequest(StrictModel):
     matrix_access_token: str = Field(min_length=1, max_length=8192, repr=False)
     matrix_device_id: str = Field(min_length=1, max_length=255)
@@ -687,9 +698,9 @@ def create_identity_router(
         return PasswordLoginResponse(access_token=access_token, refresh_token=refresh_token, matrix_user_id=matrix_user_id)
 
     @router.post("/auth/refresh", response_model=TokenResponse)
-    async def refresh(body: RefreshRequest, request: Request) -> TokenResponse:
+    async def refresh(body: MobileRefreshRequest, request: Request) -> TokenResponse:
         rate_limiter.hit(public_rate_limit_key("auth:refresh", request.client.host if request.client else "unknown", body.refresh_token), limit=60, window_seconds=60)
-        pair = tokens.rotate(body.refresh_token)
+        pair = tokens.rotate(body.refresh_token, operation_id=body.operation_id)
         return TokenResponse(access_token=pair.access_token, refresh_token=pair.refresh_token)
 
     @router.post("/presence/heartbeat", status_code=204)

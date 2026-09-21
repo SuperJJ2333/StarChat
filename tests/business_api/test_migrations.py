@@ -37,7 +37,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0071_direct_room_generations (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0080_refresh_recovery (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history
@@ -57,6 +57,53 @@ def test_direct_room_history_is_expand_only():
     assert 'uq_direct_conversation_source' in sql
     assert 'drop table' not in sql
     assert 'delete from' not in sql
+
+
+def test_mobile_refresh_recovery_is_nullable_expand_only():
+    sql = _normalized_sql(_alembic('upgrade', '0071_direct_room_generations:0080_refresh_recovery', '--sql'))
+    assert 'alter table refresh_tokens add column operation_hash varchar(64)' in sql
+    assert 'alter table refresh_tokens add column result_key_version integer' in sql
+    assert 'not null' not in sql
+    assert 'drop ' not in sql
+    assert 'delete from refresh_tokens' not in sql
+
+
+def test_mobile_refresh_recovery_downgrade_reupgrade_preserves_data():
+    import runpy
+    from alembic.config import Config
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import create_engine, inspect, text
+
+    migration = runpy.run_path(str(BUSINESS_API_ROOT / 'migrations/versions/0080_refresh_recovery.py'))
+    config = Config()
+    config.set_main_option('script_location', str(BUSINESS_API_ROOT / 'migrations'))
+    scripts = ScriptDirectory.from_config(config)
+    engine = create_engine('sqlite+pysqlite:///:memory:')
+    try:
+        with engine.begin() as connection:
+            connection.execute(text('CREATE TABLE refresh_tokens (id VARCHAR(36) PRIMARY KEY)'))
+            connection.execute(text("INSERT INTO refresh_tokens (id) VALUES ('existing')"))
+            context = MigrationContext.configure(connection)
+            context.stamp(scripts, '0071_direct_room_generations')
+            with Operations.context(context):
+                migration['upgrade']()
+                context.stamp(scripts, '0080_refresh_recovery')
+                connection.execute(text("UPDATE refresh_tokens SET operation_hash = :digest, result_key_version = 1"),
+                    {'digest': 'a' * 64})
+                migration['downgrade']()
+                context.stamp(scripts, '0071_direct_room_generations')
+                assert context.get_current_revision() == '0071_direct_room_generations'
+                assert {'operation_hash', 'result_key_version'} <= {
+                    column['name'] for column in inspect(connection).get_columns('refresh_tokens')}
+                assert connection.execute(text('SELECT operation_hash, result_key_version FROM refresh_tokens')).one() == ('a' * 64, 1)
+                migration['upgrade']()
+                context.stamp(scripts, '0080_refresh_recovery')
+                assert context.get_current_revision() == '0080_refresh_recovery'
+                assert connection.execute(text('SELECT operation_hash, result_key_version FROM refresh_tokens')).one() == ('a' * 64, 1)
+    finally:
+        engine.dispose()
 
 
 def test_direct_room_generations_are_expand_only_and_preserve_revision():

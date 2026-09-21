@@ -7,6 +7,7 @@ from sqlalchemy import select, delete
 from app.core.errors import AppError
 from app.integrations.matrix_admin import MatrixAdminGateway
 from app.modules.identity.enums import AccountStatus
+from app.modules.identity.matrix_sessions import require_mobile_family
 from app.modules.audit.writer import AuditWriter
 from app.modules.identity.models import (User, RefreshTokenFamily, AdminSession,
     MatrixLoginGrant, MatrixLoginGeneration, MobileMatrixSession)
@@ -38,9 +39,7 @@ class MatrixLoginTokenService:
         with self._session_factory.begin() as session:
             user = session.scalar(select(User).where(User.id == user_id).with_for_update())
             if family_id is not None:
-                family = session.get(RefreshTokenFamily, family_id)
-                if family is None or family.user_id != user_id or family.revoked_at is not None:
-                    raise AppError(code='SESSION_REPLACED', message='账号已在其他设备登录，请重新登录', status_code=401)
+                require_mobile_family(session, user, family_id)
             if user is None or user.status != AccountStatus.ACTIVE:
                 raise AppError(
                     code="MATRIX_ACCOUNT_NOT_ACTIVE",

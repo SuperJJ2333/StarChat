@@ -4712,6 +4712,31 @@
         "title": "MfaStatus",
         "type": "object"
       },
+      "MobileRefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Id"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "MobileRefreshRequest",
+        "type": "object"
+      },
       "MomentsPreferencesResponse": {
         "additionalProperties": false,
         "properties": {
@@ -14925,7 +14950,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "$ref": "#/components/schemas/MobileRefreshRequest"
               }
             }
           },
@@ -15755,15 +15780,45 @@
                             "rejected",
                             "cancelled",
                             "incomplete",
-                            "unknown"
+                            "unknown",
+                            "recovered"
                           ],
                           "title": "Error",
                           "type": "string"
+                        },
+                        "lifecycle": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "foreground",
+                                "background",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lifecycle"
                         },
                         "operation_id": {
                           "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
                           "title": "Operation Id",
                           "type": "string"
+                        },
+                        "retry_count": {
+                          "anyOf": [
+                            {
+                              "maximum": 20,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Retry Count"
                         },
                         "stage": {
                           "enum": [
@@ -15774,7 +15829,13 @@
                             "dateMonth",
                             "dateLocate",
                             "scrollAnchor",
-                            "framework"
+                            "framework",
+                            "pending_write_failed",
+                            "request_uncertain",
+                            "result_write_failed",
+                            "retry_recovered",
+                            "terminal_invalidated",
+                            "result_superseded"
                           ],
                           "title": "Stage",
                           "type": "string"

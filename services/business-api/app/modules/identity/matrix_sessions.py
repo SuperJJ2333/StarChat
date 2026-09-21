@@ -4,7 +4,26 @@ from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.modules.audit.writer import AuditWriter
-from app.modules.identity.models import AdminSession, MobileMatrixSession, RefreshTokenFamily, User
+from app.modules.identity.models import AdminSession, Device, MobileMatrixSession, RefreshTokenFamily, User
+
+
+def require_mobile_family(session, user, family_id):
+    """Validate current authority without misclassifying revocation as a new login."""
+    if user is None or user.status.value != 'ACTIVE':
+        raise AppError(code='ACCOUNT_NOT_ACTIVE', message='账号不可用', status_code=403)
+    family = session.get(RefreshTokenFamily, family_id)
+    if family is None or family.user_id != user.id:
+        raise AppError(code='ACCESS_TOKEN_INVALID', message='当前登录已失效，请重新登录', status_code=401)
+    admin = session.get(AdminSession, user.id)
+    if admin is not None and admin.family_id == family_id:
+        raise AppError(code='MATRIX_LOGIN_FORBIDDEN', message='需要移动端会话', status_code=403)
+    if family.revoked_at is not None and family.revoke_reason == 'SESSION_REPLACED':
+        raise AppError(code='SESSION_REPLACED', message='账号已重新登录，当前会话已结束，请重新登录', status_code=401)
+    device = session.get(Device, family.device_id)
+    if (family.revoked_at is not None or device is None or device.user_id != user.id
+            or device.revoked_at is not None):
+        raise AppError(code='ACCESS_TOKEN_INVALID', message='当前登录已失效，请重新登录', status_code=401)
+    return family
 
 
 class MatrixSessionService:
@@ -15,12 +34,7 @@ class MatrixSessionService:
     def bind(self, *, user_id, family_id, matrix_access_token, matrix_device_id):
         with self._session_factory.begin() as session:
             user = session.scalar(select(User).where(User.id == user_id).with_for_update())
-            family = session.get(RefreshTokenFamily, family_id)
-            admin = session.get(AdminSession, user_id)
-            if (user is None or user.status.value != 'ACTIVE' or family is None
-                    or family.user_id != user_id or family.revoked_at is not None
-                    or (admin is not None and admin.family_id == family_id)):
-                raise AppError(code='SESSION_REPLACED', message='账号已在其他设备登录，请重新登录', status_code=401)
+            require_mobile_family(session, user, family_id)
             current = session.get(MobileMatrixSession, user_id)
             if (current is None or current.family_id != family_id
                     or current.matrix_device_id != matrix_device_id):

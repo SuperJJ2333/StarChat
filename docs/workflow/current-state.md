@@ -845,3 +845,7 @@ Astra亲审、显式gpt-5.6-terra执行完成。工作分支`codex/offline-recov
 Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-history-2103-20260913源码e314d4f0整合main e2870554和既有H2。指定HTML账单/转账样式、按需日期检索与双向历史拖动保护已实现；同步阶段数字诊断已加入，但50秒接收延迟未定因。Mi6于03:21:25+08保留数据安装0.3.87-debug/2104，03:22:13拉回SHA260370f6…39b8bc9及固定证书一致。全Flutter2602通过/29旧钱包失败、mobile70通过、UI契约28/364通过、全分析无问题；frontend161/11旧失败，verify缺.env。未push/生产部署，用户自行真机测试。见[任务记录](tasks/2026-09-13-finance-history-2103.md)、[完整交付报告](../verification/2026-09-13-finance-history-2103.md)和[计划](../superpowers/plans/2026-09-13-finance-history-2103.md)。
 
 
+
+## 2026-09-21 凭证刷新异常恢复修复（源码完成）
+
+用户批准ADR-0080，分支codex/session-refresh-recovery-20260921完成实现、领域/安全审查与门禁。Flutter3757/analyze0、后端合并证据2301通过/48条件跳过、PG8通过。未部署或构建新包。[任务](tasks/2026-09-21-session-refresh-recovery.md) · [验证](../verification/2026-09-21-session-refresh-recovery.md) · [发布手册](../runbooks/mobile-refresh-recovery-release.md)。

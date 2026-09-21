@@ -55,10 +55,27 @@ final class SessionBootstrapController extends ChangeNotifier {
   Timer? _sessionMonitorTimer;
   bool _sessionCheckInProgress = false;
   bool _disposed = false;
+  bool _foreground = true;
+
+  void setForeground(bool foreground) {
+    _foreground = foreground;
+    final gateway = business;
+    if (gateway is BusinessSessionLifecycle) {
+      (gateway as BusinessSessionLifecycle).setSessionForeground(foreground);
+    }
+    if (!foreground) {
+      _sessionMonitorTimer?.cancel();
+      _sessionMonitorTimer = null;
+    } else if (_authenticated && business is BusinessSessionMonitor) {
+      _sessionMonitorTimer ??= Timer.periodic(const Duration(seconds: 60),
+          (_) => unawaited(checkSessionValidity()));
+    }
+  }
 
   Future<void> checkSessionValidity() async {
     final gateway = business;
-    if (!_authenticated ||
+    if (!_foreground ||
+        !_authenticated ||
         _sessionCheckInProgress ||
         gateway is! BusinessSessionMonitor) {
       return;
@@ -88,9 +105,13 @@ final class SessionBootstrapController extends ChangeNotifier {
     _bootstrapFlight = null;
     clearMediaMemoryCaches();
     _set(SessionBootstrapState(SessionBootstrapStatus.unauthenticated,
-        message: code == 'SESSION_REPLACED'
-            ? '账号已在其他设备登录，当前设备已退出。本地聊天记录已保留。'
-            : '登录状态已失效，请重新登录。本地聊天记录已保留。'));
+        message: '${switch (code) {
+          'SESSION_REPLACED' => '账号已重新登录，当前会话已结束，请重新登录。',
+          'REFRESH_TOKEN_REUSED' => '登录凭证校验异常，请重新登录。',
+          'REFRESH_TOKEN_EXPIRED' => '登录已过期，请重新登录。',
+          'ACCOUNT_NOT_ACTIVE' => '账号当前不可用，请联系管理员。',
+          _ => '当前登录已失效，请重新登录。',
+        }}本地聊天记录已保留。'));
     await _bestEffortMatrixSuspend();
   }
 
@@ -374,7 +395,7 @@ final class SessionBootstrapController extends ChangeNotifier {
       canShowCachedMessages = false;
     }
     state = next;
-    if (_authenticated && business is BusinessSessionMonitor) {
+    if (_foreground && _authenticated && business is BusinessSessionMonitor) {
       _sessionMonitorTimer ??= Timer.periodic(const Duration(seconds: 60),
           (_) => unawaited(checkSessionValidity()));
     } else {

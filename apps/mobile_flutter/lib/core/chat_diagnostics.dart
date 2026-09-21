@@ -11,6 +11,22 @@ enum ChatDiagnosticStage {
   dateLocate,
   scrollAnchor,
   framework,
+  refreshPendingWriteFailed,
+  refreshRequestUncertain,
+  refreshResultWriteFailed,
+  refreshRetryRecovered,
+  refreshTerminalInvalidated,
+  refreshResultSuperseded;
+
+  String get wireName => switch (this) {
+        refreshPendingWriteFailed => 'pending_write_failed',
+        refreshRequestUncertain => 'request_uncertain',
+        refreshResultWriteFailed => 'result_write_failed',
+        refreshRetryRecovered => 'retry_recovered',
+        refreshTerminalInvalidated => 'terminal_invalidated',
+        refreshResultSuperseded => 'result_superseded',
+        _ => name,
+      };
 }
 
 enum ChatDiagnosticError {
@@ -20,10 +36,21 @@ enum ChatDiagnosticError {
   rejected,
   cancelled,
   incomplete,
-  unknown
+  unknown,
+  recovered,
 }
 
 enum ChatDiagnosticPlatform { android, ios, other }
+
+enum ChatDiagnosticLifecycle { foreground, background, unknown }
+
+typedef _EventKey = (
+  ChatDiagnosticStage,
+  ChatDiagnosticError,
+  int?,
+  int?,
+  ChatDiagnosticLifecycle?
+);
 
 /// The transport must honor abort by closing its independent HTTP connection.
 /// Its status is intentionally opaque to auth/session-refresh mechanisms.
@@ -45,25 +72,28 @@ final class ChatDiagnosticBatch {
 
 final class _Event {
   _Event(this.stage, this.error, this.status, this.elapsedMs, this.count,
-      {String? operationId})
+      {String? operationId, this.retryCount, this.lifecycle})
       : operationId = operationId ?? const Uuid().v4();
   final ChatDiagnosticStage stage;
   final ChatDiagnosticError error;
   final int? status;
   final String operationId;
+  final int? retryCount;
+  final ChatDiagnosticLifecycle? lifecycle;
   int elapsedMs;
   int count;
-  (ChatDiagnosticStage, ChatDiagnosticError, int?) get key =>
-      (stage, error, status);
-  _Event copy() =>
-      _Event(stage, error, status, elapsedMs, count, operationId: operationId);
+  _EventKey get key => (stage, error, status, retryCount, lifecycle);
+  _Event copy() => _Event(stage, error, status, elapsedMs, count,
+      operationId: operationId, retryCount: retryCount, lifecycle: lifecycle);
   Map<String, Object?> toJson() => {
         'operation_id': operationId,
-        'stage': stage.name,
+        'stage': stage.wireName,
         'error': error.name,
         'elapsed_ms': elapsedMs,
         'count': count,
         'status': status,
+        if (retryCount != null) 'retry_count': retryCount,
+        if (lifecycle != null) 'lifecycle': lifecycle!.name,
       };
 }
 
@@ -73,7 +103,7 @@ final class ChatDiagnostics {
   ChatDiagnostics({DateTime Function()? now}) : _now = now ?? DateTime.now;
   static ChatDiagnostics instance = ChatDiagnostics();
   final DateTime Function() _now;
-  final _pending = <(ChatDiagnosticStage, ChatDiagnosticError, int?), _Event>{};
+  final _pending = <_EventKey, _Event>{};
   ChatDiagnosticUploader? _upload;
   String _version = '';
   ChatDiagnosticPlatform _platform = ChatDiagnosticPlatform.other;
@@ -122,14 +152,17 @@ final class ChatDiagnostics {
       required ChatDiagnosticError error,
       Duration elapsed = Duration.zero,
       int count = 1,
-      int? status}) {
+      int? status,
+      int? retryCount,
+      ChatDiagnosticLifecycle? lifecycle}) {
     if (_upload == null ||
         (error == ChatDiagnosticError.slow && elapsed.inMilliseconds < 250)) {
       return;
     }
     final safeStatus =
         status != null && status >= 100 && status <= 599 ? status : null;
-    final key = (stage, error, safeStatus);
+    final safeRetryCount = retryCount?.clamp(0, 20);
+    final key = (stage, error, safeStatus, safeRetryCount, lifecycle);
     final existing = _pending[key];
     final ms = elapsed.inMilliseconds.clamp(0, 3600000);
     final safeCount = count.clamp(1, 1000000);
@@ -139,7 +172,8 @@ final class ChatDiagnostics {
       return;
     }
     if (_pending.length >= 100) return;
-    _pending[key] = _Event(stage, error, safeStatus, ms, safeCount);
+    _pending[key] = _Event(stage, error, safeStatus, ms, safeCount,
+        retryCount: safeRetryCount, lifecycle: lifecycle);
   }
 
   /// Also bounded when explicitly requested: never bypasses cadence/backoff.

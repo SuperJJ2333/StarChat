@@ -19,11 +19,15 @@ class DiagnosticEvent(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     operation_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
     stage: Literal['sendAdmission', 'matrixSend', 'historyLoad', 'historySearch',
-                   'dateMonth', 'dateLocate', 'scrollAnchor', 'framework']
-    error: Literal['slow', 'network', 'timeout', 'rejected', 'cancelled', 'incomplete', 'unknown']
+                   'dateMonth', 'dateLocate', 'scrollAnchor', 'framework',
+                   'pending_write_failed', 'request_uncertain', 'result_write_failed',
+                   'retry_recovered', 'terminal_invalidated', 'result_superseded']
+    error: Literal['slow', 'network', 'timeout', 'rejected', 'cancelled', 'incomplete', 'unknown', 'recovered']
     elapsed_ms: int = Field(ge=0, le=3600000)
     count: int = Field(ge=1, le=1000000)
     status: int | None = Field(default=None, ge=100, le=599)
+    retry_count: int | None = Field(default=None, ge=0, le=20)
+    lifecycle: Literal['foreground', 'background', 'unknown'] | None = None
 
 
 class DiagnosticBatch(BaseModel):
@@ -97,7 +101,7 @@ def create_client_diagnostics_router(settings: Settings, session_factory, rate_l
         except ValidationError:
             # Do not echo input, arbitrary field names or validation contexts.
             raise AppError(code='DIAGNOSTICS_INVALID', message='诊断格式无效', status_code=422) from None
-        safe = {'event': 'client_diagnostics', **batch.model_dump(mode='json')}
+        safe = {'event': 'client_diagnostics', **batch.model_dump(mode='json', exclude_unset=True)}
         # Container stdout uses the deployment's bounded log rotation. Never
         # write credentials, account/room IDs, bodies or arbitrary exceptions.
         await run_in_threadpool(print, json.dumps(safe, ensure_ascii=True, separators=(',', ':')), flush=True)
