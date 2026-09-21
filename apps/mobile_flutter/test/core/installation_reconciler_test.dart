@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/installation_container_probe.dart';
 import 'package:liuhetong_mobile/core/installation_marker.dart';
@@ -55,6 +57,72 @@ Future<MemorySecureKeyValueStore> _retainedKeychain() async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+      'registered iOS installation does not block existing background call startup',
+      () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    // No channel handler: a registered installation must not require unlock.
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final result = await InstallationReconciler(
+            marker: _FakeMarker(registered: true),
+            probe: _FakeProbe(),
+            store: SecureSessionStore(memory))
+        .reconcile();
+    expect(result, InstallationResetOutcome.notNeeded);
+    expect(memory.values, before);
+  });
+
+  test('relock between probe and reset preserves all keys', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    const channel = MethodChannel('chatflow/ios_secure_session');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var reads = 0;
+    messenger.setMockMethodCallHandler(channel, (_) async => ++reads == 1);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final marker = _FakeMarker();
+    final result = await InstallationReconciler(
+            marker: marker,
+            probe: _FakeProbe(),
+            store: SecureSessionStore(memory))
+        .reconcile();
+    expect(result, InstallationResetOutcome.failed);
+    expect(memory.values, before);
+    expect(marker.registerCalls, 0);
+  });
+
+  test(
+      'unavailable iOS protected data never probes or clears an unmarked install',
+      () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    const channel = MethodChannel('chatflow/ios_secure_session');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (_) async => false);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final marker = _FakeMarker();
+    final probe = _FakeProbe();
+    final result = await InstallationReconciler(
+            marker: marker, probe: probe, store: SecureSessionStore(memory))
+        .reconcile();
+    expect(result, InstallationResetOutcome.failed);
+    expect(memory.values, before);
+    expect(probe.calls, 0);
+    expect(marker.registerCalls, 0);
+  });
 
   test('标记已存在时不清除也不探测', () async {
     final memory = await _retainedKeychain();

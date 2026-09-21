@@ -33,7 +33,9 @@ final class FileSystemInstallationContainerProbe
   @override
   Future<bool> hasPreviousMatrixStore() async {
     final directory = Directory(await supportDirectoryPath());
-    if (!await directory.exists()) return false;
+    // exists() returns false for both absence and some access errors. Only a
+    // successful enumeration can prove an empty container. path_provider
+    // creates the application support directory on a genuinely fresh install.
     await for (final entry in directory.list()) {
       if (entry is File && _storeFileName.hasMatch(p.basename(entry.path))) {
         return true;

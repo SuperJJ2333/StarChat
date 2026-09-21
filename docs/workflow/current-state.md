@@ -15,6 +15,14 @@ BUG-23 服务端剔除 m.call.* 在 E2EE 下结构性不可行（服务器只见
 ## 2026-09-20/21 批次 D 实施 + 干净 main 镜像上线 + 新缺陷 E1/E2（本地完成，待提交/真机）
 服务端：caibi 增量先落 main（89606cad）后重建 business-api 镜像（main-clean-20260920，215/215 文件一致，迁移 0071==0071 无变更，回退=caibi-grant 镜像）。客户端 TDD 全绿：BUG-23 残余自愈（通话终态信令+未读→自动推进已读）、BUG-28（发送补解码宽高+展示 thumbnail_info 回退）、BUG-35（视频转码百分比/上传/失败胶囊，覆盖相册+拍摄）、BUG-40（语音连播+设置开关，默认开 D7）、E1 打字卡死（搜索索引每次全量重建→增量+400ms 去抖+撤回联动删除）、E2 红包/转账闪烁（FinanceCardStore 提升进程级会话共享）。flutter analyze 0；全量测试与提交状态见[任务](tasks/2026-09-20-defect-batch-d-prep.md)、[计划](../superpowers/plans/2026-09-20-defect-batch-d-media-plan.md)。E1 真机（荣耀50Plus）与 E2 真机验收待用户。
 
+## 2026-09-21 iOS TestFlight 内部测试（2145已上传，待出口合规申报）
+
+用户确认内部测试邀请，0.3.103/2145包含重启会话恢复与权限宏/设置跳转修复。3701 Flutter测试、原生门禁及最终IPA校验通过；35528706992于02:32+08上传成功。02:43 Apple确认VALID、未过期，但MISSING_EXPORT_COMPLIANCE；尚未确认内部可安装，已请求用户提供既有申报口径或完成申报。以[任务](tasks/2026-09-20-ios-testflight-permissions.md)为准；后续仅distribute-only查询/关联2145，无需重建或再次请求分发授权。
+
+
+## 2026-09-20 iOS 重启会话恢复（代码及原生检查通过，真机待验收）
+
+用户已批准执行。保护数据/安装判据加固、有效业务会话保留与同身份聊天恢复、登录前本地只读预检及具体安全错误文案已实现；Flutter 3681/analyze 通过，独立规格及安全审查通过。独立分支2d463207未合并/发布；仓库verify、完整原生编译、iOS18/26模拟器CI35510017099均通过，iOS16.7.16真机未验收。以[任务](tasks/2026-09-20-ios-reboot-session.md)与[证据](../verification/2026-09-20-ios-reboot-session.md)为准。
 ## 2026-09-20 docs根目录与runbooks归并
 22份历史正文归档、6份专题资料归位；保留旧路径跳转。发布入口与当前轻量流程对齐，钱包/通信按分类索引进入。本地链接和内容保留检查通过，无代码或生产变更。[任务](tasks/2026-09-20-docs-consolidation.md) · [验证](../verification/2026-09-20-docs-consolidation.md)。
 

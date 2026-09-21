@@ -10,6 +10,8 @@ import '../features/matrix/matrix_e2ee_client.dart';
 import '../features/matrix/matrix_security_logger.dart';
 import 'business_api_client.dart';
 import 'business_auth_contracts.dart';
+import 'session_failure.dart';
+import '../features/auth/login_controller.dart' show LoginStageException;
 import 'cache/cache_repository.dart';
 import 'permissions/blocked_contacts.dart';
 
@@ -31,6 +33,7 @@ final class SessionBootstrapController extends ChangeNotifier {
   SessionBootstrapController({
     required this.business,
     required this.matrix,
+    this.restoreLocalMatrixSession,
     MatrixSecurityLogger? securityLogger,
     this.remoteLogoutTimeout = const Duration(seconds: 5),
   }) : securityLogger =
@@ -48,6 +51,7 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   final BusinessSessionGateway business;
   final MatrixSessionGateway matrix;
+  final Future<void> Function(String matrixUserId)? restoreLocalMatrixSession;
   bool canShowCachedMessages = false;
   int _generation = 0;
   Future<void>? _bootstrapFlight;
@@ -71,6 +75,7 @@ final class SessionBootstrapController extends ChangeNotifier {
           (_) => unawaited(checkSessionValidity()));
     }
   }
+  bool _matrixRestorePending = false;
 
   Future<void> checkSessionValidity() async {
     final gateway = business;
@@ -102,6 +107,7 @@ final class SessionBootstrapController extends ChangeNotifier {
   Future<void> _sessionInvalidated(String code) async {
     if (_disposed) return;
     ++_generation;
+    _matrixRestorePending = false;
     _bootstrapFlight = null;
     clearMediaMemoryCaches();
     _set(SessionBootstrapState(SessionBootstrapStatus.unauthenticated,
@@ -165,7 +171,8 @@ final class SessionBootstrapController extends ChangeNotifier {
     try {
       final localIdentity = await business.currentMatrixUserId();
       if (generation != _generation) return;
-      canShowCachedMessages = matrix.isLoggedIn &&
+      canShowCachedMessages = !_matrixRestorePending &&
+          matrix.isLoggedIn &&
           localIdentity != null &&
           localIdentity == matrix.userId;
       notifyListeners();
@@ -173,6 +180,7 @@ final class SessionBootstrapController extends ChangeNotifier {
       if (generation != _generation) return;
       if (businessResult == BusinessSessionRestore.absent ||
           businessResult == BusinessSessionRestore.invalid) {
+        _matrixRestorePending = false;
         // 业务会话失效（登出/令牌过期/瞬时刷新失败）时【不得】清除本地
         // 加密数据库：同账号重新登录后必须仍能解密历史消息。账号隔离
         // 由登录流程的身份校验保证（不同账号登录时才重置本地库）。
@@ -193,22 +201,36 @@ final class SessionBootstrapController extends ChangeNotifier {
         }
         return;
       }
-      if (!matrix.isLoggedIn) {
-        _set(
-          const SessionBootstrapState(SessionBootstrapStatus.unauthenticated),
-        );
-        await _clearLocalBusinessSession();
+      if ((!matrix.isLoggedIn || _matrixRestorePending) &&
+          businessResult == BusinessSessionRestore.authenticated &&
+          restoreLocalMatrixSession != null) {
+        final identity = await business.currentMatrixUserId();
         if (generation != _generation) return;
-        final suspended = await _bestEffortMatrixSuspend();
-        if (generation != _generation) return;
-        if (!suspended) {
-          _set(
-            const SessionBootstrapState(
-              SessionBootstrapStatus.unauthenticated,
-              message: _suspendFailureMessage,
-            ),
-          );
+        if (identity != null) {
+          _matrixRestorePending = true;
+          try {
+            await restoreLocalMatrixSession!(identity);
+          } catch (_) {
+            if (generation != _generation) {
+              await _bestEffortMatrixSuspend();
+              return;
+            }
+            rethrow;
+          }
+          if (generation != _generation) {
+            await _bestEffortMatrixSuspend();
+            return;
+          }
+          _matrixRestorePending = false;
         }
+      }
+      if (!matrix.isLoggedIn || _matrixRestorePending) {
+        // A local restore failure is not evidence that the business token was
+        // revoked. Keep credentials and encrypted history; deny chat access.
+        _set(const SessionBootstrapState(
+          SessionBootstrapStatus.fatalError,
+          message: '本地聊天会话尚未恢复。请解锁设备后重试；登录凭据已保留，未执行聊天数据清理。',
+        ));
         return;
       }
       final expectedMatrixUser = await business.currentMatrixUserId();
@@ -301,14 +323,14 @@ final class SessionBootstrapController extends ChangeNotifier {
     } on http.ClientException {
       if (generation != _generation) return;
       _offlineIfPossible();
-    } catch (_) {
+    } catch (error) {
       if (generation != _generation) return;
-      _set(
-        const SessionBootstrapState(
-          SessionBootstrapStatus.fatalError,
-          message: '无法恢复本地登录状态',
-        ),
-      );
+      _set(SessionBootstrapState(
+        SessionBootstrapStatus.fatalError,
+        message: error is LoginStageException
+            ? error.message
+            : sessionFailureMessage(error, stage: 'local_restore'),
+      ));
     }
   }
 
@@ -317,6 +339,7 @@ final class SessionBootstrapController extends ChangeNotifier {
     // 拉黑名单是账号级关系，登出即清空本地投影，避免影响下一个账号。
     blockedContacts.clear();
     _generation++;
+    _matrixRestorePending = false;
     _bootstrapFlight = null;
     canShowCachedMessages = false;
     _set(const SessionBootstrapState(SessionBootstrapStatus.unauthenticated));

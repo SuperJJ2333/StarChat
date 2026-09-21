@@ -122,6 +122,31 @@ final class SecureSessionStore {
   Future<String> matrixStorageScope() =>
       _runMatrixIdentityOperation(_storage.scope);
 
+  /// Read-only preflight before a password login can replace a remote session.
+  /// This checks the active local metadata, not an unauthenticated target user.
+  Future<void> validateLocalLoginStorage() =>
+      _runMatrixIdentityOperation(() async {
+        final slots = await _storage.slots();
+        final scope = await _storage.scope();
+        final binding = await _matrixBindingUnlocked();
+        final key = await _storage.read(_matrixDatabaseKey);
+        if (binding != null) {
+          final identity = _AccountScopedSecureStore.identity(
+              binding.homeserver, binding.matrixUserId);
+          if (slots.containsKey(identity) && slots[identity] != scope) {
+            throw const FormatException('Conflicting Matrix account registry');
+          }
+          if (key == null || key.isEmpty) {
+            throw const FormatException('Missing retained Matrix database key');
+          }
+        }
+        // Decode the existing clear marker without carrying out a pending deletion.
+        final pending = await _storage.read(_matrixClearTombstoneKey);
+        if (pending != null && pending != _matrixClearTombstoneValue) {
+          throw const FormatException('Invalid Matrix clear tombstone');
+        }
+      });
+
   /// Only called after business authentication and the old client has closed.
   Future<void> selectMatrixAccount(String homeserver, String userId) =>
       _runMatrixIdentityOperation(() async {
