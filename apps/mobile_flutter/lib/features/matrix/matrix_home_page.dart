@@ -1043,6 +1043,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
+      // E1 卡死兜底：打开流程任何一层挂死超过 15 秒，即解锁本房间的
+      // 点击守卫让用户可重试；挂死的底层流程完成时仍会走 onRoomClosed 收尾。
       await openRoom(RoomOpenRequest(
         roomId: snapshot.id,
         roomName: snapshot.isDirect
@@ -1075,7 +1077,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
             widget.onUnreadChanged?.call();
           }
         },
-      ));
+      )).timeout(const Duration(seconds: 15));
     } catch (_) {
       // 房间打开失败由统一入口负责租约与登记清理；列表侧只需收尾等待动画。
       // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
