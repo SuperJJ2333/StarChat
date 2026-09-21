@@ -148,3 +148,9 @@ ModalRoute.of/findRenderObject，异常以 10 次/秒轰炸 UI 线程（logcat
 （SHA256 7de933d3…）已装 Mi 6（数据保留，设备哈希一致）。证据：
 `docs/verification/artifacts/2026-09-21/mi6-debug-2152/`。待用户真机复验：
 快速进出哥们测试群不再卡死、滑动历史无红框、红包状态点击驱动。
+## 2153 诊断日志轮（2026-09-21 深夜）
+
+用户 2152 复验仍见 ~10s 死窗口。本轮为定位轮：列表层 BLOCKED/open/
+settled 日志 + 协调器 STUCK cleared 日志（含挂起毫秒数）。debug 2153
+（SHA256 ed52af2f…）已装 Mi 6。待用户复现后抓 logcat 定位挂起层。
+证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2153/`。
