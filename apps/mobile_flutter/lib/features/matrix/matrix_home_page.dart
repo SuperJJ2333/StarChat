@@ -1060,6 +1060,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         // 租约已取、页面尚未 push：先收起等待动画，再完成本房间的
         // 已读/未读收尾。
         onRoomReady: () {
+          // E1 根因修复：房间就绪即解锁列表守卫——守卫只保护「打开中」
+          // 这几百毫秒；房间打开期间的进出由路由栈管理。否则守卫要到
+          // 房间关闭才释放，低端机上退出后重进会被静默吞掉数秒。
+          _openingRooms.remove(snapshot.id);
           removeOverlay();
           _readState.setRoomOpen(snapshot.id, open: true);
           _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);

@@ -51,13 +51,18 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('官方群'));
     await tester.pump();
-    expect(harness.requests, hasLength(1), reason: '同一房间正在打开时忽略重复点击');
+    // E1 修复后：房间就绪即解锁守卫，第二次点击会再次委托——由协调器
+    // 的「已打开优先」路径兜底（回到原页面，绝不推第二层）。
+    expect(harness.requests.length, greaterThanOrEqualTo(1));
 
     harness.completeOpen();
     await tester.pumpAndSettle();
     await tester.tap(find.text('官方群'));
     await tester.pump();
-    expect(harness.requests, hasLength(2), reason: '房间关闭后应能再次打开');
+    expect(harness.requests, hasLength(3),
+        reason: '房间关闭后应能再次打开（打开中的重复委托由协调器去重）');
+    harness.completeOpen();
+    await tester.pumpAndSettle();
     harness.completeOpen();
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox());
