@@ -137,3 +137,14 @@ ctx.mounted 检查 + findRenderObject try/catch。全量 3685/0、analyze 0。
 commit 5bd6dea9；debug 2151（SHA256 eabebdfa…）已装 Mi 6（数据保留，
 设备哈希一致）。证据：
 `docs/verification/artifacts/2026-09-21/mi6-debug-2151/`。待用户复验。
+## 2152 卡死根因修复轮（2026-09-21 深夜，实机复现+抓栈确诊）
+
+根因确诊：快速进出会话时房间页元素经历 deactivated 窗口，100ms
+_mentionVisibilityTimer 在窗口内继续触发并对停用元素调用
+ModalRoute.of/findRenderObject，异常以 10 次/秒轰炸 UI 线程（logcat
+铁证：每 100ms 一条 deactivated 异常）→ 低端机整个应用冻结。
+修复=context.mounted 前置检查（覆盖 deactivated 窗口）+ deactivate()
+即刻取消定时器。全量 3685/0、analyze 0。commit e557ecfe；debug 2152
+（SHA256 7de933d3…）已装 Mi 6（数据保留，设备哈希一致）。证据：
+`docs/verification/artifacts/2026-09-21/mi6-debug-2152/`。待用户真机复验：
+快速进出哥们测试群不再卡死、滑动历史无红框、红包状态点击驱动。
