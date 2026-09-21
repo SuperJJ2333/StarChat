@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
@@ -25,6 +26,9 @@ final class _FakeRoomProcedure {
   /// 模拟 push 阶段异常：登记后抛出且故意不释放登记，
   /// 协调器必须自己兜底清理，不能留下假 active。
   String? leakAndThrowFor;
+
+  /// E1：模拟打开流程对特定房间永久挂起（任何 await 卡死）。
+  String? hangForeverFor;
   String? failBeforeRegisterFor;
 
   NavigatorState? navigator;
@@ -32,6 +36,9 @@ final class _FakeRoomProcedure {
   Future<void> open(RoomOpenRequest request, RoomRouteHandle handle) async {
     leases++;
     opened.add(request.roomId);
+    if (request.roomId == hangForeverFor) {
+      await Completer<void>().future; // 永不完成
+    }
     final lease = holdLease;
     if (lease != null) await lease.future;
     if (request.roomId == failBeforeRegisterFor) {
@@ -393,5 +400,34 @@ void main() {
     navigator.pop();
     await tester.pumpAndSettle();
     expect(coordinator.activeRoomIds, isEmpty);
+  });
+  test('E1：打开流程卡死超过兜底时长 → 死入口被清理，下次点击重启完整流程',
+      () {
+    fakeAsync((async) {
+      final procedure = _FakeRoomProcedure()
+        ..hangForeverFor = '!stuck:test';
+      final coordinator = RoomNavigationCoordinator(
+        openRoom: procedure.open,
+        navigatorOf: () => null,
+        stuckOpenTimeout: const Duration(milliseconds: 120),
+      );
+
+      unawaited(coordinator.open(request('!stuck:test')));
+      async.flushMicrotasks();
+      expect(coordinator.isOpening('!stuck:test'), isTrue);
+
+      async.elapse(const Duration(milliseconds: 180));
+      expect(coordinator.isOpening('!stuck:test'), isTrue,
+          reason: '惰性判定：入口在下次点击时才被清理');
+
+      procedure.hangForeverFor = null; // 瞬时卡死条件恢复
+      unawaited(coordinator.open(request('!stuck:test'))
+          .catchError((Object _) {})); // 无 navigator 的测试环境：push 抛错即收尾
+      async.flushMicrotasks();
+      expect(procedure.leases, 2, reason: '死入口被清理后重启了完整流程');
+      expect(procedure.opened.last, '!stuck:test');
+      expect(coordinator.isOpening('!stuck:test'), isFalse);
+      coordinator.dispose();
+    });
   });
 }

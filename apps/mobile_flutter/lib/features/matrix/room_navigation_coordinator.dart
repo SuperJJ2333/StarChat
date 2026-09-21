@@ -1,3 +1,4 @@
+import 'package:clock/clock.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -222,14 +223,22 @@ final class RoomNavigationCoordinator {
     required RoomOpenProcedure openRoom,
     required NavigatorState? Function() navigatorOf,
     String Function(String roomId)? conversationKeyOf,
+    Duration stuckOpenTimeout = const Duration(seconds: 15),
   })  : _openRoom = openRoom,
         _navigatorOf = navigatorOf,
-        _conversationKeyOf = conversationKeyOf ?? ((id) => id);
+        _conversationKeyOf = conversationKeyOf ?? ((id) => id),
+        _stuckOpenTimeout = stuckOpenTimeout;
+
+  /// 卡死兜底（E1）：一次打开流程若超过该时长仍未结束（低端机上任何
+  /// await 挂起都会导致该房间在本次会话内永远点不开），后续点击将
+  /// 丢弃旧入口并自动重启完整流程。
+  final Duration _stuckOpenTimeout;
 
   final RoomOpenProcedure _openRoom;
   final String Function(String roomId) _conversationKeyOf;
   final NavigatorState? Function() _navigatorOf;
   final Map<String, Future<void>> _opening = {};
+  final Map<String, DateTime> _openingSince = {};
   final Map<String, RoomOpenRequest> _openingAnchors = {};
   final Map<String, Route<void>> _active = {};
   final Map<String, String> _physicalRooms = {};
@@ -272,10 +281,21 @@ final class RoomNavigationCoordinator {
 
     final opening = _opening[roomId];
     if (opening != null) {
-      if (request.anchorEventId?.isNotEmpty == true) {
-        _openingAnchors[roomId] = request;
+      // E1 卡死兜底（惰性判定，无定时器）：挂起超过 [_stuckOpenTimeout]
+      // 且该房间仍未注册路由 → 判定旧流程已死，丢弃入口改走完整新流程。
+      final since = _openingSince[roomId];
+      final stuck = since != null &&
+          clock.now().difference(since) >= _stuckOpenTimeout &&
+          _active[roomId]?.isActive != true;
+      if (!stuck) {
+        if (request.anchorEventId?.isNotEmpty == true) {
+          _openingAnchors[roomId] = request;
+        }
+        return opening;
       }
-      return opening;
+      _opening.remove(roomId);
+      _openingAnchors.remove(roomId);
+      _openingSince.remove(roomId);
     }
 
     // 先登记 opening 再启动流程：打开流程在第一个 await 之前会同步执行
@@ -283,17 +303,20 @@ final class RoomNavigationCoordinator {
     final completer = Completer<void>();
     final pending = completer.future;
     _opening[roomId] = pending;
+    _openingSince[roomId] = clock.now();
     unawaited(_run(roomId, request, active?.isActive == true ? active : null)
         .then((_) {
       if (identical(_opening[roomId], pending)) {
         _opening.remove(roomId);
         _openingAnchors.remove(roomId);
+        _openingSince.remove(roomId);
       }
       if (!completer.isCompleted) completer.complete();
     }, onError: (Object error, StackTrace stackTrace) {
       if (identical(_opening[roomId], pending)) {
         _opening.remove(roomId);
         _openingAnchors.remove(roomId);
+        _openingSince.remove(roomId);
       }
       if (!completer.isCompleted) completer.completeError(error, stackTrace);
     }));
@@ -338,6 +361,7 @@ final class RoomNavigationCoordinator {
     _generation++;
     _opening.clear();
     _openingAnchors.clear();
+    _openingSince.clear();
     _active.clear();
     _physicalRooms.clear();
     _reopen.clear();

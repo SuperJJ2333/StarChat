@@ -5,6 +5,7 @@ version: 0.3.103+2148
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
+  clock: ^1.1.1
   flutter:
     sdk: flutter
   flutter_localizations:
