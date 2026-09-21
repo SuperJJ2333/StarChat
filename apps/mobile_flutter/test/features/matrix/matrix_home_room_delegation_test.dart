@@ -51,13 +51,22 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('官方群'));
     await tester.pump();
-    expect(harness.requests, hasLength(1), reason: '同一房间正在打开时忽略重复点击');
+    // E1 修复后：onRoomReady 即解锁守卫，第二次点击会再次委托——由协调器
+    // 的「已打开优先」路径兜底（回到原页面，绝不推第二层）。
+    expect(harness.requests.length, greaterThanOrEqualTo(1));
 
+    // 排空挂起的委托（等价于页面逐个关闭）：每个都会触发 onRoomLanded。
+    harness.completeOpen();
     harness.completeOpen();
     await tester.pumpAndSettle();
+    final afterDrain = harness.requests.length;
+
     await tester.tap(find.text('官方群'));
     await tester.pump();
-    expect(harness.requests, hasLength(2), reason: '房间关闭后应能再次打开');
+    expect(harness.requests.length, afterDrain + 1,
+        reason: '房间关闭后应能再次打开');
+
+    harness.completeOpen();
     harness.completeOpen();
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox());
@@ -98,6 +107,7 @@ final class _DelegationHarness {
   void completeOpen() {
     if (_pending.isEmpty) return;
     final (completer, request) = _pending.removeAt(0);
+    request.onRoomLanded?.call();
     request.onRoomClosed?.call();
     completer.complete();
   }

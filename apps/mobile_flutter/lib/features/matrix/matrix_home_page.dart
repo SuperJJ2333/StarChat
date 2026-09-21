@@ -1019,27 +1019,11 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     if (widget.previewOnly || openRoom == null) return;
     // 同一房间的重复点击只保留一次等待动画；跨房间不互相阻塞
     // （旧实现用全局 bool，关掉房间后取消租约期间会吞掉下一个会话）。
-    if (!_openingRooms.add(snapshot.id)) return;
-    // 立即反馈：取租约期间（弱网/低端机可达数秒）显示悬浮转圈。
-    // 必须用 Overlay 而非 modal route——低端机（荣耀50 Plus）上
-    // “开 modal→pop→push”三者同帧竞争路由动画会吞掉房间 push，
-    // 表现为点击永远无响应；Overlay 不进路由栈，无此竞态。
-    final overlay = OverlayEntry(
-      builder: (_) => const Positioned.fill(
-        child: ColoredBox(
-          color: Color(0x33000000),
-          child: Center(child: CupertinoActivityIndicator(radius: 16)),
-        ),
-      ),
-    );
-    var overlayRemoved = false;
-    void removeOverlay() {
-      if (overlayRemoved) return;
-      overlayRemoved = true;
-      overlay.remove();
+    if (!_openingRooms.add(snapshot.id)) {
+      debugPrint('[room-open-list] BLOCKED room=${snapshot.id}');
+      return;
     }
-
-    Overlay.of(context, rootOverlay: true).insert(overlay);
+    debugPrint('[room-open-list] open room=${snapshot.id}');
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
@@ -1056,7 +1040,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         // 租约已取、页面尚未 push：先收起等待动画，再完成本房间的
         // 已读/未读收尾。
         onRoomReady: () {
-          removeOverlay();
+          // E1 根因修复：房间就绪即解锁列表守卫——守卫只保护「打开中」
+          // 这几百毫秒；房间打开期间的进出由路由栈管理。否则守卫要到
+          // 房间关闭才释放，低端机上退出后重进会被静默吞掉数秒。
+          _openingRooms.remove(snapshot.id);
           _readState.setRoomOpen(snapshot.id, open: true);
           _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
           unawaited(widget.matrix.conversations
@@ -1082,8 +1069,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       // 房间打开失败由统一入口负责租约与登记清理；列表侧只需收尾等待动画。
       // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
     } finally {
-      removeOverlay();
-      _openingRooms.remove(snapshot.id);
+      final removed = _openingRooms.remove(snapshot.id);
+      debugPrint('[room-open-list] settled room=${snapshot.id} removed=$removed');
     }
   }
 

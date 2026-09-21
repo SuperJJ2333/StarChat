@@ -148,3 +148,26 @@ ModalRoute.of/findRenderObject，异常以 10 次/秒轰炸 UI 线程（logcat
 （SHA256 7de933d3…）已装 Mi 6（数据保留，设备哈希一致）。证据：
 `docs/verification/artifacts/2026-09-21/mi6-debug-2152/`。待用户真机复验：
 快速进出哥们测试群不再卡死、滑动历史无红框、红包状态点击驱动。
+## 2153 诊断日志轮（2026-09-21 深夜）
+
+用户 2152 复验仍见 ~10s 死窗口。本轮为定位轮：列表层 BLOCKED/open/
+settled 日志 + 协调器 STUCK cleared 日志（含挂起毫秒数）。debug 2153
+（SHA256 ed52af2f…）已装 Mi 6。待用户复现后抓 logcat 定位挂起层。
+证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2153/`。
+## 2154 E1 根因修复完整轮（2026-09-21 深夜，用户 USB 重连后复验）
+
+实机日志（22:42 窗口）完整确诊：进入哥们测试群后守卫持有至退出后 ~12s，
+期间重进点击全部 BLOCKED（日志铁证）。修复=onRoomReady 即解锁列表守卫
+（守卫只保护打开中几百毫秒；退出重进的重复委托由协调器「已打开优先」
+路径兜底）。委派套件契约同步更新（打开中重复点击改为允许再委托，页面
+级去重由协调器保证）。全量 3685/0、analyze 0。commit 5b24e340；debug
+2154（SHA256 b61c1c15…）已装 Mi 6（数据保留，设备哈希一致）。证据：
+`docs/verification/artifacts/2026-09-21/mi6-debug-2154/`。待用户复验：
+快速进出哥们测试群不再出现 ~10s 死窗口。
+## 2155 守卫就绪即解锁轮（2026-09-21 深夜，用户复验 2154：进入/退出/重进哥们测试群不再卡死）
+
+onRoomReady 即解锁列表守卫（_openingRooms.remove 前置到房间就绪回调）；
+打开中的重复点击由协调器「已打开优先」路径兜底（回到原页面，绝不推第二层）；
+委派套件契约同步更新。协调器 17/17、finance 75、全量 3685/0、analyze 0。
+commit 5b24e340；debug 2155（SHA256 551ce5f3…）已装 Mi 6（数据保留，设备
+哈希一致）。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2155/`。

@@ -85,6 +85,7 @@ final class RoomOpenRequest {
     this.modeOverride,
     this.onRoomReady,
     this.onRoomClosed,
+    this.onRoomLanded,
     this.outbox = const <String>[],
     this.readOnly = false,
     this.anchorRoomId,
@@ -121,6 +122,9 @@ final class RoomOpenRequest {
   /// RoomPage 退出（push 完成）或打开失败后回调一次；未走到 push 的失败
   /// （例如取租约失败）不会回调，因为调用方此时还没有需要收尾的房间态。
   final void Function()? onRoomClosed;
+
+  /// 路由落地（已进栈且成为当前路由）后回调：调用方据此移除打开期的反馈遮罩，覆盖「点击→房间首帧」的整个间隙。
+  final void Function()? onRoomLanded;
 
   /// Offline First：pending conversation 期间排队、进入房间后要自动发送的
   /// 文本（按输入顺序）。只承载数据，不含 SDK 对象。
@@ -293,6 +297,9 @@ final class RoomNavigationCoordinator {
         }
         return opening;
       }
+      debugPrint(
+          '[room-nav] STUCK cleared room=$roomId age='
+          '${clock.now().difference(since).inMilliseconds}ms');
       _opening.remove(roomId);
       _openingAnchors.remove(roomId);
       _openingSince.remove(roomId);
