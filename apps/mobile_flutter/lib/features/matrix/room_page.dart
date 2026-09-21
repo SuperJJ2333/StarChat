@@ -535,7 +535,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   void _observeVisibleReadReceipts() {
     // E1：滑动加载历史时元素会经历 deactivated 窗口，此时任何
     // findRenderObject/ModalRoute.of 都会抛断言（debug 红框）。整体跳过。
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     if (!_canSyncReadReceipt ||
         _logicalTimeline is! RoomVisibleReadCapability ||
         ModalRoute.of(context)?.isCurrent != true ||
@@ -576,9 +576,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _observeVisibleMentions() {
+    if (!mounted || !context.mounted) return;
     _observeVisibleReadReceipts();
     final state = unreadMentions;
-    if (!mounted || state == null || !state.hasPending) return;
+    if (state == null || !state.hasPending) return;
     if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
         ModalRoute.of(context)?.isCurrent != true) {
       _mentionVisibleSince.clear();
@@ -1141,7 +1142,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _mentionVisibilityTimer = Timer.periodic(
         const Duration(milliseconds: 100),
         (_) {
-          if (!mounted || _disposing) return;
+          // context.mounted 覆盖 deactivated 窗口（mounted 在此期间仍为
+          // true）：快速进出会话时停用→销毁可滞后数秒，期间访问
+          // ModalRoute.of/RenderObject 会在低端机上以 100ms 一次的频率
+          // 抛异常，UI 线程被异常处理淹没 = 卡死。
+          if (!mounted || !context.mounted || _disposing) return;
           _observeVisibleMentions();
         },
       );
@@ -4688,6 +4693,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         LocalMessageSearchRepository.shared.removeMessages(removed);
       }
     });
+  }
+
+  /// E1：元素停用（弹出/快速进出）即刻取消 100ms 可见性轮询——
+  /// dispose 之前存在数秒的 deactivated 窗口，低端机上定时器在该窗口内
+  /// 的异常会以 100ms 频率淹没 UI 线程（卡死根因之一）。
+  @override
+  void deactivate() {
+    _mentionVisibilityTimer?.cancel();
+    _mentionVisibilityTimer = null;
+    super.deactivate();
   }
 
   @override
