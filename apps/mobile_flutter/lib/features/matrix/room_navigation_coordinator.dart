@@ -293,6 +293,9 @@ final class RoomNavigationCoordinator {
         }
         return opening;
       }
+      debugPrint(
+          '[room-nav] STUCK cleared room=$roomId age='
+          '${clock.now().difference(since).inMilliseconds}ms');
       _opening.remove(roomId);
       _openingAnchors.remove(roomId);
       _openingSince.remove(roomId);

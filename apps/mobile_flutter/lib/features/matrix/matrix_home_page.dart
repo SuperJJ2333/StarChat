@@ -1019,7 +1019,11 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     if (widget.previewOnly || openRoom == null) return;
     // 同一房间的重复点击只保留一次等待动画；跨房间不互相阻塞
     // （旧实现用全局 bool，关掉房间后取消租约期间会吞掉下一个会话）。
-    if (!_openingRooms.add(snapshot.id)) return;
+    if (!_openingRooms.add(snapshot.id)) {
+      debugPrint('[room-open-list] BLOCKED room=${snapshot.id}');
+      return;
+    }
+    debugPrint('[room-open-list] open room=${snapshot.id}');
     // 立即反馈：取租约期间（弱网/低端机可达数秒）显示悬浮转圈。
     // 必须用 Overlay 而非 modal route——低端机（荣耀50 Plus）上
     // “开 modal→pop→push”三者同帧竞争路由动画会吞掉房间 push，
@@ -1082,8 +1086,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       // 房间打开失败由统一入口负责租约与登记清理；列表侧只需收尾等待动画。
       // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
     } finally {
+      final removed = _openingRooms.remove(snapshot.id);
       removeOverlay();
-      _openingRooms.remove(snapshot.id);
+      debugPrint('[room-open-list] settled room=${snapshot.id} removed=$removed');
     }
   }
 
