@@ -752,7 +752,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   late final FinanceCardStore _financeCardStore =
       sessionFinanceCardStore(() => BusinessFinanceCardGateway(widget.api));
   ContactDetails? peer;
-  bool loading = true;
 
   // Camera capture and automatic video preparation state.
   bool _capturingVideo = false;
@@ -1151,11 +1150,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         },
       );
       WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
-      setState(() => loading = false);
     } catch (_) {
       if (mounted) {
         setState(() {
-          loading = false;
           errorMessage = '会话加载失败，请检查网络后重试';
         });
       }
@@ -5290,9 +5287,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       key: _timelineViewportKey,
       behavior: HitTestBehavior.translucent,
       onTap: _dismissComposerExtensions,
-      child: loading
-          ? const Center(child: CupertinoActivityIndicator())
-          : errorMessage != null
+      child: errorMessage != null
               ? Center(child: Text(errorMessage!))
               : messages.isEmpty
                   ? const SizedBox.expand()

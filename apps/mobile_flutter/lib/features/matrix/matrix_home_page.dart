@@ -1024,26 +1024,6 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       return;
     }
     debugPrint('[room-open-list] open room=${snapshot.id}');
-    // 立即反馈：取租约期间（弱网/低端机可达数秒）显示悬浮转圈。
-    // 必须用 Overlay 而非 modal route——低端机（荣耀50 Plus）上
-    // “开 modal→pop→push”三者同帧竞争路由动画会吞掉房间 push，
-    // 表现为点击永远无响应；Overlay 不进路由栈，无此竞态。
-    final overlay = OverlayEntry(
-      builder: (_) => const Positioned.fill(
-        child: ColoredBox(
-          color: Color(0x33000000),
-          child: Center(child: CupertinoActivityIndicator(radius: 16)),
-        ),
-      ),
-    );
-    var overlayRemoved = false;
-    void removeOverlay() {
-      if (overlayRemoved) return;
-      overlayRemoved = true;
-      overlay.remove();
-    }
-
-    Overlay.of(context, rootOverlay: true).insert(overlay);
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
@@ -1064,7 +1044,6 @@ class _MatrixHomePageState extends State<MatrixHomePage>
           // 这几百毫秒；房间打开期间的进出由路由栈管理。否则守卫要到
           // 房间关闭才释放，低端机上退出后重进会被静默吞掉数秒。
           _openingRooms.remove(snapshot.id);
-          removeOverlay();
           _readState.setRoomOpen(snapshot.id, open: true);
           _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
           unawaited(widget.matrix.conversations
@@ -1091,7 +1070,6 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
     } finally {
       final removed = _openingRooms.remove(snapshot.id);
-      removeOverlay();
       debugPrint('[room-open-list] settled room=${snapshot.id} removed=$removed');
     }
   }
