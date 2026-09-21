@@ -3,6 +3,7 @@ from app.api.admin_session_boundary import create_admin_session_boundary
 from app.integrations.tron import diagnostics as wallet_diagnostics
 
 from app.api.health import create_health_router
+from app.api.client_diagnostics import create_client_diagnostics_router
 from app.api.identity import create_identity_router
 from app.api.support import create_support_router
 from app.api.ledger import create_ledger_router
@@ -61,6 +62,7 @@ def create_app(
             else RedisRateLimiter.from_url(settings.redis_url)
         )
     app.state.rate_limiter = rate_limiter
+    app.include_router(create_client_diagnostics_router(settings, session_factory, rate_limiter), prefix="/api/v1")
     manual_wallet_runtime = create_manual_wallet_runtime(settings, session_factory, rate_limiter)
     app.state.manual_wallet_runtime = manual_wallet_runtime
     if manual_wallet_runtime is not None:
@@ -242,5 +244,4 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
 
 def create_default_app() -> FastAPI:
     return create_app(Settings())
-
 

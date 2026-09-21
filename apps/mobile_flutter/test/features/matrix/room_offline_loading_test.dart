@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 import 'dart:async';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
@@ -206,8 +207,9 @@ void main() {
                     'body': 'history row ${499 - i}'
                   })));
     await _mount(tester, client, friend: true);
-    final list = tester.widget<ListView>(find.byType(ListView).first);
-    list.controller!.jumpTo(list.controller!.position.maxScrollExtent - 50);
+    final list = tester
+        .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList).first);
+    list.controller.jumpTo(list.controller.position.maxScrollExtent - 50);
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
@@ -217,9 +219,9 @@ void main() {
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
-    list.controller!.jumpTo(list.controller!.position.maxScrollExtent / 2);
+    list.controller.jumpTo(list.controller.position.maxScrollExtent / 2);
     await tester.pump();
-    expect(list.controller!.offset, greaterThan(500));
+    expect(list.controller.offset, greaterThan(500));
     expect(timeline.hasLaterWindow, isTrue);
     final transport = Completer<String>();
     final sending =
@@ -271,8 +273,8 @@ void main() {
     }
     await tester.pump();
     expect(timeline.hasLaterWindow, isFalse);
-    final listFinder = find.byType(ListView).first;
-    final scroll = tester.widget<ListView>(listFinder).controller!;
+    final listFinder = find.byType(AnchoredTimelineList).first;
+    final scroll = tester.widget<AnchoredTimelineList>(listFinder).controller;
     final oldFirst = timeline.messages.first.id;
     expect(timeline.hasFutureHistory, isTrue);
     expect(scroll.position.extentBefore, lessThan(120));
@@ -344,16 +346,16 @@ void main() {
                   'body': 'synthetic row ${999 - i}'
                 })));
     await _mount(tester, client);
-    final list = tester.widget<ListView>(find.byType(ListView).first);
-    final delegate = list.childrenDelegate as SliverChildBuilderDelegate;
-    expect(delegate.childCount, 40);
-    list.controller!.jumpTo(list.controller!.position.maxScrollExtent - 50);
+    final list = tester
+        .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList).first);
+    expect(list.eventIds.length, 40);
+    list.controller.jumpTo(list.controller.position.maxScrollExtent - 50);
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
-    final updated = tester.widget<ListView>(find.byType(ListView).first);
-    expect((updated.childrenDelegate as SliverChildBuilderDelegate).childCount,
-        200);
+    final updated = tester
+        .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList).first);
+    expect(updated.eventIds.length, 200);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -376,9 +378,9 @@ void main() {
                   DateTime.utc(2026).add(Duration(seconds: 999 - i)),
               content: {'msgtype': 'm.text', 'body': 'row'})));
     await _mount(tester, client);
-    final listFinder = find.byType(ListView).first;
-    final list = tester.widget<ListView>(listFinder);
-    final scroll = list.controller!;
+    final listFinder = find.byType(AnchoredTimelineList).first;
+    final list = tester.widget<AnchoredTimelineList>(listFinder);
+    final scroll = list.controller;
     final timeline = (tester.state(find.byType(RoomPage)) as dynamic).controller
         as RoomTimelineController;
     final initialOldest = timeline.messages.first.id;
@@ -420,8 +422,8 @@ void main() {
               content: {'msgtype': 'm.text', 'body': 'row'})));
     await _mount(tester, client,
         scrollBehavior: const _ClampingScrollBehavior());
-    final listFinder = find.byType(ListView).first;
-    final scroll = tester.widget<ListView>(listFinder).controller!;
+    final listFinder = find.byType(AnchoredTimelineList).first;
+    final scroll = tester.widget<AnchoredTimelineList>(listFinder).controller;
     final timeline = (tester.state(find.byType(RoomPage)) as dynamic).controller
         as RoomTimelineController;
     final initialOldest = timeline.messages.first.id;
@@ -475,8 +477,8 @@ void main() {
     expect(await timeline.openAnchor('held-event-0'), isTrue);
     await tester.pump();
 
-    final listFinder = find.byType(ListView).first;
-    final scroll = tester.widget<ListView>(listFinder).controller!;
+    final listFinder = find.byType(AnchoredTimelineList).first;
+    final scroll = tester.widget<AnchoredTimelineList>(listFinder).controller;
     final oldestLoadedAnchor = timeline.messages.first.id;
     scroll.jumpTo(scroll.position.maxScrollExtent - 50);
     await tester.pump();
@@ -538,8 +540,8 @@ void main() {
     await tester.pump();
     expect(timeline.hasLaterWindow, isTrue);
     final initialOldest = timeline.messages.first.id;
-    final listFinder = find.byType(ListView).first;
-    final scroll = tester.widget<ListView>(listFinder).controller!;
+    final listFinder = find.byType(AnchoredTimelineList).first;
+    final scroll = tester.widget<AnchoredTimelineList>(listFinder).controller;
     expect(scroll.position.extentBefore, lessThan(120));
     final gesture = await tester.startGesture(tester.getCenter(listFinder));
     for (var i = 0; i < 3; i++) {

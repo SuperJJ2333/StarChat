@@ -4,6 +4,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:matrix/matrix.dart' show MatrixException;
+import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
@@ -75,6 +78,11 @@ final class _FakeTransport
 Future<String> _networkDown() =>
     Future<String>.error(const SocketException('offline'));
 
+final class _BusinessThrottle implements Exception {
+  int get statusCode => 429;
+  int get retryAfterSeconds => 4;
+}
+
 class _HeldSettlement implements OutboxJournal {
   _HeldSettlement(this.inner);
   final OutboxJournal inner;
@@ -109,14 +117,95 @@ class _HeldSettlement implements OutboxJournal {
 }
 
 void main() {
+  testWidgets('business Retry-After seconds are not shortened', (tester) async {
+    final manager = NetworkStateManager();
+    final transport = _FakeTransport()
+      ..responses.add(() => Future.error(_BusinessThrottle()));
+    final controller =
+        RoomTimelineController(transport, networkStateManager: manager);
+    await controller.sendText('fixture');
+    await tester.pump(const Duration(seconds: 3));
+    expect(transport.txids, hasLength(1));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(transport.txids, hasLength(2));
+    controller.dispose();
+    manager.dispose();
+  });
+  test('failed send records only closed diagnostics without exception text',
+      () async {
+    final previous = ChatDiagnostics.instance;
+    var now = DateTime.utc(2026, 9, 21);
+    final diagnostics = ChatDiagnostics(now: () => now);
+    ChatDiagnostics.instance = diagnostics;
+    Map<String, Object?>? batch;
+    diagnostics.startSession(
+        version: '0.3.103',
+        platform: ChatDiagnosticPlatform.android,
+        upload: (value, abort) async {
+          batch = value.toJson();
+          return 202;
+        });
+    final transport = _FakeTransport()
+      ..responses.add(() => Future.error(MatrixException(http.Response(
+          '{"errcode":"M_FORBIDDEN","error":"SECRET_ERROR"}', 403))));
+    final manager = NetworkStateManager();
+    final controller =
+        RoomTimelineController(transport, networkStateManager: manager);
+    addTearDown(() {
+      controller.dispose();
+      manager.dispose();
+      diagnostics.stopSession();
+      ChatDiagnostics.instance = previous;
+    });
+    await controller.sendText('SECRET_BODY');
+    expect(diagnostics.pendingCount, 1);
+    now = now.add(const Duration(minutes: 1));
+    await diagnostics.flush();
+    expect(batch.toString(), contains('matrixSend'));
+    expect(batch.toString(), contains('rejected'));
+    expect(batch.toString(), isNot(contains('SECRET')));
+    expect(manager.current, NetworkState.online);
+  });
+  testWidgets('server throttling backs off finitely without global offline',
+      (tester) async {
+    final manager = NetworkStateManager();
+    final error = MatrixException(http.Response(
+        '{"errcode":"M_LIMIT_EXCEEDED","retry_after_ms":3000}', 429));
+    final transport = _FakeTransport()
+      ..responses
+          .addAll(List.generate(4, (_) => () => Future<String>.error(error)));
+    final controller =
+        RoomTimelineController(transport, networkStateManager: manager);
+    await controller.sendText('fixture');
+    expect(controller.messages.single.deliveryState,
+        RoomDeliveryState.waitingNetwork);
+    expect(manager.current, NetworkState.online);
+    await tester.pump(const Duration(seconds: 2));
+    expect(transport.txids.length, 1, reason: 'respect Retry-After');
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(transport.txids.length, 2);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 15));
+    await tester.pump();
+    expect(transport.txids.length, 4);
+    expect(transport.txids.toSet(), hasLength(1));
+    expect(controller.messages.single.deliveryState, RoomDeliveryState.failed);
+    expect(manager.current, NetworkState.online);
+    await tester.pump(const Duration(minutes: 1));
+    expect(transport.txids.length, 4);
+    controller.dispose();
+    manager.dispose();
+  });
   late NetworkStateManager manager;
 
   setUp(() => manager = NetworkStateManager());
   tearDown(() => manager.dispose());
 
   group('BUG 回归：失败消息重进房间后停留在原时间位置', () {
-    test('restoreOutboxMessage 用原始 createdAt 定位，不钳位到最新之后',
-        () async {
+    test('restoreOutboxMessage 用原始 createdAt 定位，不钳位到最新之后', () async {
       final base = DateTime(2026, 9, 19, 10, 0);
       final transport = _FakeTransport();
       // 服务器已有两条消息：失败行 createdAt 夹在两者之间。
@@ -158,7 +247,6 @@ void main() {
       controller.dispose();
     });
   });
-
 
   group('离线优先发送状态机', () {
     test('declined claim reflects durable failure and later background outcome',
@@ -303,6 +391,28 @@ void main() {
   });
 
   group('离线快速失败与悬挂护栏（2026-09-19 房间瘫痪修复）', () {
+    test('UI timeout keeps durable claim and late ACK survives page disposal',
+        () async {
+      final outbox =
+          PersistentOutboxManager(InMemoryOutboxStore(), accountId: 'me');
+      final hanging = Completer<String>();
+      final transport = _FakeTransport()..responses.add(() => hanging.future);
+      final controller = RoomTimelineController(transport,
+          outboxJournal:
+              outbox.journalFor(roomId: '!r:test', receiverId: '@peer:test'),
+          sendDispatchTimeout: const Duration(milliseconds: 10));
+      await controller.sendText('fixture');
+      final row = (await outbox.unsent()).single;
+      expect(row.status, OutboxStatus.sending);
+      expect(await outbox.claim(row.localId), isFalse);
+      controller.dispose();
+      hanging.complete(r'$late');
+      await pumpEventQueue();
+      expect(await outbox.unsent(), isEmpty);
+      expect(transport.txids, hasLength(1));
+      outbox.dispose();
+    });
+
     test('网络状态机判定离线时，发送不进入传输层，立即转 waitingNetwork', () async {
       manager.report(transportAvailable: false);
       expect(manager.current, NetworkState.offline);
@@ -327,7 +437,7 @@ void main() {
       controller.dispose();
     });
 
-    test('传输层悬挂时护栏超时把行转入 waitingNetwork，不再阻塞后续消息', () async {
+    test('传输层悬挂时预算返回但保留所有权，重试不重复且晚 ACK 送达', () async {
       final hanging = Completer<String>();
       final transport = _FakeTransport()
         ..responses.add(() => hanging.future)
@@ -347,12 +457,13 @@ void main() {
       expect(controller.messages.last.deliveryState, RoomDeliveryState.sent);
       expect(transport.txids.length, 2);
 
-      // 第一条的底层 future 之后仍挂着（模拟 SDK 队列滞留），其失败不得成为
-      // 未处理异常；行保持在 waitingNetwork 等待恢复。
-      hanging.completeError(const SocketException('late failure'));
+      await controller.retry(controller.messages.first.stableId);
+      expect(transport.txids.length, 2, reason: '底层未完成时不得重复派发');
+
+      // UI budget does not discard the underlying homeserver acknowledgement.
+      hanging.complete(r'$late');
       await pumpEventQueue();
-      expect(controller.messages.first.deliveryState,
-          RoomDeliveryState.waitingNetwork);
+      expect(controller.messages.first.deliveryState, RoomDeliveryState.sent);
       controller.dispose();
     });
   });

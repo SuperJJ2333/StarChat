@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -315,7 +316,7 @@ void main() {
     await tester.enterText(find.byType(CupertinoTextField).first, '继续输入');
     await tester.pump();
     expect(find.text('继续输入'), findsOneWidget);
-    final timeline = find.byType(ListView).first;
+    final timeline = find.byType(AnchoredTimelineList).first;
     final position = tester
         .state<ScrollableState>(find
             .descendant(of: timeline, matching: find.byType(Scrollable))

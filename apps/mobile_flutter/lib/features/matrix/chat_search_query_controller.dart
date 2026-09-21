@@ -12,6 +12,7 @@ import 'dart:typed_data';
 final class ChatSearchQueryController {
   ChatSearchQueryController({
     required this.search,
+    this.searchBatch,
     ChatSearchClock? clock,
     this.debounce = const Duration(milliseconds: 300),
   }) : _clock = clock ?? RealChatSearchClock();
@@ -19,6 +20,14 @@ final class ChatSearchQueryController {
   /// 数据源检索回调（已解密、可访问、未撤回的消息流；按时间新→旧）。
   final Future<List<ChatSearchMessage>> Function(ChatSearchFilters filters,
       {ChatSearchCursor? cursor, int limit}) search;
+  final Future<ChatSearchSlice> Function(ChatSearchFilters filters,
+      {ChatSearchCursor? cursor, int limit})? searchBatch;
+
+  /// Invalidate in-flight work without changing the visible query filters.
+  void invalidate() {
+    _epoch++;
+    cancelDebounce();
+  }
 
   final ChatSearchClock _clock;
   final Duration debounce;
@@ -184,7 +193,11 @@ final class ChatSearchQueryController {
     }
     onStateChange?.call(ChatSearchStateChange.loading(epoch));
     try {
-      final page = await search(filters, cursor: null, limit: limit);
+      final slice = searchBatch == null
+          ? null
+          : await searchBatch!(filters, cursor: null, limit: limit);
+      final page =
+          slice?.items ?? await search(filters, cursor: null, limit: limit);
       // 迟到的旧查询：epoch 已过期 → 不回调状态，返回 stale。
       if (epoch != _epoch) {
         return ChatSearchResultPage(
@@ -192,7 +205,7 @@ final class ChatSearchQueryController {
       }
       final result = ChatSearchResultPage(
         items: dedupeByEventId(page),
-        nextCursor: _cursorOf(page),
+        nextCursor: slice == null ? _cursorOf(page) : slice.nextCursor,
         epoch: epoch,
       );
       onStateChange?.call(ChatSearchStateChange.loaded(result));
@@ -221,7 +234,11 @@ final class ChatSearchQueryController {
       senderUserId: _senderUserId,
       mediaCategory: _mediaCategory,
     );
-    final more = await search(filters, cursor: cursor, limit: limit);
+    final slice = searchBatch == null
+        ? null
+        : await searchBatch!(filters, cursor: cursor, limit: limit);
+    final more =
+        slice?.items ?? await search(filters, cursor: cursor, limit: limit);
     // R10：翻页期间条件变更（epoch 推进）→ stale，不合并到有效结果。
     if (epoch != _epoch) {
       return ChatSearchResultPage(
@@ -230,7 +247,7 @@ final class ChatSearchQueryController {
     final merged = dedupeByEventId([...current.items, ...more]);
     return ChatSearchResultPage(
       items: merged,
-      nextCursor: _cursorOf(more),
+      nextCursor: slice == null ? _cursorOf(more) : slice.nextCursor,
       epoch: epoch,
     );
   }
@@ -349,6 +366,14 @@ final class ChatSearchCursor {
   const ChatSearchCursor({required this.order, required this.eventId});
   final int order;
   final String eventId;
+}
+
+/// Explicit continuation prevents a sparse bounded scan from claiming that
+/// all history has been searched just because this batch has no matches.
+final class ChatSearchSlice {
+  const ChatSearchSlice({required this.items, required this.nextCursor});
+  final List<ChatSearchMessage> items;
+  final ChatSearchCursor? nextCursor;
 }
 
 final class ChatSearchResultPage {

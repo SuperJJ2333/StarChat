@@ -22,6 +22,7 @@ final class ChatSearchPage extends StatefulWidget {
     super.key,
     required this.isGroup,
     required this.search,
+    this.searchBatch,
     required this.memberEntries,
     required this.onJumpToMessage,
     this.senderDisplayName,
@@ -51,6 +52,8 @@ final class ChatSearchPage extends StatefulWidget {
   /// 数据源检索回调（已解密、可访问、未撤回）。
   final Future<List<ChatSearchMessage>> Function(ChatSearchFilters filters,
       {ChatSearchCursor? cursor, int limit}) search;
+  final Future<ChatSearchSlice> Function(ChatSearchFilters filters,
+      {ChatSearchCursor? cursor, int limit})? searchBatch;
 
   /// 群成员目录（成员筛选入口的数据；私聊传空）。
   final List<MemberDirectoryEntry> memberEntries;
@@ -107,6 +110,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     widget.identityChanges?.addListener(_identityChanged);
     _controller = ChatSearchQueryController(
       search: widget.search,
+      searchBatch: widget.searchBatch,
       debounce: const Duration(milliseconds: 300),
     );
   }
@@ -288,6 +292,18 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Future<void> _openCalendar() async {
+    _debounce?.cancel();
+    _controller?.invalidate();
+    widget.onSearchInvalidated?.call();
+    _queryGeneration++;
+    setState(() {
+      _loadingMore = false;
+      if (_state is ChatSearchLoadingState) {
+        _state = const ChatSearchStateChange.empty();
+      }
+      // Old scan continuations belong to the cancelled query generation.
+      _lastPage = null;
+    });
     // Task A：月历只读日期 metadata（RoomHistoryMonthDays），与聊天正文解耦。
     // 最早月份缺失时不伪造 1970，交由 room 侧索引/创建时间决定。
     final now = logic.CalendarMonth.of(DateTime.now());
@@ -303,7 +319,12 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         ),
       ),
     );
-    if (picked == null) widget.onCalendarClosed?.call();
+    if (picked == null) {
+      widget.onCalendarClosed?.call();
+      if (mounted && !(_controller?.isDefaultEmptyState ?? true)) {
+        await _execute();
+      }
+    }
     if (picked != null && mounted) {
       // R6 修复：日期选择后**直接调用定位回调**（不再只弹说明框）。
       if (widget.onJumpToDate != null) {
@@ -371,6 +392,20 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         ),
       );
     }
+    if (page != null && page.nextCursor != null) {
+      return Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('已查询的记录中暂无匹配',
+            style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
+        if (_loadingMore)
+          const CupertinoActivityIndicator()
+        else
+          CupertinoButton(
+              key: const Key('chat-search-continue'),
+              onPressed: () => _loadMore(page),
+              child: const Text('继续查找更早记录')),
+      ]));
+    }
     return const Center(
       key: Key('chat-search-no-results'),
       child: Text('未找到符合条件的聊天记录',
@@ -386,7 +421,8 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
 
   /// 渲染只读 _lastPage（不在 build 中被 _state 覆盖）；
   /// _lastPage 由 executeNow 的 loaded 回调和 _loadMore 共同维护。
-  Widget _results(ChatSearchQueryController controller, ChatSearchResultPage page) {
+  Widget _results(
+      ChatSearchQueryController controller, ChatSearchResultPage page) {
     if (controller.activeFilters.any((filter) =>
         filter.kind == ChatSearchFilterKind.media &&
         filter.value == ChatSearchMediaCategory.imageVideo.name)) {
@@ -535,74 +571,76 @@ final class _ResultRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(children: [
-          avatar ??
-              Container(
-                width: 38,
-                height: 38,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: WeChatColors.brandPrimary,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  displayName.isNotEmpty ? displayName.characters.first : '?',
-                  style: const TextStyle(
-                      fontSize: 16, color: CupertinoColors.white),
-                ),
-              ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Expanded(
-                    child: Text(displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                avatar ??
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: WeChatColors.brandPrimary,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        displayName.isNotEmpty
+                            ? displayName.characters.first
+                            : '?',
                         style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w600)),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    formatSearchResultTime(message.timestamp),
-                    style: const TextStyle(
-                        fontSize: 12, color: WeChatColors.textTertiary),
-                  ),
-                ]),
-                const SizedBox(height: 2),
-                // 摘要 + 关键词高亮（安全文本片段）。
-                Text.rich(
-                  TextSpan(
+                            fontSize: 16, color: CupertinoColors.white),
+                      ),
+                    ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final segment in segments)
-                        TextSpan(
-                          text: segment.text,
-                          style: segment.highlighted
-                              ? const TextStyle(
-                                  color: WeChatColors.brandPrimary,
-                                  fontWeight: FontWeight.w700)
-                              : const TextStyle(
-                                  color: WeChatColors.textSecondary),
+                      Row(children: [
+                        Expanded(
+                          child: Text(displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600)),
                         ),
+                        const SizedBox(width: 8),
+                        Text(
+                          formatSearchResultTime(message.timestamp),
+                          style: const TextStyle(
+                              fontSize: 12, color: WeChatColors.textTertiary),
+                        ),
+                      ]),
+                      const SizedBox(height: 2),
+                      // 摘要 + 关键词高亮（安全文本片段）。
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            for (final segment in segments)
+                              TextSpan(
+                                text: segment.text,
+                                style: segment.highlighted
+                                    ? const TextStyle(
+                                        color: WeChatColors.brandPrimary,
+                                        fontWeight: FontWeight.w700)
+                                    : const TextStyle(
+                                        color: WeChatColors.textSecondary),
+                              ),
+                          ],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
                     ],
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13),
                 ),
-              ],
+                // 媒体缩略（图片视频/文件图标）。
+                if (message.mediaCategory == ChatSearchMediaCategory.imageVideo)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(CupertinoIcons.photo,
+                        size: 40, color: WeChatColors.textTertiary),
+                  ),
+              ]),
             ),
-          ),
-          // 媒体缩略（图片视频/文件图标）。
-          if (message.mediaCategory == ChatSearchMediaCategory.imageVideo)
-            const Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Icon(CupertinoIcons.photo,
-                  size: 40, color: WeChatColors.textTertiary),
-            ),
-                ]),
-              ),
             const Positioned(
               left: 0,
               right: 0,
@@ -1074,16 +1112,14 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                   final day = index - leading + 1;
                   final date = DateTime(_current.year, _current.month, day);
                   final future = date.isAfter(todayDay);
-                  final state = days?.stateOf(day) ??
-                      logic.RoomHistoryDayState.unknown;
+                  final state =
+                      days?.stateOf(day) ?? logic.RoomHistoryDayState.unknown;
                   final knownPresent = !future &&
                       state == logic.RoomHistoryDayState.knownPresent;
-                  final knownEmpty = !future &&
-                      state == logic.RoomHistoryDayState.knownEmpty;
-                  final scanning = !future &&
-                      !knownPresent &&
-                      !knownEmpty &&
-                      _monthLoading;
+                  final knownEmpty =
+                      !future && state == logic.RoomHistoryDayState.knownEmpty;
+                  final scanning =
+                      !future && !knownPresent && !knownEmpty && _monthLoading;
                   // unknown（含加载中未定论的日期）保持可点：点击会走该日的
                   // 有界定位查询；knownEmpty 与未来日期不可点。
                   final enabled = !future && !knownEmpty && _lookupDate == null;

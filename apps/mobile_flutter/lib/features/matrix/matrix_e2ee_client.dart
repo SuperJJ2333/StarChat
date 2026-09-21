@@ -44,7 +44,12 @@ import 'avatar_url_resolver.dart';
 import 'conversation_preferences.dart';
 import 'matrix_control_rooms.dart';
 import 'direct_chat_controller.dart';
-import '../../core/network_state_manager.dart' show MessageSendNetworkException;
+import '../../core/network_state_manager.dart'
+    show
+        MessageSendNetworkException,
+        networkFailureHttpStatus,
+        defaultNetworkFailureClassifier;
+import '../../core/chat_diagnostics.dart';
 import 'decryption_state_controller.dart';
 import 'emoji_vault.dart';
 import 'group_chat_controller.dart';
@@ -885,6 +890,7 @@ final class MatrixConversationCapability {
           ],
         );
       });
+
   /// BUG-23 残余自愈去重：每个 (账号, 房间, 尾部事件) 只推进一次已读。
   // 类暴露 const 构造器，去重状态放静态（键含账号，进程级共享安全）。
   static final Set<String> _callTailHealedMarkers = {};
@@ -2363,7 +2369,8 @@ final class _SdkRoomTimelineCapability
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
         RoomMessageLookupSource,
-        RoomWindowedTimelineSource {
+        RoomWindowedTimelineSource,
+        RoomNewestFirstTimelineSource {
   _SdkRoomTimelineCapability(this._lease, Timeline timeline, this._onUpdate)
       : _liveTimeline = timeline {
     _outgoingListener = () {
@@ -2379,6 +2386,7 @@ final class _SdkRoomTimelineCapability
   final Timeline _liveTimeline;
   Timeline? _contextTimeline;
   int _contextGeneration = 0;
+  Completer<void>? _dateCancellation;
   Timeline get _timeline => _contextTimeline ?? _liveTimeline;
   final void Function() _onUpdate;
   late final VoidCallback _outgoingListener;
@@ -2525,6 +2533,22 @@ final class _SdkRoomTimelineCapability
   Iterable<RoomMessageViewModel> get allMessages =>
       _viewport?.all ?? snapshot();
   @override
+  Iterable<RoomMessageViewModel> get newestFirstMessages =>
+      historyNewestFirst();
+  @override
+  Iterable<RoomMessageViewModel> historyNewestFirst({String? beforeEventId}) {
+    final viewport = _viewport;
+    if (viewport != null) {
+      return viewport.historyNewestFirst(beforeEventId: beforeEventId);
+    }
+    final source = snapshot();
+    final index = beforeEventId == null
+        ? -1
+        : source.indexWhere((m) => m.id == beforeEventId);
+    return source.reversed.skip(index < 0 ? 0 : source.length - index);
+  }
+
+  @override
   RoomMessageViewModel? findMessage(String id) =>
       _viewport?.find(id) ??
       _resolvedMessages[id] ??
@@ -2597,7 +2621,7 @@ final class _SdkRoomTimelineCapability
   void selectLater() => _viewport?.later();
   @override
   void selectLatest() {
-    _contextGeneration++;
+    cancelPendingDateLookup();
     _contextTimeline?.cancelSubscriptions();
     _contextTimeline = null;
     _messageCache.clear();
@@ -2902,15 +2926,13 @@ final class _SdkRoomTimelineCapability
       transactionId: event.unsigned?['transaction_id'] as String?,
       // BUG-28：顶层宽高缺失（旧事件）回退 thumbnail_info，占位框宽高比稳定。
       imageWidth: _intValue(info is Map ? info['w'] : null) ??
-          _intValue(
-              info is Map && info['thumbnail_info'] is Map
-                  ? (info['thumbnail_info'] as Map)['w']
-                  : null),
+          _intValue(info is Map && info['thumbnail_info'] is Map
+              ? (info['thumbnail_info'] as Map)['w']
+              : null),
       imageHeight: _intValue(info is Map ? info['h'] : null) ??
-          _intValue(
-              info is Map && info['thumbnail_info'] is Map
-                  ? (info['thumbnail_info'] as Map)['h']
-                  : null),
+          _intValue(info is Map && info['thumbnail_info'] is Map
+              ? (info['thumbnail_info'] as Map)['h']
+              : null),
       senderId: event.senderId,
       text: event.redacted
           ? ''
@@ -3171,6 +3193,10 @@ final class _SdkRoomTimelineCapability
     // Do not tear down the currently visible context. Only a future adopted
     // context may be cancelled; an SDK network future can still finish late.
     _contextGeneration++;
+    final cancellation = _dateCancellation;
+    if (cancellation != null && !cancellation.isCompleted) {
+      cancellation.complete();
+    }
   }
 
   @override
@@ -3271,9 +3297,56 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<RoomHistoryDayLocation?> locateDay(DateTime localDay) async {
+    _ensureActive();
+    cancelPendingDateLookup();
+    final generation = _contextGeneration;
+    final cancellation = _dateCancellation = Completer<void>();
+    final clock = Stopwatch()..start();
+    final diagnostics = ChatDiagnostics.instance;
+    final diagnosticGeneration = diagnostics.sessionGeneration;
+    try {
+      return await Future.any([
+        _locateDay(localDay, generation),
+        cancellation.future.then<RoomHistoryDayLocation?>((_) => null),
+      ]).timeout(const Duration(seconds: 13));
+    } catch (error) {
+      if (generation == _contextGeneration) cancelPendingDateLookup();
+      if (identical(diagnostics, ChatDiagnostics.instance) &&
+          diagnostics.sessionGeneration == diagnosticGeneration) {
+        diagnostics.record(
+            stage: ChatDiagnosticStage.dateLocate,
+            error: _dateFailureKind(error),
+            elapsed: clock.elapsed,
+            status: networkFailureHttpStatus(error));
+      }
+      rethrow;
+    } finally {
+      if (clock.elapsed > const Duration(seconds: 2) &&
+          identical(diagnostics, ChatDiagnostics.instance) &&
+          diagnostics.sessionGeneration == diagnosticGeneration) {
+        diagnostics.record(
+            stage: ChatDiagnosticStage.dateLocate,
+            error: ChatDiagnosticError.slow,
+            elapsed: clock.elapsed);
+      }
+    }
+  }
+
+  ChatDiagnosticError _dateFailureKind(Object error) =>
+      error is TimeoutException
+          ? ChatDiagnosticError.timeout
+          : error is RoomHistoryLookupIncomplete
+              ? ChatDiagnosticError.incomplete
+              : networkFailureHttpStatus(error) != null
+                  ? ChatDiagnosticError.rejected
+                  : defaultNetworkFailureClassifier(error)
+                      ? ChatDiagnosticError.network
+                      : ChatDiagnosticError.unknown;
+
+  Future<RoomHistoryDayLocation?> _locateDay(
+      DateTime localDay, int generation) async {
     final day = DateTime(localDay.year, localDay.month, localDay.day);
     _ensureActive();
-    final generation = ++_contextGeneration;
     final lookupClock = Stopwatch()..start();
     Duration remainingBudget(Duration cap) {
       final remaining = const Duration(seconds: 13) - lookupClock.elapsed;
@@ -3296,6 +3369,7 @@ final class _SdkRoomTimelineCapability
       return RoomHistoryDayLocation(eventId: local.eventId, day: day);
     }
     return _withOperation(() async {
+      if (_disposed || generation != _contextGeneration) return null;
       final room = _lease._activeRoom;
       final timestampBudget = remainingBudget(const Duration(seconds: 5));
       if (timestampBudget == Duration.zero) {
@@ -3404,6 +3478,7 @@ final class _SdkRoomTimelineCapability
   final Map<String, RoomHistoryMonthDays> _monthCache = {};
   int _monthGeneration = 0;
   bool _monthLookupCancelled = false;
+  Completer<void>? _monthCancellation;
 
   /// 日期索引的加载 Future 只创建一次：并发调用不得产生两个索引实例，
   /// 否则后完成的空索引会覆盖已填充的那个。
@@ -3464,6 +3539,10 @@ final class _SdkRoomTimelineCapability
   void cancelMonthLookup() {
     _monthGeneration++;
     _monthLookupCancelled = true;
+    final cancellation = _monthCancellation;
+    if (cancellation != null && !cancellation.isCompleted) {
+      cancellation.complete();
+    }
   }
 
   @override
@@ -3476,14 +3555,62 @@ final class _SdkRoomTimelineCapability
   @override
   Future<RoomHistoryMonthDays> loadMonthDays(CalendarMonth month) async {
     _ensureActive();
+    cancelMonthLookup();
+    final generation = _monthGeneration;
+    _monthLookupCancelled = false;
+    final cancellation = _monthCancellation = Completer<void>();
+    final clock = Stopwatch()..start();
+    final diagnostics = ChatDiagnostics.instance;
+    final diagnosticGeneration = diagnostics.sessionGeneration;
+    try {
+      final result = await Future.any([
+        _loadMonthDays(month, generation),
+        cancellation.future.then((_) => RoomHistoryMonthDays(month: month)),
+      ]).timeout(const Duration(seconds: 10));
+      if (result.error != null &&
+          identical(diagnostics, ChatDiagnostics.instance) &&
+          diagnostics.sessionGeneration == diagnosticGeneration) {
+        diagnostics.record(
+            stage: ChatDiagnosticStage.dateMonth,
+            error: _dateFailureKind(result.error!),
+            elapsed: clock.elapsed,
+            status: networkFailureHttpStatus(result.error!));
+      }
+      return result;
+    } catch (error) {
+      if (generation == _monthGeneration) cancelMonthLookup();
+      if (identical(diagnostics, ChatDiagnostics.instance) &&
+          diagnostics.sessionGeneration == diagnosticGeneration) {
+        diagnostics.record(
+            stage: ChatDiagnosticStage.dateMonth,
+            error: _dateFailureKind(error),
+            elapsed: clock.elapsed,
+            status: networkFailureHttpStatus(error));
+      }
+      return RoomHistoryMonthDays(month: month, error: error);
+    } finally {
+      if (clock.elapsed > const Duration(seconds: 2) &&
+          identical(diagnostics, ChatDiagnostics.instance) &&
+          diagnostics.sessionGeneration == diagnosticGeneration) {
+        diagnostics.record(
+            stage: ChatDiagnosticStage.dateMonth,
+            error: ChatDiagnosticError.slow,
+            elapsed: clock.elapsed);
+      }
+    }
+  }
+
+  Future<RoomHistoryMonthDays> _loadMonthDays(
+      CalendarMonth month, int generation) async {
     await _ensureDayIndex();
+    if (_disposed || generation != _monthGeneration) {
+      return RoomHistoryMonthDays(month: month);
+    }
     final index = _dayIndex!;
     final cacheKey = '${_lease.roomId}|${month.key}';
     final cached = _monthCache[cacheKey];
     if (cached != null && !cached.hasUnknown) return cached;
 
-    final generation = ++_monthGeneration;
-    _monthLookupCancelled = false;
     _recordLoadedDaysIntoIndex(index);
     var result = index.monthDays(_lease.roomId, month);
     if (!result.hasUnknown) {
@@ -3492,7 +3619,7 @@ final class _SdkRoomTimelineCapability
 
     try {
       final probes = await _probeMonthRange(month, generation);
-      if (probes == null) {
+      if (probes == null || _disposed || generation != _monthGeneration) {
         return RoomHistoryMonthDays(
             month: month,
             dayStates: result.dayStates,
@@ -3546,7 +3673,7 @@ final class _SdkRoomTimelineCapability
         }
       }
       result = index.monthDays(_lease.roomId, month);
-      await _persistDayIndex();
+      await _persistDayIndex().timeout(const Duration(seconds: 2));
       if (generation != _monthGeneration) {
         // 已切月/已取消：过期结果不得发布。
         return RoomHistoryMonthDays(month: month);
@@ -3584,8 +3711,9 @@ final class _SdkRoomTimelineCapability
           // 本地时间再取年月日，否则 UTC 边界会造成整体错一天。
           DateTime.fromMillisecondsSinceEpoch(event.originServerTs)
         );
-      } catch (_) {
-        return null;
+      } on MatrixException catch (error) {
+        if (error.error == MatrixError.M_NOT_FOUND) return null;
+        rethrow;
       }
     }
 
@@ -3611,6 +3739,8 @@ final class _SdkRoomTimelineCapability
   @override
   void dispose() {
     if (_disposed) return;
+    cancelMonthLookup();
+    cancelPendingDateLookup();
     _disposed = true;
     _outgoingWork.removeListener(_outgoingListener);
     _liveTimeline.cancelSubscriptions();
@@ -4652,6 +4782,7 @@ final class MatrixOutgoingVideoFile {
   final Future<MatrixOutgoingPreparedMedia> Function(File source)?
       _prepareMedia;
   final Future<int> Function(File source)? _sourceCost;
+
   /// BUG-35：转码进度回报（由 _buildVideoJob 注入协调器上报）。
   void Function(double progress)? _progressSink;
   bool _admitted = false;
@@ -7345,7 +7476,6 @@ final class MatrixSdkE2eeClient
                 requestId: requestId));
         if (id == null) throw StateError('好友招呼尚未发送');
       });
-
 
   @override
 

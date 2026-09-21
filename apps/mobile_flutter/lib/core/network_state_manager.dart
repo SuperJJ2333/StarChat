@@ -31,11 +31,9 @@ typedef NetworkFailureClassifier = bool Function(Object error);
 
 /// 「消息确认因网络原因未发出」的类型化异常（2026-09-19 房间瘫痪修复）。
 ///
-/// Matrix 发送路径在 SDK 耗尽重试窗口后拿到 null——只有网络类错误
-/// （Socket/超时/连接中断）才会走到重试耗尽，服务端拒绝会以
-/// `MatrixException` 直接抛出。因此该路径必须抛本类型而不是通用
-/// `StateError`，[defaultNetworkFailureClassifier] 才能把它归类为网络失败
-/// → `waitingNetwork`（恢复后自动重发），而不是终局失败。
+/// Compatibility for adapters returning no acknowledgement. The production
+/// SDK preserves its actual protocol/transport exception instead of returning
+/// null on failure. An absent acknowledgement remains retryable with its txid.
 final class MessageSendNetworkException implements Exception {
   const MessageSendNetworkException(this.message);
   final String message;
@@ -44,23 +42,24 @@ final class MessageSendNetworkException implements Exception {
 }
 
 /// 默认分类器：SocketException / TimeoutException / HttpException /
-/// package:http 的 ClientException / HTTP 5xx / [MessageSendNetworkException]。
+/// package:http 的 ClientException / HTTP 429/5xx / [MessageSendNetworkException]。
 ///
 /// 该默认实现刻意不导入 `package:http`：`ClientException` 通过运行时类型名
-/// 识别，HTTP 响应通过整数 `statusCode` 鸭子类型读取（2xx/3xx/4xx 一律不算
-/// 网络失败，只有 5xx 才算）。需要更精确的判定时自行注入
+/// 识别，HTTP响应读取statusCode或response.statusCode。429/5xx可重试，
+/// 但reportFailure不会据此把设备判离线。需要更精确的判定时自行注入
 /// [NetworkFailureClassifier]。
 bool defaultNetworkFailureClassifier(Object error) {
   if (error is SocketException) return true; // DNS/连接/重置失败
   if (error is TimeoutException) return true; // 请求超时
   if (error is HttpException) return true; // 连接中途被关闭
   if (error is MessageSendNetworkException) return true; // 发送重试耗尽
-  final status = _statusCodeOf(error);
-  if (status != null) return status >= 500 && status < 600;
+  final status = networkFailureHttpStatus(error);
+  if (status != null) return status == 429 || (status >= 500 && status < 600);
   return error.runtimeType.toString() == 'ClientException';
 }
 
-int? _statusCodeOf(Object error) {
+/// HTTP responses are retry evidence, not evidence that the device is offline.
+int? networkFailureHttpStatus(Object error) {
   try {
     final dynamic candidate = error;
     final Object? status = candidate.statusCode;
@@ -68,7 +67,17 @@ int? _statusCodeOf(Object error) {
   } catch (_) {
     // 没有 statusCode 的属性即视为非 HTTP 错误。
   }
+  try {
+    final dynamic candidate = error;
+    final Object? status = candidate.response?.statusCode;
+    if (status is int) return status;
+  } catch (_) {}
   return null;
+}
+
+bool isRetryableServerFailure(Object error) {
+  final status = networkFailureHttpStatus(error);
+  return status == 429 || (status != null && status >= 500 && status < 600);
 }
 
 /// 产品级网络状态机。
@@ -161,6 +170,9 @@ final class NetworkStateManager {
   /// false，或注入的分类器返回 false）不改变任何状态。
   void reportFailure(Object error) {
     if (_disposed) return;
+    // A response proves the endpoint answered. Backoff belongs to the failed
+    // operation; it must not pause unrelated rooms through a global offline flag.
+    if (networkFailureHttpStatus(error) != null) return;
     if (!_classifyFailure(error)) return;
     _failures++;
     _recovering = false;

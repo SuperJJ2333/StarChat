@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-21 聊天可靠性/历史性能/自动诊断
+
+已修复发送分类与在途所有权、历史锚点、关键词/日期预算，并接入无正文自动诊断。后端接收端22:33上线、22:34独立验收通过；移动端最终门禁及精确证据见[任务](tasks/2026-09-21-chat-reliability-diagnostics.md)和[验证](../verification/2026-09-21-chat-reliability-diagnostics.md)。本次尚未构建移动新包，旧2145不包含本次改动，后续交付需整合其权限/重启修复；不把源码修复宣称手机已生效。
+
 ## 2026-09-20 客服点钻派发修复（后端+admin静态已上线，待管理员复验）
 
 用户报"派发点钻显示 发放失败：点钻发放请求无效"。根因：生产储备策略为 manual_liquidity（储备 40 USDT vs 负债 4567.02=点钻 4508.11+USDT 58.91，缺口 4527.02 按记录放行），但 admin 派发与审批执行路径的 `LedgerService` 硬编码 `full_backing` 未接 `settings.wallet_reserve_policy`，每次派发 `require_coverage` 抛 `insufficient reserve coverage` 被笼统映射为"请求无效"。**不是输入框问题**（422 发生在目标解析与客服角色校验之后）。修复：两路径接入全局策略；7 类 ValueError 细分为独立错误码/中文文案；前端金额本地校验 + 错误红字icon(role=alert)/成功绿字icon(role=status)。门禁：新增 6 测先红后绿、verify PASS（API/Worker 2215/58）、npm 222。生产切换 `starchat-business-api:caibi-grant-20260920`（23:36+08 healthy），**23:42 管理员即成功派发 1550+2000 两笔（审计在案）**；**顺带发现并恢复生产容器被回退到陈旧 fb41d7fa（缺批次B三文件）的漂移**；admin 静态 `?v=20260920-grant` 公网哈希核验通过。改动待用户指示 commit/push。以[任务](tasks/2026-09-20-caibi-grant-fix.md)与[验证](../verification/2026-09-20-caibi-grant-fix.md)为准。

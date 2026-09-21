@@ -2186,6 +2186,19 @@
         "title": "DepositRepairPreviewBody",
         "type": "object"
       },
+      "DiagnosticReceipt": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "title": "DiagnosticReceipt",
+        "type": "object"
+      },
       "DirectCaibiGrantBody": {
         "additionalProperties": false,
         "properties": {
@@ -15705,6 +15718,176 @@
         "summary": "Decline",
         "tags": [
           "chat-transfers"
+        ]
+      }
+    },
+    "/api/v1/client-diagnostics": {
+      "post": {
+        "operationId": "ingest_api_v1_client_diagnostics_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "events": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "count": {
+                          "maximum": 1000000,
+                          "minimum": 1,
+                          "title": "Count",
+                          "type": "integer"
+                        },
+                        "elapsed_ms": {
+                          "maximum": 3600000,
+                          "minimum": 0,
+                          "title": "Elapsed Ms",
+                          "type": "integer"
+                        },
+                        "error": {
+                          "enum": [
+                            "slow",
+                            "network",
+                            "timeout",
+                            "rejected",
+                            "cancelled",
+                            "incomplete",
+                            "unknown"
+                          ],
+                          "title": "Error",
+                          "type": "string"
+                        },
+                        "operation_id": {
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "title": "Operation Id",
+                          "type": "string"
+                        },
+                        "stage": {
+                          "enum": [
+                            "sendAdmission",
+                            "matrixSend",
+                            "historyLoad",
+                            "historySearch",
+                            "dateMonth",
+                            "dateLocate",
+                            "scrollAnchor",
+                            "framework"
+                          ],
+                          "title": "Stage",
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "maximum": 599,
+                              "minimum": 100,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Status"
+                        }
+                      },
+                      "required": [
+                        "operation_id",
+                        "stage",
+                        "error",
+                        "elapsed_ms",
+                        "count"
+                      ],
+                      "title": "DiagnosticEvent",
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "title": "Events",
+                    "type": "array"
+                  },
+                  "platform": {
+                    "enum": [
+                      "android",
+                      "ios",
+                      "other"
+                    ],
+                    "title": "Platform",
+                    "type": "string"
+                  },
+                  "version": {
+                    "maxLength": 32,
+                    "pattern": "^\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}(\\+\\d{1,8})?$",
+                    "title": "Version",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "version",
+                  "platform",
+                  "events"
+                ],
+                "title": "DiagnosticBatch",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "413": {
+            "description": "Maximum 16384 body bytes"
+          },
+          "422": {
+            "description": "Closed metadata schema rejected"
+          },
+          "429": {
+            "description": "Account or source limit reached"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Ingest",
+        "tags": [
+          "client-diagnostics"
         ]
       }
     },

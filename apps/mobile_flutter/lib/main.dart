@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_home.dart';
 import 'core/app_config.dart';
+import 'core/chat_diagnostics.dart';
+import 'core/chat_diagnostics_scope.dart';
 import 'core/business_api_client.dart';
 import 'core/performance_metrics.dart';
 import 'core/media_resource_policy.dart';
@@ -35,6 +37,7 @@ import 'ui/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  installChatErrorReporter();
   MediaResourcePolicy(clearEncoded: clearMediaMemoryCaches).install();
   PerformanceMetrics.instance.startFrameObservation();
   await AppConfig.loadRuntimeVersion();
@@ -71,7 +74,8 @@ Future<void> main() async {
     );
     // 本地生命周期诊断只记录加盐哈希后的标识，原始 Matrix user/device id 与
     // token 永远不出现在日志里。
-    final diagnosticHasher = MatrixDiagnosticHasher(await store.diagnosticSalt());
+    final diagnosticHasher =
+        MatrixDiagnosticHasher(await store.diagnosticSalt());
     final matrixFactory = MatrixClientFactory(
       sessionStore: store,
       homeserver: Uri.parse(AppConfig.matrixHomeserver),
@@ -127,8 +131,7 @@ Future<void> main() async {
               icon: Icon(ChangliaoIcons.discover),
               label: '发现',
             ),
-            BottomNavigationBarItem(
-                icon: Icon(ChangliaoIcons.me), label: '我'),
+            BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
           ],
         ),
         tabBuilder: (_, index) => MatrixHomePage(
@@ -146,12 +149,25 @@ Future<void> main() async {
         onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
         onAuthenticated: session.bootstrap,
       ),
-      authenticatedBuilder: (_) => AppHome(
-        api: api,
-        matrix: matrix,
-        onLogout: session.logout,
-        themeController: themeController,
-      ),
+      authenticatedBuilder: (_) => ChatDiagnosticsScope(
+          sessionEpoch: api.sessionEpoch,
+          version:
+              '${AppConfig.appVersionName.split('-').first}+${AppConfig.appBuildNumber}',
+          platform: switch (defaultTargetPlatform) {
+            TargetPlatform.android => ChatDiagnosticPlatform.android,
+            TargetPlatform.iOS => ChatDiagnosticPlatform.ios,
+            _ => ChatDiagnosticPlatform.other,
+          },
+          upload: api.uploadChatDiagnostics,
+          child: AppHome(
+            api: api,
+            matrix: matrix,
+            onLogout: () {
+              ChatDiagnostics.instance.stopSession();
+              return session.logout();
+            },
+            themeController: themeController,
+          )),
     );
     final bootstrap = session.bootstrap();
     unawaited(() async {
@@ -221,7 +237,8 @@ final class _LiuhetongAppState extends State<LiuhetongApp>
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: Listenable.merge([widget.themeController, motionPreferences]),
+        animation:
+            Listenable.merge([widget.themeController, motionPreferences]),
         builder: (context, _) => CupertinoApp(
           navigatorKey: callNavigatorKey,
           title: '畅聊 ChatFlow',

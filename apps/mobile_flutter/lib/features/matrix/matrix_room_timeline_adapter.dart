@@ -35,6 +35,7 @@ const changliaoTransferMessageType = 'com.changliao.transfer';
 /// 居中灰字系统消息，双方看到语义一致的好友关系和申请说明，
 /// 不得伪装成对方名义的普通气泡消息。
 const changliaoFriendAcceptedEventType = 'com.changliao.friend_accepted';
+
 /// E2/F3：红包领取提示（仅红包发起者与领取者本机可见，见时间线白名单）。
 const changliaoRedPacketClaimedEventType = 'com.changliao.red_packet.claimed';
 
@@ -80,7 +81,8 @@ final class MatrixRoomTimelineAdapter
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
         RoomMessageLookupSource,
-        RoomWindowedTimelineSource {
+        RoomWindowedTimelineSource,
+        RoomNewestFirstTimelineSource {
   MatrixRoomTimelineAdapter(this._capability);
 
   final RoomTimelineCapability _capability;
@@ -135,6 +137,24 @@ final class MatrixRoomTimelineAdapter
   @override
   Iterable<RoomMessageViewModel> get allMessages =>
       _window?.allMessages ?? _fallbackWindow?.all ?? _capability.snapshot();
+  @override
+  Iterable<RoomMessageViewModel> get newestFirstMessages =>
+      historyNewestFirst();
+  @override
+  Iterable<RoomMessageViewModel> historyNewestFirst({String? beforeEventId}) =>
+      _capability is RoomNewestFirstTimelineSource
+          ? (_capability as RoomNewestFirstTimelineSource)
+              .historyNewestFirst(beforeEventId: beforeEventId)
+          : _fallbackWindow?.historyNewestFirst(beforeEventId: beforeEventId) ??
+              _legacyHistoryNewestFirst(beforeEventId);
+
+  Iterable<RoomMessageViewModel> _legacyHistoryNewestFirst(String? before) {
+    final source = _capability.snapshot();
+    final index =
+        before == null ? -1 : source.indexWhere((m) => m.id == before);
+    return source.reversed.skip(index < 0 ? 0 : source.length - index);
+  }
+
   @override
   RoomMessageViewModel? findMessage(String id) =>
       _window?.findMessage(id) ?? _fallbackWindow?.find(id);

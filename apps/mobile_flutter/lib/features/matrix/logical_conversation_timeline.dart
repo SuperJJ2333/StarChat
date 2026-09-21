@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'matrix_room_timeline_adapter.dart';
@@ -41,8 +42,13 @@ final class LogicalConversationTimelineCapability
   final Map<String, RoomTimelineCapability> _sources;
   final void Function()? _onDispose;
   final Map<String, String> _eventSources = {};
+  bool _sourceIndexReady = false;
+  Map<String, RoomMessageViewModel> _mergedById = {};
+  List<RoomMessageViewModel> _mergedSnapshot = const [];
   bool _disposed = false;
   int _dateGeneration = 0, _monthGeneration = 0;
+  Completer<void>? _dateCancellation, _monthCancellation;
+  static const _queryBudget = Duration(seconds: 13);
   RoomTimelineCapability get _primary => _sources[primaryRoomId]!;
 
   /// Ownership transfers only on success; callers dispose rejected sources.
@@ -53,6 +59,7 @@ final class LogicalConversationTimelineCapability
       throw StateError('Conversation source already attached');
     }
     _sources[roomId] = source;
+    _sourceIndexReady = false;
     cancelPendingDateLookup();
     cancelMonthLookup();
   }
@@ -83,16 +90,29 @@ final class LogicalConversationTimelineCapability
         _eventSources[event.id] = entry.key;
       }
     }
-    return events.values.toList()
+    _sourceIndexReady = true;
+    if (events.length == _mergedById.length &&
+        events.entries
+            .every((entry) => identical(_mergedById[entry.key], entry.value))) {
+      return _mergedSnapshot;
+    }
+    _mergedById = events;
+    final merged = events.values.toList()
       ..sort((a, b) {
         final order = a.timestamp.compareTo(b.timestamp);
         return order != 0 ? order : a.id.compareTo(b.id);
       });
+    return _mergedSnapshot = List.unmodifiable(merged);
   }
 
   @override
   String? sourceRoomId(String eventId) {
-    snapshot();
+    _checkActive();
+    // A cold caller gets one index build. Once a snapshot has been projected,
+    // resolving every row for search/attachments must be O(1), including misses.
+    // Sync/pagination refresh snapshots; a newly attached source invalidates the
+    // index. Retain ownership of off-window events and explicit cold hints.
+    if (!_sourceIndexReady) snapshot();
     return _eventSources[eventId];
   }
 
@@ -303,11 +323,36 @@ final class LogicalConversationTimelineCapability
   @override
   Future<RoomHistoryDayLocation?> locateDay(DateTime localDay) async {
     _checkActive();
-    final generation = ++_dateGeneration;
+    if (_dateCancellation != null) {
+      cancelPendingDateLookup();
+    } else {
+      _dateGeneration++;
+    }
+    final generation = _dateGeneration;
+    final cancellation = _dateCancellation = Completer<void>();
+    try {
+      return await Future.any<RoomHistoryDayLocation?>([
+        _locateDay(localDay, generation),
+        cancellation.future.then<RoomHistoryDayLocation?>(
+            (_) => throw const RoomHistoryLookupCancelled()),
+      ]).timeout(_queryBudget, onTimeout: () {
+        if (generation == _dateGeneration) cancelPendingDateLookup();
+        throw const RoomHistoryLookupIncomplete();
+      });
+    } finally {
+      if (identical(_dateCancellation, cancellation)) _dateCancellation = null;
+    }
+  }
+
+  Future<RoomHistoryDayLocation?> _locateDay(
+      DateTime localDay, int generation) async {
     RoomHistoryDayLocation? selected;
     Object? failure;
     StackTrace? failureStack;
     for (final entry in _sources.entries.toList()) {
+      if (_disposed || generation != _dateGeneration) {
+        throw const RoomHistoryLookupCancelled();
+      }
       if (entry.value is! RoomHistoryDateCapability) {
         failure ??= const RoomHistoryLookupIncomplete();
         continue;
@@ -342,6 +387,8 @@ final class LogicalConversationTimelineCapability
   @override
   void cancelPendingDateLookup() {
     _dateGeneration++;
+    _dateCancellation?.complete();
+    _dateCancellation = null;
     for (final source in _dates) {
       source.cancelPendingDateLookup();
     }
@@ -373,7 +420,31 @@ final class LogicalConversationTimelineCapability
   @override
   Future<RoomHistoryMonthDays> loadMonthDays(CalendarMonth month) async {
     _checkActive();
-    final generation = ++_monthGeneration;
+    if (_monthCancellation != null) {
+      cancelMonthLookup();
+    } else {
+      _monthGeneration++;
+    }
+    final generation = _monthGeneration;
+    final cancellation = _monthCancellation = Completer<void>();
+    try {
+      return await Future.any<RoomHistoryMonthDays>([
+        _loadMonthDays(month, generation),
+        cancellation.future.then<RoomHistoryMonthDays>(
+            (_) => throw const RoomHistoryLookupCancelled()),
+      ]).timeout(_queryBudget, onTimeout: () {
+        if (generation == _monthGeneration) cancelMonthLookup();
+        throw const RoomHistoryLookupIncomplete();
+      });
+    } finally {
+      if (identical(_monthCancellation, cancellation)) {
+        _monthCancellation = null;
+      }
+    }
+  }
+
+  Future<RoomHistoryMonthDays> _loadMonthDays(
+      CalendarMonth month, int generation) async {
     final results = await Future.wait(_sources.entries.map((entry) async {
       if (entry.value is! RoomHistoryDateCapability) {
         return RoomHistoryMonthDays(month: month);
@@ -437,6 +508,8 @@ final class LogicalConversationTimelineCapability
   @override
   void cancelMonthLookup() {
     _monthGeneration++;
+    _monthCancellation?.complete();
+    _monthCancellation = null;
     for (final source in _dates) {
       source.cancelMonthLookup();
     }
@@ -448,6 +521,10 @@ final class LogicalConversationTimelineCapability
     _disposed = true;
     _dateGeneration++;
     _monthGeneration++;
+    _dateCancellation?.complete();
+    _dateCancellation = null;
+    _monthCancellation?.complete();
+    _monthCancellation = null;
     Object? failure;
     StackTrace? failureStack;
     try {
@@ -461,6 +538,8 @@ final class LogicalConversationTimelineCapability
       }
     } finally {
       _eventSources.clear();
+      _mergedById.clear();
+      _mergedSnapshot = const [];
       _onDispose?.call();
     }
     if (failure != null) {

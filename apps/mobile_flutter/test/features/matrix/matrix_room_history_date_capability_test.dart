@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
@@ -37,6 +38,7 @@ final class _DateClient extends Client {
       <(String roomId, int timestamp, Direction direction)>[];
   Completer<GetEventByTimestampResponse>? pendingTimestamp;
   GetEventByTimestampResponse? timestampResult;
+  Object? timestampError;
 
   @override
   Room? getRoomById(String id) => room.id == id ? room : null;
@@ -48,6 +50,7 @@ final class _DateClient extends Client {
     Direction direction,
   ) {
     timestampCalls.add((roomId, timestamp, direction));
+    if (timestampError != null) return Future.error(timestampError!);
     final pending = pendingTimestamp;
     if (pending != null) return pending.future;
     return Future.value(timestampResult!);
@@ -116,6 +119,23 @@ Future<(MatrixRoomLease, RoomHistoryDateCapability)> _openCapability(
 }
 
 void main() {
+  test('date cancellation does not wait for timestamp network completion',
+      () async {
+    final client = _DateClient()
+      ..pendingTimestamp = Completer<GetEventByTimestampResponse>();
+    final room = _DateRoom(client);
+    final (lease, capability) = await _openCapability(room);
+    final pending = capability.locateDay(DateTime(2026, 9, 15));
+    await Future<void>.delayed(Duration.zero);
+    capability.cancelPendingDateLookup();
+    expect(await pending.timeout(const Duration(milliseconds: 100)), isNull);
+    client.pendingTimestamp!.complete(GetEventByTimestampResponse(
+        eventId: r'$late',
+        originServerTs: DateTime(2026, 9, 15).millisecondsSinceEpoch));
+    await Future<void>.delayed(Duration.zero);
+    expect(room.contextEventIds, isEmpty);
+    await lease.cancel();
+  });
   test('date lookup uses one forward timestamp request and adopts its context',
       () async {
     final client = _DateClient();
@@ -218,6 +238,9 @@ void main() {
     capability.cancelPendingDateLookup();
     room.pendingContext!.complete(lateContext);
     expect(await locating, isNull);
+    // Cancellation now returns immediately; the late SDK completion releases
+    // its own subscriptions in its continuation, not on the canceled UI future.
+    await Future<void>.delayed(Duration.zero);
     expect(lateContext.subscriptionCancels, 1);
     expect(capability.loadedDayMetadata, isEmpty);
 
@@ -230,6 +253,7 @@ void main() {
           .add(_message(room, r'$revoked', day.add(const Duration(hours: 4))));
     room.pendingContext!.complete(revokedContext);
     expect(await second, isNull);
+    await Future<void>.delayed(Duration.zero);
     expect(revokedContext.subscriptionCancels, 1);
   });
 
@@ -402,6 +426,75 @@ void main() {
   });
 
   group('Task A：月级日期 metadata', () {
+    test('month cancellation completes before an unresponsive server',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient()
+        ..pendingTimestamp = Completer<GetEventByTimestampResponse>();
+      final room = _DateRoom(client);
+      final (lease, capability) = await _openCapability(room);
+      final pending = capability.loadMonthDays(const CalendarMonth(2026, 9));
+      await Future<void>.delayed(Duration.zero);
+      capability.cancelMonthLookup();
+      final canceled = await pending.timeout(const Duration(milliseconds: 100));
+      expect(canceled.hasUnknown, isTrue);
+      client.pendingTimestamp!.complete(GetEventByTimestampResponse(
+          eventId: r'$late',
+          originServerTs: DateTime(2026, 10, 1).millisecondsSinceEpoch));
+      await Future<void>.delayed(Duration.zero);
+      expect(capability.anchorForDay(DateTime(2026, 9, 15)), isNull);
+      await lease.cancel();
+    });
+
+    test('timestamp timeout stays unknown with an error and can retry',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient()..timestampError = TimeoutException('probe');
+      final room = _DateRoom(client);
+      final (lease, capability) = await _openCapability(room);
+      const month = CalendarMonth(2026, 9);
+      final failed = await capability.loadMonthDays(month);
+      expect(failed.error, isA<TimeoutException>());
+      expect(failed.stateOf(15), RoomHistoryDayState.unknown);
+      expect(failed.coverageComplete, isFalse);
+      client.timestampError = null;
+      client.timestampResult = GetEventByTimestampResponse(
+          eventId: r'$retry',
+          originServerTs: DateTime(2026, 9, 15).millisecondsSinceEpoch);
+      final retried = await capability.loadMonthDays(month);
+      expect(retried.stateOf(15), RoomHistoryDayState.knownPresent);
+      await lease.cancel();
+    });
+
+    test('only explicit Matrix M_NOT_FOUND establishes no timestamp event',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient()
+        ..timestampError = MatrixException(
+            http.Response('{"errcode":"M_NOT_FOUND","error":"No event"}', 404));
+      final room = _DateRoom(client);
+      final (lease, capability) = await _openCapability(room);
+      final result =
+          await capability.loadMonthDays(const CalendarMonth(2026, 9));
+      expect(result.error, isNull);
+      expect(result.stateOf(15), RoomHistoryDayState.knownEmpty);
+      await lease.cancel();
+    });
+
+    test('a denied timestamp request never establishes an empty month',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final error = MatrixException(
+          http.Response('{"errcode":"M_FORBIDDEN","error":"denied"}', 403));
+      final client = _DateClient()..timestampError = error;
+      final room = _DateRoom(client);
+      final (lease, capability) = await _openCapability(room);
+      final result =
+          await capability.loadMonthDays(const CalendarMonth(2026, 9));
+      expect(result.error, same(error));
+      expect(result.stateOf(15), RoomHistoryDayState.unknown);
+      await lease.cancel();
+    });
     test('整月为空由两次有界探测确认，且不加载正文/媒体/上下文', () async {
       SharedPreferences.setMockInitialValues({});
       final client = _DateClient();
@@ -430,8 +523,7 @@ void main() {
       await lease.cancel();
     });
 
-    test('月内首个事件成为 anchor，earliestMonth 与 anchorForDay 不再访问服务端',
-        () async {
+    test('月内首个事件成为 anchor，earliestMonth 与 anchorForDay 不再访问服务端', () async {
       SharedPreferences.setMockInitialValues({});
       final client = _DateClient();
       final room = _DateRoom(client);
@@ -451,7 +543,8 @@ void main() {
       expect(days.hasUnknown, isFalse);
       expect(capability.earliestMonth, month);
       final probes = client.timestampCalls.length;
-      expect(capability.anchorForDay(DateTime(2026, 9, 12)), r'$first-of-month');
+      expect(
+          capability.anchorForDay(DateTime(2026, 9, 12)), r'$first-of-month');
       expect(capability.anchorForDay(DateTime(2026, 9, 13)), isNull);
       expect(client.timestampCalls, hasLength(probes),
           reason: 'anchor 查询必须是本地索引读取');
@@ -495,8 +588,7 @@ void main() {
       ));
 
       final days = await pending;
-      expect(days.hasUnknown, isTrue,
-          reason: '取消 ≠ 确认空；未覆盖的月份必须保持 unknown');
+      expect(days.hasUnknown, isTrue, reason: '取消 ≠ 确认空；未覆盖的月份必须保持 unknown');
       expect(days.stateOf(15), RoomHistoryDayState.unknown);
       expect(capability.anchorForDay(DateTime(2026, 9, 15)), isNull);
       await lease.cancel();

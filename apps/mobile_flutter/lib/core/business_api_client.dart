@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 import 'business_api_error.dart';
+import 'chat_diagnostics.dart';
 import 'business_auth_contracts.dart';
 import '../features/profile/profile_controller.dart';
 import '../features/profile/invite_controller.dart';
@@ -66,6 +67,62 @@ final class BusinessApiClient
   final Uri baseUri;
   final SecureSessionStore sessionStore;
   final http.Client _client;
+  bool _diagnosticUploadActive = false;
+
+  /// Best-effort metadata transport, deliberately outside _authorized/_decode.
+  /// 401/429 never refresh credentials, revoke a session or recurse into logs.
+  /// A dedicated socket is force-closed on deadline/abort, including stalled
+  /// response headers. No diagnostic body or credential is persisted here.
+  Future<int> uploadChatDiagnostics(
+      ChatDiagnosticBatch batch, Future<void> abort) async {
+    if (_diagnosticUploadActive) return 0;
+    _diagnosticUploadActive = true;
+    final epoch = _sessionEpoch;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+    final cancelled = Completer<int>();
+    var ended = false;
+    void cancel() {
+      if (ended) return;
+      ended = true;
+      client.close(force: true);
+      if (!cancelled.isCompleted) cancelled.complete(0);
+    }
+
+    final timer = Timer(const Duration(seconds: 5), cancel);
+    unawaited(abort.then((_) => cancel(),
+        onError: (Object _, StackTrace __) => cancel()));
+    Future<int> send() async {
+      final session = await sessionStore.session();
+      if (ended || epoch != _sessionEpoch || session == null) return 0;
+      final bytes = utf8.encode(jsonEncode(batch.toJson()));
+      if (bytes.length > 16384) return 0;
+      final request =
+          await client.postUrl(baseUri.resolve('/api/v1/client-diagnostics'));
+      if (ended || epoch != _sessionEpoch) return 0;
+      request.followRedirects = false;
+      request.headers.contentType = ContentType.json;
+      request.headers.set(
+          HttpHeaders.authorizationHeader, 'Bearer ${session.accessToken}');
+      request.contentLength = bytes.length;
+      request.add(bytes);
+      final response = await request.close();
+      if (ended || epoch != _sessionEpoch) return 0;
+      // Do not allocate/read an untrusted response body for a status-only API.
+      return response.statusCode;
+    }
+
+    try {
+      return await Future.any([send(), cancelled.future]);
+    } catch (_) {
+      return 0;
+    } finally {
+      ended = true;
+      timer.cancel();
+      client.close(force: true);
+      _diagnosticUploadActive = false;
+    }
+  }
+
   final Uuid _uuid = const Uuid();
   final Map<String, String> _pendingIdempotencyKeys = {};
   final _invalidations =
