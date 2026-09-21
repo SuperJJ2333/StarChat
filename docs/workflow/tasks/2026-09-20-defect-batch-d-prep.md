@@ -164,3 +164,10 @@ settled 日志 + 协调器 STUCK cleared 日志（含挂起毫秒数）。debug 
 2154（SHA256 b61c1c15…）已装 Mi 6（数据保留，设备哈希一致）。证据：
 `docs/verification/artifacts/2026-09-21/mi6-debug-2154/`。待用户复验：
 快速进出哥们测试群不再出现 ~10s 死窗口。
+## 2155 守卫就绪即解锁轮（2026-09-21 深夜，用户复验 2154：进入/退出/重进哥们测试群不再卡死）
+
+onRoomReady 即解锁列表守卫（_openingRooms.remove 前置到房间就绪回调）；
+打开中的重复点击由协调器「已打开优先」路径兜底（回到原页面，绝不推第二层）；
+委派套件契约同步更新。协调器 17/17、finance 75、全量 3685/0、analyze 0。
+commit 5b24e340；debug 2155（SHA256 551ce5f3…）已装 Mi 6（数据保留，设备
+哈希一致）。证据：`docs/verification/artifacts/2026-09-21/mi6-debug-2155/`。
