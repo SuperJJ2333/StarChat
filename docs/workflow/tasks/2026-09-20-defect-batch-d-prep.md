@@ -106,3 +106,14 @@ push/landed/FAILED，logcat 可见）供下一次卡死复现定位。finance 75
 全量 3684/0；analyze 0。commit e7e46615 + 6ef6824e；debug 2148
 （SHA256 aeccd10e…）已装 Mi 6（数据保留，设备哈希一致）。证据：
 `docs/verification/artifacts/2026-09-21/mi6-debug-2148/`。待用户真机复验。
+## 2149 协调器卡死自愈轮（2026-09-21 晚，真机 2148 复验：点击「哥们测试群」仍无法进入）
+
+实测证据链：点击该群无响应、无 room-open 日志、isolate 空闲、重启后依旧——排除
+内存守卫外的所有层，锁定 RoomNavigationCoordinator `_opening[roomId]` 被挂起
+流程永占（后续点击并入死 future 静默返回）。修复=惰性时间戳卡死兜底：合并
+点击时判定挂起 ≥15s 且未注册路由 → 丢弃死入口改走完整新流程（旧流程完成时
+仍自清理）；并发合并 future 身份契约保持。新增 E1 fakeAsync 测试；协调器
+17/17、全量 3685/0、analyze 0。commit 0eb40c33 + 8c89ef8e；debug 2149
+（SHA256 edf4a603…）已装 Mi 6（数据保留，设备哈希一致）。AppHome 阶段日志
+（identity/lease/ready/push/landed/FAILED）留存用于下次复现定位。证据：
+`docs/verification/artifacts/2026-09-21/mi6-debug-2149/`。待用户真机复验。
