@@ -11,6 +11,11 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_outgoing_work_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 
+final class NoticeClient extends RetryClient {
+  @override
+  String? get userID => '@me:test';
+}
+
 class RetryTimeline extends Fake implements Timeline {
   @override
   void cancelSubscriptions() {}
@@ -823,7 +828,7 @@ void main() {
 
   test('BUG-28：顶层宽高缺失时回退 thumbnail_info 宽高（旧事件占位框稳定）',
       () async {
-    final client = RetryClient();
+    final client = NoticeClient();
     final room = RetryRoom(client: client);
     final timeline = Timeline(
         room: room,
@@ -849,6 +854,83 @@ void main() {
     expect(message.imageWidth, 40,
         reason: '顶层 info.w/h 缺失时必须回退 thumbnail_info，占位框才稳定');
     expect(message.imageHeight, 30);
+    adapter.dispose();
+  });
+
+  test('F3：红包领取提示——发起者视角成行（系统文案）', () async {
+    final client = NoticeClient();
+    final room = RetryRoom(client: client);
+    final timeline = Timeline(
+        room: room,
+        chunk: TimelineChunk(events: [
+          Event.fromJson({
+            'event_id': 'notice',
+            'type': 'com.changliao.red_packet.claimed',
+            'sender': '@claimer:test',
+            'origin_server_ts': 1000,
+            'content': {
+              'packet_id': 'packet-1',
+              'owner_matrix_id': '@me:test',
+              'claimant_matrix_id': '@claimer:test',
+              'claimant_name': '小明',
+            },
+          }, room)
+        ]));
+    final adapter = await openAdapter(room, timeline);
+    final row = adapter.snapshot().single;
+    expect(row.kind, RoomMessageKind.system);
+    expect(row.text, '🧧 小明 领取了你的红包');
+    adapter.dispose();
+  });
+
+  test('F3：红包领取提示——领取者视角文案', () async {
+    final client = NoticeClient();
+    final room = RetryRoom(client: client);
+    final timeline = Timeline(
+        room: room,
+        chunk: TimelineChunk(events: [
+          Event.fromJson({
+            'event_id': 'notice',
+            'type': 'com.changliao.red_packet.claimed',
+            'sender': '@me:test',
+            'origin_server_ts': 1000,
+            'content': {
+              'packet_id': 'packet-1',
+              'owner_matrix_id': '@owner:test',
+              'claimant_matrix_id': '@me:test',
+              'claimant_name': '我',
+            },
+          }, room)
+        ]));
+    final adapter = await openAdapter(room, timeline);
+    final row = adapter.snapshot().single;
+    expect(row.kind, RoomMessageKind.system);
+    expect(row.text, '🧧 你领取了红包');
+    adapter.dispose();
+  });
+
+  test('F3：红包领取提示——无关成员不成行', () async {
+    final client = NoticeClient();
+    final room = RetryRoom(client: client);
+    final timeline = Timeline(
+        room: room,
+        chunk: TimelineChunk(events: [
+          Event.fromJson({
+            'event_id': 'notice',
+            'type': 'com.changliao.red_packet.claimed',
+            'sender': '@someone:test',
+            'origin_server_ts': 1000,
+            'content': {
+              'packet_id': 'packet-1',
+              'owner_matrix_id': '@owner:test',
+              'claimant_matrix_id': '@claimer:test',
+              'claimant_name': '小明',
+            },
+          }, room)
+        ]));
+    final adapter = await openAdapter(room, timeline);
+    expect(adapter.snapshot(), isEmpty,
+        reason: '非发起者/领取者的成员不得看到该提示');
     adapter.dispose();
   });
 }

@@ -3696,6 +3696,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 senderAvatar: _avatar(message),
                 identityCache: _identityCache,
                 redPacketMode: message.redPacketMode,
+                packetOwnerMatrixId: message.senderId,
+                sendClaimNotice: ({required String packetId,
+                        required String ownerMatrixId}) =>
+                    widget.roomLease.sendRedPacketClaimNotice(
+                        packetId: packetId, ownerMatrixId: ownerMatrixId),
                 restrictedRecipientName: _financeCounterpartyName(
                     message.redPacketRecipientMatrixId),
               ),

@@ -35,6 +35,8 @@ const changliaoTransferMessageType = 'com.changliao.transfer';
 /// 居中灰字系统消息，双方看到语义一致的好友关系和申请说明，
 /// 不得伪装成对方名义的普通气泡消息。
 const changliaoFriendAcceptedEventType = 'com.changliao.friend_accepted';
+/// E2/F3：红包领取提示（仅红包发起者与领取者本机可见，见时间线白名单）。
+const changliaoRedPacketClaimedEventType = 'com.changliao.red_packet.claimed';
 
 /// 组装好友接受系统消息正文（双端语义一致：互为好友）。
 String friendAcceptedSystemMessage(String friendDisplayName) =>

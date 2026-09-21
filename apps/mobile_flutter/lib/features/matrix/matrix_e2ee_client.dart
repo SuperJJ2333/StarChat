@@ -1901,6 +1901,33 @@ final class MatrixRoomLease
   MatrixRoomVideoWorkSummary videoWorkSummaryForRoom(String roomId) =>
       owner.outgoingWork.videoWorkSummaryForRoom(roomId);
 
+  /// E2/F3：红包领取成功后由**领取者本机**发送提示事件。
+  ///
+  /// 事件进入加密房间时间线，但投影层只对红包发起者与领取者成行
+  /// （其他成员直接排除，见时间线白名单）。事件只带账号标识与领取者
+  /// 房间显示名，不带任何金额/明细。
+  Future<void> sendRedPacketClaimNotice(
+          {required String packetId, required String ownerMatrixId}) =>
+      owner._withClient((client) async {
+        final room = client.getRoomById(roomId);
+        if (room == null || !room.encrypted) {
+          throw StateError('会话加密尚未就绪');
+        }
+        final me = client.userID;
+        if (me == null || me.isEmpty) {
+          throw StateError('Matrix account is not active');
+        }
+        final claimantName =
+            room.unsafeGetUserFromMemoryOrFallback(me).calcDisplayname();
+        final id = await room.sendEvent({
+          'packet_id': packetId,
+          'owner_matrix_id': ownerMatrixId,
+          'claimant_matrix_id': me,
+          'claimant_name': claimantName,
+        }, type: changliaoRedPacketClaimedEventType);
+        if (id == null) throw StateError('领取提示尚未发送');
+      });
+
   @override
   Future<String> sendEncryptedMedia(
       String requestedRoomId, List<int> plaintext, String mimeType,
@@ -2425,7 +2452,9 @@ final class _SdkRoomTimelineCapability
       if (!(event.type == EventTypes.Message ||
               (event.type == EventTypes.Encrypted && event.redacted) ||
               event.type == changliaoNudgeEventType ||
-              event.type == changliaoFriendAcceptedEventType) ||
+              event.type == changliaoFriendAcceptedEventType ||
+              (event.type == changliaoRedPacketClaimedEventType &&
+                  isRedPacketClaimNoticeParty(event))) ||
           event.messageType == groupAnnouncementMessageType ||
           (hidden?.call(event.eventId, event.originServerTs) ?? false) ||
           (_windowHiddenFilter?.call(event.eventId, event.originServerTs) ??
@@ -2628,7 +2657,9 @@ final class _SdkRoomTimelineCapability
       if (!(event.type == EventTypes.Message ||
               (event.type == EventTypes.Encrypted && event.redacted) ||
               event.type == changliaoNudgeEventType ||
-              event.type == changliaoFriendAcceptedEventType) ||
+              event.type == changliaoFriendAcceptedEventType ||
+              (event.type == changliaoRedPacketClaimedEventType &&
+                  isRedPacketClaimNoticeParty(event))) ||
           event.messageType == groupAnnouncementMessageType) {
         continue;
       }
@@ -2854,6 +2885,7 @@ final class _SdkRoomTimelineCapability
         info is Map ? int.tryParse(info['size']?.toString() ?? '') : null;
     final nudge = event.type == changliaoNudgeEventType;
     final friendAccepted = event.type == changliaoFriendAcceptedEventType;
+    final claimNotice = event.type == changliaoRedPacketClaimedEventType;
     final nudgeInfo = nudge
         ? NudgeInfo(
             senderId: event.content['sender_id']?.toString() ?? event.senderId,
@@ -2884,12 +2916,17 @@ final class _SdkRoomTimelineCapability
           ? ''
           : friendAccepted
               ? _friendAcceptedBody(event)
-              : (nudge ? '' : event.text),
+              : (nudge
+                  ? ''
+                  : claimNotice
+                      ? _redPacketClaimNoticeBody(
+                          event, _lease._activeRoom.client.userID)
+                      : event.text),
       isOwn: event.senderId == _lease._activeRoom.client.userID,
       deliveryState: status,
       timestamp: event.originServerTs.toLocal(),
       isSdkLocalEcho: !event.status.isSynced,
-      kind: (nudge || friendAccepted)
+      kind: (nudge || friendAccepted || claimNotice)
           ? RoomMessageKind.system
           : switch (messageType) {
               MessageTypes.Image => RoomMessageKind.image,
@@ -2948,6 +2985,28 @@ final class _SdkRoomTimelineCapability
 
   /// 好友接受系统消息正文：事件内 body 优先（发送方已拼好），缺失时
   /// 按事件内好友昵称重组。
+  /// E2/F3：领取提示文案按查看者身份区分——发起者看到「xxx 领取了你的
+  /// 红包」，领取者看到「你领取了红包」；非双方在上游已被排除。
+  static String _redPacketClaimNoticeBody(Event event, String? me) {
+    final owner = event.content['owner_matrix_id']?.toString();
+    final claimantName =
+        (event.content['claimant_name']?.toString() ?? '').trim();
+    if (me != null && me == owner) {
+      return '🧧 ${claimantName.isEmpty ? '有人' : claimantName} 领取了你的红包';
+    }
+    return '🧧 你领取了红包';
+  }
+
+  /// 领取提示是否与当前账号相关（非双方不投影成行）。
+  bool isRedPacketClaimNoticeParty(Event event) {
+    if (event.type != changliaoRedPacketClaimedEventType) return true;
+    final me = _lease._activeRoom.client.userID;
+    if (me == null || me.isEmpty) return false;
+    final owner = event.content['owner_matrix_id']?.toString();
+    final claimant = event.content['claimant_matrix_id']?.toString();
+    return me == owner || me == claimant;
+  }
+
   static String _friendAcceptedBody(Event event) {
     final body = event.content['body']?.toString();
     if (body != null && body.isNotEmpty) return body;
@@ -7286,6 +7345,7 @@ final class MatrixSdkE2eeClient
                 requestId: requestId));
         if (id == null) throw StateError('好友招呼尚未发送');
       });
+
 
   @override
 

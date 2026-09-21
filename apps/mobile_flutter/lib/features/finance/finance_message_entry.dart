@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
@@ -28,6 +29,8 @@ final class FinanceMessageEntry extends StatefulWidget {
     this.identityCache,
     this.redPacketMode,
     this.restrictedRecipientName,
+    this.packetOwnerMatrixId,
+    this.sendClaimNotice,
   });
   final FinanceCardStore store;
   final BusinessApiClient api;
@@ -45,6 +48,13 @@ final class FinanceMessageEntry extends StatefulWidget {
 
   /// 第三方视角（非收款人/非指定成员）展示名，由当前账号本机解析。
   final String? restrictedRecipientName;
+
+  /// 红包发起者的 Matrix ID（来自会话消息发送者）：领取成功后据此发送
+  /// 「领取了你的红包」提示事件。
+  final String? packetOwnerMatrixId;
+  /// 领取提示发送通道（由会话页注入，走加密房间时间线）。
+  final Future<void> Function({required String packetId,
+          required String ownerMatrixId})? sendClaimNotice;
 
   @override
   State<FinanceMessageEntry> createState() => _FinanceMessageEntryState();
@@ -150,6 +160,12 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
                 'viewer_claim': const <String, dynamic>{'amount': ''},
               });
           store.invalidate(key);
+          final owner = widget.packetOwnerMatrixId;
+          final sendNotice = widget.sendClaimNotice;
+          if (owner != null && owner.isNotEmpty && sendNotice != null) {
+            unawaited(sendNotice(packetId: id, ownerMatrixId: owner)
+                .catchError((_) {}));
+          }
         },
       );
       return;

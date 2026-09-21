@@ -2272,20 +2272,48 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
     });
     request.onRoomReady?.call();
+    // 已知竞态兜底（低端机）：同帧 modal→pop→push 会吞掉房间 push——路由
+    // 从未进栈，`visible` 永不完成 → 列表侧 `_openingRooms` 守卫被永久占住，
+    // 该房间永远点不开。落地校验：限时未进栈则按失败收尾，列表解锁可重试。
+    final landed = Completer<void>();
+    Timer? landingWatch;
+    // 首帧落地检查通过则不建定时器（测试的 FakeAsync 不残留 pending Timer）。
+    void verifyLanded() {
+      if (closed || landed.isCompleted) return;
+      if (route.isActive || route.isCurrent) {
+        landed.complete();
+        return;
+      }
+      landingWatch ??= Timer(const Duration(milliseconds: 1200), () {
+        if (closed || landed.isCompleted) return;
+        if (route.isActive || route.isCurrent) {
+          landed.complete();
+          return;
+        }
+        try {
+          navigator.removeRoute(route);
+        } catch (_) {}
+        landed.completeError(StateError('ROOM_PUSH_SWALLOWED'));
+      });
+    }
+
     try {
       final previous = handle.replacedRoute;
       final visible = navigator.push(route);
+      WidgetsBinding.instance.addPostFrameCallback((_) => verifyLanded());
       if (previous != null && previous.isActive) {
         navigator.removeRoute(previous);
       }
       final contact = request.initialContact ??
           identityCache.contactsByMatrixId[lease.roomInfo.directPeerId];
       unawaited(_reconcileOpenedDirectRoom(roomId, contact));
-      await visible;
+      await landed.future;
       // A removed/replaced route completes its pop before its widgets finish
       // their final frame. Keep their timeline and lease alive until disposal.
+      await visible;
       await route.completed;
     } finally {
+      landingWatch?.cancel();
       StatisticsRoomScope.leave(roomId);
       handle.release(route);
       navigationRequests.dispose();

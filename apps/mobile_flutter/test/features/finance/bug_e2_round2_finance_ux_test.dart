@@ -248,7 +248,45 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  test('E2-D：多红包并发缓存互不串扰、补丁只影响自身', () async {
+  
+testWidgets('E2-F2：自己发的红包被领完后，可见轮询自动翻转封面（无需重进）',
+    (tester) async {
+  var completed = false;
+  final gateway = _GatedGateway((id) {
+    final status = completed ? 'COMPLETED' : 'OPEN';
+    return Future.value({
+      'id': id,
+      'status': status,
+      'amount': '8.88',
+      'viewer_claim': null,
+      'sender_id': 'receiver-1',
+      'server_time': '2026-09-11T10:00:00Z',
+      'expires_at': '2026-09-11T11:00:00Z',
+    });
+  });
+  final store = FinanceCardStore(gateway);
+  addTearDown(store.dispose);
+
+  final lease = store.lease(const FinanceCardKey.redPacket('packet-9'));
+  lease.setVisible(true);
+  await lease.ensureFresh();
+  expect(redPacketVisualState(lease.notifier.value.detail),
+      RedPacketVisualState.available);
+  expect(lease.notifier.value.terminal, isFalse, reason: '未领完时不停止轮询');
+
+  completed = true;
+  // 可见轮询周期（15s）到达后强制刷新一次 → 状态翻转并终止轮询。
+  await tester.pump(const Duration(seconds: 16));
+  await tester.pumpAndSettle();
+
+  expect(lease.notifier.value.detail?['status'], 'COMPLETED');
+  expect(lease.notifier.value.terminal, isTrue);
+  expect(redPacketVisualState(lease.notifier.value.detail),
+      RedPacketVisualState.exhausted, reason: '封面自动切换为「已领完」');
+  lease.setVisible(false);
+  lease.dispose();
+});
+test('E2-D：多红包并发缓存互不串扰、补丁只影响自身', () async {
     final gates = <String, Completer<http.Response>>{};
     final counts = <String, int>{};
     final gateway = _FakeGateway((request) async {
@@ -349,4 +387,19 @@ final class _FakeGateway implements FinanceCardGateway {
         Uri.parse('https://business.example/api/v1/chat-transfers/$id')));
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
+}
+
+final class _GatedGateway implements FinanceCardGateway {
+  _GatedGateway(this.detailOf);
+  final Future<Map<String, dynamic>> Function(String id) detailOf;
+  @override
+  int get sessionEpoch => 1;
+  @override
+  Stream<void> get sessionInvalidations => const Stream.empty();
+  @override
+  Future<String?> currentUserId() async => 'receiver-1';
+  @override
+  Future<Map<String, dynamic>> redPacketDetail(String id) => detailOf(id);
+  @override
+  Future<Map<String, dynamic>> chatTransferDetail(String id) => detailOf(id);
 }
