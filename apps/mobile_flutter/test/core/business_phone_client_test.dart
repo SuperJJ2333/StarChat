@@ -108,8 +108,9 @@ void main() {
       client: MockClient((request) async {
         if (request.url.path.endsWith('/auth/refresh')) {
           refreshCalls++;
-          if (!available)
+          if (!available) {
             return http.Response('{"detail":{"code":"UNAVAILABLE"}}', 503);
+          }
           return http.Response(
               '{"access_token":"fresh-a","refresh_token":"fresh-r"}', 200);
         }
