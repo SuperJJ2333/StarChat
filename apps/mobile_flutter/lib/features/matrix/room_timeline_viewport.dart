@@ -122,6 +122,22 @@ final class RoomTimelineViewport<T> {
     }
   }
 
+  /// Capture references, not projections; each consumer controls its work budget.
+  Iterable<RoomMessageViewModel> get newestFirst => historyNewestFirst();
+
+  Iterable<RoomMessageViewModel> historyNewestFirst({String? beforeEventId}) {
+    final source = _source;
+    final before = beforeEventId == null ? null : _indices[beforeEventId];
+    return _projectReverse(source, (before ?? source.length) - 1);
+  }
+
+  Iterable<RoomMessageViewModel> _projectReverse(
+      List<T> source, int start) sync* {
+    for (var index = start; index >= 0; index--) {
+      yield project(source[index]);
+    }
+  }
+
   List<RoomMessageViewModel> snapshot() {
     final next = <RoomMessageViewModel>[];
     final old = {for (final message in _models) message.id: message};

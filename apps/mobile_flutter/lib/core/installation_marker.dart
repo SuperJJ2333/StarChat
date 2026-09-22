@@ -21,6 +21,9 @@ final class SharedPreferencesInstallationMarker
 
   @override
   Future<bool> isRegistered() async {
+    // A background launch before unlock may have cached an empty defaults
+    // snapshot. Re-read on every retry before deciding this is a reinstall.
+    await _preferences.reload();
     final value = _preferences.getString(key);
     return value != null && value.isNotEmpty;
   }

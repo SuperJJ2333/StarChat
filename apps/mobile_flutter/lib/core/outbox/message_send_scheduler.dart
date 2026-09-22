@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import '../../core/network_state_manager.dart';
+import '../chat_diagnostic_operation.dart';
+import '../chat_diagnostics.dart';
 import 'outbox_message.dart';
 import 'outbox_room_sender_registry.dart';
 import 'persistent_outbox_manager.dart';
@@ -84,6 +86,8 @@ final class MessageSendScheduler {
   int _recoveryRevision = 0;
   final Set<String> _openingRooms = <String>{};
   final Set<String> _resolvingReceivers = <String>{};
+  final _serverRetryTimers = <String, Timer>{};
+  final _serverRetryAttempts = <String, int>{};
   static const _resolutionRetryDelays = <Duration>[
     Duration(seconds: 2),
     Duration(seconds: 5),
@@ -100,6 +104,19 @@ final class MessageSendScheduler {
   bool get isDraining => _draining;
 
   bool get isDisposed => _disposed;
+
+  Future<T> _observe<T>(
+      ChatDiagnosticStage stage, Future<T> Function() operation) {
+    final pending = Future<T>.sync(operation);
+    // Observe a bounded mirror, never replace the owned operation. Its original
+    // future keeps the claim/single-flight lease until actual settlement; the
+    // timeout is recorded once even if the transport never completes.
+    unawaited(traceChatOperation(
+      stage: stage,
+      operation: () => pending.timeout(operationTimeout),
+    ).then<void>((_) {}, onError: (Object _, StackTrace __) {}));
+    return pending;
+  }
 
   bool get _networkUsable {
     final state = networkState?.current;
@@ -170,6 +187,7 @@ final class MessageSendScheduler {
     final offline = networkState?.current == NetworkState.offline;
     final byRoom = <String, List<OutboxMessage>>{};
     for (final row in rows) {
+      if (_serverRetryTimers.containsKey(row.localId)) continue;
       final roomId = row.roomId?.trim() ?? '';
       if (roomId.isEmpty) {
         // 会话还没建立：等 pending conversation 绑定房间号。
@@ -217,7 +235,8 @@ final class MessageSendScheduler {
       final revision = _recoveryRevision;
       final resolving = () async {
         try {
-          final roomId = await resolveUnbound!(row);
+          final roomId = await _observe(
+              ChatDiagnosticStage.sendAdmission, () => resolveUnbound!(row));
           if (_disposed) return;
           if (roomId == null || roomId.trim().isEmpty) {
             await _settleUnbound(row.receiverId, OutboxStatus.waitingNetwork,
@@ -331,12 +350,15 @@ final class MessageSendScheduler {
         if (eventId.isEmpty) {
           continue;
         }
+        _serverRetryAttempts.remove(row.localId);
         _dispatched++;
         sent++;
       } catch (error) {
         // 行内状态由会话的发送状态机与 outbox 日志落定；这里只把网络事实
         // 上报给网络状态机，让恢复信号照常产生。
-        if (defaultNetworkFailureClassifier(error)) {
+        if (isRetryableServerFailure(error)) {
+          await _retryServer(row, error);
+        } else if (defaultNetworkFailureClassifier(error)) {
           _reportFailure(error);
         }
       } finally {
@@ -359,7 +381,8 @@ final class MessageSendScheduler {
     OutboxLease? lease;
     var acquisitionExpired = false;
     try {
-      final acquiring = factory(roomId);
+      final acquiring =
+          _observe(ChatDiagnosticStage.sendAdmission, () => factory(roomId));
       unawaited(acquiring.then<void>((value) async {
         if (acquisitionExpired) await _release(value);
       }, onError: (Object _) {}).whenComplete(
@@ -404,11 +427,13 @@ final class MessageSendScheduler {
               await outbox.updateStatus(row.localId, OutboxStatus.queued);
               return false;
             }
-            final eventId = await activeLease.send(row.content, row.txid);
+            final eventId = await _observe(ChatDiagnosticStage.matrixSend,
+                () => activeLease.send(row.content, row.txid));
             if (eventId.isEmpty) {
               throw StateError('Matrix event was not accepted');
             }
             await outbox.updateStatus(row.localId, OutboxStatus.sent);
+            _serverRetryAttempts.remove(row.localId);
             await outbox.removeOrArchive(row.localId);
             _dispatched++;
             return true;
@@ -422,6 +447,10 @@ final class MessageSendScheduler {
                   : OutboxStatus.failed,
               lastError: error.toString(),
             );
+            if (isRetryableServerFailure(error)) {
+              await _retryServer(row, error);
+              return false;
+            }
             retryAfterSettlement = networkFailure &&
                 recoveryRevision != _recoveryRevision &&
                 _networkUsable;
@@ -458,6 +487,7 @@ final class MessageSendScheduler {
     for (final row in rows) {
       await outbox.updateStatus(row.localId, OutboxStatus.waitingNetwork,
           lastError: error.toString());
+      if (isRetryableServerFailure(error)) await _retryServer(row, error);
     }
     if (defaultNetworkFailureClassifier(error)) {
       _reportFailure(error);
@@ -473,19 +503,63 @@ final class MessageSendScheduler {
     }
   }
 
+  Future<bool> _retryServer(OutboxMessage row, Object error) async {
+    if (_disposed) return false;
+    if (_serverRetryTimers.containsKey(row.localId)) return true;
+    final attempt = _serverRetryAttempts[row.localId] ?? 0;
+    var delay = attempt < _resolutionRetryDelays.length
+        ? _resolutionRetryDelays[attempt]
+        : const Duration(hours: 1);
+    try {
+      final dynamic failure = error;
+      final Object? milliseconds = failure.retryAfterMs;
+      if (milliseconds is int && milliseconds > delay.inMilliseconds) {
+        delay = Duration(milliseconds: milliseconds);
+      }
+    } catch (_) {}
+    try {
+      final dynamic failure = error;
+      final Object? seconds = failure.retryAfterSeconds;
+      if (seconds is int && seconds > delay.inSeconds) {
+        delay = Duration(seconds: seconds);
+      }
+    } catch (_) {}
+    if (delay > const Duration(minutes: 15)) {
+      await outbox.updateStatus(row.localId, OutboxStatus.failed,
+          lastError: 'server_retry_exhausted', countRetry: false);
+      _serverRetryAttempts.remove(row.localId);
+      return false;
+    }
+    _serverRetryAttempts[row.localId] = attempt + 1;
+    _serverRetryTimers[row.localId] = Timer(delay, () {
+      _serverRetryTimers.remove(row.localId);
+      if (!_disposed && _networkUsable) unawaited(drain());
+    });
+    return true;
+  }
+
   Future<bool> _authorize(OutboxMessage row, {required bool claimed}) async {
     final authorize = authorizeSend;
     if (authorize == null) return true;
     var reason = 'send_authorization_denied';
     var status = OutboxStatus.failed;
     try {
-      if (await authorize(row).timeout(operationTimeout)) return true;
+      if (await _observe(
+              ChatDiagnosticStage.sendAdmission, () => authorize(row))
+          .timeout(operationTimeout)) {
+        return true;
+      }
     } catch (error) {
       // Do not store exception text: authority errors can contain private data.
       reason = 'send_authorization_unavailable';
       if (defaultNetworkFailureClassifier(error)) {
         status = OutboxStatus.waitingNetwork;
         _reportFailure(error);
+        if (isRetryableServerFailure(error)) {
+          if (!await _retryServer(row, error)) {
+            status = OutboxStatus.failed;
+          }
+        }
       }
     }
     // A registered page sender owns claiming on its successful path. On denial,
@@ -518,6 +592,11 @@ final class MessageSendScheduler {
     }
     _resolutionTimers.clear();
     _resolutionRetries.clear();
+    for (final timer in _serverRetryTimers.values) {
+      timer.cancel();
+    }
+    _serverRetryTimers.clear();
+    _serverRetryAttempts.clear();
     _inFlight.clear();
   }
 }

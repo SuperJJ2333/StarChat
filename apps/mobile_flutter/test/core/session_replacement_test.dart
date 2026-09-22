@@ -52,7 +52,7 @@ void main() {
                 const CupertinoPageScaffold(child: Text('聊天页面')))));
     await tester.pumpAndSettle();
     expect(find.text('账号已退出'), findsOneWidget);
-    expect(find.textContaining('其他设备登录'), findsOneWidget);
+    expect(find.textContaining('账号已重新登录'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     bootstrap.dispose();
   });
@@ -70,7 +70,7 @@ void main() {
     final bootstrap = SessionBootstrapController(business: api, matrix: matrix);
     await bootstrap.bootstrap();
     expect(bootstrap.state.status, SessionBootstrapStatus.unauthenticated);
-    expect(bootstrap.state.message, contains('其他设备登录'));
+    expect(bootstrap.state.message, contains('账号已重新登录'));
     expect(matrix.clearCalls, 0);
     expect(matrix.suspendCalls, 1);
     bootstrap.dispose();
@@ -158,7 +158,7 @@ void main() {
     expect(bootstrap.state.status, SessionBootstrapStatus.authenticated);
     await bootstrap.checkSessionValidity();
     expect(bootstrap.state.status, SessionBootstrapStatus.unauthenticated);
-    expect(bootstrap.state.message, contains('其他设备登录'));
+    expect(bootstrap.state.message, contains('账号已重新登录'));
     expect(matrix.suspendCalls, 1);
     expect(matrix.clearCalls, 0);
     expect(bootstrap.canShowCachedMessages, isFalse);

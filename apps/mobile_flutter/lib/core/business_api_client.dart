@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 import 'business_api_error.dart';
+import 'chat_diagnostics.dart';
 import 'business_auth_contracts.dart';
 import '../features/profile/profile_controller.dart';
 import '../features/profile/invite_controller.dart';
@@ -20,6 +21,7 @@ import 'permissions/blocked_contacts.dart';
 import 'support_identity_repository.dart';
 
 export 'business_api_error.dart';
+part 'business_session_refresh.dart';
 
 enum BusinessSessionRestore { absent, authenticated, offline, invalid }
 
@@ -48,6 +50,7 @@ final class BusinessApiClient
     implements
         BusinessSessionGateway,
         BusinessSessionMonitor,
+        BusinessSessionLifecycle,
         MatrixSessionCompletionGateway,
         RegistrationGateway,
         DualDomainBusinessGateway,
@@ -70,6 +73,62 @@ final class BusinessApiClient
   final Uri baseUri;
   final SecureSessionStore sessionStore;
   final http.Client _client;
+  bool _diagnosticUploadActive = false;
+
+  /// Best-effort metadata transport, deliberately outside _authorized/_decode.
+  /// 401/429 never refresh credentials, revoke a session or recurse into logs.
+  /// A dedicated socket is force-closed on deadline/abort, including stalled
+  /// response headers. No diagnostic body or credential is persisted here.
+  Future<int> uploadChatDiagnostics(
+      ChatDiagnosticBatch batch, Future<void> abort) async {
+    if (_diagnosticUploadActive) return 0;
+    _diagnosticUploadActive = true;
+    final epoch = _sessionEpoch;
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
+    final cancelled = Completer<int>();
+    var ended = false;
+    void cancel() {
+      if (ended) return;
+      ended = true;
+      client.close(force: true);
+      if (!cancelled.isCompleted) cancelled.complete(0);
+    }
+
+    final timer = Timer(const Duration(seconds: 5), cancel);
+    unawaited(abort.then((_) => cancel(),
+        onError: (Object _, StackTrace __) => cancel()));
+    Future<int> send() async {
+      final session = await sessionStore.session();
+      if (ended || epoch != _sessionEpoch || session == null) return 0;
+      final bytes = utf8.encode(jsonEncode(batch.toJson()));
+      if (bytes.length > 16384) return 0;
+      final request =
+          await client.postUrl(baseUri.resolve('/api/v1/client-diagnostics'));
+      if (ended || epoch != _sessionEpoch) return 0;
+      request.followRedirects = false;
+      request.headers.contentType = ContentType.json;
+      request.headers.set(
+          HttpHeaders.authorizationHeader, 'Bearer ${session.accessToken}');
+      request.contentLength = bytes.length;
+      request.add(bytes);
+      final response = await request.close();
+      if (ended || epoch != _sessionEpoch) return 0;
+      // Do not allocate/read an untrusted response body for a status-only API.
+      return response.statusCode;
+    }
+
+    try {
+      return await Future.any([send(), cancelled.future]);
+    } catch (_) {
+      return 0;
+    } finally {
+      ended = true;
+      timer.cancel();
+      client.close(force: true);
+      _diagnosticUploadActive = false;
+    }
+  }
+
   final Uuid _uuid = const Uuid();
   final Map<String, String> _pendingIdempotencyKeys = {};
   final _invalidations =
@@ -95,6 +154,16 @@ final class BusinessApiClient
 
   @override
   Future<void> checkSessionValidity() => sendPresenceHeartbeat();
+
+  bool _sessionForeground = true;
+  int _refreshFailures = 0;
+  DateTime? _refreshRetryAt;
+
+  @override
+  void setSessionForeground(bool foreground) {
+    if (foreground && !_sessionForeground) _refreshRetryAt = null;
+    _sessionForeground = foreground;
+  }
 
   @override
   Future<void> completeMatrixSession(
@@ -123,6 +192,8 @@ final class BusinessApiClient
     if (epoch != _sessionEpoch) return;
     final invalidatedEpoch = ++_sessionEpoch;
     _refreshFlight = null;
+    _refreshRetryAt = null;
+    _refreshFailures = 0;
     await _writeSession(() async {
       if (invalidatedEpoch == _sessionEpoch) {
         await sessionStore.clearBusinessSession();
@@ -167,6 +238,8 @@ final class BusinessApiClient
   }) async {
     final loginEpoch = ++_sessionEpoch;
     _refreshFlight = null;
+    _refreshRetryAt = null;
+    _refreshFailures = 0;
     _matrixGrantFlight = null;
     _matrixGrantRetryAt = null;
     final response = await _client.post(
@@ -259,21 +332,17 @@ final class BusinessApiClient
   @override
   Future<void> bindMatrixUserId(String matrixUserId) async {
     final epoch = _sessionEpoch;
-    final stored = await sessionStore.session();
-    if (stored == null) {
-      throw const BusinessApiException(
-        statusCode: 401,
-        code: 'AUTH_REQUIRED',
-        message: '需要登录',
+    await _writeCurrentSession(epoch, () async {
+      final stored = await sessionStore.session();
+      if (stored == null || epoch != _sessionEpoch) throw _ended;
+      await sessionStore.saveSession(
+        accessToken: stored.accessToken,
+        refreshToken: stored.refreshToken,
+        matrixUserId: matrixUserId,
+        deviceKey: stored.deviceKey,
+        pendingRefreshOperation: stored.pendingRefreshOperation,
       );
-    }
-    await _writeCurrentSession(
-        epoch,
-        () => sessionStore.saveSession(
-              accessToken: stored.accessToken,
-              refreshToken: stored.refreshToken,
-              matrixUserId: matrixUserId,
-            ));
+    });
   }
 
   @override
@@ -534,23 +603,19 @@ final class BusinessApiClient
   @override
   Future<BusinessSessionRestore> restoreSession() async {
     final epoch = _sessionEpoch;
-    final stored = await sessionStore.session();
-    if (stored == null) return BusinessSessionRestore.absent;
     try {
+      final stored = await sessionStore.session();
+      if (stored == null) return BusinessSessionRestore.absent;
       await refreshSession();
       return BusinessSessionRestore.authenticated;
     } on BusinessApiException catch (error) {
-      if (error.statusCode == 401 || error.statusCode == 403) {
+      if (_terminalRefreshError(error)) {
         if (epoch == _sessionEpoch) await _invalidateSession(epoch, error.code);
         return BusinessSessionRestore.invalid;
       }
-      if (error.statusCode >= 500) return BusinessSessionRestore.offline;
-      rethrow;
-    } on SocketException {
+      if (epoch != _sessionEpoch) return BusinessSessionRestore.invalid;
       return BusinessSessionRestore.offline;
-    } on TimeoutException {
-      return BusinessSessionRestore.offline;
-    } on http.ClientException {
+    } catch (_) {
       return BusinessSessionRestore.offline;
     }
   }
@@ -570,61 +635,7 @@ final class BusinessApiClient
     });
   }
 
-  Future<StoredBusinessSession> _refreshSession() async {
-    final epoch = _sessionEpoch;
-    final stored = await sessionStore.session();
-    if (stored == null) {
-      throw const BusinessApiException(
-        statusCode: 401,
-        code: 'AUTH_REQUIRED',
-        message: '需要登录',
-      );
-    }
-    final response = await _client
-        .post(
-          _uri('/auth/refresh'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'refresh_token': stored.refreshToken}),
-        )
-        .timeout(_httpTimeout);
-    if (epoch != _sessionEpoch) throw _ended;
-    late final Map<String, dynamic> body;
-    try {
-      body = _decode(response);
-    } on BusinessApiException catch (error) {
-      // BUG-19：登录端点的 403（ACCOUNT_SUSPENDED，密码正确但账号受限）
-      // 不携带会话语义，不得触发会话失效；其余 403 维持原防御。
-      if (error.statusCode == 401 ||
-          (error.statusCode == 403 && error.code != 'ACCOUNT_SUSPENDED')) {
-        await _invalidateSession(epoch, error.code);
-      }
-      rethrow;
-    }
-    if (epoch != _sessionEpoch) {
-      // A03：登出已发生——迟到的刷新结果不得恢复已清除的会话。
-      throw const BusinessApiException(
-        statusCode: 401,
-        code: 'AUTH_SESSION_ENDED',
-        message: '会话已结束',
-      );
-    }
-    final replacement = StoredBusinessSession(
-      version: 1,
-      accessToken: body['access_token'] as String,
-      refreshToken: body['refresh_token'] as String,
-      matrixUserId: stored.matrixUserId,
-      deviceKey: stored.deviceKey,
-    );
-    await _writeCurrentSession(
-        epoch,
-        () => sessionStore.saveSession(
-              accessToken: replacement.accessToken,
-              refreshToken: replacement.refreshToken,
-              matrixUserId: replacement.matrixUserId,
-              deviceKey: replacement.deviceKey,
-            ));
-    return replacement;
-  }
+  Future<StoredBusinessSession> _refreshSession() => _runRecoverableRefresh();
 
   /// Records a lightweight authenticated activity heartbeat. It carries no
   /// Matrix identifiers, message data, or tokens beyond the Authorization
@@ -669,6 +680,8 @@ final class BusinessApiClient
   Future<BusinessSessionRevocation?> clearLocalSession() async {
     final epoch = ++_sessionEpoch;
     _refreshFlight = null;
+    _refreshRetryAt = null;
+    _refreshFailures = 0;
     final stored = await _writeSession(() async {
       if (epoch != _sessionEpoch) return null;
       final previous = await sessionStore.session();
@@ -1653,6 +1666,8 @@ final class BusinessApiClient
   }) async {
     final loginEpoch = ++_sessionEpoch;
     _refreshFlight = null;
+    _refreshRetryAt = null;
+    _refreshFailures = 0;
     _matrixGrantFlight = null;
     _matrixGrantRetryAt = null;
     final response = await _client
@@ -1965,7 +1980,13 @@ final class BusinessApiClient
       }
       return response;
     }
-    final replacement = await refreshSession();
+    final refreshBudget = await remaining();
+    if (refreshBudget <= Duration.zero) {
+      throw TimeoutException('authorized request budget exhausted');
+    }
+    // Bound this caller, not the shared refresh: its durable result must still
+    // be saved for other callers if this request's budget runs out.
+    final replacement = await refreshSession().timeout(refreshBudget);
     if (epoch != _sessionEpoch) throw _ended;
     guardPayment(replacement);
     if (expectedWalletScope != null &&

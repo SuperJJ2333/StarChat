@@ -1,4 +1,5 @@
 import Flutter
+import UIKit
 
 final class IOSSecureSessionBridge {
   private let store = IOSSecureSessionStore()
@@ -8,6 +9,10 @@ final class IOSSecureSessionBridge {
     self.channel = channel
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self = self else { result(FlutterError(code: "secure_session_unavailable", message: "Session storage unavailable", details: nil)); return }
+      if call.method == "protectedDataAvailable" {
+        result(UIApplication.shared.isProtectedDataAvailable)
+        return
+      }
       guard let arguments = call.arguments as? [String: Any], let key = arguments["key"] as? String else {
         result(FlutterError(code: "secure_session_arguments", message: "Invalid session storage arguments", details: nil)); return
       }

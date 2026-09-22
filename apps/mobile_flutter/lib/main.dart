@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_home.dart';
 import 'core/app_config.dart';
+import 'core/chat_diagnostics.dart';
+import 'core/chat_diagnostics_scope.dart';
 import 'core/business_api_client.dart';
 import 'core/performance_metrics.dart';
 import 'core/media_resource_policy.dart';
@@ -35,6 +37,7 @@ import 'ui/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  installChatErrorReporter();
   MediaResourcePolicy(clearEncoded: clearMediaMemoryCaches).install();
   PerformanceMetrics.instance.startFrameObservation();
   await AppConfig.loadRuntimeVersion();
@@ -78,6 +81,9 @@ Future<void> main() async {
       homeserver: Uri.parse(AppConfig.matrixHomeserver),
       diagnosticHasher: diagnosticHasher,
     );
+    // Read/create the installation identifier before opening a DB handle so a
+    // locked keychain cannot leave an initialized client behind on startup retry.
+    final installationDeviceKey = await store.registrationDeviceKey();
     final sdkClient = await matrixFactory.create();
     final matrix = MatrixSdkE2eeClient(
       sdkClient,
@@ -92,14 +98,19 @@ Future<void> main() async {
       // 历史孤儿房间登记簿：primary 规则数据源 + 收敛台账（只记录不删除）。
       duplicateRooms: DuplicateRoomRegistry(),
     );
+    late final DualDomainLoginService login;
     final session = SessionBootstrapController(
       business: api,
       matrix: matrix,
       securityLogger: matrix.securityLogger,
+      restoreLocalMatrixSession: (identity) async {
+        await store.validateLocalLoginStorage();
+        await login.restoreAuthenticatedSession(identity);
+      },
     );
     final recovery = MatrixRecoveryService(matrix);
-    final installationDeviceKey = await store.registrationDeviceKey();
-    final login = DualDomainLoginService(
+    login = DualDomainLoginService(
+      prepareLocalLogin: store.validateLocalLoginStorage,
       business: api,
       matrix: matrix,
       deviceKey: () => installationDeviceKey,
@@ -147,12 +158,25 @@ Future<void> main() async {
         onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
         onAuthenticated: session.bootstrap,
       ),
-      authenticatedBuilder: (_) => AppHome(
-        api: api,
-        matrix: matrix,
-        onLogout: session.logout,
-        themeController: themeController,
-      ),
+      authenticatedBuilder: (_) => ChatDiagnosticsScope(
+          sessionEpoch: api.sessionEpoch,
+          version:
+              '${AppConfig.appVersionName.split('-').first}+${AppConfig.appBuildNumber}',
+          platform: switch (defaultTargetPlatform) {
+            TargetPlatform.android => ChatDiagnosticPlatform.android,
+            TargetPlatform.iOS => ChatDiagnosticPlatform.ios,
+            _ => ChatDiagnosticPlatform.other,
+          },
+          upload: api.uploadChatDiagnostics,
+          child: AppHome(
+            api: api,
+            matrix: matrix,
+            onLogout: () {
+              ChatDiagnostics.instance.stopSession();
+              return session.logout();
+            },
+            themeController: themeController,
+          )),
     );
     final bootstrap = session.bootstrap();
     unawaited(() async {

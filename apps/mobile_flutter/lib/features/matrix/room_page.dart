@@ -4,6 +4,9 @@ import 'room_navigation_coordinator.dart';
 import '../settings/voice_auto_play_preferences.dart';
 import 'coordinated_direct_chat.dart';
 import 'timeline_scroll_anchor.dart';
+import 'bounded_history_search.dart';
+import '../../core/chat_diagnostics.dart';
+import '../../core/chat_diagnostic_operation.dart';
 import 'nudge_rate_limiter.dart';
 // 会话聊天页（RoomPage）：私聊与群聊共用的消息时间线与交互。
 // 自 matrix_home_page.dart 拆分（巨石文件治理）。
@@ -115,7 +118,12 @@ import 'video_poster_disk_store.dart';
 import 'video_poster_diagnostics.dart';
 import 'video_poster_pipeline.dart';
 import 'chat_search_query_controller.dart'
-    show ChatSearchMessage, ChatSearchMediaCategory;
+    show
+        ChatSearchMessage,
+        ChatSearchMediaCategory,
+        ChatSearchFilters,
+        ChatSearchCursor,
+        ChatSearchSlice;
 import 'conversation_preferences.dart';
 import '../../core/permissions/interaction_permission.dart';
 import 'conversation_presentation.dart';
@@ -695,11 +703,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             }
             final String canonical;
             try {
-              canonical = resolver != null
-                  ? await resolver(_outboxReceiverId)
-                  : await widget.api.canonicalDirectRoomId(contact!.userId) ??
-                      await widget.api.registerDirectConversation(
-                          contact.userId, roomInfo.id);
+              canonical = await traceChatOperation(
+                  stage: ChatDiagnosticStage.sendAdmission,
+                  operation: () async => resolver != null
+                      ? await resolver(_outboxReceiverId)
+                      : await widget.api
+                              .canonicalDirectRoomId(contact!.userId) ??
+                          await widget.api.registerDirectConversation(
+                              contact.userId, roomInfo.id));
             } on DirectRoomPendingException {
               await outbox.updateStatus(localId, OutboxStatus.waitingNetwork,
                   lastError: 'conversation_recovery_pending');
@@ -727,7 +738,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<bool> _prepareNewDirectOperation() async {
     if (isGroup || widget.resolveDirectSendTarget == null) return true;
     try {
-      final target = await widget.resolveDirectSendTarget!(_outboxReceiverId);
+      final target = await traceChatOperation(
+          stage: ChatDiagnosticStage.sendAdmission,
+          operation: () => widget.resolveDirectSendTarget!(_outboxReceiverId));
       if (!mounted || _disposing || widget.roomLease.canceled) return false;
       if (target == roomInfo.id) return true;
       widget.onDirectTargetChanged?.call(target);
@@ -2991,80 +3004,98 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // R5 修复：改用新 ChatSearchPage（默认空态+组合筛选+拼音成员+
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     var searchOpen = true;
-    var searchGeneration = 0;
     var dateLookupGeneration = 0;
     RoomHistoryDayLocation? resolvedDateLocation;
-    final messagesById = <String, RoomMessageViewModel>{};
-    List<ChatSearchMessage> currentSearchMessages() {
-      final allMessages =
-          controller?.allMessages ?? const <RoomMessageViewModel>[];
-      final messages = (hiddenEvents?.visibleItems(
-                roomInfo.id,
-                allMessages,
-                eventId: (message) => message.id,
-                eventTimestamp: (message) => message.timestamp,
-              ) ??
-              allMessages)
-          .where((message) => !message.isRecalled)
-          .toList();
-      messagesById.addAll({
-        for (final message in messages) message.id: message,
-      });
-      // 转换为搜索模型（含媒体分类/正文可见文本/时间线序号）。
-      // R6：普通文本含 HTTP(S) URL → link 分类（此前漏检）。
-      return <ChatSearchMessage>[
-        for (final message in messages)
-          ChatSearchMessage(
-            eventId: message.id,
-            senderId: message.senderId,
-            senderDisplayName: MemberDirectoryEntry(
-              userId: message.senderId,
-              remark: contactsByMatrixId[message.senderId]?.remark,
-              nickname: contactsByMatrixId[message.senderId]?.nickname ??
-                  _member(message.senderId).displayName,
-              username: contactsByMatrixId[message.senderId]?.username,
-            ).displayName,
-            timestamp: message.timestamp.toLocal(),
-            timelineOrder: message.timestamp.millisecondsSinceEpoch,
-            visibleText: message.text,
-            isFlashPhoto: message.isFlashPhoto,
-            displayText: switch (message.kind) {
-              RoomMessageKind.image =>
-                message.mimeType?.startsWith('video/') == true
-                    ? '[视频消息]'
-                    : '[图片消息]',
-              RoomMessageKind.video => '[视频消息]',
-              RoomMessageKind.voice => '[语音消息]',
-              RoomMessageKind.file => '[文件消息]',
-              RoomMessageKind.call => '[通话消息]',
-              RoomMessageKind.redPacket => '[红包消息]',
-              RoomMessageKind.transfer => '[转账消息]',
-              _ => message.text,
-            },
-            mediaCategory: _ordinarySearchMediaAllowed(message)
-                ? switch (message.kind) {
-                    RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
-                    RoomMessageKind.image
-                        when message.mimeType?.startsWith('video/') == true =>
-                      ChatSearchMediaCategory.imageVideo,
-                    RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
-                    RoomMessageKind.file => ChatSearchMediaCategory.file,
-                    RoomMessageKind.text
-                        when RegExp(
-                          'https?://[^\\\\s<>"]+',
-                          caseSensitive: false,
-                        ).hasMatch(message.text) =>
-                      ChatSearchMediaCategory.link,
-                    _ => null,
-                  }
-                : null,
-            hasMedia: _ordinarySearchMediaAllowed(message) &&
-                message.kind != RoomMessageKind.text,
-            isVideo: message.kind == RoomMessageKind.video ||
-                message.mimeType?.startsWith('video/') == true,
-            duration: message.videoDuration,
-          ),
-      ]..sort((a, b) => b.timelineOrder.compareTo(a.timelineOrder));
+    Iterable<RoomMessageViewModel> currentSearchSource(
+            [String? beforeEventId]) =>
+        controller?.historyNewestFirst(beforeEventId: beforeEventId) ??
+        const <RoomMessageViewModel>[];
+
+    RoomMessageViewModel? currentSearchMessage(String id) {
+      // A retained iterator may outlive a recall or source refresh. Resolve the
+      // current indexed row before exposing its text, never a stale snapshot.
+      final message = controller?.findMessage(id);
+      if (message == null ||
+          message.isRecalled ||
+          (hiddenEvents?.isEventHidden(roomInfo.id, message.id,
+                  eventTimestamp: message.timestamp) ??
+              false)) {
+        return null;
+      }
+      return message;
+    }
+
+    ChatSearchMessage? projectSearchMessage(RoomMessageViewModel scanned) {
+      final message = currentSearchMessage(scanned.id);
+      if (message == null) return null;
+      return ChatSearchMessage(
+        eventId: message.id,
+        senderId: message.senderId,
+        senderDisplayName: MemberDirectoryEntry(
+          userId: message.senderId,
+          remark: contactsByMatrixId[message.senderId]?.remark,
+          nickname: contactsByMatrixId[message.senderId]?.nickname ??
+              _member(message.senderId).displayName,
+          username: contactsByMatrixId[message.senderId]?.username,
+        ).displayName,
+        timestamp: message.timestamp.toLocal(),
+        timelineOrder: message.timestamp.millisecondsSinceEpoch,
+        visibleText: message.text,
+        isFlashPhoto: message.isFlashPhoto,
+        displayText: switch (message.kind) {
+          RoomMessageKind.image =>
+            message.mimeType?.startsWith('video/') == true
+                ? '[视频消息]'
+                : '[图片消息]',
+          RoomMessageKind.video => '[视频消息]',
+          RoomMessageKind.voice => '[语音消息]',
+          RoomMessageKind.file => '[文件消息]',
+          RoomMessageKind.call => '[通话消息]',
+          RoomMessageKind.redPacket => '[红包消息]',
+          RoomMessageKind.transfer => '[转账消息]',
+          _ => message.text,
+        },
+        mediaCategory: _ordinarySearchMediaAllowed(message)
+            ? switch (message.kind) {
+                RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
+                RoomMessageKind.image
+                    when message.mimeType?.startsWith('video/') == true =>
+                  ChatSearchMediaCategory.imageVideo,
+                RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
+                RoomMessageKind.file => ChatSearchMediaCategory.file,
+                RoomMessageKind.text
+                    when RegExp(
+                      'https?://[^\\\\s<>"]+',
+                      caseSensitive: false,
+                    ).hasMatch(message.text) =>
+                  ChatSearchMediaCategory.link,
+                _ => null,
+              }
+            : null,
+        hasMedia: _ordinarySearchMediaAllowed(message) &&
+            message.kind != RoomMessageKind.text,
+        isVideo: message.kind == RoomMessageKind.video ||
+            message.mimeType?.startsWith('video/') == true,
+        duration: message.videoDuration,
+      );
+    }
+
+    final historySearch = BoundedHistorySearch<RoomMessageViewModel>(
+      snapshot: currentSearchSource,
+      snapshotBefore: currentSearchSource,
+      eventId: (message) => message.id,
+      project: projectSearchMessage,
+      exhausted: () => controller?.historyExhausted ?? true,
+      loadEarlier: _loadEarlier,
+    );
+    Future<ChatSearchSlice> searchBatch(ChatSearchFilters filters,
+        {ChatSearchCursor? cursor, int limit = 50}) async {
+      if (!mounted || !searchOpen) throw const HistorySearchCancelled();
+      return traceChatOperation(
+          stage: ChatDiagnosticStage.historySearch,
+          isCancellation: (error) => error is HistorySearchCancelled,
+          operation: () =>
+              historySearch.search(filters, cursor: cursor, limit: limit));
     }
 
     // 群聊成员目录（统一拼音排序/过滤服务——R5/R12）。
@@ -3096,32 +3127,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 displayName: _member(id).displayName,
               )
               .displayName,
-          search: (filters, {cursor, limit = 50}) async {
-            final generation = ++searchGeneration;
-            while (mounted && searchOpen && generation == searchGeneration) {
-              final matched =
-                  currentSearchMessages().where(filters.matches).toList();
-              final start = cursor == null
-                  ? 0
-                  : matched.indexWhere((m) => m.eventId == cursor.eventId) + 1;
-              if (matched.length >= start + limit ||
-                  (controller?.historyExhausted ?? true)) {
-                return matched.sublist(
-                  start,
-                  (start + limit).clamp(0, matched.length),
-                );
-              }
-              final last = widget.roomLease.oldestTimelineEventId;
-              final token = widget.roomLease.historyToken;
-              await _loadEarlier();
-              if (last == widget.roomLease.oldestTimelineEventId &&
-                  token == widget.roomLease.historyToken) {
-                return matched.sublist(
-                    start, (start + limit).clamp(0, matched.length));
-              }
-            }
-            return const <ChatSearchMessage>[];
-          },
+          search: (filters, {cursor, limit = 50}) async =>
+              (await searchBatch(filters, cursor: cursor, limit: limit)).items,
+          searchBatch: searchBatch,
           // Task A：月历只读日期 metadata（有界月查询），正文/媒体不参与。
           earliestMonth: earliestMonth,
           latestMonth: latestMonth,
@@ -3134,7 +3142,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           },
           onCancelCalendarMonthLookup: () => controller?.cancelMonthLookup(),
           onCalendarClosed: () => controller?.cancelPendingDateLookup(),
-          onSearchInvalidated: () => searchGeneration++,
+          onSearchInvalidated: historySearch.cancel,
           memberEntries: memberEntries(),
           liveMemberEntries: memberEntries,
           memberAvatarBuilder: (context, entry) {
@@ -3161,10 +3169,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               throw StateError(
                   'Flash photo must not use ordinary search media grid');
             }
+            final current = currentSearchMessage(message.eventId);
             return FutureBuilder<Uint8List?>(
-              future: message.isVideo
-                  ? _loadVideoPoster(message.eventId)
-                  : _loadImagePreview(messagesById[message.eventId]!),
+              future: current == null
+                  ? Future<Uint8List?>.value()
+                  : message.isVideo
+                      ? _loadVideoPoster(message.eventId)
+                      : _loadImagePreview(current),
               builder: (context, snapshot) {
                 final bytes = snapshot.data;
                 if (bytes != null) {
@@ -3185,7 +3196,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             );
           },
           onOpenMedia: (eventId) {
-            final message = messagesById[eventId];
+            final message = currentSearchMessage(eventId);
             if (message == null) return;
             if (message.kind == RoomMessageKind.video ||
                 message.mimeType?.startsWith('video/') == true) {
@@ -3253,7 +3264,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       searchOpen = false;
       dateLookupGeneration++;
       controller?.cancelPendingDateLookup();
-      searchGeneration++;
+      historySearch.cancel();
     });
   }
 
@@ -4886,7 +4897,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _lastTimelineScrollOffset = offset;
     final towardEarlier = offset > previousOffset + .5;
     final towardLater = offset < previousOffset - .5;
-    if (offset > 80) {
+    if (position.extentBefore > 80) {
       controller?.pinWindow();
     }
     _observeVisibleMentions();
@@ -4979,23 +4990,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<void> _shiftWindow(Future<void> Function() shift) async {
     if (_shiftingWindow || !mounted) return;
     _shiftingWindow = true;
-    final generation = _timelineScrollGeneration;
-    final anchor =
-        TimelineScrollAnchor.capture(messageKeys, _timelineViewportKey);
     try {
-      await shift();
-      if (!mounted) return;
-      _timelineRevision.value++;
-      if (anchor != null) {
-        await anchor.restore(
-            controller: messageScrollController,
-            keys: messageKeys,
-            eventIds: _visibleMessages().reversed.map((m) => m.id).toList(),
-            isMounted: () => mounted && !_disposing,
-            canRestore: () =>
-                generation == _timelineScrollGeneration &&
-                !_scrollInteractionActive());
-      }
+      await traceChatOperation(
+          stage: ChatDiagnosticStage.scrollAnchor,
+          operation: () async {
+            await shift();
+            if (!mounted) return;
+            _timelineRevision.value++;
+            await WidgetsBinding.instance.endOfFrame;
+          });
     } finally {
       _shiftingWindow = false;
       _lastTimelineScrollOffset = messageScrollController.hasClients
@@ -5011,7 +5014,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _timelineRevision.value++;
     await WidgetsBinding.instance.endOfFrame;
     if (mounted && messageScrollController.hasClients) {
-      messageScrollController.jumpTo(0);
+      messageScrollController
+          .jumpTo(messageScrollController.position.minScrollExtent);
     }
   }
 
@@ -5321,23 +5325,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ? const SizedBox.expand()
               : NotificationListener<ScrollNotification>(
                   onNotification: _onTimelineScrollNotification,
-                  child: ListView.builder(
+                  child: AnchoredTimelineList(
                     controller: messageScrollController,
-                    reverse: true,
+                    eventIds: messages.reversed.map((m) => m.stableId).toList(),
+                    messageKeys: _stableMessageKeys,
+                    followLatest: !_shiftingWindow &&
+                        !(controller?.hasLaterWindow ?? false) &&
+                        !(controller?.isViewingHistoryContext ?? false),
                     padding: const EdgeInsets.symmetric(
                       horizontal: WeChatSpacing.md,
                       vertical: WeChatSpacing.sm,
                     ),
-                    // 顶部状态行（视觉上的最上方）：加载历史中
-                    // 显示 loading，历史取尽显示"没有更多了"。
-                    itemCount: messages.length,
-                    findChildIndexCallback: (key) {
-                      if (key is! ValueKey<String>) {
-                        return null;
-                      }
-                      final index = _visibleIndex[key.value];
-                      return index == null ? null : messages.length - index - 1;
-                    },
                     itemBuilder: (_, reverseIndex) {
                       final index = messages.length - reverseIndex - 1;
                       final message = messages[index];

@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:liuhetong_mobile/core/notification/call_permission_readiness.dart';
 import 'package:liuhetong_mobile/features/settings/notification/call_permission_checklist.dart';
 
@@ -9,7 +10,134 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
+            const MethodChannel('flutter.baseflow.com/permissions/methods'),
+            null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
             const MethodChannel('chatflow/notification'), null);
+  });
+  for (final entry in {
+    CallPermissionAction.microphone: Permission.microphone,
+    CallPermissionAction.camera: Permission.camera,
+  }.entries) {
+    test(
+        '${entry.key} already permanently denied opens settings without request',
+        () async {
+      final calls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+              const MethodChannel('flutter.baseflow.com/permissions/methods'),
+              (call) async {
+        calls.add(call.method);
+        return switch (call.method) {
+          'checkPermissionStatus' => PermissionStatus.permanentlyDenied.index,
+          'openAppSettings' => true,
+          _ => throw MissingPluginException(),
+        };
+      });
+      expect(await const SystemCallPermissionReadinessGateway().act(entry.key),
+          true);
+      expect(calls, ['checkPermissionStatus', 'openAppSettings']);
+    });
+    for (final requested in [
+      PermissionStatus.permanentlyDenied,
+      PermissionStatus.denied,
+      PermissionStatus.restricted,
+      PermissionStatus.granted,
+    ]) {
+      for (final settingsOpened in [false, true]) {
+        test('${entry.key} request $requested with settings $settingsOpened',
+            () async {
+          final calls = <MethodCall>[];
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(
+                  const MethodChannel(
+                      'flutter.baseflow.com/permissions/methods'),
+                  (call) async {
+            calls.add(call);
+            return switch (call.method) {
+              'checkPermissionStatus' => PermissionStatus.denied.index,
+              'requestPermissions' => {entry.value.value: requested.index},
+              'openAppSettings' => settingsOpened,
+              _ => throw MissingPluginException(),
+            };
+          });
+
+          final result =
+              await const SystemCallPermissionReadinessGateway().act(entry.key);
+
+          expect(
+              result,
+              requested.isGranted ||
+                  (requested.isPermanentlyDenied && settingsOpened));
+          expect(calls.map((call) => call.method), [
+            'checkPermissionStatus',
+            'requestPermissions',
+            if (requested.isPermanentlyDenied) 'openAppSettings',
+          ]);
+          expect(calls[0].arguments, entry.value.value);
+          expect(calls[1].arguments, [entry.value.value]);
+        });
+      }
+    }
+  }
+  test('iOS readiness fallback checks permissions without prompting', () async {
+    final permissions = <int>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('flutter.baseflow.com/permissions/methods'),
+            (call) async {
+      expect(call.method, 'checkPermissionStatus');
+      permissions.add(call.arguments as int);
+      return call.arguments == Permission.camera.value
+          ? PermissionStatus.permanentlyDenied.index
+          : PermissionStatus.granted.index;
+    });
+    final state = await const SystemCallPermissionReadinessGateway().read();
+    expect(state.android, false);
+    expect(state.microphone, true);
+    expect(state.camera, false);
+    expect(state.notifications, true);
+    expect(permissions, [
+      Permission.microphone.value,
+      Permission.camera.value,
+      Permission.notification.value,
+    ]);
+  });
+  test('denied notifications retain notification settings then app fallback',
+      () async {
+    final calls = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('chatflow/notification'),
+            (call) async {
+      calls.add(call.method);
+      return false;
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('flutter.baseflow.com/permissions/methods'),
+            (call) async {
+      calls.add(call.method);
+      return switch (call.method) {
+        'checkPermissionStatus' => PermissionStatus.denied.index,
+        'requestPermissions' => {
+            Permission.notification.value:
+                PermissionStatus.permanentlyDenied.index
+          },
+        'openAppSettings' => true,
+        _ => throw MissingPluginException(),
+      };
+    });
+    expect(
+        await const SystemCallPermissionReadinessGateway()
+            .act(CallPermissionAction.notifications),
+        true);
+    expect(calls, [
+      'checkPermissionStatus',
+      'requestPermissions',
+      'openNotificationSettings',
+      'openAppSettings',
+    ]);
   });
   test(
       'explicit settings actions target the actual call channels and special access',
@@ -81,6 +209,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(gateway.reads, greaterThan(reads));
   });
+
   /// 微信级加载模型（2026-09-19 审计）：不可知（null）的重读不得把已知状态
   /// 降级成「待检查」——原先 `_refresh` 整体替换 `_state`。
   test('mergedWith keeps known values when a re-read reports unknown', () {
@@ -105,7 +234,10 @@ void main() {
     expect(merged.fullScreen, isFalse);
     expect(merged.android, isTrue, reason: 'android 是设备事实，一旦为真保持为真');
     expect(merged.fullScreenRequired, isTrue);
-    expect(const CallPermissionReadiness(android: true).mergedWith(null).microphone,
+    expect(
+        const CallPermissionReadiness(android: true)
+            .mergedWith(null)
+            .microphone,
         isNull);
   });
 

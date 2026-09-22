@@ -30,6 +30,27 @@ final class _FreshInstallProbe implements InstallationContainerProbe {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('initialization failure can retry after returning unlocked',
+      (tester) async {
+    var starts = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: InstallationStartupGate(
+      reconcile: () async => InstallationResetOutcome.notNeeded,
+      start: () async {
+        starts++;
+        if (starts == 1) throw const FileSystemException('private-path');
+        return const Text('restored-after-unlock');
+      },
+    )));
+    await tester.pump();
+    expect(find.byKey(const Key('installation-startup-retry')), findsOneWidget);
+    expect(find.textContaining('private-path'), findsNothing);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(find.text('restored-after-unlock'), findsOneWidget);
+    expect(starts, 2);
+  });
 
   testWidgets(
       'failed installation check blocks startup until one successful retry',

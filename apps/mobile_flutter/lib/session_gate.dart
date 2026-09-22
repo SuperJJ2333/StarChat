@@ -51,6 +51,7 @@ final class _SessionGateState extends State<SessionGate>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.controller.setForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       widget.controller.checkSessionValidity();
     }

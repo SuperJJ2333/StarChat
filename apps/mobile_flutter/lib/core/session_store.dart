@@ -54,6 +54,7 @@ final class StoredBusinessSession {
     required this.refreshToken,
     this.matrixUserId,
     this.deviceKey,
+    this.pendingRefreshOperation,
   });
 
   final int version;
@@ -61,6 +62,7 @@ final class StoredBusinessSession {
   final String refreshToken;
   final String? matrixUserId;
   final String? deviceKey;
+  final String? pendingRefreshOperation;
 
   @override
   bool operator ==(Object other) =>
@@ -69,11 +71,12 @@ final class StoredBusinessSession {
       other.accessToken == accessToken &&
       other.refreshToken == refreshToken &&
       other.matrixUserId == matrixUserId &&
-      other.deviceKey == deviceKey;
+      other.deviceKey == deviceKey &&
+      other.pendingRefreshOperation == pendingRefreshOperation;
 
   @override
-  int get hashCode =>
-      Object.hash(version, accessToken, refreshToken, matrixUserId, deviceKey);
+  int get hashCode => Object.hash(version, accessToken, refreshToken,
+      matrixUserId, deviceKey, pendingRefreshOperation);
 }
 
 final class SecureSessionStore {
@@ -118,6 +121,31 @@ final class SecureSessionStore {
 
   Future<String> matrixStorageScope() =>
       _runMatrixIdentityOperation(_storage.scope);
+
+  /// Read-only preflight before a password login can replace a remote session.
+  /// This checks the active local metadata, not an unauthenticated target user.
+  Future<void> validateLocalLoginStorage() =>
+      _runMatrixIdentityOperation(() async {
+        final slots = await _storage.slots();
+        final scope = await _storage.scope();
+        final binding = await _matrixBindingUnlocked();
+        final key = await _storage.read(_matrixDatabaseKey);
+        if (binding != null) {
+          final identity = _AccountScopedSecureStore.identity(
+              binding.homeserver, binding.matrixUserId);
+          if (slots.containsKey(identity) && slots[identity] != scope) {
+            throw const FormatException('Conflicting Matrix account registry');
+          }
+          if (key == null || key.isEmpty) {
+            throw const FormatException('Missing retained Matrix database key');
+          }
+        }
+        // Decode the existing clear marker without carrying out a pending deletion.
+        final pending = await _storage.read(_matrixClearTombstoneKey);
+        if (pending != null && pending != _matrixClearTombstoneValue) {
+          throw const FormatException('Invalid Matrix clear tombstone');
+        }
+      });
 
   /// Only called after business authentication and the old client has closed.
   Future<void> selectMatrixAccount(String homeserver, String userId) =>
@@ -172,6 +200,7 @@ final class SecureSessionStore {
     required String refreshToken,
     String? matrixUserId,
     String? deviceKey,
+    String? pendingRefreshOperation,
   }) =>
       _storage.write(
         _sessionKey,
@@ -181,6 +210,8 @@ final class SecureSessionStore {
           'refresh_token': refreshToken,
           if (matrixUserId != null) 'matrix_user_id': matrixUserId,
           if (deviceKey != null) 'device_key': deviceKey,
+          if (pendingRefreshOperation != null)
+            'pending_refresh_operation': pendingRefreshOperation,
         }),
       );
 
@@ -191,7 +222,9 @@ final class SecureSessionStore {
       if (value is! Map<String, dynamic> ||
           value['version'] != 1 ||
           value['access_token'] is! String ||
-          value['refresh_token'] is! String) {
+          value['refresh_token'] is! String ||
+          (value['pending_refresh_operation'] != null &&
+              !_validRefreshOperation(value['pending_refresh_operation']))) {
         throw const FormatException('Invalid stored business session');
       }
       return StoredBusinessSession(
@@ -200,9 +233,25 @@ final class SecureSessionStore {
         refreshToken: value['refresh_token'] as String,
         matrixUserId: value['matrix_user_id']?.toString(),
         deviceKey: value['device_key']?.toString(),
+        pendingRefreshOperation: value['pending_refresh_operation'] as String?,
       );
     }
     return _migrateLegacySession();
+  }
+
+  static String newRefreshOperation() {
+    final random = Random.secure();
+    return base64UrlEncode(List<int>.generate(32, (_) => random.nextInt(256)))
+        .replaceAll('=', '');
+  }
+
+  static bool _validRefreshOperation(Object? value) {
+    if (value is! String || !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(value)) {
+      return false;
+    }
+    final decoded = base64Url.decode('$value=');
+    return decoded.length == 32 &&
+        base64UrlEncode(decoded).replaceAll('=', '') == value;
   }
 
   Future<StoredBusinessSession?> _migrateLegacySession() async {

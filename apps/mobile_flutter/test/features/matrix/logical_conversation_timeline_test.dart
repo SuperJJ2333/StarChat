@@ -35,8 +35,13 @@ class Source extends Fake
   bool canLoadHistory = true;
   @override
   bool get supportsMessageLookup => true;
+  int snapshots = 0;
   @override
-  List<RoomMessageViewModel> snapshot() => messages;
+  List<RoomMessageViewModel> snapshot() {
+    snapshots++;
+    return messages;
+  }
+
   @override
   Future<String> sendText(String text) async {
     sends.add(text);
@@ -135,6 +140,27 @@ class DateSource extends Source implements RoomHistoryDateCapability {
   void selectLatest() {}
 }
 
+class DeferredDateSource extends DateSource {
+  DeferredDateSource()
+      : super([], RoomHistoryMonthDays(month: const CalendarMonth(2026, 9)));
+  final day = Completer<RoomHistoryDayLocation?>();
+  final month = Completer<RoomHistoryMonthDays>();
+  int dayCalls = 0, monthCancels = 0;
+  @override
+  Future<RoomHistoryDayLocation?> locateDay(DateTime value) {
+    dayCalls++;
+    return day.future;
+  }
+
+  @override
+  Future<RoomHistoryMonthDays> loadMonthDays(CalendarMonth value) =>
+      month.future;
+  @override
+  void cancelMonthLookup() {
+    monthCancels++;
+  }
+}
+
 void main() {
   late Source primary, old;
   late LogicalConversationTimelineCapability timeline;
@@ -144,6 +170,95 @@ void main() {
         [message('old', 1, transaction: 'old-tx'), message('middle', 2)]);
     timeline = LogicalConversationTimelineCapability(
         primaryRoomId: 'primary', primary: primary, sources: {'old': old});
+  });
+  testWidgets('logical date budget expires and cancels all sources',
+      (tester) async {
+    final first = DeferredDateSource(), second = DeferredDateSource();
+    final logical = LogicalConversationTimelineCapability(
+        primaryRoomId: 'primary', primary: first, sources: {'old': second});
+    Object? error;
+    logical.locateDay(DateTime(2026, 9, 1)).then<void>((_) {},
+        onError: (Object e) {
+      error = e;
+    });
+    await tester.pump(const Duration(seconds: 13));
+    expect(error, isA<RoomHistoryLookupIncomplete>());
+    expect(first.cancellations, greaterThan(0));
+    expect(second.cancellations, greaterThan(0));
+    first.day.complete(
+        RoomHistoryDayLocation(eventId: 'late', day: DateTime(2026, 9, 1)));
+    await tester.pump();
+    expect(second.dayCalls, 0);
+    expect(logical.sourceRoomId('late'), isNull);
+    logical.dispose();
+  });
+  testWidgets(
+      'logical month budget fails rather than publishing empty coverage',
+      (tester) async {
+    final first = DeferredDateSource();
+    final logical = LogicalConversationTimelineCapability(
+        primaryRoomId: 'primary', primary: first, sources: {});
+    Object? error;
+    logical.loadMonthDays(const CalendarMonth(2026, 9)).then<void>((_) {},
+        onError: (Object e) {
+      error = e;
+    });
+    await tester.pump(const Duration(seconds: 13));
+    expect(error, isA<RoomHistoryLookupIncomplete>());
+    expect(first.monthCancels, greaterThan(0));
+    first.month.complete(RoomHistoryMonthDays(
+        month: const CalendarMonth(2026, 9), anchors: {1: 'late'}));
+    await tester.pump();
+    expect(logical.sourceRoomId('late'), isNull);
+    logical.dispose();
+  });
+  testWidgets('logical cancellation settles without waiting for network',
+      (tester) async {
+    final first = DeferredDateSource();
+    final logical = LogicalConversationTimelineCapability(
+        primaryRoomId: 'primary', primary: first, sources: {});
+    Object? error;
+    logical.locateDay(DateTime(2026, 9, 1)).then<void>((_) {},
+        onError: (Object e) {
+      error = e;
+    });
+    logical.cancelPendingDateLookup();
+    await tester.pump();
+    expect(error, isA<RoomHistoryLookupCancelled>());
+    logical.dispose();
+  });
+  test('indexed source lookups do not rebuild all loaded messages', () {
+    primary.messages.addAll(List.generate(1000, (i) => message('many-$i', i)));
+    final snapshot = timeline.snapshot();
+    final calls = primary.snapshots + old.snapshots;
+    for (final row in snapshot) {
+      expect(timeline.sourceRoomId(row.id), isNotNull);
+    }
+    expect(primary.snapshots + old.snapshots, calls);
+  });
+  test('cold and added sources are indexed once; missing IDs do not rescan',
+      () {
+    expect(timeline.sourceRoomId('old'), 'old');
+    final calls = primary.snapshots + old.snapshots;
+    expect(timeline.sourceRoomId('missing'), isNull);
+    expect(timeline.sourceRoomId('another-missing'), isNull);
+    expect(primary.snapshots + old.snapshots, calls);
+    final added = Source([message('added', 4)]);
+    timeline.addSource('added-room', added);
+    expect(timeline.sourceRoomId('added'), 'added-room');
+    final after = primary.snapshots + old.snapshots + added.snapshots;
+    expect(timeline.sourceRoomId('added'), 'added-room');
+    expect(primary.snapshots + old.snapshots + added.snapshots, after);
+  });
+  test('unchanged merged snapshots reuse models, replacements remain visible',
+      () {
+    final before = timeline.snapshot();
+    expect(identical(timeline.snapshot(), before), isTrue);
+    old.messages[0] = message('old', 5);
+    final after = timeline.snapshot();
+    expect(after.last.id, 'old');
+    expect(identical(after, before), isFalse);
+    expect(timeline.sourceRoomId('old'), 'old');
   });
   test('adds newly discovered source without leaking replacement ownership',
       () {

@@ -5,6 +5,7 @@ import 'room_history_date_capability.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import '../../core/network_state_manager.dart';
+import '../../core/chat_diagnostics.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
 import '../../core/outbox/outbox_message.dart';
@@ -343,6 +344,11 @@ abstract interface class RoomMessageLookupSource {
 
 /// Optional SDK-backed viewport. Full history stays queryable without retaining
 /// presentation objects for every event. Legacy adapters remain valid.
+abstract interface class RoomNewestFirstTimelineSource {
+  Iterable<RoomMessageViewModel> get newestFirstMessages;
+  Iterable<RoomMessageViewModel> historyNewestFirst({String? beforeEventId});
+}
+
 abstract interface class RoomWindowedTimelineSource {
   void enableWindow();
   void setHiddenFilter(bool Function(String id, DateTime? timestamp)? hidden);
@@ -393,10 +399,10 @@ final class RoomTimelineController extends ChangeNotifier {
 
   /// 单次派发的护栏超时（2026-09-19 房间瘫痪修复）。
   ///
-  /// 传输层悬挂（弱网黑洞）时，行在护栏到期后转 `waitingNetwork`
-  /// （气泡红叹号 + 恢复自动重发），`_inFlightTxids` 不再被永久占用，
-  /// 后续消息照常派发——房间不再瘫痪。默认 20 秒与 SDK 的发送重试窗口
-  /// （组合根调紧为 20s）对齐，保证红叹号「及时」出现。
+  /// 等待超过默认20秒时结束UI等待并显示 `waitingNetwork`。
+  /// 底层不可取消的派发仍保留 `_inFlightTxids` 与持久化claim，只有真实
+  /// ACK/错误完成才释放，避免重试重复派发；迟到ACK仍写回原发件箱。
+  /// 该预算不代表SDK网络或加密请求已取消。
   final Duration sendDispatchTimeout;
   late List<RoomMessageViewModel> messages;
   RoomWindowedTimelineSource? _windowSource;
@@ -414,6 +420,47 @@ final class RoomTimelineController extends ChangeNotifier {
       if (seen.add(message.stableId)) yield message;
     }
     for (final message in _localEchoes.values) {
+      if (seen.add(message.stableId)) yield message;
+    }
+  }
+
+  /// Reverse the existing source-plus-local view without materializing history.
+  /// Source rows retain precedence over matching local echoes, as in allMessages.
+  Iterable<RoomMessageViewModel> get newestFirstMessages =>
+      historyNewestFirst();
+
+  Iterable<RoomMessageViewModel> historyNewestFirst(
+      {String? beforeEventId}) sync* {
+    final seen = <String>{};
+    var skipLocal = beforeEventId != null;
+    var sourceBefore = beforeEventId;
+    for (final local in _localEchoes.values.toList().reversed) {
+      if (_windowSource == null && adapter is! RoomNewestFirstTimelineSource) {
+        break; // The legacy visible snapshot already contains its local rows.
+      }
+      final inSource = _windowSource != null
+          ? _windowSource!.findMessage(local.id) != null
+          : _sourceSnapshot.any((message) =>
+              message.id == local.id || message.stableId == local.stableId);
+      if (inSource) continue;
+      if (skipLocal) {
+        if (local.id == beforeEventId) {
+          skipLocal = false;
+          sourceBefore = null;
+        }
+        continue;
+      }
+      if (seen.add(local.stableId)) yield local;
+    }
+    final source = adapter is RoomNewestFirstTimelineSource
+        ? (adapter as RoomNewestFirstTimelineSource)
+            .historyNewestFirst(beforeEventId: sourceBefore)
+        : messages.reversed.skip(sourceBefore == null
+            ? 0
+            : messages.length - (indexOf(sourceBefore) ?? messages.length));
+    for (var message in source) {
+      final tx = _eventTransactions[message.id];
+      if (tx != null) message = message.copyWith(transactionId: tx);
       if (seen.add(message.stableId)) yield message;
     }
   }
@@ -591,6 +638,13 @@ final class RoomTimelineController extends ChangeNotifier {
   bool _waitingDrainRequested = false;
   bool _reportingNetworkFailure = false;
   int _networkRecoveryRevision = 0;
+  final _serverRetryTimers = <String, Timer>{};
+  final _serverRetryAttempts = <String, int>{};
+  static const _serverRetryDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+  ];
 
   NetworkStateManager? get _networkState =>
       _injectedNetworkState ?? NetworkStateManager.shared;
@@ -604,6 +658,25 @@ final class RoomTimelineController extends ChangeNotifier {
   /// ClientException / 5xx）。非网络错误一律不许降级成「等待发送」。
   bool _isNetworkFailure(Object error) =>
       defaultNetworkFailureClassifier(error);
+
+  void _recordFailure(ChatDiagnostics diagnostics, int generation,
+      ChatDiagnosticStage stage, Object error, Duration elapsed) {
+    if (!identical(diagnostics, ChatDiagnostics.instance) ||
+        diagnostics.sessionGeneration != generation) {
+      return;
+    }
+    diagnostics.record(
+        stage: stage,
+        elapsed: elapsed,
+        status: networkFailureHttpStatus(error),
+        error: error is TimeoutException
+            ? ChatDiagnosticError.timeout
+            : networkFailureHttpStatus(error) != null
+                ? ChatDiagnosticError.rejected
+                : _isNetworkFailure(error)
+                    ? ChatDiagnosticError.network
+                    : ChatDiagnosticError.unknown);
+  }
 
   /// 挂载一次网络恢复监听：状态进入 online/recovering 时重发所有
   /// `waitingNetwork` 行。只挂一次、不创建任何定时器、[dispose] 时解绑。
@@ -644,6 +717,7 @@ final class RoomTimelineController extends ChangeNotifier {
           // 重发途中再次掉线：余下的行继续等待，不做无谓的失败派发。
           if (!_networkIsUsable) break;
           if (!_waitingNetworkIds.contains(tx)) continue;
+          if (_serverRetryTimers.containsKey(tx)) continue;
           if (_inFlightTxids.contains(tx) || _retrying.contains(tx)) continue;
           // 已经不在本地乐观行里的 txid（例如已被撤回/清空）不再重发。
           if (!_localEchoes.containsKey(tx)) {
@@ -665,6 +739,44 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 终局 [RoomDeliveryState.failed]。
   RoomDeliveryState _noteFailure(String tx, Object error,
       {int? attemptRevision}) {
+    if (isRetryableServerFailure(error)) {
+      final attempt = _serverRetryAttempts[tx] ?? 0;
+      if (attempt >= _serverRetryDelays.length) {
+        _waitingNetworkIds.remove(tx);
+        return RoomDeliveryState.failed;
+      }
+      var delay = _serverRetryDelays[attempt];
+      try {
+        final dynamic failure = error;
+        final Object? milliseconds = failure.retryAfterMs;
+        if (milliseconds is int && milliseconds > delay.inMilliseconds) {
+          delay = Duration(milliseconds: milliseconds);
+        }
+      } catch (_) {}
+      try {
+        final dynamic failure = error;
+        final Object? seconds = failure.retryAfterSeconds;
+        if (seconds is int && seconds > delay.inSeconds) {
+          delay = Duration(seconds: seconds);
+        }
+      } catch (_) {}
+      // Do not shorten a server's requested delay or retain unbounded timers.
+      if (delay > const Duration(minutes: 15)) {
+        _waitingNetworkIds.remove(tx);
+        return RoomDeliveryState.failed;
+      }
+      _serverRetryAttempts[tx] = attempt + 1;
+      _waitingNetworkIds.add(tx);
+      _serverRetryTimers.remove(tx)?.cancel();
+      _serverRetryTimers[tx] = Timer(delay, () {
+        _serverRetryTimers.remove(tx);
+        if (!_disposed && (_networkState == null || _networkIsUsable)) {
+          unawaited(_retry(tx, rethrowErrors: false));
+        }
+      });
+      _attachNetworkRecoveryWatch();
+      return RoomDeliveryState.waitingNetwork;
+    }
     if (_isNetworkFailure(error)) {
       if (attemptRevision == null ||
           attemptRevision == _networkRecoveryRevision ||
@@ -880,8 +992,11 @@ final class RoomTimelineController extends ChangeNotifier {
   ///
   /// 手动重试：把 `failed` / `waitingNetwork` 行翻回 [RoomDeliveryState.sending]
   /// 并复用捕获的发送回调与同一 txid。
-  Future<void> retry(String transactionId) =>
-      _retry(transactionId, rethrowErrors: true);
+  Future<void> retry(String transactionId) {
+    _serverRetryTimers.remove(transactionId)?.cancel();
+    _serverRetryAttempts.remove(transactionId);
+    return _retry(transactionId, rethrowErrors: true);
+  }
 
   Future<void> _retry(String transactionId,
       {required bool rethrowErrors}) async {
@@ -947,6 +1062,9 @@ final class RoomTimelineController extends ChangeNotifier {
     if (_disposed || _activeHistoryRequest != null || historyExhausted) return;
     final generation = _timelineOperationGeneration;
     final owner = Object();
+    final clock = Stopwatch()..start();
+    final diagnostics = ChatDiagnostics.instance;
+    final diagnosticGeneration = diagnostics.sessionGeneration;
     _activeHistoryRequest = owner;
     _historyLoadingOwner = owner;
     _publish();
@@ -962,7 +1080,19 @@ final class RoomTimelineController extends ChangeNotifier {
       historyExhausted = adapter is RoomHistoryStatus
           ? !(adapter as RoomHistoryStatus).canLoadHistory
           : messages.length <= before;
+    } catch (error) {
+      _recordFailure(diagnostics, diagnosticGeneration,
+          ChatDiagnosticStage.historyLoad, error, clock.elapsed);
+      rethrow;
     } finally {
+      if (clock.elapsed > const Duration(seconds: 2) &&
+          identical(diagnostics, ChatDiagnostics.instance) &&
+          diagnostics.sessionGeneration == diagnosticGeneration) {
+        diagnostics.record(
+            stage: ChatDiagnosticStage.historyLoad,
+            error: ChatDiagnosticError.slow,
+            elapsed: clock.elapsed);
+      }
       if (identical(_activeHistoryRequest, owner)) {
         _activeHistoryRequest = null;
         if (identical(_historyLoadingOwner, owner)) {
@@ -1316,6 +1446,36 @@ final class RoomTimelineController extends ChangeNotifier {
     String tx,
     RoomMessageViewModel local, {
     OutboxMessage? outboxRow,
+  }) {
+    final diagnostics = ChatDiagnostics.instance;
+    final generation = diagnostics.sessionGeneration;
+    // The UI budget never releases the transport's txid or durable claim.
+    // The original operation persists its eventual ACK/error, even after the
+    // page is disposed; retry remains blocked until that operation settles.
+    return _dispatchSettled(tx, local, outboxRow: outboxRow)
+        .timeout(sendDispatchTimeout, onTimeout: () {
+      final error = TimeoutException('消息发送超时', sendDispatchTimeout);
+      _recordFailure(diagnostics, generation, ChatDiagnosticStage.matrixSend,
+          error, sendDispatchTimeout);
+      if (!_disposed && _inFlightTxids.contains(tx)) {
+        _waitingNetworkIds.add(tx);
+        final echo = _localEchoes[tx];
+        if (echo != null) {
+          _echoRevision++;
+          _localEchoes[tx] =
+              echo.copyWith(deliveryState: RoomDeliveryState.waitingNetwork);
+          messages = _snapshot();
+          _publish();
+        }
+      }
+      return null;
+    });
+  }
+
+  Future<String?> _dispatchSettled(
+    String tx,
+    RoomMessageViewModel local, {
+    OutboxMessage? outboxRow,
   }) async {
     // 乐观行创建时是 `local`；派发一真正开始就**同步**翻成 `sending`，
     // 行绝不会停在「未派发」外观上（`sendText` 的调用方无需 await 即可看到）。
@@ -1335,6 +1495,10 @@ final class RoomTimelineController extends ChangeNotifier {
     final journal = _outboxJournal;
     final tracks = _tracksOutbox(inFlight);
     OutboxMessage? row = outboxRow;
+    final clock = Stopwatch()..start();
+    final diagnostics = ChatDiagnostics.instance;
+    final diagnosticGeneration = diagnostics.sessionGeneration;
+    var diagnosticStage = ChatDiagnosticStage.sendAdmission;
     try {
       // ① 先持久化：没有这一行就绝不派发。
       if (journal != null && tracks) {
@@ -1362,12 +1526,8 @@ final class RoomTimelineController extends ChangeNotifier {
       }
       final sender = _senders[tx];
       if (sender == null) return null;
-      final sendFuture = sender();
-      // 护栏先到期时，底层 future 稍后的完成/失败不得成为未处理异常。
-      sendFuture.ignore();
-      final eventId = await sendFuture.timeout(sendDispatchTimeout,
-          onTimeout: () =>
-              throw TimeoutException('消息发送超时', sendDispatchTimeout));
+      diagnosticStage = ChatDiagnosticStage.matrixSend;
+      final eventId = await sender();
       // The account-scoped journal outlives this page. A room switch must not
       // discard a transport result or leave an acknowledged row in sending.
       await _persistOutboxOutcome(tx, inFlight, RoomDeliveryState.sent,
@@ -1381,12 +1541,16 @@ final class RoomTimelineController extends ChangeNotifier {
       }
       _waitingNetworkIds.remove(tx);
       _senders.remove(tx);
+      _serverRetryTimers.remove(tx)?.cancel();
+      _serverRetryAttempts.remove(tx);
       NotificationFeedback.shared.play(SoundType.messageSent);
       messages = _snapshot();
       _publish();
       return eventId;
     } catch (error) {
       // Preserve real failures after disposal without reattaching page listeners.
+      _recordFailure(diagnostics, diagnosticGeneration, diagnosticStage, error,
+          clock.elapsed);
       final state = _disposed
           ? (_isNetworkFailure(error)
               ? RoomDeliveryState.waitingNetwork
@@ -1399,6 +1563,14 @@ final class RoomTimelineController extends ChangeNotifier {
       _localEchoes[tx] = inFlight.copyWith(deliveryState: state);
     } finally {
       _inFlightTxids.remove(tx);
+      if (clock.elapsed > const Duration(seconds: 2) &&
+          identical(diagnostics, ChatDiagnostics.instance) &&
+          diagnostics.sessionGeneration == diagnosticGeneration) {
+        diagnostics.record(
+            stage: diagnosticStage,
+            error: ChatDiagnosticError.slow,
+            elapsed: clock.elapsed);
+      }
       _resumeSettledWaiting(tx, attemptRevision);
     }
     messages = _snapshot();
@@ -1409,6 +1581,11 @@ final class RoomTimelineController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    for (final timer in _serverRetryTimers.values) {
+      timer.cancel();
+    }
+    _serverRetryTimers.clear();
+    _serverRetryAttempts.clear();
     _inFlightTxids.clear();
     _recoveryManager?.state.removeListener(_handleNetworkStateChanged);
     _recoveryManager = null;

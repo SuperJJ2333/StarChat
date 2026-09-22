@@ -97,6 +97,41 @@ void main() {
     );
   });
 
+  test('phone login clears the previous session refresh backoff', () async {
+    var available = false;
+    var refreshCalls = 0;
+    final store = SecureSessionStore(MemoryStore());
+    await store.saveSession(accessToken: 'old-a', refreshToken: 'old-r');
+    final client = BusinessApiClient(
+      baseUri: Uri.parse('https://api.test'),
+      sessionStore: store,
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/auth/refresh')) {
+          refreshCalls++;
+          if (!available)
+            return http.Response('{"detail":{"code":"UNAVAILABLE"}}', 503);
+          return http.Response(
+              '{"access_token":"fresh-a","refresh_token":"fresh-r"}', 200);
+        }
+        return http.Response(
+            '{"access_token":"phone-a","refresh_token":"phone-r"}', 200);
+      }),
+    );
+    await expectLater(
+        client.refreshSession(), throwsA(isA<BusinessApiException>()));
+    final callsBeforeLogin = refreshCalls;
+    available = true;
+    await client.phoneLogin(
+        phone: '+8613800000001',
+        code: '123456',
+        deviceKey: 'device-1',
+        deviceName: 'test');
+    await client.refreshSession();
+    expect(refreshCalls, callsBeforeLogin + 1);
+    expect((await store.session())!.accessToken, 'fresh-a');
+    expect((await store.session())!.deviceKey, 'device-1');
+  });
+
   test(
       'registerWithPhone posts phone channel without email and keeps idempotency',
       () async {

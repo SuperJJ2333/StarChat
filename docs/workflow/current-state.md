@@ -63,6 +63,9 @@ Flutter全量3751通过、analyze无问题；2158 Debug固定签名重建验包�
 ## 2026-09-21 iOS TestFlight 内部测试（2145已上传，用户将完成出口合规申报）
 
 独立分支候选0.3.103/2145含重启会话与权限修复，最终签名/权限二进制门禁通过并成功上传。Apple VALID但MISSING_EXPORT_COMPLIANCE；用户答复在App Store Connect完成申报后告知，尚未确认内部可安装。恢复见[交接](tasks/2026-09-20-ios-testflight-permissions-handoff.md)；收到确认后仅查询/关联现有2145，不重建、不重复请求分发授权。
+## 2026-09-21 聊天可靠性/历史性能/自动诊断
+
+已修复发送分类与在途所有权、历史锚点、关键词/日期预算，并接入无正文自动诊断。后端接收端22:33上线、22:34独立验收通过；移动端最终门禁及精确证据见[任务](tasks/2026-09-21-chat-reliability-diagnostics.md)和[验证](../verification/2026-09-21-chat-reliability-diagnostics.md)。本次尚未构建移动新包，旧2145不包含本次改动，后续交付需整合其权限/重启修复；不把源码修复宣称手机已生效。
 
 ## 2026-09-20 客服点钻派发修复（后端+admin静态已上线，待管理员复验）
 
@@ -75,6 +78,14 @@ BUG-23 服务端剔除 m.call.* 在 E2EE 下结构性不可行（服务器只见
 ## 2026-09-20/21 批次 D 实施 + 干净 main 镜像上线 + 新缺陷 E1/E2（本地完成，待提交/真机）
 服务端：caibi 增量先落 main（89606cad）后重建 business-api 镜像（main-clean-20260920，215/215 文件一致，迁移 0071==0071 无变更，回退=caibi-grant 镜像）。客户端 TDD 全绿：BUG-23 残余自愈（通话终态信令+未读→自动推进已读）、BUG-28（发送补解码宽高+展示 thumbnail_info 回退）、BUG-35（视频转码百分比/上传/失败胶囊，覆盖相册+拍摄）、BUG-40（语音连播+设置开关，默认开 D7）、E1 打字卡死（搜索索引每次全量重建→增量+400ms 去抖+撤回联动删除）、E2 红包/转账闪烁（FinanceCardStore 提升进程级会话共享）。flutter analyze 0；全量测试与提交状态见[任务](tasks/2026-09-20-defect-batch-d-prep.md)、[计划](../superpowers/plans/2026-09-20-defect-batch-d-media-plan.md)。E1 真机（荣耀50Plus）与 E2 真机验收待用户。
 
+## 2026-09-21 iOS TestFlight 内部测试（2145已上传，待出口合规申报）
+
+用户确认内部测试邀请，0.3.103/2145包含重启会话恢复与权限宏/设置跳转修复。3701 Flutter测试、原生门禁及最终IPA校验通过；35528706992于02:32+08上传成功。02:43 Apple确认VALID、未过期，但MISSING_EXPORT_COMPLIANCE；尚未确认内部可安装，已请求用户提供既有申报口径或完成申报。以[任务](tasks/2026-09-20-ios-testflight-permissions.md)为准；后续仅distribute-only查询/关联2145，无需重建或再次请求分发授权。
+
+
+## 2026-09-20 iOS 重启会话恢复（代码及原生检查通过，真机待验收）
+
+用户已批准执行。保护数据/安装判据加固、有效业务会话保留与同身份聊天恢复、登录前本地只读预检及具体安全错误文案已实现；Flutter 3681/analyze 通过，独立规格及安全审查通过。独立分支2d463207未合并/发布；仓库verify、完整原生编译、iOS18/26模拟器CI35510017099均通过，iOS16.7.16真机未验收。以[任务](tasks/2026-09-20-ios-reboot-session.md)与[证据](../verification/2026-09-20-ios-reboot-session.md)为准。
 ## 2026-09-20 docs根目录与runbooks归并
 22份历史正文归档、6份专题资料归位；保留旧路径跳转。发布入口与当前轻量流程对齐，钱包/通信按分类索引进入。本地链接和内容保留检查通过，无代码或生产变更。[任务](tasks/2026-09-20-docs-consolidation.md) · [验证](../verification/2026-09-20-docs-consolidation.md)。
 
@@ -924,3 +935,7 @@ Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-histor
 
 
 
+
+## 2026-09-21 凭证刷新异常恢复修复（源码完成）
+
+用户批准ADR-0080，分支codex/session-refresh-recovery-20260921完成实现、领域/安全审查与门禁。Flutter3757/analyze0、后端合并证据2301通过/48条件跳过、PG8通过。未部署或构建新包。[任务](tasks/2026-09-21-session-refresh-recovery.md) · [验证](../verification/2026-09-21-session-refresh-recovery.md) · [发布手册](../runbooks/mobile-refresh-recovery-release.md)。

@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
+import 'package:matrix/matrix_api_lite.dart' show MatrixException;
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
@@ -7,8 +9,140 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 
 void main() {
-  test('BUG-19 封禁账号登录（403 ACCOUNT_SUSPENDED）如实提示服务端文案',
+  test(
+      'authenticated recovery refreshes soft logged out Matrix without password login',
       () async {
+    final business = FakeDualDomainBusiness();
+    final matrix = FakeRetainedMatrix()..credentialsInvalid = true;
+    var completed = 0;
+    final service = DualDomainLoginService(
+      business: business,
+      matrix: matrix,
+      deviceKey: () => 'device',
+      retainedHomeserver: Uri.parse('https://matrix.example.test'),
+      completeMatrixSession: () async {
+        completed++;
+      },
+    );
+    await service.restoreAuthenticatedSession('@alice:matrix.example.test');
+    expect(business.loginPasswords, isEmpty);
+    expect(business.tokenRequests, 1);
+    expect(matrix.tokens, ['one-time-login-token']);
+    expect(matrix.isLoggedIn, isTrue);
+    expect(matrix.clears, 0);
+    expect(business.logouts, 0);
+    expect(completed, 1);
+  });
+  test(
+      'authenticated recovery rejects changed business identity before grant or selection',
+      () async {
+    final business = FakeDualDomainBusiness()
+      ..currentIdentity = '@bob:matrix.example.test';
+    final matrix = FakeRetainedMatrix();
+    final service = DualDomainLoginService(
+        business: business, matrix: matrix, deviceKey: () => 'device');
+    await expectLater(
+        service.restoreAuthenticatedSession('@alice:matrix.example.test'),
+        throwsA(isA<LoginStageException>()));
+    expect(business.loginPasswords, isEmpty);
+    expect(business.tokenRequests, 0);
+    expect(matrix.selections, 0);
+    expect(business.logouts, 0);
+    expect(matrix.suspends, 0);
+  });
+  test(
+      'authenticated recovery local failure preserves business and allows retry',
+      () async {
+    final business = FakeDualDomainBusiness();
+    final matrix = FakeRetainedMatrix()
+      ..userId = null
+      ..selectionError = PlatformException(
+          code: 'secure_session_status', details: {'status': -25308});
+    final service = DualDomainLoginService(
+        business: business,
+        matrix: matrix,
+        deviceKey: () => 'device',
+        retainedHomeserver: Uri.parse('https://matrix.example.test'));
+    await expectLater(
+        service.restoreAuthenticatedSession('@alice:matrix.example.test'),
+        throwsA(isA<LoginStageException>()
+            .having((e) => e.message, 'message', contains('解锁'))));
+    expect(business.loginPasswords, isEmpty);
+    expect(business.tokenRequests, 0);
+    expect(business.logouts, 0);
+    expect(matrix.suspends, 0);
+    expect(matrix.clears, 0);
+    matrix.selectionError = null;
+    await service.restoreAuthenticatedSession('@alice:matrix.example.test');
+    expect(matrix.isLoggedIn, isTrue);
+  });
+
+  test(
+      'local preflight failure sends no business login and unlock retry succeeds',
+      () async {
+    var locked = true;
+    var preflights = 0;
+    final business = FakeDualDomainBusiness();
+    final matrix = FakeMatrixTokenLogin(isLoggedIn: false);
+    final service = DualDomainLoginService(
+      business: business,
+      matrix: matrix,
+      deviceKey: () => 'device',
+      prepareLocalLogin: () async {
+        preflights++;
+        expect(business.loginPasswords, isEmpty);
+        if (locked) {
+          throw PlatformException(
+              code: 'Unexpected security result code',
+              details: -25308,
+              message: 'secret-password');
+        }
+      },
+    );
+    final controller = LoginController(operation: service.login);
+    expect(await controller.submit('alice', 'secret-password'), isFalse);
+    expect(controller.state.message, contains('解锁'));
+    expect(business.loginPasswords, isEmpty);
+    expect(business.logouts, 0);
+    expect(matrix.suspends, 0);
+    expect(matrix.clears, 0);
+    locked = false;
+    expect(await controller.retryNow(), isTrue);
+    expect(preflights, 2);
+    expect(business.loginPasswords, hasLength(1));
+  });
+
+  test('caught storage and Matrix failures expose safe actionable categories',
+      () async {
+    final failures = <Object, String>{
+      PlatformException(code: '-25308', message: 'secret-password'): '解锁',
+      PlatformException(code: '-34018', message: 'secret-password'): '权限',
+      PlatformException(code: 'unexpected', message: 'secret-password'): '系统',
+      const FormatException('secret-password'): '本地账号记录',
+      MatrixException.fromJson(
+          {'errcode': 'M_UNKNOWN_TOKEN', 'error': 'secret-password'}): '凭据',
+      MatrixException.fromJson(
+          {'errcode': 'M_FORBIDDEN', 'error': 'secret-password'}): '拒绝',
+      MatrixException.fromJson(
+          {'errcode': 'M_LIMIT_EXCEEDED', 'error': 'secret-password'}): '频繁',
+      const SocketException('secret-password'): '网络',
+    };
+    for (final entry in failures.entries) {
+      final matrix = FakeMatrixTokenLogin(isLoggedIn: false)
+        ..syncError = entry.key;
+      final service = DualDomainLoginService(
+          business: FakeDualDomainBusiness(),
+          matrix: matrix,
+          deviceKey: () => 'device');
+      final controller = LoginController(operation: service.login);
+      expect(await controller.submit('alice', 'secret-password'), isFalse);
+      expect(controller.state.message, contains(entry.value));
+      expect(controller.state.message, isNot(contains('secret-password')));
+      expect(controller.state.message, isNot(matches(RegExp(r'L0[0-9]'))));
+    }
+  });
+
+  test('BUG-19 封禁账号登录（403 ACCOUNT_SUSPENDED）如实提示服务端文案', () async {
     final controller = LoginController(operation: (username, password) async {
       throw const BusinessApiException(
         statusCode: 403,
@@ -57,7 +191,7 @@ void main() {
         business: business, matrix: matrix, deviceKey: () => 'device');
     final controller = LoginController(operation: service.login);
     expect(await controller.submit('alice', 'secret-password'), isFalse);
-    expect(controller.state.message, contains('L05'));
+    expect(controller.state.message, contains('聊天同步'));
     expect(controller.state.message, isNot(contains('secret-password')));
     expect(business.tokenRequests, 1);
     expect(matrix.suspends, 1);
@@ -226,8 +360,10 @@ void main() {
         throwsA(isA<MatrixAccountSwitchRequired>()),
       );
 
-      await expectLater(service.confirmAccountSwitchAndLogin(),
-          throwsA(isA<BusinessApiException>().having((e) => e.code, 'code', 'ACCOUNT_STORAGE_UNAVAILABLE')));
+      await expectLater(
+          service.confirmAccountSwitchAndLogin(),
+          throwsA(isA<BusinessApiException>()
+              .having((e) => e.code, 'code', 'ACCOUNT_STORAGE_UNAVAILABLE')));
       expect(matrix.clears, 0);
       expect(matrix.tokens, isEmpty);
       expect(matrix.userId, '@bob:matrix.example.test');
@@ -382,7 +518,7 @@ final class FakeDualDomainBusiness implements DualDomainBusinessGateway {
   }
 }
 
-final class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
+class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
   FakeMatrixTokenLogin({required this.isLoggedIn});
   @override
   bool isLoggedIn;
@@ -398,6 +534,7 @@ final class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
   int clears = 0;
   int suspends = 0;
   bool failSync = false;
+  Object? syncError;
   bool failLogin = false;
   @override
   Future<void> loginWithToken({
@@ -416,6 +553,7 @@ final class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
 
   @override
   Future<void> sync() async {
+    if (syncError != null) throw syncError!;
     if (failSync) throw StateError('sync failed');
   }
 
@@ -428,4 +566,17 @@ final class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
 
   @override
   Future<void> suspend() async => suspends++;
+}
+
+final class FakeRetainedMatrix extends FakeMatrixTokenLogin
+    implements MatrixAccountSelectionGateway {
+  FakeRetainedMatrix() : super(isLoggedIn: false);
+  int selections = 0;
+  Object? selectionError;
+  @override
+  Future<void> selectAccount(String matrixUserId, Uri homeserver) async {
+    selections++;
+    if (selectionError != null) throw selectionError!;
+    userId = matrixUserId;
+  }
 }

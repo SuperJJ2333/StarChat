@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'package:liuhetong_mobile/core/outbox/message_send_scheduler.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
@@ -152,6 +153,123 @@ void main() {
       );
 
   group('MessageSendScheduler', () {
+    test('closed-room send failure emits one content-free diagnostic',
+        () async {
+      final previous = ChatDiagnostics.instance;
+      var now = DateTime.utc(2026, 9, 21);
+      Map<String, Object?>? batch;
+      final diagnostics = ChatDiagnostics(now: () => now);
+      ChatDiagnostics.instance = diagnostics;
+      diagnostics.startSession(
+          version: '0.3.103',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (value, _) async {
+            batch = value.toJson();
+            return 202;
+          });
+      final lease = _FakeLease()
+        ..responses.add(() => Future.error(const SocketException('SECRET')));
+      final scheduler = schedulerFor(null, leaseFactory: (_) async => lease);
+      addTearDown(() {
+        scheduler.dispose();
+        diagnostics.stopSession();
+        ChatDiagnostics.instance = previous;
+      });
+      final row = (await outbox.save(
+          receiverId: '@peer:test',
+          roomId: '!room:test',
+          content: 'SECRET_BODY'))!;
+      await scheduler.drain();
+      expect(diagnostics.pendingCount, 1);
+      now = now.add(const Duration(minutes: 1));
+      await diagnostics.flush();
+      expect(batch.toString(), contains('matrixSend'));
+      expect(batch.toString(), contains('network'));
+      expect(batch.toString(), isNot(contains('SECRET')));
+      expect((await outbox.byLocalId(row.localId))!.status,
+          OutboxStatus.waitingNetwork);
+      expect(lease.releases, 1);
+    });
+
+    test('registered live sender keeps ownership of its own send diagnostic',
+        () async {
+      final previous = ChatDiagnostics.instance;
+      final diagnostics = ChatDiagnostics();
+      ChatDiagnostics.instance = diagnostics;
+      diagnostics.startSession(
+          version: '0.3.103',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 202);
+      final sender = _FakeSender('!room:test', outbox)
+        ..responses.add(() => Future.error(const SocketException('fixture')));
+      final scheduler = schedulerFor(sender);
+      addTearDown(() {
+        scheduler.dispose();
+        diagnostics.stopSession();
+        ChatDiagnostics.instance = previous;
+      });
+      await outbox.save(
+          receiverId: '@peer:test', roomId: '!room:test', content: 'fixture');
+      await scheduler.drain();
+      expect(diagnostics.pendingCount, 0,
+          reason:
+              'the live controller emits the actual send; do not count its relay twice');
+    });
+
+    test('closed resolver failure is observed before internal error settlement',
+        () async {
+      final previous = ChatDiagnostics.instance;
+      final diagnostics = ChatDiagnostics();
+      ChatDiagnostics.instance = diagnostics;
+      diagnostics.startSession(
+          version: '0.3.103',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 202);
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => null,
+          resolveUnbound: (_) async => throw const SocketException('SECRET'));
+      addTearDown(() {
+        scheduler.dispose();
+        diagnostics.stopSession();
+        ChatDiagnostics.instance = previous;
+      });
+      await outbox.save(receiverId: '@peer:test', content: 'fixture');
+      await scheduler.drain();
+      expect(diagnostics.pendingCount, 1);
+    });
+
+    test(
+        'stalled resolver reports timeout once and late outcome stays out of new session',
+        () async {
+      final previous = ChatDiagnostics.instance;
+      final diagnostics = ChatDiagnostics();
+      ChatDiagnostics.instance = diagnostics;
+      void start() => diagnostics.startSession(
+          version: '0.3.103',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 202);
+      start();
+      final pending = Completer<String?>();
+      final scheduler = MessageSendScheduler(
+          outbox: outbox,
+          senderFor: (_) => null,
+          operationTimeout: const Duration(milliseconds: 10),
+          resolveUnbound: (_) => pending.future);
+      addTearDown(() {
+        scheduler.dispose();
+        diagnostics.stopSession();
+        ChatDiagnostics.instance = previous;
+      });
+      await outbox.save(receiverId: '@peer:test', content: 'fixture');
+      await scheduler.drain();
+      expect(diagnostics.pendingCount, 1);
+      start();
+      pending.completeError(const SocketException('late SECRET'));
+      await pumpEventQueue();
+      expect(diagnostics.pendingCount, 0);
+    });
+
     test(
         'closed pending conversation resolves once per peer and preserves durable txids',
         () async {
@@ -602,7 +720,32 @@ void main() {
       scheduler.dispose();
     });
 
-    test('5xx（服务器暂时不可用）按网络失败处理 → waitingNetwork 并自动续发', () async {
+    testWidgets('background server retry budget terminates after three retries',
+        (tester) async {
+      final sender = _FakeSender('!room:test', outbox)
+        ..responses.addAll(List.generate(
+            4, (_) => () => Future<String>.error(const _Http5xx('fixture'))));
+      final scheduler = schedulerFor(sender)..start();
+      final row = (await outbox.save(
+          receiverId: '@peer:test', content: 'fixture', roomId: '!room:test'))!;
+      await scheduler.drain();
+      for (final seconds in [2, 5, 15]) {
+        await tester.pump(Duration(seconds: seconds));
+        await tester.pump();
+      }
+      expect(sender.txids, hasLength(4));
+      expect(sender.txids.toSet(), {row.txid});
+      expect(
+          (await outbox.byLocalId(row.localId))!.status, OutboxStatus.failed);
+      expect(network.current, NetworkState.online);
+      await tester.pump(const Duration(minutes: 1));
+      expect(sender.txids, hasLength(4));
+      scheduler.dispose();
+    });
+
+    testWidgets(
+        '5xx waits with bounded backoff without changing global connectivity',
+        (tester) async {
       final sender = _FakeSender('!room:test', outbox);
       sender.responses
           .add(() => Future<String>.error(const _Http5xx('bad gateway')));
@@ -615,7 +758,10 @@ void main() {
           OutboxStatus.waitingNetwork);
 
       network.reportSuccess();
-      await pumpEventQueue();
+      expect(network.current, NetworkState.online);
+      expect(sender.txids, [row.txid]);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
 
       expect(sender.txids, <String>[row.txid, row.txid],
           reason: '服务器暂时不可用恢复后自动继续，且复用同一 txid');

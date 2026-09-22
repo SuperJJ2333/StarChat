@@ -1068,56 +1068,66 @@ class Room {
     await _handleFakeSync(syncUpdate);
     final completer = Completer();
     _sendingQueue.add(completer);
-    while (_sendingQueue.first != completer) {
-      await _sendingQueue.first.future;
-    }
+    try {
+      while (_sendingQueue.first != completer) {
+        await _sendingQueue.first.future;
+      }
 
-    final timeoutDate = DateTime.now().add(client.sendTimelineEventTimeout);
-    // Send the text and on success, store and display a *sent* event.
-    String? res;
+      final timeoutDate = DateTime.now().add(client.sendTimelineEventTimeout);
+      // Send the text and on success, store and display a *sent* event.
+      String? res;
 
-    while (res == null) {
-      try {
-        res = await _sendContent(
-          type,
-          content,
-          txid: messageID,
-        );
-      } catch (e, s) {
-        if (e is MatrixException &&
-            e.retryAfterMs != null &&
-            !DateTime.now()
-                .add(Duration(milliseconds: e.retryAfterMs!))
-                .isAfter(timeoutDate)) {
-          Logs().w(
-              'Ratelimited while sending message, waiting for ${e.retryAfterMs}ms');
-          await Future.delayed(Duration(milliseconds: e.retryAfterMs!));
-        } else if (e is MatrixException ||
-            e is EventTooLarge ||
-            DateTime.now().isAfter(timeoutDate)) {
-          Logs().w('Problem while sending message', e, s);
-          syncUpdate.rooms!.join!.values.first.timeline!.events!.first
-              .unsigned![messageSendingStatusKey] = EventStatus.error.intValue;
-          await _handleFakeSync(syncUpdate);
-          completer.complete();
-          _sendingQueue.remove(completer);
-          if (e is EventTooLarge) rethrow;
-          return null;
-        } else {
-          Logs()
-              .w('Problem while sending message: $e Try again in 1 seconds...');
-          await Future.delayed(Duration(seconds: 1));
+      while (res == null) {
+        try {
+          res = await _sendContent(
+            type,
+            content,
+            txid: messageID,
+          );
+        } catch (e, s) {
+          if (e is MatrixException &&
+              e.retryAfterMs != null &&
+              !DateTime.now()
+                  .add(Duration(milliseconds: e.retryAfterMs!))
+                  .isAfter(timeoutDate)) {
+            Logs().w(
+                'Ratelimited while sending message, waiting for ${e.retryAfterMs}ms');
+            await Future.delayed(Duration(milliseconds: e.retryAfterMs!));
+          } else if (e is MatrixException ||
+              e is EventTooLarge ||
+              DateTime.now().isAfter(timeoutDate)) {
+            Logs().w('Problem while sending message', e, s);
+            syncUpdate.rooms!.join!.values.first.timeline!.events!.first
+                    .unsigned![messageSendingStatusKey] =
+                EventStatus.error.intValue;
+            try {
+              await _handleFakeSync(syncUpdate);
+            } catch (_) {
+              // A secondary cache failure must not hide the server rejection.
+              Logs().w('Unable to persist failed local echo');
+            }
+            // Preserve protocol and transport failures for the caller's retry
+            // policy. Null used to collapse an HTTP rejection into "offline".
+            rethrow;
+          } else {
+            Logs().w(
+                'Problem while sending message: $e Try again in 1 seconds...');
+            await Future.delayed(Duration(seconds: 1));
+          }
         }
       }
+      syncUpdate.rooms!.join!.values.first.timeline!.events!.first
+          .unsigned![messageSendingStatusKey] = EventStatus.sent.intValue;
+      syncUpdate.rooms!.join!.values.first.timeline!.events!.first.eventId =
+          res;
+      await _handleFakeSync(syncUpdate);
+      return res;
+    } finally {
+      // Local echo persistence can fail as well as transport. Neither may
+      // permanently block every later transaction in this room.
+      if (!completer.isCompleted) completer.complete();
+      _sendingQueue.remove(completer);
     }
-    syncUpdate.rooms!.join!.values.first.timeline!.events!.first
-        .unsigned![messageSendingStatusKey] = EventStatus.sent.intValue;
-    syncUpdate.rooms!.join!.values.first.timeline!.events!.first.eventId = res;
-    await _handleFakeSync(syncUpdate);
-    completer.complete();
-    _sendingQueue.remove(completer);
-
-    return res;
   }
 
   /// Call the Matrix API to join this room if the user is not already a member.

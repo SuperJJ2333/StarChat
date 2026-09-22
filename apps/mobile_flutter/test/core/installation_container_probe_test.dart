@@ -40,11 +40,12 @@ void main() {
     expect(await probe().hasPreviousMatrixStore(), isTrue);
   });
 
-  test('目录不存在时报告没有产物', () async {
+  test('目录不存在时不能证明安装容器为空', () async {
     final missing = FileSystemInstallationContainerProbe(
         supportDirectoryPath: () async =>
             p.join(directory.path, 'never-created'));
-    expect(await missing.hasPreviousMatrixStore(), isFalse);
+    await expectLater(
+        missing.hasPreviousMatrixStore(), throwsA(isA<FileSystemException>()));
   });
 
   test('只有无关文件时报告没有产物', () async {
@@ -61,9 +62,10 @@ void main() {
     await expectLater(failing.hasPreviousMatrixStore(), throwsStateError);
   });
 
-  test('路径不是目录时报告没有产物而不是抛错', () async {
+  test('路径不是目录时失败关闭，禁止误清钥匙串', () async {
     await directory.delete(recursive: true);
     await File(directory.path).writeAsBytes(const []);
-    expect(await probe().hasPreviousMatrixStore(), isFalse);
+    await expectLater(
+        probe().hasPreviousMatrixStore(), throwsA(isA<FileSystemException>()));
   });
 }

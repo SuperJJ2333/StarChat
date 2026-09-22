@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
 
 // 测试侧允许导入 package:http，用来验证默认分类器对真实
@@ -11,16 +12,17 @@ import 'package:liuhetong_mobile/core/network_state_manager.dart';
 void main() {
   group('发送失败类型化（2026-09-19 房间瘫痪修复）', () {
     test('MessageSendNetworkException（SDK 发送重试耗尽）判定为网络失败', () {
-      expect(defaultNetworkFailureClassifier(
-          const MessageSendNetworkException('消息发送失败')), isTrue,
+      expect(
+          defaultNetworkFailureClassifier(
+              const MessageSendNetworkException('消息发送失败')),
+          isTrue,
           reason: 'SDK 只有网络类错误才会耗尽重试窗口并返回 null，'
               '该异常必须归类为网络失败 → waitingNetwork（自动重发）');
       final manager = NetworkStateManager();
       addTearDown(manager.dispose);
       manager.report(transportAvailable: true);
       manager.reportFailure(const MessageSendNetworkException('消息发送失败'));
-      expect(manager.current, NetworkState.weak,
-          reason: '上报网络状态机，供恢复判定使用');
+      expect(manager.current, NetworkState.weak, reason: '上报网络状态机，供恢复判定使用');
     });
   });
 
@@ -199,7 +201,25 @@ void main() {
       expect(manager.current, NetworkState.online);
 
       manager.reportFailure(http.Response('server error', 502));
-      expect(manager.current, NetworkState.weak);
+      expect(manager.current, NetworkState.online);
+    });
+
+    test('Matrix 429 and 503 are retryable without declaring device offline',
+        () {
+      final manager = NetworkStateManager();
+      addTearDown(manager.dispose);
+      for (final status in [429, 503]) {
+        final error =
+            MatrixException(http.Response('{"errcode":"M_UNKNOWN"}', status));
+        expect(defaultNetworkFailureClassifier(error), isTrue);
+        manager.reportFailure(error);
+        manager.reportFailure(error);
+        expect(manager.current, NetworkState.online);
+      }
+      expect(
+          defaultNetworkFailureClassifier(
+              MatrixException(http.Response('{"errcode":"M_FORBIDDEN"}', 403))),
+          isFalse);
     });
 
     test('可注入自定义分类器，完全接管判定', () {
