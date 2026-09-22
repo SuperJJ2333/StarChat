@@ -1,5 +1,69 @@
 # 移动交付恢复索引
 
+## 2026-09-23 手机/钱包配套后端已上线（Mi6 2158无需重装）
+
+用户已授权恢复线上，随后明确5个客服沿用原平台地址。API/worker最终phone-wallet-20260923-r2，schema0083；恢复refresh协议、保留monitor-margin，换绑/FX/新旧取消路由可用，5客服目录及FINANCE_SUPPORT案件权限、后台面板已发布。完整门禁2544/59 exit0，PG认证11、前端237、旧群404兼容67通过；真实短信/资金操作未代测。最终候选60238a4b，主目录333个服务端文件回填一致。见[发布报告](../verification/2026-09-23-phone-wallet-live-restore.md)与[任务](tasks/2026-09-22-phone-wallet-live-restore.md)。后续部署以新现场与本报告为准，禁止用旧margin整树覆盖恢复修复。
+
+## 2026-09-22 Mi6 四项反馈（本地修复，2158已安装，配套后端未上线）
+
+Flutter全量3751通过、analyze无问题；2158 Debug固定签名重建验包完成。修复旧转入兼容提示、手机错误分类、参考到账估值及旧充值取消。Mi6已覆盖安装2158并启动，未清数据；线上缺phone/fx/cancel路由，不能声称实际业务已恢复。隔离PG迁移与并发已通过；完整verify运行中。见[任务](tasks/2026-09-22-mi6-phone-wallet-followup.md)、[报告](../verification/2026-09-22-mi6-followup.md)及[后端整合Prompt](prompts/2026-09-22-phone-wallet-compatible-backend.md)。禁止直接发布主工作区覆盖线上refresh recovery。
+
+## 2026-09-22 Flutter 手机契约复审（修正已回填，UI/真机待做）
+
+新增 17 个方法的路由/字段核对一致。修复短信登录未清旧 Matrix 冷却、五个公开手机号请求无限等待；增加真实存储/迟到响应/登出/OpenAPI 请求形状与权限头测试。Flutter 全量 3702、最终专项 17、analyze 无问题、infra/mobile 228 及影响门禁通过；639 个服务端相关输入未变，复用上一轮完整 verify（2449/58、exit 0），没有重跑全后端。注册验码/充值取消的服务端幂等限制需 UI 用权威状态恢复，不能凭头字段宣称可重放。短信已验，不再发码；未部署、未改开关。见[报告](../verification/2026-09-22-phone-client-code-review.md)、[任务](tasks/2026-09-22-phone-client-code-review.md)及[更新 prompt](prompts/2026-09-22-zcode-after-third-review.md)。
+
+## 2026-09-22 短信实测后与后台工作台复审（已修正回填，未发布）
+
+用户已确认真实短信验证完成，历史 RAM 403 不再是当前阻断。本轮修正 SDK 错误码文本误判、后台案件/房间旧响应覆盖与重复复核，并脱敏原记录验证码。SMS 33、离线五次尝试/第六次阻断、frontend 240、真实浏览器 HTTP fixture 通过；完整 verify exit 0，后端 2449 passed/58 skipped。未重复短信、未部署，转让开关仍关闭，Flutter 未验收。见[复审报告](../verification/2026-09-22-sms-workbench-code-review.md)与[任务](tasks/2026-09-22-sms-workbench-code-review.md)。
+
+## 2026-09-22 第三轮待核对流程代码复审（修正已回填，未发布）
+
+纠正充值证据不足释放、登记/释放锁序与幂等、群转让复核状态及未知发送释放、后台真实 API 缺失、desync 与 worker 网关清理等问题。替换原仅 assert True 的联测，实际 Synapse 2 场景、PostgreSQL 4 场景、frontend 235 通过；完整 verify exit 0，后端 2440 passed/58 skipped。下方 ZCode 第三轮摘要保留作历史，以本轮纠错结论为准：缺记录不是未入账证据，旧群主持权不能证明请求未发送。转让开关仍关闭，未部署、无真实短信或资金操作。见[复审报告](../verification/2026-09-22-review-flows-code-review.md)与[任务记录](tasks/2026-09-22-review-flows-code-review.md)。
+
+## 2026-09-22 第二轮后端一致性复审（本地修正完成，未发布）
+
+已纠正短信 VerifyResult/challenge 与发送生命周期、SDK Docker 锁文件缺失、充值绑定/登记/冲正并发、群转让 ACL/未知结果/worker 开关，以及后台 PUT/刷新/权威状态显示。新增迁移 0081 保留历史快照。完整 verify exit 0（API/worker 2404 passed、58 skipped），frontend 230，PostgreSQL 在线迁移/16 并发、真实 Docker 构建与禁网 SDK 工厂通过。群协调仍默认关闭；真实短信、真实 Matrix、Flutter/真机未验收。代码已按哈希回填，未覆盖其他任务修改，未提交或部署。以[复审报告](../verification/2026-09-22-backend-consistency-code-review.md)、[任务记录](tasks/2026-09-22-backend-consistency-code-review.md)及[下一步 prompt](prompts/2026-09-22-zcode-next-step.md)为准。
+
+## 2026-09-21 点钻/手机号/群主规则独立复审（已回填修正，仍有后端阻断项）
+
+本项更新下方“服务端完成+测试全绿”的历史口径：独立复审发现并修正 OTP 尝试/换绑、手机账号开通、FX 并发缓存/凭据日志、充值幂等凭证、提现冻结/应付和红包路由装配等缺陷。40 个代码/测试/契约文件已按 SHA256 校验回填，其他任务修改保留。最终受影响集合 203 passed；完整 verify 首轮 2320 passed / 17 failed / 58 skipped，17 个失败全部在后续模块回归通过，原失败日志保留，**不称最终全量 exit 0**。群主转让业务端点暂时返回 503，仍待 Matrix 持久协调；充值财务执行与案件登记恢复、真实 SMS、后台及 Flutter 未完成。未提交、未部署、未发生真实资金操作。见[任务](tasks/2026-09-21-pricing-code-review.md)、[复审报告](../verification/2026-09-21-pricing-code-review.md)、[下一步 Prompt](prompts/2026-09-21-zcode-next-step.md)。
+
+## 2026-09-21 聊天可靠性与自动诊断（源码完成、接收端已上线，待新包）
+
+独立分支ca4a306a完成发送所有权/分类、历史锚点、搜索日期预算和低负担自动诊断；Flutter3740/0、verify通过，接收端22:33上线。尚未构建新手机包，旧2145不含本次修复。下一步整合既有iOS权限/重启分支后构建新候选。见[交接](tasks/2026-09-21-chat-reliability-diagnostics-handoff.md)。
+
+## 2026-09-21 v0.3.102 私聊弱网与历史交互调查（证据完成，未修复/发版）
+
+确认无对方在线发送门禁；私聊异地红标实际错误仍待日志。已验证关键词无总预算扫描、逐条来源查询触发全量snapshot、滚动锚点多帧跳转及取消残留、月份超时误判整月空。5个Flutter合成测试及搜索/月Dart探针完成，不能当原设备现场复现。见[任务](tasks/2026-09-21-chat-history-network-audit.md)与[报告](../verification/2026-09-21-chat-history-network-audit.md)。保持此前TestFlight2145与本轮未实施修复的区分。
+
+## 2026-09-23 第五轮复审回填 + Flutter 短信登录状态机（本地完成，UI 页面未动工）
+
+第五轮复审修正（回填 9/9 SHA 核对一致）：短信登录清理旧 Matrix 冷却、五个手机号请求统一 8 秒预算不自动重发、会话持久化/登出竞态/授权头/OpenAPI 契约测试补强；Flutter 全量 3702、后端 2449/58、verify exit=0。本轮追加：`PhoneLoginController` 短信登录状态机（冷却 60s 本地计时、超时不显示未发送不自动重发、凭据错误计入五次上限、不可用不耗尝试）+ 6 项回归；auth+core 463 passed、analyze 0。**未动工**：登录页/注册页手机入口接入、换绑页、目录/充值页、demo 同步、真机。以[验证](verification/2026-09-23-after-third-review-batch.md)第五节 b 为准。
+
+## 2026-09-23 阿里云真实通道验收闭环 + Flutter 批次3第一批（API契约层）（本地完成，未发布）
+
+用户完成 RAM 授权后实测：**SendSmsVerifyCode 发送成功**（真实短信到达测试号）；**错码校验**返回 isv.ValidateFail(400)→适配器判 False 计入尝试——顺带修复真实契约缺陷（错码原被当作不可用不计尝试，会绕过五次上限，回归锁定）；**用户回传真实码 243697 正向校验 PASS**，challenge 隔离与 5 分钟过期判定均实测生效。**真实通道验收矩阵闭合**（发送/错码/正确码/隔离/过期/五次上限）。Flutter 批次3第一批：新增 `PhoneAuthGateway`/`RechargeGateway` 契约与 BusinessApiClient 实现（手机注册/注册OTP/短信登录/两步换绑/隐私搜索与开关/客服目录/充值申请历史取消/汇率/转让意图），回归 7 项 + test/core 全量 386 passed + auth 82 passed + analyze 0 issue。**Flutter UI 页面层未动工**（待按仓库 UI 交付流程独立批次）；转让开关仍关闭。以[验证](verification/2026-09-23-after-third-review-batch.md)为准。
+
+## 2026-09-23 第三轮复审后批次（阿里云真实通道接入+后台工作台补全）（部分完成，RAM 授权待用户）
+
+用户移交阿里云凭据（.env ACCESS_KEY/ACCESS_KEY_SECRET）与测试号 13727744565。本轮：SDK 钉版本地安装+pip check；凭据映射 BUSINESS_SMS_ALIYUN_*（.env 不入库）；连通性实测——区域 endpoint TLS 被工作站重置、**中央 endpoint dypnsapi.aliyuncs.com 可达**（适配器复审版已用中央）；真实 SendSmsVerifyCode 签名通过并到达阿里云，但 **RAM 子账号缺 dypns:SendSmsVerifyCode 权限被 403 拒绝**（ImplicitDeny，request id 01A0C7A6…）——**待用户在 RAM 控制台授权后即可重发验证**；适配器新增 403 拒绝分类 SMS_SEND_REJECTED（与网络超时可区分，不含凭据），回归 14 passed。后台补全：案件审计时间线查询 UI + 群转让意图查询/处置 UI（真实 AdminApi 路由）。frontend 235/0；受影响专项 438 passed。后端全量与 verify.ps1 本轮重跑结果见[验证](verification/2026-09-23-after-third-review-batch.md)追记。**Flutter 批次3 未动工**。以[验证](verification/2026-09-23-after-third-review-batch.md)为准。
+
+## 2026-09-22 第二轮复审回填后批次1（处置流程/分页时间线/隔离Synapse联测）（本地完成，未发布）
+
+第二轮复审修正 19 项并回填后，本轮交付批次 1 剩余流程：①充值 NEEDS_REVIEW 处置（review-queue/timeline/review retry|release，release 服务端核证调整被拒/缺失/已冲正，证据不足 409——超时不视为失败）；②转让 NEEDS_REVIEW 处置（transfer-intents 时间线 + review confirm_applied|fail_unapplied，均以权威状态为唯一判据）；③案件稳定游标分页 + 绑定状态投影 + 后台面板"待核对队列/案件历史"；④**隔离真实 Synapse 联测通过**（本地 Docker 镜像 + 真实网关：完整 ACL、权威回读确认、换主、旧客户端直改权仅 desync 观测）。测试：groups 53、recharge 30、专项合计 451、frontend 232、后端全量 **2411 passed/58 skipped exit 0**、verify.ps1 结果见 artifacts/2026-09-22/verify-exit.txt。阿里云真实通道前置清单已交付（无凭据未验收）。**Flutter 批次 3 未动工**；转让端点仍默认 503。以[验证](verification/2026-09-22-next-step-review-flows.md)与[任务](workflow/tasks/2026-09-22-backend-consistency-code-review.md)为准。
+
+## 2026-09-21 复审回填后批次1（后端一致性阻断项）+批次2（后台三页）（本地完成，未发布）
+
+独立复审（[报告](verification/2026-09-21-pricing-code-review.md)）修正 19 项 P1/P2 并回填后，本轮按[下一步 prompt](workflow/prompts/2026-09-21-zcode-next-step.md)补齐三大缺口：①群主转让持久协调（`group_transfer_intents` 0080 + 阶段机 + Synapse login-as-user 应用 power level + 权威确认 + 条件换主 + 崩溃恢复；**端点默认 503 隔离**，启用需配置与安全批准）；②充值案件↔财务执行持久绑定（`recharge_credit_bindings` 0079 + worker 幂等登记恢复，复用 mark_credited 全部凭证核验，拒绝伪造 CREDITED）；③阿里云短信适配器（`alibabacloud_dypnsapi20170525`，供应商生成码+CheckSmsVerifyCode，`code_verifier` 注入，未配置 fail-closed，真实通道未开通）。后台三页：`admin-recharge-panel.js`（充值案件/客服目录/汇率+储备三类数量）。测试：短信12+手机13+充值12+群44（含8故障注入）+worker111+frontend227 全绿；OpenAPI 重导出 PASS；后端全量首轮 2365/3（头钉与契约落后）修复后定向 19 绿；verify.ps1 结果见[证据](verification/2026-09-21-next-step-backend-consistency.md)追记。ADR 0075/0077/0079 实施补充。**Flutter 批次3 未动工**；500 人压测/真机/生产验证不在授权范围。以[任务](workflow/tasks/2026-09-21-pricing-auth-redpacket-program.md)与[验证](verification/2026-09-21-next-step-backend-consistency.md)为准。
+
+## 2026-09-21 点钻人民币计价/人工出入款/红包抽成/群主冷却/手机号注册（服务端完成+测试全绿，未发布）
+
+用户需求书批准六项（实现+隔离测试授权，**未授权生产发布/真实出款/生产数据修改**）：①1点钻=1元人民币计价、用户侧兑换写接口关闭（`CONVERSIONS_CLOSED`）、充值自动兑换与在线自动充值关闭；②储备/对账跨单位加法废止（点钻账面/参考估值/实际USDT义务三类口径）；③红包群主抽成0.1%（COMPLETED一次性结算、退款FORFEITED、worker兜底）+满10人群主本群免手续费（成员快照创建期锁定，转让不改受益人）；④业务群注册表（`business_groups`，财务受益人权威）+满10人群主转让冷却30×24h UTC（并发单赢家、任期NULL=不可证明、admin审计迁移、Matrix直改不改变注册表）；⑤人工充值（客服目录+申请单+凭证全局唯一防重+既有财务服务入账）与人工提现（汇率快照报价、`final_receive` USDT应付、客服`adjust-rate`免复核留痕、镜像冲正、10 USDT门槛按USDT）；⑥中国大陆手机号注册/短信OTP登录/两步换绑/隐私搜索（用途绑定OTP、单次消费、防枚举、SMS未配置fail-closed）。ADR 0075–0079 + [总计划](superpowers/plans/2026-09-21-pricing-auth-redpacket-group-program.md) + 规格2026-09-21修订；迁移0072–0078（expand-only，单头`0078_phone_accounts`）；OpenAPI已重导出（--check PASS）。测试：FX 18/计价9/红包42/群35/提现70/充值7/手机13 全绿 + 身份280、钱包1000回归绿 + 后端全量2288+通过（迁移头钉与时间炸弹修复后）+ `verify.ps1`结果见[验证记录](verification/2026-09-21-pricing-auth-redpacket-program.md)。**未做：admin静态三页、Flutter客户端页面、真机联测**（API契约已冻结，见验证记录第七节）；**未发布**。以[任务](tasks/2026-09-21-pricing-auth-redpacket-program.md)与[验证](verification/2026-09-21-pricing-auth-redpacket-program.md)为准。
+
+## 2026-09-21 iOS TestFlight 内部测试（2145已上传，用户将完成出口合规申报）
+
+独立分支候选0.3.103/2145含重启会话与权限修复，最终签名/权限二进制门禁通过并成功上传。Apple VALID但MISSING_EXPORT_COMPLIANCE；用户答复在App Store Connect完成申报后告知，尚未确认内部可安装。恢复见[交接](tasks/2026-09-20-ios-testflight-permissions-handoff.md)；收到确认后仅查询/关联现有2145，不重建、不重复请求分发授权。
+
 ## 2026-09-20 客服点钻派发修复（后端+admin静态已上线，待管理员复验）
 
 用户报"派发点钻显示 发放失败：点钻发放请求无效"。根因：生产储备策略为 manual_liquidity（储备 40 USDT vs 负债 4567.02=点钻 4508.11+USDT 58.91，缺口 4527.02 按记录放行），但 admin 派发与审批执行路径的 `LedgerService` 硬编码 `full_backing` 未接 `settings.wallet_reserve_policy`，每次派发 `require_coverage` 抛 `insufficient reserve coverage` 被笼统映射为"请求无效"。**不是输入框问题**（422 发生在目标解析与客服角色校验之后）。修复：两路径接入全局策略；7 类 ValueError 细分为独立错误码/中文文案；前端金额本地校验 + 错误红字icon(role=alert)/成功绿字icon(role=status)。门禁：新增 6 测先红后绿、verify PASS（API/Worker 2215/58）、npm 222。生产切换 `starchat-business-api:caibi-grant-20260920`（23:36+08 healthy），**23:42 管理员即成功派发 1550+2000 两笔（审计在案）**；**顺带发现并恢复生产容器被回退到陈旧 fb41d7fa（缺批次B三文件）的漂移**；admin 静态 `?v=20260920-grant` 公网哈希核验通过。改动待用户指示 commit/push。以[任务](tasks/2026-09-20-caibi-grant-fix.md)与[验证](../verification/2026-09-20-caibi-grant-fix.md)为准。
@@ -839,5 +903,24 @@ Astra亲审、显式gpt-5.6-terra执行完成。工作分支`codex/offline-recov
 
 ## 2026-09-13 账单/转账与历史整合 Debug2104（已安装，待用户验收）
 Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-history-2103-20260913源码e314d4f0整合main e2870554和既有H2。指定HTML账单/转账样式、按需日期检索与双向历史拖动保护已实现；同步阶段数字诊断已加入，但50秒接收延迟未定因。Mi6于03:21:25+08保留数据安装0.3.87-debug/2104，03:22:13拉回SHA260370f6…39b8bc9及固定证书一致。全Flutter2602通过/29旧钱包失败、mobile70通过、UI契约28/364通过、全分析无问题；frontend161/11旧失败，verify缺.env。未push/生产部署，用户自行真机测试。见[任务记录](tasks/2026-09-13-finance-history-2103.md)、[完整交付报告](../verification/2026-09-13-finance-history-2103.md)和[计划](../superpowers/plans/2026-09-13-finance-history-2103.md)。
+
+## 2026-09-21 后台返回偶发退登录调查
+
+已匹配用户时段19:57:55的 TOKEN_REUSE 撤销，19:58:19同设备重新登录；底层重复令牌来源及错误提示分支待进一步复现，无新修复发布。见[交接](tasks/2026-09-21-session-exit-audit-handoff.md)。
+
+## 2026-09-21 凭证刷新异常恢复修复
+
+用户已批准ADR-0080，独立分支实现及审查完成，Flutter3757/analyze0/PG8通过，后端合并门禁2301通过/48条件跳过，剩余检查通过；未部署或发布新包。见[交接](tasks/2026-09-21-session-refresh-recovery-handoff.md)。
+
+## 2026-09-22 Android v0.4.0/2157 与刷新恢复服务器（已发布）
+
+已合并2156及之前指定修复、凭证刷新恢复与启动保护，服务器b7d38f99879d/0080及Android正式0.4.0+2157已发布。Flutter3803/analyze0、构建签名和轻量发布门禁通过；iOS和最低版本未改，真机待用户反馈。主目录其他未提交业务保留。[交接](tasks/2026-09-22-android-040-release-handoff.md)。
+
+- 2026-09-22：23 屏 HTML UI 优化完成，245 项前端测试及 UI 契约通过；见 [UI 审查](../verification/2026-09-22-phone-ui-review.md)。Flutter/生产未变。
+
+## 2026-09-22 Flutter UI / Mi6 2157 debug
+
+已落实手机认证与钱包/红包/转让 UI 复用，鱼骨步骤条直接共享，Mi6保留数据安装2157并真机打开换绑页。Flutter3732、frontend245、analyze/UI契约通过；完整verify仍运行，不宣称全仓通过。见[交付](../verification/2026-09-22-flutter-phone-mi6.md)。
+
 
 

@@ -1,3 +1,4 @@
+import '../../core/business_phone_contracts.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -57,6 +58,9 @@ final class RegistrationController extends ChangeNotifier {
       const RegistrationState(RegistrationFlowStatus.idle);
   RegistrationDraft draft = const RegistrationDraft();
   String? verificationCodeHint;
+  String? registrationPhone;
+  bool get isPhoneRegistration => registrationPhone != null;
+  bool _disposed = false;
 
   void saveDraft({
     required String nickname,
@@ -78,11 +82,13 @@ final class RegistrationController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _cooldownTimer?.cancel();
     super.dispose();
   }
 
   void _startCooldown() {
+    if (_disposed) return;
     _cooldownTimer?.cancel();
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       tickSecond();
@@ -132,6 +138,7 @@ final class RegistrationController extends ChangeNotifier {
       {required String username,
       String? nickname,
       required String email,
+      String? phone,
       required String password,
       String passwordConfirmation = '',
       required String invitationCode}) async {
@@ -143,6 +150,12 @@ final class RegistrationController extends ChangeNotifier {
       passwordConfirmation: passwordConfirmation,
       invitationCode: invitationCode,
     );
+    if (phone != null) {
+      validation.remove('email');
+      if (!RegExp(r'^1[3-9]\d{9}$').hasMatch(phone)) {
+        validation['phone'] = '请输入中国大陆 11 位手机号';
+      }
+    }
     if (validation.isNotEmpty) {
       _set(RegistrationState(RegistrationFlowStatus.failed,
           fieldErrors: validation));
@@ -165,6 +178,20 @@ final class RegistrationController extends ChangeNotifier {
             fieldErrors: {'invitation_code': invitationCheck.message}));
         return false;
       }
+      if (phone != null && gateway is PhoneAuthGateway) {
+        final receipt = await (gateway as PhoneAuthGateway).registerWithPhone(
+            username: username,
+            nickname: nickname,
+            phone: phone,
+            password: password,
+            invitationCode: invitationCode);
+        registrationPhone = phone;
+        _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+            registrationSession: receipt.registrationSession));
+        await resend();
+        return true;
+      }
+      registrationPhone = null;
       final receipt = await _retryNetwork(() => gateway.register(
           username: username,
           nickname: nickname,
@@ -195,7 +222,62 @@ final class RegistrationController extends ChangeNotifier {
     }
   }
 
-  Future<void> verifyCode(String code) => _verify(code: code);
+  Future<void> verifyCode(String code) =>
+      isPhoneRegistration ? _verifyPhone(code) : _verify(code: code);
+
+  Future<void> _verifyPhone(String code) async {
+    final session = state.registrationSession!;
+    try {
+      // Query first on subsequent attempts: a consumed OTP must never be replayed
+      // while the authoritative account is provisioning or already active.
+      if (_phoneVerificationUnknown ||
+          state.status == RegistrationFlowStatus.provisioning) {
+        await _recoverPhoneVerification(session);
+        if (_phoneVerificationUnknown ||
+            state.status != RegistrationFlowStatus.awaitingVerification) {
+          return;
+        }
+      }
+      await (gateway as PhoneAuthGateway).verifyRegistrationPhone(
+          registrationSession: session, phone: registrationPhone!, code: code);
+      _set(RegistrationState(RegistrationFlowStatus.provisioning,
+          registrationSession: session));
+    } on BusinessApiException catch (error) {
+      if (error.statusCode >= 500) {
+        _phoneVerificationUnknown = true;
+        await _recoverPhoneVerification(session);
+      } else {
+        _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+            registrationSession: session,
+            resendAfterSeconds: state.resendAfterSeconds,
+            message: error.message,
+            fieldErrors: {'code': error.message}));
+      }
+    } catch (_) {
+      _phoneVerificationUnknown = true;
+      await _recoverPhoneVerification(session);
+    }
+  }
+
+  bool _phoneVerificationUnknown = false;
+  Future<void> _recoverPhoneVerification(String session) async {
+    try {
+      final receipt = await gateway.registrationStatus(session);
+      _phoneVerificationUnknown = false;
+      final status = receipt.status == 'ACTIVE'
+          ? RegistrationFlowStatus.completed
+          : receipt.status == 'PENDING_PHONE'
+              ? RegistrationFlowStatus.awaitingVerification
+              : RegistrationFlowStatus.provisioning;
+      _set(RegistrationState(status,
+          registrationSession: session,
+          resendAfterSeconds: state.resendAfterSeconds));
+    } catch (_) {
+      _set(RegistrationState(RegistrationFlowStatus.provisioning,
+          registrationSession: session, message: '验证结果待确认，请稍后查询状态'));
+    }
+  }
+
   Future<void> verifyLinkToken(String token) => _verify(token: token);
 
   void clearVerificationCodeError() {
@@ -265,6 +347,20 @@ final class RegistrationController extends ChangeNotifier {
   Future<void> resend() async {
     final session = state.registrationSession;
     if (session == null || state.resendAfterSeconds > 0) return;
+    if (isPhoneRegistration) {
+      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+          registrationSession: session, resendAfterSeconds: 60));
+      _startCooldown();
+      try {
+        await (gateway as PhoneAuthGateway).requestRegistrationOtp(session);
+      } catch (_) {
+        _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+            registrationSession: session,
+            resendAfterSeconds: state.resendAfterSeconds,
+            message: '短信发送结果待确认，请检查短信，冷却后可重试'));
+      }
+      return;
+    }
     final seconds =
         await _retryNetwork(() => gateway.resendVerification(session));
     _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
@@ -342,6 +438,6 @@ final class RegistrationController extends ChangeNotifier {
           message: '网络连接不稳定，请重试'));
   void _set(RegistrationState next) {
     state = next;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 }

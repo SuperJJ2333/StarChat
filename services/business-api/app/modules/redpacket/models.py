@@ -25,6 +25,15 @@ class RedPacket(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # ADR-0078：群主抽成与免手续费快照（创建期锁定，转让不改受益人）。
+    fee_exempt: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("0"))
+    fee_exempt_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    group_joined_count: Mapped[int | None] = mapped_column(nullable=True)
+    commission_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    commission_beneficiary_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    commission_status: Mapped[str] = mapped_column(String(16), nullable=False, default="NONE", server_default=text("'NONE'"))
+    commission_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2), nullable=True)
+    rules_version: Mapped[str] = mapped_column(String(24), nullable=False, default="rp-fee-v1", server_default=text("'rp-fee-v1'"))
     shares: Mapped[list["RedPacketShare"]] = relationship(back_populates="packet", lazy="selectin", order_by="RedPacketShare.ordinal")
 
 class RedPacketShare(Base):

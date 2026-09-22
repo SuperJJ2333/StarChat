@@ -1,3 +1,4 @@
+import '../wallet/manual_wallet_page.dart' show walletStepIndicator;
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_error.dart';
@@ -24,6 +25,8 @@ final class VerificationPage extends StatefulWidget {
 
 final class _VerificationPageState extends State<VerificationPage> {
   final code = TextEditingController();
+  bool _busy = false;
+  String? _error;
 
   @override
   void initState() {
@@ -48,12 +51,25 @@ final class _VerificationPageState extends State<VerificationPage> {
   }
 
   Future<void> verify() async {
-    await widget.controller.verifyCode(code.text);
-    if (widget.controller.state.status != RegistrationFlowStatus.provisioning) {
-      return;
-    }
-    if (await widget.controller.pollUntilActive() && mounted) {
-      widget.onCompleted();
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await widget.controller.verifyCode(code.text);
+      if (widget.controller.state.status == RegistrationFlowStatus.completed) {
+        if (mounted) widget.onCompleted();
+      } else if (widget.controller.state.status ==
+          RegistrationFlowStatus.provisioning) {
+        if (await widget.controller.pollUntilActive() && mounted) {
+          widget.onCompleted();
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '暂时无法确认状态，请稍后重试');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -75,10 +91,10 @@ final class _VerificationPageState extends State<VerificationPage> {
         ]),
         actions: [
           CupertinoDialogAction(
-              onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消')),
           CupertinoDialogAction(
-              onPressed: () =>
-                  Navigator.pop(dialogContext, input.text.trim()),
+              onPressed: () => Navigator.pop(dialogContext, input.text.trim()),
               child: const Text('确定')),
         ],
       ),
@@ -92,7 +108,8 @@ final class _VerificationPageState extends State<VerificationPage> {
           semanticType: WeChatToastSemanticType.success);
     } on BusinessApiException catch (failure) {
       if (!mounted) return;
-      showWeChatToast(context,
+      showWeChatToast(
+          context,
           failure.statusCode == 409
               ? '该邮箱已被使用'
               : (failure.message.isEmpty ? '修改邮箱失败，请稍后重试' : failure.message),
@@ -119,17 +136,22 @@ final class _VerificationPageState extends State<VerificationPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (widget.controller.isPhoneRegistration)
+                    walletStepIndicator(context, const ['填写注册信息', '验证手机号'], 1,
+                        keyPrefix: 'phone-registration-step'),
                   const AuthBrandMark(),
                   const SizedBox(height: WeChatSpacing.lg),
-                  const Text(
-                    '验证邮箱',
+                  Text(
+                    widget.controller.isPhoneRegistration ? '验证手机号' : '验证邮箱',
                     style: TextStyle(
                       fontSize: WeChatTypography.display,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const Text(
-                    '请输入邮件中的验证码，或返回应用查看验证链接结果。',
+                  Text(
+                    widget.controller.isPhoneRegistration
+                        ? '请输入短信中的 6 位验证码'
+                        : '请输入邮件中的验证码，或返回应用查看验证链接结果。',
                     style: TextStyle(color: WeChatColors.textSecondary),
                   ),
                   const SizedBox(height: WeChatSpacing.lg),
@@ -142,7 +164,10 @@ final class _VerificationPageState extends State<VerificationPage> {
                   ],
                   CupertinoTextField(
                     controller: code,
-                    placeholder: '邮件验证码',
+                    placeholder: widget.controller.isPhoneRegistration
+                        ? '短信验证码'
+                        : '邮件验证码',
+                    enabled: !_busy,
                     keyboardType: TextInputType.text,
                   ),
                   const SizedBox(height: WeChatSpacing.md),
@@ -151,8 +176,11 @@ final class _VerificationPageState extends State<VerificationPage> {
                     child: ModernActionButton(
                       key: const Key('auth-verification-verify'),
                       icon: CupertinoIcons.check_mark_circled,
-                      label: '验证并继续',
-                      onPressed: verify,
+                      label: state.status == RegistrationFlowStatus.provisioning
+                          ? '查询开通状态'
+                          : '验证并继续',
+                      loading: _busy,
+                      onPressed: _busy ? null : verify,
                     ),
                   ),
                   const SizedBox(height: WeChatSpacing.md),
@@ -163,26 +191,34 @@ final class _VerificationPageState extends State<VerificationPage> {
                       icon: CupertinoIcons.mail,
                       label: state.resendAfterSeconds > 0
                           ? '${state.resendAfterSeconds} 秒后重发'
-                          : '重新发送邮件',
+                          : (widget.controller.isPhoneRegistration
+                              ? '重新发送短信'
+                              : '重新发送邮件'),
                       kind: ModernActionKind.secondary,
-                      onPressed: state.resendAfterSeconds > 0
+                      onPressed: _busy ||
+                              state.status ==
+                                  RegistrationFlowStatus.provisioning ||
+                              state.resendAfterSeconds > 0
                           ? null
                           : widget.controller.resend,
                     ),
                   ),
                   const SizedBox(height: WeChatSpacing.md),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ModernActionButton(
-                      key: const Key('auth-verification-change-email'),
-                      icon: CupertinoIcons.pencil,
-                      label: '修改邮箱',
-                      kind: ModernActionKind.secondary,
-                      // BUG-12：验证完成前可在原地更换邮箱（服务端把验证码
-                      // 发到新邮箱，注册会话保持不变），不再退回注册页。
-                      onPressed: _changeEmail,
+                  if (!widget.controller.isPhoneRegistration)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ModernActionButton(
+                        key: const Key('auth-verification-change-email'),
+                        icon: CupertinoIcons.pencil,
+                        label: '修改邮箱',
+                        kind: ModernActionKind.secondary,
+                        // BUG-12：验证完成前可在原地更换邮箱（服务端把验证码
+                        // 发到新邮箱，注册会话保持不变），不再退回注册页。
+                        onPressed: _changeEmail,
+                      ),
                     ),
-                  ),
+                  if (_error != null || state.message != null)
+                    AuthErrorMessage(message: _error ?? state.message!),
                   if (state.status == RegistrationFlowStatus.provisioning ||
                       state.status == RegistrationFlowStatus.completed) ...[
                     const SizedBox(height: WeChatSpacing.md),

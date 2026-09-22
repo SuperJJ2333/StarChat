@@ -37,7 +37,7 @@ function inputField(label, value, placeholder) {
   return { wrapper, input };
 }
 
-export function walletBindingDemo(definition) {
+export function walletBindingDemo(definition, { depositContent } = {}) {
   const root = pageRoot(definition);
   let page = definition.page;
   let bound = !["unbound", "binding", "address-invalid"].includes(definition.state);
@@ -99,7 +99,9 @@ export function walletBindingDemo(definition) {
         action("切换为已绑定演示", () => { bound = true; ready = true; jump("home"); }));
     } else if (page === "deposit") {
       body.append(element("h2", "", "充值"), element("p", "", "USDT · TRON（TRC20）"));
-      if (!bound || !ready) {
+      if (depositContent) {
+        body.append(...depositContent());
+      } else if (!bound || !ready) {
         body.append(element("p", "c-wallet-demo__error", !bound ? "请先绑定私人钱包" : definition.state === "allocating" ? "正在获取官方充值地址…" : "官方充值地址暂不可用"),
           action("充值申请", () => {}, { disabled: true }));
       } else {

@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.wallet import create_wallet_router
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
+from app.modules.wallet import receipt_models, repair_models  # noqa: F401  (FK 目标需全部注册)
 from app.integrations.custody.sandbox import SandboxCustodyProvider
 
 

@@ -36,6 +36,11 @@
     - BUG-41：朋友圈页 `showNetworkCapsule: false`——内容离线优先可完整使用，不再渲染常驻网络状态栏（WeChatPageScaffold.navigation 新增开关，默认 true 不影响其他页面）。
     - 红包限额 200.00（用户指令，前后端统一）：服务端 config 默认 20000→200.00（已部署+重启）；生产 DB 无覆盖行（已查证）；客户端表单默认与提示同步 200。服务端测试/表单测试全绿。
     - 最终包 batch-c2（19:01 装 MI 6）；全量 flutter test 3515 全绿。
+  - **0.3.102/2142 正式发布与 iOS 企业签名交付（2026-09-20，用户指令）**：
+    - 合流：main（含四轮反馈修复）+ 并行会话孤儿房间链（8ee89d18：会话身份恢复/直接会话去重/退役房间恢复等）已同主干合流，main= dca25721 → 403a4e98/48d6e72d（iOS CI 修复）→ 5cf0a223（artifact 路径）。
+    - Android：0.3.102/2142 release 构建（standard/ARM64/三 dart-define）→ Apktool 重建 → zipalign -P 16 -f 4 → 固定身份签名（证书 75b31c66… 一致）→ verify_android_release + zipalign/aapt 检查（SHA256 439c35557e14e90b3ea08459f2c77a96f9da9f8e50a83c138f2f651afa8164c8，80,391,198 字节）。分块上传（5×16MB，远端哈希一致）→ install 版本化文件名 → latest-arm64.apk 切链 → www 域 200 抽验哈希一致 → 五设置发布（BEFORE 2141/AFTER 2142 APPLY OK，notes 158 字，min_supported 保持 3）。
+    - 同步核验（2026-09-20）：Android 2143 与 iOS unsigned IPA 均构建自 eed6bc1f（含 BUG-41 查看器修复）；IPA 内 Info.plist 核对 BundleVersion=2143 / ShortVersion=0.3.102 一致。
+    - iOS：Windows 无 Xcode——通过 GitHub Actions macos-14 工作流产出**未签名 IPA**（flutter build ios --release --no-codesign），供用户企业签名。修复三处 CI：SourcePackages 目录缺失、SPM 依赖与 Xcode 不兼容（关闭 SPM）、打包/上传步骤路径。产物 liuhetong-mobile-0.3.102-2142-unsigned.ipa（43,038,075 字节，Payload/Runner.app 完整）。
   - **生产部署（2026-09-19，用户授权）**：business-api 容器 starchat-business-api-1 最小覆盖三文件（friendship/service.py、api/identity.py、identity/registration.py）。备份 /opt/starchat/backup-20260919-defect-batch-b/（3 原文件+镜像 ID sha256:026f6dbc…）；上传件 SHA256 与本地一致；docker cp+restart 后容器 healthy、登录错误凭证仍 401 原口径、新端点存在（422=缺参）、近 5 分钟日志 0 error。注意：容器被重建（镜像重拉）会丢失覆盖层，需按本次记录重新覆盖或固化为新镜像 tag。
   - 服务端测试：friendship 54 项、identity 8 项全绿（.venv pytest）。
 - 当前状态：实现完成、定向测试全绿、全量 3466/1（唯一失败归属并行会话编辑中间态）。CSV 批次 A 状态已回填（主文件被 Excel 占用，更新副本在 artifacts/2026-09-19/）。

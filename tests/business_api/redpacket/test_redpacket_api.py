@@ -21,6 +21,9 @@ class FakeMatrixGateway:
     def __init__(self):
         self.rooms: dict[str, set[str]] = {}
 
+    def get_room_state(self, room_id):
+        return [{"type": "m.room.power_levels", "content": {"users": {"@sender:example.test": 100}}}]
+
     def get_room_members(self, room_id: str) -> set[str]:
         return set(self.rooms.get(room_id, set()))
 
@@ -63,6 +66,44 @@ def bearer(settings, user_id):
     now = datetime.now(timezone.utc)
     value = jwt.encode({"sub": user_id, "iss": settings.jwt_issuer, "iat": int(now.timestamp()), "exp": int((now + timedelta(minutes=5)).timestamp())}, settings.jwt_secret, algorithm="HS256")
     return {"Authorization": f"Bearer {value}"}
+
+
+@pytest.mark.asyncio
+async def test_actual_api_applies_owner_commission_without_ten_member_threshold(context):
+    app, factory, settings, gateway = context
+    LedgerService(factory).adjust(user_id="alice", amount=Decimal("100.50"), actor_id="finance",
+        reason_code="INITIAL_CREDIT", idempotency_key="commission-seed")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/red-packets", headers={**bearer(settings, "alice"),
+            "Idempotency-Key": "commission-api"}, json={"mode": "EQUAL", "total": "100.00",
+            "share_count": 1, "room_id": "!room:test"})
+        assert created.status_code == 201, created.text
+        packet_id = created.json()["id"]
+        with factory() as session:
+            packet = session.get(RedPacket, packet_id)
+            assert packet.fee == Decimal("0.50")
+            assert packet.commission_beneficiary_id == "sender"
+            assert packet.commission_amount == Decimal("0.10")
+        claimed = await client.post(f"/api/v1/red-packets/{packet_id}/claims",
+            headers={**bearer(settings, "alice"), "Idempotency-Key": "commission-claim"})
+        assert claimed.status_code == 201
+        with factory() as session:
+            assert session.get(RedPacket, packet_id).commission_status == "SETTLED"
+
+
+@pytest.mark.asyncio
+async def test_actual_api_exempts_owner_at_ten_joined_members(context):
+    app, factory, settings, gateway = context
+    gateway.rooms["!room:test"].update({f"@extra{i}:example.test" for i in range(8)})
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"),
+            "Idempotency-Key": "exempt-api"}, json={"mode": "EQUAL", "total": "10.00",
+            "share_count": 1, "room_id": "!room:test"})
+        assert response.status_code == 201, response.text
+        with factory() as session:
+            packet = session.get(RedPacket, response.json()["id"])
+            assert packet.fee == 0 and packet.fee_exempt is True
+            assert packet.commission_status == "NONE"
 
 @pytest.mark.asyncio
 async def test_red_packet_create_claim_and_cancel_permissions(context):

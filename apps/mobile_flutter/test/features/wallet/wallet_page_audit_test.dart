@@ -52,6 +52,10 @@ void main() {
     var writes = 0;
     final completion = Completer<void>();
     final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/fx/rate')) {
+        return flow.json({'rate': '7.10', 'stale': false});
+      }
+
       if (request.url.path.endsWith('/binding')) {
         return flow.json(fixtures.binding);
       }

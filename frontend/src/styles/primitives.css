@@ -1362,3 +1362,61 @@ app-transfer-card {
   background: var(--color-brand-primary);
   color: var(--color-on-accent);
 }
+
+/* ADR-0075/0077/0079 设计演示：手机认证与人工充值（token 化，无硬编码色） */
+.c-phone-flows__logo { width: var(--size-auth-logo); height: var(--size-auth-logo); }
+.c-phone-flows__otp-row { display: flex; gap: var(--space-sm); align-items: stretch; }
+.c-phone-flows__otp-row .c-form-field { flex: 1; }
+.c-phone-flows__otp-button {
+  min-height: var(--size-touch); padding: 0 var(--space-lg);
+  border: 1px solid var(--color-brand-primary); border-radius: var(--radius-control);
+  background: var(--color-surface-elevated); color: var(--color-brand-primary);
+  font-size: var(--type-subhead-size); cursor: pointer; white-space: nowrap;
+}
+.c-phone-flows__otp-button:disabled {
+  border-color: var(--color-divider); color: var(--color-text-tertiary); cursor: not-allowed;
+}
+.c-phone-flows__hint {
+  padding: var(--space-sm) var(--space-md); border-radius: var(--radius-card);
+  background: var(--color-surface-primary); color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size); line-height: var(--type-caption-line);
+}
+.c-phone-flows__error { color: var(--color-danger); font-size: var(--type-caption-size); }
+.c-phone-flows__card {
+  padding: var(--space-lg); border-radius: var(--radius-card);
+  background: var(--color-surface-elevated); border: 1px solid var(--color-divider);
+  display: grid; gap: var(--space-md); color: var(--color-text-primary);
+}
+.c-phone-flows__card h2 { margin: 0; font-size: var(--type-callout-size); font-weight: 600; }
+.c-phone-flows__row { display: flex; justify-content: space-between; gap: var(--space-md); font-size: var(--type-subhead-size); }
+.c-phone-flows__row .c-phone-flows__row-label { color: var(--color-text-secondary); }
+.c-phone-flows__channel { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); }
+.c-phone-flows__channel-option { display: flex; align-items: center; gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md); border-radius: var(--radius-control);
+  background: var(--color-surface-primary); font-size: var(--type-subhead-size); }
+.c-phone-flows__steps { display: grid; gap: var(--space-sm); margin: 0; padding: 0; list-style: none; }
+.c-phone-flows__step { color: var(--color-text-tertiary); font-size: var(--type-subhead-size); }
+.c-phone-flows__step--done { color: var(--color-brand-primary); }
+
+/* Existing phone-flow layouts use the shared form, action and spacing primitives. */
+.c-phone-flows__otp-row { align-items: end; }
+.c-phone-flows__otp-row .c-form-field { min-width: 0; }
+.c-phone-flows__otp-row app-secondary-button { flex: 0 0 auto; }
+.c-phone-flows__row { align-items: baseline; line-height: var(--type-subhead-line); }
+.c-phone-flows__row > span { min-width: 0; overflow-wrap: anywhere; }
+.c-phone-flows__row > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.c-phone-flows__row-label { flex: 0 0 40%; }
+.c-phone-flows__card .c-form-help { margin: 0; }
+.c-phone-flows__channel-option { min-height: var(--size-touch); cursor: pointer; }
+.c-phone-flows__channel-option:has(input:checked) { color: var(--color-brand-primary); }
+.c-phone-flows__channel-option input { accent-color: var(--color-brand-primary); }
+
+/* Transfer status follows wallet card geometry, using a neutral surface. */
+.p-transfer-transfer .c-phone-flows__card { padding: var(--space-xl); border-radius: var(--radius-control); background: var(--color-surface-elevated); color: var(--color-text-primary); }
+
+/* Same connected numbered steps as the wallet / Flutter walletStepIndicator. */
+.c-phone-flows__steps { display: flex; align-items: center; counter-reset: phone-step; }
+.c-phone-flows__step { display: flex; align-items: center; gap: var(--space-xs); flex: 1; font-size: var(--type-caption-size); }
+.c-phone-flows__step::before { counter-increment: phone-step; content: counter(phone-step); border-radius: 50%; min-width: var(--size-touch); min-height: var(--size-touch); display: grid; place-items: center; background: var(--color-surface-primary); }
+.c-phone-flows__step--done::before { background: var(--color-brand-primary); color: var(--color-on-accent); }
+.c-phone-flows__step + .c-phone-flows__step { border-left: var(--size-hairline) solid var(--color-divider); padding-left: var(--space-sm); }

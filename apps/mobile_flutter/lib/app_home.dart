@@ -1,3 +1,4 @@
+import 'features/auth/phone_rebind_page.dart';
 import 'features/contacts/contact_actions.dart';
 import 'features/contacts/friend_acceptance_greeting_ledger.dart';
 import 'features/matrix/direct_chat_failure.dart';
@@ -2322,6 +2323,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(_reconcileOpenedDirectRoom(roomId, contact));
       await landed.future;
       stage = 'landed';
+      // 路由已落地：通知调用方移除打开期反馈遮罩（转圈），由房间页自身
+      // 的推入转场完成最后的视觉过渡。
+      request.onRoomLanded?.call();
       // A removed/replaced route completes its pop before its widgets finish
       // their final frame. Keep their timeline and lease alive until disposal.
       await visible;
@@ -3415,6 +3419,11 @@ final class _AccountPrivacyPageState extends State<AccountPrivacyPage> {
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
                     children: [
+                      WeChatListTile(
+                        title: const Text('绑定或更换手机号'),
+                        onTap: () => Navigator.of(context).push(MotionPageRoute(
+                            builder: (_) => PhoneRebindPage(api: widget.api))),
+                      ),
                       WeChatListTile(
                         title: const Text('是否自动允许加入群聊'),
                         subtitle: const Text('开启后，好友创建群聊时将自动加入'),

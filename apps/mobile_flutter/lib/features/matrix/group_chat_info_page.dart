@@ -712,6 +712,12 @@ final class GroupManagementPage extends StatelessWidget {
           navigationBar: const CupertinoNavigationBar(middle: Text('群管理')),
           child: SafeArea(
               child: ListView(children: [
+            if (controller.ownershipTransferCompatibilityMessage != null)
+              Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(controller.ownershipTransferCompatibilityMessage!,
+                      style:
+                          const TextStyle(color: WeChatColors.textSecondary))),
             if (controller.state.message != null)
               Padding(
                   padding: const EdgeInsets.all(16),
@@ -807,13 +813,23 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
       ? <String>{}
       : widget.controller.state.snapshot!.adminIds.toSet();
   bool busy = false;
+  @override
+  void initState() {
+    super.initState();
+    if (widget.transfer) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.controller.refreshOwnershipTransfer();
+      });
+    }
+  }
+
   Future<void> _save() async {
     if (widget.transfer) {
       final confirmed = await showCupertinoDialog<bool>(
           context: context,
           builder: (context) => CupertinoAlertDialog(
                   title: const Text('转让群主'),
-                  content: const Text('转让后你将成为普通成员，是否继续？'),
+                  content: const Text('转让完成后你将成为普通成员。群主资格与冷却期由服务端核验，是否继续？'),
                   actions: [
                     CupertinoDialogAction(
                         onPressed: () => Navigator.pop(context, false),
@@ -833,17 +849,20 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
     }
     if (!mounted) return;
     setState(() => busy = false);
-    if (widget.controller.state.status != GroupChatInfoStatus.failed) {
+    if (!widget.transfer &&
+        widget.controller.state.status != GroupChatInfoStatus.failed) {
       Navigator.pop(context);
     }
   }
 
   @override
-  Widget build(BuildContext context) => widget.identityCache == null
-      ? _buildContent(context)
-      : ListenableBuilder(
-          listenable: widget.identityCache!,
-          builder: (context, _) => _buildContent(context));
+  Widget build(BuildContext context) => ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) => widget.identityCache == null
+          ? _buildContent(context)
+          : ListenableBuilder(
+              listenable: widget.identityCache!,
+              builder: (context, _) => _buildContent(context)));
   Widget _buildContent(BuildContext context) {
     final snapshot = widget.controller.state.snapshot!;
     return WeChatPageScaffold.navigation(
@@ -851,17 +870,53 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
             middle: Text(widget.transfer ? '转让群主' : '群管理员'),
             trailing: CupertinoButton(
                 padding: EdgeInsets.zero,
-                onPressed: busy || (widget.transfer && selected.isEmpty)
+                onPressed: busy ||
+                        widget.controller.state.status ==
+                            GroupChatInfoStatus.saving ||
+                        (widget.transfer &&
+                            (selected.isEmpty ||
+                                widget.controller.ownershipTransferPending ||
+                                !snapshot.isOwner))
                     ? null
                     : _save,
                 child: const Text('完成'))),
         child: SafeArea(
             child: ListView(children: [
+          if (widget.transfer &&
+              widget.controller.ownershipTransferCompatibilityMessage != null)
+            Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                    widget.controller.ownershipTransferCompatibilityMessage!,
+                    style: const TextStyle(color: WeChatColors.textSecondary))),
           if (widget.controller.state.status == GroupChatInfoStatus.failed)
             Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(widget.controller.state.message!,
                     style: const TextStyle(color: WeChatColors.danger))),
+          if (widget.transfer && widget.controller.ownershipTransfer != null)
+            Container(
+                key: const Key('group-transfer-status'),
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                    color: WeChatColors.elevatedSurface(context),
+                    borderRadius: BorderRadius.circular(12)),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.controller.ownershipTransferMessage,
+                          style: TextStyle(
+                              color: WeChatColors.resolveTextPrimary(context))),
+                      const SizedBox(height: 8),
+                      CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: widget.controller.state.status ==
+                                  GroupChatInfoStatus.saving
+                              ? null
+                              : widget.controller.refreshOwnershipTransfer,
+                          child: const Text('刷新状态')),
+                    ])),
           for (final member in snapshot.members
               .where((m) => m.matrixUserId != snapshot.ownerId))
             WeChatListTile(
@@ -869,7 +924,9 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
                 trailing: Icon(selected.contains(member.matrixUserId)
                     ? CupertinoIcons.check_mark_circled_solid
                     : CupertinoIcons.circle),
-                onTap: busy
+                onTap: busy ||
+                        (widget.transfer &&
+                            widget.controller.ownershipTransferPending)
                     ? null
                     : () => setState(() {
                           final id = member.matrixUserId;

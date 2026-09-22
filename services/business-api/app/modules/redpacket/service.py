@@ -14,14 +14,25 @@ from app.modules.identity.payment_pin import PaymentPinService
 
 # ADR-0073：红包手续费与转账同费率、同取整、同下限（0.5%，最低 0.01 点钻）。
 RED_PACKET_FEE_RATE = Decimal("0.005")
+# ADR-0078：群主抽成 0.1%（本金两位 HALF_UP，无最低，不超过最终保留手续费）；
+# 满 OWNER_FEE_EXEMPT_MIN_MEMBERS 名 joined 成员时群主本群发送免手续费。
+GROUP_OWNER_COMMISSION_RATE = Decimal("0.001")
+OWNER_FEE_EXEMPT_MIN_MEMBERS = 10
+COMMISSION_RULES_VERSION = "rp-fee-v2"
 
 
 def red_packet_fee(total: Decimal) -> Decimal:
     return max(CENT, money(total * RED_PACKET_FEE_RATE))
 
 
+def owner_commission(total: Decimal, retained_fee: Decimal) -> Decimal:
+    """本金×0.001 两位 HALF_UP；不设最低、舍入 0 不补 0.01；上限=保留手续费。"""
+    raw = money(total * GROUP_OWNER_COMMISSION_RATE)
+    return min(raw, money(retained_fee))
+
+
 class RedPacketService:
-    def __init__(self, session_factory, ledger: LedgerService, *, max_total: Decimal | str = "20000.00", profiles=None, room_membership=None, payment_pin=None):
+    def __init__(self, session_factory, ledger: LedgerService, *, max_total: Decimal | str = "20000.00", profiles=None, room_membership=None, payment_pin=None, group_registry=None, owner_commission_enabled=True):
         self.session_factory = session_factory
         self.ledger = ledger
         self.payment_pin = payment_pin or PaymentPinService(session_factory)
@@ -33,6 +44,12 @@ class RedPacketService:
         # 关系）。None = 未配置（worker 过期退款等非用户请求路径），
         # 此时群红包的成员校验退化为仅允许发起人本人。
         self.room_membership = room_membership
+        # ADR-0078：业务群注册表（群主/免手续费权威）。None = 未接线
+        # （仅测试/worker 路径）：此时不做免手续费判定（费用照收），
+        # 群红包不产生抽成快照（commission_status=NONE）——生产 main.py
+        # 始终接线，绝不允许客户端自行决定免手续费或群主身份。
+        self.group_registry = group_registry
+        self.owner_commission_enabled = owner_commission_enabled
 
     def create_equal(self, **kwargs) -> RedPacket:
         total, count = self._validate(kwargs["total"], kwargs["share_count"])
@@ -93,6 +110,12 @@ class RedPacketService:
                 "fee": str(packet.fee or Decimal("0.00"))
                 if packet.sender_id == user_id
                 else None,
+                # ADR-0078：发起方可见免手续费原因与抽成状态（待结算不
+                # 增加可花余额；客户端只展示服务端口径）。
+                "fee_exempt": bool(packet.fee_exempt) if packet.sender_id == user_id else None,
+                "fee_exempt_reason": packet.fee_exempt_reason if packet.sender_id == user_id else None,
+                "commission_status": packet.commission_status if packet.sender_id == user_id else None,
+                "commission_amount": str(packet.commission_amount) if packet.sender_id == user_id and packet.commission_amount is not None else None,
                 "share_count": packet.share_count,
                 "claimed_count": len(claims), "status": packet.status, "expires_at": packet.expires_at,
                 "room_id": packet.room_id, "server_time": server_time.isoformat(),
@@ -160,9 +183,6 @@ class RedPacketService:
         now = datetime.now(timezone.utc)
         packet_id = str(uuid4())
         escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
-        # ADR-0073：发起方承担手续费，与转账同构（本金入托管、手续费进
-        # 官方 PLATFORM_FEE 科目），分录整体平衡且每笔可追溯。
-        fee = red_packet_fee(total)
         # F01：幂等检查、账本扣款/入托管、业务单据在同一事务提交——
         # 记账后、单据插入前崩溃即整体回滚，不再留下"钱进了托管但没有
         # 红包"的中间态。并发同键：账本与单据唯一约束互证，败者回滚后
@@ -177,10 +197,35 @@ class RedPacketService:
                 if existing.total != total or existing.mode != mode or existing.room_id != room_id or existing.recipient_id != recipient_id or existing.share_count != len(amounts):
                     raise ValueError("idempotency key reused with different payload")
                 return existing
-            if room_id:
+            # ADR-0078：满 10 人群主本群发送免手续费；否则 ADR-0073 费率。
+            # 抽成受益人/费率/成员快照在创建事务内锁定，后续转让不改。
+            fee_exempt, fee_exempt_reason, joined_count = False, None, None
+            commission_rate, commission_beneficiary = None, None
+            if room_id and self.group_registry is not None:
+                sender_is_member, joined_count = self._authorize_group_creation(room_id, sender_id, len(amounts))
+                owner_user_id = (self.group_registry.owner_for_creation(session, room_id)
+                    if hasattr(self.group_registry, "owner_for_creation")
+                    else self.group_registry.owner_of(room_id))
+                if owner_user_id is None:
+                    raise ValueError("room membership required")
+                if sender_id == owner_user_id and joined_count >= OWNER_FEE_EXEMPT_MIN_MEMBERS:
+                    fee_exempt, fee_exempt_reason = True, "GROUP_OWNER_TEN_PLUS"
+                elif self.owner_commission_enabled:
+                    commission_rate, commission_beneficiary = GROUP_OWNER_COMMISSION_RATE, owner_user_id
+            fee = Decimal("0.00") if fee_exempt else red_packet_fee(total)
+            if commission_rate is not None and fee > Decimal("0.00"):
+                commission_amount = owner_commission(total, fee)
+                commission_status = "PENDING" if commission_amount > Decimal("0.00") else "NONE"
+            else:
+                commission_amount, commission_status = None, "NONE"
+            if room_id and self.group_registry is None:
                 self._authorize_group_creation(room_id, sender_id, len(amounts))
             self.ledger.post(entries={sender_id: -(total + fee), escrow: total, "PLATFORM_FEE": fee}, actor_id=sender_id, reason_code="RED_PACKET_CREATE", idempotency_key=idempotency_key, scope="redpacket.create", session=session)
-            packet = RedPacket(id=packet_id, sender_id=sender_id, total=total, fee=fee, share_count=len(amounts), mode=mode, status="OPEN", room_id=room_id, recipient_id=recipient_id, idempotency_key=idempotency_key, expires_at=expires_at, created_at=now)
+            packet = RedPacket(id=packet_id, sender_id=sender_id, total=total, fee=fee, share_count=len(amounts), mode=mode, status="OPEN", room_id=room_id, recipient_id=recipient_id, idempotency_key=idempotency_key, expires_at=expires_at, created_at=now,
+                fee_exempt=fee_exempt, fee_exempt_reason=fee_exempt_reason, group_joined_count=joined_count,
+                commission_rate=commission_rate, commission_beneficiary_id=commission_beneficiary,
+                commission_status=commission_status, commission_amount=commission_amount,
+                rules_version=COMMISSION_RULES_VERSION)
             packet.shares = [RedPacketShare(id=str(uuid4()), ordinal=i, amount=money(amount)) for i, amount in enumerate(amounts)]
             session.add(packet)
             session.flush()
@@ -213,6 +258,9 @@ class RedPacketService:
             share.claimed_by, share.claimed_at = user_id, now
             if session.scalar(select(RedPacketShare.id).where(RedPacketShare.packet_id == packet_id, RedPacketShare.claimed_by.is_(None), RedPacketShare.id != share.id).limit(1)) is None:
                 packet.status = "COMPLETED"
+                # ADR-0078：全部领取即手续费最终保留——抽成与 COMPLETED
+                # 翻转同一事务入账（行锁保证并发完成只结算一次）。
+                self._settle_commission(session, packet)
             session.flush()
             return share
 
@@ -249,9 +297,43 @@ class RedPacketService:
                 # F01：退款分录与终态变更同一事务（session 注入，不再
                 # 各自独立提交）。
                 self.ledger.post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="redpacket.refund", session=session, skip_coverage=True)
+                # ADR-0078：退还手续费的红包不发抽成（PENDING→FORFEITED）。
+                if packet.commission_status == "PENDING":
+                    packet.commission_status = "FORFEITED"
             packet.status = final_status
             session.flush()
             return packet
+
+    def _settle_commission(self, session, packet: RedPacket) -> None:
+        """群主抽成一次性入账：{PLATFORM_FEE: -c, 群主: +c}，幂等键
+        commission:{packet_id}；重复回调/重复任务/并发完成只入账一次。"""
+        if packet.commission_status != "PENDING":
+            return
+        beneficiary = packet.commission_beneficiary_id
+        amount = owner_commission(packet.total, packet.fee or Decimal("0.00"))
+        if not beneficiary or amount <= Decimal("0.00"):
+            packet.commission_status = "NONE"
+            return
+        self.ledger.post(entries={"PLATFORM_FEE": -amount, beneficiary: amount}, actor_id="redpacket-settlement",
+            reason_code="RED_PACKET_COMMISSION", idempotency_key=f"commission:{packet.id}",
+            scope="redpacket.commission", session=session, skip_coverage=True)
+        packet.commission_amount = amount
+        packet.commission_status = "SETTLED"
+
+    def settle_pending_commissions(self, *, limit: int = 100, actor_id: str = "business-worker") -> int:
+        """worker 兜底：PENDING+COMPLETED 的历史遗漏补结算（幂等）。"""
+        settled = 0
+        with self.session_factory() as session:
+            ids = list(session.scalars(select(RedPacket.id).where(
+                RedPacket.status == "COMPLETED", RedPacket.commission_status == "PENDING").limit(limit)))
+        for packet_id in ids:
+            with self.session_factory.begin() as session:
+                packet = session.scalar(select(RedPacket).where(RedPacket.id == packet_id).with_for_update())
+                if packet is None or packet.status != "COMPLETED" or packet.commission_status != "PENDING":
+                    continue
+                self._settle_commission(session, packet)
+                settled += 1
+        return settled
 
     def _authorize_room_access(self, packet: RedPacket, *, user_id: str) -> None:
         """F06：群红包房间成员授权。
@@ -279,6 +361,7 @@ class RedPacketService:
             raise ValueError("room membership required")
         if share_count > member_count:
             raise ValueError("share count exceeds room members")
+        return sender_is_member, member_count
 
     @staticmethod
     def _aware(value):

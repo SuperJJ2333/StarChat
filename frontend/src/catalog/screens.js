@@ -14,7 +14,12 @@ const rendererFiles = Object.freeze({
   caibi: "finance",
   redpacket: "finance",
   wallet: "finance",
-  feedback: "feedback"
+  feedback: "feedback",
+  phone: "phone-flows",
+  recharge: "phone-flows",
+  fx: "phone-flows",
+  commission: "phone-flows",
+  transfer: "phone-flows"
 });
 
 function semanticTags(state) {
@@ -76,6 +81,28 @@ register("auth", "verification", [
   ["code-error", "邮箱验证 / 验证码错误"], ["expired", "邮箱验证 / 已过期"], ["resend-failed", "邮箱验证 / 重发失败"]
 ]);
 register("auth", "layout", [["keyboard", "认证 / 键盘布局"], ["reduced-motion", "认证 / 减少动态效果"]]);
+register("phone", "login-phone", [
+  ["default", "手机登录 / 输入手机号"], ["otp-sent", "手机登录 / 验证码已发送"],
+  ["cooldown", "手机登录 / 重发冷却"], ["error", "手机登录 / 凭证错误"]
+]);
+register("phone", "registration-phone", [
+  ["default", "手机注册 / 手机邮箱选择"], ["otp", "手机注册 / 短信验证码"],
+  ["matrix-wait", "手机注册 / 等待开通"], ["error", "手机注册 / 验证码错误"]
+]);
+register("phone", "rebind", [
+  ["old", "换绑 / 验证当前手机号"], ["new", "换绑 / 验证新手机号"], ["success", "换绑 / 完成"]
+]);
+register("recharge", "directory", [["directory", "人工充值 / 客服目录与申请"]]);
+register("recharge", "history", [["history", "人工充值 / 我的申请"]]);
+register("recharge", "pending-review", [["pending-review", "人工充值 / 待核对案件"]]);
+register("fx", "fx", [["fresh", "钱包 / 汇率与应付"], ["stale", "钱包 / 汇率过期参考"]]);
+register("commission", "commission", [
+  ["pending", "红包 / 抽成待结算"], ["settled", "红包 / 抽成已入账"], ["fee-exempt", "红包 / 群主免手续费"]
+]);
+register("transfer", "transfer", [
+  ["pending", "转让 / 处理中"], ["review", "转让 / 待核对"],
+  ["completed", "转让 / 完成"], ["unavailable", "转让 / 未启用"]
+]);
 
 register("messages", "inbox", [
   ["default", "消息 / 默认"], ["syncing", "消息 / 同步中"], ["empty", "消息 / 空状态"],

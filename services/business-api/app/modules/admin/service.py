@@ -240,7 +240,9 @@ class AdminControlService:
             for user_id, role in role_rows:
                 roles_by_user.setdefault(user_id, []).append(role.value)
             profiles = support_profile_badges(session, user_ids)
-        def masked(email: str) -> str:
+        def masked(email: str | None) -> str:
+            if not email:
+                return ""
             local, domain = email.split('@', 1)
             return f"{local[:1]}***@{domain}"
         return {"items": [{"id": u.id, "username": u.username, "nickname": u.nickname, "masked_email": masked(u.email_normalized), "roles": sorted(roles_by_user[u.id]), "badge": profiles.get(u.id, "官方客服"), "dispatch_eligible": RoleCode.SUPPORT_AGENT.value in roles_by_user[u.id]} for u in users], "total": total, "limit": limit, "offset": offset}

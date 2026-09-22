@@ -17,6 +17,37 @@ def migration(filename='0043_funding_intents.py'):
     return module
 
 
+def test_cancel_expand_migration_preserves_intent_and_adds_cancellation_receipt():
+    from datetime import datetime, timedelta, timezone
+    engine = sa.create_engine('sqlite://')
+    with engine.begin() as conn:
+        conn.exec_driver_sql('CREATE TABLE wallet_bindings (id VARCHAR(36) PRIMARY KEY)')
+        conn.exec_driver_sql("INSERT INTO wallet_bindings VALUES ('binding')")
+        old = migration('0043_funding_intents.py')
+        old.op = Operations(MigrationContext.configure(conn))
+        old.upgrade()
+        before = sa.Table('wallet_deposit_intents', sa.MetaData(), autoload_with=conn)
+        now = datetime.now(timezone.utc)
+        conn.execute(before.insert().values(id='intent', user_id='alice', idempotency_key='create',
+            binding_id='binding', binding_version=1, binding_effective_from_block=100,
+            source_address='source', official_address='official', official_config_version='v1',
+            network='tron-mainnet', expected_amount=10, rules_snapshot={'version':'original'},
+            status='OPEN', created_at=now, expires_at=now + timedelta(minutes=20)))
+        expand = migration('0082_deposit_intent_cancel.py')
+        expand.op = Operations(MigrationContext.configure(conn))
+        expand.upgrade()
+        after = sa.Table('wallet_deposit_intents', sa.MetaData(), autoload_with=conn)
+        conn.execute(after.update().where(after.c.id == 'intent').values(status='CANCELLED', closed_at=now))
+        row = conn.execute(sa.select(after)).mappings().one()
+        assert row['rules_snapshot'] == {'version':'original'}
+        assert row['expected_amount'] == 10
+        assert row['status'] == 'CANCELLED'
+        assert 'wallet_deposit_intent_cancellations' in sa.inspect(conn).get_table_names()
+        with pytest.raises(RuntimeError, match='append-only'):
+            expand.downgrade()
+    engine.dispose()
+
+
 def test_scan_migration_retains_existing_data_and_rejects_invalid_progress():
     module = migration('0048_funding_scan.py')
     engine = sa.create_engine('sqlite://')

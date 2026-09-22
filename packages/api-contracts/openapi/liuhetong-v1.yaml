@@ -1517,9 +1517,42 @@
             ],
             "title": "Candidate Txid"
           },
+          "conversion_rate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Rate"
+          },
           "digest": {
             "title": "Digest",
             "type": "string"
+          },
+          "final_rate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Rate"
+          },
+          "final_receive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Receive"
           },
           "funding_amount": {
             "anyOf": [
@@ -1551,6 +1584,17 @@
           "quote_id": {
             "title": "Quote Id",
             "type": "string"
+          },
+          "rate_stale": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Stale"
           },
           "review_reason": {
             "anyOf": [
@@ -2074,6 +2118,60 @@
         "title": "CreateRedPacketRequest",
         "type": "object"
       },
+      "CsDirectoryBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cs_user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Cs User Id",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "payment_address": {
+            "maxLength": 128,
+            "minLength": 20,
+            "title": "Payment Address",
+            "type": "string"
+          },
+          "sort": {
+            "default": 0,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Sort",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cs_user_id",
+          "display_name",
+          "payment_address"
+        ],
+        "title": "CsDirectoryBody",
+        "type": "object"
+      },
       "DailyWalletReport": {
         "properties": {
           "accounts": {
@@ -2184,6 +2282,19 @@
           "reason_detail"
         ],
         "title": "DepositRepairPreviewBody",
+        "type": "object"
+      },
+      "DiagnosticReceipt": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "title": "DiagnosticReceipt",
         "type": "object"
       },
       "DirectCaibiGrantBody": {
@@ -3074,6 +3185,75 @@
         "title": "FriendRequestProjection",
         "type": "object"
       },
+      "FxRateResponse": {
+        "properties": {
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "pair": {
+            "title": "Pair",
+            "type": "string"
+          },
+          "pricing_basis": {
+            "title": "Pricing Basis",
+            "type": "string"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "string"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "upstream_uptime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Uptime"
+          }
+        },
+        "required": [
+          "pair",
+          "rate",
+          "fetched_at",
+          "expires_at",
+          "stale",
+          "upstream_uptime",
+          "pricing_basis",
+          "disclaimer"
+        ],
+        "title": "FxRateResponse",
+        "type": "object"
+      },
       "GrantIssueRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3194,6 +3374,57 @@
           "token"
         ],
         "title": "GroupJoinRedeemRequest",
+        "type": "object"
+      },
+      "GroupRegisterBody": {
+        "properties": {
+          "room_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Room Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room_id"
+        ],
+        "title": "GroupRegisterBody",
+        "type": "object"
+      },
+      "GroupTenureMigrationBody": {
+        "properties": {
+          "owner_since": {
+            "format": "date-time",
+            "title": "Owner Since",
+            "type": "string"
+          },
+          "reason_code": {
+            "maxLength": 100,
+            "minLength": 3,
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_since",
+          "reason_code"
+        ],
+        "title": "GroupTenureMigrationBody",
+        "type": "object"
+      },
+      "GroupTransferBody": {
+        "properties": {
+          "new_owner_user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "New Owner User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_owner_user_id"
+        ],
+        "title": "GroupTransferBody",
         "type": "object"
       },
       "HandoverConfirmBody": {
@@ -4329,6 +4560,28 @@
             "title": "Policy Version",
             "type": "string"
           },
+          "rate_fetched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Fetched At"
+          },
+          "rate_stale": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Stale"
+          },
           "receive": {
             "title": "Receive",
             "type": "string"
@@ -4697,6 +4950,31 @@
           "enrolled_at"
         ],
         "title": "MfaStatus",
+        "type": "object"
+      },
+      "MobileRefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Id"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "MobileRefreshRequest",
         "type": "object"
       },
       "MomentsPreferencesResponse": {
@@ -5190,9 +5468,42 @@
             ],
             "title": "Candidate Txid"
           },
+          "conversion_rate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Rate"
+          },
           "digest": {
             "title": "Digest",
             "type": "string"
+          },
+          "final_rate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Rate"
+          },
+          "final_receive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Receive"
           },
           "funding_amount": {
             "anyOf": [
@@ -5221,6 +5532,17 @@
           "quote_id": {
             "title": "Quote Id",
             "type": "string"
+          },
+          "rate_stale": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Stale"
           },
           "review_reason": {
             "anyOf": [
@@ -5264,6 +5586,156 @@
           "review_reason"
         ],
         "title": "PayoutView",
+        "type": "object"
+      },
+      "PhoneLoginBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 8,
+            "minLength": 4,
+            "title": "Code",
+            "type": "string"
+          },
+          "device_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Device Key",
+            "type": "string"
+          },
+          "device_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Device Name",
+            "type": "string"
+          },
+          "phone": {
+            "maxLength": 20,
+            "minLength": 5,
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone",
+          "code",
+          "device_key",
+          "device_name"
+        ],
+        "title": "PhoneLoginBody",
+        "type": "object"
+      },
+      "PhoneOldVerifyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "PhoneOldVerifyBody",
+        "type": "object"
+      },
+      "PhoneOtpRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "phone": {
+            "maxLength": 20,
+            "minLength": 5,
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "title": "PhoneOtpRequestBody",
+        "type": "object"
+      },
+      "PhonePrivacyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "phone_findable": {
+            "title": "Phone Findable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "phone_findable"
+        ],
+        "title": "PhonePrivacyBody",
+        "type": "object"
+      },
+      "PhoneRebindConfirmBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 8,
+            "minLength": 4,
+            "title": "Code",
+            "type": "string"
+          },
+          "new_phone": {
+            "maxLength": 20,
+            "minLength": 5,
+            "title": "New Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_phone",
+          "code"
+        ],
+        "title": "PhoneRebindConfirmBody",
+        "type": "object"
+      },
+      "PhoneRegistrationVerifyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "phone": {
+            "maxLength": 20,
+            "minLength": 5,
+            "title": "Phone",
+            "type": "string"
+          },
+          "registration_session": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Registration Session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "registration_session",
+          "phone",
+          "code"
+        ],
+        "title": "PhoneRegistrationVerifyBody",
+        "type": "object"
+      },
+      "PhoneSearchBody": {
+        "additionalProperties": false,
+        "properties": {
+          "phone": {
+            "maxLength": 20,
+            "minLength": 5,
+            "title": "Phone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone"
+        ],
+        "title": "PhoneSearchBody",
         "type": "object"
       },
       "PlatformRecord": {
@@ -6226,6 +6698,58 @@
         "title": "QuoteView",
         "type": "object"
       },
+      "RateAdjustBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mfa_proof": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 6,
+                "minLength": 6,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Proof"
+          },
+          "new_rate": {
+            "pattern": "^(0|[1-9][0-9]{0,3})(\\.[0-9]{1,6})?$",
+            "title": "New Rate",
+            "type": "string"
+          },
+          "operation_password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 128,
+                "minLength": 12,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Password"
+          },
+          "reason_code": {
+            "maxLength": 100,
+            "minLength": 3,
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_rate",
+          "reason_code"
+        ],
+        "title": "RateAdjustBody",
+        "type": "object"
+      },
       "ReadyHealthResponse": {
         "properties": {
           "database": {
@@ -6247,6 +6771,176 @@
           "database"
         ],
         "title": "ReadyHealthResponse",
+        "type": "object"
+      },
+      "RechargeBindBody": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Adjustment Id",
+            "type": "string"
+          },
+          "final_rate": {
+            "anyOf": [
+              {
+                "maxLength": 18,
+                "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Rate"
+          }
+        },
+        "required": [
+          "adjustment_id"
+        ],
+        "title": "RechargeBindBody",
+        "type": "object"
+      },
+      "RechargeCreditBody": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustment_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjustment Id"
+          },
+          "final_caibi_amount": {
+            "maxLength": 20,
+            "pattern": "^(0|[1-9][0-9]{0,15})(\\.[0-9]{1,2})?$",
+            "title": "Final Caibi Amount",
+            "type": "string"
+          },
+          "final_rate": {
+            "anyOf": [
+              {
+                "maxLength": 18,
+                "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,6})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Rate"
+          },
+          "ledger_transaction_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Ledger Transaction Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ledger_transaction_id",
+          "final_caibi_amount"
+        ],
+        "title": "RechargeCreditBody",
+        "type": "object"
+      },
+      "RechargeRejectBody": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 3,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "RechargeRejectBody",
+        "type": "object"
+      },
+      "RechargeReviewBody": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "pattern": "^(retry|release)$",
+            "title": "Action",
+            "type": "string"
+          },
+          "binding_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action",
+          "binding_id"
+        ],
+        "title": "RechargeReviewBody",
+        "type": "object"
+      },
+      "RechargeSubmitBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_usdt": {
+            "maxLength": 24,
+            "pattern": "^(0|[1-9][0-9]{0,15})(\\.[0-9]{1,6})?$",
+            "title": "Amount Usdt",
+            "type": "string"
+          },
+          "evidence_txid": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 10,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Txid"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "amount_usdt"
+        ],
+        "title": "RechargeSubmitBody",
         "type": "object"
       },
       "RedPacketSettingsBody": {
@@ -6366,10 +7060,17 @@
         "additionalProperties": false,
         "properties": {
           "email": {
-            "maxLength": 320,
-            "minLength": 3,
-            "title": "Email",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
           },
           "invitation_code": {
             "maxLength": 128,
@@ -6395,6 +7096,19 @@
             "title": "Password",
             "type": "string"
           },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
           "referral_code": {
             "anyOf": [
               {
@@ -6416,7 +7130,6 @@
         },
         "required": [
           "username",
-          "email",
           "password",
           "invitation_code"
         ],
@@ -7249,6 +7962,20 @@
           "refresh_token"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "TransferReviewBody": {
+        "properties": {
+          "action": {
+            "pattern": "^(confirm_applied|fail_unapplied)$",
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "TransferReviewBody",
         "type": "object"
       },
       "TxidBody": {
@@ -8678,6 +9405,81 @@
         "summary": "Review Withdrawal",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/groups/{room_id}/owner-tenure": {
+      "post": {
+        "operationId": "admin_set_owner_tenure_api_v1_admin_groups__room_id__owner_tenure_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "room_id",
+            "required": true,
+            "schema": {
+              "title": "Room Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupTenureMigrationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Admin Set Owner Tenure",
+        "tags": [
+          "groups"
         ]
       }
     },
@@ -14905,6 +15707,575 @@
         ]
       }
     },
+    "/api/v1/auth/phone/login": {
+      "post": {
+        "operationId": "phone_login_api_v1_auth_phone_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneLoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Phone Login",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/login/request": {
+      "post": {
+        "operationId": "phone_login_request_api_v1_auth_phone_login_request_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Device-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Device-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneOtpRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Phone Login Request",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/privacy": {
+      "patch": {
+        "operationId": "phone_privacy_api_v1_auth_phone_privacy_patch",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhonePrivacyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Phone Privacy",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/rebind/confirm": {
+      "post": {
+        "operationId": "phone_rebind_confirm_api_v1_auth_phone_rebind_confirm_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneRebindConfirmBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Phone Rebind Confirm",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/rebind/new-request": {
+      "post": {
+        "operationId": "phone_rebind_new_request_api_v1_auth_phone_rebind_new_request_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneOtpRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Phone Rebind New Request",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/rebind/old-confirm": {
+      "post": {
+        "operationId": "phone_rebind_old_confirm_api_v1_auth_phone_rebind_old_confirm_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneOldVerifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Phone Rebind Old Confirm",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/rebind/old-request": {
+      "post": {
+        "operationId": "phone_rebind_old_request_api_v1_auth_phone_rebind_old_request_post",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Phone Rebind Old Request",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/registration/request": {
+      "post": {
+        "operationId": "phone_registration_request_api_v1_auth_phone_registration_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Phone Registration Request",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/registration/verify": {
+      "post": {
+        "operationId": "phone_registration_verify_api_v1_auth_phone_registration_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneRegistrationVerifyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Phone Registration Verify",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "operationId": "refresh_api_v1_auth_refresh_post",
@@ -14912,7 +16283,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
+                "$ref": "#/components/schemas/MobileRefreshRequest"
               }
             }
           },
@@ -15708,6 +17079,212 @@
         ]
       }
     },
+    "/api/v1/client-diagnostics": {
+      "post": {
+        "operationId": "ingest_api_v1_client_diagnostics_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "events": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "count": {
+                          "maximum": 1000000,
+                          "minimum": 1,
+                          "title": "Count",
+                          "type": "integer"
+                        },
+                        "elapsed_ms": {
+                          "maximum": 3600000,
+                          "minimum": 0,
+                          "title": "Elapsed Ms",
+                          "type": "integer"
+                        },
+                        "error": {
+                          "enum": [
+                            "slow",
+                            "network",
+                            "timeout",
+                            "rejected",
+                            "cancelled",
+                            "incomplete",
+                            "unknown",
+                            "recovered"
+                          ],
+                          "title": "Error",
+                          "type": "string"
+                        },
+                        "lifecycle": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "foreground",
+                                "background",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Lifecycle"
+                        },
+                        "operation_id": {
+                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                          "title": "Operation Id",
+                          "type": "string"
+                        },
+                        "retry_count": {
+                          "anyOf": [
+                            {
+                              "maximum": 20,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Retry Count"
+                        },
+                        "stage": {
+                          "enum": [
+                            "sendAdmission",
+                            "matrixSend",
+                            "historyLoad",
+                            "historySearch",
+                            "dateMonth",
+                            "dateLocate",
+                            "scrollAnchor",
+                            "framework",
+                            "pending_write_failed",
+                            "request_uncertain",
+                            "result_write_failed",
+                            "retry_recovered",
+                            "terminal_invalidated",
+                            "result_superseded"
+                          ],
+                          "title": "Stage",
+                          "type": "string"
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "maximum": 599,
+                              "minimum": 100,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Status"
+                        }
+                      },
+                      "required": [
+                        "operation_id",
+                        "stage",
+                        "error",
+                        "elapsed_ms",
+                        "count"
+                      ],
+                      "title": "DiagnosticEvent",
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "title": "Events",
+                    "type": "array"
+                  },
+                  "platform": {
+                    "enum": [
+                      "android",
+                      "ios",
+                      "other"
+                    ],
+                    "title": "Platform",
+                    "type": "string"
+                  },
+                  "version": {
+                    "maxLength": 32,
+                    "pattern": "^\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}(\\+\\d{1,8})?$",
+                    "title": "Version",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "version",
+                  "platform",
+                  "events"
+                ],
+                "title": "DiagnosticBatch",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "413": {
+            "description": "Maximum 16384 body bytes"
+          },
+          "422": {
+            "description": "Closed metadata schema rejected"
+          },
+          "429": {
+            "description": "Account or source limit reached"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Ingest",
+        "tags": [
+          "client-diagnostics"
+        ]
+      }
+    },
     "/api/v1/contact-tags": {
       "delete": {
         "operationId": "delete_tags_api_v1_contact_tags_delete",
@@ -16052,6 +17629,71 @@
         "summary": "Rename Tag",
         "tags": [
           "friends"
+        ]
+      }
+    },
+    "/api/v1/contacts/search-phone": {
+      "post": {
+        "operationId": "search_phone_api_v1_contacts_search_phone_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneSearchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Search Phone",
+        "tags": [
+          "identity"
         ]
       }
     },
@@ -17478,6 +19120,140 @@
         ]
       }
     },
+    "/api/v1/fx/rate": {
+      "get": {
+        "description": "点钻↔USDT 参考展示共用同一快照；过期快照标注 stale=true。",
+        "operationId": "rate_api_v1_fx_rate_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxRateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Rate",
+        "tags": [
+          "fx"
+        ]
+      }
+    },
+    "/api/v1/groups/admin/transfer-intents/{intent_id}/review": {
+      "post": {
+        "description": "待核对处置：confirm_applied=只读核实既成事实后完成；\nfail_unapplied=权威状态确证未应用后失败化。超时不视为失败。",
+        "operationId": "review_transfer_intent_api_v1_groups_admin_transfer_intents__intent_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "title": "Intent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferReviewBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Review Transfer Intent",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
     "/api/v1/groups/auto-join": {
       "post": {
         "description": "好友邀请成员的授权代加入（建群与添加成员共用）。\n\n校验链：actor 身份 → 操作者在房间为 join → 每个被邀者存在\nsender=操作者的 invite 事件（Matrix 已对邀请鉴权的事实凭证）\n→ 好友关系 → 目标账号可用 → auto_allow_group_join 分流。\n分桶返回：部分失败不中断其余成员，失败成员绝不伪装为已加入。",
@@ -17929,6 +19705,71 @@
         ]
       }
     },
+    "/api/v1/groups/register": {
+      "post": {
+        "operationId": "register_group_api_v1_groups_register_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupRegisterBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Register Group",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
     "/api/v1/groups/{room_id}/join-requests": {
       "get": {
         "operationId": "list_join_requests_api_v1_groups__room_id__join_requests_get",
@@ -18066,6 +19907,223 @@
           }
         ],
         "summary": "Issue Join Token",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/api/v1/groups/{room_id}/owner": {
+      "get": {
+        "operationId": "group_owner_api_v1_groups__room_id__owner_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "room_id",
+            "required": true,
+            "schema": {
+              "title": "Room Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Group Owner",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/api/v1/groups/{room_id}/transfer-intents": {
+      "get": {
+        "description": "房间转让意图时间线（只读）：注册表群主或系统管理员可查看。",
+        "operationId": "transfer_intents_api_v1_groups__room_id__transfer_intents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "room_id",
+            "required": true,
+            "schema": {
+              "title": "Room Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Transfer Intents",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/api/v1/groups/{room_id}/transfer-owner": {
+      "post": {
+        "operationId": "transfer_owner_api_v1_groups__room_id__transfer_owner_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "room_id",
+            "required": true,
+            "schema": {
+              "title": "Room Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupTransferBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Transfer Owner",
         "tags": [
           "groups"
         ]
@@ -24308,6 +26366,1221 @@
         ]
       }
     },
+    "/api/v1/recharge/admin/directory": {
+      "get": {
+        "operationId": "admin_directory_api_v1_recharge_admin_directory_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Admin Directory",
+        "tags": [
+          "recharge"
+        ]
+      },
+      "put": {
+        "operationId": "upsert_directory_api_v1_recharge_admin_directory_put",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsDirectoryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Upsert Directory",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/directory/{entry_id}": {
+      "put": {
+        "operationId": "update_directory_api_v1_recharge_admin_directory__entry_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsDirectoryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update Directory",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests": {
+      "get": {
+        "operationId": "admin_requests_api_v1_recharge_admin_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Admin Requests",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/pending": {
+      "get": {
+        "operationId": "pending_api_v1_recharge_admin_requests_pending_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Pending",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/{request_id}/bind": {
+      "post": {
+        "description": "把案件绑定到唯一授权财务调整（执行走既有公开财务审批链路）。",
+        "operationId": "bind_api_v1_recharge_admin_requests__request_id__bind_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeBindBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Bind",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/{request_id}/complete-binding": {
+      "post": {
+        "description": "执行后的幂等登记（worker 兜底的手动入口；复用全部凭证校验）。",
+        "operationId": "complete_binding_api_v1_recharge_admin_requests__request_id__complete_binding_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Complete Binding",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/{request_id}/credit": {
+      "post": {
+        "description": "财务调整执行成功后登记 CREDITED（入账本身走既有公开财务服务）。",
+        "operationId": "credit_api_v1_recharge_admin_requests__request_id__credit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeCreditBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Credit",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/{request_id}/reject": {
+      "post": {
+        "operationId": "reject_api_v1_recharge_admin_requests__request_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeRejectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reject",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/{request_id}/review": {
+      "post": {
+        "description": "待核对处置：retry=只读核实重新登记（幂等）；release=确证未执行后释放\n（服务端核证拒绝且未执行或已冲正；记录缺失不能证明未入账）。",
+        "operationId": "review_api_v1_recharge_admin_requests__request_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeReviewBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Review",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/{request_id}/timeline": {
+      "get": {
+        "operationId": "timeline_api_v1_recharge_admin_requests__request_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Timeline",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/reserve-valuation": {
+      "get": {
+        "description": "ADR-0076 三类数量一次读齐：点钻账面 / 参考估值 / 实际 USDT 义务。",
+        "operationId": "reserve_valuation_api_v1_recharge_admin_reserve_valuation_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reserve Valuation",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/review-queue": {
+      "get": {
+        "operationId": "review_queue_api_v1_recharge_admin_review_queue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Review Queue",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/directory": {
+      "get": {
+        "description": "官方充值客服目录（后台授权，APP 据此推荐）。",
+        "operationId": "directory_api_v1_recharge_directory_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Directory",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/requests": {
+      "post": {
+        "operationId": "submit_api_v1_recharge_requests_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeSubmitBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Submit",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/requests/mine": {
+      "get": {
+        "operationId": "mine_api_v1_recharge_requests_mine_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mine",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/requests/{request_id}/cancel": {
+      "post": {
+        "operationId": "cancel_api_v1_recharge_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
     "/api/v1/red-packets": {
       "post": {
         "operationId": "create_api_v1_red_packets_post",
@@ -26708,6 +29981,85 @@
         ]
       }
     },
+    "/api/v1/wallet/manual/deposit-intents/{intent_id}/cancel": {
+      "post": {
+        "operationId": "cancel_deposit_api_v1_wallet_manual_deposit_intents__intent_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "title": "Intent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel Deposit",
+        "tags": [
+          "wallet",
+          "manual-wallet"
+        ]
+      }
+    },
     "/api/v1/wallet/manual/payout-quotes": {
       "post": {
         "operationId": "quote_api_v1_wallet_manual_payout_quotes_post",
@@ -26998,6 +30350,95 @@
           }
         ],
         "summary": "Status",
+        "tags": [
+          "wallet",
+          "manual-wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/manual/payouts/{order_id}/adjust-rate": {
+      "post": {
+        "operationId": "adjust_rate_api_v1_wallet_manual_payouts__order_id__adjust_rate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateAdjustBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Adjust Rate",
         "tags": [
           "wallet",
           "manual-wallet"

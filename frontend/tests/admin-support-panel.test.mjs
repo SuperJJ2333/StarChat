@@ -52,3 +52,46 @@ test('pagination requests offset 25 and hides non-dispatchable options', async()
   install();const calls=[];const api={getSupportAgents:async q=>{calls.push(q);return {items:q.offset?[]:[{id:'no',username:'no',dispatch_eligible:false}],total:26}},command:async()=>({})};
   const panel=supportPanel(api,{mode:'grant'});await settle();assert.equal(panel.find('select')[0].find('option').length,1);panel.find('button').find(x=>x.textContent==='下一页').handlers.click();await settle();assert.equal(calls.at(-1).offset,25);assert.equal(panel.find('button').some(x=>x.textContent==='选择客服'),false);
 });
+
+test('grant rejects malformed amounts locally without calling the API', async()=>{
+  install();const calls=[];const api={getSupportAgents:async()=>({items:[],total:0}),command:async(...a)=>{calls.push(a);return {amount:'1.00'}}};
+  const panel=supportPanel(api,{mode:'grant'});await settle();
+  const form=panel.find('form')[0],inputs=form.find('input');
+  for(const bad of ['abc','1.234','0.00','-5','']){inputs[0].value='agent';inputs[1].value=bad;form.handlers.submit({preventDefault(){}});await settle();assert.equal(calls.length,0,`amount ${bad} must not reach the API`);}
+  const feedback=form.find('p').at(-1);
+  assert.ok(feedback.className.includes('is-error'));
+  assert.ok(feedback.textContent.includes('金额格式无效'));
+  assert.equal(feedback.role,'alert');
+  inputs[1].value='88.00';form.handlers.submit({preventDefault(){}});await settle();
+  assert.equal(calls.length,1);assert.deepEqual(calls[0][1],{user_id:'agent',amount:'88.00',reason_code:'SUPPORT_CAIBI_GRANT'});
+});
+
+test('grant failure renders red error feedback with icon and success turns green', async()=>{
+  install();let fail=true;const api={getSupportAgents:async()=>({items:[],total:0}),command:async()=>{if(fail)throw Error('点钻储备覆盖不足，发放已被风控阻断，请联系技术核查储备');return {amount:'88.00'}}};
+  const panel=supportPanel(api,{mode:'grant'});await settle();
+  const form=panel.find('form')[0],inputs=form.find('input');
+  inputs[0].value='agent';inputs[1].value='88.00';form.handlers.submit({preventDefault(){}});await settle();
+  let feedback=form.find('p').at(-1);
+  assert.ok(feedback.className.includes('is-error'));
+  assert.ok(feedback.textContent.includes('发放失败'));
+  assert.ok(feedback.textContent.includes('储备覆盖不足'));
+  assert.ok(feedback.children.some(x=>x.className==='admin-feedback-icon'));
+  assert.equal(feedback.role,'alert');
+  fail=false;inputs[0].value='agent';inputs[1].value='88.00';form.handlers.submit({preventDefault(){}});await settle();
+  feedback=form.find('p').at(-1);
+  assert.ok(feedback.className.includes('is-success'));
+  assert.ok(feedback.textContent.includes('已发放'));
+  assert.ok(feedback.children.some(x=>x.className==='admin-feedback-icon'));
+  assert.equal(feedback.role,'status');
+});
+
+test('manage form reports failures with error styling too', async()=>{
+  install();const api={getSupportAgents:async()=>({items:[],total:0}),command:async()=>{throw Error('权限不足')}};
+  const panel=supportPanel(api,{mode:'manage'});await settle();
+  const form=panel.find('form')[0],inputs=form.find('input');
+  inputs[0].value='u1';inputs[1].value='官方客服';
+  form.handlers.submit({preventDefault(){}});await settle();
+  const feedback=form.find('p').at(-1);
+  assert.ok(feedback.className.includes('is-error'));
+  assert.ok(feedback.textContent.includes('保存失败'));
+});

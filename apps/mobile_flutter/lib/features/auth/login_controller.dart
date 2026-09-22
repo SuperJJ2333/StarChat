@@ -1,3 +1,4 @@
+import '../../core/business_phone_contracts.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -159,17 +160,29 @@ final class DualDomainLoginService {
   }
 
   Future<void> login(String username, String password) =>
-      _run(() => _login(username, password));
+      _run(() => _login(() => business.loginBusiness(
+          username: username,
+          password: password,
+          deviceKey: deviceKey(),
+          deviceName: '畅聊移动端')));
 
-  Future<void> _login(String username, String password) async {
+  Future<void> loginPhone(String phone, String code) =>
+      _run(() => _login(() async {
+            final gateway = business;
+            if (gateway is! PhoneAuthGateway) {
+              throw StateError('Phone login unavailable');
+            }
+            await (gateway as PhoneAuthGateway).phoneLogin(
+                phone: phone,
+                code: code,
+                deviceKey: deviceKey(),
+                deviceName: '畅聊移动端');
+          }));
+
+  Future<void> _login(Future<void> Function() authenticate) async {
     _forgetPending();
     _stage = 'business_login';
-    await business.loginBusiness(
-      username: username,
-      password: password,
-      deviceKey: deviceKey(),
-      deviceName: '畅聊移动端',
-    );
+    await authenticate();
     try {
       if (matrix is MatrixAccountSelectionGateway) {
         await _loginRetained();

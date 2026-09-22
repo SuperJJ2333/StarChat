@@ -69,6 +69,25 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     previewManualDepositCase: async caseId=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/${encodeURIComponent(caseId)}/preview`,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:'{}'}),
     executeManualDepositCase: async (caseId,body,options)=>command(`/api/v1/admin/wallet/manual/manual-deposit-cases/${encodeURIComponent(caseId)}/execute`,body,options),
     getManualDepositCaseOperation: async operationId=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/operations/${encodeURIComponent(operationId)}`,{cache:'no-store'}),
+    // ADR-0077 后台：人工充值案件 / 客服目录 / 汇率与储备展示。
+    getRechargePending: async ()=>request('/api/v1/recharge/admin/requests/pending',{cache:'no-store'}),
+    getRechargeReviewQueue: async (filters={})=>request(`/api/v1/recharge/admin/review-queue?${new URLSearchParams(filters)}`,{cache:'no-store'}),
+    listRechargeRequests: async (filters={})=>request(`/api/v1/recharge/admin/requests?${new URLSearchParams(filters)}`,{cache:'no-store'}),
+    getRechargeTimeline: async requestId=>request(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/timeline`,{cache:'no-store'}),
+    reviewRecharge: async (requestId,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/review`,body,options),
+    bindRechargeAdjustment: async (requestId,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/bind`,body,options),
+    completeRechargeBinding: async (requestId,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/complete-binding`,{},options),
+    rejectRecharge: async (requestId,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/reject`,body,options),
+    getRechargeDirectory: async ()=>request('/api/v1/recharge/admin/directory',{cache:'no-store'}),
+    upsertRechargeDirectory: async (body,options)=>{
+      const {entry_id,...payload}=body;
+      return command(`/api/v1/recharge/admin/directory${entry_id?`/${encodeURIComponent(entry_id)}`:''}`,
+        payload,{...options,method:'PUT'});
+    },
+    getReserveValuation: async ()=>request('/api/v1/recharge/admin/reserve-valuation',{cache:'no-store'}),
+    getFxRate: async ()=>request('/api/v1/fx/rate',{cache:'no-store'}),
+    listTransferIntents: async roomId=>request(`/api/v1/groups/${encodeURIComponent(roomId)}/transfer-intents`,{cache:'no-store'}),
+    reviewTransferIntent: async (intentId,body,options)=>command(`/api/v1/groups/admin/transfer-intents/${encodeURIComponent(intentId)}/review`,body,options),
     previewWalletRepair: async (kind,body)=>request(`/api/v1/admin/wallet/manual/${kind}/preview`,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(body)}),
     executeWalletRepair: async (kind,body,options)=>command(`/api/v1/admin/wallet/manual/${kind}`,body,options),
     getWalletRepair: async (kind,id)=>request(`/api/v1/admin/wallet/manual/${kind}/${encodeURIComponent(id)}`,{cache:'no-store'}),

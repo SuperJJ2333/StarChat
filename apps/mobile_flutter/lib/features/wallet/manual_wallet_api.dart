@@ -122,7 +122,7 @@ T _state<T>(Map<String, dynamic> json, String key, Map<String, T> states) {
 
 enum ManualBindingState { active, pending, unbound }
 
-enum ManualIntentState { open, expired, closedByRebind, fulfilled }
+enum ManualIntentState { open, expired, closedByRebind, fulfilled, cancelled }
 
 enum ManualPayoutState { requested, claimed, unknown, settled, cancelled }
 
@@ -219,6 +219,12 @@ final class ManualWalletApi {
   Future<ManualDepositIntent> depositIntent(String id) async =>
       ManualDepositIntent.fromJson(
           await _client.getJson('/wallet/manual/deposit-intents/${_id(id)}'));
+
+  Future<ManualDepositIntent> cancelDepositIntent(
+          String id, String key) async =>
+      ManualDepositIntent.fromJson(await _client.postJson(
+          '/wallet/manual/deposit-intents/${_id(id)}/cancel', {},
+          idempotencyKey: key));
   Future<ManualDepositIntent?> currentDepositIntent() async {
     final result =
         await _client.getJson('/wallet/manual/deposit-intents/current');
@@ -462,7 +468,8 @@ final class ManualDepositIntent {
             'OPEN': ManualIntentState.open,
             'EXPIRED': ManualIntentState.expired,
             'CLOSED_BY_REBIND': ManualIntentState.closedByRebind,
-            'FULFILLED': ManualIntentState.fulfilled
+            'FULFILLED': ManualIntentState.fulfilled,
+            'CANCELLED': ManualIntentState.cancelled
           }),
           _money(json, 'expected_amount'),
           _date(json, 'created_at'),

@@ -92,3 +92,7 @@ docs/verification/artifacts/2026-09-10/main-2082/
 /docs/verification/archives/**
 !/docs/verification/archives/README.md
 codegraph.json
+
+# Local agent plans and generated Gradle caches.
+.zcode/
+**/.gradle/

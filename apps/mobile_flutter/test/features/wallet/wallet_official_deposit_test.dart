@@ -148,6 +148,10 @@ void main() {
     var calls = 0;
     final pending = Completer<http.Response>();
     final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/fx/rate')) {
+        return flow.json({'rate': '7.10', 'stale': false});
+      }
+
       if (request.url.path.endsWith('/binding')) {
         return flow.json(fixtures.binding);
       }

@@ -225,7 +225,7 @@ function caibi(definition) {
   return root;
 }
 
-function redpacket(definition) {
+export function redpacket(definition, { details = [] } = {}) {
   const root = pageRoot(definition);
   root.append(navigation(definition.page === "detail" ? "领取详情" : "发点钻红包", { leading: "返回" }));
   const content = element("div", "p-finance__content");
@@ -256,13 +256,15 @@ function redpacket(definition) {
     const limitHint = element("p", "c-ledger-page-note", "");
     limitHint.dataset.redpacketLimit = "true";
     const retryLimits = component("app-action-button", { label: "重试获取限额", action: "redpacket:retry-limits" });
+    const retryLimitsHost = element("div");
+    retryLimitsHost.append(retryLimits);
     let limitRequest;
     const showLimit = (state, maximum) => {
       limitHint.dataset.state = state;
       limitHint.textContent = state === "loading" ? "正在获取红包限额…"
         : state === "unavailable" ? "红包限额暂未获取，以提交时校验为准"
         : `单个红包金额不可超过 ${maximum} 点钻`;
-      retryLimits.hidden = state !== "unavailable";
+      retryLimitsHost.hidden = state !== "unavailable";
     };
     const loadLimits = () => {
       if (limitRequest) return limitRequest;
@@ -307,7 +309,7 @@ function redpacket(definition) {
     content.append(element("div", "c-segmented-control", typeLabels[definition.state] ?? "群聊拼手气"));
     const amountField = field("总金额", "88.00", "请输入金额");
     amountField.querySelector("input").setAttribute("aria-label", "总金额");
-    content.append(amountField, count, field("祝福语", "周末愉快", "恭喜发财，大吉大利"), limitHint, retryLimits, validation);
+    content.append(amountField, count, field("祝福语", "周末愉快", "恭喜发财，大吉大利"), limitHint, retryLimitsHost, validation);
     const invalidMessage = definition.state === "count-invalid"
       ? (fixedSinglePart ? "私聊或专属红包只能创建 1 份" : `红包份数不能超过当前群聊人数（含发送者）：${maxParts}`)
       : definition.state === "minimum-invalid" ? "每份至少 0.01 点钻"
@@ -317,6 +319,7 @@ function redpacket(definition) {
     content.append(create);    if (definition.state === "confirm") root.append(component("app-dialog", { title: "确认创建红包", message: "88.00 点钻将转入红包托管，24 小时未领取部分自动退回。", cancel: "取消", confirm: "确认" }));
     if (definition.state === "failed") root.append(component("app-toast", { kind: "error", message: "红包创建失败，账户余额不足" }));
   }
+  content.append(...details);
   root.append(content);
   return root;
 }

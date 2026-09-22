@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import '../../core/business_api_error.dart';
 
 import 'group_announcement_service.dart';
 
@@ -291,7 +292,8 @@ final class GroupAutoJoinOutcome {
   bool get hasFailures => failed.isNotEmpty;
 
   /// 有被限制（封禁/禁用）的受邀人：邀请永远无法兑现，必须如实提示并撤回。
-  bool get hasUnavailableInvitee => failed.any((failure) => failure.isUnavailable);
+  bool get hasUnavailableInvitee =>
+      failed.any((failure) => failure.isUnavailable);
   List<String> get unavailableUserIds => [
         for (final failure in failed)
           if (failure.isUnavailable) failure.userId,
@@ -299,7 +301,34 @@ final class GroupAutoJoinOutcome {
 }
 
 final class GroupChatInfoController extends ChangeNotifier {
-  GroupChatInfoController(this.gateway, {this.serverAutoJoin});
+  GroupChatInfoController(this.gateway,
+      {this.serverAutoJoin,
+      this.submitOwnershipTransfer,
+      this.loadOwnershipTransfers});
+
+  final Future<Map<String, dynamic>> Function(String targetMatrixUserId)?
+      submitOwnershipTransfer;
+  final Future<List<Map<String, dynamic>>> Function()? loadOwnershipTransfers;
+  Map<String, dynamic>? ownershipTransfer;
+  bool ownershipTransferReadUnsupported = false;
+  String? get ownershipTransferCompatibilityMessage =>
+      ownershipTransferReadUnsupported && ownershipTransfer == null
+          ? '当前服务器暂不支持转让状态查询，群权限按当前群聊显示；新的群主转让需等待服务器支持'
+          : null;
+
+  bool _isUnsupportedTransferRead(Object error) =>
+      error is BusinessApiException &&
+      {404, 405, 501}.contains(error.statusCode);
+  String? _transferTarget;
+  bool get ownershipTransferPending =>
+      ownershipTransfer != null &&
+      !{'COMPLETED', 'FAILED'}.contains(ownershipTransfer!['stage']);
+  String get ownershipTransferMessage => switch (ownershipTransfer?['stage']) {
+        'COMPLETED' => '群主转让已完成',
+        'NEEDS_REVIEW' => '转让待人工核对，确认完成前群主身份保持不变',
+        'FAILED' => '转让未完成，请重试或联系客服',
+        _ => '转让处理中，确认完成前群主身份保持不变',
+      };
 
   final GroupChatInfoGateway gateway;
 
@@ -315,7 +344,10 @@ final class GroupChatInfoController extends ChangeNotifier {
   void bindMembershipChanges(Stream<void> updates, {required String roomId}) {
     _membershipSubscription?.cancel();
     _membershipSubscription = updates.listen((_) {
-      if (state.status != GroupChatInfoStatus.loading) unawaited(load());
+      if (state.status != GroupChatInfoStatus.loading &&
+          state.status != GroupChatInfoStatus.saving) {
+        unawaited(load());
+      }
     });
   }
 
@@ -331,9 +363,28 @@ final class GroupChatInfoController extends ChangeNotifier {
       snapshot: state.snapshot,
     ));
     try {
+      final previousOwner = state.snapshot?.ownerId;
+      var snapshot = await gateway.load();
+      if (ownershipTransfer == null && loadOwnershipTransfers != null) {
+        try {
+          final intents = await loadOwnershipTransfers!();
+          ownershipTransferReadUnsupported = false;
+          if (intents.isNotEmpty) ownershipTransfer = intents.first;
+        } catch (error) {
+          ownershipTransferReadUnsupported = _isUnsupportedTransferRead(error);
+          /* Group metadata remains available when status cannot load. */
+        }
+      }
+      if (ownershipTransferPending) {
+        snapshot = snapshot.copyWith(
+            ownerId:
+                ownershipTransfer?['expected_old_owner_matrix_id'] as String? ??
+                    previousOwner ??
+                    '');
+      }
       _set(GroupChatInfoState(
         status: GroupChatInfoStatus.ready,
-        snapshot: await gateway.load(),
+        snapshot: snapshot,
       ));
     } catch (_) {
       _set(GroupChatInfoState(
@@ -433,10 +484,81 @@ final class GroupChatInfoController extends ChangeNotifier {
         return gateway.setAdminIds(ids);
       }, (snapshot) => snapshot.copyWith(adminIds: ids));
 
-  Future<void> transferOwnership(String id) => _save(() {
-        _requireManager(ownerOnly: true);
-        return (gateway as GroupOwnershipGateway).transferOwnership(id);
-      }, (snapshot) => snapshot.copyWith(ownerId: id));
+  Future<void> transferOwnership(String id) async {
+    if (state.status == GroupChatInfoStatus.saving ||
+        ownershipTransferPending) {
+      return;
+    }
+    final snapshot = state.snapshot;
+    try {
+      _requireManager(ownerOnly: true);
+      final submit = submitOwnershipTransfer;
+      if (submit == null) throw StateError('unavailable');
+      _set(GroupChatInfoState(
+          status: GroupChatInfoStatus.saving, snapshot: snapshot));
+      _transferTarget = id;
+      ownershipTransfer = await submit(id);
+      _set(GroupChatInfoState(
+          status: GroupChatInfoStatus.ready,
+          snapshot: ownershipTransfer?['stage'] == 'COMPLETED'
+              ? snapshot!.copyWith(ownerId: id)
+              : snapshot,
+          message: ownershipTransferMessage));
+    } catch (error) {
+      _set(GroupChatInfoState(
+          status: GroupChatInfoStatus.failed,
+          snapshot: snapshot,
+          message: error is BusinessApiException
+              ? error.message
+              : '群主转让暂不可用，请稍后重试'));
+    }
+  }
+
+  Future<void> refreshOwnershipTransfer() async {
+    final read = loadOwnershipTransfers;
+    if (read == null || state.status == GroupChatInfoStatus.saving) return;
+    final snapshot = state.snapshot;
+    _set(GroupChatInfoState(
+        status: GroupChatInfoStatus.saving, snapshot: snapshot));
+    try {
+      final intents = await read();
+      ownershipTransferReadUnsupported = false;
+      final currentId =
+          ownershipTransfer?['transfer_id'] ?? ownershipTransfer?['id'];
+      final matching = currentId == null
+          ? intents
+          : intents.where((entry) => entry['id'] == currentId).toList();
+      if (matching.isNotEmpty) ownershipTransfer = matching.first;
+      var next = snapshot;
+      if (ownershipTransferPending &&
+          ownershipTransfer!.containsKey('expected_old_owner_matrix_id')) {
+        next = snapshot?.copyWith(
+            ownerId:
+                ownershipTransfer!['expected_old_owner_matrix_id'] as String);
+      }
+      if (ownershipTransfer?['stage'] == 'COMPLETED') {
+        next = _transferTarget == null
+            ? await gateway.load()
+            : snapshot?.copyWith(ownerId: _transferTarget);
+      }
+      _set(GroupChatInfoState(
+          status: GroupChatInfoStatus.ready,
+          snapshot: next,
+          message:
+              ownershipTransfer == null ? null : ownershipTransferMessage));
+    } catch (error) {
+      if (ownershipTransfer == null && _isUnsupportedTransferRead(error)) {
+        ownershipTransferReadUnsupported = true;
+        _set(GroupChatInfoState(
+            status: GroupChatInfoStatus.ready, snapshot: snapshot));
+        return;
+      }
+      _set(GroupChatInfoState(
+          status: GroupChatInfoStatus.failed,
+          snapshot: snapshot,
+          message: '转让状态暂未获取，请重试'));
+    }
+  }
 
   Future<bool> dissolve() async {
     if (state.status == GroupChatInfoStatus.saving) return false;
@@ -529,13 +651,18 @@ final class GroupChatInfoController extends ChangeNotifier {
   }
 
   Future<bool> leave() async {
+    if (ownershipTransferPending) {
+      _set(GroupChatInfoState(
+          status: GroupChatInfoStatus.ready,
+          snapshot: state.snapshot,
+          message: ownershipTransferMessage));
+      return false;
+    }
     try {
       // BUG-29：群主退出且群内仍有其他成员时，先把群主转移给（列表序
       // 最早的）其他成员，避免群因退出而失去群主；转移失败则不退出。
       final snapshot = state.snapshot;
-      if (snapshot != null &&
-          snapshot.ownerId == snapshot.currentUserId &&
-          gateway is GroupOwnershipGateway) {
+      if (snapshot != null && snapshot.ownerId == snapshot.currentUserId) {
         final successor = snapshot.members
             .where((member) =>
                 member.isJoined &&
@@ -543,7 +670,8 @@ final class GroupChatInfoController extends ChangeNotifier {
             .map((member) => member.matrixUserId)
             .firstOrNull;
         if (successor != null) {
-          await (gateway as GroupOwnershipGateway).transferOwnership(successor);
+          await transferOwnership(successor);
+          if (ownershipTransfer?['stage'] != 'COMPLETED') return false;
         }
       }
       await gateway.leave();

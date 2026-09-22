@@ -1,3 +1,5 @@
+import '../wallet/manual_wallet_page.dart' show walletStepIndicator;
+import '../../core/business_phone_contracts.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -30,6 +32,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   final passwordConfirmation = TextEditingController();
   final invitation = TextEditingController();
   final email = TextEditingController();
+  final phone = TextEditingController();
+  bool _phoneMode = false;
   bool _passwordVisible = false;
   bool _confirmationVisible = false;
   bool _submittedAttempted = false;
@@ -41,6 +45,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   @override
   void initState() {
     super.initState();
+    _phoneMode = widget.controller.isPhoneRegistration;
+    phone.text = widget.controller.registrationPhone ?? '';
     nickname.text = widget.controller.draft.nickname;
     username.text = widget.controller.draft.username;
     password.text = widget.controller.draft.password;
@@ -60,6 +66,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
     passwordConfirmation.dispose();
     invitation.dispose();
     email.dispose();
+    phone.dispose();
     super.dispose();
   }
 
@@ -175,13 +182,22 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         email: email.text,
       );
 
-  Map<String, String> get _errors => RegistrationController.validateFields(
-      nickname: nickname.text,
-      username: username.text,
-      email: email.text,
-      password: password.text,
-      passwordConfirmation: passwordConfirmation.text,
-      invitationCode: invitation.text);
+  Map<String, String> get _errors {
+    final errors = RegistrationController.validateFields(
+        nickname: nickname.text,
+        username: username.text,
+        email: email.text,
+        password: password.text,
+        passwordConfirmation: passwordConfirmation.text,
+        invitationCode: invitation.text);
+    if (_phoneMode) {
+      errors.remove('email');
+      if (!RegExp(r'^1[3-9]\d{9}$').hasMatch(phone.text.trim())) {
+        errors['phone'] = '请输入中国大陆 11 位手机号';
+      }
+    }
+    return errors;
+  }
 
   bool get _resendCoolingDown =>
       widget.controller.state.registrationSession != null &&
@@ -222,6 +238,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         username: username.text.trim(),
         nickname: nickname.text.trim(),
         email: email.text.trim(),
+        phone: _phoneMode ? phone.text.trim() : null,
         password: password.text,
         passwordConfirmation: passwordConfirmation.text,
         invitationCode: invitation.text.trim());
@@ -258,6 +275,26 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                                 color: WeChatColors.textSecondary,
                                 fontSize: WeChatTypography.subhead)),
                         const SizedBox(height: 20),
+                        if (widget.controller.gateway is PhoneAuthGateway) ...[
+                          CupertinoSlidingSegmentedControl<bool>(
+                              groupValue: _phoneMode,
+                              children: const {
+                                false: Text('邮箱注册'),
+                                true: Text('手机号注册')
+                              },
+                              onValueChanged: loading ||
+                                      widget.controller.state
+                                              .registrationSession !=
+                                          null
+                                  ? (_) {}
+                                  : (value) => setState(
+                                      () => _phoneMode = value ?? false)),
+                          const SizedBox(height: WeChatSpacing.md),
+                        ],
+                        if (_phoneMode)
+                          walletStepIndicator(
+                              context, const ['填写注册信息', '验证手机号'], 0,
+                              keyPrefix: 'phone-registration-step'),
                         AuthTextField(
                             key: const Key('auth-registration-nickname'),
                             label: '用户名',
@@ -345,12 +382,18 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                         _fieldError('invitation_code'),
                         const SizedBox(height: WeChatSpacing.md),
                         AuthTextField(
-                            key: const Key('auth-registration-email'),
-                            label: '邮箱',
-                            placeholder: 'name@example.invalid',
-                            controller: email,
+                            key: Key(_phoneMode
+                                ? 'auth-registration-phone'
+                                : 'auth-registration-email'),
+                            label: _phoneMode ? '手机号' : '邮箱',
+                            placeholder: _phoneMode
+                                ? '中国大陆 +86'
+                                : 'name@example.invalid',
+                            controller: _phoneMode ? phone : email,
                             enabled: !loading,
-                            keyboardType: TextInputType.emailAddress,
+                            keyboardType: _phoneMode
+                                ? TextInputType.phone
+                                : TextInputType.emailAddress,
                             textInputAction: TextInputAction.done,
                             onChanged: (_) => setState(() {}),
                             trailing: CupertinoButton(
@@ -375,12 +418,12 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                                                     .resendAfterSeconds >
                                                 0
                                             ? '${widget.controller.state.resendAfterSeconds}s'
-                                            : '发送验证邮件',
+                                            : (_phoneMode ? '获取验证码' : '发送验证邮件'),
                                         style: const TextStyle(
                                             color: CupertinoColors.white,
                                             fontSize: WeChatTypography.caption,
                                             fontWeight: FontWeight.w600))))),
-                        _fieldError('email'),
+                        _fieldError(_phoneMode ? 'phone' : 'email'),
                         if (widget.controller.state.message != null &&
                             widget.controller.state.fieldErrors.isEmpty)
                           Padding(
@@ -399,7 +442,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                               width: double.infinity,
                               child: ModernActionButton(
                                   icon: ChangliaoIcons.confirm,
-                                  label: '继续验证邮箱',
+                                  label: _phoneMode ? '继续验证手机' : '继续验证邮箱',
                                   onPressed: () => widget.onVerification(widget
                                       .controller.state.registrationSession!))),
                         ],

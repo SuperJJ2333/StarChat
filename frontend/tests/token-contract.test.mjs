@@ -72,7 +72,7 @@ test("support identity yellow matches Flutter", async () => {
 test("index loads the approved style layers in fixed order", async () => {
   const html = await readFile(new URL("index.html", root), "utf8");
   const styles = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/gu)]
-    .map((match) => match[1]);
+    .map((match) => new URL(match[1], "http://localhost").pathname);
 
   assert.deepEqual(styles, [
     "/src/styles/reset.css",

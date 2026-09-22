@@ -12,10 +12,12 @@ final class AuthenticationFlow extends StatefulWidget {
       {super.key,
       required this.api,
       required this.onLogin,
+      this.onPhoneLogin,
       this.onConfirmMatrixAccountSwitch,
       this.onCancelMatrixAccountSwitch,
       required this.onAuthenticated});
   final BusinessApiClient api;
+  final Future<void> Function(String, String)? onPhoneLogin;
   final Future<void> Function(String, String) onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
@@ -39,6 +41,7 @@ final class _AuthenticationFlowState extends State<AuthenticationFlow> {
         _AuthPage.login => LoginPage(
             api: widget.api,
             onLogin: widget.onLogin,
+            onPhoneLogin: widget.onPhoneLogin,
             onConfirmMatrixAccountSwitch: widget.onConfirmMatrixAccountSwitch,
             onCancelMatrixAccountSwitch: widget.onCancelMatrixAccountSwitch,
             onAuthenticated: widget.onAuthenticated,

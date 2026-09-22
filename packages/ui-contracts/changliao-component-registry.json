@@ -6,25 +6,25 @@
       "html": "frontend/src/screens/messaging.js",
       "demo": "messages-inbox-identity-pending",
       "components": [
-            "ConversationListTile",
-            "CupertinoButton"
+        "ConversationListTile",
+        "CupertinoButton"
       ],
       "props": [
-            "unresolvedRoomCount"
+        "unresolvedRoomCount"
       ],
       "states": [
-            "identity-pending",
-            "retrying",
-            "resolved",
-            "offline"
+        "identity-pending",
+        "retrying",
+        "resolved",
+        "offline"
       ],
       "tokens": [
-            "WeChatColors.textSecondary",
-            "WeChatSpacing.md",
-            "WeChatDimensions.conversationAvatar"
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md",
+        "WeChatDimensions.conversationAvatar"
       ],
       "behavior": "Silent background identity recovery: no notice, retry row or live announcement; retained local rows remain usable. Automatic network/resume/backoff recovery and current-account refresh continue."
-},
+    },
     "2026-09-09-shared-media-identity": {
       "comments": "Reuse ChatEmojiPanel and ImagePickerPage; prepareGalleryMedia shared with chat; preserve GIF animation and actual MIME",
       "identity": "ProfileRepository.resolveIdentity; local remark before public nickname; known avatar deletion distinct from absent metadata; account-scoped cacheKey",
@@ -181,6 +181,38 @@
       "timestamps": "Asia/Shanghai YYYY-MM-DD HH:mm:ss; datetime-local filters interpreted in Beijing time",
       "identity": "username is 畅聊号; nickname is 用户名; actor IDs preserved by API",
       "figmaSync": "Explicitly deferred by user on 2026-09-10; no remote update claimed"
+    },
+    "2026-09-22-phone-wallet-reuse": {
+      "flutter": [
+        "apps/mobile_flutter/lib/features/auth/phone_rebind_page.dart",
+        "apps/mobile_flutter/lib/features/auth/verification_page.dart",
+        "apps/mobile_flutter/lib/features/wallet/manual_wallet_page.dart",
+        "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart"
+      ],
+      "html": "frontend/src/screens/phone-flows.js",
+      "demo": [
+        "phone-rebind-old",
+        "phone-rebind-new",
+        "recharge-directory-directory",
+        "fx-fx-fresh",
+        "commission-commission-settled",
+        "transfer-transfer-review"
+      ],
+      "reuse": "walletStepIndicator is the existing wallet step implementation shared directly with phone verification; no new registered component",
+      "states": [
+        "loading",
+        "error",
+        "cooldown",
+        "pending",
+        "review",
+        "completed"
+      ],
+      "tokens": [
+        "WeChatColors.brandPrimary",
+        "WeChatColors.elevatedSurface",
+        "WeChatMotion.actionPressDuration"
+      ],
+      "behavior": "Existing wallet and redpacket routes; neutral same-page ownership status. Business APIs authoritative."
     }
   },
   "tokenMappings": {
@@ -385,24 +417,59 @@
       "flutter": {
         "name": "WeChatEmojiInputDecoration",
         "file": "apps/mobile_flutter/lib/ui/chat/wechat_emoji_input_decoration.dart",
-        "props": ["controller", "child", "fontSize"],
+        "props": [
+          "controller",
+          "child",
+          "fontSize"
+        ],
         "variants": {},
-        "states": ["default", "animated", "scroll-clipped"]
+        "states": [
+          "default",
+          "animated",
+          "scroll-clipped"
+        ]
       },
-      "html": {"tag": "app-emoji-input-decoration"},
-      "tokens": ["control", "callout"]
+      "html": {
+        "tag": "app-emoji-input-decoration"
+      },
+      "tokens": [
+        "control",
+        "callout"
+      ]
     },
     {
       "id": "message-selection-session",
       "flutter": {
         "name": "MessageTextSelectionSession",
         "file": "apps/mobile_flutter/lib/ui/chat/message_text_selection.dart",
-        "props": ["text", "textKey", "onAction", "onDismissed"],
-        "variants": {"selection": ["partial", "all"]},
-        "states": ["active", "dragging", "settled", "dismissed"]
+        "props": [
+          "text",
+          "textKey",
+          "onAction",
+          "onDismissed"
+        ],
+        "variants": {
+          "selection": [
+            "partial",
+            "all"
+          ]
+        },
+        "states": [
+          "active",
+          "dragging",
+          "settled",
+          "dismissed"
+        ]
       },
-      "html": {"tag": "app-message-selection-session"},
-      "tokens": ["control", "sm", "md", "callout"]
+      "html": {
+        "tag": "app-message-selection-session"
+      },
+      "tokens": [
+        "control",
+        "sm",
+        "md",
+        "callout"
+      ]
     },
     {
       "id": "contact-tile",
@@ -418,8 +485,14 @@
           "showDivider"
         ],
         "variants": {
-          "background": ["surfaceElevated-light", "surfaceElevated-dark"],
-          "divider": ["gradient", "none"]
+          "background": [
+            "surfaceElevated-light",
+            "surfaceElevated-dark"
+          ],
+          "divider": [
+            "gradient",
+            "none"
+          ]
         },
         "states": [
           "default",
@@ -452,8 +525,14 @@
           "endIndent"
         ],
         "variants": {
-          "theme": ["light", "dark"],
-          "width": ["full-bleed", "indented"]
+          "theme": [
+            "light",
+            "dark"
+          ],
+          "width": [
+            "full-bleed",
+            "indented"
+          ]
         },
         "states": [
           "default"
@@ -661,12 +740,39 @@
       "flutter": {
         "name": "GroupMemberPicker",
         "file": "apps/mobile_flutter/lib/features/matrix/group_member_picker.dart",
-        "props": ["title", "members", "selectedMatrixUserId", "avatarMedia", "itemKeyPrefix", "onSelected"],
-        "variants": {"entry": ["group-transfer", "exclusive-red-packet"]},
-        "states": ["ready", "loading", "empty", "error", "selected"]
+        "props": [
+          "title",
+          "members",
+          "selectedMatrixUserId",
+          "avatarMedia",
+          "itemKeyPrefix",
+          "onSelected"
+        ],
+        "variants": {
+          "entry": [
+            "group-transfer",
+            "exclusive-red-packet"
+          ]
+        },
+        "states": [
+          "ready",
+          "loading",
+          "empty",
+          "error",
+          "selected"
+        ]
       },
-      "html": {"tag": "app-group-member-picker"},
-      "tokens": ["brandPrimary", "textSecondary", "control", "sm", "md", "control"]
+      "html": {
+        "tag": "app-group-member-picker"
+      },
+      "tokens": [
+        "brandPrimary",
+        "textSecondary",
+        "control",
+        "sm",
+        "md",
+        "control"
+      ]
     },
     {
       "id": "contact-tag-management",
@@ -935,12 +1041,33 @@
       "flutter": {
         "name": "WeChatOfficialName",
         "file": "apps/mobile_flutter/lib/ui/components/wechat_official_name.dart",
-        "props": ["name", "supportIdentities", "userId", "matrixUserId"],
-        "variants": {"context": ["contact", "conversation", "title"]},
-        "states": ["verified", "unverified", "expired", "failure"]
+        "props": [
+          "name",
+          "supportIdentities",
+          "userId",
+          "matrixUserId"
+        ],
+        "variants": {
+          "context": [
+            "contact",
+            "conversation",
+            "title"
+          ]
+        },
+        "states": [
+          "verified",
+          "unverified",
+          "expired",
+          "failure"
+        ]
       },
-      "html": {"tag": "app-official-name"},
-      "tokens": ["WeChatColors.supportIdentityYellow = --color-support-identity", "WeChatTypography.caption = --type-caption-size"]
+      "html": {
+        "tag": "app-official-name"
+      },
+      "tokens": [
+        "WeChatColors.supportIdentityYellow = --color-support-identity",
+        "WeChatTypography.caption = --type-caption-size"
+      ]
     },
     {
       "id": "moment-personal-cover",
@@ -1148,28 +1275,87 @@
       "flutter": {
         "name": "WeChatRedPacketCard",
         "file": "apps/mobile_flutter/lib/ui/finance/wechat_red_packet_card.dart",
-        "props": ["greeting", "state", "labelOverride", "onTap"],
-        "variants": {"scene": ["group-random", "group-equal", "direct", "exclusive"]},
-        "states": ["available", "claimed", "viewer-claimed", "exhausted", "expired", "withdrawn", "claiming", "error"]
+        "props": [
+          "greeting",
+          "state",
+          "labelOverride",
+          "onTap"
+        ],
+        "variants": {
+          "scene": [
+            "group-random",
+            "group-equal",
+            "direct",
+            "exclusive"
+          ]
+        },
+        "states": [
+          "available",
+          "claimed",
+          "viewer-claimed",
+          "exhausted",
+          "expired",
+          "withdrawn",
+          "claiming",
+          "error"
+        ]
       },
       "html": {
         "tag": "app-red-packet-card",
-        "attributes": ["state", "greeting", "viewer-claim", "status-label", "action"],
-        "attributeMappings": {"labelOverride": "status-label"}
+        "attributes": [
+          "state",
+          "greeting",
+          "viewer-claim",
+          "status-label",
+          "action"
+        ],
+        "attributeMappings": {
+          "labelOverride": "status-label"
+        }
       },
-      "tokens": ["WeChatColors.warning", "WeChatColors.redPacketMuted", "WeChatRadius.redPacket", "spacing", "typography"]
+      "tokens": [
+        "WeChatColors.warning",
+        "WeChatColors.redPacketMuted",
+        "WeChatRadius.redPacket",
+        "spacing",
+        "typography"
+      ]
     },
     {
       "id": "transfer-card",
       "flutter": {
         "name": "WeChatTransferCard",
         "file": "apps/mobile_flutter/lib/ui/finance/wechat_transfer_card.dart",
-        "props": ["amount", "state", "isOwn", "labelOverride", "onTap"],
-        "variants": {"viewerRole": ["sender", "receiver"]},
-        "states": ["pending", "accepted", "returned", "loading", "error"]
+        "props": [
+          "amount",
+          "state",
+          "isOwn",
+          "labelOverride",
+          "onTap"
+        ],
+        "variants": {
+          "viewerRole": [
+            "sender",
+            "receiver"
+          ]
+        },
+        "states": [
+          "pending",
+          "accepted",
+          "returned",
+          "loading",
+          "error"
+        ]
       },
-      "html": {"tag": "app-transfer-card"},
-      "tokens": ["WeChatColors.warning", "WeChatRadius.redPacket", "spacing", "typography"]
+      "html": {
+        "tag": "app-transfer-card"
+      },
+      "tokens": [
+        "WeChatColors.warning",
+        "WeChatRadius.redPacket",
+        "spacing",
+        "typography"
+      ]
     }
   ],
   "tokenParity": [
@@ -1504,7 +1690,7 @@
     }
   },
   "screens": {
-    "expectedCount": 375
+    "expectedCount": 398
   },
   "adminCompletion20260910": {
     "html": [
@@ -1602,28 +1788,95 @@
     "verification": "Static source review only; user no-self-test authorization retained. Figma retired; HTML demo only."
   },
   "redPacketRuntimeLimits20260920": {
-    "flutter": ["lib/features/matrix/chat_red_packet_sheet.dart"],
-    "html": ["frontend/src/screens/finance.js"],
-    "tags": ["app-action-button"],
-    "props": ["support", "controller"],
-    "demo": ["redpacket-create-limits-loading", "redpacket-create-limits-failed"],
-    "states": ["loading", "unavailable", "retrying", "ready"],
-    "tokens": ["WeChatColors.textSecondary = --color-text-secondary", "existing finance field and action-button tokens"],
+    "flutter": [
+      "lib/features/matrix/chat_red_packet_sheet.dart"
+    ],
+    "html": [
+      "frontend/src/screens/finance.js"
+    ],
+    "tags": [
+      "app-action-button"
+    ],
+    "props": [
+      "support",
+      "controller"
+    ],
+    "demo": [
+      "redpacket-create-limits-loading",
+      "redpacket-create-limits-failed"
+    ],
+    "states": [
+      "loading",
+      "unavailable",
+      "retrying",
+      "ready"
+    ],
+    "tokens": [
+      "WeChatColors.textSecondary = --color-text-secondary",
+      "existing finance field and action-button tokens"
+    ],
     "acceptance": "Unknown cap never fabricates 200. Retry keeps amount/count/greeting drafts and resolves the fixture business maximum 500.00. Flutter fetches at page entry, resume and before submit; requests coalesce. Demo has no financial network writes."
   },
   "financeSixRemediation20260913": {
-    "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js", "frontend/src/styles/components.css"],
-    "demo": ["caibi-ledger-all", "caibi-transaction-detail", "caibi-group-member-picker-ready", "caibi-group-member-picker-loading", "caibi-group-member-picker-empty", "caibi-group-member-picker-error", "feedback-toast-nudge-rate-limited"],
+    "html": [
+      "frontend/src/screens/finance.js",
+      "frontend/src/components/finance.js",
+      "frontend/src/styles/components.css"
+    ],
+    "demo": [
+      "caibi-ledger-all",
+      "caibi-transaction-detail",
+      "caibi-group-member-picker-ready",
+      "caibi-group-member-picker-loading",
+      "caibi-group-member-picker-empty",
+      "caibi-group-member-picker-error",
+      "feedback-toast-nudge-rate-limited"
+    ],
     "ledger": "Fixture ledger keeps signed amounts right-aligned, exposes status and name/畅聊号 fallback, and opens the approved hero detail with ID copy and all-bills navigation.",
     "memberPicker": "Shared group-transfer/exclusive-red-packet demo only lists joined-member fixtures; search, empty, retry and selection are interactive. MXC/HTTP rendering remains native Matrix avatar behavior.",
     "nudge": "Fixture-only WeChatToast demonstrates the fourth nudge blocked after three sends per actor and room within 60 seconds; no financial write is invoked."
   },
   "financeChatB4b20260911": {
-    "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js"],
-    "demo": ["redpacket-detail-viewer-claimed", "redpacket-detail-claiming", "redpacket-detail-unknown-result", "redpacket-detail-group-random-completed", "redpacket-detail-group-random-expired", "redpacket-create-group-random", "caibi-transfer-receiver-accepted", "caibi-ledger-all", "caibi-ledger-filtered", "caibi-ledger-loading", "caibi-ledger-empty", "caibi-ledger-error", "caibi-ledger-paged", "caibi-transaction-detail"],
-    "states": ["viewer-claimed", "claiming", "unknown-result", "group-random-completed", "receiver-accepted", "loading", "empty", "error", "filtered", "paged", "detail"],
+    "html": [
+      "frontend/src/screens/finance.js",
+      "frontend/src/components/finance.js"
+    ],
+    "demo": [
+      "redpacket-detail-viewer-claimed",
+      "redpacket-detail-claiming",
+      "redpacket-detail-unknown-result",
+      "redpacket-detail-group-random-completed",
+      "redpacket-detail-group-random-expired",
+      "redpacket-create-group-random",
+      "caibi-transfer-receiver-accepted",
+      "caibi-ledger-all",
+      "caibi-ledger-filtered",
+      "caibi-ledger-loading",
+      "caibi-ledger-empty",
+      "caibi-ledger-error",
+      "caibi-ledger-paged",
+      "caibi-transaction-detail"
+    ],
+    "states": [
+      "viewer-claimed",
+      "claiming",
+      "unknown-result",
+      "group-random-completed",
+      "receiver-accepted",
+      "loading",
+      "empty",
+      "error",
+      "filtered",
+      "paged",
+      "detail"
+    ],
     "ledger": "Fixture-only HTML interaction uses server-side-filter-shaped type, date and keyword controls; amount strings and immutable example transaction IDs are never Number-coerced.",
-    "tokens": ["WeChatColors.warning = --color-warning", "WeChatColors.redPacketMuted = --color-red-packet-muted", "WeChatRadius.redPacket = --radius-red-packet", "existing spacing/typography tokens"]
+    "tokens": [
+      "WeChatColors.warning = --color-warning",
+      "WeChatColors.redPacketMuted = --color-red-packet-muted",
+      "WeChatRadius.redPacket = --radius-red-packet",
+      "existing spacing/typography tokens"
+    ]
   },
   "walletDepositPayoutRedesign20260917": {
     "date": "2026-09-17",

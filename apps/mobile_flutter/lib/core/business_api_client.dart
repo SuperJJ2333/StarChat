@@ -1,4 +1,6 @@
+import 'package:crypto/crypto.dart' show sha256;
 import 'dart:convert';
+import 'business_phone_contracts.dart' as phone_contracts;
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -57,7 +59,9 @@ final class BusinessApiClient
         PersonalInvitationGateway,
         InviteHistoryGateway,
         InviteCacheScopeProvider,
-        SupportIdentityGateway {
+        SupportIdentityGateway,
+        phone_contracts.PhoneAuthGateway,
+        phone_contracts.RechargeGateway {
   BusinessApiClient({
     required this.baseUri,
     required this.sessionStore,
@@ -1549,6 +1553,286 @@ final class BusinessApiClient
     return _decode(response);
   }
 
+  // ------------------------------------------------------------------
+  // ADR-0075：手机号认证（注册/短信登录/两步换绑/隐私搜索）。
+  // 红线：验证码与完整手机号绝不进入日志；会话写入沿用 login 纪律。
+  // ------------------------------------------------------------------
+  @override
+  Future<phone_contracts.RegistrationPhoneReceipt> registerWithPhone({
+    required String username,
+    String? nickname,
+    required String phone,
+    required String password,
+    required String invitationCode,
+  }) async {
+    final operation = 'register-phone:$username:$phone:$invitationCode';
+    final response = await _client
+        .post(
+          _uri('/auth/register'),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Device-Key': await sessionStore.registrationDeviceKey(),
+            'Idempotency-Key': _pendingIdempotencyKey(operation),
+          },
+          body: jsonEncode({
+            'username': username,
+            if (nickname != null) 'nickname': nickname,
+            'phone': phone,
+            'password': password,
+            'invitation_code': invitationCode,
+          }),
+        )
+        .timeout(_httpTimeout);
+    final body = _decode(response);
+    _pendingIdempotencyKeys.remove(operation);
+    return phone_contracts.RegistrationPhoneReceipt(
+      registrationSession: body['registration_session'] as String,
+      status: body['status'] as String,
+      resendAfterSeconds: body['resend_after_seconds'] as int,
+    );
+  }
+
+  @override
+  Future<void> requestRegistrationOtp(String registrationSession) async {
+    final response = await _client
+        .post(
+          _uri('/auth/phone/registration/request'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'registration_session': registrationSession}),
+        )
+        .timeout(_httpTimeout);
+    _decode(response);
+  }
+
+  @override
+  Future<void> verifyRegistrationPhone({
+    required String registrationSession,
+    required String phone,
+    required String code,
+  }) async {
+    final operation = 'phone-verify:$registrationSession:$code';
+    final response = await _client
+        .post(
+          _uri('/auth/phone/registration/verify'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': _pendingIdempotencyKey(operation),
+          },
+          body: jsonEncode({
+            'registration_session': registrationSession,
+            'phone': phone,
+            'code': code,
+          }),
+        )
+        .timeout(_httpTimeout);
+    _decode(response);
+    _pendingIdempotencyKeys.remove(operation);
+  }
+
+  @override
+  Future<void> requestPhoneLoginOtp(String phone) async {
+    final response = await _client
+        .post(
+          _uri('/auth/phone/login/request'),
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Device-Key': await sessionStore.registrationDeviceKey(),
+          },
+          body: jsonEncode({'phone': phone}),
+        )
+        .timeout(_httpTimeout);
+    _decode(response);
+  }
+
+  @override
+  Future<Map<String, dynamic>> phoneLogin({
+    required String phone,
+    required String code,
+    required String deviceKey,
+    required String deviceName,
+  }) async {
+    final loginEpoch = ++_sessionEpoch;
+    _refreshFlight = null;
+    _matrixGrantFlight = null;
+    _matrixGrantRetryAt = null;
+    final response = await _client
+        .post(
+          _uri('/auth/phone/login'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'phone': phone,
+            'code': code,
+            'device_key': deviceKey,
+            'device_name': deviceName,
+          }),
+        )
+        .timeout(_httpTimeout);
+    final body = _decode(response);
+    if (loginEpoch != _sessionEpoch) throw _ended;
+    final returnedMatrixUserId = body['matrix_user_id']?.toString();
+    await _writeCurrentSession(
+        loginEpoch,
+        () => sessionStore.saveSession(
+              accessToken: body['access_token'] as String,
+              refreshToken: body['refresh_token'] as String,
+              deviceKey: deviceKey,
+              matrixUserId:
+                  returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
+                      ? null
+                      : returnedMatrixUserId,
+            ));
+    return body;
+  }
+
+  @override
+  Future<Map<String, dynamic>> rebindOldRequest() async {
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/auth/phone/rebind/old-request'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({}),
+      ),
+    );
+    return _decode(response);
+  }
+
+  @override
+  Future<void> rebindOldConfirm({required String code}) async {
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/auth/phone/rebind/old-confirm'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'code': code}),
+      ),
+    );
+    _decode(response);
+  }
+
+  @override
+  Future<void> rebindNewRequest({required String phone}) async {
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/auth/phone/rebind/new-request'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'phone': phone}),
+      ),
+    );
+    _decode(response);
+  }
+
+  @override
+  Future<void> rebindNewConfirm(
+      {required String phone, required String code}) async {
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/auth/phone/rebind/confirm'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'new_phone': phone, 'code': code}),
+      ),
+    );
+    _decode(response);
+  }
+
+  @override
+  Future<Map<String, dynamic>> searchByPhone(String phone) async {
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/contacts/search-phone'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'phone': phone}),
+      ),
+    );
+    return _decode(response);
+  }
+
+  @override
+  Future<void> setPhoneFindable(bool enabled) async {
+    final response = await _authorized(
+      (headers) => _client.patch(
+        _uri('/auth/phone/privacy'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'phone_findable': enabled}),
+      ),
+    );
+    _decode(response);
+  }
+
+  // ------------------------------------------------------------------
+  // ADR-0077：人工充值（客服结算）；ADR-0076：参考汇率；ADR-0079：转让意图。
+  // ------------------------------------------------------------------
+  @override
+  Future<List<Map<String, dynamic>>> rechargeDirectory() async {
+    final body = await getJson('/recharge/directory');
+    return (body['items'] as List).cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Future<Map<String, dynamic>> submitRecharge({
+    required String amountUsdt,
+    String? evidenceTxid,
+    String? note,
+    required String idempotencyKey,
+  }) =>
+      postJson(
+        '/recharge/requests',
+        {
+          'amount_usdt': amountUsdt,
+          if (evidenceTxid != null) 'evidence_txid': evidenceTxid,
+          if (note != null) 'note': note,
+        },
+        idempotencyKey: idempotencyKey,
+      );
+
+  @override
+  Future<List<Map<String, dynamic>>> myRecharges() async {
+    final body = await getJson('/recharge/requests/mine');
+    return (body['items'] as List).cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Future<void> cancelRecharge(String requestId) =>
+      postJson('/recharge/requests/$requestId/cancel', {},
+          idempotencyKey: 'recharge-cancel:$requestId');
+
+  @override
+  Future<Map<String, dynamic>> fxRate() => getJson('/fx/rate');
+
+  @override
+  Future<List<Map<String, dynamic>>> transferIntents(String roomId) async {
+    final body = await getJson(
+        '/groups/${Uri.encodeComponent(roomId)}/transfer-intents');
+    return (body['items'] as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Same ownership tenure + target has one durable identity across app restarts.
+  /// Unknown requests are replayed to the coordinator, never to Matrix directly.
+  Future<Map<String, dynamic>> requestGroupOwnershipTransfer(
+      String roomId, String targetMatrixUserId) async {
+    final epoch = _sessionEpoch;
+    final owner = await getJson('/groups/${Uri.encodeComponent(roomId)}/owner');
+    final target = await lookupUserByMatrixId(targetMatrixUserId);
+    final targetId = target['user_id'] as String?;
+    if (targetId == null ||
+        targetId.isEmpty ||
+        owner['owner_user_id'] == null) {
+      throw const BusinessApiException(
+          statusCode: 409,
+          code: 'GROUP_OWNER_UNRESOLVABLE',
+          message: '无法确认群主或成员身份，请刷新后重试');
+    }
+    if (epoch != _sessionEpoch) {
+      throw const BusinessApiException(
+          statusCode: 409, code: 'SESSION_CHANGED', message: '账号已切换，请重新打开群资料');
+    }
+    final key = sha256
+        .convert(utf8.encode(jsonEncode(
+            [roomId, owner['owner_user_id'], owner['owner_since'], targetId])))
+        .toString();
+    return postJson('/groups/${Uri.encodeComponent(roomId)}/transfer-owner',
+        {'new_owner_user_id': targetId},
+        idempotencyKey: 'owner:$key');
+  }
+
   Future<Map<String, dynamic>> postJson(
     String path,
     Map<String, dynamic> body, {
@@ -1705,18 +1989,28 @@ final class BusinessApiClient
   Uri? _lastRequestUrl;
 
   Map<String, dynamic> _decode(http.Response response) {
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    Map<String, dynamic>? body;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) body = decoded;
+    } on FormatException {
+      // Proxy HTML and empty errors must retain their HTTP status without
+      // exposing arbitrary response contents to the user.
+    }
     if (response.statusCode >= 400) {
+      final error = body?['error'];
+      final details = error is Map ? error : const <String, dynamic>{};
       throw BusinessApiException(
         statusCode: response.statusCode,
-        code: body['error']?['code']?.toString() ?? 'BUSINESS_REQUEST_FAILED',
-        message: body['error']?['message']?.toString() ?? '业务请求失败',
-        fieldErrors: _parseFieldErrors(body['error']?['fields']),
+        code: details['code']?.toString() ?? 'BUSINESS_REQUEST_FAILED',
+        message: details['message']?.toString() ?? '业务请求失败',
+        fieldErrors: _parseFieldErrors(details['fields']),
         retryAfterSeconds: response.statusCode == 429
             ? _retrySeconds(response.headers['retry-after'])
             : null,
       );
     }
+    if (body == null) throw const FormatException('Invalid business response');
     return body;
   }
 

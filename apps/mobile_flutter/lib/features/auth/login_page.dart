@@ -1,3 +1,4 @@
+import 'phone_login_controller.dart';
 import '../../core/privacy_consent.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -17,6 +18,7 @@ final class LoginPage extends StatefulWidget {
     super.key,
     required this.api,
     this.onLogin,
+    this.onPhoneLogin,
     this.onConfirmMatrixAccountSwitch,
     this.onCancelMatrixAccountSwitch,
     this.onAuthenticated,
@@ -27,6 +29,7 @@ final class LoginPage extends StatefulWidget {
   });
 
   final BusinessApiClient api;
+  final Future<void> Function(String phone, String code)? onPhoneLogin;
   final Future<void> Function(String username, String password)? onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
@@ -44,6 +47,28 @@ final class _LoginPageState extends State<LoginPage>
     with SingleTickerProviderStateMixin {
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _phone = TextEditingController();
+  final _code = TextEditingController();
+  bool _phoneMode = false;
+  late final PhoneLoginController _phoneController = PhoneLoginController(
+      gateway: widget.api,
+      deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}',
+      deviceName: '畅聊移动端')
+    ..addListener(_phoneChanged);
+  void _phoneChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _requestPhoneCode() async {
+    if (!RegExp(r'^1[3-9]\d{9}$').hasMatch(_phone.text.trim())) {
+      setState(() => _error = '请输入中国大陆 11 位手机号');
+      return;
+    }
+    setState(() => _error = null);
+    await _phoneController.requestOtp(_phone.text.trim());
+    if (mounted) setState(() => _error = _phoneController.state.message);
+  }
+
   late final AnimationController _intro = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 500),
@@ -59,12 +84,22 @@ final class _LoginPageState extends State<LoginPage>
     _intro.dispose();
     _username.dispose();
     _password.dispose();
+    _phone.dispose();
+    _code.dispose();
+    _phoneController.removeListener(_phoneChanged);
+    _phoneController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final username = _username.text.trim();
-    final password = _password.text;
+    final username = _phoneMode ? _phone.text.trim() : _username.text.trim();
+    final password = _phoneMode ? _code.text.trim() : _password.text;
+    if (_phoneMode &&
+        (!RegExp(r'^1[3-9]\d{9}$').hasMatch(username) ||
+            !RegExp(r'^\d{6}$').hasMatch(password))) {
+      setState(() => _error = '请输入有效手机号和 6 位验证码');
+      return;
+    }
     if (username.isEmpty || password.isEmpty) {
       setState(() => _error = '请输入畅聊号/邮箱和密码');
       return;
@@ -95,7 +130,17 @@ final class _LoginPageState extends State<LoginPage>
     );
 
     try {
-      final success = await controller.submit(username, password);
+      final bool success;
+      if (_phoneMode) {
+        if (widget.onPhoneLogin != null) {
+          await widget.onPhoneLogin!(username, password);
+          success = true;
+        } else {
+          success = await _phoneController.submit(username, password);
+        }
+      } else {
+        success = await controller.submit(username, password);
+      }
       if (success && mounted) {
         // 勾选《用户协议和隐私政策》是登录前置条件；成功后持久化，
         // 作为个推等第三方 SDK 初始化的同意依据（docs/PUSH_SETUP.md）。
@@ -114,7 +159,9 @@ final class _LoginPageState extends State<LoginPage>
         }
       }
       if (!success && mounted) {
-        setState(() => _error = controller.state.message);
+        setState(() => _error = _phoneMode
+            ? _phoneController.state.message
+            : controller.state.message);
       }
     } on MatrixAccountSwitchRequired {
       final confirmed = await _confirmMatrixAccountSwitch();
@@ -132,6 +179,10 @@ final class _LoginPageState extends State<LoginPage>
       } else {
         await widget.onCancelMatrixAccountSwitch?.call();
       }
+    } on BusinessApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on LoginStageException catch (error) {
+      if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
         setState(() => _error = '服务暂时不可用，请稍后重试');
@@ -190,8 +241,8 @@ final class _LoginPageState extends State<LoginPage>
                   letterSpacing: -1,
                 ),
               ),
-              const Text(
-                '使用用户名或邮箱登录',
+              Text(
+                _phoneMode ? '使用中国大陆手机号登录' : '使用用户名或邮箱登录',
                 style: TextStyle(
                   color: WeChatColors.textSecondary,
                   fontSize: WeChatTypography.subhead,
@@ -199,45 +250,87 @@ final class _LoginPageState extends State<LoginPage>
                 ),
               ),
               const SizedBox(height: 20),
-              AuthTextField(
-                key: const Key('auth-login-identity'),
-                label: '用户名/邮箱',
-                placeholder: '输入用户名或邮箱',
-                controller: _username,
-                enabled: !_loading,
-                textInputAction: TextInputAction.next,
-                autofillHints: const [
-                  AutofillHints.username,
-                  AutofillHints.email,
-                ],
+              CupertinoSlidingSegmentedControl<bool>(
+                groupValue: _phoneMode,
+                children: const {false: Text('密码登录'), true: Text('手机号登录')},
+                onValueChanged: _loading
+                    ? (_) {}
+                    : (value) => setState(() {
+                          _phoneMode = value ?? false;
+                          _error = null;
+                        }),
               ),
               const SizedBox(height: WeChatSpacing.md),
-              AuthTextField(
-                key: const Key('auth-login-password'),
-                label: '密码',
-                placeholder: '输入密码',
-                controller: _password,
-                enabled: !_loading,
-                obscureText: !_passwordVisible,
-                textInputAction: TextInputAction.done,
-                autofillHints: const [AutofillHints.password],
-                trailing: CupertinoButton(
-                  key: const Key('auth-login-password-visibility'),
-                  padding: EdgeInsets.zero,
-                  onPressed: _loading
-                      ? null
-                      : () => setState(
-                            () => _passwordVisible = !_passwordVisible,
-                          ),
-                  child: Icon(
-                    _passwordVisible
-                        ? CupertinoIcons.eye_slash
-                        : CupertinoIcons.eye,
-                    size: 19,
-                    color: WeChatColors.textSecondary,
+              if (_phoneMode) ...[
+                AuthTextField(
+                    key: const Key('auth-login-phone'),
+                    label: '手机号',
+                    placeholder: '中国大陆 +86',
+                    controller: _phone,
+                    keyboardType: TextInputType.phone,
+                    enabled: !_loading),
+                const SizedBox(height: WeChatSpacing.md),
+                AuthTextField(
+                    key: const Key('auth-login-code'),
+                    label: '短信验证码',
+                    placeholder: '输入 6 位验证码',
+                    controller: _code,
+                    keyboardType: TextInputType.number,
+                    enabled: !_loading,
+                    trailing: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        onPressed: _loading ||
+                                !_agreementAccepted ||
+                                _phoneController.state.resendAfterSeconds > 0 ||
+                                _phoneController.state.status ==
+                                    PhoneLoginStatus.otpSending
+                            ? null
+                            : _requestPhoneCode,
+                        child: Text(_phoneController.state.resendAfterSeconds >
+                                0
+                            ? '${_phoneController.state.resendAfterSeconds}s'
+                            : '获取验证码'))),
+              ] else ...[
+                AuthTextField(
+                  key: const Key('auth-login-identity'),
+                  label: '用户名/邮箱',
+                  placeholder: '输入用户名或邮箱',
+                  controller: _username,
+                  enabled: !_loading,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [
+                    AutofillHints.username,
+                    AutofillHints.email,
+                  ],
+                ),
+                const SizedBox(height: WeChatSpacing.md),
+                AuthTextField(
+                  key: const Key('auth-login-password'),
+                  label: '密码',
+                  placeholder: '输入密码',
+                  controller: _password,
+                  enabled: !_loading,
+                  obscureText: !_passwordVisible,
+                  textInputAction: TextInputAction.done,
+                  autofillHints: const [AutofillHints.password],
+                  trailing: CupertinoButton(
+                    key: const Key('auth-login-password-visibility'),
+                    padding: EdgeInsets.zero,
+                    onPressed: _loading
+                        ? null
+                        : () => setState(
+                              () => _passwordVisible = !_passwordVisible,
+                            ),
+                    child: Icon(
+                      _passwordVisible
+                          ? CupertinoIcons.eye_slash
+                          : CupertinoIcons.eye,
+                      size: 19,
+                      color: WeChatColors.textSecondary,
+                    ),
                   ),
                 ),
-              ),
+              ],
               const SizedBox(height: WeChatSpacing.md),
               const Text(
                 '端到端加密 · 恢复密钥仅保存在设备',

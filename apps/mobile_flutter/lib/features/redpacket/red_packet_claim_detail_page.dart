@@ -137,10 +137,9 @@ final class _RedPacketClaimDetailPageState
     extends State<RedPacketClaimDetailPage> {
   /// 只读明细页注入会话级明细缓存：再次进入先用上次明细渲染，再后台刷新
   /// （拆红包弹窗刻意不注入，资金动作一律以服务端实时状态为准）。
-  late final RedPacketController controller = RedPacketController(
-          widget.api,
-          details: RedPacketDetailStores.shared)
-    ..addListener(_changed);
+  late final RedPacketController controller =
+      RedPacketController(widget.api, details: RedPacketDetailStores.shared)
+        ..addListener(_changed);
   List<ContactSummary> contacts = const [];
   bool contactsLoaded = false;
 
@@ -247,14 +246,14 @@ final class _RedPacketClaimDetailPageState
                       _headerCard(detail, senderName, senderAvatarUrl, status),
                       Padding(
                         // 白色列表压在 hero 底弧上（demo：-18px 圆角衔接）。
-                        padding:
-                            const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                         child: Transform.translate(
                           offset: const Offset(0, -18),
                           child: _recordsCard(records, bestIndex),
                         ),
                       ),
                       if (detail != null) ...[
+                        if (detail['fee'] != null) _feeDetails(detail),
                         const SizedBox(height: 16),
                         Center(
                           child: Text(
@@ -273,6 +272,49 @@ final class _RedPacketClaimDetailPageState
     );
   }
 
+  Widget _feeDetails(Map<String, dynamic> detail) {
+    final status = switch (detail['commission_status']) {
+      'PENDING' => '待结算，尚未计入可用余额',
+      'SETTLED' => '已结算',
+      'FORFEITED' => '已失效',
+      'NONE' => '无抽成',
+      _ => '状态待确认',
+    };
+    Widget row(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label,
+              style: const TextStyle(
+                  color: WeChatColors.textSecondary, fontSize: 14)),
+          const SizedBox(width: 16),
+          Expanded(
+              child: Text(value,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                      color: WeChatColors.resolveTextPrimary(context),
+                      fontSize: 14))),
+        ]));
+    return Container(
+        key: const Key('red-packet-fee-details'),
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+            color: WeChatColors.elevatedSurface(context),
+            borderRadius: BorderRadius.circular(12)),
+        child: Column(children: [
+          row('手续费', '${detail['fee']} 点钻'),
+          if (detail['fee_exempt'] == true)
+            row(
+                '免手续费',
+                detail['fee_exempt_reason'] == 'GROUP_OWNER_TEN_PLUS'
+                    ? '群主发红包 · 群成员满 10 人'
+                    : '已按服务端规则减免'),
+          if (detail['commission_status'] != null)
+            row('群主抽成',
+                '${detail['commission_amount'] == null ? '' : '${detail['commission_amount']} 点钻 · '}$status'),
+        ]));
+  }
+
   /// 微信式橙色 hero（demo 一比一）：渐变底 + 底部 28px 圆角；
   /// 白色列表以 -18px 负边距压在 hero 圆弧上（见 build 的 Stack）。
   Widget _headerCard(
@@ -283,85 +325,85 @@ final class _RedPacketClaimDetailPageState
   ) {
     final total = redPacketVisibleTotal(detail);
     return Container(
-        key: const Key('red-packet-claim-detail-hero'),
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(24, 40, 24, 42),
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment(-0.4, -1),
-            end: Alignment(0.4, 1),
-            colors: [
-              Color(0xFFFA9D3B),
-              Color(0xFFFA5151),
-              Color(0xFFE8413F),
-            ],
-            stops: [-0.1, 0.55, 1],
+      key: const Key('red-packet-claim-detail-hero'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 40, 24, 42),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment(-0.4, -1),
+          end: Alignment(0.4, 1),
+          colors: [
+            Color(0xFFFA9D3B),
+            Color(0xFFFA5151),
+            Color(0xFFE8413F),
+          ],
+          stops: [-0.1, 0.55, 1],
+        ),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(28),
+          bottomRight: Radius.circular(28),
+        ),
+      ),
+      child: Column(children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFDD89F),
+            borderRadius: BorderRadius.circular(10),
           ),
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(28),
-            bottomRight: Radius.circular(28),
+          alignment: Alignment.center,
+          child: const Icon(CupertinoIcons.gift_fill,
+              color: Color(0xFFD2691E), size: 34),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '$senderName的红包',
+          style: const TextStyle(
+            fontSize: 15,
+            color: Color(0xFFFFE7C2),
           ),
         ),
-        child: Column(children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFDD89F),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(CupertinoIcons.gift_fill,
-                color: Color(0xFFD2691E), size: 34),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '$senderName的红包',
-            style: const TextStyle(
-              fontSize: 15,
-              color: Color(0xFFFFE7C2),
-            ),
-          ),
-          const SizedBox(height: 6),
-          // 未领取的普通成员看不到总点钻（服务端 total 为 null）：
-          // 直接不渲染金额行，绝不显示「null 点钻」。
-          if (total != null)
-            Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                  text: total,
-                  style: const TextStyle(
-                    fontSize: 44,
-                    fontWeight: FontWeight.w700,
-                    color: CupertinoColors.white,
-                    height: 1.1,
-                  ),
+        const SizedBox(height: 6),
+        // 未领取的普通成员看不到总点钻（服务端 total 为 null）：
+        // 直接不渲染金额行，绝不显示「null 点钻」。
+        if (total != null)
+          Text.rich(
+            TextSpan(children: [
+              TextSpan(
+                text: total,
+                style: const TextStyle(
+                  fontSize: 44,
+                  fontWeight: FontWeight.w700,
+                  color: CupertinoColors.white,
+                  height: 1.1,
                 ),
-                const TextSpan(
-                  text: ' 点钻',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: CupertinoColors.white,
-                  ),
+              ),
+              const TextSpan(
+                text: ' 点钻',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: CupertinoColors.white,
                 ),
-              ]),
-              key: const Key('red-packet-claim-detail-total'),
-            ),
-          const SizedBox(height: 8),
-          Text(
-            detail == null
-                ? ''
-                : status == 'OPEN'
-                    ? '已领取 ${detail['claimed_count']}/${detail['share_count']} 个'
-                    : '${redPacketStatusText(status)} ·'
-                        ' 已领取 ${detail['claimed_count']}/${detail['share_count']} 个',
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFFFFE7C2),
-            ),
+              ),
+            ]),
+            key: const Key('red-packet-claim-detail-total'),
           ),
-        ]),
-      );
+        const SizedBox(height: 8),
+        Text(
+          detail == null
+              ? ''
+              : status == 'OPEN'
+                  ? '已领取 ${detail['claimed_count']}/${detail['share_count']} 个'
+                  : '${redPacketStatusText(status)} ·'
+                      ' 已领取 ${detail['claimed_count']}/${detail['share_count']} 个',
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFFFFE7C2),
+          ),
+        ),
+      ]),
+    );
   }
 
   /// 列表头：N人已领 · 共 已领/总额（demo 一比一）。

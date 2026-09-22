@@ -4,6 +4,9 @@ from decimal import Decimal
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Numeric, String, UniqueConstraint, event, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
+from app.modules.wallet.repair_models import ManualDepositCase  # noqa: F401
+# 本表的 FK 目标必须随本模块一同注册（否则独立 create_all 失败）。
+
 
 
 class DepositReceipt(Base):

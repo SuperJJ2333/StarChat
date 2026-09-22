@@ -8,7 +8,7 @@ import json
 import re
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import object_session
 
 from app.core.errors import AppError
@@ -78,7 +78,7 @@ class ManualPayoutService:
     user_mfa_required = True
     reserve_policy = 'full_backing'
     conversions_enabled = False
-    def __init__(self, session_factory, *, official_config, policy, owner_admin_id, mfa_verifier, finality, clock):
+    def __init__(self, session_factory, *, official_config, policy, owner_admin_id, mfa_verifier, finality, clock, rate_provider=None):
         if not isinstance(policy, ManualPayoutPolicy) or not official_config.version:
             raise ValueError('explicit server policy required')
         canonical_address(official_config.address)
@@ -89,6 +89,10 @@ class ManualPayoutService:
             raise ValueError('explicit official wallet owner administrator required')
         self.owner_admin_id = owner_admin_id
         self.mfa_verifier, self.finality, self.clock = mfa_verifier, finality, clock
+        # ADR-0077：结算汇率提供者（返回 (rate, stale, fetched_at) 或 None）。
+        # None = 未接汇率服务的历史装配（退回 1:1，仅测试/回退演练可用）；
+        # 生产 runtime 必须注入，否则 CAIBI 报价 503。
+        self.rate_provider = rate_provider
         self.wallet_ledger = WalletLedger(session_factory)
         self.payment_pin = PaymentPinService(session_factory, clock=clock)
 
@@ -174,10 +178,14 @@ class ManualPayoutService:
         settlement_txid = None
         if row.status == 'SETTLED':
             settlement_txid = object_session(row).scalar(select(ManualPayoutEvent.txid).where(ManualPayoutEvent.order_id == row.id))
+        final_receive = row.final_receive if row.final_receive is not None else Decimal(terms.get('receive', str(row.amount)))
         return dict(id=row.id, user_id=row.user_id, quote_id=row.quote_id, amount=format(row.amount, '.6f'),
             status=row.status, digest=row.digest, candidate_txid=row.candidate_txid, review_reason=row.review_reason,
             settlement_txid=settlement_txid, funding_asset=asset,
             funding_amount=terms.get('funding_amount', format(row.amount, '.6f')),
+            conversion_rate=terms.get('conversion_rate', '1'), rate_stale=bool(terms.get('rate_stale', False)),
+            final_rate=format(row.final_rate, '.6f') if row.final_rate is not None else None,
+            final_receive=format(final_receive, '.6f'),
             cancellation_asset=asset)
 
     def quote_status(self, *, user_id, quote_id):
@@ -191,7 +199,7 @@ class ManualPayoutService:
     @_precise
     def quote(self, *, user_id, amount, expected_binding_version, idempotency_key, funding_asset='USDT'):
         if (not isinstance(amount, str) or re.fullmatch(r'(0|[1-9][0-9]{0,23})\.[0-9]{6}', amount) is None
-                or not Decimal('10') <= Decimal(amount) <= self.policy.max_per):
+                or Decimal(amount) <= 0):
             _fail('WALLET_PAYOUT_AMOUNT_INVALID', 400)
         if funding_asset not in {'USDT', 'CAIBI'}:
             _fail('WALLET_PAYOUT_FUNDING_ASSET_INVALID', 400)
@@ -217,36 +225,60 @@ class ManualPayoutService:
                 _fail('WALLET_BINDING_VERSION_CONFLICT')
             if binding.address == self.official_config.address:
                 _fail('WALLET_PAYOUT_OFFICIAL_TARGET_FORBIDDEN')
+            # ADR-0077：点钻按 1 点钻=1 元人民币计价，USDT 应付 = 点钻 / 结算率。
+            # 汇率快照进报价摘要（不可变）；stale 快照仅作参考并明确标注。
+            rate, rate_stale, rate_fetched_at = Decimal('1'), False, None
+            if funding_asset == 'CAIBI' and self.rate_provider is not None:
+                provided = self.rate_provider()
+                if provided is None:
+                    _fail('WALLET_RATE_UNAVAILABLE', 503)
+                rate, rate_stale, rate_fetched_at = provided
+                if rate_stale or not rate.is_finite() or rate <= 0:
+                    _fail('WALLET_RATE_UNAVAILABLE', 503)
+            receive_amount = amount
+            if funding_asset == 'CAIBI':
+                receive_amount = format((Decimal(amount) / rate).quantize(Decimal('0.000001'), rounding='ROUND_HALF_UP'), '.6f')
+            if Decimal(receive_amount) < Decimal('10') or Decimal(receive_amount) > self.policy.max_per:
+                _fail('WALLET_PAYOUT_AMOUNT_INVALID', 400)
             snapshot = dict(binding_id=binding.id, binding_version=binding.version, target_address=binding.address,
                 official_address=self.official_config.address, official_config_version=self.official_config.version,
                 owner_admin_id=self.owner_admin_id,
                 policy_version=self.policy.version, approval_policy='OWNER_MANUAL_V1', finality_policy=POLICY,
-                network=NETWORK, contract=USDT_CONTRACT, amount=amount, fee='0.000000', hold=amount, receive=amount,
+                network=NETWORK, contract=USDT_CONTRACT, amount=amount, fee='0.000000', hold=receive_amount, receive=receive_amount,
                 minimum='10.000000', max_per=format(self.policy.max_per, '.6f'), user_24h=format(self.policy.user_24h, '.6f'),
                 global_24h=format(self.policy.global_24h, '.6f'), safety_epoch=epoch, created_at=now.isoformat(),
                 expires_at=(now+self.policy.quote_ttl).isoformat())
             snapshot.update(funding_asset=funding_asset,
                 funding_amount=format(Decimal(amount), '.2f' if funding_asset == 'CAIBI' else '.6f'),
-                conversion_rate='1', conversion_fee='0.000000', cancellation_asset=funding_asset)
+                conversion_rate=format(rate, '.6f'), conversion_fee='0.000000', cancellation_asset=funding_asset,
+                rate_stale=rate_stale,
+                **({'rate_fetched_at': rate_fetched_at} if rate_fetched_at else {}))
             row = ManualPayoutQuote(id=str(uuid4()), user_id=user_id, amount=Decimal(amount), snapshot=snapshot,
                 digest=_digest(snapshot), created_at=now, expires_at=now+self.policy.quote_ttl)
             session.add(row)
             return self._record(session, user_id, 'QUOTE', idempotency_key, payload,
                 dict(snapshot, id=row.id, digest=row.digest), now)
 
-    def _limits(self, session, quote, now):
+    def _limits(self, session, quote, now, *, effective=None, exclude_order_id=None):
         cutoff = now-timedelta(hours=24)
-        totals = list(session.execute(select(ManualPayoutOrder.user_id, ManualPayoutOrder.amount).where(
-            ManualPayoutOrder.created_at > cutoff, ManualPayoutOrder.status != 'CANCELLED')))
+        orders = select(ManualPayoutOrder.user_id,
+            func.coalesce(ManualPayoutOrder.final_receive, ManualPayoutOrder.amount)).where(
+            ManualPayoutOrder.created_at > cutoff, ManualPayoutOrder.status != 'CANCELLED')
+        if exclude_order_id is not None:
+            orders = orders.where(ManualPayoutOrder.id != exclude_order_id)
+        totals = list(session.execute(orders))
         totals += list(session.execute(select(Withdrawal.user_id, Withdrawal.amount).where(
             Withdrawal.created_at > cutoff, Withdrawal.status.notin_(['CANCELLED', 'FAILED_COMPENSATED']))))
         user_total = sum((a for uid, a in totals if uid == quote.user_id), Decimal('0'))
         total = sum((a for _, a in totals), Decimal('0'))
         # A tighter new server policy applies immediately, while older quoted caps remain ceilings.
+        # ADR-0077：CAIBI 报价按 USDT 应付额计限额（风险口径始终是 USDT）。
         terms = quote.snapshot
-        if (quote.amount > min(self.policy.max_per, Decimal(terms['max_per']))
-                or user_total+quote.amount > min(self.policy.user_24h, Decimal(terms['user_24h']))
-                or total+quote.amount > min(self.policy.global_24h, Decimal(terms['global_24h']))):
+        if effective is None:
+            effective = Decimal(terms['receive']) if terms.get('funding_asset') == 'CAIBI' else quote.amount
+        if (effective > min(self.policy.max_per, Decimal(terms['max_per']))
+                or user_total+effective > min(self.policy.user_24h, Decimal(terms['user_24h']))
+                or total+effective > min(self.policy.global_24h, Decimal(terms['global_24h']))):
             _fail('WALLET_PAYOUT_LIMIT_EXCEEDED')
 
     @_precise
@@ -295,6 +327,8 @@ class ManualPayoutService:
                 _fail('WALLET_PAYOUT_QUOTE_USED')
             self._limits(session, quote, now)
             funding_asset = terms.get('funding_asset', 'USDT')
+            if funding_asset == 'CAIBI' and terms.get('rate_stale', False):
+                _fail('WALLET_RATE_UNAVAILABLE', 503)
             if funding_asset == 'CAIBI' and not self.conversions_enabled:
                 _fail('WALLET_CONVERSION_DISABLED', 503)
             if funding_asset not in {'CAIBI', 'USDT'}:
@@ -306,17 +340,118 @@ class ManualPayoutService:
                 authorization=payment_authorization, required=True)
             if claims['family_id'] != session_id:
                 _fail('PAYMENT_AUTHORIZATION_INVALID', 403)
-            row = ManualPayoutOrder(id=str(uuid4()), quote_id=quote_id, user_id=user_id, amount=quote.amount,
+            # ADR-0077：订单金额 = 最终 USDT 应付（链上支付口径）；点钻
+            # 报价单内 source 金额保存在 quote.snapshot.funding_amount。
+            payout_usdt = Decimal(terms['receive']) if funding_asset == 'CAIBI' else quote.amount
+            row = ManualPayoutOrder(id=str(uuid4()), quote_id=quote_id, user_id=user_id, amount=payout_usdt,
                 digest=quote.digest, status='REQUESTED', created_at=now, updated_at=now)
             session.add(row)
             if funding_asset == 'CAIBI':
-                from app.modules.wallet.conversions import convert_in_session
-                convert_in_session(session, self.factory, user_id=user_id, direction='CAIBI_TO_USDT',
-                    amount=quote.amount, requested_amount=quote.amount, idempotency_key='payout:'+row.id,
+                from decimal import ROUND_HALF_UP
+                from app.modules.wallet.conversions import convert_for_payout
+                caibi_amount = Decimal(terms['funding_amount'])
+                rate = Decimal(terms['conversion_rate'])
+                expected = (caibi_amount / rate).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP)
+                if expected != payout_usdt:
+                    _fail('WALLET_PAYOUT_QUOTE_CHANGED')
+                convert_for_payout(session, self.factory, user_id=user_id,
+                    caibi_amount=caibi_amount, usdt_amount=payout_usdt,
+                    conversion_rate=rate, idempotency_key='payout:'+row.id,
                     reserve_policy=self.reserve_policy, now=now)
             self.wallet_ledger.post(entries={user_id: -row.amount, 'HOLD:'+user_id: row.amount}, actor_id=user_id,
                 reason_code='MANUAL_PAYOUT_HOLD', idempotency_key=row.id, scope='wallet.manual_hold', session=session)
             return self._record(session, user_id, 'REQUEST', idempotency_key, payload, self._result(row), now)
+
+    @staticmethod
+    def _payable(row, quote) -> Decimal:
+        """链上应付 USDT：汇率调整后取 final_receive，否则原报价 receive。"""
+        if row.final_receive is not None:
+            return row.final_receive
+        return Decimal(quote.snapshot['receive'])
+
+    @_precise
+    def adjust_rate(self, *, admin_id, session_id, mfa_proof=None, order_id, new_rate, reason_code, idempotency_key, authorize=None):
+        """ADR-0077 决策9：客服调整结算汇率（无需用户确认/复核/金额审批）。
+
+        仅 CLAIMED 状态可调；记录处理人/时间/原因/前后值；冻结差额即时
+        调平（HOLD 始终等于最终应付）；SETTLED/CANCELLED/UNKNOWN 不可调。
+        """
+        if not isinstance(reason_code, str) or len(reason_code.strip()) < 3:
+            _fail('WALLET_PAYOUT_REASON_INVALID', 400)
+        try:
+            rate = Decimal(str(new_rate))
+        except Exception:
+            _fail('WALLET_RATE_INVALID', 400)
+        if (not rate.is_finite() or not Decimal('0') < rate < Decimal('1000')
+                or rate != rate.quantize(Decimal('0.000001'))):
+            _fail('WALLET_RATE_INVALID', 400)
+        verified_at = self._now()
+        if authorize is None:
+            self._mfa(admin_id, session_id, mfa_proof, verified_at)
+        payload = dict(order_id=order_id, new_rate=format(rate, '.6f'), reason_code=reason_code)
+        with self.factory.begin() as session:
+            row, locked = self._order_lock(session, order_id)
+            require_wallet_actor(session, user_id=admin_id, clock=self.clock, administrator=True)
+            fresh = authorize(session) if authorize is not None else lambda: self._fresh_mfa(verified_at)
+            fresh()
+            if row.claimed_by is None:
+                _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE', 409)
+            if row.claimed_by != admin_id:
+                _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
+            replay = self._replay(session, admin_id, 'ADJUST_RATE', idempotency_key, payload)
+            if replay:
+                fresh()
+                return replay
+            if row.status != 'CLAIMED' or row.candidate_txid is not None:
+                _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE', 409)
+            require_wallet_actor(session, user_id=row.user_id, clock=self.clock)
+            if locked[1].withdrawals_paused:
+                _fail('WALLET_WITHDRAWALS_PAUSED')
+            safety = session.get(WalletSafetyState, row.user_id)
+            if safety and safety.restricted:
+                _fail('WALLET_ACCOUNT_RESTRICTED', 403)
+            if locked[0] is None or locked[0].outgoing_restricted:
+                _fail('WALLET_RESERVE_UNAVAILABLE', 503)
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            if quote.snapshot.get('funding_asset', 'USDT') != 'CAIBI':
+                _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE', 409)
+            from decimal import ROUND_HALF_UP
+            caibi_amount = Decimal(quote.snapshot['funding_amount'])
+            new_receive = (caibi_amount / rate).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP)
+            if new_receive < Decimal('10') or new_receive > self.policy.max_per:
+                _fail('WALLET_PAYOUT_AMOUNT_INVALID', 400)
+            self._limits(session, quote, self._now(), effective=new_receive, exclude_order_id=row.id)
+            old_receive = self._payable(row, quote)
+            delta = new_receive - old_receive
+            if delta > 0 and locked[0].eligible_usdt < new_receive:
+                _fail('WALLET_PAYMENT_LIQUIDITY_INSUFFICIENT')
+            # Only move existing user funds into/out of HOLD. No platform issuance
+            # or coverage bypass; WalletLedger serializes and verifies the debit.
+            if delta:
+                operation_key = _digest(dict(actor=admin_id, order_id=row.id, key=idempotency_key))
+                try:
+                    self.wallet_ledger.post(entries={row.user_id: -delta, 'HOLD:'+row.user_id: delta},
+                        actor_id=admin_id, reason_code='MANUAL_PAYOUT_RATE_ADJUSTED',
+                        idempotency_key='adj-hold:'+operation_key, scope='wallet.manual_hold_adjust', session=session)
+                except ValueError as exc:
+                    if str(exc) == 'insufficient USDT balance':
+                        _fail('WALLET_PAYOUT_INSUFFICIENT_BALANCE')
+                    raise
+            history = list(row.adjustment_history or [])
+            history.append(dict(actor_id=admin_id, at=self._now().isoformat(), reason_code=reason_code[:100],
+                old_rate=format(row.final_rate, '.6f') if row.final_rate is not None else quote.snapshot.get('conversion_rate'),
+                new_rate=format(rate, '.6f'),
+                old_receive=format(old_receive, '.6f'), new_receive=format(new_receive, '.6f')))
+            row.final_rate = rate
+            row.final_receive = new_receive
+            row.adjustment_history = history
+            row.adjusted_digest = _digest(dict(quote.snapshot, receive=format(new_receive, '.6f'),
+                conversion_rate=format(rate, '.6f'), adjusted=True))
+            row.updated_at = self._now()
+            result = self._record(session, admin_id, 'ADJUST_RATE', idempotency_key, payload, self._result(row), self._now(),
+                reason_code='MANUAL_PAYOUT_RATE_ADJUSTED')
+            fresh()
+            return result
 
     def _order_lock(self, session, order_id):
         # Read identity only, then acquire the shared lock order before row locking.
@@ -349,6 +484,12 @@ class ManualPayoutService:
             row.status, row.updated_at = 'CANCELLED', now
             return self._record(session, user_id, 'CANCEL', idempotency_key, payload, self._result(row), now)
 
+    def _claim_result(self, row, quote):
+        return dict(self._result(row), instructions=dict(target_address=quote.snapshot['target_address'],
+            official_address=quote.snapshot['official_address'], amount=format(self._payable(row, quote), '.6f'),
+            network=NETWORK, contract=USDT_CONTRACT, digest=row.adjusted_digest or row.digest,
+            warning='VERIFY_EXISTING_PAYMENT_BEFORE_SIGNING'))
+
     @_precise
     def claim(self, *, admin_id, session_id, mfa_proof=None, order_id, expected_digest, idempotency_key, authorize=None):
         now = self._now()
@@ -369,7 +510,10 @@ class ManualPayoutService:
             if replay:
                 if row.claimed_by != admin_id or row.status != 'CLAIMED':
                     _fail('WALLET_PAYOUT_CLAIM_UNAVAILABLE')
-                result = replay
+                # The receipt proves the original claim, but an authorized rate
+                # adjustment may have changed the payable since that receipt.
+                # Project current locked terms without rewriting claim history.
+                result = self._claim_result(row, quote)
             else:
                 binding, epoch = self._gate(session, row.user_id, now, locked, execution=True)
                 now = self._now()
@@ -377,20 +521,20 @@ class ManualPayoutService:
                 quote = session.get(ManualPayoutQuote, row.quote_id)
                 if row.status != 'REQUESTED':
                     _fail('WALLET_PAYOUT_ALREADY_CLAIMED')
-                if (expected_digest != row.digest or row.digest != _digest(quote.snapshot)
+                final_receive = row.final_receive if row.final_receive is not None else Decimal(quote.snapshot['receive'])
+                digest_ok = expected_digest in (row.digest, row.adjusted_digest)
+                if (not digest_ok or row.digest != _digest(quote.snapshot)
                         or binding.id != quote.snapshot['binding_id'] or epoch != quote.snapshot['safety_epoch']
                         or self.official_config.address != quote.snapshot['official_address']
                         or self.official_config.version != quote.snapshot['official_config_version']
                         or self.owner_admin_id != quote.snapshot['owner_admin_id']):
                     _fail('WALLET_PAYOUT_DIGEST_CONFLICT')
-                if self.reserve_policy == 'manual_liquidity' and locked[0].eligible_usdt < Decimal(quote.snapshot['receive']):
+                if self.reserve_policy == 'manual_liquidity' and locked[0].eligible_usdt < final_receive:
                     _fail('WALLET_PAYMENT_LIQUIDITY_INSUFFICIENT')
                 reserve_observed_at = _utc(locked[0].observed_at)
                 row.status, row.claimed_by, row.claimed_at, row.updated_at = 'CLAIMED', admin_id, now, now
                 mark_manual_payout_pending(locked[0])
-                result = dict(self._result(row), instructions=dict(target_address=quote.snapshot['target_address'],
-                    official_address=quote.snapshot['official_address'], amount=quote.snapshot['receive'],
-                    network=NETWORK, contract=USDT_CONTRACT, digest=row.digest, warning='VERIFY_EXISTING_PAYMENT_BEFORE_SIGNING'))
+                result = self._claim_result(row, quote)
                 self._record(session, admin_id, 'CLAIM', idempotency_key, payload, result, now)
                 if not 0 <= (self._now() - reserve_observed_at).total_seconds() <= 120:
                     _fail('WALLET_RESERVE_UNAVAILABLE', 503)
@@ -480,7 +624,7 @@ class ManualPayoutService:
         claim_ms = int(_utc(row.claimed_at).timestamp()*1000)
         return [transfer for transfer in evidence.transfers if transfer.txid == txid
             and transfer.contract == USDT_CONTRACT and transfer.from_address == quote.snapshot['official_address']
-            and transfer.to_address == quote.snapshot['target_address'] and transfer.amount_units == int(row.amount*1000000)
+            and transfer.to_address == quote.snapshot['target_address'] and transfer.amount_units == int(ManualPayoutService._payable(row, quote)*1000000)
             and transfer.timestamp_ms >= claim_ms and transfer.timestamp_ms == evidence.timestamp_ms
             and transfer.block_number == evidence.block_number and transfer.block_id == evidence.block_id
             and type(transfer.log_index) is int and transfer.log_index >= 0]
@@ -530,11 +674,12 @@ class ManualPayoutService:
                     row.status, row.review_reason, row.updated_at = 'UNKNOWN', reason, now
                     audit_write(session, 'manual-payout-reconciler', row.id, 'wallet.manual_payout_review', reason)
                 return self._result(row)
+            payable = self._payable(row, quote)
             session.add(ManualPayoutEvent(id=str(uuid4()), order_id=row.id, network=NETWORK, contract=USDT_CONTRACT,
                 txid=txid, log_index=transfer.log_index, created_at=now, evidence=dict(policy=evidence.policy,
                     source_id=evidence.source_id, block_number=evidence.block_number, block_id=evidence.block_id,
                     timestamp_ms=evidence.timestamp_ms, amount_units=transfer.amount_units)))
-            self.wallet_ledger.post(entries={'HOLD:'+row.user_id: -row.amount, 'PLATFORM_CUSTODY': row.amount},
+            self.wallet_ledger.post(entries={'HOLD:'+row.user_id: -payable, 'PLATFORM_CUSTODY': payable},
                 actor_id='manual-payout-reconciler', reason_code='MANUAL_PAYOUT_SETTLED', idempotency_key=row.id,
                 scope='wallet.manual_settle', session=session)
             finish_manual_payout_pending(locked[0])

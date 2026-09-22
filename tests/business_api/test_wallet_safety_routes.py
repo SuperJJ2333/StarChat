@@ -62,8 +62,9 @@ def test_disabled_conversion_is_explicit(wallet_http):
     response = client.post("/api/v1/wallet/conversions",
                            headers={**headers, "Idempotency-Key": "conversion-1"},
                            json={"direction": "USDT_TO_CAIBI", "amount": "1.00"})
-    assert response.status_code == 503
-    assert response.json()["error"]["code"] == "WALLET_CONVERSION_DISABLED"
+    # ADR-0076：计价 v2 关闭用户侧兑换——旧客户端收到明确业务错误。
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "CONVERSIONS_CLOSED"
 
 
 def test_configuration_exposes_safe_conversion_state(wallet_http):

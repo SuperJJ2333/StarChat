@@ -245,7 +245,7 @@ final class _State extends State<ChatRedPacketSheet>
       await _alert('请输入有效的红包金额');
       return;
     }
-    if (balance != null && amount + fee > balance!) {
+    if (!widget.isGroup && balance != null && amount + fee > balance!) {
       await _alert(
           '红包创建失败，账户余额不足（含 0.5% 手续费 ${fee.toStringAsFixed(2)} 点钻，需合计 ${(amount + fee).toStringAsFixed(2)} 点钻）',
           key: const Key('chat-red-packet-insufficient-dialog'));
@@ -552,6 +552,16 @@ final class _State extends State<ChatRedPacketSheet>
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: total,
               builder: (context, value, child) {
+                if (widget.isGroup) {
+                  return const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Text('手续费及群主减免以服务端核验为准，发出后可在红包详情查看手续费与抽成状态',
+                        key: Key('chat-red-packet-fee-hint'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: WeChatColors.textSecondary, fontSize: 12)),
+                  );
+                }
                 // ADR-0073：手续费与实扣合计都来自同一个与转账共享的
                 // 手续费实现（BigInt，无浮点估算）。
                 final feeText = chatPaymentFeeOrNull(value.text);

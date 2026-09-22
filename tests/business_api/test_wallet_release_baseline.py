@@ -19,8 +19,13 @@ def test_wallet_and_moments_production_branches_have_one_shared_head():
     merge = scripts.get_revision('0056_merge_moment_comments')
     assert set(merge.down_revision) == {
         '0055_admin_sessions', '0040_moment_comment_images'}
-    assert scripts.get_heads() == ['0071_direct_room_generations']
-    assert scripts.get_revision('0071_direct_room_generations').down_revision == '0070_direct_room_history'
+    # 2026-09-21：迁移链扩至 0080（ADR-0075..0079 及实施补充），仍单头。
+    assert scripts.get_heads() == ['0083_phone_wallet_refresh_merge']
+    assert set(scripts.get_revision('0083_phone_wallet_refresh_merge').down_revision) == {
+        '0080_refresh_recovery', '0082_deposit_intent_cancel'}
+    assert scripts.get_revision('0080_refresh_recovery').down_revision == '0071_direct_room_generations'
+    assert scripts.get_revision('0078_phone_accounts').down_revision == '0077_recharge_requests'
+    assert scripts.get_revision('0072_fx_rates').down_revision == '0071_direct_room_generations'
     assert scripts.get_revision('0070_direct_room_history').down_revision == '0069_media_platform'
     assert scripts.get_revision('0069_media_platform').down_revision == '0068_red_packet_fee'
     assert scripts.get_revision('0068_red_packet_fee').down_revision == '0067_wallet_owner_transfers'

@@ -3,6 +3,7 @@ from app.api.admin_session_boundary import create_admin_session_boundary
 from app.integrations.tron import diagnostics as wallet_diagnostics
 
 from app.api.health import create_health_router
+from app.api.client_diagnostics import create_client_diagnostics_router
 from app.api.identity import create_identity_router
 from app.api.support import create_support_router
 from app.api.ledger import create_ledger_router
@@ -15,6 +16,10 @@ from app.api.wallet_mfa import create_wallet_mfa_router
 from app.api.wallet_access import create_wallet_access_router
 from app.modules.wallet.runtime import create_manual_wallet_runtime
 from app.api.friendship import create_friendship_router
+from app.api.fx import create_fx_router
+from app.api.recharge import create_recharge_router
+from app.modules.recharge.service import RechargeService
+from app.modules.ledger.service import LedgerService
 from app.api.moments import create_moments_router
 from app.api.media import create_media_router
 from app.api.media_platform import create_media_platform_router
@@ -61,6 +66,7 @@ def create_app(
             else RedisRateLimiter.from_url(settings.redis_url)
         )
     app.state.rate_limiter = rate_limiter
+    app.include_router(create_client_diagnostics_router(settings, session_factory, rate_limiter), prefix="/api/v1")
     manual_wallet_runtime = create_manual_wallet_runtime(settings, session_factory, rate_limiter)
     app.state.manual_wallet_runtime = manual_wallet_runtime
     if manual_wallet_runtime is not None:
@@ -129,6 +135,23 @@ def create_app(
         prefix="/api/v1",
     )
     app.include_router(create_group_router(settings, session_factory, matrix_gateway=matrix_gateway), prefix="/api/v1")
+    app.include_router(create_fx_router(settings, session_factory), prefix="/api/v1")
+    # ADR-0077：人工充值（客服结算）；汇率提供者与 FX 展示共用同一持久缓存。
+    from app.modules.fx.service import FxService as _FxService
+
+    _fx = _FxService(session_factory,
+        api_id=settings.fx_api_id.get_secret_value() if settings.fx_api_id else None,
+        api_key=settings.fx_api_key.get_secret_value() if settings.fx_api_key else None,
+        api_url=settings.fx_api_url, ttl_seconds=settings.fx_cache_ttl_seconds)
+
+    def _recharge_rate_provider():
+        snapshot = _fx.get_rate_snapshot(actor_id='recharge-reference')
+        return snapshot['rate'], bool(snapshot.get('stale'))
+
+    _recharge_ledger = LedgerService(session_factory)
+    _recharge_ledger.reserve_policy = getattr(settings, "wallet_reserve_policy", "full_backing")
+    _recharge = RechargeService(session_factory, ledger=_recharge_ledger, rate_provider=_recharge_rate_provider)
+    app.include_router(create_recharge_router(settings, session_factory, recharge_service=_recharge), prefix="/api/v1")
     app.include_router(
         create_media_platform_router(
             settings,

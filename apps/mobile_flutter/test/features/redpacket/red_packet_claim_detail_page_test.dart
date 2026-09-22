@@ -129,6 +129,43 @@ Future<void> _pumpPage(WidgetTester tester, FakeGateway gateway) async {
 }
 
 void main() {
+  testWidgets('missing sender fee fields do not invent commission',
+      (tester) async {
+    await _pumpPage(tester, FakeGateway(detail: _detail));
+    expect(find.byKey(const Key('red-packet-fee-details')), findsNothing);
+  });
+  testWidgets('server exemption is shown without calculating from membership',
+      (tester) async {
+    await _pumpPage(
+        tester,
+        FakeGateway(detail: {
+          ..._detail,
+          'fee': '0.00',
+          'fee_exempt': true,
+          'fee_exempt_reason': 'GROUP_OWNER_TEN_PLUS',
+          'commission_status': 'NONE',
+          'commission_amount': null,
+        }));
+    expect(find.text('0.00 点钻'), findsOneWidget);
+    expect(find.text('群主发红包 · 群成员满 10 人'), findsOneWidget);
+    expect(find.text('无抽成'), findsOneWidget);
+  });
+  testWidgets('existing detail shows authoritative fee and pending commission',
+      (tester) async {
+    await _pumpPage(
+        tester,
+        FakeGateway(detail: {
+          ..._detail,
+          'fee': '0.50',
+          'fee_exempt': false,
+          'commission_amount': '0.10',
+          'commission_status': 'PENDING',
+        }));
+    expect(find.text('手续费'), findsOneWidget);
+    expect(find.text('0.50 点钻'), findsOneWidget);
+    expect(find.text('群主抽成'), findsOneWidget);
+    expect(find.textContaining('待结算'), findsOneWidget);
+  });
   // 明细页现在会读写会话级明细缓存（RedPacketDetailStores.shared）。缓存是
   // 进程级的，必须在每个用例前重置，否则前一个用例的成功明细会被后一个用例
   // 当作"本地优先"数据渲染出来（例如 error-retry 用例的首帧错误页会被跳过）。
@@ -138,7 +175,11 @@ void main() {
   test('单份红包即使领完也不显示手气最佳（微信对齐）', () {
     final records = parseRedPacketClaims({
       'claims': [
-        {'user_id': 'u1', 'amount': '1.00', 'claimed_at': '2026-01-01T00:00:01+00:00'},
+        {
+          'user_id': 'u1',
+          'amount': '1.00',
+          'claimed_at': '2026-01-01T00:00:01+00:00'
+        },
       ]
     });
     final detail = {
@@ -156,8 +197,16 @@ void main() {
   test('两份群红包领完显示手气最佳', () {
     final records = parseRedPacketClaims({
       'claims': [
-        {'user_id': 'u1', 'amount': '5.00', 'claimed_at': '2026-01-01T00:00:01+00:00'},
-        {'user_id': 'u2', 'amount': '6.00', 'claimed_at': '2026-01-01T00:00:02+00:00'},
+        {
+          'user_id': 'u1',
+          'amount': '5.00',
+          'claimed_at': '2026-01-01T00:00:01+00:00'
+        },
+        {
+          'user_id': 'u2',
+          'amount': '6.00',
+          'claimed_at': '2026-01-01T00:00:02+00:00'
+        },
       ]
     });
     final detail = {
@@ -339,8 +388,8 @@ void main() {
           'claims': [claims.first],
         }, contacts: _contacts));
 
-    expect(find.byKey(const Key('red-packet-claim-detail-total')),
-        findsNothing);
+    expect(
+        find.byKey(const Key('red-packet-claim-detail-total')), findsNothing);
     expect(find.textContaining('null'), findsNothing);
     expect(find.textContaining('共 '), findsNothing);
     // 领取记录仍然可见（金额来自各自领取记录）。
@@ -348,13 +397,12 @@ void main() {
     expect(find.text('30.00点钻'), findsOneWidget);
   });
 
-  testWidgets(
-      'completed packet shows the total once the server exposes it',
+  testWidgets('completed packet shows the total once the server exposes it',
       (tester) async {
     await _pumpPage(tester, FakeGateway(detail: _detail, contacts: _contacts));
 
-    expect(find.byKey(const Key('red-packet-claim-detail-total')),
-        findsOneWidget);
+    expect(
+        find.byKey(const Key('red-packet-claim-detail-total')), findsOneWidget);
     expect(find.text('88.00 点钻'), findsOneWidget);
   });
 

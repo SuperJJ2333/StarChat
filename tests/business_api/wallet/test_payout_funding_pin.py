@@ -1,6 +1,6 @@
 """Isolated regression coverage for ADR-0068; no chain/provider financial writes."""
 import hashlib
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.errors import AppError
 from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.identity.payment_pin_models import PaymentPinAuthorization
+from app.modules.fx.models import FxRate
 from app.modules.ledger.reserve import RedeemabilityReserve
 from app.modules.ledger.service import LedgerService
 from app.modules.wallet.models import WalletConversion
@@ -19,6 +20,9 @@ def funded(core):
     service, factory = core[:2]
     service.conversions_enabled = True
     with factory.begin() as session:
+        now = datetime.now(timezone.utc)
+        session.add(FxRate(pair='USD/CNY', rate=Decimal('7.12'), fetched_at=now,
+            expires_at=now + timedelta(hours=1), fetch_state='idle'))
         session.get(RedeemabilityReserve, 'global').eligible_usdt = Decimal('1100')
     LedgerService(factory).post(entries={'alice': Decimal('100'), 'PLATFORM_CLEARING': Decimal('-100')},
         actor_id='alice', reason_code='TEST_FUND', idempotency_key='points', scope='test')

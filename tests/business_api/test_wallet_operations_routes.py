@@ -10,6 +10,7 @@ from app.api.admin import create_admin_router
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
 from app.core.errors import install_error_handlers
+from app.modules.fx.models import FxRate  # noqa: F401 — register reconciliation's table before create_all
 from app.modules.identity.enums import AccountStatus, RoleCode
 from app.modules.identity.models import User, UserRole, RefreshTokenFamily
 from app.modules.identity.tokens import TokenService
@@ -82,7 +83,7 @@ def test_incident_two_person_workflow_never_clears_active_condition(ops):
     ack = response.json()
     response = client.post(path+'/resolve', json=dict(expected_version=ack['version'],
         reason_code='REVIEWED', clearance_digest='0'*64), headers=headers['reviewer'])
-    assert response.status_code == 409
+    assert response.status_code == 409, response.text
     assert svc.get(row['id'])['status'] == 'ACKNOWLEDGED'
     assert client.get('/api/v1/admin/wallet/monitor/status', headers=headers['finance']).status_code == 200
 

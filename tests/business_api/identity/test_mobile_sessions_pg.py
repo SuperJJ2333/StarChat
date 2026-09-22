@@ -67,6 +67,29 @@ def test_concurrent_mobile_logins_leave_exactly_one_valid_family(pg_mobile):
     assert accepted == 1
 
 
+def test_concurrent_same_refresh_operation_creates_one_child(pg_mobile):
+    import base64
+    factory, service = pg_mobile
+    parent = service().issue_pair(user_id='alice', device_key='phone', display_name='Phone')
+    operation = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip('=')
+    barrier = Barrier(4)
+
+    def refresh(_):
+        barrier.wait()
+        return service().rotate(parent.refresh_token, operation_id=operation)
+
+    with ThreadPoolExecutor(4) as pool:
+        pairs = list(pool.map(refresh, range(4)))
+    assert len({pair.refresh_token for pair in pairs}) == 1
+    for pair in pairs:
+        assert service().decode_access_token(pair.access_token)['family_id'] == parent.family_id
+    with factory() as session:
+        records = list(session.scalars(select(RefreshToken).where(RefreshToken.family_id == parent.family_id)))
+        assert len(records) == 2
+        assert sum(record.consumed_at is not None for record in records) == 1
+        assert session.get(RefreshTokenFamily, parent.family_id).revoked_at is None
+
+
 def test_broker_grant_consumes_once_and_holds_user_lock_through_synapse(pg_mobile):
     from app.modules.identity.models import MatrixLoginGrant, MatrixLoginGeneration, MobileMatrixSession
     from app.modules.identity.matrix_login import MatrixLoginTokenService

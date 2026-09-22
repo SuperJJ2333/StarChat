@@ -27,6 +27,7 @@ def core():
     from app.modules.wallet.funding import OfficialFundingConfig
     from app.modules.wallet.manual_payouts import ManualPayoutService, ManualPayoutPolicy
     from app.modules.wallet import manual_payout_models  # noqa: F401
+    from app.modules.wallet import receipt_models, repair_models  # noqa: F401  (receipt FK 目标需全部注册)
     engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)

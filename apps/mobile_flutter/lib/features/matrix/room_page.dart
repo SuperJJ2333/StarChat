@@ -447,6 +447,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         autoPlayNextVoiceEnabled: () => voiceAutoPlayPreferences.autoPlayNext,
         nextAutoPlayVoice: _nextUnreadVoiceAfter,
       );
+
   /// BUG-40：同会话内 [eventId] 之后最近的一条**未播过**的非本人语音。
   RoomMessageViewModel? _nextUnreadVoiceAfter(String eventId) {
     final timeline = controller;
@@ -747,6 +748,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       roomInfo.id;
   late SupportIdentityRepository _supportIdentities;
   Timer? _supportTimer;
+
   /// E2：金融卡片缓存提升到会话级（进程共享、会话失效才重建），
   /// 每次进入房间不再清零重拉——气泡状态稳定不闪烁（微信式机制）。
   late final FinanceCardStore _financeCardStore =
@@ -2811,6 +2813,31 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (isGroup) {
       final infoController = GroupChatInfoController(
         widget.roomLease.openGroupChatInfoGateway(),
+        submitOwnershipTransfer: (targetMatrixUserId) => widget.api
+            .requestGroupOwnershipTransfer(roomInfo.id, targetMatrixUserId),
+        loadOwnershipTransfers: () async {
+          final intents = await widget.api.transferIntents(roomInfo.id);
+          if (!intents.any(
+              (entry) => !{'COMPLETED', 'FAILED'}.contains(entry['stage']))) {
+            return intents;
+          }
+          String ownerId = '';
+          try {
+            final owner = await widget.api
+                .getJson('/groups/${Uri.encodeComponent(roomInfo.id)}/owner');
+            ownerId = owner['owner_matrix_id']?.toString() ?? '';
+          } catch (_) {
+            /* Unknown business owner must not fall back to Matrix promotion. */
+          }
+          return [
+            for (final intent in intents)
+              {
+                ...intent,
+                if (!{'COMPLETED', 'FAILED'}.contains(intent['stage']))
+                  'expected_old_owner_matrix_id': ownerId,
+              }
+          ];
+        },
         // BUG1：添加成员与建群共用服务端授权自动入群（操作者校验 +
         // invite 配对 + auto_allow 分流在服务端完成）。
         serverAutoJoin: (roomId, inviteeUserIds) async {
@@ -3713,7 +3740,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 identityCache: _identityCache,
                 redPacketMode: message.redPacketMode,
                 packetOwnerMatrixId: message.senderId,
-                sendClaimNotice: ({required String packetId,
+                sendClaimNotice: (
+                        {required String packetId,
                         required String ownerMatrixId}) =>
                     widget.roomLease.sendRedPacketClaimNotice(
                         packetId: packetId, ownerMatrixId: ownerMatrixId),
@@ -5288,40 +5316,38 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       behavior: HitTestBehavior.translucent,
       onTap: _dismissComposerExtensions,
       child: errorMessage != null
-              ? Center(child: Text(errorMessage!))
-              : messages.isEmpty
-                  ? const SizedBox.expand()
-                  : NotificationListener<ScrollNotification>(
-                      onNotification: _onTimelineScrollNotification,
-                      child: ListView.builder(
-                        controller: messageScrollController,
-                        reverse: true,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: WeChatSpacing.md,
-                          vertical: WeChatSpacing.sm,
-                        ),
-                        // 顶部状态行（视觉上的最上方）：加载历史中
-                        // 显示 loading，历史取尽显示"没有更多了"。
-                        itemCount: messages.length,
-                        findChildIndexCallback: (key) {
-                          if (key is! ValueKey<String>) {
-                            return null;
-                          }
-                          final index = _visibleIndex[key.value];
-                          return index == null
-                              ? null
-                              : messages.length - index - 1;
-                        },
-                        itemBuilder: (_, reverseIndex) {
-                          final index = messages.length - reverseIndex - 1;
-                          final message = messages[index];
-                          final previous = index == 0
-                              ? controller?.previousTimestamp(message.id)
-                              : messages[index - 1].timestamp;
-                          return _cachedMessageRow(message, previous);
-                        },
-                      ),
+          ? Center(child: Text(errorMessage!))
+          : messages.isEmpty
+              ? const SizedBox.expand()
+              : NotificationListener<ScrollNotification>(
+                  onNotification: _onTimelineScrollNotification,
+                  child: ListView.builder(
+                    controller: messageScrollController,
+                    reverse: true,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: WeChatSpacing.md,
+                      vertical: WeChatSpacing.sm,
                     ),
+                    // 顶部状态行（视觉上的最上方）：加载历史中
+                    // 显示 loading，历史取尽显示"没有更多了"。
+                    itemCount: messages.length,
+                    findChildIndexCallback: (key) {
+                      if (key is! ValueKey<String>) {
+                        return null;
+                      }
+                      final index = _visibleIndex[key.value];
+                      return index == null ? null : messages.length - index - 1;
+                    },
+                    itemBuilder: (_, reverseIndex) {
+                      final index = messages.length - reverseIndex - 1;
+                      final message = messages[index];
+                      final previous = index == 0
+                          ? controller?.previousTimestamp(message.id)
+                          : messages[index - 1].timestamp;
+                      return _cachedMessageRow(message, previous);
+                    },
+                  ),
+                ),
     );
     return Stack(children: [
       Positioned.fill(child: list),
@@ -5473,18 +5499,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   // BUG-35：视频发送工作胶囊（转码百分比/上传中/失败可重试），
                   // 覆盖相册与拍摄两条路径；进度由后台协调器驱动。
                   ListenableBuilder(
-                      listenable: (widget.roomLease
-                              as MatrixOutgoingProgressView)
-                          .outgoingProgress,
+                      listenable:
+                          (widget.roomLease as MatrixOutgoingProgressView)
+                              .outgoingProgress,
                       builder: (context, _) {
-                        final summary = (widget.roomLease
-                                as MatrixOutgoingVideoWorkView)
-                            .videoWorkSummaryForRoom(roomInfo.id);
+                        final summary =
+                            (widget.roomLease as MatrixOutgoingVideoWorkView)
+                                .videoWorkSummaryForRoom(roomInfo.id);
                         if (!summary.busy && summary.failed == 0) {
                           return const SizedBox.shrink();
                         }
                         return Padding(
-                          key: const Key('video-automatic-compression-progress'),
+                          key:
+                              const Key('video-automatic-compression-progress'),
                           padding: const EdgeInsets.all(8),
                           child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -5492,11 +5519,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                                 const CupertinoActivityIndicator(radius: 7),
                                 const SizedBox(width: 8),
                                 Expanded(
-                                  child: Text(summary.label,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                          fontSize: 13,
-                                          color: CupertinoColors.systemGrey))),
+                                    child: Text(summary.label,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            color:
+                                                CupertinoColors.systemGrey))),
                               ]),
                         );
                       }),

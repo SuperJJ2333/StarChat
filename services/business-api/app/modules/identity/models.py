@@ -24,8 +24,14 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     username_normalized: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    email: Mapped[str] = mapped_column(String(320), nullable=False)
-    email_normalized: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    # ADR-0075：手机号通道。归一化 +86；可空 + 唯一（部分唯一语义由
+    # 唯一索引允许多 NULL 保证）；email 改为可空（禁止虚构邮箱占位）。
+    email_normalized: Mapped[str | None] = mapped_column(String(320), nullable=True, unique=True)
+    phone: Mapped[str | None] = mapped_column(String(20))
+    phone_normalized: Mapped[str | None] = mapped_column(String(20), unique=True)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    phone_findable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('true'))
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[AccountStatus] = mapped_column(Enum(AccountStatus), nullable=False)
     matrix_user_id: Mapped[str | None] = mapped_column(String(255), unique=True)
@@ -199,6 +205,8 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     replaced_by_id: Mapped[str | None] = mapped_column(String(36))
+    operation_hash: Mapped[str | None] = mapped_column(String(64))
+    result_key_version: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -286,4 +294,20 @@ class ReferralBinding(Base):
         String(30), nullable=False, default="NOT_CONFIGURED"
     )
     bound_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OtpChallenge(Base):
+    """ADR-0075：用途绑定的短信 OTP 挑战（只存哈希；单次消费）。"""
+    __tablename__ = "otp_challenges"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    purpose: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    target: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    registration_session: Mapped[str | None] = mapped_column(String(64))
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts_left: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

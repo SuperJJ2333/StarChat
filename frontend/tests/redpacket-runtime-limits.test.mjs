@@ -37,5 +37,5 @@ test("runtime retry handler loads server-shaped cap and preserves draft", async 
   assert.equal(hint.dataset.state, "ready");
   assert.match(hint.textContent, /500.00 点钻/u);
   assert.equal(amount.value, "300.00");
-  assert.equal(retry.hidden, true);
+  assert.equal(nodes.find(node => node.children.includes(retry)).hidden, true);
 });

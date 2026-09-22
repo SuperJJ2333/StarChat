@@ -19,6 +19,65 @@ import 'wallet_payment_flow.dart';
 import 'wallet_qr_exporter.dart';
 import '../../ui/motion/motion_page_route.dart';
 
+Widget walletStepIndicator(
+    BuildContext context, List<String> steps, int current,
+    {String keyPrefix = 'manual-wallet-step'}) {
+  final duration = MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : WeChatMotion.actionPressDuration;
+  final idleSurface = WeChatColors.elevatedSurface(context);
+  final idleLine = WeChatColors.resolve(context, WeChatColors.divider);
+  return Padding(
+      key: Key('$keyPrefix-steps'),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(children: [
+        for (var index = 0; index < steps.length; index++) ...[
+          if (index > 0)
+            Expanded(
+                child: AnimatedContainer(
+                    key: Key('$keyPrefix-bar-${index - 1}'),
+                    duration: duration,
+                    height: 2,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    color: index <= current
+                        ? WeChatColors.brandPrimary
+                        : idleLine)),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            AnimatedContainer(
+                key: Key('$keyPrefix-dot-$index'),
+                duration: duration,
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                    color: index <= current
+                        ? WeChatColors.brandPrimary
+                        : idleSurface,
+                    shape: BoxShape.circle),
+                child: index < current
+                    ? Icon(CupertinoIcons.checkmark_alt,
+                        key: Key('$keyPrefix-check-$index'),
+                        size: 14,
+                        color: CupertinoColors.white)
+                    : Text('${index + 1}',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: index <= current
+                                ? CupertinoColors.white
+                                : WeChatColors.textSecondary))),
+            const SizedBox(width: 6),
+            Text(steps[index],
+                style: TextStyle(
+                    fontSize: 11,
+                    color: index <= current
+                        ? WeChatColors.resolveTextPrimary(context)
+                        : WeChatColors.textSecondary)),
+          ]),
+        ],
+      ]));
+}
+
 enum ManualWalletSection { overview, binding, deposit, payout }
 
 final class ManualWalletPage extends StatefulWidget {
@@ -85,6 +144,153 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   bool conversionEnabled = false;
   String? pointsAvailable;
   String? pointsError;
+  Map<String, dynamic>? referenceFx;
+  String? referenceFxError;
+  bool referenceFxRequested = false;
+  bool cnyPricing = false;
+  List<Map<String, dynamic>> rechargeContacts = [];
+  List<Map<String, dynamic>> rechargeHistory = [];
+  Map<String, dynamic>? rechargeOp;
+  String? rechargeError;
+  bool depositCancellationPending = false;
+
+  Future<void> loadRecharges() async {
+    try {
+      await ensureCurrentScope();
+      rechargeOp = await store.read('recharge');
+      final contacts = await widget.client.rechargeDirectory();
+      final history = await widget.client.myRecharges();
+      await ensureCurrentScope();
+      if (!mounted) return;
+      setState(() {
+        rechargeContacts = contacts;
+        rechargeHistory = history;
+        rechargeError = null;
+        if (rechargeOp?['amount'] is String) {
+          amount.text = rechargeOp!['amount'] as String;
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() => rechargeError = '充值信息加载失败，请重试');
+    }
+  }
+
+  Future<void> submitManualRecharge() async {
+    await ensureCurrentScope();
+    rechargeOp ??=
+        await store.begin('recharge', {'amount': manualAmount(amount.text)});
+    final result = await widget.client.submitRecharge(
+      amountUsdt: rechargeOp!['amount'] as String,
+      idempotencyKey: rechargeOp!['key'] as String,
+    );
+    await ensureCurrentScope();
+    rechargeOp = {...rechargeOp!, 'id': result['id']};
+    await store.save('recharge', rechargeOp!);
+    rechargeHistory = [
+      result,
+      ...rechargeHistory.where((row) => row['id'] != result['id'])
+    ];
+  }
+
+  Future<void> cancelManualRecharge(String id) async {
+    await ensureCurrentScope();
+    // Cancellation is not replayable. Always reconcile the authoritative list
+    // after success or an uncertain response before another user action.
+    try {
+      await widget.client.cancelRecharge(id);
+    } finally {
+      await loadRecharges();
+    }
+  }
+
+  Future<void> cancelLegacyDeposit() async {
+    await ensureCurrentScope();
+    final current = deposit;
+    if (current == null || current.status != ManualIntentState.open) return;
+    final command = await store.begin('deposit_cancel', {'id': current.id});
+    if (command['id'] != current.id) {
+      throw StateError('请先刷新确认上一笔充值申请状态');
+    }
+    depositCancellationPending = true;
+    final result =
+        await api.cancelDepositIntent(current.id, command['key'] as String);
+    await ensureCurrentScope();
+    deposit = result;
+    depositCancellationPending = false;
+    watchDepositDeadline();
+  }
+
+  Future<void> loadReferenceFx() async {
+    try {
+      final snapshot = await widget.client.fxRate();
+      final rate = snapshot['rate'];
+      if (rate is! String ||
+          _referenceUnits(rate) == null ||
+          _referenceUnits(rate) == BigInt.zero) {
+        throw const FormatException('参考汇率不可用');
+      }
+      if (!mounted) return;
+      setState(() {
+        referenceFx = snapshot;
+        referenceFxError = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => referenceFxError = '参考汇率暂不可用，实际结算以客服确认为准');
+    }
+  }
+
+  // Reference display only: fixed 18-place integers avoid binary floating point.
+  // These estimates never enter a request, quote, balance or ledger calculation.
+  static BigInt? _referenceUnits(String value) {
+    if (!RegExp(r'^(0|[1-9][0-9]{0,23})(\.[0-9]{1,18})?$').hasMatch(value)) {
+      return null;
+    }
+    final parts = value.split('.');
+    return BigInt.parse(
+        parts.first + (parts.length == 2 ? parts.last : '').padRight(18, '0'));
+  }
+
+  String? get referenceEstimate {
+    final input = amount.text.trim().isNotEmpty
+        ? amount.text.trim()
+        : deposit?.expectedAmount ?? '';
+    final inputUnits = _referenceUnits(input);
+    final rate = referenceFx?['rate'];
+    final rateUnits = rate is String ? _referenceUnits(rate) : null;
+    if (inputUnits == null || rateUnits == null || rateUnits <= BigInt.zero) {
+      return null;
+    }
+    final payoutReference = widget.section == ManualWalletSection.payout;
+    final digits = payoutReference ? 6 : 2;
+    final scale = BigInt.from(10).pow(18);
+    final displayScale = BigInt.from(10).pow(digits);
+    final numerator = payoutReference
+        ? inputUnits * displayScale
+        : inputUnits * rateUnits * displayScale;
+    final denominator = payoutReference ? rateUnits : scale * scale;
+    final rounded = (numerator + denominator ~/ BigInt.two) ~/ denominator;
+    final text = rounded.toString().padLeft(digits + 1, '0');
+    return '${text.substring(0, text.length - digits)}.${text.substring(text.length - digits)}';
+  }
+
+  Widget referenceFxCard() => rowsCard([
+        detail('点钻计价', '1 点钻 = ¥1.00'),
+        if (referenceFx?['rate'] is String)
+          detail('参考汇率', '1 USDT ≈ ¥${referenceFx!['rate']}'),
+        if (referenceEstimate != null)
+          detail(
+              widget.section == ManualWalletSection.payout
+                  ? '参考可兑 USDT'
+                  : '预计到账点钻',
+              '≈ $referenceEstimate ${widget.section == ManualWalletSection.payout ? 'USDT' : '点钻'}'),
+        detail(
+            '结算说明',
+            referenceFxError ??
+                (referenceFx?['stale'] == true
+                    ? '参考汇率已过期，实际结算以客服确认为准'
+                    : '参考估算，最终以客服结算为准')),
+      ]);
 
   /// 距离上次改绑未满 30 天：服务端会拒绝，界面必须先讲清楚而不是让用户撞错。
   bool get rebindCoolingDown {
@@ -97,7 +303,11 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       capabilitiesKnown &&
       bindingFresh &&
       binding?.status == ManualBindingState.active;
-  bool get canDeposit => !busy && activeBinding && depositEnabled;
+  bool get canDeposit =>
+      !busy &&
+      ready &&
+      capabilitiesKnown &&
+      (cnyPricing || (activeBinding && depositEnabled));
   bool get canWithdraw =>
       !busy &&
       activeBinding &&
@@ -231,12 +441,13 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     if (snapshot != null) {
       final config = snapshot['config'];
       if (config is Map) {
+        cnyPricing = config['caibi_pricing_version'] == 'caibi-cny-v1';
         depositEnabled = config['funding_enabled'] == true;
         payoutEnabled = config['manual_payout_enabled'] == true;
         executionEnabled = config['manual_payout_execution_enabled'] == true;
         conversionEnabled = config['conversion_enabled'] == true;
-        pointsPayoutEnabled =
-            config['caibi_payout_enabled'] == true && conversionEnabled;
+        pointsPayoutEnabled = config['caibi_payout_enabled'] == true &&
+            (cnyPricing || conversionEnabled);
         capabilitiesKnown = true;
         capabilitiesUnavailable = false;
         addressOnly = config['user_auth_mode'] == 'address_only';
@@ -284,6 +495,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     await ensureCurrentScope();
     bindingFresh = false;
     depositOp = await store.read('deposit');
+    final cancelOp = await store.read('deposit_cancel');
+    depositCancellationPending =
+        cancelOp != null && cancelOp['id'] == depositOp?['id'];
     quoteOp = await store.read('quote');
     payoutOp = await store.read('payout');
     if (depositOp == null) deposit = null;
@@ -347,6 +561,15 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     }
     // 点钻余额已由进入态快照应用（见 _applyEntryState）：此处不再单独请求，
     // 避免「先清空再等接口」造成的余额/错误条闪烁。
+    if (cnyPricing && widget.section == ManualWalletSection.deposit) {
+      await loadRecharges();
+    }
+    if (!referenceFxRequested &&
+        (widget.section == ManualWalletSection.deposit ||
+            widget.section == ManualWalletSection.payout)) {
+      referenceFxRequested = true;
+      unawaited(loadReferenceFx());
+    }
   }
 
   /// 记录报价绑定的输入金额；若输入框为空（例如服务端恢复的报价）则补齐。
@@ -507,8 +730,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       if (cacheFirst && (entry?.state.hasData ?? false)) return;
       messageIsWarning = true;
       const explanations = {
-        'WALLET_ADDRESS_INVALID':
-            '地址格式不正确，请填写有效的 TRON 地址并检查是否复制完整。',
+        'WALLET_ADDRESS_INVALID': '地址格式不正确，请填写有效的 TRON 地址并检查是否复制完整。',
         'WALLET_ADDRESS_OWNED': '该地址已被其他账号登记，请更换一个属于你的钱包地址。',
         'WALLET_REBIND_TOO_SOON': '距离上次修改未满 30 天，请查看下次可修改时间。',
         'WALLET_BINDING_PENDING': '地址正在同步，请稍后刷新状态。',
@@ -867,9 +1089,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       if (!mounted) return;
       setState(() {
         messageIsWarning = true;
-        message = error is StateError
-            ? error.message.toString()
-            : '无法保存提醒设置，请稍后重试';
+        message =
+            error is StateError ? error.message.toString() : '无法保存提醒设置，请稍后重试';
       });
       return;
     } finally {
@@ -930,6 +1151,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                     ? const TextStyle(color: CupertinoColors.white)
                     : null)));
   }
+
   Widget field(String name, TextEditingController controller, String hint,
           {bool secret = false, bool enabled = true}) =>
       Padding(
@@ -937,6 +1159,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           child: CupertinoTextField(
               key: Key(name),
               controller: controller,
+              onChanged:
+                  identical(controller, amount) ? (_) => setState(() {}) : null,
               placeholder: hint,
               enabled: enabled && !busy,
               obscureText: secret,
@@ -963,6 +1187,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                         message = copiedMessage;
                       }),
               child: const Icon(CupertinoIcons.doc_on_doc, size: 20)));
+
   /// 地址行：[label] 定宽左对齐，地址**压缩展示**后靠左对齐，复制 icon 右端对齐。
   ///
   /// 复制动作始终使用 [value]（完整地址）；展示用压缩值，因此不同长度的地址都
@@ -1016,11 +1241,11 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   /// 带图形 icon 的次级动作按钮（与 [WeChatSecondaryButton] 同一套 token）。
   Widget iconActionButton(
-          {required Key key,
-          required IconData icon,
-          required String label,
-          required VoidCallback? onPressed,
-          bool loading = false}) {
+      {required Key key,
+      required IconData icon,
+      required String label,
+      required VoidCallback? onPressed,
+      bool loading = false}) {
     final enabled = onPressed != null;
     final tone =
         enabled ? WeChatColors.brandPrimary : WeChatColors.textTertiary;
@@ -1034,8 +1259,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                     color: enabled
                         ? WeChatColors.controlBorder
                         : WeChatColors.resolve(context, WeChatColors.divider)),
-                borderRadius:
-                    BorderRadius.circular(WeChatRadius.actionButton)),
+                borderRadius: BorderRadius.circular(WeChatRadius.actionButton)),
             child: CupertinoButton(
                 key: key,
                 padding: const EdgeInsets.symmetric(
@@ -1055,6 +1279,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                           fontSize: WeChatTypography.callout, color: tone)),
                 ]))));
   }
+
   String shortDate(DateTime value) =>
       value.toLocal().toIso8601String().substring(0, 16).replaceFirst('T', ' ');
   Widget warningBox(String text, {String? key}) {
@@ -1095,68 +1320,15 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                     fontSize: 15,
                     color: WeChatColors.resolveTextPrimary(context))),
           ]));
+
   /// 三步指示器（充值/提现共用）：与 design-demo 的「填写金额 → 转账/确认报价 → 到账」一致。
   ///
   /// 点击「下一步」后**保留**，并用 [AnimatedContainer] 做进度过渡：已完成步骤
   /// 高亮 + 勾号，当前步骤高亮，未完成步骤次级色。系统「减少动态效果」开启时
   /// 过渡时长归零（[MediaQuery.disableAnimationsOf]）。
   Widget stepIndicator(List<String> steps, int current,
-      {String keyPrefix = 'manual-wallet-step'}) {
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : WeChatMotion.actionPressDuration;
-    final idleSurface = WeChatColors.elevatedSurface(context);
-    final idleLine = WeChatColors.resolve(context, WeChatColors.divider);
-    return Padding(
-        key: Key('$keyPrefix-steps'),
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(children: [
-          for (var index = 0; index < steps.length; index++) ...[
-            if (index > 0)
-              Expanded(
-                  child: AnimatedContainer(
-                      key: Key('$keyPrefix-bar-${index - 1}'),
-                      duration: duration,
-                      height: 2,
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
-                      color: index <= current
-                          ? WeChatColors.brandPrimary
-                          : idleLine)),
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              AnimatedContainer(
-                  key: Key('$keyPrefix-dot-$index'),
-                  duration: duration,
-                  width: 22,
-                  height: 22,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: index <= current
-                          ? WeChatColors.brandPrimary
-                          : idleSurface,
-                      shape: BoxShape.circle),
-                  child: index < current
-                      ? Icon(CupertinoIcons.checkmark_alt,
-                          key: Key('$keyPrefix-check-$index'),
-                          size: 14,
-                          color: CupertinoColors.white)
-                      : Text('${index + 1}',
-                          style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: index <= current
-                                  ? CupertinoColors.white
-                                  : WeChatColors.textSecondary))),
-              const SizedBox(width: 6),
-              Text(steps[index],
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: index <= current
-                          ? WeChatColors.resolveTextPrimary(context)
-                          : WeChatColors.textSecondary)),
-            ]),
-          ],
-        ]));
-  }
+          {String keyPrefix = 'manual-wallet-step'}) =>
+      walletStepIndicator(context, steps, current, keyPrefix: keyPrefix);
 
   /// 状态主卡：金额/状态/倒计时是这一屏的主语（design-demo 的 status-hero）。
   Widget statusHero({
@@ -1181,7 +1353,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                 height: 52,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                    color: tone.withValues(alpha: 0.10), shape: BoxShape.circle),
+                    color: tone.withValues(alpha: 0.10),
+                    shape: BoxShape.circle),
                 child: Icon(icon, size: 26, color: tone)),
             const SizedBox(height: 10),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -1227,16 +1400,14 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           color: WeChatColors.elevatedSurface(context),
           borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var index = 0; index < cells.length; index++) ...[
-              // §19：卡片内相邻区块的分隔线一律用共享渐隐分割线，
-              // 不得再自建 Container + color 的实心线。
-              if (index > 0) const WeChatGradientDivider(indent: WeChatSpacing.lg),
-              cells[index],
-            ],
-          ]));
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (var index = 0; index < cells.length; index++) ...[
+          // §19：卡片内相邻区块的分隔线一律用共享渐隐分割线，
+          // 不得再自建 Container + color 的实心线。
+          if (index > 0) const WeChatGradientDivider(indent: WeChatSpacing.lg),
+          cells[index],
+        ],
+      ]));
 
   Widget detail(String label, String value, {String? key}) => Padding(
       key: key == null ? null : Key(key),
@@ -1345,22 +1516,19 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                               binding?.bindingEnabled != true
                           ? null
                           : () => openSection(ManualWalletSection.binding),
-                      child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(CupertinoIcons.pencil,
-                                size: 16,
-                                color: WeChatColors.brandPrimary),
-                            const SizedBox(width: 4),
-                            Text(
-                                binding?.status == ManualBindingState.active
-                                    ? '更改绑定'
-                                    : '绑定钱包',
-                                style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: WeChatColors.brandPrimary)),
-                          ]))),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(CupertinoIcons.pencil,
+                            size: 16, color: WeChatColors.brandPrimary),
+                        const SizedBox(width: 4),
+                        Text(
+                            binding?.status == ManualBindingState.active
+                                ? '更改绑定'
+                                : '绑定钱包',
+                            style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: WeChatColors.brandPrimary)),
+                      ]))),
             ]),
             const SizedBox(height: 16),
             Row(children: [
@@ -1469,7 +1637,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                 child: CupertinoButton(
                     key: Key('manual-$kind-notice-open'),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: WeChatSpacing.md, vertical: WeChatSpacing.md),
+                        horizontal: WeChatSpacing.md,
+                        vertical: WeChatSpacing.md),
                     // 直接导航（不能包进 run：run 会先置 busy，openSection 的
                     // busy 守卫会因此拒绝跳转）。
                     onPressed: busy || !ready ? null : () => unawaited(open()),
@@ -1545,43 +1714,42 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   key: const Key('wallet-page-list'),
                   padding: const EdgeInsets.all(16),
                   children: [
-                    if (widget.embedded)
-                      Align(
-                          alignment: Alignment.centerRight,
-                          child: refreshControl()),
-                    if (widget.section == ManualWalletSection.overview)
-                      overview(),
-                    if (capabilitiesUnavailable)
-                      warningBox('功能状态暂不可用，请刷新；已有订单仍可查询。'),
-                    if (widget.section == ManualWalletSection.binding) ...[
-                      if (!addressOnly)
-                        CupertinoButton(
-                            onPressed: busy
-                                ? null
-                                : () => Navigator.of(context).push(
-                                    MotionPageRoute<void>(
-                                        builder: (_) => ManualMfaPage(
-                                            client: widget.client))),
-                            child: const Text('设置身份验证器')),
-                      if (binding?.bindingEnabled != true)
-                        warningBox('绑定暂不可用，请联系管理员'),
-                      card(addressOnly ? registrationFields() : bindingFields()),
-                    ],
-                    if (widget.section == ManualWalletSection.deposit)
-                      card(depositFields()),
-                    if (widget.section == ManualWalletSection.payout)
-                      card(payoutFields()),
-                    if (busy) const CupertinoActivityIndicator(),
-                    if (message != null)
-                      messageIsWarning
-                          ? warningBox(message!, key: 'manual-feedback')
-                          : Padding(
-                              padding: const EdgeInsets.only(top: 12),
-                              child: Text(message!,
-                                  key: const Key('manual-feedback'),
-                                  style: const TextStyle(
-                                      color: WeChatColors.textSecondary))),
-                  ])),
+                if (widget.embedded)
+                  Align(
+                      alignment: Alignment.centerRight,
+                      child: refreshControl()),
+                if (widget.section == ManualWalletSection.overview) overview(),
+                if (capabilitiesUnavailable)
+                  warningBox('功能状态暂不可用，请刷新；已有订单仍可查询。'),
+                if (widget.section == ManualWalletSection.binding) ...[
+                  if (!addressOnly)
+                    CupertinoButton(
+                        onPressed: busy
+                            ? null
+                            : () => Navigator.of(context).push(
+                                MotionPageRoute<void>(
+                                    builder: (_) =>
+                                        ManualMfaPage(client: widget.client))),
+                        child: const Text('设置身份验证器')),
+                  if (binding?.bindingEnabled != true)
+                    warningBox('绑定暂不可用，请联系管理员'),
+                  card(addressOnly ? registrationFields() : bindingFields()),
+                ],
+                if (widget.section == ManualWalletSection.deposit)
+                  card(depositFields()),
+                if (widget.section == ManualWalletSection.payout)
+                  card(payoutFields()),
+                if (busy) const CupertinoActivityIndicator(),
+                if (message != null)
+                  messageIsWarning
+                      ? warningBox(message!, key: 'manual-feedback')
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(message!,
+                              key: const Key('manual-feedback'),
+                              style: const TextStyle(
+                                  color: WeChatColors.textSecondary))),
+              ])),
         ]));
     if (widget.embedded) return content;
     return WeChatPageScaffold.navigation(
@@ -1681,101 +1849,191 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         ],
       ];
 
-  List<Widget> depositFields() => [
-        if (!activeBinding || !depositEnabled) warningBox('充值入账暂不可用，请勿转账。'),
-        // 步骤指示器始终保留（有申请时停在「转账」步）。
-        stepIndicator(const ['填写金额', '转账', '到账'],
-            deposit == null ? 0 : (depositOpen ? 1 : 2),
+  List<Widget> manualRechargeFields() => [
+        stepIndicator(
+            const ['填写金额', '客服处理', '到账'],
+            rechargeOp?['id'] == null
+                ? 0
+                : rechargeHistory.any((row) =>
+                        row['id'] == rechargeOp?['id'] &&
+                        row['status'] == 'CREDITED')
+                    ? 2
+                    : 1,
             keyPrefix: 'manual-deposit-step'),
-        const Text('充值金额',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        const Text('最低 10 USDT · 仅支持 TRC20',
-            style: TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
-        field('manual-deposit-amount', amount, '充值金额',
-            enabled: depositOp == null),
-        if (deposit == null)
+        referenceFxCard(),
+        warningBox('请先联系官方客服确认收款信息。提交申请不代表到账。'),
+        if (rechargeError != null) ...[
+          warningBox(rechargeError!),
+          button('重新加载充值信息', loadRecharges),
+        ],
+        for (final contact
+            in rechargeContacts.where((row) => row['enabled'] == true))
           rowsCard([
-            detail('到账金额', '按实际转账金额入账'),
-            detail('手续费', '0.00 USDT'),
-            detail('到账网络', 'TRON（TRC20）'),
+            detail('官方客服', contact['display_name']?.toString() ?? ''),
+            codeRow('客服账号', contact['cs_user_id']?.toString() ?? '',
+                'recharge-contact-${contact['id']}'),
+            if (contact['payment_address'] is String)
+              addressRow('客服收款地址', contact['payment_address'] as String,
+                  'recharge-address-${contact['id']}'),
+            if (contact['note'] is String)
+              detail('说明', contact['note'] as String),
           ]),
-        // 「查看本次充值」已删除：申请生成后由本页自动恢复展示（见 refresh）。
-        // 只有「结果未确认」的草稿保留同键重试入口（幂等重试，不是查看）。
-        if (depositOp == null ||
-            (depositOp!['id'] == null && deposit == null))
-          button(depositOp == null ? '下一步' : '重试本次充值', createDeposit,
-              enabled: depositOp != null || (depositEnabled && activeBinding),
-              key: 'manual-deposit-create'),
-        if (deposit != null) ...[
-          if (deposit!.status == ManualIntentState.open)
-            statusHero(
-                key: 'manual-deposit-hero',
-                icon: CupertinoIcons.arrow_down_circle,
-                amount: deposit!.expectedAmount,
-                subtitle: '待转账 · 请向下方地址转入',
-                countdown: depositOpen
-                    ? '有效期至 ${shortDate(deposit!.expiresAt)}'
-                    : null),
+        if (rechargeContacts.isEmpty && rechargeError == null)
+          const Text('暂无可用官方客服，请稍后重试'),
+        field('manual-deposit-amount', amount, '充值金额 USDT',
+            enabled: rechargeOp == null),
+        if (rechargeOp?['id'] == null)
+          button(rechargeOp == null ? '提交充值申请' : '重试同一申请', submitManualRecharge,
+              enabled: ready &&
+                  capabilitiesKnown &&
+                  rechargeError == null &&
+                  rechargeContacts.any((row) => row['enabled'] == true),
+              key: 'manual-recharge-submit'),
+        if (rechargeOp?['id'] != null)
+          button('填写新的充值申请', () async {
+            await store.clear('recharge');
+            rechargeOp = null;
+            amount.clear();
+          }),
+        for (final request in rechargeHistory)
           rowsCard([
+            codeRow('申请单号', request['id'].toString(),
+                'recharge-id-${request['id']}'),
+            detail('充值 USDT', request['amount_usdt']?.toString() ?? '—'),
+            if (request['final_caibi_amount'] is String)
+              detail('最终到账点钻', request['final_caibi_amount'] as String),
+            if (request['final_rate'] is String)
+              detail('结算汇率', request['final_rate'] as String),
             detail(
                 '状态',
-                switch (deposit!.status) {
-                  ManualIntentState.open => '待转账',
-                  ManualIntentState.expired => '已过期',
-                  ManualIntentState.fulfilled => '已完成',
-                  ManualIntentState.closedByRebind => '已关闭',
+                switch (request['status']) {
+                  'SUBMITTED' => '待客服处理，尚未到账',
+                  'CREDITED' => '已到账',
+                  'CANCELLED' => '已取消',
+                  'REJECTED' => '已拒绝',
+                  _ => '状态待核验，请刷新',
                 }),
-            detail('金额 USDT', deposit!.expectedAmount),
-            addressRow('转出钱包', deposit!.sourceAddress, 'manual-source-copy'),
-            detail('有效期', shortDate(deposit!.expiresAt)),
+            if (request['status'] == 'SUBMITTED')
+              button(
+                  '取消充值申请', () => cancelManualRecharge(request['id'] as String),
+                  enabled: rechargeError == null,
+                  key: 'recharge-cancel-${request['id']}'),
           ]),
-          if (depositOpen && depositEnabled && activeBinding) ...[
-            // 需求 4：收款地址与上方文字信息之间必须有明显分割线，
-            // 且只能使用仓库统一的渐隐分割线共享组件（§19）。
-            const Padding(
-                padding: EdgeInsets.symmetric(vertical: WeChatSpacing.md),
-                child: WeChatGradientDivider(
-                    key: Key('manual-deposit-address-divider'))),
-            rowsCard([
-              addressRow(
-                  '收款地址', deposit!.officialAddress, 'manual-official-copy',
-                  canCopy: () => depositOpen && depositEnabled && activeBinding),
-              Padding(
-                  padding: const EdgeInsets.all(WeChatSpacing.lg),
-                  child: Column(children: [
-                    QrImageView(
-                        key: const Key('manual-deposit-qr'),
-                        data: deposit!.officialAddress,
-                        size: 180,
-                        backgroundColor: CupertinoColors.white),
-                    const SizedBox(height: WeChatSpacing.md),
-                    iconActionButton(
-                        key: const Key('manual-deposit-qr-save'),
-                        icon: CupertinoIcons.square_arrow_down,
-                        label: '保存到本地',
-                        loading: savingQr,
-                        onPressed: savingQr || busy
-                            ? null
-                            : () => unawaited(saveDepositQr())),
-                  ])),
-            ]),
-          ],
-          if (deposit!.status == ManualIntentState.expired ||
-              (deposit!.status == ManualIntentState.open && !depositOpen))
-            warningBox('本次充值申请已过期，请勿转账'),
-          if (deposit!.status == ManualIntentState.closedByRebind)
-            warningBox('钱包地址已变更，本次充值已关闭，请勿转账'),
-          if (deposit!.status != ManualIntentState.open)
-            button('再次充值', () async {
-              await store.clear('deposit');
-              depositOp = null;
-              deposit = null;
-              if (mounted) amount.clear();
-              await loadPointsBalance();
-            }),
-        ],
       ];
+
+  List<Widget> depositFields() => cnyPricing && depositOp == null
+      ? manualRechargeFields()
+      : [
+          if (!activeBinding || !depositEnabled) warningBox('充值入账暂不可用，请勿转账。'),
+          // 步骤指示器始终保留（有申请时停在「转账」步）。
+          stepIndicator(const ['填写金额', '转账', '到账'],
+              deposit == null ? 0 : (depositOpen ? 1 : 2),
+              keyPrefix: 'manual-deposit-step'),
+          referenceFxCard(),
+          const Text('充值金额',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('最低 10 USDT · 仅支持 TRC20',
+              style:
+                  TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
+          field('manual-deposit-amount', amount, '充值金额',
+              enabled: depositOp == null),
+          if (deposit == null)
+            rowsCard([
+              detail('到账金额', '按实际转账金额入账'),
+              detail('手续费', '0.00 USDT'),
+              detail('到账网络', 'TRON（TRC20）'),
+            ]),
+          // 「查看本次充值」已删除：申请生成后由本页自动恢复展示（见 refresh）。
+          // 只有「结果未确认」的草稿保留同键重试入口（幂等重试，不是查看）。
+          if (depositOp == null ||
+              (depositOp!['id'] == null && deposit == null))
+            button(depositOp == null ? '下一步' : '重试本次充值', createDeposit,
+                enabled: depositOp != null || (depositEnabled && activeBinding),
+                key: 'manual-deposit-create'),
+          if (deposit != null) ...[
+            if (deposit!.status == ManualIntentState.open)
+              statusHero(
+                  key: 'manual-deposit-hero',
+                  icon: CupertinoIcons.arrow_down_circle,
+                  amount: deposit!.expectedAmount,
+                  subtitle: depositCancellationPending
+                      ? '取消结果待确认，请勿转账'
+                      : '待转账 · 请向下方地址转入',
+                  countdown: depositOpen
+                      ? '有效期至 ${shortDate(deposit!.expiresAt)}'
+                      : null),
+            rowsCard([
+              detail(
+                  '状态',
+                  switch (deposit!.status) {
+                    ManualIntentState.open => '待转账',
+                    ManualIntentState.expired => '已过期',
+                    ManualIntentState.fulfilled => '已完成',
+                    ManualIntentState.closedByRebind => '已关闭',
+                    ManualIntentState.cancelled => '已取消',
+                  }),
+              detail('金额 USDT', deposit!.expectedAmount),
+              addressRow('转出钱包', deposit!.sourceAddress, 'manual-source-copy'),
+              detail('有效期', shortDate(deposit!.expiresAt)),
+            ]),
+            if (depositOpen &&
+                depositEnabled &&
+                activeBinding &&
+                !depositCancellationPending) ...[
+              // 需求 4：收款地址与上方文字信息之间必须有明显分割线，
+              // 且只能使用仓库统一的渐隐分割线共享组件（§19）。
+              const Padding(
+                  padding: EdgeInsets.symmetric(vertical: WeChatSpacing.md),
+                  child: WeChatGradientDivider(
+                      key: Key('manual-deposit-address-divider'))),
+              rowsCard([
+                addressRow(
+                    '收款地址', deposit!.officialAddress, 'manual-official-copy',
+                    canCopy: () =>
+                        depositOpen && depositEnabled && activeBinding),
+                Padding(
+                    padding: const EdgeInsets.all(WeChatSpacing.lg),
+                    child: Column(children: [
+                      QrImageView(
+                          key: const Key('manual-deposit-qr'),
+                          data: deposit!.officialAddress,
+                          size: 180,
+                          backgroundColor: CupertinoColors.white),
+                      const SizedBox(height: WeChatSpacing.md),
+                      iconActionButton(
+                          key: const Key('manual-deposit-qr-save'),
+                          icon: CupertinoIcons.square_arrow_down,
+                          label: '保存到本地',
+                          loading: savingQr,
+                          onPressed: savingQr || busy
+                              ? null
+                              : () => unawaited(saveDepositQr())),
+                    ])),
+              ]),
+            ],
+            if (deposit!.status == ManualIntentState.expired ||
+                (deposit!.status == ManualIntentState.open && !depositOpen))
+              warningBox('本次充值申请已过期，请勿转账'),
+            if (deposit!.status == ManualIntentState.closedByRebind)
+              warningBox('钱包地址已变更，本次充值已关闭，请勿转账'),
+            if (deposit!.status == ManualIntentState.cancelled)
+              warningBox('取消申请不代表链上转账已撤销或退款；如已转账请联系客服核验。'),
+            if (depositOpen)
+              button(depositCancellationPending ? '重试取消申请' : '取消充值申请',
+                  cancelLegacyDeposit,
+                  key: 'manual-deposit-cancel'),
+            if (deposit!.status != ManualIntentState.open)
+              button('再次充值', () async {
+                await store.clear('deposit_cancel');
+                await store.clear('deposit');
+                depositOp = null;
+                deposit = null;
+                if (mounted) amount.clear();
+                await loadPointsBalance();
+              }),
+          ],
+        ];
 
   /// 当前提现所处的步骤：0 填写金额 / 1 确认报价 / 2 到账。
   int get payoutStep {
@@ -1786,9 +2044,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   /// 是否还需要（重新）获取报价：没有报价、报价结果未确认，或金额已被修改。
   bool get needsPayoutQuote =>
-      quoteOp == null ||
-      quoteOp!['id'] == null ||
-      !payoutQuoteMatchesInput;
+      quoteOp == null || quoteOp!['id'] == null || !payoutQuoteMatchesInput;
 
   String get payoutQuoteActionLabel {
     if (quoteOp == null) return '下一步';
@@ -1810,37 +2066,40 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         Text('当前点钻余额',
             style: TextStyle(
                 fontSize: WeChatTypography.subhead,
-                color: WeChatColors.resolve(context, WeChatColors.textSecondary))),
+                color:
+                    WeChatColors.resolve(context, WeChatColors.textSecondary))),
         const SizedBox(height: WeChatSpacing.xs),
         Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-          // 极端金额（超长小数）必须缩放而不是溢出。
-          Flexible(
-              child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(amountText,
-                      key: const Key('manual-payout-points-value'),
-                      maxLines: 1,
-                      style: TextStyle(
-                          fontSize: WeChatTypography.brand,
-                          fontWeight: FontWeight.w700,
-                          height: 1.1,
-                          color: WeChatColors.resolveTextPrimary(context))))),
-          const SizedBox(width: WeChatSpacing.xs),
-          Text('点钻',
-              style: TextStyle(
-                  fontSize: WeChatTypography.callout,
-                  color:
-                      WeChatColors.resolve(context, WeChatColors.textSecondary))),
-        ]),
+              // 极端金额（超长小数）必须缩放而不是溢出。
+              Flexible(
+                  child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(amountText,
+                          key: const Key('manual-payout-points-value'),
+                          maxLines: 1,
+                          style: TextStyle(
+                              fontSize: WeChatTypography.brand,
+                              fontWeight: FontWeight.w700,
+                              height: 1.1,
+                              color:
+                                  WeChatColors.resolveTextPrimary(context))))),
+              const SizedBox(width: WeChatSpacing.xs),
+              Text('点钻',
+                  style: TextStyle(
+                      fontSize: WeChatTypography.callout,
+                      color: WeChatColors.resolve(
+                          context, WeChatColors.textSecondary))),
+            ]),
         const SizedBox(height: WeChatSpacing.xs),
-        Text('1 点钻 = 1 USDT · 最低提现 10 USDT',
+        Text('1 点钻 = ¥1.00 · 实际提现金额以报价为准',
             style: TextStyle(
                 fontSize: WeChatTypography.caption,
-                color: WeChatColors.resolve(context, WeChatColors.textTertiary))),
+                color:
+                    WeChatColors.resolve(context, WeChatColors.textTertiary))),
       ]),
     );
   }
@@ -1855,6 +2114,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         stepIndicator(const ['填写金额', '确认报价', '到账'], payoutStep,
             keyPrefix: 'manual-payout-step'),
         pointsBalanceHero(),
+        referenceFxCard(),
         if (pointsError != null) ...[
           warningBox(pointsError!),
           button('重新加载余额', loadPointsBalance),
@@ -1863,7 +2123,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         const Text('提现金额',
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        const Text('1 点钻 = 1 USDT · 手续费 0 · 最低提现 10 USDT',
+        const Text('1 点钻 = ¥1.00 · 到账金额与费用以报价为准',
             style: TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
         Row(children: [
           Expanded(

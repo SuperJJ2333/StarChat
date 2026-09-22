@@ -17,6 +17,9 @@ dependencies = [
   "uvicorn[standard]>=0.30,<1.0",
   "argon2-cffi>=23.1,<26.0",
   "httpx>=0.28,<1.0",
+  # ADR-0075 实施补充：阿里云验证码短信（dypnsapi SendSmsVerifyCode）。
+  # 适配器对 SDK 惰性导入——本依赖缺失时生产装配明确失败，绝不伪成功。
+  "alibabacloud_dypnsapi20170525==2.0.0",
   "PyJWT>=2.9,<3.0",
   "cryptography>=44,<50",
   "coincurve==21.0.0",

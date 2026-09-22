@@ -34,8 +34,14 @@ def test_user_starts_pending_email_without_phone_or_real_name(session_factory) -
         )
         session.add(user)
 
-    assert not hasattr(user, "phone")
+    # 2026-09-21 ADR-0075 修订：新增中国大陆手机号通道（非实名）；
+    # 邮箱与手机号字段均可空（二选一注册，禁止虚构邮箱占位），
+    # 隐私开关 phone_findable 默认开启。仍不做任何实名/证件字段。
+    assert user.email == "alice@example.com"
+    assert user.phone_normalized is None
+    assert user.phone_findable is True
     assert not hasattr(user, "real_name")
+    assert not hasattr(user, "id_number")
     assert user.status == AccountStatus.PENDING_EMAIL
 
 

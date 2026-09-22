@@ -537,7 +537,9 @@ class ProfileService:
             ) from None
 
     @staticmethod
-    def _mask_email(email: str) -> str:
+    def _mask_email(email: str | None) -> str:
+        if not email:
+            return ""
         local, separator, domain = email.partition("@")
         visible = local[:2] if len(local) > 1 else local[:1]
         return f"{visible}***{separator}{domain}"

@@ -12,6 +12,7 @@ from app.modules.identity.tokens import TokenService
 from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.service import LedgerService, money
 from app.modules.redpacket.service import RedPacketService, red_packet_fee
+from app.modules.groups.registry import GroupOwnerError
 from app.modules.settings.service import RED_PACKET_MAX_TOTAL_KEY, SettingService
 
 class StrictModel(BaseModel):
@@ -42,10 +43,12 @@ class CancelRequest(StrictModel):
 def create_redpacket_router(settings: Settings, session_factory, *, avatar_storage=None, matrix_gateway=None) -> APIRouter:
     router = APIRouter(prefix="/red-packets", tags=["red-packets"])
     from app.modules.redpacket.membership import MatrixRoomMembershipAuthority
+    from app.modules.groups.registry import GroupRegistryService
     # F06：群红包房间成员授权权威（Matrix join 成员；gateway 可用时启用，
     # 不可用时 fail closed——群红包仅发起人本人可见/可领）。
     room_membership = MatrixRoomMembershipAuthority(session_factory, matrix_gateway) if matrix_gateway is not None else None
-    service = RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total, room_membership=room_membership, payment_pin=PaymentPinService(session_factory, require_all=settings.payment_pin_require_all))
+    group_registry = GroupRegistryService(session_factory, matrix_gateway=matrix_gateway) if matrix_gateway is not None else None
+    service = RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total, room_membership=room_membership, group_registry=group_registry, owner_commission_enabled=settings.red_packet_owner_commission_enabled, payment_pin=PaymentPinService(session_factory, require_all=settings.payment_pin_require_all))
     if avatar_storage is not None:
         from app.modules.identity.profile import ProfileService
 
@@ -76,6 +79,8 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
         kwargs = dict(sender_id=user_id, payment_claims=claims, payment_authorization=body.payment_authorization, total=body.total, share_count=body.share_count, room_id=body.room_id, recipient_id=body.recipient_id, idempotency_key=idempotency_key, expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
         try:
             packet = service.create_equal(**kwargs) if body.mode == "EQUAL" else service.create_random(**kwargs) if body.mode == "RANDOM" else service.create_exclusive(**kwargs)
+        except GroupOwnerError as error:
+            raise AppError(code=error.code, message=error.message, status_code=503) from None
         except ValueError as error:
             if str(error) == "insufficient balance":
                 # ADR-0073 §5：余额不足必须说明含手续费后的实扣合计，而不是

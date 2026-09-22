@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_red_packet_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_red_packet_sheet.dart';
+import 'package:liuhetong_mobile/features/matrix/chat_payment_flow.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
 import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
@@ -85,6 +86,37 @@ Future<void> _pump(
 }
 
 void main() {
+  test('authorization distinguishes group fee reference from transfer fee', () {
+    expect(
+        chatPaymentFeeDescription(
+            'red_packet.create', {'total': '100.00', 'room_id': '!group:test'}),
+        contains('减免以服务端核验为准'));
+    expect(
+        chatPaymentFeeDescription('chat_transfer.create', {'amount': '100.00'}),
+        '手续费 0.50 点钻（0.5%，最低 0.01）');
+  });
+  testWidgets(
+      'group fee exemption is left to backend without local fee balance rejection',
+      (tester) async {
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(
+        business: business,
+        references: FakeRedPacketReference(),
+        roomId: '!group:test');
+    await _pump(tester,
+        controller: controller, isGroup: true, support: FakeSupport(5, 20000));
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '5.00');
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-shares')), '1');
+    await tester.pump();
+    expect(find.textContaining('以服务端核验为准'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+    expect(business.creates, 1);
+    expect(find.byKey(const Key('chat-red-packet-insufficient-dialog')),
+        findsNothing);
+  });
   testWidgets(
       'submit refreshes an old cap before local rejection and keeps server errors',
       (tester) async {

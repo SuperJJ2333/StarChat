@@ -50,13 +50,12 @@ Future<ChatPaymentIntent?> prepareChatPayment(
         if (!await current() || !context.mounted) return null;
         final transfer = action == 'chat_transfer.create';
         final amount = payload[transfer ? 'amount' : 'total'].toString();
-        final fee = chatPaymentFeeOrNull(amount);
         return showPaymentPinAuthorization(context,
             title: transfer ? '转账' : '发红包',
             recipient: recipient(payload),
             amount: '$amount 点钻',
             // ADR-0073：红包与转账同费率，两者都必须在授权弹窗里显示手续费。
-            fee: fee == null ? null : '手续费 $fee 点钻（0.5%，最低 0.01）',
+            fee: chatPaymentFeeDescription(action, payload),
             isScopeCurrent: current, onAuthorize: (pin) async {
           try {
             final result = await api.authorizePaymentPin(
@@ -76,6 +75,15 @@ Future<ChatPaymentIntent?> prepareChatPayment(
           }
         });
       });
+}
+
+String? chatPaymentFeeDescription(String action, Map<String, dynamic> payload) {
+  final transfer = action == 'chat_transfer.create';
+  if (!transfer && payload['room_id'] != null) {
+    return '手续费及群主减免以服务端核验为准，发出后可在红包详情查看';
+  }
+  final fee = chatPaymentFeeOrNull('${payload[transfer ? 'amount' : 'total']}');
+  return fee == null ? null : '手续费 $fee 点钻（0.5%，最低 0.01）';
 }
 
 /// Mirrors the existing 0.5% fee, half-up to cents, without binary floats.

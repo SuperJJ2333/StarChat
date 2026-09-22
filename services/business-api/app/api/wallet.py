@@ -41,9 +41,12 @@ def create_wallet_router(settings: Settings, session_factory, *, custody_provide
     if custody_provider is None:
         custody_provider = create_custody_provider(settings)
     provider, provider_mode = custody_provider
+    # ADR-0077：在线自动充值取消——托管回调在验签后对新增入账明确拒绝。
+    service_auto_deposit_enabled = bool(settings.wallet_auto_deposit_enabled)
     service=WalletService(
         session_factory,
         provider,
+        auto_deposit_enabled=service_auto_deposit_enabled,
         withdrawal_admin_threshold=Decimal(str(settings.adjustment_admin_threshold)),
         confirmation_threshold=settings.wallet_confirmation_threshold,
         conversions_enabled=(manual_runtime.conversions_enabled if manual_runtime is not None else
@@ -78,7 +81,9 @@ def create_wallet_router(settings: Settings, session_factory, *, custody_provide
             payload.update(withdrawal_fee='0.000000', withdrawal_max_per=str(manual_runtime.payouts.policy.max_per),
                 withdrawal_user_24h=str(manual_runtime.payouts.policy.user_24h),
                 withdrawal_global_24h=str(manual_runtime.payouts.policy.global_24h))
-        payload["conversion_enabled"] = service.conversions_enabled
+        payload["conversion_enabled"] = service.conversions_enabled and not settings.wallet_user_conversions_closed
+        payload["user_conversions_closed"] = settings.wallet_user_conversions_closed
+        payload["caibi_pricing_version"] = settings.caibi_pricing_version
         payload['caibi_payout_enabled'] = bool(manual_runtime is not None
             and manual_runtime.payout_requests_enabled and manual_runtime.payouts.conversions_enabled)
         return payload
@@ -89,6 +94,12 @@ def create_wallet_router(settings: Settings, session_factory, *, custody_provide
 
     @router.post("/conversions", status_code=201)
     def convert(body:ConversionBody, idempotency_key:Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id:str=Depends(actor)):
+        # ADR-0076：点钻人民币计价 v2——用户侧直接兑换写能力关闭。
+        # 关闭检查在最前：即使资金门禁未配置，旧客户端也收到明确业务错误。
+        if settings.wallet_user_conversions_closed:
+            raise AppError(code="CONVERSIONS_CLOSED",
+                message="点钻与USDT兑换已停止办理：点钻按1点钻=1元人民币计价，充值请通过官方客服办理",
+                status_code=422)
         if manual_runtime is None:
             require_funding_enabled()
         if not service.conversions_enabled:

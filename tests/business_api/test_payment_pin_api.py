@@ -18,6 +18,9 @@ from app.modules.identity.tokens import TokenService
 from app.modules.ledger.service import LedgerService
 
 class StaticRoomMembershipAuthority:
+    def get_room_state(self, room_id):
+        return [{'type': 'm.room.power_levels', 'content': {'users': {'@user:test': 100}}}]
+
     def get_room_members(self, room_id):
         return {'@user:test', '@other:test'} if room_id == '!test:example' else set()
 

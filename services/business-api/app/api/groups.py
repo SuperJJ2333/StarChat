@@ -18,10 +18,13 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.core.config import Settings
+
+from app.modules.groups.registry import GroupOwnerError, GroupRegistryService, COOLDOWN_MIN_MEMBERS, COOLDOWN_PERIOD
+from app.modules.groups.transfer_coordination import GroupTransferCoordinator
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
 from app.modules.audit.writer import AuditWriter
@@ -30,6 +33,7 @@ from app.modules.groups.models import GroupJoinRequest, GroupJoinToken
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.models import User
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.rbac import Permission, RbacService
 
 
 class Strict(BaseModel):
@@ -137,8 +141,28 @@ def moderator_power_requirement(power_levels: dict) -> int:
     return max(50, int(power_levels.get('invite', 0) or 0))
 
 
+class GroupRegisterBody(BaseModel):
+    room_id: str = Field(min_length=1, max_length=255)
+
+
+class GroupTransferBody(BaseModel):
+    new_owner_user_id: str = Field(min_length=1, max_length=36)
+
+
+class TransferReviewBody(BaseModel):
+    action: str = Field(pattern='^(confirm_applied|fail_unapplied)$')
+
+
+class GroupTenureMigrationBody(BaseModel):
+    owner_since: AwareDatetime
+    reason_code: str = Field(min_length=3, max_length=100)
+
+
 def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRouter:
     router = APIRouter(tags=['groups'])
+    group_registry = GroupRegistryService(factory, matrix_gateway=matrix_gateway)
+    group_registry_coordinator = GroupTransferCoordinator(factory, registry=group_registry,
+        matrix_gateway=matrix_gateway)
     tokens = TokenService(
         factory,
         jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',
@@ -624,5 +648,131 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
                 trace_id=idempotency_key, after={'request_id': request_id},
             )
             return _qr_complete(operation, {'status': 'approved' if approved else 'rejected'})
+
+    # ------------------------------------------------------------------
+    # ADR-0079：业务群注册表——建群注册 / 群主转让冷却 / 群主任期迁移。
+    # ------------------------------------------------------------------
+    rbac = RbacService(factory)
+
+    def _owner_action(error: GroupOwnerError):
+        status = 503 if error.code in ('GROUP_AUTHORITY_UNAVAILABLE', 'GROUP_OWNER_UNRESOLVABLE') else 409
+        raise AppError(code=error.code, message=error.message, status_code=status)
+
+    @router.get('/groups/{room_id}/owner')
+    def group_owner(room_id: str, actor_user_id: str = Depends(actor)):
+        with factory() as session:
+            operator = _operator(session, actor_user_id)
+            matrix_id = operator.matrix_user_id
+        try:
+            members = set(matrix_gateway.get_room_members(room_id))
+        except Exception:
+            raise AppError(code='GROUP_AUTHORITY_UNAVAILABLE', message='群成员权威不可用', status_code=503) from None
+        if not matrix_id or matrix_id not in members:
+            raise AppError(code='GROUP_MEMBERSHIP_REQUIRED', message='仅群成员可以查看群主信息', status_code=403)
+        view = group_registry.group_view(room_id)
+        if view is None:
+            try:
+                view = group_registry.group_view(group_registry.ensure(room_id).room_id)
+            except GroupOwnerError as error:
+                _owner_action(error)
+        if view is None:
+            raise AppError(code='GROUP_NOT_REGISTERED', message='群未注册', status_code=404)
+        return view
+
+    @router.post('/groups/register')
+    def register_group(body: GroupRegisterBody, actor_user_id: str = Depends(actor)):
+        with factory.begin() as session:
+            _operator(session, actor_user_id)
+        try:
+            row = group_registry.register_creation(body.room_id, actor_user_id)
+        except GroupOwnerError as error:
+            _owner_action(error)
+        return {'room_id': row.room_id, 'owner_user_id': row.owner_user_id,
+            'owner_since': row.owner_since.isoformat() if row.owner_since else None,
+            'tenure_source': row.tenure_source}
+
+    @router.post('/groups/{room_id}/transfer-owner')
+    def transfer_owner(
+        room_id: str,
+        body: GroupTransferBody,
+        idempotency_key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=128)],
+        actor_user_id: str = Depends(actor),
+    ):
+        with factory.begin() as session:
+            _operator(session, actor_user_id)
+        # ADR-0079 实施补充：持久协调流程（意图阶段机 + Matrix 以群主身份
+        # 应用 power level + 权威确认 + 条件换主 + 可恢复）。默认关闭＝
+        # 保持 GROUP_TRANSFER_UNAVAILABLE；启用需配置
+        # BUSINESS_GROUP_TRANSFER_COORDINATION_ENABLED=true 且完成安全审查。
+        if not settings.group_transfer_coordination_enabled:
+            raise AppError(code='GROUP_TRANSFER_UNAVAILABLE',
+                message='群主转让同步流程尚未启用，请稍后再试', status_code=503)
+        coordinator = GroupTransferCoordinator(factory, registry=group_registry,
+            matrix_gateway=matrix_gateway)
+        try:
+            view = coordinator.request(room_id=room_id, requester_user_id=actor_user_id,
+                current_owner_user_id=actor_user_id, new_owner_user_id=body.new_owner_user_id,
+                idempotency_key=idempotency_key)
+        except GroupOwnerError as error:
+            _owner_action(error)
+        if view.get('stage') == 'VALIDATED':
+            view = coordinator.advance(intent_id=view['id'])
+        if view.get('stage') == 'MATRIX_APPLIED':
+            view = coordinator.complete(intent_id=view['id'], actor_id=actor_user_id)
+        response = {'room_id': room_id, 'transfer_id': view.get('id'),
+            'stage': view.get('stage'), 'attempts': view.get('attempts'),
+            'last_error_code': view.get('last_error_code')}
+        # 只有 COMPLETED 才报告新群主与接任时间——绝不虚假成功。
+        if view.get('stage') == 'COMPLETED':
+            row = group_registry.get(room_id)
+            response.update({'owner_user_id': row.owner_user_id,
+                'owner_since': row.owner_since.isoformat() if row.owner_since else None,
+                'tenure_source': row.tenure_source})
+        return response
+
+    @router.get('/groups/{room_id}/transfer-intents')
+    def transfer_intents(room_id: str, actor_user_id: str = Depends(actor)):
+        """房间转让意图时间线（只读）：注册表群主或系统管理员可查看。"""
+        with factory.begin() as session:
+            _operator(session, actor_user_id)
+        view = group_registry.group_view(room_id)
+        if view is None:
+            raise AppError(code='GROUP_NOT_REGISTERED', message='群未注册', status_code=404)
+        is_owner = view.get('owner_user_id') == actor_user_id
+        if not is_owner:
+            rbac.require(actor_user_id, Permission.SYSTEM_ADMIN)
+        return {'room_id': room_id, 'items': group_registry_coordinator.intents_timeline(room_id)}
+
+    @router.post('/groups/admin/transfer-intents/{intent_id}/review')
+    def review_transfer_intent(intent_id: str, body: TransferReviewBody, actor_user_id: str = Depends(actor)):
+        """待核对处置：confirm_applied=只读核实既成事实后完成；
+        fail_unapplied=权威状态确证未应用后失败化。超时不视为失败。"""
+        with factory() as session:
+            _operator(session, actor_user_id)
+        rbac.require(actor_user_id, Permission.SYSTEM_ADMIN)
+        if not settings.group_transfer_coordination_enabled:
+            raise AppError(code='GROUP_TRANSFER_UNAVAILABLE',
+                message='群主转让同步流程尚未启用，请稍后再试', status_code=503)
+        try:
+            return group_registry_coordinator.review_intent(intent_id=intent_id,
+                action=body.action, actor_id=actor_user_id)
+        except GroupOwnerError as error:
+            _owner_action(error)
+
+    @router.post('/admin/groups/{room_id}/owner-tenure')
+    def admin_set_owner_tenure(
+        room_id: str,
+        body: GroupTenureMigrationBody,
+        actor_user_id: str = Depends(actor),
+    ):
+        rbac.require(actor_user_id, Permission.SYSTEM_ADMIN)
+        try:
+            row = group_registry.admin_set_tenure(room_id, owner_since=body.owner_since,
+                reason_code=body.reason_code, actor_id=actor_user_id)
+        except GroupOwnerError as error:
+            _owner_action(error)
+        return {'room_id': room_id, 'owner_user_id': row.owner_user_id,
+            'owner_since': row.owner_since.isoformat() if row.owner_since else None,
+            'tenure_source': row.tenure_source}
 
     return router

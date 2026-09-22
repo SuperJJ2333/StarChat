@@ -1,5 +1,10 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import base64
+import hashlib
+import hmac
+import logging
+import re
 import secrets
 from uuid import uuid4
 
@@ -140,7 +145,25 @@ class TokenService:
     def rotate_admin(self, refresh_token: str, *, expected_session_id: str | None = None) -> TokenPair:
         return self.rotate(refresh_token, _admin=True, _expected_session_id=expected_session_id)
 
-    def rotate(self, refresh_token: str, *, _admin: bool = False, _expected_session_id: str | None = None) -> TokenPair:
+    @staticmethod
+    def decode_operation_id(operation_id: str) -> bytes:
+        if not isinstance(operation_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', operation_id):
+            raise AppError(code='VALIDATION_ERROR', message='刷新操作参数无效', status_code=422)
+        decoded = base64.urlsafe_b64decode(operation_id + '=')
+        if base64.urlsafe_b64encode(decoded).decode().rstrip('=') != operation_id:
+            raise AppError(code='VALIDATION_ERROR', message='刷新操作参数无效', status_code=422)
+        return decoded
+
+    @staticmethod
+    def _refresh_result(parent: str, operation: bytes) -> str:
+        digest = hmac.new(parent.encode('utf-8'),
+            b'chatflow/mobile-refresh/result/v1\0' + operation, hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(digest).decode().rstrip('=')
+
+    def rotate(self, refresh_token: str, *, operation_id: str | None = None, _admin: bool = False, _expected_session_id: str | None = None) -> TokenPair:
+        operation = self.decode_operation_id(operation_id) if operation_id is not None else None
+        if _admin and operation is not None:
+            self._invalid('VALIDATION_ERROR', '刷新操作参数无效', 422)
         now = self._now_factory()
         session = self._session_factory()
         try:
@@ -165,40 +188,63 @@ class TokenService:
             admin = session.get(AdminSession, family.user_id)
             is_admin = admin is not None and admin.family_id == family.id
             if not _admin and family.revoke_reason == 'SESSION_REPLACED':
-                self._invalid('SESSION_REPLACED', '账号已在其他设备登录，请重新登录', 401)
+                self._invalid('SESSION_REPLACED', '账号已重新登录，当前会话已结束，请重新登录', 401)
             if _admin and _expected_session_id is not None and family.id != _expected_session_id:
                 self._invalid('ADMIN_SESSION_REPLACED', '管理会话已切换，请重新加载页面', 401)
             if _admin and family.revoke_reason == 'ADMIN_SESSION_REPLACED':
                 self._invalid('ADMIN_SESSION_REPLACED', '账号已在其他设备登录', 401)
             if is_admin != _admin:
                 self._invalid('REFRESH_TOKEN_INVALID', '刷新令牌无效', 401)
+            if family.revoked_at is not None:
+                self._invalid('REFRESH_TOKEN_INVALID', '当前登录已失效，请重新登录', 401)
+            device = session.get(Device, family.device_id)
+            if device is None or device.user_id != family.user_id or device.revoked_at is not None:
+                self._invalid('REFRESH_TOKEN_INVALID', '当前登录已失效，请重新登录', 401)
+            user = session.get(User, family.user_id)
+            if user is None or user.status.value != 'ACTIVE':
+                self._invalid('ACCOUNT_NOT_ACTIVE', '账号不可用', 403)
             if is_admin and self._utc(admin.expires_at) <= now:
                 family.revoked_at = now
                 family.revoke_reason = 'ADMIN_SESSION_EXPIRED'
                 session.commit()
                 self._invalid('ADMIN_SESSION_EXPIRED', '管理会话已到期，请重新登录', 401)
             if record.consumed_at is not None:
+                if (not _admin and operation is not None and record.operation_hash is not None
+                        and hmac.compare_digest(record.operation_hash, hash_opaque_token(operation_id))):
+                    replacement = session.get(RefreshToken, record.replaced_by_id) if record.replaced_by_id else None
+                    if (record.result_key_version != 1 or replacement is None
+                            or replacement.family_id != family.id):
+                        self._invalid('REFRESH_TOKEN_INVALID', '当前登录已失效，请重新登录', 401)
+                    replacement_value = self._refresh_result(refresh_token, operation)
+                    if not hmac.compare_digest(replacement.token_hash, hash_opaque_token(replacement_value)):
+                        self._invalid('REFRESH_TOKEN_INVALID', '当前登录已失效，请重新登录', 401)
+                    if replacement.consumed_at is not None:
+                        self._invalid('REFRESH_RESULT_SUPERSEDED', '登录凭证已更新，请重新读取当前会话', 409)
+                    if self._utc(replacement.expires_at) <= now:
+                        self._invalid('REFRESH_TOKEN_EXPIRED', '登录已过期，请重新登录', 401)
+                    return self._pair(family.user_id, device.id, family.id, replacement_value, now)
                 family.revoked_at = now
                 family.revoke_reason = "TOKEN_REUSE"
                 session.commit()
-                self._invalid("REFRESH_TOKEN_REUSED", "检测到刷新令牌重复使用", 401)
+                if not _admin:
+                    logging.getLogger(__name__).info('mobile_refresh terminal_invalidated TOKEN_REUSE 401')
+                self._invalid("REFRESH_TOKEN_REUSED", "登录凭证校验异常，请重新登录", 401)
             record_expires_at = record.expires_at
             if record_expires_at.tzinfo is None:
                 record_expires_at = record_expires_at.replace(tzinfo=timezone.utc)
-            if family.revoked_at is not None or record_expires_at <= now:
-                self._invalid("REFRESH_TOKEN_INVALID", "刷新令牌无效", 401)
-            device = session.get(Device, family.device_id)
-            if device is None or device.revoked_at is not None:
-                self._invalid("REFRESH_TOKEN_INVALID", "刷新令牌无效", 401)
-            user = session.get(User, family.user_id)
-            if user is None or user.status.value != "ACTIVE":
-                self._invalid("ACCOUNT_NOT_ACTIVE", "账号不可用", 403)
-            replacement_value = self._new_refresh_token()
+            if record_expires_at <= now:
+                self._invalid('REFRESH_TOKEN_INVALID' if _admin else 'REFRESH_TOKEN_EXPIRED',
+                    '登录已过期，请重新登录', 401)
+            replacement_value = (self._refresh_result(refresh_token, operation)
+                if operation is not None else self._new_refresh_token())
             replacement = self._refresh_record(family.id, replacement_value, now)
             if is_admin:
                 replacement.expires_at = admin.expires_at
             record.consumed_at = now
             record.replaced_by_id = replacement.id
+            if operation is not None:
+                record.operation_hash = hash_opaque_token(operation_id)
+                record.result_key_version = 1
             device.last_seen_at = now
             session.add(replacement)
             session.commit()
@@ -298,7 +344,7 @@ class TokenService:
                         and family.user_id == claims['sub']
                         and family.device_id == claims['device_id']
                         and family.revoke_reason == 'SESSION_REPLACED'):
-                    self._invalid('SESSION_REPLACED', '账号已在其他设备登录，请重新登录', 401)
+                    self._invalid('SESSION_REPLACED', '账号已重新登录，当前会话已结束，请重新登录', 401)
                 if (
                     user is None
                     or user.status.value != "ACTIVE"
