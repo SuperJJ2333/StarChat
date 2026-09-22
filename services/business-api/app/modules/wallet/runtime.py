@@ -61,13 +61,30 @@ def create_manual_wallet_runtime(settings, factory, rate_limiter):
         receipts = DepositReceiptService(factory, finality_adapter=finality, official_config=official,
             activation_baseline_time=settings.wallet_funding_baseline_at,
             activation_baseline_height=settings.wallet_funding_baseline_height, clock=clock)
+        # ADR-0077：结算汇率提供者——注入 FX 服务的持久缓存快照（唯一
+        # 服务端上游访问点；未配置 FX 时 CAIBI 报价 503 fail closed）。
+        from app.modules.fx.service import FxService
+
+        fx = FxService(factory,
+            api_id=settings.fx_api_id.get_secret_value() if settings.fx_api_id else None,
+            api_key=settings.fx_api_key.get_secret_value() if settings.fx_api_key else None,
+            api_url=settings.fx_api_url, ttl_seconds=settings.fx_cache_ttl_seconds)
+
+        def payout_rate_provider():
+            snapshot = fx.get_rate_snapshot(actor_id='manual-payout-quote')
+            fetched = snapshot.get('fetched_at')
+            return snapshot['rate'], bool(snapshot.get('stale')), fetched.isoformat() if fetched else None
+
         payouts = ManualPayoutService(factory, official_config=official,
             policy=ManualPayoutPolicy(settings.wallet_manual_policy_version, timedelta(seconds=settings.wallet_manual_quote_ttl_seconds),
                 Decimal(settings.wallet_manual_max_per), Decimal(settings.wallet_manual_user_24h), Decimal(settings.wallet_manual_global_24h)),
-            owner_admin_id=settings.wallet_manual_owner_admin_id, mfa_verifier=mfa, finality=finality, clock=clock)
+            owner_admin_id=settings.wallet_manual_owner_admin_id, mfa_verifier=mfa, finality=finality, clock=clock,
+            rate_provider=payout_rate_provider)
         receipts.reserve_policy = settings.wallet_reserve_policy
         receipts.wallet_ledger.reserve_policy = settings.wallet_reserve_policy
         receipts.deposit_auto_conversion_enabled = settings.wallet_deposit_auto_conversion_enabled
+        # ADR-0077：在线自动充值取消（默认关闭）；保留对账/修复/补录。
+        receipts.auto_deposit_enabled = bool(settings.wallet_auto_deposit_enabled)
         payouts.reserve_policy = settings.wallet_reserve_policy
         payouts.wallet_ledger.reserve_policy = settings.wallet_reserve_policy
         payouts.conversions_enabled = settings.wallet_conversions_enabled

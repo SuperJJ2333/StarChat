@@ -36,6 +36,9 @@ class IdentityEmailVerificationTask:
         if message.event_type == "identity.password_reset.requested":
             self._send_password_reset(message)
             return
+        if message.event_type == "identity.email.otp.requested":
+            self._send_email_otp(message)
+            return
         if message.event_type != "identity.email.verification.requested":
             raise AppError(
                 code="EMAIL_EVENT_UNSUPPORTED",
@@ -89,6 +92,36 @@ class IdentityEmailVerificationTask:
                 code=code,
                 link=link,
             )
+
+
+    def _send_email_otp(self, message) -> None:
+        """ADR-0075：邮箱 OTP 投递（换绑邮箱→手机场景）。
+
+        验证码由 token_codec 从 otp_id 确定性派生，与业务 API 侧派生器
+        一致；payload 只携带 otp_id，明文码不落库、不进日志。
+        """
+        from app.modules.identity.models import OtpChallenge, User as WorkerUser
+
+        otp_id = message.payload.get("otp_id")
+        if not otp_id or otp_id != message.aggregate_id:
+            raise AppError(code="EMAIL_EVENT_INVALID", message="invalid email otp event", status_code=400)
+        with self._session_factory() as session:
+            challenge = session.get(OtpChallenge, otp_id)
+            if (challenge is None or challenge.consumed_at is not None or challenge.invalidated_at is not None
+                    or challenge.purpose != "email_rebind_old"):
+                return
+            expires = challenge.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires <= self._now_factory():
+                return
+            user = session.get(WorkerUser, challenge.user_id)
+            if (user is None or not user.email_normalized or user.phone_normalized
+                    or user.email_normalized != challenge.target or user.status != AccountStatus.ACTIVE):
+                return
+            recipient = user.email_normalized
+        code = self._token_codec.verification_code(otp_id)
+        self._email_sender.send_wallet_alert(recipient=recipient, event_id=otp_id, code=code, severity="info")
 
     def _send_password_reset(self, message) -> None:
         challenge_id = message.payload.get("challenge_id")

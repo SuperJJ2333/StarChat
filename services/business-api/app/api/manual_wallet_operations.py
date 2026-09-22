@@ -118,7 +118,7 @@ def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, 
         from app.modules.wallet.monitoring import WalletMonitoringService
         official = OfficialFundingConfig(settings.wallet_official_address.get_secret_value(), settings.wallet_official_config_version)
         source = SQLiteFundingSource(settings.tron_observer_database_path, official_address=official.address,
-            clock=clock, solid_head_max_age_seconds=180)
+            clock=clock, max_age_seconds=180, solid_head_max_age_seconds=180)
         delivery = WalletMonitoringService(factory).status()['external_delivery_configured']
         monitor = ManualReserveMonitor(factory, source=source, official_config=official,
             activation_baseline_time=settings.wallet_funding_baseline_at,

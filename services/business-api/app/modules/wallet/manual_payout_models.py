@@ -38,6 +38,12 @@ class ManualPayoutOrder(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     candidate_txid: Mapped[str | None] = mapped_column(String(64))
     review_reason: Mapped[str | None] = mapped_column(String(80))
+    # ADR-0077：客服汇率调整（仅 CLAIMED 且未 SETTLED；原快照列保持不可变，
+    # 调整历史完整留痕；链上支付与结算一律以 final_receive 为准）。
+    final_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    final_receive: Mapped[Decimal | None] = mapped_column(Numeric(30, 6), nullable=True)
+    adjusted_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    adjustment_history: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

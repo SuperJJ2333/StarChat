@@ -31,6 +31,7 @@ def utc(value):
 class DepositReceiptService:
     reserve_policy = 'full_backing'
     deposit_auto_conversion_enabled = False
+    auto_deposit_enabled = True
     def __init__(self, session_factory, *, finality_adapter, official_config,
                  activation_baseline_time, activation_baseline_height, clock, wallet_ledger=None):
         if (official_config is None or not isinstance(official_config.version, str)
@@ -257,9 +258,12 @@ class DepositReceiptService:
                 if candidate is not None and counts[candidate.id] > 1:
                     row.reason_code = 'MULTIPLE_MATCHING_LOGS'
                 if candidate is not None and counts[candidate.id] == 1:
-                    if defer_credit or retry_receipt_id is not None and row.id != retry_receipt_id:
-                        row.reason_code = 'DEFERRED_RESERVE_CHECK'
-                        audit_write(session, actor_id, row.id, 'wallet.deposit_receipt_recorded', 'TRON_RECEIPT_REVIEW')
+                    # ADR-0077：在线自动充值已取消——关闭时新收据一律留在
+                    # REVIEW（pending_obligation 保持），仅人工补录/修复可入账。
+                    if defer_credit or not self.auto_deposit_enabled or retry_receipt_id is not None and row.id != retry_receipt_id:
+                        row.reason_code = 'DEFERRED_RESERVE_CHECK' if defer_credit else 'AUTO_DEPOSIT_CLOSED'
+                        audit_write(session, actor_id, row.id, 'wallet.deposit_receipt_recorded',
+                            'TRON_RECEIPT_REVIEW' if defer_credit else 'AUTO_DEPOSIT_CLOSED')
                         results.append(self._result(row))
                         continue
                     try:

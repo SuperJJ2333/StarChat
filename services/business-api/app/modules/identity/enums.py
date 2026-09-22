@@ -3,6 +3,7 @@ from enum import StrEnum
 
 class AccountStatus(StrEnum):
     PENDING_EMAIL = "PENDING_EMAIL"
+    PENDING_PHONE = "PENDING_PHONE"  # ADR-0075：手机号注册待验证
     PENDING_MATRIX = "PENDING_MATRIX"
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"

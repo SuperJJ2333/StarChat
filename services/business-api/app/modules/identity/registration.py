@@ -24,6 +24,15 @@ from app.modules.identity.models import (
 from app.modules.identity.passwords import PasswordHasher
 
 
+def phone_registration_user_id(session, registration_session: str) -> str | None:
+    record = session.scalar(select(IdempotencyRecord).where(
+        IdempotencyRecord.scope == "identity.registration",
+        IdempotencyRecord.status == "COMPLETED",
+        IdempotencyRecord.response_body["registration_session"].as_string() == registration_session,
+    ))
+    return (record.response_body or {}).get("phone_user_id") if record else None
+
+
 @dataclass(frozen=True)
 class RegistrationResult:
     user_id: str
@@ -116,24 +125,36 @@ class RegistrationService:
         *,
         username: str,
         nickname: str | None = None,
-        email: str,
+        email: str | None = None,
         password: str,
         invitation_code: str,
         idempotency_key: str,
         referral_code: str | None = None,
+        phone: str | None = None,
     ) -> RegistrationResult:
         username_clean = username.strip()
         nickname_clean = (nickname or username_clean).strip()
-        email_clean = email.strip()
-        username_normalized = username_clean.casefold()
+        # ADR-0075：邮箱或中国大陆手机号二选一注册；禁止虚构邮箱占位。
+        phone_normalized = None
+        if phone is not None:
+            from app.modules.identity.phone import normalize_phone
+
+            phone_normalized = normalize_phone(phone)
+        email_clean = (email or "").strip()
         email_normalized = email_clean.casefold()
+        if email_clean and phone_normalized is not None:
+            raise AppError(code="REGISTRATION_INVALID", message="邮箱或手机号只能选择一种", status_code=422)
+        if not email_clean and phone_normalized is None:
+            raise AppError(code="REGISTRATION_INVALID", message="注册信息无效", status_code=422,
+                fields=[FieldError(loc=["body", "email"], msg="需要邮箱或手机号之一", type="value_error")])
+        username_normalized = username_clean.casefold()
         idempotency_key_clean = idempotency_key.strip()
         fields: list[FieldError] = []
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{2,63}", username_clean):
             fields.append(FieldError(loc=["body", "username"], msg="畅聊号格式无效", type="value_error"))
         if not nickname_clean or len(nickname_clean) > 64:
             fields.append(FieldError(loc=["body", "nickname"], msg="用户名长度需为 1-64 个字符", type="value_error"))
-        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_clean):
+        if email_clean and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_clean):
             fields.append(FieldError(loc=["body", "email"], msg="邮箱格式无效", type="value_error"))
         if len(password) < 12:
             fields.append(FieldError(loc=["body", "password"], msg="密码至少需要 12 位", type="value_error"))
@@ -152,7 +173,8 @@ class RegistrationService:
         )
         request_payload = json.dumps(
             {
-                "email": email_normalized,
+                "email": email_normalized or None,
+                **({"phone": phone_normalized} if phone_normalized is not None else {}),
                 "invitation_code": invitation_code.strip(),
                 "nickname": nickname_clean,
                 "password": password,
@@ -174,7 +196,7 @@ class RegistrationService:
         registration_session = secrets.token_urlsafe(32)
         public_response = {
             "registration_session": registration_session,
-            "status": AccountStatus.PENDING_EMAIL.value,
+            "status": (AccountStatus.PENDING_EMAIL if email_clean else AccountStatus.PENDING_PHONE).value,
             "resend_after_seconds": 60,
         }
         try:
@@ -189,21 +211,55 @@ class RegistrationService:
                 if idempotency_record.status == "COMPLETED":
                     return self._replayed_result(session, idempotency_record)
 
+                if email_clean:
+                    pending_status = AccountStatus.PENDING_EMAIL
+                else:
+                    pending_status = AccountStatus.PENDING_PHONE
+                if phone_normalized is not None:
+                    existing_phone = session.scalar(select(User.id).where(User.phone_normalized == phone_normalized))
+                    if existing_phone is not None:
+                        raise AppError(code="PHONE_TAKEN", message="手机号已被使用", status_code=409)
                 session.add(
                     User(
                         id=user_id,
                         username=username_clean,
                         username_normalized=username_normalized,
                         nickname=nickname_clean,
-                        email=email_clean,
-                        email_normalized=email_normalized,
+                        email=email_clean or None,
+                        email_normalized=email_normalized or None,
+                        phone=phone_normalized,
+                        phone_normalized=phone_normalized,
                         password_hash=self._password_hasher.hash(password),
-                        status=AccountStatus.PENDING_EMAIL,
+                        status=pending_status,
                         created_at=now,
                         updated_at=now,
                     )
                 )
                 session.flush()
+                if not email_clean:
+                    # 手机通道：不发邮件挑战；验证经 OTP purpose=registration
+                    # （绑定 registration_session），由 PhoneOtpService 完成。
+                    idempotency_record.status = "COMPLETED"
+                    idempotency_record.response_status = 202
+                    idempotency_record.response_body = {**public_response, "phone_user_id": user_id}
+                    idempotency_record.completed_at = now
+                    session.flush()
+                    invitation = self._invitation_service.consume_in_session(
+                        session, code=invitation_code, now=now
+                    )
+                    referral_bound = self._bind_invitation_owner_in_session(
+                        session, invitation=invitation, invited_user_id=user_id, now=now)
+                    if (not referral_bound and referral_code_clean and self._referral_service is not None):
+                        self._referral_service.bind_in_session(session, invited_user_id=user_id,
+                            referral_code=referral_code_clean, now=now)
+                    session.flush()
+                    return RegistrationResult(
+                        user_id=user_id,
+                        registration_session=registration_session,
+                        status=pending_status,
+                        resend_after_seconds=60,
+                        verification_token=None,
+                    )
                 session.add(
                     EmailVerificationChallenge(
                         id=challenge_id,
@@ -327,9 +383,15 @@ class RegistrationService:
         invitation_code: str,
         idempotency_key: str,
         referral_code: str | None = None,
+        phone: str | None = None,
     ) -> None:
-        email_clean = email.strip()
-        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_clean):
+        email_clean = (email or "").strip()
+        if phone is not None:
+            from app.modules.identity.phone import normalize_phone
+            phone = normalize_phone(phone)
+        if email_clean and phone is not None:
+            raise AppError(code="REGISTRATION_INVALID", message="邮箱或手机号只能选择一种", status_code=422)
+        if email_clean and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_clean):
             raise AppError(
                 code="REGISTRATION_INVALID",
                 message="注册信息无效",
@@ -342,9 +404,13 @@ class RegistrationService:
                     )
                 ],
             )
+        if not email_clean and phone is None:
+            raise AppError(code="REGISTRATION_INVALID", message="注册信息无效", status_code=422,
+                fields=[FieldError(loc=["body", "email"], msg="需要邮箱或手机号之一", type="value_error")])
         request_payload = json.dumps(
             {
-                "email": email_clean.casefold(),
+                "email": email_clean.casefold() or None,
+                **({"phone": phone} if phone is not None else {}),
                 "invitation_code": invitation_code.strip(),
                 "nickname": (nickname or username.strip()).strip(),
                 "password": password,
@@ -427,6 +493,9 @@ class RegistrationService:
         registration_session = response.get("registration_session")
         if not isinstance(registration_session, str):
             raise RuntimeError("completed registration is missing its public session")
+        if response.get("phone_user_id"):
+            return RegistrationResult(user_id=response["phone_user_id"], registration_session=registration_session,
+                status=AccountStatus(response["status"]), resend_after_seconds=int(response["resend_after_seconds"]))
         challenge = session.scalar(
             select(EmailVerificationChallenge).where(
                 EmailVerificationChallenge.registration_session_hash

@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # U03：充值确认阈值（客户端展示与服务端判定同一来源）。
     wallet_confirmation_threshold: int = 20
     wallet_conversions_enabled: bool = False
+    # ADR-0076：点钻人民币计价 v2（1 点钻 = 1 元人民币）。用户侧直接
+    # 点钻/USDT 兑换默认关闭；默认值即新常态，仅回退演练显式置 False。
+    wallet_user_conversions_closed: bool = True
+    caibi_pricing_version: str = "caibi-cny-v1"
     wallet_deposit_auto_conversion_enabled: bool = False
     wallet_sandbox_store_path: str | None = None
     tron_observer_database_path: str | None = None
@@ -64,6 +68,8 @@ class Settings(BaseSettings):
     wallet_owner_transfers_enabled: bool = False
     wallet_user_auth_mode: Literal['wallet_proof', 'address_only'] = 'wallet_proof'
     wallet_real_funds_enabled: bool = False
+    # ADR-0077：在线自动充值取消；显式置 True 仅用于回退演练。
+    wallet_auto_deposit_enabled: bool = False
     wallet_deposits_enabled: bool | None = None
     wallet_payout_requests_enabled: bool | None = None
     wallet_payout_execution_enabled: bool | None = None
@@ -93,6 +99,30 @@ class Settings(BaseSettings):
             raise ValueError('manual stale resample budget must be an integer from 0 to 60')
         return value
     wallet_deposit_intent_ttl_seconds: int = 1200
+    # ADR-0076：USD/CNY 参考汇率（apihz）。密钥只从服务端环境读取，
+    # 不进源码/前端/APP 包/日志/测试快照；未配置时 FX 端点 fail closed。
+    fx_api_url: str = "https://cn.apihz.cn/api/jinrong/huilv.php"
+    fx_api_id: SecretStr | None = None
+    fx_api_key: SecretStr | None = None
+    fx_cache_ttl_seconds: int = 3600
+    red_packet_owner_commission_enabled: bool = True
+    # ADR-0079 实施补充：持久转让协调流程开关。默认关闭＝端点保持
+    # GROUP_TRANSFER_UNAVAILABLE（复审安全隔离）；启用前必须完成故障
+    # 注入与安全审查（见 ADR-0079 实施记录）。
+    group_transfer_coordination_enabled: bool = False
+    # ADR-0075：手机号功能与短信适配。phone_auth_enabled=True 时生产必须
+    # 配置真实短信供应商。用户 2026-09-21 指定阿里云验证码短信
+    # （dypnsapi SendSmsVerifyCode：供应商生成验证码 + ##code## 占位符，
+    # CheckSmsVerifyCode 校验；凭据只进服务端配置，不进代码/日志/前端）。
+    phone_auth_enabled: bool = False
+    otp_hash_secret: str | None = None
+    sms_provider: Literal["disabled", "console", "aliyun_dypns"] = "disabled"
+    sms_aliyun_access_key_id: SecretStr | None = None
+    sms_aliyun_access_key_secret: SecretStr | None = None
+    sms_aliyun_sign_name: str | None = None
+    sms_aliyun_template_code: str | None = None
+    sms_aliyun_region: str = "ap-southeast-1"
+    sms_aliyun_code_valid_minutes: int = 5
     wallet_funding_baseline_at: datetime | None = None
     wallet_funding_baseline_height: int | None = None
     wallet_alert_recipient: SecretStr | None = None
@@ -116,6 +146,8 @@ class Settings(BaseSettings):
             raise ValueError('handover preparation requires every money capability disabled')
         if self.wallet_deposit_auto_conversion_enabled and not self.wallet_conversions_enabled:
             raise ValueError('deposit auto conversion requires conversions enabled')
+        if self.wallet_deposit_auto_conversion_enabled and self.wallet_user_conversions_closed:
+            raise ValueError('deposit auto conversion cannot run while user conversions are closed')
         if self.wallet_handover_preparation_mode and (self.wallet_real_mode != 'manual_tron' or self.wallet_real_funds_enabled):
             raise ValueError('handover preparation requires manual TRON with funds disabled')
         if self.wallet_real_mode == 'disabled':
@@ -181,6 +213,35 @@ class Settings(BaseSettings):
     @classmethod
     def parse_matrix_login_token_expiry(cls, value):
         return int(value) if isinstance(value, str) else value
+
+    @field_validator("sms_aliyun_code_valid_minutes")
+    @classmethod
+    def validate_aliyun_code_minutes(cls, value):
+        if not 1 <= value <= 10:
+            raise ValueError("aliyun sms code validity must be 1-10 minutes")
+        return value
+
+    @model_validator(mode="after")
+    def validate_phone_auth(self) -> "Settings":
+        if self.sms_provider == "aliyun_dypns":
+            # fail closed：选择阿里云通道但配置不完整时直接拒绝启动。
+            missing = [name for name, value in (
+                ("BUSINESS_SMS_ALIYUN_ACCESS_KEY_ID", self.sms_aliyun_access_key_id),
+                ("BUSINESS_SMS_ALIYUN_ACCESS_KEY_SECRET", self.sms_aliyun_access_key_secret),
+                ("BUSINESS_SMS_ALIYUN_SIGN_NAME", self.sms_aliyun_sign_name),
+                ("BUSINESS_SMS_ALIYUN_TEMPLATE_CODE", self.sms_aliyun_template_code),
+            ) if value is None or not str(getattr(value, "secret_value" if hasattr(value, "secret_value") else "value", value)).strip()]
+            if missing:
+                raise ValueError(f"aliyun sms provider requires: {', '.join(missing)}")
+            if not (self.sms_aliyun_region or "").strip():
+                raise ValueError("aliyun sms provider requires a region")
+        if self.phone_auth_enabled and self.environment == "production":
+            if self.sms_provider != "aliyun_dypns" or not self.otp_hash_secret:
+                raise ValueError(
+                    "production phone auth requires the aliyun SMS provider "
+                    "(BUSINESS_SMS_PROVIDER=aliyun_dypns) and BUSINESS_OTP_HASH_SECRET"
+                )
+        return self
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

@@ -38,6 +38,26 @@ def authorize_payout(client, headers, quote_id):
     return result.json()['authorization']
 
 
+def test_cancel_deposit_is_authenticated_owned_and_available_when_creation_paused(api, core):
+    from datetime import timedelta
+    from app.modules.wallet.funding import DepositIntentService
+    client, headers, runtime = api
+    runtime.intents = DepositIntentService(core[1], official_config=core[0].official_config,
+        intent_ttl=timedelta(minutes=20), clock=core[0].clock)
+    original = runtime.intents.create(user_id='alice', expected_amount='10.000000',
+        expected_binding_version=1, idempotency_key='create-cancel-test')
+    path = '/manual/deposit-intents/' + original['id'] + '/cancel'
+    runtime.funds_enabled = False
+    assert client.post(path, headers={'Idempotency-Key':'k'}).status_code == 401
+    assert client.post(path, headers={'Authorization':headers['alice']['Authorization']}).status_code == 422
+    assert client.post(path, headers=headers['bob']).status_code == 404
+    result = client.post(path, headers=headers['alice'])
+    assert result.status_code == 200
+    assert result.json()['status'] == 'CANCELLED'
+    assert result.headers['cache-control'] == 'no-store'
+    assert client.post(path, headers=headers['alice']).json() == result.json()
+
+
 def legacy_quote(core, api):
     from decimal import Decimal
     from uuid import uuid4

@@ -46,6 +46,12 @@ class CorrectionBody(TxidBody):
     reason_code: str = Field(pattern='^[A-Z][A-Z0-9_]{2,79}$')
 
 
+class RateAdjustBody(AdminWalletProofBody):
+    model_config = ConfigDict(extra='forbid')
+    new_rate: str = Field(pattern=r'^(0|[1-9][0-9]{0,3})(\.[0-9]{1,6})?$')
+    reason_code: str = Field(min_length=3, max_length=100)
+
+
 class PayoutView(BaseModel):
     id: str
     user_id: str
@@ -58,6 +64,10 @@ class PayoutView(BaseModel):
     review_reason: str | None
     funding_asset: Literal['CAIBI', 'USDT'] = 'USDT'
     funding_amount: str | None = None
+    conversion_rate: str | None = None
+    rate_stale: bool | None = None
+    final_rate: str | None = None
+    final_receive: str | None = None
     cancellation_asset: Literal['CAIBI', 'USDT'] = 'USDT'
 
 
@@ -184,6 +194,12 @@ def create_manual_wallet_router(settings, factory, *, runtime):
     def deposit_status(intent_id: str, identity=Depends(actor)):
         return call(ready().intents.status, user_id=identity[0], intent_id=intent_id)
 
+    @router.post('/deposit-intents/{intent_id}/cancel', response_model=IntentView)
+    def cancel_deposit(intent_id: str, idempotency_key: IdempotencyKey, identity=Depends(actor)):
+        # Cancellation remains available when creation is disabled.
+        return call(ready().intents.cancel, user_id=identity[0], intent_id=intent_id,
+            idempotency_key=idempotency_key)
+
     @router.post('/payout-quotes', response_model=QuoteView, status_code=201)
     def quote(body: PayoutQuoteBody, idempotency_key: IdempotencyKey, identity=Depends(actor)):
         payload = dict(amount=body.amount, binding_version=body.expected_binding_version)
@@ -224,6 +240,16 @@ def create_manual_wallet_router(settings, factory, *, runtime):
         auth = {'authorize':authorize} if authorize is not None else {'mfa_proof':body.mfa_proof.get_secret_value()}
         return call(ready(capability='payout_execution_enabled').payouts.claim, admin_id=identity[0], session_id=identity[1], order_id=order_id,
             expected_digest=body.expected_digest, idempotency_key=idempotency_key, **auth)
+
+    @router.post('/payouts/{order_id}/adjust-rate', response_model=PayoutView)
+    def adjust_rate(order_id: str, body: RateAdjustBody, idempotency_key: IdempotencyKey, identity=Depends(actor)):
+        # ADR-0077：客服调整结算汇率——无需用户二次确认/复核/金额审批；
+        # 处理人、时间、原因与前后值完整审计。
+        authorize = selected_password_authorization(settings,factory,lambda:datetime.now(timezone.utc),identity[2],body)
+        auth = {'authorize':authorize} if authorize is not None else {'mfa_proof':body.mfa_proof.get_secret_value()}
+        return call(ready(capability='payout_execution_enabled').payouts.adjust_rate, admin_id=identity[0],
+            session_id=identity[1], order_id=order_id, new_rate=body.new_rate, reason_code=body.reason_code,
+            idempotency_key=idempotency_key, **auth)
 
     @router.post('/payouts/{order_id}/txid', response_model=PayoutView)
     def submit(order_id: str, body: TxidBody, idempotency_key: IdempotencyKey, identity=Depends(actor)):

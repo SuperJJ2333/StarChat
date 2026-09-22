@@ -27,6 +27,9 @@ from integrations.avatar_reader import LocalPrivateAvatarReader
 from tasks.identity import IdentityEmailVerificationTask, MatrixProfileSyncTask
 from tasks.admin_operation_observation import AdminOperationObservationTask
 from tasks.redpacket_expiry import RedPacketExpiryTask
+from tasks.redpacket_commission import RedPacketCommissionSweepTask
+from tasks.recharge_registration import RechargeRegistrationTask
+from tasks.group_transfer_recovery import GroupTransferRecoveryTask
 from tasks.chat_transfer_expiry import ChatTransferExpiryTask
 from tasks.wallet import WalletMaintenanceTask
 from tasks.moments import MomentsModerationTask
@@ -182,12 +185,26 @@ def main() -> None:
         consumer = (OutboxConsumer(session_factory, wallet_handover_preparation_mode=True)
             if getattr(settings, 'wallet_handover_preparation_mode', False) else OutboxConsumer(session_factory))
         redpacket_expiry = RedPacketExpiryTask(session_factory, RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total))
+        commission_sweep = RedPacketCommissionSweepTask(session_factory)
+        recharge_registration = RechargeRegistrationTask(session_factory, LedgerService(session_factory))
         chat_transfer_expiry = ChatTransferExpiryTask(session_factory, ChatTransferService(session_factory, LedgerService(session_factory)))
         wallet_maintenance, wallet_monitoring, alert_handlers = build_wallet_tasks(settings, session_factory)
         wallet_task = getattr(wallet_maintenance, '__self__', None)
         if wallet_task is not None and hasattr(wallet_task, 'close'):
             resources.callback(wallet_task.close)
         moments_moderation = MomentsModerationTask(session_factory)
+        # ADR-0079 实施补充：转让协调恢复。配置不完整（测试装配）时任务
+        # 优雅缺席，不影响其余维护任务。
+        group_transfer_recovery = None
+        if getattr(settings, 'group_transfer_coordination_enabled', False) and all(hasattr(settings, name) for name in
+                ('matrix_homeserver_url', 'matrix_server_name', 'synapse_admin_access_token')):
+            _transfer_gateway = SynapseMatrixAdminGateway(
+                homeserver_url=settings.matrix_homeserver_url,
+                server_name=settings.matrix_server_name,
+                admin_access_token=settings.synapse_admin_access_token or '',
+            )
+            resources.callback(_transfer_gateway.close)
+            group_transfer_recovery = GroupTransferRecoveryTask(session_factory, matrix_gateway=_transfer_gateway, enabled=True)
         email_sender = email_sender_from_environment()
         matrix_gateway = SynapseMatrixAdminGateway(
             homeserver_url=os.getenv("MATRIX_HOMESERVER_URL", "http://synapse:8008"),
@@ -226,7 +243,8 @@ def main() -> None:
             handlers={**identity_handlers, **alert_handlers},
             worker_id=os.getenv("WORKER_ID", "business-worker-1"),
             heartbeat_path=os.getenv("WORKER_HEARTBEAT_PATH", "/tmp/liuhetong-worker-heartbeat"),
-            maintenance_tasks=[lambda: redpacket_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), lambda: chat_transfer_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), wallet_maintenance, wallet_monitoring, moments_moderation.run_batch],
+            maintenance_tasks=[lambda: redpacket_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), lambda: chat_transfer_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), lambda: commission_sweep.run_batch(), lambda: recharge_registration.run_batch(),
+                *( [lambda: group_transfer_recovery.run_batch()] if group_transfer_recovery is not None else [] ), wallet_maintenance, wallet_monitoring, moments_moderation.run_batch],
         )
         worker.run_forever(
             stop_event=stop_event,

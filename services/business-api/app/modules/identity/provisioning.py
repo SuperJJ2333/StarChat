@@ -46,7 +46,7 @@ class MatrixProvisionTask:
                 self._not_ready("MATRIX_USER_NOT_FOUND", "identity user not found")
             if user.status == AccountStatus.ACTIVE and user.matrix_user_id:
                 return
-            if user.status != AccountStatus.PENDING_MATRIX or user.email_verified_at is None:
+            if user.status != AccountStatus.PENDING_MATRIX or not self._has_verified_contact(user):
                 self._not_ready("MATRIX_USER_NOT_READY", "identity user is not ready")
             localpart = user.username_normalized
 
@@ -59,11 +59,18 @@ class MatrixProvisionTask:
             user = session.scalar(select(User).where(User.id == user_id).with_for_update())
             if user.status == AccountStatus.ACTIVE and user.matrix_user_id == matrix_user_id:
                 return
-            if user.status != AccountStatus.PENDING_MATRIX:
+            if user.status != AccountStatus.PENDING_MATRIX or not self._has_verified_contact(user):
                 self._not_ready("MATRIX_USER_STATE_CONFLICT", "identity user state changed")
             user.matrix_user_id = matrix_user_id
             user.status = AccountStatus.ACTIVE
             user.updated_at = now
+
+    @staticmethod
+    def _has_verified_contact(user: User) -> bool:
+        return bool(
+            (user.email_normalized and user.email_verified_at is not None)
+            or (user.phone_normalized and user.phone_verified_at is not None)
+        )
 
     @staticmethod
     def _not_ready(code: str, message: str) -> None:

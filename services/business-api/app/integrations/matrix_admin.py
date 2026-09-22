@@ -39,6 +39,11 @@ class MatrixAdminGateway(Protocol):
 
     def get_room_members(self, room_id: str) -> set[str]: ...
 
+    # ADR-0079 实施补充：转让协调所需（以群主身份应用 power level）。
+    def login_as_user(self, matrix_user_id: str) -> str: ...
+    def send_room_state_as_user(self, matrix_user_id: str, room_id: str,
+                                event_type: str, content: dict) -> None: ...
+
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
 
     def session_identity(self, access_token: str) -> tuple[str, str]: ...
@@ -190,8 +195,14 @@ class SynapseMatrixAdminGateway:
         self._homeserver_url = homeserver_url.rstrip("/")
         self._server_name = server_name
         self._admin_access_token = admin_access_token
+        self._owns_client = client is None
         self._client = client or httpx.Client(timeout=10.0)
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
+
+    def close(self) -> None:
+        """Release worker-owned HTTP resources; injected clients belong to callers."""
+        if self._owns_client:
+            self._client.close()
 
     def ensure_user(self, localpart: str, password: str) -> str:
         matrix_user_id = f"@{localpart}:{self._server_name}"
@@ -297,6 +308,40 @@ class SynapseMatrixAdminGateway:
                 raise ValueError('invite failed')
         except (httpx.HTTPError, ValueError, AttributeError):
             raise AppError(code='MATRIX_GROUP_INVITE_FAILED', message='群成员邀请失败', status_code=502) from None
+
+    def login_as_user(self, matrix_user_id: str) -> str:
+        """Synapse admin login-as-user（本仓库 invite 链路已在用的既有能力）：
+        换取短期用户 access token，用于以该用户身份发送房间状态事件。"""
+        path_user_id = quote(matrix_user_id, safe='')
+        login = self._client.post(
+            f"{self._homeserver_url}/_synapse/admin/v1/users/{path_user_id}/login",
+            json={"logout_devices": False,
+                "valid_until_ms": int(self._now_factory().timestamp() * 1000) + 60_000},
+            headers={"Authorization": f"Bearer {self._admin_access_token}"},
+        )
+        if login.status_code != 200:
+            raise ValueError('login failed')
+        token = login.json().get('access_token')
+        if not token:
+            raise ValueError('login failed')
+        return token
+
+    def send_room_state_as_user(self, matrix_user_id: str, room_id: str,
+                                event_type: str, content: dict) -> None:
+        """以指定用户身份发送房间状态事件（转让：应用 m.room.power_levels）。
+
+        该 HTTP 调用发生在业务事务之外；成败以随后的权威状态读取为准。
+        """
+        token = self.login_as_user(matrix_user_id)
+        path_room = quote(room_id, safe='')
+        response = self._client.put(
+            f"{self._homeserver_url}/_matrix/client/v3/rooms/{path_room}/state/"
+            f"{quote(event_type, safe='')}",
+            json=content,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if response.status_code not in (200, 201):
+            raise ValueError('state event rejected')
 
     def get_room_state(self, room_id: str) -> list[dict]:
         """读取房间全量状态（Synapse admin API）。

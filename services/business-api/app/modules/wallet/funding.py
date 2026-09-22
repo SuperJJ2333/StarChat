@@ -12,7 +12,7 @@ from app.core.errors import AppError
 from app.integrations.tron.message_signature import canonical_address
 from app.modules.ledger.reserve import lock_budget
 from app.modules.wallet.binding_models import WalletBinding, WalletBindingState
-from app.modules.wallet.funding_models import DepositIntent
+from app.modules.wallet.funding_models import DepositIntent, DepositIntentCancellation
 from app.modules.wallet.models import WalletControl, WalletSafetyState
 from app.modules.wallet.safety import audit_write
 
@@ -163,6 +163,40 @@ class DepositIntentService:
             row = session.scalar(select(DepositIntent).where(
                 DepositIntent.user_id == user_id, DepositIntent.status == 'OPEN'))
             return self._result(row) if row is not None else None
+
+    def cancel(self, *, user_id, intent_id, idempotency_key):
+        """Close only the intent. A later actual receipt remains an obligation.
+
+        Shared reserve/control locks serialize this with receipt ingestion;
+        nothing here credits, refunds, or suppresses a blockchain receipt.
+        """
+        from app.modules.identity.wallet_access import require_wallet_actor
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 128:
+            _fail('WALLET_IDEMPOTENCY_REQUIRED', 400)
+        with self.factory.begin() as session:
+            self._lock(session, user_id)
+            row = session.scalar(select(DepositIntent).where(
+                DepositIntent.id == intent_id, DepositIntent.user_id == user_id).with_for_update())
+            if row is None:
+                _fail('WALLET_DEPOSIT_INTENT_NOT_FOUND', 404)
+            require_wallet_actor(session, user_id=user_id, clock=self.clock)
+            replay = session.scalar(select(DepositIntentCancellation).where(
+                DepositIntentCancellation.user_id == user_id,
+                DepositIntentCancellation.idempotency_key == idempotency_key))
+            if replay is not None:
+                if replay.intent_id != intent_id:
+                    _fail('WALLET_IDEMPOTENCY_CONFLICT')
+                return deepcopy(replay.response)
+            now = self._now()
+            if row.status != 'OPEN' or now >= _utc(row.expires_at):
+                _fail('WALLET_DEPOSIT_INTENT_CANNOT_CANCEL')
+            self._close(session, row, status='CANCELLED', actor_id=user_id, now=now)
+            result = self._result(row)
+            session.add(DepositIntentCancellation(id=str(uuid4()), user_id=user_id,
+                intent_id=intent_id, idempotency_key=idempotency_key,
+                response=deepcopy(result), created_at=now))
+            session.flush()
+            return result
 
     @staticmethod
     def _result(row):

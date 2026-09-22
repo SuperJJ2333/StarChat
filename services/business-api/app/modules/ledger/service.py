@@ -29,6 +29,12 @@ class LedgerService:
             value = session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(LedgerEntry.account_id == account_id, LedgerEntry.asset == "CAIBI"))
             return money(Decimal(value))
 
+    @staticmethod
+    def lock_transaction(*, session, transaction_id):
+        """Serialize proof consumption with reversals in the caller transaction."""
+        return session.scalar(select(LedgerTransaction).where(
+            LedgerTransaction.id == transaction_id).with_for_update())
+
     def redeemable_liability(self, *, session):
         return caibi_liability(session)
 
@@ -60,6 +66,9 @@ class LedgerService:
             raise ValueError("ledger entries must be balanced")
         now = datetime.now(timezone.utc)
         reserve = lock_budget(session)
+        if reversal_of_id is not None:
+            if self.lock_transaction(session=session, transaction_id=reversal_of_id) is None:
+                raise ValueError('original transaction not found')
         existing = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries)).where(LedgerTransaction.scope == scope, LedgerTransaction.idempotency_key == idempotency_key))
         if existing:
             persisted = {entry.account_id: money(entry.amount) for entry in existing.entries}
@@ -149,12 +158,13 @@ class LedgerService:
         return self.post(entries={user_id: amount, "PLATFORM_CLEARING": -amount}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="ledger.adjustment", session=session)
 
     def reverse(self, original_id: str, reason_code: str, actor_id: str, idempotency_key: str) -> LedgerTransaction:
-        with self.session_factory() as session:
-            original = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries)).where(LedgerTransaction.id == original_id))
+        with self.session_factory.begin() as session:
+            lock_budget(session)
+            original = self.lock_transaction(session=session, transaction_id=original_id)
             if not original:
                 raise ValueError("original transaction not found")
             entries = {entry.account_id: -entry.amount for entry in original.entries}
-        return self.post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="ledger.reversal", reversal_of_id=original_id)
+            return self.post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="ledger.reversal", reversal_of_id=original_id, session=session)
 
 @dataclass(frozen=True)
 class TransferResult:
@@ -172,5 +182,3 @@ class PointTransferService:
         fee = max(CENT, money(amount * Decimal("0.005")))
         tx = self.ledger.post(entries={sender_id: -(amount + fee), receiver_id: amount, "PLATFORM_FEE": fee}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="caibi.transfer", session=session)
         return TransferResult(tx, fee)
-
-

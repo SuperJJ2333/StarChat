@@ -88,3 +88,19 @@ def test_unclassified_snapshot_failure_waits_without_accepting_old_balance(scan)
     assert not source.read_batch(after_rowid=0).healthy
     clock[0] += timedelta(seconds=91)
     assert not source.read_reserve_cut().healthy
+
+
+def test_heartbeat_window_margin_supports_180_seconds(scan):
+    from app.integrations.tron.funding_source import SQLiteFundingSource
+    _, existing, _, _, path, clock, ms = scan
+    clock[0] += timedelta(seconds=150)
+    now_ms = int(clock[0].timestamp()*1000)
+    with closing(sqlite3.connect(path)) as c, c:
+        c.execute('UPDATE runs SET heartbeat_ms=?', (now_ms-150000,))
+        c.execute('UPDATE observations SET heartbeat_ms=?', (now_ms-150000,))
+    source = SQLiteFundingSource(path, official_address=existing.official_address,
+        clock=lambda:clock[0], max_age_seconds=180, solid_head_max_age_seconds=240)
+    assert source.read_batch(after_rowid=0).healthy
+    with pytest.raises(ValueError):
+        SQLiteFundingSource(path, official_address=existing.official_address,
+            clock=lambda:clock[0], max_age_seconds=301)

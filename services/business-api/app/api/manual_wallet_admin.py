@@ -63,6 +63,9 @@ class ManualPayoutSnapshot(PayoutReadModel):
     conversion_rate: str | None = Field(default=None, pattern=r'^\d+(\.\d+)?$')
     conversion_fee: str | None = Field(default=None, pattern=r'^\d+\.\d{6}$')
     cancellation_asset: Literal['USDT', 'CAIBI'] | None = None
+    # ADR-0077：汇率快照参考信息（旧快照无这些键 → None）。
+    rate_stale: bool | None = None
+    rate_fetched_at: str | None = None
 
 
 class ManualPayoutCandidateRead(PayoutReadModel):

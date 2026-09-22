@@ -52,7 +52,9 @@ class InvitationRequest(StrictModel):
 class RegisterRequest(StrictModel):
     username: str = Field(min_length=3, max_length=64)
     nickname: str | None = Field(default=None, max_length=64)
-    email: str = Field(min_length=3, max_length=320)
+    # ADR-0075：邮箱或中国大陆手机号二选一注册。
+    email: str | None = Field(default=None, min_length=3, max_length=320)
+    phone: str | None = Field(default=None, min_length=5, max_length=20)
     password: str = Field(min_length=12, max_length=256)
     invitation_code: str = Field(min_length=1, max_length=128)
     # 好友推荐码（选填）：仅用于绑定邀请关系，无效不阻断注册。
@@ -168,6 +170,7 @@ def create_identity_router(
     rate_limiter: RateLimiter,
     *,
     matrix_gateway,
+    sms_sender=None,
 ) -> APIRouter:
     router = APIRouter(tags=["identity"])
     captcha_service = LoginCaptcha(Redis.from_url(settings.redis_url, decode_responses=True))
@@ -202,6 +205,41 @@ def create_identity_router(
         jwt_issuer=settings.jwt_issuer,
         require_session_claims=settings.environment != "test",
     )
+    # ADR-0075：手机号体系（短信供应商未配置即 fail closed；测试注入替身）。
+    from app.modules.identity.phone import (
+        NullSmsSender,
+        PhoneAuthService,
+        PhoneOtpService,
+    )
+
+    def _build_phone_auth():
+        # ADR-0075 实施补充：生产装配按 settings.sms_provider 构建真实
+        # 供应商适配器（阿里云验证码短信）；未配置一律 fail-closed。
+        # sms_sender 参数仅供测试注入替身（RecordingSmsSender 等）。
+        sender = sms_sender
+        code_verifier = None
+        if sender is None:
+            if settings.sms_provider == "aliyun_dypns":
+                from app.modules.identity.sms_aliyun import AliyunDypnsSmsSender
+
+                adapter = AliyunDypnsSmsSender(
+                    access_key_id=settings.sms_aliyun_access_key_id.get_secret_value(),
+                    access_key_secret=settings.sms_aliyun_access_key_secret.get_secret_value(),
+                    sign_name=settings.sms_aliyun_sign_name,
+                    template_code=settings.sms_aliyun_template_code,
+                    region=settings.sms_aliyun_region,
+                    code_valid_minutes=settings.sms_aliyun_code_valid_minutes,
+                )
+                sender, code_verifier = adapter, adapter.verify
+            else:
+                sender = NullSmsSender()
+        otp = PhoneOtpService(session_factory, sender=sender,
+            secret=settings.otp_hash_secret or settings.jwt_secret or "development-otp-secret",
+            phone_enabled=settings.phone_auth_enabled, code_verifier=code_verifier)
+        return PhoneAuthService(session_factory, otp=otp,
+            email_code_deriver=verification_codec.verification_code)
+
+    phone_auth = _build_phone_auth()
     recovery = PasswordRecoveryService(
         session_factory,
         password_hasher=password_hasher,
@@ -241,6 +279,13 @@ def create_identity_router(
         if not authorization or not authorization.startswith("Bearer "):
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
         return tokens.decode_access_token(authorization[7:])
+
+    def current_user_id(
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> str:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
+        return str(tokens.decode_access_token(authorization[7:])["sub"])
 
     @router.post("/invitations/validate")
     async def validate_invitation(body: InvitationRequest, request: Request) -> dict:
@@ -394,6 +439,11 @@ def create_identity_router(
             **body.model_dump(),
             idempotency_key=idempotency_key,
         )
+        if body.phone is not None:
+            if not settings.phone_auth_enabled:
+                raise AppError(code="PHONE_AUTH_DISABLED", message="手机号功能未开启", status_code=503)
+            if isinstance(phone_auth.otp.sender, NullSmsSender):
+                raise AppError(code="SMS_NOT_CONFIGURED", message="短信服务未配置", status_code=503)
         rate_limiter.hit(public_rate_limit_key("auth:register:v2", request.client.host if request.client else "unknown", device_key or body.username), limit=3, window_seconds=3600)
         result = registration.register(
             **body.model_dump(),
@@ -542,6 +592,10 @@ def create_identity_router(
     @router.get("/auth/registrations/{registration_session}")
     async def registration_status(registration_session: str, request: Request) -> dict:
         rate_limiter.hit(public_rate_limit_key("auth:registration:status", request.client.host if request.client else "unknown", registration_session), limit=60, window_seconds=60)
+        with session_factory() as session:
+            phone_user = phone_auth.registration_user(session, registration_session)
+            if phone_user is not None:
+                return {"status": phone_user.status.value, "resend_after_seconds": 60}
         result = email_verification.status(registration_session)
         return {
             "status": result.status,
@@ -858,5 +912,99 @@ def create_identity_router(
             reason_code="USER_DEVICE_REVOCATION",
         )
         return Response(status_code=204)
+
+
+    # ------------------------------------------------------------------
+    # ADR-0075：手机号登录 / 换绑 / 手机号好友搜索（短信供应商未配置
+    # 时 fail closed；响应不携带验证码或完整手机号）。
+    # ------------------------------------------------------------------
+    class PhoneOtpRequestBody(StrictModel):
+        phone: str = Field(min_length=5, max_length=20)
+
+    class PhoneLoginBody(StrictModel):
+        phone: str = Field(min_length=5, max_length=20)
+        code: str = Field(min_length=4, max_length=8)
+        device_key: str = Field(min_length=8, max_length=128)
+        device_name: str = Field(min_length=1, max_length=128)
+
+    class PhoneRebindConfirmBody(StrictModel):
+        new_phone: str = Field(min_length=5, max_length=20)
+        code: str = Field(min_length=4, max_length=8)
+
+    class PhoneSearchBody(StrictModel):
+        phone: str = Field(min_length=5, max_length=20)
+
+    class PhoneRegistrationVerifyBody(StrictModel):
+        registration_session: str = Field(min_length=1, max_length=128)
+        phone: str = Field(min_length=5, max_length=20)
+        code: str = Field(pattern=r"^[0-9]{6}$")
+
+    class PhoneOldVerifyBody(StrictModel):
+        code: str = Field(pattern=r"^[0-9]{6}$")
+
+    class PhonePrivacyBody(StrictModel):
+        phone_findable: bool
+
+    @router.post("/auth/phone/registration/request", status_code=202)
+    def phone_registration_request(body: RegistrationSessionRequest, request: Request):
+        rate_limiter.hit(public_rate_limit_key("auth:phone-register-otp", request.client.host if request.client else "unknown"), limit=3, window_seconds=600)
+        return phone_auth.request_registration_otp(registration_session=body.registration_session)
+
+    @router.post("/auth/phone/registration/verify", status_code=202)
+    def phone_registration_verify(body: PhoneRegistrationVerifyBody, request: Request):
+        rate_limiter.hit(public_rate_limit_key("auth:phone-register-verify", request.client.host if request.client else "unknown"), limit=30, window_seconds=600)
+        return phone_auth.verify_registration(**body.model_dump())
+
+    @router.post("/auth/phone/login/request", status_code=202)
+    def phone_login_request(body: PhoneOtpRequestBody, request: Request,
+                            device_key: Annotated[str | None, Header(alias="X-Device-Key")] = None):
+        rate_limiter.hit(public_rate_limit_key("auth:phone-login-otp", request.client.host if request.client else "unknown"), limit=3, window_seconds=600)
+        return phone_auth.request_login_otp(phone=body.phone)
+
+    @router.post("/auth/phone/login")
+    def phone_login(body: PhoneLoginBody, request: Request):
+        rate_limiter.hit(public_rate_limit_key("auth:phone-login", request.client.host if request.client else "unknown"), limit=10, window_seconds=3600)
+        pair = phone_auth.login(phone=body.phone, code=body.code, tokens=tokens,
+            device_key=body.device_key, device_name=body.device_name)
+        claims = tokens.decode_access_token(pair.access_token)
+        with session_factory() as session:
+            user = session.get(User, claims["sub"])
+            matrix_user_id = user.matrix_user_id
+        record_audit(request, actor_id=claims["sub"], subject_id=claims["sub"],
+            action="identity.session.created", reason_code="PHONE_OTP_LOGIN")
+        return PasswordLoginResponse(access_token=pair.access_token, refresh_token=pair.refresh_token,
+            matrix_user_id=matrix_user_id)
+
+    @router.post("/auth/phone/rebind/old-request", status_code=202)
+    def phone_rebind_old_request(user_id: Annotated[str, Depends(current_user_id)]):
+        rate_limiter.hit(f"auth:phone-old-request:{user_id}", limit=3, window_seconds=600)
+        return phone_auth.request_old_channel_verification(user_id=user_id)
+
+    @router.post("/auth/phone/rebind/old-confirm")
+    def phone_rebind_old_confirm(body: PhoneOldVerifyBody, user_id: Annotated[str, Depends(current_user_id)]):
+        rate_limiter.hit(f"auth:phone-old-confirm:{user_id}", limit=30, window_seconds=600)
+        return phone_auth.confirm_old_channel(user_id=user_id, code=body.code)
+
+    @router.post("/auth/phone/rebind/new-request", status_code=202)
+    def phone_rebind_new_request(body: PhoneOtpRequestBody, user_id: Annotated[str, Depends(current_user_id)]):
+        return phone_auth.request_new_phone_verification(user_id=user_id, new_phone=body.phone)
+
+    @router.post("/auth/phone/rebind/confirm")
+    def phone_rebind_confirm(body: PhoneRebindConfirmBody, user_id: Annotated[str, Depends(current_user_id)]):
+        return phone_auth.confirm_new_phone(user_id=user_id, new_phone=body.new_phone, code=body.code)
+
+    @router.post("/contacts/search-phone")
+    def search_phone(body: PhoneSearchBody, request: Request, user_id: Annotated[str, Depends(current_user_id)]):
+        rate_limiter.hit(f"contacts:phone-search:{user_id}", limit=10, window_seconds=3600)
+        return phone_auth.search_by_phone(phone=body.phone)
+
+    @router.patch("/auth/phone/privacy")
+    def phone_privacy(body: PhonePrivacyBody, user_id: Annotated[str, Depends(current_user_id)]):
+        with session_factory.begin() as session:
+            user = session.get(User, user_id)
+            if user is None or user.status != AccountStatus.ACTIVE:
+                raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
+            user.phone_findable = body.phone_findable
+        return {"phone_findable": body.phone_findable}
 
     return router

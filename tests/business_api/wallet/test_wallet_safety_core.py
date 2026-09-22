@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine
@@ -8,6 +9,7 @@ from app.core.database import Base, create_session_factory
 from app.integrations.custody.sandbox import SandboxCustodyProvider
 from app.modules.ledger.service import LedgerService
 from app.modules.wallet.service import WalletService
+from app.modules.fx.models import FxRate
 
 
 @pytest.fixture()
@@ -15,6 +17,12 @@ def core():
     engine = create_engine('sqlite+pysqlite:///:memory:', poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
+    # Historical 1:1 conversion accounting scenario: explicitly supply its unit
+    # valuation quote instead of depending on a missing-FX 1:1 fallback.
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add(FxRate(pair='USD/CNY', rate=Decimal('1'), fetched_at=now,
+            expires_at=now + timedelta(hours=1), fetch_state='idle'))
     provider = SandboxCustodyProvider(secret='offline-only')
     service = WalletService(factory, provider, conversions_enabled=True)
     provider.custody_balance = Decimal('100')

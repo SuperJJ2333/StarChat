@@ -568,3 +568,28 @@ def test_actual_delivery_configuration_persists_across_success_error_and_stale(c
     assert state['last_error_code'] and state['stale']
     assert set(state) == {'last_attempt_at','last_success_at','last_error_code','stale',
                           'stale_after_seconds','external_delivery_configured'}
+
+
+def test_pending_window_follows_source_margin(core, monitor):
+    from app.integrations.tron.funding_source import FundingSourcePending
+    service, source, clock = monitor
+    source.max_age_seconds = 180
+    now_ms = int(clock[0].timestamp()*1000)
+    def pending():
+        raise FundingSourcePending(now_ms, now_ms+150000)
+    source.read_reserve_cut = pending
+    result = service.run_once()
+    assert result == dict(complete=False, status='WAITING', codes=['MANUAL_SOURCE_PENDING'])
+
+
+def test_published_observed_at_follows_source_margin(core, monitor):
+    from datetime import datetime, timezone
+    from app.modules.wallet.manual_reserve_monitor import EPOCH
+    service, source, clock = monitor
+    source.max_age_seconds = 180
+    ms = source.value.heartbeat_ms
+    source.value = digest_cut(source.value, fresh_until_ms=ms+180000)
+    assert service.run_once()['status'] == 'PUBLISHED'
+    with core[1]() as session:
+        reserve = session.get(RedeemabilityReserve, 'global')
+        assert reserve.observed_at.replace(tzinfo=timezone.utc) == EPOCH+timedelta(milliseconds=ms)

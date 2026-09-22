@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal, localcontext
 
-from app.modules.ledger.reserve import caibi_liability
+from app.modules.ledger.reserve import full_backing_required_usdt
 
 
 def require_manual_payout_coverage(session, reserve, *, now, policy='full_backing'):
@@ -15,13 +15,15 @@ def require_manual_payout_coverage(session, reserve, *, now, policy='full_backin
         raise ValueError('reserve evidence stale')
     if reserve.outgoing_restricted or reserve.pending_payouts:
         raise ValueError('reserve outgoing restricted')
-    with localcontext() as ctx:
-        ctx.prec = 50
-        required = caibi_liability(session) + Decimal(reserve.usdt_liability)
-        if policy not in {'full_backing', 'manual_liquidity'}:
-            raise ValueError('invalid reserve policy')
-        if policy == 'full_backing' and reserve.eligible_usdt < required:
-            raise ValueError('insufficient reserve coverage')
+    if policy not in {'full_backing', 'manual_liquidity'}:
+        raise ValueError('invalid reserve policy')
+    if policy == 'full_backing':
+        # ADR-0076：点钻按新鲜参考报价估值；有点钻负债但缺报价时拒绝，不跨单位相加。
+        with localcontext() as ctx:
+            ctx.prec = 50
+            required = full_backing_required_usdt(session, reserve)
+            if reserve.eligible_usdt < required:
+                raise ValueError('insufficient reserve coverage')
 
 
 def mark_manual_payout_pending(reserve):

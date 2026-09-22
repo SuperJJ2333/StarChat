@@ -16,6 +16,9 @@ from app.modules.ledger.service import LedgerService
 
 
 class FakeMatrixGateway:
+    def get_room_state(self, room_id):
+        return [{"type": "m.room.power_levels", "content": {"users": {"@sender:example.test": 100}}}]
+
     def get_room_members(self, room_id):
         return {"@sender:example.test", "@alice:example.test"}
 

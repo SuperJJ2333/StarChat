@@ -10,7 +10,7 @@ from app.modules.wallet.safety import WalletSafetyMixin, precise_amount, audit_w
 from app.modules.wallet.models import WalletPayoutIntent, WalletSafetyState, WalletWithdrawalAuthorization
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder
 from app.modules.wallet.receipt_models import DepositReceipt
-from app.modules.ledger.reserve import lock_budget, require_coverage
+from app.modules.ledger.reserve import RedeemabilityReserve, lock_budget, refresh_valuation, require_coverage
 import hashlib
 import json
 USDT = Decimal("0.000001")
@@ -23,16 +23,16 @@ WITHDRAWAL_TERMINAL = {"CHAIN_CONFIRMED", "FAILED_COMPENSATED", "CANCELLED"}
 class WalletLedger:
     reserve_policy = 'full_backing'
     def __init__(self, session_factory): self.factory = session_factory
-    def post(self, *, entries, actor_id, reason_code, idempotency_key, scope, session=None):
+    def post(self, *, entries, actor_id, reason_code, idempotency_key, scope, session=None, skip_coverage=False):
         normalized={k:usdt(v) for k,v in entries.items() if usdt(v)!=0}
         if not normalized or sum(normalized.values(), Decimal("0")) != Decimal("0"): raise ValueError("wallet ledger entries must be balanced")
         now=datetime.now(timezone.utc)
         if session is not None:
-            return self._post(session, normalized, actor_id, reason_code, idempotency_key, scope, now)
+            return self._post(session, normalized, actor_id, reason_code, idempotency_key, scope, now, skip_coverage)
         with self.factory.begin() as owned:
-            return self._post(owned, normalized, actor_id, reason_code, idempotency_key, scope, now)
+            return self._post(owned, normalized, actor_id, reason_code, idempotency_key, scope, now, skip_coverage)
 
-    def _post(self, session, normalized, actor_id, reason_code, idempotency_key, scope, now):
+    def _post(self, session, normalized, actor_id, reason_code, idempotency_key, scope, now, skip_coverage=False):
         if not actor_id or not reason_code or not idempotency_key:
             raise ValueError('actor, reason and idempotency required')
         reserve = lock_budget(session)
@@ -44,7 +44,7 @@ class WalletLedger:
                 raise ValueError("wallet ledger idempotency key reused with different payload")
             return existing
         liability_delta = sum((delta for account, delta in normalized.items() if account not in {'PLATFORM_CUSTODY', 'PLATFORM_CONVERSION', 'PLATFORM_OWNER_DRAWING'}), Decimal('0'))
-        if liability_delta > 0:
+        if liability_delta > 0 and not skip_coverage:
             require_coverage(session, reserve, usdt_delta=liability_delta, policy=self.reserve_policy)
         from app.modules.ledger.account_locks import lock_accounts
         lock_accounts(session, [a for a,d in normalized.items() if d < 0], asset="USDT-TRC20")
@@ -69,21 +69,24 @@ class WalletLedger:
         original = session.get(WalletConversion, conversion_id)
         release = session.get(WalletLedgerTransaction, release_id)
         if (original is None or original.user_id != user_id or original.direction != 'CAIBI_TO_USDT'
-                or original.status != 'COMPLETED' or original.source_amount != amount or original.target_amount != amount
+                or original.status != 'COMPLETED' or original.source_amount != amount or original.target_amount <= 0
                 or not original.idempotency_key.startswith('payout:')
                 or release is None or release.actor_id != user_id or release.scope != 'wallet.conversion_reversal'
                 or release.reason_code != 'MANUAL_PAYOUT_CANCELLED' or release.idempotency_key != 'reverse:'+conversion_id):
             raise ValueError('conversion release proof invalid')
+        # ADR-0077：率结兑换 source(点钻)≠target(USDT)；回收额按 target 校验。
         entries = {entry.account_id: entry.amount for entry in session.scalars(select(WalletLedgerEntry).where(
             WalletLedgerEntry.transaction_id == release_id))}
-        if entries != {user_id: -amount, 'PLATFORM_CONVERSION': amount}:
+        if entries != {user_id: -original.target_amount, 'PLATFORM_CONVERSION': original.target_amount}:
             raise ValueError('conversion release amount mismatch')
 
 class WalletService(WalletSafetyMixin):
-    def __init__(self, session_factory, provider, *, withdrawal_admin_threshold=Decimal("1000.000000"), confirmation_threshold=20, conversions_enabled=False, manual_runtime=None):
+    def __init__(self, session_factory, provider, *, withdrawal_admin_threshold=Decimal("1000.000000"), confirmation_threshold=20, conversions_enabled=False, manual_runtime=None, auto_deposit_enabled=True):
         self.factory=session_factory; self.provider=provider; self.wallet_ledger=WalletLedger(session_factory); self.admin_threshold=usdt(withdrawal_admin_threshold); self.confirmation_threshold=confirmation_threshold
         self.confirmation_threshold = max(20, int(confirmation_threshold))
         self.conversions_enabled = bool(conversions_enabled)
+        # ADR-0077：在线自动充值取消（验签后于 DEPOSIT 入账前拒绝新事件）。
+        self.auto_deposit_enabled = bool(auto_deposit_enabled)
         self.manual_runtime = manual_runtime
         self.reserve_policy = manual_runtime.receipts.reserve_policy if manual_runtime is not None else 'full_backing'
         self.wallet_ledger.reserve_policy = self.reserve_policy
@@ -161,6 +164,8 @@ class WalletService(WalletSafetyMixin):
         self._offline_provider()
         if not hmac.compare_digest(self.provider.sign(payload),signature): raise AppError(code="CUSTODY_SIGNATURE_INVALID",message="托管回调签名无效",status_code=401)
         if payload.get("asset")!="USDT-TRC20" or payload.get("type")!="DEPOSIT_CONFIRMED": raise ValueError("unsupported custody event")
+        if not self.auto_deposit_enabled:
+            raise AppError(code="AUTO_DEPOSIT_CLOSED", message="在线自动充值已停止：请通过官方客服办理充值", status_code=422)
         event_id=payload["event_id"]; txid=payload["txid"]; now=datetime.now(timezone.utc)
         confirmations=int(payload["confirmations"])
         with self.factory.begin() as session:
@@ -360,12 +365,23 @@ class WalletService(WalletSafetyMixin):
     def _reconcile(self, *, actor_id: str, mode: str):
         self._offline_provider()
         with self.factory() as session:
-            from app.modules.ledger.service import LedgerService
-            expected = usdt(usdt_liability(session) + LedgerService(self.factory).redeemable_liability(session=session))
+            from app.modules.ledger.reserve import refresh_valuation, reserve_valuation_snapshot
+            # ADR-0076：USDT 托管核对只对实际 USDT 义务（含冻结持有）；
+            # 点钻账面/参考估值随行记录，不并入义务门禁，不跨单位相加。
+            expected = usdt(usdt_liability(session))
+            valuation = reserve_valuation_snapshot(session)
         actual = usdt(self.provider.custody_balance)
         matched = actual >= expected
+        if matched:
+            with self.factory.begin() as session:
+                reserve = session.get(RedeemabilityReserve, 'global', with_for_update=True)
+                if reserve is not None:
+                    refresh_valuation(session, reserve)
         if not matched: self.pause_on_reconciliation_mismatch(f"{mode}: custody={actual} internal={expected}")
-        return ReconciliationResult(mode=mode, expected=expected, actual=actual, matched=matched)
+        return ReconciliationResult(mode=mode, expected=expected, actual=actual, matched=matched,
+            caibi_face=valuation["caibi_face"], valuation_rate=valuation["valuation_rate"],
+            caibi_reference_usdt=valuation["caibi_reference_usdt"],
+            approved_unpaid_usdt=valuation["approved_unpaid_usdt"])
     def finance_approve(self,id,approver_id): return self._approve(id,approver_id,"finance_approver_id","REQUESTED","FINANCE_APPROVED")
     def admin_approve(self,id,approver_id):
         return self._approve(id,approver_id,'admin_approver_id','FINANCE_APPROVED','ADMIN_APPROVED')
@@ -453,3 +469,8 @@ class ReconciliationResult:
     expected: Decimal
     actual: Decimal
     matched: bool
+    # ADR-0076：随行报告的点钻三类数量（不参与 matched 判定）。
+    caibi_face: Decimal | None = None
+    valuation_rate: Decimal | None = None
+    caibi_reference_usdt: Decimal | None = None
+    approved_unpaid_usdt: Decimal | None = None

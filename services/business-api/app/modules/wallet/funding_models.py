@@ -14,7 +14,7 @@ class DepositIntent(Base):
         UniqueConstraint('user_id', 'idempotency_key', name='uq_wallet_deposit_intent_request'),
         Index('uq_wallet_deposit_intent_open', 'user_id', unique=True,
               postgresql_where=text("status = 'OPEN'"), sqlite_where=text("status = 'OPEN'")),
-        CheckConstraint("status IN ('OPEN', 'EXPIRED', 'CLOSED_BY_REBIND', 'FULFILLED')", name='ck_wallet_deposit_intent_status'),
+        CheckConstraint("status IN ('OPEN', 'EXPIRED', 'CLOSED_BY_REBIND', 'FULFILLED', 'CANCELLED')", name='ck_wallet_deposit_intent_status'),
         CheckConstraint('expected_amount >= 10 AND binding_version > 0 AND binding_effective_from_block >= 0',
                         name='ck_wallet_deposit_intent_values'),
         CheckConstraint('expires_at > created_at', name='ck_wallet_deposit_intent_expiry'),
@@ -47,7 +47,7 @@ def _immutable_snapshot(mapper, connection, target):
         raise ValueError('immutable deposit intent snapshot')
     changed = state.attrs.status.history
     if state.attrs.closed_at.history.has_changes() or changed.has_changes():
-        if (list(changed.deleted) != ['OPEN'] or target.status not in {'EXPIRED', 'CLOSED_BY_REBIND', 'FULFILLED'}
+        if (list(changed.deleted) != ['OPEN'] or target.status not in {'EXPIRED', 'CLOSED_BY_REBIND', 'FULFILLED', 'CANCELLED'}
                 or target.closed_at is None):
             raise ValueError('immutable deposit intent lifecycle')
 
@@ -55,3 +55,20 @@ def _immutable_snapshot(mapper, connection, target):
 @event.listens_for(DepositIntent, 'before_delete')
 def _no_delete(mapper, connection, target):
     raise ValueError('immutable deposit intent cannot be deleted')
+
+
+class DepositIntentCancellation(Base):
+    __tablename__ = 'wallet_deposit_intent_cancellations'
+    __table_args__ = (UniqueConstraint('user_id', 'idempotency_key', name='uq_deposit_intent_cancel_request'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    intent_id: Mapped[str] = mapped_column(ForeignKey('wallet_deposit_intents.id'), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    response: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+@event.listens_for(DepositIntentCancellation, 'before_update')
+@event.listens_for(DepositIntentCancellation, 'before_delete')
+def _immutable_cancellation(mapper, connection, target):
+    raise ValueError('immutable deposit intent cancellation')

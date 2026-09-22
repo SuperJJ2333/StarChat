@@ -1,10 +1,11 @@
 from decimal import Decimal
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 
 from app.modules.ledger.service import LedgerService
+from app.modules.fx.models import FxRate
 from app.modules.identity.enums import HoldType
 from app.modules.identity.models import SecurityHold
 from app.modules.wallet.models import WalletControl, WalletConversion, WalletLedgerTransaction, WalletSafetyState
@@ -29,6 +30,10 @@ def auto_core():
 
 @pytest.fixture
 def repair_auto(auto_core):
+    now = datetime.now(timezone.utc)
+    with auto_core[1].begin() as session:
+        session.add(FxRate(pair='USD/CNY', rate=Decimal('7.12'), fetched_at=now,
+            expires_at=now + timedelta(hours=1), fetch_state='idle'))
     return repair.__wrapped__(auto_core)
 
 
