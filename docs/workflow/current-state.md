@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-23 main 整合与 Mi6 2159 Debug 已安装
+
+所有原本地分支提交已合入main，手机/钱包修复与会话恢复、历史定位同时保留。来源c7cff671，Flutter3870通过、analyze无问题、frontend245通过；后端/契约与已上线60238a4b完全一致复用2544/59。Mi6已保留数据覆盖安装0.4.1+2159 Debug，固定签名重建独立验证通过；用户业务效果待复验。Git远端未推送，生产未再次部署。mobile108/1与UI契约/迁移/OpenAPI/Compose检查通过；清理保留项见[报告](../verification/2026-09-23-main-integration-debug.md)和[任务](tasks/2026-09-23-main-integration-debug.md)。
+
 ## 2026-09-23 手机/钱包配套后端已上线（Mi6 2158无需重装）
 
 用户已授权恢复线上，随后明确5个客服沿用原平台地址。API/worker最终phone-wallet-20260923-r2，schema0083；恢复refresh协议、保留monitor-margin，换绑/FX/新旧取消路由可用，5客服目录及FINANCE_SUPPORT案件权限、后台面板已发布。完整门禁2544/59 exit0，PG认证11、前端237、旧群404兼容67通过；真实短信/资金操作未代测。最终候选60238a4b，主目录333个服务端文件回填一致。见[发布报告](../verification/2026-09-23-phone-wallet-live-restore.md)与[任务](tasks/2026-09-22-phone-wallet-live-restore.md)。后续部署以新现场与本报告为准，禁止用旧margin整树覆盖恢复修复。
