@@ -263,8 +263,8 @@ def test_transaction_cap_stops_before_receipt_fetch():
     assert len(chain.requests) == 2
 
 
-@pytest.mark.parametrize('status', [302, 429, 500])
-def test_http_errors_and_redirects_do_not_leak_request(status):
+@pytest.mark.parametrize('status,expected_calls', [(302, 1), (429, 2), (500, 2)])
+def test_http_errors_and_redirects_do_not_leak_request(status, expected_calls):
     calls = []
     def respond(request):
         calls.append(request)
@@ -273,7 +273,7 @@ def test_http_errors_and_redirects_do_not_leak_request(status):
     reader = module().TronReader(client=client, api_key='synthetic-token')
     with pytest.raises(module().TronReadError, match='^TRON request failed$'):
         reader.snapshot(ACCOUNT, 1000, 2000)
-    assert len(calls) == 1
+    assert len(calls) == expected_calls
 
 
 def test_invalid_window_never_calls_network():
@@ -334,3 +334,53 @@ def test_total_scan_deadline_stops_successful_but_slow_requests(monkeypatch):
 def test_invalid_scan_budget_is_rejected(seconds):
     with pytest.raises(ValueError):
         module().TronReader(max_scan_seconds=seconds)
+
+
+def test_transient_head_timeout_retries_once_and_recovers():
+    chain = Chain()
+    original = chain.respond
+    state = {'failed': False, 'head_attempts': 0}
+    def flaky(request):
+        if request.url.path.endswith('/getnowblock'):
+            state['head_attempts'] += 1
+            if not state['failed']:
+                state['failed'] = True
+                raise httpx.ReadTimeout('simulated slow solid head')
+        return original(request)
+    chain.respond = flaky
+    result = chain.reader().snapshot(ACCOUNT, 1000, 2000)
+    assert result['stable_balance'] is True and result['balance_units'] == 9000000
+    assert state['head_attempts'] == 3
+
+
+def test_client_error_is_never_retried():
+    chain = Chain()
+    original = chain.respond
+    calls = {'head': 0}
+    def bad(request):
+        if request.url.path.endswith('/getnowblock'):
+            calls['head'] += 1
+            return httpx.Response(400, json={})
+        return original(request)
+    chain.respond = bad
+    with pytest.raises(module().TronReadError):
+        chain.reader().snapshot(ACCOUNT, 1000, 2000)
+    assert calls['head'] == 1
+
+
+def test_retry_is_skipped_once_scan_budget_is_spent(monkeypatch):
+    chain = Chain()
+    reader_module = module()
+    original = chain.respond
+    state = {'head': 0, 'now': [1000.0]}
+    def slow_head(request):
+        if request.url.path.endswith('/getnowblock'):
+            state['head'] += 1
+            state['now'][0] += 59.0
+            return httpx.Response(503, json={})
+        return original(request)
+    chain.respond = slow_head
+    monkeypatch.setattr(reader_module.time, 'monotonic', lambda: state['now'][0])
+    with pytest.raises(reader_module.TronReadError):
+        chain.reader(max_scan_seconds=60).snapshot(ACCOUNT, 1000, 2000)
+    assert state['head'] == 1

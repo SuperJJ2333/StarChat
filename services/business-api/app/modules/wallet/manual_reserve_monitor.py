@@ -132,6 +132,10 @@ class ManualReserveMonitor:
         with self.factory.begin() as session:
             return self._block(session, code, _aware(self.clock()))
 
+    def _window_ms(self):
+        """Observer freshness window in milliseconds; matches the source config."""
+        return getattr(self.source, 'max_age_seconds', 120) * 1000
+
     def _pending_source(self, pending):
         with self.factory.begin() as session:
             lock_budget(session)
@@ -141,7 +145,8 @@ class ManualReserveMonitor:
                       pending_age_ms=now_ms-pending.since_ms if type(pending.since_ms) is int else None,
                       fresh_until_ms=pending.fresh_until_ms)
             if (type(pending.since_ms) is not int or type(pending.fresh_until_ms) is not int
-                    or not 0 <= pending.since_ms <= now_ms <= pending.fresh_until_ms <= now_ms+120000):
+                    or not 0 <= pending.since_ms <= now_ms <= pending.fresh_until_ms
+                    <= now_ms+self._window_ms()):
                 return self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)
             if now_ms-pending.since_ms >= 300000:
                 return self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)
@@ -431,9 +436,11 @@ class ManualReserveMonitor:
                         current = lock_budget(session)
                         row = publish_manual_reserve(session, expected_version=current.version if current is not None else None,
                             eligible_usdt=eligible, usdt_liability=usdt_liability(session), pending_payouts=0,
-                            observed_at=EPOCH+timedelta(milliseconds=cut.fresh_until_ms-120000), now=_aware(self.clock()),
+                            observed_at=EPOCH+timedelta(milliseconds=cut.fresh_until_ms-self._window_ms()),
+                            now=_aware(self.clock()),
                             source_identity=cut.source_identity, observation_id=cut.observation_id, cut_digest=cut.digest,
-                            evidence=evidence, actor_id=actor_id, idempotency_key=idempotency_key, policy=self.reserve_policy)
+                            evidence=evidence, actor_id=actor_id, idempotency_key=idempotency_key, policy=self.reserve_policy,
+                            max_age_ms=self._window_ms())
                         self._heartbeat(session, _aware(self.clock()))
                         return row
                     try:
@@ -472,10 +479,10 @@ class ManualReserveMonitor:
                 evidence.pop(key)
             row = publish_manual_reserve(session, expected_version=expected, eligible_usdt=eligible,
                 usdt_liability=liability, pending_payouts=pending,
-                observed_at=EPOCH+timedelta(milliseconds=cut.fresh_until_ms-120000), now=now,
+                observed_at=EPOCH+timedelta(milliseconds=cut.fresh_until_ms-self._window_ms()), now=now,
                 source_identity=cut.source_identity, observation_id=cut.observation_id, cut_digest=cut.digest,
                 evidence=evidence, actor_id=ACTOR, policy=self.reserve_policy, idempotency_key='manual-reserve:'+_digest(dict(
-                    cut=cut.digest, version=expected, liability=str(liability))))
+                    cut=cut.digest, version=expected, liability=str(liability))), max_age_ms=self._window_ms())
             self._heartbeat(session, now)
             # Publication and heartbeat may themselves wait on database locks.
             # Expiry here rolls the entire transaction back before fail-closed.

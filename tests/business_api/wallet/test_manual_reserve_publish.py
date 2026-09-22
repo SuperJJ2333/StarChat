@@ -30,7 +30,7 @@ def args(**overrides):
         pending_payouts=0, observed_at=NOW, now=NOW, source_identity='a'*64,
         observation_id=1, cut_digest='b'*64, evidence={'heartbeat_ms': int(NOW.timestamp()*1000),
             'fresh_until_ms': int(NOW.timestamp()*1000)+120000, 'healthy': True},
-        actor_id='monitor', idempotency_key='publish-1')
+        actor_id='monitor', idempotency_key='publish-1', max_age_ms=120000)
     values.update(overrides)
     if 'evidence' not in overrides:
         with localcontext() as ctx:

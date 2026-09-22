@@ -91,7 +91,7 @@ def _integer(value):
 class SQLiteFundingSource:
     def __init__(self, path, *, official_address, clock, max_age_seconds=120, solid_head_max_age_seconds=None):
         canonical_address(official_address)
-        if not callable(clock) or type(max_age_seconds) is not int or not 1 <= max_age_seconds <= 120:
+        if not callable(clock) or type(max_age_seconds) is not int or not 1 <= max_age_seconds <= 300:
             raise ValueError('bounded source freshness and clock required')
         self.path, self.official_address, self.clock = Path(path), official_address, clock
         self.source_identity = hashlib.sha256(('tron-mainnet-usdt:'+official_address).encode()).hexdigest()

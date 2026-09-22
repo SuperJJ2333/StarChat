@@ -67,9 +67,16 @@ def _word(value: object) -> str:
 
 
 class TronReader:
+    # Transient transport/provider failures that a single immediate retry may
+    # clear; every endpoint here is an idempotent read so a retry cannot
+    # duplicate an observation.
+    _RETRYABLE = frozenset({'CONNECT_TIMEOUT', 'READ_TIMEOUT', 'WRITE_TIMEOUT', 'POOL_TIMEOUT',
+        'CONNECT_ERROR', 'PROTOCOL_ERROR', 'HTTP_RATE_LIMITED', 'HTTP_SERVER_ERROR'})
+    _MIN_RETRY_BUDGET_SECONDS = 3.0
+
     def __init__(self, base_url: str = 'https://api.trongrid.io', api_key: str | None = None,
                  client: httpx.Client | None = None, *, max_pages: int = 100,
-                 max_transactions: int = 10000, max_scan_seconds: float = 60):
+                 max_transactions: int = 10000, max_scan_seconds: float = 90):
         url = urlsplit(base_url)
         if url.scheme != 'https' or not url.netloc or url.username or url.password or url.query or url.fragment:
             raise ValueError('TRON endpoint must be an HTTPS origin')
@@ -95,49 +102,56 @@ class TronReader:
             self._client.close()
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
-        started = time.monotonic()
         stage = {'/walletsolidity/getnowblock': 'head',
                  '/walletsolidity/triggerconstantcontract': 'balance',
                  '/walletsolidity/gettransactioninfobyid': 'receipt'}.get(path, 'unknown')
         if path.startswith('/v1/accounts/') and path.endswith('/transactions/trc20'):
             stage = 'history'
         context = dict(stage=stage, request_id=uuid4().hex)
-        diag.emit('DEBUG', 'request_started', component='reader', **context)
-        remaining = 20.0 if self._deadline is None else self._deadline - time.monotonic()
-        if remaining <= 0:
-            diag.emit('ERROR', 'request_failed', component='reader', reason_code='SCAN_DEADLINE', **context)
-            raise TronReadError('TRON scan deadline exceeded')
-        response = None
-        try:
-            response = self._client.request(method, self.base_url + path, headers=self._headers,
-                                            timeout=min(20.0, remaining), follow_redirects=False, **kwargs)
-            response.raise_for_status()
-            payload = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            reason = 'HTTP_TRANSPORT_ERROR'
-            for kind, code in ((httpx.ConnectTimeout, 'CONNECT_TIMEOUT'), (httpx.ReadTimeout, 'READ_TIMEOUT'),
-                    (httpx.WriteTimeout, 'WRITE_TIMEOUT'), (httpx.PoolTimeout, 'POOL_TIMEOUT'),
-                    (httpx.ConnectError, 'CONNECT_ERROR'), (httpx.RemoteProtocolError, 'PROTOCOL_ERROR'),
-                    (ValueError, 'INVALID_JSON')):
-                if isinstance(exc, kind):
-                    reason = code
-                    break
-            status = response.status_code if response is not None else None
-            if isinstance(exc, httpx.HTTPStatusError):
-                reason = 'HTTP_RATE_LIMITED' if status == 429 else 'HTTP_SERVER_ERROR' if status >= 500 else 'HTTP_CLIENT_ERROR'
-            diag.emit('ERROR', 'request_failed', component='reader', reason_code=reason,
-                      http_status=status, duration_ms=int((time.monotonic()-started)*1000),
-                      budget_ms=int(max(0, remaining)*1000), **context, **diag.exception_info(exc))
-            raise TronReadError('TRON request failed') from None
-        if self._deadline is not None and time.monotonic() >= self._deadline:
-            diag.emit('ERROR', 'request_failed', component='reader', reason_code='SCAN_DEADLINE', **context)
-            raise TronReadError('TRON scan deadline exceeded')
-        if not isinstance(payload, dict) or any(key in payload for key in ('Error', 'error')):
-            diag.emit('ERROR', 'request_failed', component='reader', reason_code='INVALID_RESPONSE', **context)
-            raise TronReadError('Malformed TRON response')
-        diag.emit('DEBUG', 'request_completed', component='reader', http_status=response.status_code,
-                  duration_ms=int((time.monotonic()-started)*1000), **context)
-        return payload
+        attempt = 0
+        while True:
+            started = time.monotonic()
+            diag.emit('DEBUG', 'request_started', component='reader', attempt=attempt, **context)
+            remaining = 20.0 if self._deadline is None else self._deadline - time.monotonic()
+            if remaining <= 0:
+                diag.emit('ERROR', 'request_failed', component='reader', reason_code='SCAN_DEADLINE', **context)
+                raise TronReadError('TRON scan deadline exceeded')
+            response = None
+            try:
+                response = self._client.request(method, self.base_url + path, headers=self._headers,
+                                                timeout=min(20.0, remaining), follow_redirects=False, **kwargs)
+                response.raise_for_status()
+                payload = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                reason = 'HTTP_TRANSPORT_ERROR'
+                for kind, code in ((httpx.ConnectTimeout, 'CONNECT_TIMEOUT'), (httpx.ReadTimeout, 'READ_TIMEOUT'),
+                        (httpx.WriteTimeout, 'WRITE_TIMEOUT'), (httpx.PoolTimeout, 'POOL_TIMEOUT'),
+                        (httpx.ConnectError, 'CONNECT_ERROR'), (httpx.RemoteProtocolError, 'PROTOCOL_ERROR'),
+                        (ValueError, 'INVALID_JSON')):
+                    if isinstance(exc, kind):
+                        reason = code
+                        break
+                status = response.status_code if response is not None else None
+                if isinstance(exc, httpx.HTTPStatusError):
+                    reason = 'HTTP_RATE_LIMITED' if status == 429 else 'HTTP_SERVER_ERROR' if status >= 500 else 'HTTP_CLIENT_ERROR'
+                diag.emit('ERROR', 'request_failed', component='reader', reason_code=reason,
+                          http_status=status, duration_ms=int((time.monotonic()-started)*1000),
+                          budget_ms=int(max(0, remaining)*1000), attempt=attempt, **context, **diag.exception_info(exc))
+                budget_after = self._deadline - time.monotonic() if self._deadline is not None else 20.0
+                if attempt == 0 and reason in self._RETRYABLE and budget_after >= self._MIN_RETRY_BUDGET_SECONDS:
+                    attempt += 1
+                    time.sleep(1.5 if reason == 'HTTP_RATE_LIMITED' else 0.5)
+                    continue
+                raise TronReadError('TRON request failed') from None
+            if self._deadline is not None and time.monotonic() >= self._deadline:
+                diag.emit('ERROR', 'request_failed', component='reader', reason_code='SCAN_DEADLINE', **context)
+                raise TronReadError('TRON scan deadline exceeded')
+            if not isinstance(payload, dict) or any(key in payload for key in ('Error', 'error')):
+                diag.emit('ERROR', 'request_failed', component='reader', reason_code='INVALID_RESPONSE', **context)
+                raise TronReadError('Malformed TRON response')
+            diag.emit('DEBUG', 'request_completed', component='reader', http_status=response.status_code,
+                      duration_ms=int((time.monotonic()-started)*1000), attempt=attempt, **context)
+            return payload
 
     def _head(self) -> tuple[int, int, str]:
         data = self._request('POST', '/walletsolidity/getnowblock', json={})

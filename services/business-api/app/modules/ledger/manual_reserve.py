@@ -48,7 +48,7 @@ def _stored_aware(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def _source_evidence(value, observed):
+def _source_evidence(value, observed, *, max_age_ms):
     allowed = {'max_rowid', 'checkpoint_ms', 'solid_block', 'heartbeat_ms', 'fresh_until_ms', 'balance_units', 'healthy'}
     if not isinstance(value, Mapping) or set(value) != allowed:
         raise ValueError('invalid reserve evidence')
@@ -65,7 +65,8 @@ def _source_evidence(value, observed):
             result[key] = str(item)
         else:
             _integer(item)
-    source_ms = result['fresh_until_ms'] - 120000
+    _integer(max_age_ms, minimum=1000, maximum=300000)
+    source_ms = result['fresh_until_ms'] - max_age_ms
     delta = observed - _EPOCH
     observed_us = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
     if observed_us != source_ms * 1000 or source_ms > result['heartbeat_ms']:
@@ -75,7 +76,8 @@ def _source_evidence(value, observed):
 
 def publish_manual_reserve(session, *, expected_version, eligible_usdt, usdt_liability,
                            pending_payouts, observed_at, now, source_identity, observation_id,
-                           cut_digest, evidence, actor_id, idempotency_key, policy='full_backing'):
+                           cut_digest, evidence, actor_id, idempotency_key, policy='full_backing',
+                           max_age_ms=120000):
     """Publish atomically; exact replay excludes retry clock and never refreshes.
 
     The caller must roll back its transaction on any error. Staged caller facts
@@ -100,7 +102,7 @@ def publish_manual_reserve(session, *, expected_version, eligible_usdt, usdt_lia
         raise ValueError('invalid reserve idempotency key')
     eligible, liability = _amount(eligible_usdt), _amount(usdt_liability)
     observed, clock = _aware(observed_at), _aware(now)
-    source_cut = _source_evidence(evidence, observed)
+    source_cut = _source_evidence(evidence, observed, max_age_ms=max_age_ms)
     canonical_cut = dict(source_cut, source_identity=source_identity, observation_id=observation_id)
     canonical_cut['balance_units'] = int(canonical_cut['balance_units'])
     actual_cut_digest = hashlib.sha256(json.dumps(canonical_cut, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
