@@ -67,3 +67,42 @@ async def test_register_transfer_owner_view_contract():
         assert view.json()['owner_user_id'] == 'u1'
         assert view.json()['owner_desync'] is False
     engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_unregistered_transfer_timeline_reports_missing_business_group():
+    from sqlalchemy import select
+    from app.modules.groups.models import BusinessGroup, GroupTransferIntent
+
+    engine = create_engine('sqlite+pysqlite:///:memory:',
+        connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = create_session_factory(engine)
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add(User(id='legacy-member', username='legacy-member',
+            username_normalized='legacy-member', email='member@x.test',
+            email_normalized='member@x.test', password_hash='unused',
+            status=AccountStatus.ACTIVE, matrix_user_id=ALICE,
+            created_at=now, updated_at=now))
+    class NoMatrixLookup:
+        def get_room_state(self, room_id):
+            pytest.fail('Timeline lookup must not infer a business owner from Matrix')
+        def get_room_members(self, room_id):
+            pytest.fail('Missing business registry needs no Matrix lookup')
+    settings = Settings(_env_file=None, environment='test', jwt_secret='x' * 32)
+    app = create_app(settings, session_factory=factory, matrix_gateway=NoMatrixLookup())
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            route = f'/api/v1/groups/{ROOM}/transfer-intents'
+            assert (await client.get(route)).status_code == 401
+            missing = await client.get(route, headers=bearer(settings, 'legacy-member'))
+            assert missing.status_code == 404, missing.text
+            assert missing.json()['error']['code'] == 'GROUP_NOT_REGISTERED'
+            assert 'items' not in missing.json()
+        with factory() as session:
+            assert session.scalar(select(BusinessGroup)) is None
+            assert session.scalar(select(GroupTransferIntent)) is None
+        assert settings.group_transfer_coordination_enabled is False
+    finally:
+        engine.dispose()

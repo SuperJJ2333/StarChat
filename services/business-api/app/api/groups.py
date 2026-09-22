@@ -736,7 +736,9 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
         with factory.begin() as session:
             _operator(session, actor_user_id)
         view = group_registry.group_view(room_id)
-        is_owner = view is not None and view.get('owner_user_id') == actor_user_id
+        if view is None:
+            raise AppError(code='GROUP_NOT_REGISTERED', message='群未注册', status_code=404)
+        is_owner = view.get('owner_user_id') == actor_user_id
         if not is_owner:
             rbac.require(actor_user_id, Permission.SYSTEM_ADMIN)
         return {'room_id': room_id, 'items': group_registry_coordinator.intents_timeline(room_id)}
