@@ -939,3 +939,7 @@ Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-histor
 ## 2026-09-21 凭证刷新异常恢复修复（源码完成）
 
 用户批准ADR-0080，分支codex/session-refresh-recovery-20260921完成实现、领域/安全审查与门禁。Flutter3757/analyze0、后端合并证据2301通过/48条件跳过、PG8通过。未部署或构建新包。[任务](tasks/2026-09-21-session-refresh-recovery.md) · [验证](../verification/2026-09-21-session-refresh-recovery.md) · [发布手册](../runbooks/mobile-refresh-recovery-release.md)。
+
+## 2026-09-22 Android v0.4.0/2157 与刷新恢复服务器（已发布）
+
+服务器refresh-040-20260922/0080已上线；Android正式ARM64 0.4.0+2157已发布，候选28bdfc48包含main2156全部指定修复、刷新恢复及启动会话保护。Flutter3803/analyze0、生产隔离恢复与协议门禁、APK固定签名重建通过；iOS设置和最低版本未改，真机待反馈。[任务](tasks/2026-09-22-android-040-release.md) · [报告](../verification/2026-09-22-android-040-release.md)。
