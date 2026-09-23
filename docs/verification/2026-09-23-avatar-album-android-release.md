@@ -75,3 +75,9 @@ HTML demo页面：`http://127.0.0.1:8157/index.html?screen=profile-avatar-crop`�
 SettingService回读Android 0.4.6/2165、minimum3、新更新说明及不可变APK URL；全部iOS设置逐键不变（当前生产0.3.102/2144）。Settings审计与原值备份位于服务器 `/opt/starchat/docs/verification/artifacts/2026-09-23/avatar-album-android-2165`，镜像/数据库备份位于私有r2发布目录。工作站经专属loopback SOCKS+jump验证HTTPS APK HEAD200、80,718,878字节，业务域未授权接口401 JSON；没有重复下载APK或假称设备安装已验证。
 
 未做本轮真机安装/视频编解码、iOS平台验收、实际多设备公告密钥互发；这些不计入自动化通过。最后步骤为main回填/提交/推送及已归档远程分支清理，证据将记录在本任务git日志。
+
+## Git收尾完成
+
+代码提交 **12ded27596a0081862b4ce5eeee91eb7f0708326** 已正常推送origin/main（包含原42个未推送祖先提交，无强推）。本地5个codex分支和远程2个已合入分支均已归档后删除引用；本地/远程仅main。分支bundle、逐分支差异及未追踪文件zip保留。原工作目录保留detached，不删除未提交文件。根主目录与候选113路径哈希核对后整合，Git实际提交112文件；一次Windows映射文件写入受阻后，重新全量校验目的路径并采用原子替换完成，没有关闭用户IDE或覆盖未知改动。
+
+原始证据集中保存在根目录 artifacts 同名任务文件夹；源码构建/重建APK大文件及解包树仍留 `.worktrees/avatar-album-release/docs/verification/artifacts/2026-09-23/avatar-album-release/android-final/`，不纳入Git。此次交付不包含真机验收，也未声称iOS旧安装包已获得代码修复。

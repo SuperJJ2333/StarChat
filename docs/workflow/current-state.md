@@ -2,7 +2,7 @@
 
 ## 2026-09-23 Android0.4.6/2165已发布：头像缓存/统一相册/公告恢复/朋友圈视频
 
-本人头像缓存身份统一；相册头像仅静态图片、隐藏视频/GIF，复用Flutter方形编辑器；公告补标准SDK缺密钥请求；朋友圈复用相册/播放器/账户媒体缓存，MP4/QuickTime≤20MiB。Android正式重建固定签名，最终SHA60826c92，官网APK和Android更新弹窗发布成功；iOS设置未动。APIe15807b2/worker90696ffa、schema0087，22其他容器不变。Flutter3971+更新delta18、frontend299；后端2727/74条件跳过、最终草稿delta21；原verify因备用版本号旧值exit1，修正后mobile108/1及后续门禁exit0。Git正在收尾。见[报告](../verification/2026-09-23-avatar-album-android-release.md)、[任务](tasks/2026-09-23-avatar-album-release.md)。本轮未真机验收/未发布iOS。
+本人头像缓存身份统一；相册头像仅静态图片、隐藏视频/GIF，复用Flutter方形编辑器；公告补标准SDK缺密钥请求；朋友圈复用相册/播放器/账户媒体缓存，MP4/QuickTime≤20MiB。Android正式重建固定签名，最终SHA60826c92，官网APK和Android更新弹窗发布成功；iOS设置未动。APIe15807b2/worker90696ffa、schema0087，22其他容器不变。Flutter3971+更新delta18、frontend299；后端2727/74条件跳过、最终草稿delta21；原verify因备用版本号旧值exit1，修正后mobile108/1及后续门禁exit0。代码提交12ded275已推送main，本地/远程仅保留main，分支归档保留。见[报告](../verification/2026-09-23-avatar-album-android-release.md)、[任务](tasks/2026-09-23-avatar-album-release.md)。本轮未真机验收/未发布iOS。
 ## 2026-09-23 Debug2164已安装，群主转让服务器已启用
 
 Mi6保留数据安装0.4.5+2164 Debug，SHA/固定签名/首次安装时间/启动通过。验证码页品牌、公告解密恢复、钱包账号隔离缓存和账单行已进包。生产API38cf79c5/worker85620b2c，协调开关实际true；335源码/136表218320行隔离恢复/22其他容器/双侧HTTPS通过，schema0087不变。后端2706/68条件跳过；原verify因旧屏数2断言exit1，更新401后mobile108/1跳过及剩余门禁exit0，不冒称原完整脚本exit0。Flutter3932+最后FX167、frontend298通过。原群公告与钱包弱网效果待用户复验。见[报告](../verification/2026-09-23-debug-feedback.md)、[任务](tasks/2026-09-23-debug-feedback.md)。
