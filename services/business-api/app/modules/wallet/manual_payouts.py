@@ -28,6 +28,7 @@ from app.modules.wallet.service import WalletLedger
 from app.modules.wallet.manual_payout_models import (
     ManualPayoutQuote, ManualPayoutOrder, ManualPayoutCommand, ManualPayoutEvent, ManualPayoutCandidate,
 )
+from app.modules.wallet.support_payout import SupportPayoutState, support_payout_projection
 
 
 def _fail(code, status=409):
@@ -78,6 +79,7 @@ class ManualPayoutService:
     user_mfa_required = True
     reserve_policy = 'full_backing'
     conversions_enabled = False
+    support_orders_enabled = False
     def __init__(self, session_factory, *, official_config, policy, owner_admin_id, mfa_verifier, finality, clock, rate_provider=None):
         if not isinstance(policy, ManualPayoutPolicy) or not official_config.version:
             raise ValueError('explicit server policy required')
@@ -170,8 +172,7 @@ class ManualPayoutService:
         session.flush()
         return response
 
-    @staticmethod
-    def _result(row):
+    def _result(self, row):
         quote = object_session(row).get(ManualPayoutQuote, row.quote_id)
         terms = quote.snapshot
         asset = terms.get('funding_asset', 'USDT')
@@ -186,7 +187,8 @@ class ManualPayoutService:
             conversion_rate=terms.get('conversion_rate', '1'), rate_stale=bool(terms.get('rate_stale', False)),
             final_rate=format(row.final_rate, '.6f') if row.final_rate is not None else None,
             final_receive=format(final_receive, '.6f'),
-            cancellation_asset=asset)
+            cancellation_asset=asset,
+            **support_payout_projection(object_session(row),row,self._now()))
 
     def quote_status(self, *, user_id, quote_id):
         with self.factory.begin() as session:
@@ -243,7 +245,7 @@ class ManualPayoutService:
             snapshot = dict(binding_id=binding.id, binding_version=binding.version, target_address=binding.address,
                 official_address=self.official_config.address, official_config_version=self.official_config.version,
                 owner_admin_id=self.owner_admin_id,
-                policy_version=self.policy.version, approval_policy='OWNER_MANUAL_V1', finality_policy=POLICY,
+                policy_version=self.policy.version, approval_policy='SUPPORT_MANUAL_V1' if self.support_orders_enabled else 'OWNER_MANUAL_V1', finality_policy=POLICY,
                 network=NETWORK, contract=USDT_CONTRACT, amount=amount, fee='0.000000', hold=receive_amount, receive=receive_amount,
                 minimum='10.000000', max_per=format(self.policy.max_per, '.6f'), user_24h=format(self.policy.user_24h, '.6f'),
                 global_24h=format(self.policy.global_24h, '.6f'), safety_epoch=epoch, created_at=now.isoformat(),
@@ -346,6 +348,8 @@ class ManualPayoutService:
             row = ManualPayoutOrder(id=str(uuid4()), quote_id=quote_id, user_id=user_id, amount=payout_usdt,
                 digest=quote.digest, status='REQUESTED', created_at=now, updated_at=now)
             session.add(row)
+            if terms.get('approval_policy') == 'SUPPORT_MANUAL_V1':
+                session.add(SupportPayoutState(order_id=row.id,expires_at=now+timedelta(hours=2),version=0,review_required=False))
             if funding_asset == 'CAIBI':
                 from decimal import ROUND_HALF_UP
                 from app.modules.wallet.conversions import convert_for_payout
@@ -391,7 +395,7 @@ class ManualPayoutService:
         payload = dict(order_id=order_id, new_rate=format(rate, '.6f'), reason_code=reason_code)
         with self.factory.begin() as session:
             row, locked = self._order_lock(session, order_id)
-            require_wallet_actor(session, user_id=admin_id, clock=self.clock, administrator=True)
+            self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: self._fresh_mfa(verified_at)
             fresh()
             if row.claimed_by is None:
@@ -461,6 +465,30 @@ class ManualPayoutService:
         locked = self._lock(session, uid)
         return session.get(ManualPayoutOrder, order_id, with_for_update=True), locked
 
+    def _financial_actor(self, session, row, admin_id, authorize):
+        quote=session.get(ManualPayoutQuote,row.quote_id)
+        if quote.snapshot.get('approval_policy') == 'SUPPORT_MANUAL_V1':
+            from app.modules.wallet.support_payout import _PayoutAuthorization
+            if (not isinstance(authorize,_PayoutAuthorization) or authorize.order_id!=row.id
+                    or authorize.claims.get('sub')!=admin_id):
+                _fail('SUPPORT_PAYOUT_AUTHORIZATION_REQUIRED',403)
+            require_wallet_actor(session,user_id=admin_id,clock=self.clock)
+        else:
+            require_wallet_actor(session,user_id=admin_id,clock=self.clock,administrator=True)
+
+    def payment_instructions(self, *, admin_id, order_id, expected_digest, authorize):
+        with self.factory.begin() as session:
+            row,_=self._order_lock(session,order_id)
+            self._financial_actor(session,row,admin_id,authorize)
+            fresh=authorize(session)
+            if row.status!='CLAIMED' or row.claimed_by!=admin_id:
+                _fail('WALLET_PAYOUT_CLAIM_UNAVAILABLE')
+            if expected_digest not in (row.digest,row.adjusted_digest):
+                _fail('WALLET_PAYOUT_DIGEST_CONFLICT')
+            result=self._claim_result(row,session.get(ManualPayoutQuote,row.quote_id))
+            fresh()
+            return result
+
     @_precise
     def cancel(self, *, user_id, order_id, idempotency_key):
         now = self._now()
@@ -474,6 +502,9 @@ class ManualPayoutService:
             if replay:
                 return replay
             if row.status != 'REQUESTED':
+                _fail('WALLET_PAYOUT_CANNOT_CANCEL')
+            support_state=session.get(SupportPayoutState,row.id,with_for_update=True)
+            if support_state is not None and support_state.execution_started_at is not None:
                 _fail('WALLET_PAYOUT_CANNOT_CANCEL')
             self.wallet_ledger.post(entries={'HOLD:'+user_id: -row.amount, user_id: row.amount}, actor_id=user_id,
                 reason_code='MANUAL_PAYOUT_CANCELLED', idempotency_key=row.id, scope='wallet.manual_release', session=session)
@@ -500,11 +531,11 @@ class ManualPayoutService:
         payload = dict(order_id=order_id, expected_digest=expected_digest)
         with self.factory.begin() as session:
             row, locked = self._order_lock(session, order_id)
-            require_wallet_actor(session, user_id=admin_id, clock=self.clock, administrator=True)
+            self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: self._fresh_mfa(verified_at)
             fresh()
             quote = session.get(ManualPayoutQuote, row.quote_id)
-            if admin_id != quote.snapshot['owner_admin_id']:
+            if quote.snapshot.get('approval_policy') != 'SUPPORT_MANUAL_V1' and admin_id != quote.snapshot['owner_admin_id']:
                 _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
             replay = self._replay(session, admin_id, 'CLAIM', idempotency_key, payload)
             if replay:
@@ -550,7 +581,7 @@ class ManualPayoutService:
         payload = dict(order_id=order_id, txid=txid)
         with self.factory.begin() as session:
             row, _ = self._order_lock(session, order_id)
-            require_wallet_actor(session, user_id=admin_id, clock=self.clock, administrator=True)
+            self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: None
             fresh()
             if row.claimed_by != admin_id:
@@ -589,7 +620,7 @@ class ManualPayoutService:
         payload = dict(order_id=order_id, txid=txid, reason_code=reason_code)
         with self.factory.begin() as session:
             row, _ = self._order_lock(session, order_id)
-            require_wallet_actor(session, user_id=admin_id, clock=self.clock, administrator=True)
+            self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: self._fresh_mfa(verified_at)
             fresh()
             if row.claimed_by != admin_id:
@@ -630,7 +661,7 @@ class ManualPayoutService:
             and type(transfer.log_index) is int and transfer.log_index >= 0]
 
     @_precise
-    def reconcile(self, *, order_id):
+    def reconcile(self, *, order_id, authorize=None):
         with self.factory() as session:
             row = session.get(ManualPayoutOrder, order_id)
             if row is None:
@@ -648,6 +679,8 @@ class ManualPayoutService:
         now = self._now()
         with self.factory.begin() as session:
             row, locked = self._order_lock(session, order_id)
+            fresh = authorize(session) if authorize is not None else lambda: None
+            fresh()
             if row.status not in {'CLAIMED', 'UNKNOWN'} or row.review_reason == 'MULTIPLE_MATCHING_PAYOUT_EVENTS':
                 return self._result(row)
             if self._candidates(session, row) != candidates:
@@ -673,6 +706,7 @@ class ManualPayoutService:
                 if row.status != 'UNKNOWN' or row.review_reason != reason:
                     row.status, row.review_reason, row.updated_at = 'UNKNOWN', reason, now
                     audit_write(session, 'manual-payout-reconciler', row.id, 'wallet.manual_payout_review', reason)
+                fresh()
                 return self._result(row)
             payable = self._payable(row, quote)
             session.add(ManualPayoutEvent(id=str(uuid4()), order_id=row.id, network=NETWORK, contract=USDT_CONTRACT,
@@ -686,6 +720,7 @@ class ManualPayoutService:
             row.status, row.review_reason, row.updated_at = 'SETTLED', None, now
             audit_write(session, 'manual-payout-reconciler', row.id, 'wallet.manual_payout_settled', 'MANUAL_PAYOUT_SETTLED')
             session.flush()
+            fresh()
             return self._result(row)
 
     def status(self, *, user_id, order_id):

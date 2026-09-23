@@ -43,6 +43,28 @@ def issue(context):
     return context[0].verify(claims=context[3], operation_password='operation-password-123')
 
 
+def test_new_grant_is_complete_before_autoflush(grant_context):
+    grant_context[1].configure(autoflush=True)
+    assert issue(grant_context)['verified'] is True
+
+
+def test_support_scope_never_satisfies_owner_scope_or_operation_proof(grant_context):
+    from app.modules.identity.wallet_grant import WalletAccessGrantService
+    from app.modules.identity.operation_password import AdminWalletOperationPasswordService
+    owner, factory, now, claims, settings = grant_context
+    support = WalletAccessGrantService(settings, factory, lambda:now[0], scope='support-orders')
+    issue(grant_context)
+    with pytest.raises(AppError, match='WALLET_ACCESS_REQUIRED'): support.require(claims=claims)
+    support.verify(claims=claims, operation_password='operation-password-123')
+    support.require(claims=claims)
+    with pytest.raises(AppError, match='WALLET_ACCESS_REQUIRED'): owner.require(claims=claims)
+    own = AdminWalletOperationPasswordService(factory,owner_id=lambda:'owner',auth_mode=lambda:'operation_password',clock=lambda:now[0])
+    scoped = AdminWalletOperationPasswordService(factory,owner_id=lambda:'owner',auth_mode=lambda:'operation_password',clock=lambda:now[0],scope='support-orders')
+    proof = scoped.verify(claims=claims,operation_password='operation-password-123')
+    with factory.begin() as session:
+        with pytest.raises(AppError, match='OPERATION_PASSWORD_REQUIRED'): own.authorization(claims=claims,proof=proof)(session)
+
+
 def test_fixed_deadline_and_old_login(grant_context):
     service, factory, now, claims, _ = grant_context
     now[0] += timedelta(minutes=10)

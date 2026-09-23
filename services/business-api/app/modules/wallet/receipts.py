@@ -28,7 +28,9 @@ def utc(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-class DepositReceiptService:
+from app.modules.wallet.recharge_receipts import RechargeReceiptOperations, reserved_for_recharge
+
+class DepositReceiptService(RechargeReceiptOperations):
     reserve_policy = 'full_backing'
     deposit_auto_conversion_enabled = False
     auto_deposit_enabled = True
@@ -64,6 +66,8 @@ class DepositReceiptService:
             session.flush()
 
     def _match(self, session, row, *, reevaluate=False):
+        if reserved_for_recharge(session, row.id):
+            return None, 'SUPPORT_RECHARGE_RESERVED'
         if row.reason_code != 'UNMATCHED' and not (reevaluate and row.reason_code in {
                 'DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE', 'AUTO_CONVERSION_RETRY_REQUIRED',
                 'MULTIPLE_MATCHING_LOGS'}):

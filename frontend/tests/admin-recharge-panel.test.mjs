@@ -25,9 +25,17 @@ const FX={rate:'7.120000',fetched_at:'2026-09-21T12:00:00+00:00',stale:false,dis
 const VALUATION={caibi_face:'100.00',caibi_reference_usdt:'14.044944',usdt_obligation:'12.000000',
   valuation_rate:'7.120000',approved_unpaid_usdt:'0.000000'};
 
+async function claimedPanel(api){
+  const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();await settle();
+  panel.find('button').find(b=>b.textContent==='认领案件')?.handlers.click();await settle();await settle();return panel;
+}
 function makeApi(calls){
+  let pending=structuredClone(PENDING);pending.items[0].payment_verified=true;
   return {
-    getRechargePending:async()=>{calls.push(['pending']);return PENDING;},
+    claimRecharge:async()=>{pending.items[0]={...pending.items[0],claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...pending.items[0],claim_token:'lease'};},
+    heartbeatRecharge:async()=>pending.items[0],
+    settleRecharge:async(path,body,options)=>{calls.push(['bind',`/api/v1/recharge/admin/requests/${encodeURIComponent(path)}/settlement`,body,options]);return {state:'BOUND'};},
+    getRechargePending:async()=>{calls.push(['pending']);return pending;},
     bindRechargeAdjustment:async(path,body,options)=>{calls.push(['bind',`/api/v1/recharge/admin/requests/${encodeURIComponent(path)}/bind`,body,options]);return {state:'BOUND'};},
     completeRechargeBinding:async(path,options)=>{calls.push(['complete',`/api/v1/recharge/admin/requests/${encodeURIComponent(path)}/complete-binding`,options]);return {status:'CREDITED',binding_state:'REGISTERED'};},
     rejectRecharge:async(path,body,options)=>{calls.push(['reject',`/api/v1/recharge/admin/requests/${encodeURIComponent(path)}/reject`,body,options]);return {status:'REJECTED'};},
@@ -65,7 +73,7 @@ test('case and directory reload buttons invoke the API again', async()=>{
 test('completion awaiting approval explicitly remains uncredited', async()=>{
   install();const calls=[];const api=makeApi(calls);
   api.completeRechargeBinding=async()=>({status:'PENDING_APPROVAL',binding_state:'BOUND'});
-  const panel=rechargePanel(api);await settle();await settle();
+  const panel=await claimedPanel(api);
   panel.find('button').find(b=>b.textContent==='完成登记').handlers.click();
   await settle();await settle();
   assert.ok(panel.find('p').some(p=>p.textContent.includes('尚未执行')));
@@ -86,7 +94,7 @@ test('recharge panel renders pending cases with stale-marked reference rate and 
 
 test('bind submits adjustment id with idempotency key; empty id is rejected locally', async()=>{
   install();const calls=[];
-  const panel=rechargePanel(makeApi(calls));await settle();await settle();
+  const panel=await claimedPanel(makeApi(calls));
   const inputs=panel.find('input');
   const adjInput=inputs.find(i=>i.placeholder==='财务调整 ID');
   const bindButton=panel.find('button').find(b=>b.textContent==='绑定调整');
@@ -94,17 +102,18 @@ test('bind submits adjustment id with idempotency key; empty id is rejected loca
   const bindCalls=calls.filter(([k])=>k==='bind');
   assert.equal(bindCalls.length,0,'缺少调整 ID 时不得发出命令');
   adjInput.value='adj-1';
+  inputs.find(i=>i.placeholder==='最终结算率（点钻/USDT）').value='7';
   bindButton.handlers.click();await settle();
   const sent=calls.filter(([k])=>k==='bind');
   assert.equal(sent.length,1);
   assert.equal(sent[0][1],'/api/v1/recharge/admin/requests/req-1/bind');
-  assert.deepEqual(sent[0][2],{adjustment_id:'adj-1'});
-  assert.equal(sent[0][3].idempotencyKey,'bind:req-1:adj-1');
+  assert.deepEqual(sent[0][2],{adjustment_id:'adj-1',final_rate:'7'});
+  assert.equal(sent[0][3].idempotencyKey,'bind:req-1:adj-1:7');
 });
 
 test('complete registration surfaces authoritative reply instead of assuming success', async()=>{
   install();const calls=[];
-  const panel=rechargePanel(makeApi(calls));await settle();await settle();
+  const panel=await claimedPanel(makeApi(calls));
   const complete=panel.find('button').find(b=>b.textContent==='完成登记');
   complete.handlers.click();await settle();
   const sent=calls.filter(([k])=>k==='complete');
@@ -115,7 +124,7 @@ test('complete registration surfaces authoritative reply instead of assuming suc
 
 test('reject requires a reason and sends it with idempotency', async()=>{
   install();const calls=[];
-  const panel=rechargePanel(makeApi(calls));await settle();await settle();
+  const panel=await claimedPanel(makeApi(calls));
   const rejectInput=panel.find('input').find(i=>i.placeholder==='拒绝原因');
   const rejectButton=panel.find('button').find(b=>b.textContent==='拒绝');
   rejectButton.handlers.click();await settle();
@@ -285,4 +294,70 @@ test('empty lookup does not invalidate an existing valid in-flight lookup',async
  const panel=rechargePanel(api);await settle();const input=panel.find('input').find(x=>x.placeholder==='案件 ID');const button=panel.find('button').find(x=>x.textContent==='查看时间线');
  input.value='valid-case';button.handlers.click();input.value='';await button.handlers.click();timelineResolve({request_id:'valid-case',status:'SUBMITTED',items:[]});await settle();assert.ok(panel.find('pre')[0].textContent.includes('valid-case'));
  const room=panel.find('input').find(x=>x.placeholder.startsWith('房间 ID'));room.value='!a:test';const lookup=panel.loadTransferIntents();room.value='';await panel.loadTransferIntents();intentsResolve({items:[{id:'valid-intent',stage:'COMPLETED'}]});await lookup;assert.ok(panel.find('td').some(x=>x.textContent==='valid-intent'));
+});
+
+
+test('other actor is read-only; unverified owned order cannot settle; forbidden heartbeat removes mutation',async()=>{
+  install();let item={...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString(),claimed_by:'other',claim_expires_at:new Date(Date.now()+300000).toISOString()};
+  const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff'};return {...item,claim_token:'lease'};},heartbeatRecharge:async()=>{throw {status:403};}};
+  const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
+  assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
+  item={...item,claimed_by:null};await panel.refreshOrders();
+  panel.find('button').find(b=>b.textContent==='认领案件').handlers.click();await settle();await settle();
+  assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),true);
+  assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
+  document.hidden=true;await panel.heartbeat();assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),true);
+  document.hidden=false;await panel.heartbeat();assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),false);
+  panel.dispose();
+});
+
+test('late pending response cannot restore another actor actions and disposed panel cannot claim',async()=>{
+  install();const managedPending={items:[{...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString()}]};const pending=[];let claims=0;const api={...makeApi([]),getRechargePending:()=>new Promise(resolve=>pending.push(resolve)),claimRecharge:async()=>{claims++;return {};}};
+  const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
+  const newer=panel.refreshOrders();pending[1]({items:[{...PENDING.items[0],claimed_by:'other',claim_expires_at:new Date(Date.now()+300000).toISOString()}]});await newer;
+  pending[0](managedPending);await settle();assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  const latest=panel.refreshOrders();pending[2](managedPending);await latest;
+  const claim=panel.find('button').find(b=>b.textContent==='认领案件');panel.dispose();claim.handlers.click();await settle();assert.equal(claims,0);
+});
+
+test('overdue managed order needs explicit finance review claim and reason',async()=>{
+  install();let sent;
+  const item={...PENDING.items[0],processing_stage:'NEEDS_REVIEW',expires_at:'2020-01-01T00:00:00Z'};
+  const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),claimRecharge:async(...args)=>{sent=args;return {};}};
+  const normal=rechargePanel(api,{actor:{id:'staff'}});await settle();assert.equal(normal.find('button').some(b=>b.textContent.includes('认领')),false);normal.dispose();
+  const panel=rechargePanel(api,{actor:{id:'staff'},canReview:true});await settle();
+  const button=panel.find('button').find(b=>b.textContent==='认领待核对案件');button.handlers.click();await settle();assert.equal(sent,undefined);
+  panel.find('input').find(i=>i.placeholder.includes('核对受理原因')).value='迟到账需核对';button.handlers.click();await settle();await settle();
+  assert.deepEqual(sent[2],{review:true,reason:'迟到账需核对'});panel.dispose();
+});
+
+test('historical orders keep direct bind registration without unsupported claim',async()=>{
+  install();const calls=[];const api=makeApi(calls);const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
+  assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  assert.ok(panel.find('button').some(b=>b.textContent==='绑定调整'));
+  panel.find('input').find(i=>i.placeholder==='财务调整 ID').value='history-adj';
+  panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）').value='7';
+  panel.find('button').find(b=>b.textContent==='绑定调整').handlers.click();await settle();
+  assert.equal(calls.find(([kind])=>kind==='bind')[1],'/api/v1/recharge/admin/requests/req-1/bind');panel.dispose();
+});
+
+test('independent administrator can approve a bound order without taking its claim',async()=>{
+  install();let sent;
+  const api={...makeApi([]),getRechargePending:async()=>({items:[{...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString(),claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString(),binding_adjustment_id:'approved-domain-adj',settlement_status:'SUBMITTED',settlement_submitted_by:'staff',binding_final_rate:'7',binding_final_caibi_amount:'350.00'}]}),adminReviewAdjustment:async(...args)=>{sent=args;return {status:'ADMIN_APPROVED'};}};
+  const panel=rechargePanel(api,{actor:{id:'independent-admin'},canApprove:true});await settle();
+  assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  panel.find('button').find(b=>b.textContent==='独立管理员批准结算').handlers.click();await settle();
+  assert.equal(sent[0],'approved-domain-adj');assert.deepEqual(sent[1],{approve:true});panel.dispose();
+  const own=rechargePanel(api,{actor:{id:'staff'},canApprove:true});await settle();
+  assert.equal(own.find('button').some(b=>b.textContent==='独立管理员批准结算'),false);own.dispose();
+});
+
+test('public recharge queue pages by opaque server cursor',async()=>{
+  install();const calls=[];
+  const panel=rechargePanel({...makeApi([]),getRechargePending:async filters=>{calls.push(filters);return filters?.cursor?{items:[{id:'page-two',status:'SUBMITTED'}],next_cursor:null}:{items:[{id:'page-one',status:'SUBMITTED'}],next_cursor:'opaque-next'};}});await settle();
+  const next=panel.find('button').find(button=>button.textContent==='下一页充值案件');assert.equal(next.disabled,false);
+  next.handlers.click();await settle();assert.equal(calls.at(-1).cursor,'opaque-next');assert.equal(next.disabled,true);
+  assert.ok(panel.find('td').some(node=>node.textContent==='page-two'));
+  await panel.refreshOrders();assert.equal(calls.at(-1).cursor,'opaque-next');panel.dispose();
 });

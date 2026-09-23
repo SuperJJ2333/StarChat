@@ -8,7 +8,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -36,6 +36,18 @@ class RechargeRequest(Base):
     adjustment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Nullable additions distinguish historical cases from managed support orders.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    processing_stage: Mapped[str | None] = mapped_column(String(32))
+    official_payment: Mapped[dict | None] = mapped_column(JSON)
+    claimed_by: Mapped[str | None] = mapped_column(String(36))
+    claim_token_hash: Mapped[str | None] = mapped_column(String(64))
+    claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt_id: Mapped[str | None] = mapped_column(String(36), unique=True)
+    actual_received_usdt: Mapped[Decimal | None] = mapped_column(Numeric(30, 6))
+    payment_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CsDirectoryEntry(Base):

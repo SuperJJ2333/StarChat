@@ -70,13 +70,30 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     executeManualDepositCase: async (caseId,body,options)=>command(`/api/v1/admin/wallet/manual/manual-deposit-cases/${encodeURIComponent(caseId)}/execute`,body,options),
     getManualDepositCaseOperation: async operationId=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/operations/${encodeURIComponent(operationId)}`,{cache:'no-store'}),
     // ADR-0077 后台：人工充值案件 / 客服目录 / 汇率与储备展示。
-    getRechargePending: async ()=>request('/api/v1/recharge/admin/requests/pending',{cache:'no-store'}),
+    getRechargePending: async (filters={})=>request(`/api/v1/recharge/admin/requests/pending${Object.keys(filters).length?`?${new URLSearchParams(filters)}`:''}`,{cache:'no-store'}),
+    claimRecharge: async (id,options,body={})=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/claim`,body,options),
+    heartbeatRecharge: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/heartbeat`,body,options),
+    verifyRechargePayment: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/verify-payment`,body,options),
+    prepareRechargeSettlement: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/prepare-settlement`,body,options),
+    executeRechargeSettlement: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/execute-settlement`,body,options),
+    financeReviewAdjustment: async (id,body,options)=>command(`/api/v1/ledger/adjustments/${encodeURIComponent(id)}/finance-review`,body,options),
+    adminReviewAdjustment: async (id,body,options)=>command(`/api/v1/ledger/adjustments/${encodeURIComponent(id)}/admin-review`,body,options),
+    getOrderEvents: async (filters={})=>request(`/api/v1/recharge/admin/events?${new URLSearchParams(filters)}`,{cache:'no-store'}),
+    getSupportPayouts: async (filters={})=>request(`/api/v1/admin/support-orders/payouts?${new URLSearchParams(filters)}`,{cache:'no-store'}),
+    getSupportPayout: async id=>request(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}`,{cache:'no-store'}),
+    supportPayoutCommand: async (id,action,body,options)=>{
+      if(!['claim','review-claim','heartbeat','begin-payment','adjust-rate','txid','correct-candidate','reconcile'].includes(action))throw new TypeError('Invalid support payout action');
+      return command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/${action}`,body,options);
+    },
+    getSupportOrderAccess: async ()=>request('/api/v1/admin/support-orders/security',{cache:'no-store'}),
+    verifySupportOrderAccess: async body=>request('/api/v1/admin/support-orders/security/verify',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(body)}),
+    setSupportOrderPassword: async (body,options)=>command('/api/v1/admin/support-orders/security/operation-password',body,{...options,method:'PUT'}),
     getRechargeReviewQueue: async (filters={})=>request(`/api/v1/recharge/admin/review-queue?${new URLSearchParams(filters)}`,{cache:'no-store'}),
     listRechargeRequests: async (filters={})=>request(`/api/v1/recharge/admin/requests?${new URLSearchParams(filters)}`,{cache:'no-store'}),
     getRechargeTimeline: async requestId=>request(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/timeline`,{cache:'no-store'}),
     reviewRecharge: async (requestId,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/review`,body,options),
     bindRechargeAdjustment: async (requestId,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/bind`,body,options),
-    completeRechargeBinding: async (requestId,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/complete-binding`,{},options),
+    completeRechargeBinding: async (requestId,options,body={})=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/complete-binding`,body,options),
     rejectRecharge: async (requestId,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(requestId)}/reject`,body,options),
     getRechargeDirectory: async ()=>request('/api/v1/recharge/admin/directory',{cache:'no-store'}),
     upsertRechargeDirectory: async (body,options)=>{

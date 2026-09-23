@@ -42,6 +42,11 @@ configure_database_url(config)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+from app.modules.recharge import notification_models as _support_notification_models
+from app.modules.wallet import recharge_receipt_models as _recharge_receipt_models
+from app.modules.wallet import support_payout as _support_payout_models
+from app.modules.identity import staff_activation as _staff_activation_models
+
 target_metadata = Base.metadata
 
 

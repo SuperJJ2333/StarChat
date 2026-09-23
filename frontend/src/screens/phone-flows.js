@@ -186,16 +186,39 @@ function buildRebind(state) {
 function rechargeNodes(state) {
   const nodes = [];
   if (state === "directory") {
-    const card = card_("官方充值客服目录");
-    card.append(row("充值客服 · 小畅", "TRC20 · TA5x…8f2Q"));
-    card.append(row("充值客服 · 阿畅", "TRC20 · TB7k…3d9P"));
-    card.append(hint("支付前请核对客服收款地址；平台仅推荐授权客服。"));
-    nodes.push(card);
-    const apply = card_("提交充值申请");
-    apply.append(field("支付金额（USDT）", "50.000000", "50.000000").wrapper);
-    apply.append(field("到账凭证", "链上交易哈希").wrapper);
-    apply.append(primaryButton("提交充值申请"));
-    apply.append(hint("提交只生成待处理订单，不增加余额；同一凭证不得重复使用。"));
+    const apply = card_("填写金额 · 第 1 步");
+    const amount = field("充值金额（USDT）", "0.000000", "50.000000");
+    amount.input.inputMode = "decimal";
+    const estimate = component("app-amount-summary", {
+      label: "预计到账点钻 · 参考", amount: "≈ 356.00", asset: "点钻",
+      hint: "参考估算，最终以客服结算为准"
+    });
+    amount.input.addEventListener("input", () => {
+      const value = amount.input.value;
+      const valid = /^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$/.test(value);
+      const units = valid ? BigInt(value.split(".")[0] + (value.split(".")[1] || "").padEnd(6, "0")) : null;
+      const cents = units === null ? null : (units * 712n + 500000n) / 1000000n;
+      const digits = cents?.toString().padStart(3, "0");
+      estimate.setAttribute("amount", digits ? `≈ ${digits.slice(0, -2)}.${digits.slice(-2)}` : "—");
+    });
+    const next = primaryButton("下一步");
+    next.addEventListener("click", () => {
+      const evidence = field("已付款凭证", "链上交易哈希");
+      const submit = primaryButton("提交付款凭证");
+      const status = hint("等待付款 · 尚未到账");
+      submit.addEventListener("click", () => {
+        status.textContent = /^[a-fA-F0-9]{64}$/.test(evidence.input.value || "")
+          ? "等待到账核验 · 提交凭证不代表到账" : "请输入有效的链上交易哈希";
+      });
+      apply.replaceChildren(element("h2", "", "客服处理 · 第 2 步"),
+        row("订单", "演示订单 req-1"), row("网络", "TRON（TRC20）"),
+        row("官方收款地址", "演示地址 · 不可用于付款"),
+        row("处理期限", "2 小时 · 截止 2026-09-23 12:00"),
+        status, evidence.wrapper, submit,
+        hint("演示数据；已付款、逾期或付款不明确时由客服核对，请勿重复付款。"));
+    });
+    apply.append(amount.wrapper, estimate,
+      hint("1 USDT ≈ ¥7.12 · 参考估算，最终以客服结算为准"), next);
     nodes.push(apply);
     return nodes;
   }

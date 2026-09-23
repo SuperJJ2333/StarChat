@@ -22,7 +22,9 @@ def digest(value):
 
 
 class WalletAccessGrantService:
-    def __init__(self, settings, factory, clock):
+    def __init__(self, settings, factory, clock, *, scope='wallet-admin'):
+        if scope not in ('wallet-admin', 'support-orders'): raise ValueError('invalid grant scope')
+        self.scope = scope
         self.settings, self.factory, self.clock = settings, factory, clock
         self.audit = AuditWriter(factory, now_factory=clock)
 
@@ -34,6 +36,14 @@ class WalletAccessGrantService:
 
     def _identity(self, session, claims):
         lock_budget(session)
+        if self.scope == 'support-orders':
+            from app.modules.identity.support_order_auth import require_support_order_actor
+            if self.settings.wallet_real_mode != 'manual_tron':
+                raise error('PERMISSION_DENIED')
+            require_support_order_actor(session, claims=claims, clock=self.clock,
+                owner_id=self.settings.wallet_manual_owner_admin_id)
+            return require_wallet_session(session, claims=claims, clock=self.clock, verified_at=None,
+                require_recent=False, require_proof=False)
         if (claims.get('session_scope') != 'admin' or not self.settings.wallet_manual_owner_admin_id
                 or claims['sub'] != self.settings.wallet_manual_owner_admin_id
                 or self.settings.wallet_real_mode != 'manual_tron'):
@@ -69,7 +79,7 @@ class WalletAccessGrantService:
     def _valid(self, row, claims, credential):
         return bool(getattr(self.settings, 'wallet_access_grant_enabled', False) and row is not None
             and (row.user_id, row.family_id, row.device_id, row.scope) ==
-                (claims['sub'], claims['family_id'], claims['device_id'], 'wallet-admin')
+                (claims['sub'], claims['family_id'], claims['device_id'], self.scope)
             and row.revoked_at is None and row.auth_mode == self.settings.wallet_admin_auth_mode
             and row.configuration_digest == self._configuration() and credential is not None
             and row.credential_digest == credential
@@ -77,7 +87,7 @@ class WalletAccessGrantService:
 
     def _view(self, row, claims, credential):
         valid = self._valid(row, claims, credential)
-        return dict(enabled=getattr(self.settings, 'wallet_access_grant_enabled', False), verified=valid,
+        return dict(enabled=getattr(self.settings, 'wallet_access_grant_enabled', False), verified=valid, scope=self.scope,
             auth_mode=self.settings.wallet_admin_auth_mode, configured=credential is not None,
             grant_id=row.grant_id if valid else None,
             verified_at=aware(row.verified_at).isoformat() if valid else None,
@@ -158,7 +168,7 @@ class WalletAccessGrantService:
         if mode == 'operation_password':
             service = AdminWalletOperationPasswordService(self.factory,
                 owner_id=lambda:self.settings.wallet_manual_owner_admin_id,
-                auth_mode=lambda:self.settings.wallet_admin_auth_mode, clock=self.clock)
+                auth_mode=lambda:self.settings.wallet_admin_auth_mode, clock=self.clock, scope=self.scope)
             service.verify(claims=claims, operation_password=operation_password, grant_verification=True)
         elif mode == 'totp':
             if mfa_verifier is None:
@@ -186,13 +196,13 @@ class WalletAccessGrantService:
                 raise error('WALLET_ACCESS_REQUIRED')
             if not self._valid(row, claims, current):
                 now = self.clock()
+                admin_deadline = session.scalar(select(AdminSession.expires_at).where(AdminSession.user_id == claims['sub']))
                 if row is None:
                     row = WalletAccessGrant(family_id=claims['family_id'])
                     session.add(row)
                 row.grant_id, row.user_id, row.device_id = str(uuid4()), claims['sub'], claims['device_id']
-                row.scope, row.auth_mode = 'wallet-admin', mode
+                row.scope, row.auth_mode = self.scope, mode
                 row.configuration_digest, row.credential_digest = configuration, current
-                admin_deadline = session.scalar(select(AdminSession.expires_at).where(AdminSession.user_id == claims['sub']))
                 row.verified_at, row.expires_at, row.revoked_at = now, min(now+timedelta(minutes=60), aware(admin_deadline)), None
                 self._record(session, claims, row, 'identity.wallet_access.verified')
                 session.flush()
@@ -207,7 +217,7 @@ class WalletAccessGrantService:
             if row is None:
                 now = self.clock()
                 row = WalletAccessGrant(family_id=claims['family_id'], grant_id=str(uuid4()), user_id=claims['sub'],
-                    device_id=claims['device_id'], scope='wallet-admin', auth_mode=self.settings.wallet_admin_auth_mode,
+                    device_id=claims['device_id'], scope=self.scope, auth_mode=self.settings.wallet_admin_auth_mode,
                     configuration_digest=self._configuration(), credential_digest=credential or '',
                     verified_at=now, expires_at=now+timedelta(minutes=60))
                 session.add(row)

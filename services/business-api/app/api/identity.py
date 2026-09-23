@@ -634,6 +634,14 @@ def create_identity_router(
             user_id=view['user_id'], session_id=view['session_id'],
             expires_in=min(900, remaining), session_expires_at=view['session_expires_at'])
 
+    from app.api.staff_activation import create_staff_activation_router
+    from app.modules.identity.staff_activation import StaffActivationService
+    router.include_router(create_staff_activation_router(
+        service=StaffActivationService(session_factory, phone_otp=phone_auth.otp,
+            email_code_deriver=verification_codec.verification_code),
+        captcha=captcha_service, rate_limiter=rate_limiter,
+        origin_check=admin_origin, rate_key=public_rate_limit_key))
+
     @router.post("/auth/admin-login", response_model=AdminTokenResponse)
     async def admin_login(body: AdminLoginRequest, request: Request, response: Response) -> AdminTokenResponse:
         response.headers['Cache-Control'] = 'no-store'

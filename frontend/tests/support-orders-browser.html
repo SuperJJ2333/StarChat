@@ -1,0 +1,33 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>客服订单工作台 · 隔离验收</title>
+<link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/gallery.css"><link rel="stylesheet" href="/src/styles/admin-modern.css">
+<body class="admin-page admin-modern"><main class="admin-content"><h1>客服订单工作台 · 隔离测试数据</h1><p id="result">RUNNING</p><div id="panel"></div></main>
+<script type="module">
+import {rechargePanel} from '/src/admin-recharge-panel.js';
+import {createAdminApi} from '/src/admin-api.js';
+const calls=[];
+let item={id:'isolated-recharge',user_id:'测试用户',amount_usdt:'50.000000',fx_rate:'7.1',status:'SUBMITTED',processing_stage:'等待到账核验',evidence_txid:'a'.repeat(64),expires_at:new Date(Date.now()+7200000).toISOString()};
+const api=createAdminApi({fetchImpl:async(url,options={})=>{
+ calls.push({url,options});let result={items:[]};
+ if(url.includes('/pending'))result={items:[item]};
+ if(url.endsWith('/claim')){item={...item,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};result={...item,claim_token:'isolated-lease'};}
+ if(url.endsWith('/verify-payment')){item={...item,payment_verified:true,actual_received_usdt:'49.500000'};result=item;}
+ if(url.endsWith('/prepare-settlement')){item={...item,binding_state:'BOUND',binding_adjustment_id:'approved-domain-adjustment',status:'PENDING_APPROVAL',final_caibi_amount:'351.45'};result=item;}
+ if(url.endsWith('/rate'))result={rate:'7.1',stale:false};
+ return {ok:true,json:async()=>result};
+}});
+const panel=rechargePanel(api,{actor:{id:'staff'},onOpenPayout:()=>{}});document.querySelector('#panel').append(panel);
+const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
+const button=label=>[...panel.querySelectorAll('button')].find(node=>node.textContent===label);
+const input=label=>[...panel.querySelectorAll('input')].find(node=>node.placeholder===label);
+const assert=(condition,message)=>{if(!condition)throw Error(message);};
+try {
+ await flush();assert(!button('绑定调整'),'unclaimed settlement hidden');button('认领案件').click();await flush();await flush();
+ assert(!button('绑定调整'),'unverified settlement hidden');button('核验实际到账').click();await flush();await flush();
+ assert(panel.textContent.includes('49.500000'),'authoritative actual received');
+ assert(!input('财务调整 ID'),'managed orders have no arbitrary adjustment input');input('最终结算率（点钻/USDT）').value='7.1';button('提交结算审批').click();await flush();await flush();
+ const call=calls.find(call=>call.url.endsWith('/prepare-settlement'));assert(JSON.parse(call.options.body).claim_token==='isolated-lease','claim bound settlement');
+ assert(panel.textContent.includes('尚未执行'),'approval pending remains uncredited');assert(panel.textContent.includes('351.45'),'authoritative final amount');
+ document.querySelector('#result').textContent='PASS · 认领 → 核验 → 审批链结算（未入账）';document.body.dataset.result='PASS';panel.dispose();
+}catch(error){document.querySelector('#result').textContent=error.message;document.body.dataset.result='FAIL';}
+</script></body></html>

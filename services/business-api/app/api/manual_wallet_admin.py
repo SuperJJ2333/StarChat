@@ -41,7 +41,7 @@ class ManualPayoutSnapshot(PayoutReadModel):
     official_config_version: str
     owner_admin_id: str
     policy_version: str
-    approval_policy: Literal['OWNER_MANUAL_V1']
+    approval_policy: Literal['OWNER_MANUAL_V1','SUPPORT_MANUAL_V1']
     finality_policy: str
     network: str
     contract: str

@@ -50,6 +50,7 @@ final class ManualOperationStore {
       'address',
       'method',
       'confirm_key',
+      'txid',
       'funding_asset'
     };
     if (record.keys.any((key) => !allowed.contains(key))) {

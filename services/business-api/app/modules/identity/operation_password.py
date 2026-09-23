@@ -33,19 +33,28 @@ class OperationPasswordProof:
     device_id: str
     version: int
     verified_at: datetime
+    scope: str = 'wallet-admin'
 
 
 class AdminWalletOperationPasswordService:
-    def __init__(self,factory,*,owner_id,auth_mode,clock,password_hasher=None):
+    def __init__(self,factory,*,owner_id,auth_mode,clock,password_hasher=None,scope='wallet-admin'):
+        if scope not in ('wallet-admin', 'support-orders'): raise ValueError('invalid operation scope')
+        self.scope = scope
         self.factory,self.owner_id,self.auth_mode,self.clock=factory,owner_id,auth_mode,clock
         self.hasher=password_hasher or PasswordHasher()
         self.audit=AuditWriter(factory,now_factory=clock)
 
     def _identity(self,session,claims,verified_at,*,grant_verification=False):
         lock_budget(session)
-        if not self.owner_id() or claims['sub'] != self.owner_id():
-            raise error('PERMISSION_DENIED')
-        require_wallet_actor(session,user_id=claims['sub'],clock=self.clock,administrator=True)
+        def identity():
+            if self.scope == 'support-orders':
+                from app.modules.identity.support_order_auth import require_support_order_actor
+                require_support_order_actor(session, claims=claims, clock=self.clock, owner_id=self.owner_id())
+            else:
+                if not self.owner_id() or claims['sub'] != self.owner_id():
+                    raise error('PERMISSION_DENIED')
+                require_wallet_actor(session,user_id=claims['sub'],clock=self.clock,administrator=True)
+        identity()
         def check():
             try:
                 return require_wallet_session(session,claims=claims,clock=self.clock,verified_at=verified_at,
@@ -55,7 +64,7 @@ class AdminWalletOperationPasswordService:
                 raise
         session_fresh=check()
         def fresh():
-            if claims['sub']!=self.owner_id(): raise error('PERMISSION_DENIED')
+            identity()
             try: session_fresh()
             except AppError as exc:
                 if exc.code=='TOTP_REQUIRED': raise error('OPERATION_PASSWORD_REQUIRED') from None
@@ -159,12 +168,13 @@ class AdminWalletOperationPasswordService:
             if row is None: raise _Rejected('OPERATION_PASSWORD_NOT_CONFIGURED')
             if not self.hasher.verify(row.password_hash,operation_password): raise _Rejected('OPERATION_PASSWORD_INVALID')
             self._record(session,claims['sub'],'identity.admin_operation.verified','SUCCESS',row.version,now)
-            return OperationPasswordProof(claims['sub'],claims['family_id'],claims['device_id'],row.version,now)
+            return OperationPasswordProof(claims['sub'],claims['family_id'],claims['device_id'],row.version,now,self.scope)
         return self._execute(claims,verify,grant_verification=grant_verification)
 
     def authorization(self,*,claims,proof):
         def authorize(session):
             if (self.auth_mode()!='operation_password' or not isinstance(proof,OperationPasswordProof)
+                    or proof.scope != self.scope
                     or (proof.user_id,proof.session_id,proof.device_id)!=(claims['sub'],claims['family_id'],claims['device_id'])):
                 raise error('OPERATION_PASSWORD_REQUIRED')
             fresh=self._identity(session,claims,proof.verified_at)

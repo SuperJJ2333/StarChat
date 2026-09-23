@@ -6,7 +6,7 @@
 - 同一到账凭证（evidence_txid）全局唯一，重复提交 409；
 - 全部状态迁移写审计 + Outbox；不支持直改余额。
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import hashlib
 import json
@@ -23,15 +23,19 @@ from app.modules.ledger.adjustment_models import AdjustmentRequest
 from app.modules.ledger.models import LedgerEntry, LedgerTransaction
 from app.modules.recharge.models import CsDirectoryEntry, RechargeCreditBinding, RechargeRequest
 
+from app.modules.recharge.workflow import SupportOrderWorkflow
+
 RECHARGE_RULES_VERSION = "recharge-manual-v1"
 
 
-class RechargeService:
-    def __init__(self, session_factory, *, ledger, rbac=None, rate_provider=None, now=None):
+class RechargeService(SupportOrderWorkflow):
+    def __init__(self, session_factory, *, ledger, rbac=None, rate_provider=None, now=None, wallet_receipts=None, official_config=None):
         self.factory = session_factory
         self.ledger = ledger
         self.rbac = rbac
         self.rate_provider = rate_provider
+        self.wallet_receipts = wallet_receipts
+        self.official_config = official_config
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def _utcnow(self):
@@ -114,6 +118,10 @@ class RechargeService:
             row = RechargeRequest(id=request_id, user_id=user_id, amount_usdt=amount,
                 evidence_txid=evidence_txid, note=(note or None), status="SUBMITTED",
                 fx_rate=rate, fx_rate_stale=stale, created_at=now, updated_at=now)
+            if self.official_config is not None:
+                row.expires_at = now + timedelta(hours=2)
+                row.processing_stage = 'WAITING_PAYMENT'
+                row.official_payment = self.official_payment_view()
             session.add(row)
             try:
                 session.flush()
@@ -136,6 +144,8 @@ class RechargeService:
             if row.status != "SUBMITTED":
                 raise AppError(code="RECHARGE_CANNOT_CANCEL", message="当前状态不可取消", status_code=409)
             self._require_unbound(session, request_id)
+            if row.expires_at is not None and (row.evidence_txid or row.receipt_id or row.claimed_by):
+                raise AppError(code='RECHARGE_PAYMENT_REVIEW_REQUIRED', message='付款或处理状态需要核对，暂不可取消', status_code=409)
             row.status, row.updated_at = "CANCELLED", self._utcnow()
             session.add(AuditEvent(id=str(uuid4()), actor_id=user_id, subject_type="recharge_request",
                 subject_id=request_id, action="recharge.cancelled", result="SUCCESS",
@@ -152,6 +162,9 @@ class RechargeService:
             return [self._view(row) for row in rows]
 
     # ------------------------------------------------------------------ 客服/管理
+    def pending_page(self, *, cursor=None, limit=50):
+        return self.admin_requests(status='SUBMITTED', cursor=cursor, limit=limit)
+
     def list_pending(self, *, limit=50):
         with self.factory() as session:
             rows = session.scalars(select(RechargeRequest).where(RechargeRequest.status == "SUBMITTED")
@@ -168,6 +181,7 @@ class RechargeService:
                     binding_failure_reason=binding.failure_reason if binding else None,
                     binding_final_rate=str(binding.final_rate) if binding and binding.final_rate is not None else None,
                     binding_final_caibi_amount=str(binding.final_caibi_amount) if binding and binding.final_caibi_amount is not None else None)
+                view.update(self._settlement_projection(session, binding))
                 result.append(view)
             return result
 
@@ -178,10 +192,10 @@ class RechargeService:
                 RechargeCreditBinding.state_active == '1')) is not None:
             raise AppError(code='RECHARGE_CASE_BOUND', message='案件财务命令尚未完成核对', status_code=409)
 
-    def reject(self, *, request_id, actor_id, reason, idempotency_key=None):
+    def reject(self, *, request_id, actor_id, reason, idempotency_key=None, claim_token=None, authorization=None):
         if not reason or len(reason.strip()) < 3:
             raise AppError(code="RECHARGE_REASON_REQUIRED", message="拒绝必须填写原因", status_code=422)
-        with self.factory.begin() as session:
+        with self._authorized_transaction(authorization) as session:
             record = self._claim(session, scope='recharge.reject:'+actor_id,
                 key=idempotency_key if idempotency_key is not None else request_id,
                 payload=dict(request_id=request_id, reason=reason))
@@ -192,6 +206,9 @@ class RechargeService:
                 raise AppError(code="RECHARGE_NOT_FOUND", message="充值申请不存在", status_code=404)
             if row.status != "SUBMITTED":
                 raise AppError(code="RECHARGE_ALREADY_DECIDED", message="该申请已处理", status_code=409)
+            self._require_claim(row, actor_id, claim_token, allow_review=True)
+            if row.expires_at is not None and (row.receipt_id or row.evidence_txid):
+                raise AppError(code='RECHARGE_PAYMENT_REVIEW_REQUIRED', message='存在付款证据，请核对处理', status_code=409)
             self._require_unbound(session, request_id)
             now = self._utcnow()
             row.status, row.decided_by, row.decided_at = "REJECTED", actor_id, now
@@ -207,12 +224,14 @@ class RechargeService:
             return self._complete(record, self._view(row))
 
     def mark_credited(self, *, request_id, actor_id, ledger_transaction_id, final_caibi_amount,
-                      final_rate=None, adjustment_id=None, idempotency_key=None):
+                      final_rate=None, adjustment_id=None, idempotency_key=None, authorization=None):
         """客服核实到账、财务调整执行成功后登记 CREDITED（只登记，不再动账）。"""
         final_amount = self._amount(final_caibi_amount, '0.01')
         rate = self._amount(final_rate, '0.000001') if final_rate is not None else None
         now = self._utcnow()
-        with self.factory.begin() as session:
+        with self._authorized_transaction(authorization) as session:
+            from app.modules.ledger.reserve import lock_budget
+            lock_budget(session)
             record = self._claim(session, scope='recharge.credit:'+actor_id,
                 key=idempotency_key if idempotency_key is not None else request_id,
                 payload=dict(request_id=request_id, ledger_transaction_id=ledger_transaction_id,
@@ -222,6 +241,10 @@ class RechargeService:
             row = session.scalar(select(RechargeRequest).where(RechargeRequest.id == request_id).with_for_update())
             if row is None:
                 raise AppError(code="RECHARGE_NOT_FOUND", message="充值申请不存在", status_code=404)
+            if row.expires_at is not None:
+                from app.modules.recharge.execution import require_completed_receipt
+                require_completed_receipt(session, request_id=row.id, receipt_id=row.receipt_id,
+                    ledger_transaction_id=ledger_transaction_id, user_id=row.user_id)
             if row.status == "CREDITED":
                 if (row.ledger_transaction_id != ledger_transaction_id or row.final_caibi_amount != final_amount
                         or rate is not None and row.final_rate != rate
@@ -234,7 +257,7 @@ class RechargeService:
             # reference must never silently become a financial settlement.
             if rate is None:
                 raise AppError(code='RECHARGE_FINAL_RATE_REQUIRED', message='请填写最终结算汇率', status_code=422)
-            if (row.amount_usdt * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) != final_amount:
+            if ((row.actual_received_usdt or row.amount_usdt) * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) != final_amount:
                 raise AppError(code='RECHARGE_SETTLEMENT_MISMATCH', message='最终金额与结算汇率不一致', status_code=422)
             proof = self._claim(session, scope='recharge.credit_transaction', key=ledger_transaction_id,
                 payload={'request_id': request_id}, conflict_code='RECHARGE_PROOF_REUSED')
@@ -326,7 +349,7 @@ class RechargeService:
             return self._directory_view(row)
 
     # ---------------------------------------------------- 案件-财务执行绑定
-    def bind_finance_adjustment(self, *, request_id, adjustment_id, actor_id, idempotency_key=None, final_rate=None):
+    def bind_finance_adjustment(self, *, request_id, adjustment_id, actor_id, idempotency_key=None, final_rate=None, claim_token=None, authorization=None, session=None):
         """把 SUBMITTED 案件绑定到唯一授权财务调整（不入账、不改余额）。
 
         绑定校验：调整归属同一用户、未被冲正、仍在审批中；案件 SUBMITTED；
@@ -335,7 +358,9 @@ class RechargeService:
         """
         now = self._utcnow()
         rate = self._amount(final_rate, '0.000001') if final_rate is not None else None
-        with self.factory.begin() as session:
+        with self._authorized_transaction(authorization, session=session) as session:
+            from app.modules.ledger.reserve import lock_budget
+            lock_budget(session)
             record = self._claim(session, scope='recharge.bind:' + actor_id,
                 key=idempotency_key if idempotency_key is not None else request_id + ':' + adjustment_id,
                 payload=dict(request_id=request_id, adjustment_id=adjustment_id, final_rate=str(rate) if rate is not None else None))
@@ -346,6 +371,9 @@ class RechargeService:
                 raise AppError(code='RECHARGE_NOT_FOUND', message='充值申请不存在', status_code=404)
             if row.status != 'SUBMITTED':
                 raise AppError(code='RECHARGE_ALREADY_DECIDED', message='该申请已处理', status_code=409)
+            if row.expires_at is not None:
+                self._require_claim(row, actor_id, claim_token, allow_review=True)
+                self._require_payment(session, row)
             active = session.scalar(select(RechargeCreditBinding).where(
                 RechargeCreditBinding.request_id == request_id,
                 RechargeCreditBinding.state_active == '1').with_for_update())
@@ -375,7 +403,7 @@ class RechargeService:
                 raise AppError(code='RECHARGE_BIND_TERMINAL_ADJUSTMENT',
                     message='只能绑定尚在审批中的财务调整', status_code=409)
             amount = self._amount(adjustment.amount, '0.01')
-            if rate is not None and (row.amount_usdt * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) != amount:
+            if rate is not None and ((row.actual_received_usdt or row.amount_usdt) * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) != amount:
                 raise AppError(code='RECHARGE_SETTLEMENT_MISMATCH', message='金额与绑定结算率不一致', status_code=409)
             if (adjustment.ledger_transaction_id is not None
                     and session.scalar(select(LedgerTransaction.id).where(
@@ -415,10 +443,15 @@ class RechargeService:
             payload={'request_id': binding.request_id, 'state': state, 'reason': reason},
             now=binding.updated_at)
 
-    def complete_bound(self, *, request_id, actor_id='recharge-registration-worker', expected_binding_id=None):
+    def complete_bound(self, *, request_id, actor_id='recharge-registration-worker', expected_binding_id=None,
+                       claim_token=None, authorization=None):
         """Register executed money; uncertain settlement never releases the command."""
-        with self.factory.begin() as session:
+        with self._authorized_transaction(authorization) as session:
+            from app.modules.ledger.reserve import lock_budget
+            lock_budget(session)
             row = session.get(RechargeRequest, request_id, with_for_update=True)
+            if row is not None and authorization is not None and row.status != 'CREDITED':
+                self._require_claim(row, actor_id, claim_token, allow_review=True)
             binding = session.scalar(select(RechargeCreditBinding).where(
                 RechargeCreditBinding.request_id == request_id,
                 RechargeCreditBinding.state_active == '1').with_for_update())
@@ -450,9 +483,15 @@ class RechargeService:
             result = self.mark_credited(request_id=request_id, actor_id=actor_id,
                 ledger_transaction_id=adjustment_tx, final_caibi_amount=adjustment_amount,
                 final_rate=rate if rate is not None else self._derived_rate(request_id, adjustment_amount),
-                adjustment_id=adjustment_id, idempotency_key='register:' + binding_id)
+                adjustment_id=adjustment_id, idempotency_key='register:' + binding_id, authorization=authorization)
         except AppError as error:
+            if error.code not in {'RECHARGE_PROOF_INVALID','RECHARGE_PROOF_REUSED',
+                    'RECHARGE_SETTLEMENT_MISMATCH','RECHARGE_FINAL_RATE_REQUIRED',
+                    'RECHARGE_PAYMENT_UNVERIFIED'}:
+                raise
             with self.factory.begin() as session:
+                from app.modules.ledger.reserve import lock_budget
+                lock_budget(session)
                 session.get(RechargeRequest, request_id, with_for_update=True)
                 binding = session.get(RechargeCreditBinding, binding_id, with_for_update=True)
                 if binding is not None and binding.state_active == '1':
@@ -474,11 +513,11 @@ class RechargeService:
         if row is None or not row.amount_usdt:
             return None
         try:
-            rate = (Decimal(str(final_amount)) / row.amount_usdt).quantize(
+            rate = (Decimal(str(final_amount)) / (row.actual_received_usdt or row.amount_usdt)).quantize(
                 Decimal('0.000001'), rounding=ROUND_HALF_UP)
         except Exception:
             return None
-        check = (row.amount_usdt * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        check = ((row.actual_received_usdt or row.amount_usdt) * rate).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         return str(rate) if check == Decimal(str(final_amount)).quantize(Decimal('0.01')) else None
 
     def sweep_pending_registrations(self, *, limit: int = 100, actor_id='recharge-registration-worker') -> dict:
@@ -540,7 +579,7 @@ class RechargeService:
             items = []
             for binding in page:
                 request = session.get(RechargeRequest, binding.request_id)
-                items.append({**self._binding_view(binding),
+                items.append({**(self._view(request) if request else {}), **self._binding_view(binding),
                     'request_status': request.status if request else None,
                     'user_id': request.user_id if request else None,
                     'amount_usdt': str(request.amount_usdt) if request else None})
@@ -569,9 +608,20 @@ class RechargeService:
                 bindings.setdefault(binding.request_id, binding)
             next_cursor = page[-1].created_at.isoformat() + '|' + page[-1].id if len(rows) > limit else None
             return {'items': [{**self._view(row),
+                **self._settlement_projection(session, bindings.get(row.id)),
                 'binding_state': bindings[row.id].state if row.id in bindings else None,
                 'binding_id': bindings[row.id].id if row.id in bindings else None} for row in page],
                 'next_cursor': next_cursor}
+
+    @staticmethod
+    def _settlement_projection(session, binding):
+        adjustment = session.get(AdjustmentRequest, binding.adjustment_id) if binding else None
+        return {'binding_adjustment_id':binding.adjustment_id if binding else None,
+            'binding_failure_reason':binding.failure_reason if binding else None,
+            'binding_final_rate':str(binding.final_rate) if binding and binding.final_rate is not None else None,
+            'binding_final_caibi_amount':str(binding.final_caibi_amount) if binding and binding.final_caibi_amount is not None else None,
+            'settlement_status':adjustment.status if adjustment else None,
+            'settlement_submitted_by':adjustment.submitted_by if adjustment else None}
 
     def case_timeline(self, *, request_id: str) -> dict:
         """案件审计时间线：案件/绑定维度的全部审计事件（只读）。"""
@@ -592,9 +642,10 @@ class RechargeService:
                     'action': e.action, 'reason_code': e.reason_code,
                     'after': e.after_data} for e in events]}
 
-    def retry_review_registration(self, *, request_id: str, actor_id: str, expected_binding_id=None) -> dict:
+    def retry_review_registration(self, *, request_id: str, actor_id: str, expected_binding_id=None,
+                                  claim_token=None, authorization=None) -> dict:
         return self.complete_bound(request_id=request_id, actor_id=actor_id,
-            expected_binding_id=expected_binding_id)
+            expected_binding_id=expected_binding_id, claim_token=claim_token, authorization=authorization)
 
     def _release_evidence(self, session, adjustment):
         """Missing commands or contradictory financial records are not unpaid proof."""
@@ -612,15 +663,18 @@ class RechargeService:
             LedgerTransaction.reversal_of_id == transaction.id)) is not None else None
 
     def release_review_binding(self, *, request_id: str, actor_id: str, reason: str,
-                               idempotency_key=None, expected_binding_id=None) -> dict:
+                               idempotency_key=None, expected_binding_id=None, claim_token=None, authorization=None) -> dict:
         """Release only verified rejected/unpaid or reversed commands, never missing evidence."""
         if not reason or len(reason.strip()) < 3:
             raise AppError(code='RECHARGE_REASON_REQUIRED', message='释放必须填写原因', status_code=422)
         now = self._utcnow()
-        with self.factory.begin() as session:
+        with self._authorized_transaction(authorization) as session:
+            from app.modules.ledger.reserve import lock_budget
+            lock_budget(session)
             row = session.get(RechargeRequest, request_id, with_for_update=True)
             if row is None:
                 raise AppError(code='RECHARGE_NOT_FOUND', message='充值申请不存在', status_code=404)
+            self._require_claim(row, actor_id, claim_token, allow_review=True)
             binding = session.scalar(select(RechargeCreditBinding).where(
                 RechargeCreditBinding.request_id == request_id,
                 RechargeCreditBinding.state_active == '1').with_for_update())
@@ -665,8 +719,7 @@ class RechargeService:
             'created_at': row.created_at.isoformat() if row.created_at else None}
 
     # ------------------------------------------------------------------ 投影
-    @staticmethod
-    def _view(row) -> dict:
+    def _view(self, row) -> dict:
         return {"id": row.id, "user_id": row.user_id, "amount_usdt": str(row.amount_usdt),
             "evidence_txid": row.evidence_txid, "note": row.note, "status": row.status,
             "fx_rate": str(row.fx_rate) if row.fx_rate is not None else None,
@@ -677,6 +730,13 @@ class RechargeService:
             "final_caibi_amount": str(row.final_caibi_amount) if row.final_caibi_amount is not None else None,
             "ledger_transaction_id": row.ledger_transaction_id, "adjustment_id": row.adjustment_id,
             "rules_version": RECHARGE_RULES_VERSION,
+            "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+            "processing_stage": self._processing_stage(row),
+            "official_payment": row.official_payment,
+            "claimed_by": row.claimed_by,
+            "claim_expires_at": row.claim_expires_at.isoformat() if row.claim_expires_at else None,
+            "payment_verified": row.receipt_id is not None and row.payment_verified_at is not None,
+            "actual_received_usdt": str(row.actual_received_usdt) if row.actual_received_usdt is not None else None,
             "created_at": row.created_at.isoformat() if row.created_at else None}
 
     @staticmethod

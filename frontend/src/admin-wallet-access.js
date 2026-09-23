@@ -38,13 +38,13 @@ export function createWalletAccess({api,actorId,getActorId=()=>actorId,now=()=>p
   };
 }
 
-export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,onLogin}={}) {
+export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,onLogin,title:panelTitle="USDT提现与支付",scope="wallet"}={}) {
   const make=(tag,text)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el;};
   const root=make('section');root.className='admin-wallet-access';
   const content=make('div'),pending=make('p','正在确认钱包验证状态…');
   pending.setAttribute('role','status');pending.hidden=true;root.append(content,pending);
   let child,dialog,disposed=false,background,previousOverflow,poll,setup,dialogKind;
-  const channel=typeof BroadcastChannel==='function'?new BroadcastChannel('chatflow-wallet-access'):null;
+  const channel=typeof BroadcastChannel==='function'?new BroadcastChannel(`chatflow-${scope}-access`):null;
   function clearContent(){child?.dispose?.();child=null;content.replaceChildren();}
   function close(){setup?.dispose?.();setup=null;dialogKind=null;if(dialog){dialog.close();dialog.remove();dialog=null;}if(background){background.inert=false;background.classList.remove('wallet-access-obscured');background=null;}if(previousOverflow!==undefined){document.body.style.overflow=previousOverflow;previousOverflow=undefined;}}
   const exit=()=>{close();onExit?.();};
@@ -72,8 +72,8 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
     }
     if(dialogKind===state.kind&&['verify','setup'].includes(state.kind)&&!state.error)return;
     dialogKind=state.kind;setup?.dispose?.();setup=null;dialog.replaceChildren();
-    const title=make('h2','USDT提现与支付');title.id='wallet-access-title';dialog.append(title);
-    const message=make('p',({unknown:'正在确认钱包验证状态…',verify:'请验证身份以访问USDT提现与支付。验证成功后60分钟内无需重复验证。',setup:'请先配置钱包验证凭据，完成后验证并进入。',login:'后台登录已失效，请重新登录。',forbidden:'当前账号无权访问USDT提现与支付。',network:'无法确认钱包验证状态，敏感内容已隐藏。请检查网络后重试。'})[state.kind]);dialog.append(message);
+    const title=make('h2',panelTitle);title.id='wallet-access-title';dialog.append(title);
+    const message=make('p',({unknown:'正在确认钱包验证状态…',verify:'请验证身份以访问USDT提现与支付。验证成功后60分钟内无需重复验证。',setup:'请先配置钱包验证凭据，完成后验证并进入。',login:'后台登录已失效，请重新登录。',forbidden:'当前账号无权访问USDT提现与支付。',network:'无法确认钱包验证状态，敏感内容已隐藏。请检查网络后重试。'})[state.kind]);message.textContent=message.textContent.replaceAll('USDT提现与支付',panelTitle);dialog.append(message);
     const button=(label,fn)=>{const b=make('button',label);b.type='button';b.className='admin-secondary';b.addEventListener('click',fn);return b;};
     if(state.kind==='verify'){
       const form=make('form'),input=make('input'),label=make('label',state.auth_mode==='totp'?'当前六位验证码':'操作密码');
@@ -82,7 +82,7 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
       form.append(label,submit);form.addEventListener('submit',async event=>{event.preventDefault();if(submit.disabled)return;const proof={[input.name]:input.value};input.value='';submit.disabled=true;const ok=await gate.verify(proof);for(const key of Object.keys(proof))delete proof[key];submit.disabled=false;if(ok)channel?.postMessage('changed');});dialog.append(form);
       if(state.error)dialog.append(make('p',state.error));queueMicrotask(()=>input.focus());
     }else if(state.kind==='setup'){
-      setup=renderSetup?.(api,()=>gate.check());if(setup)dialog.append(setup);
+      setup=renderSetup?.(api,()=>gate.check(),state);if(setup)dialog.append(setup);
       dialog.append(button('配置完成，检查验证状态',()=>gate.check()));
     }else if(state.kind==='login')dialog.append(button('重新登录',()=>{close();onLogin?.();}));
     else if(state.kind==='network')dialog.append(button('重试验证状态',()=>gate.check()));
@@ -97,6 +97,7 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
   globalThis.addEventListener('focus',focus);globalThis.addEventListener('storage',storage);document.addEventListener('visibilitychange',recheck);
   // Read-only polling discovers server revocation and updates from other tabs.
   poll=setInterval(()=>{if(!disposed&&!document.hidden&&!['setup','login','forbidden'].includes(gate.state().kind))void gate.check();},30000);
+  root.refreshOrders=async()=>{if(gate.allowed())await child?.refreshOrders?.();};
   root.refresh=async()=>{if(!await gate.check())return false;return await child?.refresh?.();};
   root.dispose=()=>{disposed=true;gate.dispose();channel?.close();clearInterval(poll);globalThis.removeEventListener('focus',focus);globalThis.removeEventListener('storage',storage);document.removeEventListener('visibilitychange',recheck);clearContent();close();};
   queueMicrotask(()=>{if(!disposed){show(gate.state());void gate.check();}});

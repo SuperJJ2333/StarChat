@@ -213,6 +213,80 @@
         "WeChatMotion.actionPressDuration"
       ],
       "behavior": "Existing wallet and redpacket routes; neutral same-page ownership status. Business APIs authoritative."
+    },
+    "2026-09-23-support-order-workflow": {
+      "flutter": "apps/mobile_flutter/lib/features/wallet/manual_wallet_page.dart",
+      "html": "frontend/src/screens/phone-flows.js",
+      "demo": "recharge-directory-directory",
+      "components": [
+        "walletStepIndicator",
+        "CupertinoTextField",
+        "QrImageView",
+        "app-amount-summary",
+        "app-action-button"
+      ],
+      "props": [
+        "amount",
+        "official_payment",
+        "expires_at",
+        "processing_stage",
+        "final_caibi_amount",
+        "final_receive"
+      ],
+      "states": [
+        "amount-entry",
+        "reference-unavailable",
+        "payment-processing",
+        "evidence-pending",
+        "needs-review",
+        "credited",
+        "cancelled"
+      ],
+      "variants": [
+        "recharge",
+        "payout"
+      ],
+      "additionalHtml": [
+        "frontend/src/screens/wallet-binding.js"
+      ],
+      "tokens": [
+        "WeChatTypography.brand",
+        "WeChatTypography.caption",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ]
+    },
+    "2026-09-23-support-admin-workstation": {
+      "html": "frontend/src/admin-recharge-panel.js",
+      "demo": "frontend/admin.html#recharge",
+      "components": [
+        "admin-card",
+        "admin-button",
+        "admin-table",
+        "admin-audit-note"
+      ],
+      "states": [
+        "queue",
+        "my-processing",
+        "other-owner-readonly",
+        "proof-required",
+        "verified-settlement",
+        "claim-lost",
+        "review",
+        "history"
+      ],
+      "props": [
+        "claim_token",
+        "payment_verified",
+        "actual_received_usdt",
+        "final_rate"
+      ],
+      "tokens": [
+        "admin-card",
+        "admin-button",
+        "admin-table",
+        "admin-audit-note"
+      ]
     }
   },
   "tokenMappings": {

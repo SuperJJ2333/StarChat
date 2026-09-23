@@ -31,3 +31,21 @@
 .admin-proof-dialog .admin-manual-case .admin-command-form{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}.admin-proof-dialog .admin-manual-case .admin-command-form>label{display:flex;align-items:flex-start;gap:10px}.admin-proof-dialog .admin-manual-case .admin-command-form>label>input{width:auto;flex:0 0 auto;margin-top:3px}.admin-proof-dialog .admin-manual-case .admin-command-form>.admin-primary{justify-self:start;align-self:start;min-height:44px}
 .admin-proof-dialog .admin-repair-case>div>button,.admin-proof-dialog .admin-manual-case>div>button{margin-inline-end:10px;margin-bottom:10px}.admin-proof-dialog .admin-repair-case>label,.admin-proof-dialog .admin-manual-case>label{display:flex;align-items:flex-start;gap:8px}.admin-proof-dialog .admin-repair-case>label>input,.admin-proof-dialog .admin-manual-case>label>input{width:auto;flex:0 0 auto;margin-top:3px}
 .admin-modern .admin-support-panel .admin-support-feedback{display:flex;align-items:flex-start;gap:6px}.admin-modern .admin-support-panel .admin-support-feedback.is-error{color:var(--color-danger);font-weight:600}.admin-modern .admin-support-panel .admin-support-feedback.is-success{color:var(--color-brand-primary);font-weight:600}.admin-modern .admin-support-panel .admin-support-feedback .admin-feedback-icon{flex:0 0 auto;width:15px;height:15px;margin-top:2px;background:currentColor;-webkit-mask:center/contain no-repeat;mask:center/contain no-repeat}.admin-modern .admin-support-panel .admin-support-feedback.is-error .admin-feedback-icon{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 3.2a1.1 1.1 0 0 0-1.1 1.1v4.4a1.1 1.1 0 0 0 2.2 0V4.3A1.1 1.1 0 0 0 8 3.2Zm0 8.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Z'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 3.2a1.1 1.1 0 0 0-1.1 1.1v4.4a1.1 1.1 0 0 0 2.2 0V4.3A1.1 1.1 0 0 0 8 3.2Zm0 8.2a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Z'/%3E%3C/svg%3E")}.admin-modern .admin-support-panel .admin-support-feedback.is-success .admin-feedback-icon{-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm3.4 5.9a1 1 0 0 0-1.42-.08L7.3 8.4 6 7.2a1 1 0 0 0-1.36 1.47l2 1.86a1 1 0 0 0 1.38-.03l3.3-3.17a1 1 0 0 0 .08-1.43Z'/%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm3.4 5.9a1 1 0 0 0-1.42-.08L7.3 8.4 6 7.2a1 1 0 0 0-1.36 1.47l2 1.86a1 1 0 0 0 1.38-.03l3.3-3.17a1 1 0 0 0 .08-1.43Z'/%3E%3C/svg%3E")}
+
+/* Support orders reuse the existing administration palette and controls. */
+.admin-modern .admin-recharge-panel{display:grid;gap:20px}
+.admin-modern .recharge-section{display:grid;gap:12px;min-width:0}
+.admin-modern .recharge-section h3,.admin-modern .recharge-alert{margin:0}
+.admin-modern .recharge-section>.admin-secondary,.admin-modern .admin-recharge-panel>.admin-secondary{justify-self:start}
+.admin-modern .recharge-field-row{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;line-height:1.6}
+.admin-modern .recharge-field-label{color:var(--admin-muted);min-width:160px}
+.admin-modern .recharge-cases{table-layout:fixed;min-width:1080px}
+.admin-modern .recharge-cases th:last-child{width:32%}
+.admin-modern .recharge-cases td{vertical-align:top;overflow-wrap:anywhere}
+.admin-modern .recharge-cases td:last-child>*{display:block;margin-bottom:8px;max-width:100%}
+.admin-modern .recharge-cases .admin-filter{width:100%}
+.admin-modern .recharge-section .admin-command-form{margin:0;display:flex;gap:12px;flex-wrap:wrap}
+.admin-modern .admin-order-notifications{display:grid;gap:4px;max-width:280px}
+.admin-modern .admin-order-notifications .admin-audit-note{margin:0;font-size:12px}
+
+.admin-modern .recharge-cases td{white-space:normal;word-break:break-all}

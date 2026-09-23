@@ -102,6 +102,9 @@ class DepositRepairService:
         owner = session.get(WalletAddressOwner, row.source_address)
         control = session.get(WalletControl, 'global')
         blockers = []
+        from app.modules.wallet.recharge_receipts import reserved_for_recharge
+        if reserved_for_recharge(session, row.id):
+            blockers.append('SUPPORT_RECHARGE_RESERVED')
         if row.official_address != self.receipts.official_config.address or row.source_address == row.official_address:
             blockers.append('DIRECTION_MISMATCH')
         if row.status == 'CREDITED' or row.ledger_transaction_id or not row.pending_obligation:

@@ -118,6 +118,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   String? ignoredPayoutNotice;
   final address = TextEditingController();
   final amount = TextEditingController();
+  final evidenceTxid = TextEditingController();
   final signature = TextEditingController();
   final oldSignature = TextEditingController();
   final otp = TextEditingController();
@@ -148,28 +149,45 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   String? referenceFxError;
   bool referenceFxRequested = false;
   bool cnyPricing = false;
-  List<Map<String, dynamic>> rechargeContacts = [];
   List<Map<String, dynamic>> rechargeHistory = [];
   Map<String, dynamic>? rechargeOp;
   String? rechargeError;
   bool depositCancellationPending = false;
+  final rechargeEvidencePending = <String>{};
 
   Future<void> loadRecharges() async {
     try {
       await ensureCurrentScope();
       rechargeOp = await store.read('recharge');
-      final contacts = await widget.client.rechargeDirectory();
       final history = await widget.client.myRecharges();
       await ensureCurrentScope();
+      if (rechargeOp == null) {
+        final pending = history.where((row) => row['status'] == 'SUBMITTED');
+        if (pending.isNotEmpty) {
+          final current = pending.first;
+          rechargeOp = await store.begin('recharge', {
+            'id': current['id'],
+            'amount': current['amount_usdt'],
+          });
+        }
+      }
       if (!mounted) return;
       setState(() {
-        rechargeContacts = contacts;
         rechargeHistory = history;
         rechargeError = null;
         if (rechargeOp?['amount'] is String) {
           amount.text = rechargeOp!['amount'] as String;
         }
       });
+      if (rechargeOp?['id'] != null) {
+        final evidence =
+            await store.read('recharge_evidence_${rechargeOp!['id']}');
+        if (mounted && evidence?['txid'] is String) {
+          evidenceTxid.text = evidence!['txid'] as String;
+          setState(
+              () => rechargeEvidencePending.add(rechargeOp!['id'] as String));
+        }
+      }
     } catch (_) {
       if (mounted) setState(() => rechargeError = '充值信息加载失败，请重试');
     }
@@ -177,6 +195,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   Future<void> submitManualRecharge() async {
     await ensureCurrentScope();
+    // The public endpoint checks current availability; only the order's frozen
+    // official_payment snapshot is displayed after submission.
+    if (rechargeOp == null) await api.officialRechargePayment();
     rechargeOp ??=
         await store.begin('recharge', {'amount': manualAmount(amount.text)});
     final result = await widget.client.submitRecharge(
@@ -190,6 +211,26 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       result,
       ...rechargeHistory.where((row) => row['id'] != result['id'])
     ];
+  }
+
+  Future<void> submitRechargeEvidence(String id) async {
+    await ensureCurrentScope();
+    final txid = evidenceTxid.text.trim();
+    if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(txid)) {
+      throw const FormatException('请输入有效的链上交易哈希');
+    }
+    final operation =
+        await store.begin('recharge_evidence_$id', {'id': id, 'txid': txid});
+    evidenceTxid.text = operation['txid'] as String;
+    rechargeEvidencePending.add(id);
+    final result = await api.submitRechargeEvidence(
+        id, operation['txid'] as String, operation['key'] as String);
+    await ensureCurrentScope();
+    rechargeHistory = [
+      result,
+      ...rechargeHistory.where((row) => row['id'] != id)
+    ];
+    // Keep the same evidence operation for uncertain responses and app restarts.
   }
 
   Future<void> cancelManualRecharge(String id) async {
@@ -274,22 +315,32 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     return '${text.substring(0, text.length - digits)}.${text.substring(text.length - digits)}';
   }
 
-  Widget referenceFxCard() => rowsCard([
+  Widget referenceFxCard() => card([
+        Text(
+            widget.section == ManualWalletSection.payout
+                ? '预计到账 USDT · 参考'
+                : '预计到账点钻 · 参考',
+            style: const TextStyle(
+                fontSize: WeChatTypography.subhead,
+                color: WeChatColors.textSecondary)),
+        Text(
+            referenceEstimate == null
+                ? '—'
+                : '≈ $referenceEstimate ${widget.section == ManualWalletSection.payout ? 'USDT' : '点钻'}',
+            key: const Key('manual-reference-estimate'),
+            style: const TextStyle(
+                fontSize: WeChatTypography.brand, fontWeight: FontWeight.w600)),
         detail('点钻计价', '1 点钻 = ¥1.00'),
         if (referenceFx?['rate'] is String)
           detail('参考汇率', '1 USDT ≈ ¥${referenceFx!['rate']}'),
-        if (referenceEstimate != null)
-          detail(
-              widget.section == ManualWalletSection.payout
-                  ? '参考可兑 USDT'
-                  : '预计到账点钻',
-              '≈ $referenceEstimate ${widget.section == ManualWalletSection.payout ? 'USDT' : '点钻'}'),
-        detail(
-            '结算说明',
+        Text(
             referenceFxError ??
                 (referenceFx?['stale'] == true
                     ? '参考汇率已过期，实际结算以客服确认为准'
-                    : '参考估算，最终以客服结算为准')),
+                    : '参考估算，最终以客服结算为准'),
+            style: const TextStyle(
+                fontSize: WeChatTypography.caption,
+                color: WeChatColors.textSecondary)),
       ]);
 
   /// 距离上次改绑未满 30 天：服务端会拒绝，界面必须先讲清楚而不是让用户撞错。
@@ -366,6 +417,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (widget.section == ManualWalletSection.overview ||
+        widget.section == ManualWalletSection.deposit ||
         widget.section == ManualWalletSection.payout) {
       balanceRefresh = Timer.periodic(const Duration(seconds: 15), (_) {
         if (!mounted ||
@@ -377,7 +429,11 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             ModalRoute.of(context)?.isCurrent != true) {
           return;
         }
-        unawaited(refreshVisibleBalance());
+        if (widget.section == ManualWalletSection.deposit && cnyPricing) {
+          unawaited(run(loadRecharges, cacheFirst: true));
+        } else {
+          unawaited(refreshVisibleBalance());
+        }
       });
     }
     unawaited(_bootstrap());
@@ -1072,7 +1128,14 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     balanceRefresh?.cancel();
     // 共享 Store 的持有者是 WalletEntryStores（会话级），页面只退订，绝不 dispose。
     entry?.view.removeListener(_applyEntryState);
-    for (final field in [address, amount, signature, oldSignature, otp]) {
+    for (final field in [
+      address,
+      amount,
+      signature,
+      oldSignature,
+      otp,
+      evidenceTxid
+    ]) {
       field.dispose();
     }
     super.dispose();
@@ -1159,6 +1222,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           child: CupertinoTextField(
               key: Key(name),
               controller: controller,
+              keyboardType: identical(controller, amount)
+                  ? const TextInputType.numberWithOptions(decimal: true)
+                  : TextInputType.text,
               onChanged:
                   identical(controller, amount) ? (_) => setState(() {}) : null,
               placeholder: hint,
@@ -1438,7 +1504,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         builder: (context) => CupertinoAlertDialog(
                 title: const Text('钱包使用说明'),
                 content: const Text(
-                    '仅支持 TRON 网络 USDT（TRC20）。充值与提现每笔最低 10 USDT。提现使用点钻余额，1 点钻 = 1 USDT，服务费为 0。请先绑定地址，再创建充值或提现申请。提现由管理员人工付款。地址每 30 天最多修改一次，请仔细核对。'),
+                    '外部充值与提现仅支持 TRON 网络 USDT（TRC20）。1 点钻 = 1 元人民币；汇率和预计到账金额仅供参考，实际到账以客服结算为准。请先绑定钱包地址；使用其他来源付款时需要进一步核对归属。提现金额与费用以页面报价为准。地址每 30 天最多修改一次，请仔细核对。'),
                 actions: [
                   CupertinoDialogAction(
                       onPressed: () => Navigator.pop(context),
@@ -1849,76 +1915,122 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         ],
       ];
 
+  bool rechargeUnpaid(Map<String, dynamic> request) =>
+      request['status'] == 'SUBMITTED' &&
+      request['payment_verified'] != true &&
+      request['claimed_by'] == null &&
+      !rechargeEvidencePending.contains(request['id']) &&
+      request['evidence_txid'] == null &&
+      (request['processing_stage'] == null ||
+          request['processing_stage'] == 'WAITING_PAYMENT');
+
+  Widget rechargeOrder(Map<String, dynamic> request) {
+    final id = request['id'] as String;
+    final payment = request['official_payment'];
+    final deadline = DateTime.tryParse(request['expires_at']?.toString() ?? '');
+    final expired = deadline != null && !widget.clock().isBefore(deadline);
+    final active = rechargeOp?['id'] == id;
+    return rowsCard([
+      codeRow('申请单号', id, 'recharge-id-$id'),
+      detail('充值 USDT', request['amount_usdt']?.toString() ?? '—'),
+      if (request['processing_stage'] is String)
+        detail(
+            '处理阶段',
+            switch (request['processing_stage']) {
+              'WAITING_PAYMENT' => '等待付款',
+              'VERIFYING_PAYMENT' => '等待到账核验',
+              'PAYMENT_VERIFIED' => '待客服发放',
+              'NEEDS_REVIEW' || 'REVIEWING' => '待核对',
+              _ => '处理中',
+            }),
+      if (deadline != null) detail('处理截止时间（2小时）', shortDate(deadline)),
+      if (request['actual_received_usdt'] is String)
+        detail('实际收到 USDT', request['actual_received_usdt'] as String),
+      if (request['final_caibi_amount'] is String)
+        detail('最终到账点钻', request['final_caibi_amount'] as String),
+      if (request['final_rate'] is String)
+        detail('结算汇率', request['final_rate'] as String),
+      detail(
+          '状态',
+          switch (request['status']) {
+            'CREDITED' => '已到账',
+            'CANCELLED' => '已取消',
+            'REJECTED' => '已拒绝',
+            'SUBMITTED' => const {'NEEDS_REVIEW', 'REVIEWING'}
+                        .contains(request['processing_stage']) ||
+                    expired
+                ? '付款结果待核对，请勿重复付款'
+                : '待客服处理，尚未到账',
+            _ => '状态待核验，请刷新',
+          }),
+      if (active && request['status'] == 'SUBMITTED') ...[
+        if (!expired &&
+            deadline != null &&
+            rechargeError == null &&
+            request['evidence_txid'] == null &&
+            !rechargeEvidencePending.contains(id) &&
+            request['payment_verified'] != true &&
+            payment is Map &&
+            payment['address'] is String) ...[
+          detail('支付网络', payment['network']?.toString() ?? '—'),
+          addressRow(
+              '官方收款地址', payment['address'] as String, 'recharge-payment-$id',
+              canCopy: () => rechargeError == null),
+          QrImageView(
+              data: payment['address'] as String,
+              size: 160,
+              backgroundColor: CupertinoColors.white),
+        ],
+        if (expired) warningBox('处理期限已到，请勿继续付款；已付款或结果不明确的申请由客服核对。'),
+        if (!expired && payment is! Map) warningBox('收款信息尚未确认，请刷新订单后再付款。'),
+        field('recharge-evidence-txid', evidenceTxid, '已付款的链上交易哈希',
+            enabled: !rechargeEvidencePending.contains(id)),
+        button('提交付款凭证', () => submitRechargeEvidence(id),
+            enabled: rechargeError == null, key: 'recharge-evidence-submit'),
+        const Text('提交凭证不代表到账；实际收到的金额与最终结算以客服核验结果为准。',
+            style: TextStyle(
+                fontSize: WeChatTypography.caption,
+                color: WeChatColors.textSecondary)),
+      ],
+      if (rechargeUnpaid(request) && !expired)
+        button('取消充值申请', () => cancelManualRecharge(id),
+            enabled: rechargeError == null, key: 'recharge-cancel-$id'),
+    ]);
+  }
+
   List<Widget> manualRechargeFields() => [
-        stepIndicator(
-            const ['填写金额', '客服处理', '到账'],
-            rechargeOp?['id'] == null
-                ? 0
-                : rechargeHistory.any((row) =>
-                        row['id'] == rechargeOp?['id'] &&
-                        row['status'] == 'CREDITED')
-                    ? 2
-                    : 1,
+        stepIndicator(const ['填写金额', '客服处理'], rechargeOp?['id'] == null ? 0 : 1,
             keyPrefix: 'manual-deposit-step'),
-        referenceFxCard(),
-        warningBox('请先联系官方客服确认收款信息。提交申请不代表到账。'),
         if (rechargeError != null) ...[
           warningBox(rechargeError!),
           button('重新加载充值信息', loadRecharges),
         ],
-        for (final contact
-            in rechargeContacts.where((row) => row['enabled'] == true))
-          rowsCard([
-            detail('官方客服', contact['display_name']?.toString() ?? ''),
-            codeRow('客服账号', contact['cs_user_id']?.toString() ?? '',
-                'recharge-contact-${contact['id']}'),
-            if (contact['payment_address'] is String)
-              addressRow('客服收款地址', contact['payment_address'] as String,
-                  'recharge-address-${contact['id']}'),
-            if (contact['note'] is String)
-              detail('说明', contact['note'] as String),
-          ]),
-        if (rechargeContacts.isEmpty && rechargeError == null)
-          const Text('暂无可用官方客服，请稍后重试'),
-        field('manual-deposit-amount', amount, '充值金额 USDT',
-            enabled: rechargeOp == null),
-        if (rechargeOp?['id'] == null)
-          button(rechargeOp == null ? '提交充值申请' : '重试同一申请', submitManualRecharge,
-              enabled: ready &&
-                  capabilitiesKnown &&
-                  rechargeError == null &&
-                  rechargeContacts.any((row) => row['enabled'] == true),
+        if (rechargeOp?['id'] == null) ...[
+          field('manual-deposit-amount', amount, '充值金额 USDT',
+              enabled: rechargeOp == null),
+          referenceFxCard(),
+          button(rechargeOp == null ? '下一步' : '重试同一申请', submitManualRecharge,
+              enabled: ready && capabilitiesKnown && rechargeError == null,
               key: 'manual-recharge-submit'),
+        ],
         if (rechargeOp?['id'] != null)
+          for (final request
+              in rechargeHistory.where((row) => row['id'] == rechargeOp?['id']))
+            rechargeOrder(request),
+        if (rechargeOp?['id'] != null &&
+            !rechargeHistory.any((row) => row['id'] == rechargeOp?['id']))
+          codeRow('待刷新订单', rechargeOp!['id'] as String, 'recharge-pending-id'),
+        if (rechargeOp?['id'] != null &&
+            rechargeHistory.any((row) =>
+                row['id'] == rechargeOp?['id'] &&
+                const {'CREDITED', 'CANCELLED', 'REJECTED'}
+                    .contains(row['status'])))
           button('填写新的充值申请', () async {
             await store.clear('recharge');
             rechargeOp = null;
+            evidenceTxid.clear();
             amount.clear();
           }),
-        for (final request in rechargeHistory)
-          rowsCard([
-            codeRow('申请单号', request['id'].toString(),
-                'recharge-id-${request['id']}'),
-            detail('充值 USDT', request['amount_usdt']?.toString() ?? '—'),
-            if (request['final_caibi_amount'] is String)
-              detail('最终到账点钻', request['final_caibi_amount'] as String),
-            if (request['final_rate'] is String)
-              detail('结算汇率', request['final_rate'] as String),
-            detail(
-                '状态',
-                switch (request['status']) {
-                  'SUBMITTED' => '待客服处理，尚未到账',
-                  'CREDITED' => '已到账',
-                  'CANCELLED' => '已取消',
-                  'REJECTED' => '已拒绝',
-                  _ => '状态待核验，请刷新',
-                }),
-            if (request['status'] == 'SUBMITTED')
-              button(
-                  '取消充值申请', () => cancelManualRecharge(request['id'] as String),
-                  enabled: rechargeError == null,
-                  key: 'recharge-cancel-${request['id']}'),
-          ]),
       ];
 
   List<Widget> depositFields() => cnyPricing && depositOp == null
@@ -2037,7 +2149,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   /// 当前提现所处的步骤：0 填写金额 / 1 确认报价 / 2 到账。
   int get payoutStep {
-    if (payout != null || payoutOp?['id'] != null) return 2;
+    if (payout != null || payoutOp != null) return 1;
     if (quote != null) return 1;
     return 0;
   }
@@ -2095,7 +2207,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                           context, WeChatColors.textSecondary))),
             ]),
         const SizedBox(height: WeChatSpacing.xs),
-        Text('1 点钻 = ¥1.00 · 实际提现金额以报价为准',
+        Text('1 点钻 = ¥1.00 · 最终到账以客服结算为准',
             style: TextStyle(
                 fontSize: WeChatTypography.caption,
                 color:
@@ -2111,41 +2223,44 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             !pointsPayoutEnabled)
           warningBox('点钻提现暂不可用；已有订单可刷新查询或按状态取消。'),
         // 需求 5：步骤指示器在点「下一步」后保留，并用动效表达进度变化。
-        stepIndicator(const ['填写金额', '确认报价', '到账'], payoutStep,
+        stepIndicator(const ['填写金额', '客服处理'], payoutStep,
             keyPrefix: 'manual-payout-step'),
-        pointsBalanceHero(),
-        referenceFxCard(),
-        if (pointsError != null) ...[
-          warningBox(pointsError!),
-          button('重新加载余额', loadPointsBalance),
+        if (payoutStep == 0) ...[
+          referenceFxCard(),
+          pointsBalanceHero(),
+          if (pointsError != null) ...[
+            warningBox(pointsError!),
+            button('重新加载余额', loadPointsBalance),
+          ],
+          const SizedBox(height: 16),
+          const Text('提现金额',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text('1 点钻 = ¥1.00 · 预计金额仅供参考',
+              style:
+                  TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
+          Row(children: [
+            Expanded(
+                child: field('manual-payout-amount', amount, '输入点钻金额',
+                    // 需求 11：确认提现前输入框始终可改（提交以最终输入为准）。
+                    enabled: payoutOp == null)),
+            // 需求 6：输入框与「全部提现」之间保留设计网格间距（≥12dp）。
+            const SizedBox(width: WeChatSpacing.md),
+            WeChatSecondaryButton(
+                key: const Key('manual-payout-all'),
+                label: '全部提现',
+                onPressed: busy ||
+                        !ready ||
+                        !activeBinding ||
+                        !payoutEnabled ||
+                        !executionEnabled ||
+                        !pointsPayoutEnabled ||
+                        pointsAvailable == null ||
+                        payoutOp != null
+                    ? null
+                    : () => run(fillAll)),
+          ]),
         ],
-        const SizedBox(height: 16),
-        const Text('提现金额',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        const Text('1 点钻 = ¥1.00 · 到账金额与费用以报价为准',
-            style: TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
-        Row(children: [
-          Expanded(
-              child: field('manual-payout-amount', amount, '输入点钻金额',
-                  // 需求 11：确认提现前输入框始终可改（提交以最终输入为准）。
-                  enabled: payoutOp == null)),
-          // 需求 6：输入框与「全部提现」之间保留设计网格间距（≥12dp）。
-          const SizedBox(width: WeChatSpacing.md),
-          WeChatSecondaryButton(
-              key: const Key('manual-payout-all'),
-              label: '全部提现',
-              onPressed: busy ||
-                      !ready ||
-                      !activeBinding ||
-                      !payoutEnabled ||
-                      !executionEnabled ||
-                      !pointsPayoutEnabled ||
-                      pointsAvailable == null ||
-                      payoutOp != null
-                  ? null
-                  : () => run(fillAll)),
-        ]),
         if (quoteOp != null && (quoteOp!['funding_asset'] ?? 'USDT') != 'CAIBI')
           warningBox('这是此前保存的 USDT 提现申请，将按原资金来源恢复。'),
         if (quote != null && !payoutQuoteMatchesInput)
@@ -2173,7 +2288,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
               key: 'manual-payout-hero',
               icon: CupertinoIcons.arrow_up_circle,
               amount: quote!.amount,
-              subtitle: '确认后由管理员人工付款',
+              subtitle: '参考应付 · 确认后由客服处理',
               countdown: widget.clock().isBefore(quote!.expiresAt)
                   ? '报价有效期至 ${shortDate(quote!.expiresAt)}'
                   : null),
@@ -2184,7 +2299,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             detail('提现 USDT', quote!.amount),
             detail('服务费 USDT', quote!.fee),
             if (quote!.fundingAsset != 'CAIBI') detail('总冻结 USDT', quote!.hold),
-            detail('到账 USDT', quote!.receive),
+            detail('参考到账 USDT', quote!.receive),
             // 需求 12：确认有效期只展示服务端权威值（本地过期校验用同一个
             // expires_at），前端不自己编造 5 分钟/24 小时。
             detail('确认有效期', shortDate(quote!.expiresAt)),
@@ -2232,7 +2347,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                 ManualPayoutState.unknown => CupertinoIcons.question,
                 _ => CupertinoIcons.clock,
               },
-              amount: payout!.amount,
+              amount: payout!.finalReceive ?? '—',
               subtitle: switch (payout!.status) {
                 ManualPayoutState.settled => '已结算 · 请在钱包内确认到账',
                 ManualPayoutState.unknown => '付款结果待核验，资金继续冻结',
@@ -2247,7 +2362,13 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           rowsCard([
             codeRow('订单', payout!.id, 'manual-payout-id'),
             detail('状态', payout!.status.name),
-            detail('提现 USDT', payout!.amount),
+            detail('参考提现 USDT', payout!.amount),
+            detail('最终到账 USDT', payout!.finalReceive ?? '待客服结算'),
+            if (payout!.finalRate != null) detail('结算汇率', payout!.finalRate!),
+            if (payout!.expiresAt != null)
+              detail('处理截止时间（2小时）', shortDate(payout!.expiresAt!)),
+            if (payout!.processingStage == 'NEEDS_REVIEW')
+              warningBox('付款结果待核对，请勿重复申请；资金继续冻结。'),
             if (payout!.reviewReason != null)
               detail('核验说明', payout!.reviewReason!),
             if (payout!.settlementTxid != null)
@@ -2255,7 +2376,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           ]),
           if (payout!.status == ManualPayoutState.unknown)
             warningBox('付款结果待核验，资金继续冻结，请勿重复申请。'),
-          if (payout!.status == ManualPayoutState.requested)
+          if (payout!.status == ManualPayoutState.requested &&
+              payout!.processingStage != 'NEEDS_REVIEW')
             Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: WeChatSecondaryButton(

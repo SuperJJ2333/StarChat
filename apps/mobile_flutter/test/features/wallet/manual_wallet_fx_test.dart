@@ -121,6 +121,13 @@ void main() {
       if (request.url.path.endsWith('/fx/rate')) {
         return flow.json({'rate': '7.10'});
       }
+      if (request.url.path.endsWith('/recharge/official-payment')) {
+        return flow.json({
+          'network': 'tron-mainnet',
+          'address': fixtures.syntheticTronAddress(),
+          'config_version': 'v1'
+        });
+      }
       if (request.url.path.endsWith('/recharge/directory')) {
         return flow.json({
           'items': [
@@ -192,6 +199,13 @@ void main() {
       if (request.url.path.endsWith('/fx/rate')) {
         return flow.json({'rate': '7.10', 'stale': false});
       }
+      if (request.url.path.endsWith('/recharge/official-payment')) {
+        return flow.json({
+          'network': 'tron-mainnet',
+          'address': fixtures.syntheticTronAddress(),
+          'config_version': 'v1'
+        });
+      }
       if (request.url.path.endsWith('/recharge/directory')) {
         return flow.json({
           'items': [
@@ -223,7 +237,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     await flow.openDeposit(tester);
-    expect(find.text('客服小畅'), findsOneWidget);
+    expect(find.text('客服小畅'), findsNothing);
     await tester.enterText(
         find.byKey(const Key('manual-deposit-amount')), '20');
     await flow.tap(tester, find.byKey(const Key('manual-recharge-submit')));

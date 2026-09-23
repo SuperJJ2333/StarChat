@@ -36,3 +36,24 @@ test('session dialog is modal and re-login only follows explicit action',()=>{
  assert.equal(dialog.open,true);assert.equal(dialog['aria-labelledby'],'admin-session-title');assert.equal(calls,0);
  dialog.find('button')[0].handlers.click();assert.equal(calls,1);assert.equal(dialog.removed,true);
 });
+
+test('staff activation uses server-bound contact then returns to password login',async()=>{
+ let sent,confirmed;
+ const page=setup({getLoginCaptcha:async()=>challenge,
+   requestStaffActivation:async body=>{sent=body;return {activation_id:'z'.repeat(43),channel:'phone',masked_target:'+86****0000',expires_in:300};},
+   confirmStaffActivation:async body=>{confirmed=body;return {status:'activated',user_id:'staff'};}});
+ await settle();
+ const activate=page.find('button').find(n=>n.textContent==='首次开通');
+ assert.ok(activate);await activate.handlers.click();await settle();
+ page.find('input').find(n=>n.name==='username').value='staff';
+ page.find('input').find(n=>n.name==='password').value='secret-password';
+ page.find('input').find(n=>n.name==='captcha_answer').value='ABC123';
+ await page.find('form')[0].handlers.submit({preventDefault(){}});
+ assert.equal(sent.username,'staff');assert.equal(sent.phone,undefined);assert.equal(sent.email,undefined);
+ assert.ok(page.find('p').some(n=>n.textContent?.includes('+86****0000')));
+ const code=page.find('input').find(n=>n.name==='activation_code');code.value='123456';
+ await page.find('form')[0].handlers.submit({preventDefault(){}});
+ assert.deepEqual(confirmed,{activation_id:'z'.repeat(43),code:'123456'});
+ assert.equal(code.value,'');
+ assert.ok(page.find('p').some(n=>n.textContent?.includes('开通成功')));
+});

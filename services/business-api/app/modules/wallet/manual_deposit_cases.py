@@ -63,6 +63,9 @@ class ManualDepositCaseService:
         decision = (session.scalar(select(ManualDepositDecision).where(ManualDepositDecision.case_id == case.id))
                     if case is not None else None)
         blockers = []
+        from app.modules.wallet.recharge_receipts import reserved_for_recharge
+        if reserved_for_recharge(session, row.id):
+            blockers.append('SUPPORT_RECHARGE_RESERVED')
         if row.status != 'REVIEW' or not row.pending_obligation or row.ledger_transaction_id or row.intent_id or row.manual_case_id:
             blockers.append('RECEIPT_ALREADY_CREDITED')
         if binding is None:

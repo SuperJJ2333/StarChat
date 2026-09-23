@@ -42,6 +42,9 @@ class DepositReceipt(Base):
     ledger_transaction_id: Mapped[str | None] = mapped_column(ForeignKey('wallet_ledger_transactions.id'))
     manual_case_id: Mapped[str | None] = mapped_column(ForeignKey('wallet_manual_deposit_cases.id'), unique=True)
 
+    recharge_request_id: Mapped[str | None] = mapped_column(String(36), unique=True)
+    caibi_ledger_transaction_id: Mapped[str | None] = mapped_column(String(36), unique=True)
+
 
 class DepositReceiptAnomaly(Base):
     __tablename__ = 'wallet_deposit_receipt_anomalies'
@@ -56,17 +59,36 @@ class DepositReceiptAnomaly(Base):
 @event.listens_for(DepositReceipt, 'before_update')
 def immutable_receipt(mapper, connection, target):
     state = inspect(target)
-    mutable = {'status', 'reason_code', 'pending_obligation', 'intent_id', 'user_id', 'ledger_transaction_id', 'manual_case_id'}
+    mutable = {'status', 'reason_code', 'pending_obligation', 'intent_id', 'user_id', 'ledger_transaction_id', 'manual_case_id', 'recharge_request_id', 'caibi_ledger_transaction_id'}
     if any(state.attrs[c.name].history.has_changes() for c in target.__table__.columns if c.name not in mutable):
         raise ValueError('immutable deposit receipt facts')
     changed = state.attrs.status.history
     if (not changed.has_changes() and target.status == 'REVIEW'
             and not any(state.attrs[name].history.has_changes() for name in mutable - {'reason_code'})):
         return
+    if target.recharge_request_id or target.caibi_ledger_transaction_id:
+        if (list(changed.deleted) != ['REVIEW'] or target.status != 'CREDITED'
+            or target.pending_obligation or not target.user_id or not target.recharge_request_id
+            or not target.caibi_ledger_transaction_id or target.ledger_transaction_id
+            or target.intent_id or target.manual_case_id):
+            raise ValueError('invalid support recharge receipt transition')
+        proof = connection.execute(text("""SELECT 1 FROM wallet_recharge_receipt_reservations r
+            JOIN recharge_credit_bindings b ON b.request_id=r.request_id
+            JOIN adjustment_requests a ON a.id=b.adjustment_id
+            WHERE r.receipt_id=:receipt AND r.request_id=:request AND r.user_id=:user
+            AND r.state='CONSUMED' AND r.ledger_transaction_id=:ledger
+            AND a.status='EXECUTED' AND a.ledger_transaction_id=:ledger AND a.user_id=:user"""),
+            {'receipt':target.id,'request':target.recharge_request_id,'user':target.user_id,
+             'ledger':target.caibi_ledger_transaction_id}).first()
+        if proof is None: raise ValueError('support recharge requires approved financial execution')
+        return
     if (list(changed.deleted) != ['REVIEW'] or target.status != 'CREDITED'
             or target.pending_obligation or not target.user_id or not target.ledger_transaction_id
             or bool(target.intent_id) == bool(target.manual_case_id)):
         raise ValueError('immutable deposit receipt lifecycle')
+    if connection.execute(text('SELECT 1 FROM wallet_recharge_receipt_reservations WHERE receipt_id=:receipt'),
+                          {'receipt': target.id}).first() is not None:
+        raise ValueError('receipt reserved for support recharge')
     if target.manual_case_id:
         row = connection.execute(text("""SELECT 1 FROM wallet_manual_deposit_cases c
             JOIN wallet_manual_deposit_decisions d ON d.case_id=c.id AND d.decision='APPROVED'

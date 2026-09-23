@@ -1,11 +1,18 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
+from contextlib import nullcontext
+import hashlib
 
 from sqlalchemy import func, select
 
 from app.modules.ledger.adjustment_models import AdjustmentPolicy, AdjustmentRequest
 from app.modules.ledger.service import LedgerService, money
+from app.modules.recharge.execution import prepare_adjustment_execution, finish_adjustment_execution, lock_execution_scope
+from app.modules.recharge.execution import support_adjustment_terms, require_execution_authorization
+from app.core.errors import AppError
+from app.core.outbox import OutboxPublisher
+from app.modules.audit.models import AuditEvent
 
 class AdjustmentWorkflow:
     def __init__(self, session_factory, ledger: LedgerService, *, admin_threshold: Decimal):
@@ -22,12 +29,13 @@ class AdjustmentWorkflow:
             else:
                 row.per_transaction, row.per_day, row.allowed_users, row.updated_at = money(per_transaction), money(per_day), sorted(allowed_users), now
 
-    def submit(self, *, actor_id: str, user_id: str, amount: Decimal, reason_code: str, idempotency_key: str) -> AdjustmentRequest:
+    def submit(self, *, actor_id: str, user_id: str, amount: Decimal, reason_code: str, idempotency_key: str, session=None) -> AdjustmentRequest:
+        """Public submission boundary; an optional caller transaction binds the order atomically."""
         amount = money(amount)
         if amount == 0 or not reason_code or not idempotency_key:
             raise ValueError("amount, reason and idempotency are required")
         now = datetime.now(timezone.utc)
-        with self.session_factory.begin() as session:
+        with (self.session_factory.begin() if session is None else nullcontext(session)) as session:
             existing = session.scalar(select(AdjustmentRequest).where(AdjustmentRequest.submitted_by == actor_id, AdjustmentRequest.idempotency_key == idempotency_key))
             if existing:
                 return existing
@@ -49,14 +57,49 @@ class AdjustmentWorkflow:
     def finance_review(self, request_id: str, *, reviewer_id: str, approve: bool) -> AdjustmentRequest:
         return self._review(request_id, reviewer_id, approve, "SUBMITTED", "FINANCE_APPROVED", "finance_reviewer_id")
 
+    def submit_support_recharge(self, *, session, request_id, actor_id, claim_token,
+                                final_rate, idempotency_key):
+        """Narrow verified-order submission, still pending independent approval.
+
+        The caller supplies its transaction and must bind this returned request
+        before committing; execution fails closed for an unbound support request.
+        Ordinary adjustment policy permissions remain unchanged.
+        """
+        if not actor_id or not idempotency_key:
+            raise ValueError('actor and idempotency key are required')
+        now = datetime.now(timezone.utc)
+        user_id, amount = support_adjustment_terms(session, request_id=request_id,
+            actor_id=actor_id, claim_token=claim_token, final_rate=final_rate, now=now)
+        key = 'support-recharge:' + hashlib.sha256((request_id + ':' + idempotency_key).encode()).hexdigest()
+        existing = session.scalar(select(AdjustmentRequest).where(
+            AdjustmentRequest.submitted_by == actor_id, AdjustmentRequest.idempotency_key == key))
+        if existing is not None:
+            if existing.user_id != user_id or existing.amount != amount or existing.reason_code != 'RECHARGE_CREDIT':
+                raise AppError(code='IDEMPOTENCY_CONFLICT', message='同一申请的结算参数不能变更', status_code=409)
+            return existing
+        request = AdjustmentRequest(id=str(uuid4()), user_id=user_id, amount=amount,
+            reason_code='RECHARGE_CREDIT', status='SUBMITTED', submitted_by=actor_id,
+            idempotency_key=key, business_date=now.date(), created_at=now, updated_at=now)
+        session.add(request)
+        session.flush()
+        session.add(AuditEvent(id=str(uuid4()), actor_id=actor_id, subject_type='adjustment_request',
+            subject_id=request.id, action='recharge.adjustment_submitted', result='SUCCESS',
+            reason_code='RECHARGE_CREDIT', trace_id=request.id[:32],
+            after_data={'request_id': request_id, 'amount': str(amount)}, created_at=now))
+        OutboxPublisher.enqueue(session, topic='recharge', event_type='recharge.adjustment_submitted',
+            aggregate_type='recharge_request', aggregate_id=request_id,
+            payload={'request_id': request_id, 'adjustment_id': request.id}, now=now)
+        return request
+
     def admin_review(self, request_id: str, *, reviewer_id: str, approve: bool) -> AdjustmentRequest:
         # A system administrator may execute the modification directly.  The
         # command still records the actor and follows the state machine, but it
         # does not require a preceding finance approval or amount threshold.
         with self.session_factory.begin() as session:
-            request = session.get(AdjustmentRequest, request_id)
+            request = session.get(AdjustmentRequest, request_id, with_for_update=True)
             if not request or request.status not in {"SUBMITTED", "FINANCE_APPROVED"}:
                 raise ValueError("illegal approval transition")
+            self._support_review_audit(session, request, reviewer_id, approve)
             request.admin_reviewer_id = reviewer_id
             request.status = "ADMIN_APPROVED" if approve else "REJECTED"
             request.updated_at = datetime.now(timezone.utc)
@@ -65,16 +108,33 @@ class AdjustmentWorkflow:
 
     def _review(self, request_id, reviewer_id, approve, expected, approved_status, reviewer_field):
         with self.session_factory.begin() as session:
-            request = session.get(AdjustmentRequest, request_id)
+            request = session.get(AdjustmentRequest, request_id, with_for_update=True)
             if not request or request.status != expected:
                 raise ValueError("illegal approval transition")
+            self._support_review_audit(session, request, reviewer_id, approve)
             setattr(request, reviewer_field, reviewer_id)
             request.status = approved_status if approve else "REJECTED"
             request.updated_at = datetime.now(timezone.utc)
             session.flush()
             return request
 
-    def execute(self, request_id: str, *, actor_id: str, idempotency_key: str) -> AdjustmentRequest:
+    def _support_review_audit(self, session, request, reviewer_id, approve):
+        if not request.idempotency_key.startswith('support-recharge:'):
+            return
+        if approve and reviewer_id == request.submitted_by:
+            raise AppError(code='RECHARGE_INDEPENDENT_APPROVAL_REQUIRED', message='充值结算需要独立财务审批', status_code=409)
+        now = datetime.now(timezone.utc)
+        outcome = 'APPROVED' if approve else 'REJECTED'
+        session.add(AuditEvent(id=str(uuid4()), actor_id=reviewer_id, subject_type='adjustment_request',
+            subject_id=request.id, action='recharge.adjustment_reviewed', result='SUCCESS',
+            reason_code='RECHARGE_CREDIT', trace_id=request.id[:32],
+            before_data={'status': request.status}, after_data={'decision': outcome}, created_at=now))
+        OutboxPublisher.enqueue(session, topic='recharge', event_type='recharge.adjustment_reviewed',
+            aggregate_type='adjustment_request', aggregate_id=request.id,
+            payload={'adjustment_id': request.id, 'decision': outcome, 'reviewer_id': reviewer_id}, now=now)
+
+    def execute(self, request_id: str, *, actor_id: str, idempotency_key: str, session=None,
+                support_claim_token=None, support_authorization=None) -> AdjustmentRequest:
         """F02：同一审批单只执行一次。
 
         - 执行幂等键由服务端从 adjustment_request_id 派生（与 HTTP 请求
@@ -84,14 +144,21 @@ class AdjustmentWorkflow:
           回滚；崩溃后重试经账本幂等键返回同一交易并补齐终态。
         """
         execution_key = f"adjustment-execute:{request_id}"
-        with self.session_factory.begin() as session:
+        with (self.session_factory.begin() if session is None else nullcontext(session)) as session:
+            fresh = support_authorization(session) if support_authorization is not None else None
+            order = lock_execution_scope(session, adjustment_id=request_id)
+            require_execution_authorization(order, actor_id=actor_id, claim_token=support_claim_token,
+                fresh=fresh, now=datetime.now(timezone.utc))
             request = session.get(AdjustmentRequest, request_id, with_for_update=True)
             if not request:
                 raise ValueError("request not found")
             if request.status == "EXECUTED":
+                if callable(fresh): fresh()
                 return request
             if request.status not in ("FINANCE_APPROVED", "ADMIN_APPROVED"):
                 raise ValueError("request is not approved")
+            prepared = prepare_adjustment_execution(session, adjustment=request, actor_id=actor_id,
+                now=datetime.now(timezone.utc), reserve_policy=self.ledger.reserve_policy)
             tx = self.ledger.adjust(
                 user_id=request.user_id,
                 amount=request.amount,
@@ -102,4 +169,6 @@ class AdjustmentWorkflow:
             )
             request.status, request.ledger_transaction_id, request.updated_at = "EXECUTED", tx.id, datetime.now(timezone.utc)
             session.flush()
+            finish_adjustment_execution(session, prepared=prepared, ledger_transaction_id=tx.id)
+            if callable(fresh): fresh()
             return request

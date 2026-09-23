@@ -73,6 +73,8 @@ def env(tmp_path):
         jwt_issuer=settings.jwt_issuer, require_session_claims=False)
     headers = {uid: {"Authorization": f"Bearer {tokens.issue_pair(user_id=uid, device_key='d', display_name='t').access_token}"}
         for uid in ("alice", "agent", "root")}
+    from support_auth_helpers import staff_token
+    headers['agent'] = {'Authorization': 'Bearer ' + staff_token(factory, settings, tokens)}
     yield app, factory, ledger, headers
     engine.dispose()
 
@@ -94,7 +96,7 @@ def get(app, headers, path):
 def test_review_queue_requires_finance_permission(env):
     app, factory, ledger, headers = env
     response = get(app, headers["alice"], "/api/v1/recharge/admin/review-queue")
-    assert response.status_code == 403
+    assert response.status_code == 401  # Ordinary APP token is not a management session
     ok = get(app, headers["agent"], "/api/v1/recharge/admin/review-queue")
     assert ok.status_code == 200
     assert ok.json()["items"][0]["state"] == "NEEDS_REVIEW"
@@ -149,4 +151,4 @@ def test_timeline_and_pagination(env):
     assert page2.status_code == 200
     assert len(page2.json()["items"]) >= 1
     denied = get(app, headers["alice"], "/api/v1/recharge/admin/requests")
-    assert denied.status_code == 403
+    assert denied.status_code == 401  # APP session is not authorized for management.

@@ -354,6 +354,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         is_admin = "system.admin" in actual
         frontend_map = {
             "admin.finance.read": "finance.review",
+            "admin.finance.review": "finance.review",
             "admin.bans.read": "system.admin",
             "admin.support_roles.read": "support.scope.manage",
             "admin.analytics.read": "audit.view",
@@ -524,7 +525,6 @@ def _mask_wallet_address(address: str) -> str:
     if len(address) <= 8:
         return "***"
     return f"{address[:1]}***{address[-4:]}"
-
 
 
 

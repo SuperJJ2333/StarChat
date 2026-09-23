@@ -69,6 +69,11 @@ class PayoutView(BaseModel):
     final_rate: str | None = None
     final_receive: str | None = None
     cancellation_asset: Literal['CAIBI', 'USDT'] = 'USDT'
+    expires_at: str | None = None
+    processing_stage: str | None = None
+    claimed_by: str | None = None
+    claim_expires_at: str | None = None
+    execution_started_at: str | None = None
 
 
 class InstructionView(BaseModel):

@@ -16,6 +16,7 @@ from app.modules.identity.invitations import hash_opaque_token
 from app.modules.identity.models import AdminSession, Device, RefreshToken, RefreshTokenFamily, User
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.rbac import RbacService
+from app.modules.identity.staff_activation import require_staff_admin_access
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,7 @@ class TokenService:
                 self._invalid('CREDENTIALS_INVALID', '账号或密码错误', 401)
             if not RbacService(self._session_factory).permissions_for(user_id):
                 self._invalid('PERMISSION_DENIED', '无权访问管理后台', 403)
+            require_staff_admin_access(session, user)
             current = session.get(AdminSession, user_id)
             if current is not None:
                 old_family = session.get(RefreshTokenFamily, current.family_id)
@@ -203,6 +205,8 @@ class TokenService:
             user = session.get(User, family.user_id)
             if user is None or user.status.value != 'ACTIVE':
                 self._invalid('ACCOUNT_NOT_ACTIVE', '账号不可用', 403)
+            if is_admin:
+                require_staff_admin_access(session, user)
             if is_admin and self._utc(admin.expires_at) <= now:
                 family.revoked_at = now
                 family.revoke_reason = 'ADMIN_SESSION_EXPIRED'
@@ -334,6 +338,8 @@ class TokenService:
                 admin = session.get(AdminSession, claims['sub'])
                 is_admin = admin is not None and admin.family_id == claims['family_id']
                 if claims.get('session_scope') == 'admin':
+                    if user is not None:
+                        require_staff_admin_access(session, user)
                     if not is_admin:
                         self._invalid('ADMIN_SESSION_REPLACED', '账号已在其他设备登录', 401)
                     if self._utc(admin.expires_at) <= self._now_factory():

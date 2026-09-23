@@ -146,6 +146,24 @@ final class ManualWalletApi {
       : _client = _ScopedWalletTransport(client);
   final _ScopedWalletTransport _client;
 
+  Future<Map<String, dynamic>> officialRechargePayment() async {
+    final value = await _client.getJson('/recharge/official-payment');
+    _tronAddress(value, 'address');
+    if (!const {'TRON', 'tron-mainnet'}.contains(value['network'])) _invalid();
+    _string(value, 'config_version');
+    return value;
+  }
+
+  Future<Map<String, dynamic>> submitRechargeEvidence(
+      String id, String txid, String idempotencyKey) {
+    if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(txid)) {
+      throw const FormatException('请输入有效的链上交易哈希');
+    }
+    return _client.postJson(
+        '/recharge/requests/${_id(id)}/evidence', {'txid': txid},
+        idempotencyKey: _key(idempotencyKey));
+  }
+
   String _key(String value) {
     if (value.isEmpty ||
         value.length > 128 ||
@@ -588,7 +606,11 @@ final class ManualPayout {
       this.digest,
       this.candidateTxid,
       this.settlementTxid,
-      this.reviewReason);
+      this.reviewReason,
+      this.finalReceive,
+      this.finalRate,
+      this.expiresAt,
+      this.processingStage);
   final String id;
   final String userId;
   final String quoteId;
@@ -598,6 +620,10 @@ final class ManualPayout {
   final String? candidateTxid;
   final String? settlementTxid;
   final String? reviewReason;
+  final String? finalReceive;
+  final String? finalRate;
+  final DateTime? expiresAt;
+  final String? processingStage;
   factory ManualPayout.fromJson(Map<String, dynamic> json) => ManualPayout._(
       _string(json, 'id'),
       _string(json, 'user_id'),
@@ -613,7 +639,11 @@ final class ManualPayout {
       _digest(json, 'digest'),
       _optionalString(json, 'candidate_txid'),
       _optionalString(json, 'settlement_txid'),
-      _optionalString(json, 'review_reason'));
+      _optionalString(json, 'review_reason'),
+      json['final_receive'] == null ? null : _money(json, 'final_receive'),
+      _optionalString({'final_rate': null, ...json}, 'final_rate'),
+      _optionalDate({'expires_at': null, ...json}, 'expires_at'),
+      _optionalString({'processing_stage': null, ...json}, 'processing_stage'));
 }
 
 final class ManualMfaStatus {

@@ -38,7 +38,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
     # 2026-09-21：迁移链扩至 0080（ADR-0075..0079 及实施补充），仍单头。
-    assert _alembic("heads").strip() == "0083_phone_wallet_refresh_merge (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0087_support_payout_workflow (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history

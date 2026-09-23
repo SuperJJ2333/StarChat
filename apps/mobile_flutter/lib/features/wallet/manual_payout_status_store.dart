@@ -44,6 +44,10 @@ final class ManualPayoutStatusStore {
     'candidate_txid',
     'settlement_txid',
     'review_reason',
+    'final_receive',
+    'final_rate',
+    'expires_at',
+    'processing_stage',
   };
 
   Future<void> initialize() async {
@@ -114,5 +118,9 @@ final class ManualPayoutStatusStore {
         'candidate_txid': payout.candidateTxid,
         'settlement_txid': payout.settlementTxid,
         'review_reason': payout.reviewReason,
+        'final_receive': payout.finalReceive,
+        'final_rate': payout.finalRate,
+        'expires_at': payout.expiresAt?.toUtc().toIso8601String(),
+        'processing_stage': payout.processingStage,
       };
 }

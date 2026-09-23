@@ -25,6 +25,7 @@ def management_path(path: str) -> bool:
         path == '/api/v1/admin' or path.startswith('/api/v1/admin/')
         or re.fullmatch(r'/api/v1/wallet/manual/payouts/[^/]+/(claim|txid|correct-candidate)', path)
         or re.fullmatch(r'/api/v1/wallet/withdrawals/[^/]+/(finance-approve|admin-approve|submit)', path)
+        or path.startswith('/api/v1/recharge/admin/')
         or path.startswith('/api/v1/ledger/adjustments')
         or path.startswith('/api/v1/ledger/adjustment-policies')
         or re.fullmatch(r'/api/v1/support/tickets/[^/]+/(assign|transfer|close)', path)

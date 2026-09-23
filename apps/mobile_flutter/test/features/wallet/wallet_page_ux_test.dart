@@ -63,8 +63,7 @@ void main() {
     final gate = Completer<http.Response>();
     final api = await walletClient(() => gate.future);
 
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.textContaining('功能状态暂不可用'), findsNothing,
@@ -82,8 +81,7 @@ void main() {
       return unavailable();
     });
 
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
 
     expect(attempts, greaterThan(0));
@@ -102,8 +100,7 @@ void main() {
           : gate.future;
     });
 
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     expect(find.textContaining('功能状态暂不可用'), findsNothing);
 
@@ -119,8 +116,8 @@ void main() {
   });
 
   testWidgets('钱包根页面的刷新按钮位于顶部导航栏右侧', (tester) async {
-    final api = await flow.client((request) async =>
-        flow.json(request.url.path.endsWith('/binding') ? fixtures.binding : {}));
+    final api = await flow.client((request) async => flow
+        .json(request.url.path.endsWith('/binding') ? fixtures.binding : {}));
     await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
     await tester.pumpAndSettle();
 
@@ -138,8 +135,7 @@ void main() {
         reason: '列表内不再重复放刷新按钮');
     expect(
         find.descendant(
-            of: find.byType(CupertinoNavigationBar),
-            matching: find.text('钱包')),
+            of: find.byType(CupertinoNavigationBar), matching: find.text('钱包')),
         findsOneWidget);
   });
 
@@ -151,8 +147,7 @@ void main() {
       }
       return flow.json({});
     });
-    await tester
-        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
 
     // 充值：填写金额步骤 + 手续费/到账网络明细分组。
@@ -170,21 +165,19 @@ void main() {
     expect(find.byKey(const Key('manual-deposit-hero')), findsOneWidget);
   });
 
-  testWidgets('提现页面按 design-demo 呈现三步指示器', (tester) async {
-    final api = await flow.client((request) async =>
-        flow.json(request.url.path.endsWith('/wallet/binding')
-            ? fixtures.binding
-            : {}));
+  testWidgets('提现页面按 design-demo 呈现两步指示器', (tester) async {
+    final api = await flow.client((request) async => flow.json(
+        request.url.path.endsWith('/wallet/binding') ? fixtures.binding : {}));
     await tester.pumpWidget(CupertinoApp(
         home: ManualWalletPage(
             client: api, section: ManualWalletSection.payout)));
     await tester.pumpAndSettle();
 
     expect(find.text('填写金额'), findsOneWidget);
-    expect(find.text('确认报价'), findsOneWidget);
-    expect(find.text('到账'), findsOneWidget);
-    expect(find.byKey(const Key('manual-payout-points-balance')),
-        findsOneWidget);
+    expect(find.text('客服处理'), findsOneWidget);
+    expect(find.text('到账'), findsNothing);
+    expect(
+        find.byKey(const Key('manual-payout-points-balance')), findsOneWidget);
   });
 
   test('AppHome 的钱包入口不再自建导航栏（避免与钱包页导航栏重复）', () {

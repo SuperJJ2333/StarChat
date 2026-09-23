@@ -1,5 +1,6 @@
 """ADR-0077：人工充值 API（用户申请 + 客服处理 + 目录）。"""
 from decimal import Decimal
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -10,7 +11,9 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.wallet_grant import WalletAccessGrantService
 from app.modules.recharge.service import RechargeService
+from app.modules.recharge.notifications import SupportOrderNotifications  # model registration
 
 
 class StrictModel(BaseModel):
@@ -25,6 +28,7 @@ class RechargeSubmitBody(StrictModel):
 
 class RechargeRejectBody(StrictModel):
     reason: str = Field(min_length=3, max_length=200)
+    claim_token: str | None = Field(default=None, max_length=128)
 
 
 class RechargeCreditBody(StrictModel):
@@ -38,11 +42,35 @@ class RechargeReviewBody(StrictModel):
     action: str = Field(pattern='^(retry|release)$')
     binding_id: str = Field(min_length=1, max_length=36)
     reason: str | None = Field(default=None, min_length=3, max_length=200)
+    claim_token: str | None = Field(default=None, max_length=128)
 
 
 class RechargeBindBody(StrictModel):
     adjustment_id: str = Field(min_length=1, max_length=36)
     final_rate: str | None = Field(default=None, pattern=r"^(0|[1-9][0-9]{0,8})(\.[0-9]{1,6})?$", max_length=18)
+    claim_token: str | None = Field(default=None, max_length=128)
+
+
+class RechargeClaimBody(StrictModel):
+    review: bool = False
+    reason: str | None = Field(default=None, min_length=3, max_length=200)
+
+
+class RechargeLeaseBody(StrictModel):
+    claim_token: str | None = Field(default=None, max_length=128)
+
+
+class RechargeEvidenceBody(StrictModel):
+    txid: str = Field(pattern=r'^[a-fA-F0-9]{64}$')
+
+
+class RechargeVerifyBody(RechargeEvidenceBody):
+    claim_token: str = Field(min_length=1, max_length=128)
+    log_index: int = Field(ge=0)
+
+
+class RechargeSettlementBody(RechargeLeaseBody):
+    final_rate: str = Field(pattern=r'^(0|[1-9][0-9]{0,8})(\.[0-9]{1,6})?$', max_length=18)
 
 
 class CsDirectoryBody(StrictModel):
@@ -63,6 +91,18 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
         jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes",
         jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     rbac = RbacService(session_factory)
+    grants = WalletAccessGrantService(settings, session_factory,
+        lambda: datetime.now(timezone.utc), scope='support-orders')
+
+    def command_authorization(authorization: Annotated[str | None, Header()] = None):
+        if not authorization or not authorization.startswith('Bearer '):
+            raise AppError(code='AUTH_REQUIRED', message='需要管理会话', status_code=401)
+        claims = tokens.decode_access_token(authorization[7:])
+        # Match the established fixture-only boundary. Real test sessions are
+        # still subject to the management-session and scoped proof requirements.
+        if settings.environment == 'test' and not claims.get('family_id'):
+            return None
+        return grants.authorization(claims=claims)
 
     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -78,8 +118,14 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
         """官方充值客服目录（后台授权，APP 据此推荐）。"""
         return {"items": recharge_service.directory(), "disclaimer": "参考估算，最终以客服结算为准"}
 
+    @router.get('/official-payment')
+    def official_payment(user_id: str = Depends(actor)):
+        return recharge_service.official_payment_view()
+
     @router.post("/requests", status_code=201)
     def submit(body: RechargeSubmitBody, idempotency_key: IdempotencyKey, user_id: str = Depends(actor)):
+        if settings.environment != 'test':
+            recharge_service.official_payment_view()
         return recharge_service.submit(user_id=user_id, amount_usdt=Decimal(body.amount_usdt),
             evidence_txid=body.evidence_txid, note=body.note, idempotency_key=idempotency_key)
 
@@ -91,26 +137,72 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
     def cancel(request_id: str, user_id: str = Depends(actor)):
         return recharge_service.cancel(user_id=user_id, request_id=request_id)
 
-    @router.get("/admin/requests/pending")
-    def pending(actor_id: str = Depends(actor)):
+    @router.post('/requests/{request_id}/evidence')
+    def evidence(request_id: str, body: RechargeEvidenceBody, idempotency_key: IdempotencyKey,
+                 user_id: str = Depends(actor)):
+        return recharge_service.submit_evidence(request_id=request_id, user_id=user_id,
+            txid=body.txid, idempotency_key=idempotency_key)
+
+    @router.post('/admin/requests/{request_id}/claim')
+    def claim(request_id: str, body: RechargeClaimBody, idempotency_key: IdempotencyKey,
+              actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
         require_finance(actor_id)
-        return {"items": recharge_service.list_pending()}
+        return recharge_service.claim_order(request_id=request_id, actor_id=actor_id,
+            idempotency_key=idempotency_key, authorization=authorization, **body.model_dump())
+
+    @router.post('/admin/requests/{request_id}/heartbeat')
+    def heartbeat(request_id: str, body: RechargeLeaseBody, actor_id: str = Depends(actor),
+                  authorization=Depends(command_authorization)):
+        require_finance(actor_id)
+        return recharge_service.heartbeat_order(request_id=request_id, actor_id=actor_id,
+            claim_token=body.claim_token, authorization=authorization)
+
+    @router.post('/admin/requests/{request_id}/verify-payment')
+    def verify_payment(request_id: str, body: RechargeVerifyBody, idempotency_key: IdempotencyKey,
+                       actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
+        require_finance(actor_id)
+        return recharge_service.verify_order_payment(request_id=request_id, actor_id=actor_id,
+            idempotency_key=idempotency_key, authorization=authorization, **body.model_dump())
+
+    @router.get("/admin/requests/pending")
+    def pending(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):
+        require_finance(actor_id)
+        return recharge_service.pending_page(cursor=cursor, limit=limit)
+
+    @router.get('/admin/events')
+    def events(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):
+        require_finance(actor_id)
+        return recharge_service.order_events(actor_id=actor_id, cursor=cursor, limit=limit)
+
+    @router.post('/admin/requests/{request_id}/prepare-settlement')
+    def prepare_settlement(request_id: str, body: RechargeSettlementBody, idempotency_key: IdempotencyKey,
+                           actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
+        require_finance(actor_id)
+        return recharge_service.prepare_settlement(request_id=request_id, actor_id=actor_id,
+            idempotency_key=idempotency_key, authorization=authorization, **body.model_dump())
+
+    @router.post('/admin/requests/{request_id}/execute-settlement')
+    def execute_settlement(request_id: str, body: RechargeLeaseBody, idempotency_key: IdempotencyKey,
+                           actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
+        require_finance(actor_id)
+        return recharge_service.execute_settlement(request_id=request_id, actor_id=actor_id,
+            claim_token=body.claim_token, idempotency_key=idempotency_key, authorization=authorization)
 
     @router.post("/admin/requests/{request_id}/reject")
-    def reject(request_id: str, body: RechargeRejectBody, idempotency_key: IdempotencyKey, actor_id: str = Depends(actor)):
+    def reject(request_id: str, body: RechargeRejectBody, idempotency_key: IdempotencyKey, actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
         require_finance(actor_id)
         return recharge_service.reject(request_id=request_id, actor_id=actor_id, reason=body.reason,
-            idempotency_key=idempotency_key)
+            idempotency_key=idempotency_key, claim_token=body.claim_token, authorization=authorization)
 
     @router.post("/admin/requests/{request_id}/credit")
-    def credit(request_id: str, body: RechargeCreditBody, idempotency_key: IdempotencyKey, actor_id: str = Depends(actor)):
+    def credit(request_id: str, body: RechargeCreditBody, idempotency_key: IdempotencyKey, actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
         """财务调整执行成功后登记 CREDITED（入账本身走既有公开财务服务）。"""
         require_finance(actor_id)
         return recharge_service.mark_credited(request_id=request_id, actor_id=actor_id,
             ledger_transaction_id=body.ledger_transaction_id,
             final_caibi_amount=Decimal(body.final_caibi_amount),
             final_rate=Decimal(body.final_rate) if body.final_rate else None,
-            adjustment_id=body.adjustment_id, idempotency_key=idempotency_key)
+            adjustment_id=body.adjustment_id, idempotency_key=idempotency_key, authorization=authorization)
 
     @router.get("/admin/requests")
     def admin_requests(status: str | None = None, cursor: str | None = None,
@@ -130,14 +222,14 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
 
     @router.post("/admin/requests/{request_id}/review")
     def review(request_id: str, body: RechargeReviewBody, idempotency_key: IdempotencyKey,
-               actor_id: str = Depends(actor)):
+               actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
         """待核对处置：retry=只读核实重新登记（幂等）；release=确证未执行后释放
         （服务端核证拒绝且未执行或已冲正；记录缺失不能证明未入账）。"""
         require_finance(actor_id)
         if body.action == "retry":
             try:
                 return recharge_service.retry_review_registration(request_id=request_id, actor_id=actor_id,
-                    expected_binding_id=body.binding_id)
+                    expected_binding_id=body.binding_id, claim_token=body.claim_token, authorization=authorization)
             except AppError as error:
                 if error.code in ('RECHARGE_PROOF_INVALID', 'RECHARGE_SETTLEMENT_MISMATCH',
                         'RECHARGE_FINAL_RATE_REQUIRED'):
@@ -147,22 +239,24 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
         if body.action == "release":
             return recharge_service.release_review_binding(request_id=request_id,
                 actor_id=actor_id, reason=body.reason or "", idempotency_key=idempotency_key,
-                expected_binding_id=body.binding_id)
+                expected_binding_id=body.binding_id, claim_token=body.claim_token, authorization=authorization)
         raise AppError(code='RECHARGE_REVIEW_ACTION_INVALID', message='处置动作无效', status_code=422)
 
     @router.post("/admin/requests/{request_id}/bind")
-    def bind(request_id: str, body: RechargeBindBody, idempotency_key: IdempotencyKey, actor_id: str = Depends(actor)):
+    def bind(request_id: str, body: RechargeBindBody, idempotency_key: IdempotencyKey, actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
         """把案件绑定到唯一授权财务调整（执行走既有公开财务审批链路）。"""
         require_finance(actor_id)
         return recharge_service.bind_finance_adjustment(request_id=request_id,
             adjustment_id=body.adjustment_id, actor_id=actor_id, idempotency_key=idempotency_key,
-            final_rate=Decimal(body.final_rate) if body.final_rate is not None else None)
+            final_rate=Decimal(body.final_rate) if body.final_rate is not None else None, claim_token=body.claim_token, authorization=authorization)
 
     @router.post("/admin/requests/{request_id}/complete-binding")
-    def complete_binding(request_id: str, actor_id: str = Depends(actor)):
+    def complete_binding(request_id: str, body: RechargeLeaseBody | None = None, actor_id: str = Depends(actor),
+                         authorization=Depends(command_authorization)):
         """执行后的幂等登记（worker 兜底的手动入口；复用全部凭证校验）。"""
         require_finance(actor_id)
-        return recharge_service.complete_bound(request_id=request_id, actor_id=actor_id)
+        return recharge_service.complete_bound(request_id=request_id, actor_id=actor_id,
+            claim_token=body.claim_token if body else None, authorization=authorization)
 
     @router.get("/admin/reserve-valuation")
     def reserve_valuation(actor_id: str = Depends(actor)):

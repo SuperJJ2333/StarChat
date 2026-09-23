@@ -108,7 +108,7 @@ class IdentityEmailVerificationTask:
         with self._session_factory() as session:
             challenge = session.get(OtpChallenge, otp_id)
             if (challenge is None or challenge.consumed_at is not None or challenge.invalidated_at is not None
-                    or challenge.purpose != "email_rebind_old"):
+                    or challenge.purpose not in ("email_rebind_old", "staff_activation_email")):
                 return
             expires = challenge.expires_at
             if expires.tzinfo is None:
@@ -120,6 +120,16 @@ class IdentityEmailVerificationTask:
                     or user.email_normalized != challenge.target or user.status != AccountStatus.ACTIVE):
                 return
             recipient = user.email_normalized
+            if challenge.purpose == 'staff_activation_email':
+                from app.modules.identity.staff_activation import StaffActivationChallenge, staff_identity
+                activation = session.get(StaffActivationChallenge, challenge.registration_session)
+                try:
+                    _, _, digest = staff_identity(session, user)
+                except AppError:
+                    return
+                if (activation is None or activation.consumed_at is not None
+                        or activation.identity_digest != digest):
+                    return
         code = self._token_codec.verification_code(otp_id)
         self._email_sender.send_wallet_alert(recipient=recipient, event_id=otp_id, code=code, severity="info")
 

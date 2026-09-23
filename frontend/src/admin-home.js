@@ -12,6 +12,8 @@ import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-com
 import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260921-recharge';
+import {supportOrderAccessPanel} from './admin-support-order-access.js';
+import {supportPayoutPanel} from './admin-support-payout-panel.js';
 
 const modules = [
   ["客服点钻派发", "批次与审计记录", "finance", "admin.adjustments.read"],
@@ -59,7 +61,7 @@ function tableFor(key, dataset = {}) {
 }
 function modulePanel(key, title, context) {
   if(key==='support-role')return supportPanel(browserAdminApi(),{mode:'manage'});
-  if(key==='recharge')return rechargePanel(browserAdminApi());
+  if(key==='recharge')return supportOrderAccessPanel(browserAdminApi(),{actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,onReauthenticate:reauthenticateManualWallet,renderContent:api=>supportOrderContent(api,context)});
   if(key==='finance')return supportPanel(browserAdminApi(),{mode:'grant'});
   if(key==='ledger')return ledgerPanel(browserAdminApi());
   if(key==='wallet') return walletAccessPanel(browserAdminApi(),{
@@ -76,6 +78,13 @@ function modulePanel(key, title, context) {
   panel.append(tableFor(key, tableDataset));
   if (["support-role", "ads", "notice", "finance"].includes(key)) panel.append(commandForm(key, context));
   panel.append(element("p", "admin-audit-note", "管理员可直接操作；服务端持续保留 RBAC、幂等键、审计与 Outbox。")); return panel;
+}
+function supportOrderContent(api,context){
+  const container=element('section');let child;
+  const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),onOpenPayout:showPayout});container.replaceChildren(child);};
+  const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onBack:showRecharge});container.replaceChildren(child);};
+  container.refresh=()=>child?.refresh?.();container.refreshOrders=()=>child?.refreshOrders?.();container.dispose=()=>child?.dispose?.();
+  showRecharge();return container;
 }
 function walletContent(api,context,walletAccess){
   const panel=element('section','admin-card admin-module-panel');

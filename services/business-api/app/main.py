@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import Depends, FastAPI
 from app.api.admin_session_boundary import create_admin_session_boundary
 from app.integrations.tron import diagnostics as wallet_diagnostics
@@ -18,6 +19,8 @@ from app.modules.wallet.runtime import create_manual_wallet_runtime
 from app.api.friendship import create_friendship_router
 from app.api.fx import create_fx_router
 from app.api.recharge import create_recharge_router
+from app.api.support_order_security import create_support_order_security_router
+from app.api.support_payout import create_support_payout_router
 from app.modules.recharge.service import RechargeService
 from app.modules.ledger.service import LedgerService
 from app.api.moments import create_moments_router
@@ -70,6 +73,7 @@ def create_app(
     manual_wallet_runtime = create_manual_wallet_runtime(settings, session_factory, rate_limiter)
     app.state.manual_wallet_runtime = manual_wallet_runtime
     if manual_wallet_runtime is not None:
+        manual_wallet_runtime.payouts.support_orders_enabled = True
         app.router.on_shutdown.append(manual_wallet_runtime.close)
     if matrix_gateway is None:
         matrix_gateway = SynapseMatrixAdminGateway(
@@ -150,8 +154,15 @@ def create_app(
 
     _recharge_ledger = LedgerService(session_factory)
     _recharge_ledger.reserve_policy = getattr(settings, "wallet_reserve_policy", "full_backing")
-    _recharge = RechargeService(session_factory, ledger=_recharge_ledger, rate_provider=_recharge_rate_provider)
+    _recharge = RechargeService(session_factory, ledger=_recharge_ledger, rate_provider=_recharge_rate_provider,
+        wallet_receipts=manual_wallet_runtime.receipts if manual_wallet_runtime else None,
+        official_config=manual_wallet_runtime.receipts.official_config if manual_wallet_runtime else None)
+    _recharge.adjustment_admin_threshold = Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000")))
+    _recharge.settlement_enabled = bool(manual_wallet_runtime and manual_wallet_runtime.deposits_enabled)
+    app.state.recharge_service = _recharge
     app.include_router(create_recharge_router(settings, session_factory, recharge_service=_recharge), prefix="/api/v1")
+    app.include_router(create_support_order_security_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_support_payout_router(settings, session_factory, runtime=manual_wallet_runtime), prefix="/api/v1")
     app.include_router(
         create_media_platform_router(
             settings,

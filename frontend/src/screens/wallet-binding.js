@@ -1,7 +1,7 @@
 import { fixtures } from "../catalog/fixtures.js";
 import { element } from "../components/base.js";
 import { icon } from "../icons/icons.js";
-import { navigation, pageRoot } from "./shared.js";
+import { component, navigation, pageRoot } from "./shared.js";
 
 // A local interaction demo only: never request a real PIN or submit a payment.
 const demoBalance = fixtures.finance.caibiBalance;
@@ -120,37 +120,54 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
         }));
       }
     } else if (page === "withdrawal") {
-      body.append(element("h2", "", "提现"), element("p", "", `当前点钻余额 ${demoBalance}`),
-        element("p", "c-wallet-demo__address", `收款钱包：${fixtures.finance.walletAddress}`));
-      const amountField = inputField("提现金额（USDT）", amount, "最低10 USDT");
-      amountField.input.inputMode = "decimal";
-      amountField.input.addEventListener("input", () => { amount = amountField.input.value; error = ""; });
-      const full = action("全额", () => { amount = demoBalance; amountField.input.value = amount; error = ""; }, { secondary: true });
-      const summary = element("section", "c-fee-summary", "1点钻 = 1USDT · 手续费0 · 最低提现10USDT");
-      body.append(amountField.wrapper, full, summary);
       const status = withdrawalStates[definition.state];
-      if (status) body.append(element("p", "c-wallet-demo__muted", `订单状态示例：${status}`));
-      if (!bound || !ready) error = !bound ? "请先绑定私人钱包" : "钱包服务暂不可用";
-      body.append(action("确认提现", () => {
-        const value = cents(amount);
-        if (value === null || value < 1000n) error = "最低提现10 USDT，金额最多保留两位小数";
-        else if (value > cents(demoBalance)) error = "点钻余额不足";
-        else { jump("pin"); return; }
-        feedback();
-      }, { disabled: !bound || !ready || Boolean(status) }));
+      body.append(element("h2", "", status ? "客服处理 · 第 2 步" : "填写金额 · 第 1 步"));
+      if (status) {
+        body.append(element("p", "c-wallet-demo__muted", `订单状态示例：${status}`),
+          element("p", "", "订单：演示订单 payout-1 · 处理时限 2 小时"),
+          element("p", "c-wallet-demo__address", `收款钱包：${fixtures.finance.walletAddress}`),
+          element("p", "c-wallet-demo__muted", definition.state === "confirmed"
+            ? "最终到账：客服结算结果（示例）" : "最终到账：待客服结算"));
+      } else {
+        const amountField = inputField("提现金额（点钻）", amount, "输入点钻金额");
+        amountField.input.inputMode = "decimal";
+        const summary = component("app-amount-summary", {
+          label: "预计到账 USDT · 参考", amount: "—", asset: "USDT",
+          hint: "参考估算，最终以客服结算为准"
+        });
+        const updateEstimate = () => {
+          const value = cents(amount);
+          const micros = value === null ? null : (value * 1000000n + 356n) / 712n;
+          const digits = micros?.toString().padStart(7, "0");
+          summary.setAttribute("amount", digits ? `≈ ${digits.slice(0, -6)}.${digits.slice(-6)}` : "—");
+        };
+        amountField.input.addEventListener("input", () => { amount = amountField.input.value; error = ""; updateEstimate(); });
+        const full = action("全额", () => { amount = demoBalance; amountField.input.value = amount; error = ""; updateEstimate(); }, { secondary: true });
+        updateEstimate();
+        body.append(amountField.wrapper, full, summary,
+          element("p", "", `当前点钻余额 ${demoBalance}`),
+          element("p", "c-wallet-demo__muted", "1点钻 = ¥1.00 · 参考估算，最终以客服结算为准"));
+        if (!bound || !ready) error = !bound ? "请先绑定私人钱包" : "钱包服务暂不可用";
+        body.append(action("下一步", () => {
+          const value = cents(amount);
+          if (value === null || value < 7120n) error = "参考到账不足10 USDT，最终门槛由服务端报价校验";
+          else if (value > cents(demoBalance)) error = "点钻余额不足";
+          else { jump("pin"); return; }
+          feedback();
+        }, { disabled: !bound || !ready }));
+      }
       if (definition.state === "unknown-result") body.append(action("查询原订单", () => {
         note = "演示订单结果仍未知；不会新建订单或重复付款"; feedback();
       }, { secondary: true }));
-      // 订单处理中时展示危险动作：红色填充的「取消提现申请」。
-      if (["reviewing", "direct-execution", "provider-processing", "broadcast"].includes(definition.state))
+      if (definition.state === "reviewing")
         body.append(action("取消提现申请", () => {
-          note = "演示：已取消提现申请，资金退回点钻余额"; feedback();
+          note = "演示：取消请求仍需服务端确认，不能根据点击推断已退款"; feedback();
         }, { danger: true }));
     } else if (page === "pin") {
       body.append(element("section", "c-wallet-demo__pin-summary"));
       const summary = body.lastElementChild;
       summary.append(element("p", "", `提现至 ${fixtures.finance.walletAddress}`),
-        element("h2", "c-wallet-demo__amount", `${amount} USDT`), element("p", "", "手续费 0 USDT"),
+        element("h2", "c-wallet-demo__amount", `${amount} 点钻`), element("p", "c-wallet-demo__muted", "预计金额仅供参考，最终到账以客服结算为准"),
         element("p", "", "请输入支付密码"), element("p", "c-wallet-demo__muted", "演示密码123456，请勿输入真实密码"));
       const boxes = element("div", "c-wallet-demo__pin-boxes");
       boxes.setAttribute("aria-label", `支付密码，已输入${pin.length}位，共6位`);

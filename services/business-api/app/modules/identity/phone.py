@@ -83,10 +83,10 @@ def _hash_code(code: str, salt: str) -> str:
 class PhoneOtpService:
     """用途绑定的短信 OTP（签发/校验/消费一体）。"""
 
-    PURPOSES = {"registration", "login", "phone_rebind_old", "phone_rebind_new", "email_rebind_old"}
+    PURPOSES = {"registration", "login", "phone_rebind_old", "phone_rebind_new", "email_rebind_old", "staff_activation_phone", "staff_activation_email"}
 
     def __init__(self, session_factory, *, sender: SmsSender, secret: str, now=None, phone_enabled: bool = True,
-                 code_verifier=None):
+                 code_verifier=None, code_deriver=None):
         import app.modules.identity.models as identity_models
 
         self._models = identity_models
@@ -99,6 +99,7 @@ class PhoneOtpService:
         # 提供时本地 code_hash 比较被替换为 provider 判定；尝试计数、
         # 用途/目标/会话绑定、单次消费等本地不变量全部保留。
         self.code_verifier = code_verifier
+        self.code_deriver = code_deriver
 
     def _utcnow(self) -> datetime:
         value = self._now()
@@ -113,9 +114,9 @@ class PhoneOtpService:
         if not self.phone_enabled:
             raise AppError(code="PHONE_AUTH_DISABLED", message="手机号功能未开启", status_code=503)
         now = self._utcnow()
-        code = f"{secrets.randbelow(1000000):06d}"
-        code_hash = _hash_code(code, self._secret)
         challenge_id = str(uuid4())
+        code = self.code_deriver(challenge_id) if self.code_deriver else f"{secrets.randbelow(1000000):06d}"
+        code_hash = _hash_code(code, self._secret)
         with self._factory.begin() as session:
             OtpChallenge = self._models.OtpChallenge
             if session.get_bind().dialect.name == "postgresql":

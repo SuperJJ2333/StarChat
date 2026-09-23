@@ -172,7 +172,8 @@ def test_recharge_api_contract(env):
     app = create_app(settings, session_factory=factory)
     tokens = TS(factory, jwt_secret=settings.jwt_secret, jwt_issuer=settings.jwt_issuer, require_session_claims=False)
     alice = tokens.issue_pair(user_id="alice", device_key="d", display_name="t").access_token
-    agent = tokens.issue_pair(user_id="agent", device_key="d", display_name="t").access_token
+    from support_auth_helpers import staff_token
+    agent = staff_token(factory, settings, tokens)
 
     async def calls():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -191,6 +192,6 @@ def test_recharge_api_contract(env):
     assert directory.status_code == 200
     assert directory.json()["disclaimer"] == "参考估算，最终以客服结算为准"
     assert submit.status_code == 201 and submit.json()["status"] == "SUBMITTED"
-    assert pending_denied.status_code == 403  # 无权限人员不能操作
+    assert pending_denied.status_code == 401  # 无权限人员不能操作
     assert pending.status_code == 200 and len(pending.json()["items"]) == 1
     assert mine.status_code == 200 and mine.json()["items"][0]["status"] == "SUBMITTED"

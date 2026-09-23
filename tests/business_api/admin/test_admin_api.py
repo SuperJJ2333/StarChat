@@ -16,6 +16,9 @@ from app.modules.admin.service import AdminControlService
 from app.modules.admin.models import OfficialNotice, NoticeReceipt
 from app.modules.audit.models import AuditEvent
 from app.core.outbox import OutboxEvent
+from app.modules.identity.passwords import PasswordHasher
+from app.modules.identity.phone import PhoneOtpService, RecordingSmsSender
+from app.modules.identity.staff_activation import StaffActivationService
 
 @pytest.fixture()
 def admin_app():
@@ -31,6 +34,18 @@ def admin_app():
             UserRole(id="r2", user_id="finance-1", role_code=RoleCode.FINANCE_SUPPORT, assigned_by="admin-1", assigned_at=now),
         ])
     settings = Settings(_env_file=None, environment="test", database_url="sqlite+pysqlite:///:memory:", jwt_secret="test-jwt-secret-at-least-thirty-two-bytes")
+    # A financial staff management session requires the same first-use OTP
+    # activation as production; the fixture verifies its existing APP contact.
+    password = 'fixture-finance-login-password'
+    with factory.begin() as session:
+        finance = session.get(User, 'finance-1')
+        finance.password_hash = PasswordHasher().hash(password)
+        finance.email_verified_at = now
+    activation = StaffActivationService(factory,
+        phone_otp=PhoneOtpService(factory, sender=RecordingSmsSender(), secret='fixture-otp-secret'),
+        email_code_deriver=lambda _: '728415')
+    challenge = activation.request(username='finance', password=password)
+    activation.confirm(activation_id=challenge['activation_id'], code='728415')
     app = create_app(settings, session_factory=factory)
     tokens = TokenService(factory, jwt_secret=settings.jwt_secret, jwt_issuer=settings.jwt_issuer, require_session_claims=False)
     return app, tokens.issue_admin_pair(user_id="admin-1", display_name="admin").access_token, tokens.issue_admin_pair(user_id="finance-1", display_name="finance").access_token
