@@ -1187,16 +1187,16 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   }
 
   /// 保存收款二维码到系统相册：申请权限 → 渲染 PNG → 写入相册，成败都可见。
-  Future<void> saveDepositQr() async {
-    final current = deposit;
-    if (current == null || savingQr) return;
+  Future<void> saveDepositQr([String? address]) async {
+    final value = address ?? deposit?.officialAddress;
+    if (value == null || value.isEmpty || savingQr) return;
     setState(() {
       savingQr = true;
       message = null;
       messageIsWarning = false;
     });
     try {
-      await widget.qrExporter.saveQrCode(current.officialAddress);
+      await widget.qrExporter.saveQrCode(value);
       if (!mounted) return;
       message = '收款二维码已保存到相册';
     } catch (error) {
@@ -1274,7 +1274,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   /// 复制动作始终使用 [value]（完整地址）；展示用压缩值，因此不同长度的地址都
   /// 落在同一列、复制 icon 不再错位。
   Widget addressRow(String label, String value, String key,
-          {bool Function()? canCopy}) =>
+          {bool Function()? canCopy, bool alignRight = false}) =>
       Padding(
           // 与 detail() 单元格同一水平内边距：地址列与其它单元格对齐。
           padding: const EdgeInsets.symmetric(
@@ -1291,7 +1291,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                     maxLines: 1,
                     softWrap: false,
                     overflow: TextOverflow.visible,
-                    textAlign: TextAlign.left,
+                    textAlign: alignRight ? TextAlign.right : TextAlign.left,
                     style: TextStyle(
                         fontSize: 13,
                         color: WeChatColors.resolveTextPrimary(context)))),
@@ -1989,26 +1989,27 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             payment['address'] is String) ...[
           detail('支付网络', payment['network']?.toString() ?? '—'),
           addressRow(
-              '官方收款地址', payment['address'] as String, 'recharge-payment-$id',
-              canCopy: () => rechargeError == null),
-          QrImageView(
-              data: payment['address'] as String,
-              size: 160,
-              backgroundColor: CupertinoColors.white),
+              '收款地址', payment['address'] as String, 'recharge-payment-$id',
+              alignRight: true, canCopy: () => rechargeError == null),
+          Center(
+              child: QrImageView(
+                  key: Key('recharge-qr-$id'),
+                  data: payment['address'] as String,
+                  size: 160,
+                  backgroundColor: CupertinoColors.white)),
+          Center(
+              child: iconActionButton(
+                  key: Key('recharge-qr-save-$id'),
+                  icon: CupertinoIcons.square_arrow_down,
+                  label: '保存到本地',
+                  loading: savingQr,
+                  onPressed: savingQr || busy
+                      ? null
+                      : () => unawaited(
+                          saveDepositQr(payment['address'] as String)))),
         ],
         if (expired) warningBox('处理期限已到，请勿继续付款；已付款或结果不明确的申请由客服核对。'),
         if (!expired && payment is! Map) warningBox('收款信息尚未确认，请刷新订单后再付款。'),
-        if (request['payment_verified'] != true && !expired)
-          const Text('等待系统确认到账 · 确认后由客服结算'),
-        if (rechargeUnpaid(request) && !expired)
-          const Text('请使用 APP 已绑定的钱包，按本单金额转入官方收款地址。',
-              style: TextStyle(
-                  fontSize: WeChatTypography.caption,
-                  color: WeChatColors.textSecondary)),
-        const Text('系统自动核对，无需提交付款凭证；实际到账以客服结算为准。',
-            style: TextStyle(
-                fontSize: WeChatTypography.caption,
-                color: WeChatColors.textSecondary)),
       ],
       if (rechargeUnpaid(request) && !expired)
         button('取消充值申请', () => cancelManualRecharge(id),

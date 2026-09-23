@@ -1,4 +1,4 @@
-"""Order -> immutable chain proof -> independent approval -> exactly-once credit."""
+"""Order -> immutable chain proof -> staff authorization -> exactly-once credit."""
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
@@ -36,18 +36,13 @@ def prepared_order(core):
     return service, order['id'], claimed['claim_token']
 
 
-def test_pending_approval_then_staff_settlement_retries_credit_once(core):
+def test_prepared_staff_settlement_retries_credit_once(core):
     service, order_id, token = prepared_order(core)
     prepared = service.prepare_settlement(request_id=order_id, actor_id='cs', claim_token=token,
         final_rate='7.123456', idempotency_key='prepare')
     assert prepared['settlement_status']=='SUBMITTED'
     assert service.ledger.balance('alice')==0
-    with pytest.raises(AppError) as denied:
-        service.execute_settlement(request_id=order_id, actor_id='cs', claim_token=token,
-            idempotency_key='execute', authorization=lambda session:lambda:None)
-    assert denied.value.code=='PENDING_APPROVAL'
-    workflow = AdjustmentWorkflow(core[1], service.ledger, admin_threshold=Decimal('10000'))
-    workflow.finance_review(prepared['adjustment_id'], reviewer_id='independent-finance', approve=True)
+    assert prepared['settlement_approval_required'] is False
     result = service.execute_settlement(request_id=order_id, actor_id='cs', claim_token=token,
         idempotency_key='execute', authorization=lambda session:lambda:None)
     assert result['status']=='CREDITED'

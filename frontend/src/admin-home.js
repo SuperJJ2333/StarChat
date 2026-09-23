@@ -1,5 +1,5 @@
 import {adminSession} from "./admin-session.js?v=20260908-modern";
-import {createAdminShell} from "./admin-dashboard.js?v=20260910-completion";
+import {createAdminShell} from "./admin-dashboard.js?v=20260923-direct";
 import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260910-readability";
 import { element, button } from "./components/base.js";
 import { browserAdminApi, can } from "./admin-api.js?v=20260910-completion";
@@ -11,15 +11,15 @@ import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
 import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-completion";
 import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
-import { rechargePanel } from './admin-recharge-panel.js?v=20260921-recharge';
+import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';
 import {supportOrderAccessPanel} from './admin-support-order-access.js';
-import {supportPayoutPanel} from './admin-support-payout-panel.js';
+import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260923-direct';
 
 const modules = [
   ["客服点钻派发", "批次与审计记录", "finance", "admin.adjustments.read"],
   ["封禁 IP 和用户", "封禁与解封操作", "security", "admin.bans.read"],
   ["客服管理", "角色和权限范围", "support-role", "admin.support_roles.read"],
-  ["人工充值与结算", "案件 / 目录 / 汇率", "recharge", "admin.finance.read"],
+  ["充值与提现请求", "客服订单处理", "recharge", "admin.finance.read"],
   ["平台注册用户统计", "用户查询与注册明细", "analytics", "admin.analytics.read"],
   ["在线客户数量", "实时在线列表", "online", "admin.presence.read"],
   ["朋友圈原生广告", "素材与投放统计", "ads", "admin.ads.read"],
@@ -81,7 +81,7 @@ function modulePanel(key, title, context) {
 }
 function supportOrderContent(api,context){
   const container=element('section');let child;
-  const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),onOpenPayout:showPayout});container.replaceChildren(child);};
+  const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),canManage:can(context,'*'),onOpenPayout:showPayout});container.replaceChildren(child);};
   const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onBack:showRecharge});container.replaceChildren(child);};
   container.refresh=()=>child?.refresh?.();container.refreshOrders=()=>child?.refreshOrders?.();container.dispose=()=>child?.dispose?.();
   showRecharge();return container;

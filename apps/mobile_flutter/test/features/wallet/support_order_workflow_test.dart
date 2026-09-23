@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
+import 'package:liuhetong_mobile/features/wallet/wallet_qr_exporter.dart';
+import 'package:liuhetong_mobile/core/gallery_save_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
@@ -7,6 +10,18 @@ import 'package:liuhetong_mobile/features/wallet/manual_payout_status_store.dart
 import 'package:shared_preferences/shared_preferences.dart';
 import 'manual_wallet_api_test.dart' as fixtures;
 import 'manual_wallet_flow_test.dart' as flow;
+
+class RecordingQrExporter implements WalletQrExporter {
+  final values = <String>[];
+  Completer<void>? pending;
+  Object? error;
+  @override
+  Future<void> saveQrCode(String data) async {
+    values.add(data);
+    if (error != null) throw error!;
+    await pending?.future;
+  }
+}
 
 void main() {
   setUp(() {
@@ -64,10 +79,13 @@ void main() {
       }
       return flow.json(fixtures.binding);
     }, capabilities: {'caibi_pricing_version': 'caibi-cny-v1'});
+    final exporter = RecordingQrExporter();
     Future<void> open() async {
       await tester.pumpWidget(CupertinoApp(
           home: ManualWalletPage(
-              client: api, section: ManualWalletSection.deposit)));
+              client: api,
+              qrExporter: exporter,
+              section: ManualWalletSection.deposit)));
       await tester.pumpAndSettle();
     }
 
@@ -84,6 +102,27 @@ void main() {
         find.byKey(const Key('manual-deposit-amount')), '20');
     await flow.tap(tester, find.byKey(const Key('manual-recharge-submit')));
     expect(find.byKey(const Key('recharge-payment-r1')), findsOneWidget);
+    expect(find.byKey(const Key('recharge-qr-save-r1')), findsOneWidget);
+    expect(find.text('官方收款地址'), findsNothing);
+    expect(
+        tester
+            .widget<Text>(find.byKey(const Key('recharge-payment-r1-display')))
+            .textAlign,
+        TextAlign.right);
+    expect(tester.getCenter(find.byKey(const Key('recharge-qr-r1'))).dx,
+        closeTo(400, 1));
+    exporter.pending = Completer<void>();
+    await tester.ensureVisible(find.byKey(const Key('recharge-qr-save-r1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recharge-qr-save-r1')));
+    await tester.pump();
+    expect(exporter.values, [official]);
+    exporter.pending!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('收款二维码已保存到相册'), findsOneWidget);
+    exporter.error = GallerySavePermissionDenied();
+    await flow.tap(tester, find.byKey(const Key('recharge-qr-save-r1')));
+    expect(find.textContaining('未获得相册写入权限'), findsOneWidget);
     expect(find.byKey(const Key('manual-deposit-amount')), findsNothing);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     WalletEntryStores.disposeAll();
@@ -91,7 +130,7 @@ void main() {
     expect(find.byKey(const Key('recharge-payment-r1')), findsOneWidget);
     expect(find.byKey(const Key('recharge-evidence-txid')), findsNothing);
     expect(find.byKey(const Key('recharge-evidence-submit')), findsNothing);
-    expect(find.text('等待系统确认到账 · 确认后由客服结算'), findsOneWidget);
+    expect(find.text('等待系统确认到账 · 确认后由客服结算'), findsNothing);
     order = {
       ...order!,
       'payment_verified': true,

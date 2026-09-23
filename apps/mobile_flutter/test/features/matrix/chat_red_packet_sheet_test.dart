@@ -110,7 +110,7 @@ void main() {
     await tester.enterText(
         find.byKey(const Key('chat-red-packet-shares')), '1');
     await tester.pump();
-    expect(find.textContaining('以服务端核验为准'), findsOneWidget);
+    expect(find.textContaining('以服务端核验为准'), findsNothing);
     await tester.tap(find.byKey(const Key('chat-red-packet-send')));
     await tester.pumpAndSettle();
     expect(business.creates, 1);
@@ -131,7 +131,7 @@ void main() {
         references: FakeRedPacketReference(),
         recipientId: 'user-bob');
     await _pump(tester, controller: controller, support: support);
-    expect(find.textContaining('200.00 点钻'), findsOneWidget);
+    expect(find.textContaining('200.00 点钻'), findsNothing);
     support.value = 500;
     await tester.enterText(
         find.byKey(const Key('chat-red-packet-total')), '300');
@@ -141,7 +141,7 @@ void main() {
     expect(business.creates, 1);
     expect(business.total, '300');
     expect(find.text('单个红包金额不能超过 400.00 点钻'), findsOneWidget);
-    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+    expect(find.textContaining('500.00 点钻'), findsNothing);
   });
 
   testWidgets('resume refreshes cap preserving input and coalesces with submit',
@@ -176,7 +176,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(business.creates, 1);
     expect(business.total, '300');
-    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+    expect(find.textContaining('500.00 点钻'), findsNothing);
   });
 
   testWidgets(
@@ -220,7 +220,8 @@ void main() {
     }
   });
 
-  testWidgets('failed limits can retry and reopening fetches changed config',
+  testWidgets(
+      'failed limits refresh on resume and reopening fetches changed config',
       (tester) async {
     final support = MutableLimitsSupport();
     final controller = ChatRedPacketController(
@@ -229,14 +230,15 @@ void main() {
         recipientId: 'user-bob');
     await _pump(tester, controller: controller, support: support);
     support.value = 500;
-    await tester.tap(find.byKey(const Key('chat-red-packet-retry-limits')));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pumpAndSettle();
-    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+    expect(find.textContaining('500.00 点钻'), findsNothing);
     expect(support.calls, 2);
     await tester.pumpWidget(const SizedBox());
     support.value = 750;
     await _pump(tester, controller: controller, support: support);
-    expect(find.textContaining('750.00 点钻'), findsOneWidget);
+    expect(find.textContaining('750.00 点钻'), findsNothing);
     expect(support.calls, 3);
   });
 
@@ -249,7 +251,7 @@ void main() {
       recipientId: 'user-bob',
     );
     await _pump(tester, controller: controller, support: support);
-    expect(find.textContaining('500.00 点钻'), findsOneWidget);
+    expect(find.textContaining('500.00 点钻'), findsNothing);
     expect(find.textContaining('200.00 点钻'), findsNothing);
     support.pendingBalance.complete(1000);
     await tester.pump();
@@ -266,7 +268,7 @@ void main() {
     await _pump(tester,
         controller: controller, support: UnavailableLimitsSupport());
     expect(find.textContaining('200.00 点钻'), findsNothing);
-    expect(find.text('红包限额暂未获取，以提交时校验为准'), findsOneWidget);
+    expect(find.text('红包限额暂未获取，以提交时校验为准'), findsNothing);
     await tester.enterText(
         find.byKey(const Key('chat-red-packet-total')), '300');
     await tester.tap(find.byKey(const Key('chat-red-packet-send')));
@@ -290,6 +292,10 @@ void main() {
     expect(find.textContaining('200.00 点钻'), findsNothing,
         reason: 'Only the runtime business configuration can supply the cap');
     expect(find.text('未领取的红包，将于24小时后发起退款'), findsOneWidget);
+    expect(find.byKey(const Key('chat-red-packet-fee-hint')), findsNothing);
+    expect(find.byKey(const Key('chat-red-packet-limit-hint')), findsNothing);
+    expect(tester.getBottomLeft(find.text('未领取的红包，将于24小时后发起退款')).dy,
+        greaterThan(500));
     final totalField = tester.widget<CupertinoTextField>(
       find.byKey(const Key('chat-red-packet-total')),
     );
@@ -334,7 +340,7 @@ void main() {
       members: const [ChatRoomMember('user-alice', '爱丽丝')],
     );
 
-    expect(find.text('群成员共 3 人，最多可发 3 个红包'), findsOneWidget);
+    expect(find.text('群成员共 3 人，最多可发 3 个红包'), findsNothing);
   });
 
   testWidgets('group share count above its current member hint shows error',
@@ -416,7 +422,7 @@ void main() {
     expect(business.creates, 0);
   });
 
-  testWidgets('fee hint shows 0.5% with the 0.01 floor and the deduction',
+  testWidgets('send page hides fee and deduction hints after editing amounts',
       (tester) async {
     final controller = ChatRedPacketController(
       business: FakeRedPacketBusiness(),
@@ -432,15 +438,15 @@ void main() {
     await tester.enterText(
         find.byKey(const Key('chat-red-packet-total')), '10.00');
     await tester.pump();
-    expect(find.textContaining('手续费 0.05 点钻'), findsOneWidget);
-    expect(find.textContaining('实扣合计 10.05 点钻'), findsOneWidget);
+    expect(find.textContaining('手续费 0.05 点钻'), findsNothing);
+    expect(find.textContaining('实扣合计 10.05 点钻'), findsNothing);
 
     // 极小金额必须显示最低 0.01，而不是 0.00。
     await tester.enterText(
         find.byKey(const Key('chat-red-packet-total')), '1.00');
     await tester.pump();
-    expect(find.textContaining('手续费 0.01 点钻'), findsOneWidget);
-    expect(find.textContaining('实扣合计 1.01 点钻'), findsOneWidget);
+    expect(find.textContaining('手续费 0.01 点钻'), findsNothing);
+    expect(find.textContaining('实扣合计 1.01 点钻'), findsNothing);
   });
 
   testWidgets('balance check includes the fee so the server cannot reject it',

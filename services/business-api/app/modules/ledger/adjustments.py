@@ -31,6 +31,8 @@ class AdjustmentWorkflow:
 
     def submit(self, *, actor_id: str, user_id: str, amount: Decimal, reason_code: str, idempotency_key: str, session=None) -> AdjustmentRequest:
         """Public submission boundary; an optional caller transaction binds the order atomically."""
+        if idempotency_key and idempotency_key.startswith('support-recharge:'):
+            raise ValueError('support recharge idempotency namespace is reserved')
         amount = money(amount)
         if amount == 0 or not reason_code or not idempotency_key:
             raise ValueError("amount, reason and idempotency are required")
@@ -59,7 +61,7 @@ class AdjustmentWorkflow:
 
     def submit_support_recharge(self, *, session, request_id, actor_id, claim_token,
                                 final_rate, idempotency_key):
-        """Narrow verified-order submission, still pending independent approval.
+        """Narrow verified-order submission; execution uses the scoped recharge boundary.
 
         The caller supplies its transaction and must bind this returned request
         before committing; execution fails closed for an unbound support request.
@@ -143,6 +145,23 @@ class AdjustmentWorkflow:
         - 账本记账与 EXECUTED 终态在**同一事务**提交：记账后崩溃整体
           回滚；崩溃后重试经账本幂等键返回同一交易并补齐终态。
         """
+        return self._execute(request_id, actor_id=actor_id, idempotency_key=idempotency_key,
+            session=session, support_claim_token=support_claim_token,
+            support_authorization=support_authorization, direct_recharge=False)
+
+    def execute_support_recharge(self, request_id: str, *, actor_id: str, idempotency_key: str,
+                                 support_claim_token, support_authorization, session=None):
+        """ADR-0084: execute only a verified order-derived recharge, without a reviewer.
+
+        No recipient/amount is accepted here. Existing approval records stay intact;
+        ordinary adjustments retain their approval gate and cannot enter this path.
+        """
+        return self._execute(request_id, actor_id=actor_id, idempotency_key=idempotency_key,
+            session=session, support_claim_token=support_claim_token,
+            support_authorization=support_authorization, direct_recharge=True)
+
+    def _execute(self, request_id, *, actor_id, idempotency_key, session,
+                 support_claim_token, support_authorization, direct_recharge):
         execution_key = f"adjustment-execute:{request_id}"
         with (self.session_factory.begin() if session is None else nullcontext(session)) as session:
             fresh = support_authorization(session) if support_authorization is not None else None
@@ -152,13 +171,20 @@ class AdjustmentWorkflow:
             request = session.get(AdjustmentRequest, request_id, with_for_update=True)
             if not request:
                 raise ValueError("request not found")
+            if direct_recharge and (order is None or order.expires_at is None
+                    or not request.idempotency_key.startswith('support-recharge:')
+                    or request.reason_code != 'RECHARGE_CREDIT'):
+                raise AppError(code='RECHARGE_DIRECT_SCOPE_REQUIRED',
+                    message='只有订单专用的已核验充值可直接下发', status_code=409)
             if request.status == "EXECUTED":
                 if callable(fresh): fresh()
                 return request
-            if request.status not in ("FINANCE_APPROVED", "ADMIN_APPROVED"):
+            allowed = ('SUBMITTED', 'FINANCE_APPROVED', 'ADMIN_APPROVED') if direct_recharge else ('FINANCE_APPROVED', 'ADMIN_APPROVED')
+            if request.status not in allowed:
                 raise ValueError("request is not approved")
             prepared = prepare_adjustment_execution(session, adjustment=request, actor_id=actor_id,
-                now=datetime.now(timezone.utc), reserve_policy=self.ledger.reserve_policy)
+                now=datetime.now(timezone.utc), reserve_policy=self.ledger.reserve_policy,
+                direct_recharge=direct_recharge)
             tx = self.ledger.adjust(
                 user_id=request.user_id,
                 amount=request.amount,
@@ -170,5 +196,18 @@ class AdjustmentWorkflow:
             request.status, request.ledger_transaction_id, request.updated_at = "EXECUTED", tx.id, datetime.now(timezone.utc)
             session.flush()
             finish_adjustment_execution(session, prepared=prepared, ledger_transaction_id=tx.id)
+            if direct_recharge:
+                now = datetime.now(timezone.utc)
+                session.add(AuditEvent(id=str(uuid4()), actor_id=actor_id,
+                    subject_type='recharge_request', subject_id=order.id,
+                    action='recharge.direct_settlement_executed', result='SUCCESS',
+                    reason_code='RECHARGE_CREDIT', trace_id=request.id[:32],
+                    after_data={'adjustment_id': request.id, 'ledger_transaction_id': tx.id,
+                                'amount': str(request.amount), 'approval_required': False}, created_at=now))
+                OutboxPublisher.enqueue(session, topic='recharge',
+                    event_type='recharge.direct_settlement_executed',
+                    aggregate_type='recharge_request', aggregate_id=order.id,
+                    payload={'request_id': order.id, 'adjustment_id': request.id,
+                             'ledger_transaction_id': tx.id}, now=now)
             if callable(fresh): fresh()
             return request

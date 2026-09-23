@@ -153,10 +153,13 @@ def create_app(
         return snapshot['rate'], bool(snapshot.get('stale'))
 
     _recharge_ledger = LedgerService(session_factory)
+    from app.modules.identity.profile import ProfileService
+
     _recharge_ledger.reserve_policy = getattr(settings, "wallet_reserve_policy", "full_backing")
     _recharge = RechargeService(session_factory, ledger=_recharge_ledger, rate_provider=_recharge_rate_provider,
         wallet_receipts=manual_wallet_runtime.receipts if manual_wallet_runtime else None,
-        official_config=manual_wallet_runtime.receipts.official_config if manual_wallet_runtime else None)
+        official_config=manual_wallet_runtime.receipts.official_config if manual_wallet_runtime else None,
+        profile_reader=ProfileService(session_factory, storage=avatar_storage))
     _recharge.adjustment_admin_threshold = Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000")))
     _recharge.settlement_enabled = bool(manual_wallet_runtime and manual_wallet_runtime.deposits_enabled)
     app.state.recharge_service = _recharge
@@ -276,5 +279,4 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
 
 def create_default_app() -> FastAPI:
     return create_app(Settings())
-
 

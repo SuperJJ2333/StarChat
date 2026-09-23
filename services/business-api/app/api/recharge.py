@@ -1,7 +1,7 @@
 """ADR-0077：人工充值 API（用户申请 + 客服处理 + 目录）。"""
 from decimal import Decimal
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header
@@ -166,9 +166,11 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
             idempotency_key=idempotency_key, authorization=authorization, **body.model_dump())
 
     @router.get("/admin/requests/pending", dependencies=[Depends(command_authorization)])
-    def pending(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):
+    def pending(cursor: str | None = None, limit: int = 50,
+                scope: Literal['all', 'mine'] = 'all', actor_id: str = Depends(actor)):
         require_finance(actor_id)
-        return recharge_service.pending_page(cursor=cursor, limit=limit)
+        return recharge_service.pending_page(cursor=cursor, limit=limit,
+            claimed_by=actor_id if scope == 'mine' else None)
 
     @router.get('/admin/events', dependencies=[Depends(command_authorization)])
     def events(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):

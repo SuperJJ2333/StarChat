@@ -1,7 +1,7 @@
 """ADR-0077：人工充值应用服务。
 
 - 用户提交申请：只生成 SUBMITTED 订单，不动任何余额；
-- 客服/财务核实实际付款后走既有公开财务调整服务入账（审批链不变），
+- 系统核验付款后经公开财务接口入账（ADR-0084 订单专用直发，普通调整仍审批），
   再以 `mark_credited` 原子登记最终点钻金额与账本凭证；
 - 同一到账凭证（evidence_txid）全局唯一，重复提交 409；
 - 全部状态迁移写审计 + Outbox；不支持直改余额。
@@ -30,13 +30,14 @@ RECHARGE_RULES_VERSION = "recharge-manual-v1"
 
 
 class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
-    def __init__(self, session_factory, *, ledger, rbac=None, rate_provider=None, now=None, wallet_receipts=None, official_config=None):
+    def __init__(self, session_factory, *, ledger, rbac=None, rate_provider=None, now=None, wallet_receipts=None, official_config=None, profile_reader=None):
         self.factory = session_factory
         self.ledger = ledger
         self.rbac = rbac
         self.rate_provider = rate_provider
         self.wallet_receipts = wallet_receipts
         self.official_config = official_config
+        self.profile_reader = profile_reader
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def _utcnow(self):
@@ -163,8 +164,9 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
             return [self._view(row) for row in rows]
 
     # ------------------------------------------------------------------ 客服/管理
-    def pending_page(self, *, cursor=None, limit=50):
-        return self.admin_requests(status='SUBMITTED', cursor=cursor, limit=limit)
+    def pending_page(self, *, cursor=None, limit=50, claimed_by=None):
+        return self.admin_requests(status='SUBMITTED', cursor=cursor, limit=limit,
+            claimed_by=claimed_by)
 
     def list_pending(self, *, limit=50):
         with self.factory() as session:
@@ -283,13 +285,16 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
                     (binding.final_caibi_amount is not None and binding.final_caibi_amount != final_amount)):
                 raise AppError(code='RECHARGE_SETTLEMENT_MISMATCH', message='最终金额与绑定结算快照不一致', status_code=409)
             tx = self.ledger.lock_transaction(session=session, transaction_id=ledger_transaction_id)
+            direct_recharge = (row.expires_at is not None and binding is not None and adjustment is not None
+                and adjustment.idempotency_key.startswith('support-recharge:')
+                and adjustment.reason_code == 'RECHARGE_CREDIT')
             if (adjustment is None or adjustment.status != 'EXECUTED' or adjustment.user_id != row.user_id
-                    or adjustment.amount != final_amount or not (adjustment.finance_reviewer_id or adjustment.admin_reviewer_id)
+                    or adjustment.amount != final_amount or not (direct_recharge or adjustment.finance_reviewer_id or adjustment.admin_reviewer_id)
                     or tx is None or tx.asset != 'CAIBI' or tx.scope != 'ledger.adjustment'
                     or tx.idempotency_key != 'adjustment-execute:'+adjustment.id
                     or tx.reason_code != adjustment.reason_code or tx.reversal_of_id is not None
                     or session.scalar(select(LedgerTransaction.id).where(LedgerTransaction.reversal_of_id == tx.id))):
-                raise AppError(code='RECHARGE_PROOF_INVALID', message='需要已审批执行且匹配的财务调整凭证', status_code=409)
+                raise AppError(code='RECHARGE_PROOF_INVALID', message='需要已授权执行且匹配的财务调整凭证', status_code=409)
             entries = list(session.scalars(select(LedgerEntry).where(LedgerEntry.transaction_id == tx.id)))
             if (len(entries) != 2 or any(entry.asset != 'CAIBI' for entry in entries)
                     or {entry.account_id: entry.amount for entry in entries} != {
@@ -587,7 +592,7 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
             next_cursor = page[-1].created_at.isoformat() + '|' + page[-1].id if len(rows) > limit else None
             return {'items': items, 'next_cursor': next_cursor}
 
-    def admin_requests(self, *, status=None, cursor=None, limit: int = 50) -> dict:
+    def admin_requests(self, *, status=None, cursor=None, limit: int = 50, claimed_by=None) -> dict:
         """Stable case pagination with current or most recent historical binding."""
         limit = max(1, min(int(limit), 100))
         with self.factory() as session:
@@ -595,12 +600,16 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
                 RechargeRequest.created_at.desc(), RechargeRequest.id.desc())
             if status:
                 statement = statement.where(RechargeRequest.status == status)
+            if claimed_by is not None:
+                statement = statement.where(RechargeRequest.claimed_by == claimed_by)
             if cursor:
                 when, row_id = self._parse_cursor(cursor)
                 statement = statement.where((RechargeRequest.created_at < when) |
                     ((RechargeRequest.created_at == when) & (RechargeRequest.id < row_id)))
             rows = session.scalars(statement.limit(limit + 1)).all()
             page = rows[:limit]
+            profiles = (self.profile_reader.read_public_profile_identities(
+                {row.user_id for row in page}) if self.profile_reader and page else {})
             bindings = {}
             for binding in session.scalars(select(RechargeCreditBinding).where(
                     RechargeCreditBinding.request_id.in_([row.id for row in page])).order_by(
@@ -609,6 +618,8 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
                 bindings.setdefault(binding.request_id, binding)
             next_cursor = page[-1].created_at.isoformat() + '|' + page[-1].id if len(rows) > limit else None
             return {'items': [{**self._view(row),
+                'user_display_name': profiles[row.user_id].nickname if row.user_id in profiles else None,
+                'user_chat_id': profiles[row.user_id].username if row.user_id in profiles else None,
                 **self._settlement_projection(session, bindings.get(row.id)),
                 'binding_state': bindings[row.id].state if row.id in bindings else None,
                 'binding_id': bindings[row.id].id if row.id in bindings else None} for row in page],
@@ -622,6 +633,7 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
             'binding_final_rate':str(binding.final_rate) if binding and binding.final_rate is not None else None,
             'binding_final_caibi_amount':str(binding.final_caibi_amount) if binding and binding.final_caibi_amount is not None else None,
             'settlement_status':adjustment.status if adjustment else None,
+            'settlement_approval_required': not adjustment.idempotency_key.startswith('support-recharge:') if adjustment else False,
             'settlement_submitted_by':adjustment.submitted_by if adjustment else None}
 
     def case_timeline(self, *, request_id: str) -> dict:

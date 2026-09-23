@@ -1,6 +1,16 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-23-wallet-ui-cleanup": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/chat_red_packet_sheet.dart",
+      "html": "frontend/src/screens/finance.js",
+      "demo": "redpacket-create-direct-equal",
+      "components": ["WeChatPageScaffold", "CupertinoButton"],
+      "props": ["total", "shareCount", "recipient"],
+      "states": ["editing", "submitting", "validation-error"],
+      "tokens": ["WeChatColors.textSecondary"],
+      "behavior": "Only the static 24-hour refund note remains at the bottom; validation and server errors remain actionable."
+    },
     "2026-09-23-wallet-feedback": {
       "flutter": "apps/mobile_flutter/lib/features/wallet/manual_wallet_page.dart",
       "html": "frontend/src/screens/phone-flows.js",
@@ -9,7 +19,7 @@
       "props": ["amount", "referenceRate", "paymentVerified"],
       "states": ["amount-input", "waiting-payment", "verified-awaiting-staff", "minimum-toast", "amount-rejected-retry", "unknown-result-retains-intent"],
       "tokens": ["WeChatColors.brandPrimary", "WeChatColors.textSecondary"],
-      "behavior": "Recharge reuses amount/address/wait steps without user evidence input. Payout below 10 USDT uses existing toast with reference points; definite rejection clears the old quote, unknown results preserve its idempotent intent. Withdrawal demo: wallet-withdrawal-default."
+      "behavior": "Recharge reuses amount/address/wait steps without user evidence input. Payment QR is centered above a real gallery-save icon, with saving/success/permission-error feedback; address is right aligned next to copy and static payment hints are removed. Payout below 10 USDT uses existing toast with reference points; definite rejection clears the old quote, unknown results preserve its idempotent intent. Withdrawal demo: wallet-withdrawal-default."
     },
     "2026-09-23-phone-onboarding": {
       "flutter": "apps/mobile_flutter/lib/features/auth/login_page.dart",

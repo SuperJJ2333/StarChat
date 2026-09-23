@@ -251,42 +251,12 @@ export function redpacket(definition, { details = [] } = {}) {
       }
     }
   } else {
-    // Fixture-only gateway: the production Flutter page reads business limits.
-    const limitsGateway = { load: () => new Promise(resolve => setTimeout(() => resolve({ max_total: "500.00" }), 400)) };
-    const limitHint = element("p", "c-ledger-page-note", "");
-    limitHint.dataset.redpacketLimit = "true";
-    const retryLimits = component("app-action-button", { label: "重试获取限额", action: "redpacket:retry-limits" });
-    const retryLimitsHost = element("div");
-    retryLimitsHost.append(retryLimits);
-    let limitRequest;
-    const showLimit = (state, maximum) => {
-      limitHint.dataset.state = state;
-      limitHint.textContent = state === "loading" ? "正在获取红包限额…"
-        : state === "unavailable" ? "红包限额暂未获取，以提交时校验为准"
-        : `单个红包金额不可超过 ${maximum} 点钻`;
-      retryLimitsHost.hidden = state !== "unavailable";
-    };
-    const loadLimits = () => {
-      if (limitRequest) return limitRequest;
-      showLimit("loading");
-      limitRequest = limitsGateway.load().then(({ max_total }) => showLimit("ready", max_total))
-        .catch(() => showLimit("unavailable")).finally(() => { limitRequest = null; });
-      return limitRequest;
-    };
-    retryLimits.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-      void loadLimits();
-    });
-    if (definition.state === "limits-loading") void loadLimits();
-    else if (definition.state === "limits-failed") showLimit("unavailable");
-    else showLimit("ready", "500.00");
     const typeLabels = { "group-equal": "普通红包", "group-random": "拼手气红包", "group-exclusive": "专属红包", "direct-equal": "私聊普通红包" };
     const directCreate = definition.state === "direct-equal";
     const exclusiveCreate = definition.state === "group-exclusive";
     const fixedSinglePart = directCreate || exclusiveCreate;
     const maxParts = fixedSinglePart ? 1 : Math.min(500, groupRedPacketFixture.joinedMemberIds.length);
-    const count = field("红包个数", String(fixedSinglePart ? 1 : maxParts), fixedSinglePart ? "私聊或专属红包仅限 1 份" : `群成员共 ${maxParts} 人，最多可发 ${maxParts} 个红包`);
+    const count = field("红包个数", String(fixedSinglePart ? 1 : maxParts), "");
     const countInput = count.querySelector("input");
     countInput.type = "number";
     countInput.min = "1";
@@ -309,14 +279,19 @@ export function redpacket(definition, { details = [] } = {}) {
     content.append(element("div", "c-segmented-control", typeLabels[definition.state] ?? "群聊拼手气"));
     const amountField = field("总金额", "88.00", "请输入金额");
     amountField.querySelector("input").setAttribute("aria-label", "总金额");
-    content.append(amountField, count, field("祝福语", "周末愉快", "恭喜发财，大吉大利"), limitHint, retryLimitsHost, validation);
+    content.append(amountField, count, field("祝福语", "周末愉快", "恭喜发财，大吉大利"), validation);
     const invalidMessage = definition.state === "count-invalid"
       ? (fixedSinglePart ? "私聊或专属红包只能创建 1 份" : `红包份数不能超过当前群聊人数（含发送者）：${maxParts}`)
       : definition.state === "minimum-invalid" ? "每份至少 0.01 点钻"
       : definition.state === "amount-invalid" ? "红包金额格式错误"
       : null;
     if (invalidMessage) content.append(component("app-toast", { kind: "error", message: invalidMessage }));
-    content.append(create);    if (definition.state === "confirm") root.append(component("app-dialog", { title: "确认创建红包", message: "88.00 点钻将转入红包托管，24 小时未领取部分自动退回。", cancel: "取消", confirm: "确认" }));
+    content.append(create);
+    content.setAttribute("style", "display:flex;flex-direction:column;min-height:calc(100% - 80px)");
+    const refund = element("p", "c-ledger-page-note", "未领取的红包，将于24小时后发起退款");
+    refund.setAttribute("style", "margin-top:auto");
+    content.append(refund);
+    if (definition.state === "confirm") root.append(component("app-dialog", { title: "确认创建红包", message: "88.00 点钻将转入红包托管，24 小时未领取部分自动退回。", cancel: "取消", confirm: "确认" }));
     if (definition.state === "failed") root.append(component("app-toast", { kind: "error", message: "红包创建失败，账户余额不足" }));
   }
   content.append(...details);

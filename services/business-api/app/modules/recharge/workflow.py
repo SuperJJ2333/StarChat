@@ -255,7 +255,9 @@ class SupportOrderWorkflow:
                 idempotency_key='prepare:'+adjustment.id, session=session)
             self._order_event(session, row, actor_id, 'recharge.settlement_submitted')
             return self._complete(command, {**self._view(row), 'adjustment_id':adjustment.id,
-                'binding_state':bound['state'], 'settlement_status':adjustment.status})
+                'binding_state':bound['state'], 'settlement_status':adjustment.status,
+                'settlement_approval_required':False, 'binding_final_rate':str(rate),
+                'binding_final_caibi_amount':str(adjustment.amount)})
 
     def execute_settlement(self, *, request_id, actor_id, claim_token, idempotency_key,
                            authorization=None):
@@ -278,13 +280,16 @@ class SupportOrderWorkflow:
             binding = session.scalar(select(RechargeCreditBinding).where(
                 RechargeCreditBinding.request_id==row.id, RechargeCreditBinding.state_active=='1'))
             if binding is None:
-                fail('RECHARGE_BINDING_NOT_FOUND', '请先提交结算审批')
+                fail('RECHARGE_BINDING_NOT_FOUND', '请先确认结算金额')
             adjustment = session.get(AdjustmentRequest, binding.adjustment_id, with_for_update=True)
-            if adjustment is None or adjustment.status not in ('FINANCE_APPROVED','ADMIN_APPROVED','EXECUTED'):
-                fail('PENDING_APPROVAL', '等待独立财务审批后执行')
+            direct = adjustment is not None and adjustment.idempotency_key.startswith('support-recharge:')
+            allowed = ('SUBMITTED','FINANCE_APPROVED','ADMIN_APPROVED','EXECUTED') if direct else ('FINANCE_APPROVED','ADMIN_APPROVED','EXECUTED')
+            if adjustment is None or adjustment.status not in allowed:
+                fail('PENDING_APPROVAL', '该财务命令不可执行，请核对状态')
             if adjustment.status != 'EXECUTED':
                 self._require_payment(session, row)
-                workflow.execute(adjustment.id, actor_id=actor_id,
+                execute = workflow.execute_support_recharge if direct else workflow.execute
+                execute(adjustment.id, actor_id=actor_id,
                     idempotency_key=idempotency_key, session=session,
                     support_claim_token=claim_token, support_authorization=authorization)
             self._order_event(session, row, actor_id, 'recharge.settlement_executed')

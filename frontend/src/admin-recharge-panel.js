@@ -1,3 +1,5 @@
+import {refreshIcon} from './admin-dashboard.js';
+import {formatBeijingTime} from './admin-formatters.js';
 // ADR-0077 后台：人工充值案件 / 官方客服目录 / 汇率与储备三类数量。
 // 纪律：前端不凭提交成功就展示已充值——登记状态只来自服务端权威回执。
 
@@ -31,9 +33,12 @@ function previewPoints(amount, rate) {
   return formatFixed((amount * rate + 5000000000n) / 10000000000n, 2);
 }
 
-export function rechargePanel(api, { actor = {}, canReview = false, canApprove = false, onOpenPayout = null } = {}) {
+export function rechargePanel(api, { actor = {}, canReview = false, canApprove = false, canManage = false, onOpenPayout = null } = {}) {
   let disposed = false, casesGeneration = 0, filter = 'all';
-  const claims = new Map(), busyOrders = new Set();
+  const claims = new Map(), busyOrders = new Set(), dialogs = new Set();
+  const operationDialogs = new Set();
+  const drafts = new Map(), orderFeedbacks = new Map();
+  let activeOrder = null, activeKind = null, operationFeedback = null, rebuilding = false;
   let currentFx = null, fxRequest = null;
   const loadReference = () => {
     if (!fxRequest) fxRequest = Promise.resolve().then(()=>api.getFxRate())
@@ -47,103 +52,142 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
 
   const panel = element("section", "admin-card admin-recharge-panel");
   const panelAlertNode = element("p", "admin-audit-note recharge-alert");
-  function panelAlert(message) {
+  function panelAlert(message,orderId=activeOrder) {
+    if(orderId)message=`订单 ${orderId}：${message}`;
     panelAlertNode.textContent = message;
     panelAlertNode.hidden = false;
+    const failed=/失败|未确认|请填写|必须|不可|失效|被拒绝/.test(message);if(orderId)orderFeedbacks.set(orderId,{message,failed});
+    panelAlertNode.className='recharge-alert '+(failed?'admin-load-error':'admin-feedback-success');
+    panelAlertNode.setAttribute('role',failed?'alert':'status');
+    if(operationFeedback&&activeOrder===orderId){operationFeedback.textContent=message;operationFeedback.className=panelAlertNode.className;operationFeedback.hidden=false;operationFeedback.setAttribute('role',failed?'alert':'status');}
   }
-  async function settle(operation) {
+  async function settle(operation,orderId=activeOrder) {
     try { return (await (typeof operation === 'function' ? operation() : operation)) ?? true; }
-    catch(error) { panelAlert(`操作失败：${error?.message || '未知错误'}`); return false; }
+    catch(error) { panelAlert(`操作失败：${error?.message || '未知错误'}`,orderId); return false; }
   }
+  panelAlertNode.setAttribute('role','status');panelAlertNode.setAttribute('aria-live','polite');
   panelAlertNode.hidden = true;
-  panel.append(element("h2", null, "人工充值与结算"));
+  const flow=element("header","recharge-workbench-heading");flow.append(element("h2",null,"处理充值"));panel.append(flow);
   panel.append(panelAlertNode);
   if (onOpenPayout) {
-    const payout = element('button', 'admin-button', '打开提现订单工作台');
-    payout.addEventListener('click', onOpenPayout); panel.append(payout);
+    const payout = element('button', 'admin-button', '提现请求 →');
+    payout.addEventListener('click', onOpenPayout); flow.append(payout);
   }
 
+  const tools=element('details','recharge-advanced');
+  tools.append(element('summary',null,'管理员工具 · 配置与异常核对'));
+  function refreshControl(label,run){
+    const button=refreshIcon(async()=>{if(button.disabled)return;button.disabled=true;button.setAttribute('aria-busy','true');
+      try{await run();}catch(error){panelAlert(`刷新失败：${error.message??'请重试'}`);}
+      finally{button.disabled=false;button.setAttribute('aria-busy','false');}});
+    button.title=label;button.setAttribute('aria-label',label);return button;
+  }
+  const labels={WAITING_PAYMENT:'等待到账',VERIFYING_PAYMENT:'正在核验到账',REVIEWING:'客服核对中',REQUESTED:'等待处理',SUBMITTED:'等待处理',CLAIMED:'处理中',PAYMENT_VERIFIED:'到账已核验',NEEDS_REVIEW:'需核对',CREDITED:'已到账',REJECTED:'已拒绝',CANCELLED:'已取消',REGISTERED:'登记完成',BOUND:'结算处理中',PENDING_APPROVAL:'等待审批'};
+  const statusName=value=>labels[value]??value??'等待处理';
+  const userCell=item=>{const cell=element('td','recharge-user');cell.append(element('strong',null,item.user_display_name??'用户资料暂缺'),element('small','admin-audit-note',item.user_chat_id?`畅聊号：${item.user_chat_id}`:'畅聊号暂缺'));return cell;};
+  function openTimeline(requestId){
+    const previous=document.activeElement,dialog=element('dialog','admin-proof-dialog');dialog.setAttribute('aria-label','订单处理记录');
+    const heading=element('header','admin-proof-heading'),close=element('button','admin-dialog-close','×');close.type='button';close.setAttribute('aria-label','关闭订单详情');
+    heading.append(element('h2',null,'订单处理记录'),close);const content=element('div','admin-proof-body');dialog.append(heading,content);
+    document.body.append(dialog);dialogs.add(dialog);let closed=false;
+    close.addEventListener('click',()=>dialog.close());dialog.addEventListener('close',()=>{closed=true;dialogs.delete(dialog);dialog.remove();if(!disposed)previous?.focus?.();});dialog.showModal();close.focus();
+    const load=async()=>{content.replaceChildren(element('p','admin-audit-note','正在加载订单记录…'));
+      try{const data=await api.getRechargeTimeline(requestId);if(closed||disposed)return;content.replaceChildren(element('p','admin-audit-note',`订单 ${requestId} · ${statusName(data.status)}`));
+        if(!data.items?.length)content.append(element('p','admin-audit-note','暂无处理记录'));
+        for(const event of data.items??[]){const row=element('article','admin-proof-audit');row.append(element('strong',null,statusName(event.action??event.type??event.status)),element('p','admin-audit-note',formatBeijingTime(event.created_at??event.at)),element('p',null,event.reason??event.reason_code??''));content.append(row);}
+      }catch(error){if(closed||disposed)return;const retry=element('button','admin-secondary','重新加载');retry.addEventListener('click',()=>void load());content.replaceChildren(element('p','admin-load-error',`记录加载失败：${error.message??'请检查网络'}`),retry);}};void load();
+  }
   // ---------------------------------------------------------- 汇率与储备
-  const fxSection = element("div", "recharge-section");
-  fxSection.append(element("h3", null, "汇率参考与储备三类数量"));
+  const fxSection = element("section", "admin-card recharge-section recharge-fx-card");
+  const fxHeading=element("header","admin-panel-heading");fxHeading.append(element("h3",null,"结算参考"));fxSection.append(fxHeading);
   const fxBody = element("div", "recharge-fx");
   const refreshFx = async () => {
-    fxBody.replaceChildren(element("p", "admin-audit-note", "加载中…"));
+    fxBody.setAttribute("aria-busy","true");
     let rate = null, valuation = null;
     rate = await loadReference();
     try { valuation = await api.getReserveValuation(); } catch { valuation = null; }
     fxBody.replaceChildren();
-    if (rate) {
-      fxBody.append(
-        fieldRow("USD/CNY 参考汇率", rate.rate),
-        fieldRow("更新时刻", rate.fetched_at),
-        fieldRow("状态", rate.stale ? "过期参考（不用于自动资金结算）" : "有效"),
-        element("p", "admin-audit-note", rate.disclaimer || "参考估算，最终以客服结算为准"));
-    } else {
-      fxBody.append(element("p", "admin-audit-note", "汇率服务不可用"));
-    }
-    if (valuation) {
-      fxBody.append(
-        fieldRow("点钻账面数量（CAIBI face）", valuation.caibi_face),
-        fieldRow("参考 USDT 估值", valuation.caibi_reference_usdt),
-        fieldRow("实际 USDT 义务", valuation.usdt_obligation),
-        fieldRow("估值汇率", valuation.valuation_rate),
-        fieldRow("已批准未支付应付", valuation.approved_unpaid_usdt));
-    }
+    const quote=element('div','recharge-quote');
+    if(rate){quote.append(fieldRow('1 USDT ≈ 点钻',rate.rate),element('p','admin-audit-note',`${rate.stale?'已过期 · 仅供参考':'参考汇率'} · ${formatBeijingTime(rate.fetched_at)}`));}
+    else quote.append(element('p','admin-load-error','汇率暂不可用，请稍后刷新'));
+    fxBody.append(quote);
+    if(valuation){fxBody.append(fieldRow('点钻账面总量',valuation.caibi_face),fieldRow('参考 USDT 估值',valuation.caibi_reference_usdt),fieldRow('USDT 应付总额',valuation.usdt_obligation));}
+    else fxBody.append(element('p','admin-load-error','储备信息暂不可用，请重试；未显示不代表余额为零。'));
+    fxBody.append(element('p','admin-audit-note recharge-fx-disclaimer',rate?.disclaimer||'参考估算，最终以客服结算为准'));
+    fxBody.setAttribute("aria-busy","false");
   };
-  const fxButton = element("button", "admin-button", "刷新汇率与储备");
-  fxButton.addEventListener("click", () => settle(refreshFx()));
-  fxSection.append(fxButton, fxBody);
+  const fxButton = refreshControl("刷新结算参考", refreshFx);
+  fxHeading.append(fxButton);fxSection.append(fxBody);
   panel.append(fxSection);
 
   // ---------------------------------------------------------- 待处理案件
   const section = element("div", "recharge-section");
-  section.append(element("h3", null, "待处理充值案件"));
+  const sectionHead=element("header","admin-panel-heading");sectionHead.append(element("h3", null, "充值请求"));section.append(sectionHead);
   const table = element("table", "admin-table recharge-cases");
   const head = table.createTHead().insertRow();
-  ["申请单", "用户", "原始金额（USDT）", "参考汇率", "凭证", "绑定状态", "操作"].forEach((h) => head.append(element("th", null, h)));
+  ["订单", "用户", "申请金额", "参考汇率", "到账核验", "处理状态", "操作"].forEach((h) => head.append(element("th", null, h)));
   const body = table.createTBody();
   let nextCasesCursor=null, casesPageCursor=null;
   const nextCases=element('button','admin-button','下一页充值案件');nextCases.disabled=true;
   nextCases.addEventListener('click',()=>{if(!nextCases.disabled)void loadCases(true);});
   let currentItems = [];
   const renderCases = () => {
+    rebuilding=true;
+    for(const dialog of operationDialogs){dialog.close?.();dialogs.delete(dialog);}
+    operationDialogs.clear();if(activeKind!=='review')operationFeedback=null;
     body.replaceChildren();
     const items = currentItems.filter(item => filter !== 'mine' || item.claimed_by === actorId);
-    if (!items.length) { body.insertRow().append(element('td', 'admin-status-cell', '暂无待处理案件')); return; }
+    if (!items.length) { body.insertRow().append(element('td', 'admin-status-cell', '暂无待处理案件')); if(activeKind!=='review'){activeOrder=null;activeKind=null;}rebuilding=false;return; }
     for (const item of items) {
+      const orderAlert=message=>panelAlert(message,item.id);
       const tr = body.insertRow();
-      tr.append(element('td', null, item.id), element('td', null, item.user_id),
+      tr.append(element('td', null, item.id), userCell(item),
         element('td', null, `${item.amount_usdt} USDT`),
         element('td', null, item.fx_rate ? `${item.fx_rate}${item.fx_rate_stale ? '（过期参考）' : '（参考）'}` : '—'),
-        element('td', null, item.evidence_txid ?? '—'),
-        element('td', null, `${item.processing_stage ?? item.status} / ${item.binding_state ?? '未绑定'}`));
-      const actions = element('td', 'admin-status-cell'); tr.append(actions);
-      actions.append(element('p','admin-audit-note', `实际到账 ${item.actual_received_usdt ?? '待核验'} USDT · 最终点钻 ${item.final_caibi_amount ?? item.binding_final_caibi_amount ?? '待结算'}`));
-      if (item.expires_at) actions.append(element('p','admin-audit-note', `处理截止（北京）：${new Date(item.expires_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
+        element('td', null, item.payment_verified?'已核验到账':'等待系统核验'),
+        element('td', null, statusName(item.processing_stage ?? item.status)));
+      const actionsCell=element('td','admin-status-cell recharge-actions');tr.append(actionsCell);
+      const actions=element('div','recharge-action-controls'),notes=element('div','recharge-action-notes');
+      const dialog=element('dialog','admin-proof-dialog admin-order-dialog');dialog.setAttribute('aria-label','处理充值请求');dialog.hidden=true;
+      dialog.dataset && (dialog.dataset.orderId=item.id);
+      dialog.addEventListener('input',event=>{if(event.target?.tagName==='INPUT'){const draft=drafts.get(item.id)??{};draft[event.target.placeholder]=event.target.value;drafts.set(item.id,draft);}});
+      const heading=element('header','admin-proof-heading'),close=element('button','admin-dialog-close','×');close.setAttribute('aria-label','关闭处理窗口');
+      heading.append(element('h2',null,'处理充值请求'),close);
+      const content=element('div','admin-proof-body'),feedback=element('p','recharge-alert');feedback.hidden=true;feedback.setAttribute('aria-live','polite');
+      content.append(element('p','admin-audit-note',`订单 ${item.id} · ${item.user_display_name??'用户资料暂缺'} · 畅聊号 ${item.user_chat_id??'暂缺'}`),element('h3',null,`申请 ${item.amount_usdt} USDT`),feedback,notes,actions);dialog.append(heading,content);dialogs.add(dialog);operationDialogs.add(dialog);
+      let claimAction=null;
+      const open=element('button','admin-primary','处理请求');open.disabled=busyOrders.has(item.id);
+      open.addEventListener('click',()=>{if(disposed||open.disabled)return;activeOrder=item.id;activeKind='normal';operationFeedback=feedback;actionsCell.append(dialog);dialog.hidden=false;dialog.showModal?.();if(claimAction)void claimAction();});
+      close.addEventListener('click',()=>{dialog.hidden=true;dialog.close?.();cache.append(dialog);activeOrder=null;activeKind=null;operationFeedback=null;});dialog.addEventListener('close',()=>{dialog.hidden=true;if(!rebuilding&&operationDialogs.has(dialog)&&activeOrder===item.id){cache.append(dialog);activeOrder=null;activeKind=null;operationFeedback=null;open.focus?.();}});
+      const cache=element('div','recharge-operation-cache');cache.append(dialog);actionsCell.append(open,element('p','admin-audit-note','在弹窗中核对到账与完成处理'),cache);
+      if(activeKind==='normal'&&activeOrder===item.id){actionsCell.append(dialog);operationFeedback=feedback;if(orderFeedbacks.has(item.id)){const savedFeedback=orderFeedbacks.get(item.id);feedback.textContent=savedFeedback.message;feedback.className='recharge-alert '+(savedFeedback.failed?'admin-load-error':'admin-feedback-success');feedback.hidden=false;}dialog.hidden=false;dialog.showModal?.();}
+      const detail=element('button','admin-secondary','查看记录');detail.addEventListener('click',()=>openTimeline(item.id));notes.append(detail);
+      notes.append(element('p','admin-audit-note', `实际到账 ${item.actual_received_usdt ?? '待核验'} USDT · 最终点钻 ${item.final_caibi_amount ?? item.binding_final_caibi_amount ?? '待结算'}`));
+      if (item.expires_at) notes.append(element('p','admin-audit-note', `处理截止（北京）：${new Date(item.expires_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
       const command = async operation => {
         if (disposed || busyOrders.has(item.id) || !owned(item)) return;
         busyOrders.add(item.id); renderCases();
         try { const result = await operation(claims.get(item.id));
-          if (!disposed) { panelAlert(result.status === 'CREDITED' && result.binding_state === 'REGISTERED' ? '已入账并完成登记'
-            : result.status === 'PENDING_APPROVAL' ? '财务调整尚未执行，案件未入账' : '服务端已受理，请按权威状态继续处理；尚未因此入账'); }
+          if (!disposed) { orderAlert(result.status === 'CREDITED' ? '已入账并完成登记'
+            : result.status === 'REJECTED' ? '请求已拒绝，原因已记录'
+            : result.status === 'PENDING_APPROVAL' ? '历史财务调整仍需审核，尚未执行或入账' : '服务端已受理，请按权威状态继续处理；尚未因此入账'); }
         } catch(error) {
-          if(error.code==='PENDING_APPROVAL')panelAlert('等待独立管理员审批，尚未入账；审批通过后再执行结算。');
-          else {claims.delete(item.id); panelAlert(`操作未确认，已停止修改，请刷新并重新认领：${error.message ?? '认领已失效'}`);}
-        } finally { busyOrders.delete(item.id); if (!disposed) await loadCases(); }
+          if(error.code==='PENDING_APPROVAL')orderAlert('等待独立管理员审批，尚未入账；审批通过后再执行结算。');
+          else {claims.delete(item.id); orderAlert(`操作未确认，已停止修改，请刷新并重新接手：${error.message ?? '认领已失效'}`);}
+        } finally { busyOrders.delete(item.id); if (!disposed) {await loadCases();await loadHistory(true);} }
       };
       const addButton = (label, run, disabled = false) => {
-        const button = element('button','admin-button',label);button.disabled = disabled || busyOrders.has(item.id);
+        const button = element('button',label==='处理请求'?'admin-primary':'admin-button',label);button.disabled = disabled || busyOrders.has(item.id);
         button.addEventListener('click',()=>{if(!button.disabled)void run();});actions.append(button);return button;
       };
-      if(canApprove && item.binding_adjustment_id && item.settlement_submitted_by && item.settlement_submitted_by!==actorId
+      if(canApprove && item.settlement_approval_required!==false && item.binding_adjustment_id && item.settlement_submitted_by && item.settlement_submitted_by!==actorId
           && ['SUBMITTED','FINANCE_APPROVED'].includes(item.settlement_status)){
         actions.append(element('p','admin-audit-note',`独立审批：${item.binding_final_caibi_amount??'—'} 点钻 · 汇率 ${item.binding_final_rate??'—'} · 提交人 ${item.settlement_submitted_by}`));
         const review=async(approve,finance=false)=>{
           if(disposed||busyOrders.has(item.id))return;busyOrders.add(item.id);renderCases();
           try{const result=await (finance?api.financeReviewAdjustment:api.adminReviewAdjustment)(item.binding_adjustment_id,{approve},{idempotencyKey:key(`approval:${item.binding_adjustment_id}`)});
-            if(!disposed)panelAlert(`审批结果：${result.status??'已受理'}；资金由持有人在审批后执行，不会自动入账。`);
-          }catch(error){if(!disposed)panelAlert(`审批失败：${error.message??'请刷新重试'}`);}
+            if(!disposed)orderAlert(`审批结果：${result.status??'已受理'}；资金由持有人在审批后执行，不会自动入账。`);
+          }catch(error){if(!disposed)orderAlert(`审批失败：${error.message??'请刷新重试'}`);}
           finally{busyOrders.delete(item.id);if(!disposed)await loadCases();}
         };
         if(item.settlement_status==='SUBMITTED')addButton('独立财务审核通过',()=>review(true,true));
@@ -154,17 +198,17 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       if (!owned(item)) {
         const needsReview=item.processing_stage==='NEEDS_REVIEW' || (item.expires_at && Date.parse(item.expires_at)<=Date.now());
         const reviewReason=element('input');reviewReason.placeholder='核对受理原因（至少3字符）';reviewReason.setAttribute('aria-label',reviewReason.placeholder);
-        actions.append(element('span',null,activeOther ? '其他客服处理中（只读）' : '请先认领，服务端将校验受理期限'));
+        notes.append(element('p','admin-audit-note',activeOther ? '另一位客服正在处理，当前仅可查看' : '接手后由你负责，其他客服无法同时处理'));
         if(needsReview && !canReview)actions.append(element('p','admin-audit-note','已转待核对，需要财务复核权限受理。'));
         if(needsReview && canReview && !activeOther)actions.append(reviewReason);
-        if (!activeOther && actorId && (!needsReview || canReview)) addButton(needsReview?'认领待核对案件':'认领案件',async()=>{
-          if(needsReview && reviewReason.value.trim().length<3){panelAlert('请填写核对受理原因（至少3字符）');return;}
+        if (!activeOther && actorId && (!needsReview || canReview)) {claimAction=async()=>{
+          if(needsReview && reviewReason.value.trim().length<3){orderAlert('请填写核对受理原因（至少3字符）');return;}
           if(disposed || busyOrders.has(item.id))return;busyOrders.add(item.id);renderCases();
           try {const result=await api.claimRecharge(item.id,{idempotencyKey:key(`claim:${item.id}`)},needsReview?{review:true,reason:reviewReason.value.trim()}:{});
-            if(!disposed && result.claim_token && result.claimed_by===actorId)claims.set(item.id,result.claim_token);
-          }catch(error){claims.delete(item.id);panelAlert(`认领失败：${error.message ?? '案件已被认领'}`);}
+            if(!disposed && result.claim_token && result.claimed_by===actorId){claims.set(item.id,result.claim_token);orderAlert(result.payment_verified?'已接手该请求，到账已核验，请确认结算金额。':'已接手该请求，请等待系统确认到账后继续结算。');}
+          }catch(error){claims.delete(item.id);orderAlert(`接手失败：${error.message ?? '案件已被认领'}`);}
           finally{busyOrders.delete(item.id);if(!disposed){await loadCases();await loadReview();}}
-        });
+        };addButton(needsReview?'处理待核对请求':'接手处理',claimAction);if(needsReview)claimAction=null;}
         continue;
       }
       if(item.expires_at && canReview && item.processing_stage==='NEEDS_REVIEW'){
@@ -173,7 +217,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       const logIndex = element('input');logIndex.placeholder='链上日志序号';logIndex.value='0';logIndex.setAttribute('aria-label',logIndex.placeholder);
       actions.append(txid,logIndex);
       addButton('核验实际到账',()=>{
-        if(!txid.value.trim() || !/^\d+$/.test(logIndex.value) || !Number.isSafeInteger(Number(logIndex.value))){panelAlert('请填写交易哈希与有效日志序号');return;}
+        if(!txid.value.trim() || !/^\d+$/.test(logIndex.value) || !Number.isSafeInteger(Number(logIndex.value))){orderAlert('请填写交易哈希与有效日志序号');return;}
         return command(claim_token=>api.verifyRechargePayment(item.id,{claim_token,txid:txid.value.trim(),log_index:Number(logIndex.value)},{idempotencyKey:key(`verify:${item.id}`)}));
       });
       }
@@ -187,7 +231,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
             : `基准不可用${currentFx?.stale ? '（过期参考）' : ''}；请核对汇率后明确填写最终结算率`));
           if(Number.isFinite(Date.parse(currentFx?.fetched_at)))actions.append(element('p','admin-audit-note',`参考获取时间（北京）：${new Date(currentFx.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
           const rate=element('input');rate.placeholder='最终结算率（点钻/USDT）';rate.setAttribute('aria-label',rate.placeholder);
-          rate.value=baseRate ? formatFixed(baseRate,6) : '';actions.append(rate);
+          rate.value=item.binding_adjustment_id||item.adjustment_id ? (item.binding_final_rate??'') : (drafts.get(item.id)?.[rate.placeholder]??(baseRate ? formatFixed(baseRate,6) : ''));actions.append(rate);
           const preview=element('p','admin-audit-note');
           const updatePreview=()=>{
             const finalRate=decimalMicros(rate.value);
@@ -195,44 +239,56 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
               ? `最终点钻预览：${previewPoints(received,finalRate)}（实际到账 ${item.actual_received_usdt} USDT × 最终结算率 ${formatFixed(finalRate,6)}）`
               : '最终点钻预览：待填写有效结算率并确认实际到账金额';
           };
-          rate.addEventListener('input',updatePreview);
+          const persistRate=()=>{const draft=drafts.get(item.id)??{};draft[rate.placeholder]=rate.value;drafts.set(item.id,draft);};rate.addEventListener('input',()=>{persistRate();updatePreview();});
           for(const [label,percent] of [['-5%',95n],['-1%',99n],['基准',100n],['+1%',101n],['+5%',105n]]){
-            addButton(label,()=>{if(baseRate){rate.value=formatFixed((baseRate*percent+50n)/100n,6);updatePreview();}},!baseRate);
+            addButton(label,()=>{if(baseRate){rate.value=formatFixed((baseRate*percent+50n)/100n,6);persistRate();updatePreview();}},!baseRate);
           }
-          actions.append(preview,element('p','admin-audit-note','参考汇率仅作结算基准，最终以客服确认的结算率和独立审批结果为准；预览不代表已入账。'));
+          actions.append(preview,element('p','admin-audit-note','请核对结算金额，确认后将直接下发点钻；以下发成功回执为准。'));
           updatePreview();
-          addButton('提交结算审批',()=>{
-            if(!received || !decimalMicros(rate.value)){panelAlert('请确认实际到账金额并填写有效最终结算率（最多6位小数）');return;}
-            return command(claim_token=>api.prepareRechargeSettlement(item.id,{claim_token,final_rate:rate.value.trim()},{idempotencyKey:`prepare:${item.id}:${rate.value.trim()}`}));
+          if(!item.binding_adjustment_id && !item.adjustment_id)addButton('确认下发点钻',()=>{
+            if(!received || !decimalMicros(rate.value)){orderAlert('请确认实际到账金额并填写有效最终结算率（最多6位小数）');return;}
+            const finalRate=rate.value.trim();
+            return command(async claim_token=>{
+              const prepared=await api.prepareRechargeSettlement(item.id,{claim_token,final_rate:finalRate},{idempotencyKey:`prepare:${item.id}:${finalRate}`});
+              if(prepared.status==='CREDITED')return prepared;
+              return api.executeRechargeSettlement(item.id,{claim_token},{idempotencyKey:`execute:${item.id}`});
+            });
           },!received);
           if(item.binding_adjustment_id || item.adjustment_id){
-            actions.append(element('p','admin-audit-note',`审批调整 ${item.binding_adjustment_id ?? item.adjustment_id}；需独立管理员审批后执行。`));
-            addButton('审批后执行结算',()=>command(claim_token=>api.executeRechargeSettlement(item.id,{claim_token},{idempotencyKey:`execute:${item.id}:${item.binding_adjustment_id ?? item.adjustment_id}`})));
+            rate.disabled=true;
+            for(const button of actions.querySelectorAll?.('button')??[])if(['-5%','-1%','基准','+1%','+5%'].includes(button.textContent))button.disabled=true;
+            actions.append(element('p','admin-audit-note',`已保存结算：${item.binding_final_caibi_amount??'待核对'} 点钻 · 汇率 ${item.binding_final_rate??'待核对'}。继续操作沿用该金额，服务端防止重复入账。`));
+            addButton('继续下发点钻',()=>command(claim_token=>api.executeRechargeSettlement(item.id,{claim_token},{idempotencyKey:`execute:${item.id}`})));
           }
         } else {
         const adjustment=element('input');adjustment.placeholder='财务调整 ID';adjustment.setAttribute('aria-label',adjustment.placeholder);
         const rate=element('input');rate.placeholder='最终结算率（点钻/USDT）';rate.setAttribute('aria-label',rate.placeholder);
         actions.append(adjustment,rate);
         addButton('绑定调整',()=>{
-          if(!adjustment.value.trim() || !/^[0-9]+(?:\.[0-9]+)?$/.test(rate.value.trim())){panelAlert('请填写既有审批链财务调整 ID 和最终结算率');return;}
+          if(!adjustment.value.trim() || !/^[0-9]+(?:\.[0-9]+)?$/.test(rate.value.trim())){orderAlert('请填写既有审批链财务调整 ID 和最终结算率');return;}
           return command(()=>api.bindRechargeAdjustment(item.id,{adjustment_id:adjustment.value.trim(),final_rate:rate.value.trim()},{idempotencyKey:`bind:${item.id}:${adjustment.value.trim()}:${rate.value.trim()}`}));
         });
         addButton('完成登记',()=>command(claim_token=>api.completeRechargeBinding(item.id,{idempotencyKey:`register:${item.id}`},{claim_token})));
         }
       } else actions.append(element('p','admin-audit-note','等待系统确认到账：自动匹配用户在 APP 绑定的钱包付款，确认前不可提交结算；无需用户或客服填写凭证。'));
-      const reason=element('input');reason.placeholder='拒绝原因';reason.setAttribute('aria-label',reason.placeholder);actions.append(reason);
+      const reasons=['用户未及时支付','用户主动取消','重复提交申请','付款来源与绑定钱包不符','收款网络或币种不符'];
+      const reason=element('select');reason.setAttribute('aria-label','拒绝原因');
+      for(const text of reasons){const option=element('option',null,text);option.value=text;reason.append(option);}
+      reason.value=drafts.get(item.id)?.rejectReason??reasons[0];reason.addEventListener('change',()=>{const draft=drafts.get(item.id)??{};draft.rejectReason=reason.value;drafts.set(item.id,draft);});actions.append(reason);
       addButton('拒绝',()=>{
-        if(reason.value.trim().length<3){panelAlert('拒绝必须填写原因（≥3 字符）');return;}
+        if(!reasons.includes(reason.value)){orderAlert('请选择拒绝原因');return;}
         return command(claim_token=>api.rejectRecharge(item.id,{...item.expires_at?{claim_token}:{},reason:reason.value.trim()},{idempotencyKey:`reject:${item.id}`}));
       });
     }
+    for(const dialog of operationDialogs){const draft=drafts.get(dialog.dataset?.orderId);if(draft)for(const input of dialog.querySelectorAll?.('input')??[]){if(!input.disabled&&Object.hasOwn(draft,input.placeholder)){input.value=draft[input.placeholder];input.dispatchEvent(new Event('input',{bubbles:true}));}}}
+    rebuilding=false;
   };
   const loadCases = async (nextPage=false) => {
     if(nextPage){if(nextCases.disabled)return;casesPageCursor=nextCasesCursor;}
     nextCases.disabled=true;
     const generation = ++casesGeneration;
     try {
-      const [page, snapshot] = await Promise.all([api.getRechargePending({...casesPageCursor?{cursor:casesPageCursor}:{},limit:50}), loadReference()]);
+      const [page, snapshot] = await Promise.all([api.getRechargePending({scope:filter,...casesPageCursor?{cursor:casesPageCursor}:{},limit:50}), loadReference()]);
       if(disposed || generation!==casesGeneration)return;
       currentFx=snapshot;
       nextCasesCursor=page.next_cursor??null;nextCases.disabled=!nextCasesCursor;
@@ -245,11 +301,13 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       body.insertRow().append(element('td','admin-status-cell','案件加载失败，请检查权限或网络；修改已停止'));
     }
   };
-  const tabs=element('div','admin-command-form');
-  for(const [value,label] of [['all','公共充值队列'],['mine','我的处理中']]){
-    const tab=element('button','admin-button',label);tab.addEventListener('click',()=>{filter=value;renderCases();});tabs.append(tab);
+  const tabs=element('div','recharge-filter-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','充值请求范围');
+  const tabButtons=new Map(),filterHint=element('p','admin-audit-note');
+  const updateTabs=()=>{for(const [value,button] of tabButtons){button.setAttribute('aria-pressed',String(value===filter));button.className='admin-secondary'+(value===filter?' active':'');}filterHint.textContent=filter==='mine'?'由你接手的充值请求，请及时完成处理。':'全部待处理充值请求；点击「处理请求」接手，到账后再结算。';};
+  for(const [value,label] of [['all','待处理请求'],['mine','我正在处理']]){
+    const tab=element('button','admin-secondary',label);tabButtons.set(value,tab);tab.addEventListener('click',()=>{if(filter===value)return;filter=value;casesPageCursor=null;updateTabs();void loadCases();});tabs.append(tab);
   }
-  section.append(tabs);
+  updateTabs();section.append(tabs,filterHint);
   const heartbeat = async () => {
     if(disposed || document.hidden)return;
     let lost = false;
@@ -257,7 +315,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       if(!item.expires_at||!owned(item)||busyOrders.has(item.id))continue;
       try{const result=await api.heartbeatRecharge(item.id,{claim_token:claims.get(item.id)},{idempotencyKey:key(`heartbeat:${item.id}`)});
         if(!disposed && claims.has(item.id))Object.assign(item,result);
-      }catch(error){lost=true;claims.delete(item.id);panelAlert('认领续租未确认，已停止修改，请刷新并重新认领');}
+      }catch(error){lost=true;claims.delete(item.id);panelAlert('认领续租未确认，已停止修改，请刷新并重新接手',item.id);}
     }
     if(!disposed && lost){renderCases();await loadReview();}
   };
@@ -265,11 +323,10 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const resume=()=>{if(!document.hidden)void loadCases();};document.addEventListener?.('visibilitychange',resume);
   panel.heartbeat=heartbeat;
   panel.refreshOrders=async()=>{await loadCases();if(!disposed)await loadReview();};
-  panel.dispose=()=>{disposed=true;++casesGeneration;claims.clear();clearInterval(leaseTimer);document.removeEventListener?.('visibilitychange',resume);};
-  const reloadButton = element("button", "admin-button", "刷新待处理案件");
-  reloadButton.addEventListener("click", () => {casesPageCursor=null;return settle(loadCases);});
+  panel.dispose=()=>{disposed=true;for(const dialog of dialogs){dialog.close?.();dialog.remove?.();}dialogs.clear();++casesGeneration;claims.clear();clearInterval(leaseTimer);document.removeEventListener?.('visibilitychange',resume);};
+  const reloadButton = refreshControl("刷新充值请求",()=>{casesPageCursor=null;return loadCases();});
   const tableScroll=element("div","admin-table-scroll");tableScroll.append(table);
-  section.append(reloadButton, tableScroll, nextCases);
+  sectionHead.append(reloadButton);section.append(tableScroll, nextCases);
   panel.append(section);
 
   // ---------------------------------------------------------- 待核对队列
@@ -280,11 +337,14 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   ["案件", "状态", "失败原因", "操作"].forEach((h) => rHead.append(element("th", null, h)));
   const rBody = reviewTable.createTBody();
   let reviewCursor = null, reviewGeneration = 0;
+  const reviewDialogs=new Map(), reviewDrafts=new Map();
   const loadReview = async (reset = true) => {
+    if(!canManage)return;
     if (!reset && moreReviewButton.disabled) return;
     const generation = ++reviewGeneration;
     if (reset) reviewCursor = null;
     moreReviewButton.disabled = true;
+    const previousReviewDialogs=[...reviewDialogs.values()];reviewDialogs.clear();for(const dialog of previousReviewDialogs){dialog.close?.();dialogs.delete(dialog);}
     rBody.replaceChildren();
     let items = [];
     try {
@@ -300,6 +360,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
     }
     if (!items.length) { rBody.insertRow().append(element("td", "admin-status-cell", "无待核对绑定")); return; }
     for (const item of items) {
+      const reviewAlert=message=>panelAlert(message,item.request_id);
       const tr = rBody.insertRow();
       tr.append(element("td", null, item.request_id), element("td", null, item.request_status ?? "—"),
         element("td", null, item.failure_reason ?? "—"));
@@ -316,7 +377,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
         const result = await settle(api.reviewRecharge(item.request_id, { action: "retry", binding_id:item.id,...managed?{claim_token:claims.get(item.request_id)}:{} },
           { idempotencyKey: `review-retry:${item.id}` }));
         if (result) {
-          panelAlert(result.status === 'CREDITED' && result.binding_state === 'REGISTERED'
+          reviewAlert(result.status === 'CREDITED' && result.binding_state === 'REGISTERED'
             ? '已入账并完成登记' : `尚未完成登记：${result.binding_state || result.status || '待核对'}`);
           await panel.refresh();
         }
@@ -324,37 +385,46 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       });
       const releaseInput = element("input");
       releaseInput.placeholder = "释放原因（需确证未执行）";
+      releaseInput.value=reviewDrafts.get(item.request_id)??'';releaseInput.addEventListener('input',()=>reviewDrafts.set(item.request_id,releaseInput.value));
       const releaseButton = element("button", "admin-button", "确证未执行·释放");
       releaseButton.addEventListener("click", async () => {
         if (!releaseInput.value.trim() || releaseInput.value.trim().length < 3) {
-          panelAlert("释放必须填写原因；服务端会核证拒绝且未执行或已冲正，记录缺失不能证明未入账"); return;
+          reviewAlert("释放必须填写原因；服务端会核证拒绝且未执行或已冲正，记录缺失不能证明未入账"); return;
         }
         if (!item.id || releaseButton.disabled || !reviewOwned()) return;
         retryButton.disabled = releaseButton.disabled = true;
         const ok = await settle(api.reviewRecharge(item.request_id,
           { action: "release", reason: releaseInput.value.trim(), binding_id:item.id,...managed?{claim_token:claims.get(item.request_id)}:{} },
           { idempotencyKey: `review-release:${item.id}` }));
-        if (ok) { panelAlert('绑定已释放，案件未因此入账'); await panel.refresh(); }
+        if (ok) { reviewAlert('绑定已释放，案件未因此入账'); await panel.refresh(); }
         retryButton.disabled = releaseButton.disabled = false;
       });
-      actions.append(retryButton, releaseInput, releaseButton);
+      const reviewDialog=element('dialog','admin-proof-dialog admin-order-dialog');reviewDialog.hidden=true;reviewDialog.setAttribute('aria-label','处理待核对充值');
+      const reviewHeading=element('header','admin-proof-heading'),reviewClose=element('button','admin-dialog-close','×');reviewClose.setAttribute('aria-label','关闭处理窗口');reviewHeading.append(element('h2',null,'处理待核对充值'),reviewClose);
+      const reviewContent=element('div','admin-proof-body'),reviewFeedback=element('p','recharge-alert');reviewFeedback.hidden=true;reviewFeedback.setAttribute('aria-live','polite');
+      reviewContent.append(element('p','admin-audit-note',`订单 ${item.request_id} · ${item.failure_reason??'登记结果需核对'}`),reviewFeedback,retryButton,releaseInput,releaseButton);reviewDialog.append(reviewHeading,reviewContent);
+      const cache=element('div','recharge-operation-cache');cache.append(reviewDialog);const process=element('button','admin-primary','处理请求');
+      process.addEventListener('click',()=>{if(disposed)return;activeOrder=item.request_id;activeKind='review';operationFeedback=reviewFeedback;actions.append(reviewDialog);reviewDialog.hidden=false;reviewDialog.showModal?.();});
+      const closeReview=()=>{reviewDialog.hidden=true;cache.append(reviewDialog);if(reviewDialogs.get(item.request_id)===reviewDialog&&activeKind==='review'&&activeOrder===item.request_id){activeOrder=null;activeKind=null;operationFeedback=null;process.focus?.();}};
+      reviewClose.addEventListener('click',()=>{reviewDialog.close?.();closeReview();});reviewDialog.addEventListener('close',closeReview);dialogs.add(reviewDialog);reviewDialogs.set(item.request_id,reviewDialog);
+      actions.append(process,cache);
       tr.append(actions);
+      if(activeKind==='review'&&activeOrder===item.request_id){operationFeedback=reviewFeedback;actions.append(reviewDialog);reviewDialog.hidden=false;reviewDialog.showModal?.();}
     }
   };
-  const reloadReviewButton = element("button", "admin-button", "刷新待核对队列");
-  reloadReviewButton.addEventListener("click", () => settle(loadReview));
+  const reloadReviewButton = refreshControl("刷新异常登记", loadReview);
   const moreReviewButton = element('button','admin-button','下一页待核对');
   moreReviewButton.disabled = true;
   moreReviewButton.addEventListener('click',()=>settle(loadReview(false)));
   reviewSection.append(reloadReviewButton, reviewTable, moreReviewButton);
-  panel.append(reviewSection);
+  if(canManage)tools.append(reviewSection);
 
   // ---------------------------------------------------------- 案件历史（分页）
   const historySection = element("div", "recharge-section");
-  historySection.append(element("h3", null, "案件历史（含绑定状态）"));
+
   const historyTable = element("table", "admin-table recharge-history");
   const hHead = historyTable.createTHead().insertRow();
-  ["申请单", "用户", "金额（USDT）", "案件状态", "绑定状态", "最终点钻"].forEach((h) => hHead.append(element("th", null, h)));
+  ["申请单", "用户", "金额（USDT）", "订单状态", "结算状态", "最终点钻"].forEach((h) => hHead.append(element("th", null, h)));
   const hBody = historyTable.createTBody();
   let historyCursor = null, historyGeneration = 0;
   const loadHistory = async (reset) => {
@@ -368,9 +438,9 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       hBody.replaceChildren();
       for (const item of page.items ?? []) {
         const tr = hBody.insertRow();
-        tr.append(element("td", null, item.id), element("td", null, item.user_id),
-          element("td", null, `${item.amount_usdt} USDT`), element("td", null, item.status),
-          element("td", null, item.binding_state ?? "—"),
+        tr.append(element("td", null, item.id), userCell(item),
+          element("td", null, `${item.amount_usdt} USDT`), element("td", null, statusName(item.status)),
+          element("td", null, statusName(item.binding_state??"—")),
           element("td", null, item.final_caibi_amount ?? "—"));
       }
       historyCursor = page.next_cursor ?? null;
@@ -385,14 +455,13 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const moreButton = element("button", "admin-button", "加载下一页");
   moreButton.disabled = true;
   moreButton.addEventListener("click", () => settle(loadHistory(false)));
-  const reloadHistoryButton = element("button", "admin-button", "刷新案件历史");
-  reloadHistoryButton.addEventListener("click", () => settle(loadHistory(true)));
-  historySection.append(reloadHistoryButton, historyTable, moreButton);
+  const reloadHistoryButton = refreshControl("刷新订单查询",()=>loadHistory(true));
+  const historyHeading=element("header","admin-panel-heading");historyHeading.append(element("h3", null, "订单查询"),reloadHistoryButton);historySection.append(historyHeading,historyTable,moreButton);
   panel.append(historySection);
 
   // ---------------------------------------------------------- 审计时间线详情
   const timelineSection = element("div", "recharge-section");
-  timelineSection.append(element("h3", null, "案件审计时间线"));
+  timelineSection.append(element("h3", null, "按订单号查询处理记录"));
   const timelineInput = element("input");
   timelineInput.placeholder = "案件 ID";
   const timelineButton = element("button", "admin-button", "查看时间线");
@@ -413,7 +482,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
     }
   });
   timelineSection.append(timelineInput, timelineButton, timelineBody);
-  panel.append(timelineSection);
+  if(canManage)tools.append(timelineSection);
 
   // ---------------------------------------------------------- 转让意图（查询与复核）
   const transferSection = element("div", "recharge-section");
@@ -482,7 +551,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   };
   listIntentsButton.addEventListener("click", () => settle(loadIntents()));
   transferSection.append(roomInput, listIntentsButton, intentTable);
-  panel.append(transferSection);
+  if(canManage)tools.append(transferSection);
 
   // ---------------------------------------------------------- 客服目录
   const directorySection = element("div", "recharge-section");
@@ -492,6 +561,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   ["条目 ID", "客服 ID", "展示名", "收款地址（USDT/TRC20）", "启用", "排序"].forEach((h) => dHead.append(element("th", null, h)));
   const dBody = directoryTable.createTBody();
   const loadDirectory = async () => {
+    if(!canManage)return;
     dBody.replaceChildren();
     let items = [];
     try { items = (await api.getRechargeDirectory()).items ?? []; } catch {
@@ -538,10 +608,10 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const label = element("label", null, "启用");
   label.append(enabledCheck);
   form.append(label, upsertButton);
-  const reloadDirectoryButton = element("button", "admin-button", "刷新目录");
-  reloadDirectoryButton.addEventListener("click", () => settle(loadDirectory));
+  const reloadDirectoryButton = refreshControl("刷新目录", loadDirectory);
   directorySection.append(reloadDirectoryButton, directoryTable, form);
-  panel.append(directorySection);
+  if(canManage)tools.append(directorySection);
+  if(canManage)panel.append(tools);
 
   panel.refresh = async () => { await Promise.allSettled([loadCases(), loadDirectory(), refreshFx(), loadReview(), loadHistory(true)]); };
   panel.loadTransferIntents = loadIntents;

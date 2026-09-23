@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rechargePanel } from '../src/admin-recharge-panel.js';
+import { rechargePanel as createRechargePanel } from '../src/admin-recharge-panel.js';
 import { createAdminApi } from '../src/admin-api.js';
 
+function rechargePanel(api,options={}){return createRechargePanel(api,{canManage:true,...options});}
 class Element {
   constructor(tag){this.tag=tag;this.children=[];this.handlers={};this.value='';this.textContent='';this.disabled=false;this.checked=false;this.hidden=false;this.placeholder='';
     this.classList={add(){},toggle(){}};}
   append(...x){this.children.push(...x.filter(Boolean));}
   replaceChildren(...x){this.children=x;}
-  setAttribute(){}
+  setAttribute(name,value){this.attributes??={};this.attributes[name]=value;}
+  getAttribute(name){return this.attributes?.[name];}
   addEventListener(n,h){this.handlers[n]=h;}
   find(tag){return [this,...this.children.flatMap(x=>x.find?.(tag)??[])].filter(x=>x.tag===tag);}
   createTHead(){const t=new Element('thead');this.children.push(t);return t;}
@@ -27,7 +29,7 @@ const VALUATION={caibi_face:'100.00',caibi_reference_usdt:'14.044944',usdt_oblig
 
 async function claimedPanel(api){
   const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();await settle();
-  panel.find('button').find(b=>b.textContent==='认领案件')?.handlers.click();await settle();await settle();return panel;
+  panel.find('button').find(b=>b.textContent==='处理请求')?.handlers.click();await settle();await settle();return panel;
 }
 function makeApi(calls){
   let pending=structuredClone(PENDING);pending.items[0].payment_verified=true;
@@ -63,8 +65,8 @@ test('directory writes use PUT and the ID path, never pass entry_id in body', as
 test('case and directory reload buttons invoke the API again', async()=>{
   install();const calls=[];
   const panel=rechargePanel(makeApi(calls));await settle();await settle();
-  panel.find('button').find(b=>b.textContent==='刷新待处理案件').handlers.click();
-  panel.find('button').find(b=>b.textContent==='刷新目录').handlers.click();
+  panel.find('button').find(b=>b.title==='刷新充值请求').handlers.click();
+  panel.find('button').find(b=>b.title==='刷新目录').handlers.click();
   await settle();await settle();
   assert.equal(calls.filter(([kind])=>kind==='pending').length,2);
   assert.equal(calls.filter(([kind])=>kind==='directory').length,2);
@@ -122,18 +124,17 @@ test('complete registration surfaces authoritative reply instead of assuming suc
   assert.equal(sent[0][2].idempotencyKey,'register:req-1');
 });
 
-test('reject requires a reason and sends it with idempotency', async()=>{
+test('reject offers standard reasons and defaults to overdue payment with idempotency', async()=>{
   install();const calls=[];
   const panel=await claimedPanel(makeApi(calls));
-  const rejectInput=panel.find('input').find(i=>i.placeholder==='拒绝原因');
+  const rejectInput=panel.find('select').find(i=>i.getAttribute('aria-label')==='拒绝原因');
   const rejectButton=panel.find('button').find(b=>b.textContent==='拒绝');
-  rejectButton.handlers.click();await settle();
-  assert.equal(calls.filter(([k])=>k==='reject').length,0,'无原因不得拒绝');
-  rejectInput.value='付款未到账';
+  assert.equal(rejectInput.value,'用户未及时支付');
+  assert.ok(rejectInput.children.some(option=>option.value==='用户主动取消'));
   rejectButton.handlers.click();await settle();
   const sent=calls.filter(([k])=>k==='reject');
   assert.equal(sent.length,1);
-  assert.deepEqual(sent[0][2],{reason:'付款未到账'});
+  assert.deepEqual(sent[0][2],{reason:'用户未及时支付'});
   assert.equal(sent[0][3].idempotencyKey,'reject:req-1');
 });
 
@@ -220,7 +221,7 @@ test('late history response cannot replace a newer explicit refresh', async()=>{
   const panel=rechargePanel(api);await settle();
   const more=panel.find('button').find(b=>b.textContent==='加载下一页');
   assert.equal(more.disabled,true,'分页请求完成前禁止下一页');
-  panel.find('button').find(b=>b.textContent==='刷新案件历史').handlers.click();
+  panel.find('button').find(b=>b.title==='刷新订单查询').handlers.click();
   pending[1]({items:[{id:'new-data'}],next_cursor:null});await settle();
   pending[0]({items:[{id:'stale-data'}],next_cursor:'stale-cursor'});await settle();
   assert.ok(panel.find('td').some(x=>x.textContent==='new-data'));
@@ -301,10 +302,10 @@ test('other actor is read-only; unverified owned order cannot settle; forbidden 
   install();let item={...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString(),claimed_by:'other',claim_expires_at:new Date(Date.now()+300000).toISOString()};
   const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff'};return {...item,claim_token:'lease'};},heartbeatRecharge:async()=>{throw {status:403};}};
   const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
-  assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  assert.equal(panel.find('button').some(b=>b.textContent==='接手处理'),false);
   assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
   item={...item,claimed_by:null};await panel.refreshOrders();
-  panel.find('button').find(b=>b.textContent==='认领案件').handlers.click();await settle();await settle();
+  panel.find('button').find(b=>b.textContent==='处理请求').handlers.click();await settle();await settle();
   assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),false);
   assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
   document.hidden=true;await panel.heartbeat();assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),false);
@@ -316,9 +317,9 @@ test('late pending response cannot restore another actor actions and disposed pa
   install();const managedPending={items:[{...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString()}]};const pending=[];let claims=0;const api={...makeApi([]),getRechargePending:()=>new Promise(resolve=>pending.push(resolve)),claimRecharge:async()=>{claims++;return {};}};
   const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
   const newer=panel.refreshOrders();pending[1]({items:[{...PENDING.items[0],claimed_by:'other',claim_expires_at:new Date(Date.now()+300000).toISOString()}]});await newer;
-  pending[0](managedPending);await settle();assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  pending[0](managedPending);await settle();assert.equal(panel.find('button').some(b=>b.textContent==='接手处理'),false);
   const latest=panel.refreshOrders();pending[2](managedPending);await latest;
-  const claim=panel.find('button').find(b=>b.textContent==='认领案件');panel.dispose();claim.handlers.click();await settle();assert.equal(claims,0);
+  const claim=panel.find('button').find(b=>b.textContent==='处理请求');panel.dispose();claim.handlers.click();await settle();assert.equal(claims,0);
 });
 
 test('overdue managed order needs explicit finance review claim and reason',async()=>{
@@ -327,14 +328,14 @@ test('overdue managed order needs explicit finance review claim and reason',asyn
   const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),claimRecharge:async(...args)=>{sent=args;return {};}};
   const normal=rechargePanel(api,{actor:{id:'staff'}});await settle();assert.equal(normal.find('button').some(b=>b.textContent.includes('认领')),false);normal.dispose();
   const panel=rechargePanel(api,{actor:{id:'staff'},canReview:true});await settle();
-  const button=panel.find('button').find(b=>b.textContent==='认领待核对案件');button.handlers.click();await settle();assert.equal(sent,undefined);
+  const button=panel.find('button').find(b=>b.textContent==='处理待核对请求');button.handlers.click();await settle();assert.equal(sent,undefined);
   panel.find('input').find(i=>i.placeholder.includes('核对受理原因')).value='迟到账需核对';button.handlers.click();await settle();await settle();
   assert.deepEqual(sent[2],{review:true,reason:'迟到账需核对'});panel.dispose();
 });
 
 test('historical orders keep direct bind registration without unsupported claim',async()=>{
   install();const calls=[];const api=makeApi(calls);const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
-  assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  assert.equal(panel.find('button').some(b=>b.textContent==='接手处理'),false);
   assert.ok(panel.find('button').some(b=>b.textContent==='绑定调整'));
   panel.find('input').find(i=>i.placeholder==='财务调整 ID').value='history-adj';
   panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）').value='7';
@@ -346,7 +347,7 @@ test('independent administrator can approve a bound order without taking its cla
   install();let sent;
   const api={...makeApi([]),getRechargePending:async()=>({items:[{...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString(),claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString(),binding_adjustment_id:'approved-domain-adj',settlement_status:'SUBMITTED',settlement_submitted_by:'staff',binding_final_rate:'7',binding_final_caibi_amount:'350.00'}]}),adminReviewAdjustment:async(...args)=>{sent=args;return {status:'ADMIN_APPROVED'};}};
   const panel=rechargePanel(api,{actor:{id:'independent-admin'},canApprove:true});await settle();
-  assert.equal(panel.find('button').some(b=>b.textContent==='认领案件'),false);
+  assert.equal(panel.find('button').some(b=>b.textContent==='接手处理'),false);
   panel.find('button').find(b=>b.textContent==='独立管理员批准结算').handlers.click();await settle();
   assert.equal(sent[0],'approved-domain-adj');assert.deepEqual(sent[1],{approve:true});panel.dispose();
   const own=rechargePanel(api,{actor:{id:'staff'},canApprove:true});await settle();
@@ -362,14 +363,31 @@ test('public recharge queue pages by opaque server cursor',async()=>{
   await panel.refreshOrders();assert.equal(calls.at(-1).cursor,'opaque-next');panel.dispose();
 });
 
-async function settlementPanel(overrides = {}) {
+async function settlementPanel(overrides = {}, apiOverrides = {}) {
   install(); const calls=[];
   let item={...PENDING.items[0],amount_usdt:'10.000000',actual_received_usdt:'10.000000',fx_rate:'7.123456',fx_rate_stale:false,payment_verified:true,
     expires_at:new Date(Date.now()+7200000).toISOString(),...overrides};
   const api={...makeApi(calls),getFxRate:async()=>({rate:item.fx_rate,stale:item.fx_rate_stale,fetched_at:'2026-09-23T10:00:00Z'}),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...item,claim_token:'lease'};},
-    prepareRechargeSettlement:async(...args)=>{calls.push(['prepare',...args]);return {status:'PENDING_APPROVAL'};}};
-  return {panel:await claimedPanel(api),calls};
+    prepareRechargeSettlement:async(...args)=>{calls.push(['prepare',...args]);return {status:'PENDING_APPROVAL',binding_adjustment_id:'prepared-1'};},
+    executeRechargeSettlement:async(...args)=>{calls.push(['execute',...args]);return {status:'CREDITED',binding_state:'REGISTERED'};}};
+  return {panel:await claimedPanel({...api,...apiOverrides}),calls};
 }
+
+test('saved settlement displays its frozen rate and continues the same execution',async()=>{
+  const {panel,calls}=await settlementPanel({binding_adjustment_id:'saved-1',binding_final_rate:'6.000000',binding_final_caibi_amount:'60.00',settlement_approval_required:false});
+  const rate=panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');
+  assert.equal(rate.value,'6.000000');assert.equal(rate.disabled,true);
+  assert.equal(panel.find('button').some(b=>b.textContent==='确认下发点钻'),false);
+  panel.find('button').find(b=>b.textContent==='继续下发点钻').handlers.click();await settle();
+  assert.equal(calls.some(c=>c[0]==='prepare'),false);assert.equal(calls.filter(c=>c[0]==='execute').length,1);panel.dispose();
+});
+
+test('failed settlement preparation never executes or reports points credited',async()=>{
+  const {panel,calls}=await settlementPanel({}, {prepareRechargeSettlement:async()=>{throw Error('请求未确认');}});
+  panel.find('button').find(b=>b.textContent==='确认下发点钻').handlers.click();await settle();
+  assert.equal(calls.some(c=>c[0]==='execute'),false);
+  assert.equal(panel.find('p').some(p=>p.textContent.includes('已入账并完成登记')),false);panel.dispose();
+});
 test('managed settlement defaults to fresh reference and fixed-base percentage shortcuts with decimal previews',async()=>{
   const {panel,calls}=await settlementPanel();
   const rate=panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');
@@ -380,14 +398,16 @@ test('managed settlement defaults to fresh reference and fixed-base percentage s
     assert.equal(rate.value,value);assert.ok(panel.find('p').some(p=>p.textContent.includes(`最终点钻预览：${amount}`)));
   }
   rate.value='8.000001';rate.handlers.input();assert.ok(panel.find('p').some(p=>p.textContent.includes('最终点钻预览：80.00')));
-  panel.find('button').find(b=>b.textContent==='提交结算审批').handlers.click();await settle();
-  assert.equal(calls.find(c=>c[0]==='prepare')[2].final_rate,'8.000001');panel.dispose();
+  panel.find('button').find(b=>b.textContent==='确认下发点钻').handlers.click();await settle();
+  assert.equal(calls.find(c=>c[0]==='prepare')[2].final_rate,'8.000001');
+  assert.equal(calls.find(c=>c[0]==='execute')[2].claim_token,'lease');
+  assert.deepEqual(calls.filter(c=>['prepare','execute'].includes(c[0])).map(c=>c[0]),['prepare','execute']);panel.dispose();
 });
 test('managed awaiting-payment orders show automatic detection and cannot submit settlement',async()=>{
   const {panel,calls}=await settlementPanel({payment_verified:false,actual_received_usdt:null});
   assert.ok(panel.find('p').some(p=>p.textContent.includes('等待系统确认到账')));
   assert.equal(panel.find('input').some(i=>i.placeholder==='到账交易哈希'),false);
-  assert.equal(panel.find('button').some(b=>b.textContent==='提交结算审批'),false);
+  assert.equal(panel.find('button').some(b=>b.textContent==='确认下发点钻'),false);
   assert.equal(calls.some(c=>c[0]==='prepare'),false);panel.dispose();
 });
 for(const baseline of [{fx_rate:null},{fx_rate:'7.123456',fx_rate_stale:true}])test(`unusable baseline is never invented ${JSON.stringify(baseline)}`,async()=>{
@@ -405,9 +425,9 @@ test('decimal preview rounds half up without losing large integer precision',asy
 });
 test('missing actual receipt and invalid final rates cannot prepare a settlement',async()=>{
   const {panel,calls}=await settlementPanel({actual_received_usdt:null});
-  assert.equal(panel.find('button').find(b=>b.textContent==='提交结算审批').disabled,true);panel.dispose();
+  assert.equal(panel.find('button').find(b=>b.textContent==='确认下发点钻').disabled,true);panel.dispose();
   const good=await settlementPanel();const rate=good.panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');
-  for(const value of ['0','1.0000001','-1','Infinity','1e5']){rate.value=value;good.panel.find('button').find(b=>b.textContent==='提交结算审批').handlers.click();await settle();}
+  for(const value of ['0','1.0000001','-1','Infinity','1e5']){rate.value=value;good.panel.find('button').find(b=>b.textContent==='确认下发点钻').handlers.click();await settle();}
   assert.equal(good.calls.some(c=>c[0]==='prepare'),false);assert.equal(calls.some(c=>c[0]==='prepare'),false);good.panel.dispose();
 });
 
@@ -427,4 +447,84 @@ test('settlement uses this load current FX snapshot, retaining historical order 
   api.getFxRate=async()=>{throw new Error('unavailable');};await panel.refreshOrders();
   assert.equal(panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）').value,'');
   assert.equal(panel.find('button').find(b=>b.textContent==='+5%').disabled,true);panel.dispose();
+});
+
+test('ordinary staff workbench separates admin tools and gives clear selected filters',async()=>{
+ install();const calls=[];const panel=rechargePanel(makeApi(calls),{actor:{id:'staff'},canManage:false});await settle();await settle();
+ assert.ok(!panel.find('h3').some(n=>/官方充值客服目录|群主转让意图|不确定登记/.test(n.textContent)));
+ assert.equal(calls.filter(x=>x[0]==='directory').length,0);
+ const tabs=panel.find('button');assert.ok(tabs.some(n=>n.textContent==='待处理请求'));assert.ok(tabs.some(n=>n.textContent==='我正在处理'));
+ assert.ok(tabs.some(n=>n.title==='刷新充值请求' && n.textContent==='↻'));
+ panel.dispose();
+});
+test('user cell uses display identity and prominent processing action',async()=>{
+ install();const api=makeApi([]);api.getRechargePending=async()=>({items:[{id:'req',user_id:'private-id',user_display_name:'小林',user_chat_id:'lin2026',amount_usdt:'10.000000',expires_at:new Date(Date.now()+3600000).toISOString()}]});
+ const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();await settle();
+ assert.ok(panel.find('strong').some(n=>n.textContent==='小林'));
+ assert.ok(panel.find('small').some(n=>n.textContent==='畅聊号：lin2026'));
+ assert.ok(panel.find('button').some(n=>n.textContent==='处理请求' && n.className.includes('admin-primary')));panel.dispose();
+});
+
+test('order detail dialog is removed on disposal and ignores delayed response',async()=>{
+ install();const mounted=[];
+ document.body={append:node=>mounted.push(node)};
+ const original=document.createElement;
+ document.createElement=tag=>{const node=original(tag);node.focus=()=>{};
+   node.showModal=()=>{node.open=true;};node.close=()=>{node.open=false;node.handlers.close?.();};
+   node.remove=()=>{node.removed=true;};return node;};
+ let resolve;const api={...makeApi([]),getRechargeTimeline:()=>new Promise(r=>{resolve=r;})};
+ const panel=rechargePanel(api,{canManage:false});await settle();await settle();
+ panel.find('button').find(b=>b.textContent==='查看记录').handlers.click();
+ assert.equal(mounted.length,1);assert.equal(mounted[0].open,true);
+ panel.dispose();assert.equal(mounted[0].removed,true);assert.equal(mounted[0].open,false);
+ resolve({status:'CREDITED',items:[{action:'迟到响应'}]});await settle();
+ assert.equal(mounted[0].find('strong').some(n=>n.textContent==='迟到响应'),false);
+});
+
+test('recharge settlement inputs live inside an operation dialog, not in the table row',async()=>{
+ install();const panel=await claimedPanel(makeApi([]));
+ const dialogs=panel.find('dialog').filter(d=>d.className.includes('admin-order-dialog'));
+ assert.ok(dialogs.length>0);
+ assert.ok(dialogs.some(d=>d.find('input').some(i=>i.placeholder==='最终结算率（点钻/USDT）')));
+ assert.ok(panel.find('button').some(b=>b.textContent==='处理请求'));
+ panel.dispose();
+});
+
+
+test('settlement shortcut and manual drafts survive a list refresh',async()=>{
+ const {panel}=await settlementPanel();
+ panel.find('button').find(b=>b.textContent==='+5%').handlers.click();
+ await panel.refreshOrders();
+ let rate=panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');
+ assert.equal(rate.value,'7.479629');
+ rate.value='8.120001';rate.handlers.input();await panel.refreshOrders();
+ rate=panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');assert.equal(rate.value,'8.120001');panel.dispose();
+});
+
+test('late success of order A is never displayed inside order B operation dialog',async()=>{
+ install();let complete;
+ const api={...makeApi([]),getRechargePending:async()=>({items:[{...PENDING.items[0],id:'order-A'},{...PENDING.items[0],id:'order-B'}]}),completeRechargeBinding:()=>new Promise(r=>{complete=r;})};
+ const panel=rechargePanel(api,{actor:{id:'staff'},canManage:false});await settle();await settle();
+ panel.find('button').filter(b=>b.textContent==='处理请求')[0].handlers.click();
+ panel.find('button').find(b=>b.textContent==='完成登记').handlers.click();await settle();
+ panel.find('button').find(b=>b.textContent==='×').handlers.click();
+ panel.find('button').filter(b=>b.textContent==='处理请求')[1].handlers.click();
+ complete({status:'CREDITED',binding_state:'REGISTERED'});await settle();await settle();
+ const orderB=panel.find('dialog').find(d=>d.find('p').some(p=>p.textContent.includes('订单 order-B')));
+ assert.ok(orderB);assert.equal(orderB.find('p').some(p=>p.textContent.includes('已入账并完成登记')),false);
+ assert.ok(panel.find('p').some(p=>p.textContent.includes('订单 order-A：已入账')));panel.dispose();
+});
+
+test('review dialog stays in review mode and keeps release draft after order refresh',async()=>{
+ install();const create=document.createElement;
+ document.createElement=tag=>{const node=create(tag);node.showModal=()=>{node.open=true;};node.close=()=>{node.open=false;node.handlers.close?.();};return node;};
+ const api={...makeApi([]),getRechargeReviewQueue:async()=>({items:[{id:'binding',request_id:'req-1',request_status:'SUBMITTED'}]})};
+ const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();await settle();
+ const table=panel.find('table').find(t=>t.className.includes('recharge-review'));
+ table.find('button').find(b=>b.textContent==='处理请求').handlers.click();
+ const input=panel.find('input').find(i=>i.placeholder==='释放原因（需确证未执行）');input.value='已核对调整拒绝';input.handlers.input();
+ await panel.refreshOrders();
+ const review=panel.find('dialog').find(d=>d.find('h2').some(h=>h.textContent==='处理待核对充值'));
+ assert.equal(review.open,true);assert.equal(review.find('input')[0].value,'已核对调整拒绝');
+ assert.equal(panel.find('dialog').some(d=>d.open&&d.find('h2').some(h=>h.textContent==='处理充值请求')),false);panel.dispose();
 });

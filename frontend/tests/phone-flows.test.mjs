@@ -29,13 +29,13 @@ for (const [id,check] of [
  }]
 ]) test(id, async()=>{
  globalThis.HTMLElement=class {};
- globalThis.document={createElement:tag=>new Node(tag)};
+ globalThis.document={createElement:tag=>new Node(tag),createElementNS:(_ns,tag)=>new Node(tag)};
  check(walk(await getScreen(id).component()));
 });
 
 test("recharge demo advances to payment without claiming credit", async () => {
  globalThis.HTMLElement=class {};
- globalThis.document={createElement:tag=>new Node(tag)};
+ globalThis.document={createElement:tag=>new Node(tag),createElementNS:(_ns,tag)=>new Node(tag)};
  const root=await getScreen("recharge-directory-directory").component();
  walk(root).find(n=>n.attributes.label==="下一步").handlers.click();
  const nodes=walk(root);
@@ -43,15 +43,20 @@ test("recharge demo advances to payment without claiming credit", async () => {
  assert.ok(nodes.some(n=>n.textContent?.includes("2 小时")));
  assert.ok(!nodes.some(n=>n.tag==="input"));
  assert.ok(!nodes.some(n=>n.attributes.label==="提交付款凭证"));
- assert.ok(nodes.some(n=>n.textContent==="等待系统确认到账 · 确认后由客服结算"));
- assert.ok(nodes.some(n=>n.textContent?.includes("已绑定的钱包")));
+ assert.ok(nodes.some(n=>n.attributes["aria-label"]==="保存到本地" && n.attributes.download));
+ assert.ok(nodes.some(n=>n.textContent==="收款地址"));
+ const copy=nodes.find(n=>n.attributes["aria-label"]==="复制地址");
+ assert.equal(copy.tag,"button");
+ assert.match(copy.attributes.style,/flex:0 0 48px/);
+ assert.ok(copy.children.some(n=>n.dataset.icon==="copy"));
+ assert.ok(!nodes.some(n=>n.textContent?.includes("已绑定的钱包")));
 });
 
 
 
 test("phone OTP validates live and explains consent before send", async () => {
  globalThis.HTMLElement=class {};
- globalThis.document={createElement:tag=>new Node(tag)};
+ globalThis.document={createElement:tag=>new Node(tag),createElementNS:(_ns,tag)=>new Node(tag)};
  const nodes=walk(await getScreen("phone-login-phone-error").component());
  const phone=nodes.find(n=>n.tag==="input");
  const button=nodes.find(n=>n.attributes.label==="获取验证码");

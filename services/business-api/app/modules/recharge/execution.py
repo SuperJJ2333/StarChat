@@ -66,7 +66,7 @@ def support_adjustment_terms(session, *, request_id, actor_id, claim_token, fina
     return row.user_id, amount
 
 
-def prepare_adjustment_execution(session, *, adjustment, actor_id, now, reserve_policy):
+def prepare_adjustment_execution(session, *, adjustment, actor_id, now, reserve_policy, direct_recharge=False):
     binding=session.scalar(select(RechargeCreditBinding).where(
         RechargeCreditBinding.adjustment_id==adjustment.id,
         RechargeCreditBinding.state_active=='1').with_for_update())
@@ -79,7 +79,7 @@ def prepare_adjustment_execution(session, *, adjustment, actor_id, now, reserve_
     if row is None or (support_scoped and row.expires_at is None):
         raise AppError(code='RECHARGE_PAYMENT_UNVERIFIED', message='充值订单不存在或缺少核验信息', status_code=409)
     if row.expires_at is None: return None
-    if not any(reviewer and reviewer != adjustment.submitted_by for reviewer in
+    if not direct_recharge and not any(reviewer and reviewer != adjustment.submitted_by for reviewer in
             (adjustment.finance_reviewer_id, adjustment.admin_reviewer_id)):
         raise AppError(code='RECHARGE_INDEPENDENT_APPROVAL_REQUIRED', message='充值结算需要独立财务审批', status_code=409)
     if (row.status!='SUBMITTED' or binding.state!='BOUND' or row.claimed_by!=actor_id

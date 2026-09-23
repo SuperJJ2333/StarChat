@@ -49,3 +49,46 @@
 .admin-modern .admin-order-notifications .admin-audit-note{margin:0;font-size:12px}
 
 .admin-modern .recharge-cases td{white-space:normal;word-break:break-all}
+/* Staff workbench: reuse admin cards, actions, tables and semantic tokens. */
+.admin-modern .admin-recharge-panel{display:grid;gap:24px;padding:0;border:0;background:transparent;box-shadow:none}
+.admin-modern .admin-recharge-panel>h2{margin:0;font-size:24px;letter-spacing:-.03em}
+.admin-modern .recharge-section{min-width:0;margin:0;padding:24px;background:var(--admin-surface);border:1px solid var(--admin-border);border-radius:16px}
+.admin-modern .recharge-section h3{margin:0;font-size:17px;line-height:1.5}
+.admin-modern .admin-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}
+.admin-modern .admin-refresh-icon{background:transparent;color:var(--admin-brand);box-shadow:none;border:0;border-radius:50%;font-size:27px;transition:background 160ms,transform 160ms}
+.admin-modern .admin-refresh-icon:hover{background:var(--admin-page)}
+.admin-modern .admin-refresh-icon:active{transform:rotate(35deg) scale(.93)}
+.admin-modern .admin-refresh-icon[aria-busy=true]{animation:admin-spin .8s linear infinite}
+.admin-modern .recharge-fx{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.admin-modern .recharge-field-row{display:grid;align-content:start;gap:10px;padding:12px 18px;border-left:1px solid var(--admin-border)}
+.admin-modern .recharge-quote .recharge-field-row{padding-left:0;border:0}
+.admin-modern .recharge-field-label{font-size:12px;color:var(--admin-muted)}
+.admin-modern .recharge-field-value{font-size:25px;line-height:1.25;font-weight:650;letter-spacing:-.03em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.admin-modern .recharge-quote .recharge-field-value{color:var(--admin-brand);font-size:32px}
+.admin-modern .recharge-fx-disclaimer{grid-column:1/-1;margin:0;padding-top:12px;border-top:1px solid var(--admin-border)}
+.admin-modern .recharge-filter-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:4px;border-radius:12px;background:var(--admin-page);width:fit-content;margin:12px 0}
+.admin-modern .recharge-filter-tabs .admin-secondary{border-color:transparent;background:transparent;color:var(--admin-muted);box-shadow:none}
+.admin-modern .recharge-filter-tabs .active{background:var(--admin-brand);color:var(--admin-surface);border-color:var(--admin-brand)}
+.admin-modern .recharge-cases th{white-space:nowrap;font-size:12px;color:var(--admin-muted)}
+.admin-modern .recharge-cases td{vertical-align:top;padding-top:20px;padding-bottom:20px}
+.admin-modern .recharge-user{min-width:130px}.admin-modern .recharge-user strong,.admin-modern .recharge-user small{display:block}.admin-modern .recharge-user small{margin-top:6px;font-size:12px}
+.admin-modern .recharge-actions{min-width:240px;max-width:360px}.admin-modern .recharge-action-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.admin-modern .recharge-action-controls .admin-primary{min-width:110px}.admin-modern .recharge-action-controls input{min-width:0;max-width:100%}
+.admin-modern .recharge-action-notes{display:grid;gap:6px;margin-top:12px}.admin-modern .recharge-action-notes .admin-audit-note{margin:0;line-height:1.6;font-size:12px}.admin-modern .recharge-action-notes .admin-secondary{justify-self:start;padding:0;min-height:28px;border:0;background:transparent;color:var(--admin-brand)}
+.admin-modern .recharge-alert{padding:14px 18px;border-radius:12px;border:1px solid currentColor;margin:0}.admin-modern .admin-feedback-success{color:var(--admin-brand);background:var(--admin-surface)}
+.admin-modern .recharge-advanced{padding:18px;border:1px dashed var(--admin-border);border-radius:16px}.admin-modern .recharge-advanced summary{cursor:pointer;color:var(--admin-muted)}.admin-modern .recharge-advanced .recharge-section{margin-top:18px}
+.admin-modern .admin-notification-bell{display:inline-flex;align-items:center;gap:7px;position:relative;min-width:44px;min-height:44px;border:0;border-radius:12px;background:var(--admin-page);color:var(--admin-brand);cursor:pointer}
+.admin-modern .admin-notification-bell svg{width:22px;height:22px}.admin-modern .admin-notification-count{border-radius:20px;padding:2px 6px;background:var(--admin-brand);color:var(--admin-surface);font-size:11px;font-weight:700}
+.admin-modern .admin-notification-toast{position:fixed;right:24px;top:96px;width:min(360px,calc(100vw - 32px));padding:20px;background:var(--admin-surface);border:1px solid var(--admin-border);border-left:4px solid var(--admin-brand);border-radius:16px;box-shadow:0 10px 35px var(--admin-modern-color-12);z-index:100;animation:staff-notice-in .2s ease-out}
+.admin-modern .admin-notification-toast-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}.admin-modern .admin-notification-toast p{font-size:14px;line-height:1.6}.admin-modern .admin-notification-error{max-width:240px;font-size:12px;color:var(--admin-muted)}
+.admin-demo-controls{display:flex;gap:10px;flex-wrap:wrap;padding:16px 24px;background:var(--admin-surface);border-bottom:1px solid var(--admin-border);align-items:center}.admin-demo-controls p{margin:0;color:var(--admin-muted);font-size:13px}.admin-demo-controls button{font-size:12px}
+@keyframes staff-notice-in{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:1050px){.admin-modern .recharge-fx{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-modern .recharge-section{padding:18px}}
+@media(max-width:600px){.admin-modern .recharge-fx{grid-template-columns:1fr}.admin-modern .recharge-field-row{border:0;padding-left:0}.admin-modern .recharge-section{padding:14px}.admin-modern .admin-notification-toast{right:16px}.admin-modern .admin-panel-heading{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.admin-modern .admin-notification-toast{animation:none}.admin-modern .admin-refresh-icon{transition:none}.admin-modern .admin-refresh-icon[aria-busy=true]{animation:none}}
+.admin-modern .recharge-workbench-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.admin-modern .recharge-workbench-heading h2{margin:0;font-size:20px}.admin-modern .recharge-fx-card .admin-panel-heading{margin-bottom:4px}.admin-modern .recharge-quote .admin-audit-note{margin:8px 0 0;font-size:11px}.admin-modern .recharge-fx-card .recharge-fx{gap:10px}.admin-modern .recharge-fx-card .recharge-fx-disclaimer{font-size:11px}
+@keyframes admin-spin{to{transform:rotate(360deg)}}
+.admin-modern .admin-notification-toast-actions .admin-icon-button{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border:0;border-radius:10px;background:transparent;color:var(--admin-muted);cursor:pointer}.admin-modern .admin-notification-toast-actions .admin-icon-button svg{width:20px;height:20px}.admin-modern .admin-notification-toast-actions .admin-icon-button:hover{background:var(--admin-page)}
+.admin-modern .admin-order-dialog{width:min(720px,calc(100vw - 32px));text-align:left}.admin-modern .admin-order-dialog .admin-proof-body{display:flex;flex-wrap:wrap;gap:14px;align-items:center}.admin-modern .admin-order-dialog .admin-proof-body>p,.admin-modern .admin-order-dialog .admin-proof-body>h3,.admin-modern .admin-order-dialog .recharge-action-notes,.admin-modern .admin-order-dialog .recharge-action-controls{flex-basis:100%;margin:0}.admin-modern .admin-order-dialog .recharge-action-controls>p,.admin-modern .admin-order-dialog .recharge-action-controls>input{flex-basis:100%;width:100%;margin:0}.admin-modern .admin-order-dialog .recharge-action-controls{gap:12px;padding-top:16px;border-top:1px solid var(--admin-border)}.admin-modern .admin-order-dialog input{padding:12px 14px;border:1px solid var(--admin-border);border-radius:10px;font-size:15px}.admin-modern .recharge-actions{min-width:150px}.admin-modern .recharge-actions>p{font-size:11px;line-height:1.6}
+.admin-modern .admin-order-dialog:not([open]){display:none}.admin-modern .admin-order-dialog[open]{margin:auto;border-radius:24px;overflow:auto}.admin-modern .recharge-cases td:nth-child(3),.admin-modern .recharge-cases td:nth-child(4){white-space:nowrap}
+.recharge-operation-cache{display:none}
+html:has(.admin-order-dialog[open]){overflow:hidden}.admin-modern .admin-order-dialog{white-space:normal}.admin-modern .admin-order-dialog[open]{position:fixed;inset:0}.admin-modern .admin-order-dialog .admin-proof-heading{flex-wrap:nowrap}

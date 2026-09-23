@@ -1,6 +1,7 @@
 import { walletBindingDemo } from "./wallet-binding.js";
 import { redpacket } from "./finance.js";
 import { element } from "../components/base.js";
+import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, navigation, pageRoot } from "./shared.js";
 
 // ADR-0075/0076/0077/0079：手机号认证、人工充值与转让阶段的 HTML 设计演示。
@@ -226,13 +227,30 @@ function rechargeNodes(state) {
     });
     const next = primaryButton("下一步");
     next.addEventListener("click", () => {
-      const status = hint("等待系统确认到账 · 确认后由客服结算");
+      const address = row("收款地址", "演示地址 · 不可用于付款");
+      const copy = element("button");
+      copy.setAttribute("type", "button");
+      copy.setAttribute("aria-label", "复制地址");
+      copy.setAttribute("style", "width:48px;height:48px;flex:0 0 48px;display:grid;place-items:center;border:0;background:transparent;color:var(--color-brand-primary)");
+      copy.append(icon("copy"));
+      copy.addEventListener("click", () => navigator.clipboard.writeText("DEMO-NOT-A-PAYMENT-ADDRESS"));
+      address.children[1].setAttribute("style", "margin-left:auto;text-align:right;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis");
+      address.append(copy);
+      const qr = element("img");
+      qr.setAttribute("src", "./assets/download-qr.png");
+      qr.setAttribute("alt", "演示二维码，指向应用下载页，不可用于付款");
+      qr.setAttribute("width", "160");
+      qr.setAttribute("height", "160");
+      const save = element("a", "c-wallet-demo__icon-action", "↓");
+      save.setAttribute("aria-label", "保存到本地");
+      save.setAttribute("href", "./assets/download-qr.png");
+      save.setAttribute("download", "demo-qr.png");
+      const qrArea = element("div");
+      qrArea.setAttribute("style", "display:flex;flex-direction:column;align-items:center");
+      qrArea.append(qr, save);
       apply.replaceChildren(element("h2", "", "客服处理 · 第 2 步"),
         row("订单", "演示订单 req-1"), row("网络", "TRON（TRC20）"),
-        row("官方收款地址", "演示地址 · 不可用于付款"),
-        row("处理期限", "2 小时 · 截止 2026-09-23 12:00"),
-        status, hint("请使用 APP 已绑定的钱包，按本单金额转入官方收款地址。系统自动核对，无需提交付款凭证。"),
-        hint("演示数据；已付款、逾期或付款不明确时由客服核对，请勿重复付款。"));
+        row("处理期限", "2 小时 · 截止 2026-09-23 12:00"), address, qrArea);
     });
     apply.append(amount.wrapper, estimate,
       hint("1 USDT ≈ ¥7.12 · 参考估算，最终以客服结算为准"), next);

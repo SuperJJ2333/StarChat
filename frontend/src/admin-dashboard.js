@@ -1,7 +1,7 @@
 import {formatBeijingTime, reasonLabel, actorLabel} from './admin-formatters.js';
 import {installSidebarResize} from './admin-sidebar.js';
 import {openProofDialog} from './admin-proof-dialog.js';
-import {orderNotifications} from './admin-order-notifications.js';
+import {orderNotifications} from './admin-order-notifications.js?v=20260923-direct';
 // Read-only dashboard presentation. Asset arithmetic belongs to the business API.
 export function formatPoints(value) {
   if(typeof value!=='string'||! /^-?\d+\.\d{2}$/.test(value))return '—';
@@ -55,12 +55,12 @@ export function createAdminShell({context,api,modules,renderModule,onLogout}) {
   let current='overview',generation=0,days=30,currentPanel=null,initialOverview=true;
   const coordinate=refreshCoordinator();
   const links=new Map();
-  function addNavigation(key,label){const item=btn(label,()=>{if(current===key)return;current=key;for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;nav.append(item);links.set(key,item);}
+  function addNavigation(key,label){const item=btn(label,()=>{if(key==='recharge')notifications?.markRead?.();if(current===key)return;current=key;for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;nav.append(item);links.set(key,item);}
   addNavigation('overview','运营概览');links.get('overview').classList.add('active');links.get('overview').setAttribute('aria-current','page');
   const groups=[['用户与安全',['security','support-role','analytics','online']],['运营',['ads','notice']],['财务',['recharge','finance','ledger','wallet']]];
   for(const [label,keys] of groups){const entries=visibleAdminModules(context,modules).filter(([, ,key])=>keys.includes(key));if(!entries.length)continue;nav.append(el('p','admin-nav-group',label));for(const [name,,key] of entries)addNavigation(key,name);}
   const esc=event=>{if(event.key==='Escape'&&!side.hidden&&matchMedia('(max-width:760px)').matches)setHidden(true);};page.addEventListener('keydown',esc);
-  const notifications=can('admin.finance.read') && typeof api.getOrderEvents==='function' ? orderNotifications(api,{onOpen:()=>links.get('recharge')?.click(),onChange:async()=>{await currentPanel?.refreshOrders?.();}}):null;
+  const notifications=can('admin.finance.read') && typeof api.getOrderEvents==='function' ? orderNotifications(api,{actorId:context.actor.id,onOpen:()=>links.get('recharge')?.click(),onChange:async()=>{await currentPanel?.refreshOrders?.();}}):null;
   if(notifications)tools.append(notifications);
   page.dispose=()=>{++generation;notifications?.dispose();sidebar.dispose();closeProof?.();page.removeEventListener('keydown',esc);if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();};
   async function loadCurrent(isRefresh){

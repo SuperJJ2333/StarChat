@@ -460,204 +460,141 @@ final class _State extends State<ChatRedPacketSheet>
             ],
           ),
         ),
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          children: [
-            const SizedBox(height: 10),
-            if (widget.isGroup)
-              Center(
-                child: CupertinoButton(
-                  key: const Key('chat-red-packet-type'),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  minimumSize: Size.zero,
-                  color: WeChatColors.redPacketCreateTint,
-                  borderRadius: BorderRadius.circular(16),
-                  onPressed: busy ? null : _pickType,
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(redPacketTypeLabel(mode),
-                        style: TextStyle(
-                            color: WeChatColors.resolveTextPrimary(context),
-                            fontSize: 14)),
-                    const SizedBox(width: 4),
-                    const Icon(CupertinoIcons.chevron_down,
-                        size: 13, color: WeChatColors.textSecondary),
-                  ]),
+        child: Column(children: [
+          Expanded(
+              child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              const SizedBox(height: 10),
+              if (widget.isGroup)
+                Center(
+                  child: CupertinoButton(
+                    key: const Key('chat-red-packet-type'),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    minimumSize: Size.zero,
+                    color: WeChatColors.redPacketCreateTint,
+                    borderRadius: BorderRadius.circular(16),
+                    onPressed: busy ? null : _pickType,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(redPacketTypeLabel(mode),
+                          style: TextStyle(
+                              color: WeChatColors.resolveTextPrimary(context),
+                              fontSize: 14)),
+                      const SizedBox(width: 4),
+                      const Icon(CupertinoIcons.chevron_down,
+                          size: 13, color: WeChatColors.textSecondary),
+                    ]),
+                  ),
                 ),
-              ),
-            const SizedBox(height: 12),
-            Container(
-              decoration: BoxDecoration(
-                color: WeChatColors.elevatedSurface(context),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Column(children: [
-                _field(
-                  label: '总金额',
-                  key: const Key('chat-red-packet-total'),
-                  controller: total,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  placeholder: '0.00',
-                  suffix: '点钻',
-                  enabled: !busy,
-                  inputFormatters: const [TwoDecimalAmountFormatter()],
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: WeChatColors.elevatedSurface(context),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                _divider(),
-                if (widget.isGroup && !exclusive)
+                clipBehavior: Clip.antiAlias,
+                child: Column(children: [
                   _field(
-                    label: '红包个数',
-                    key: const Key('chat-red-packet-shares'),
-                    controller: shares,
-                    keyboardType: TextInputType.number,
-                    placeholder: '请输入个数',
-                    suffix: '个',
+                    label: '总金额',
+                    key: const Key('chat-red-packet-total'),
+                    controller: total,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    placeholder: '0.00',
+                    suffix: '点钻',
                     enabled: !busy,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(3),
-                    ],
+                    inputFormatters: const [TwoDecimalAmountFormatter()],
                   ),
-                if (widget.isGroup && exclusive)
-                  _pickerRow(
-                    label: '指定成员',
-                    key: const Key('chat-red-packet-recipient'),
-                    value: recipientName,
-                    onTap: busy ? null : _pickRecipient,
+                  _divider(),
+                  if (widget.isGroup && !exclusive)
+                    _field(
+                      label: '红包个数',
+                      key: const Key('chat-red-packet-shares'),
+                      controller: shares,
+                      keyboardType: TextInputType.number,
+                      placeholder: '请输入个数',
+                      suffix: '个',
+                      enabled: !busy,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(3),
+                      ],
+                    ),
+                  if (widget.isGroup && exclusive)
+                    _pickerRow(
+                      label: '指定成员',
+                      key: const Key('chat-red-packet-recipient'),
+                      value: recipientName,
+                      onTap: busy ? null : _pickRecipient,
+                    ),
+                  if (widget.isGroup) _divider(),
+                  _field(
+                    label: '祝福语',
+                    key: const Key('chat-red-packet-greeting'),
+                    controller: greeting,
+                    keyboardType: TextInputType.text,
+                    placeholder: '恭喜发财，大吉大利',
+                    enabled: !busy,
+                    alignRight: false,
                   ),
-                if (widget.isGroup) _divider(),
-                _field(
-                  label: '祝福语',
-                  key: const Key('chat-red-packet-greeting'),
-                  controller: greeting,
-                  keyboardType: TextInputType.text,
-                  placeholder: '恭喜发财，大吉大利',
-                  enabled: !busy,
-                  alignRight: false,
-                ),
-              ]),
-            ),
-            const SizedBox(height: 8),
-            if (resolvingRecipient)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child:
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  CupertinoActivityIndicator(),
-                  SizedBox(width: 8),
-                  Text('正在确认收款账号'),
                 ]),
               ),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: total,
-              builder: (context, value, child) {
-                if (widget.isGroup) {
-                  return const Padding(
-                    padding: EdgeInsets.only(top: 4),
-                    child: Text('手续费及群主减免以服务端核验为准，发出后可在红包详情查看手续费与抽成状态',
-                        key: Key('chat-red-packet-fee-hint'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: WeChatColors.textSecondary, fontSize: 12)),
-                  );
-                }
-                // ADR-0073：手续费与实扣合计都来自同一个与转账共享的
-                // 手续费实现（BigInt，无浮点估算）。
-                final feeText = chatPaymentFeeOrNull(value.text);
-                final parsed = double.tryParse(value.text.trim());
-                final String hint;
-                if (feeText == null || parsed == null) {
-                  hint = '收取 0.5% 手续费，最低 0.01 点钻，由发红包方承担';
-                } else {
-                  final sum = parsed + double.parse(feeText);
-                  hint = '手续费 $feeText 点钻（0.5%，最低 0.01）'
-                      ' · 实扣合计 ${sum.toStringAsFixed(2)} 点钻';
-                }
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    hint,
-                    key: const Key('chat-red-packet-fee-hint'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: WeChatColors.textSecondary, fontSize: 12),
-                  ),
-                );
-              },
-            ),
-            Text(
-              maxTotal != null
-                  ? '单个红包金额不可超过 ${maxTotal!.toStringAsFixed(2)} 点钻'
-                  : loadingLimits
-                      ? '正在获取红包限额…'
-                      : '红包限额暂未获取，以提交时校验为准',
-              key: const Key('chat-red-packet-limit-hint'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: WeChatColors.textSecondary, fontSize: 12),
-            ),
-            if (maxTotal == null && !loadingLimits && widget.support != null)
+              const SizedBox(height: 8),
+              if (resolvingRecipient)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CupertinoActivityIndicator(),
+                        SizedBox(width: 8),
+                        Text('正在确认收款账号'),
+                      ]),
+                ),
+              const SizedBox(height: 16),
               CupertinoButton(
-                key: const Key('chat-red-packet-retry-limits'),
-                padding: const EdgeInsets.all(4),
-                minimumSize: Size.zero,
-                onPressed: _loadLimits,
-                child: const Text('重试获取限额', style: TextStyle(fontSize: 12)),
+                key: const Key('chat-red-packet-send'),
+                color: WeChatColors.redPacketAction,
+                borderRadius: BorderRadius.circular(8),
+                onPressed: busy ? null : _send,
+                child: const Text('塞钱进红包',
+                    style: TextStyle(
+                        color: CupertinoColors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600)),
               ),
-            if (widget.isGroup && !exclusive)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  _memberCountHint(),
-                  key: const Key('chat-red-packet-member-count-hint'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: WeChatColors.textSecondary, fontSize: 12),
+              if (state.status == ChatRedPacketStatus.sent)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: Center(
+                      child: Text('红包已发送',
+                          style: TextStyle(
+                              color: WeChatColors.brandPrimary, fontSize: 14))),
                 ),
-              ),
-            const SizedBox(height: 16),
-            CupertinoButton(
-              key: const Key('chat-red-packet-send'),
-              color: WeChatColors.redPacketAction,
-              borderRadius: BorderRadius.circular(8),
-              onPressed: busy ? null : _send,
-              child: const Text('塞钱进红包',
-                  style: TextStyle(
-                      color: CupertinoColors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600)),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '未领取的红包，将于24小时后发起退款',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: WeChatColors.textSecondary, fontSize: 12),
-            ),
-            if (state.status == ChatRedPacketStatus.sent)
-              const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: Center(
-                    child: Text('红包已发送',
-                        style: TextStyle(
-                            color: WeChatColors.brandPrimary, fontSize: 14))),
-              ),
-            if (state.status == ChatRedPacketStatus.shareFailed)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Center(
-                  child: CupertinoButton(
-                    onPressed: () => widget.controller.retryShare(),
-                    child: const Text('红包已创建，重新发送到会话',
-                        style: TextStyle(
-                            color: WeChatColors.brandPrimary, fontSize: 14)),
+              if (state.status == ChatRedPacketStatus.shareFailed)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Center(
+                    child: CupertinoButton(
+                      onPressed: () => widget.controller.retryShare(),
+                      child: const Text('红包已创建，重新发送到会话',
+                          style: TextStyle(
+                              color: WeChatColors.brandPrimary, fontSize: 14)),
+                    ),
                   ),
                 ),
-              ),
-            const SizedBox(height: 24),
-          ],
-        ),
+              const SizedBox(height: 24),
+            ],
+          )),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Text('未领取的红包，将于24小时后发起退款',
+                textAlign: TextAlign.center,
+                style:
+                    TextStyle(color: WeChatColors.textSecondary, fontSize: 12)),
+          ),
+        ]),
       ),
     );
   }
@@ -666,13 +603,6 @@ final class _State extends State<ChatRedPacketSheet>
       height: .5,
       margin: const EdgeInsets.only(left: 16),
       color: WeChatColors.resolve(context, WeChatColors.divider));
-
-  String _memberCountHint() {
-    final count = widget.controller.joinedMemberCount;
-    final limit = widget.controller.joinedMemberShareLimit;
-    if (count == null || limit == null) return '红包个数最多 500 个';
-    return '群成员共 $count 人，最多可发 $limit 个红包';
-  }
 
   Widget _field({
     required String label,
