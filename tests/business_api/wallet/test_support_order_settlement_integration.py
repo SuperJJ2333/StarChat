@@ -70,3 +70,24 @@ def test_final_auth_revoke_rolls_back_adjustment_and_binding(core):
     with core[1]() as session:
         assert session.scalar(select(AdjustmentRequest)) is None
     assert service.ledger.balance('alice')==0
+
+
+def test_execution_committed_response_lost_recovers_after_proof_expires(core, monkeypatch):
+    service, order_id, token = prepared_order(core)
+    prepared = service.prepare_settlement(request_id=order_id,actor_id='cs',claim_token=token,
+        final_rate='7',idempotency_key='prepare')
+    AdjustmentWorkflow(core[1],service.ledger,admin_threshold=Decimal('10000')).finance_review(
+        prepared['adjustment_id'],reviewer_id='finance',approve=True)
+    complete=service.complete_bound
+    def lost(**kwargs): raise RuntimeError('response lost after execution')
+    monkeypatch.setattr(service,'complete_bound',lost)
+    with pytest.raises(RuntimeError):
+        service.execute_settlement(request_id=order_id,actor_id='cs',claim_token=token,
+            idempotency_key='execute',authorization=lambda session:lambda:None)
+    assert service.ledger.balance('alice')==Decimal('70')
+    monkeypatch.setattr(service,'complete_bound',complete)
+    service._now=lambda:core[5]+timedelta(seconds=121)
+    result=service.execute_settlement(request_id=order_id,actor_id='cs',claim_token=token,
+        idempotency_key='execute',authorization=lambda session:lambda:None)
+    assert result['status']=='CREDITED'
+    assert service.ledger.balance('alice')==Decimal('70')

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import struct
 from urllib.parse import parse_qs, unquote, urlparse
@@ -91,7 +91,7 @@ def _add_user(factory, user_id: str, username: str, email: str) -> str:
         factory,
         jwt_secret=JWT_SECRET,
         jwt_issuer="liuhetong",
-        now_factory=lambda: NOW,
+        now_factory=lambda: datetime.now(timezone.utc),
     ).issue_pair(
         user_id=user_id,
         device_key=f"device-{user_id}",
@@ -101,6 +101,19 @@ def _add_user(factory, user_id: str, username: str, email: str) -> str:
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_profile_token_fixture_uses_current_time_after_slow_collection(monkeypatch):
+    monkeypatch.setitem(globals(), 'NOW', datetime.now(timezone.utc) - timedelta(hours=1))
+    engine, factory, _, _ = _components()
+    try:
+        access_token = _add_user(factory, 'delayed-profile', 'delayedprofile',
+            'delayed@example.test')
+        claims = TokenService(factory, jwt_secret=JWT_SECRET,
+            jwt_issuer='liuhetong').decode_access_token(access_token)
+        assert claims['sub'] == 'delayed-profile'
+    finally:
+        engine.dispose()
 
 
 def _png(width: int, height: int) -> bytes:

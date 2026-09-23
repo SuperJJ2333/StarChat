@@ -109,7 +109,10 @@ final class PhoneLoginController extends ChangeNotifier {
   }
 
   /// 提交验证码仅发送一次；凭据类错误计入服务端五次尝试。
-  Future<bool> submit(String phone, String code) async {
+  Future<bool> submit(String phone, String code,
+      {String invitationCode = '',
+      bool termsAccepted = false,
+      bool Function()? shouldContinue}) async {
     if (state.status == PhoneLoginStatus.verifying) return false;
     state = const PhoneLoginState(PhoneLoginStatus.verifying);
     notifyListeners();
@@ -117,6 +120,9 @@ final class PhoneLoginController extends ChangeNotifier {
       await gateway.phoneLogin(
         phone: phone,
         code: code,
+        invitationCode: invitationCode,
+        termsAccepted: termsAccepted,
+        shouldContinue: shouldContinue,
         deviceKey: deviceKey,
         deviceName: deviceName,
       );
@@ -159,6 +165,17 @@ final class PhoneLoginController extends ChangeNotifier {
 
   String _messageFor(Exception error, {required String fallback}) {
     switch (_errorCode(error)) {
+      case 'INVITATION_REQUIRED':
+      case 'INVITATION_INVALID':
+        return '新用户需要填写有效邀请码';
+      case 'PHONE_PROVISIONING_PENDING':
+        return '账号仍在开通，请稍后重新登录；无需再次注册';
+      case 'PHONE_REGISTRATION_INCOMPLETE':
+        return '该手机号已开始注册，请完成原注册验证流程或联系客服';
+      case 'LOGIN_TICKET_INVALID':
+        return '登录凭据已失效，请重新登录';
+      case 'TERMS_REQUIRED':
+        return '请先阅读并同意用户协议和隐私政策';
       case 'CREDENTIALS_INVALID':
       case 'OTP_INVALID':
         return '手机号或验证码错误';

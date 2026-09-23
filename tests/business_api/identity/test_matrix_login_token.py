@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 from pathlib import Path
@@ -139,12 +139,27 @@ def _access_token(factory, user_id: str) -> str:
         factory,
         jwt_secret=JWT_SECRET,
         jwt_issuer="liuhetong",
-        now_factory=lambda: NOW,
+        now_factory=lambda: datetime.now(timezone.utc),
     ).issue_pair(
         user_id=user_id,
         device_key=f"device-{user_id}",
         display_name="Integration device",
     ).access_token
+
+
+def test_access_token_fixture_uses_issuance_time_after_slow_collection(monkeypatch):
+    # A full suite can reach this module long after collection. Keep NOW for
+    # deterministic gateway/user fixtures, but issue authentication at real time.
+    monkeypatch.setitem(globals(), 'NOW', datetime.now(timezone.utc) - timedelta(hours=1))
+    engine, factory, _, _ = _components()
+    try:
+        _add_user(factory, 'delayed-user', mxid='@delayed:matrix.example.test')
+        access_token = _access_token(factory, 'delayed-user')
+        claims = TokenService(factory, jwt_secret=JWT_SECRET,
+            jwt_issuer='liuhetong').decode_access_token(access_token)
+        assert claims['sub'] == 'delayed-user'
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.asyncio

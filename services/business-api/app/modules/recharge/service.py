@@ -24,11 +24,12 @@ from app.modules.ledger.models import LedgerEntry, LedgerTransaction
 from app.modules.recharge.models import CsDirectoryEntry, RechargeCreditBinding, RechargeRequest
 
 from app.modules.recharge.workflow import SupportOrderWorkflow
+from app.modules.recharge.matching import AutomaticRechargeMatching
 
 RECHARGE_RULES_VERSION = "recharge-manual-v1"
 
 
-class RechargeService(SupportOrderWorkflow):
+class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
     def __init__(self, session_factory, *, ledger, rbac=None, rate_provider=None, now=None, wallet_receipts=None, official_config=None):
         self.factory = session_factory
         self.ledger = ledger

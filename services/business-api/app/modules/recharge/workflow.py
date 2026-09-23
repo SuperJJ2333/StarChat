@@ -228,6 +228,8 @@ class SupportOrderWorkflow:
     def prepare_settlement(self, *, request_id, actor_id, claim_token, final_rate,
                            idempotency_key, authorization=None):
         self._require_settlement_enabled()
+        self.refresh_detected_payment(request_id=request_id,actor_id=actor_id,
+            claim_token=claim_token,authorization=authorization)
         from app.modules.ledger.adjustments import AdjustmentWorkflow
         from app.modules.ledger.reserve import lock_budget
         workflow = AdjustmentWorkflow(self.factory, self.ledger,
@@ -258,6 +260,8 @@ class SupportOrderWorkflow:
     def execute_settlement(self, *, request_id, actor_id, claim_token, idempotency_key,
                            authorization=None):
         self._require_settlement_enabled()
+        self.refresh_detected_payment(request_id=request_id,actor_id=actor_id,
+            claim_token=claim_token,authorization=authorization)
         from app.modules.ledger.adjustments import AdjustmentWorkflow
         from app.modules.ledger.adjustment_models import AdjustmentRequest
         from app.modules.ledger.reserve import lock_budget

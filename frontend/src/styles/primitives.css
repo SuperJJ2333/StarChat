@@ -1402,6 +1402,9 @@ app-transfer-card {
 .c-phone-flows__otp-row { align-items: end; }
 .c-phone-flows__otp-row .c-form-field { min-width: 0; }
 .c-phone-flows__otp-row app-secondary-button { flex: 0 0 auto; }
+.c-phone-flows__otp-row[data-eligible="true"] app-secondary-button .c-secondary-button {
+  color: var(--color-brand-primary);
+}
 .c-phone-flows__row { align-items: baseline; line-height: var(--type-subhead-line); }
 .c-phone-flows__row > span { min-width: 0; overflow-wrap: anywhere; }
 .c-phone-flows__row > span:last-child { text-align: right; font-variant-numeric: tabular-nums; }

@@ -155,3 +155,28 @@ def test_sender_error_never_contains_smtp_secret() -> None:
 
     assert "smtp-secret" not in str(exc_info.value)
     assert "smtp-user" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize('purpose,code', [('wallet_alert', '123456'), ('staff_activation_email', 'P0'), ('email_rebind_old', '12345')])
+def test_email_otp_rejects_invalid_contract_without_transport(purpose, code):
+    module = _email_sender_module()
+    calls = []
+    sender = module.SmtpEmailSender(module.SmtpConfig(host='smtp.example.test', port=587,
+        from_address='noreply@example.test', use_starttls=True), smtp_factory=lambda *a, **k: calls.append(1))
+    with pytest.raises(module.EmailDeliveryError, match='SMTP email OTP delivery failed'):
+        sender.send_email_otp(recipient='staff@example.test', code=code, purpose=purpose)
+    assert not calls
+
+
+def test_email_otp_disabled_sender_and_transport_failure_are_sanitized():
+    module = _email_sender_module()
+    args = dict(recipient='staff@example.test', code='123456', purpose='staff_activation_email')
+    with pytest.raises(module.EmailDeliveryError, match='disabled'):
+        module.DisabledEmailSender().send_email_otp(**args)
+    def fail(*a, **k):
+        raise RuntimeError('recipient staff@example.test OTP 123456 secret')
+    sender = module.SmtpEmailSender(module.SmtpConfig(host='smtp.example.test', port=587,
+        from_address='noreply@example.test', use_starttls=True), smtp_factory=fail)
+    with pytest.raises(module.EmailDeliveryError) as error:
+        sender.send_email_otp(**args)
+    assert str(error.value) == 'SMTP email OTP delivery failed'

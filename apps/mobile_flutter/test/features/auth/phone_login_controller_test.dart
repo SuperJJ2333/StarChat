@@ -38,7 +38,8 @@ void main() {
     expect(gateway.otpRequests.length, before);
   });
 
-  test('send failure shows unavailable, never claims "not sent", no auto resend',
+  test(
+      'send failure shows unavailable, never claims "not sent", no auto resend',
       () async {
     gateway.otpError = BusinessApiException(
         code: 'SMS_SEND_REJECTED', message: '短信发送被供应商拒绝', statusCode: 503);
@@ -50,8 +51,7 @@ void main() {
 
   test('correct code succeeds and lands session via gateway', () async {
     await controller.requestOtp('+8613800000001');
-    expect(
-        await controller.submit('+8613800000001', '243697'), isTrue);
+    expect(await controller.submit('+8613800000001', '243697'), isTrue);
     expect(controller.state.status, PhoneLoginStatus.succeeded);
     expect(gateway.loginAttempts.last['code'], '243697');
   });
@@ -102,6 +102,9 @@ class FakePhoneGateway implements PhoneAuthGateway {
     required String code,
     required String deviceKey,
     required String deviceName,
+    String invitationCode = '',
+    bool termsAccepted = false,
+    bool Function()? shouldContinue,
   }) async {
     loginAttempts.add({'phone': phone, 'code': code});
     final error = loginError;

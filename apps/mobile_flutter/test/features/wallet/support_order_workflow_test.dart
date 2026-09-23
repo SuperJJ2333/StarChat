@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
@@ -27,7 +26,7 @@ void main() {
     expect(snapshot['processing_stage'], 'NEEDS_REVIEW');
   });
   testWidgets(
-      'amount first, durable payment step, evidence never means credited',
+      'amount first, automatic payment confirmation never means credited',
       (tester) async {
     Map<String, dynamic>? order;
     final evidenceKeys = <String?>[];
@@ -46,14 +45,7 @@ void main() {
       }
       if (path.endsWith('/evidence')) {
         evidenceKeys.add(request.headers['Idempotency-Key']);
-        expect(request.headers['Idempotency-Key'], isNotEmpty);
-        order = {
-          ...order!,
-          'processing_stage': 'NEEDS_REVIEW',
-          'evidence_txid': 'a' * 64
-        };
-        if (evidenceKeys.length == 1) throw TimeoutException('lost reply');
-        return flow.json(order!);
+        throw StateError('New UI must not submit user evidence');
       }
       if (path.endsWith('/requests') && request.method == 'POST') {
         order = {
@@ -97,18 +89,22 @@ void main() {
     WalletEntryStores.disposeAll();
     await open();
     expect(find.byKey(const Key('recharge-payment-r1')), findsOneWidget);
-    await tester.enterText(
-        find.byKey(const Key('recharge-evidence-txid')), 'a' * 64);
-    await flow.tap(tester, find.byKey(const Key('recharge-evidence-submit')));
-    expect(find.text('已到账'), findsNothing);
-    expect(find.byKey(const Key('recharge-cancel-r1')), findsNothing);
+    expect(find.byKey(const Key('recharge-evidence-txid')), findsNothing);
+    expect(find.byKey(const Key('recharge-evidence-submit')), findsNothing);
+    expect(find.text('等待系统确认到账 · 确认后由客服结算'), findsOneWidget);
+    order = {
+      ...order!,
+      'payment_verified': true,
+      'processing_stage': 'PAYMENT_VERIFIED'
+    };
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     WalletEntryStores.disposeAll();
     await open();
-    await flow.tap(tester, find.byKey(const Key('recharge-evidence-submit')));
-    expect(evidenceKeys.length, 2);
-    expect(evidenceKeys.first, evidenceKeys.last);
+    expect(find.byKey(const Key('recharge-payment-r1')), findsNothing);
+    expect(find.byKey(const Key('recharge-cancel-r1')), findsNothing);
+    expect(find.text('待客服发放'), findsOneWidget);
     expect(find.text('已到账'), findsNothing);
+    expect(evidenceKeys, isEmpty);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
   });
   for (final stage in ['WAITING_PAYMENT', 'PAYMENT_VERIFIED', 'NEEDS_REVIEW']) {
@@ -151,7 +147,7 @@ void main() {
       expect(find.byKey(const Key('recharge-cancel-expired')), findsNothing);
       expect(find.text('135.00'), findsOneWidget);
       expect(find.text('已到账'), findsNothing);
-      expect(find.byKey(const Key('recharge-evidence-submit')), findsOneWidget);
+      expect(find.byKey(const Key('recharge-evidence-submit')), findsNothing);
       await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     });
   }

@@ -161,7 +161,7 @@ def test_email_otp_worker_derivation_and_stale_delivery_guard(env, state):
         elif state == "invalidated":
             challenge.invalidated_at = clock()
     delivered = []
-    sender = SimpleNamespace(send_wallet_alert=lambda **message: delivered.append(message))
+    sender = SimpleNamespace(send_email_otp=lambda **message: delivered.append(message))
     task = IdentityEmailVerificationTask(factory, token_codec=codec, public_base_url="https://example.test",
         email_sender=sender, now_factory=clock)
     task(SimpleNamespace(event_type=event.event_type, payload=event.payload, aggregate_id=event.aggregate_id))

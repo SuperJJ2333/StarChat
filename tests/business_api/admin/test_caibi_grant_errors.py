@@ -8,6 +8,8 @@ LedgerService 曾硬编码 full_backing，导致储备缺口（记录型策略�
 """
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import runpy
+from unittest.mock import patch
 
 import pytest
 
@@ -26,14 +28,15 @@ from app.modules.ledger.reserve import RedeemabilityReserve
 from app.modules.fx.models import FxRate
 
 GRANT = {"user_id": "u1", "amount": "88.00", "reason_code": "SUPPORT_CAIBI_GRANT"}
-FRESH = datetime.now(timezone.utc)
 
 
-def build_app(*, reserve_policy, observed_at=FRESH, pending_payouts=0):
+def build_app(*, reserve_policy, observed_at=None, pending_payouts=0):
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
     now = datetime.now(timezone.utc)
+    if observed_at is None:
+        observed_at = now
     with factory.begin() as session:
         session.add_all([
             FxRate(pair='USD/CNY', rate=Decimal('7.12'), fetched_at=now,
@@ -60,6 +63,24 @@ async def post_grant(app, token, idempotency_key, payload=None):
 
 
 @pytest.mark.asyncio
+async def test_fresh_reserve_fixture_survives_slow_test_collection():
+    class CollectionClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) - timedelta(hours=1)
+
+    # Load only this test module as if collection occurred an hour ago, then
+    # restore its runtime clock before exercising the real API freshness gate.
+    with patch('datetime.datetime', CollectionClock):
+        collected = runpy.run_path(__file__)
+    build = collected['build_app']
+    build.__globals__['datetime'] = datetime
+    app, token = build(reserve_policy='manual_liquidity')
+    response = await post_grant(app, token, 'grant-after-slow-collection')
+    assert response.status_code == 201, response.json()
+
+
+@pytest.mark.asyncio
 async def test_manual_liquidity_policy_allows_grant_despite_backing_deficit():
     app, token = build_app(reserve_policy="manual_liquidity")
     response = await post_grant(app, token, "grant-manual-1")
@@ -80,7 +101,7 @@ async def test_full_backing_deficit_reports_reserve_coverage_error():
 
 @pytest.mark.asyncio
 async def test_manual_liquidity_stale_evidence_reports_stale_error():
-    app, token = build_app(reserve_policy="manual_liquidity", observed_at=FRESH - timedelta(minutes=10))
+    app, token = build_app(reserve_policy="manual_liquidity", observed_at=datetime.now(timezone.utc) - timedelta(minutes=10))
     response = await post_grant(app, token, "grant-stale-1")
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "RESERVE_EVIDENCE_STALE"

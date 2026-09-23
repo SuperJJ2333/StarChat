@@ -305,9 +305,9 @@ test('other actor is read-only; unverified owned order cannot settle; forbidden 
   assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
   item={...item,claimed_by:null};await panel.refreshOrders();
   panel.find('button').find(b=>b.textContent==='认领案件').handlers.click();await settle();await settle();
-  assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),true);
+  assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),false);
   assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
-  document.hidden=true;await panel.heartbeat();assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),true);
+  document.hidden=true;await panel.heartbeat();assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),false);
   document.hidden=false;await panel.heartbeat();assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),false);
   panel.dispose();
 });
@@ -360,4 +360,71 @@ test('public recharge queue pages by opaque server cursor',async()=>{
   next.handlers.click();await settle();assert.equal(calls.at(-1).cursor,'opaque-next');assert.equal(next.disabled,true);
   assert.ok(panel.find('td').some(node=>node.textContent==='page-two'));
   await panel.refreshOrders();assert.equal(calls.at(-1).cursor,'opaque-next');panel.dispose();
+});
+
+async function settlementPanel(overrides = {}) {
+  install(); const calls=[];
+  let item={...PENDING.items[0],amount_usdt:'10.000000',actual_received_usdt:'10.000000',fx_rate:'7.123456',fx_rate_stale:false,payment_verified:true,
+    expires_at:new Date(Date.now()+7200000).toISOString(),...overrides};
+  const api={...makeApi(calls),getFxRate:async()=>({rate:item.fx_rate,stale:item.fx_rate_stale,fetched_at:'2026-09-23T10:00:00Z'}),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...item,claim_token:'lease'};},
+    prepareRechargeSettlement:async(...args)=>{calls.push(['prepare',...args]);return {status:'PENDING_APPROVAL'};}};
+  return {panel:await claimedPanel(api),calls};
+}
+test('managed settlement defaults to fresh reference and fixed-base percentage shortcuts with decimal previews',async()=>{
+  const {panel,calls}=await settlementPanel();
+  const rate=panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');
+  assert.equal(rate.value,'7.123456');
+  for(const [label,value,amount] of [['-5%','6.767283','67.67'],['-1%','7.052221','70.52'],['基准','7.123456','71.23'],['+1%','7.194691','71.95'],['+5%','7.479629','74.80']]){
+    const button=panel.find('button').find(b=>b.textContent===label);
+    button.handlers.click();button.handlers.click();
+    assert.equal(rate.value,value);assert.ok(panel.find('p').some(p=>p.textContent.includes(`最终点钻预览：${amount}`)));
+  }
+  rate.value='8.000001';rate.handlers.input();assert.ok(panel.find('p').some(p=>p.textContent.includes('最终点钻预览：80.00')));
+  panel.find('button').find(b=>b.textContent==='提交结算审批').handlers.click();await settle();
+  assert.equal(calls.find(c=>c[0]==='prepare')[2].final_rate,'8.000001');panel.dispose();
+});
+test('managed awaiting-payment orders show automatic detection and cannot submit settlement',async()=>{
+  const {panel,calls}=await settlementPanel({payment_verified:false,actual_received_usdt:null});
+  assert.ok(panel.find('p').some(p=>p.textContent.includes('等待系统确认到账')));
+  assert.equal(panel.find('input').some(i=>i.placeholder==='到账交易哈希'),false);
+  assert.equal(panel.find('button').some(b=>b.textContent==='提交结算审批'),false);
+  assert.equal(calls.some(c=>c[0]==='prepare'),false);panel.dispose();
+});
+for(const baseline of [{fx_rate:null},{fx_rate:'7.123456',fx_rate_stale:true}])test(`unusable baseline is never invented ${JSON.stringify(baseline)}`,async()=>{
+  const {panel}=await settlementPanel(baseline);
+  const rate=panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');assert.equal(rate.value,'');
+  assert.equal(panel.find('button').find(b=>b.textContent==='+5%').disabled,true);
+  assert.ok(panel.find('p').some(p=>p.textContent.includes('基准不可用')));panel.dispose();
+});
+
+test('decimal preview rounds half up without losing large integer precision',async()=>{
+  for(const [amount,rate,expected] of [['0.005000','1.000000','0.01'],['9007199254740993.005000','1.000000','9007199254740993.01']]){
+    const {panel}=await settlementPanel({actual_received_usdt:amount,fx_rate:rate});
+    assert.ok(panel.find('p').some(p=>p.textContent.includes(`最终点钻预览：${expected}`)));panel.dispose();
+  }
+});
+test('missing actual receipt and invalid final rates cannot prepare a settlement',async()=>{
+  const {panel,calls}=await settlementPanel({actual_received_usdt:null});
+  assert.equal(panel.find('button').find(b=>b.textContent==='提交结算审批').disabled,true);panel.dispose();
+  const good=await settlementPanel();const rate=good.panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）');
+  for(const value of ['0','1.0000001','-1','Infinity','1e5']){rate.value=value;good.panel.find('button').find(b=>b.textContent==='提交结算审批').handlers.click();await settle();}
+  assert.equal(good.calls.some(c=>c[0]==='prepare'),false);assert.equal(calls.some(c=>c[0]==='prepare'),false);good.panel.dispose();
+});
+
+
+test('settlement uses this load current FX snapshot, retaining historical order reference',async()=>{
+  install();let fetches=0;
+  let item={...PENDING.items[0],actual_received_usdt:'10.000000',payment_verified:true,
+    fx_rate:'6.000000',fx_rate_stale:false,expires_at:new Date(Date.now()+7200000).toISOString()};
+  const api={...makeApi([]),getFxRate:async()=>{fetches++;return {rate:'7.123456',stale:false,fetched_at:'2026-09-23T10:00:00Z'};},
+    getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...item,claim_token:'lease'};}};
+  const panel=await claimedPanel(api);
+  assert.equal(panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）').value,'7.123456');
+  assert.ok(panel.find('td').some(td=>td.textContent.includes('6.000000')));
+  assert.ok(panel.find('p').some(p=>p.textContent.includes('本次参考基准') && p.textContent.includes('7.123456')));
+  assert.ok(panel.find('p').some(p=>p.textContent.includes('参考获取时间')));
+  assert.equal(fetches,2,'initial shared load plus claim refresh each request FX once');
+  api.getFxRate=async()=>{throw new Error('unavailable');};await panel.refreshOrders();
+  assert.equal(panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）').value,'');
+  assert.equal(panel.find('button').find(b=>b.textContent==='+5%').disabled,true);panel.dispose();
 });

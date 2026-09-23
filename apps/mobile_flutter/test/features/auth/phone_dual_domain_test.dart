@@ -12,11 +12,15 @@ class PhoneBusiness implements DualDomainBusinessGateway, PhoneAuthGateway {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
   @override
-  Future<Map<String, dynamic>> phoneLogin(
-      {required String phone,
-      required String code,
-      required String deviceKey,
-      required String deviceName}) async {
+  Future<Map<String, dynamic>> phoneLogin({
+    required String phone,
+    required String code,
+    required String deviceKey,
+    required String deviceName,
+    String invitationCode = '',
+    bool termsAccepted = false,
+    bool Function()? shouldContinue,
+  }) async {
     phoneLogins++;
     return {};
   }

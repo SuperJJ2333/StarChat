@@ -45,7 +45,7 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
   let amount = definition.state === "amount-invalid" ? "1" : definition.state === "insufficient" ? "99999" : "20.00";
   let pin = "", note = "", error = ({
     "pin-error": "支付密码错误，请重新输入",
-    "amount-invalid": "最低提现10 USDT，金额最多保留两位小数",
+    "amount-invalid": "最低提现 10 USDT，按当前参考汇率约需 71.20 点钻；实际以报价为准",
     insufficient: "点钻余额不足",
   })[definition.state] ?? "";
   if (["payment-pin", "pin-error", "confirm"].includes(definition.state)) page = "pin";
@@ -146,11 +146,15 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
         updateEstimate();
         body.append(amountField.wrapper, full, summary,
           element("p", "", `当前点钻余额 ${demoBalance}`),
+          element("p", "c-wallet-demo__muted", "最低提现 10 USDT，按当前参考汇率约需 71.20 点钻；实际以报价为准"),
           element("p", "c-wallet-demo__muted", "1点钻 = ¥1.00 · 参考估算，最终以客服结算为准"));
         if (!bound || !ready) error = !bound ? "请先绑定私人钱包" : "钱包服务暂不可用";
         body.append(action("下一步", () => {
           const value = cents(amount);
-          if (value === null || value < 7120n) error = "参考到账不足10 USDT，最终门槛由服务端报价校验";
+          if (value === null || value < 7120n) {
+            error = "最低提现 10 USDT，按当前参考汇率约需 71.20 点钻；实际以报价为准";
+            body.append(component("app-toast", { kind: "error", message: error }));
+          }
           else if (value > cents(demoBalance)) error = "点钻余额不足";
           else { jump("pin"); return; }
           feedback();

@@ -7,6 +7,7 @@ import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/wechat_secondary_button.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../finance/wallet_entry_store.dart';
 import 'manual_mfa_page.dart';
@@ -118,7 +119,6 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   String? ignoredPayoutNotice;
   final address = TextEditingController();
   final amount = TextEditingController();
-  final evidenceTxid = TextEditingController();
   final signature = TextEditingController();
   final oldSignature = TextEditingController();
   final otp = TextEditingController();
@@ -183,7 +183,6 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         final evidence =
             await store.read('recharge_evidence_${rechargeOp!['id']}');
         if (mounted && evidence?['txid'] is String) {
-          evidenceTxid.text = evidence!['txid'] as String;
           setState(
               () => rechargeEvidencePending.add(rechargeOp!['id'] as String));
         }
@@ -211,26 +210,6 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       result,
       ...rechargeHistory.where((row) => row['id'] != result['id'])
     ];
-  }
-
-  Future<void> submitRechargeEvidence(String id) async {
-    await ensureCurrentScope();
-    final txid = evidenceTxid.text.trim();
-    if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(txid)) {
-      throw const FormatException('请输入有效的链上交易哈希');
-    }
-    final operation =
-        await store.begin('recharge_evidence_$id', {'id': id, 'txid': txid});
-    evidenceTxid.text = operation['txid'] as String;
-    rechargeEvidencePending.add(id);
-    final result = await api.submitRechargeEvidence(
-        id, operation['txid'] as String, operation['key'] as String);
-    await ensureCurrentScope();
-    rechargeHistory = [
-      result,
-      ...rechargeHistory.where((row) => row['id'] != id)
-    ];
-    // Keep the same evidence operation for uncertain responses and app restarts.
   }
 
   Future<void> cancelManualRecharge(String id) async {
@@ -313,6 +292,25 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     final rounded = (numerator + denominator ~/ BigInt.two) ~/ denominator;
     final text = rounded.toString().padLeft(digits + 1, '0');
     return '${text.substring(0, text.length - digits)}.${text.substring(text.length - digits)}';
+  }
+
+  String get payoutMinimumHint {
+    const minimum = '最低提现 10 USDT';
+    final rate = referenceFx?['rate'];
+    final units = rate is String ? _referenceUnits(rate) : null;
+    if (referenceFxError != null ||
+        referenceFx?['stale'] == true ||
+        units == null ||
+        units <= BigInt.zero) {
+      return '$minimum，点钻金额以报价时汇率为准';
+    }
+    // Reference only: round UP to a CAIBI cent without binary floating point.
+    final scale = BigInt.from(10).pow(18);
+    final cents = (units * BigInt.from(1000) + scale - BigInt.one) ~/ scale;
+    final digits = cents.toString().padLeft(3, '0');
+    final points =
+        '${digits.substring(0, digits.length - 2)}.${digits.substring(digits.length - 2)}';
+    return '$minimum，按当前参考汇率约需 $points 点钻；实际以报价为准';
   }
 
   Widget referenceFxCard() => card([
@@ -793,7 +791,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         'WALLET_WITHDRAWAL_IN_PROGRESS': '还有未完成的提现，请处理完成后再修改地址。',
       };
       message = error is BusinessApiException
-          ? explanations[error.code] ?? '${error.message}（${error.code}）'
+          ? error.code == 'WALLET_PAYOUT_AMOUNT_INVALID'
+              ? '提现金额不符合限额。$payoutMinimumHint'
+              : explanations[error.code] ?? '${error.message}（${error.code}）'
           : error is FormatException
               ? error.message
               : error is StateError
@@ -985,11 +985,27 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       adoptQuoteAmount();
       return;
     }
-    quote = await api.createPayoutQuote(
-        amount: quoteOp!['amount'] as String,
-        fundingAsset: quoteOp!['funding_asset'] as String? ?? 'USDT',
-        expectedBindingVersion: quoteOp!['version'] as int,
-        idempotencyKey: quoteOp!['key'] as String);
+    try {
+      quote = await api.createPayoutQuote(
+          amount: quoteOp!['amount'] as String,
+          fundingAsset: quoteOp!['funding_asset'] as String? ?? 'USDT',
+          expectedBindingVersion: quoteOp!['version'] as int,
+          idempotencyKey: quoteOp!['key'] as String);
+    } on BusinessApiException catch (error) {
+      if (error.code == 'WALLET_PAYOUT_AMOUNT_INVALID') {
+        // An explicit rejection has no accepted quote to recover. Unknown
+        // network results retain the original operation and idempotency key.
+        await store.clear('quote');
+        quoteOp = null;
+        quote = null;
+        quoteInputAmount = null;
+        if (mounted) {
+          showWeChatToast(context, '提现金额不符合限额。$payoutMinimumHint',
+              semanticType: WeChatToastSemanticType.error);
+        }
+      }
+      rethrow;
+    }
     quoteOp = {
       ...quoteOp!,
       'id': quote!.id,
@@ -1134,7 +1150,6 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       signature,
       oldSignature,
       otp,
-      evidenceTxid
     ]) {
       field.dispose();
     }
@@ -1983,11 +1998,14 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         ],
         if (expired) warningBox('处理期限已到，请勿继续付款；已付款或结果不明确的申请由客服核对。'),
         if (!expired && payment is! Map) warningBox('收款信息尚未确认，请刷新订单后再付款。'),
-        field('recharge-evidence-txid', evidenceTxid, '已付款的链上交易哈希',
-            enabled: !rechargeEvidencePending.contains(id)),
-        button('提交付款凭证', () => submitRechargeEvidence(id),
-            enabled: rechargeError == null, key: 'recharge-evidence-submit'),
-        const Text('提交凭证不代表到账；实际收到的金额与最终结算以客服核验结果为准。',
+        if (request['payment_verified'] != true && !expired)
+          const Text('等待系统确认到账 · 确认后由客服结算'),
+        if (rechargeUnpaid(request) && !expired)
+          const Text('请使用 APP 已绑定的钱包，按本单金额转入官方收款地址。',
+              style: TextStyle(
+                  fontSize: WeChatTypography.caption,
+                  color: WeChatColors.textSecondary)),
+        const Text('系统自动核对，无需提交付款凭证；实际到账以客服结算为准。',
             style: TextStyle(
                 fontSize: WeChatTypography.caption,
                 color: WeChatColors.textSecondary)),
@@ -2028,7 +2046,6 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           button('填写新的充值申请', () async {
             await store.clear('recharge');
             rechargeOp = null;
-            evidenceTxid.clear();
             amount.clear();
           }),
       ];
@@ -2239,6 +2256,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           const Text('1 点钻 = ¥1.00 · 预计金额仅供参考',
               style:
                   TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
+          Text(payoutMinimumHint,
+              key: const Key('manual-payout-minimum'),
+              style: const TextStyle(
+                  fontSize: 13, color: WeChatColors.textSecondary)),
           Row(children: [
             Expanded(
                 child: field('manual-payout-amount', amount, '输入点钻金额',

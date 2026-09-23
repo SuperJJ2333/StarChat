@@ -29,7 +29,10 @@ final class LoginPage extends StatefulWidget {
   });
 
   final BusinessApiClient api;
-  final Future<void> Function(String phone, String code)? onPhoneLogin;
+  final Future<void> Function(String phone, String code,
+      {String invitationCode,
+      bool termsAccepted,
+      bool Function()? shouldContinue})? onPhoneLogin;
   final Future<void> Function(String username, String password)? onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
@@ -49,6 +52,7 @@ final class _LoginPageState extends State<LoginPage>
   final _password = TextEditingController();
   final _phone = TextEditingController();
   final _code = TextEditingController();
+  final _invitation = TextEditingController();
   bool _phoneMode = false;
   late final PhoneLoginController _phoneController = PhoneLoginController(
       gateway: widget.api,
@@ -59,13 +63,30 @@ final class _LoginPageState extends State<LoginPage>
     if (mounted) setState(() {});
   }
 
+  String? get _normalizedPhone {
+    var value = _phone.text.replaceAll(RegExp(r'[ \-\(\)]'), '');
+    if (value.startsWith('+86')) {
+      value = value.substring(3);
+    } else if (value.startsWith('86') && value.length == 13) {
+      value = value.substring(2);
+    }
+    return RegExp(r'^1[3-9][0-9]{9}$').hasMatch(value) ? value : null;
+  }
+
+  bool get _canRequestPhoneCode =>
+      !_loading && _normalizedPhone != null && _phoneController.canRequestOtp;
+
   Future<void> _requestPhoneCode() async {
-    if (!RegExp(r'^1[3-9]\d{9}$').hasMatch(_phone.text.trim())) {
+    if (_normalizedPhone == null) {
       setState(() => _error = '请输入中国大陆 11 位手机号');
       return;
     }
+    if (!_agreementAccepted) {
+      setState(() => _error = '请先阅读并同意用户协议和隐私政策');
+      return;
+    }
     setState(() => _error = null);
-    await _phoneController.requestOtp(_phone.text.trim());
+    await _phoneController.requestOtp(_normalizedPhone!);
     if (mounted) setState(() => _error = _phoneController.state.message);
   }
 
@@ -86,13 +107,15 @@ final class _LoginPageState extends State<LoginPage>
     _password.dispose();
     _phone.dispose();
     _code.dispose();
+    _invitation.dispose();
     _phoneController.removeListener(_phoneChanged);
     _phoneController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final username = _phoneMode ? _phone.text.trim() : _username.text.trim();
+    final username =
+        _phoneMode ? _normalizedPhone ?? '' : _username.text.trim();
     final password = _phoneMode ? _code.text.trim() : _password.text;
     if (_phoneMode &&
         (!RegExp(r'^1[3-9]\d{9}$').hasMatch(username) ||
@@ -133,10 +156,16 @@ final class _LoginPageState extends State<LoginPage>
       final bool success;
       if (_phoneMode) {
         if (widget.onPhoneLogin != null) {
-          await widget.onPhoneLogin!(username, password);
+          await widget.onPhoneLogin!(username, password,
+              invitationCode: _invitation.text.trim(),
+              termsAccepted: _agreementAccepted,
+              shouldContinue: _loginIsCurrent);
           success = true;
         } else {
-          success = await _phoneController.submit(username, password);
+          success = await _phoneController.submit(username, password,
+              invitationCode: _invitation.text.trim(),
+              termsAccepted: _agreementAccepted,
+              shouldContinue: _loginIsCurrent);
         }
       } else {
         success = await controller.submit(username, password);
@@ -192,6 +221,11 @@ final class _LoginPageState extends State<LoginPage>
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  bool _loginIsCurrent() =>
+      mounted &&
+      (WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed);
 
   Future<bool> _confirmMatrixAccountSwitch() async {
     final confirmed = await showCupertinoDialog<bool>(
@@ -267,6 +301,7 @@ final class _LoginPageState extends State<LoginPage>
                     label: '手机号',
                     placeholder: '中国大陆 +86',
                     controller: _phone,
+                    onChanged: (_) => setState(() {}),
                     keyboardType: TextInputType.phone,
                     enabled: !_loading),
                 const SizedBox(height: WeChatSpacing.md),
@@ -279,17 +314,27 @@ final class _LoginPageState extends State<LoginPage>
                     enabled: !_loading,
                     trailing: CupertinoButton(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        onPressed: _loading ||
-                                !_agreementAccepted ||
-                                _phoneController.state.resendAfterSeconds > 0 ||
-                                _phoneController.state.status ==
-                                    PhoneLoginStatus.otpSending
-                            ? null
-                            : _requestPhoneCode,
-                        child: Text(_phoneController.state.resendAfterSeconds >
-                                0
-                            ? '${_phoneController.state.resendAfterSeconds}s'
-                            : '获取验证码'))),
+                        onPressed:
+                            _canRequestPhoneCode ? _requestPhoneCode : null,
+                        child: Text(
+                            _phoneController.state.resendAfterSeconds > 0
+                                ? '${_phoneController.state.resendAfterSeconds}s'
+                                : '获取验证码',
+                            style: TextStyle(
+                                color: _canRequestPhoneCode
+                                    ? WeChatColors.brandPrimary
+                                    : WeChatColors.textTertiary)))),
+                const SizedBox(height: WeChatSpacing.md),
+                AuthTextField(
+                    key: const Key('auth-login-invitation'),
+                    label: '邀请码（仅新用户必填）',
+                    placeholder: '已有账号无需填写',
+                    controller: _invitation,
+                    enabled: !_loading),
+                const SizedBox(height: WeChatSpacing.sm),
+                const Text('新手机号验证后自动注册，用户名和畅聊号由系统生成',
+                    style: TextStyle(
+                        fontSize: 12, color: WeChatColors.textSecondary)),
               ] else ...[
                 AuthTextField(
                   key: const Key('auth-login-identity'),

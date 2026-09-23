@@ -11,6 +11,7 @@
 - 验证码登录只恢复登录权，不触及 Matrix 密钥/E2EE 恢复边界。
 """
 import re
+import hmac
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import secrets
@@ -208,7 +209,7 @@ class PhoneAuthService:
 
     OLD_VERIF_WINDOW = timedelta(minutes=5)
 
-    def __init__(self, session_factory, *, otp: PhoneOtpService, now=None, email_code_deriver=None):
+    def __init__(self, session_factory, *, otp: PhoneOtpService, now=None, email_code_deriver=None, registration=None):
         self._factory = session_factory
         self.otp = otp
         self._now = now or (lambda: datetime.now(timezone.utc))
@@ -216,6 +217,7 @@ class PhoneAuthService:
         # 提供时邮箱 OTP 由 otp_id 确定性派生——明文只出现在投递事件中由
         # worker 以同一派生器复原，数据库仅存哈希（与邮箱验证码同纪律）。
         self._email_code_deriver = email_code_deriver
+        self.registration = registration
 
     def _utcnow(self) -> datetime:
         value = self._now()
@@ -276,39 +278,115 @@ class PhoneAuthService:
 
     # -------------------------------------------------------- 登录
     def request_login_otp(self, *, phone: str) -> dict:
-        """防枚举：存在/不存在同一响应；仅真实账号触发发送。"""
         normalized = normalize_phone(phone)
         if not self.otp.phone_enabled:
             raise AppError(code="PHONE_AUTH_DISABLED", message="手机号功能未开启", status_code=503)
         if isinstance(self.otp.sender, NullSmsSender):
             raise AppError(code="SMS_NOT_CONFIGURED", message="短信服务未配置", status_code=503)
         from app.modules.identity.enums import AccountStatus
-        from app.modules.identity.models import User
-
         with self._factory() as session:
             user = self._user_by_phone(session, normalized)
-            if user is not None and user.status == AccountStatus.ACTIVE:
-                try:
-                    self.otp.issue(purpose="login", phone=normalized, user_id=user.id)
-                except AppError as error:
-                    if error.code != "OTP_SEND_RATE_LIMITED":
-                        raise
+            eligible = user is None or user.status in (
+                AccountStatus.ACTIVE, AccountStatus.PENDING_PHONE, AccountStatus.PENDING_MATRIX)
+            user_id = user.id if user else None
+        if eligible and (user_id is not None or self.registration is not None):
+            try:
+                self.otp.issue(purpose="login", phone=normalized, user_id=user_id)
+            except AppError as error:
+                if error.code != "OTP_SEND_RATE_LIMITED":
+                    raise
         return {"status": "accepted"}
 
-    def login(self, *, phone: str, code: str, tokens: object, device_key: str, device_name: str) -> dict:
-        """验证码登录：只恢复登录权（会话签发走既有 TokenService 单设备规则）；
-        不创建/恢复任何 E2EE 密钥材料。"""
+    def _ticket_digest(self, value: str) -> str:
+        return hmac.new(self.otp._secret.encode(),
+            ("phone-login-resume:" + value).encode(), sha256).hexdigest()
+
+    def login(self, *, phone: str, code: str, tokens: object, device_key: str,
+              device_name: str, invitation_code: str = "", terms_accepted: bool = False,
+              on_new_account=None):
         if not self.otp.phone_enabled:
             raise AppError(code="PHONE_AUTH_DISABLED", message="手机号功能未开启", status_code=503)
-        normalized = normalize_phone(phone)
         from app.modules.identity.enums import AccountStatus
+        from app.modules.identity.models import OtpChallenge
+        from app.core.outbox import OutboxPublisher
+        normalized = normalize_phone(phone)
+        now = self._utcnow()
+        result = {}
+        ticket = secrets.token_urlsafe(32)
 
-        with self._factory() as session:
+        def complete(session, challenge):
+            if session.get_bind().dialect.name == "postgresql":
+                session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                    {"key": "identity:onboard:" + sha256(normalized.encode()).hexdigest()})
             user = self._user_by_phone(session, normalized)
-            if user is None or user.status != AccountStatus.ACTIVE:
+            if user is not None and user.status not in (
+                    AccountStatus.ACTIVE, AccountStatus.PENDING_PHONE, AccountStatus.PENDING_MATRIX):
                 raise AppError(code="CREDENTIALS_INVALID", message="账号或验证码错误", status_code=401)
+            if challenge.user_id is not None and (user is None or challenge.user_id != user.id):
+                raise AppError(code="OTP_INVALID", message="验证码无效或已过期", status_code=400)
+            if user is not None and user.status == AccountStatus.PENDING_PHONE:
+                # That separate registration owns its credentials and invitation.
+                # A login OTP must never activate an unverified registrant's password.
+                raise AppError(code="PHONE_REGISTRATION_INCOMPLETE",
+                    message="该手机号已开始注册，请完成原注册验证流程或联系客服", status_code=409)
+            if user is None:
+                if self.registration is None:
+                    raise AppError(code="CREDENTIALS_INVALID", message="账号或验证码错误", status_code=401)
+                if not terms_accepted:
+                    raise AppError(code="TERMS_REQUIRED", message="请先阅读并同意用户协议和隐私政策", status_code=422)
+                user = self.registration.create_verified_phone_in_session(session,
+                    phone=normalized, invitation_code=invitation_code, now=now)
+                if on_new_account is not None:
+                    on_new_account()
+                result['created'] = True
+            if result.get('created'):
+                user.phone_verified_at = now
+                user.status = AccountStatus.PENDING_MATRIX
+                user.updated_at = now
+                OutboxPublisher.enqueue(session, topic="identity.matrix",
+                    event_type="identity.matrix.provision.requested", aggregate_type="user",
+                    aggregate_id=user.id, payload={"user_id": user.id}, now=now)
+            result['user_id'] = user.id
+            if user.status == AccountStatus.PENDING_MATRIX:
+                session.add(OtpChallenge(id=str(uuid4()), purpose='login_resume',
+                    target=self._ticket_digest(ticket), code_hash=self._ticket_digest(normalized),
+                    registration_session=self._ticket_digest(device_key), user_id=user.id,
+                    expires_at=now + timedelta(minutes=5), attempts_left=1, created_at=now))
+                result['pending'] = True
+        self.otp.verify_code(purpose="login", target=normalized, code=code, on_verified=complete)
+        if result.get('pending'):
+            return {'status': 'PENDING_MATRIX', 'login_ticket': ticket, 'retry_after_seconds': 2}
+        return tokens.issue_pair(user_id=result['user_id'], device_key=device_key, display_name=device_name)
+
+    def complete_login(self, *, login_ticket: str, device_key: str, device_name: str, tokens):
+        """Single-use, device-bound proof. Never invokes the SMS verifier."""
+        from app.modules.identity.models import OtpChallenge, User
+        from app.modules.identity.enums import AccountStatus
+        if not self.otp.phone_enabled:
+            raise AppError(code="PHONE_AUTH_DISABLED", message="手机号功能未开启", status_code=503)
+        now = self._utcnow()
+        with self._factory.begin() as session:
+            proof = session.scalar(select(OtpChallenge).where(
+                OtpChallenge.purpose == 'login_resume',
+                OtpChallenge.target == self._ticket_digest(login_ticket),
+                OtpChallenge.registration_session == self._ticket_digest(device_key),
+                OtpChallenge.consumed_at.is_(None), OtpChallenge.invalidated_at.is_(None),
+                OtpChallenge.expires_at > now).with_for_update())
+            if proof is None:
+                raise AppError(code='LOGIN_TICKET_INVALID', message='登录凭据已失效，请重新登录', status_code=401)
+            user = session.get(User, proof.user_id)
+            if user is None or user.status not in (AccountStatus.PENDING_MATRIX, AccountStatus.ACTIVE):
+                raise AppError(code='CREDENTIALS_INVALID', message='账号状态不可用', status_code=401)
+            if not user.phone_verified_at or not user.phone_normalized or not hmac.compare_digest(
+                    proof.code_hash, self._ticket_digest(user.phone_normalized)):
+                raise AppError(code='LOGIN_TICKET_INVALID', message='登录凭据已失效，请重新登录', status_code=401)
+            if user.status == AccountStatus.PENDING_MATRIX:
+                return {'status': 'PENDING_MATRIX', 'retry_after_seconds': 2}
+            consumed = session.execute(update(OtpChallenge).where(OtpChallenge.id == proof.id,
+                OtpChallenge.consumed_at.is_(None)).values(consumed_at=now))
+            if consumed.rowcount != 1:
+                raise AppError(code='LOGIN_TICKET_INVALID', message='登录凭据已失效，请重新登录', status_code=401)
             user_id = user.id
-        self.otp.verify_code(purpose="login", target=normalized, code=code, user_id=user_id)
         return tokens.issue_pair(user_id=user_id, device_key=device_key, display_name=device_name)
 
     # -------------------------------------------------------- 换绑

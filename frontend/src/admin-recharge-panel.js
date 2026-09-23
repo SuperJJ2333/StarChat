@@ -15,9 +15,31 @@ function fieldRow(label, value) {
   return row;
 }
 
+// Asset arithmetic stays in decimal strings / integer micro-units.
+function decimalMicros(value) {
+  if (typeof value !== 'string' || !/^[0-9]{1,24}(?:\.[0-9]{1,6})?$/.test(value.trim())) return null;
+  const [whole, fraction = ''] = value.trim().split('.');
+  const units = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, '0'));
+  return units > 0n ? units : null;
+}
+function formatFixed(units, digits) {
+  const scale = 10n ** BigInt(digits);
+  return `${units / scale}.${String(units % scale).padStart(digits, '0')}`;
+}
+function previewPoints(amount, rate) {
+  // Positive decimal HALF_UP, matching server settlement quantization.
+  return formatFixed((amount * rate + 5000000000n) / 10000000000n, 2);
+}
+
 export function rechargePanel(api, { actor = {}, canReview = false, canApprove = false, onOpenPayout = null } = {}) {
   let disposed = false, casesGeneration = 0, filter = 'all';
   const claims = new Map(), busyOrders = new Set();
+  let currentFx = null, fxRequest = null;
+  const loadReference = () => {
+    if (!fxRequest) fxRequest = Promise.resolve().then(()=>api.getFxRate())
+      .catch(()=>null).finally(()=>{fxRequest=null;});
+    return fxRequest;
+  };
   const actorId = actor.id ?? actor.user_id;
   const key = prefix => `${prefix}:${globalThis.crypto.randomUUID()}`;
   const owned = item => !item.expires_at || Boolean(actorId && item.claimed_by === actorId && claims.has(item.id)
@@ -48,7 +70,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const refreshFx = async () => {
     fxBody.replaceChildren(element("p", "admin-audit-note", "加载中…"));
     let rate = null, valuation = null;
-    try { rate = await api.getFxRate(); } catch { rate = null; }
+    rate = await loadReference();
     try { valuation = await api.getReserveValuation(); } catch { valuation = null; }
     fxBody.replaceChildren();
     if (rate) {
@@ -145,7 +167,8 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
         });
         continue;
       }
-      if(item.expires_at){
+      if(item.expires_at && canReview && item.processing_stage==='NEEDS_REVIEW'){
+      actions.append(element('p','admin-audit-note','辅助人工核查：仅用于待核对案件；仍由服务端核验链上证据。'));
       const txid = element('input');txid.placeholder='到账交易哈希';txid.value=item.evidence_txid ?? '';txid.setAttribute('aria-label',txid.placeholder);
       const logIndex = element('input');logIndex.placeholder='链上日志序号';logIndex.value='0';logIndex.setAttribute('aria-label',logIndex.placeholder);
       actions.append(txid,logIndex);
@@ -156,11 +179,32 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       }
       if(item.payment_verified || !item.expires_at){
         if(item.expires_at){
-          const rate=element('input');rate.placeholder='最终结算率（点钻/USDT）';rate.setAttribute('aria-label',rate.placeholder);actions.append(rate);
+          const reference = decimalMicros(currentFx?.rate);
+          const baseRate = currentFx?.stale === false && Number.isFinite(Date.parse(currentFx?.fetched_at)) ? reference : null;
+          const received = decimalMicros(item.actual_received_usdt);
+          actions.append(element('p','admin-audit-note', baseRate
+            ? `本次参考基准：${formatFixed(baseRate,6)} 点钻/USDT`
+            : `基准不可用${currentFx?.stale ? '（过期参考）' : ''}；请核对汇率后明确填写最终结算率`));
+          if(Number.isFinite(Date.parse(currentFx?.fetched_at)))actions.append(element('p','admin-audit-note',`参考获取时间（北京）：${new Date(currentFx.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
+          const rate=element('input');rate.placeholder='最终结算率（点钻/USDT）';rate.setAttribute('aria-label',rate.placeholder);
+          rate.value=baseRate ? formatFixed(baseRate,6) : '';actions.append(rate);
+          const preview=element('p','admin-audit-note');
+          const updatePreview=()=>{
+            const finalRate=decimalMicros(rate.value);
+            preview.textContent=received && finalRate
+              ? `最终点钻预览：${previewPoints(received,finalRate)}（实际到账 ${item.actual_received_usdt} USDT × 最终结算率 ${formatFixed(finalRate,6)}）`
+              : '最终点钻预览：待填写有效结算率并确认实际到账金额';
+          };
+          rate.addEventListener('input',updatePreview);
+          for(const [label,percent] of [['-5%',95n],['-1%',99n],['基准',100n],['+1%',101n],['+5%',105n]]){
+            addButton(label,()=>{if(baseRate){rate.value=formatFixed((baseRate*percent+50n)/100n,6);updatePreview();}},!baseRate);
+          }
+          actions.append(preview,element('p','admin-audit-note','参考汇率仅作结算基准，最终以客服确认的结算率和独立审批结果为准；预览不代表已入账。'));
+          updatePreview();
           addButton('提交结算审批',()=>{
-            if(!/^[0-9]+(?:\.[0-9]+)?$/.test(rate.value.trim())){panelAlert('请填写最终结算率');return;}
+            if(!received || !decimalMicros(rate.value)){panelAlert('请确认实际到账金额并填写有效最终结算率（最多6位小数）');return;}
             return command(claim_token=>api.prepareRechargeSettlement(item.id,{claim_token,final_rate:rate.value.trim()},{idempotencyKey:`prepare:${item.id}:${rate.value.trim()}`}));
-          });
+          },!received);
           if(item.binding_adjustment_id || item.adjustment_id){
             actions.append(element('p','admin-audit-note',`审批调整 ${item.binding_adjustment_id ?? item.adjustment_id}；需独立管理员审批后执行。`));
             addButton('审批后执行结算',()=>command(claim_token=>api.executeRechargeSettlement(item.id,{claim_token},{idempotencyKey:`execute:${item.id}:${item.binding_adjustment_id ?? item.adjustment_id}`})));
@@ -175,7 +219,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
         });
         addButton('完成登记',()=>command(claim_token=>api.completeRechargeBinding(item.id,{idempotencyKey:`register:${item.id}`},{claim_token})));
         }
-      } else actions.append(element('p','admin-audit-note','到账证据未核验，禁止结算；截图或交易哈希本身不代表到账。'));
+      } else actions.append(element('p','admin-audit-note','等待系统确认到账：自动匹配用户在 APP 绑定的钱包付款，确认前不可提交结算；无需用户或客服填写凭证。'));
       const reason=element('input');reason.placeholder='拒绝原因';reason.setAttribute('aria-label',reason.placeholder);actions.append(reason);
       addButton('拒绝',()=>{
         if(reason.value.trim().length<3){panelAlert('拒绝必须填写原因（≥3 字符）');return;}
@@ -188,8 +232,9 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
     nextCases.disabled=true;
     const generation = ++casesGeneration;
     try {
-      const page = await api.getRechargePending({...casesPageCursor?{cursor:casesPageCursor}:{},limit:50});
+      const [page, snapshot] = await Promise.all([api.getRechargePending({...casesPageCursor?{cursor:casesPageCursor}:{},limit:50}), loadReference()]);
       if(disposed || generation!==casesGeneration)return;
+      currentFx=snapshot;
       nextCasesCursor=page.next_cursor??null;nextCases.disabled=!nextCasesCursor;
       currentItems=page.items??[];
       for(const id of claims.keys())if(!currentItems.some(item=>item.id===id && item.claimed_by===actorId && Date.parse(item.claim_expires_at)>Date.now()))claims.delete(id);

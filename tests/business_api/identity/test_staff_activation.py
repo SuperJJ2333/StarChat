@@ -159,7 +159,7 @@ def test_email_worker_rechecks_bound_staff_before_delivery(env, revoked):
     sent=[]
     task=import_module('tasks.identity').IdentityEmailVerificationTask(factory,
         token_codec=VerificationTokenCodec(b'test-email-verification-secret'),public_base_url='https://test.invalid',
-        email_sender=SimpleNamespace(send_wallet_alert=lambda **body:sent.append(body)),now_factory=lambda:clock[0])
+        email_sender=SimpleNamespace(send_email_otp=lambda **body:sent.append(body)),now_factory=lambda:clock[0])
     task(message)
     assert len(sent)==(0 if revoked else 1)
 
@@ -276,3 +276,50 @@ async def test_support_security_http_rejects_app_scope_and_accepts_activated_fin
         response=await client.post(path+'/verify',headers=headers,json={'operation_password':'separate operation password'})
         assert response.status_code==200,response.text
         assert response.json()['verified'] is True
+
+
+@pytest.mark.parametrize('purpose', ['staff_activation_email', 'email_rebind_old'])
+def test_email_otp_worker_uses_real_smtp_adapter(env, purpose):
+    from app.core.outbox import OutboxEvent, OutboxMessage
+    from app.modules.identity.registration import VerificationTokenCodec
+    from integrations.email_sender import SmtpConfig, SmtpEmailSender
+    from tasks.identity import IdentityEmailVerificationTask
+    factory, clock, _, service = env
+    codec = VerificationTokenCodec(b'fixture-email-code-secret')
+    service.email_otp.code_deriver = codec.verification_code
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        user.phone_normalized = None
+        user.email_normalized = 'staff@example.invalid'
+        user.email_verified_at = clock[0]
+    issue(env)
+    with factory.begin() as session:
+        otp = session.scalar(select(OtpChallenge))
+        otp.purpose = purpose
+        expected_code = codec.verification_code(otp.id)
+        event = session.scalar(select(OutboxEvent).where(OutboxEvent.event_type == 'identity.email.otp.requested'))
+        message = OutboxMessage(id=event.id, topic=event.topic, event_type=event.event_type,
+            aggregate_type=event.aggregate_type, aggregate_id=event.aggregate_id,
+            payload=event.payload, headers={}, attempt_count=1)
+    delivered = []
+    class Smtp:
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def starttls(self, *, context): assert context is not None
+        def send_message(self, message): delivered.append(message)
+    sender = SmtpEmailSender(SmtpConfig(host='smtp.example.invalid', port=587,
+        from_address='noreply@example.invalid', use_starttls=True), smtp_factory=Smtp)
+    task = IdentityEmailVerificationTask(factory, token_codec=codec,
+        public_base_url='https://example.invalid', email_sender=sender, now_factory=lambda: clock[0])
+    task(message)
+    assert len(delivered) == 1
+    mail = delivered[0]
+    assert mail['To'] == 'staff@example.invalid'
+    assert expected_code in mail.get_content()
+    assert ('客服后台首次开通' if purpose == 'staff_activation_email' else '绑定手机') in mail.get_content()
+    assert '5 分钟' in mail.get_content()
+    assert '钱包告警' not in mail['Subject']
+    clock[0] += timedelta(seconds=301)
+    task(message)
+    assert len(delivered) == 1

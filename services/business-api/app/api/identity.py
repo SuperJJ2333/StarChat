@@ -237,7 +237,7 @@ def create_identity_router(
             secret=settings.otp_hash_secret or settings.jwt_secret or "development-otp-secret",
             phone_enabled=settings.phone_auth_enabled, code_verifier=code_verifier)
         return PhoneAuthService(session_factory, otp=otp,
-            email_code_deriver=verification_codec.verification_code)
+            email_code_deriver=verification_codec.verification_code, registration=registration)
 
     phone_auth = _build_phone_auth()
     recovery = PasswordRecoveryService(
@@ -934,6 +934,18 @@ def create_identity_router(
         code: str = Field(min_length=4, max_length=8)
         device_key: str = Field(min_length=8, max_length=128)
         device_name: str = Field(min_length=1, max_length=128)
+        invitation_code: str = Field(default="", max_length=128)
+        terms_accepted: bool = False
+
+    class PhoneLoginCompleteBody(StrictModel):
+        login_ticket: str = Field(min_length=32, max_length=128)
+        device_key: str = Field(min_length=8, max_length=128)
+        device_name: str = Field(min_length=1, max_length=128)
+
+    class PhoneLoginPendingResponse(StrictModel):
+        status: str = "PENDING_MATRIX"
+        login_ticket: str | None = None
+        retry_after_seconds: int = 2
 
     class PhoneRebindConfirmBody(StrictModel):
         new_phone: str = Field(min_length=5, max_length=20)
@@ -969,11 +981,26 @@ def create_identity_router(
         rate_limiter.hit(public_rate_limit_key("auth:phone-login-otp", request.client.host if request.client else "unknown"), limit=3, window_seconds=600)
         return phone_auth.request_login_otp(phone=body.phone)
 
-    @router.post("/auth/phone/login")
+    @router.post("/auth/phone/login", response_model=PasswordLoginResponse,
+                 responses={202: {"model": PhoneLoginPendingResponse}})
     def phone_login(body: PhoneLoginBody, request: Request):
         rate_limiter.hit(public_rate_limit_key("auth:phone-login", request.client.host if request.client else "unknown"), limit=10, window_seconds=3600)
-        pair = phone_auth.login(phone=body.phone, code=body.code, tokens=tokens,
-            device_key=body.device_key, device_name=body.device_name)
+        pair = phone_auth.login(**body.model_dump(), tokens=tokens,
+            on_new_account=lambda: rate_limiter.hit(public_rate_limit_key(
+                "auth:register:v2", request.client.host if request.client else "unknown", body.device_key),
+                limit=3, window_seconds=3600))
+        return phone_login_response(pair, request)
+
+    @router.post("/auth/phone/login/complete", response_model=PasswordLoginResponse,
+                 responses={202: {"model": PhoneLoginPendingResponse}})
+    def phone_login_complete(body: PhoneLoginCompleteBody, request: Request):
+        rate_limiter.hit(public_rate_limit_key("auth:phone-login-complete", request.client.host if request.client else "unknown"), limit=60, window_seconds=60)
+        pair = phone_auth.complete_login(**body.model_dump(), tokens=tokens)
+        return phone_login_response(pair, request)
+
+    def phone_login_response(pair, request):
+        if isinstance(pair, dict):
+            return JSONResponse(status_code=202, content=pair, headers={"Cache-Control": "no-store"})
         claims = tokens.decode_access_token(pair.access_token)
         with session_factory() as session:
             user = session.get(User, claims["sub"])

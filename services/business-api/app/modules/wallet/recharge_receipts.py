@@ -41,6 +41,32 @@ def require_unambiguous_transaction(session, row):
 
 
 class RechargeReceiptOperations:
+    def observed_recharge_candidates(self, *, after=None, limit=50):
+        """Read-only bridge from observer facts to order attribution, never credit."""
+        with self.factory() as session:
+            query=select(DepositReceipt,WalletAddressOwner.user_id).join(WalletAddressOwner,
+                WalletAddressOwner.address==DepositReceipt.source_address).outerjoin(
+                RechargeReceiptReservation,RechargeReceiptReservation.receipt_id==DepositReceipt.id).where(
+                    DepositReceipt.status=='REVIEW',DepositReceipt.pending_obligation.is_(True),
+                    DepositReceipt.amount>0,RechargeReceiptReservation.receipt_id.is_(None),
+                    DepositReceipt.official_address==self.official_config.address,
+                    DepositReceipt.official_config_version==self.official_config.version)
+            if after is not None:query=query.where(DepositReceipt.id>after)
+            rows=session.execute(query.order_by(DepositReceipt.id).limit(limit)).all()
+            return [{'receipt_id':r.id,'user_id':user,'txid':r.txid,'log_index':r.log_index,
+                'amount_usdt':str(r.amount),'block_time':utc(r.block_time),
+                'official_payment':{'address':r.official_address,'config_version':r.official_config_version}}
+                for r,user in rows]
+
+    def recharge_payment_reference(self, *, receipt_id, request_id, user_id):
+        with self.factory() as session:
+            row=session.get(DepositReceipt,receipt_id)
+            reservation=session.get(RechargeReceiptReservation,receipt_id)
+            if (not row or not reservation or reservation.request_id!=request_id
+                    or reservation.user_id!=user_id or reservation.state!='RESERVED'):
+                fail('RECHARGE_EVIDENCE_CONSUMED')
+            return {'txid':row.txid,'log_index':row.log_index}
+
     def recharge_evidence(self,txid):
         # Ingest only immutable facts; automatic credits MUST be deferred.
         self.ingest(txid,actor_id='support-receipt-verifier',defer_credit=True)

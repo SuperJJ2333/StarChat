@@ -1,6 +1,26 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-23-wallet-feedback": {
+      "flutter": "apps/mobile_flutter/lib/features/wallet/manual_wallet_page.dart",
+      "html": "frontend/src/screens/phone-flows.js",
+      "demo": "recharge-directory-directory",
+      "components": ["WeChatToast", "WeChatSecondaryButton", "walletStepIndicator", "CupertinoTextField"],
+      "props": ["amount", "referenceRate", "paymentVerified"],
+      "states": ["amount-input", "waiting-payment", "verified-awaiting-staff", "minimum-toast", "amount-rejected-retry", "unknown-result-retains-intent"],
+      "tokens": ["WeChatColors.brandPrimary", "WeChatColors.textSecondary"],
+      "behavior": "Recharge reuses amount/address/wait steps without user evidence input. Payout below 10 USDT uses existing toast with reference points; definite rejection clears the old quote, unknown results preserve its idempotent intent. Withdrawal demo: wallet-withdrawal-default."
+    },
+    "2026-09-23-phone-onboarding": {
+      "flutter": "apps/mobile_flutter/lib/features/auth/login_page.dart",
+      "html": "frontend/src/screens/phone-flows.js",
+      "demo": "phone-login-phone-error",
+      "components": ["AuthTextField", "AuthAgreementRow", "CupertinoButton", "app-secondary-button"],
+      "props": ["normalizedPhone", "invitationCode", "termsAccepted"],
+      "states": ["invalid-phone", "eligible-green", "consent-required", "cooldown", "invitation-required", "matrix-pending", "authenticated"],
+      "tokens": ["WeChatColors.brandPrimary", "WeChatColors.textTertiary", "--color-brand-primary"],
+      "behavior": "Valid mainland phone immediately enables green OTP text; unchecked consent explains and sends nothing. New accounts need invitation plus verified OTP, derive opaque handles and await Matrix through a device-bound single-use ticket."
+    },
     "2026-09-19-conversation-identity-admission": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
       "html": "frontend/src/screens/messaging.js",

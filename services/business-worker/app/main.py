@@ -186,10 +186,11 @@ def main() -> None:
             if getattr(settings, 'wallet_handover_preparation_mode', False) else OutboxConsumer(session_factory))
         redpacket_expiry = RedPacketExpiryTask(session_factory, RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total))
         commission_sweep = RedPacketCommissionSweepTask(session_factory)
-        recharge_registration = RechargeRegistrationTask(session_factory, LedgerService(session_factory))
         chat_transfer_expiry = ChatTransferExpiryTask(session_factory, ChatTransferService(session_factory, LedgerService(session_factory)))
         wallet_maintenance, wallet_monitoring, alert_handlers = build_wallet_tasks(settings, session_factory)
         wallet_task = getattr(wallet_maintenance, '__self__', None)
+        recharge_registration = RechargeRegistrationTask(session_factory, LedgerService(session_factory),
+            wallet_runtime=getattr(wallet_task,'runtime',None))
         if wallet_task is not None and hasattr(wallet_task, 'close'):
             resources.callback(wallet_task.close)
         moments_moderation = MomentsModerationTask(session_factory)

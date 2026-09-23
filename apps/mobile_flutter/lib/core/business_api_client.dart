@@ -1663,6 +1663,9 @@ final class BusinessApiClient
     required String code,
     required String deviceKey,
     required String deviceName,
+    String invitationCode = '',
+    bool termsAccepted = false,
+    bool Function()? shouldContinue,
   }) async {
     final loginEpoch = ++_sessionEpoch;
     _refreshFlight = null;
@@ -1677,25 +1680,62 @@ final class BusinessApiClient
           body: jsonEncode({
             'phone': phone,
             'code': code,
+            if (invitationCode.isNotEmpty) 'invitation_code': invitationCode,
+            if (termsAccepted) 'terms_accepted': true,
             'device_key': deviceKey,
             'device_name': deviceName,
           }),
         )
         .timeout(_httpTimeout);
-    final body = _decode(response);
+    var body = _decode(response);
+    final waiting = Stopwatch()..start();
+    final ticket = body['login_ticket']?.toString();
+    while (body['status'] == 'PENDING_MATRIX') {
+      if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+        throw _ended;
+      }
+      if (ticket == null || waiting.elapsed >= const Duration(seconds: 60)) {
+        throw BusinessApiException(
+            code: 'PHONE_PROVISIONING_PENDING',
+            message: '账号仍在开通，请稍后重新登录；无需再次注册',
+            statusCode: 202);
+      }
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+        throw _ended;
+      }
+      final remaining = const Duration(seconds: 60) - waiting.elapsed;
+      if (remaining <= Duration.zero) continue;
+      final completion = await _client
+          .post(_uri('/auth/phone/login/complete'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'login_ticket': ticket,
+                'device_key': deviceKey,
+                'device_name': deviceName
+              }))
+          .timeout(remaining < _httpTimeout ? remaining : _httpTimeout,
+              onTimeout: () => throw BusinessApiException(
+                  code: 'PHONE_PROVISIONING_PENDING',
+                  message: '账号开通结果待确认，请稍后重新登录；无需再次注册',
+                  statusCode: 202));
+      body = _decode(completion);
+    }
+    if (shouldContinue?.call() == false) throw _ended;
     if (loginEpoch != _sessionEpoch) throw _ended;
     final returnedMatrixUserId = body['matrix_user_id']?.toString();
-    await _writeCurrentSession(
-        loginEpoch,
-        () => sessionStore.saveSession(
-              accessToken: body['access_token'] as String,
-              refreshToken: body['refresh_token'] as String,
-              deviceKey: deviceKey,
-              matrixUserId:
-                  returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
-                      ? null
-                      : returnedMatrixUserId,
-            ));
+    await _writeCurrentSession(loginEpoch, () {
+      if (shouldContinue?.call() == false) throw _ended;
+      return sessionStore.saveSession(
+        accessToken: body['access_token'] as String,
+        refreshToken: body['refresh_token'] as String,
+        deviceKey: deviceKey,
+        matrixUserId:
+            returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
+                ? null
+                : returnedMatrixUserId,
+      );
+    });
     return body;
   }
 

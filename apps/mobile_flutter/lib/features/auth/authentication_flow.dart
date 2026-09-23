@@ -17,7 +17,10 @@ final class AuthenticationFlow extends StatefulWidget {
       this.onCancelMatrixAccountSwitch,
       required this.onAuthenticated});
   final BusinessApiClient api;
-  final Future<void> Function(String, String)? onPhoneLogin;
+  final Future<void> Function(String, String,
+      {String invitationCode,
+      bool termsAccepted,
+      bool Function()? shouldContinue})? onPhoneLogin;
   final Future<void> Function(String, String) onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;

@@ -20,6 +20,9 @@ class DisabledEmailSender:
     def send_email_verification(self, **_kwargs) -> None:
         raise EmailDeliveryError("email delivery is disabled")
 
+    def send_email_otp(self, **_kwargs) -> None:
+        raise EmailDeliveryError("email delivery is disabled")
+
     def send_password_reset(self, **_kwargs) -> None:
         raise EmailDeliveryError("email delivery is disabled")
 
@@ -38,6 +41,8 @@ class EmailSender(Protocol):
         code: str,
         link: str,
     ) -> None: ...
+
+    def send_email_otp(self, *, recipient: str, code: str, purpose: str) -> None: ...
 
     def send_password_reset(self, *, recipient: str, link: str) -> None: ...
 
@@ -142,6 +147,27 @@ class SmtpEmailSender:
             f"也可以点击验证链接：{link}\n"
         )
         self._send(message)
+
+    def send_email_otp(self, *, recipient: str, code: str, purpose: str) -> None:
+        purposes = {
+            'staff_activation_email': '客服后台首次开通',
+            'email_rebind_old': '绑定手机',
+        }
+        try:
+            if purpose not in purposes or not isinstance(code, str) or re.fullmatch(r'[0-9]{6}', code) is None:
+                raise ValueError('invalid email OTP')
+            message = EmailMessage()
+            message['Subject'] = '畅聊 ChatFlow ' + purposes[purpose] + '验证码'
+            message['From'] = self._config.from_address
+            message['To'] = recipient
+            message.set_content(
+                f'您正在进行{purposes[purpose]}。\n\n验证码：{code}\n'
+                '验证码自申请起 5 分钟内有效。请勿向他人透露验证码。\n'
+                '如非本人操作，请忽略此邮件。\n'
+            )
+            self._send(message)
+        except Exception:
+            raise EmailDeliveryError('SMTP email OTP delivery failed') from None
 
     def send_password_reset(self, *, recipient: str, link: str) -> None:
         message = EmailMessage()

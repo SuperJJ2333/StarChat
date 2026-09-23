@@ -120,6 +120,33 @@ class RegistrationService:
         # ReferralCodec（可选）：识别"某用户的个人邀请码"以推导邀请关系。
         self._referral_codec = referral_codec
 
+    def create_verified_phone_in_session(self, session, *, phone: str,
+                                         invitation_code: str, now: datetime) -> User:
+        """Called only inside the successful OTP consumption transaction."""
+        invitation = self._invitation_service.consume_in_session(
+            session, code=invitation_code, now=now)
+        handle = 'p' + self._token_codec.digest(
+            purpose='phone-public-handle', value=phone)[:24]
+        # A user may have manually claimed the deterministic handle. Keep the
+        # public identifier opaque without exposing the phone on collisions.
+        if session.scalar(select(User.id).where(User.username_normalized == handle)):
+            handle += secrets.token_hex(6)
+        user = User(id=str(uuid4()), username=handle, username_normalized=handle,
+            nickname='畅聊用户' + phone[-4:], email=None, email_normalized=None,
+            phone=phone, phone_normalized=phone, phone_verified_at=now,
+            password_hash=self._password_hasher.hash(secrets.token_urlsafe(48)),
+            status=AccountStatus.PENDING_MATRIX, created_at=now, updated_at=now)
+        session.add(user)
+        session.flush()
+        self._bind_invitation_owner_in_session(session, invitation=invitation,
+            invited_user_id=user.id, now=now)
+        from app.modules.audit.writer import AuditWriter
+        AuditWriter(self._session_factory).record_in_session(session,
+            actor_id=user.id, subject_type='user', subject_id=user.id,
+            action='identity.registration.created', result='SUCCESS',
+            reason_code='PHONE_OTP_ONBOARDING', trace_id=str(uuid4()))
+        return user
+
     def register(
         self,
         *,

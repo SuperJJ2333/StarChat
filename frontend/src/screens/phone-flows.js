@@ -69,6 +69,17 @@ function buildPhoneLogin(state) {
   const phone = field("手机号", "+86 手机号",
     state === "error" ? "" : "");
   const otp = otpField();
+  const invitation = field('邀请码（仅新用户必填）', '已有账号无需填写');
+  const consent = element('input');
+  consent.type = 'checkbox';
+  const consentRow = element('label', 'c-form-help');
+  consentRow.append(consent, element('span', null, '我已阅读并同意用户协议和隐私政策'));
+  const validPhone = () => {
+    let value = (phone.input.value || '').replace(/[ \-()]/g, '');
+    if (value.startsWith('+86')) value = value.slice(3);
+    else if (value.startsWith('86') && value.length === 13) value = value.slice(2);
+    return /^1[3-9][0-9]{9}$/.test(value);
+  };
   const button = component("app-secondary-button", { label: "获取验证码" });
   const otpRow = element("div", "c-phone-flows__otp-row");
   otpRow.append(otp.wrapper, button);
@@ -80,11 +91,21 @@ function buildPhoneLogin(state) {
   const draw = () => {
     errorNode.hidden = errorNode.textContent.length === 0;
     button.setAttribute("label", seconds > 0 ? seconds + " 秒后重发" : "获取验证码");
-    if (seconds > 0 || requests >= 3) button.setAttribute("disabled", "true");
+    otpRow.dataset.eligible = String(validPhone() && seconds === 0 && requests < 3);
+    if (!validPhone() || seconds > 0 || requests >= 3) button.setAttribute("disabled", "true");
     else button.removeAttribute("disabled");
+    // StrictElement does not observe attributes. Refresh its native button
+    // after changing validity/cooldown, keeping this behavior local to the page.
+    button.renderContract?.();
   };
+  phone.input.addEventListener('input', draw);
   button.addEventListener("click", () => {
-    if (seconds > 0 || requests >= 3) return;
+    if (!validPhone() || seconds > 0 || requests >= 3) return;
+    if (!consent.checked) {
+      errorNode.textContent = '请先阅读并同意用户协议和隐私政策';
+      draw();
+      return;
+    }
     requests += 1;
     if (requests >= 3) {
       errorNode.textContent = "请求较频繁，请稍后再试。";
@@ -107,7 +128,9 @@ function buildPhoneLogin(state) {
     }, 1000);
   });
 
-  nodes.push(phone.wrapper, otpRow, errorNode, primaryButton("登录"), hintNode);
+  nodes.push(phone.wrapper, otpRow, invitation.wrapper, consentRow, errorNode,
+    primaryButton("登录"), hintNode,
+    hint('新手机号验证后自动注册，用户名和畅聊号由系统生成；需要有效邀请码。'));
   draw();
   // 启动初始冷却演示（cooldown 态）
   if (seconds > 0) {
@@ -203,18 +226,12 @@ function rechargeNodes(state) {
     });
     const next = primaryButton("下一步");
     next.addEventListener("click", () => {
-      const evidence = field("已付款凭证", "链上交易哈希");
-      const submit = primaryButton("提交付款凭证");
-      const status = hint("等待付款 · 尚未到账");
-      submit.addEventListener("click", () => {
-        status.textContent = /^[a-fA-F0-9]{64}$/.test(evidence.input.value || "")
-          ? "等待到账核验 · 提交凭证不代表到账" : "请输入有效的链上交易哈希";
-      });
+      const status = hint("等待系统确认到账 · 确认后由客服结算");
       apply.replaceChildren(element("h2", "", "客服处理 · 第 2 步"),
         row("订单", "演示订单 req-1"), row("网络", "TRON（TRC20）"),
         row("官方收款地址", "演示地址 · 不可用于付款"),
         row("处理期限", "2 小时 · 截止 2026-09-23 12:00"),
-        status, evidence.wrapper, submit,
+        status, hint("请使用 APP 已绑定的钱包，按本单金额转入官方收款地址。系统自动核对，无需提交付款凭证。"),
         hint("演示数据；已付款、逾期或付款不明确时由客服核对，请勿重复付款。"));
     });
     apply.append(amount.wrapper, estimate,

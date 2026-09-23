@@ -36,6 +36,9 @@ abstract interface class PhoneAuthGateway {
     required String code,
     required String deviceKey,
     required String deviceName,
+    String invitationCode = '',
+    bool termsAccepted = false,
+    bool Function()? shouldContinue,
   });
 
   /// 换绑第一步：验证当前凭证（已绑手机→旧手机码；仅邮箱账号→邮箱码）。

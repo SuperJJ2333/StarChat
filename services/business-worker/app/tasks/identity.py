@@ -95,7 +95,7 @@ class IdentityEmailVerificationTask:
 
 
     def _send_email_otp(self, message) -> None:
-        """ADR-0075：邮箱 OTP 投递（换绑邮箱→手机场景）。
+        """邮箱 OTP 投递：邮箱账号绑定手机及客服首次开通。
 
         验证码由 token_codec 从 otp_id 确定性派生，与业务 API 侧派生器
         一致；payload 只携带 otp_id，明文码不落库、不进日志。
@@ -120,6 +120,7 @@ class IdentityEmailVerificationTask:
                     or user.email_normalized != challenge.target or user.status != AccountStatus.ACTIVE):
                 return
             recipient = user.email_normalized
+            purpose = challenge.purpose
             if challenge.purpose == 'staff_activation_email':
                 from app.modules.identity.staff_activation import StaffActivationChallenge, staff_identity
                 activation = session.get(StaffActivationChallenge, challenge.registration_session)
@@ -131,7 +132,7 @@ class IdentityEmailVerificationTask:
                         or activation.identity_digest != digest):
                     return
         code = self._token_codec.verification_code(otp_id)
-        self._email_sender.send_wallet_alert(recipient=recipient, event_id=otp_id, code=code, severity="info")
+        self._email_sender.send_email_otp(recipient=recipient, code=code, purpose=purpose)
 
     def _send_password_reset(self, message) -> None:
         challenge_id = message.payload.get("challenge_id")

@@ -165,7 +165,10 @@ final class DualDomainLoginService {
           deviceKey: deviceKey(),
           deviceName: '畅聊移动端')));
 
-  Future<void> loginPhone(String phone, String code) =>
+  Future<void> loginPhone(String phone, String code,
+          {String invitationCode = '',
+          bool termsAccepted = false,
+          bool Function()? shouldContinue}) =>
       _run(() => _login(() async {
             final gateway = business;
             if (gateway is! PhoneAuthGateway) {
@@ -174,6 +177,9 @@ final class DualDomainLoginService {
             await (gateway as PhoneAuthGateway).phoneLogin(
                 phone: phone,
                 code: code,
+                invitationCode: invitationCode,
+                termsAccepted: termsAccepted,
+                shouldContinue: shouldContinue,
                 deviceKey: deviceKey(),
                 deviceName: '畅聊移动端');
           }));
