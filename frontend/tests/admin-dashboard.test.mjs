@@ -2,6 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {formatPoints, trendGeometry, refreshCoordinator} from '../src/admin-dashboard.js';
 
+test('staff navigation excludes administrator USDT wallet without broadening permissions',async()=>{
+  const {visibleAdminModules}=await import('../src/admin-dashboard.js');
+  const modules=[['客服订单','','recharge','admin.finance.read'],['USDT提现与支付','','wallet','admin.withdrawals.read'],['用户管理','','analytics','admin.analytics.read']];
+  const context={permissions:['admin.finance.read','admin.withdrawals.read','admin.overview.read'],actor:{roles:['FINANCE_SUPPORT']}};
+  assert.equal(typeof visibleAdminModules,'function');
+  assert.deepEqual(visibleAdminModules(context,modules).map(x=>x[2]),['recharge']);
+  assert.equal(visibleAdminModules({permissions:['*']},modules).length,3);
+});
+
 test('point totals preserve cents beyond JavaScript safe integer',()=>{
   assert.equal(formatPoints('100000000000000001.09'),'100,000,000,000,000,001.09');
   assert.equal(formatPoints('-0.01'),'-0.01');

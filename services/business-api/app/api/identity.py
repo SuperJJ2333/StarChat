@@ -120,6 +120,13 @@ class AdminLoginRequest(LoginRequest):
     challenge_id: str = Field(min_length=32, max_length=128)
     captcha_answer: str = Field(min_length=1, max_length=16)
 
+
+class StaffLoginRequest(StrictModel):
+    username: str = Field(min_length=1, max_length=320)
+    password: str = Field(min_length=1, max_length=256, repr=False)
+    device_key: str | None = Field(default=None, min_length=1, max_length=128)
+    device_name: str = Field(default='Staff browser', min_length=1, max_length=128)
+
 class PresenceHeartbeatRequest(StrictModel):
     client_version: str | None = Field(default=None, max_length=64)
 
@@ -661,6 +668,28 @@ def create_identity_router(
         actor_id, pair = await anyio.to_thread.run_sync(verify)
         record_audit(request, actor_id=actor_id, subject_id=actor_id,
             action='identity.admin_session.created', reason_code='ADMIN_PASSWORD_LOGIN')
+        return admin_response(pair, response)
+
+    @router.post('/auth/staff-login', response_model=AdminTokenResponse)
+    async def staff_login(body: StaffLoginRequest, request: Request, response: Response) -> AdminTokenResponse:
+        response.headers['Cache-Control'] = 'no-store'
+        admin_origin(request)
+        def verify():
+            source = request.client.host if request.client else 'unknown'
+            rate_limiter.hit(public_rate_limit_key('auth:staff-login', source), limit=20, window_seconds=900)
+            normalized = body.username.strip().casefold()
+            # Share the password budget with administrator login to avoid doubling it.
+            rate_limiter.hit(public_rate_limit_key('auth:admin-password', source, normalized), limit=10, window_seconds=900)
+            with session_factory() as session:
+                user = session.scalar(select(User).where(
+                    User.email_normalized == normalized if '@' in normalized else User.username_normalized == normalized))
+                if user is None or user.status != AccountStatus.ACTIVE or not password_hasher.verify(user.password_hash, body.password):
+                    raise AppError(code='CREDENTIALS_INVALID', message='账号或密码错误', status_code=401)
+                return user.id, tokens.issue_admin_pair(user_id=user.id, display_name=body.device_name,
+                    password=body.password, staff_only=True)
+        actor_id, pair = await anyio.to_thread.run_sync(verify)
+        record_audit(request, actor_id=actor_id, subject_id=actor_id,
+            action='identity.admin_session.created', reason_code='STAFF_PASSWORD_LOGIN')
         return admin_response(pair, response)
 
     @router.post('/auth/admin-session/refresh', response_model=AdminTokenResponse)

@@ -65,6 +65,21 @@
             "title": "Challenge Id",
             "type": "string"
           },
+          "channel": {
+            "anyOf": [
+              {
+                "enum": [
+                  "phone",
+                  "email"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
           "password": {
             "maxLength": 256,
             "minLength": 1,
@@ -8063,6 +8078,49 @@
           "variant_kind"
         ],
         "title": "SignedUrlRequest",
+        "type": "object"
+      },
+      "StaffLoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "device_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Key"
+          },
+          "device_name": {
+            "default": "Staff browser",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Device Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "StaffLoginRequest",
         "type": "object"
       },
       "StatementItem": {
@@ -18466,6 +18524,67 @@
         "summary": "Confirm",
         "tags": [
           "identity",
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/staff-login": {
+      "post": {
+        "operationId": "staff_login_api_v1_auth_staff_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Staff Login",
+        "tags": [
           "identity"
         ]
       }

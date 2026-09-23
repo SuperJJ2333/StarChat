@@ -116,20 +116,17 @@ class IdentityEmailVerificationTask:
             if expires <= self._now_factory():
                 return
             user = session.get(WorkerUser, challenge.user_id)
-            if (user is None or not user.email_normalized or user.phone_normalized
+            if (user is None or not user.email_normalized
+                    or (challenge.purpose == 'email_rebind_old' and user.phone_normalized)
                     or user.email_normalized != challenge.target or user.status != AccountStatus.ACTIVE):
                 return
             recipient = user.email_normalized
             purpose = challenge.purpose
             if challenge.purpose == 'staff_activation_email':
-                from app.modules.identity.staff_activation import StaffActivationChallenge, staff_identity
-                activation = session.get(StaffActivationChallenge, challenge.registration_session)
+                from app.modules.identity.staff_activation import require_pending_delivery
                 try:
-                    _, _, digest = staff_identity(session, user)
+                    require_pending_delivery(session, otp_id, self._now_factory())
                 except AppError:
-                    return
-                if (activation is None or activation.consumed_at is not None
-                        or activation.identity_digest != digest):
                     return
         code = self._token_codec.verification_code(otp_id)
         self._email_sender.send_email_otp(recipient=recipient, code=code, purpose=purpose)

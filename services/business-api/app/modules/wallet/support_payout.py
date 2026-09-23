@@ -9,8 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 from app.core.errors import AppError
-from app.modules.identity.support_order_auth import require_support_order_actor
-from app.modules.identity.wallet_grant import WalletAccessGrantService
+from app.modules.identity.support_order_auth import SupportOrderSessionAuthorizer
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder, ManualPayoutQuote
 from app.modules.wallet.safety import audit_write
 
@@ -84,7 +83,7 @@ class _PayoutAuthorization:
         self.begin,self.evidence=begin,evidence
 
     def __call__(self, session):
-        fresh = self.service.grants.authorization(claims=self.claims)(session)
+        fresh = self.service.order_access.authorization(claims=self.claims)(session)
         state=session.get(SupportPayoutState,self.order_id,with_for_update=True)
         self.service._held(state,self.claims,self.token,evidence=self.evidence)
         row=session.get(ManualPayoutOrder,self.order_id)
@@ -103,7 +102,7 @@ class _PayoutAuthorization:
 class SupportPayoutService:
     def __init__(self, payout, settings):
         self.payout,self.factory,self.settings=payout,payout.factory,settings
-        self.grants=WalletAccessGrantService(settings,self.factory,payout.clock,scope='support-orders')
+        self.order_access=SupportOrderSessionAuthorizer(settings,self.factory,payout.clock)
 
     def _state(self, session, order):
         state=session.get(SupportPayoutState,order.id,with_for_update=True)
@@ -131,19 +130,21 @@ class SupportPayoutService:
 
     def detail(self, *, claims, order_id):
         with self.factory.begin() as session:
-            require_support_order_actor(session,claims=claims,clock=self.payout.clock,owner_id=self.settings.wallet_manual_owner_admin_id)
+            fresh=self.order_access.authorization(claims=claims)(session)
             row=session.get(ManualPayoutOrder,order_id)
             if row is None: fail('SUPPORT_PAYOUT_NOT_FOUND',404)
             self._state(session,row)
-            return self._view(session,row,claims['sub'])
+            result=self._view(session,row,claims['sub'])
+            fresh()
+            return result
 
     def list(self, *, claims, limit=50, cursor=None):
         if type(limit) is not int or not 1<=limit<=100: fail('SUPPORT_PAYOUT_QUERY_INVALID',422)
         with self.factory.begin() as session:
-            require_support_order_actor(session,claims=claims,clock=self.payout.clock,owner_id=self.settings.wallet_manual_owner_admin_id)
+            self.order_access.authorization(claims=claims)(session)()
         self.expire_orders()
         with self.factory.begin() as session:
-            require_support_order_actor(session,claims=claims,clock=self.payout.clock,owner_id=self.settings.wallet_manual_owner_admin_id)
+            fresh=self.order_access.authorization(claims=claims)(session)
             query=select(ManualPayoutOrder).join(SupportPayoutState,SupportPayoutState.order_id==ManualPayoutOrder.id)
             if cursor:
                 previous=session.get(ManualPayoutOrder,cursor)
@@ -151,13 +152,15 @@ class SupportPayoutService:
                 query=query.where((ManualPayoutOrder.created_at<previous.created_at)|
                     ((ManualPayoutOrder.created_at==previous.created_at)&(ManualPayoutOrder.id<previous.id)))
             rows=session.scalars(query.order_by(ManualPayoutOrder.created_at.desc(),ManualPayoutOrder.id.desc()).limit(limit+1)).all()
-            return {'items':[self._view(session,row,claims['sub']) for row in rows[:limit]],'next_cursor':rows[limit-1].id if len(rows)>limit else None}
+            result={'items':[self._view(session,row,claims['sub']) for row in rows[:limit]],'next_cursor':rows[limit-1].id if len(rows)>limit else None}
+            fresh()
+            return result
 
     def claim(self, *, claims, order_id, idempotency_key):
         with self.factory.begin() as session:
             row,_=self.payout._order_lock(session,order_id)
             state=self._state(session,row)
-            fresh=self.grants.authorization(claims=claims)(session)
+            fresh=self.order_access.authorization(claims=claims)(session)
             now=self.payout._now()
             if row.status!='REQUESTED' or state.execution_started_at: fail('SUPPORT_PAYOUT_ALREADY_STARTED')
             if now>=utc(state.expires_at) or state.review_required: fail('SUPPORT_PAYOUT_EXPIRED')
@@ -180,7 +183,7 @@ class SupportPayoutService:
         with self.factory.begin() as session:
             row,_=self.payout._order_lock(session,order_id)
             state=self._state(session,row)
-            fresh=self.grants.authorization(claims=claims)(session)
+            fresh=self.order_access.authorization(claims=claims)(session)
             self._held(state,claims,claim_token)
             if row.status in ('SETTLED','CANCELLED','UNKNOWN'): fail('SUPPORT_PAYOUT_UNAVAILABLE')
             deadline=self.payout._now()+timedelta(minutes=5)
@@ -195,7 +198,7 @@ class SupportPayoutService:
         with self.factory.begin() as session:
             row,_=self.payout._order_lock(session,order_id)
             state=self._state(session,row)
-            fresh=self.grants.authorization(claims=claims)(session)
+            fresh=self.order_access.authorization(claims=claims)(session)
             now=self.payout._now()
             if row.status!='REQUESTED' or state.execution_started_at or row.candidate_txid:
                 fail('SUPPORT_PAYOUT_ALREADY_STARTED')

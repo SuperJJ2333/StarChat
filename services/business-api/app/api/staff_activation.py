@@ -1,5 +1,6 @@
 """First-use staff activation; same-origin requests, no client destination."""
 from fastapi import APIRouter, Request, Response
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 import anyio.to_thread
 
@@ -10,6 +11,7 @@ class ActivationRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256, repr=False)
     challenge_id: str = Field(min_length=32, max_length=128)
     captcha_answer: str = Field(min_length=1, max_length=16, repr=False)
+    channel: Literal['phone', 'email'] | None = None
 
 
 class ActivationConfirm(BaseModel):
@@ -30,7 +32,7 @@ def create_staff_activation_router(*, service, captcha, rate_limiter, origin_che
             rate_limiter.hit(rate_key('auth:staff-activation:send', source), limit=10, window_seconds=900)
             captcha.verify(body.challenge_id, body.captcha_answer)
             rate_limiter.hit(rate_key('auth:staff-activation:password', source, body.username), limit=5, window_seconds=900)
-            return service.request(username=body.username, password=body.password)
+            return service.request(username=body.username, password=body.password, channel=body.channel)
         return await anyio.to_thread.run_sync(run)
 
     @router.post('/auth/staff-activation/confirm')

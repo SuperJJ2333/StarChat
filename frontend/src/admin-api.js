@@ -119,6 +119,7 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     getPointIssuance: async ({limit=25,cursor,kind}={})=>{const query=new URLSearchParams({limit:String(limit)});if(cursor)query.set('cursor',cursor);if(kind)query.set('kind',kind);return request(`/api/v1/admin/point-issuance?${query}`,{cache:'no-store'});},
     getPointIssuanceDetail: async id=>request(`/api/v1/admin/point-issuance/${encodeURIComponent(id)}`,{cache:'no-store'}),
     getLoginCaptcha: async () => request('/api/v1/auth/admin-captcha', {cache:'no-store'}),
+    staffLogin: async body => request('/api/v1/auth/staff-login', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Admin-CSRF':'1'},cache:'no-store',body:JSON.stringify({...body,device_key:'admin-browser',device_name:'ChatFlow Staff'})}),
     adminLogin: async body => request('/api/v1/auth/admin-login', {method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store', body:JSON.stringify({...body, device_key:'admin-browser', device_name:'ChatFlow Admin'})}),
     getWalletIncidents: async ({limit = 25, cursor, status, severity, code, sort} = {}) => {
       const query = new URLSearchParams({limit: String(limit)});
@@ -189,5 +190,5 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
 
 export function browserAdminApi() {
   // A URL query must never redirect administrator credentials to another origin.
-  return {...createAdminApi({tokenProvider:()=>adminSession.getToken()}),adminLogin:body=>adminSession.login({...body,device_key:'admin-browser',device_name:'ChatFlow Admin'})};
+  return {...createAdminApi({tokenProvider:()=>adminSession.getToken()}),staffLogin:body=>adminSession.staffLogin({...body,device_key:'admin-browser',device_name:'ChatFlow Staff'}),adminLogin:body=>adminSession.login({...body,device_key:'admin-browser',device_name:'ChatFlow Admin'})};
 }

@@ -139,7 +139,8 @@ def test_verified_email_uses_outbox_and_purpose_bound_code(env):
 
 
 @pytest.mark.parametrize('revoked', [False, True])
-def test_email_worker_rechecks_bound_staff_before_delivery(env, revoked):
+@pytest.mark.parametrize('has_phone', [False, True])
+def test_email_worker_rechecks_bound_staff_before_delivery(env, revoked, has_phone):
     from importlib import import_module
     from types import SimpleNamespace
     from app.core.outbox import OutboxEvent, OutboxMessage
@@ -147,10 +148,10 @@ def test_email_worker_rechecks_bound_staff_before_delivery(env, revoked):
     factory, clock, _, service = env
     with factory.begin() as session:
         user=session.get(User,'staff')
-        user.phone_normalized=None
+        if not has_phone: user.phone_normalized=None
         user.email_normalized='staff@example.invalid'
         user.email_verified_at=clock[0]
-    issue(env)
+    service.request(username='staff', password='correct password 123', channel='email')
     with factory.begin() as session:
         event=session.scalar(select(OutboxEvent).where(OutboxEvent.event_type=='identity.email.otp.requested'))
         if revoked: session.delete(session.get(UserRole,'role'))
@@ -269,7 +270,9 @@ async def test_support_security_http_rejects_app_scope_and_accepts_activated_fin
         headers={'Authorization':'Bearer '+admin.access_token}
         response=await client.get(path,headers=headers)
         assert response.status_code==200,response.text
-        assert response.json()['configured'] is False
+        assert response.json()['configured'] is True
+        assert response.json()['verified'] is True
+        assert response.json()['auth_mode'] == 'session'
         response=await client.put(path+'/operation-password',headers={**headers,'Idempotency-Key':'http-setup'},
             json={'login_password':'correct password 123','new_operation_password':'separate operation password'})
         assert response.status_code==200,response.text

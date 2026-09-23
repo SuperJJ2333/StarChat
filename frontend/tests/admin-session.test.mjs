@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAdminSession} from '../src/admin-session.js';
 const reply=token=>new Response(JSON.stringify({access_token:token,expires_in:900,user_id:'fixture',session_id:'family'}),{status:200});
+
+test('staff password login uses dedicated endpoint and the same in-memory session lifecycle',async()=>{
+ const calls=[];const session=createAdminSession({fetchImpl:async(path,options)=>{calls.push({path,options});return reply('staff-access');}});
+ await session.staffLogin({username:'staff',password:'fixture'});
+ assert.equal(calls[0].path,'/api/v1/auth/staff-login');assert.equal(calls[0].options.credentials,'same-origin');
+ assert.equal(calls[0].options.headers['X-Admin-CSRF'],'1');assert.equal(await session.getToken(),'staff-access');
+ session.clear();await assert.rejects(session.getToken(),e=>e.status===401);
+});
 test('session bootstraps with protected cookie and coalesces refresh',async()=>{
   const calls=[];let done;const session=createAdminSession({fetchImpl:(path,options)=>{calls.push({path,options});return new Promise(r=>done=r);}});
   const a=session.getToken(),b=session.getToken();await Promise.resolve();done(reply('access'));assert.equal(await a,'access');assert.equal(await b,'access');

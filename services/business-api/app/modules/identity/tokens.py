@@ -100,7 +100,8 @@ class TokenService:
             session.add(self._refresh_record(family.id, refresh_value, now))
             return self._pair(user_id, device.id, family.id, refresh_value, now)
 
-    def issue_admin_pair(self, *, user_id: str, display_name: str, password: str | None = None) -> TokenPair:
+    def issue_admin_pair(self, *, user_id: str, display_name: str, password: str | None = None,
+                         staff_only: bool = False) -> TokenPair:
         now = self._now_factory()
         with self._session_factory.begin() as session:
             # Stable existing user row serializes competing successful logins across workers.
@@ -111,7 +112,7 @@ class TokenService:
                 self._invalid('CREDENTIALS_INVALID', '账号或密码错误', 401)
             if not RbacService(self._session_factory).permissions_for(user_id):
                 self._invalid('PERMISSION_DENIED', '无权访问管理后台', 403)
-            require_staff_admin_access(session, user)
+            require_staff_admin_access(session, user, staff_only=staff_only)
             current = session.get(AdminSession, user_id)
             if current is not None:
                 old_family = session.get(RefreshTokenFamily, current.family_id)

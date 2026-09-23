@@ -14,6 +14,7 @@ export function createAdminSession({fetchImpl=globalThis.fetch,locks=globalThis.
   return {
     getToken,peek:()=>access,clear,
     async login(body){const version=++generation;return exclusive(async()=>{const data=await call('admin-login',body);identity=null;accept(data,version);blocked=false;return data;});},
+    async staffLogin(body){const version=++generation;return exclusive(async()=>{const data=await call('staff-login',body);identity=null;accept(data,version);blocked=false;return data;});},
     async logout(){try{await exclusive(()=>call('admin-session/logout',{}));}finally{clear();}},
     async stepUp(password){const token=await getToken(),version=generation;const data=await call('admin-session/step-up',{password},token);accept(data,version);return data;},
     async check(){try{const token=await getToken();return await call('admin-session',undefined,token);}catch(error){if(error.status===401)clear();throw error;}}

@@ -1,4 +1,4 @@
-"""Dedicated support-order proof scope, with each staff member's own credential."""
+"""Session access status; legacy credential endpoints remain compatibility-only."""
 from datetime import datetime, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request
@@ -8,6 +8,7 @@ from app.api.admin_wallet_security import OperationPasswordBody, WalletSecurityV
 from app.api.wallet_access import WalletAccessView
 from app.core.errors import AppError
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.support_order_auth import SupportOrderSessionAuthorizer
 from app.modules.identity.operation_password import AdminWalletOperationPasswordService
 from app.modules.identity.wallet_grant import WalletAccessGrantService
 
@@ -15,6 +16,7 @@ from app.modules.identity.wallet_grant import WalletAccessGrantService
 def create_support_order_security_router(settings, factory, *, clock=None, mfa_verifier=None):
     router = APIRouter(prefix='/admin/support-orders/security', tags=['support-order-security'])
     clock = clock or (lambda: datetime.now(timezone.utc))
+    order_access = SupportOrderSessionAuthorizer(settings, factory, clock)
     grants = WalletAccessGrantService(settings, factory, clock, scope='support-orders')
     operations = AdminWalletOperationPasswordService(factory, owner_id=lambda:settings.wallet_manual_owner_admin_id,
         auth_mode=lambda:settings.wallet_admin_auth_mode, clock=clock, scope='support-orders')
@@ -31,7 +33,7 @@ def create_support_order_security_router(settings, factory, *, clock=None, mfa_v
 
     @router.get('', response_model=WalletAccessView)
     def status(claims=Depends(actor)):
-        return response(grants.status(claims=claims))
+        return response(order_access.status(claims=claims))
 
     @router.post('/verify', response_model=WalletAccessView)
     def verify(body: AdminWalletProofBody, request: Request, claims=Depends(actor)):

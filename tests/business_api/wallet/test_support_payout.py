@@ -11,8 +11,6 @@ from app.modules.identity.enums import RoleCode
 from app.modules.identity.models import User, UserRole, Device, RefreshTokenFamily, AdminSession
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.staff_activation import StaffActivation, staff_identity
-from app.modules.identity.operation_password import AdminWalletOperationPasswordService
-from app.modules.identity.wallet_grant import WalletAccessGrantService
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder
 from app.modules.ledger.reserve import RedeemabilityReserve
 
@@ -48,9 +46,6 @@ def scoped(core):
             session.add(AdminSession(user_id=uid,family_id=uid+'-family',created_at=clock[0],authenticated_at=clock[0],expires_at=clock[0]+timedelta(hours=48)))
         claims[uid]=dict(sub=uid,device_id=uid+'-device',family_id=uid+'-family',session_scope='admin',
             iat=int(clock[0].timestamp()),exp=int((clock[0]+timedelta(hours=48)).timestamp()))
-        operations=AdminWalletOperationPasswordService(factory,owner_id=lambda:'owner',auth_mode=lambda:'operation_password',clock=lambda:clock[0],scope='support-orders')
-        operations.set_password(claims=claims[uid],login_password='correct login password',new_operation_password='separate operation password',idempotency_key='setup')
-        WalletAccessGrantService(settings,factory,lambda:clock[0],scope='support-orders').verify(claims=claims[uid],operation_password='separate operation password')
     return core,SupportPayoutService(svc,settings),claims
 
 
@@ -153,7 +148,6 @@ def test_expired_unstarted_review_claim_requires_reason_and_revalidates_digest(s
     order=request(core)
     core[2][0]+=timedelta(hours=2)
     svc.expire_orders()
-    svc.grants.verify(claims=claims['bob'],operation_password='separate operation password')
     with pytest.raises(AppError):
         svc.review_claim(claims=claims['bob'],order_id=order['id'],reason_code='',idempotency_key='bad')
     lease=svc.review_claim(claims=claims['bob'],order_id=order['id'],reason_code='PAYOUT_REVIEW_CONFIRMED',idempotency_key='review')
@@ -170,21 +164,17 @@ def test_expired_unstarted_review_claim_requires_reason_and_revalidates_digest(s
     started=svc.begin_payment(claims=claims['bob'],order_id=order['id'],claim_token=lease['claim_token'],expected_digest=order['digest'],idempotency_key='begin-review')
     assert started['status']=='CLAIMED'
     core[2][0]+=timedelta(minutes=6)
-    svc.grants.verify(claims=claims['owner'],operation_password='separate operation password')
     with pytest.raises(AppError):
         svc.review_claim(claims=claims['owner'],order_id=order['id'],reason_code='PAYOUT_REVIEW_CONFIRMED',idempotency_key='steal')
     assert core[5].balance('HOLD:alice')==Decimal('10')
 
 
-def test_late_evidence_requires_fresh_grant_but_never_releases_unknown_hold(scoped):
+def test_late_evidence_uses_live_session_without_reverification_and_preserves_unknown_hold(scoped):
     core,svc,claims=scoped
     order=request(core)
     lease=svc.claim(claims=claims['bob'],order_id=order['id'],idempotency_key='claim')
     svc.begin_payment(claims=claims['bob'],order_id=order['id'],claim_token=lease['claim_token'],expected_digest=order['digest'],idempotency_key='begin')
     core[2][0]+=timedelta(hours=2)
-    with pytest.raises(AppError):
-        svc.submit_txid(claims=claims['bob'],order_id=order['id'],claim_token=lease['claim_token'],txid='a'*64,idempotency_key='late')
-    svc.grants.verify(claims=claims['bob'],operation_password='separate operation password')
     result=svc.submit_txid(claims=claims['bob'],order_id=order['id'],claim_token=lease['claim_token'],txid='a'*64,idempotency_key='late')
     assert result['status']=='UNKNOWN' and result['processing_stage']=='NEEDS_REVIEW'
     corrected=svc.correct_candidate(claims=claims['bob'],order_id=order['id'],claim_token=lease['claim_token'],
@@ -205,7 +195,6 @@ async def test_scoped_payout_http_contract_and_app_token_rejection(scoped):
     settings=Settings(_env_file=None,environment='test',jwt_secret='test-jwt-secret-at-least-thirty-two-bytes').model_copy(update=vars(service.settings))
     tokens=TokenService(core[1],jwt_secret=settings.jwt_secret,jwt_issuer=settings.jwt_issuer,now_factory=lambda:core[2][0])
     pair=tokens.issue_admin_pair(user_id='bob',display_name='Browser')
-    service.grants.verify(claims=tokens.decode_access_token(pair.access_token),operation_password='separate operation password')
     mobile=tokens.issue_pair(user_id='bob',device_key='mobile',display_name='APP')
     order=request(core)
     app=FastAPI();install_error_handlers(app)
@@ -224,3 +213,75 @@ async def test_scoped_payout_http_contract_and_app_token_rejection(scoped):
             json={'claim_token':token,'expected_digest':order['digest']})
         assert begun.status_code==200,begun.text
         assert begun.json()['instructions']['amount']=='10.000000'
+
+
+@pytest.mark.parametrize('change', ['disabled', 'unactivated', 'role', 'contact',
+    'device', 'family', 'replacement', 'expired', 'app'])
+def test_order_access_denies_live_identity_or_session_changes(scoped, change):
+    core, service, claims = scoped
+    order = request(core)
+    actor = dict(claims['bob'])
+    with core[1].begin() as session:
+        if change == 'disabled':
+            session.get(User, 'bob').status = 'DISABLED'
+        elif change == 'unactivated':
+            session.delete(session.get(StaffActivation, 'bob'))
+        elif change == 'role':
+            session.delete(session.get(UserRole, 'bob-finance'))
+        elif change == 'contact':
+            session.get(User, 'bob').email_normalized = 'changed@example.test'
+        elif change == 'device':
+            session.get(Device, 'bob-device').revoked_at = core[2][0]
+        elif change == 'family':
+            session.get(RefreshTokenFamily, 'bob-family').revoked_at = core[2][0]
+        elif change == 'replacement':
+            session.add(RefreshTokenFamily(id='bob-new-family', user_id='bob',
+                device_id='bob-device', created_at=core[2][0]))
+            session.flush()
+            session.get(AdminSession, 'bob').family_id = 'bob-new-family'
+        elif change == 'expired':
+            session.get(AdminSession, 'bob').expires_at = core[2][0]
+        else:
+            actor['session_scope'] = 'app'
+    with pytest.raises(AppError):
+        service.detail(claims=actor, order_id=order['id'])
+    with pytest.raises(AppError):
+        service.claim(claims=actor, order_id=order['id'], idempotency_key='denied')
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'REQUESTED'
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+
+
+@pytest.mark.parametrize('change', ['role', 'family', 'disabled', 'unactivated', 'expiry'])
+def test_order_authorizer_final_check_rereads_state_in_callers_transaction(scoped, change):
+    core, service, claims = scoped
+    with core[1].begin() as session:
+        final = service.order_access.authorization(claims=claims['bob'])(session)
+        if change == 'role':
+            session.delete(session.get(UserRole, 'bob-finance'))
+        elif change == 'family':
+            session.get(RefreshTokenFamily, 'bob-family').revoked_at = core[2][0]
+        elif change == 'disabled':
+            session.get(User, 'bob').status = 'DISABLED'
+        elif change == 'unactivated':
+            session.delete(session.get(StaffActivation, 'bob'))
+        else:
+            core[2][0] += timedelta(hours=49)
+        session.flush()
+        with pytest.raises(AppError):
+            final()
+        session.rollback()
+
+
+def test_passwordless_order_session_never_grants_owner_wallet_access(scoped):
+    from app.modules.identity.wallet_grant import WalletAccessGrantService
+    from app.modules.identity.operation_password_models import AdminOperationCredential
+    from app.modules.identity.wallet_grant_models import WalletAccessGrant
+    core, service, claims = scoped
+    with core[1]() as session:
+        assert session.scalar(select(AdminOperationCredential)) is None
+        assert session.scalar(select(WalletAccessGrant)) is None
+    service.order_access.require(claims=claims['bob'])
+    wallet = WalletAccessGrantService(service.settings, core[1], lambda: core[2][0])
+    for actor in ('bob', 'owner'):
+        with pytest.raises(AppError):
+            wallet.require(claims=claims[actor])

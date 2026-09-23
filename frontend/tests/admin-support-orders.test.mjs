@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAdminApi} from '../src/admin-api.js';
 import {createOrderFeed} from '../src/admin-order-notifications.js';
+import {supportOrderAccessPanel} from '../src/admin-support-order-access.js';
+
+test('support orders open real content without password setup or extra security requests',()=>{
+ const api={getSupportOrderAccess(){throw Error('Unexpected extra verification');}};
+ let rendered=0;const child={refresh(){},dispose(){}};
+ const page=supportOrderAccessPanel(api,{renderContent:gateway=>{assert.equal(gateway,api);rendered++;return child;}});
+ assert.equal(page,child);assert.equal(rendered,1);
+});
 
 test('support commands use actual encoded routes, token and idempotency',async()=>{
   const calls=[];const api=createAdminApi({fetchImpl:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({})};}});

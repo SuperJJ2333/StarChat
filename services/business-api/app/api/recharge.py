@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.tokens import TokenService
-from app.modules.identity.wallet_grant import WalletAccessGrantService
+from app.modules.identity.support_order_auth import SupportOrderSessionAuthorizer
 from app.modules.recharge.service import RechargeService
 from app.modules.recharge.notifications import SupportOrderNotifications  # model registration
 
@@ -91,18 +91,19 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
         jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes",
         jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     rbac = RbacService(session_factory)
-    grants = WalletAccessGrantService(settings, session_factory,
-        lambda: datetime.now(timezone.utc), scope='support-orders')
+    order_access = SupportOrderSessionAuthorizer(settings, session_factory,
+        lambda: datetime.now(timezone.utc))
 
     def command_authorization(authorization: Annotated[str | None, Header()] = None):
         if not authorization or not authorization.startswith('Bearer '):
             raise AppError(code='AUTH_REQUIRED', message='需要管理会话', status_code=401)
         claims = tokens.decode_access_token(authorization[7:])
         # Match the established fixture-only boundary. Real test sessions are
-        # still subject to the management-session and scoped proof requirements.
+        # still subject to the live management-session and activation requirements.
         if settings.environment == 'test' and not claims.get('family_id'):
             return None
-        return grants.authorization(claims=claims)
+        order_access.require(claims=claims)
+        return order_access.authorization(claims=claims)
 
     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -164,12 +165,12 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
         return recharge_service.verify_order_payment(request_id=request_id, actor_id=actor_id,
             idempotency_key=idempotency_key, authorization=authorization, **body.model_dump())
 
-    @router.get("/admin/requests/pending")
+    @router.get("/admin/requests/pending", dependencies=[Depends(command_authorization)])
     def pending(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):
         require_finance(actor_id)
         return recharge_service.pending_page(cursor=cursor, limit=limit)
 
-    @router.get('/admin/events')
+    @router.get('/admin/events', dependencies=[Depends(command_authorization)])
     def events(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):
         require_finance(actor_id)
         return recharge_service.order_events(actor_id=actor_id, cursor=cursor, limit=limit)
@@ -204,18 +205,18 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
             final_rate=Decimal(body.final_rate) if body.final_rate else None,
             adjustment_id=body.adjustment_id, idempotency_key=idempotency_key, authorization=authorization)
 
-    @router.get("/admin/requests")
+    @router.get("/admin/requests", dependencies=[Depends(command_authorization)])
     def admin_requests(status: str | None = None, cursor: str | None = None,
                        limit: int = 50, actor_id: str = Depends(actor)):
         require_finance(actor_id)
         return recharge_service.admin_requests(status=status, cursor=cursor, limit=limit)
 
-    @router.get("/admin/review-queue")
+    @router.get("/admin/review-queue", dependencies=[Depends(command_authorization)])
     def review_queue(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):
         require_finance(actor_id)
         return recharge_service.review_queue_page(cursor=cursor, limit=limit)
 
-    @router.get("/admin/requests/{request_id}/timeline")
+    @router.get("/admin/requests/{request_id}/timeline", dependencies=[Depends(command_authorization)])
     def timeline(request_id: str, actor_id: str = Depends(actor)):
         require_finance(actor_id)
         return recharge_service.case_timeline(request_id=request_id)

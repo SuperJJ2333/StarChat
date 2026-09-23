@@ -30,3 +30,7 @@
 .admin-session-dialog button{width:100%;min-height:46px;border-radius:12px}
 @media(max-width:480px){.admin-login-page{padding:28px 16px;gap:22px}.admin-login-card{padding:24px}.admin-login-brand h1{font-size:26px}}
 @media(prefers-reduced-motion:reduce){.admin-login-page button{transition:none}.admin-login-page button:active:not(:disabled){transform:none}}
+
+.admin-login-modes .admin-secondary[aria-pressed="true"]{background:var(--admin-brand);border-color:var(--admin-brand);color:var(--color-on-accent);}
+.admin-login-modes .admin-secondary:focus-visible{outline:2px solid var(--admin-focus);outline-offset:2px;}
+.admin-login-page [hidden]{display:none}

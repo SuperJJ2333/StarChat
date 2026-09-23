@@ -75,9 +75,10 @@ async def test_finance_context_is_scoped_and_does_not_leak_admin_modules(admin_a
         forbidden = await client.get("/api/v1/admin/modules/analytics", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     body = response.json()
-    assert body["overview"] == {}
+    assert body["overview"]
+    assert "admin.overview.read" in body["permissions"]
     assert "admin.withdrawals.read" in body["permissions"]
-    assert "wallet" in body["modules"]
+    assert "wallet" not in body["modules"]
     assert "analytics" not in body["modules"]
     assert forbidden.status_code == 403
 

@@ -44,15 +44,18 @@ def denied(code='STAFF_ACTIVATION_INVALID', status=403):
     raise AppError(code=code, message='客服身份或验证状态无效，请核对账号后重试', status_code=status)
 
 
-def staff_identity(session, user):
+def staff_identity(session, user, channel=None):
     if user is None or user.status != AccountStatus.ACTIVE:
         denied()
     roles = session.scalars(select(UserRole).where(UserRole.user_id == user.id,
-        UserRole.role_code.in_(STAFF_ROLES)).order_by(UserRole.id).with_for_update()).all()
+        UserRole.role_code.in_(STAFF_ROLES)).order_by(UserRole.id).with_for_update()
+        .execution_options(populate_existing=True)).all()
     if not roles:
         denied()
-    if user.phone_normalized:
-        if not user.phone_verified_at:
+    if channel not in (None, 'phone', 'email'):
+        denied('STAFF_CONTACT_UNVERIFIED')
+    if channel == 'phone' or (channel is None and user.phone_normalized):
+        if not user.phone_normalized or not user.phone_verified_at:
             denied('STAFF_CONTACT_UNVERIFIED')
         channel, target, verified = 'phone', user.phone_normalized, user.phone_verified_at
     elif user.email_normalized and user.email_verified_at:
@@ -64,15 +67,30 @@ def staff_identity(session, user):
     return channel, target, sha256(json.dumps(snapshot, separators=(',', ':')).encode()).hexdigest()
 
 
-def require_staff_admin_access(session, user):
+def require_staff_admin_access(session, user, *, staff_only=False):
     """Existing super administrators remain compatible; staff cannot skip activation."""
-    if session.scalar(select(UserRole.id).where(UserRole.user_id == user.id,
-            UserRole.role_code == RoleCode.SUPER_ADMIN)):
+    is_superadmin = session.scalar(select(UserRole.id).where(UserRole.user_id == user.id,
+        UserRole.role_code == RoleCode.SUPER_ADMIN)) is not None
+    if staff_only and is_superadmin:
+        # A mixed-role account still receives full admin permissions from RBAC;
+        # it must use the administrator entry point with CAPTCHA.
+        denied()
+    if staff_only and not session.scalar(select(UserRole.id).where(UserRole.user_id == user.id,
+            UserRole.role_code.in_((RoleCode.SUPPORT_AGENT, RoleCode.FINANCE_SUPPORT)))):
+        denied()
+    if not staff_only and is_superadmin:
         return
-    _, _, digest = staff_identity(session, user)
-    active = session.get(StaffActivation, user.id)
-    if active is None or active.identity_digest != digest:
-        raise AppError(code='STAFF_ACTIVATION_REQUIRED', message='请先完成客服后台首次开通', status_code=403)
+    active = session.get(StaffActivation, user.id, populate_existing=True)
+    # The digest already includes its channel. Match verified contacts explicitly
+    # to preserve old phone-first records without adding a nullable schema field.
+    for channel in ('phone', 'email'):
+        try:
+            _, _, digest = staff_identity(session, user, channel)
+        except AppError:
+            continue
+        if active is not None and active.identity_digest == digest:
+            return
+    raise AppError(code='STAFF_ACTIVATION_REQUIRED', message='请先完成客服后台首次开通', status_code=403)
 
 
 class _EmailSender(SmsSender):
@@ -94,7 +112,7 @@ def require_pending_delivery(session, challenge_id, now):
     if (challenge is None or challenge.consumed_at or utc(challenge.expires_at) <= utc(now)
             or otp.invalidated_at or otp.consumed_at):
         denied()
-    _, _, digest = staff_identity(session, session.get(User, challenge.user_id))
+    _, _, digest = staff_identity(session, session.get(User, challenge.user_id), challenge.channel)
     if challenge.identity_digest != digest:
         denied()
 
@@ -121,7 +139,7 @@ class StaffActivationService:
             secret=phone_otp._secret, now=self.now, code_deriver=email_code_deriver)
         self.audit = AuditWriter(session_factory, now_factory=self.now)
 
-    def request(self, *, username, password):
+    def request(self, *, username, password, channel=None):
         normalized = username.strip().casefold()
         now = utc(self.now())
         activation_id = secrets.token_urlsafe(32)
@@ -130,7 +148,7 @@ class StaffActivationService:
                 if '@' in normalized else User.username_normalized == normalized).with_for_update())
             if user is None or user.status != AccountStatus.ACTIVE or not PasswordHasher().verify(user.password_hash, password):
                 denied('CREDENTIALS_INVALID', 401)
-            channel, target, digest = staff_identity(session, user)
+            channel, target, digest = staff_identity(session, user, channel)
             existing = session.get(StaffActivation, user.id)
             if existing is not None and existing.identity_digest == digest:
                 denied('STAFF_ALREADY_ACTIVATED', 409)
@@ -150,13 +168,13 @@ class StaffActivationService:
             if challenge is None or challenge.consumed_at or utc(challenge.expires_at) <= now:
                 denied()
             user_id = challenge.user_id
-            channel, target, digest = staff_identity(session, session.get(User, user_id))
+            channel, target, digest = staff_identity(session, session.get(User, user_id), challenge.channel)
             if challenge.identity_digest != digest or challenge.channel != channel:
                 denied()
 
         def complete(session, otp_row):
             user = session.get(User, user_id, with_for_update=True)
-            _, _, current_digest = staff_identity(session, user)
+            _, _, current_digest = staff_identity(session, user, channel)
             challenge = session.get(StaffActivationChallenge, activation_id, with_for_update=True)
             if (challenge is None or challenge.consumed_at or utc(challenge.expires_at) <= utc(self.now())
                     or current_digest != digest or challenge.identity_digest != current_digest):

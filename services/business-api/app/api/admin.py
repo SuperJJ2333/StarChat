@@ -18,6 +18,7 @@ from app.modules.ledger.supply_reports import point_supply, issuance_page, issua
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.staff_activation import require_staff_admin_access, STAFF_ROLES
 from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.models import User, UserRole, Device
 from app.modules.identity.enums import AccountStatus
@@ -152,6 +153,22 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         if Permission.SYSTEM_ADMIN in rbac.permissions_for(actor_id):
             return
         rbac.require(actor_id, permission)
+
+    def require_overview(request: Request, actor_id: str):
+        if Permission.SYSTEM_ADMIN in rbac.permissions_for(actor_id):
+            return
+        authorization = request.headers.get('authorization', '')
+        claims = tokens.decode_access_token(authorization[7:])
+        if claims.get('session_scope') != 'admin':
+            raise AppError(code='PERMISSION_DENIED', message='需要已开通的客服管理会话', status_code=403)
+        with session_factory() as session:
+            user = session.get(User, actor_id)
+            if user is None:
+                raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+            roles = set(session.scalars(select(UserRole.role_code).where(UserRole.user_id == actor_id)))
+            if not roles.intersection(STAFF_ROLES):
+                raise AppError(code='PERMISSION_DENIED', message='需要客服权限', status_code=403)
+            require_staff_admin_access(session, user)
 
     def trace(request: Request) -> str:
         return getattr(request.state, "trace_id", "admin-command")
@@ -367,18 +384,20 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         }
         permissions = ["*"] if is_admin else [name for name, required in frontend_map.items() if required in actual]
         overview_data = {}
-        if is_admin:
+        if is_admin or set(info["roles"]).intersection(role.value for role in STAFF_ROLES):
             overview_data = overview(request, user_id, 30)
+            if not is_admin:
+                permissions.append("admin.overview.read")
         modules = {}
         for name, required in MODULE_PERMISSIONS.items():
-            if name == 'wallet' and getattr(settings, 'wallet_access_grant_enabled', False):
+            if name == 'wallet' and (not is_admin or getattr(settings, 'wallet_access_grant_enabled', False)):
                 continue
             if is_admin or required in actual:
                 modules[name] = module_data(name, user_id).get("items", [])
-        return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}
+        return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员" if is_admin else "畅聊客服", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}
     @router.get("/overview", response_model=AdminOverview)
     def overview(request: Request, user_id: str = Depends(actor), days: int = Query(default=30, enum=[7, 30, 90])):
-        require(user_id, Permission.SYSTEM_ADMIN)
+        require_overview(request, user_id)
         if days not in (7, 30, 90):
             raise AppError(code="ADMIN_REPORT_FILTER_INVALID", message="统计周期必须为 7、30 或 90 天", status_code=422)
         with session_factory() as session:

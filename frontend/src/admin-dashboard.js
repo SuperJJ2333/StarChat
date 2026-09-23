@@ -35,6 +35,10 @@ function chartView(data) {
   const body=table.createTBody();for(const p of points)body.insertRow().append(el('td',null,p.date),el('td',null,String(p.value)));
   details.append(table);root.append(svg,el('p','admin-audit-note','北京时间 · 今日数据尚未结束'),details);return root;
 }
+export function visibleAdminModules(context, modules) {
+  const permissions=context.permissions??[],administrator=permissions.includes('*');
+  return modules.filter(([, ,key,permission])=>(administrator||permissions.includes(permission))&&(key!=='wallet'||administrator));
+}
 export function createAdminShell({context,api,modules,renderModule,onLogout}) {
   const page=el('div','admin-page admin-modern'),shell=el('div','admin-shell'),side=el('aside','admin-sidebar');side.id='admin-sidebar';
   const can=p=>context.permissions.includes('*')||context.permissions.includes(p);
@@ -54,7 +58,7 @@ export function createAdminShell({context,api,modules,renderModule,onLogout}) {
   function addNavigation(key,label){const item=btn(label,()=>{if(current===key)return;current=key;for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;nav.append(item);links.set(key,item);}
   addNavigation('overview','运营概览');links.get('overview').classList.add('active');links.get('overview').setAttribute('aria-current','page');
   const groups=[['用户与安全',['security','support-role','analytics','online']],['运营',['ads','notice']],['财务',['recharge','finance','ledger','wallet']]];
-  for(const [label,keys] of groups){const entries=modules.filter(([, ,key,p])=>keys.includes(key)&&can(p));if(!entries.length)continue;nav.append(el('p','admin-nav-group',label));for(const [name,,key] of entries)addNavigation(key,name);}
+  for(const [label,keys] of groups){const entries=visibleAdminModules(context,modules).filter(([, ,key])=>keys.includes(key));if(!entries.length)continue;nav.append(el('p','admin-nav-group',label));for(const [name,,key] of entries)addNavigation(key,name);}
   const esc=event=>{if(event.key==='Escape'&&!side.hidden&&matchMedia('(max-width:760px)').matches)setHidden(true);};page.addEventListener('keydown',esc);
   const notifications=can('admin.finance.read') && typeof api.getOrderEvents==='function' ? orderNotifications(api,{onOpen:()=>links.get('recharge')?.click(),onChange:async()=>{await currentPanel?.refreshOrders?.();}}):null;
   if(notifications)tools.append(notifications);
@@ -81,14 +85,14 @@ export function createAdminShell({context,api,modules,renderModule,onLogout}) {
     }catch(error){if(revision!==generation)return;const old=content.querySelector('.admin-load-error');old?.remove();content.prepend(el('p','admin-load-error',`数据读取失败：${error.message??'请重试'}。现有数据可能已过期。`));return false;}
   }
   function overviewView(data){
-    const root=el('div','admin-overview'),cards=el('div','admin-kpis');
-    for(const [key,label,p] of [['registered_users','注册用户','admin.analytics.read'],['online_customers','在线客户','admin.presence.read'],['pending_withdrawals','待审核提现','admin.withdrawals.read'],['today_point_volume','今日点钻流水','admin.ledger.read']]){if(!can(p))continue;const metric=data[key]?.value??data[key];const value=key==='today_point_volume'?formatPoints(metric):(Number.isSafeInteger(metric)?metric.toLocaleString('zh-CN'):'—');const card=el('article','admin-card');card.append(el('p','admin-kpi-label',label),el('strong','admin-kpi-value',value));cards.append(card);}root.append(cards);
-    if(can('admin.ledger.read')){
+    const root=el('div','admin-overview'),cards=el('div','admin-kpis'),overviewAccess=can('admin.overview.read');
+    for(const [key,label,p] of [['registered_users','注册用户','admin.analytics.read'],['online_customers','在线客户','admin.presence.read'],['pending_withdrawals','待审核提现','admin.withdrawals.read'],['today_point_volume','今日点钻流水','admin.ledger.read']]){if(!overviewAccess&&!can(p))continue;const metric=data[key]?.value??data[key];const value=key==='today_point_volume'?formatPoints(metric):(Number.isSafeInteger(metric)?metric.toLocaleString('zh-CN'):'—');const card=el('article','admin-card');card.append(el('p','admin-kpi-label',label),el('strong','admin-kpi-value',value));cards.append(card);}root.append(cards);
+    if(overviewAccess||can('admin.ledger.read')){
       const supply=data.point_supply,s=el('section','admin-card admin-supply');s.append(el('p','admin-kpi-label','平台点钻总量'),el('strong','admin-supply-total',formatPoints(supply?.total)));
       if(supply){const details=el('dl','admin-supply-breakdown');for(const [key,label] of [['issued','累计发行'],['returned','累计回收 / 冲正'],['holdings','用户与托管持有'],['platform_fees','平台手续费']])details.append(el('dt',null,label),el('dd',null,formatPoints(supply[key])));s.append(details,el('p',supply.balanced?'admin-audit-note':'admin-load-error',supply.balanced?'账本总量核对一致 · 转账和红包流转不重复计入发行':'账本一致性尚未确认，请核对发行凭证'));}else s.append(el('p','admin-audit-note','总量数据暂不可用'));
       s.append(el('p','admin-audit-note','总量包含平台手续费持有，不等同于用户可兑付负债或 USDT 储备。'));root.append(s);
     }
-    if(can('admin.analytics.read')){const chart=el('section','admin-card admin-trend-card'),head=el('div','admin-panel-heading'),select=el('select','admin-filter');select.setAttribute('aria-label','注册趋势日期范围');for(const value of [7,30,90]){const option=el('option',null,`最近 ${value} 天`);option.value=String(value);select.append(option);}select.value=String(days);select.addEventListener('change',()=>{days=Number(select.value);void loadCurrent(true);});head.append(el('h2',null,'注册用户趋势'),select);chart.append(head,chartView(data.registration_trend));root.insertBefore(chart,root.querySelector('.admin-supply'));}return root;
+    if(overviewAccess||can('admin.analytics.read')){const chart=el('section','admin-card admin-trend-card'),head=el('div','admin-panel-heading'),select=el('select','admin-filter');select.setAttribute('aria-label','注册趋势日期范围');for(const value of [7,30,90]){const option=el('option',null,`最近 ${value} 天`);option.value=String(value);select.append(option);}select.value=String(days);select.addEventListener('change',()=>{days=Number(select.value);void loadCurrent(true);});head.append(el('h2',null,'注册用户趋势'),select);chart.append(head,chartView(data.registration_trend));root.insertBefore(chart,root.querySelector('.admin-supply'));}return root;
   }
   async function showIssuance(parent){
     parent.querySelector('.admin-issuance')?.remove();const box=el('section','admin-card admin-issuance');parent.append(box);const title=el('h2',null,'发行与回收凭证'),kind=el('select','admin-filter');kind.setAttribute('aria-label','凭证类型');for(const [value,label] of [['','全部'],['issued','发行'],['returned','回收 / 冲正']]){const option=el('option',null,label);option.value=value;kind.append(option);}const records=el('div','admin-table-scroll'),feedback=el('p','admin-audit-note');box.append(title,kind,feedback,records);let revision=0;
