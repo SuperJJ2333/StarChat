@@ -32,6 +32,7 @@ final class GalleryVideoPreviewPage extends StatefulWidget {
     required this.selected,
     required this.onToggle,
     this.controllerFactory,
+    this.viewerOnly = false,
   });
 
   /// 解析并转移压缩产物所有权；页面负责释放。
@@ -40,6 +41,7 @@ final class GalleryVideoPreviewPage extends StatefulWidget {
   final Duration? duration;
   final bool selected;
   final VoidCallback onToggle;
+  final bool viewerOnly;
   final VideoPlayerController Function(File file)? controllerFactory;
 
   @override
@@ -118,7 +120,7 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
     VideoRendition? rendition;
     if (_isCurrentAttempt(generation)) {
       _prepareProgress = null;
-      _prepareLabel = '正在准备压缩版…';
+      _prepareLabel = widget.viewerOnly ? '正在加载视频…' : '正在准备压缩版…';
       _fallbackNotice = null;
     }
     final previousSubscription = _progressSubscription;
@@ -562,32 +564,34 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
                   size: 22, color: CupertinoColors.white),
             ),
           ),
-          Positioned(
-            right: 16,
-            bottom: 24,
-            child: CupertinoButton(
-              key: const Key('gallery-video-select'),
-              color: selected
-                  ? WeChatColors.brandPrimary
-                  : CupertinoColors.systemGrey5.withValues(alpha: .28),
-              borderRadius: BorderRadius.circular(18),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              onPressed: () {
-                widget.onToggle();
-                setState(() => selected = !selected);
-              },
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                if (selected) ...[
-                  const Icon(CupertinoIcons.check_mark,
-                      size: 14, color: CupertinoColors.white),
-                  const SizedBox(width: 4),
-                ],
-                Text(selected ? '已选择' : '选择',
-                    style: const TextStyle(
-                        fontSize: 14, color: CupertinoColors.white)),
-              ]),
+          if (!widget.viewerOnly)
+            Positioned(
+              right: 16,
+              bottom: 24,
+              child: CupertinoButton(
+                key: const Key('gallery-video-select'),
+                color: selected
+                    ? WeChatColors.brandPrimary
+                    : CupertinoColors.systemGrey5.withValues(alpha: .28),
+                borderRadius: BorderRadius.circular(18),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                onPressed: () {
+                  widget.onToggle();
+                  setState(() => selected = !selected);
+                },
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (selected) ...[
+                    const Icon(CupertinoIcons.check_mark,
+                        size: 14, color: CupertinoColors.white),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(selected ? '已选择' : '选择',
+                      style: const TextStyle(
+                          fontSize: 14, color: CupertinoColors.white)),
+                ]),
+              ),
             ),
-          ),
         ]),
       ),
     );
@@ -653,8 +657,9 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
                 size: 48, color: CupertinoColors.systemGrey),
           const SizedBox(height: 12),
           Text(
-            '视频准备失败（${_format(widget.duration)}），可重试；'
-            '重试失败仍可选择发送',
+            widget.viewerOnly
+                ? '视频加载失败，请返回刷新或重试'
+                : '视频准备失败（${_format(widget.duration)}），可重试；重试失败仍可选择发送',
             style: TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
           ),
           const SizedBox(height: 10),

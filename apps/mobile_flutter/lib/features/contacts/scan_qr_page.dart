@@ -237,7 +237,11 @@ final class _ScanQrPageState extends State<ScanQrPage>
       }
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
-        builder: (_) => MyQrCodePage(profile: profile),
+        builder: (_) => MyQrCodePage(
+          profile: profile,
+          avatarCacheKey: widget.identityCache
+              ?.resolveIdentity(username: profile.username).cacheKey,
+        ),
       ));
     } catch (_) {
       if (mounted) setState(() => hint = '个人二维码加载失败，请重试');

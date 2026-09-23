@@ -79,10 +79,17 @@ function composer(definition) {
   field.querySelector("textarea").placeholder = "这一刻的想法…";
   if (definition.state !== "disabled") field.querySelector("textarea").value = "今天的海风很舒服。";
   content.append(field);
+  content.append(component("app-action-button", { icon: "camera", label: "相册", action: "moment:album" }));
+  if (definition.state === "video") {
+    content.append(component("app-list-tile", { title: "海边日落.mp4", subtitle: "12.4 MB · 视频", leading: "video", trailing: "00:18" }));
+  }
+  if (definition.state === "video-too-large") {
+    content.append(component("app-toast", { kind: "error", message: "视频不能超过20MB，请重新选择" }));
+  }
   if (["images", "uploading", "upload-failed"].includes(definition.state)) content.append(component("app-moment-grid", { count: 4, failed: definition.state === "upload-failed" }));
   for (const [title, trailing] of [["所在位置", "海滨步道"], ["提醒谁看", "周然"], ["谁可以看", "好友"]]) content.append(component("app-list-tile", { title, trailing, leading: "info" }));
   if (definition.state === "upload-failed") content.append(component("app-action-button", { kind: "danger", icon: "retry", label: "重试上传", action: "moment:retry" }));
-  if (definition.state === "uploading") content.append(component("app-status-chip", { status: "processing", label: "正在上传加密图片" }));
+  if (definition.state === "uploading") content.append(component("app-status-chip", { status: "processing", label: "正在上传媒体" }));
   root.append(content);
   return root;
 }

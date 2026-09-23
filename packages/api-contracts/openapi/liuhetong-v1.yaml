@@ -2125,6 +2125,15 @@
             "title": "Text",
             "type": "string"
           },
+          "video_urls": {
+            "description": "Owner-completed MP4/MOV upload references; at most nine images and videos combined, each <=20MiB.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 9,
+            "title": "Video Urls",
+            "type": "array"
+          },
           "visibility": {
             "enum": [
               "PUBLIC",
@@ -19193,9 +19202,53 @@
                       "type": "object"
                     },
                     "maxItems": 20,
-                    "minItems": 1,
                     "title": "Events",
                     "type": "array"
+                  },
+                  "frames": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "description": "Foreground frames exceeding build or raster refresh budget, not totalSpan.",
+                        "properties": {
+                          "frame_count": {
+                            "maximum": 1000000,
+                            "minimum": 1,
+                            "title": "Frame Count",
+                            "type": "integer"
+                          },
+                          "slow_build_count": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Slow Build Count",
+                            "type": "integer"
+                          },
+                          "slow_frame_count": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Slow Frame Count",
+                            "type": "integer"
+                          },
+                          "slow_raster_count": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Slow Raster Count",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "frame_count",
+                          "slow_frame_count",
+                          "slow_build_count",
+                          "slow_raster_count"
+                        ],
+                        "title": "DiagnosticFrames",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "platform": {
                     "enum": [
@@ -26002,6 +26055,18 @@
                 }
               },
               "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "video/mp4": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "video/quicktime": {
                 "schema": {
                   "format": "binary",
                   "type": "string"

@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/ui/moments/moment_media_cache.dart';
+import 'package:liuhetong_mobile/ui/moments/moment_thumbnail_provider.dart';
 import 'package:liuhetong_mobile/ui/moments/moment_image_viewer_page.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_image_grid.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_viewer.dart';
@@ -34,7 +35,7 @@ void main() {
   // Directory.absolute retains '..'; normalize before Windows directory
   // enumeration so a worktree prefix does not inflate the native search path.
   final scratch = Directory(path.normalize(path.absolute(
-      '../../docs/verification/artifacts/2026-09-10/four-fixes-2083/media/cache-${DateTime.now().microsecondsSinceEpoch}')));
+      '../../docs/verification/artifacts/2026-09-23/remaining-optimizations/media/cache-${DateTime.now().microsecondsSinceEpoch}')));
   final png = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
   setUpAll(() async {
@@ -483,9 +484,11 @@ void main() {
       imageUrls: ['https://example.invalid/moment.png'],
     )));
     final image = tester.widget<Image>(find.byType(Image));
-    expect(image.image, isA<CachedNetworkImageProvider>());
-    expect((image.image as CachedNetworkImageProvider).cacheManager,
-        same(MomentMediaCache.manager));
+    expect(image.image, isA<MomentThumbnailProvider>());
+    final thumbnail = image.image as MomentThumbnailProvider;
+    expect(thumbnail.extent, 540);
+    expect(
+        thumbnail.imageProvider.cacheManager, same(MomentMediaCache.manager));
   });
 
   testWidgets('memory hit paints immediately in grid and viewer without fade',
@@ -496,6 +499,8 @@ void main() {
       final provider = MomentMediaCache.imageProvider(url);
       final stream = provider.resolve(ImageConfiguration.empty);
       await imageReady(stream);
+      await imageReady(MomentThumbnailProvider(provider, extent: 540)
+          .resolve(ImageConfiguration.empty));
     });
     await tester.pumpWidget(
         const CupertinoApp(home: WeChatMomentImageGrid(imageUrls: [url])));
@@ -511,6 +516,120 @@ void main() {
             url: url, onChangeCover: (_) async => null)));
     expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
   });
+
+  testWidgets('grid decode follows DPR with a bounded aspect-preserving size',
+      (tester) async {
+    for (final sample in [(1, 1.5, 270), (2, 2.5, 225), (1, 8.0, 1024)]) {
+      tester.view.devicePixelRatio = sample.$2;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(CupertinoApp(
+          home: WeChatMomentImageGrid(
+              imageUrls: List.generate(sample.$1,
+                  (index) => 'https://example.invalid/sized-$index.png'))));
+      final provider = tester.widgetList<Image>(find.byType(Image)).first.image;
+      expect(provider, isA<MomentThumbnailProvider>());
+      final thumbnail = provider as MomentThumbnailProvider;
+      expect(thumbnail.extent, sample.$3);
+    }
+  });
+
+  for (final sample in [
+    (1200, 600, 1080, 540),
+    (600, 1200, 540, 1080),
+    (12000, 100, 4096, 34),
+    (4096, 1024, 2048, 512),
+    (100, 50, 100, 50),
+  ]) {
+    testWidgets('cover decode $sample keeps ratio and retry clears both keys',
+        (tester) async {
+      final url = 'https://example.invalid/cover-${sample.$1}-${sample.$2}.png';
+      final original = MomentMediaCache.imageProvider(url);
+      await tester.runAsync(() async {
+        final recorder = ui.PictureRecorder();
+        ui.Canvas(recorder)
+            .drawPaint(ui.Paint()..color = const Color(0xff112233));
+        final picture = recorder.endRecording();
+        final large = picture.toImageSync(sample.$1, sample.$2);
+        final bytes = await large
+            .toByteData(format: ui.ImageByteFormat.png)
+            .timeout(const Duration(seconds: 10));
+        await MomentMediaCache.manager
+            .putFile(url, bytes!.buffer.asUint8List(), fileExtension: 'png');
+        large.dispose();
+        picture.dispose();
+        await imageReady(original.resolve(ImageConfiguration.empty))
+            .timeout(const Duration(seconds: 10));
+        await imageReady(MomentThumbnailProvider(original, extent: 540)
+            .resolve(ImageConfiguration.empty));
+      });
+      await tester.pumpWidget(
+          CupertinoApp(home: WeChatMomentImageGrid(imageUrls: [url])));
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(image.image, isA<MomentThumbnailProvider>());
+      final thumbnail = image.image as MomentThumbnailProvider;
+      final decoded = tester.widget<RawImage>(find.byType(RawImage)).image!;
+      expect(decoded.width, sample.$3);
+      expect(decoded.height, sample.$4);
+      expect(decoded.width * decoded.height, lessThanOrEqualTo(1024 * 1024));
+      await tester.runAsync(() async {
+        final thumbnailKey =
+            await thumbnail.obtainKey(ImageConfiguration.empty);
+        final cache = PaintingBinding.instance.imageCache;
+        expect(cache.containsKey(original), isTrue);
+        expect(cache.containsKey(thumbnailKey), isTrue);
+        final error = image.errorBuilder!(
+                tester.element(find.byType(Image)), StateError('corrupt'), null)
+            as ColoredBox;
+        final retry = error.child! as CupertinoButton;
+        // The error action is asynchronous, so wait for its explicit work rather
+        // than running fake test-clock timers for the disk cache.
+        await (retry.onPressed! as Future<void> Function())()
+            .timeout(const Duration(seconds: 10));
+        expect(cache.containsKey(original), isFalse);
+        expect(cache.containsKey(thumbnailKey), isFalse);
+        expect(await MomentMediaCache.manager.getFileFromCache(url), isNull);
+      });
+    });
+  }
+
+  test('thumbnail identity includes account, signed content and decode extent',
+      () {
+    const origin = 'https://media.example.test';
+    const digest =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    MomentThumbnailProvider provider(String account, String path, int extent) =>
+        MomentThumbnailProvider(
+            MomentMediaCache.imageProvider(
+                '$origin/api/v1/profile/avatar/content/$path',
+                cacheKey: digest,
+                accountKey: account,
+                trustedOrigin: origin),
+            extent: extent);
+    final first = provider('alice', 'signed-A', 540);
+    final rotated = provider('alice', 'signed-B', 540);
+    expect(first, rotated);
+    expect(first.hashCode, rotated.hashCode);
+    expect(first, isNot(provider('bob', 'signed-A', 540)));
+    expect(first, isNot(provider('alice', 'signed-A', 270)));
+    var synchronous = false;
+    first.obtainKey(ImageConfiguration.empty).then((_) => synchronous = true);
+    expect(synchronous, isTrue);
+  });
+
+  test('failed decode evicts thumbnail key as well as the delegated key',
+      () async {
+    const url = 'https://example.invalid/corrupt-thumbnail.png';
+    final original = MomentMediaCache.imageProvider(url);
+    final thumbnail = MomentThumbnailProvider(original, extent: 540);
+    await MomentMediaCache.manager
+        .putFile(url, base64Decode('AAAA'), fileExtension: 'png');
+    await expectLater(imageReady(thumbnail.resolve(ImageConfiguration.empty)),
+        throwsA(anything));
+    await Future<void>.delayed(Duration.zero);
+    final cache = PaintingBinding.instance.imageCache;
+    expect(cache.containsKey(thumbnail), isFalse);
+    expect(cache.statusForKey(thumbnail).live, isFalse);
+  });
 }
 
 Future<void> imageReady(ImageStream stream) async {
@@ -521,8 +640,11 @@ Future<void> imageReady(ImageStream stream) async {
     completer.complete();
   }, onError: completer.completeError);
   stream.addListener(listener);
-  await completer.future;
-  stream.removeListener(listener);
+  try {
+    await completer.future;
+  } finally {
+    stream.removeListener(listener);
+  }
 }
 
 String _baselineMomentsUrlKey(String accountKey, String url) =>

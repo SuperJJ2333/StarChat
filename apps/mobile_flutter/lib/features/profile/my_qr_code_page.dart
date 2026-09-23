@@ -12,9 +12,10 @@ import 'profile_controller.dart';
 /// 二维码载荷为 `changliao://u/<畅聊号>`，好友「扫一扫」识别后
 /// 进入「申请添加朋友」页（不会直接发送请求）。
 final class MyQrCodePage extends StatelessWidget {
-  const MyQrCodePage({super.key, required this.profile});
+  const MyQrCodePage({super.key, required this.profile, this.avatarCacheKey});
 
   final ProfileData profile;
+  final String? avatarCacheKey;
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +55,7 @@ final class MyQrCodePage extends StatelessWidget {
                         key: const Key('my-qr-avatar'),
                         nickname: profile.nickname,
                         fallbackSeed: profile.fallbackSeed,
+                        avatarCacheKey: avatarCacheKey,
                         avatarUrl: profile.avatarUrl,
                         size: 28,
                       ),

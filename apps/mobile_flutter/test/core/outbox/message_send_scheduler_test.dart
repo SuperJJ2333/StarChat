@@ -38,6 +38,7 @@ final class _FakeSender implements OutboxSender {
       // 行已被（另一个派发者）认领或已送达：不算一次发送。
       throw const _AlreadyDispatched();
     }
+    final attempt = (await manager.byLocalId(message.localId))!;
     txids.add(message.txid);
     final response = responses.isEmpty
         ? () => Future<String>.value('event-${message.txid}')
@@ -51,8 +52,8 @@ final class _FakeSender implements OutboxSender {
       final status = defaultNetworkFailureClassifier(error)
           ? OutboxStatus.waitingNetwork
           : OutboxStatus.failed;
-      await manager.updateStatus(message.localId, status,
-          lastError: error.toString());
+      await manager.settleAttempt(attempt, status,
+          error: error, reason: 'send_failed');
       rethrow;
     }
   }
@@ -126,12 +127,61 @@ final class _Http5xx implements Exception {
   String toString() => 'HttpException(502): $message';
 }
 
+class _QueryRaceStore implements OutboxStore {
+  final inner = InMemoryOutboxStore();
+  Future<void> Function()? afterQuery;
+  bool failUpdates = false;
+  @override
+  Future<List<OutboxMessage>> query(
+      {Set<OutboxStatus>? statuses,
+      bool unsent = false,
+      String? roomId,
+      String? receiverId,
+      String? accountId,
+      int? limit}) async {
+    final rows = await inner.query(
+        statuses: statuses,
+        unsent: unsent,
+        roomId: roomId,
+        receiverId: receiverId,
+        accountId: accountId,
+        limit: limit);
+    final callback = afterQuery;
+    afterQuery = null;
+    await callback?.call();
+    return rows;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (failUpdates && invocation.memberName == #updateStatus) {
+      return Future<bool>.error(StateError('disk unavailable'));
+    }
+    final target = switch (invocation.memberName) {
+      #insert => inner.insert,
+      #byLocalId => inner.byLocalId,
+      #byTxid => inner.byTxid,
+      #updateStatus => inner.updateStatus,
+      _ => null,
+    };
+    if (target != null) {
+      return Function.apply(
+          target, invocation.positionalArguments, invocation.namedArguments);
+    }
+    return super.noSuchMethod(invocation);
+  }
+}
+
 void main() {
   late PersistentOutboxManager outbox;
   late NetworkStateManager network;
 
   setUp(() {
-    outbox = PersistentOutboxManager(InMemoryOutboxStore(), accountId: 'me');
+    outbox = PersistentOutboxManager(InMemoryOutboxStore(),
+        accountId: 'me',
+        clock: () => TestWidgetsFlutterBinding.instance.inTest
+            ? TestWidgetsFlutterBinding.instance.clock.now()
+            : DateTime.now());
     network = NetworkStateManager();
   });
 
@@ -151,6 +201,80 @@ void main() {
                 : null,
         leaseFactory: leaseFactory,
       );
+
+  testWidgets('restarted scheduler restores stored deadline before dispatch',
+      (tester) async {
+    final manager = PersistentOutboxManager(InMemoryOutboxStore(),
+        clock: tester.binding.clock.now);
+    final row =
+        (await manager.save(receiverId: 'peer', content: 'x', roomId: 'room'))!;
+    final firstLease = _FakeLease()
+      ..responses.add(() => Future.error(const _Http5xx('fixture')));
+    final first = MessageSendScheduler(
+        outbox: manager,
+        senderFor: (_) => null,
+        leaseFactory: (_) async => firstLease);
+    await first.drain();
+    first.dispose();
+    expect((await manager.byLocalId(row.localId))!.serverRetryCount, 1);
+    final nextLease = _FakeLease();
+    final restarted = MessageSendScheduler(
+        outbox: manager,
+        senderFor: (_) => null,
+        leaseFactory: (_) async => nextLease);
+    await restarted.drain();
+    await tester.pump(const Duration(seconds: 1));
+    expect(nextLease.txids, isEmpty);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(nextLease.txids, [row.txid]);
+    expect(await manager.unsent(), isEmpty);
+    restarted.dispose();
+    manager.dispose();
+  });
+
+  test('store failure blocks claim and retains unknown settlement ownership',
+      () async {
+    final store = _QueryRaceStore();
+    final manager = PersistentOutboxManager(store);
+    final row = (await manager.save(receiverId: 'peer', content: 'x'))!;
+    store.failUpdates = true;
+    expect(await manager.claim(row.localId), isFalse);
+    expect((await manager.byLocalId(row.localId))!.status, OutboxStatus.queued);
+    store.failUpdates = false;
+    expect(await manager.claim(row.localId), isTrue);
+    final attempt = (await manager.byLocalId(row.localId))!;
+    store.failUpdates = true;
+    expect(
+        await manager.settleAttempt(attempt, OutboxStatus.waitingNetwork,
+            error: const _Http5xx('fixture')),
+        isFalse);
+    final retained = (await manager.byLocalId(row.localId))!;
+    expect(retained.status, OutboxStatus.sending);
+    expect(retained.serverRetryCount, 0);
+    expect(retained.nextServerRetryAt, isNull);
+  });
+
+  test('offline stale scan never releases a foreground transport claim',
+      () async {
+    final store = _QueryRaceStore();
+    final manager = PersistentOutboxManager(store);
+    final row =
+        (await manager.save(receiverId: 'peer', content: 'x', roomId: 'room'))!;
+    final network = NetworkStateManager();
+    network.report(transportAvailable: false);
+    store.afterQuery = () async {
+      expect(await manager.claim(row.localId), isTrue);
+    };
+    final scheduler = MessageSendScheduler(
+        outbox: manager, senderFor: (_) => null, networkState: network);
+    await scheduler.drain();
+    expect(
+        (await manager.byLocalId(row.localId))!.status, OutboxStatus.sending);
+    scheduler.dispose();
+    network.dispose();
+    manager.dispose();
+  });
 
   group('MessageSendScheduler', () {
     test('closed-room send failure emits one content-free diagnostic',

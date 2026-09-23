@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'incremental_timeline_merge.dart';
+
 import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
 import 'room_timeline_controller.dart';
@@ -43,8 +45,13 @@ final class LogicalConversationTimelineCapability
   final void Function()? _onDispose;
   final Map<String, String> _eventSources = {};
   bool _sourceIndexReady = false;
-  Map<String, RoomMessageViewModel> _mergedById = {};
-  List<RoomMessageViewModel> _mergedSnapshot = const [];
+  final _merger = IncrementalTimelineMerge<RoomMessageViewModel>(
+    idOf: (event) => event.id,
+    compare: (a, b) {
+      final order = a.timestamp.compareTo(b.timestamp);
+      return order != 0 ? order : a.id.compareTo(b.id);
+    },
+  );
   bool _disposed = false;
   int _dateGeneration = 0, _monthGeneration = 0;
   Completer<void>? _dateCancellation, _monthCancellation;
@@ -91,18 +98,7 @@ final class LogicalConversationTimelineCapability
       }
     }
     _sourceIndexReady = true;
-    if (events.length == _mergedById.length &&
-        events.entries
-            .every((entry) => identical(_mergedById[entry.key], entry.value))) {
-      return _mergedSnapshot;
-    }
-    _mergedById = events;
-    final merged = events.values.toList()
-      ..sort((a, b) {
-        final order = a.timestamp.compareTo(b.timestamp);
-        return order != 0 ? order : a.id.compareTo(b.id);
-      });
-    return _mergedSnapshot = List.unmodifiable(merged);
+    return _merger.update(events.values);
   }
 
   @override
@@ -538,8 +534,7 @@ final class LogicalConversationTimelineCapability
       }
     } finally {
       _eventSources.clear();
-      _mergedById.clear();
-      _mergedSnapshot = const [];
+      _merger.clear();
       _onDispose?.call();
     }
     if (failure != null) {

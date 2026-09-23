@@ -1,5 +1,7 @@
 # 实施计划：酷信源码借鉴优化专项（资金安全 / 容灾开关 / 性能缓存 / 拥挤场景）（2026-09-23）
 
+> 2026-09-23 执行校正：实际增量以[修订执行计划](2026-09-23-remaining-optimization-increments.md)及[任务记录](../../workflow/tasks/2026-09-23-remaining-optimizations.md)为准。下文保留为原排期草案，不能直接照搬：已有缓存/MFA/重试不重复建设，SDK实际为KV存储；ADR0080–0081及迁移0084–0087已被其他批准工作使用。红包先实施[PostgreSQL查询过滤优化](2026-09-23-redpacket-claim-filter.md)，没有启用Redis异步账务。受保护扩展的具体策略见[待批准设计](../specs/2026-09-23-remaining-protected-optimizations.md)，不能将提案当已实施能力。
+
 状态：基于 2026-09-21～09-23 对酷信（视酷 SkWeiChat）源码与 TTTalk APK 的逆向分析产出；**本文为排期草案，每阶段开工前需按惯例补对应 ADR 并获用户批准**。
 建议 ADR：0080 抢红包 Redis 预拆分 · 0081 多服务器容灾与 config 下发 · 0082 TOTP/设备管理/社交恢复 · 0083 E2EE 群已读聚合 · 0084 推送合并窗口。
 任务记录：`docs/superpowers/tasks/2026-09-23-kuxin-borrowing-optimization-program.md`（开工时建立）。

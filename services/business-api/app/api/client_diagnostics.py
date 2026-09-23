@@ -4,7 +4,7 @@ import json
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings
@@ -30,11 +30,35 @@ class DiagnosticEvent(BaseModel):
     lifecycle: Literal['foreground', 'background', 'unknown'] | None = None
 
 
+class DiagnosticFrames(BaseModel):
+    """Foreground frames exceeding build or raster refresh budget, not totalSpan."""
+    model_config = ConfigDict(extra='forbid', strict=True)
+    frame_count: int = Field(ge=1, le=1000000)
+    slow_frame_count: int = Field(ge=0, le=1000000)
+    slow_build_count: int = Field(ge=0, le=1000000)
+    slow_raster_count: int = Field(ge=0, le=1000000)
+
+    @model_validator(mode='after')
+    def consistent_counts(self):
+        if not (max(self.slow_build_count, self.slow_raster_count)
+                <= self.slow_frame_count
+                <= min(self.frame_count, self.slow_build_count + self.slow_raster_count)):
+            raise ValueError('Inconsistent frame counts')
+        return self
+
+
 class DiagnosticBatch(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     version: str = Field(max_length=32, pattern=r'^\d{1,4}\.\d{1,4}\.\d{1,4}(\+\d{1,8})?$')
     platform: Literal['android', 'ios', 'other']
-    events: list[DiagnosticEvent] = Field(min_length=1, max_length=20)
+    events: list[DiagnosticEvent] = Field(max_length=20)
+    frames: DiagnosticFrames | None = None
+
+    @model_validator(mode='after')
+    def nonempty(self):
+        if not self.events and self.frames is None:
+            raise ValueError('Empty diagnostic batch')
+        return self
 
 
 class DiagnosticReceipt(BaseModel):

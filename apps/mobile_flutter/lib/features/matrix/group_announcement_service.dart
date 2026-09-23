@@ -118,6 +118,9 @@ abstract interface class GroupAnnouncementService {
 final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   MatrixGroupAnnouncementService(this.room);
   final Room room;
+  // Page/banner instances share a room. Sync-driven reloads must not repeatedly
+  // broadcast the same missing-session request; a later retry remains possible.
+  static final _keyRequests = Expando<Map<String, DateTime>>();
   @override
   bool get canEdit => GroupRoomAuthority(room).canManage;
   @override
@@ -151,7 +154,8 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     if (eventId is! String || !eventId.startsWith(r'$')) {
       throw FormatException('公告引用无效');
     }
-    final event = await _loadEncryptedEvent(eventId);
+    final event = await _loadEncryptedEvent(eventId,
+        expectedSenderId: reference.senderId);
     if (event == null ||
         event.senderId != reference.senderId ||
         event.originalSource?.type != EventTypes.Encrypted) {
@@ -174,14 +178,56 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     }
   }
 
-  Future<Event?> _loadEncryptedEvent(String eventId) async {
+  Future<Event?> _loadEncryptedEvent(String eventId,
+      {String? expectedSenderId}) async {
     _requireMember();
     var event = await room.getEventById(eventId);
+    if (event != null &&
+        expectedSenderId != null &&
+        event.senderId != expectedSenderId) {
+      throw StateError('公告暂不可用');
+    }
+    // Failed SDK projections can omit ciphertext for non-requestable errors.
+    // Always retry their original encrypted event, never the error projection.
+    if (event?.messageType == MessageTypes.BadEncrypted &&
+        event?.originalSource?.type == EventTypes.Encrypted) {
+      event = Event.fromMatrixEvent(event!.originalSource!, room);
+    }
     // SDK cache hits can still be ciphertext; its network path alone decrypts.
     if (event?.type == EventTypes.Encrypted && room.client.encryptionEnabled) {
       event = await room.client.encryption?.decryptRoomEvent(room.id, event!);
     }
     _requireMember();
+    if (event?.type == EventTypes.Encrypted &&
+        event?.messageType == MessageTypes.BadEncrypted &&
+        event?.content['can_request_session'] == true &&
+        event?.content['session_id'] is String &&
+        event?.content['sender_key'] is String) {
+      final requestId =
+          '${event!.content['session_id']}|${event.content['sender_key']}';
+      final requests = _keyRequests[room] ??= <String, DateTime>{};
+      final now = DateTime.now();
+      requests.removeWhere(
+          (_, at) => now.difference(at) >= const Duration(seconds: 30));
+      if (!requests.containsKey(requestId)) {
+        requests[requestId] = now;
+        try {
+          // SDK auto-decryption only tries online backup by default. The normal
+          // requestKey API also asks eligible devices, retaining SDK key-sharing
+          // authorization and historical message-index restrictions.
+          await event.requestKey();
+        } catch (_) {
+          requests.remove(requestId);
+          rethrow;
+        }
+        _requireMember();
+        // Backup recovery can finish synchronously with the request, before the
+        // caller has subscribed to key notifications.
+        event = await room.client.encryption?.decryptRoomEvent(room.id,
+            Event.fromMatrixEvent(event.originalSource ?? event, room));
+        _requireMember();
+      }
+    }
     if (event?.type == EventTypes.Encrypted ||
         event?.messageType == MessageTypes.BadEncrypted) {
       throw const AnnouncementPendingDecryption();

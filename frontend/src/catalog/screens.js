@@ -181,7 +181,7 @@ register("moments", "actions", [["menu", "朋友圈 / 操作菜单"], ["liked", 
 register("moments", "visibility", [["public", "朋友圈 / 公开"], ["friends", "朋友圈 / 好友"], ["partial", "朋友圈 / 部分可见"], ["excluded", "朋友圈 / 不给谁看"], ["private", "朋友圈 / 仅自己"]]);
 register("moments", "governance", [["uploading", "朋友圈 / 上传中"], ["reviewing", "朋友圈 / 审核中"], ["published", "朋友圈 / 已发布"], ["limited", "朋友圈 / 部分可见"], ["removed", "朋友圈 / 已下架"], ["failed", "朋友圈 / 发布失败"]]);
 register("moments", "recommendation", [["recommended", "公开时间线 / 推荐"], ["latest", "公开时间线 / 最新"], ["personalization-off", "公开时间线 / 关闭个性化"]]);
-register("moments", "composer", [["text", "发布朋友圈 / 纯文字"], ["images", "发布朋友圈 / 图片"], ["location", "发布朋友圈 / 位置"], ["mention", "发布朋友圈 / 提醒谁看"], ["visibility", "发布朋友圈 / 可见范围"], ["disabled", "发布朋友圈 / 发布禁用"], ["uploading", "发布朋友圈 / 上传中"], ["upload-failed", "发布朋友圈 / 上传失败"]], { height: 980 });
+register("moments", "composer", [["video", "发布朋友圈 / 视频"], ["video-too-large", "发布朋友圈 / 视频超过20MB"], ["text", "发布朋友圈 / 纯文字"], ["images", "发布朋友圈 / 图片"], ["location", "发布朋友圈 / 位置"], ["mention", "发布朋友圈 / 提醒谁看"], ["visibility", "发布朋友圈 / 可见范围"], ["disabled", "发布朋友圈 / 发布禁用"], ["uploading", "发布朋友圈 / 上传中"], ["upload-failed", "发布朋友圈 / 上传失败"]], { height: 980 });
 register("moments", "composer-sheet", [["leave-confirm", "发布朋友圈 / 离开确认"], ["location", "发布朋友圈 / 位置面板"], ["mention", "发布朋友圈 / 提醒好友面板"], ["visibility", "发布朋友圈 / 可见范围面板"]]);
 register("moments", "detail", [["default", "动态详情 / 默认", 1180], ["comment-reply", "动态详情 / 回复评论", 1180], ["comment-delete", "动态详情 / 删除评论确认", 1180]]);
 register("moments", "search", [["default", "朋友圈搜索 / 默认"], ["results", "朋友圈搜索 / 结果"], ["filters", "朋友圈搜索 / 筛选"], ["no-result", "朋友圈搜索 / 无结果"], ["permission-filtered", "朋友圈搜索 / 无权限过滤"]]);

@@ -43,6 +43,37 @@ def payload():
          'elapsed_ms': 5000, 'count': 1, 'status': None}]}
 
 
+def frame_summary():
+    return {'frame_count': 100, 'slow_frame_count': 7,
+            'slow_build_count': 4, 'slow_raster_count': 5}
+
+
+def test_frame_summary_without_error_events(endpoint, capsys):
+    client, _, headers = endpoint
+    data = payload()
+    data.update(events=[], frames=frame_summary())
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    assert response.json() == {'accepted': 0}
+    assert json.loads(capsys.readouterr().out)['frames'] == frame_summary()
+
+
+@pytest.mark.parametrize('change', [
+    {'frame_count': 0}, {'frame_count': 1000001}, {'frame_count': True},
+    {'slow_frame_count': 101}, {'slow_frame_count': 4},
+    {'slow_frame_count': 10}, {'slow_build_count': -1},
+    {'slow_raster_count': '5'}, {'device_id': 'PRIVATE_CREDENTIAL'},
+])
+def test_frame_summary_rejects_invalid_counts_and_identifiers(endpoint, capsys, change):
+    client, _, headers = endpoint
+    data = payload()
+    data['frames'] = {**frame_summary(), **change}
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert 'PRIVATE_CREDENTIAL' not in response.text
+    assert capsys.readouterr().out == ''
+
+
 @pytest.mark.parametrize('stage', [
     'pending_write_failed', 'request_uncertain', 'result_write_failed',
     'retry_recovered', 'terminal_invalidated', 'result_superseded',

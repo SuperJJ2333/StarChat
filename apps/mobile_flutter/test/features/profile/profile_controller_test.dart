@@ -137,6 +137,27 @@ void main() {
     gateway.load.complete(profile);
   });
 
+  test(
+      'avatar update invalidates canonical account identity and persists result',
+      () async {
+    final invalidated = <String>[];
+    final persisted = <ProfileData>[];
+    final c = ProfileController(
+        gateway: FakeProfileGateway(),
+        avatarSource: FakeAvatarSource(),
+        avatarCacheIdentity: (profile) =>
+            'identity:account:${profile.username}',
+        invalidateAvatarCache: (key) async => invalidated.add(key),
+        persistProfile: (value) async => persisted.add(value));
+    await c.load();
+    await c.chooseAvatar();
+    await c.uploadAvatar();
+    expect(c.avatarCacheKey, 'identity:account:alice');
+    expect(invalidated, ['identity:account:alice']);
+    expect(persisted.last.avatarUrl, 'https://signed/avatar');
+    c.dispose();
+  });
+
   test('cached profile paints before a held gateway refresh completes',
       () async {
     final gateway = _HeldProfileGateway();
@@ -165,8 +186,7 @@ void main() {
     await controller.load();
 
     expect(controller.state.profile, isNull);
-    expect(controller.state.message, isNotNull,
-        reason: '从未成功过且无数据时才提示失败');
+    expect(controller.state.message, isNotNull, reason: '从未成功过且无数据时才提示失败');
   });
 
   testWidgets('cached identity is visible on the profile page before refresh',
@@ -440,17 +460,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // 单入口 + 二级平台选项：安卓复制 /download，苹果复制 ?platform=ios。
-    await tester.tap(
-        find.byKey(const Key('profile-invite-copy-download-link')));
-    await tester.pumpAndSettle();
     await tester
-        .tap(find.byKey(const Key('invite-download-android')));
+        .tap(find.byKey(const Key('profile-invite-copy-download-link')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('invite-download-android')));
     await tester.pumpAndSettle();
     expect(clipboard, 'https://www.liuhetong888.com/download');
     expect(find.byKey(const Key('invite-copy-toast')), findsOneWidget);
 
-    await tester.tap(
-        find.byKey(const Key('profile-invite-copy-download-link')));
+    await tester
+        .tap(find.byKey(const Key('profile-invite-copy-download-link')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('invite-download-ios')));
     await tester.pumpAndSettle();

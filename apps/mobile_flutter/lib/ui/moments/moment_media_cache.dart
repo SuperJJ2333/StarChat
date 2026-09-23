@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:io' as io;
+import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file/local.dart';
@@ -22,6 +25,84 @@ class _MomentImageProvider extends CachedNetworkImageProvider {
 }
 
 abstract final class MomentMediaCache {
+  static final _videoLoads = <String, Future<io.File>>{};
+
+  /// Uses the same verified, account-scoped object store as Moments images and
+  /// chat. The response is bounded while streaming, before writing any object.
+  static Future<io.File> videoFile(String url,
+      {required String? cacheKey,
+      required String? accountKey,
+      required String? trustedOrigin,
+      bool refresh = false,
+      http.Client? client}) async {
+    final provider = imageProvider(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    final source = _sources[provider.cacheKey];
+    if (source == null) throw StateError('Untrusted Moments video reference');
+    source.ensureCurrent();
+    final flightKey = '${source.cacheKey}:${source.generation}';
+    if (refresh) {
+      await MediaCache.removeReference('moments', source.cacheKey,
+          accountId: source.accountKey);
+      source.ensureCurrent();
+    }
+    final pending = _videoLoads[flightKey];
+    if (pending != null) return pending;
+    final load = _loadVideo(url, source, client);
+    _videoLoads[flightKey] = load;
+    try {
+      return await load;
+    } finally {
+      if (identical(_videoLoads[flightKey], load)) {
+        _videoLoads.remove(flightKey);
+      }
+    }
+  }
+
+  static Future<io.File> _loadVideo(String url, _MomentMediaSource source,
+      http.Client? suppliedClient) async {
+    final cached = await MediaCache.cached('moments', source.cacheKey,
+        accountId: source.accountKey);
+    source.ensureCurrent();
+    if (cached != null) return cached;
+    final client = suppliedClient ?? http.Client();
+    try {
+      final response = await client
+          .send(http.Request('GET', Uri.parse(url))..followRedirects = false)
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200 ||
+          !const ['video/mp4', 'video/quicktime'].contains(
+              response.headers['content-type']?.split(';').first.trim())) {
+        throw StateError('Moments video unavailable');
+      }
+      const limit = 20 * 1024 * 1024;
+      if ((response.contentLength ?? 0) > limit) {
+        throw StateError('Moments video exceeds 20MB');
+      }
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk
+          in response.stream.timeout(const Duration(seconds: 30))) {
+        source.ensureCurrent();
+        if (bytes.length + chunk.length > limit) {
+          throw StateError('Moments video exceeds 20MB');
+        }
+        bytes.add(chunk);
+      }
+      if (bytes.isEmpty) throw StateError('Empty Moments video');
+      source.ensureCurrent();
+      final file = await MediaCache.store(
+          'moments', source.cacheKey, bytes.takeBytes(),
+          accountId: source.accountKey,
+          expectedAccountGeneration: source.generation);
+      source.ensureCurrent();
+      return file;
+    } finally {
+      if (suppliedClient == null) client.close();
+    }
+  }
+
   /// Called only after a failed decode/load. Remove a damaged disk entry as
   /// well as the failed decoded frame so the explicit retry can recover.
   static Future<void> retry(CachedNetworkImageProvider provider) async {

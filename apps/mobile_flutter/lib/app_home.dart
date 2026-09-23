@@ -2936,7 +2936,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
     return ProfileController(
       gateway: api,
       avatarSource: GalleryAvatarSource(
-        brightnessProvider: () => CupertinoTheme.brightnessOf(context),
+        contextProvider: () => mounted ? context : null,
       ),
       readCachedProfile: () async {
         if (!ownsCurrentSession() || cache == null) return null;
@@ -2947,6 +2947,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
         if (!ownsCurrentSession() || cache == null) return;
         await cache.applyUpdatedProfile(profile);
       },
+      avatarCacheIdentity: (profile) => cache?.resolveIdentity(username: profile.username).cacheKey ?? profile.fallbackSeed,
       onAvatarUpdated: _refreshAvatarDisplays,
       initialProfile: cache?.profile,
     );
@@ -3010,7 +3011,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
         final profile = controller.state.profile;
         if (profile == null) return;
         Navigator.push(context,
-            MotionPageRoute(builder: (_) => MyQrCodePage(profile: profile)));
+            MotionPageRoute(builder: (_) => MyQrCodePage(profile: profile, avatarCacheKey: controller.avatarCacheKey)));
       },
       onSettings: () => Navigator.push(
           context,

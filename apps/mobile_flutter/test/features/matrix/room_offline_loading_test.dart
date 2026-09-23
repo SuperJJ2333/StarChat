@@ -186,6 +186,49 @@ void _newEvent(_OfflineRoom room) {
 }
 
 void main() {
+  testWidgets('sync bursts preserve composing range, selection and focus',
+      (tester) async {
+    final client = _OfflineClient();
+    final room = client.localRoom;
+    final lease = await _mount(tester, client, friend: true);
+    final field = find.byType(EditableText);
+    await tester.tap(field);
+    await tester.pump();
+    final editable = tester.widget<EditableText>(field);
+    const composing = TextEditingValue(
+        text: 'nihao',
+        selection: TextSelection.collapsed(offset: 5),
+        composing: TextRange(start: 0, end: 5));
+    tester.testTextInput.updateEditingValue(composing);
+    await tester.pump();
+    for (var i = 0; i < 30; i++) {
+      room.localTimeline.events.insert(
+          0,
+          Event(
+              room: room,
+              eventId: 'burst-$i',
+              senderId: '@peer:offline.test',
+              type: EventTypes.Message,
+              originServerTs:
+                  DateTime.utc(2026, 9, 12).add(Duration(seconds: i)),
+              content: {'msgtype': 'm.text', 'body': 'synthetic burst'}));
+      room.update!();
+      await tester.pump(const Duration(milliseconds: 20));
+      final current = tester.widget<EditableText>(field);
+      expect(current.controller, same(editable.controller));
+      expect(current.focusNode, same(editable.focusNode));
+      expect(current.focusNode.hasFocus, isTrue);
+      expect(current.controller.value, composing);
+    }
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+        text: '你好', selection: TextSelection.collapsed(offset: 2)));
+    await tester.pump();
+    expect(editable.controller.text, '你好');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+    await lease.cancel();
+  });
   testWidgets(
       'own local send from older window scrolls before transport completes',
       (tester) async {

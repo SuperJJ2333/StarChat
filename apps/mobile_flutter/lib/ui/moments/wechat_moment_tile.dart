@@ -11,6 +11,7 @@ import 'moment_action_menu.dart';
 import 'wechat_moment_reactions.dart';
 import 'moment_reaction_tokens.dart';
 import 'moment_like_feedback.dart';
+import 'moment_video_tile.dart';
 
 final class WeChatMomentTile extends StatelessWidget {
   const WeChatMomentTile({
@@ -156,6 +157,17 @@ final class WeChatMomentTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(item.text),
+                      for (var index = 0; index < item.videos.length; index++)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: MomentVideoTile(
+                              url: item.videos[index],
+                              cacheKey: index < item.videoCacheKeys.length
+                                  ? item.videoCacheKeys[index]
+                                  : null,
+                              accountKey: mediaAccountKey,
+                              trustedOrigin: mediaOrigin),
+                        ),
                       if (item.images.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -222,7 +234,8 @@ final class WeChatMomentTile extends StatelessWidget {
                                 key: const Key('moment-delete-button'),
                                 padding: EdgeInsets.zero,
                                 onPressed: onDelete,
-                                child: const Icon(CupertinoIcons.delete, size: 20),
+                                child:
+                                    const Icon(CupertinoIcons.delete, size: 20),
                               ),
                           ],
                         ],

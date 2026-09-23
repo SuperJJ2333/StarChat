@@ -103,6 +103,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
             else ...[
               _IdentityCard(
                 profile: profile,
+                avatarCacheKey: widget.controller.avatarCacheKey,
                 onTap: _openDetails,
                 onQrCode: widget.onQrCode,
               ),
@@ -166,11 +167,13 @@ final class _ProfileIdentityPlaceholder extends StatelessWidget {
 final class _IdentityCard extends StatelessWidget {
   const _IdentityCard({
     required this.profile,
+    required this.avatarCacheKey,
     required this.onTap,
     this.onQrCode,
   });
 
   final ProfileData profile;
+  final String? avatarCacheKey;
   final VoidCallback onTap;
 
   /// 右上角「二维码」入口：点击打开“我的二维码”页（微信式）。
@@ -201,6 +204,7 @@ final class _IdentityCard extends StatelessWidget {
                     key: const Key('profile-identity-avatar'),
                     nickname: profile.nickname,
                     fallbackSeed: profile.fallbackSeed,
+                    avatarCacheKey: avatarCacheKey,
                     avatarUrl: profile.avatarUrl,
                     size: 72,
                   ),
@@ -442,6 +446,7 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
                   trailing: UserAvatar(
                     nickname: profile.nickname,
                     fallbackSeed: profile.fallbackSeed,
+                    avatarCacheKey: widget.controller.avatarCacheKey,
                     avatarUrl: profile.avatarUrl,
                     size: 48,
                   ),
@@ -649,8 +654,7 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.android,
-                    size: 22, color: WeChatColors.brandPrimary),
+                Icon(Icons.android, size: 22, color: WeChatColors.brandPrimary),
                 SizedBox(width: 8),
                 Text('安卓'),
               ],
@@ -813,6 +817,4 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
           ),
         ),
       );
-
-
 }

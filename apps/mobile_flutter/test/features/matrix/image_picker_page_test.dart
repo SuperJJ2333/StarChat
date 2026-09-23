@@ -126,6 +126,35 @@ void main() {
     });
   });
 
+  testWidgets('static avatar mode hides videos and GIF across filtered pages',
+      (tester) async {
+    GalleryPhoto photo(String id, String mime, {bool video = false}) =>
+        GalleryPhoto(
+            id: id,
+            thumbnail: tinyPng,
+            mimeType: mime,
+            isVideo: video,
+            compressedBytes: () async => tinyPng,
+            originalBytes: () async => tinyPng);
+    final pager = FakePager([
+      [photo('gif', 'image/gif'), photo('video', 'video/mp4', video: true)],
+      [photo('still', 'image/jpeg')],
+    ]);
+    await tester.pumpWidget(CupertinoApp(
+        home: ImagePickerPage(
+      photosOnly: true,
+      staticImagesOnly: true,
+      maxCount: 1,
+      pagerBuilder: () => pager,
+    )));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('image-picker-item-gif')), findsNothing);
+    expect(find.byKey(const ValueKey('image-picker-item-video')), findsNothing);
+    expect(pager.served, 2);
+    expect(
+        find.byKey(const ValueKey('image-picker-item-still')), findsOneWidget);
+  });
+
   testWidgets(
       'reopen keeps cached preview while querying new media and clears old index',
       (tester) async {
@@ -181,6 +210,34 @@ void main() {
     expect(find.byKey(const Key('image-picker-item-cached')), findsNothing);
     expect(scans, 1,
         reason: 'Opening must bypass an index cached while closed');
+  });
+
+  testWidgets(
+      'static avatar gallery hides GIF headers with incorrect or empty MIME',
+      (tester) async {
+    final gif = Uint8List.fromList('GIF89a'.codeUnits);
+    GalleryPhoto disguised(String id, String mime) => GalleryPhoto(
+        id: id,
+        thumbnail: tinyPng,
+        mimeType: mime,
+        compressedBytes: () async => tinyPng,
+        originalBytes: () async => gif);
+    final hidden = [
+      disguised('wrong-mime', 'image/jpeg'),
+      disguised('unknown-mime', '')
+    ];
+    GalleryAccessCache.photos.preview = hidden;
+    await tester.pumpWidget(CupertinoApp(
+        home: ImagePickerPage(
+      photosOnly: true,
+      staticImagesOnly: true,
+      pagerBuilder: () => FakePager([hidden]),
+    )));
+    expect(find.byKey(const Key('image-picker-item-wrong-mime')), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('image-picker-item-wrong-mime')), findsNothing);
+    expect(
+        find.byKey(const Key('image-picker-item-unknown-mime')), findsNothing);
   });
 
   testWidgets('system media change refreshes the mounted picker',
@@ -331,7 +388,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    Rect cell(int i) => tester.getRect(find.byKey(Key('image-picker-item-photo-$i')));
+    Rect cell(int i) =>
+        tester.getRect(find.byKey(Key('image-picker-item-photo-$i')));
     // 从第 1 格角标起按，横向滑过第 2 格：两格均被选中。
     final start = cell(1).topLeft + const Offset(14, 14);
     final gesture = await tester.startGesture(start);
@@ -340,8 +398,7 @@ void main() {
     await tester.pump();
     await gesture.up();
     await tester.pump();
-    expect(find.text('发送(2)'), findsOneWidget,
-        reason: '滑动多选应把起始格与滑过格一起选中');
+    expect(find.text('发送(2)'), findsOneWidget, reason: '滑动多选应把起始格与滑过格一起选中');
 
     // 未拖动的按下仍走角标单击语义（不双切）。
     await tester.tap(find.byKey(const Key('image-picker-check-photo-3')),
@@ -438,14 +495,15 @@ void main() {
     // 再点一次选中圆圈 = 取消选中（点击缩略图是预览，不再切换选中）。
     // 间隔须超过抖动补偿窗口（120ms）：部分触屏一次按压会派发两次 tap，
     // 窗口内的重复事件被视为回声忽略，避免“点击无反应”。
-    await tester.runAsync(() => Future<void>.delayed(
-        const Duration(milliseconds: 150)));
+    await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 150)));
     await tester.tap(find.byKey(const Key('image-picker-check-photo-1')));
     await tester.pump();
     expect(find.text('发送(1)'), findsNothing);
   });
 
-  testWidgets('rapid double tap on one circle toggles only once', (tester) async {
+  testWidgets('rapid double tap on one circle toggles only once',
+      (tester) async {
     final photos = [
       GalleryPhoto(
         id: 'photo-1',
@@ -468,8 +526,7 @@ void main() {
     await tester.tap(find.byKey(const Key('image-picker-check-photo-1')),
         warnIfMissed: false);
     await tester.pump();
-    expect(find.text('发送(1)'), findsOneWidget,
-        reason: '双触发回声不应把选中立即取消');
+    expect(find.text('发送(1)'), findsOneWidget, reason: '双触发回声不应把选中立即取消');
   });
 
   testWidgets('gallery loads 20 per page with loading footer and prefetch',

@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import 'profile_controller.dart';
@@ -21,8 +20,21 @@ final class PersonalProfilePage extends StatefulWidget {
 
 const _genderOptions = <String>['男', '女', '保密'];
 const _regions = <String>[
-  '北京', '上海', '广东', '江苏', '浙江', '四川', '湖北', '湖南',
-  '山东', '河南', '河北', '福建', '陕西', '辽宁', '其他',
+  '北京',
+  '上海',
+  '广东',
+  '江苏',
+  '浙江',
+  '四川',
+  '湖北',
+  '湖南',
+  '山东',
+  '河南',
+  '河北',
+  '福建',
+  '陕西',
+  '辽宁',
+  '其他',
 ];
 
 final class _PersonalProfilePageState extends State<PersonalProfilePage> {
@@ -126,7 +138,8 @@ final class _PersonalProfilePageState extends State<PersonalProfilePage> {
             child: const Text('取消'),
           ),
           CupertinoDialogAction(
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
             child: const Text('确定'),
           ),
         ],
@@ -159,7 +172,9 @@ final class _PersonalProfilePageState extends State<PersonalProfilePage> {
                   title: const Text('头像'),
                   trailing: UserAvatar(
                     nickname: nickname,
-                    fallbackSeed: profile?.fallbackSeed ?? widget.controller.hashCode.toString(),
+                    fallbackSeed: profile?.fallbackSeed ??
+                        widget.controller.hashCode.toString(),
+                    avatarCacheKey: widget.controller.avatarCacheKey,
                     avatarUrl: profile?.avatarUrl,
                     size: 48,
                   ),
@@ -176,7 +191,8 @@ final class _PersonalProfilePageState extends State<PersonalProfilePage> {
                   title: const Text('昵称'),
                   additionalInfo: Text(nickname.isEmpty ? '未设置' : nickname),
                   trailing: const CupertinoListTileChevron(),
-                  onTap: nickname.isEmpty ? null : () => _editNickname(nickname),
+                  onTap:
+                      nickname.isEmpty ? null : () => _editNickname(nickname),
                 ),
               ],
             ),

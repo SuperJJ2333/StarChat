@@ -32,14 +32,14 @@ def resolve_reference(storage, reference):
     invalid(422)
 
 
-def owned_key(session, storage, reference, owner):
+def owned_key(session, storage, reference, owner, *, purpose=None):
     try:
         key = resolve_reference(storage, reference)
     except AppError:
         invalid(422)
     upload = session.scalar(select(MomentMediaUpload).where(
         MomentMediaUpload.object_key == key, MomentMediaUpload.owner_id == owner,
-        MomentMediaUpload.status == "COMPLETED", MomentMediaUpload.purpose == "MOMENT_IMAGE"))
+        MomentMediaUpload.status == "COMPLETED", MomentMediaUpload.purpose.in_([purpose] if purpose else ["MOMENT_IMAGE", "MOMENT_VIDEO"])))
     if upload is None:
         invalid(422)
     return key
@@ -65,7 +65,7 @@ def read_content(factory, storage, token):
         if data.get("domain") == "moment-upload-v1":
             with factory() as session:
                 upload = session.get(MomentMediaUpload, data["upload"])
-                if not upload or upload.owner_id != data["viewer"] or upload.object_key != data["key"] or upload.status != "COMPLETED" or upload.purpose != "MOMENT_IMAGE":
+                if not upload or upload.owner_id != data["viewer"] or upload.object_key != data["key"] or upload.status != "COMPLETED" or upload.purpose not in ("MOMENT_IMAGE", "MOMENT_VIDEO"):
                     invalid()
                 return storage.get(upload.object_key), upload.mime_type
         if data.get("domain") != "moment-media-v1":
@@ -90,7 +90,7 @@ def read_content(factory, storage, token):
             attached = any(key in (comment.image_object_keys or []) for comment in comments)
         if not attached:
             invalid()
-        mime = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png", ".webp":"image/webp", ".gif":"image/gif"}.get(Path(key).suffix.lower())
+        mime = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png", ".webp":"image/webp", ".gif":"image/gif", ".mp4":"video/mp4", ".mov":"video/quicktime"}.get(Path(key).suffix.lower())
         if not mime:
             invalid()
         return storage.get(key), mime

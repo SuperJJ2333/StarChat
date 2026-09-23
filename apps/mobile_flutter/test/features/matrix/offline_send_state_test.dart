@@ -86,6 +86,11 @@ final class _BusinessThrottle implements Exception {
 class _HeldSettlement implements OutboxJournal {
   _HeldSettlement(this.inner);
   final OutboxJournal inner;
+  @override
+  DateTime get now => inner.now;
+  @override
+  Future<bool> resetServerRetry(String localId) =>
+      inner.resetServerRetry(localId);
   final entered = Completer<void>();
   final release = Completer<void>();
   bool held = false;
@@ -106,13 +111,13 @@ class _HeldSettlement implements OutboxJournal {
   Future<void> complete(String localId) => inner.complete(localId);
   @override
   Future<void> settle(String localId, OutboxStatus status,
-      {String? lastError}) async {
+      {String? lastError, Object? error}) async {
     if (status == OutboxStatus.waitingNetwork && !held) {
       held = true;
       entered.complete();
       await release.future;
     }
-    await inner.settle(localId, status, lastError: lastError);
+    await inner.settle(localId, status, lastError: lastError, error: error);
   }
 }
 

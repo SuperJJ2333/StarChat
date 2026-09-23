@@ -24,6 +24,12 @@ abstract interface class OutboxStore {
     OutboxStatus status, {
     String? lastError,
     int? retryCount,
+    int? serverRetryCount,
+    DateTime? nextServerRetryAt,
+    bool clearNextServerRetryAt = false,
+    int? expectedRetryCount,
+    String? accountId,
+    DateTime? dueAt,
     bool incrementRetry = false,
     DateTime? updatedAt,
     Set<OutboxStatus>? from,
@@ -102,6 +108,8 @@ final class SqliteOutboxStore implements OutboxStore {
         'content TEXT NOT NULL, '
         'status TEXT NOT NULL, '
         'retry_count INTEGER NOT NULL DEFAULT 0, '
+        'server_retry_count INTEGER NOT NULL DEFAULT 0, '
+        'next_server_retry_at INTEGER, '
         'created_at INTEGER NOT NULL, '
         'updated_at INTEGER NOT NULL, '
         'last_error TEXT)',
@@ -118,7 +126,9 @@ final class SqliteOutboxStore implements OutboxStore {
 
   Future<Database> _open() {
     final existing = _database;
-    if (existing != null && existing.isOpen) return Future<Database>.value(existing);
+    if (existing != null && existing.isOpen) {
+      return Future<Database>.value(existing);
+    }
     return _opening ??= _openDatabase().catchError((Object error) {
       _opening = null;
       throw error;
@@ -133,7 +143,15 @@ final class SqliteOutboxStore implements OutboxStore {
     final database = await _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
+        onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 2) {
+            await db.execute(
+                'ALTER TABLE $table ADD COLUMN server_retry_count INTEGER NOT NULL DEFAULT 0');
+            await db.execute(
+                'ALTER TABLE $table ADD COLUMN next_server_retry_at INTEGER');
+          }
+        },
         onCreate: (db, _) async {
           for (final statement in createTableStatements) {
             await db.execute(statement);
@@ -162,6 +180,12 @@ final class SqliteOutboxStore implements OutboxStore {
     OutboxStatus status, {
     String? lastError,
     int? retryCount,
+    int? serverRetryCount,
+    DateTime? nextServerRetryAt,
+    bool clearNextServerRetryAt = false,
+    int? expectedRetryCount,
+    String? accountId,
+    DateTime? dueAt,
     bool incrementRetry = false,
     DateTime? updatedAt,
     Set<OutboxStatus>? from,
@@ -170,48 +194,47 @@ final class SqliteOutboxStore implements OutboxStore {
     final db = await _open();
     final values = <String, Object?>{
       'status': status.wireName,
-      'updated_at':
-          (updatedAt ?? DateTime.now()).millisecondsSinceEpoch,
+      'updated_at': (updatedAt ?? DateTime.now()).millisecondsSinceEpoch,
       if (clearLastError) 'last_error': null,
       if (lastError != null) 'last_error': lastError,
       if (retryCount != null) 'retry_count': retryCount,
+      if (serverRetryCount != null) 'server_retry_count': serverRetryCount,
+      if (clearNextServerRetryAt) 'next_server_retry_at': null,
+      if (nextServerRetryAt != null)
+        'next_server_retry_at': nextServerRetryAt.millisecondsSinceEpoch,
     };
     final where = StringBuffer('local_id = ?');
     final args = <Object?>[localId];
     if (from != null && from.isNotEmpty) {
-      where.write(' AND status IN (${List.filled(from.length, '?').join(',')})');
+      where
+          .write(' AND status IN (${List.filled(from.length, '?').join(',')})');
       args.addAll(from.map((status) => status.wireName));
     }
-    if (!incrementRetry) {
-      return await db.update(table, values,
-              where: where.toString(), whereArgs: args) >
-          0;
+    if (accountId != null) {
+      where.write(' AND account_id = ?');
+      args.add(accountId);
     }
-    // 计数用 SQL 自增：条件更新与 +1 在同一条语句里完成，不会丢计数。
-    final assignments = <String>[
-      'status = ?',
-      'updated_at = ?',
-      'retry_count = retry_count + 1',
-      if (clearLastError) 'last_error = NULL',
-      if (lastError != null) 'last_error = ?',
-      if (retryCount != null) 'retry_count = ?',
-    ];
-    final incrementArgs = <Object?>[
-      status.wireName,
-      (updatedAt ?? DateTime.now()).millisecondsSinceEpoch,
-      if (lastError != null) lastError,
-      if (retryCount != null) retryCount,
-      ...args,
-    ];
+    if (expectedRetryCount != null) {
+      where.write(' AND retry_count = ?');
+      args.add(expectedRetryCount);
+    }
+    if (dueAt != null) {
+      where.write(
+          ' AND (next_server_retry_at IS NULL OR next_server_retry_at <= ?)');
+      args.add(dueAt.millisecondsSinceEpoch);
+    }
+    final assignments = values.keys.map((key) => '$key = ?').toList();
+    if (incrementRetry) assignments.add('retry_count = retry_count + 1');
     return await db.rawUpdate(
-            'UPDATE $table SET ${assignments.join(', ')} WHERE ${where.toString()}',
-            incrementArgs) >
+          'UPDATE $table SET ${assignments.join(', ')} WHERE $where',
+          [...values.values, ...args],
+        ) >
         0;
   }
 
   @override
   Future<bool> bindRoom(String localId, String roomId,
-          {DateTime? updatedAt}) async {
+      {DateTime? updatedAt}) async {
     final db = await _open();
     return await db.update(
           table,
@@ -243,7 +266,8 @@ final class SqliteOutboxStore implements OutboxStore {
     }
     final ids = localIds?.toList() ?? const <String>[];
     if (ids.isNotEmpty) {
-      where.write(' AND local_id IN (${List.filled(ids.length, '?').join(',')})');
+      where.write(
+          ' AND local_id IN (${List.filled(ids.length, '?').join(',')})');
       args.addAll(ids);
     }
     return db.update(
@@ -283,7 +307,8 @@ final class SqliteOutboxStore implements OutboxStore {
     final where = StringBuffer('1 = 1');
     final args = <Object?>[];
     if (statuses != null && statuses.isNotEmpty) {
-      where.write(' AND status IN (${List.filled(statuses.length, '?').join(',')})');
+      where.write(
+          ' AND status IN (${List.filled(statuses.length, '?').join(',')})');
       args.addAll(statuses.map((status) => status.wireName));
     }
     if (unsent) {
@@ -339,8 +364,8 @@ final class SqliteOutboxStore implements OutboxStore {
       await (await _open()).delete(table);
       return;
     }
-    await (await _open())
-        .delete(table, where: 'account_id = ?', whereArgs: <Object?>[accountId]);
+    await (await _open()).delete(table,
+        where: 'account_id = ?', whereArgs: <Object?>[accountId]);
   }
 
   @override
@@ -383,6 +408,12 @@ final class InMemoryOutboxStore implements OutboxStore {
     OutboxStatus status, {
     String? lastError,
     int? retryCount,
+    int? serverRetryCount,
+    DateTime? nextServerRetryAt,
+    bool clearNextServerRetryAt = false,
+    int? expectedRetryCount,
+    String? accountId,
+    DateTime? dueAt,
     bool incrementRetry = false,
     DateTime? updatedAt,
     Set<OutboxStatus>? from,
@@ -390,12 +421,24 @@ final class InMemoryOutboxStore implements OutboxStore {
   }) async {
     final row = _rows[localId];
     if (row == null) return false;
+    if (accountId != null && row.accountId != accountId) return false;
+    if (expectedRetryCount != null && row.retryCount != expectedRetryCount) {
+      return false;
+    }
+    if (dueAt != null &&
+        row.nextServerRetryAt != null &&
+        row.nextServerRetryAt!.isAfter(dueAt)) {
+      return false;
+    }
     if (from != null && from.isNotEmpty && !from.contains(row.status)) {
       return false;
     }
     _rows[localId] = row.copyWith(
       status: status,
       retryCount: incrementRetry ? row.retryCount + 1 : retryCount,
+      serverRetryCount: serverRetryCount,
+      nextServerRetryAt: nextServerRetryAt,
+      clearNextServerRetryAt: clearNextServerRetryAt,
       updatedAt: updatedAt ?? DateTime.now(),
       lastError: lastError,
       clearLastError: clearLastError,
@@ -408,8 +451,8 @@ final class InMemoryOutboxStore implements OutboxStore {
       {DateTime? updatedAt}) async {
     final row = _rows[localId];
     if (row == null || row.hasRoom) return false;
-    _rows[localId] = row.copyWith(
-        roomId: roomId, updatedAt: updatedAt ?? DateTime.now());
+    _rows[localId] =
+        row.copyWith(roomId: roomId, updatedAt: updatedAt ?? DateTime.now());
     return true;
   }
 
@@ -429,8 +472,8 @@ final class InMemoryOutboxStore implements OutboxStore {
       if (row.hasRoom || row.status.isSettled) continue;
       if (accountId != null && row.accountId != accountId) continue;
       if (ids != null && !ids.contains(row.localId)) continue;
-      _rows[entry.key] = row.copyWith(
-          roomId: roomId, updatedAt: updatedAt ?? DateTime.now());
+      _rows[entry.key] =
+          row.copyWith(roomId: roomId, updatedAt: updatedAt ?? DateTime.now());
       changed++;
     }
     return changed;

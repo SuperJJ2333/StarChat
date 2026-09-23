@@ -54,6 +54,19 @@ exercises independent HKDF vectors, standard SDK decryption, actual
 preprocessing order, decrypted-event authority and validated content caches.
 This patch does not change Megolm rotation, room encryption or avatar uploads.
 
+2026-09-23 attachment upload phase reuse:
+
+- `lib/src/room.dart` retains successful main-file and thumbnail upload URIs
+  within one `sendFileEvent` call. A transient thumbnail failure retries only
+  that unfinished upload instead of uploading the main ciphertext again.
+  Encryption envelopes, transaction ID, single event dispatch, timeout and
+  permanent Matrix-error handling retain their existing behavior. This does
+  not add persistence or reuse across separate calls or process restarts.
+- Regression: `test/features/matrix/content_addressed_media_test.dart` covers
+  transient failures of both phases, permanent failures of both phases,
+  preserved original MXC references, ciphertext and encryption descriptors,
+  local-sync/sent transaction identity, metadata and single event dispatch.
+
 2026-09-12 sync-loop ownership recovery:
 
 - `lib/src/client.dart` assigns each SDK sync loop a monotonically increasing

@@ -6,6 +6,30 @@ import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 
 void main() {
   testWidgets(
+      'profile display uses the prewarmed account identity while retaining fallback seed',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+        home: UserAvatar(
+      nickname: 'Alice',
+      fallbackSeed: 'color-seed',
+      avatarCacheKey: 'identity:account:alice',
+      avatarUrl: 'https://safe/avatar?v=1',
+    )));
+    final image = tester.widget<Image>(find.byType(Image));
+    final provider = image.image as AvatarCacheImageProvider;
+    expect(
+        provider.cacheKey,
+        AvatarCache.cacheKey(
+            userId: 'identity:account:alice',
+            avatarUrl: 'https://safe/avatar?v=1'));
+    final context = tester.element(find.byType(Image));
+    image.frameBuilder!(context, const SizedBox(), 0, true);
+    expect(AvatarCache.lastSuccessful('identity:account:alice'), provider);
+    expect(AvatarCache.lastSuccessful('color-seed'), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
       'late frame callback cannot retain previous account image under new identity',
       (tester) async {
     Widget build(String identity) => CupertinoApp(

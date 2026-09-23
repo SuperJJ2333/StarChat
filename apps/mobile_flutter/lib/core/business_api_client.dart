@@ -1379,11 +1379,13 @@ final class BusinessApiClient
     required String text,
     required String visibility,
     List<String> imageUrls = const [],
+    List<String> videoUrls = const [],
     List<String> includeUserIds = const [],
     List<String> excludeUserIds = const [],
     List<String> includeTagIds = const [],
     List<String> excludeTagIds = const [],
     String? linkUrl,
+    String? idempotencyKey,
   }) =>
       postJson(
           '/moments',
@@ -1391,13 +1393,14 @@ final class BusinessApiClient
             'text': text,
             'visibility': visibility,
             'image_urls': imageUrls,
+            if (videoUrls.isNotEmpty) 'video_urls': videoUrls,
             'include_user_ids': includeUserIds,
             'exclude_user_ids': excludeUserIds,
             'include_tag_ids': includeTagIds,
             'exclude_tag_ids': excludeTagIds,
             'link_url': linkUrl,
           },
-          idempotencyKey: newIdempotencyKey());
+          idempotencyKey: idempotencyKey ?? newIdempotencyKey());
   Future<Map<String, dynamic>> likeMoment(String id) =>
       postJson('/moments/$id/likes', {}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> commentMoment(String id, String text,

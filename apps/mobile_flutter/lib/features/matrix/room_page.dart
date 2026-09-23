@@ -147,7 +147,7 @@ import '../finance/finance_message_presentation.dart';
 import 'media_message_access_policy.dart';
 import 'room_media_gallery_projection.dart';
 import '../search/local_message_search_repository.dart';
-import '../search/room_search_index_scheduler.dart';
+import '../search/room_search_index_pump.dart';
 import '../../ui/motion/motion_page_route.dart';
 
 /// Counts the authoritative joined snapshot exactly once per Matrix member.
@@ -536,9 +536,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   final Set<String> _visibleReadIds = {};
   // E1：搜索索引增量调度与突发去抖。
-  final RoomSearchIndexScheduler _searchIndexScheduler =
-      RoomSearchIndexScheduler();
-  Timer? _searchIndexDebounce;
+  RoomSearchIndexPump? _searchIndexPump;
   final Set<String> _acknowledgedVisibleIds = {};
   bool _immediateVisibleReceipt = false;
   void _observeVisibleReadReceipts() {
@@ -4667,39 +4665,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// E1：搜索索引**增量**投影——旧实现在每次时间线变化时把房间全部
   /// 消息重建进索引（O(N log N) 分配+排序，UI 线程执行）。活跃群聊里
   /// 每条新消息都触发一遍，低端机在键盘输入时直接卡死数秒。现在只为
-  /// 新出现的消息构建条目，突发合并为一次提交（400ms 去抖），撤回联动删除。
+  /// 变化的消息构建条目，突发合并、分片处理，撤回联动删除。
   void _recordGlobalSearchIndex() {
     final timeline = controller;
     if (timeline == null) return;
-    final seenIds = <String>[];
-    final indexableIds = <String>{};
-    final recalledIds = <String>{};
-    final freshById = <String, RoomMessageViewModel>{};
-    for (final message in timeline.allMessages) {
-      seenIds.add(message.stableId);
-      if (message.isRecalled) {
-        recalledIds.add(message.stableId);
-        continue;
-      }
-      if (message.isFlashPhoto ||
-          message.isSdkLocalEcho ||
-          message.text.trim().isEmpty) {
-        continue;
-      }
-      indexableIds.add(message.stableId);
-      if (!freshById.containsKey(message.stableId)) {
-        freshById[message.stableId] = message;
-      }
-    }
-    final observation = _searchIndexScheduler.observe(
-      seenIds: seenIds,
-      indexableIds: indexableIds,
-      recalledIds: recalledIds,
-    );
-    if (observation.toIndex.isEmpty && observation.toRemove.isEmpty) return;
-    final fresh = [
-      for (final id in observation.toIndex)
-        if (freshById[id] case final RoomMessageViewModel message)
+    final repository = LocalMessageSearchRepository.shared;
+    final epoch = repository.accountEpoch;
+    _searchIndexPump ??= RoomSearchIndexPump(
+      source: () => controller?.newestFirstMessages ?? const [],
+      isActive: () => mounted && !_disposing && !widget.roomLease.canceled &&
+          repository.accountEpoch == epoch,
+      remove: repository.removeMessages,
+      upsert: (messages) => repository.recordRoomMessages([
+        for (final message in messages)
           LocalSearchMessage(
             eventId: message.id,
             senderId: message.senderId,
@@ -4709,26 +4687,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             roomId: (_logicalTimeline is RoomEventSourceCapability
                     ? (_logicalTimeline as RoomEventSourceCapability)
                         .sourceRoomId(message.id)
-                    : null) ??
-                roomInfo.id,
+                    : null) ?? roomInfo.id,
             roomName: roomInfo.name,
             isGroup: isGroup,
             senderIsSelf: message.isOwn,
             roomAvatarSeed: roomInfo.id,
             isFlashPhoto: message.isFlashPhoto,
           ),
-    ];
-    final removed = List<String>.of(observation.toRemove);
-    _searchIndexDebounce?.cancel();
-    _searchIndexDebounce = Timer(const Duration(milliseconds: 400), () {
-      if (_disposing) return;
-      if (fresh.isNotEmpty) {
-        LocalMessageSearchRepository.shared.recordRoomMessages(fresh);
-      }
-      if (removed.isNotEmpty) {
-        LocalMessageSearchRepository.shared.removeMessages(removed);
-      }
-    });
+      ]),
+    );
+    // This list is the bounded viewport, never all loaded history. The pump
+    // lazily catches up older records between frames without cancelling batches.
+    _searchIndexPump!.request(timeline.messages);
   }
 
   /// E1：元素停用（弹出/快速进出）即刻取消 100ms 可见性轮询——
@@ -4797,7 +4767,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     inputFocusNode.dispose();
     input.dispose();
     messageScrollController.removeListener(_onMessageScroll);
-    _searchIndexDebounce?.cancel();
+    _searchIndexPump?.dispose();
     ConversationReadState.shared().setRoomOpen(roomInfo.id, open: false);
     messageScrollController.dispose();
     super.dispose();

@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
+import 'package:liuhetong_mobile/core/outbox/message_send_scheduler.dart';
+import 'package:liuhetong_mobile/core/outbox/outbox_room_sender_registry.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
@@ -67,6 +69,63 @@ final class _FakeTransport
 Future<String> _networkDown() =>
     Future<String>.error(const SocketException('offline'));
 
+class _WriteFailureStore implements OutboxStore {
+  final inner = InMemoryOutboxStore();
+  bool fail = false;
+  int failedWrites = 0;
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    if (fail && invocation.memberName == #updateStatus) {
+      failedWrites++;
+      return Future<bool>.error(StateError('storage unavailable'));
+    }
+    final target = switch (invocation.memberName) {
+      #insert => inner.insert,
+      #byLocalId => inner.byLocalId,
+      #byTxid => inner.byTxid,
+      #updateStatus => inner.updateStatus,
+      #query => inner.query,
+      #delete => inner.delete,
+      _ => null,
+    };
+    if (target != null) {
+      return Function.apply(
+          target, invocation.positionalArguments, invocation.namedArguments);
+    }
+    return super.noSuchMethod(invocation);
+  }
+}
+
+class _TransportLease implements OutboxLease {
+  _TransportLease(this.transport);
+  final _FakeTransport transport;
+  @override
+  Future<String> send(String text, String txid) =>
+      transport.sendTextWithTransaction(text, txid);
+  @override
+  Future<void> release() async {}
+}
+
+class _ControllerSender implements OutboxSender {
+  _ControllerSender(this.controller);
+  final RoomTimelineController controller;
+  @override
+  String get roomId => '!room:test';
+  @override
+  bool get canSend => true;
+  @override
+  Future<String> send(OutboxMessage row) async {
+    final result = await controller.sendText(row.content, outboxRow: row);
+    if (result == null) throw StateError('send not accepted');
+    return result;
+  }
+}
+
+class _ServerUnavailable implements Exception {
+  int get statusCode => 503;
+  int get retryAfterSeconds => 5;
+}
+
 void main() {
   late NetworkStateManager manager;
   late PersistentOutboxManager outbox;
@@ -86,6 +145,223 @@ void main() {
           networkStateManager: manager,
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
+
+  test('expired deadline with failed writes wakes only once per owner',
+      () async {
+    var now = DateTime.now();
+    final store = _WriteFailureStore();
+    outbox.dispose();
+    outbox = PersistentOutboxManager(store, accountId: 'me', clock: () => now);
+    manager.reportSuccess();
+    final transport = _FakeTransport()
+      ..responses.add(() => Future.error(_ServerUnavailable()));
+    final original = controllerFor(transport);
+    await original.sendText('storage fixture');
+    final row = (await outbox.unsent()).single;
+    original.dispose();
+    now = row.nextServerRetryAt!.add(const Duration(seconds: 1));
+    store.fail = true;
+    final restored = controllerFor(transport)..restoreOutboxMessage(row);
+    final scheduler = MessageSendScheduler(
+        outbox: outbox, senderFor: (_) => _ControllerSender(restored))
+      ..start();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(store.failedWrites, lessThanOrEqualTo(3));
+    expect(transport.txids, [row.txid]);
+    final retained = (await outbox.unsent()).single;
+    expect(retained.serverRetryCount, 1);
+    expect(retained.status, OutboxStatus.waitingNetwork);
+    store.fail = false;
+    manager.report(transportAvailable: false);
+    manager.reportSuccess();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(transport.txids, [row.txid, row.txid]);
+    expect(await outbox.unsent(), isEmpty);
+    scheduler.dispose();
+    restored.dispose();
+  });
+
+  testWidgets(
+      'retryable canonical admission failure receives durable retry budget',
+      (tester) async {
+    outbox.dispose();
+    outbox = PersistentOutboxManager(InMemoryOutboxStore(),
+        accountId: 'me', clock: tester.binding.clock.now);
+    var admissions = 0;
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        outboxJournal: RoomOutboxJournal(
+            manager: outbox,
+            roomId: '!room:test',
+            receiverId: '@peer:test',
+            beforeClaim: (_) async {
+              admissions++;
+              throw _ServerUnavailable();
+            }));
+    await controller.sendText('admission fixture');
+    final row = (await outbox.unsent()).single;
+    expect(row.serverRetryCount, 1);
+    expect(row.nextServerRetryAt, isNotNull);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(admissions, 2);
+    expect(transport.txids, isEmpty);
+    controller.dispose();
+  });
+
+  for (final ownerFailed in [false, true]) {
+    test(
+        'late admission failure preserves concurrent owner ${ownerFailed ? 'terminal rejection' : 'retry deadline'}',
+        () async {
+      final admission = Completer<bool>();
+      final transport = _FakeTransport();
+      final delayed = RoomTimelineController(transport,
+          outboxJournal: RoomOutboxJournal(
+              manager: outbox,
+              roomId: '!room:test',
+              receiverId: '@peer:test',
+              beforeClaim: (_) => admission.future));
+      final pending = delayed.sendText('concurrent admission');
+      await pumpEventQueue();
+      final row = (await outbox.unsent()).single;
+      final owner =
+          outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test');
+      expect(await owner.claim(row.localId), isTrue);
+      await owner.settle(row.localId,
+          ownerFailed ? OutboxStatus.failed : OutboxStatus.waitingNetwork,
+          error: ownerFailed ? StateError('denied') : _ServerUnavailable());
+      final settled = (await outbox.byLocalId(row.localId))!;
+      admission.completeError(
+          ownerFailed ? _ServerUnavailable() : StateError('denied'));
+      await pending;
+      final retained = (await outbox.byLocalId(row.localId))!;
+      expect(retained.status, settled.status);
+      expect(retained.retryCount, settled.retryCount);
+      expect(retained.serverRetryCount, settled.serverRetryCount);
+      expect(retained.nextServerRetryAt, settled.nextServerRetryAt);
+      expect(retained.lastError, settled.lastError);
+      expect(transport.txids, isEmpty);
+      delayed.dispose();
+    });
+  }
+
+  for (final failure in [false, true]) {
+    testWidgets(
+        'observation timeout holds budget until late ${failure ? '503' : 'ACK'}',
+        (tester) async {
+      outbox.dispose();
+      outbox = PersistentOutboxManager(InMemoryOutboxStore(),
+          accountId: 'me', clock: tester.binding.clock.now);
+      final response = Completer<String>();
+      final transport = _FakeTransport()..responses.add(() => response.future);
+      final controller = RoomTimelineController(transport,
+          sendDispatchTimeout: const Duration(seconds: 1),
+          outboxJournal: outbox.journalFor(
+              roomId: '!room:test', receiverId: '@peer:test'));
+      final pending = controller.sendText('timeout fixture');
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(await pending, isNull);
+      final row = (await outbox.unsent()).single;
+      expect(row.status, OutboxStatus.sending);
+      expect(row.serverRetryCount, 0);
+      expect(row.nextServerRetryAt, isNull);
+      expect(await outbox.claim(row.localId), isFalse);
+      await controller.retry(row.txid);
+      expect(transport.txids, [row.txid]);
+      controller.dispose();
+      if (failure) {
+        response.completeError(_ServerUnavailable());
+      } else {
+        response.complete('ack');
+      }
+      await tester.pump();
+      final settled = await outbox.byLocalId(row.localId);
+      if (failure) {
+        expect(settled!.serverRetryCount, 1);
+        expect(settled.nextServerRetryAt,
+            tester.binding.clock.now().add(const Duration(seconds: 5)));
+      } else {
+        expect(settled, isNull);
+      }
+    });
+  }
+
+  testWidgets(
+      'direct foreground late failure wakes background after page disposal',
+      (tester) async {
+    outbox.dispose();
+    outbox = PersistentOutboxManager(InMemoryOutboxStore(),
+        accountId: 'me', clock: tester.binding.clock.now);
+    manager.reportSuccess();
+    final response = Completer<String>();
+    final transport = _FakeTransport()..responses.add(() => response.future);
+    final scheduler = MessageSendScheduler(
+        outbox: outbox,
+        senderFor: (_) => null,
+        networkState: manager,
+        leaseFactory: (_) async => _TransportLease(transport))
+      ..start();
+    await tester.pump();
+    final controller = controllerFor(transport);
+    final pending = controller.sendText('direct typed');
+    await tester.pump();
+    final row = (await outbox.unsent()).single;
+    controller.dispose();
+    response.completeError(_ServerUnavailable());
+    await pending;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(transport.txids, [row.txid, row.txid]);
+    expect(await outbox.unsent(), isEmpty);
+    scheduler.dispose();
+  });
+
+  testWidgets(
+      'restored page wakes at durable deadline and wrapper never charges twice',
+      (tester) async {
+    outbox.dispose();
+    outbox = PersistentOutboxManager(InMemoryOutboxStore(),
+        accountId: 'me', clock: tester.binding.clock.now);
+    final transport = _FakeTransport()
+      ..responses.add(() => Future.error(_ServerUnavailable()));
+    var controller = controllerFor(transport);
+    final row = (await outbox.save(
+        receiverId: '@peer:test', content: 'x', roomId: '!room:test'))!;
+    final scheduler = MessageSendScheduler(
+        outbox: outbox, senderFor: (_) => _ControllerSender(controller));
+    await scheduler.drain();
+    final failed = (await outbox.byLocalId(row.localId))!;
+    expect(failed.serverRetryCount, 1);
+    scheduler.dispose();
+    controller.dispose();
+    controller = controllerFor(transport)..restoreOutboxMessage(failed);
+    await tester.pump(const Duration(seconds: 4));
+    expect(transport.txids, [row.txid]);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(transport.txids, [row.txid, row.txid]);
+    expect(await outbox.unsent(), isEmpty);
+    controller.dispose();
+  });
+
+  test('late server failure persists retry budget after page disposal',
+      () async {
+    final response = Completer<String>();
+    final transport = _FakeTransport()..responses.add(() => response.future);
+    final controller = controllerFor(transport);
+    final send = controller.sendText('persist backoff');
+    await pumpEventQueue();
+    final row = (await outbox.unsent()).single;
+    controller.dispose();
+    response.completeError(_ServerUnavailable());
+    await send;
+    final settled = (await outbox.byLocalId(row.localId))!;
+    expect(settled.status, OutboxStatus.waitingNetwork);
+    expect(settled.toRow()['server_retry_count'], 1);
+    expect(settled.toRow()['next_server_retry_at'], isA<int>());
+    expect(await outbox.claim(row.localId), isFalse);
+  });
 
   group('room switch during dispatch', () {
     test('late server acknowledgement settles outbox after page disposal',
@@ -129,8 +405,7 @@ void main() {
         expect(row.txid, original.txid);
         expect(row.status,
             networkFailure ? OutboxStatus.waitingNetwork : OutboxStatus.failed);
-        expect(row.lastError,
-            contains(networkFailure ? 'offline' : 'M_FORBIDDEN'));
+        expect(row.lastError, 'send_failed');
       });
     }
   });
@@ -187,7 +462,7 @@ void main() {
 
       final pending = await outbox.unsent();
       expect(pending.single.status, OutboxStatus.failed);
-      expect(pending.single.lastError, contains('M_FORBIDDEN'));
+      expect(pending.single.lastError, 'send_failed');
       controller.dispose();
     });
 

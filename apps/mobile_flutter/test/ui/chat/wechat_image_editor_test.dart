@@ -5,7 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_image_editor.dart';
 
-Future<Uint8List> _patternPng({int size = 100}) async {
+Future<Uint8List> _patternPng({int size = 100, int? height}) async {
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
   canvas.drawRect(
@@ -20,7 +20,7 @@ Future<Uint8List> _patternPng({int size = 100}) async {
     canvas.drawRect(Rect.fromLTWH(x.toDouble(), 0, 4, size.toDouble()), line);
   }
   final picture = recorder.endRecording();
-  final image = await picture.toImage(size, size);
+  final image = await picture.toImage(size, height ?? size);
   picture.dispose();
   try {
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -61,8 +61,7 @@ Rect _viewBoxGlobal(WidgetTester tester) {
 /// 图片内的百分比坐标 → 全局坐标。
 Offset _imagePoint(WidgetTester tester, double x, double y) {
   final box = _viewBoxGlobal(tester);
-  return Offset(
-      box.left + box.width * x / 100, box.top + box.height * y / 100);
+  return Offset(box.left + box.width * x / 100, box.top + box.height * y / 100);
 }
 
 /// 当前裁剪框（全局坐标）。
@@ -84,11 +83,11 @@ Future<void> _waitForEditor(WidgetTester tester) async {
     await tester
         .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
     await tester.pump();
-    if (find.byKey(const Key('image-editor-brush')).evaluate().isNotEmpty) {
+    if (find.byKey(const Key('image-editor-done')).evaluate().isNotEmpty) {
       return;
     }
   }
-  expect(find.byKey(const Key('image-editor-brush')), findsOneWidget);
+  expect(find.byKey(const Key('image-editor-done')), findsOneWidget);
 }
 
 Future<void> _exportThroughForward(
@@ -110,6 +109,60 @@ Future<void> _exportThroughForward(
 
 void main() {
   for (final width in [320.0, 390.0]) {
+    testWidgets(
+        'avatar crop exports square bounded PNG with safe-area controls at $width',
+        (tester) async {
+      await tester.binding.setSurfaceSize(Size(width, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final bytes =
+          (await tester.runAsync(() => _patternPng(size: 1400, height: 1200)))!;
+      Uint8List? result;
+      await tester.pumpWidget(CupertinoApp(
+        builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(padding: const EdgeInsets.only(top: 59, bottom: 34)),
+            child: child!),
+        home: Builder(
+            builder: (context) => CupertinoButton(
+                child: const Text('open'),
+                onPressed: () async {
+                  result = await Navigator.of(context).push<Uint8List>(
+                      CupertinoPageRoute(
+                          builder: (_) => WeChatImageEditorPage(
+                              bytes: bytes, avatarMode: true)));
+                })),
+      ));
+      await tester.tap(find.text('open'));
+      await _waitForEditor(tester);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(_painter(tester).selection!.width,
+          closeTo(_painter(tester).selection!.height, 0.01));
+      expect(
+          find.byKey(const Key('image-editor-crop-aspect-free')), findsNothing);
+      expect(find.byKey(const Key('image-editor-brush')), findsNothing);
+      expect(tester.getRect(find.byKey(const Key('image-editor-cancel'))).top,
+          greaterThanOrEqualTo(59));
+      expect(tester.getRect(find.byKey(const Key('image-editor-done'))).bottom,
+          lessThanOrEqualTo(810));
+      await tester.tap(find.text('使用此头像'));
+      for (var i = 0; i < 40 && result == null; i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await tester.pump();
+      }
+      expect(result, isNotNull);
+      await tester.runAsync(() async {
+        final codec = await ui.instantiateImageCodec(result!);
+        final image = (await codec.getNextFrame()).image;
+        expect(image.width, 1024);
+        expect(image.height, 1024);
+        image.dispose();
+        codec.dispose();
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('open'), findsOneWidget);
+    });
+
     testWidgets('emoji chooser is centered with fixed touch targets at $width',
         (tester) async {
       await tester.binding.setSurfaceSize(Size(width, 720));
@@ -176,8 +229,7 @@ void main() {
         reason: '导出必须发生在转发确认之后，选择器不能先等 PNG 编码');
   });
 
-  testWidgets('BUG-27 转发被接受后显示瞬态「已转发」，不再滞留「正在发送」',
-      (tester) async {
+  testWidgets('BUG-27 转发被接受后显示瞬态「已转发」，不再滞留「正在发送」', (tester) async {
     final source = (await tester.runAsync(_patternPng))!;
     final exports = <Uint8List>[];
     await tester.pumpWidget(CupertinoApp(
@@ -198,8 +250,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(exports, isNotEmpty);
-    expect(find.text('正在发送'), findsNothing,
-        reason: '不得再显示永远不会更新的「正在发送」');
+    expect(find.text('正在发送'), findsNothing, reason: '不得再显示永远不会更新的「正在发送」');
     expect(find.text('已转发'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
     await tester.pump();
@@ -228,8 +279,7 @@ void main() {
     expect(find.text('已收藏'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
     await tester.pump();
-    expect(find.text('已收藏'), findsNothing,
-        reason: '成功提示必须自动消失，不得常驻画布');
+    expect(find.text('已收藏'), findsNothing, reason: '成功提示必须自动消失，不得常驻画布');
   });
   testWidgets(
       'eraser removes only its touched edit layer and undo redo exports it',
@@ -260,7 +310,8 @@ void main() {
     expect(find.byIcon(CupertinoIcons.delete_left), findsNothing,
         reason: 'the eraser uses a drawing icon rather than a backspace glyph');
 
-    Offset point(int x, int y) => _imagePoint(tester, x.toDouble(), y.toDouble());
+    Offset point(int x, int y) =>
+        _imagePoint(tester, x.toDouble(), y.toDouble());
 
     await _draw(tester, point(25, 50), point(30, 50));
     await _draw(tester, point(72, 50), point(77, 50));

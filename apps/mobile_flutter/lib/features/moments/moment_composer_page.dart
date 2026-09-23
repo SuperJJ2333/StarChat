@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,6 +11,9 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../matrix/profile_repository.dart';
+import '../matrix/image_picker_page.dart';
+import 'moment_comment_composer.dart'
+    show MomentGallerySelection, MomentGalleryPicker;
 import 'moment_visibility_page.dart';
 import 'moment_draft_store.dart';
 import 'moment_image_preprocessor.dart';
@@ -22,9 +26,11 @@ final class MomentComposerPage extends StatefulWidget {
     this.initialImages = const [],
     this.imagePreprocessor,
     this.identityCache,
+    this.galleryPicker,
   });
 
   final BusinessApiClient api;
+  final MomentGalleryPicker? galleryPicker;
   final List<XFile> initialImages;
 
   /// 可注入的图片压缩管线（缺省为原生 JPEG 压缩实现）。
@@ -41,19 +47,27 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   final text = TextEditingController();
   final images = <XFile>[];
   final remoteImageUrls = <String>[];
+  final remoteVideoUrls = <String>[];
+  final _previews = <XFile, Uint8List>{};
+  int get _mediaCount =>
+      images.length + remoteImageUrls.length + remoteVideoUrls.length;
   MomentVisibilitySelection visibility =
       const MomentVisibilitySelection.public();
   String? linkUrl;
   String? errorMessage;
   bool saving = false;
+  bool _selecting = false;
+  bool get busy => saving || _selecting;
   bool _allowPop = false;
   bool _draftSaved = false;
   bool _published = false;
+  String? _publishKey, _publishPayload;
 
   bool get dirty =>
       text.text.trim().isNotEmpty ||
       images.isNotEmpty ||
       remoteImageUrls.isNotEmpty ||
+      remoteVideoUrls.isNotEmpty ||
       linkUrl != null ||
       visibility.visibility != 'PUBLIC' ||
       visibility.selectedCount > 0;
@@ -107,8 +121,14 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         (draft['image_urls'] as List? ?? const [])
             .map((value) => value.toString())
             .where((value) => value.trim().isNotEmpty)
-            .take(9),
+            .take(9 - images.length),
       );
+    remoteVideoUrls
+      ..clear()
+      ..addAll((draft['video_urls'] as List? ?? const [])
+          .map((v) => v.toString())
+          .where((v) => v.isNotEmpty)
+          .take(9 - images.length - remoteImageUrls.length));
     visibility = MomentVisibilitySelection(
       visibility: mode,
       userIds: users,
@@ -158,6 +178,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         'text': text.text,
         'visibility': visibility.visibility,
         'image_urls': remoteImageUrls.toList(growable: false),
+        if (remoteVideoUrls.isNotEmpty)
+          'video_urls': remoteVideoUrls.toList(growable: false),
         'link_url': linkUrl,
         'include_user_ids': visibility.visibility == 'INCLUDE'
             ? visibility.userIds.toList()
@@ -190,16 +212,27 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     final preprocessor = widget.imagePreprocessor ?? MomentImagePreprocessor();
     while (images.isNotEmpty) {
       final image = images.first;
+      final videoMime = momentVideoMime(image);
       final Uint8List bytes;
       try {
+        if (videoMime != null && await image.length() > 20 * 1024 * 1024) {
+          throw const MomentImageException('视频大小不能超过20MB');
+        }
         bytes = await image.readAsBytes();
+      } on MomentImageException {
+        rethrow;
       } catch (_) {
-        throw const MomentImageException('读取图片失败，请重新选择该图片');
+        throw const MomentImageException('读取媒体失败，请重新选择');
       }
-      final processed = await preprocessor.process(bytes);
-      final mimeType = 'image/jpeg';
+      if (videoMime != null &&
+          (bytes.isEmpty || bytes.length > 20 * 1024 * 1024)) {
+        throw const MomentImageException('视频大小不能超过20MB');
+      }
+      final processed =
+          videoMime == null ? await preprocessor.process(bytes) : bytes;
+      final mimeType = videoMime ?? 'image/jpeg';
       final begun = await widget.api.beginMomentUpload(
-        fileName: _jpegFileName(image.name),
+        fileName: videoMime == null ? _jpegFileName(image.name) : image.name,
         mimeType: mimeType,
         byteSize: processed.lengthInBytes,
       );
@@ -216,13 +249,15 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       if (!mounted) return remoteImageUrls.toList(growable: false);
       setState(() {
         images.removeAt(0);
-        remoteImageUrls.add(mediaUrl);
+        _previews.remove(image);
+        (videoMime == null ? remoteImageUrls : remoteVideoUrls).add(mediaUrl);
       });
     }
     return remoteImageUrls.toList(growable: false);
   }
 
   Future<bool> _onBack() async {
+    if (busy) return false;
     if (_allowPop || _published || _draftSaved || !dirty) return true;
     final result = await showCupertinoDialog<String>(
       context: context,
@@ -278,33 +313,62 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   }
 
   Future<void> _pickImages() async {
-    final remaining = 9 - images.length - remoteImageUrls.length;
+    if (busy) return;
+    final remaining = 9 - _mediaCount;
     if (remaining <= 0) {
-      setState(() => errorMessage = '最多只能发布 9 张图片');
+      setState(() => errorMessage = '最多只能发布9个图片或视频');
       return;
     }
-    final List<XFile> selected;
+    setState(() => _selecting = true);
     try {
-      // pickMultipleMedia：Android 13+ 走系统 Photo Picker（无需媒体
-      // 权限，且允许误选视频），12- 回退多选实现。
-      selected = await ImagePicker().pickMultipleMedia();
-    } catch (_) {
-      setState(() => errorMessage = '选择图片失败，请重试');
-      return;
+      final selected = await (widget.galleryPicker?.call(context, remaining) ??
+          Navigator.of(context, rootNavigator: true)
+              .push<MomentGallerySelection>(MotionPageRoute(
+                  builder: (_) => ImagePickerPage(
+                      maxCount: remaining,
+                      confirmLabel: '添加',
+                      showOriginalToggle: false))));
+      if (!mounted || selected == null) return;
+      if (selected.flash) throw const MomentImageException('朋友圈不支持闪照');
+      for (final photo in selected.photos.take(remaining)) {
+        if (photo.isVideo &&
+            !const ['video/mp4', 'video/quicktime'].contains(photo.mimeType)) {
+          throw const MomentImageException('仅支持MP4/MOV视频');
+        }
+        if (photo.isVideo &&
+            photo.originalSizeBytes != null &&
+            await photo.originalSizeBytes!() > 20 * 1024 * 1024) {
+          throw const MomentImageException('视频大小不能超过20MB');
+        }
+        final bytes = await photo.originalBytes();
+        if (!mounted) return;
+        if (photo.isVideo &&
+            (bytes.isEmpty || bytes.length > 20 * 1024 * 1024)) {
+          throw const MomentImageException('视频大小不能超过20MB');
+        }
+        final suffix = photo.isVideo
+            ? (photo.mimeType == 'video/quicktime' ? 'mov' : 'mp4')
+            : 'jpg';
+        final file = XFile.fromData(bytes,
+            name: 'moment-${photo.id}.$suffix', mimeType: photo.mimeType);
+        if (photo.isVideo && momentVideoMime(file) == null) {
+          throw const MomentImageException('仅支持MP4/MOV视频');
+        }
+        setState(() {
+          images.add(file);
+          _previews[file] =
+              photo.thumbnail.isNotEmpty ? photo.thumbnail : bytes;
+          errorMessage = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => errorMessage =
+            error is MomentImageException ? error.message : '选择媒体失败，请重试');
+      }
+    } finally {
+      if (mounted) setState(() => _selecting = false);
     }
-    if (!mounted) return;
-    // Photo Picker 允许选中视频：朋友圈仅支持图片，按 MIME/扩展名过滤。
-    final imageOnly = selected.where(isSupportedMomentImage).toList();
-    if (imageOnly.length < selected.length) {
-      setState(() => errorMessage =
-          '朋友圈仅支持图片，已跳过 ${selected.length - imageOnly.length} 个视频/文件');
-    }
-    if (imageOnly.isEmpty) return;
-    final truncated = imageOnly.length > remaining;
-    setState(() {
-      images.addAll(imageOnly.take(remaining));
-      if (truncated) errorMessage = '一次最多发布 9 张图片，已截取前 $remaining 张';
-    });
   }
 
   Future<void> _openVisibility() async {
@@ -357,17 +421,24 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   }
 
   Future<void> _publish() async {
-    if (saving || !dirty) return;
+    if (busy || !dirty) return;
     setState(() {
       saving = true;
       errorMessage = null;
     });
     try {
       final imageUrls = await _uploadPendingImages();
+      final payloadIdentity = jsonEncode(_payload());
+      if (_publishPayload != payloadIdentity) {
+        _publishPayload = payloadIdentity;
+        _publishKey = widget.api.newIdempotencyKey();
+      }
       await widget.api.publishMoment(
+        idempotencyKey: _publishKey,
         text: text.text,
         visibility: visibility.visibility,
         imageUrls: imageUrls,
+        videoUrls: remoteVideoUrls,
         includeUserIds: visibility.visibility == 'INCLUDE'
             ? visibility.userIds.toList()
             : const [],
@@ -437,8 +508,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
             trailing: CupertinoButton(
               key: const Key('moment-compose-publish'),
               padding: EdgeInsets.zero,
-              onPressed: saving || !dirty ? null : _publish,
-              child: saving
+              onPressed: busy || !dirty ? null : _publish,
+              child: busy
                   ? const CupertinoActivityIndicator()
                   : Text(
                       '发表',
@@ -503,9 +574,12 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                               right: 0,
                               child: CupertinoButton(
                                 padding: EdgeInsets.zero,
-                                onPressed: () => setState(
-                                  () => remoteImageUrls.remove(imageUrl),
-                                ),
+                                onPressed: busy
+                                    ? null
+                                    : () => setState(
+                                          () =>
+                                              remoteImageUrls.remove(imageUrl),
+                                        ),
                                 child: const Icon(
                                   CupertinoIcons.clear_circled_solid,
                                   color: CupertinoColors.systemGrey,
@@ -514,21 +588,55 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                             ),
                           ],
                         ),
+                      for (final videoUrl in remoteVideoUrls)
+                        SizedBox(
+                            width: 84,
+                            height: 84,
+                            child: Stack(children: [
+                              const Center(
+                                  child: Icon(CupertinoIcons.play_circle,
+                                      size: 36)),
+                              Positioned(
+                                  right: 0,
+                                  child: CupertinoButton(
+                                      padding: EdgeInsets.zero,
+                                      onPressed: busy
+                                          ? null
+                                          : () => setState(() =>
+                                              remoteVideoUrls.remove(videoUrl)),
+                                      child: const Icon(
+                                          CupertinoIcons.clear_circled_solid))),
+                            ])),
                       for (final image in images)
                         Stack(
                           children: [
-                            Image.file(
-                              File(image.path),
-                              width: 84,
-                              height: 84,
-                              fit: BoxFit.cover,
-                            ),
+                            if (momentVideoMime(image) != null)
+                              const SizedBox(
+                                  width: 84,
+                                  height: 84,
+                                  child: Icon(CupertinoIcons.play_circle,
+                                      size: 36))
+                            else if (_previews[image]?.isNotEmpty == true)
+                              Image.memory(_previews[image]!,
+                                  cacheWidth: 256,
+                                  width: 84,
+                                  height: 84,
+                                  fit: BoxFit.cover)
+                            else
+                              Image.file(
+                                File(image.path),
+                                width: 84,
+                                height: 84,
+                                fit: BoxFit.cover,
+                              ),
                             Positioned(
                               right: 0,
                               child: CupertinoButton(
                                 padding: EdgeInsets.zero,
-                                onPressed: () =>
-                                    setState(() => images.remove(image)),
+                                onPressed: busy
+                                    ? null
+                                    : () =>
+                                        setState(() => images.remove(image)),
                                 child: const Icon(
                                   CupertinoIcons.clear_circled_solid,
                                   color: CupertinoColors.systemGrey,
@@ -537,19 +645,26 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                             ),
                           ],
                         ),
-                      if (images.length + remoteImageUrls.length < 9)
+                      if (_mediaCount < 9)
                         CupertinoButton(
                           key: const Key('moment-pick-images'),
                           color: WeChatColors.resolve(
                               context, WeChatColors.lightSurface),
                           minimumSize: const Size(84, 84),
                           padding: EdgeInsets.zero,
-                          onPressed: _pickImages,
-                          child: const Icon(
-                            CupertinoIcons.add,
-                            color: WeChatColors.textSecondary,
-                            size: 30,
-                          ),
+                          onPressed: busy ? null : _pickImages,
+                          child: const Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(CupertinoIcons.photo_on_rectangle,
+                                    color: WeChatColors.textSecondary,
+                                    size: 26),
+                                SizedBox(height: 4),
+                                Text('相册',
+                                    style: TextStyle(
+                                        color: WeChatColors.textSecondary,
+                                        fontSize: 12))
+                              ]),
                         ),
                     ],
                   ),
@@ -624,4 +739,15 @@ bool isSupportedMomentImage(XFile file) {
   final dot = name.lastIndexOf('.');
   if (dot < 0) return false;
   return extensions.contains(name.substring(dot).toLowerCase());
+}
+
+/// Only allow native-player containers accepted by the Moments upload API.
+String? momentVideoMime(XFile file) {
+  final mime = file.mimeType?.toLowerCase();
+  if (mime == 'video/mp4' || mime == 'video/quicktime') return mime;
+  if (mime != null && mime.isNotEmpty) return null;
+  final name = file.name.toLowerCase();
+  if (name.endsWith('.mp4') || name.endsWith('.m4v')) return 'video/mp4';
+  if (name.endsWith('.mov')) return 'video/quicktime';
+  return null;
 }

@@ -291,6 +291,7 @@ void main() {
 
     expect(find.byType(MyQrCodePage), findsOneWidget,
         reason: '有本地资料时断网也要能打开自己的二维码');
+    expect(tester.widget<MyQrCodePage>(find.byType(MyQrCodePage)).avatarCacheKey, repository.resolveIdentity(username: 'alice').cacheKey);
     expect(find.text('个人二维码加载失败，请重试'), findsNothing);
     Navigator.of(tester.element(find.byType(MyQrCodePage))).pop();
     await advance(tester);

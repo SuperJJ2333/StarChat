@@ -15,7 +15,7 @@ async def read_moment_upload_content(request: Request):
     content = bytearray()
     async for chunk in request.stream():
         if len(chunk) > MAX_IMAGE_BYTES - len(content):
-            raise AppError(code="MOMENT_MEDIA_INVALID", message="图片不能超过20MiB", status_code=422)
+            raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体不能超过20MiB", status_code=422)
         content.extend(chunk)
     return bytes(content)
 
@@ -36,6 +36,7 @@ class CreateMoment(Strict):
     text: str = Field(default="", max_length=5000)
     visibility: Literal["PUBLIC", "FRIENDS", "INCLUDE", "EXCLUDE", "SELF"]
     image_urls: list[str] = Field(default_factory=list, max_length=9)
+    video_urls: list[str] = Field(default_factory=list, max_length=9, description="Owner-completed MP4/MOV upload references; at most nine images and videos combined, each <=20MiB.")
     include_user_ids: list[str] = Field(default_factory=list)
     exclude_user_ids: list[str] = Field(default_factory=list, max_length=30)
     include_tag_ids: list[str] = Field(default_factory=list, max_length=30)
@@ -173,7 +174,7 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     @router.get("/media/content/{token}", response_class=Response,
                 responses={200: {"description": "Authorized image bytes", "content": {
                     mime: {"schema": {"type": "string", "format": "binary"}}
-                    for mime in ("image/jpeg", "image/png", "image/webp", "image/gif")}}},
+                    for mime in ("image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/quicktime")}}},
                 description="Read a viewer-bound Moment image capability, rechecking current visibility on every request. Capabilities expire after 300 seconds.")
     def read_media(token: str):
         from app.modules.moments.media_access import read_content

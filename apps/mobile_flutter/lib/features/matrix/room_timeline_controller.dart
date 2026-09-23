@@ -9,6 +9,7 @@ import '../../core/chat_diagnostics.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
 import '../../core/outbox/outbox_message.dart';
+import '../../core/outbox/server_retry_policy.dart';
 import '../../core/outbox/persistent_outbox_manager.dart';
 import '../../core/performance_metrics.dart';
 
@@ -639,12 +640,8 @@ final class RoomTimelineController extends ChangeNotifier {
   bool _reportingNetworkFailure = false;
   int _networkRecoveryRevision = 0;
   final _serverRetryTimers = <String, Timer>{};
+  final _serverRetryWakeups = <String, (int, int)>{};
   final _serverRetryAttempts = <String, int>{};
-  static const _serverRetryDelays = [
-    Duration(seconds: 2),
-    Duration(seconds: 5),
-    Duration(seconds: 15),
-  ];
 
   NetworkStateManager? get _networkState =>
       _injectedNetworkState ?? NetworkStateManager.shared;
@@ -741,27 +738,8 @@ final class RoomTimelineController extends ChangeNotifier {
       {int? attemptRevision}) {
     if (isRetryableServerFailure(error)) {
       final attempt = _serverRetryAttempts[tx] ?? 0;
-      if (attempt >= _serverRetryDelays.length) {
-        _waitingNetworkIds.remove(tx);
-        return RoomDeliveryState.failed;
-      }
-      var delay = _serverRetryDelays[attempt];
-      try {
-        final dynamic failure = error;
-        final Object? milliseconds = failure.retryAfterMs;
-        if (milliseconds is int && milliseconds > delay.inMilliseconds) {
-          delay = Duration(milliseconds: milliseconds);
-        }
-      } catch (_) {}
-      try {
-        final dynamic failure = error;
-        final Object? seconds = failure.retryAfterSeconds;
-        if (seconds is int && seconds > delay.inSeconds) {
-          delay = Duration(seconds: seconds);
-        }
-      } catch (_) {}
-      // Do not shorten a server's requested delay or retain unbounded timers.
-      if (delay > const Duration(minutes: 15)) {
+      final delay = ServerRetryPolicy.delay(attempt, error);
+      if (delay == null) {
         _waitingNetworkIds.remove(tx);
         return RoomDeliveryState.failed;
       }
@@ -992,7 +970,17 @@ final class RoomTimelineController extends ChangeNotifier {
   ///
   /// 手动重试：把 `failed` / `waitingNetwork` 行翻回 [RoomDeliveryState.sending]
   /// 并复用捕获的发送回调与同一 txid。
-  Future<void> retry(String transactionId) {
+  Future<void> retry(String transactionId) async {
+    if (_disposed ||
+        _inFlightTxids.contains(transactionId) ||
+        _foreignOutboxTransactions.contains(transactionId)) {
+      return;
+    }
+    final journal = _outboxJournal;
+    if (journal != null) {
+      final row = await journal.findByTxid(transactionId);
+      if (row != null && !await journal.resetServerRetry(row.localId)) return;
+    }
     _serverRetryTimers.remove(transactionId)?.cancel();
     _serverRetryAttempts.remove(transactionId);
     return _retry(transactionId, rethrowErrors: true);
@@ -1028,7 +1016,7 @@ final class RoomTimelineController extends ChangeNotifier {
         final exists = adapter
             .snapshot()
             .any((m) => m.id == transactionId || m.stableId == tx);
-        if (!exists && _senders.containsKey(tx)) {
+        if ((!exists || _tracksOutbox(fresh)) && _senders.containsKey(tx)) {
           await _dispatch(tx, fresh);
           return;
         }
@@ -1292,7 +1280,14 @@ final class RoomTimelineController extends ChangeNotifier {
             : adapter.sendText(text);
     _echoRevision++;
     _localEchoes[tx] = local;
-    messages = [...messages, local];
+    // Recovery and a page timer can revisit an existing durable identity.
+    // Keep one visible row so projection indexes never point at a duplicate.
+    messages = messages.any((message) => message.stableId == tx)
+        ? [
+            for (final message in messages)
+              message.stableId == tx ? local : message
+          ]
+        : [...messages, local];
     if (_windowSource != null && messages.length > 200) {
       messages = List.unmodifiable(messages.skip(messages.length - 200));
     }
@@ -1339,6 +1334,7 @@ final class RoomTimelineController extends ChangeNotifier {
         : adapter.sendText(row.content);
     _echoRevision++;
     _localEchoes[tx] = local;
+    if (!foreign) _armDurableRetry(row);
     // BUG 回归（真机）：按原始时间戳插入历史位置，而不是 append 到底——
     // 失败行重进房间后必须停留在它原本的 Chronological 位置。
     final insertIndex =
@@ -1374,6 +1370,7 @@ final class RoomTimelineController extends ChangeNotifier {
         row.roomId != outboxRoomId) {
       _foreignOutboxTransactions.add(tx);
     }
+    _armDurableRetry(row);
     final state = roomDeliveryStateOf(row.status);
     if (state == RoomDeliveryState.sent) {
       _eventTransactions[tx] = tx;
@@ -1387,6 +1384,37 @@ final class RoomTimelineController extends ChangeNotifier {
     _localEchoes[tx] = echo.copyWith(deliveryState: state);
     messages = _snapshot();
     _publish();
+  }
+
+  void _armDurableRetry(OutboxMessage row) {
+    if (_disposed || _foreignOutboxTransactions.contains(row.txid)) return;
+    final deadline = row.nextServerRetryAt;
+    if (!row.status.isAutoDispatchable) {
+      _serverRetryTimers.remove(row.txid)?.cancel();
+      _serverRetryWakeups.remove(row.txid);
+      _waitingNetworkIds.remove(row.txid);
+      return;
+    }
+    _waitingNetworkIds.add(row.txid);
+    _attachNetworkRecoveryWatch();
+    if (deadline == null) {
+      _serverRetryTimers.remove(row.txid)?.cancel();
+      _serverRetryWakeups.remove(row.txid);
+      return;
+    }
+    final wakeup = (deadline.millisecondsSinceEpoch, row.retryCount);
+    if (_serverRetryWakeups[row.txid] == wakeup) return;
+    _serverRetryWakeups[row.txid] = wakeup;
+    _serverRetryTimers.remove(row.txid)?.cancel();
+    final remaining =
+        deadline.difference(_outboxJournal?.now ?? DateTime.now());
+    _serverRetryTimers[row.txid] =
+        Timer(remaining.isNegative ? Duration.zero : remaining, () {
+      _serverRetryTimers.remove(row.txid);
+      if (!_disposed && (_networkState == null || _networkIsUsable)) {
+        unawaited(_retry(row.txid, rethrowErrors: false));
+      }
+    });
   }
 
   /// 本地时间戳（恢复行用它保持原始顺序；不早于窗口内最后一条）。
@@ -1433,7 +1461,7 @@ final class RoomTimelineController extends ChangeNotifier {
         await journal.complete(row.localId);
       } else {
         await journal.settle(row.localId, outboxStatusOf(state),
-            lastError: error?.toString());
+            lastError: error == null ? null : 'send_failed', error: error);
       }
       outboxError = null;
     } catch (persistError) {
@@ -1551,13 +1579,24 @@ final class RoomTimelineController extends ChangeNotifier {
       // Preserve real failures after disposal without reattaching page listeners.
       _recordFailure(diagnostics, diagnosticGeneration, diagnosticStage, error,
           clock.elapsed);
-      final state = _disposed
+      final durableServerFailure = journal != null &&
+          row != null &&
+          tracks &&
+          isRetryableServerFailure(error);
+      var state = _disposed || durableServerFailure
           ? (_isNetworkFailure(error)
               ? RoomDeliveryState.waitingNetwork
               : RoomDeliveryState.failed)
           : _noteFailure(tx, error, attemptRevision: attemptRevision);
       await _persistOutboxOutcome(tx, inFlight, state,
           error: error, outboxRow: row);
+      if (journal != null && row != null && tracks) {
+        final settled = await journal.findByTxid(tx);
+        if (settled != null) {
+          state = roomDeliveryStateOf(settled.status);
+          if (!_disposed) _armDurableRetry(settled);
+        }
+      }
       if (_disposed) return null;
       _echoRevision++;
       _localEchoes[tx] = inFlight.copyWith(deliveryState: state);
@@ -1585,6 +1624,7 @@ final class RoomTimelineController extends ChangeNotifier {
       timer.cancel();
     }
     _serverRetryTimers.clear();
+    _serverRetryWakeups.clear();
     _serverRetryAttempts.clear();
     _inFlightTxids.clear();
     _recoveryManager?.state.removeListener(_handleNetworkStateChanged);

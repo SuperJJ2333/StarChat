@@ -62,9 +62,21 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope> {
 
   void _timings(List<FrameTiming> timings) {
     if (_diagnostics.sessionGeneration != _generation) return;
+    final foreground =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    final refreshRate = View.maybeOf(context)?.display.refreshRate ?? 60;
+    final budgetUs =
+        (1000000 / (refreshRate.isFinite && refreshRate > 0 ? refreshRate : 60))
+            .round();
     var maximum = Duration.zero;
     var count = 0;
     for (final frame in timings) {
+      if (foreground) {
+        _diagnostics.recordFrame(
+            buildUs: frame.buildDuration.inMicroseconds,
+            rasterUs: frame.rasterDuration.inMicroseconds,
+            budgetUs: budgetUs);
+      }
       if (frame.totalSpan.inMilliseconds < 250) continue;
       count++;
       if (frame.totalSpan > maximum) maximum = frame.totalSpan;

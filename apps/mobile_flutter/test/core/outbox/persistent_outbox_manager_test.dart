@@ -3,14 +3,108 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
+import 'package:liuhetong_mobile/core/outbox/server_retry_policy.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// 持久化出站消息层：表结构、幂等键、状态迁移与启动恢复。
 ///
 /// 全部使用注入的内存/SQLite 存储与固定时钟，不触网、不用 fakeAsync。
+class _ServerError implements Exception {
+  const _ServerError({this.retryAfterSeconds = 0});
+  int get statusCode => 503;
+  final int retryAfterSeconds;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('retry policy rejects overflow-sized remote delay and negative budget',
+      () {
+    expect(
+        ServerRetryPolicy.delay(
+            0, const _ServerError(retryAfterSeconds: 0x7fffffffffffffff)),
+        isNull);
+    expect(ServerRetryPolicy.delay(-1, const _ServerError()), isNull);
+  });
+
+  test('each admission ownership rejects a stale previous settlement',
+      () async {
+    final manager = PersistentOutboxManager(InMemoryOutboxStore());
+    final row = (await manager.save(receiverId: 'peer', content: 'x'))!;
+    await manager.claim(row.localId);
+    final originalAttempt = (await manager.byLocalId(row.localId))!;
+    await manager.settleAttempt(originalAttempt, OutboxStatus.waitingNetwork);
+    await manager.claim(row.localId);
+    final nextAttempt = (await manager.byLocalId(row.localId))!;
+    expect(await manager.settleAttempt(originalAttempt, OutboxStatus.failed),
+        isFalse);
+    expect(nextAttempt.retryCount, greaterThan(originalAttempt.retryCount));
+    expect(nextAttempt.txid, originalAttempt.txid);
+    expect(nextAttempt.serverRetryCount, 0);
+  });
+
+  test('automatic claim cannot revive a stale exhausted row', () async {
+    final manager = PersistentOutboxManager(InMemoryOutboxStore());
+    final row = (await manager.save(receiverId: 'peer', content: 'x'))!;
+    await manager.updateStatus(row.localId, OutboxStatus.failed);
+    expect(await manager.claim(row.localId), isFalse);
+  });
+
+  test('claim fails closed on excluded status and another account', () async {
+    final store = InMemoryOutboxStore();
+    final owner = PersistentOutboxManager(store, accountId: 'owner');
+    final other = PersistentOutboxManager(store, accountId: 'other');
+    final row = (await owner.save(receiverId: 'peer', content: 'x'))!;
+    expect(
+        await owner.claim(row.localId, from: {OutboxStatus.failed}), isFalse);
+    expect(await other.claim(row.localId), isFalse);
+    expect((await owner.byLocalId(row.localId))!.retryCount, 0);
+  });
+
+  test('SQLite v1 upgrade preserves identity and adds durable retry defaults',
+      () async {
+    sqfliteFfiInit();
+    final path = '${Directory.current.path}/../../docs/verification/artifacts/'
+        '2026-09-23/remaining-optimizations/outbox-migration-${DateTime.now().microsecondsSinceEpoch}.db';
+    final db = await databaseFactoryFfi.openDatabase(path,
+        options: OpenDatabaseOptions(
+            version: 1,
+            onCreate: (db, _) async {
+              await db.execute('CREATE TABLE outbox_messages ('
+                  'local_id TEXT PRIMARY KEY, txid TEXT UNIQUE, room_id TEXT, '
+                  'receiver_id TEXT, account_id TEXT, content TEXT, status TEXT, '
+                  'retry_count INTEGER, created_at INTEGER, updated_at INTEGER, last_error TEXT)');
+              await db.insert('outbox_messages', {
+                'local_id': 'old',
+                'txid': 'same-tx',
+                'room_id': 'room',
+                'receiver_id': 'peer',
+                'account_id': 'me',
+                'content': 'retained',
+                'status': 'waitingNetwork',
+                'retry_count': 2,
+                'created_at': 1,
+                'updated_at': 1,
+              });
+            }));
+    await db.close();
+    final store = SqliteOutboxStore(databasePath: path);
+    try {
+      final row = (await store.byLocalId('old'))!;
+      expect(row.txid, 'same-tx');
+      expect(row.content, 'retained');
+      expect(row.toRow()['server_retry_count'], 0);
+      final connection = await databaseFactoryFfi.openDatabase(path);
+      final columns =
+          await connection.rawQuery('PRAGMA table_info(outbox_messages)');
+      expect(columns.map((e) => e['name']), contains('next_server_retry_at'));
+      expect(await connection.getVersion(), 2);
+    } finally {
+      await store.close();
+      await databaseFactoryFfi.deleteDatabase(path);
+    }
+  });
 
   group('OutboxStatus 语义（产品词汇表）', () {
     test('五个状态与文案一一对应，网络问题绝不属于终局失败', () {
@@ -79,8 +173,7 @@ void main() {
       expect(sending!.status, OutboxStatus.sending);
       expect(sending.retryCount, 1);
 
-      await manager.updateStatus(
-          row.localId, OutboxStatus.waitingNetwork,
+      await manager.updateStatus(row.localId, OutboxStatus.waitingNetwork,
           lastError: 'offline');
       expect(await manager.claim(row.localId), isTrue,
           reason: '网络失败后的行恢复时必须能再次认领（复用同一 txid）');
@@ -94,8 +187,7 @@ void main() {
           lastError: 'M_FORBIDDEN');
 
       expect(await manager.queryPending(), isEmpty);
-      expect(await manager.unsent(), hasLength(1),
-          reason: '失败行仍要保留，供用户手动重试');
+      expect(await manager.unsent(), hasLength(1), reason: '失败行仍要保留，供用户手动重试');
     });
 
     test('complete/removeOrArchive：已送达的行从表里移除', () async {
@@ -128,7 +220,8 @@ void main() {
       final sent = await manager.save(receiverId: '@peer:test', content: 'd');
       await manager.removeOrArchive(sent!.localId);
 
-      final bound = await manager.bindRoomForReceiver('@peer:test', '!room:test');
+      final bound =
+          await manager.bindRoomForReceiver('@peer:test', '!room:test');
 
       expect(bound, 2);
       expect((await manager.byLocalId(a!.localId))!.roomId, '!room:test');
@@ -157,13 +250,108 @@ void main() {
     setUp(() {
       sqfliteFfiInit();
       path = '${Directory.current.path}/../../docs/verification/artifacts/'
-          '2026-09-18/outbox/outbox-${DateTime.now().microsecondsSinceEpoch}.db';
+          '2026-09-23/remaining-optimizations/outbox-${DateTime.now().microsecondsSinceEpoch}.db';
       store = SqliteOutboxStore(databasePath: path);
     });
 
     tearDown(() async {
       await store.close();
       await databaseFactoryFfi.deleteDatabase(path);
+    });
+
+    test(
+        'SQLite reopen preserves three-retry budget, CAS owner and manual reset',
+        () async {
+      var now = DateTime.utc(2026, 9, 23);
+      var manager =
+          PersistentOutboxManager(store, accountId: 'me', clock: () => now);
+      final row = (await manager.save(
+          receiverId: 'peer', content: 'x', roomId: 'room'))!;
+      OutboxMessage? oldAttempt;
+      for (var retry = 0; retry < 4; retry++) {
+        final claims = await Future.wait(
+            [manager.claim(row.localId), manager.claim(row.localId)]);
+        expect(claims.where((value) => value), hasLength(1));
+        final attempt = (await manager.byLocalId(row.localId))!;
+        final foreign = PersistentOutboxManager(store, accountId: 'other');
+        expect(
+            await foreign.settleAttempt(attempt, OutboxStatus.failed,
+                error: const _ServerError()),
+            isFalse);
+        final retained = (await manager.byLocalId(row.localId))!;
+        expect(retained.status, OutboxStatus.sending);
+        expect(retained.serverRetryCount, attempt.serverRetryCount);
+        expect(retained.nextServerRetryAt, attempt.nextServerRetryAt);
+
+        expect(await manager.resetServerRetry(row.localId), isFalse);
+        if (oldAttempt != null) {
+          expect(
+              await manager.settleAttempt(oldAttempt, OutboxStatus.failed,
+                  error: const _ServerError()),
+              isFalse);
+        }
+        expect(
+            await manager.settleAttempt(attempt, OutboxStatus.waitingNetwork,
+                error: const _ServerError()),
+            isTrue);
+        expect(
+            await manager.settleAttempt(attempt, OutboxStatus.waitingNetwork,
+                error: const _ServerError()),
+            isFalse);
+        oldAttempt = attempt;
+        await store.close();
+        store = SqliteOutboxStore(databasePath: path);
+        manager =
+            PersistentOutboxManager(store, accountId: 'me', clock: () => now);
+        final restored = (await manager.recoverOnStartup()).single;
+        expect(restored.txid, row.txid);
+        expect(restored.serverRetryCount, retry < 3 ? retry + 1 : 3);
+        if (retry < 3) {
+          expect(restored.nextServerRetryAt?.toUtc(),
+              now.toUtc().add(Duration(seconds: [2, 5, 15][retry])));
+          expect(await manager.claim(row.localId), isFalse);
+          now = restored.nextServerRetryAt!;
+        } else {
+          expect(restored.status, OutboxStatus.failed);
+          expect(restored.nextServerRetryAt, isNull);
+        }
+      }
+      final other = PersistentOutboxManager(store, accountId: 'other');
+      expect(await other.resetServerRetry(row.localId), isFalse);
+      expect(await other.byLocalId(row.localId), isNull);
+      expect(await manager.resetServerRetry(row.localId), isTrue);
+      final reset = (await manager.byLocalId(row.localId))!;
+      expect(reset.txid, row.txid);
+      expect(reset.serverRetryCount, 0);
+      expect(reset.nextServerRetryAt, isNull);
+    });
+
+    test(
+        'Retry-After deadline survives reopening without shortening and oversized delay fails',
+        () async {
+      final now = DateTime.utc(2026, 9, 23);
+      final manager =
+          PersistentOutboxManager(store, accountId: 'me', clock: () => now);
+      final row = (await manager.save(receiverId: 'peer', content: 'x'))!;
+      await manager.claim(row.localId);
+      await manager.settleAttempt(
+          (await manager.byLocalId(row.localId))!, OutboxStatus.waitingNetwork,
+          error: const _ServerError(retryAfterSeconds: 30));
+      await store.close();
+      store = SqliteOutboxStore(databasePath: path);
+      final reopened =
+          PersistentOutboxManager(store, accountId: 'me', clock: () => now);
+      expect(
+          (await reopened.byLocalId(row.localId))!.nextServerRetryAt?.toUtc(),
+          now.toUtc().add(const Duration(seconds: 30)));
+      expect(await reopened.claim(row.localId), isFalse);
+      await reopened.resetServerRetry(row.localId);
+      await reopened.claim(row.localId);
+      await reopened.settleAttempt(
+          (await reopened.byLocalId(row.localId))!, OutboxStatus.waitingNetwork,
+          error: const _ServerError(retryAfterSeconds: 901));
+      expect(
+          (await reopened.byLocalId(row.localId))!.status, OutboxStatus.failed);
     });
 
     test('表结构与键：outbox_messages / 主键 local_id / 唯一索引 txid', () async {
@@ -221,8 +409,7 @@ void main() {
 
       expect(report, hasLength(1));
       expect(report.single.localId, row.localId);
-      expect(report.single.txid, row.txid,
-          reason: '跨进程恢复必须复用同一 txid（幂等键）');
+      expect(report.single.txid, row.txid, reason: '跨进程恢复必须复用同一 txid（幂等键）');
       expect(report.single.status, OutboxStatus.queued);
       expect(report.single.content, 'hello');
     });

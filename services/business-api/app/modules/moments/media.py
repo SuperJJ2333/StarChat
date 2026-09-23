@@ -13,9 +13,53 @@ from app.core.errors import AppError
 
 IMAGE_SUFFIX_BY_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 ALLOWED_IMAGE_MIME = set(IMAGE_SUFFIX_BY_MIME)
+VIDEO_SUFFIX_BY_MIME = {"video/mp4": ".mp4", "video/quicktime": ".mov"}
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_GIF_PIXELS = 4 * 1024 * 1024
 MAX_GIF_TOTAL_PIXELS = 128 * 1024 * 1024
+
+
+def validate_video_container(content, mime_type):
+    """Validate bounded ISO BMFF/QuickTime boxes before storing opaque media.
+
+    This is container validation, not a server-side video decode/transcode.
+    The native player remains responsible for codec support.
+    """
+    offset = 0
+    seen = set()
+    try:
+        while offset < len(content):
+            if len(content) - offset < 8:
+                raise ValueError("truncated box")
+            size = int.from_bytes(content[offset:offset + 4], "big")
+            kind = content[offset + 4:offset + 8]
+            header = 8
+            if size == 1:
+                if len(content) - offset < 16:
+                    raise ValueError("truncated extended box")
+                size = int.from_bytes(content[offset + 8:offset + 16], "big")
+                header = 16
+            elif size == 0:
+                size = len(content) - offset
+            if size < header or size > len(content) - offset:
+                raise ValueError("invalid box size")
+            if kind == b"ftyp":
+                if size < header + 8 or (size - header) % 4:
+                    raise ValueError("invalid brands")
+                brand = content[offset + header:offset + header + 4]
+                if mime_type == "video/quicktime":
+                    if brand != b"qt  ":
+                        raise ValueError("not QuickTime")
+                elif brand not in (b"isom", b"iso2", b"iso4", b"iso5", b"iso6", b"mp41", b"mp42", b"avc1", b"M4V "):
+                    raise ValueError("not MP4")
+            if kind in (b"moov", b"mdat") and size <= header:
+                raise ValueError("empty movie")
+            seen.add(kind)
+            offset += size
+        if not {b"ftyp", b"moov", b"mdat"}.issubset(seen):
+            raise ValueError("missing movie boxes")
+    except ValueError as exc:
+        raise AppError(code="MOMENT_MEDIA_INVALID", message="视频文件已损坏或格式不支持", status_code=422) from exc
 
 
 def _validate_gif_container(content, width, height):
@@ -120,13 +164,16 @@ class MomentMediaService:
         self.factory = factory
         self.storage = storage
     def begin(self, actor, file_name, mime_type, byte_size, key, *, purpose="MOMENT_IMAGE"):
-        if mime_type not in ALLOWED_IMAGE_MIME or byte_size < 1 or byte_size > MAX_IMAGE_BYTES:
-            raise AppError(code="MOMENT_MEDIA_INVALID", message="仅支持20MiB以内 JPG/PNG/WebP/GIF", status_code=422)
+        allowed = ALLOWED_IMAGE_MIME | (set(VIDEO_SUFFIX_BY_MIME) if purpose == "MOMENT_IMAGE" else set())
+        if mime_type not in allowed or byte_size < 1 or byte_size > MAX_IMAGE_BYTES:
+            raise AppError(code="MOMENT_MEDIA_INVALID", message="仅支持20MiB以内图片或MP4/MOV视频（封面仅图片）", status_code=422)
+        if mime_type in VIDEO_SUFFIX_BY_MIME:
+            purpose = "MOMENT_VIDEO"
         with self.factory.begin() as session:
             old = session.scalar(select(MomentMediaUpload).where(MomentMediaUpload.owner_id == actor, MomentMediaUpload.idempotency_key == key))
             if old: return old
             now = datetime.now(timezone.utc); upload_id = str(uuid4())
-            suffix = IMAGE_SUFFIX_BY_MIME[mime_type]
+            suffix = {**IMAGE_SUFFIX_BY_MIME, **VIDEO_SUFFIX_BY_MIME}[mime_type]
             directory = "moments/covers" if purpose == "MOMENT_COVER" else "moments"
             row = MomentMediaUpload(id=upload_id, owner_id=actor, file_name=file_name, mime_type=mime_type, byte_size=byte_size, status="PENDING", object_key=f"{directory}/{actor}/{upload_id}{suffix}", purpose=purpose, idempotency_key=key, created_at=now, expires_at=now + timedelta(minutes=30))
             session.add(row); return row
@@ -158,6 +205,10 @@ class MomentMediaService:
                 raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体格式与声明不一致", status_code=422)
             if row.mime_type == "image/gif":
                 validate_gif(content)
+            if row.mime_type in VIDEO_SUFFIX_BY_MIME:
+                validate_video_container(content, row.mime_type)
+            elif len(content) >= 8 and content[4:8] == b"ftyp":
+                raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体格式与声明不一致", status_code=422)
             if self.storage:
                 self.storage.put(row.object_key, content)
             row.status = "UPLOADED"

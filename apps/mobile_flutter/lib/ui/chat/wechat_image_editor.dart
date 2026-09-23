@@ -150,8 +150,8 @@ ImageEditDocument rotatedDocument(ImageEditDocument document, ui.Image image) {
 
 /// 在文档空间绘制「旋转后的原图 + 标注」；导出与屏幕渲染共用同一实现，
 /// 保证「所见即所得」。
-void paintImageDocument(
-    Canvas canvas, ui.Image image, ui.Image mosaic, ImageEditDocument document) {
+void paintImageDocument(Canvas canvas, ui.Image image, ui.Image mosaic,
+    ImageEditDocument document) {
   final bounds = Offset.zero & documentSpaceSize(image, document.rotation);
   canvas.save();
   applyImageRotation(canvas, image, document.rotation);
@@ -201,8 +201,7 @@ void paintImageDocument(
           mosaic,
           Rect.fromLTWH(
               0, 0, mosaic.width.toDouble(), mosaic.height.toDouble()),
-          Rect.fromLTWH(
-              0, 0, image.width.toDouble(), image.height.toDouble()),
+          Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
           Paint()..filterQuality = FilterQuality.none);
       canvas.restore();
       canvas.restore();
@@ -220,11 +219,9 @@ void paintImageDocument(
             mark.width / 2,
             Paint()
               ..color = mark.color
-              ..blendMode =
-                  mark.eraser ? BlendMode.clear : BlendMode.srcOver);
+              ..blendMode = mark.eraser ? BlendMode.clear : BlendMode.srcOver);
       } else {
-        final path = Path()
-          ..moveTo(mark.points.first.dx, mark.points.first.dy);
+        final path = Path()..moveTo(mark.points.first.dx, mark.points.first.dy);
         for (final point in mark.points.skip(1)) {
           path.lineTo(point.dx, point.dy);
         }
@@ -246,10 +243,11 @@ final class WeChatImageEditorPage extends StatefulWidget {
       required this.bytes,
       this.onForward,
       this.onFavorite,
-      this.onSend});
+      this.onSend,
+      this.avatarMode = false});
+  final bool avatarMode;
   final Uint8List bytes;
-  final Future<bool> Function(Future<Uint8List> Function() export)?
-      onForward;
+  final Future<bool> Function(Future<Uint8List> Function() export)? onForward;
   final Future<void> Function(Uint8List)? onFavorite;
 
   /// 「发送」动作：把编辑结果作为**新的媒体对象**交给上层（相册预览 →
@@ -286,6 +284,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
       if (mounted) setState(() => _status = null);
     });
   }
+
   ImageEditDocument get _doc => _history[_cursor];
   double get _strokeWidth => _image!.width / 350 * _width;
 
@@ -311,6 +310,10 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.avatarMode) {
+      _tool = ImageEditTool.crop;
+      _cropAspect = 1;
+    }
     _decode();
   }
 
@@ -387,7 +390,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
 
   void _resetCropSession() {
     _cropFrame = null;
-    _cropAspect = null;
+    _cropAspect = widget.avatarMode ? 1 : null;
     _viewScale = 1;
     _viewOffset = Offset.zero;
     _activeHandle = CropHandle.none;
@@ -525,7 +528,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
       if (tool == ImageEditTool.crop) {
         // 进入裁剪：图片完整铺满编辑区域，裁剪框默认覆盖整张图片。
         _cropFrame = null;
-        _cropAspect = null;
+        _cropAspect = widget.avatarMode ? 1 : null;
         _viewScale = 1;
         _viewOffset = Offset.zero;
         _activeHandle = CropHandle.none;
@@ -564,11 +567,9 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
     final rect = _imageViewRect();
     if (rect.width <= 0 || rect.height <= 0) return _doc.crop.center;
     return Offset(
-      (_doc.crop.left +
-              (local.dx - rect.left) / rect.width * _doc.crop.width)
+      (_doc.crop.left + (local.dx - rect.left) / rect.width * _doc.crop.width)
           .clamp(_doc.crop.left, _doc.crop.right),
-      (_doc.crop.top +
-              (local.dy - rect.top) / rect.height * _doc.crop.height)
+      (_doc.crop.top + (local.dy - rect.top) / rect.height * _doc.crop.height)
           .clamp(_doc.crop.top, _doc.crop.bottom),
     );
   }
@@ -647,7 +648,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
     final bounds = _cropBounds;
     if (frame == null || bounds == null) return false;
     final imageRect = ImageCropGeometry.toImageRect(
-        frame: frame, imageViewRect: bounds, imageBounds: _doc.crop);
+        frame: frame, imageViewRect: _imageViewRect(), imageBounds: _doc.crop);
     return imageRect.width >= minCropImagePixels &&
         imageRect.height >= minCropImagePixels;
   }
@@ -715,14 +716,18 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
     // 裁剪框（视图）→ 图像像素，产生**新文档**；原图字节不被修改。
     _commit(_documentWith(
         crop: ImageCropGeometry.toImageRect(
-            frame: frame, imageViewRect: bounds, imageBounds: _doc.crop)));
+            frame: frame,
+            imageViewRect: _imageViewRect(),
+            imageBounds: _doc.crop)));
   }
 
   Future<Uint8List> _export() async {
     final image = _image!;
     final document = _doc;
-    final width = document.crop.width.round().clamp(1, 4096);
-    final height = document.crop.height.round().clamp(1, 4096);
+    final width =
+        document.crop.width.round().clamp(1, widget.avatarMode ? 1024 : 4096);
+    final height =
+        document.crop.height.round().clamp(1, widget.avatarMode ? 1024 : 4096);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.scale(width / document.crop.width, height / document.crop.height);
@@ -746,6 +751,23 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
 
   Future<void> _finish() async {
     if (_busy || _image == null) return;
+    if (widget.avatarMode) {
+      if (!_canApplyCrop) return;
+      _applyCrop();
+      setState(() {
+        _busy = true;
+        _error = null;
+      });
+      try {
+        final bytes = await _export();
+        if (mounted) Navigator.pop(context, bytes);
+      } catch (_) {
+        if (mounted) setState(() => _error = '图片处理失败，请重试');
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+      return;
+    }
     final action = await showCupertinoModalPopup<String>(
         context: context,
         builder: (context) => CupertinoActionSheet(
@@ -875,19 +897,24 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                       final frame = _cropFrame;
                       if (frame == null ||
                           !ImageCropGeometry.withinBounds(frame, bounds)) {
-                        _cropFrame = bounds;
+                        _cropFrame = widget.avatarMode
+                            ? ImageCropGeometry.applyAspect(bounds, 1, bounds)
+                            : bounds;
                       }
                     }
-                    final document = ImageEditDocument(_doc.crop, [
-                      ...(_movingMarks ?? _doc.marks),
-                      if (_stroke.isNotEmpty)
-                        ImageEditMark(
-                            points: _stroke,
-                            color: _color,
-                            width: _strokeWidth,
-                            mosaic: _tool == ImageEditTool.mosaic,
-                            eraser: _tool == ImageEditTool.eraser)
-                    ], rotation: _doc.rotation);
+                    final document = ImageEditDocument(
+                        _doc.crop,
+                        [
+                          ...(_movingMarks ?? _doc.marks),
+                          if (_stroke.isNotEmpty)
+                            ImageEditMark(
+                                points: _stroke,
+                                color: _color,
+                                width: _strokeWidth,
+                                mosaic: _tool == ImageEditTool.mosaic,
+                                eraser: _tool == ImageEditTool.eraser)
+                        ],
+                        rotation: _doc.rotation);
                     return SizedBox(
                         width: canvas.width,
                         height: canvas.height,
@@ -911,15 +938,15 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                                         }),
                                 onScaleStart: _cropping ? _cropStart : null,
                                 onScaleUpdate: _cropping ? _cropUpdate : null,
-                                onScaleEnd: _cropping ? (_) => _cropEnd() : null,
+                                onScaleEnd:
+                                    _cropping ? (_) => _cropEnd() : null,
                                 child: CustomPaint(
                                     size: canvas,
                                     painter: ImageEditorPainter(
                                         _image!, _mosaic!, document,
                                         canvasSize: canvas,
-                                        selection: _cropping
-                                            ? _cropFrame
-                                            : null,
+                                        selection:
+                                            _cropping ? _cropFrame : null,
                                         viewScale: _viewScale,
                                         viewOffset: _viewOffset,
                                         activeHandle: _activeHandle)))));
@@ -983,31 +1010,32 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                 padding: EdgeInsets.all(8),
                 child: Text('拖动文字或表情调整位置',
                     style: TextStyle(color: CupertinoColors.white))),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            for (final entry in const [
-              (ImageEditTool.brush, CupertinoIcons.pencil, '画笔'),
-              (ImageEditTool.emoji, CupertinoIcons.smiley, '表情'),
-              (ImageEditTool.text, CupertinoIcons.textformat, '文字'),
-              (ImageEditTool.crop, CupertinoIcons.crop, '裁剪'),
-              (ImageEditTool.mosaic, CupertinoIcons.square_grid_3x2, '马赛克'),
-              (ImageEditTool.eraser, null, '橡皮擦')
-            ])
-              CupertinoButton(
-                  key: ValueKey('image-editor-${entry.$1.name}'),
-                  padding: const EdgeInsets.all(WeChatSpacing.sm),
-                  onPressed: _busy ? null : () => _selectTool(entry.$1),
-                  child: entry.$1 == ImageEditTool.eraser
-                      ? _ImageEditorEraserIcon(
-                          semanticLabel: entry.$3,
-                          color: _tool == entry.$1
-                              ? WeChatColors.brandPrimary
-                              : CupertinoColors.white)
-                      : Icon(entry.$2,
-                          semanticLabel: entry.$3,
-                          color: _tool == entry.$1
-                              ? WeChatColors.brandPrimary
-                              : CupertinoColors.white)),
-          ]),
+          if (!widget.avatarMode)
+            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+              for (final entry in const [
+                (ImageEditTool.brush, CupertinoIcons.pencil, '画笔'),
+                (ImageEditTool.emoji, CupertinoIcons.smiley, '表情'),
+                (ImageEditTool.text, CupertinoIcons.textformat, '文字'),
+                (ImageEditTool.crop, CupertinoIcons.crop, '裁剪'),
+                (ImageEditTool.mosaic, CupertinoIcons.square_grid_3x2, '马赛克'),
+                (ImageEditTool.eraser, null, '橡皮擦')
+              ])
+                CupertinoButton(
+                    key: ValueKey('image-editor-${entry.$1.name}'),
+                    padding: const EdgeInsets.all(WeChatSpacing.sm),
+                    onPressed: _busy ? null : () => _selectTool(entry.$1),
+                    child: entry.$1 == ImageEditTool.eraser
+                        ? _ImageEditorEraserIcon(
+                            semanticLabel: entry.$3,
+                            color: _tool == entry.$1
+                                ? WeChatColors.brandPrimary
+                                : CupertinoColors.white)
+                        : Icon(entry.$2,
+                            semanticLabel: entry.$3,
+                            color: _tool == entry.$1
+                                ? WeChatColors.brandPrimary
+                                : CupertinoColors.white)),
+            ]),
           if (_cropping)
             Padding(
                 padding: const EdgeInsets.fromLTRB(WeChatSpacing.lg,
@@ -1036,7 +1064,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                       onPressed: _busy ? null : _finish,
                       child: _busy
                           ? const CupertinoActivityIndicator()
-                          : const Text('完成')))),
+                          : Text(widget.avatarMode ? '使用此头像' : '完成')))),
         ],
       ])));
 
@@ -1059,7 +1087,8 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                         TextStyle(color: CupertinoColors.white, fontSize: 13)),
               ])),
           const SizedBox(width: WeChatSpacing.sm),
-          for (final entry in _cropAspects)
+          for (final entry in _cropAspects
+              .where((entry) => !widget.avatarMode || entry.aspect == 1))
             Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 3),
                 child: CupertinoButton(
@@ -1099,10 +1128,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
 /// 只有「应用裁剪」用品牌色填充并带高亮状态。
 final class ImageEditorActionButton extends StatelessWidget {
   const ImageEditorActionButton(
-      {super.key,
-      required this.label,
-      this.onPressed,
-      this.filled = false});
+      {super.key, required this.label, this.onPressed, this.filled = false});
 
   static const double height = 44;
   static const double radius = WeChatRadius.bubble;
@@ -1213,9 +1239,8 @@ class ImageEditorPainter extends CustomPainter {
 
   /// 图片按 contain 适配后的矩形（画布坐标，不含缩放/平移）。
   Rect viewBoxFor(Size size) {
-    final extent = (canvasSize != null && !canvasSize!.isEmpty)
-        ? canvasSize!
-        : size;
+    final extent =
+        (canvasSize != null && !canvasSize!.isEmpty) ? canvasSize! : size;
     final crop = document.crop.size;
     if (extent.isEmpty || crop.isEmpty) return Rect.zero;
     final fitted = applyBoxFit(BoxFit.contain, crop, extent).destination;
@@ -1227,9 +1252,8 @@ class ImageEditorPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final extent = (canvasSize != null && !canvasSize!.isEmpty)
-        ? canvasSize!
-        : size;
+    final extent =
+        (canvasSize != null && !canvasSize!.isEmpty) ? canvasSize! : size;
     final base = viewBoxFor(size);
     canvas.save();
     canvas.clipRect(Offset.zero & extent);

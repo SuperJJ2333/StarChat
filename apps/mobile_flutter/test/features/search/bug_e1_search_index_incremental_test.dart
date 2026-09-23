@@ -14,6 +14,36 @@ GlobalSearchMessageRecord _record(String eventId, {DateTime? at}) =>
     );
 
 void main() {
+  test('incremental replacement updates content without losing older history',
+      () {
+    final index = GlobalSearchIndex(maxRecordsPerRoom: 3);
+    void write(List<GlobalSearchMessageRecord> rows) => index.recordRoom(
+        roomId: 'room',
+        roomName: 'group',
+        isGroup: true,
+        messages: rows,
+        replace: false);
+    write([_record('a'), _record('b')]);
+    write([
+      GlobalSearchMessageRecord(
+          eventId: 'a',
+          senderId: 'peer',
+          senderName: 'peer',
+          timestamp: DateTime(2026, 9, 21),
+          body: 'corrected')
+    ]);
+    expect(index.search('corrected').single.eventId, 'a');
+    expect(index.search('内容 a'), isEmpty);
+    expect(index.search('内容 b').single.eventId, 'b');
+    write([
+      _record('c', at: DateTime(2026, 9, 22)),
+      _record('d', at: DateTime(2026, 9, 23))
+    ]);
+    expect(index.search('内容 b'), isEmpty, reason: 'oldest is evicted');
+    expect(index.search('corrected').single.eventId, 'a');
+    index.removeMessages(['a']);
+    expect(index.search('corrected'), isEmpty);
+  });
   test('E1：索引支持按 eventId 删除（撤回不再可被搜索到）', () {
     final index = GlobalSearchIndex.shared..clear();
     index.recordRoom(

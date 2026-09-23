@@ -289,6 +289,7 @@ final class ImagePickerPage extends StatefulWidget {
     super.key,
     this.pagerBuilder,
     this.photosOnly = false,
+    this.staticImagesOnly = false,
     this.isGroup = false,
     this.confirmLabel = '发送',
     this.showOriginalToggle = true,
@@ -299,6 +300,7 @@ final class ImagePickerPage extends StatefulWidget {
 
   final DeviceGalleryPager Function()? pagerBuilder;
   final bool photosOnly;
+  final bool staticImagesOnly;
   final bool isGroup;
   final String confirmLabel;
   final bool showOriginalToggle;
@@ -350,7 +352,9 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    photos = GalleryAccessCache.forMode(widget.photosOnly).preview;
+    photos = widget.staticImagesOnly
+        ? const []
+        : GalleryAccessCache.forMode(widget.photosOnly).preview;
     loading = photos.isEmpty;
     unawaited(_reloadAfterExternalChange());
     unawaited(_observeGalleryChanges());
@@ -478,6 +482,33 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     }
   }
 
+  Future<List<GalleryPhoto>> _visiblePhotos(List<GalleryPhoto> items) async {
+    if (!widget.staticImagesOnly) return items;
+    final visible = <GalleryPhoto>[];
+    for (final photo in items) {
+      if (photo.isVideo || photo.mimeType.toLowerCase() == 'image/gif') {
+        continue;
+      }
+      try {
+        final header = await (photo.headerBytes ?? photo.originalBytes)();
+        if (header.isNotEmpty && !isGifBytes(header)) visible.add(photo);
+      } catch (_) {
+        // Unreadable source cannot be offered as a static avatar. Other assets
+        // remain available, and a later gallery refresh can retry this asset.
+      }
+    }
+    return visible;
+  }
+
+  Future<List<GalleryPhoto>> _nextVisiblePage(
+      DeviceGalleryPager activePager) async {
+    var page = await _visiblePhotos(await activePager.loadNextPage());
+    while (page.isEmpty && activePager.hasMore) {
+      page = await _visiblePhotos(await activePager.loadNextPage());
+    }
+    return page;
+  }
+
   Future<void> _load({bool preservePreview = false}) async {
     final epoch = ++_loadEpoch;
     final activePager = pager;
@@ -489,7 +520,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     });
     try {
       if (!preservePreview) photos = const [];
-      final firstPage = <GalleryPhoto>[...await activePager.loadNextPage()];
+      final firstPage = <GalleryPhoto>[...await _nextVisiblePage(activePager)];
       // 请求批次已变（用户切到其他相册）：旧结果直接丢弃。
       if (!mounted || epoch != _loadEpoch) return;
       setState(() {
@@ -498,7 +529,9 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         permissionDenied = false;
         hasMore = activePager.hasMore;
         if (selectedAlbum == null || selectedAlbum!.isRecent) {
-          GalleryAccessCache.forMode(widget.photosOnly).preview = firstPage;
+          if (!widget.staticImagesOnly) {
+            GalleryAccessCache.forMode(widget.photosOnly).preview = firstPage;
+          }
         }
       });
       // 首屏若未填满一屏，立即预取下一页，保证滚动无缝。
@@ -533,7 +566,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       loadMoreFailed = false;
     });
     try {
-      final next = await activePager.loadNextPage();
+      final next = await _nextVisiblePage(activePager);
       // 请求批次或分页器已换（切相册/外部重载）：旧页不得混入新列表。
       if (!mounted || epoch != _loadEpoch || !identical(activePager, pager)) {
         return;
@@ -802,71 +835,71 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       onPointerUp: (_) => _endDragSelect(),
       onPointerCancel: (_) => _endDragSelect(),
       child: GridView.builder(
-      key: const Key('image-picker-grid'),
-      controller: scrollController,
-      // 滑动多选期间禁用手势滚动，避免“越选越滚”。
-      physics: _dragSelecting
-          ? const NeverScrollableScrollPhysics()
-          : const BouncingScrollPhysics(),
-      padding: const EdgeInsets.all(2),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 2,
-        crossAxisSpacing: 2,
-        childAspectRatio: 0.82,
-      ),
-      itemCount: photos.length + (showFooter ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index >= photos.length) {
-          return _gridFooter();
-        }
-        _maybePrefetch(index);
-        final photo = photos[index];
-        return GestureDetector(
-          key: Key('image-picker-item-${photo.id}'),
-          behavior: HitTestBehavior.opaque,
-          // 点击预览区域=放大查看；选中只由左上角圆圈切换，二者严格分离。
-          onTap: () => _openPreview(photo),
-          child: Stack(fit: StackFit.expand, children: [
-            // 规格#4：视频缩略图懒加载——立即渲染占位，首帧就绪只更新
-            // 本 cell（成功内存缓存、失败退避重试、预算耗尽显重试入口）。
-            if (photo.isVideo)
-              _VideoFirstFrameCell(photo: photo)
-            else
-              _GalleryImageCell(key: ValueKey(photo), photo: photo),
-            if (photo.isVideo)
-              Positioned(
-                left: 6,
-                bottom: 6,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0x99000000),
-                    borderRadius: BorderRadius.circular(4),
+        key: const Key('image-picker-grid'),
+        controller: scrollController,
+        // 滑动多选期间禁用手势滚动，避免“越选越滚”。
+        physics: _dragSelecting
+            ? const NeverScrollableScrollPhysics()
+            : const BouncingScrollPhysics(),
+        padding: const EdgeInsets.all(2),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 4,
+          mainAxisSpacing: 2,
+          crossAxisSpacing: 2,
+          childAspectRatio: 0.82,
+        ),
+        itemCount: photos.length + (showFooter ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= photos.length) {
+            return _gridFooter();
+          }
+          _maybePrefetch(index);
+          final photo = photos[index];
+          return GestureDetector(
+            key: Key('image-picker-item-${photo.id}'),
+            behavior: HitTestBehavior.opaque,
+            // 点击预览区域=放大查看；选中只由左上角圆圈切换，二者严格分离。
+            onTap: () => _openPreview(photo),
+            child: Stack(fit: StackFit.expand, children: [
+              // 规格#4：视频缩略图懒加载——立即渲染占位，首帧就绪只更新
+              // 本 cell（成功内存缓存、失败退避重试、预算耗尽显重试入口）。
+              if (photo.isVideo)
+                _VideoFirstFrameCell(photo: photo)
+              else
+                _GalleryImageCell(key: ValueKey(photo), photo: photo),
+              if (photo.isVideo)
+                Positioned(
+                  left: 6,
+                  bottom: 6,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0x99000000),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(CupertinoIcons.play_fill,
+                          size: 9, color: CupertinoColors.white),
+                      const SizedBox(width: 3),
+                      Text(_formatDuration(photo.duration),
+                          style: const TextStyle(
+                              fontSize: 10, color: CupertinoColors.white)),
+                    ]),
                   ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(CupertinoIcons.play_fill,
-                        size: 9, color: CupertinoColors.white),
-                    const SizedBox(width: 3),
-                    Text(_formatDuration(photo.duration),
-                        style: const TextStyle(
-                            fontSize: 10, color: CupertinoColors.white)),
-                  ]),
                 ),
+              // 选中热区：左上角 1/4 格（老年用户可轻松点中）；
+              // 圆圈 icon 本身保持 24px 不放大，仅扩大可点区域。
+              Positioned(
+                top: 0,
+                left: 0,
+                width: 56,
+                height: 80,
+                child: _checkCircle(photo),
               ),
-            // 选中热区：左上角 1/4 格（老年用户可轻松点中）；
-            // 圆圈 icon 本身保持 24px 不放大，仅扩大可点区域。
-            Positioned(
-              top: 0,
-              left: 0,
-              width: 56,
-              height: 80,
-              child: _checkCircle(photo),
-            ),
-          ]),
-        );
-      },
+            ]),
+          );
+        },
       ),
     );
   }
@@ -927,7 +960,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     if (box is! RenderBox || !box.hasSize) return null;
     const columns = 4, spacing = 2.0, padding = 2.0;
     final width = box.size.width;
-    final cellExtent = (width - padding * 2 - spacing * (columns - 1)) / columns;
+    final cellExtent =
+        (width - padding * 2 - spacing * (columns - 1)) / columns;
     final rowExtent = cellExtent / 0.82;
     final y = local.dy + scrollController.offset - padding;
     final row = (y / (rowExtent + spacing)).floor();
@@ -1025,13 +1059,13 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           photo: photo,
           selected: selection.isSelected(photo.id),
           onToggle: () => _toggle(photo),
-          onSendFlash: photo.isVideo
+          onSendFlash: photo.isVideo || widget.staticImagesOnly
               ? null
               : () {
                   // 先关预览页，再以闪照结果关闭整个选择器。
                   Navigator.of(context).pop();
-                  Navigator.of(context).pop(
-                      (photos: [photo], original: true, flash: true));
+                  Navigator.of(context)
+                      .pop((photos: [photo], original: true, flash: true));
                 },
           // 编辑结果作为**新的媒体对象**（`editedGalleryPhoto`）结束选择器：
           // 设备原照片不被覆盖，也不再需要二次选择。
@@ -1047,8 +1081,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     _editedFromPreview = null;
     if (!mounted) return;
     if (edited != null) {
-      Navigator.pop(
-          context, (photos: [edited], original: true, flash: false));
+      Navigator.pop(context, (photos: [edited], original: true, flash: false));
       return;
     }
     setState(() {});
@@ -1082,24 +1115,26 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           alignment: Alignment.topLeft,
           padding: const EdgeInsets.only(top: 6, left: 6),
           child: Container(
-          width: 24,
-          height: 24,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color:
-                selected ? WeChatColors.brandPrimary : const Color(0x66000000),
-            border: Border.all(
-              color:
-                  selected ? WeChatColors.brandPrimary : CupertinoColors.white,
-              width: 1.5,
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected
+                  ? WeChatColors.brandPrimary
+                  : const Color(0x66000000),
+              border: Border.all(
+                color: selected
+                    ? WeChatColors.brandPrimary
+                    : CupertinoColors.white,
+                width: 1.5,
+              ),
             ),
+            child: selected
+                ? const Icon(CupertinoIcons.check_mark,
+                    size: 14, color: CupertinoColors.white)
+                : const SizedBox.shrink(),
           ),
-          child: selected
-              ? const Icon(CupertinoIcons.check_mark,
-                  size: 14, color: CupertinoColors.white)
-              : const SizedBox.shrink(),
-        ),
         ),
       ),
     );

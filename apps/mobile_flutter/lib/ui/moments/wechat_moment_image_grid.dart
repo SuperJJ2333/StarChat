@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import '../foundation/wechat_tokens.dart';
 import 'moment_image_viewer_page.dart';
 import 'moment_media_cache.dart';
+import 'moment_thumbnail_provider.dart';
 import '../motion/motion_page_route.dart';
 
 final class WeChatMomentImageGrid extends StatefulWidget {
@@ -38,6 +39,8 @@ final class _WeChatMomentImageGridState extends State<WeChatMomentImageGrid> {
             ? 2
             : 3;
     final size = count == 1 ? 180.0 : 90.0;
+    final decodeSize =
+        (size * MediaQuery.devicePixelRatioOf(context)).ceil().clamp(1, 1024);
     return SizedBox(
       width: columns * size + (columns - 1) * WeChatSpacing.xs,
       child: GridView.builder(
@@ -48,71 +51,69 @@ final class _WeChatMomentImageGridState extends State<WeChatMomentImageGrid> {
             crossAxisCount: columns,
             crossAxisSpacing: WeChatSpacing.xs,
             mainAxisSpacing: WeChatSpacing.xs),
-        itemBuilder: (_, index) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            // 点击朋友圈图片 → 全屏查看大图（支持双指缩放）。
-            onTap: () => Navigator.push(
-                context,
-                MotionPageRoute(
-                  fullscreenDialog: true,
-                  builder: (_) => MomentImageViewerPage(
-                      imageUrls: imageUrls,
-                      imageCacheKeys: imageCacheKeys,
-                      mediaAccountKey: mediaAccountKey,
-                      mediaOrigin: mediaOrigin,
-                      cacheNamespace: cacheNamespace,
-                      initialIndex: index),
-                )),
-            child: SizedBox(
-                key: const ValueKey('moment-image'),
-                child: Image(
-                    key: ValueKey((
-                      MomentMediaCache.imageIdentity(imageUrls[index],
-                          accountKey: mediaAccountKey ?? cacheNamespace,
-                          trustedOrigin: mediaOrigin,
-                          cacheKey: index < imageCacheKeys.length
-                              ? imageCacheKeys[index]
-                              : null),
-                      _retries[index] ?? 0
-                    )),
-                    gaplessPlayback: true,
-                    image: MomentMediaCache.imageProvider(imageUrls[index],
-                        accountKey: mediaAccountKey ?? cacheNamespace,
-                        trustedOrigin: mediaOrigin,
-                        cacheKey: index < imageCacheKeys.length
-                            ? imageCacheKeys[index]
-                            : null),
-                    width: size,
-                    height: size,
-                    fit: BoxFit.cover,
-                    frameBuilder: (_, child, frame, synchronous) =>
-                        frame != null || synchronous
-                            ? child
-                            : ColoredBox(
-                                color: WeChatColors.resolve(
-                                    context, WeChatColors.divider)),
-                    errorBuilder: (_, __, ___) => ColoredBox(
-                        color:
-                            WeChatColors.resolve(context, WeChatColors.divider),
-                        child: CupertinoButton(
-                          padding: EdgeInsets.zero,
-                          onPressed: () async {
-                            await MomentMediaCache.retry(
-                                MomentMediaCache.imageProvider(imageUrls[index],
-                                    accountKey:
-                                        mediaAccountKey ?? cacheNamespace,
-                                    trustedOrigin: mediaOrigin,
-                                    cacheKey: index < imageCacheKeys.length
-                                        ? imageCacheKeys[index]
-                                        : null));
-                            if (mounted) {
-                              setState(() =>
-                                  _retries[index] = (_retries[index] ?? 0) + 1);
-                            }
-                          },
-                          child: const Icon(CupertinoIcons.arrow_clockwise,
-                              semanticLabel: '重新加载图片'),
-                        ))))),
+        itemBuilder: (_, index) {
+          final original = MomentMediaCache.imageProvider(imageUrls[index],
+              accountKey: mediaAccountKey ?? cacheNamespace,
+              trustedOrigin: mediaOrigin,
+              cacheKey:
+                  index < imageCacheKeys.length ? imageCacheKeys[index] : null);
+          final thumbnail =
+              MomentThumbnailProvider(original, extent: decodeSize);
+          return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // 点击朋友圈图片 → 全屏查看大图（支持双指缩放）。
+              onTap: () => Navigator.push(
+                  context,
+                  MotionPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => MomentImageViewerPage(
+                        imageUrls: imageUrls,
+                        imageCacheKeys: imageCacheKeys,
+                        mediaAccountKey: mediaAccountKey,
+                        mediaOrigin: mediaOrigin,
+                        cacheNamespace: cacheNamespace,
+                        initialIndex: index),
+                  )),
+              child: SizedBox(
+                  key: const ValueKey('moment-image'),
+                  child: Image(
+                      key: ValueKey((
+                        MomentMediaCache.imageIdentity(imageUrls[index],
+                            accountKey: mediaAccountKey ?? cacheNamespace,
+                            trustedOrigin: mediaOrigin,
+                            cacheKey: index < imageCacheKeys.length
+                                ? imageCacheKeys[index]
+                                : null),
+                        _retries[index] ?? 0
+                      )),
+                      gaplessPlayback: true,
+                      image: thumbnail,
+                      width: size,
+                      height: size,
+                      fit: BoxFit.cover,
+                      frameBuilder: (_, child, frame, synchronous) =>
+                          frame != null || synchronous
+                              ? child
+                              : ColoredBox(
+                                  color: WeChatColors.resolve(
+                                      context, WeChatColors.divider)),
+                      errorBuilder: (_, __, ___) => ColoredBox(
+                          color: WeChatColors.resolve(
+                              context, WeChatColors.divider),
+                          child: CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: () async {
+                              await thumbnail.evict();
+                              await MomentMediaCache.retry(original);
+                              if (mounted) {
+                                setState(() => _retries[index] =
+                                    (_retries[index] ?? 0) + 1);
+                              }
+                            },
+                            child: const Icon(CupertinoIcons.arrow_clockwise,
+                                semanticLabel: '重新加载图片'),
+                          )))));
+        },
       ),
     );
   }

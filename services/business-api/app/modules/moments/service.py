@@ -26,7 +26,7 @@ from app.modules.moments.models import (
 from app.modules.moments.visibility import VisibilityPolicy, moment_comment_audience, reaction_audience
 from app.modules.moments.recommendation import recommendation_score
 from app.modules.moments.media import MomentMediaUpload
-from app.modules.moments.media_access import owned_key, signed_url
+from app.modules.moments.media_access import owned_key, signed_url, upload_url
 
 
 class MomentsService:
@@ -74,8 +74,8 @@ class MomentsService:
         return sorted(direct_ids | (tag_members & friend_ids)), tag_ids
 
     def create(self, actor, data, key):
-        if len(data.get("image_urls", [])) > 9:
-            raise AppError(code="MOMENT_IMAGE_LIMIT", message="最多上传9张图片", status_code=422)
+        if len(data.get("image_urls", [])) + len(data.get("video_urls", [])) > 9:
+            raise AppError(code="MOMENT_IMAGE_LIMIT", message="最多上传9个图片或视频", status_code=422)
         with self.factory.begin() as session:
             old = session.scalar(select(Moment).where(Moment.author_id == actor, Moment.idempotency_key == key))
             if old:
@@ -86,7 +86,8 @@ class MomentsService:
             exclude_ids, exclude_tags = self._resolve_audience(
                 session, actor, data.get('exclude_user_ids', []), data.get('exclude_tag_ids', []),
             )
-            image_urls = ["media://" + owned_key(session, self.avatar_storage, url, actor) for url in data.get("image_urls", [])]
+            image_urls = ["media://" + owned_key(session, self.avatar_storage, url, actor, purpose="MOMENT_IMAGE") for url in data.get("image_urls", [])]
+            image_urls += ["media://" + owned_key(session, self.avatar_storage, url, actor, purpose="MOMENT_VIDEO") for url in data.get("video_urls", [])]
             now = datetime.now(timezone.utc)
             row = Moment(
                 id=str(uuid4()), author_id=actor, text=data.get("text", ""), visibility=data["visibility"],
@@ -328,10 +329,28 @@ class MomentsService:
             row = session.get(MomentDraft, actor)
             if row is None:
                 raise AppError(code='MOMENT_DRAFT_NOT_FOUND', message='草稿不存在', status_code=404)
-            return row.payload
+            payload = dict(row.payload)
+            if payload.get('video_urls'):
+                urls = []
+                for reference in payload['video_urls']:
+                    object_key = owned_key(session, self.avatar_storage, reference, actor, purpose='MOMENT_VIDEO')
+                    upload = session.scalar(select(MomentMediaUpload).where(MomentMediaUpload.object_key == object_key))
+                    urls.append(upload_url(self.avatar_storage, upload))
+                payload['video_urls'] = urls
+            return payload
 
     def save_draft(self, actor, payload):
         with self.factory.begin() as session:
+            videos = payload.get('video_urls', [])
+            images = payload.get('image_urls', [])
+            if any(not isinstance(urls, list) or any(not isinstance(url, str) for url in urls) for urls in (images, videos)):
+                raise AppError(code='MOMENT_MEDIA_INVALID', message='媒体列表格式不正确', status_code=422)
+            if len(videos) + len(images) > 9:
+                raise AppError(code='MOMENT_MEDIA_INVALID', message='最多保存9个图片或视频', status_code=422)
+            if videos:
+                payload = {**payload, 'video_urls': [
+                    'media://' + owned_key(session, self.avatar_storage, url, actor, purpose='MOMENT_VIDEO') for url in videos
+                ]}
             row = session.get(MomentDraft, actor)
             if row is None:
                 row = MomentDraft(owner_id=actor, payload=payload, updated_at=datetime.now(timezone.utc)); session.add(row)
@@ -540,10 +559,10 @@ class MomentsService:
             'author': self._user_projection(session, moment.author_id, viewer_id),
             'text': moment.text,
             'visibility': moment.visibility,
-            'image_urls': [
-                self._moment_media_url(session, moment, url, viewer_id) for url in moment.image_urls
-            ],
-            'image_cache_keys': [self._media_cache_key(url) for url in moment.image_urls],
+            'image_urls': [self._moment_media_url(session, moment, url, viewer_id) for url in moment.image_urls if not url.endswith(('.mp4', '.mov'))],
+            'image_cache_keys': [self._media_cache_key(url) for url in moment.image_urls if not url.endswith(('.mp4', '.mov'))],
+            'video_urls': [self._moment_media_url(session, moment, url, viewer_id) for url in moment.image_urls if url.endswith(('.mp4', '.mov'))],
+            'video_cache_keys': [self._media_cache_key(url) for url in moment.image_urls if url.endswith(('.mp4', '.mov'))],
             'include_user_ids': moment.include_user_ids if viewer_id == moment.author_id else [],
             'exclude_user_ids': moment.exclude_user_ids if viewer_id == moment.author_id else [],
             'include_tag_ids': moment.include_tag_ids if viewer_id == moment.author_id else [],

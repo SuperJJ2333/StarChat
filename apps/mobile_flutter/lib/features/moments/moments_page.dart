@@ -10,7 +10,8 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
-import 'package:image_picker/image_picker.dart';
+import '../matrix/image_picker_page.dart';
+import 'moment_comment_composer.dart' show MomentGallerySelection;
 
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/wechat_toast.dart';
@@ -1120,26 +1121,28 @@ final class _MomentsPageState extends State<MomentsPage> {
   Future<String?> _changeCover(ValueChanged<Uint8List> onPreview) async {
     final epoch = _accountEpoch;
     final api = widget.api;
-    final image = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
-    if (image == null) return null;
+    final selected = await Navigator.of(context, rootNavigator: true)
+        .push<MomentGallerySelection>(MotionPageRoute(
+            builder: (_) => const ImagePickerPage(
+                photosOnly: true,
+                staticImagesOnly: true,
+                maxCount: 1,
+                confirmLabel: '完成',
+                showOriginalToggle: false)));
+    if (selected == null || selected.photos.isEmpty || selected.flash) {
+      return null;
+    }
+    final image = selected.photos.single;
     if (epoch != _accountEpoch) return null;
-    final bytes = await image.readAsBytes();
+    final bytes = await image.originalBytes();
     onPreview(bytes);
-    final extension = image.name.toLowerCase().split('.').last;
-    final mimeType = extension == 'png'
-        ? 'image/png'
-        : extension == 'webp'
-            ? 'image/webp'
-            : 'image/jpeg';
+    final mimeType = image.mimeType;
     // BUG-38：四步链路（begin→put→complete→set）整体最多重试一次，
     // 失败给出友好提示而非原始报错；中途失败不再向查看器裸抛异常。
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final begun = await api.beginMomentCoverUpload(
-          fileName: image.name,
+          fileName: 'moment-cover',
           mimeType: mimeType,
           byteSize: bytes.length,
         );

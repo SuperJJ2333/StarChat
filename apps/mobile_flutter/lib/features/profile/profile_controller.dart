@@ -105,6 +105,7 @@ final class ProfileController extends ChangeNotifier {
     this.readCachedProfile,
     this.persistProfile,
     this.onAvatarUpdated,
+    this.avatarCacheIdentity,
     ProfileData? initialProfile,
   })  : _invalidateAvatarCache =
             invalidateAvatarCache ?? AvatarCache.invalidateUser,
@@ -113,6 +114,11 @@ final class ProfileController extends ChangeNotifier {
             : ProfileState(ProfileStatus.ready, profile: initialProfile);
   final ProfileGateway gateway;
   final AvatarSource avatarSource;
+  final String Function(ProfileData profile)? avatarCacheIdentity;
+  String? get avatarCacheKey =>
+      state.profile == null ? null : _avatarKey(state.profile!);
+  String _avatarKey(ProfileData profile) =>
+      avatarCacheIdentity?.call(profile) ?? profile.fallbackSeed;
   final Future<void> Function(String userId) _invalidateAvatarCache;
   final Future<ProfileData?> Function()? readCachedProfile;
   final Future<void> Function(ProfileData profile)? persistProfile;
@@ -274,7 +280,7 @@ final class ProfileController extends ChangeNotifier {
           profile: state.profile, candidate: candidate, progress: .85));
       final profile = await gateway.completeAvatar(session.uploadId);
       if (!_isCurrent(generation)) return;
-      await _invalidateAvatarCache(profile.fallbackSeed);
+      await _invalidateAvatarCache(_avatarKey(profile));
       if (!_isCurrent(generation)) return;
       _retryCandidate = null;
       _set(ProfileState(ProfileStatus.ready, profile: profile, progress: 1));
@@ -296,7 +302,7 @@ final class ProfileController extends ChangeNotifier {
     await gateway.deleteAvatar();
     if (!_isCurrent(generation)) return;
     final current = state.profile;
-    if (current != null) await _invalidateAvatarCache(current.fallbackSeed);
+    if (current != null) await _invalidateAvatarCache(_avatarKey(current));
     if (!_isCurrent(generation)) return;
     if (current != null) {
       _set(ProfileState(ProfileStatus.ready,

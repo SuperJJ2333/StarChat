@@ -53,6 +53,10 @@ function profileDetails(definition) {
 
 function avatar(definition) {
   const root = pageRoot(definition);
+  if (definition.state === "crop") {
+    root.append(component("app-image-editor", { state: "crop", "avatar-mode": "true" }));
+    return root;
+  }
   root.append(navigation("修改头像", { leading: "返回" }));
   const content = element("div", "p-profile-avatar__content");
   content.append(component("app-avatar", { name: fixtures.currentUser.name, size: "detail" }), element("h2", "p-profile-avatar__title", definition.title));

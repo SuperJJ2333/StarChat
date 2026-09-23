@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 
 import 'global_search_models.dart';
@@ -78,79 +80,51 @@ final class GlobalSearchIndex {
     bool replace = true,
   }) {
     if (roomId.isEmpty) return;
-    final incoming = _normalize(messages);
-    final existing = replace
-        ? const <GlobalSearchMessageRecord>[]
-        : _rooms[roomId]?.records ?? const <GlobalSearchMessageRecord>[];
-    final records = _dedupe([...existing, ...incoming]);
-    _rooms.remove(roomId); // 保持 LRU 顺序
-    _rooms[roomId] = _IndexedRoom(
+    final old = replace ? null : _rooms[roomId];
+    final room = _IndexedRoom(
       roomId: roomId,
       roomName: roomName,
       isGroup: isGroup,
       avatarSeed: roomAvatarSeed,
       avatarUrl: roomAvatarUrl,
-      records: records.length > maxRecordsPerRoom
-          ? records.sublist(0, maxRecordsPerRoom)
-          : records,
+      records: old?.records ?? {},
+      order: old?.order ?? SplayTreeMap<_RecordOrder, String>(_compareOrder),
     );
+    for (final record in messages) {
+      if (record.eventId.isEmpty || record.body.trim().isEmpty) continue;
+      final previous = room.records[record.eventId];
+      if (previous != null) {
+        room.order.remove((previous.timestamp, previous.eventId));
+      }
+      room.records[record.eventId] = record;
+      room.order[(record.timestamp, record.eventId)] = record.eventId;
+      while (room.records.length > maxRecordsPerRoom) {
+        final oldest = room.order.firstKey()!;
+        room.records.remove(room.order.remove(oldest));
+      }
+    }
+    _rooms.remove(roomId); // LRU without re-sorting/copying all old records.
+    _rooms[roomId] = room;
     while (_rooms.length > maxRooms) {
       _rooms.remove(_rooms.keys.first);
     }
   }
 
-  /// E1：按 eventId 删除记录（消息撤回后不得再被搜索到）。
-  /// 未知 id 静默忽略；受影响房间保持 LRU 位置不变。
+  /// Recalls update both indexes without scanning every message in every room.
   int removeMessages(Iterable<String> eventIds) {
     final ids = Set<String>.of(eventIds);
     if (ids.isEmpty) return 0;
     var removed = 0;
-    final rebuilt = <String, _IndexedRoom>{};
-    final emptied = <String>[];
-    _rooms.removeWhere((roomId, room) {
-      final kept =
-          room.records.where((record) => !ids.contains(record.eventId));
-      if (kept.length == room.records.length) return false;
-      removed += room.records.length - kept.length;
-      if (kept.isEmpty) {
-        emptied.add(roomId); // 整个房间的记录都被删光：移除房间。
-        return true;
+    _rooms.removeWhere((_, room) {
+      for (final id in ids) {
+        final record = room.records.remove(id);
+        if (record == null) continue;
+        room.order.remove((record.timestamp, record.eventId));
+        removed++;
       }
-      rebuilt[roomId] = _IndexedRoom(
-        roomId: room.roomId,
-        roomName: room.roomName,
-        isGroup: room.isGroup,
-        records: kept.toList(),
-        avatarSeed: room.avatarSeed,
-        avatarUrl: room.avatarUrl,
-      );
-      return true; // 移除后立即按原字段重插，保持 LRU 顺序不变。
+      return room.records.isEmpty;
     });
-    _rooms.addAll(rebuilt);
-    for (final roomId in emptied) {
-      _rooms.remove(roomId);
-    }
     return removed;
-  }
-
-  static List<GlobalSearchMessageRecord> _normalize(
-          Iterable<GlobalSearchMessageRecord> messages) =>
-      messages
-          .where((record) =>
-              record.eventId.isNotEmpty && record.body.trim().isNotEmpty)
-          .toList()
-        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-  /// 按 eventId 去重（保持新→旧顺序）。
-  static List<GlobalSearchMessageRecord> _dedupe(
-      List<GlobalSearchMessageRecord> records) {
-    final seen = <String>{};
-    final unique = <GlobalSearchMessageRecord>[];
-    for (final record in records) {
-      if (seen.add(record.eventId)) unique.add(record);
-    }
-    unique.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    return unique;
   }
 
   /// 按关键词检索（连续子串、英文忽略大小写、中文按字），最近优先。
@@ -162,7 +136,7 @@ final class GlobalSearchIndex {
     if (needle.isEmpty) return const [];
     final hits = <GlobalSearchMessageHit>[];
     for (final room in _rooms.values) {
-      for (final record in room.records) {
+      for (final record in room.records.values) {
         if (!record.body.toLowerCase().contains(needle)) continue;
         hits.add(GlobalSearchMessageHit(
           roomId: room.roomId,
@@ -202,6 +176,7 @@ final class _IndexedRoom {
     required this.roomName,
     required this.isGroup,
     required this.records,
+    required this.order,
     this.avatarSeed,
     this.avatarUrl,
   });
@@ -209,7 +184,15 @@ final class _IndexedRoom {
   final String roomId;
   final String roomName;
   final bool isGroup;
-  final List<GlobalSearchMessageRecord> records;
+  final Map<String, GlobalSearchMessageRecord> records;
+  final SplayTreeMap<_RecordOrder, String> order;
   final String? avatarSeed;
   final String? avatarUrl;
+}
+
+// Deterministic ties preserve both events and make oldest eviction logarithmic.
+typedef _RecordOrder = (DateTime, String);
+int _compareOrder(_RecordOrder a, _RecordOrder b) {
+  final time = a.$1.compareTo(b.$1);
+  return time != 0 ? time : a.$2.compareTo(b.$2);
 }

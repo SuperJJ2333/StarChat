@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
@@ -27,6 +27,8 @@ class _UploadClient extends Client {
   late Room room;
   final uploads = <Uint8List>[];
   final uploadNames = <String?>[];
+  Future<Uri> Function(int attempt)? uploadResponse;
+  final syncTransactionIds = <String>[];
   @override
   bool get fileEncryptionEnabled => true;
   @override
@@ -36,13 +38,22 @@ class _UploadClient extends Client {
   @override
   Future<MediaConfig> getConfig() async => MediaConfig(mUploadSize: 1000000);
   @override
-  Future<void> handleSync(SyncUpdate sync, {Direction? direction}) async {}
+  Future<void> handleSync(SyncUpdate sync, {Direction? direction}) async {
+    for (final joined in sync.rooms?.join?.values ?? <JoinedRoomUpdate>[]) {
+      for (final event in joined.timeline?.events ?? <MatrixEvent>[]) {
+        final txid = event.unsigned?['transaction_id'];
+        if (txid is String) syncTransactionIds.add(txid);
+      }
+    }
+  }
+
   @override
   Future<Uri> uploadContent(Uint8List file,
       {String? filename, String? contentType}) async {
     uploads.add(file);
     uploadNames.add(filename);
     expect(contentType, 'application/octet-stream');
+    if (uploadResponse != null) return uploadResponse!(uploads.length);
     return Uri.parse('mxc://test/${uploads.length}');
   }
 }
@@ -50,6 +61,7 @@ class _UploadClient extends Client {
 class _UploadRoom extends Room {
   _UploadRoom(Client client) : super(id: '!test:example', client: client);
   Map<String, dynamic>? sent;
+  final sentTransactionIds = <String?>[];
   Event? received;
   Timeline? testTimeline;
   @override
@@ -80,6 +92,7 @@ class _UploadRoom extends Room {
     String? threadLastEventId,
   }) async {
     sent = content;
+    sentTransactionIds.add(txid);
     return 'event';
   }
 }
@@ -511,6 +524,109 @@ void main() {
     expect(room.sent!['info']['thumbnail_file']['key']['k'],
         (await MediaEnvelope.forBytes(Uint8List.fromList([4, 5]))).encrypted.k);
   });
+  for (final failingPhase in ['main', 'thumbnail']) {
+    test('SDK upload retries only the unfinished $failingPhase phase',
+        () async {
+      final client = _UploadClient();
+      final room = _UploadRoom(client);
+      client.room = room;
+      final thumbnailBytes = Uint8List.fromList([4, 5]);
+      final prepared = await prepareContentAddressedMedia(
+          file: MatrixVideoFile(bytes: bytes, name: 'clip.mp4', duration: 42),
+          thumbnail: MatrixImageFile(
+              bytes: thumbnailBytes, name: 'thumb.jpg', width: 1, height: 2));
+      final encrypted = await prepared.file.encrypt();
+      final encryptedThumbnail = await prepared.thumbnail!.encrypt();
+      var mainAttempts = 0;
+      var thumbnailAttempts = 0;
+      client.uploadResponse = (attempt) async {
+        final isMain = listEquals(client.uploads[attempt - 1], encrypted.data);
+        final phaseAttempt = isMain ? ++mainAttempts : ++thumbnailAttempts;
+        if ((isMain ? 'main' : 'thumbnail') == failingPhase &&
+            phaseAttempt == 1) {
+          throw const SocketException('transient upload failure');
+        }
+        return Uri.parse(
+            'mxc://test/${isMain ? 'main' : 'thumbnail'}-$phaseAttempt');
+      };
+
+      expect(
+          await room.sendFileEvent(prepared.file,
+              thumbnail: prepared.thumbnail,
+              extraContent: prepared.extraContent,
+              txid: 'stable-upload-transaction'),
+          'event');
+
+      expect(mainAttempts, failingPhase == 'main' ? 2 : 1);
+      expect(thumbnailAttempts, failingPhase == 'thumbnail' ? 2 : 1);
+      expect(
+          client.uploads,
+          failingPhase == 'main'
+              ? [encrypted.data, encrypted.data, encryptedThumbnail.data]
+              : [
+                  encrypted.data,
+                  encryptedThumbnail.data,
+                  encryptedThumbnail.data
+                ]);
+      expect(client.uploadNames, everyElement('crypt'));
+      expect(room.sentTransactionIds, ['stable-upload-transaction']);
+      expect(client.syncTransactionIds, isNotEmpty);
+      expect(
+          client.syncTransactionIds, everyElement('stable-upload-transaction'));
+      final content = room.sent!;
+      void checkDescriptor(
+          dynamic descriptor, EncryptedFile envelope, String uri) {
+        expect(descriptor['url'], uri);
+        expect(descriptor['v'], 'v2');
+        expect(descriptor['key']['k'], envelope.k);
+        expect(descriptor['iv'], envelope.iv);
+        expect(descriptor['hashes']['sha256'], envelope.sha256);
+      }
+
+      checkDescriptor(content['file'], encrypted,
+          'mxc://test/main-${failingPhase == 'main' ? 2 : 1}');
+      checkDescriptor(content['info']['thumbnail_file'], encryptedThumbnail,
+          'mxc://test/thumbnail-${failingPhase == 'thumbnail' ? 2 : 1}');
+      expect(content.containsKey('url'), isFalse);
+      expect(content['info'].containsKey('thumbnail_url'), isFalse);
+      expect(content['info']['duration'], 42);
+      expect(content['info']['thumbnail_info']['h'], 2);
+      expect(content['chatflow_media']['content_sha256'], hash);
+      expect(await decryptFileImplementation(encrypted), bytes);
+      expect(
+          await decryptFileImplementation(encryptedThumbnail), thumbnailBytes);
+      expect(room.sendingFilePlaceholders, isEmpty);
+      expect(room.sendingFileThumbnails, isEmpty);
+    });
+
+    test('SDK upload stops on a permanent $failingPhase failure', () async {
+      final client = _UploadClient();
+      final room = _UploadRoom(client);
+      client.room = room;
+      final failureAttempt = failingPhase == 'main' ? 1 : 2;
+      final error = MatrixException(http.Response(
+          '{"errcode":"M_FORBIDDEN","error":"Upload denied"}', 403));
+      client.uploadResponse = (attempt) async {
+        if (attempt == failureAttempt) throw error;
+        return Uri.parse('mxc://test/main');
+      };
+      final prepared = await prepareContentAddressedMedia(
+          file: MatrixVideoFile(bytes: bytes, name: 'clip.mp4'),
+          thumbnail: MatrixImageFile(
+              bytes: Uint8List.fromList([4, 5]), name: 'thumb.jpg'));
+
+      await expectLater(
+          room.sendFileEvent(prepared.file,
+              thumbnail: prepared.thumbnail, txid: 'permanent-upload-failure'),
+          throwsA(same(error)));
+
+      expect(client.uploads.length, failureAttempt);
+      expect(room.sentTransactionIds, isEmpty);
+      expect(room.sent, isNull);
+      expect(
+          client.syncTransactionIds, everyElement('permanent-upload-failure'));
+    });
+  }
   test('prepared images skip SDK post-encryption resizing and retain thumbnail',
       () async {
     final client = _UploadClient();

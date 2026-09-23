@@ -11,25 +11,24 @@ final class MomentAuthor {
 
   /// 备注隐私红线：作者展示只取服务端主昵称投影，绝不读取 remark 字段。
   factory MomentAuthor.fromJson(Map<String, dynamic> json) => MomentAuthor(
-    userId: json['user_id'].toString(),
-    username: json['username']?.toString() ?? '',
-    nickname: json['nickname']?.toString() ?? '',
-    displayName:
-        json['display_name']?.toString() ??
-        json['nickname']?.toString() ??
-        json['username']?.toString() ??
-        '',
-    avatarUrl: json['avatar_url']?.toString(),
-  );
+        userId: json['user_id'].toString(),
+        username: json['username']?.toString() ?? '',
+        nickname: json['nickname']?.toString() ?? '',
+        displayName: json['display_name']?.toString() ??
+            json['nickname']?.toString() ??
+            json['username']?.toString() ??
+            '',
+        avatarUrl: json['avatar_url']?.toString(),
+      );
   final String userId, username, nickname, displayName;
   final String? avatarUrl;
   Map<String, dynamic> toJson() => {
-    'user_id': userId,
-    'username': username,
-    'nickname': nickname,
-    'display_name': displayName,
-    'avatar_url': avatarUrl,
-  };
+        'user_id': userId,
+        'username': username,
+        'nickname': nickname,
+        'display_name': displayName,
+        'avatar_url': avatarUrl,
+      };
 }
 
 final class MomentCommentView {
@@ -65,14 +64,14 @@ final class MomentCommentView {
   final MomentAuthor? parentAuthor;
   final DateTime? createdAt;
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'text': text,
-    'created_at': createdAt?.toIso8601String(),
-    'author': author.toJson(),
-    'parent_author': parentAuthor?.toJson(),
-    'image_urls': images,
-    'image_cache_keys': imageCacheKeys,
-  };
+        'id': id,
+        'text': text,
+        'created_at': createdAt?.toIso8601String(),
+        'author': author.toJson(),
+        'parent_author': parentAuthor?.toJson(),
+        'image_urls': images,
+        'image_cache_keys': imageCacheKeys,
+      };
   final List<String> images;
   final List<String?> imageCacheKeys;
 }
@@ -80,10 +79,11 @@ final class MomentCommentView {
 List<MomentCommentView> mergeMomentComments(
   Iterable<MomentCommentView> existing,
   MomentCommentView incoming,
-) => <String, MomentCommentView>{
-  for (final comment in existing) comment.id: comment,
-  incoming.id: incoming,
-}.values.toList(growable: false);
+) =>
+    <String, MomentCommentView>{
+      for (final comment in existing) comment.id: comment,
+      incoming.id: incoming,
+    }.values.toList(growable: false);
 
 final class MomentItem {
   const MomentItem({
@@ -93,6 +93,8 @@ final class MomentItem {
     required this.images,
     required this.createdAt,
     this.imageCacheKeys = const [],
+    this.videos = const [],
+    this.videoCacheKeys = const [],
     this.liked = false,
     this.likeCount = 0,
     this.likeUsers = const [],
@@ -105,6 +107,7 @@ final class MomentItem {
     this.includeTagIds = const [],
     this.excludeTagIds = const [],
   });
+
   /// 可见范围（作者本人视角由服务端返回；他人视角为 null/空）。
   final String? visibility;
   final List<String> includeUserIds;
@@ -140,8 +143,12 @@ final class MomentItem {
       text: json['text']?.toString() ?? '',
       images: List<String>.from(json['image_urls'] ?? const []),
       imageCacheKeys: _imageCacheKeys(json),
-      createdAt:
-          DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+      videos: List<String>.from(json['video_urls'] ?? const []),
+      videoCacheKeys: _imageCacheKeys({
+        'image_urls': json['video_urls'],
+        'image_cache_keys': json['video_cache_keys']
+      }),
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.now(),
       liked: json['viewer_has_liked'] == true,
       likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
@@ -218,6 +225,8 @@ final class MomentItem {
   }
 
   final List<String> images;
+  final List<String> videos;
+  final List<String?> videoCacheKeys;
   final List<String?> imageCacheKeys;
   final List<MomentAuthor> likeUsers;
   final List<MomentCommentView> comments;
@@ -235,25 +244,28 @@ final class MomentItem {
     List<String>? excludeUserIds,
     List<String>? includeTagIds,
     List<String>? excludeTagIds,
-  }) => MomentItem(
-    id: id,
-    author: author,
-    text: text,
-    images: images,
-    imageCacheKeys: imageCacheKeys,
-    createdAt: createdAt,
-    liked: liked ?? this.liked,
-    likeCount: likeCount ?? this.likeCount,
-    likeUsers: likeUsers ?? this.likeUsers,
-    comments: comments ?? this.comments,
-    kind: kind,
-    adLink: adLink,
-    visibility: visibility ?? this.visibility,
-    includeUserIds: includeUserIds ?? this.includeUserIds,
-    excludeUserIds: excludeUserIds ?? this.excludeUserIds,
-    includeTagIds: includeTagIds ?? this.includeTagIds,
-    excludeTagIds: excludeTagIds ?? this.excludeTagIds,
-  );
+  }) =>
+      MomentItem(
+        id: id,
+        author: author,
+        text: text,
+        images: images,
+        imageCacheKeys: imageCacheKeys,
+        videos: videos,
+        videoCacheKeys: videoCacheKeys,
+        createdAt: createdAt,
+        liked: liked ?? this.liked,
+        likeCount: likeCount ?? this.likeCount,
+        likeUsers: likeUsers ?? this.likeUsers,
+        comments: comments ?? this.comments,
+        kind: kind,
+        adLink: adLink,
+        visibility: visibility ?? this.visibility,
+        includeUserIds: includeUserIds ?? this.includeUserIds,
+        excludeUserIds: excludeUserIds ?? this.excludeUserIds,
+        includeTagIds: includeTagIds ?? this.includeTagIds,
+        excludeTagIds: excludeTagIds ?? this.excludeTagIds,
+      );
 }
 
 String formatMomentTime(DateTime value, {DateTime? now}) {

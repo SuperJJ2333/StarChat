@@ -1,70 +1,58 @@
-import 'dart:io';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:image_picker/image_picker.dart';
-import '../../ui/foundation/wechat_tokens.dart';
+import 'package:flutter/foundation.dart';
+
+import '../../ui/chat/wechat_image_editor.dart';
+import '../../ui/motion/motion_page_route.dart';
+import '../matrix/image_picker_page.dart';
+import '../matrix/gif_image_policy.dart';
 import 'profile_controller.dart';
 
-/// 服务端头像校验上限（AVATAR_DIMENSIONS_EXCEEDED，1024×1024）。
-/// 高分辨率设备（如 Android 16 全面屏）裁剪输出可达 1440+，必须压回。
 const avatarMaxDimension = 1024;
 
+/// Uses the same gallery and safe-area Flutter editor on both mobile platforms.
 final class GalleryAvatarSource implements AvatarSource {
-  GalleryAvatarSource(
-      {ImagePicker? picker, ImageCropper? cropper, this.brightnessProvider})
-      : picker = picker ?? ImagePicker(),
-        cropper = cropper ?? ImageCropper();
-  final ImagePicker picker;
-  final ImageCropper cropper;
-  final Brightness Function()? brightnessProvider;
+  GalleryAvatarSource({required this.contextProvider});
+  final BuildContext? Function() contextProvider;
+
   @override
   Future<AvatarCandidate?> selectCropAndCompress() async {
-    // Capture while the owning page is mounted, before the native picker can
-    // outlive it (for example when the account is signed out in the background).
-    final dark = brightnessProvider?.call() == Brightness.dark;
-    final selected =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 92);
-    if (selected == null) return null;
-    final cropped = await cropper.cropImage(
-        sourcePath: selected.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        compressFormat: ImageCompressFormat.jpg,
-        compressQuality: 88,
-        uiSettings: [
-          // 面向全面屏（刘海/灵动岛/手势条）：给系统栏显式的不透明主题色，
-          // 确认与退出控件落在工具栏/底部控制区内，不被状态栏或手势条遮挡；
-          // 非全面屏设备无 insets，布局保持不变。
-          AndroidUiSettings(
-            lockAspectRatio: true,
-            hideBottomControls: false,
-            toolbarTitle: '裁剪头像',
-            toolbarColor: dark
-                ? WeChatColors.darkSurface
-                : WeChatColors.chatNavigationBackground,
-            toolbarWidgetColor: dark
-                ? WeChatColors.darkTextPrimary
-                : WeChatColors.lightTextPrimary,
-            // 9.x 在浅色系统栏下保证工具栏图标可见；insets 由插件处理，
-            // 确认/退出控件不会被状态栏或手势条遮挡。
-            statusBarLight: !dark,
-            navBarLight: !dark,
-            activeControlsWidgetColor: WeChatColors.brandPrimary,
-          ),
-          IOSUiSettings(
-              aspectRatioLockEnabled: true, resetAspectRatioEnabled: false)
-        ]);
-    if (cropped == null) return null;
-    // 压到服务端上限内：保持正方形比例（裁剪已锁定 1:1），
-    // flutter_image_compress 的 minWidth/minHeight 为"最大边界"语义。
-    final compressed = await FlutterImageCompress.compressWithFile(
-      cropped.path,
-      minWidth: avatarMaxDimension,
-      minHeight: avatarMaxDimension,
-      quality: 88,
-      format: CompressFormat.jpeg,
+    final context = contextProvider();
+    if (context == null || !context.mounted) return null;
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final selected = await navigator
+        .push<({List<GalleryPhoto> photos, bool original, bool flash})>(
+      MotionPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const ImagePickerPage(
+                photosOnly: true,
+                staticImagesOnly: true,
+                maxCount: 1,
+                confirmLabel: '下一步',
+                showOriginalToggle: false,
+              )),
     );
-    final bytes = compressed ?? await File(cropped.path).readAsBytes();
-    return AvatarCandidate(bytes: bytes, mimeType: 'image/jpeg');
+    if (!context.mounted ||
+        !navigator.mounted ||
+        selected == null ||
+        selected.photos.length != 1) {
+      return null;
+    }
+    final photo = selected.photos.single;
+    if (photo.isVideo || photo.mimeType.toLowerCase() == 'image/gif') {
+      return null;
+    }
+    final bytes = await photo.originalBytes();
+    if (!context.mounted ||
+        !navigator.mounted ||
+        bytes.isEmpty ||
+        isGifBytes(bytes)) {
+      return null;
+    }
+    final cropped = await navigator.push<Uint8List>(MotionPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => WeChatImageEditorPage(bytes: bytes, avatarMode: true),
+    ));
+    if (!context.mounted || cropped == null) return null;
+    return AvatarCandidate(bytes: cropped, mimeType: 'image/png');
   }
 }

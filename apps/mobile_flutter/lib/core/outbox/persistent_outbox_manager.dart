@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../network_state_manager.dart';
+import 'server_retry_policy.dart';
 import 'outbox_message.dart';
 import 'outbox_store.dart';
 
@@ -15,6 +17,8 @@ typedef OutboxIdGenerator = String Function();
 /// 只有这一个接缝：控制器在**派发之前**把消息写进 outbox，并在结果回来时
 /// 更新状态；它不需要知道房间号、接收方或数据库形状。
 abstract interface class OutboxJournal {
+  DateTime get now;
+  Future<bool> resetServerRetry(String localId);
   Future<OutboxMessage?> findByTxid(String txid);
 
   /// 插入（幂等：txid 已存在时返回既有行，不产生第二行）。
@@ -30,7 +34,8 @@ abstract interface class OutboxJournal {
   Future<bool> claim(String localId, {Set<OutboxStatus>? from});
 
   /// 结果落定（等待网络 / 发送失败）。
-  Future<void> settle(String localId, OutboxStatus status, {String? lastError});
+  Future<void> settle(String localId, OutboxStatus status,
+      {String? lastError, Object? error});
 
   /// 服务端已确认：先记 `sent`，再从表里移除（不保留正文副本）。
   Future<void> complete(String localId);
@@ -47,8 +52,8 @@ abstract interface class OutboxJournal {
 /// - [recoverOnStartup]：进程重启后把"派发中"的行复位为 queued 再交给调度器；
 /// - [bindRoomForReceiver]：pending conversation 拿到真实房间号后把行绑定过去。
 ///
-/// 所有存储异常都被吞进 [lastError] 并记日志式暴露，**绝不**让持久化故障
-/// 变成"消息发不出去"——可用性优先，但失败可见（`lastError`）。
+/// 存储异常通过 [lastError] 暴露。已持久化行的认领与结果结算失败时
+/// 必须保留所有权并停止派发；首次日志不可用仍沿用调用方的内存降级。
 final class PersistentOutboxManager extends ChangeNotifier {
   PersistentOutboxManager(
     this.store, {
@@ -69,12 +74,13 @@ final class PersistentOutboxManager extends ChangeNotifier {
   final OutboxIdGenerator _newLocalId;
   final OutboxIdGenerator _newTxid;
 
-  /// 最近一次持久化故障（诊断用；不影响发送路径）。
+  /// 最近一次持久化故障（认领失败会阻止持久化行派发）。
   Object? lastError;
 
   bool _disposed = false;
 
   bool get isDisposed => _disposed;
+  DateTime get now => _clock();
 
   String newLocalId() => _newLocalId();
 
@@ -134,6 +140,7 @@ final class PersistentOutboxManager extends ChangeNotifier {
     OutboxStatus status, {
     String? lastError,
     bool countRetry = false,
+    Set<OutboxStatus>? from,
   }) async {
     if (_disposed) return false;
     try {
@@ -142,6 +149,8 @@ final class PersistentOutboxManager extends ChangeNotifier {
         status,
         lastError: lastError,
         incrementRetry: countRetry,
+        accountId: accountId,
+        from: from,
         updatedAt: _clock(),
         clearLastError: lastError == null && status == OutboxStatus.sent,
       );
@@ -154,44 +163,100 @@ final class PersistentOutboxManager extends ChangeNotifier {
     }
   }
 
-  /// 原子认领：把行翻成 [OutboxStatus.sending]。
+  /// 原子认领：把行翻成 [OutboxStatus.sending] 并递增持久化所有权代次。
+  /// 包含准入/租约尝试；即使没有调用 SDK，每次所有权都必须有新代次。
   ///
-  /// 默认只允许从"可派发/可手动重试"的状态认领（queued / waitingNetwork /
-  /// failed）。返回 false 说明这一行已经被别人派发（sending）或已送达
+  /// 默认只允许从可自动派发状态认领（queued / waitingNetwork）。返回 false 说明这一行已经被别人派发（sending）或已送达
   /// （sent），调用方必须放弃本次派发——这就是"两次尝试只发一次"的实现。
   Future<bool> claim(
     String localId, {
     Set<OutboxStatus>? from,
-    bool countRetry = true,
   }) async {
     if (_disposed) return false;
     try {
+      final current = await store.byLocalId(localId);
+      if (current == null || current.accountId != accountId) return false;
       final changed = await store.updateStatus(
         localId,
         OutboxStatus.sending,
-        incrementRetry: countRetry,
-        updatedAt: _clock(),
+        incrementRetry: true,
+        updatedAt: now,
+        accountId: accountId,
+        expectedRetryCount: current.retryCount,
+        dueAt: now,
         from: from ??
-            const <OutboxStatus>{
+            const {
               OutboxStatus.queued,
               OutboxStatus.waitingNetwork,
-              OutboxStatus.failed,
             },
       );
       lastError = null;
-      if (changed) {
-        _notify();
-        return true;
-      }
-      // 没改到行有两种可能：行已不存在（可以发），或已被别的派发者认领/
-      // 已送达（绝对不能再发一次）。必须读一次才能区分。
-      final current = await store.byLocalId(localId);
-      if (current == null) return true;
-      return !(current.status.isSettled || current.status.isInFlight);
+      if (changed) _notify();
+      return changed;
     } catch (error) {
       lastError = error;
-      // 持久化故障时不阻断发送：可用性优先（状态无法落盘由 lastError 暴露）。
-      return true;
+      return false;
+    }
+  }
+
+  /// Only an actually settled, owned transport attempt may consume this budget.
+  Future<bool> settleAttempt(OutboxMessage attempt, OutboxStatus status,
+      {Object? error, String? reason}) async {
+    if (_disposed || attempt.accountId != accountId) return false;
+    var retries = attempt.serverRetryCount;
+    DateTime? deadline;
+    if (error != null && isRetryableServerFailure(error)) {
+      final delay = ServerRetryPolicy.delay(retries, error);
+      if (delay == null) {
+        status = OutboxStatus.failed;
+        reason = 'server_retry_exhausted';
+      } else {
+        retries++;
+        deadline = now.add(delay);
+        status = OutboxStatus.waitingNetwork;
+        reason = 'server_unavailable';
+      }
+    }
+    try {
+      final changed = await store.updateStatus(attempt.localId, status,
+          accountId: accountId,
+          from: const {OutboxStatus.sending},
+          expectedRetryCount: attempt.retryCount,
+          serverRetryCount: retries,
+          nextServerRetryAt: deadline,
+          clearNextServerRetryAt: deadline == null,
+          updatedAt: now,
+          lastError: reason,
+          clearLastError: reason == null);
+      lastError = null;
+      if (changed) _notify();
+      return changed;
+    } catch (error) {
+      lastError = error;
+      return false;
+    }
+  }
+
+  Future<bool> resetServerRetry(String localId) async {
+    if (_disposed) return false;
+    try {
+      final changed = await store.updateStatus(localId, OutboxStatus.queued,
+          accountId: accountId,
+          from: const {
+            OutboxStatus.queued,
+            OutboxStatus.waitingNetwork,
+            OutboxStatus.failed
+          },
+          serverRetryCount: 0,
+          clearNextServerRetryAt: true,
+          clearLastError: true,
+          updatedAt: now);
+      lastError = null;
+      if (changed) _notify();
+      return changed;
+    } catch (error) {
+      lastError = error;
+      return false;
     }
   }
 
@@ -238,7 +303,8 @@ final class PersistentOutboxManager extends ChangeNotifier {
 
   Future<OutboxMessage?> byTxid(String txid) async {
     try {
-      return await store.byTxid(txid);
+      final row = await store.byTxid(txid);
+      return row?.accountId == accountId ? row : null;
     } catch (error) {
       lastError = error;
       return null;
@@ -247,7 +313,8 @@ final class PersistentOutboxManager extends ChangeNotifier {
 
   Future<OutboxMessage?> byLocalId(String localId) async {
     try {
-      return await store.byLocalId(localId);
+      final row = await store.byLocalId(localId);
+      return row?.accountId == accountId ? row : null;
     } catch (error) {
       lastError = error;
       return null;
@@ -383,6 +450,14 @@ final class RoomOutboxJournal implements OutboxJournal {
   final String? roomId;
   final Future<bool> Function(String localId)? beforeClaim;
   final String receiverId;
+  final _claims = <String, OutboxMessage>{};
+
+  @override
+  DateTime get now => _manager.now;
+
+  @override
+  Future<bool> resetServerRetry(String localId) =>
+      _manager.resetServerRetry(localId);
 
   @override
   Future<OutboxMessage?> findByTxid(String txid) => _manager.byTxid(txid);
@@ -405,18 +480,56 @@ final class RoomOutboxJournal implements OutboxJournal {
 
   @override
   Future<bool> claim(String localId, {Set<OutboxStatus>? from}) async {
-    if (beforeClaim != null && !await beforeClaim!(localId)) return false;
-    return _manager.claim(localId, from: from);
+    try {
+      if (beforeClaim != null && !await beforeClaim!(localId)) return false;
+    } catch (_) {
+      // A completed admission failure also needs bounded durable retries. Own
+      // only a still-pending row before recording it; never touch another sender.
+      if (!await _manager.claim(localId)) return false;
+      final attempt = await _manager.byLocalId(localId);
+      if (attempt == null || attempt.status != OutboxStatus.sending) {
+        return false;
+      }
+      _claims[localId] = attempt;
+      rethrow;
+    }
+    if (!await _manager.claim(localId, from: from)) return false;
+    final attempt = await _manager.byLocalId(localId);
+    if (attempt == null || attempt.status != OutboxStatus.sending) return false;
+    _claims[localId] = attempt;
+    return true;
   }
 
   @override
   Future<void> settle(String localId, OutboxStatus status,
-          {String? lastError}) =>
-      _manager.updateStatus(localId, status, lastError: lastError);
+      {String? lastError, Object? error}) async {
+    final attempt = _claims[localId];
+    if (attempt != null) {
+      if (await _manager.settleAttempt(attempt, status,
+          error: error, reason: error == null ? lastError : 'send_failed')) {
+        _claims.remove(localId);
+      }
+      return;
+    }
+    // Pre-admission outcomes may update only a non-owned pending row.
+    await _manager.store.updateStatus(localId, status,
+        accountId: _manager.accountId,
+        from: const {
+          OutboxStatus.queued,
+          OutboxStatus.waitingNetwork,
+          OutboxStatus.failed
+        },
+        lastError: lastError,
+        updatedAt: now);
+  }
 
   @override
   Future<void> complete(String localId) async {
-    await _manager.updateStatus(localId, OutboxStatus.sent);
-    await _manager.removeOrArchive(localId);
+    final attempt = _claims[localId];
+    if (attempt == null) return;
+    if (await _manager.settleAttempt(attempt, OutboxStatus.sent)) {
+      _claims.remove(localId);
+      await _manager.removeOrArchive(localId);
+    }
   }
 }

@@ -80,6 +80,8 @@ final class MessageSendScheduler {
 
   final Set<String> _inFlight = <String>{};
   NetworkStateManager? _attached;
+  bool _started = false;
+  int _deadlineRevision = 0;
   bool _draining = false;
   bool _drainRequested = false;
   bool _reportingFailure = false;
@@ -87,7 +89,7 @@ final class MessageSendScheduler {
   final Set<String> _openingRooms = <String>{};
   final Set<String> _resolvingReceivers = <String>{};
   final _serverRetryTimers = <String, Timer>{};
-  final _serverRetryAttempts = <String, int>{};
+  final _serverRetryWakeups = <String, (int, int)>{};
   static const _resolutionRetryDelays = <Duration>[
     Duration(seconds: 2),
     Duration(seconds: 5),
@@ -127,15 +129,45 @@ final class MessageSendScheduler {
 
   /// 挂载网络恢复监听。幂等；不创建定时器。
   void start() {
-    if (_disposed || _attached != null) return;
+    if (_disposed || _started) return;
+    _started = true;
+    outbox.addListener(_onOutboxChanged);
+    _onOutboxChanged();
     final manager = networkState;
-    if (manager == null) return;
+    if (manager == null) {
+      unawaited(drain());
+      return;
+    }
     _attached = manager;
     manager.state.addListener(_onNetworkStateChanged);
     // 挂载时可能已经在线（例如恢复服务在同步成功之后才启动）。
     if (manager.current == NetworkState.online ||
         manager.current == NetworkState.recovering) {
       unawaited(drain());
+    }
+  }
+
+  void _onOutboxChanged() {
+    final revision = ++_deadlineRevision;
+    unawaited(_refreshDurableDeadlines(revision));
+  }
+
+  Future<void> _refreshDurableDeadlines(int revision) async {
+    final rows = await outbox.queryPending();
+    if (_disposed || revision != _deadlineRevision) return;
+    final ids = rows
+        .where((row) => row.nextServerRetryAt != null)
+        .map((row) => row.localId)
+        .toSet();
+    for (final id in _serverRetryTimers.keys.toList()) {
+      if (!ids.contains(id)) {
+        _serverRetryTimers.remove(id)?.cancel();
+        _serverRetryWakeups.remove(id);
+      }
+    }
+    _serverRetryWakeups.removeWhere((id, _) => !ids.contains(id));
+    for (final row in rows) {
+      if (row.nextServerRetryAt != null) _armServerRetry(row);
     }
   }
 
@@ -187,7 +219,11 @@ final class MessageSendScheduler {
     final offline = networkState?.current == NetworkState.offline;
     final byRoom = <String, List<OutboxMessage>>{};
     for (final row in rows) {
-      if (_serverRetryTimers.containsKey(row.localId)) continue;
+      if (row.nextServerRetryAt?.isAfter(outbox.now) ?? false) {
+        _armServerRetry(row);
+        continue;
+      }
+      _serverRetryTimers.remove(row.localId)?.cancel();
       final roomId = row.roomId?.trim() ?? '';
       if (roomId.isEmpty) {
         // 会话还没建立：等 pending conversation 绑定房间号。
@@ -200,7 +236,9 @@ final class MessageSendScheduler {
       for (final roomRows in byRoom.values) {
         for (final row in roomRows) {
           await outbox.updateStatus(row.localId, OutboxStatus.waitingNetwork,
-              lastError: 'offline', countRetry: false);
+              lastError: 'offline',
+              countRetry: false,
+              from: const {OutboxStatus.queued, OutboxStatus.waitingNetwork});
         }
       }
       return 0;
@@ -318,10 +356,12 @@ final class MessageSendScheduler {
       if (_disposed) return;
       if (row.hasRoom) continue;
       if (await outbox.claim(row.localId,
-          from: const {OutboxStatus.queued, OutboxStatus.waitingNetwork},
-          countRetry: false)) {
+          from: const {OutboxStatus.queued, OutboxStatus.waitingNetwork})) {
         if (_disposed) return;
-        await outbox.updateStatus(row.localId, status, lastError: reason);
+        final attempt = await outbox.byLocalId(row.localId);
+        if (attempt != null) {
+          await outbox.settleAttempt(attempt, status, reason: reason);
+        }
       }
     }
   }
@@ -344,21 +384,26 @@ final class MessageSendScheduler {
           // claim or dispatch the same request while its outcome is unknown.
           unawaited(sending
               .then<void>((_) {}, onError: (Object _) {})
-              .whenComplete(() => _inFlight.remove(row.localId)));
+              .whenComplete(() async {
+            _inFlight.remove(row.localId);
+            await _refreshServerRetry(row.localId);
+          }));
           return '';
         });
         if (eventId.isEmpty) {
+          await _refreshServerRetry(row.localId);
           continue;
         }
-        _serverRetryAttempts.remove(row.localId);
         _dispatched++;
         sent++;
       } catch (error) {
         // 行内状态由会话的发送状态机与 outbox 日志落定；这里只把网络事实
         // 上报给网络状态机，让恢复信号照常产生。
-        if (isRetryableServerFailure(error)) {
-          await _retryServer(row, error);
-        } else if (defaultNetworkFailureClassifier(error)) {
+        // The registered sender owns settlement. Wrapper exceptions may hide
+        // the original 429/5xx, so observe durable state without charging again.
+        await _refreshServerRetry(row.localId);
+        if (defaultNetworkFailureClassifier(error) &&
+            !isRetryableServerFailure(error)) {
           _reportFailure(error);
         }
       } finally {
@@ -414,10 +459,13 @@ final class MessageSendScheduler {
         final activeLease = lease!;
         final recoveryRevision = _recoveryRevision;
         var retryAfterSettlement = false;
+        OutboxMessage? attempt;
         final sending = () async {
           try {
             // 原子认领：失败说明已被别的派发者认领/已送达。
             if (!await outbox.claim(row.localId)) return false;
+            attempt = await outbox.byLocalId(row.localId);
+            if (attempt == null) return false;
             if (_disposed) {
               await outbox.updateStatus(row.localId, OutboxStatus.queued);
               return false;
@@ -432,23 +480,25 @@ final class MessageSendScheduler {
             if (eventId.isEmpty) {
               throw StateError('Matrix event was not accepted');
             }
-            await outbox.updateStatus(row.localId, OutboxStatus.sent);
-            _serverRetryAttempts.remove(row.localId);
-            await outbox.removeOrArchive(row.localId);
+            if (await outbox.settleAttempt(attempt!, OutboxStatus.sent)) {
+              await outbox.removeOrArchive(row.localId);
+            }
             _dispatched++;
             return true;
           } catch (error) {
             // 网络问题 → 等待网络（自动续发）；服务端明确拒绝 → failed。
             final networkFailure = defaultNetworkFailureClassifier(error);
-            await outbox.updateStatus(
-              row.localId,
-              networkFailure
-                  ? OutboxStatus.waitingNetwork
-                  : OutboxStatus.failed,
-              lastError: error.toString(),
-            );
+            if (attempt != null) {
+              await outbox.settleAttempt(
+                  attempt!,
+                  networkFailure
+                      ? OutboxStatus.waitingNetwork
+                      : OutboxStatus.failed,
+                  error: error,
+                  reason: 'send_failed');
+            }
             if (isRetryableServerFailure(error)) {
-              await _retryServer(row, error);
+              await _refreshServerRetry(row.localId);
               return false;
             }
             retryAfterSettlement = networkFailure &&
@@ -485,9 +535,15 @@ final class MessageSendScheduler {
   Future<void> _keepWaitingNetwork(
       List<OutboxMessage> rows, Object error) async {
     for (final row in rows) {
-      await outbox.updateStatus(row.localId, OutboxStatus.waitingNetwork,
-          lastError: error.toString());
-      if (isRetryableServerFailure(error)) await _retryServer(row, error);
+      if (!await outbox.claim(row.localId,
+          from: const {OutboxStatus.queued, OutboxStatus.waitingNetwork})) {
+        continue;
+      }
+      final attempt = await outbox.byLocalId(row.localId);
+      if (attempt == null) continue;
+      await outbox.settleAttempt(attempt, OutboxStatus.waitingNetwork,
+          error: error, reason: 'lease_unavailable');
+      await _refreshServerRetry(row.localId);
     }
     if (defaultNetworkFailureClassifier(error)) {
       _reportFailure(error);
@@ -503,39 +559,29 @@ final class MessageSendScheduler {
     }
   }
 
-  Future<bool> _retryServer(OutboxMessage row, Object error) async {
-    if (_disposed) return false;
-    if (_serverRetryTimers.containsKey(row.localId)) return true;
-    final attempt = _serverRetryAttempts[row.localId] ?? 0;
-    var delay = attempt < _resolutionRetryDelays.length
-        ? _resolutionRetryDelays[attempt]
-        : const Duration(hours: 1);
-    try {
-      final dynamic failure = error;
-      final Object? milliseconds = failure.retryAfterMs;
-      if (milliseconds is int && milliseconds > delay.inMilliseconds) {
-        delay = Duration(milliseconds: milliseconds);
-      }
-    } catch (_) {}
-    try {
-      final dynamic failure = error;
-      final Object? seconds = failure.retryAfterSeconds;
-      if (seconds is int && seconds > delay.inSeconds) {
-        delay = Duration(seconds: seconds);
-      }
-    } catch (_) {}
-    if (delay > const Duration(minutes: 15)) {
-      await outbox.updateStatus(row.localId, OutboxStatus.failed,
-          lastError: 'server_retry_exhausted', countRetry: false);
-      _serverRetryAttempts.remove(row.localId);
-      return false;
+  Future<void> _refreshServerRetry(String localId) async {
+    final row = await outbox.byLocalId(localId);
+    if (row != null) _armServerRetry(row);
+  }
+
+  void _armServerRetry(OutboxMessage row) {
+    if (_disposed) return;
+    final deadline = row.nextServerRetryAt;
+    if (deadline == null || !row.status.isAutoDispatchable) {
+      _serverRetryTimers.remove(row.localId)?.cancel();
+      _serverRetryWakeups.remove(row.localId);
+      return;
     }
-    _serverRetryAttempts[row.localId] = attempt + 1;
-    _serverRetryTimers[row.localId] = Timer(delay, () {
+    final wakeup = (deadline.millisecondsSinceEpoch, row.retryCount);
+    if (_serverRetryWakeups[row.localId] == wakeup) return;
+    _serverRetryWakeups[row.localId] = wakeup;
+    _serverRetryTimers.remove(row.localId)?.cancel();
+    final delay = deadline.difference(outbox.now);
+    _serverRetryTimers[row.localId] =
+        Timer(delay.isNegative ? Duration.zero : delay, () {
       _serverRetryTimers.remove(row.localId);
       if (!_disposed && _networkUsable) unawaited(drain());
     });
-    return true;
   }
 
   Future<bool> _authorize(OutboxMessage row, {required bool claimed}) async {
@@ -543,6 +589,7 @@ final class MessageSendScheduler {
     if (authorize == null) return true;
     var reason = 'send_authorization_denied';
     var status = OutboxStatus.failed;
+    Object? failure;
     try {
       if (await _observe(
               ChatDiagnosticStage.sendAdmission, () => authorize(row))
@@ -552,14 +599,10 @@ final class MessageSendScheduler {
     } catch (error) {
       // Do not store exception text: authority errors can contain private data.
       reason = 'send_authorization_unavailable';
+      failure = error;
       if (defaultNetworkFailureClassifier(error)) {
         status = OutboxStatus.waitingNetwork;
         _reportFailure(error);
-        if (isRetryableServerFailure(error)) {
-          if (!await _retryServer(row, error)) {
-            status = OutboxStatus.failed;
-          }
-        }
       }
     }
     // A registered page sender owns claiming on its successful path. On denial,
@@ -569,7 +612,12 @@ final class MessageSendScheduler {
           OutboxStatus.queued,
           OutboxStatus.waitingNetwork,
         })) {
-      await outbox.updateStatus(row.localId, status, lastError: reason);
+      final attempt = await outbox.byLocalId(row.localId);
+      if (attempt != null) {
+        await outbox.settleAttempt(attempt, status,
+            error: failure, reason: reason);
+        await _refreshServerRetry(row.localId);
+      }
     }
     return false;
   }
@@ -585,6 +633,8 @@ final class MessageSendScheduler {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    if (_started) outbox.removeListener(_onOutboxChanged);
+    _deadlineRevision++;
     _attached?.state.removeListener(_onNetworkStateChanged);
     _attached = null;
     for (final timer in _resolutionTimers.values) {
@@ -596,7 +646,7 @@ final class MessageSendScheduler {
       timer.cancel();
     }
     _serverRetryTimers.clear();
-    _serverRetryAttempts.clear();
+    _serverRetryWakeups.clear();
     _inFlight.clear();
   }
 }

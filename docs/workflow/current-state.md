@@ -1,5 +1,24 @@
 # 移动交付恢复索引
 
+## 2026-09-23 Android0.4.6/2165已发布：头像缓存/统一相册/公告恢复/朋友圈视频
+
+本人头像缓存身份统一；相册头像仅静态图片、隐藏视频/GIF，复用Flutter方形编辑器；公告补标准SDK缺密钥请求；朋友圈复用相册/播放器/账户媒体缓存，MP4/QuickTime≤20MiB。Android正式重建固定签名，最终SHA60826c92，官网APK和Android更新弹窗发布成功；iOS设置未动。APIe15807b2/worker90696ffa、schema0087，22其他容器不变。Flutter3971+更新delta18、frontend299；后端2727/74条件跳过、最终草稿delta21；原verify因备用版本号旧值exit1，修正后mobile108/1及后续门禁exit0。Git正在收尾。见[报告](../verification/2026-09-23-avatar-album-android-release.md)、[任务](tasks/2026-09-23-avatar-album-release.md)。本轮未真机验收/未发布iOS。
+## 2026-09-23 Debug2164已安装，群主转让服务器已启用
+
+Mi6保留数据安装0.4.5+2164 Debug，SHA/固定签名/首次安装时间/启动通过。验证码页品牌、公告解密恢复、钱包账号隔离缓存和账单行已进包。生产API38cf79c5/worker85620b2c，协调开关实际true；335源码/136表218320行隔离恢复/22其他容器/双侧HTTPS通过，schema0087不变。后端2706/68条件跳过；原verify因旧屏数2断言exit1，更新401后mobile108/1跳过及剩余门禁exit0，不冒称原完整脚本exit0。Flutter3932+最后FX167、frontend298通过。原群公告与钱包弱网效果待用户复验。见[报告](../verification/2026-09-23-debug-feedback.md)、[任务](tasks/2026-09-23-debug-feedback.md)。
+
+## 2026-09-23 客服直接结算与弹窗工作台已上线，Mi6 2163已安装
+
+用户明确批准取消已核验充值独立审批；客服直接下发保留到账/认领/幂等审计。API ba801c6c、worker07019a1b、7静态上线，schema0087；136表217931行隔离恢复、335源身份、22其他容器与双侧HTTPS通过。兼容回退仅保留新登记逻辑。Flutter3921/analyze通过，首次AAPT2环境失败后两worker重跑成功；固定签名重建验包通过，Mi6已保留数据安装0.4.4+2163，设备SHA一致/启动正常。见[报告](../verification/2026-09-23-staff-direct-release.md)、[任务](tasks/2026-09-23-staff-direct-release.md)。
+
+## 2026-09-23 Android输入卡顿源码修复已回填，Redmi K80待新包复验
+
+索引维护改为有界分片队列，修复丢批、同ID旧内容和失败重试撤回复活；索引按ID/有序树增量更新，逻辑时间线仅排序变化行后线性合并。9文件与候选SHA一致，先前21个移动修改保持；Flutter3932通过、analyze无问题、mobile108/1跳过及UI契约/仓库策略通过。中文composing/焦点在模拟消息洪峰中保持。用户设备Redmi K80、App0.4.0；未做设备性能采样、未构建/安装/发布。安全/恢复/容灾仍暂缓。[任务](tasks/2026-09-23-input-jank-fix.md) · [报告](../verification/2026-09-23-input-jank-fix.md)。
+
+## 2026-09-23 帧预算诊断接收端已上线，客户端优化待新包
+
+基于现有客服API镜像单文件叠加诊断接收端，最终e2577705bc27。335文件身份、44专项/5回退保护、136表217441行隔离恢复通过；schema0087，23其他容器未变，双侧HTTPS健康与鉴权通过。图片解码、上传复用、文本Outbox持久重试及帧采集仍需新客户端，本次未打包/安装/分发。安全、账号恢复及容灾提案按用户要求暂缓。见[报告](../verification/2026-09-23-diagnostics-release.md)、[任务](tasks/2026-09-23-diagnostics-release.md)。
+
 ## 2026-09-23 客服后台五项反馈已上线
 
 修复a70e5191：登录入口选中色；已开通客服密码登录免验证码，首次开通选邮箱/手机；共用运营概览汇总；订单免额外操作密码/验证且保留认领、凭证、审批和审计；客服隐藏USDT钱包入口。API/worker及6静态已发布，schema0087不变；350源码与提交一致，双侧HTTPS/鉴权/资源哈希通过，其他22容器未变。verify exit0，后端2684通过/67条件跳过，frontend280，隔离PG订单4通过；真实客服操作待本人复验。见[报告](../verification/2026-09-23-staff-console.md)、[任务](tasks/2026-09-23-staff-console.md)。其他任务修改保留，无APK或Git远端发布。
@@ -7,6 +26,10 @@
 ## 2026-09-23 2161反馈修复已上线，Mi6 2162已安装
 
 代码a1afa2b6：修复客服开通邮件契约、绑定钱包链上到账自动关联与客服参考汇率快捷调整、提现最低10USDT中文提示及改额重试、手机号实时校验和保留邀请码自动开户。API/worker和充值后台已上线，schema0087无迁移，350源码与提交一致；双侧HTTPS及其他21容器不变通过。Mi6保留数据安装0.4.3+2162 Debug，设备内SHA和启动通过。Flutter3884、frontend274；后端原全量2626/67跳过/16旧时钟夹具失败，已修夹具56项补充通过，后续门禁通过，未冒称原verify退出0。真实邮件/短信开户及资金业务待用户复验。见[报告](../verification/2026-09-23-support-feedback.md)、[任务](tasks/2026-09-23-support-feedback.md)。其他任务修改保留，未推送远端或改iOS/官网分发。
+
+## 2026-09-23 其余优化（四项增量已回填，未发布）
+
+朋友圈有界缩略解码、上传阶段复用、帧预算诊断、文本Outbox持久重试已回填23个源码/测试文件。隔离候选Flutter3912通过、analyze无问题，Outbox121项及规格/质量复审通过；主目录保留并行登录/客服/钱包改动并重新生成OpenAPI。后端未变输入复用前次证据，取消的重复verify不算新全量通过。未构建或发布。受保护项目仍为待批准提案。见[任务](tasks/2026-09-23-remaining-optimizations.md)、[报告](../verification/2026-09-23-remaining-optimizations.md)及[设计](../superpowers/specs/2026-09-23-remaining-protected-optimizations.md)。
 
 ## 2026-09-23 客服充值提现已上线，Mi6 2161已安装
 

@@ -38,6 +38,7 @@ final class GalleryPhoto {
     this.localVideoFile,
     this.loadThumbnail,
     this.cachedThumbnail,
+    this.headerBytes,
   }) : _thumbnail = thumbnail;
 
   final String id;
@@ -48,6 +49,9 @@ final class GalleryPhoto {
   final Future<Uint8List> Function() compressedBytes;
   final Future<Uint8List> Function() originalBytes;
   final String mimeType;
+
+  /// Small source header for static-image selection without decoding a full image.
+  final Future<Uint8List> Function()? headerBytes;
 
   /// 视频条目：网格带时长角标；所有发送均自动压缩，原图开关仅影响图片。
   final bool isVideo;
@@ -559,7 +563,10 @@ class DeviceGalleryPager {
       // 网格以占位底色渲染，选择与发送仍走原始字节。
       final thumbBytes = galleryThumbnailStore.peek(asset) ?? Uint8List(0);
       // MIME 按系统媒体库真实值透传（MP4/MOV/MKV/AVI…），不再一律 mp4。
-      final mimeType = asset.mimeType ?? (isVideo ? 'video/mp4' : 'image/jpeg');
+      final mimeType = asset.mimeType ??
+          ((asset.title?.toLowerCase().endsWith('.gif') ?? false)
+              ? 'image/gif'
+              : (isVideo ? 'video/mp4' : 'image/jpeg'));
       photos.add(
         GalleryPhoto(
           id: asset.id,
@@ -571,6 +578,7 @@ class DeviceGalleryPager {
           isVideo: isVideo,
           duration: isVideo ? asset.videoDuration : null,
           mimeType: mimeType,
+          headerBytes: isVideo ? null : () => _readImageHeader(asset),
           compressedBytes: isVideo
               ? () => _readCompressedVideo(asset)
               : () => _readImage(asset, compressed: true),
@@ -606,6 +614,26 @@ class DeviceGalleryPager {
     final origin = file ?? await asset.originFile;
     if (origin == null) throw StateError('original media unavailable');
     return origin.readAsBytes();
+  }
+
+  Future<Uint8List> _readImageHeader(AssetEntity asset) async {
+    File? file;
+    try {
+      file = await asset.originFile;
+    } catch (_) {
+      // Some platform providers only support originBytes.
+    }
+    if (file == null) {
+      final bytes = await _readOriginal(asset);
+      return Uint8List.sublistView(
+          bytes, 0, bytes.length < 6 ? bytes.length : 6);
+    }
+    final handle = await file.open();
+    try {
+      return await handle.read(6);
+    } finally {
+      await handle.close();
+    }
   }
 
   Future<Uint8List> _readImage(AssetEntity asset,
@@ -729,8 +757,8 @@ Future<String> videoFirstFrameCacheEventId(AssetEntity asset) async {
   if (origin == null) return '';
   final size = await origin.length();
   final digest = sha256
-      .convert(utf8.encode(
-          '${origin.path}|${asset.id}|${asset.videoDuration}|$size'))
+      .convert(utf8
+          .encode('${origin.path}|${asset.id}|${asset.videoDuration}|$size'))
       .toString();
   return '$videoFirstFrameVariant:$digest';
 }

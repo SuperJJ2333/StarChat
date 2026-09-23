@@ -78,6 +78,7 @@ final class _ProfileAvatarPageState extends State<ProfileAvatarPage> {
                   ? UserAvatar(
                       nickname: profile.nickname,
                       fallbackSeed: profile.fallbackSeed,
+                      avatarCacheKey: widget.controller.avatarCacheKey,
                       avatarUrl: profile.avatarUrl,
                       size: 176,
                     )

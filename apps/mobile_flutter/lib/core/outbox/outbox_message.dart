@@ -70,6 +70,8 @@ final class OutboxMessage {
     this.roomId,
     this.status = OutboxStatus.queued,
     this.retryCount = 0,
+    this.serverRetryCount = 0,
+    this.nextServerRetryAt,
     this.lastError,
     this.accountId = '',
   });
@@ -91,8 +93,13 @@ final class OutboxMessage {
 
   final OutboxStatus status;
 
-  /// 已尝试派发的次数（每次真正交给传输层前 +1）。
+  /// 累计认领次数（含准入/租约尝试），也是结果 CAS 的持久化所有权代次。
+  /// 每次认领 +1；与仅计服务器重试预算的 serverRetryCount 独立。
   final int retryCount;
+
+  /// Consumed automatic server retries; survives process and page restarts.
+  final int serverRetryCount;
+  final DateTime? nextServerRetryAt;
 
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -116,6 +123,9 @@ final class OutboxMessage {
     String? content,
     OutboxStatus? status,
     int? retryCount,
+    int? serverRetryCount,
+    DateTime? nextServerRetryAt,
+    bool clearNextServerRetryAt = false,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? lastError,
@@ -131,6 +141,10 @@ final class OutboxMessage {
         content: content ?? this.content,
         status: status ?? this.status,
         retryCount: retryCount ?? this.retryCount,
+        serverRetryCount: serverRetryCount ?? this.serverRetryCount,
+        nextServerRetryAt: clearNextServerRetryAt
+            ? null
+            : (nextServerRetryAt ?? this.nextServerRetryAt),
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
         lastError: clearLastError ? null : (lastError ?? this.lastError),
@@ -147,6 +161,8 @@ final class OutboxMessage {
         'content': content,
         'status': status.wireName,
         'retry_count': retryCount,
+        'server_retry_count': serverRetryCount,
+        'next_server_retry_at': nextServerRetryAt?.millisecondsSinceEpoch,
         'created_at': createdAt.millisecondsSinceEpoch,
         'updated_at': updatedAt.millisecondsSinceEpoch,
         'last_error': lastError,
@@ -161,6 +177,11 @@ final class OutboxMessage {
         content: (row['content'] ?? '') as String,
         status: OutboxStatusSemantics.fromWire(row['status'] as String?),
         retryCount: (row['retry_count'] as int?) ?? 0,
+        serverRetryCount: (row['server_retry_count'] as int?) ?? 0,
+        nextServerRetryAt: row['next_server_retry_at'] == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                row['next_server_retry_at']! as int),
         createdAt: DateTime.fromMillisecondsSinceEpoch(
             (row['created_at'] as int?) ?? 0),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(
@@ -169,8 +190,7 @@ final class OutboxMessage {
       );
 
   @override
-  String toString() =>
-      'OutboxMessage($localId, tx=$txid, room=$roomId, '
+  String toString() => 'OutboxMessage($localId, tx=$txid, room=$roomId, '
       'status=${status.name}, retries=$retryCount)';
 }
 

@@ -14,9 +14,11 @@ final class UserAvatar extends StatefulWidget {
       required this.nickname,
       required this.fallbackSeed,
       this.avatarUrl,
+      this.avatarCacheKey,
       this.avatarHeaders,
       this.diagnosticSource = 'unspecified',
       this.size = 48});
+  final String? avatarCacheKey;
   final String nickname;
   final String fallbackSeed;
   final String? avatarUrl;
@@ -29,6 +31,7 @@ final class UserAvatar extends StatefulWidget {
 }
 
 final class _UserAvatarState extends State<UserAvatar> {
+  String get _cacheIdentity => widget.avatarCacheKey ?? widget.fallbackSeed;
   final _retry = AvatarRetry();
   int _generation = 0;
   int _imageEpoch = 0;
@@ -44,6 +47,7 @@ final class _UserAvatarState extends State<UserAvatar> {
   void didUpdateWidget(covariant UserAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.fallbackSeed != widget.fallbackSeed ||
+        oldWidget.avatarCacheKey != widget.avatarCacheKey ||
         oldWidget.avatarUrl != widget.avatarUrl ||
         !mapEquals(oldWidget.avatarHeaders, widget.avatarHeaders)) {
       _generation++;
@@ -134,12 +138,12 @@ final class _UserAvatarState extends State<UserAvatar> {
     final provider = url == null
         ? null
         : AvatarCache.imageProvider(
-            userId: widget.fallbackSeed,
+            userId: _cacheIdentity,
             avatarUrl: url,
             size: widget.size,
             headers: widget.avatarHeaders,
           );
-    final retained = AvatarCache.lastSuccessful(widget.fallbackSeed);
+    final retained = AvatarCache.lastSuccessful(_cacheIdentity);
     return ClipRRect(
       borderRadius: BorderRadius.circular(WeChatRadius.avatar),
       child: SizedBox(
@@ -151,7 +155,7 @@ final class _UserAvatarState extends State<UserAvatar> {
             // render an empty circle).
             ? _fallback()
             : Image(
-                key: ValueKey((widget.fallbackSeed, _imageEpoch)),
+                key: ValueKey((_cacheIdentity, _imageEpoch)),
                 image: provider,
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
@@ -159,8 +163,7 @@ final class _UserAvatarState extends State<UserAvatar> {
                   if (generation != _generation) return const SizedBox.expand();
                   if (wasSynchronouslyLoaded || frame != null) {
                     if (generation == _generation) _retry.reset();
-                    AvatarCache.rememberSuccessful(
-                        widget.fallbackSeed, provider);
+                    AvatarCache.rememberSuccessful(_cacheIdentity, provider);
                     if (wasSynchronouslyLoaded || retained != null) {
                       return child;
                     }

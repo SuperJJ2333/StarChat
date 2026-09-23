@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/moments/moment_models.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_tile.dart';
 import 'package:liuhetong_mobile/ui/moments/moment_media_cache.dart';
+import 'package:liuhetong_mobile/ui/moments/moment_thumbnail_provider.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_viewer.dart';
 
 void main() {
@@ -65,11 +66,12 @@ void main() {
             mediaOrigin: 'https://media.example.test')));
     final image = tester.widgetList<Image>(find.byType(Image)).firstWhere(
         (image) =>
-            image.image is CachedNetworkImageProvider &&
-            (image.image as CachedNetworkImageProvider)
+            image.image is MomentThumbnailProvider &&
+            (image.image as MomentThumbnailProvider)
+                .imageProvider
                 .url
                 .contains('random-A'));
-    final provider = image.image as CachedNetworkImageProvider;
+    final provider = (image.image as MomentThumbnailProvider).imageProvider;
     expect(provider.cacheKey, isNotNull);
     await tester.tap(find.byKey(const ValueKey('moment-image')));
     await tester.pumpAndSettle();

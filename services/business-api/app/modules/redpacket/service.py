@@ -234,7 +234,14 @@ class RedPacketService:
     def claim(self, packet_id: str, *, user_id: str, idempotency_key: str) -> RedPacketShare:
         now = datetime.now(timezone.utc)
         with self.session_factory.begin() as session:
-            packet = session.scalar(select(RedPacket).where(RedPacket.id == packet_id).with_for_update())
+            # Reject terminal/expired packets without joining their row-lock queue.
+            # PostgreSQL also rechecks these predicates after a competing writer
+            # commits; eligible claims still use the original atomic transaction.
+            packet = session.scalar(select(RedPacket).where(
+                RedPacket.id == packet_id,
+                RedPacket.status == "OPEN",
+                RedPacket.expires_at > now,
+            ).with_for_update())
             if not packet or packet.status != "OPEN" or self._aware(packet.expires_at) <= now:
                 raise ValueError("red packet unavailable")
             if packet.recipient_id and packet.recipient_id != user_id:
@@ -366,5 +373,4 @@ class RedPacketService:
     @staticmethod
     def _aware(value):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-
 

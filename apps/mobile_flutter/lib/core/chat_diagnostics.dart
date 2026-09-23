@@ -58,15 +58,40 @@ typedef ChatDiagnosticUploader = Future<int> Function(
     ChatDiagnosticBatch batch, Future<void> abort);
 
 final class ChatDiagnosticBatch {
-  ChatDiagnosticBatch._(this.version, this.platform, List<_Event> events)
+  ChatDiagnosticBatch._(
+      this.version, this.platform, List<_Event> events, this._frames)
       : _events = List.unmodifiable(events.map((e) => e.copy()));
   final String version;
   final ChatDiagnosticPlatform platform;
   final List<_Event> _events;
+  final _FrameCounts? _frames;
   Map<String, Object?> toJson() => {
         'version': version,
         'platform': platform.name,
         'events': [for (final event in _events) event.toJson()],
+        if (_frames != null) 'frames': _frames!.toJson(),
+      };
+}
+
+final class _FrameCounts {
+  int total = 0, slow = 0, build = 0, raster = 0;
+  _FrameCounts copy() => _FrameCounts()
+    ..total = total
+    ..slow = slow
+    ..build = build
+    ..raster = raster;
+  void subtract(_FrameCounts sent) {
+    total -= sent.total;
+    slow -= sent.slow;
+    build -= sent.build;
+    raster -= sent.raster;
+  }
+
+  Map<String, int> toJson() => {
+        'frame_count': total,
+        'slow_frame_count': slow,
+        'slow_build_count': build,
+        'slow_raster_count': raster,
       };
 }
 
@@ -104,6 +129,8 @@ final class ChatDiagnostics {
   static ChatDiagnostics instance = ChatDiagnostics();
   final DateTime Function() _now;
   final _pending = <_EventKey, _Event>{};
+  _FrameCounts _frames = _FrameCounts();
+  bool _framesSupported = true;
   ChatDiagnosticUploader? _upload;
   String _version = '';
   ChatDiagnosticPlatform _platform = ChatDiagnosticPlatform.other;
@@ -140,6 +167,8 @@ final class ChatDiagnostics {
     _timer = null;
     _upload = null;
     _pending.clear();
+    _frames = _FrameCounts();
+    _framesSupported = true;
     _failures = 0;
     _nextAllowed = null;
     final abort = _abort;
@@ -176,12 +205,32 @@ final class ChatDiagnostics {
         retryCount: safeRetryCount, lifecycle: lifecycle);
   }
 
+  /// Foreground frames only (enforced by the scope). A slow frame exceeds
+  /// either pipeline stage's display budget; totalSpan is not a drop count.
+  void recordFrame(
+      {required int buildUs, required int rasterUs, required int budgetUs}) {
+    if (_upload == null ||
+        !_framesSupported ||
+        _frames.total >= 1000000 ||
+        budgetUs <= 0 ||
+        buildUs < 0 ||
+        rasterUs < 0) {
+      return;
+    }
+    final slowBuild = buildUs > budgetUs;
+    final slowRaster = rasterUs > budgetUs;
+    _frames.total++;
+    if (slowBuild) _frames.build++;
+    if (slowRaster) _frames.raster++;
+    if (slowBuild || slowRaster) _frames.slow++;
+  }
+
   /// Also bounded when explicitly requested: never bypasses cadence/backoff.
   Future<void> flush() async {
     final upload = _upload;
     final now = _now();
     if (upload == null ||
-        _pending.isEmpty ||
+        (_pending.isEmpty && _frames.total == 0) ||
         _inFlight ||
         (_nextAllowed != null && now.isBefore(_nextAllowed!))) {
       return;
@@ -189,7 +238,8 @@ final class ChatDiagnostics {
     _inFlight = true;
     final epoch = _epoch;
     final events = _pending.values.take(20).map((e) => e.copy()).toList();
-    final batch = ChatDiagnosticBatch._(_version, _platform, events);
+    final frames = _frames.total > 0 ? _frames.copy() : null;
+    final batch = ChatDiagnosticBatch._(_version, _platform, events, frames);
     final abort = Completer<void>();
     _abort = abort;
     _nextAllowed = now.add(const Duration(minutes: 1));
@@ -197,8 +247,10 @@ final class ChatDiagnostics {
       if (!abort.isCompleted) abort.complete();
     });
     var success = false;
+    int? status;
     try {
-      success = await upload(batch, abort.future) == 202;
+      status = await upload(batch, abort.future);
+      success = status == 202;
     } catch (_) {
       // Never feed diagnostics transport errors back into diagnostics.
     } finally {
@@ -207,8 +259,15 @@ final class ChatDiagnostics {
       if (identical(_abort, abort)) _abort = null;
     }
     if (epoch != _epoch) return;
+    if (status == 422 && frames != null) {
+      // Old servers have a closed schema. Keep existing events for the next
+      // bounded attempt, but stop sending the extension for this session.
+      _framesSupported = false;
+      _frames = _FrameCounts();
+    }
     if (success) {
       _failures = 0;
+      if (frames != null) _frames.subtract(frames);
       for (final event in events) {
         final current = _pending[event.key];
         if (current == null) continue;

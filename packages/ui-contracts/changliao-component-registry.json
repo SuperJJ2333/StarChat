@@ -58,30 +58,83 @@
       "flutter": "apps/mobile_flutter/lib/features/matrix/chat_red_packet_sheet.dart",
       "html": "frontend/src/screens/finance.js",
       "demo": "redpacket-create-direct-equal",
-      "components": ["WeChatPageScaffold", "CupertinoButton"],
-      "props": ["total", "shareCount", "recipient"],
-      "states": ["editing", "submitting", "validation-error"],
-      "tokens": ["WeChatColors.textSecondary"],
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "total",
+        "shareCount",
+        "recipient"
+      ],
+      "states": [
+        "editing",
+        "submitting",
+        "validation-error"
+      ],
+      "tokens": [
+        "WeChatColors.textSecondary"
+      ],
       "behavior": "Only the static 24-hour refund note remains at the bottom; validation and server errors remain actionable."
     },
     "2026-09-23-wallet-feedback": {
       "flutter": "apps/mobile_flutter/lib/features/wallet/manual_wallet_page.dart",
       "html": "frontend/src/screens/phone-flows.js",
       "demo": "recharge-directory-directory",
-      "components": ["WeChatToast", "WeChatSecondaryButton", "walletStepIndicator", "CupertinoTextField"],
-      "props": ["amount", "referenceRate", "paymentVerified"],
-      "states": ["amount-input", "waiting-payment", "verified-awaiting-staff", "minimum-toast", "amount-rejected-retry", "unknown-result-retains-intent"],
-      "tokens": ["WeChatColors.brandPrimary", "WeChatColors.textSecondary"],
+      "components": [
+        "WeChatToast",
+        "WeChatSecondaryButton",
+        "walletStepIndicator",
+        "CupertinoTextField"
+      ],
+      "props": [
+        "amount",
+        "referenceRate",
+        "paymentVerified"
+      ],
+      "states": [
+        "amount-input",
+        "waiting-payment",
+        "verified-awaiting-staff",
+        "minimum-toast",
+        "amount-rejected-retry",
+        "unknown-result-retains-intent"
+      ],
+      "tokens": [
+        "WeChatColors.brandPrimary",
+        "WeChatColors.textSecondary"
+      ],
       "behavior": "Recharge reuses amount/address/wait steps without user evidence input. Payment QR is centered above a real gallery-save icon, with saving/success/permission-error feedback; address is right aligned next to copy and static payment hints are removed. Payout below 10 USDT uses existing toast with reference points; definite rejection clears the old quote, unknown results preserve its idempotent intent. Withdrawal demo: wallet-withdrawal-default."
     },
     "2026-09-23-phone-onboarding": {
       "flutter": "apps/mobile_flutter/lib/features/auth/login_page.dart",
       "html": "frontend/src/screens/phone-flows.js",
       "demo": "phone-login-phone-error",
-      "components": ["AuthTextField", "AuthAgreementRow", "CupertinoButton", "app-secondary-button"],
-      "props": ["normalizedPhone", "invitationCode", "termsAccepted"],
-      "states": ["invalid-phone", "eligible-green", "consent-required", "cooldown", "invitation-required", "matrix-pending", "authenticated"],
-      "tokens": ["WeChatColors.brandPrimary", "WeChatColors.textTertiary", "--color-brand-primary"],
+      "components": [
+        "AuthTextField",
+        "AuthAgreementRow",
+        "CupertinoButton",
+        "app-secondary-button"
+      ],
+      "props": [
+        "normalizedPhone",
+        "invitationCode",
+        "termsAccepted"
+      ],
+      "states": [
+        "invalid-phone",
+        "eligible-green",
+        "consent-required",
+        "cooldown",
+        "invitation-required",
+        "matrix-pending",
+        "authenticated"
+      ],
+      "tokens": [
+        "WeChatColors.brandPrimary",
+        "WeChatColors.textTertiary",
+        "--color-brand-primary"
+      ],
       "behavior": "Valid mainland phone immediately enables green OTP text; unchecked consent explains and sends nothing. New accounts need invitation plus verified OTP, derive opaque handles and await Matrix through a device-bound single-use ticket. Normal OTP prompts identify 畅聊 ChatFlow; no provider-signature explanation. Provider SMS body remains its approved template."
     },
     "2026-09-19-conversation-identity-admission": {
@@ -518,7 +571,8 @@
           "nickname",
           "fallbackSeed",
           "avatarUrl",
-          "size"
+          "size",
+          "avatarCacheKey"
         ],
         "variants": {},
         "states": [
@@ -1369,7 +1423,8 @@
           "bytes",
           "onForward",
           "onFavorite",
-          "onSend"
+          "onSend",
+          "avatarMode"
         ],
         "variants": {},
         "states": [
@@ -1847,7 +1902,7 @@
     }
   },
   "screens": {
-    "expectedCount": 401
+    "expectedCount": 403
   },
   "adminCompletion20260910": {
     "html": [
@@ -2139,5 +2194,22 @@
       "WeChatDividerTokens.coreEnd = --divider-fade-core-end (82%)"
     ],
     "verification": "flutter analyze lib test clean; focused red→green recorded in docs/verification/2026-09-19-ui-review.md; verify_ui_contract PASS (32 components, 372 screens); frontend npm test 216 pass."
+  },
+  "avatarAlbum20260923": {
+    "selection": "Reuse ImagePickerPage; avatar static images only; hide video and GIF",
+    "crop": "Reuse WeChatImageEditorPage avatarMode with locked 1:1 and safe-area cancel/confirm",
+    "moments": "Shared album for media; video <=20MiB; shared media cache and player; compatible separate video response fields",
+    "cache": "ProfileRepository identity shared by precache, display and invalidation",
+    "html": [
+      "frontend/src/screens/profile.js",
+      "frontend/src/screens/moments.js",
+      "frontend/src/components/image-editor.js"
+    ],
+    "screens": [
+      "profile-avatar-crop",
+      "moments-composer-video",
+      "moments-composer-video-too-large"
+    ],
+    "scope": "Android release only; shared Flutter implementation"
   }
 }

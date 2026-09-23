@@ -11,7 +11,8 @@ const _sourceSide = 100.0;
 Future<Uint8List> _solidPng(int size, Color color) async {
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
-  canvas.drawRect(Offset.zero & Size.square(size.toDouble()), Paint()..color = color);
+  canvas.drawRect(
+      Offset.zero & Size.square(size.toDouble()), Paint()..color = color);
   final picture = recorder.endRecording();
   final image = await picture.toImage(size, size);
   picture.dispose();
@@ -136,8 +137,7 @@ BoxDecoration? _decorationOf(WidgetTester tester, Key key) {
 }
 
 void main() {
-  testWidgets('Test1 打开裁剪：裁剪框默认覆盖整张图片（不是固定小框）',
-      (tester) async {
+  testWidgets('Test1 打开裁剪：裁剪框默认覆盖整张图片（不是固定小框）', (tester) async {
     await _pumpEditor(tester, (await tester.runAsync(_whitePng))!);
     await _openCrop(tester);
 
@@ -149,8 +149,8 @@ void main() {
     expect(frame.top, closeTo(box.top, .01));
     expect(frame.width, closeTo(box.width, .01));
     expect(frame.height, closeTo(box.height, .01));
-    expect(frame.width * frame.height,
-        greaterThan(box.width * box.height * .95),
+    expect(
+        frame.width * frame.height, greaterThan(box.width * box.height * .95),
         reason: '默认裁剪框必须覆盖整张图片');
     expect(painter.viewScale, 1);
     expect(painter.viewOffset, Offset.zero);
@@ -191,14 +191,13 @@ void main() {
 
     expect(_painter(tester).activeHandle, CropHandle.topLeft,
         reason: '拖动中控制点必须高亮');
-    final active = await _samples(
-        tester, [box.topLeft + const Offset(28, 30 - 1)]);
+    final active =
+        await _samples(tester, [box.topLeft + const Offset(28, 30 - 1)]);
     expect(active.first.b, greaterThan(.3), reason: '高亮使用品牌色而非白色');
 
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(_painter(tester).activeHandle, CropHandle.none,
-        reason: '松手后取消高亮');
+    expect(_painter(tester).activeHandle, CropHandle.none, reason: '松手后取消高亮');
   });
 
   testWidgets('Test2 拖动四角：裁剪区域变化', (tester) async {
@@ -213,14 +212,12 @@ void main() {
     expect(frame.right, closeTo(box.right, 1.5));
     expect(frame.bottom, closeTo(box.bottom, 1.5));
 
-    await _drag(tester,
-        box.bottomRight - const Offset(3, 3),
+    await _drag(tester, box.bottomRight - const Offset(3, 3),
         box.bottomRight - const Offset(53, 33));
     frame = _frameGlobal(tester);
     expect(frame.right, closeTo(box.right - 50, 1.5));
     expect(frame.bottom, closeTo(box.bottom - 30, 1.5));
-    expect(frame.left, closeTo(box.left + 60, 1.5),
-        reason: '拖右下角不得影响左上角');
+    expect(frame.left, closeTo(box.left + 60, 1.5), reason: '拖右下角不得影响左上角');
   });
 
   testWidgets('Test3 拖动四边：区域变化且另一轴不动', (tester) async {
@@ -228,8 +225,8 @@ void main() {
     await _openCrop(tester);
     final box = _viewBoxGlobal(tester);
 
-    await _drag(tester,
-        Offset(box.center.dx, box.top), Offset(box.center.dx, box.top + 45));
+    await _drag(tester, Offset(box.center.dx, box.top),
+        Offset(box.center.dx, box.top + 45));
     var frame = _frameGlobal(tester);
     expect(frame.top, closeTo(box.top + 45, 1.5));
     expect(frame.left, closeTo(box.left, .01));
@@ -243,8 +240,7 @@ void main() {
     expect(frame.top, closeTo(box.top + 45, 1.5), reason: '拖左边不得改动上边');
   });
 
-  testWidgets('Test4 点击还原：恢复原始图片状态 / 默认裁剪框 / 默认缩放与旋转',
-      (tester) async {
+  testWidgets('Test4 点击还原：恢复原始图片状态 / 默认裁剪框 / 默认缩放与旋转', (tester) async {
     await _pumpEditor(tester, (await tester.runAsync(_whitePng))!);
     await _openCrop(tester);
     final box = _viewBoxGlobal(tester);
@@ -332,8 +328,8 @@ void main() {
                 child: Center(
                     child: CupertinoButton(
                         key: const Key('host-open'),
-                        onPressed: () => Navigator.of(context).push(
-                            CupertinoPageRoute(
+                        onPressed: () =>
+                            Navigator.of(context).push(CupertinoPageRoute(
                                 builder: (_) => WeChatImageEditorPage(
                                     bytes: source,
                                     onForward: (export) async {
@@ -411,17 +407,42 @@ void main() {
     final center = _viewBoxGlobal(tester).center;
 
     await _pinch(tester, scale: 3, center: center);
-    expect(_painter(tester).viewScale, greaterThan(1.4),
-        reason: '双指捏合必须放大画面');
+    expect(_painter(tester).viewScale, greaterThan(1.4), reason: '双指捏合必须放大画面');
 
     await _drag(tester, center, center + const Offset(25, 18));
-    expect(_painter(tester).viewOffset.dx.abs() + _painter(tester).viewOffset.dy.abs(),
+    expect(
+        _painter(tester).viewOffset.dx.abs() +
+            _painter(tester).viewOffset.dy.abs(),
         greaterThan(4),
         reason: '放大后可以拖动画面改变裁剪内容');
   });
 
-  testWidgets('还原 / 应用裁剪：高度、圆角一致，应用裁剪有填充背景',
+  testWidgets('zoomed and moved crop commits exactly the visible image region',
       (tester) async {
+    await _pumpEditor(tester, (await tester.runAsync(_whitePng))!);
+    await _openCrop(tester);
+    final center = _viewBoxGlobal(tester).center;
+    await _pinch(tester, scale: 3, center: center);
+    await _drag(tester, center, center + const Offset(25, 18));
+    final painter = _painter(tester);
+    final expected = ImageCropGeometry.toImageRect(
+        frame: painter.selection!,
+        imageViewRect: Rect.fromCenter(
+            center: painter.viewBox.center + painter.viewOffset,
+            width: painter.viewBox.width * painter.viewScale,
+            height: painter.viewBox.height * painter.viewScale),
+        imageBounds: painter.document.crop);
+    expect(expected.width, lessThan(80));
+    await tester.tap(find.byKey(const Key('image-editor-apply-crop')));
+    await tester.pump();
+    final actual = _painter(tester).document.crop;
+    expect(actual.left, closeTo(expected.left, 0.01));
+    expect(actual.top, closeTo(expected.top, 0.01));
+    expect(actual.width, closeTo(expected.width, 0.01));
+    expect(actual.height, closeTo(expected.height, 0.01));
+  });
+
+  testWidgets('还原 / 应用裁剪：高度、圆角一致，应用裁剪有填充背景', (tester) async {
     await _pumpEditor(tester, (await tester.runAsync(_whitePng))!);
     await _openCrop(tester);
 

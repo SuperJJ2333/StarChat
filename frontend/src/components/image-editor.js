@@ -57,6 +57,7 @@ export class AppImageEditor extends StrictElement {
   render() {
     const root = element("section", "c-image-editor");
     const state = this.attr("state", "ready");
+    const avatarMode = this.attr("avatar-mode", "false") === "true";
     const source = this.sourceCanvas ?? picture(Number(this.attr("picture", "0")));
     const canvas = element("canvas", "c-image-editor__canvas");
     canvas.width = source.width; canvas.height = source.height;
@@ -289,7 +290,7 @@ export class AppImageEditor extends StrictElement {
       cropActions.hidden = tool !== "crop";
       cropOptions.hidden = tool !== "crop";
       if (cropActions.children.length) {
-        cropActions.children[1].disabled = busy || !cropFrame
+        cropActions.children[cropActions.children.length - 1].disabled = busy || !cropFrame
           || cropFrame.width < cropMinSize || cropFrame.height < cropMinSize;
       }
     };
@@ -329,7 +330,17 @@ export class AppImageEditor extends StrictElement {
       }
       panel.append(control("取消", close, "取消")); root.append(panel);
     };
-    const done = control("完成", sheet, "完成"); done.classList.add("c-image-editor__done");
+    const done = control("完成", avatarMode ? async () => {
+      if (busy) return;
+      if (cropFrame) applyCrop.click();
+      tool = "none"; redraw(); busy = true; refresh();
+      try {
+        const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("export")), "image/jpeg", .88));
+        this.dispatchEvent(new CustomEvent("avatar-crop", { bubbles: true, detail: { blob } }));
+        status.textContent = "头像裁剪完成";
+      } catch { status.textContent = "头像处理失败，请重试"; }
+      finally { tool = "crop"; busy = false; refresh(); }
+    } : sheet, "完成"); done.classList.add("c-image-editor__done");
     // 裁剪工具条：旋转 + 比例预设 + 还原 / 应用裁剪（同高度、同圆角）。
     const rotate = control("旋转", () => {
       if (busy) return;
@@ -358,7 +369,7 @@ export class AppImageEditor extends StrictElement {
     const reset = control("还原", resetAll, "还原");
     reset.classList.add("c-image-editor__crop-action");
     cropOptions.append(rotate);
-    for (const [id, label, aspect] of cropAspects) {
+    for (const [id, label, aspect] of avatarMode ? cropAspects.filter(value => value[2] === 1) : cropAspects) {
       const chip = control(label, () => {
         cropAspect = aspect;
         if (cropFrame) {
@@ -434,6 +445,16 @@ export class AppImageEditor extends StrictElement {
     });
     canvas.addEventListener("pointercancel", () => { stroke = null; cropDrag = null; activeCropHandle = null; restore(); });
     settings.append(color, width, text, emojiPicker, cropOptions, cropActions); footer.append(settings, tools, done); viewport.append(canvas); root.append(header, viewport, status, footer); redraw(); refresh();
+    if (avatarMode) {
+      tool = "crop"; cropAspect = 1;
+      cropFrame = fitAspect({ x: 0, y: 0, width: source.width, height: source.height }, 1);
+      tools.remove(); color.remove(); width.remove(); historyControls.remove();
+      reset.remove();
+      for (const node of cropOptions.children) if (node.dataset.aspect) node.setAttribute("aria-pressed", "true");
+      header.append(done);
+      cancel.textContent = "✕"; done.textContent = "✓";
+      redraw(); refresh();
+    }
     if (state === "loading" || state === "error") { canvas.hidden = true; status.textContent = state === "loading" ? "正在打开图片…" : "图片打开失败，请返回重试"; done.disabled = true; }
     if (state === "complete-sheet") sheet();
     return root;
