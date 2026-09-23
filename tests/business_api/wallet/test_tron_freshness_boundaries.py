@@ -103,4 +103,19 @@ def test_heartbeat_window_margin_supports_180_seconds(scan):
     assert source.read_batch(after_rowid=0).healthy
     with pytest.raises(ValueError):
         SQLiteFundingSource(path, official_address=existing.official_address,
-            clock=lambda:clock[0], max_age_seconds=301)
+            clock=lambda:clock[0], max_age_seconds=601)
+
+
+def test_solid_head_margin_supports_360_seconds(scan):
+    """Mirrors the 2026-09-23 incident: solid head stalled at 182.5s must stay
+    inside a 360s window instead of tripping the fail-closed P0."""
+    from app.integrations.tron.funding_source import SQLiteFundingSource
+    _, existing, _, _, path, clock, ms = scan
+    clock[0] += timedelta(seconds=182)
+    now_ms = int(clock[0].timestamp()*1000)
+    with closing(sqlite3.connect(path)) as c, c:
+        c.execute('UPDATE runs SET heartbeat_ms=?', (now_ms-5000,))
+        c.execute('UPDATE observations SET heartbeat_ms=?', (now_ms-5000,))
+    source = SQLiteFundingSource(path, official_address=existing.official_address,
+        clock=lambda:clock[0], max_age_seconds=360, solid_head_max_age_seconds=360)
+    assert source.read_batch(after_rowid=0).healthy

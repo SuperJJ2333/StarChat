@@ -65,7 +65,7 @@ def _source_evidence(value, observed, *, max_age_ms):
             result[key] = str(item)
         else:
             _integer(item)
-    _integer(max_age_ms, minimum=1000, maximum=300000)
+    _integer(max_age_ms, minimum=1000, maximum=600000)
     source_ms = result['fresh_until_ms'] - max_age_ms
     delta = observed - _EPOCH
     observed_us = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds

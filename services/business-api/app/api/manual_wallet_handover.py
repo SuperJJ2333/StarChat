@@ -109,7 +109,7 @@ def create_manual_wallet_handover_router(settings, factory, *, monitor_factory=N
             from app.modules.wallet.monitoring import WalletMonitoringService
             official = OfficialFundingConfig(settings.wallet_official_address.get_secret_value(), settings.wallet_official_config_version)
             source = SQLiteFundingSource(settings.tron_observer_database_path, official_address=official.address,
-                clock=clock, max_age_seconds=180, solid_head_max_age_seconds=180)
+                clock=clock, max_age_seconds=360, solid_head_max_age_seconds=360)
             monitor = ManualReserveMonitor(factory, source=source, official_config=official,
                 activation_baseline_time=settings.wallet_funding_baseline_at,
                 activation_baseline_height=settings.wallet_funding_baseline_height, clock=clock,
