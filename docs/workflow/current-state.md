@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-23 客服异步充值提现新需求（分支归档完成，设计待确认）
+
+本地仅保留main；10个旧分支已归档引用，脏树补丁/文件ZIP已校验并保留原目录。用户已确认两小时未完成的核对策略。充值/提现两步、数字键盘复用、结算说明小字、客服后台绑定验证码开通及订单独占处理/消息提醒的[具体设计](../superpowers/specs/2026-09-23-support-order-workflow-design.md)已提交；产品代码尚未修改，2159不含此新需求。见[任务](tasks/2026-09-23-support-order-workflow.md)。
+
 ## 2026-09-23 main 整合与 Mi6 2159 Debug 已安装
 
 所有原本地分支提交已合入main，手机/钱包修复与会话恢复、历史定位同时保留。来源c7cff671，Flutter3870通过、analyze无问题、frontend245通过；后端/契约与已上线60238a4b完全一致复用2544/59。Mi6已保留数据覆盖安装0.4.1+2159 Debug，固定签名重建独立验证通过；用户业务效果待复验。Git远端未推送，生产未再次部署。mobile108/1与UI契约/迁移/OpenAPI/Compose检查通过；清理保留项见[报告](../verification/2026-09-23-main-integration-debug.md)和[任务](tasks/2026-09-23-main-integration-debug.md)。
