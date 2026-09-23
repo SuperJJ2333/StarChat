@@ -19,6 +19,10 @@ void validateAnnouncementImage(Uint8List bytes) {
 const groupAnnouncementMessageType =
     'com.changliao.group.announcement.document';
 
+final class AnnouncementPendingDecryption implements Exception {
+  const AnnouncementPendingDecryption();
+}
+
 final class AnnouncementBlock {
   const AnnouncementBlock.text(this.value)
       : isImage = false,
@@ -117,9 +121,18 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   @override
   bool get canEdit => GroupRoomAuthority(room).canManage;
   @override
-  Stream<void> get changes => room.client.onSync.stream
-      .where((update) => update.rooms?.join?.containsKey(room.id) == true)
-      .map<void>((_) {});
+  Stream<void> get changes => Stream<void>.multi((controller) {
+        final sync = room.client.onSync.stream
+            .where((update) => update.rooms?.join?.containsKey(room.id) == true)
+            .listen((_) => controller.add(null));
+        // Session recovery can arrive without a room timeline/state update.
+        final keys = room.onSessionKeyReceived.stream
+            .listen((_) => controller.add(null));
+        controller.onCancel = () async {
+          await sync.cancel();
+          await keys.cancel();
+        };
+      });
   @override
   Future<GroupAnnouncement> load() async {
     _requireMember();
@@ -169,6 +182,10 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
       event = await room.client.encryption?.decryptRoomEvent(room.id, event!);
     }
     _requireMember();
+    if (event?.type == EventTypes.Encrypted ||
+        event?.messageType == MessageTypes.BadEncrypted) {
+      throw const AnnouncementPendingDecryption();
+    }
     return event;
   }
 

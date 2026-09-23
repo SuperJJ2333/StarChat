@@ -56,6 +56,10 @@ function register(module, page, states, options = {}) {
   }
 }
 
+register("chat", "announcement", [
+  ["mixed", "群公告 / 图文"], ["decrypting", "群公告 / 等待解密"], ["malformed", "群公告 / 格式异常"]
+]);
+
 register("foundation", "tokens", [
   ["overview", "Foundations / 语义 Token / 浅色", 1180]
 ]);

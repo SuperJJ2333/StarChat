@@ -40,6 +40,7 @@ function inputField(label, value, placeholder) {
 export function walletBindingDemo(definition, { depositContent } = {}) {
   const root = pageRoot(definition);
   let page = definition.page;
+  let offline = definition.state === "cached-offline";
   let bound = !["unbound", "binding", "address-invalid"].includes(definition.state);
   let ready = !["unavailable", "allocating", "allocation-failed"].includes(definition.state);
   let amount = definition.state === "amount-invalid" ? "1" : definition.state === "insufficient" ? "99999" : "20.00";
@@ -56,6 +57,9 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
     root.append(navigation("钱包"));
     const body = element("div", "p-finance__content c-wallet-demo");
     body.append(element("p", "c-wallet-demo__notice", "交互演示 · 示例数据，不会提交真实申请"));
+    if (offline) body.append(element("p", "c-wallet-demo__muted", "显示上次钱包内容 · 余额、汇率与订单待更新"),
+      action("重试更新", () => { offline = false; ready = true; draw(); }, { secondary: true }));
+    else body.append(action("模拟离线", () => { offline = true; ready = false; draw(); }, { secondary: true }));
     if (page !== "home") body.append(action(page === "pin" ? "取消" : "返回", () => {
       const cancelling = page === "pin";
       jump(cancelling ? "withdrawal" : "home");

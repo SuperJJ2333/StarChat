@@ -318,7 +318,8 @@ final class GroupChatInfoController extends ChangeNotifier {
 
   bool _isUnsupportedTransferRead(Object error) =>
       error is BusinessApiException &&
-      {404, 405, 501}.contains(error.statusCode);
+      {404, 405, 501}.contains(error.statusCode) &&
+      !error.code.startsWith('GROUP_');
   String? _transferTarget;
   bool get ownershipTransferPending =>
       ownershipTransfer != null &&
@@ -556,7 +557,10 @@ final class GroupChatInfoController extends ChangeNotifier {
       _set(GroupChatInfoState(
           status: GroupChatInfoStatus.failed,
           snapshot: snapshot,
-          message: '转让状态暂未获取，请重试'));
+          message: error is BusinessApiException &&
+                  error.code == 'GROUP_NOT_REGISTERED'
+              ? '群资料尚未登记，请重试或联系管理员核验群主资料'
+              : '转让状态暂未获取，请重试'));
     }
   }
 

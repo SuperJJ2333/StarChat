@@ -175,6 +175,11 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
                             : '请输入新的中国大陆手机号。',
                     style: const TextStyle(color: WeChatColors.textSecondary)),
                 if (!_done) ...[
+                  const SizedBox(height: WeChatSpacing.sm),
+                  const Text('请输入畅聊 ChatFlow 验证码',
+                      style: TextStyle(
+                          fontSize: WeChatTypography.caption,
+                          color: WeChatColors.textSecondary)),
                   const SizedBox(height: 20),
                   if (_step == 1) ...[
                     AuthTextField(

@@ -99,6 +99,41 @@ void main() {
     });
   }
 
+  testWidgets('manual refresh recovers failed FX and bypasses warm entry cache',
+      (tester) async {
+    var online = false;
+    var rate = '7.20';
+    var fxCalls = 0;
+    final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/fx/rate')) {
+        fxCalls++;
+        if (!online) throw TimeoutException('offline');
+        return flow.json({'rate': rate, 'stale': false});
+      }
+      return flow.json(fixtures.binding);
+    });
+    await tester.pumpWidget(CupertinoApp(
+        home: ManualWalletPage(
+            client: api, section: ManualWalletSection.deposit)));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const Key('manual-deposit-amount')), '20');
+    expect(find.text('参考汇率暂不可用，实际结算以客服确认为准'), findsOneWidget);
+    expect(fxCalls, 1);
+    online = true;
+    await flow.tap(tester, find.byKey(const Key('manual-refresh')));
+    expect(fxCalls, 2);
+    expect(find.text('1 USDT ≈ ¥7.20'), findsOneWidget);
+    expect(find.text('≈ 144.00 点钻'), findsOneWidget);
+    expect(find.text('参考汇率暂不可用，实际结算以客服确认为准'), findsNothing);
+    rate = '8.00';
+    await flow.tap(tester, find.byKey(const Key('manual-refresh')));
+    expect(fxCalls, 3,
+        reason: 'explicit refresh must bypass the 30-second warm cache');
+    expect(find.text('≈ 160.00 点钻'), findsOneWidget);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+  });
+
   testWidgets('missing FX endpoint clearly states unavailable without estimate',
       (tester) async {
     final api =

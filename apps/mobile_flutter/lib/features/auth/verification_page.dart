@@ -150,7 +150,7 @@ final class _VerificationPageState extends State<VerificationPage> {
                   ),
                   Text(
                     widget.controller.isPhoneRegistration
-                        ? '请输入短信中的 6 位验证码'
+                        ? '请输入畅聊 ChatFlow 短信中的 6 位验证码'
                         : '请输入邮件中的验证码，或返回应用查看验证链接结果。',
                     style: TextStyle(color: WeChatColors.textSecondary),
                   ),

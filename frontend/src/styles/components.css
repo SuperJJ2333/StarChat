@@ -1103,3 +1103,16 @@ app-image-editor, app-room-image-gallery { display: block; height: 100%; min-hei
   height: var(--size-avatar-conversation);
   color: var(--color-text-secondary);
 }
+
+/* Wallet history uses the ledger row and the shared segmented-control surface. */
+.c-segmented-control--wallet { display: flex; gap: var(--space-xs); padding: var(--space-xs); }
+.c-segmented-control--wallet > button { flex: 1; min-width: 0; min-height: 32px; padding: var(--space-xs) var(--space-md); border: 0; background: transparent; color: var(--color-text-secondary); }
+.c-segmented-control--wallet > button[aria-pressed="true"] { background: var(--color-surface-elevated); color: var(--color-text-primary); box-shadow: var(--shadow-overlay); }
+.c-ledger-row--wallet { grid-template-columns: 34px minmax(0, 1fr) auto; }
+.c-ledger-row--wallet .c-ledger-row__title { grid-column: 2; grid-row: 1; }
+.c-ledger-row--wallet .c-ledger-row__subtitle { grid-column: 2; grid-row: 2; }
+.c-ledger-row--wallet .c-ledger-row__amount { grid-column: 3; grid-row: 1; align-self: end; }
+.c-ledger-row--wallet .c-ledger-row__status { grid-column: 3; grid-row: 2; }
+.c-ledger-row--wallet .c-ledger-row__icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--radius-pill); color: var(--color-on-accent); background: var(--color-ledger-transfer); }
+.c-ledger-row--wallet .c-ledger-row__icon svg { width: 16px; height: 16px; }
+.c-ledger-row--wallet .c-ledger-row__icon--withdrawal { background: var(--color-social-link); }

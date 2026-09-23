@@ -103,23 +103,26 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
         setState(() {
           final status =
               failure is MatrixException ? failure.response?.statusCode : null;
-          _loadRetryable = failure is SocketException ||
+          _loadRetryable = failure is AnnouncementPendingDecryption ||
+              failure is SocketException ||
               failure is TimeoutException ||
               failure is http.ClientException ||
               status == 408 ||
               status == 429 ||
               (status != null && status >= 500 && status < 600);
-          error = _loadRetryable
-              ? '公告加载失败，请重试'
-              : failure is FormatException
-                  ? '公告格式异常，暂无法显示'
-                  : failure is StateError && failure.message == '仅群成员可查看公告'
-                      ? '仅群成员可查看公告'
-                      : failure is MatrixException &&
-                              (failure.errcode == 'M_FORBIDDEN' ||
-                                  failure.errcode == 'M_UNKNOWN_TOKEN')
-                          ? '无权查看群公告'
-                          : '公告暂不可用，请稍后查看';
+          error = failure is AnnouncementPendingDecryption
+              ? '公告正在解密，点击重试'
+              : _loadRetryable
+                  ? '公告加载失败，请重试'
+                  : failure is FormatException
+                      ? '公告格式异常，暂无法显示'
+                      : failure is StateError && failure.message == '仅群成员可查看公告'
+                          ? '仅群成员可查看公告'
+                          : failure is MatrixException &&
+                                  (failure.errcode == 'M_FORBIDDEN' ||
+                                      failure.errcode == 'M_UNKNOWN_TOKEN')
+                              ? '无权查看群公告'
+                              : '公告暂不可用，请稍后查看';
         });
       }
     }
@@ -336,10 +339,40 @@ final class _AnnouncementImage extends StatefulWidget {
 
 final class _AnnouncementImageState extends State<_AnnouncementImage> {
   late Future<Uint8List> bytes = widget.service.loadImage(widget.eventId);
+  StreamSubscription<void>? _subscription;
+  bool _failed = false;
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  void _listen() {
+    _subscription = widget.service.changes.listen((_) {
+      if (!mounted || !_failed) return;
+      setState(() {
+        _failed = false;
+        bytes = widget.service.loadImage(widget.eventId);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
   @override
   void didUpdateWidget(covariant _AnnouncementImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.eventId != widget.eventId) {
+    if (!identical(oldWidget.service, widget.service)) {
+      _subscription?.cancel();
+      _listen();
+    }
+    if (oldWidget.eventId != widget.eventId ||
+        !identical(oldWidget.service, widget.service)) {
+      _failed = false;
       bytes = widget.service.loadImage(widget.eventId);
     }
   }
@@ -347,19 +380,22 @@ final class _AnnouncementImageState extends State<_AnnouncementImage> {
   @override
   Widget build(BuildContext context) => FutureBuilder<Uint8List>(
       future: bytes,
-      builder: (context, snapshot) => snapshot.hasData
-          ? Image(
-              image: boundedChatImageProvider(snapshot.data!),
-              fit: BoxFit.contain)
-          : SizedBox(
-              height: 160,
-              child: Center(
-                  child: snapshot.hasError
-                      ? CupertinoButton(
-                          onPressed: () => setState(() =>
-                              bytes = widget.service.loadImage(widget.eventId)),
-                          child: const Text('图片加载失败，点击重试'))
-                      : const CupertinoActivityIndicator())));
+      builder: (context, snapshot) {
+        _failed = snapshot.hasError;
+        return snapshot.hasData
+            ? Image(
+                image: boundedChatImageProvider(snapshot.data!),
+                fit: BoxFit.contain)
+            : SizedBox(
+                height: 160,
+                child: Center(
+                    child: snapshot.hasError
+                        ? CupertinoButton(
+                            onPressed: () => setState(() => bytes =
+                                widget.service.loadImage(widget.eventId)),
+                            child: const Text('图片加载失败，点击重试'))
+                        : const CupertinoActivityIndicator()));
+      });
 }
 
 final class GroupAnnouncementBanner extends StatefulWidget {

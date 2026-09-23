@@ -32,6 +32,21 @@ const ledgerRows = Object.freeze([
   Object.freeze({ id: "ca149b1f-2cd8-472c-9d67-1e04b9a95e46", kind: "其他", title: "系统调整", subtitle: "2026-09-07 16:45 · 已完成", amount: "+10.00 点钻" })
 ]);
 
+function ledgerRecordRow(row, onOpen) {
+  const item = button("c-ledger-row", `${row.title} ${row.amount}`, onOpen ? "ledger:detail" : undefined);
+  item.dataset.transactionId = row.id;
+  if (row.walletIcon) {
+    item.className += " c-ledger-row--wallet";
+    const badge = element("span", `c-ledger-row__icon c-ledger-row__icon--${row.kind}`);
+    badge.append(icon(row.kind === "deposit" ? "upload" : "download"));
+    item.append(badge);
+  }
+      const copy = row.remark || row.nickname || row.username;
+      item.append(element("span", "c-ledger-row__title", copy ? `${row.title} · ${copy}` : row.title), element("span", "c-ledger-row__subtitle", (row.walletIcon ? row.subtitle.split(" · ")[0] : row.subtitle)), element("strong", "c-ledger-row__amount", row.amount), element("span", "c-ledger-row__status", row.subtitle.split(" · ").at(-1)));
+  if (onOpen) item.addEventListener("click", onOpen);
+  return item;
+}
+
 function ledgerButton(label, action) {
   const value = button("c-ledger-filter__button", label, action);
   value.textContent = label;
@@ -137,11 +152,7 @@ function ledger(definition) {
       results.append(component("app-empty-state", { title: "暂无点钻流水", message: "调整日期、类型或关键词后重试" }), reset); return;
     }
     for (const row of matched.slice(0, page * pageSize)) {
-      const item = button("c-ledger-row", `${row.title} ${row.amount}`, "ledger:detail");
-      item.dataset.transactionId = row.id;
-      const copy = row.remark || row.nickname || row.username;
-      item.append(element("span", "c-ledger-row__title", copy ? `${row.title} · ${copy}` : row.title), element("span", "c-ledger-row__subtitle", row.subtitle), element("strong", "c-ledger-row__amount", row.amount), element("span", "c-ledger-row__status", row.subtitle.split(" · ").at(-1)));
-      item.addEventListener("click", () => { selected = row; render(); });
+      const item = ledgerRecordRow(row, () => { selected = row; render(); });
       results.append(item);
     }
     if (matched.length > page * pageSize) {
@@ -301,13 +312,30 @@ export function redpacket(definition, { details = [] } = {}) {
 
 function wallet(definition) {
   if (["home", "binding", "deposit", "withdrawal"].includes(definition.page)) return walletBindingDemo(definition);
-  const titles = { history: "交易记录", transaction: "交易详情", state: "钱包" };
+  const titles = { history: "钱包记录", transaction: "交易详情", state: "钱包" };
   const root = pageRoot(definition);
   root.append(navigation(titles[definition.page], { leading: "返回" }));
   const content = element("div", "p-finance__content");
   if (definition.page === "history") {
     if (definition.state === "empty") content.append(component("app-empty-state", { title: "暂无交易记录", message: "充值和提现记录会显示在这里" }));
-    else content.append(...historyRows("USDT"));
+    else {
+      const rows = [
+        { id: "wallet-deposit", walletIcon: true, kind: "deposit", title: "充值", subtitle: "今天 09:41 · 已完成", amount: "20.000000 USDT" },
+        { id: "wallet-payout", walletIcon: true, kind: "withdrawal", title: "提现", subtitle: "昨天 18:20 · 处理中", amount: "10.000000 USDT" }
+      ];
+      const filters = element("div", "c-segmented-control c-segmented-control--wallet");
+      const results = element("section", "c-ledger-results");
+      const buttons = [];
+      const render = selected => {
+        results.replaceChildren(...rows.filter(row => selected === "all" || row.kind === selected).map(row => ledgerRecordRow(row)));
+        for (const [value, control] of buttons) control.setAttribute("aria-pressed", String(value === selected));
+      };
+      for (const [value, label] of [["all", "全部"], ["deposit", "充值"], ["withdrawal", "提现"]]) {
+        const control = ledgerButton(label, `wallet:history:${value}`);
+        control.addEventListener("click", () => render(value)); buttons.push([value, control]); filters.append(control);
+      }
+      content.append(element("p", "c-ledger-page-note", "最近 50 条记录 · 筛选仅限已加载内容"), filters, results); render(definition.state);
+    }
   } else if (definition.page === "transaction") {
     content.append(component("app-status-chip", { status: "success", label: "链上已确认" }), element("p", "c-wallet-address", definition.state === "detail" ? fixtures.finance.walletAddressFull : fixtures.finance.walletAddress), component("app-action-button", { kind: "secondary", icon: "document", label: "复制完整地址", action: "wallet:copy-address" }));
   } else {

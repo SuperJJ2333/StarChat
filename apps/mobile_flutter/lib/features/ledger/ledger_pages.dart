@@ -234,8 +234,8 @@ final class _LedgerListPageState extends State<LedgerListPage> {
             key: const Key('ledger-filter-summary'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                fontSize: 12, color: WeChatColors.textTertiary),
+            style:
+                const TextStyle(fontSize: 12, color: WeChatColors.textTertiary),
           ),
         ),
         CupertinoButton(
@@ -269,44 +269,41 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                     ? () => _controller.setDateRange(null, null)
                     : null,
                 child: Icon(CupertinoIcons.clear,
-                    color: _controller.startAt != null ||
-                            _controller.endAt != null
-                        ? WeChatColors.textSecondary
-                        : WeChatColors.textTertiary)),
+                    color:
+                        _controller.startAt != null || _controller.endAt != null
+                            ? WeChatColors.textSecondary
+                            : WeChatColors.textTertiary)),
           ]),
           SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                  children: _kinds.entries
-                      .map((entry) {
-                        // 对比度修复：选中=品牌绿底+白字；未选中=浅表面+
-                        // 细边框+品牌绿字（此前绿底叠默认绿字不可辨）。
-                        final selected = _controller.kind == entry.key;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: WeChatSpacing.xs),
-                          child: CupertinoButton(
-                              key: Key('ledger-kind-${entry.value}'),
-                              color: selected
-                                  ? WeChatColors.brandPrimary
-                                  : WeChatColors.elevatedSurface(context),
-                              borderRadius: BorderRadius.circular(8),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 10),
-                              minimumSize: const Size(0, 32),
-                              onPressed: () => _controller.setKind(entry.key),
-                              child: Text(
-                                entry.value,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: selected ? FontWeight.w600 : null,
-                                  color: selected
-                                      ? CupertinoColors.white
-                                      : WeChatColors.brandPrimary,
-                                ),
-                              )),
-                        );
-                      })
-                      .toList())),
+                  children: _kinds.entries.map((entry) {
+                // 对比度修复：选中=品牌绿底+白字；未选中=浅表面+
+                // 细边框+品牌绿字（此前绿底叠默认绿字不可辨）。
+                final selected = _controller.kind == entry.key;
+                return Padding(
+                  padding: const EdgeInsets.only(right: WeChatSpacing.xs),
+                  child: CupertinoButton(
+                      key: Key('ledger-kind-${entry.value}'),
+                      color: selected
+                          ? WeChatColors.brandPrimary
+                          : WeChatColors.elevatedSurface(context),
+                      borderRadius: BorderRadius.circular(8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size(0, 32),
+                      onPressed: () => _controller.setKind(entry.key),
+                      child: Text(
+                        entry.value,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: selected ? FontWeight.w600 : null,
+                          color: selected
+                              ? CupertinoColors.white
+                              : WeChatColors.brandPrimary,
+                        ),
+                      )),
+                );
+              }).toList())),
           const SizedBox(height: WeChatSpacing.sm),
           _filterSummary(),
         ]),
@@ -428,8 +425,8 @@ final class _LedgerListPageState extends State<LedgerListPage> {
   Widget _dayHeader(String label) => Container(
         key: Key('ledger-day-$label'),
         color: WeChatColors.pageBackground(context),
-        padding: const EdgeInsets.fromLTRB(
-            WeChatSpacing.lg, WeChatSpacing.md, WeChatSpacing.lg, WeChatSpacing.xs),
+        padding: const EdgeInsets.fromLTRB(WeChatSpacing.lg, WeChatSpacing.md,
+            WeChatSpacing.lg, WeChatSpacing.xs),
         child: Text(label,
             style: const TextStyle(
                 fontSize: 12, color: WeChatColors.textTertiary)),
@@ -454,65 +451,21 @@ final class _LedgerListPageState extends State<LedgerListPage> {
       _ => (CupertinoIcons.circle, WeChatColors.textTertiary, '其他'),
     };
     final description = ledgerDisplayDescription(row);
-    return CupertinoButton(
-      key: Key('ledger-row-${row['id']}'),
-      padding: const EdgeInsets.symmetric(
-          horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
+    return LedgerRecordRow(
+      recordId: '${row['id']}',
+      icon: icon,
+      iconBg: iconBg,
+      title: _billTitle(row, title),
+      subtitle:
+          '${formatLedgerShortTime(row['created_at'])}${description.isEmpty ? '' : ' · $description'}',
+      amount: amount,
+      status: _statusText(row),
       onPressed: () => Navigator.of(context).push(MotionPageRoute<void>(
           builder: (_) => LedgerDetailPage(
               gateway: widget.gateway,
               transactionId: row['id'] as String,
               identityCache: widget.identityCache,
               fromList: true))),
-      child: Row(children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
-          child: Icon(icon, color: CupertinoColors.white, size: 16),
-        ),
-        const SizedBox(width: WeChatSpacing.md),
-        Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(_billTitle(row, title), style: const TextStyle(fontSize: 16)),
-          const SizedBox(height: 2),
-          Text(
-            '${_shortTime(row['created_at'])}${description.isEmpty ? '' : ' · $description'}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style:
-                const TextStyle(fontSize: 12, color: WeChatColors.textTertiary),
-          ),
-        ])),
-        SizedBox(
-          width: 112,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              FittedBox(
-                alignment: Alignment.centerRight,
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  amount,
-                  key: Key('ledger-row-amount-${row['id']}'),
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: !amount.startsWith('-')
-                        ? WeChatColors.brandPrimary
-                        : WeChatColors.resolveTextPrimary(context),
-                  ),
-                ),
-              ),
-              Text(_statusText(row),
-                  style: const TextStyle(
-                      fontSize: 11, color: WeChatColors.textTertiary)),
-            ],
-          ),
-        ),
-      ]),
     );
   }
 
@@ -578,14 +531,6 @@ final class _LedgerListPageState extends State<LedgerListPage> {
       'EXPIRED' => '已过期',
       _ => status.isEmpty ? '已入账' : status,
     };
-  }
-
-  String _shortTime(dynamic value) {
-    final parsed = DateTime.tryParse('$value');
-    if (parsed == null) return '';
-    final local = parsed.toLocal();
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
   }
 
   Widget _tail() {
@@ -733,10 +678,8 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
                 return Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Text(_error!),
-                  if (!_sessionEnded &&
-                      _epoch == widget.gateway.sessionEpoch)
-                    CupertinoButton(
-                        onPressed: _load, child: const Text('重试')),
+                  if (!_sessionEnded && _epoch == widget.gateway.sessionEpoch)
+                    CupertinoButton(onPressed: _load, child: const Text('重试')),
                 ]));
               }
               return const Center(child: CupertinoActivityIndicator());
@@ -900,8 +843,8 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
           decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(4)),
-          child: Text(status,
-              style: TextStyle(fontSize: 12, color: statusColor)),
+          child:
+              Text(status, style: TextStyle(fontSize: 12, color: statusColor)),
         ),
       ]),
     );
@@ -976,4 +919,88 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
         builder: (_) => LedgerListPage(
             gateway: widget.gateway, identityCache: widget.identityCache)));
   }
+}
+
+/// Shared visual row for the authoritative ledger and wallet order history.
+/// The caller supplies decimal text and navigation; this widget has no gateway.
+final class LedgerRecordRow extends StatelessWidget {
+  const LedgerRecordRow(
+      {super.key,
+      required this.recordId,
+      required this.icon,
+      required this.iconBg,
+      required this.title,
+      required this.subtitle,
+      required this.amount,
+      required this.status,
+      this.onPressed});
+  final String recordId, title, subtitle, amount, status;
+  final IconData icon;
+  final Color iconBg;
+  final VoidCallback? onPressed;
+  @override
+  Widget build(BuildContext context) => CupertinoButton(
+        key: Key('ledger-row-$recordId'),
+        padding: const EdgeInsets.symmetric(
+            horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
+        onPressed: onPressed,
+        child: Row(children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child: Icon(icon, color: CupertinoColors.white, size: 16),
+          ),
+          const SizedBox(width: WeChatSpacing.md),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(title, style: const TextStyle(fontSize: 16)),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 12, color: WeChatColors.textTertiary),
+                ),
+              ])),
+          SizedBox(
+            width: 112,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FittedBox(
+                  alignment: Alignment.centerRight,
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    amount,
+                    key: Key('ledger-row-amount-$recordId'),
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: !amount.startsWith('-')
+                          ? WeChatColors.brandPrimary
+                          : WeChatColors.resolveTextPrimary(context),
+                    ),
+                  ),
+                ),
+                Text(status,
+                    style: const TextStyle(
+                        fontSize: 11, color: WeChatColors.textTertiary)),
+              ],
+            ),
+          ),
+        ]),
+      );
+}
+
+String formatLedgerShortTime(dynamic value) {
+  final parsed = DateTime.tryParse('$value');
+  if (parsed == null) return '';
+  final local = parsed.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
 }

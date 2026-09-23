@@ -139,6 +139,22 @@ void main() {
     expect(controller.ownershipTransferPending, isFalse);
   });
 
+  test('unregistered room is a business error rather than unsupported server',
+      () async {
+    final controller = GroupChatInfoController(_OwnerGroupInfoGateway(),
+        loadOwnershipTransfers: () async => throw const BusinessApiException(
+            statusCode: 404,
+            code: 'GROUP_NOT_REGISTERED',
+            message: '群未注册'));
+    await controller.load();
+    await controller.refreshOwnershipTransfer();
+    expect(controller.ownershipTransferReadUnsupported, isFalse);
+    expect(controller.ownershipTransferCompatibilityMessage, isNull);
+    expect(controller.state.status, GroupChatInfoStatus.failed);
+    expect(controller.state.message, '群资料尚未登记，请重试或联系管理员核验群主资料');
+    expect(controller.ownershipTransferPending, isFalse);
+  });
+
   test('network failure remains actionable and does not invent transfer',
       () async {
     final controller = GroupChatInfoController(_OwnerGroupInfoGateway(),

@@ -737,7 +737,10 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
             _operator(session, actor_user_id)
         view = group_registry.group_view(room_id)
         if view is None:
-            raise AppError(code='GROUP_NOT_REGISTERED', message='群未注册', status_code=404)
+            # ADR-0079: legacy rooms are discovered on first group access.
+            # Reuse the membership gate and authoritative registration path;
+            # unknown tenure stays NULL and never becomes a fresh creation.
+            view = group_owner(room_id, actor_user_id)
         is_owner = view.get('owner_user_id') == actor_user_id
         if not is_owner:
             rbac.require(actor_user_id, Permission.SYSTEM_ADMIN)

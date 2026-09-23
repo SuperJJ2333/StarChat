@@ -13,6 +13,48 @@ import 'package:liuhetong_mobile/features/matrix/group_announcement_page.dart';
 import 'package:liuhetong_mobile/features/matrix/group_room_authority.dart';
 
 void main() {
+  testWidgets('pending document key is retryable and restores announcement',
+      (tester) async {
+    final room = _Room()..keyPending = true;
+    await tester.pumpWidget(CupertinoApp(
+        home: GroupAnnouncementPage(
+            service: MatrixGroupAnnouncementService(room))));
+    await tester.pumpAndSettle();
+    expect(find.text('公告格式异常，暂无法显示'), findsNothing);
+    expect(find.text('公告正在解密，点击重试'), findsOneWidget);
+    room.keyPending = false;
+    room.onSessionKeyReceived.add('recovered-session');
+    await tester.pumpAndSettle();
+    expect(find.text('成员可读'), findsOneWidget);
+  });
+  test('room session keys notify announcement listeners without room sync',
+      () async {
+    final room = _Room();
+    final changed = MatrixGroupAnnouncementService(room).changes.first;
+    room.onSessionKeyReceived.add('recovered-session');
+    await changed.timeout(const Duration(seconds: 1));
+  });
+  testWidgets(
+      'image key recovery reloads image without losing surrounding text',
+      (tester) async {
+    final service = _Service()
+      ..pending = Future.value(const GroupAnnouncement([
+        AnnouncementBlock.text('before'),
+        AnnouncementBlock.image(r'$image'),
+        AnnouncementBlock.text('after')
+      ]))
+      ..imageFailure = const AnnouncementPendingDecryption();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupAnnouncementPage(service: service)));
+    await tester.pumpAndSettle();
+    expect(find.text('before'), findsOneWidget);
+    expect(find.text('图片加载失败，点击重试'), findsOneWidget);
+    service.imageFailure = null;
+    service.updates.add(null);
+    await tester.pumpAndSettle();
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.text('after'), findsOneWidget);
+  });
   for (final failure in [
     TimeoutException('timeout'),
     http.ClientException('offline'),
@@ -252,7 +294,18 @@ class _Encryption extends Encryption {
   Future<Event> decryptRoomEvent(String roomId, Event event,
       {bool store = false,
       EventUpdateType updateType = EventUpdateType.timeline}) async {
-    (event.room as _Room).decryptions++;
+    final room = event.room as _Room;
+    room.decryptions++;
+    if (room.keyPending) {
+      return Event(
+          type: EventTypes.Encrypted,
+          content: {'msgtype': MessageTypes.BadEncrypted},
+          senderId: event.senderId,
+          room: room,
+          eventId: event.eventId,
+          originServerTs: event.originServerTs,
+          originalSource: event);
+    }
     return Event(
         type: EventTypes.Message,
         content: const GroupAnnouncement([AnnouncementBlock.text('成员可读')])
@@ -277,6 +330,7 @@ class _Room extends Room {
         originServerTs: DateTime(2026)));
   }
   int decryptions = 0;
+  bool keyPending = false;
   @override
   Future<Event?> getEventById(String eventID) async => Event(
       type: EventTypes.Encrypted,
@@ -292,6 +346,7 @@ class _Service implements GroupAnnouncementService {
   bool editable = false;
   bool failure = false;
   Object? loadFailure;
+  Object? imageFailure;
   Future<GroupAnnouncement>? pending;
   Future<void>? pendingSave;
   @override
@@ -311,7 +366,12 @@ class _Service implements GroupAnnouncementService {
   }
 
   @override
-  Future<Uint8List> loadImage(String eventId) async => Uint8List(0);
+  Future<Uint8List> loadImage(String eventId) async {
+    if (imageFailure != null) throw imageFailure!;
+    return base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==');
+  }
+
   @override
   Future<String> uploadImage(Uint8List bytes, String name) async => r'$image';
 }

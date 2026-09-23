@@ -15,6 +15,8 @@ import 'manual_operation_store.dart';
 import 'manual_payout_status_store.dart';
 import 'manual_wallet_api.dart';
 import 'wallet_display.dart';
+import 'wallet_read_cache.dart';
+import 'wallet_history_page.dart';
 import 'wallet_notice_store.dart';
 import 'wallet_payment_flow.dart';
 import 'wallet_qr_exporter.dart';
@@ -110,8 +112,41 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   /// 钱包进入态共享 Store（缓存优先 + 后台刷新）。持有者是会话级
   /// [WalletEntryStores]；页面只借用，[dispose] 里只 removeListener。
-  late final _entryGateway = _WalletEntryGateway(widget.client, api);
+  late final _entryGateway =
+      _WalletEntryGateway(widget.client, api, walletScope!);
   WalletEntryStore? entry;
+  WalletEntryStore? rechargeCache, fxCache;
+
+  void applyReadCaches() {
+    if (!mounted) return;
+    final recharges = rechargeCache?.state;
+    final rows = recharges?.data?['items'];
+    if (rows is List) {
+      rechargeHistory = rows
+          .whereType<Map>()
+          .map((r) => Map<String, dynamic>.from(r))
+          .toList();
+      // Payment QR/copy stays unavailable until this session has reconciled
+      // the order. Old snapshots are useful display, never payment authority.
+      rechargeError = recharges!.phase == WalletLoadPhase.success
+          ? null
+          : '显示上次充值记录，请刷新确认付款状态';
+    }
+    final fx = fxCache?.state.data;
+    if (fx != null) {
+      referenceFx = {
+        ...fx,
+        if (fxCache?.state.phase != WalletLoadPhase.success) 'stale': true
+      };
+      referenceFxError = fxCache?.state.phase == WalletLoadPhase.success
+          ? null
+          : '显示上次参考汇率，正在更新';
+    }
+    if (fxCache?.state.lastError != null) {
+      referenceFxError = '参考汇率更新失败，显示上次参考值';
+    }
+    setState(() {});
+  }
 
   /// 申请提醒「不再通知」标记的持久化存储与已忽略的申请身份。
   late final noticeStore = WalletNoticeStore(widget.client);
@@ -155,11 +190,24 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   bool depositCancellationPending = false;
   final rechargeEvidencePending = <String>{};
 
-  Future<void> loadRecharges() async {
+  Future<void> loadRecharges({bool entering = false}) async {
     try {
       await ensureCurrentScope();
       rechargeOp = await store.read('recharge');
-      final history = await widget.client.myRecharges();
+      final cache = rechargeCache;
+      if (cache == null) return;
+      if (entering) {
+        await cache.enter(maxAge: const Duration(seconds: 30));
+        if (cache.state.refreshing) await cache.refresh();
+      } else {
+        await cache.refresh();
+      }
+      if (cache.state.phase != WalletLoadPhase.success) {
+        throw StateError('充值信息加载失败');
+      }
+      final history = (cache.state.data!['items'] as List)
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
       await ensureCurrentScope();
       if (rechargeOp == null) {
         final pending = history.where((row) => row['status'] == 'SUBMITTED');
@@ -240,9 +288,17 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     watchDepositDeadline();
   }
 
-  Future<void> loadReferenceFx() async {
+  Future<void> loadReferenceFx({bool force = false}) async {
     try {
-      final snapshot = await widget.client.fxRate();
+      final cache = fxCache;
+      if (cache == null) return;
+      if (force) {
+        await cache.refresh();
+      } else {
+        await cache.enter(maxAge: const Duration(seconds: 30));
+      }
+      final snapshot = cache.state.data;
+      if (snapshot == null) throw StateError('参考汇率不可用');
       final rate = snapshot['rate'];
       if (rate is! String ||
           _referenceUnits(rate) == null ||
@@ -251,7 +307,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       }
       if (!mounted) return;
       setState(() {
-        referenceFx = snapshot;
+        referenceFx = {
+          ...snapshot,
+          if (cache.state.phase != WalletLoadPhase.success) 'stale': true
+        };
         referenceFxError = null;
       });
     } catch (_) {
@@ -443,9 +502,12 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   /// 既有错误提示；网络部分走 [WalletEntryStore.enter]：命中缓存时立即渲染
   /// 缓存数据并在后台刷新，不再让整页进入 busy 禁用态（按钮/余额不再闪）。
   Future<void> _bootstrap() async {
+    final client = widget.client;
+    final bootstrapEpoch = client.sessionEpoch;
     await run(() async {
       walletScope = await widget.client.walletIntentScope();
       paymentScope = await widget.client.paymentIntentScope();
+      if (!mounted || widget.client.sessionEpoch != bootstrapEpoch) return;
       final shared =
           WalletEntryStores.of(scope: walletScope!, gateway: _entryGateway);
       entry = shared;
@@ -453,6 +515,14 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       _applyEntryState(); // 命中缓存：能力配置/余额立刻就位，不等网络
       await store.initialize();
       await payoutStatusStore.initialize();
+      if (!mounted || widget.client.sessionEpoch != bootstrapEpoch) return;
+      rechargeCache = walletReadCache(widget.client, walletScope!, 'recharges',
+          () async => {'items': await client.myRecharges()});
+      fxCache = walletReadCache(
+          widget.client, walletScope!, 'fx', widget.client.fxRate);
+      rechargeCache!.view.addListener(applyReadCaches);
+      fxCache!.view.addListener(applyReadCaches);
+      applyReadCaches();
       try {
         await noticeStore.initialize();
         ignoredDepositNotice = await noticeStore.ignoredIdentity('deposit');
@@ -465,6 +535,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       depositOp = await store.read('deposit');
       quoteOp = await store.read('quote');
       payoutOp = await store.read('payout');
+      rechargeOp = await store.read('recharge');
+      if (payoutOp?['id'] is String) {
+        payout = await payoutStatusStore.read(payoutOp!['id'] as String);
+      }
       if (!mounted) return;
       address.text = bindingOp?['address'] as String? ?? '';
       amount.text = (widget.section == ManualWalletSection.deposit
@@ -475,12 +549,29 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       setState(() {});
     });
     final shared = entry;
-    if (!mounted || shared == null) return;
+    if (!mounted ||
+        shared == null ||
+        client.sessionEpoch != bootstrapEpoch ||
+        client != widget.client) {
+      return;
+    }
     // 有缓存时 enter() 立即返回、刷新在后台；无缓存时才等待首次加载。
-    await shared.enter();
-    if (!mounted) return;
+    await shared.enter(maxAge: const Duration(seconds: 30));
+    if (!mounted ||
+        client.sessionEpoch != bootstrapEpoch ||
+        client != widget.client) {
+      return;
+    }
     // 快照刚由 enter() 取回：这里的 refresh 只补绑定状态与草稿恢复，
     // 不再重复请求一次能力配置/余额。
+    if (cnyPricing && widget.section == ManualWalletSection.deposit) {
+      unawaited(loadRecharges(entering: true));
+    }
+    if (widget.section == ManualWalletSection.deposit ||
+        widget.section == ManualWalletSection.payout) {
+      referenceFxRequested = true;
+      unawaited(loadReferenceFx());
+    }
     await run(() => refresh(refreshEntry: false),
         cacheFirst: shared.state.hasData);
   }
@@ -547,6 +638,12 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   Future<void> refresh({bool refreshEntry = true}) async {
     await ensureCurrentScope();
+    if ((refreshEntry || !referenceFxRequested) &&
+        (widget.section == ManualWalletSection.deposit ||
+            widget.section == ManualWalletSection.payout)) {
+      referenceFxRequested = true;
+      unawaited(loadReferenceFx(force: refreshEntry));
+    }
     bindingFresh = false;
     depositOp = await store.read('deposit');
     final cancelOp = await store.read('deposit_cancel');
@@ -568,7 +665,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     // 有缓存时刷新失败只留弱失败信号：保留数据、不显示错误条、不闪。
     if (refreshEntry) await entry?.refresh();
     _applyEntryState();
-    binding = await api.bindingStatus();
+    if (refreshEntry || entry?.state.phase != WalletLoadPhase.success) {
+      binding = await api.bindingStatus();
+    }
     bindingFresh = true;
     if (bindingOp != null &&
         (binding!.pendingId != null ||
@@ -615,14 +714,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     }
     // 点钻余额已由进入态快照应用（见 _applyEntryState）：此处不再单独请求，
     // 避免「先清空再等接口」造成的余额/错误条闪烁。
-    if (cnyPricing && widget.section == ManualWalletSection.deposit) {
+    if (refreshEntry &&
+        cnyPricing &&
+        widget.section == ManualWalletSection.deposit) {
       await loadRecharges();
-    }
-    if (!referenceFxRequested &&
-        (widget.section == ManualWalletSection.deposit ||
-            widget.section == ManualWalletSection.payout)) {
-      referenceFxRequested = true;
-      unawaited(loadReferenceFx());
     }
   }
 
@@ -698,7 +793,12 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   }
 
   Future<void> refreshVisibleBalance() async {
-    await loadPointsBalance();
+    try {
+      await loadPointsBalance();
+    } catch (_) {
+      // A periodic refresh is display-only; explicit payment actions still
+      // fail closed when the fresh balance cannot be obtained.
+    }
     if (mounted) setState(() {});
   }
 
@@ -725,6 +825,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     await ensureCurrentScope(); // 作用域校验仍在，失败照旧报错
     await shared.refresh();
     _applyEntryState();
+    if (shared.state.phase != WalletLoadPhase.success) {
+      throw StateError('余额更新失败，请联网刷新后重试');
+    }
     final value = shared.state.data?['caibi_available'];
     if (value is String && !shared.state.fatalError) {
       return; // 快照已由 _applyEntryState 写入
@@ -1138,6 +1241,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   @override
   void dispose() {
+    rechargeCache?.view.removeListener(applyReadCaches);
+    fxCache?.view.removeListener(applyReadCaches);
     WidgetsBinding.instance.removeObserver(this);
     depositDeadline?.cancel();
     bindingCountdown?.cancel();
@@ -1528,21 +1633,11 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   }
 
   Future<void> showHistory() async {
-    final data = await widget.client.walletHistory();
+    await ensureCurrentScope();
     if (!mounted) return;
-    final rows = (data['items'] as List?) ?? [];
     await Navigator.of(context).push(MotionPageRoute<void>(
-        builder: (context) => WeChatPageScaffold.navigation(
-            navigationBar: const CupertinoNavigationBar(middle: Text('钱包记录')),
-            child: SafeArea(
-                child: ListView(padding: const EdgeInsets.all(20), children: [
-              if (rows.isEmpty) const Text('暂无交易记录'),
-              for (final row in rows)
-                Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                        '${row['kind'] == 'deposit' ? '充值' : '提现'}  ${row['amount'] ?? ''} USDT\n${row['status'] ?? ''}')),
-            ])))));
+        builder: (_) =>
+            WalletHistoryPage(client: widget.client, scope: walletScope!)));
   }
 
   String get pageTitle => switch (widget.section) {
@@ -1799,6 +1894,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   Align(
                       alignment: Alignment.centerRight,
                       child: refreshControl()),
+                if (entry?.state.lastError != null)
+                  CupertinoButton(
+                      onPressed: () => run(refresh, cacheFirst: true),
+                      child: const Text('显示上次钱包内容 · 重试更新')),
                 if (widget.section == ManualWalletSection.overview) overview(),
                 if (capabilitiesUnavailable)
                   warningBox('功能状态暂不可用，请刷新；已有订单仍可查询。'),
@@ -2430,7 +2529,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 /// 因此它们的失败语义（会话变化、终局失败）保持不变。金融数据绝不跨账号展示：
 /// 作用域变化时直接抛错，让本次刷新失败而不是返回别的账号的数据。
 final class _WalletEntryGateway implements WalletEntryGateway {
-  _WalletEntryGateway(this.client, this.api);
+  _WalletEntryGateway(this.client, this.api, this.expectedScope);
+
+  final String expectedScope;
 
   final BusinessApiClient client;
   final ManualWalletApi api;
@@ -2441,6 +2542,7 @@ final class _WalletEntryGateway implements WalletEntryGateway {
   @override
   Future<Map<String, dynamic>> load() async {
     final scope = await client.walletIntentScope();
+    if (scope != expectedScope) throw StateError('账户已切换，请重新打开钱包');
     final config = await client.walletConfig();
     final balances =
         await client.getJson('/wallet/balances/me', expectedWalletScope: scope);

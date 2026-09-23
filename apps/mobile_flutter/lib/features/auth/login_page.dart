@@ -296,6 +296,11 @@ final class _LoginPageState extends State<LoginPage>
               ),
               const SizedBox(height: WeChatSpacing.md),
               if (_phoneMode) ...[
+                const Text('请输入畅聊 ChatFlow 短信验证码',
+                    style: TextStyle(
+                        fontSize: WeChatTypography.caption,
+                        color: WeChatColors.textSecondary)),
+                const SizedBox(height: WeChatSpacing.sm),
                 AuthTextField(
                     key: const Key('auth-login-phone'),
                     label: '手机号',

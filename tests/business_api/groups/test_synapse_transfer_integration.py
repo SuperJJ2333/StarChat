@@ -126,8 +126,10 @@ def transfer_case(synapse):
     httpx.post(f"{base}/_matrix/client/v3/rooms/{room}/join",
         headers={"Authorization": f"Bearer {new_token}"}, json={}, timeout=10)
 
-    # 业务侧：真实网关 + 内存注册表库
-    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False},
+    # A private file database lets recovery prove it needs no in-process state.
+    db_path = ARTIFACT_ROOT / (synapse['container'] + '-business.sqlite')
+    db_url = f'sqlite+pysqlite:///{db_path.as_posix()}'
+    engine = create_engine(db_url, connect_args={"check_same_thread": False},
         poolclass=__import__("sqlalchemy.pool", fromlist=["StaticPool"]).StaticPool)
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
@@ -169,10 +171,12 @@ def transfer_case(synapse):
     response.raise_for_status()
     try:
         yield dict(coordinator=coordinator, gateway=gateway, registry=registry, room=room,
-            owner=owner, new_owner=new_owner, new_token=new_token, base=base, before=before)
+            owner=owner, new_owner=new_owner, new_token=new_token, base=base, before=before,
+            factory=factory, engine=engine, db_url=db_url)
     finally:
         gateway_client.close()
         engine.dispose()
+        db_path.unlink(missing_ok=True)
 
 
 def test_real_synapse_transfer_coordination(transfer_case):
@@ -223,3 +227,43 @@ def test_real_synapse_lost_response_review_does_not_resend(transfer_case):
     assert coordinator.review_intent(intent_id=view['id'], action='confirm_applied', actor_id='owner')['stage'] == 'COMPLETED'
     assert case['registry'].get(case['room']).owner_user_id == 'newowner'
     assert len(writes) == 1
+
+
+def test_real_synapse_lost_response_survives_database_reopen(transfer_case):
+    from datetime import timedelta
+    from sqlalchemy import create_engine
+    from app.core.database import create_session_factory
+    from app.modules.groups.models import GroupTransferIntent
+    from app.modules.groups.registry import GroupRegistryService
+    from app.modules.groups.transfer_coordination import GroupTransferCoordinator
+
+    case = transfer_case
+    gateway = case['gateway']
+    real_send = gateway.send_room_state_as_user
+    writes = []
+
+    def lost_response(*args, **kwargs):
+        result = real_send(*args, **kwargs)
+        writes.append(result)
+        raise TimeoutError('Lost reply after Matrix accepted transfer')
+
+    gateway.send_room_state_as_user = lost_response
+    view = case['coordinator'].request(room_id=case['room'], requester_user_id='owner',
+        current_owner_user_id='owner', new_owner_user_id='newowner', idempotency_key='reopen-transfer')
+    assert case['coordinator'].advance(intent_id=view['id'])['stage'] == 'MATRIX_PENDING'
+    assert case['registry'].get(case['room']).owner_user_id == 'owner'
+    with case['factory'].begin() as session:
+        intent = session.get(GroupTransferIntent, view['id'])
+        intent.claim_at = datetime.now(timezone.utc) - timedelta(seconds=61)
+    case['engine'].dispose()
+    engine = create_engine(case['db_url'])
+    factory = create_session_factory(engine)
+    registry = GroupRegistryService(factory, matrix_gateway=gateway)
+    recovered = GroupTransferCoordinator(factory, registry=registry, matrix_gateway=gateway)
+    try:
+        assert recovered.recover_batch() == dict(scanned=1, completed=1, retried=0, review=0)
+        assert registry.get(case['room']).owner_user_id == 'newowner'
+        assert recovered.recover_batch() == dict(scanned=0, completed=0, retried=0, review=0)
+        assert len(writes) == 1
+    finally:
+        engine.dispose()

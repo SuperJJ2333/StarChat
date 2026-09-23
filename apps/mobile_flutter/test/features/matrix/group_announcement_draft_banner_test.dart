@@ -106,6 +106,28 @@ void main() {
       {'type': 'image', 'value': r'$image'}
     ]);
     expect((room.client as _Client).published, {'event_id': r'$document'});
+    // Reopen from the published state reference and SDK-decrypted history,
+    // without retaining the editor's in-memory local image bytes.
+    room.reference({'event_id': r'$document'});
+    room.pending = Future.value(Event(
+      type: EventTypes.Message,
+      content: Map<String, dynamic>.from(room.sent!),
+      senderId: '@owner:test',
+      room: room,
+      eventId: r'$document',
+      originServerTs: DateTime(2026),
+      originalSource: Event(
+          type: EventTypes.Encrypted,
+          content: {},
+          senderId: '@owner:test',
+          room: room,
+          eventId: r'$document',
+          originServerTs: DateTime(2026)),
+    ));
+    final reopened = await MatrixGroupAnnouncementService(room).load();
+    expect(reopened.blocks.map((block) => block.value), ['hello', r'$image']);
+    expect(reopened.blocks.last.isImage, isTrue);
+    expect(reopened.blocks.last.localBytes, isNull);
   });
   testWidgets('cleared banner cannot be resurrected by an older delayed load',
       (tester) async {

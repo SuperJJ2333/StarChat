@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
 import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_payout_status_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_wallet_api.dart';
@@ -26,20 +25,9 @@ void main() {
     WalletEntryStores.disposeAll();
   });
 
-  /// 断网：状态接口直接 HTTP 500（客户端抛业务异常）。
-  Future<http.Response> offlinePayout(http.Request request) async {
-    if (request.url.path.endsWith('/binding')) {
-      return flow.json(fixtures.binding);
-    }
-    if (request.url.path.contains('/wallet/manual/payouts/')) {
-      return http.Response('{"code":"UPSTREAM_UNAVAILABLE"}', 500,
-          headers: {'content-type': 'application/json'});
-    }
-    return flow.json(const {});
-  }
-
   testWidgets('断网冷启动：有本地状态快照就照常展示提现状态卡', (tester) async {
-    final api = await flow.client(offlinePayout);
+    final api =
+        await flow.client((request) async => throw StateError('offline'));
     final scope = await api.walletIntentScope();
     SharedPreferences.setMockInitialValues({
       'wallet.manual.v1:$scope:payout':
@@ -48,20 +36,19 @@ void main() {
     });
 
     await tester.pumpWidget(CupertinoApp(
-      home: ManualWalletPage(
-          client: api, section: ManualWalletSection.payout),
+      home: ManualWalletPage(client: api, section: ManualWalletSection.payout),
     ));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('管理员人工付款处理中'), findsOneWidget,
         reason: '断网也要能看到上次成功的申请状态');
     expect(find.textContaining('order'), findsWidgets, reason: '订单号可见');
-    expect(find.textContaining('10.000000'), findsWidgets,
-        reason: '提现金额可见');
+    expect(find.textContaining('10.000000'), findsWidgets, reason: '提现金额可见');
   });
 
   testWidgets('无本地快照且断网：不伪造状态卡（保持失败可见）', (tester) async {
-    final api = await flow.client(offlinePayout);
+    final api =
+        await flow.client((request) async => throw StateError('offline'));
     final scope = await api.walletIntentScope();
     SharedPreferences.setMockInitialValues({
       'wallet.manual.v1:$scope:payout':
@@ -69,8 +56,7 @@ void main() {
     });
 
     await tester.pumpWidget(CupertinoApp(
-      home: ManualWalletPage(
-          client: api, section: ManualWalletSection.payout),
+      home: ManualWalletPage(client: api, section: ManualWalletSection.payout),
     ));
     await tester.pumpAndSettle();
 
@@ -78,7 +64,8 @@ void main() {
   });
 
   testWidgets('快照属于别的账号：不得展示上一个账号的提现记录', (tester) async {
-    final api = await flow.client(offlinePayout);
+    final api =
+        await flow.client((request) async => throw StateError('offline'));
     final scope = await api.walletIntentScope();
     SharedPreferences.setMockInitialValues({
       'wallet.manual.v1:$scope:payout':
@@ -88,8 +75,7 @@ void main() {
     });
 
     await tester.pumpWidget(CupertinoApp(
-      home: ManualWalletPage(
-          client: api, section: ManualWalletSection.payout),
+      home: ManualWalletPage(client: api, section: ManualWalletSection.payout),
     ));
     await tester.pumpAndSettle();
 
@@ -99,7 +85,8 @@ void main() {
 
   group('ManualPayoutStatusStore', () {
     test('成功取回后写回快照，读回字段一致', () async {
-      final api = await flow.client(offlinePayout);
+      final api =
+          await flow.client((request) async => throw StateError('offline'));
       final store = ManualPayoutStatusStore(api);
       await store.initialize();
       expect(await store.read('order'), isNull);
@@ -117,7 +104,8 @@ void main() {
     });
 
     test('未登记字段/损坏内容/id 不符一律按无本地数据处理', () async {
-      final api = await flow.client(offlinePayout);
+      final api =
+          await flow.client((request) async => throw StateError('offline'));
       final scope = await api.walletIntentScope();
       final store = ManualPayoutStatusStore(api);
       await store.initialize();
@@ -146,7 +134,8 @@ void main() {
     });
 
     test('只落非密展示字段（白名单显式登记）', () async {
-      final api = await flow.client(offlinePayout);
+      final api =
+          await flow.client((request) async => throw StateError('offline'));
       final store = ManualPayoutStatusStore(api);
       await store.initialize();
       await store.save(ManualPayout.fromJson(fixtures.payout));
@@ -155,8 +144,9 @@ void main() {
       final scope = await api.walletIntentScope();
       final raw = prefs.getString('wallet.payout.status.v1:$scope:order');
       final record = jsonDecode(raw!) as Map<String, dynamic>;
-      expect(record.keys.toSet().difference(
-          ManualPayoutStatusStore.allowedFields), isEmpty,
+      expect(
+          record.keys.toSet().difference(ManualPayoutStatusStore.allowedFields),
+          isEmpty,
           reason: '落盘字段必须全部在白名单内');
       expect(record.containsKey('secret'), isFalse);
       expect(record.containsKey('key'), isFalse, reason: '幂等键不进状态快照');

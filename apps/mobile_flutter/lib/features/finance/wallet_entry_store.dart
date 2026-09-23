@@ -74,8 +74,7 @@ final class WalletEntryState {
   }
 
   @override
-  String toString() =>
-      'WalletEntryState(phase: $phase, hasData: $hasData, '
+  String toString() => 'WalletEntryState(phase: $phase, hasData: $hasData, '
       'lastError: $lastError, updatedAt: $updatedAt)';
 }
 
@@ -151,8 +150,18 @@ final class WalletEntryStore {
   ///
   /// - 已有缓存：立即返回（不阻塞首帧），刷新在后台进行；期间数据从不清空。
   /// - 没有缓存：等待首次加载结束（成功 → `success`，失败 → `failed`）。
-  Future<void> enter() async {
+  Future<void> enter({Duration maxAge = Duration.zero}) async {
     if (_disposed || _retired) return;
+    _dropCacheOnEpochDrift();
+    // Only a successful refresh in this process is eligible for the short
+    // re-entry window. Disk snapshots always refresh on a cold start.
+    final stamp = state.updatedAt;
+    if (state.phase == WalletLoadPhase.success &&
+        stamp != null &&
+        _now().difference(stamp) >= Duration.zero &&
+        _now().difference(stamp) < maxAge) {
+      return;
+    }
     if (state.hasData) {
       unawaited(refresh());
       return;
@@ -178,6 +187,7 @@ final class WalletEntryStore {
   }
 
   Future<void> _run() async {
+    final epoch = gateway.sessionEpoch;
     final previous = state;
     final cached = previous.data;
     _emit(WalletEntryState(
@@ -188,6 +198,10 @@ final class WalletEntryStore {
     try {
       final loaded = await gateway.load();
       if (_disposed || _retired) return;
+      if (gateway.sessionEpoch != epoch) {
+        _dropCacheOnEpochDrift();
+        return;
+      }
       final stamp = _now();
       _emit(WalletEntryState(
         phase: WalletLoadPhase.success,
@@ -212,6 +226,10 @@ final class WalletEntryStore {
       }
     } catch (error) {
       if (_disposed || _retired) return;
+      if (gateway.sessionEpoch != epoch) {
+        _dropCacheOnEpochDrift();
+        return;
+      }
       _emit(cached == null
           // 首次加载失败（无缓存）：只有这一种失败需要页面弹错。
           ? WalletEntryState(phase: WalletLoadPhase.failed, lastError: error)
@@ -288,7 +306,8 @@ final class WalletEntryStores {
     // 注意：这里**不删本地快照**——下一个账号的作用域键不同，读不到旧数据；
     // 而同一账号重新登录时正需要这份快照来立即展示。
     for (final stale in _stores.keys
-        .where((candidate) => candidate != key && candidate.startsWith('$scope#'))
+        .where(
+            (candidate) => candidate != key && candidate.startsWith('$scope#'))
         .toList()) {
       _stores.remove(stale)?.retire();
     }
@@ -306,7 +325,9 @@ final class WalletEntryStores {
   static void disposeScope(String scope) {
     for (final key in _stores.keys
         .where((candidate) =>
-            candidate == scope || candidate.startsWith('$scope#'))
+            candidate == scope ||
+            candidate.startsWith('$scope#') ||
+            candidate.startsWith('$scope/read/'))
         .toList()) {
       _stores.remove(key)?.dispose();
     }

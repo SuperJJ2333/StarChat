@@ -1,6 +1,59 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-23-announcement-decryption": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/group_announcement_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-announcement-mixed",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "document",
+        "error"
+      ],
+      "states": [
+        "mixed",
+        "decrypting",
+        "malformed"
+      ],
+      "tokens": [
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "Encrypted pending content is distinguished from malformed decrypted content; session-key and sync recovery retries existing readers, preserving encrypted attachment boundaries. Additional demos: chat-announcement-decrypting, chat-announcement-malformed."
+    },
+    "2026-09-23-wallet-cold-start": {
+      "flutter": "apps/mobile_flutter/lib/features/wallet/wallet_history_page.dart",
+      "html": "frontend/src/screens/finance.js",
+      "demo": "wallet-history-all",
+      "components": [
+        "LedgerRecordRow",
+        "WeChatPageScaffold",
+        "CupertinoSlidingSegmentedControl",
+        "WeChatEmptyState"
+      ],
+      "props": [
+        "scope",
+        "items",
+        "filter",
+        "refreshing"
+      ],
+      "states": [
+        "loading",
+        "fresh",
+        "cached-offline",
+        "retrying",
+        "empty",
+        "failed"
+      ],
+      "tokens": [
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "Reuse the existing all-bills ledger row; account-and-epoch scoped display snapshots render before network. Cold disk snapshots always refresh; a 30-second in-memory window avoids redundant loads. Unknown payment results retain their original intent; stale recharge snapshots cannot authorize QR/copy/payment."
+    },
     "2026-09-23-wallet-ui-cleanup": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/chat_red_packet_sheet.dart",
       "html": "frontend/src/screens/finance.js",
@@ -29,7 +82,7 @@
       "props": ["normalizedPhone", "invitationCode", "termsAccepted"],
       "states": ["invalid-phone", "eligible-green", "consent-required", "cooldown", "invitation-required", "matrix-pending", "authenticated"],
       "tokens": ["WeChatColors.brandPrimary", "WeChatColors.textTertiary", "--color-brand-primary"],
-      "behavior": "Valid mainland phone immediately enables green OTP text; unchecked consent explains and sends nothing. New accounts need invitation plus verified OTP, derive opaque handles and await Matrix through a device-bound single-use ticket."
+      "behavior": "Valid mainland phone immediately enables green OTP text; unchecked consent explains and sends nothing. New accounts need invitation plus verified OTP, derive opaque handles and await Matrix through a device-bound single-use ticket. Normal OTP prompts identify 畅聊 ChatFlow; no provider-signature explanation. Provider SMS body remains its approved template."
     },
     "2026-09-19-conversation-identity-admission": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
@@ -1794,7 +1847,7 @@
     }
   },
   "screens": {
-    "expectedCount": 398
+    "expectedCount": 401
   },
   "adminCompletion20260910": {
     "html": [

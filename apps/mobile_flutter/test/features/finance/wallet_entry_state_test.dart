@@ -10,9 +10,42 @@ import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 /// 这些用例覆盖用户报告的「每次进入钱包：按钮闪烁 → 错误提示短暂出现 →
 /// 数据恢复」，全部注入假网关，不触网。
 void main() {
+  test(
+      'warm re-entry within 30 seconds reuses success, explicit refresh bypasses it',
+      () async {
+    var now = DateTime(2026, 9, 23);
+    final gateway = _FakeWalletGateway();
+    final store = WalletEntryStore(gateway: gateway, now: () => now);
+    addTearDown(store.dispose);
+    await _primeCache(store, gateway, {'caibi_available': '10.00'});
+    await store.enter(maxAge: const Duration(seconds: 30));
+    expect(gateway.calls, 1);
+    now = now.add(const Duration(seconds: 31));
+    await store.enter(maxAge: const Duration(seconds: 30));
+    expect(gateway.calls, 2);
+    gateway.succeed({'caibi_available': '11.00'});
+    await store.refresh();
+    final forced = store.refresh();
+    expect(gateway.calls, 3);
+    gateway.succeed({'caibi_available': '12.00'});
+    await forced;
+  });
+
+  test('in-flight result from an ended account is never cached', () async {
+    final gateway = _FakeWalletGateway();
+    final snapshots = _FakeSnapshotStore();
+    final store = WalletEntryStore(
+        gateway: gateway, scope: 'alice', snapshots: snapshots);
+    addTearDown(store.dispose);
+    final pending = store.refresh();
+    gateway.sessionEpoch++;
+    gateway.succeed({'caibi_available': '99.00'});
+    await pending;
+    expect(store.state.hasData, isFalse);
+    expect(snapshots.writes, 0);
+  });
   group('钱包进入态（缓存优先 + 后台刷新）', () {
-    test('1. 首次进入（无缓存、接口成功）：只加载一次并最终 success，不出现空态闪烁',
-        () async {
+    test('1. 首次进入（无缓存、接口成功）：只加载一次并最终 success，不出现空态闪烁', () async {
       final gateway = _FakeWalletGateway();
       final store = WalletEntryStore(gateway: gateway);
       addTearDown(store.dispose);
@@ -50,8 +83,7 @@ void main() {
       expect(emptyNotifications.last, isFalse);
     });
 
-    test('2. 第二次进入（有缓存）：立即拿到 cached 数据，后台刷新到 success，期间数据从不为空',
-        () async {
+    test('2. 第二次进入（有缓存）：立即拿到 cached 数据，后台刷新到 success，期间数据从不为空', () async {
       final gateway = _FakeWalletGateway();
       final store = WalletEntryStore(gateway: gateway);
       addTearDown(store.dispose);
@@ -227,11 +259,10 @@ void main() {
       expect(store.state.phase, WalletLoadPhase.success);
     });
 
-    test('9. 只读状态视图：值相等不视为变化，致命错误只属于无缓存的首次失败',
-        () async {      expect(
+    test('9. 只读状态视图：值相等不视为变化，致命错误只属于无缓存的首次失败', () async {
+      expect(
           const WalletEntryState(
-                  phase: WalletLoadPhase.success, data: {'v': '1'})
-              ==
+                  phase: WalletLoadPhase.success, data: {'v': '1'}) ==
               WalletEntryState(
                   phase: WalletLoadPhase.success,
                   data: {'v': '1'},
@@ -280,8 +311,8 @@ void main() {
         ),
       });
       final gateway = _FakeWalletGateway();
-      final store = WalletEntryStore(
-          gateway: gateway, scope: 's1', snapshots: snapshots);
+      final store =
+          WalletEntryStore(gateway: gateway, scope: 's1', snapshots: snapshots);
       addTearDown(store.dispose);
 
       expect(store.state.hasData, isTrue, reason: '首帧就要有数据，不能等网络');
@@ -302,8 +333,8 @@ void main() {
         ),
       });
       final gateway = _FakeWalletGateway();
-      final store = WalletEntryStore(
-          gateway: gateway, scope: 's1', snapshots: snapshots);
+      final store =
+          WalletEntryStore(gateway: gateway, scope: 's1', snapshots: snapshots);
       addTearDown(store.dispose);
 
       final fatalFlags = <bool>[];
@@ -327,8 +358,8 @@ void main() {
     test('12. 刷新成功写入本地快照；账号切换丢弃该作用域快照', () async {
       final snapshots = _FakeSnapshotStore();
       final gateway = _FakeWalletGateway();
-      final store = WalletEntryStore(
-          gateway: gateway, scope: 's1', snapshots: snapshots);
+      final store =
+          WalletEntryStore(gateway: gateway, scope: 's1', snapshots: snapshots);
       addTearDown(store.dispose);
 
       final entered = store.enter();
@@ -340,8 +371,7 @@ void main() {
       // 账号切换：另一个账号的金融数据绝不能跨账号复用。
       gateway.sessionEpoch = 2;
       final refreshed = store.refresh();
-      expect(snapshots.read('s1'), isNull,
-          reason: 'epoch 变化时必须清掉该作用域的本地快照');
+      expect(snapshots.read('s1'), isNull, reason: 'epoch 变化时必须清掉该作用域的本地快照');
       gateway.succeed({'caibi_available': '0.00'});
       await refreshed;
       expect(store.state.data, {'caibi_available': '0.00'});
@@ -358,9 +388,9 @@ void main() {
       addTearDown(() => WalletEntryStores.snapshots = null);
       WalletEntryStores.snapshots = snapshots;
 
-      final store = WalletEntryStores.of(scope: 's1', gateway: _FakeWalletGateway());
-      expect(store.state.hasData, isTrue,
-          reason: '页面只调用 of()，共享快照存储必须由注册表补齐');
+      final store =
+          WalletEntryStores.of(scope: 's1', gateway: _FakeWalletGateway());
+      expect(store.state.hasData, isTrue, reason: '页面只调用 of()，共享快照存储必须由注册表补齐');
       expect(store.state.data, {'caibi_available': '10.00'});
     });
   });
@@ -374,7 +404,8 @@ Future<void> _primeCache(WalletEntryStore store, _FakeWalletGateway gateway,
   expect(store.state.hasData, isTrue);
 }
 
-final class _FakeWalletGateway implements WalletEntryGateway {  final List<Completer<Map<String, dynamic>>> _pending = [];
+final class _FakeWalletGateway implements WalletEntryGateway {
+  final List<Completer<Map<String, dynamic>>> _pending = [];
   int calls = 0;
   @override
   int sessionEpoch = 1;
@@ -387,7 +418,8 @@ final class _FakeWalletGateway implements WalletEntryGateway {  final List<Compl
     return completer.future;
   }
 
-  void succeed(Map<String, dynamic> data) => _pending.removeAt(0).complete(data);
+  void succeed(Map<String, dynamic> data) =>
+      _pending.removeAt(0).complete(data);
   void fail(Object error) => _pending.removeAt(0).completeError(error);
 }
 

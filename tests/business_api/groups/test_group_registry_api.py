@@ -35,6 +35,10 @@ class FakeGateway:
     def get_room_members(self, room_id):
         return self.members
 
+    def send_room_state_as_user(self, actor, room_id, event_type, content):
+        assert actor == ALICE
+        self.power_users = dict(content['users'])
+
 
 @pytest.mark.asyncio
 async def test_register_transfer_owner_view_contract():
@@ -70,7 +74,7 @@ async def test_register_transfer_owner_view_contract():
 
 
 @pytest.mark.asyncio
-async def test_unregistered_transfer_timeline_reports_missing_business_group():
+async def test_unregistered_transfer_timeline_discovers_authoritative_owner_without_inventing_tenure():
     from sqlalchemy import select
     from app.modules.groups.models import BusinessGroup, GroupTransferIntent
 
@@ -85,24 +89,100 @@ async def test_unregistered_transfer_timeline_reports_missing_business_group():
             email_normalized='member@x.test', password_hash='unused',
             status=AccountStatus.ACTIVE, matrix_user_id=ALICE,
             created_at=now, updated_at=now))
-    class NoMatrixLookup:
-        def get_room_state(self, room_id):
-            pytest.fail('Timeline lookup must not infer a business owner from Matrix')
-        def get_room_members(self, room_id):
-            pytest.fail('Missing business registry needs no Matrix lookup')
+    gateway = FakeGateway()
     settings = Settings(_env_file=None, environment='test', jwt_secret='x' * 32)
-    app = create_app(settings, session_factory=factory, matrix_gateway=NoMatrixLookup())
+    app = create_app(settings, session_factory=factory, matrix_gateway=gateway)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
             route = f'/api/v1/groups/{ROOM}/transfer-intents'
             assert (await client.get(route)).status_code == 401
             missing = await client.get(route, headers=bearer(settings, 'legacy-member'))
-            assert missing.status_code == 404, missing.text
-            assert missing.json()['error']['code'] == 'GROUP_NOT_REGISTERED'
-            assert 'items' not in missing.json()
+            assert missing.status_code == 200, missing.text
+            assert missing.json()['items'] == []
         with factory() as session:
-            assert session.scalar(select(BusinessGroup)) is None
+            group = session.scalar(select(BusinessGroup))
+            assert group.owner_user_id == 'legacy-member'
+            assert group.owner_since is None
+            assert group.tenure_source is None
             assert session.scalar(select(GroupTransferIntent)) is None
         assert settings.group_transfer_coordination_enabled is False
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('authority', ['outsider', 'unavailable', 'ambiguous'])
+async def test_legacy_timeline_does_not_register_without_authorized_authority(authority):
+    from sqlalchemy import select
+    from app.modules.groups.models import BusinessGroup
+
+    engine = create_engine('sqlite+pysqlite:///:memory:',
+        connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = create_session_factory(engine)
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add(User(id='u1', username='u1', username_normalized='u1',
+            email='u1@x.test', email_normalized='u1@x.test', password_hash='x',
+            status=AccountStatus.ACTIVE, matrix_user_id=ALICE, created_at=now, updated_at=now))
+    gateway = FakeGateway()
+    if authority == 'outsider':
+        gateway.members.remove(ALICE)
+    elif authority == 'ambiguous':
+        gateway.power_users[BOB] = 100
+    else:
+        def unavailable(_):
+            raise RuntimeError('offline')
+        gateway.get_room_members = unavailable
+    settings = Settings(_env_file=None, environment='test', jwt_secret='x' * 32)
+    app = create_app(settings, session_factory=factory, matrix_gateway=gateway)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            response = await client.get(f'/api/v1/groups/{ROOM}/transfer-intents', headers=bearer(settings, 'u1'))
+            assert response.status_code == (403 if authority == 'outsider' else 503)
+        with factory() as session:
+            assert session.scalar(select(BusinessGroup)) is None
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('joined', [9, 10])
+async def test_discovered_legacy_group_transfer_preserves_unknown_tenure_rule(joined):
+    from app.modules.groups.models import BusinessGroup
+
+    engine = create_engine('sqlite+pysqlite:///:memory:',
+        connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = create_session_factory(engine)
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        for user_id, matrix_id in [('u1', ALICE), ('u2', BOB)]:
+            session.add(User(id=user_id, username=user_id, username_normalized=user_id,
+                email=f'{user_id}@x.test', email_normalized=f'{user_id}@x.test', password_hash='x',
+                status=AccountStatus.ACTIVE, matrix_user_id=matrix_id, created_at=now, updated_at=now))
+    gateway = FakeGateway()
+    gateway.members.update(f'@extra{i}:x' for i in range(joined - 2))
+    settings = Settings(_env_file=None, environment='test', jwt_secret='x' * 32,
+        group_transfer_coordination_enabled=True)
+    app = create_app(settings, session_factory=factory, matrix_gateway=gateway)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            assert (await client.get(f'/api/v1/groups/{ROOM}/transfer-intents',
+                headers=bearer(settings, 'u1'))).status_code == 200
+            response = await client.post(f'/api/v1/groups/{ROOM}/transfer-owner',
+                headers=bearer(settings, 'u1'), json={'new_owner_user_id': 'u2'})
+            if joined == 9:
+                assert response.status_code == 200, response.text
+                assert response.json()['stage'] == 'COMPLETED'
+                assert response.json()['owner_user_id'] == 'u2'
+                assert gateway.power_users == {ALICE: 0, BOB: 100}
+            else:
+                assert response.status_code == 409, response.text
+                assert response.json()['error']['code'] == 'OWNER_TENURE_UNPROVEN'
+                assert '管理员' in response.json()['error']['message']
+                assert gateway.power_users == {ALICE: 100, BOB: 0}
+                with factory() as session:
+                    assert session.get(BusinessGroup, ROOM).owner_since is None
     finally:
         engine.dispose()

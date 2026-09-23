@@ -327,9 +327,40 @@ function forwardBackground(definition) {
   return root;
 }
 
+function announcementScreen(definition) {
+  const root = pageRoot(definition, [navigation("群公告")]);
+  const content = element("div", "p-messages-inbox__content");
+  content.style.padding = "var(--space-lg)";
+  content.style.display = "grid";
+  content.style.gap = "var(--space-lg)";
+  content.style.lineHeight = "1.6";
+  function showDocument() {
+    const image = element("img");
+    image.src = "/assets/download-qr.png";
+    image.alt = "群公告示例图片";
+    image.style.maxWidth = "100%";
+    image.style.objectFit = "contain";
+    content.replaceChildren(element("p", "", "群主小林 · 2026-09-23 20:00"),
+      element("p", "", "欢迎加入畅聊，请查看以下图片。"), image,
+      element("p", "", "图片后的公告文字保持顺序显示。"));
+  }
+  if (definition.state === "decrypting") {
+    const retry = button("c-button", "公告正在解密，点击重试");
+    retry.textContent = "公告正在解密，点击重试";
+    retry.addEventListener("click", showDocument);
+    content.append(retry);
+  } else if (definition.state === "malformed") {
+    content.append(element("p", "", "公告格式异常，暂无法显示"));
+  } else showDocument();
+  root.append(content);
+  return root;
+}
+
 export function renderScreen(definition) {
   let root;
-  if (definition.page === "image-editor") {
+  if (definition.page === "announcement") {
+    root = announcementScreen(definition);
+  } else if (definition.page === "image-editor") {
     root = pageRoot(definition, [component("app-image-editor", { state: definition.state })]);
   } else if (definition.page === "image-gallery") {
     root = pageRoot(definition, [component("app-room-image-gallery")]);

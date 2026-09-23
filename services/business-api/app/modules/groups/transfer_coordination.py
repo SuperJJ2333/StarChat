@@ -89,7 +89,8 @@ class GroupTransferCoordinator:
             raise GroupOwnerError("GROUP_TRANSFER_TARGET_INVALID", "新群主不能是当前群主")
         if joined >= COOLDOWN_MIN_MEMBERS:
             if row.owner_since is None:
-                raise GroupOwnerError("OWNER_TENURE_UNPROVEN", "任期无法证明，转让暂不受理")
+                raise GroupOwnerError("OWNER_TENURE_UNPROVEN",
+                    "该群已满10人，当前群主任期尚未核实，请联系管理员凭接任证据补录；核实任满30天后可转让")
             now = self._utcnow()
             held = now - (row.owner_since if row.owner_since.tzinfo else row.owner_since.replace(tzinfo=timezone.utc))
             if held < COOLDOWN_PERIOD:

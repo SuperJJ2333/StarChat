@@ -14,7 +14,7 @@ const otpField = () => {
   input.inputMode = "numeric";
   input.maxLength = 6;
   const wrapper = element("label", "c-form-field");
-  wrapper.append(element("span", "c-form-field__label", "短信验证码"), input);
+  wrapper.append(element("span", "c-form-field__label", "畅聊 ChatFlow 短信验证码"), input);
   return { wrapper, input };
 };
 const field = (labelText, placeholder = "", value = "") => {

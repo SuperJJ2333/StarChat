@@ -4,6 +4,25 @@ import 'package:liuhetong_mobile/features/matrix/group_room_authority.dart';
 import 'package:liuhetong_mobile/features/matrix/group_announcement_service.dart';
 
 void main() {
+  test('malformed document and untrusted image URLs remain rejected', () {
+    for (final content in <Map<String, dynamic>>[
+      {'msgtype': 'm.image', 'body': 'image'},
+      {'msgtype': groupAnnouncementMessageType, 'blocks': 'invalid'},
+      {'msgtype': groupAnnouncementMessageType, 'blocks': List.filled(101, {})},
+    ]) {
+      expect(
+          () => GroupAnnouncement.fromContent(content), throwsFormatException);
+    }
+    final document = GroupAnnouncement.fromContent({
+      'msgtype': groupAnnouncementMessageType,
+      'blocks': [
+        {'type': 'image', 'value': 'https://untrusted.test/image'},
+        {'type': 'text', 'value': 'safe text'}
+      ],
+    });
+    expect(document.blocks.length, 1);
+    expect(document.preview, 'safe text');
+  });
   test('legacy topic remains readable when no announcement reference exists',
       () async {
     final room = _AnnouncementRoom();
