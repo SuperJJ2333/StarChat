@@ -13,7 +13,13 @@ abstract interface class SecureKeyValueStore {
   Future<void> delete(String key);
 }
 
-final class FlutterSecureKeyValueStore implements SecureKeyValueStore {
+/// An inspection read must never migrate a Keychain item as a side effect.
+abstract interface class PeekableSecureKeyValueStore {
+  Future<String?> peek(String key);
+}
+
+final class FlutterSecureKeyValueStore
+    implements SecureKeyValueStore, PeekableSecureKeyValueStore {
   FlutterSecureKeyValueStore([FlutterSecureStorage? storage])
       : _storage = storage ?? const FlutterSecureStorage();
 
@@ -31,6 +37,22 @@ final class FlutterSecureKeyValueStore implements SecureKeyValueStore {
           RegExp(r'^liuhetong\.matrix_database_key\.v1\.[a-f0-9]{64}$')
               .hasMatch(key));
 
+  bool _nativePreflightKey(String key) =>
+      _nativeSessionKey(key) ||
+      (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.iOS &&
+          (const {
+                'liuhetong.matrix_local_binding.v1',
+                'liuhetong.matrix_clear_tombstone.v1',
+              }.contains(key) ||
+              RegExp(r'^liuhetong\.(matrix_local_binding|matrix_clear_tombstone)\.v1\.[a-f0-9]{64}$')
+                  .hasMatch(key)));
+
+  @override
+  Future<String?> peek(String key) => _nativePreflightKey(key)
+      ? _iosSession.invokeMethod<String>('peek', {'key': key})
+      : _storage.read(key: key);
+
   @override
   Future<void> delete(String key) => _nativeSessionKey(key)
       ? _iosSession.invokeMethod<void>('delete', {'key': key})
@@ -45,6 +67,18 @@ final class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   Future<void> write(String key, String value) => _nativeSessionKey(key)
       ? _iosSession.invokeMethod<void>('write', {'key': key, 'value': value})
       : _storage.write(key: key, value: value);
+}
+
+final class MatrixStoredIdentitySnapshot {
+  const MatrixStoredIdentitySnapshot({
+    required this.scope,
+    required this.binding,
+    required this.databaseKey,
+  });
+
+  final String scope;
+  final MatrixLocalBinding? binding;
+  final String? databaseKey;
 }
 
 final class StoredBusinessSession {
@@ -122,6 +156,87 @@ final class SecureSessionStore {
   Future<String> matrixStorageScope() =>
       _runMatrixIdentityOperation(_storage.scope);
 
+  /// Read-only Keychain snapshot for inspection before Matrix SDK init.
+  Future<MatrixStoredIdentitySnapshot> peekActiveMatrixIdentity() =>
+      _runMatrixIdentityOperation(
+          () async => _peekIdentityAtScopeUnlocked(await _storage.peekScope()));
+
+  /// Resolves the target account without writing registry or active scope.
+  Future<MatrixStoredIdentitySnapshot> peekAccountMatrixIdentity(
+          String homeserver, String userId) =>
+      _runMatrixIdentityOperation(() async {
+        if (Uri.tryParse(homeserver)?.hasAuthority != true ||
+            !userId.startsWith('@') ||
+            !userId.contains(':')) {
+          throw const FormatException('Invalid Matrix account identity');
+        }
+        final slots = await _storage.peekSlots();
+        final current = await _storage.peekScope();
+        final old = (await _peekIdentityAtScopeUnlocked(current)).binding;
+        if (old != null) {
+          final identity = _AccountScopedSecureStore.identity(
+              old.homeserver, old.matrixUserId);
+          if (slots.containsKey(identity) && slots[identity] != current) {
+            throw const FormatException('Conflicting Matrix account registry');
+          }
+          slots[identity] = current;
+        }
+        final target = _AccountScopedSecureStore.identity(homeserver, userId);
+        return _peekIdentityAtScopeUnlocked(slots[target] ?? target);
+      });
+
+  /// Scope candidates from the registry and the legacy unsuffixed store.
+  Future<Set<String>> peekKnownMatrixScopes() =>
+      _runMatrixIdentityOperation(() async {
+        final slots = await _storage.peekSlots();
+        final active = await _storage.peekScope();
+        return <String>{'', active, ...slots.values};
+      });
+
+  Future<bool> peekMatrixClearPending() =>
+      _runMatrixIdentityOperation(() async {
+        final scope = await _storage.peekScope();
+        final key = scope.isEmpty
+            ? _matrixClearTombstoneKey
+            : '$_matrixClearTombstoneKey.$scope';
+        final value = await _storage.peekRaw(key);
+        if (value == null) return false;
+        if (value != _matrixClearTombstoneValue) {
+          throw const FormatException('Invalid Matrix clear tombstone');
+        }
+        return true;
+      });
+
+  Future<MatrixStoredIdentitySnapshot> peekMatrixIdentityAtScope(
+          String scope) =>
+      _runMatrixIdentityOperation(() => _peekIdentityAtScopeUnlocked(scope));
+
+  Future<MatrixStoredIdentitySnapshot> _peekIdentityAtScopeUnlocked(
+      String scope) async {
+    if (scope.isNotEmpty && !_AccountScopedSecureStore._hash.hasMatch(scope)) {
+      throw const FormatException('Invalid Matrix storage scope');
+    }
+    final bindingKey =
+        scope.isEmpty ? _matrixBindingKey : '$_matrixBindingKey.$scope';
+    final databaseKey =
+        scope.isEmpty ? _matrixDatabaseKey : '$_matrixDatabaseKey.$scope';
+    final encoded = await _storage.peekRaw(bindingKey);
+    final binding = encoded == null ? null : _decodeMatrixBinding(encoded);
+    return MatrixStoredIdentitySnapshot(
+      scope: scope,
+      binding: binding,
+      databaseKey: await _storage.peekRaw(databaseKey),
+    );
+  }
+
+  static MatrixLocalBinding _decodeMatrixBinding(String encoded) {
+    final value = jsonDecode(encoded);
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Invalid matrix local binding');
+    }
+    return MatrixLocalBinding.fromJson(value);
+  }
+
   /// Read-only preflight before a password login can replace a remote session.
   /// This checks the active local metadata, not an unauthenticated target user.
   Future<void> validateLocalLoginStorage() =>
@@ -148,7 +263,8 @@ final class SecureSessionStore {
       });
 
   /// Only called after business authentication and the old client has closed.
-  Future<void> selectMatrixAccount(String homeserver, String userId) =>
+  Future<void> selectMatrixAccount(String homeserver, String userId,
+          {MatrixStoredIdentitySnapshot? expectedSnapshot}) =>
       _runMatrixIdentityOperation(() async {
         if (Uri.tryParse(homeserver)?.hasAuthority != true ||
             !userId.startsWith('@') ||
@@ -169,6 +285,14 @@ final class SecureSessionStore {
         final target = _AccountScopedSecureStore.identity(homeserver, userId);
         // An unclaimed legacy store stays untouched. New identities use new slots.
         final selected = slots[target] ?? target;
+        if (expectedSnapshot != null) {
+          final currentTarget = await _peekIdentityAtScopeUnlocked(selected);
+          if (selected != expectedSnapshot.scope ||
+              currentTarget.binding != expectedSnapshot.binding ||
+              currentTarget.databaseKey != expectedSnapshot.databaseKey) {
+            throw StateError('Matrix account changed during local preflight');
+          }
+        }
         slots[target] = selected;
         await _storage.raw
             .write(_AccountScopedSecureStore.registryKey, jsonEncode(slots));
@@ -420,11 +544,7 @@ final class SecureSessionStore {
   Future<MatrixLocalBinding?> _matrixBindingUnlocked() async {
     final encoded = await _storage.read(_matrixBindingKey);
     if (encoded == null) return null;
-    final value = jsonDecode(encoded);
-    if (value is! Map<String, dynamic>) {
-      throw const FormatException('Invalid matrix local binding');
-    }
-    return MatrixLocalBinding.fromJson(value);
+    return _decodeMatrixBinding(encoded);
   }
 
   Future<String> matrixDatabaseKey() =>
@@ -611,8 +731,17 @@ final class _AccountScopedSecureStore implements SecureKeyValueStore {
   };
   static String identity(String homeserver, String userId) =>
       sha256.convert(utf8.encode(jsonEncode([homeserver, userId]))).toString();
-  Future<Map<String, String>> slots() async {
-    final encoded = await raw.read(registryKey);
+  Future<String?> peekRaw(String key) async =>
+      raw is PeekableSecureKeyValueStore
+          ? (raw as PeekableSecureKeyValueStore).peek(key)
+          : raw.read(key);
+
+  Future<Map<String, String>> slots() => _slots(raw.read);
+  Future<Map<String, String>> peekSlots() => _slots(peekRaw);
+
+  Future<Map<String, String>> _slots(
+      Future<String?> Function(String key) readKey) async {
+    final encoded = await readKey(registryKey);
     if (encoded == null) return {};
     final parsed = jsonDecode(encoded);
     if (parsed is! Map<String, dynamic> ||
@@ -629,9 +758,13 @@ final class _AccountScopedSecureStore implements SecureKeyValueStore {
     return result;
   }
 
-  Future<String> scope() async {
-    final value = await raw.read(activeKey);
-    final registered = await slots();
+  Future<String> scope() => _scope(raw.read, slots);
+  Future<String> peekScope() => _scope(peekRaw, peekSlots);
+
+  Future<String> _scope(Future<String?> Function(String key) readKey,
+      Future<Map<String, String>> Function() readSlots) async {
+    final value = await readKey(activeKey);
+    final registered = await readSlots();
     if (value == null) return '';
     if ((value.isNotEmpty && !_hash.hasMatch(value)) ||
         !registered.containsValue(value)) {

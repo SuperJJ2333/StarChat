@@ -130,6 +130,38 @@ final class IOSSecureSessionTests: XCTestCase {
      kSecAttrService as String: "flutter_secure_storage_service", kSecAttrAccessible as String: accessible,
      kSecAttrSynchronizable as String: false, kSecAttrAccessGroup as String: "existing-app-group"]
   }
+  func testPreflightPeekNeverMigratesLegacyAccessibility() throws {
+    let ops = FakeSessionSecurity()
+    ops.copies = [(errSecSuccess, item() as CFDictionary)]
+    XCTAssertEqual(try IOSSecureSessionStore(security: ops).peek(key: key), "existing-secret")
+    XCTAssertEqual(ops.queries.count, 1)
+    XCTAssertTrue(ops.updates.isEmpty)
+    XCTAssertTrue(ops.additions.isEmpty)
+    XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testPreflightPeekLockedKeychainFailsWithoutMutation() {
+    let ops = FakeSessionSecurity()
+    ops.copies = [(errSecInteractionNotAllowed, nil)]
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).peek(key: key))
+    XCTAssertTrue(ops.updates.isEmpty)
+    XCTAssertTrue(ops.additions.isEmpty)
+    XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testPreflightPeekAcceptsScopedBindingWithoutEnablingNativeWrites() throws {
+    let scope = String(repeating: "a", count: 64)
+    let bindingKey = "liuhetong.matrix_local_binding.v1." + scope
+    let ops = FakeSessionSecurity()
+    var stored = item("binding-value")
+    stored[kSecAttrAccount as String] = bindingKey
+    ops.copies = [(errSecSuccess, stored as CFDictionary)]
+    let store = IOSSecureSessionStore(security: ops)
+    XCTAssertEqual(try store.peek(key: bindingKey), "binding-value")
+    XCTAssertThrowsError(try store.write(key: bindingKey, value: "changed"))
+    XCTAssertThrowsError(try store.delete(key: bindingKey))
+    XCTAssertTrue(ops.updates.isEmpty)
+    XCTAssertTrue(ops.additions.isEmpty)
+    XCTAssertTrue(ops.deletions.isEmpty)
+  }
   func testLockedReadPropagatesWithoutFallbackOrMutation() {
     let ops = FakeSessionSecurity(); ops.copies = [(errSecInteractionNotAllowed, nil)]
     XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).read(key: key))

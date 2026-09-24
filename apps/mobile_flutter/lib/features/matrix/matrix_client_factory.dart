@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 
@@ -12,6 +13,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../core/matrix_local_binding.dart';
 import '../../core/session_store.dart';
 import 'matrix_e2ee_client.dart';
+import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 
 typedef MatrixClientOpener = Future<Client> Function({
@@ -74,6 +76,7 @@ final class MatrixClientFactory {
     String? Function(Client client)? fingerprintReader,
     String Function()? databaseGenerationFactory,
     MatrixSecurityLogger? securityLogger,
+    MatrixLocalIdentityPreflight? localIdentityPreflight,
     this.diagnosticHasher,
   })  : supportDirectoryPath = supportDirectoryPath ?? _defaultSupportPath,
         opener = opener ?? _openPersistentClient,
@@ -84,7 +87,9 @@ final class MatrixClientFactory {
         databaseGenerationFactory =
             databaseGenerationFactory ?? _newDatabaseGeneration,
         securityLogger = securityLogger ??
-            MatrixSecurityLogger.create(sink: (line) => debugPrint(line));
+            MatrixSecurityLogger.create(sink: (line) => debugPrint(line)),
+        localIdentityPreflight =
+            localIdentityPreflight ?? MatrixLocalIdentityPreflight();
 
   static const clientName = 'liuhetong_mobile';
   static const databaseFileName = 'liuhetong_matrix.sqlite';
@@ -105,6 +110,7 @@ final class MatrixClientFactory {
   final String? Function(Client client) fingerprintReader;
   final String Function() databaseGenerationFactory;
   final MatrixSecurityLogger securityLogger;
+  final MatrixLocalIdentityPreflight localIdentityPreflight;
   final MatrixDiagnosticHasher? diagnosticHasher;
   String? _unboundDatabaseGeneration;
 
@@ -125,27 +131,206 @@ final class MatrixClientFactory {
 
   Future<String> _databasePath(String directory) async {
     final scope = await sessionStore.matrixStorageScope();
-    return p.join(directory,
-        scope.isEmpty ? databaseFileName : 'liuhetong_matrix_$scope.sqlite');
+    return _databasePathForScope(directory, scope);
+  }
+
+  static String _databasePathForScope(String directory, String scope) => p.join(
+      directory,
+      scope.isEmpty ? databaseFileName : 'liuhetong_matrix_$scope.sqlite');
+
+  static final _scopedDatabaseName =
+      RegExp(r'^liuhetong_matrix_([a-f0-9]{64})\.sqlite(?:-wal|-shm)?$');
+
+  Future<Set<String>> _candidateScopes(String directory) async {
+    final scopes = await sessionStore.peekKnownMatrixScopes();
+    final folder = Directory(directory);
+    if (await folder.exists()) {
+      await for (final entry in folder.list(followLinks: false)) {
+        final match = _scopedDatabaseName.firstMatch(p.basename(entry.path));
+        if (match == null) continue;
+        if (entry is Link) {
+          throw const MatrixLocalIdentityPreflightException(
+              MatrixLocalIdentityCause.unreadable);
+        }
+        if (entry is File) scopes.add(match.group(1)!);
+        if (scopes.length > 256) {
+          throw const MatrixLocalIdentityPreflightException(
+              MatrixLocalIdentityCause.unreadable);
+        }
+      }
+    }
+    return scopes;
+  }
+
+  Future<bool> _hasVerifiedOriginalElsewhere({
+    required String directory,
+    required String currentScope,
+    required String expectedUserId,
+    required String expectedFingerprint,
+  }) async {
+    var matches = 0;
+    var unreadable = false;
+    final scopes = await _candidateScopes(directory);
+    if (scopes.length > 256) {
+      throw const MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.unreadable);
+    }
+    for (final scope in scopes) {
+      if (scope == currentScope) continue;
+      final snapshot = await sessionStore.peekMatrixIdentityAtScope(scope);
+      final binding = snapshot.binding;
+      if (binding != null &&
+          (binding.matrixUserId != expectedUserId ||
+              binding.homeserver != homeserver.toString())) {
+        continue;
+      }
+      final path = _databasePathForScope(directory, scope);
+      try {
+        final inspection = await localIdentityPreflight.inspect(
+          databasePath: path,
+          cipher: snapshot.databaseKey,
+          binding: binding,
+          expectedHomeserver: homeserver.toString(),
+          expectedUserId: expectedUserId,
+        );
+        if (inspection.status == MatrixLocalIdentityStatus.verifiedRetained) {
+          if (binding == null) {
+            unreadable = true;
+          } else if (inspection.ed25519Fingerprint == expectedFingerprint &&
+              binding.ed25519Fingerprint == expectedFingerprint) {
+            matches++;
+          }
+        }
+      } on MatrixLocalIdentityPreflightException catch (error) {
+        if (error.cause == MatrixLocalIdentityCause.unreadable ||
+            error.cause == MatrixLocalIdentityCause.missingKey) {
+          unreadable = true;
+        }
+      }
+    }
+    if (unreadable) {
+      throw const MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.unreadable);
+    }
+    if (matches > 1) {
+      throw const MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.multipleCandidates);
+    }
+    return matches == 1;
+  }
+
+  Future<void> _inspectBeforeSdk({
+    required String directory,
+    required String databasePath,
+    required MatrixStoredIdentitySnapshot snapshot,
+    String? expectedUserId,
+  }) async {
+    try {
+      await localIdentityPreflight.inspect(
+        databasePath: databasePath,
+        cipher: snapshot.databaseKey,
+        binding: snapshot.binding,
+        expectedHomeserver: homeserver.toString(),
+        expectedUserId: expectedUserId,
+      );
+    } on MatrixLocalIdentityPreflightException catch (error) {
+      final userId = expectedUserId ?? snapshot.binding?.matrixUserId;
+      final fingerprint = snapshot.binding?.ed25519Fingerprint;
+      if (userId == null ||
+          fingerprint == null ||
+          error.cause == MatrixLocalIdentityCause.unreadable ||
+          error.cause == MatrixLocalIdentityCause.missingKey) {
+        rethrow;
+      }
+      try {
+        if (await _hasVerifiedOriginalElsewhere(
+          directory: directory,
+          currentScope: snapshot.scope,
+          expectedUserId: userId,
+          expectedFingerprint: fingerprint,
+        )) {
+          throw const MatrixLocalIdentityPreflightException(
+              MatrixLocalIdentityCause.originalIdentityElsewhere);
+        }
+      } on MatrixLocalIdentityPreflightException {
+        rethrow;
+      } catch (_) {
+        throw const MatrixLocalIdentityPreflightException(
+            MatrixLocalIdentityCause.unreadable);
+      }
+      throw MatrixLocalIdentityPreflightException(error.cause,
+          canCreateNewDevice: true);
+    } catch (_) {
+      throw const MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.unreadable);
+    }
   }
 
   Future<void> selectAccount(String selectedHomeserver, String userId) async {
     if (selectedHomeserver != homeserver.toString()) {
       throw StateError('Matrix account homeserver mismatch');
     }
-    await sessionStore.selectMatrixAccount(selectedHomeserver, userId);
-    _unboundDatabaseGeneration = null;
+    final directory = await supportDirectoryPath();
+    MatrixStoredIdentitySnapshot snapshot;
+    try {
+      snapshot = await sessionStore.peekAccountMatrixIdentity(
+          selectedHomeserver, userId);
+    } catch (_) {
+      throw const MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.unreadable);
+    }
+    final databasePath = _databasePathForScope(directory, snapshot.scope);
+    await _DatabaseInitLocks.run(databasePath, () async {
+      await _inspectBeforeSdk(
+        directory: directory,
+        databasePath: databasePath,
+        snapshot: snapshot,
+        expectedUserId: userId,
+      );
+      await sessionStore.selectMatrixAccount(selectedHomeserver, userId,
+          expectedSnapshot: snapshot);
+      _unboundDatabaseGeneration = null;
+    });
   }
 
   Future<Client> create() async {
     final directory = await supportDirectoryPath();
-    final databasePath = await _databasePath(directory);
+    MatrixStoredIdentitySnapshot snapshot;
+    try {
+      snapshot = await sessionStore.peekActiveMatrixIdentity();
+    } catch (_) {
+      throw const MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.unreadable);
+    }
+    final databasePath = _databasePathForScope(directory, snapshot.scope);
     // 串行化必须在路径确定之后、打开数据库之前开始，并覆盖「打开 +
     // SDK 初始化（含 box_client 凭据写入）+ 迁移」的完整窗口。
     return _DatabaseInitLocks.run(databasePath, () async {
-      if (await sessionStore.matrixClearPending()) {
-        await _completePendingClear(databasePath);
+      final current = await sessionStore.peekActiveMatrixIdentity();
+      if (current.scope != snapshot.scope ||
+          current.binding != snapshot.binding ||
+          current.databaseKey != snapshot.databaseKey) {
+        if (current.scope == snapshot.scope &&
+            current.binding == null &&
+            snapshot.binding == null &&
+            snapshot.databaseKey == null) {
+          // Two first-open calls can queue before the first one creates the
+          // pristine store key. The second must inspect the latest snapshot.
+          snapshot = current;
+        } else {
+          throw const MatrixLocalIdentityPreflightException(
+              MatrixLocalIdentityCause.unreadable);
+        }
       }
+      if (await sessionStore.peekMatrixClearPending()) {
+        await _completePendingClear(databasePath);
+        snapshot = await sessionStore.peekActiveMatrixIdentity();
+      }
+      await _inspectBeforeSdk(
+        directory: directory,
+        databasePath: databasePath,
+        snapshot: snapshot,
+      );
       final cipher = await sessionStore.matrixDatabaseKey();
       final client = await opener(
         clientName: clientName,

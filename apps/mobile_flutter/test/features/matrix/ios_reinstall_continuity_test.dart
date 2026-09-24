@@ -4,6 +4,7 @@ import 'package:liuhetong_mobile/core/installation_marker.dart';
 import 'package:liuhetong_mobile/core/installation_reconciler.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
+import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import '../../core/account_chat_store_test.dart' show binding;
 import '../../core/session_store_test.dart' show MemorySecureKeyValueStore;
@@ -141,7 +142,7 @@ void main() {
     expect(metadata.isLoggedIn, isFalse);
   });
 
-  test('标记读取失败时协调器不清理，空库兼容路径仅清除失效绑定', () async {
+  test('标记读取失败时协调器不清理，预检保留旧绑定并阻断 SDK 初始化', () async {
     final memory = await retainedKeychain();
     final store = SecureSessionStore(memory);
     final factory = _factory(store);
@@ -161,10 +162,15 @@ void main() {
     expect(await store.encryptedRecoveryKey(), 'recovery-A');
     expect(memory.values['liuhetong.matrix_account_slots.v1'], registry);
 
-    final metadata = await factory.continuityMetadata(await factory.create());
-    expect(metadata.isLoggedIn, isFalse);
-    expect(await store.matrixBinding(), isNull,
-        reason: 'the pre-existing empty-store compatibility path consumes only the stale binding');
+    await expectLater(
+      factory.create(),
+      throwsA(isA<MatrixLocalIdentityPreflightException>().having(
+          (error) => error.cause,
+          'cause',
+          MatrixLocalIdentityCause.missingDatabaseWithBinding)),
+    );
+    expect(await store.matrixBinding(), isNotNull,
+        reason: 'uncertain reinstall state must retain old binding and keys');
     expect(await store.matrixDatabaseKey(), databaseKey);
     expect(await store.encryptedRecoveryKey(), 'recovery-A');
     expect(memory.values['liuhetong.matrix_account_slots.v1'], registry);
