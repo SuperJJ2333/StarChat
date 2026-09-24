@@ -5,6 +5,7 @@ from app.integrations.tron import diagnostics as wallet_diagnostics
 
 from app.api.health import create_health_router
 from app.api.client_diagnostics import create_client_diagnostics_router
+from app.api.performance_diagnostics import create_performance_diagnostics_router
 from app.api.identity import create_identity_router
 from app.api.support import create_support_router
 from app.api.ledger import create_ledger_router
@@ -92,6 +93,7 @@ def create_app(
         )
     install_trace_middleware(app)
     install_error_handlers(app)
+    app.include_router(create_performance_diagnostics_router(settings), prefix="/api/v1")
     app.include_router(
         create_health_router(settings, session_factory=session_factory),
         prefix="/api/v1",
@@ -279,4 +281,3 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
 
 def create_default_app() -> FastAPI:
     return create_app(Settings())
-

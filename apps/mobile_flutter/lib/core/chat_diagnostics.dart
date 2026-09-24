@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:uuid/uuid.dart';
+
+import 'performance_trace_model.dart';
 
 enum ChatDiagnosticStage {
   sendAdmission,
@@ -58,18 +62,24 @@ typedef ChatDiagnosticUploader = Future<int> Function(
     ChatDiagnosticBatch batch, Future<void> abort);
 
 final class ChatDiagnosticBatch {
-  ChatDiagnosticBatch._(
-      this.version, this.platform, List<_Event> events, this._frames)
-      : _events = List.unmodifiable(events.map((e) => e.copy()));
+  ChatDiagnosticBatch._(this.version, this.platform, List<_Event> events,
+      this._frames, List<PerformanceRecord> operations)
+      : _events = List.unmodifiable(events.map((e) => e.copy())),
+        _operations = List.unmodifiable(operations);
   final String version;
   final ChatDiagnosticPlatform platform;
   final List<_Event> _events;
   final _FrameCounts? _frames;
+  final List<PerformanceRecord> _operations;
   Map<String, Object?> toJson() => {
         'version': version,
         'platform': platform.name,
         'events': [for (final event in _events) event.toJson()],
         if (_frames != null) 'frames': _frames!.toJson(),
+        if (_operations.isNotEmpty)
+          'operations': [
+            for (final operation in _operations) operation.toJson()
+          ],
       };
 }
 
@@ -125,12 +135,31 @@ final class _Event {
 /// In-memory only, closed metadata. Callers cannot submit text, IDs or stacks.
 /// Recording is bounded O(1), never awaits, and never writes on the UI path.
 final class ChatDiagnostics {
-  ChatDiagnostics({DateTime Function()? now}) : _now = now ?? DateTime.now;
+  static const _serverBodyLimitBytes = 16 * 1024;
+  static const defaultMaxUploadBytes = 15 * 1024;
+
+  ChatDiagnostics({
+    DateTime Function()? now,
+    this.normalSamplePercent = PerformanceThresholds.normalSamplePercent,
+    this.maxUploadBytes = defaultMaxUploadBytes,
+  }) : _now = now ?? DateTime.now {
+    if (normalSamplePercent < 0 || normalSamplePercent > 100) {
+      throw ArgumentError.value(normalSamplePercent, 'normalSamplePercent');
+    }
+    if (maxUploadBytes < 256 || maxUploadBytes > _serverBodyLimitBytes) {
+      throw ArgumentError.value(maxUploadBytes, 'maxUploadBytes');
+    }
+  }
   static ChatDiagnostics instance = ChatDiagnostics();
   final DateTime Function() _now;
+  final int normalSamplePercent;
+  final int maxUploadBytes;
   final _pending = <_EventKey, _Event>{};
+  final _pendingOperations = ListQueue<PerformanceRecord>();
   _FrameCounts _frames = _FrameCounts();
+  _FrameCounts _cumulativeFrames = _FrameCounts();
   bool _framesSupported = true;
+  bool _operationsSupported = true;
   ChatDiagnosticUploader? _upload;
   String _version = '';
   ChatDiagnosticPlatform _platform = ChatDiagnosticPlatform.other;
@@ -140,7 +169,14 @@ final class ChatDiagnostics {
   int _epoch = 0;
   int _failures = 0;
   DateTime? _nextAllowed;
-  int get pendingCount => _pending.length;
+  int get pendingCount => _pending.length + _pendingOperations.length;
+  bool get isActive => _upload != null;
+  PerformanceFrameCounts get cumulativeFrameCounts => PerformanceFrameCounts(
+        total: _cumulativeFrames.total,
+        slow: _cumulativeFrames.slow,
+        slowBuild: _cumulativeFrames.build,
+        slowRaster: _cumulativeFrames.raster,
+      );
 
   /// Capture before an async operation; discard its diagnostic after logout.
   int get sessionGeneration => _epoch;
@@ -167,8 +203,11 @@ final class ChatDiagnostics {
     _timer = null;
     _upload = null;
     _pending.clear();
+    _pendingOperations.clear();
     _frames = _FrameCounts();
+    _cumulativeFrames = _FrameCounts();
     _framesSupported = true;
+    _operationsSupported = true;
     _failures = 0;
     _nextAllowed = null;
     final abort = _abort;
@@ -200,7 +239,7 @@ final class ChatDiagnostics {
       existing.elapsedMs = math.max(existing.elapsedMs, ms);
       return;
     }
-    if (_pending.length >= 100) return;
+    if (pendingCount >= 100) return;
     _pending[key] = _Event(stage, error, safeStatus, ms, safeCount,
         retryCount: safeRetryCount, lifecycle: lifecycle);
   }
@@ -223,6 +262,100 @@ final class ChatDiagnostics {
     if (slowBuild) _frames.build++;
     if (slowRaster) _frames.raster++;
     if (slowBuild || slowRaster) _frames.slow++;
+    _cumulativeFrames.total++;
+    if (slowBuild) _cumulativeFrames.build++;
+    if (slowRaster) _cumulativeFrames.raster++;
+    if (slowBuild || slowRaster) _cumulativeFrames.slow++;
+  }
+
+  /// Receives immutable typed records from PerformanceTrace. Normal operations
+  /// are sampled; slow outcomes and errors always enter this bounded queue.
+  void recordPerformance(PerformanceRecord record) {
+    if (_upload == null || !_operationsSupported) {
+      return;
+    }
+    final mustKeep = _mustKeepPerformance(record);
+    if (!mustKeep) {
+      var hash = 0;
+      for (final code in record.operationId.codeUnits) {
+        hash = ((hash * 31) + code) & 0x7fffffff;
+      }
+      if (hash % 100 >= normalSamplePercent) return;
+    }
+    if (pendingCount >= 100) {
+      if (!mustKeep) return;
+      // Keep the newest slow/error evidence without growing the queue. Both
+      // collections preserve insertion order; removal is constant time.
+      if (_pendingOperations.length > 20) {
+        // Flush reads the oldest records. Evict the tail so a concurrent
+        // in-flight batch keeps its identity and cannot be sent twice.
+        _pendingOperations.removeLast();
+      } else if (_pending.isNotEmpty) {
+        _pending.remove(_pending.keys.first);
+      } else if (_pendingOperations.isNotEmpty) {
+        _pendingOperations.removeLast();
+      }
+    }
+    _pendingOperations.addLast(record);
+  }
+
+  bool _mustKeepPerformance(PerformanceRecord record) {
+    if (record.result != PerformanceResult.success) return true;
+    if (record.operation == PerformanceOperationType.conversationOpen) {
+      final firstFrame = record.betweenMs(PerformanceStage.routePushStarted,
+          PerformanceStage.firstFrameRendered);
+      final localReady = record.betweenMs(
+          PerformanceStage.userAction, PerformanceStage.localTimelineReady);
+      final syncWait = record.conversationSyncWaitMs;
+      final responseWait = record.betweenMs(
+          PerformanceStage.syncResponseWaitStarted,
+          PerformanceStage.syncResponseReceived);
+      final processing = record.betweenMs(
+          PerformanceStage.syncResponseReceived,
+          PerformanceStage.syncProcessingDone);
+      return (firstFrame != null &&
+              firstFrame >= PerformanceThresholds.conversationFirstFrameMs) ||
+          (localReady != null &&
+              localReady >= PerformanceThresholds.conversationLocalReadyMs) ||
+          (syncWait != null &&
+              syncWait >= PerformanceThresholds.syncWaitMs) ||
+          (responseWait != null &&
+              responseWait >= PerformanceThresholds.syncWaitMs) ||
+          (processing != null &&
+              processing >= PerformanceThresholds.syncProcessingMs);
+    }
+    if (record.operation == PerformanceOperationType.matrixSync) {
+      // A long /sync response wait is normal long-poll behavior. Retain a
+      // successful cycle only when measured local processing/cleanup is slow.
+      final processing = record.betweenMs(
+          PerformanceStage.syncResponseReceived,
+          PerformanceStage.syncProcessingDone);
+      final cleanup = record.betweenMs(
+          PerformanceStage.syncProcessingDone,
+          PerformanceStage.syncCleanupDone);
+      return (processing != null &&
+              processing >= PerformanceThresholds.syncProcessingMs) ||
+          (cleanup != null &&
+              cleanup >= PerformanceThresholds.syncProcessingMs);
+    }
+    if (record.operation == PerformanceOperationType.callActive) {
+      final loss = record.packetLossPercent;
+      return (record.rttMs != null &&
+              record.rttMs! >= PerformanceThresholds.callRttMs) ||
+          (record.jitterMs != null &&
+              record.jitterMs! >= PerformanceThresholds.callJitterMs) ||
+          (loss != null &&
+              loss >= PerformanceThresholds.callPacketLossPercent);
+    }
+    final threshold = switch (record.operation) {
+      PerformanceOperationType.apiRequest =>
+        PerformanceThresholds.businessApiMs,
+      PerformanceOperationType.callSetup => PerformanceThresholds.callSetupMs,
+      PerformanceOperationType.mediaLoad =>
+        PerformanceThresholds.mediaFirstVisibleMs,
+      _ => PerformanceThresholds.conversationLocalReadyMs,
+    };
+    return record.totalMs >= threshold;
   }
 
   /// Also bounded when explicitly requested: never bypasses cadence/backoff.
@@ -230,16 +363,75 @@ final class ChatDiagnostics {
     final upload = _upload;
     final now = _now();
     if (upload == null ||
-        (_pending.isEmpty && _frames.total == 0) ||
+        (_pending.isEmpty &&
+            _pendingOperations.isEmpty &&
+            _frames.total == 0) ||
         _inFlight ||
         (_nextAllowed != null && now.isBefore(_nextAllowed!))) {
       return;
     }
     _inFlight = true;
     final epoch = _epoch;
-    final events = _pending.values.take(20).map((e) => e.copy()).toList();
-    final frames = _frames.total > 0 ? _frames.copy() : null;
-    final batch = ChatDiagnosticBatch._(_version, _platform, events, frames);
+    final events = <_Event>[];
+    final operations = <PerformanceRecord>[];
+    _FrameCounts? frames = _frames.total > 0 ? _frames.copy() : null;
+
+    // Encoding happens only on this low-frequency flush path. Count actual
+    // UTF-8 body bytes, including JSON framing, below the server's 16 KiB cap.
+    bool fits() =>
+        utf8
+            .encode(jsonEncode(ChatDiagnosticBatch._(
+                    _version, _platform, events, frames, operations)
+                .toJson()))
+            .length <=
+        maxUploadBytes;
+
+    var batchFull = false;
+    for (final event in _pending.values.take(20).toList(growable: false)) {
+      events.add(event.copy());
+      if (fits()) continue;
+      if (frames != null) {
+        final heldFrames = frames;
+        frames = null;
+        if (fits()) continue;
+        frames = heldFrames;
+      }
+      events.removeLast();
+      if (events.isNotEmpty) {
+        batchFull = true;
+        break;
+      }
+      // A single unsendable item must not permanently pin the queue head.
+      _pending.remove(event.key);
+    }
+    if (!batchFull) {
+      for (final operation
+          in _pendingOperations.take(20).toList(growable: false)) {
+        if (events.length + operations.length >= 20) break;
+        operations.add(operation);
+        if (fits()) continue;
+        if (frames != null) {
+          final heldFrames = frames;
+          frames = null;
+          if (fits()) continue;
+          frames = heldFrames;
+        }
+        operations.removeLast();
+        if (events.isNotEmpty || operations.isNotEmpty) {
+          break;
+        }
+        if (_pendingOperations.isNotEmpty &&
+            _pendingOperations.first.operationId == operation.operationId) {
+          _pendingOperations.removeFirst();
+        }
+      }
+    }
+    if (events.isEmpty && operations.isEmpty && frames == null) {
+      _inFlight = false;
+      return;
+    }
+    final batch =
+        ChatDiagnosticBatch._(_version, _platform, events, frames, operations);
     final abort = Completer<void>();
     _abort = abort;
     _nextAllowed = now.add(const Duration(minutes: 1));
@@ -259,7 +451,11 @@ final class ChatDiagnostics {
       if (identical(_abort, abort)) _abort = null;
     }
     if (epoch != _epoch) return;
-    if (status == 422 && frames != null) {
+    if (status == 422 && operations.isNotEmpty) {
+      // An older receiver may know legacy events/frames but not operations.
+      _operationsSupported = false;
+      _pendingOperations.clear();
+    } else if (status == 422 && frames != null) {
       // Old servers have a closed schema. Keep existing events for the next
       // bounded attempt, but stop sending the extension for this session.
       _framesSupported = false;
@@ -273,6 +469,12 @@ final class ChatDiagnostics {
         if (current == null) continue;
         current.count -= event.count;
         if (current.count <= 0) _pending.remove(event.key);
+      }
+      for (final operation in operations) {
+        if (_pendingOperations.isNotEmpty &&
+            _pendingOperations.first.operationId == operation.operationId) {
+          _pendingOperations.removeFirst();
+        }
       }
     } else {
       _failures = math.min(_failures + 1, 5);

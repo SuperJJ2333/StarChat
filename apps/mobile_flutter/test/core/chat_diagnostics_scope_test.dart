@@ -3,8 +3,36 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics_scope.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 
 void main() {
+  testWidgets('scope tracks foreground, background and resume lifecycle',
+      (tester) async {
+    final recorder = PerformanceTraceRecorder.instance;
+    addTearDown(() {
+      recorder.clear();
+      recorder.lifecycle = PerformanceLifecycle.unknown;
+    });
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(ChatDiagnosticsScope(
+      sessionEpoch: 90,
+      version: 'test',
+      platform: ChatDiagnosticPlatform.android,
+      diagnostics: ChatDiagnostics(),
+      upload: (batch, abort) async => 202,
+      child: const SizedBox(),
+    ));
+    expect(recorder.lifecycle, PerformanceLifecycle.foreground);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    expect(recorder.lifecycle, PerformanceLifecycle.background);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    expect(recorder.lifecycle, PerformanceLifecycle.resuming);
+    await tester.pump();
+    expect(recorder.lifecycle, PerformanceLifecycle.foreground);
+    await tester.pumpWidget(const SizedBox());
+    expect(recorder.lifecycle, PerformanceLifecycle.unknown);
+  });
   testWidgets(
       'foreground display budget counts build and raster, not total span',
       (tester) async {
@@ -55,8 +83,10 @@ void main() {
   testWidgets('scope clears diagnostics across account switch and disposal',
       (tester) async {
     final diagnostics = ChatDiagnostics();
+    final metrics = PerformanceMetrics(enabled: true);
     Widget scope(int epoch) => ChatDiagnosticsScope(
           diagnostics: diagnostics,
+          performanceMetrics: metrics,
           sessionEpoch: epoch,
           version: '0.3.103+2152',
           platform: ChatDiagnosticPlatform.android,
@@ -68,13 +98,18 @@ void main() {
         stage: ChatDiagnosticStage.matrixSend,
         error: ChatDiagnosticError.timeout);
     expect(diagnostics.pendingCount, 1);
+    metrics.record(PerformanceOperation.conversationOpen, 120000);
+    expect((metrics.snapshot()['operations'] as Map), isNotEmpty);
     await tester.pumpWidget(scope(2));
     expect(diagnostics.pendingCount, 0);
+    expect((metrics.snapshot()['operations'] as Map), isEmpty);
+    metrics.record(PerformanceOperation.mediaLoad, 90000);
     diagnostics.record(
         stage: ChatDiagnosticStage.framework,
         error: ChatDiagnosticError.unknown);
     await tester.pumpWidget(const SizedBox());
     expect(diagnostics.pendingCount, 0);
+    expect((metrics.snapshot()['operations'] as Map), isEmpty);
     diagnostics.record(
         stage: ChatDiagnosticStage.framework,
         error: ChatDiagnosticError.unknown);

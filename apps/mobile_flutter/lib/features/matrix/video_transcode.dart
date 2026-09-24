@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:video_compress/video_compress.dart';
 
+import '../../core/performance_trace.dart';
+
 /// Maximum plaintext video payload, measured again after encoding.
 const maxOriginalVideoBytes = 20 * 1024 * 1024;
 
@@ -130,16 +132,24 @@ final class VideoRendition {
 /// has a process-wide encoder, so preview and send work cannot run it together.
 Future<void> _videoEncodingQueue = Future<void>.value();
 Future<VideoRendition> transcodeForChat(File origin,
-    {void Function(double progress)? onProgress}) {
-  final operation = _videoEncodingQueue
-      .then((_) => _transcodeForChat(origin, onProgress: onProgress));
+    {void Function(double progress)? onProgress,
+    PerformanceTrace? performanceTrace}) {
+  performanceTrace?.mark(PerformanceStage.queueEntered);
+  final operation = _videoEncodingQueue.then((_) async {
+    performanceTrace?.mark(PerformanceStage.queueExited);
+    final rendition = await _transcodeForChat(origin,
+        onProgress: onProgress, performanceTrace: performanceTrace);
+    performanceTrace?.mark(PerformanceStage.videoTranscodeDone);
+    return rendition;
+  });
   _videoEncodingQueue =
       operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
   return operation;
 }
 
 Future<VideoRendition> _transcodeForChat(File origin,
-    {void Function(double progress)? onProgress}) async {
+    {void Function(double progress)? onProgress,
+    PerformanceTrace? performanceTrace}) async {
   final originSize = await origin.length();
   if (originSize <= 0) throw const VideoCompressionException();
   int? durationMs;
@@ -158,6 +168,7 @@ Future<VideoRendition> _transcodeForChat(File origin,
       originalBytes: originSize, durationMs: durationMs)) {
     throw const GroupVideoTooLargeException(estimated: true);
   }
+  performanceTrace?.mark(PerformanceStage.videoTranscodeStarted);
   final generated = <File>[];
   File? accepted;
   var hadOversize = false;
@@ -199,6 +210,7 @@ Future<VideoRendition> _transcodeForChat(File origin,
           continue;
         }
         if (size <= 0) continue;
+        performanceTrace?.mark(PerformanceStage.videoValidated);
         accepted = output;
         return VideoRendition(
             file: output,

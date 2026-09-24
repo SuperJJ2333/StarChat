@@ -6,8 +6,29 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'performance_trace_model.dart';
+
 // Closed enums deliberately prevent identifiers, URLs or content in telemetry.
 enum PerformanceOperation {
+  appStartup,
+  appResume,
+  conversationOpen,
+  messageSend,
+  matrixSync,
+  syncCycleTotal,
+  recentPicturesLoad,
+  videoPrepare,
+  videoPoster,
+  search,
+  searchPageOpen,
+  contactsLoad,
+  momentsLoad,
+  walletLoad,
+  apiRequest,
+  callSetup,
+  callActive,
+  profileLoad,
+  chatListLoad,
   frameBuild,
   frameRaster,
   frameTotal,
@@ -24,6 +45,11 @@ enum PerformanceOperation {
 }
 
 enum PerformanceCounter {
+  slowFrames,
+  syncErrors,
+  syncSoftKicks,
+  syncHardRestarts,
+  syncReconnects,
   frames,
   slowBuildFrames,
   slowRasterFrames,
@@ -54,6 +80,8 @@ final class PerformanceMetrics {
   final bool enabled;
   final int sampleCapacity;
   final _samples = <PerformanceOperation, ListQueue<int>>{};
+  final _stageSamples = <PerformanceStage, ListQueue<int>>{};
+  final _recentTraces = ListQueue<PerformanceRecord>();
   final _counts = <PerformanceOperation, int>{};
   final _counters = <PerformanceCounter, int>{};
   bool _observing = false;
@@ -85,6 +113,35 @@ final class PerformanceMetrics {
     record(PerformanceOperation.frameTotal, totalUs);
     if (buildUs > budgetUs) increment(PerformanceCounter.slowBuildFrames);
     if (rasterUs > budgetUs) increment(PerformanceCounter.slowRasterFrames);
+    if (buildUs > budgetUs || rasterUs > budgetUs) {
+      increment(PerformanceCounter.slowFrames);
+    }
+  }
+
+  PerformanceFrameCounts get frameCounts => PerformanceFrameCounts(
+        total: _counters[PerformanceCounter.frames] ?? 0,
+        slow: _counters[PerformanceCounter.slowFrames] ?? 0,
+        slowBuild: _counters[PerformanceCounter.slowBuildFrames] ?? 0,
+        slowRaster: _counters[PerformanceCounter.slowRasterFrames] ?? 0,
+      );
+
+  /// The trace closes on this path. Work is bounded by the fixed stage enum;
+  /// the hot-path mark/recordFrame methods never sort, encode or perform I/O.
+  void recordTrace(PerformanceRecord trace) {
+    if (!enabled) return;
+    if (_recentTraces.length == sampleCapacity) _recentTraces.removeFirst();
+    _recentTraces.addLast(trace);
+    record(PerformanceOperation.values.byName(trace.operation.name),
+        trace.totalUs);
+    var previous = 0;
+    for (final entry in trace.stagesUs.entries) {
+      final elapsed = entry.value - previous;
+      if (elapsed < 0) continue;
+      final samples = _stageSamples.putIfAbsent(entry.key, ListQueue<int>.new);
+      if (samples.length == sampleCapacity) samples.removeFirst();
+      samples.addLast(elapsed);
+      previous = entry.value;
+    }
   }
 
   Map<String, Object> snapshot() => {
@@ -95,6 +152,18 @@ final class PerformanceMetrics {
           for (final entry in _samples.entries)
             entry.key.name: _summary(entry.value, _counts[entry.key]!),
         },
+        'stages': {
+          for (final entry in _stageSamples.entries)
+            entry.key.wireName: _summary(entry.value, entry.value.length),
+        },
+        'recentTraces': [
+          for (final trace in _recentTraces)
+            {
+              ...trace.toLocalDiagnosticJson(),
+              'bottleneck':
+                  PerformanceBottleneckClassifier.classify(trace).wireName,
+            }
+        ],
         'counters': {
           for (final entry in _counters.entries) entry.key.name: entry.value,
         },
@@ -115,6 +184,8 @@ final class PerformanceMetrics {
 
   void reset() {
     _samples.clear();
+    _stageSamples.clear();
+    _recentTraces.clear();
     _counts.clear();
     _counters.clear();
   }

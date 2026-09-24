@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../core/performance_trace.dart';
 import 'video_poster_extractor.dart';
 import 'video_transcode.dart';
 
@@ -16,9 +17,12 @@ final class PreparedChatVideo {
 /// A failed rendition deliberately keeps the original so the account-owned
 /// outgoing job can retry; a successful standalone preparation releases it.
 Future<PreparedChatVideo> prepareCapturedChatVideo(File capture,
-    {void Function(double)? onProgress}) async {
+    {void Function(double)? onProgress,
+    PerformanceTrace? performanceTrace}) async {
   final prepared = await prepareLocalChatVideo(capture,
-      deleteSourceWhenDone: false, onProgress: onProgress);
+      deleteSourceWhenDone: false,
+      onProgress: onProgress,
+      performanceTrace: performanceTrace);
   if (await capture.exists()) await capture.delete();
   return prepared;
 }
@@ -28,13 +32,16 @@ Future<PreparedChatVideo> prepareCapturedChatVideo(File capture,
 /// after admission, so no widget or room lease owns the asynchronous work.
 Future<PreparedChatVideo> prepareLocalChatVideo(File source,
     {required bool deleteSourceWhenDone,
-    void Function(double)? onProgress}) async {
+    void Function(double)? onProgress,
+    PerformanceTrace? performanceTrace}) async {
   VideoRendition? rendition;
   try {
-    rendition = await transcodeForChat(source, onProgress: onProgress);
+    rendition = await transcodeForChat(source,
+        onProgress: onProgress, performanceTrace: performanceTrace);
     final bytes = await rendition.file.readAsBytes();
     validateGroupVideoSize(bytes.length);
     final poster = await extractVideoPoster(rendition.file.path);
+    performanceTrace?.mark(PerformanceStage.videoThumbnailDone);
     return PreparedChatVideo(bytes, poster, rendition.durationMs);
   } finally {
     try {

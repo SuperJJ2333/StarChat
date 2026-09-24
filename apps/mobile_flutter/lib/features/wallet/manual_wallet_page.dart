@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/performance_trace.dart';
 import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/wechat_secondary_button.dart';
@@ -90,11 +91,13 @@ final class ManualWalletPage extends StatefulWidget {
       this.clock = DateTime.now,
       this.section = ManualWalletSection.overview,
       this.embedded = false,
-      this.qrExporter = const GalleryQrExporter()});
+      this.qrExporter = const GalleryQrExporter(),
+      this.performanceTrace});
   final BusinessApiClient client;
   final DateTime Function() clock;
   final ManualWalletSection section;
   final bool embedded;
+  final PerformanceTrace? performanceTrace;
 
   /// 收款二维码导出（申请权限 + 写入系统相册）。测试注入假实现覆盖失败/无权限态。
   final WalletQrExporter qrExporter;
@@ -104,6 +107,38 @@ final class ManualWalletPage extends StatefulWidget {
 
 final class _ManualWalletPageState extends State<ManualWalletPage>
     with WidgetsBindingObserver {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.walletLoad);
+  bool _initialFirstFrameRendered = false;
+  bool _watchingInitialEntry = false;
+  bool _initialRemoteStarted = false;
+  bool _initialEntrySettled = false;
+  bool _initialEntryFailed = false;
+
+  void _finishInitialPerformanceTrace() {
+    if (!_initialFirstFrameRendered || !_initialEntrySettled) return;
+    _performanceTrace.finish(
+      result: _initialEntryFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
+  void _observeInitialEntry(WalletEntryState state) {
+    if (!_watchingInitialEntry || _initialEntrySettled) return;
+    if (state.phase == WalletLoadPhase.refreshing) {
+      _initialRemoteStarted = true;
+      _performanceTrace.mark(PerformanceStage.remoteRefreshStarted);
+      return;
+    }
+    if (!_initialRemoteStarted) return;
+    _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
+    _initialEntryFailed =
+        state.phase == WalletLoadPhase.failed || state.lastError != null;
+    _initialEntrySettled = true;
+    _finishInitialPerformanceTrace();
+  }
+
   late final api = ManualWalletApi(widget.client);
   late final store = ManualOperationStore(widget.client);
 
@@ -472,6 +507,13 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initialFirstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialPerformanceTrace();
+    });
     WidgetsBinding.instance.addObserver(this);
     if (widget.section == ManualWalletSection.overview ||
         widget.section == ManualWalletSection.deposit ||
@@ -508,10 +550,15 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       walletScope = await widget.client.walletIntentScope();
       paymentScope = await widget.client.paymentIntentScope();
       if (!mounted || widget.client.sessionEpoch != bootstrapEpoch) return;
+      _performanceTrace.mark(PerformanceStage.cacheLoadStarted);
       final shared =
           WalletEntryStores.of(scope: walletScope!, gateway: _entryGateway);
       entry = shared;
       shared.view.addListener(_applyEntryState);
+      if (shared.state.hasData) {
+        _performanceTrace.mark(PerformanceStage.cacheLoadDone);
+        _performanceTrace.mark(PerformanceStage.contentReady);
+      }
       _applyEntryState(); // 命中缓存：能力配置/余额立刻就位，不等网络
       await store.initialize();
       await payoutStatusStore.initialize();
@@ -556,7 +603,15 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       return;
     }
     // 有缓存时 enter() 立即返回、刷新在后台；无缓存时才等待首次加载。
-    await shared.enter(maxAge: const Duration(seconds: 30));
+    _watchingInitialEntry = true;
+    await _performanceTrace.runChildOperations(
+        () => shared.enter(maxAge: const Duration(seconds: 30)));
+    if (!_initialEntrySettled && !shared.state.refreshing) {
+      _initialEntryFailed = shared.state.phase == WalletLoadPhase.failed ||
+          shared.state.lastError != null;
+      _initialEntrySettled = true;
+      _finishInitialPerformanceTrace();
+    }
     if (!mounted ||
         client.sessionEpoch != bootstrapEpoch ||
         client != widget.client) {
@@ -565,15 +620,17 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     // 快照刚由 enter() 取回：这里的 refresh 只补绑定状态与草稿恢复，
     // 不再重复请求一次能力配置/余额。
     if (cnyPricing && widget.section == ManualWalletSection.deposit) {
-      unawaited(loadRecharges(entering: true));
+      unawaited(_performanceTrace
+          .runChildOperations(() => loadRecharges(entering: true)));
     }
     if (widget.section == ManualWalletSection.deposit ||
         widget.section == ManualWalletSection.payout) {
       referenceFxRequested = true;
-      unawaited(loadReferenceFx());
+      unawaited(_performanceTrace.runChildOperations(loadReferenceFx));
     }
-    await run(() => refresh(refreshEntry: false),
-        cacheFirst: shared.state.hasData);
+    await _performanceTrace.runChildOperations(() => run(
+        () => refresh(refreshEntry: false),
+        cacheFirst: shared.state.hasData));
   }
 
   /// 命中缓存或后台刷新落地时，用快照刷新能力配置与点钻余额。
@@ -584,6 +641,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     final state = entry?.state;
     final snapshot = state?.data;
     if (snapshot != null) {
+      _performanceTrace.mark(PerformanceStage.contentReady);
       final config = snapshot['config'];
       if (config is Map) {
         cnyPricing = config['caibi_pricing_version'] == 'caibi-cny-v1';
@@ -611,6 +669,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       }
     }
     if (state != null) {
+      _observeInitialEntry(state);
       if (state.fatalError) {
         // 唯一允许提示的失败：从未成功过、没有任何数据可展示。
         capabilitiesUnavailable = !capabilitiesKnown;
@@ -637,6 +696,28 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   }
 
   Future<void> refresh({bool refreshEntry = true}) async {
+    final trace = _performanceTrace.isRecording
+        ? _performanceTrace
+        : _performanceTrace
+            .startSiblingOperation(PerformanceOperationType.walletLoad);
+    final ownsTrace = !identical(trace, _performanceTrace);
+    if (ownsTrace) trace.mark(PerformanceStage.remoteRefreshStarted);
+    var result = PerformanceResult.success;
+    try {
+      await trace
+          .runChildOperations(() => _refreshBody(refreshEntry: refreshEntry));
+    } catch (_) {
+      result = PerformanceResult.failed;
+      rethrow;
+    } finally {
+      if (ownsTrace) {
+        trace.mark(PerformanceStage.remoteRefreshDone);
+        trace.finish(result: result);
+      }
+    }
+  }
+
+  Future<void> _refreshBody({required bool refreshEntry}) async {
     await ensureCurrentScope();
     if ((refreshEntry || !referenceFxRequested) &&
         (widget.section == ManualWalletSection.deposit ||
@@ -1241,6 +1322,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   @override
   void dispose() {
+    _performanceTrace.dispose();
     rechargeCache?.view.removeListener(applyReadCaches);
     fxCache?.view.removeListener(applyReadCaches);
     WidgetsBinding.instance.removeObserver(this);

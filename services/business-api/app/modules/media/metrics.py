@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections import deque
+from math import ceil
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -69,11 +71,11 @@ class MediaPlatformMetrics:
             "upload_session_created": 0,
             "upload_session_aborted": 0,
         }
-        self._samples: dict[str, list[float]] = {
-            "media_resolve_ms": [],
-            "variant_resolve_ms": [],
-            "authorization_ms": [],
-            "storage_read_ms": [],
+        self._samples: dict[str, deque[float]] = {
+            "media_resolve_ms": deque(maxlen=512),
+            "variant_resolve_ms": deque(maxlen=512),
+            "authorization_ms": deque(maxlen=512),
+            "storage_read_ms": deque(maxlen=512),
         }
 
     # -- recording ---------------------------------------------------------
@@ -89,9 +91,6 @@ class MediaPlatformMetrics:
             return
         samples = self._samples[name]
         samples.append(float(duration_ms))
-        # Keep memory bounded: a rolling window is enough for diagnosis.
-        if len(samples) > 512:
-            del samples[: len(samples) - 512]
 
     @contextmanager
     def timed(self, name: str) -> Iterator[None]:
@@ -105,14 +104,24 @@ class MediaPlatformMetrics:
     def counter(self, name: str) -> int:
         return self._counters[name]
 
-    def timing(self, name: str) -> dict[str, float | int]:
+    def timing(self, name: str) -> dict[str, float | int | None]:
         samples = self._samples[name]
         if not samples:
-            return {"count": 0, "avg_ms": 0.0, "max_ms": 0.0}
+            return {"count": 0, "avg_ms": 0.0, "max_ms": 0.0,
+                    "p50_ms": None, "p95_ms": None, "p99_ms": None}
+        ordered = sorted(samples)
+        count = len(ordered)
+
+        def percentile(percent: float) -> float:
+            return round(ordered[ceil(count * percent) - 1], 3)
+
         return {
-            "count": len(samples),
-            "avg_ms": round(sum(samples) / len(samples), 3),
-            "max_ms": round(max(samples), 3),
+            "count": count,
+            "avg_ms": round(sum(ordered) / count, 3),
+            "max_ms": round(ordered[-1], 3),
+            "p50_ms": percentile(0.50),
+            "p95_ms": percentile(0.95),
+            "p99_ms": percentile(0.99),
         }
 
     def snapshot(self) -> dict[str, Any]:

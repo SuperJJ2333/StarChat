@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/app_home.dart';
@@ -13,6 +15,51 @@ import 'package:matrix/matrix.dart';
 /// BUG4：通讯录"群聊"入口 → 群聊通讯录列表（不再误入发起群聊）。
 /// 该区只在 BusinessApiClient 注入时渲染，用 MockClient 构造真实客户端。
 void main() {
+  testWidgets('contacts initial request shares its page operation ID',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final pageTrace = recorder.start(PerformanceOperationType.contactsLoad);
+    final store = SecureSessionStore(_MemoryStore());
+    await store.saveSession(accessToken: 'access', refreshToken: 'refresh');
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: store,
+      performanceRecorder: recorder,
+      client: MockClient((_) async => http.Response('{"items":[]}', 200)),
+    );
+
+    await tester.pumpWidget(CupertinoApp(
+      home: ContactsPage(
+        api: api,
+        performanceTrace: pageTrace,
+        onOpenRoom: (_, {anchorEventId}) async {},
+        pendingFriendRequests: ValueNotifier<int>(0),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final request = records.singleWhere((record) =>
+        record.operation == PerformanceOperationType.apiRequest &&
+        record.endpointCategory == PerformanceEndpointCategory.friendship);
+    expect(request.operationId, pageTrace.operationId);
+
+    final state = tester.state(find.byType(ContactsPage)) as dynamic;
+    state.reload();
+    await tester.pumpAndSettle();
+    final requests = records.where((record) =>
+        record.operation == PerformanceOperationType.apiRequest &&
+        record.endpointCategory == PerformanceEndpointCategory.friendship).toList();
+    expect(requests, hasLength(2));
+    expect(requests.last.operationId, isNot(pageTrace.operationId));
+    expect(records.any((record) =>
+        record.operation == PerformanceOperationType.contactsLoad &&
+        record.operationId == requests.last.operationId), isTrue);
+  });
+
   testWidgets('ContactsTabPage 透传保存群列表入口', (tester) async {
     final store = SecureSessionStore(_MemoryStore());
     await store.saveSession(
@@ -63,12 +110,18 @@ void main() {
   }
 
   testWidgets('通讯录首页"群聊"tile 进入群聊通讯录而非发起群聊', (tester) async {
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.contactsLoad);
     var addressListOpened = 0;
     var createGroupOpened = 0;
     final client = await api();
     await tester.pumpWidget(CupertinoApp(
       home: ContactsPage(
         api: client,
+        performanceTrace: trace,
         onOpenRoom: (_, {anchorEventId}) async {},
         pendingFriendRequests: ValueNotifier<int>(0),
         onGroupAddressList: () => addressListOpened++,
@@ -76,6 +129,17 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    expect(records, hasLength(1));
+    expect(
+        records.single.stagesUs.keys,
+        containsAll([
+          PerformanceStage.routeEnter,
+          PerformanceStage.firstFrameRendered,
+          PerformanceStage.cacheLoadDone,
+          PerformanceStage.remoteRefreshStarted,
+          PerformanceStage.remoteRefreshDone,
+          PerformanceStage.contentReady,
+        ]));
 
     final tile = find.byKey(const Key('contacts-group-address-entry'));
     expect(tile, findsOneWidget);

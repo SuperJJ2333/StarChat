@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/performance_metrics.dart';
+import '../../core/performance_trace.dart';
 import 'media_cache_metrics.dart';
 import 'media_index.dart';
 
@@ -249,8 +250,7 @@ final class MediaCache {
 
   static Future<File?> cached(String roomId, String eventId,
       {String accountId = '', String? contentSha256}) async {
-    final watch =
-        MediaCacheMetrics.enabled ? (Stopwatch()..start()) : null;
+    final watch = MediaCacheMetrics.enabled ? (Stopwatch()..start()) : null;
     try {
       // ① 索引快路径：只做廉价校验（命名空间/存在/精确大小），**不重算哈希**。
       if (contentSha256 != null) {
@@ -274,8 +274,8 @@ final class MediaCache {
         }
         return null;
       }
-      final indexed = await _cachedViaIndex(accountId,
-          roomId: roomId, eventId: eventId);
+      final indexed =
+          await _cachedViaIndex(accountId, roomId: roomId, eventId: eventId);
       if (indexed != null) return indexed;
       // ② legacy：refs/<digest>.ref → objects/<name>，完整校验后回填索引。
       final ref = await _reference(accountId, roomId, eventId);
@@ -350,21 +350,22 @@ final class MediaCache {
     if (roomId != null && eventId != null) {
       _touchIndex(accountId, roomId, eventId, file, objectHash: objectHash);
     } else if (objectHash != null) {
-      MediaIndex.shared.touchObject(accountId, objectHash,
-          objectPath: file.path);
+      MediaIndex.shared
+          .touchObject(accountId, objectHash, objectPath: file.path);
     }
     PerformanceMetrics.instance.increment(PerformanceCounter.mediaDiskHit);
     return file;
   }
 
   /// LRU 命中登记：只写内存 pending（同一对象 60s 内至多落库一次）。
-  static void _touchIndex(String accountId, String roomId, String eventId,
-      File file, {String? objectHash}) {
+  static void _touchIndex(
+      String accountId, String roomId, String eventId, File file,
+      {String? objectHash}) {
     if (objectHash != null) {
-      MediaIndex.shared.touchObject(accountId, objectHash,
-          objectPath: file.path);
-      MediaIndex.shared.touch(accountId, roomId, eventId,
-          objectPath: file.path);
+      MediaIndex.shared
+          .touchObject(accountId, objectHash, objectPath: file.path);
+      MediaIndex.shared
+          .touch(accountId, roomId, eventId, objectPath: file.path);
       return;
     }
     MediaIndex.shared.touch(accountId, roomId, eventId, objectPath: file.path);
@@ -372,7 +373,8 @@ final class MediaCache {
 
   /// 内容校验判定损坏：删除对象与长度标记 + 失效索引行。
   /// 下一次 `cached()` 会重新走"未命中 → 下载/解密 → 落盘"。
-  static Future<void> _discardCorruptObject(MediaCacheKey key, File file) async {
+  static Future<void> _discardCorruptObject(
+      MediaCacheKey key, File file) async {
     await _deleteQuietly(file);
     await _deleteQuietly(File('${file.path}.len'));
     await MediaIndex.shared
@@ -698,7 +700,8 @@ final class MediaCache {
   }
 
   /// 账号内对象（objects/ 下的数据文件 + 大小 + mtime）。
-  static Future<List<_CacheObject>> _accountObjects(String accountRootPath) async {
+  static Future<List<_CacheObject>> _accountObjects(
+      String accountRootPath) async {
     final dir = Directory('$accountRootPath/objects');
     if (!await dir.exists()) return const [];
     final objects = <_CacheObject>[];
@@ -765,8 +768,8 @@ final class MediaCache {
       // 设备兜底：先尝试回收无引用对象（GC 比淘汰更安全），再按 LRU 淘汰。
       await collectGarbage(accountId, triggeredByQuota: true);
       final access = await _indexedLastAccess(accountId);
-      deviceTotal = await _evictOldest(objects, deviceTotal,
-          deviceHardQuotaBytes, keep.path, access);
+      deviceTotal = await _evictOldest(
+          objects, deviceTotal, deviceHardQuotaBytes, keep.path, access);
       _deviceBytesEstimate = deviceTotal;
     } on FileSystemException {
       /* Cache quota maintenance is best effort. */
@@ -783,7 +786,8 @@ final class MediaCache {
       String accountId) async {
     final access = <String, DateTime>{};
     try {
-      for (final entry in await MediaIndex.shared.entriesForAccount(accountId)) {
+      for (final entry
+          in await MediaIndex.shared.entriesForAccount(accountId)) {
         final at = DateTime.fromMillisecondsSinceEpoch(entry.lastAccessAt);
         final current = access[entry.objectName];
         if (current == null || at.isAfter(current)) {
@@ -798,13 +802,12 @@ final class MediaCache {
 
   /// 按 LRU（索引 last_access → mtime）最旧优先删除，直到回到
   /// [targetBytes]；返回剩余总字节。跳过：keep、pinned、在途写入。
-  static Future<int> _evictOldest(List<_CacheObject> objects, int total,
-      int targetBytes, String keepPath,
+  static Future<int> _evictOldest(
+      List<_CacheObject> objects, int total, int targetBytes, String keepPath,
       [Map<String, DateTime>? indexedAccess]) async {
     if (total <= targetBytes) return total;
     DateTime accessOf(_CacheObject object) {
-      final indexed =
-          indexedAccess?[object.file.uri.pathSegments.last];
+      final indexed = indexedAccess?[object.file.uri.pathSegments.last];
       if (indexed == null) return object.modified;
       return indexed.isAfter(object.modified) ? indexed : object.modified;
     }
@@ -905,7 +908,11 @@ final class MediaCache {
       bool triggeredByQuota = false}) async {
     final watch = MediaCacheMetrics.enabled ? (Stopwatch()..start()) : null;
     MediaCacheMetrics.gcRuns++;
-    var scanned = 0, kept = 0, collected = 0, skippedPinned = 0, skippedYoung = 0;
+    var scanned = 0,
+        kept = 0,
+        collected = 0,
+        skippedPinned = 0,
+        skippedYoung = 0;
     var bytes = 0;
     final removed = <String>{};
     try {
@@ -949,8 +956,7 @@ final class MediaCache {
           kept++;
           continue;
         }
-        if (isPinned(object.file.path) ||
-            _isActiveWrite(object.file.path)) {
+        if (isPinned(object.file.path) || _isActiveWrite(object.file.path)) {
           skippedPinned++;
           continue;
         }
@@ -981,7 +987,9 @@ final class MediaCache {
     } on FileSystemException {
       /* Best effort. */
     } finally {
-      if (watch != null) MediaCacheMetrics.gcMicros += watch.elapsedMicroseconds;
+      if (watch != null) {
+        MediaCacheMetrics.gcMicros += watch.elapsedMicroseconds;
+      }
     }
     MediaCacheMetrics.gcCollectedObjects += collected;
     MediaCacheMetrics.gcCollectedBytes += bytes;
@@ -1268,8 +1276,63 @@ void clearMediaMemoryCaches() {
 }
 
 Future<Uint8List> loadMediaWithCache(
+        MediaCacheKey key, Future<Uint8List> Function() decrypt,
+        {MediaLoadPriority? priority,
+        bool? isVideo,
+        PerformanceTrace? trace}) =>
+    _loadMediaWithCacheObserved(key, decrypt,
+        priority: priority, isVideo: isVideo, trace: trace);
+
+Future<Uint8List> _loadMediaWithCacheObserved(
     MediaCacheKey key, Future<Uint8List> Function() decrypt,
-    {MediaLoadPriority? priority, bool? isVideo}) async {
+    {MediaLoadPriority? priority,
+    bool? isVideo,
+    PerformanceTrace? trace,
+    bool localSeed = false}) async {
+  final ownedTrace = trace == null &&
+          PerformanceTraceRecorder.instance.recordingEnabled
+      ? PerformanceTrace.start(operation: PerformanceOperationType.mediaLoad)
+      : null;
+  final observed = trace ?? ownedTrace;
+  if (isVideo == true) {
+    observed?.setMedia(type: PerformanceMediaType.video);
+  }
+  observed?.mark(PerformanceStage.cacheLoadStarted);
+  try {
+    final bytes = await _loadMediaWithCache(key, decrypt,
+        priority: priority,
+        isVideo: isVideo,
+        trace: observed,
+        localSeed: localSeed);
+    observed?.setMedia(size: _mediaSizeBucket(bytes.length));
+    observed?.mark(PerformanceStage.contentReady);
+    ownedTrace?.finish();
+    return bytes;
+  } on MediaLoadCanceled {
+    ownedTrace?.finish(result: PerformanceResult.cancelled);
+    rethrow;
+  } catch (_) {
+    ownedTrace?.finish(result: PerformanceResult.failed);
+    rethrow;
+  }
+}
+
+/// Diagnostic-only coarse size ranges. No exact attachment size is retained.
+PerformanceSizeBucket _mediaSizeBucket(int byteLength) {
+  if (byteLength <= 0) return PerformanceSizeBucket.zero;
+  if (byteLength <= 64 * 1024) return PerformanceSizeBucket.tiny;
+  if (byteLength <= 1024 * 1024) return PerformanceSizeBucket.small;
+  if (byteLength <= 10 * 1024 * 1024) return PerformanceSizeBucket.medium;
+  if (byteLength <= 100 * 1024 * 1024) return PerformanceSizeBucket.large;
+  return PerformanceSizeBucket.huge;
+}
+
+Future<Uint8List> _loadMediaWithCache(
+    MediaCacheKey key, Future<Uint8List> Function() decrypt,
+    {MediaLoadPriority? priority,
+    bool? isVideo,
+    PerformanceTrace? trace,
+    bool localSeed = false}) async {
   final scope = MediaConsumerScope.current;
   if (scope != null && !scope.isActive) throw MediaLoadCanceled();
   final generation = _mediaGeneration;
@@ -1285,6 +1348,8 @@ Future<Uint8List> loadMediaWithCache(
   final warm =
       key.contentSha256 == null ? null : _sharedMediaBytes.get(key.cacheId);
   if (warm != null) {
+    trace?.setMedia(source: PerformanceCacheSource.memory);
+    trace?.mark(PerformanceStage.cacheLoadDone);
     await _linkMediaReference(key, warm, generation);
     if (scope != null && !scope.isActive) throw MediaLoadCanceled();
     return warm;
@@ -1292,6 +1357,10 @@ Future<Uint8List> loadMediaWithCache(
   final existing = _mediaLoads[identity];
   if (existing != null) {
     PerformanceMetrics.instance.increment(PerformanceCounter.mediaFlightJoin);
+    // This caller observes a shared flight, not its owner's disk or network
+    // provenance and not its scheduler queue.
+    trace?.setMedia(source: PerformanceCacheSource.unknown);
+    trace?.mark(PerformanceStage.sharedFlightJoined);
   }
   var demand = priority ?? currentMediaLoadPriority;
   if (scope != null && scope.priority.index < demand.index) {
@@ -1307,6 +1376,13 @@ Future<Uint8List> loadMediaWithCache(
           disk = await MediaCache.cached('source', key.sourceIdentity!,
               accountId: key.accountId, contentSha256: key.contentSha256);
         }
+        trace?.setMedia(
+            source: disk == null
+                ? (localSeed
+                    ? PerformanceCacheSource.unknown
+                    : PerformanceCacheSource.miss)
+                : PerformanceCacheSource.disk);
+        trace?.mark(PerformanceStage.cacheLoadDone);
         if (generation != _mediaGeneration) {
           throw StateError('Media cache session changed');
         }
@@ -1315,12 +1391,15 @@ Future<Uint8List> loadMediaWithCache(
         Uint8List? bytes;
         if (disk == null) {
           final lease = mediaLoadScheduler.request(taskKey, () async {
-            PerformanceMetrics.instance
-                .increment(PerformanceCounter.mediaDownload);
+            if (!localSeed) {
+              PerformanceMetrics.instance
+                  .increment(PerformanceCounter.mediaDownload);
+            }
             return decrypt();
           },
               priority: child.priority,
-              isVideo: isVideo ?? currentMediaLoadIsVideo);
+              isVideo: isVideo ?? currentMediaLoadIsVideo,
+              trace: trace);
           void promote(MediaLoadPriority priority) =>
               mediaLoadScheduler.promote(taskKey, priority);
           child.addCancelListener(lease.cancel);
@@ -1379,8 +1458,14 @@ Future<Uint8List> loadMediaWithCache(
               // 这里是最后一道内容校验：判定损坏 → 删除对象 + 失效索引 →
               // 重新解密并落盘（修复，而不是把异常抛给 UI）。
               await MediaCache._discardCorruptObject(key, file);
-              PerformanceMetrics.instance
-                  .increment(PerformanceCounter.mediaDownload);
+              trace?.setMedia(
+                  source: localSeed
+                      ? PerformanceCacheSource.unknown
+                      : PerformanceCacheSource.miss);
+              if (!localSeed) {
+                PerformanceMetrics.instance
+                    .increment(PerformanceCounter.mediaDownload);
+              }
               final fresh = await decrypt();
               verifyMediaContent(fresh, key.contentSha256);
               await MediaCache.store(key.roomId, key.eventId, fresh,
@@ -1403,7 +1488,13 @@ Future<Uint8List> loadMediaWithCache(
     };
     _mediaLoads[identity] = flight;
   }
-  final bytes = await withMediaLoadPriority(demand, () => flight.join(scope));
+  late final Uint8List bytes;
+  try {
+    bytes = await withMediaLoadPriority(demand, () => flight.join(scope));
+  } finally {
+    if (existing != null) trace?.mark(PerformanceStage.sharedFlightDone);
+  }
+  trace?.mark(PerformanceStage.cacheLoadDone);
   if (scope != null && !scope.isActive) throw MediaLoadCanceled();
   // A source flight can serve a different message: persist its reference too.
   if (existing != null && generation == _mediaGeneration) {
@@ -1438,15 +1529,18 @@ Future<Uint8List> cacheOutgoingMedia({
   required String accountId,
   required String roomId,
   required Uint8List bytes,
+  PerformanceTrace? trace,
 }) {
   final hash = sha256.convert(bytes).toString();
-  return loadMediaWithCache(
+  return _loadMediaWithCacheObserved(
       MediaCacheKey(
           accountId: accountId,
           roomId: roomId,
           eventId: 'outgoing:$hash',
           contentSha256: hash),
-      () async => bytes);
+      () async => bytes,
+      trace: trace,
+      localSeed: true);
 }
 
 /// Video source flights share the same 32 MiB encoded-byte budget as images.

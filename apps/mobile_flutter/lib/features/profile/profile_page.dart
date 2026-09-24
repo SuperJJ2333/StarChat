@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/services.dart';
 
+import '../../core/performance_trace.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_gradient_divider.dart';
@@ -34,12 +35,14 @@ final class ProfileExperiencePage extends StatefulWidget {
     this.supportIdentities,
     this.matrixUserId,
     this.momentInteractionUnreadCount = 0,
+    this.performanceTrace,
   });
 
   final SupportIdentityRepository? supportIdentities;
   final String? matrixUserId;
   final int momentInteractionUnreadCount;
   final ProfileController controller;
+  final PerformanceTrace? performanceTrace;
   final VoidCallback onMoments;
   final VoidCallback onCaibi;
   final VoidCallback onWallet;
@@ -60,21 +63,57 @@ final class ProfileExperiencePage extends StatefulWidget {
 }
 
 final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.profileLoad);
+  bool _firstFrameRendered = false;
+  bool _contentReady = false;
+  bool _initialLoadFailed = false;
+
+  void _finishInitialLoad() {
+    if (!_firstFrameRendered || (!_contentReady && !_initialLoadFailed)) return;
+    _performanceTrace.finish(
+      result: _initialLoadFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
+  void _observeProfile() {
+    if (widget.controller.state.profile != null) {
+      _contentReady = true;
+      _performanceTrace.mark(PerformanceStage.contentReady);
+    } else if (widget.controller.state.status == ProfileStatus.failed) {
+      _initialLoadFailed = true;
+    }
+    _finishInitialLoad();
+  }
+
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
     widget.controller.addListener(_change);
-    widget.controller.load();
+    _observeProfile();
+    unawaited(_performanceTrace.runChildOperations(widget.controller.load));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _firstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialLoad();
+    });
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_change);
+    _performanceTrace.dispose();
     super.dispose();
   }
 
   void _change() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    _observeProfile();
+    setState(() {});
   }
 
   void _openDetails() => Navigator.of(context, rootNavigator: true).push(

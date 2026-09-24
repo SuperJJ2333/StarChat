@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/search/global_search_controller.dart';
 import 'package:liuhetong_mobile/features/search/global_search_index.dart';
 import 'package:liuhetong_mobile/features/search/global_search_models.dart';
@@ -150,6 +151,27 @@ void main() {
   });
 
   group('GlobalSearchController', () {
+    test('first local index query marks actual search and coarse hit count',
+        () async {
+      final recorder = PerformanceTraceRecorder(enabled: () => true);
+      final trace = recorder.start(PerformanceOperationType.search);
+      final controller = GlobalSearchController(
+        loadContacts: () async => const [],
+        loadRooms: () async => const [],
+        index: _indexWith({
+          '!group:test': [_record(r'$one', 'needle payload')],
+        }),
+        searchTrace: () => trace,
+      );
+      controller.setQuery('needle');
+      await controller.refresh();
+      final record = trace.finish();
+      expect(record.stagesUs, contains(PerformanceStage.localSearchStarted));
+      expect(record.stagesUs, contains(PerformanceStage.localSearchDone));
+      expect(record.resultCountBucket, PerformanceRowCountBucket.oneToTwenty);
+      expect(record.toJson().toString(), isNot(contains('needle payload')));
+      controller.dispose();
+    });
     GlobalSearchController build(GlobalSearchIndex index,
             {Duration debounce = const Duration(milliseconds: 250),
             int sectionLimit = 3,

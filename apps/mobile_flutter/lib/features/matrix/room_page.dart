@@ -12,6 +12,7 @@ import 'nudge_rate_limiter.dart';
 // 自 matrix_home_page.dart 拆分（巨石文件治理）。
 import 'dart:async';
 import 'dart:io';
+import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
 
 import 'room_draft_store.dart';
 import 'media_load_scheduler.dart';
@@ -29,6 +30,7 @@ import '../../core/permissions/blocked_contacts.dart';
 import '../../core/support_identity_repository.dart';
 import '../../ui/chat/flash_photo.dart';
 import '../../core/performance_metrics.dart';
+import '../../core/performance_trace.dart';
 import '../../core/chat_payment_intent.dart';
 import 'chat_payment_flow.dart';
 import '../contacts/contact_models.dart';
@@ -170,6 +172,10 @@ class RoomPage extends StatefulWidget {
     super.key,
     this.voiceTranscriber,
     required this.api,
+    this.performanceTrace,
+    this.onPerformanceContentReady,
+    this.remoteSyncStatus,
+    this.remoteSyncAlreadyReady = false,
     required this.roomName,
     required this.roomLease,
     this.mediaSenderFactory,
@@ -194,6 +200,10 @@ class RoomPage extends StatefulWidget {
   });
 
   final BusinessApiClient api;
+  final PerformanceTrace? performanceTrace;
+  final VoidCallback? onPerformanceContentReady;
+  final Stream<SyncStatusUpdate>? remoteSyncStatus;
+  final bool remoteSyncAlreadyReady;
   final String roomName;
   final MatrixRoomLease roomLease;
   final RoomPickedMediaSender Function(MatrixEncryptedMediaGateway gateway)?
@@ -301,7 +311,95 @@ Future<void> openGroupMemberProfile(
   }
 }
 
+/// The first observed sync cycle may start before this route subscribes.
+/// Keep partial timings honest and never join phases across an error/retry.
+enum _ConversationSyncPhase { unseen, waiting, processing, cleaning, invalid }
+
 class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
+  StreamSubscription<SyncStatusUpdate>? _performanceSyncSubscription;
+  Timer? _performanceSyncDeadline;
+  bool _performanceLocalReady = false;
+  bool _performanceRemoteSeen = false;
+  bool _performanceFirstFrameSeen = false;
+  _ConversationSyncPhase _performanceSyncPhase = _ConversationSyncPhase.unseen;
+
+  void _observePerformanceSyncPhase(SyncStatus status) {
+    final trace = widget.performanceTrace;
+    if (trace == null ||
+        !trace.isRecording ||
+        _performanceRemoteSeen ||
+        _performanceSyncPhase == _ConversationSyncPhase.invalid) {
+      return;
+    }
+    switch (status) {
+      case SyncStatus.waitingForResponse:
+        if (_performanceSyncPhase == _ConversationSyncPhase.unseen) {
+          trace.mark(PerformanceStage.syncResponseWaitStarted);
+          _performanceSyncPhase = _ConversationSyncPhase.waiting;
+        } else if (_performanceSyncPhase != _ConversationSyncPhase.waiting) {
+          _performanceSyncPhase = _ConversationSyncPhase.invalid;
+        }
+      case SyncStatus.processing:
+        if (_performanceSyncPhase == _ConversationSyncPhase.unseen ||
+            _performanceSyncPhase == _ConversationSyncPhase.waiting) {
+          trace.mark(PerformanceStage.syncResponseReceived);
+          _performanceSyncPhase = _ConversationSyncPhase.processing;
+        } else if (_performanceSyncPhase != _ConversationSyncPhase.processing) {
+          _performanceSyncPhase = _ConversationSyncPhase.invalid;
+        }
+      case SyncStatus.cleaningUp:
+        if (_performanceSyncPhase == _ConversationSyncPhase.processing) {
+          trace.mark(PerformanceStage.syncProcessingDone);
+          _performanceSyncPhase = _ConversationSyncPhase.cleaning;
+        } else if (_performanceSyncPhase != _ConversationSyncPhase.cleaning) {
+          _performanceSyncPhase = _ConversationSyncPhase.invalid;
+        }
+      case SyncStatus.finished:
+        if (_performanceSyncPhase == _ConversationSyncPhase.cleaning) {
+          trace.mark(PerformanceStage.syncCleanupDone);
+        }
+      case SyncStatus.error:
+        if (_performanceSyncPhase != _ConversationSyncPhase.unseen) {
+          _performanceSyncPhase = _ConversationSyncPhase.invalid;
+        }
+    }
+  }
+
+  void _completeConversationOpenIfReady() {
+    final trace = widget.performanceTrace;
+    if (trace == null ||
+        trace.isFinished ||
+        !_performanceLocalReady ||
+        !_performanceFirstFrameSeen) {
+      return;
+    }
+    if (_performanceRemoteSeen || widget.remoteSyncStatus == null) {
+      trace.finish();
+      _performanceSyncDeadline?.cancel();
+      unawaited(_performanceSyncSubscription?.cancel());
+    }
+  }
+
+  void _markLocalTimelineReady() {
+    _performanceLocalReady = true;
+    widget.onPerformanceContentReady?.call();
+    final trace = widget.performanceTrace;
+    if (trace == null || trace.isFinished) return;
+    trace.mark(PerformanceStage.localTimelineReady);
+    trace.mark(PerformanceStage.contentReady);
+    if (_performanceRemoteSeen || widget.remoteSyncStatus == null) {
+      _completeConversationOpenIfReady();
+    } else {
+      _performanceSyncDeadline =
+          Timer(PerformanceThresholds.remoteSyncObservationWindow, () {
+        if (!trace.isFinished) {
+          trace.finish(result: PerformanceResult.waitingNetwork);
+        }
+        unawaited(_performanceSyncSubscription?.cancel());
+      });
+    }
+  }
+
   bool _paymentEntryBusy = false;
 
   Future<ChatPaymentIntent?> _preparePayment() async {
@@ -421,6 +519,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     } else {
       _syncReadReceiptWhileViewing();
       if (_readReceiptDirty) _scheduleReadReceipt(Duration.zero);
+      if (_performanceLocalReady) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+            widget.onPerformanceContentReady?.call();
+          }
+        });
+      }
     }
   }
 
@@ -793,6 +898,34 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _performanceRemoteSeen = widget.remoteSyncAlreadyReady;
+    if (_performanceRemoteSeen) {
+      widget.performanceTrace?.mark(PerformanceStage.remoteSyncReady);
+      widget.performanceTrace
+          ?.setNetwork(matrixConnection: PerformanceMatrixState.connected);
+    }
+    if (!_performanceRemoteSeen) {
+      _performanceSyncSubscription = widget.remoteSyncStatus?.listen((update) {
+        _observePerformanceSyncPhase(update.status);
+        if (update.status == SyncStatus.finished) {
+          _performanceRemoteSeen = true;
+          widget.performanceTrace?.mark(PerformanceStage.remoteSyncReady);
+          widget.performanceTrace
+              ?.setNetwork(matrixConnection: PerformanceMatrixState.connected);
+          _completeConversationOpenIfReady();
+        } else if (update.status == SyncStatus.error) {
+          widget.performanceTrace?.setNetwork(
+              matrixConnection: PerformanceMatrixState.disconnected);
+        }
+      });
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _performanceFirstFrameSeen = true;
+        widget.performanceTrace?.mark(PerformanceStage.firstFrameRendered);
+        _completeConversationOpenIfReady();
+      }
+    });
     MessageTextSelectionSession.dismissActive();
     callAudioActivity.addListener(_handleCallAudioActivity);
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
@@ -1081,6 +1214,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     try {
+      widget.performanceTrace?.mark(PerformanceStage.timelineLocalStarted);
       final accountId = roomInfo.currentUserId;
       if (accountId == null) throw StateError('Matrix 账号尚未登录');
       hiddenEvents = SharedPreferencesLocalHiddenEvents(
@@ -1146,6 +1280,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await controller!.refresh();
       await _ingestMentions();
       if (!mounted) return;
+      _markLocalTimelineReady();
       _mentionVisibilityTimer = Timer.periodic(
         const Duration(milliseconds: 100),
         (_) {
@@ -1159,6 +1294,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
       WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
     } catch (_) {
+      widget.performanceTrace?.finish(result: PerformanceResult.failed);
       if (mounted) {
         setState(() {
           errorMessage = '会话加载失败，请检查网络后重试';
@@ -1750,6 +1886,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final timeline = controller;
     if (timeline == null) return;
     final service = MediaMessageService(matrix, isGroup: isGroup);
+    PerformanceTrace? videoTrace;
     try {
       final file = await service.pickFileForSend();
       if (file == null ||
@@ -1758,11 +1895,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           !identical(widget.roomLease, matrix)) {
         return;
       }
-      await service.validateSelectedFile(file);
       final mime =
           file.mimeType == null || file.mimeType == 'application/octet-stream'
               ? mimeFromFileName(file.name)
               : file.mimeType!;
+      if (mime.startsWith('video/') &&
+          PerformanceTraceRecorder.instance.recordingEnabled) {
+        videoTrace = PerformanceTrace.start(
+            operation: PerformanceOperationType.videoPrepare)
+          ..mark(PerformanceStage.videoSelected);
+      }
+      await service.validateSelectedFile(file);
       if (mime.startsWith('video/')) {
         await matrix.enqueueVideoFile(
           jobId: 'file-video-${DateTime.now().microsecondsSinceEpoch}',
@@ -1772,6 +1915,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             filename: file.name,
             body: '[视频消息]',
             deleteSourceWhenDone: false,
+            performanceTrace: videoTrace,
           ),
           targetRoomIds: [targetRoomId],
         );
@@ -1792,8 +1936,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ),
       );
     } on GroupVideoTooLargeException catch (error) {
+      videoTrace?.finish(result: PerformanceResult.rejected);
       if (mounted) _showMediaMessage(error.toString());
     } catch (_) {
+      videoTrace?.finish(result: PerformanceResult.failed);
       if (mounted) _showMediaMessage('文件选择失败，请重试');
     } finally {
       await service.dispose();
@@ -2166,6 +2312,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     for (final photo in result.photos) {
       final videoSource = photo.localVideoFile;
       if (photo.isVideo && videoSource != null) {
+        final videoTrace = PerformanceTraceRecorder.instance.recordingEnabled
+            ? (PerformanceTrace.start(
+                operation: PerformanceOperationType.videoPrepare)
+              ..mark(PerformanceStage.videoSelected))
+            : null;
         final jobId =
             'gallery-video-${DateTime.now().microsecondsSinceEpoch}-${galleryVideos.length}';
         // 登记本机产物：发送后点开优先本地回读——弱网下大视频回下载
@@ -2182,6 +2333,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             filename: 'video.mp4',
             body: '[视频消息]',
             deleteSourceWhenDone: false,
+            performanceTrace: videoTrace,
           ),
           targetRoomIds: [targetRoomId],
         ));
@@ -2337,6 +2489,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     setState(() => _capturingVideo = true);
     String? capturePath;
     var admitted = false;
+    PerformanceTrace? videoTrace;
     try {
       capturePath = await service.captureVideoToFile();
       if (capturePath == null ||
@@ -2347,6 +2500,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       _dismissComposerExtensions();
       final capture = File(capturePath);
+      if (PerformanceTraceRecorder.instance.recordingEnabled) {
+        videoTrace = PerformanceTrace.start(
+            operation: PerformanceOperationType.videoPrepare)
+          ..mark(PerformanceStage.videoSelected);
+      }
       await matrix.enqueueVideoFile(
         jobId: 'capture-video-${DateTime.now().microsecondsSinceEpoch}',
         video: MatrixOutgoingVideoFile(
@@ -2355,6 +2513,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           filename: capture.uri.pathSegments.last,
           body: '[视频消息]',
           deleteSourceWhenDone: true,
+          performanceTrace: videoTrace,
         ),
         targetRoomIds: [targetRoomId],
       );
@@ -2366,12 +2525,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         _showMediaMessage('正在发送');
       }
     } on GroupVideoTooLargeException catch (error) {
+      videoTrace?.finish(result: PerformanceResult.rejected);
       if (mounted && !_disposing) _showMediaMessage(error.toString());
     } on VideoCompressionException catch (error) {
+      videoTrace?.finish(result: PerformanceResult.failed);
       if (mounted && !_disposing) _showMediaMessage(error.toString());
     } catch (_) {
+      videoTrace?.finish(result: PerformanceResult.failed);
       if (mounted && !_disposing) _showMediaMessage('视频准备失败，请重试');
     } finally {
+      if (!admitted && videoTrace != null && !videoTrace.isFinished) {
+        videoTrace.finish(result: PerformanceResult.cancelled);
+      }
       // Covers navigation away while the system camera is still returning.
       try {
         if (!admitted && capturePath != null) {
@@ -4722,6 +4887,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _performanceSyncDeadline?.cancel();
+    unawaited(_performanceSyncSubscription?.cancel());
+    final openTrace = widget.performanceTrace;
+    if (openTrace != null && openTrace.isRecording) {
+      openTrace.finish(result: PerformanceResult.cancelled);
+    }
     callAudioActivity.removeListener(_handleCallAudioActivity);
     _disposing = true;
     dismissActionMenu();

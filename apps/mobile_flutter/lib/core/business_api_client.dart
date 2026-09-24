@@ -8,7 +8,9 @@ import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 import 'business_api_error.dart';
+import 'business_api_performance_client.dart';
 import 'chat_diagnostics.dart';
+import 'performance_trace.dart';
 import 'business_auth_contracts.dart';
 import '../features/profile/profile_controller.dart';
 import '../features/profile/invite_controller.dart';
@@ -69,10 +71,12 @@ final class BusinessApiClient
     required this.baseUri,
     required this.sessionStore,
     http.Client? client,
-  }) : _client = client ?? http.Client();
+    PerformanceTraceRecorder? performanceRecorder,
+  }) : _client = BusinessApiPerformanceClient(client ?? http.Client(),
+            recorder: performanceRecorder);
   final Uri baseUri;
   final SecureSessionStore sessionStore;
-  final http.Client _client;
+  final BusinessApiPerformanceClient _client;
   bool _diagnosticUploadActive = false;
 
   /// Account-scoped shared presentation cache; widgets only remove listeners.
@@ -233,11 +237,9 @@ final class BusinessApiClient
   String _pendingIdempotencyKey(String operation) =>
       _pendingIdempotencyKeys.putIfAbsent(operation, newIdempotencyKey);
   Uri _uri(String path) {
-    final url = baseUri.resolve(
+    return baseUri.resolve(
       path.startsWith('/api/v1/') ? path : '/api/v1$path',
     );
-    _lastRequestUrl = url; // 供 debug 日志记录（不含 query 密钥）
-    return url;
   }
 
   Future<Map<String, dynamic>> login({
@@ -1989,11 +1991,11 @@ final class BusinessApiClient
   /// A03：会话代数——登出递增；在途刷新的迟到结果据此失效。
   int _sessionEpoch = 0;
 
-  /// debug 模式请求观测：只记录 method/URL/HTTP 状态/错误类型，
-  /// 绝不输出 header、body、token、密码或完整邀请码。
-  void _logRequest(String method, Uri? url, Object outcome) {
+  /// Debug output uses no request path: path segments can hold room, user or
+  /// upload identifiers even when the query string is omitted.
+  void _logRequest(Object outcome) {
     if (!kDebugMode) return;
-    debugPrint('[api] $method ${url?.path ?? ''} -> $outcome');
+    debugPrint('[chatflow/network] business_request -> $outcome');
   }
 
   Future<http.Response> _authorized(
@@ -2002,73 +2004,84 @@ final class BusinessApiClient
     String? expectedWalletScope,
     String? expectedPaymentScope,
   }) async {
-    final epoch = _sessionEpoch;
-    // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
-    // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
-    final deadline = DateTime.now().add(_authorizedTotalTimeout);
-    Future<Duration> remaining() async => deadline.difference(DateTime.now());
-    final initial = await sessionStore.session();
-    if (epoch != _sessionEpoch) throw _ended;
-    void guardPayment(StoredBusinessSession? session) {
-      if (expectedPaymentScope != null &&
-          _paymentSessionScope(session) != expectedPaymentScope) {
-        throw StateError('支付会话已变化，请重新打开支付页面');
-      }
-    }
-
-    guardPayment(initial);
-    if (expectedWalletScope != null &&
-        _walletSessionScope(initial) != expectedWalletScope) {
-      throw StateError('账户已切换，请重新打开钱包');
-    }
-    final requestUrl = _lastRequestUrl;
-    http.Response response;
+    final performanceScope = _client.beginLogicalRequest();
+    Object? failure;
+    Future<http.Response> attempt(Map<String, String> headers) =>
+        performanceScope == null
+            ? operation(headers)
+            : performanceScope.run(() => operation(headers));
     try {
-      response = await operation({
-        if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}',
-      }).timeout(timeout);
-    } catch (error) {
-      _logRequest('REQUEST', requestUrl, 'ERROR:${error.runtimeType}');
-      rethrow;
-    }
-    if (response.statusCode >= 400) {
-      _logRequest('REQUEST', requestUrl, 'HTTP ${response.statusCode}');
-    }
-    await _checkReplacement(response, epoch);
-    if (response.statusCode != 401 || initial == null) {
+      final epoch = _sessionEpoch;
+      // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
+      // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
+      final deadline = DateTime.now().add(_authorizedTotalTimeout);
+      Future<Duration> remaining() async => deadline.difference(DateTime.now());
+      final initial = await sessionStore.session();
+      if (epoch != _sessionEpoch) throw _ended;
+      void guardPayment(StoredBusinessSession? session) {
+        if (expectedPaymentScope != null &&
+            _paymentSessionScope(session) != expectedPaymentScope) {
+          throw StateError('支付会话已变化，请重新打开支付页面');
+        }
+      }
+
+      guardPayment(initial);
+      if (expectedWalletScope != null &&
+          _walletSessionScope(initial) != expectedWalletScope) {
+        throw StateError('账户已切换，请重新打开钱包');
+      }
+      http.Response response;
+      try {
+        response = await attempt({
+          if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}',
+        }).timeout(timeout);
+      } catch (error) {
+        _logRequest('ERROR:${error.runtimeType}');
+        rethrow;
+      }
+      if (response.statusCode >= 400) {
+        _logRequest('HTTP ${response.statusCode}');
+      }
+      await _checkReplacement(response, epoch);
+      if (response.statusCode != 401 || initial == null) {
+        if (expectedPaymentScope != null) {
+          guardPayment(await sessionStore.session());
+        }
+        return response;
+      }
+      final refreshBudget = await remaining();
+      if (refreshBudget <= Duration.zero) {
+        throw TimeoutException('authorized request budget exhausted');
+      }
+      // Bound this caller, not the shared refresh: its durable result must still
+      // be saved for other callers if this request's budget runs out.
+      final replacement = await refreshSession().timeout(refreshBudget);
+      if (epoch != _sessionEpoch) throw _ended;
+      guardPayment(replacement);
+      if (expectedWalletScope != null &&
+          _walletSessionScope(replacement) != expectedWalletScope) {
+        throw StateError('账户已切换，请重新打开钱包');
+      }
+      final budget = await remaining();
+      if (budget.isNegative) {
+        throw TimeoutException('authorized request budget exhausted');
+      }
+      performanceScope?.retryCount++;
+      final retried = await attempt({
+        'Authorization': 'Bearer ${replacement.accessToken}',
+      }).timeout(budget < timeout ? budget : timeout);
+      await _checkReplacement(retried, epoch);
       if (expectedPaymentScope != null) {
         guardPayment(await sessionStore.session());
       }
-      return response;
+      return retried;
+    } catch (error) {
+      failure = error;
+      rethrow;
+    } finally {
+      performanceScope?.finish(failure: failure);
     }
-    final refreshBudget = await remaining();
-    if (refreshBudget <= Duration.zero) {
-      throw TimeoutException('authorized request budget exhausted');
-    }
-    // Bound this caller, not the shared refresh: its durable result must still
-    // be saved for other callers if this request's budget runs out.
-    final replacement = await refreshSession().timeout(refreshBudget);
-    if (epoch != _sessionEpoch) throw _ended;
-    guardPayment(replacement);
-    if (expectedWalletScope != null &&
-        _walletSessionScope(replacement) != expectedWalletScope) {
-      throw StateError('账户已切换，请重新打开钱包');
-    }
-    final budget = await remaining();
-    if (budget.isNegative) {
-      throw TimeoutException('authorized request budget exhausted');
-    }
-    final retried = await operation({
-      'Authorization': 'Bearer ${replacement.accessToken}',
-    }).timeout(budget < timeout ? budget : timeout);
-    await _checkReplacement(retried, epoch);
-    if (expectedPaymentScope != null) {
-      guardPayment(await sessionStore.session());
-    }
-    return retried;
   }
-
-  Uri? _lastRequestUrl;
 
   Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic>? body;

@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.api.maintenance import media_maintenance_dependency
 from app.modules.media.domain import (
     BusinessType,
     DigestKind,
@@ -117,24 +118,7 @@ def create_media_platform_router(
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
         return tokens.decode_access_token(authorization[7:])
 
-    def require_maintenance(
-        token: Annotated[str | None, Header(alias="X-Media-Maintenance-Token")] = None,
-    ) -> None:
-        expected = settings.media_maintenance_token
-        if expected:
-            if token != expected:
-                raise AppError(
-                    code="MEDIA_MAINTENANCE_FORBIDDEN",
-                    message="维护接口不可用",
-                    status_code=403,
-                )
-            return
-        if settings.environment == "production":
-            raise AppError(
-                code="MEDIA_MAINTENANCE_UNAVAILABLE",
-                message="维护接口未配置",
-                status_code=503,
-            )
+    require_maintenance = media_maintenance_dependency(settings)
 
     # ------------------------------------------------------------------ #
     # Upload engine (interface: session lifecycle works, transfer is reserved)

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/performance_trace.dart';
 import 'call_alerts.dart';
 import 'call_audio_route_coordinator.dart';
 import 'call_diagnostics.dart';
@@ -41,7 +42,13 @@ enum CallPhase {
   failed,
 }
 
-enum CallBackendEventKind { incoming, connected, ended, networkInterrupted }
+enum CallBackendEventKind {
+  incoming,
+  signalingReady,
+  connected,
+  ended,
+  networkInterrupted,
+}
 
 /// 通话对方身份的统一呈现模型（Task L）。
 ///
@@ -146,6 +153,12 @@ final class VerifiedCallTarget {
 }
 
 final class CallBackendEvent {
+  const CallBackendEvent.signalingReady()
+      : kind = CallBackendEventKind.signalingReady,
+        roomId = null,
+        matrixUserId = null,
+        type = null,
+        identity = null;
   const CallBackendEvent.connected()
       : kind = CallBackendEventKind.connected,
         roomId = null,
@@ -274,6 +287,7 @@ final class CallController extends ChangeNotifier {
     CallSoundCues? soundCues,
     CallDiagnostics? diagnostics,
     CallAudioRouteCoordinator? audioRoute,
+    PerformanceTraceRecorder? performanceRecorder,
     this.ringTimeout = callRingTimeout,
     this.connectTimeout = callConnectTimeout,
     DateTime Function()? now,
@@ -282,6 +296,8 @@ final class CallController extends ChangeNotifier {
         diagnostics = diagnostics ?? CallDiagnostics(),
         audioRoute =
             audioRoute ?? CallAudioRouteCoordinator(apply: backend.setSpeaker),
+        _performanceRecorder =
+            performanceRecorder ?? PerformanceTraceRecorder.instance,
         _now = now ?? DateTime.now {
     _events = backend.callEvents.listen(_handleEvent);
   }
@@ -304,6 +320,8 @@ final class CallController extends ChangeNotifier {
 
   /// **唯一**音频路由所有者（Task I）：任何 speaker/earpiece 决策只经此组件。
   final CallAudioRouteCoordinator audioRoute;
+  final PerformanceTraceRecorder _performanceRecorder;
+  PerformanceTrace? _callSetupTrace;
 
   /// 主叫等待超时：到点未接通自动挂断并提示。
   final Duration ringTimeout;
@@ -322,12 +340,27 @@ final class CallController extends ChangeNotifier {
   bool _isCurrent(int generation) =>
       !_disposed && generation == _callGeneration;
 
+  void _beginCallSetup() {
+    _finishCallSetup(PerformanceResult.cancelled);
+    if (!_performanceRecorder.recordingEnabled) return;
+    _callSetupTrace = _performanceRecorder
+        .start(PerformanceOperationType.callSetup)
+      ..mark(PerformanceStage.callStart);
+  }
+
+  void _finishCallSetup(PerformanceResult result) {
+    final trace = _callSetupTrace;
+    _callSetupTrace = null;
+    trace?.finish(result: result);
+  }
+
   Future<void> start({
     required String roomId,
     required String matrixUserId,
     required CallMediaType type,
   }) async {
     if (_disposed) return;
+    _beginCallSetup();
     final generation = ++_callGeneration;
     _ringTimeoutTimer?.cancel();
     _connectTimeoutTimer?.cancel();
@@ -342,7 +375,13 @@ final class CallController extends ChangeNotifier {
     ));
     diagnostics.mark(CallDiagStage.outgoingStart);
     // Task F：唯一一次安全验证，结果直接交给 startVerified 复用。
-    final target = await backend.verifyStartTarget(roomId, matrixUserId);
+    VerifiedCallTarget? target;
+    try {
+      target = await backend.verifyStartTarget(roomId, matrixUserId);
+    } catch (_) {
+      if (_isCurrent(generation)) _finishCallSetup(PerformanceResult.failed);
+      rethrow;
+    }
     if (!_isCurrent(generation)) return;
     diagnostics.mark(CallDiagStage.securityValidated);
     if (target == null) {
@@ -350,8 +389,13 @@ final class CallController extends ChangeNotifier {
           state.copyWith(phase: CallPhase.failed, message: '只能在已验证的加密双人会话中通话'));
       throw StateError('Call room is not an encrypted direct room');
     }
-    final allowed =
-        await permissions.request(video: type == CallMediaType.video);
+    bool allowed;
+    try {
+      allowed = await permissions.request(video: type == CallMediaType.video);
+    } catch (_) {
+      if (_isCurrent(generation)) _finishCallSetup(PerformanceResult.failed);
+      rethrow;
+    }
     if (!_isCurrent(generation)) return;
     if (!allowed) {
       _set(state.copyWith(
@@ -413,6 +457,7 @@ final class CallController extends ChangeNotifier {
     }
     final generation = _callGeneration;
     final type = state.type ?? CallMediaType.audio;
+    _beginCallSetup();
     diagnostics.mark(CallDiagStage.answerTapped);
     _set(state.copyWith(
         phase: CallPhase.requestingPermission, clearMessage: true));
@@ -423,6 +468,7 @@ final class CallController extends ChangeNotifier {
           await permissions.request(video: type == CallMediaType.video);
       if (!_isCurrent(generation)) return;
       if (!allowed) {
+        _finishCallSetup(PerformanceResult.rejected);
         _set(state.copyWith(
             phase: CallPhase.ringing,
             message:
@@ -559,7 +605,7 @@ final class CallController extends ChangeNotifier {
           // 后端未真正改变媒体状态：继续重试只会死循环。
           // 保持真实媒体状态（不欺骗 UI），并留诊断。
           assert(() {
-            debugPrint('[chatflow/calldiag] mute backend did not change state '
+            debugPrint('[chatflow/call] mute backend did not change state '
                 'for desired=$desired');
             return true;
           }());
@@ -595,6 +641,7 @@ final class CallController extends ChangeNotifier {
     if (_disposed) return;
     switch (event.kind) {
       case CallBackendEventKind.incoming:
+        _finishCallSetup(PerformanceResult.cancelled);
         _callGeneration++;
         _incomingRinging = true;
         _muteDesired = false; // 新通话：静音意图以新会话的真实状态为起点
@@ -607,6 +654,12 @@ final class CallController extends ChangeNotifier {
           type: event.type,
           identity: event.identity,
         ));
+      case CallBackendEventKind.signalingReady:
+        if (state.phase != CallPhase.ended &&
+            state.phase != CallPhase.failed &&
+            state.phase != CallPhase.permissionDenied) {
+          _callSetupTrace?.mark(PerformanceStage.signalingReady);
+        }
       case CallBackendEventKind.connected:
         if (state.phase == CallPhase.ended ||
             state.phase == CallPhase.failed ||
@@ -616,6 +669,7 @@ final class CallController extends ChangeNotifier {
         final generation = _callGeneration;
         _incomingRinging = false;
         diagnostics.mark(CallDiagStage.iceConnected);
+        _callSetupTrace?.mark(PerformanceStage.iceConnected);
         // 接通即停铃；视频通话默认打开免提（微信语义），语音保持听筒。
         alerts.stop();
         _ringTimeoutTimer?.cancel();
@@ -626,6 +680,8 @@ final class CallController extends ChangeNotifier {
           phase: CallPhase.connected,
           connectedAt: _now(),
         ));
+        _callSetupTrace?.mark(PerformanceStage.callConnected);
+        _finishCallSetup(PerformanceResult.success);
         // 唯一路由所有者按产品语义应用默认；用户显式选择优先。
         try {
           await audioRoute.preferForConnected(type);
@@ -643,6 +699,7 @@ final class CallController extends ChangeNotifier {
         }
         _set(state.copyWith(phase: CallPhase.ended, message: '通话已结束'));
       case CallBackendEventKind.networkInterrupted:
+        _finishCallSetup(PerformanceResult.failed);
         _set(state.copyWith(phase: CallPhase.ended, message: '网络中断，通话已结束'));
     }
   }
@@ -652,6 +709,11 @@ final class CallController extends ChangeNotifier {
     if (next.phase == CallPhase.ended ||
         next.phase == CallPhase.failed ||
         next.phase == CallPhase.permissionDenied) {
+      _finishCallSetup(switch (next.phase) {
+        CallPhase.failed => PerformanceResult.failed,
+        CallPhase.permissionDenied => PerformanceResult.rejected,
+        _ => PerformanceResult.cancelled,
+      });
       _callGeneration++;
       _ringTimeoutTimer?.cancel();
       _connectTimeoutTimer?.cancel();
@@ -679,6 +741,8 @@ final class CallController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _callSetupTrace?.dispose();
+    _callSetupTrace = null;
     _callGeneration++;
     _ringTimeoutTimer?.cancel();
     _connectTimeoutTimer?.cancel();

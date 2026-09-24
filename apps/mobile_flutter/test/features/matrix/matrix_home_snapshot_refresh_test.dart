@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
@@ -50,6 +52,43 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 40));
     expect(loads, beforePop + 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('chat list separates first frame from local snapshot readiness',
+      (tester) async {
+    final held = Completer<MatrixConversationSnapshot>();
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.chatListLoad);
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    await tester.pumpWidget(_home(
+      matrix: matrix,
+      snapshotLoader: () => held.future,
+      performanceTrace: trace,
+    ));
+    await tester.pump();
+    expect(records, isEmpty);
+
+    held.complete(_snapshot('ready'));
+    await tester.pumpAndSettle();
+    expect(records, hasLength(1));
+    expect(
+        records.single.stagesUs.keys,
+        containsAll([
+          PerformanceStage.routeEnter,
+          PerformanceStage.firstFrameRendered,
+          PerformanceStage.cacheLoadStarted,
+          PerformanceStage.cacheLoadDone,
+          PerformanceStage.contentReady,
+        ]));
+    expect(
+        records.single.stagesUs[PerformanceStage.contentReady],
+        greaterThanOrEqualTo(
+            records.single.stagesUs[PerformanceStage.firstFrameRendered]!));
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -382,6 +421,7 @@ Widget _home({
   bool previewOnly = true,
   ProfileRepository? identityCache,
   BusinessApiClient? api,
+  PerformanceTrace? performanceTrace,
 }) {
   // These tests isolate snapshot scheduling; disk hydration is covered by
   // cold_start_identity_test with an actual persisted profile fixture.
@@ -396,6 +436,7 @@ Widget _home({
     previewOnly: previewOnly,
     identityCache: identities,
     snapshotLoader: snapshotLoader,
+    performanceTrace: performanceTrace,
   ));
 }
 

@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/finance/wallet_entry_snapshot_store.dart';
 import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
@@ -21,23 +23,96 @@ void main() {
     WalletEntryStores.disposeAll();
   });
 
-  testWidgets('有缓存：进入立即渲染缓存；后台刷新失败不弹错、不清空', (tester) async {
+  testWidgets('wallet entry API requests share the page operation ID',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final pageTrace = recorder.start(PerformanceOperationType.walletLoad);
     final api = await flow.client(
-        (request) async => flow.json(request.url.path.endsWith('/binding')
-            ? fixtures.binding
-            : {}));
+      (request) async => flow
+          .json(request.url.path.endsWith('/binding') ? fixtures.binding : {}),
+      performanceRecorder: recorder,
+    );
+
+    await tester.pumpWidget(CupertinoApp(
+        home: ManualWalletPage(client: api, performanceTrace: pageTrace)));
+    await tester.pumpAndSettle();
+
+    expect(
+        records.any((record) =>
+            record.operation == PerformanceOperationType.apiRequest &&
+            record.endpointCategory == PerformanceEndpointCategory.finance &&
+            record.operationId == pageTrace.operationId),
+        isTrue);
+
+    final refresh = find.byKey(const Key('manual-refresh'));
+    await tester.ensureVisible(refresh);
+    await tester.tap(refresh);
+    await tester.pumpAndSettle();
+    final refreshRecords = records
+        .where((record) =>
+            record.operation == PerformanceOperationType.walletLoad &&
+            record.operationId != pageTrace.operationId)
+        .toList();
+    expect(refreshRecords, isNotEmpty);
+    expect(
+        records.any((record) =>
+            record.operation == PerformanceOperationType.apiRequest &&
+            record.endpointCategory == PerformanceEndpointCategory.finance &&
+            record.operationId == refreshRecords.last.operationId),
+        isTrue);
+  });
+
+  testWidgets('有缓存：进入立即渲染缓存；后台刷新失败不弹错、不清空', (tester) async {
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.walletLoad);
+    final api = await flow.client((request) async => flow
+        .json(request.url.path.endsWith('/binding') ? fixtures.binding : {}));
+    var now = DateTime(2026, 9, 25);
     final gateway = _ScriptedGateway(epoch: api.sessionEpoch)
       ..results.add(_snapshot('88.88'));
     final shared = WalletEntryStores.of(
-        scope: await api.walletIntentScope(), gateway: gateway);
+        scope: await api.walletIntentScope(), gateway: gateway, now: () => now);
     await shared.enter(); // 首次成功：缓存落地
     expect(shared.state.phase, WalletLoadPhase.success);
 
     // 之后每次刷新都失败（弱网）：必须保留缓存。
+    now = now.add(const Duration(seconds: 31));
     gateway.failure = StateError('offline');
-    await tester.pumpWidget(
-        CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(
+        home: ManualWalletPage(client: api, performanceTrace: trace)));
     await tester.pumpAndSettle();
+
+    final pageRecord = records.singleWhere(
+      (record) => record.operationId == trace.operationId,
+    );
+    final refreshRecord = records.singleWhere(
+      (record) => record.operationId != trace.operationId,
+    );
+    expect(
+        pageRecord.stagesUs.keys,
+        containsAll([
+          PerformanceStage.routeEnter,
+          PerformanceStage.firstFrameRendered,
+          PerformanceStage.cacheLoadDone,
+          PerformanceStage.contentReady,
+        ]));
+    expect(
+        refreshRecord.stagesUs.keys,
+        containsAll([
+          PerformanceStage.remoteRefreshStarted,
+          PerformanceStage.remoteRefreshDone,
+        ]));
+    expect(pageRecord.stagesUs[PerformanceStage.firstFrameRendered],
+        lessThanOrEqualTo(pageRecord.stagesUs[PerformanceStage.contentReady]!));
+    expect(
+        refreshRecord.stagesUs[PerformanceStage.remoteRefreshStarted],
+        lessThanOrEqualTo(
+            refreshRecord.stagesUs[PerformanceStage.remoteRefreshDone]!));
 
     // 缓存数据渲染出来了（余额不是 '—'）。
     expect(find.textContaining('88.88'), findsOneWidget);
@@ -50,17 +125,14 @@ void main() {
   });
 
   testWidgets('无缓存：首次加载失败必须显示错误（可见、不静默）', (tester) async {
-    final api = await flow.client(
-        (request) async => flow.json(request.url.path.endsWith('/binding')
-            ? fixtures.binding
-            : {}));
+    final api = await flow.client((request) async => flow
+        .json(request.url.path.endsWith('/binding') ? fixtures.binding : {}));
     final gateway = _ScriptedGateway(epoch: api.sessionEpoch)
       ..failure = StateError('offline');
     final shared = WalletEntryStores.of(
         scope: await api.walletIntentScope(), gateway: gateway);
 
-    await tester.pumpWidget(
-        CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
 
     expect(shared.state.fatalError, isTrue);
@@ -104,12 +176,12 @@ void main() {
     // 入口仍可用：断网下点「充值」必须真的进入充值页（步骤指示器出现）。
     await tester.tap(find.text('充值'));
     await tester.pumpAndSettle();
-    expect(find.text('填写金额'), findsWidgets,
-        reason: '有本地快照时充值入口不得因为一次网络失败被禁用');
+    expect(find.text('填写金额'), findsWidgets, reason: '有本地快照时充值入口不得因为一次网络失败被禁用');
   });
 }
 
-Map<String, dynamic> _snapshot(String balance) => {      'config': const {
+Map<String, dynamic> _snapshot(String balance) => {
+      'config': const {
         'funding_enabled': true,
         'manual_payout_enabled': true,
         'manual_payout_execution_enabled': true,

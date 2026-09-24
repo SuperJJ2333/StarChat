@@ -47,16 +47,180 @@ class DiagnosticFrames(BaseModel):
         return self
 
 
+# Literal values mirror PerformanceWireName in performance_trace_model.dart.
+# Keep this allowlist static at runtime; never accept arbitrary client labels.
+OperationWire = Literal[
+    'app_startup', 'app_resume', 'conversation_open', 'message_send',
+    'matrix_sync', 'media_load', 'recent_pictures_load', 'video_prepare', 'video_poster',
+    'search', 'search_page_open', 'contacts_load', 'moments_load',
+    'wallet_load', 'api_request', 'call_setup', 'call_active',
+    'profile_load', 'chat_list_load',
+]
+
+PerformanceStageWire = Literal[
+    'user_action', 'identity_lookup_done', 'local_room_lookup_done', 'route_enter', 'route_push_started',
+    'first_frame_rendered', 'room_attach_started', 'room_attach_done', 'timeline_local_started', 'local_timeline_ready', 'remote_sync_ready', 'content_ready',
+    'cache_load_started', 'cache_load_done', 'remote_refresh_started', 'remote_refresh_done', 'composer_submit',
+    'outbox_persist', 'send_admission', 'matrix_send_start', 'matrix_send_finish', 'ack',
+    'timeline_visible', 'sync_response_wait_started', 'sync_response_received', 'sync_processing_done', 'sync_cleanup_done', 'queue_entered',
+    'queue_exited', 'shared_flight_joined', 'shared_flight_done', 'download_started', 'download_done', 'decrypt_started', 'decrypt_done',
+    'decode_started', 'decode_done', 'video_selected', 'video_validated', 'video_prepare_started',
+    'video_prepare_done', 'video_transcode_started', 'video_transcode_done', 'video_thumbnail_done', 'video_encrypted',
+    'video_upload_started', 'video_upload_done', 'video_event_sent', 'call_start', 'signaling_ready',
+    'ice_gathering', 'ice_connected', 'media_first_packet', 'call_connected', 'matrix_connected',
+    'sync_finished', 'conversation_ready', 'local_search_started',
+    'local_search_done', 'database_search_started', 'database_search_done', 'remote_search_started', 'remote_search_done',
+    'render_results', 'request_finished',
+]
+
+PerformanceResultWire = Literal[
+    'success', 'slow', 'waiting_network', 'rejected', 'failed',
+    'cancelled',
+]
+
+OpeningSourceWire = Literal[
+    'local_room', 'pending_conversation',
+]
+
+PerformanceLifecycleWire = Literal[
+    'foreground', 'background', 'resuming', 'unknown',
+]
+
+AppNetworkStateWire = Literal[
+    'online', 'weak', 'offline', 'recovering', 'unknown',
+]
+
+MatrixStateWire = Literal[
+    'connected', 'connecting', 'disconnected', 'unknown',
+]
+
+NetworkErrorWire = Literal[
+    'dns_failure', 'connect_timeout', 'read_timeout', 'socket_failure', 'tls_failure',
+    'offline', 'server5xx', 'rate_limit', 'auth_failure', 'business_rejection',
+    'cancelled', 'unknown',
+]
+
+EndpointCategoryWire = Literal[
+    'auth', 'profile', 'contacts', 'friendship', 'moments',
+    'finance', 'support', 'push', 'media', 'diagnostics',
+    'other',
+]
+
+HttpMethodWire = Literal[
+    'get', 'post', 'put', 'patch', 'delete',
+    'head', 'other',
+]
+
+CacheSourceWire = Literal[
+    'memory', 'disk', 'network', 'miss', 'server_poster', 'local_frame', 'unknown',
+]
+
+MediaTypeWire = Literal[
+    'image', 'video', 'audio', 'file', 'avatar',
+    'unknown',
+]
+
+MediaPriorityWire = Literal[
+    'interactive', 'visible', 'prefetch', 'background',
+]
+
+SizeBucketWire = Literal[
+    'zero', 'tiny', 'small', 'medium', 'large',
+    'huge', 'unknown',
+]
+
+DatabaseOperationWire = Literal[
+    'timeline_local_load', 'conversation_snapshot_load', 'outbox_query',
+    'media_index_lookup', 'message_search',
+]
+
+RowCountBucketWire = Literal[
+    'zero', 'one_to_twenty', 'twenty_one_to_hundred',
+    'hundred_one_to_five_hundred', 'over_five_hundred',
+]
+
+RelayProtocolWire = Literal[
+    'udp', 'tcp', 'tls', 'unknown',
+]
+
+
+class PerformanceOperationStage(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    stage: PerformanceStageWire
+    elapsed_ms: int = Field(ge=0, le=3600000)
+
+
+class PerformanceOperation(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    operation_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
+    operation: OperationWire
+    result: PerformanceResultWire
+    total_ms: int = Field(ge=0, le=3600000)
+    stages: list[PerformanceOperationStage] = Field(max_length=64)
+    lifecycle: PerformanceLifecycleWire
+    slow_frame_count: int = Field(ge=0, le=1000000)
+    slow_build_count: int = Field(ge=0, le=1000000)
+    slow_raster_count: int = Field(ge=0, le=1000000)
+    soft_kick_count: int | None = Field(default=None, ge=0, le=1000)
+    hard_restart_count: int | None = Field(default=None, ge=0, le=1000)
+    sync_error_count: int | None = Field(default=None, ge=0, le=1000)
+    reconnect_count: int | None = Field(default=None, ge=0, le=1000)
+    last_healthy_sync_age_ms: int | None = Field(default=None, ge=0, le=3600000)
+    opening_source: OpeningSourceWire | None = None
+    app_network_state: AppNetworkStateWire | None = None
+    matrix_state: MatrixStateWire | None = None
+    transport_available: bool | None = None
+    service_reachable: bool | None = None
+    network_error: NetworkErrorWire | None = None
+    endpoint_category: EndpointCategoryWire | None = None
+    method: HttpMethodWire | None = None
+    status_code: int | None = Field(default=None, ge=100, le=599)
+    retry_count: int | None = Field(default=None, ge=0, le=20)
+    cache_source: CacheSourceWire | None = None
+    media_type: MediaTypeWire | None = None
+    size_bucket: SizeBucketWire | None = None
+    database_operation: DatabaseOperationWire | None = None
+    row_count_bucket: RowCountBucketWire | None = None
+    result_count_bucket: RowCountBucketWire | None = None
+    scheduler_queue: int | None = Field(default=None, ge=0, le=1000)
+    scheduler_active: int | None = Field(default=None, ge=0, le=1000)
+    scheduler_video_active: int | None = Field(default=None, ge=0, le=1000)
+    media_priority: MediaPriorityWire | None = None
+    rtt_ms: float | None = Field(default=None, ge=0, le=60000, allow_inf_nan=False)
+    jitter_ms: float | None = Field(default=None, ge=0, le=60000, allow_inf_nan=False)
+    packet_loss_percent: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    uses_turn: bool | None = None
+    relay_protocol: RelayProtocolWire | None = None
+    candidate_protocol: RelayProtocolWire | None = None
+
+    @model_validator(mode='after')
+    def consistent_stages_and_frames(self):
+        if not (max(self.slow_build_count, self.slow_raster_count)
+                <= self.slow_frame_count
+                <= self.slow_build_count + self.slow_raster_count):
+            raise ValueError('Inconsistent operation frame counts')
+        seen = set()
+        previous_ms = -1
+        for item in self.stages:
+            if (item.stage in seen or item.elapsed_ms < previous_ms
+                    or item.elapsed_ms > self.total_ms):
+                raise ValueError('Inconsistent operation stages')
+            seen.add(item.stage)
+            previous_ms = item.elapsed_ms
+        return self
+
+
 class DiagnosticBatch(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     version: str = Field(max_length=32, pattern=r'^\d{1,4}\.\d{1,4}\.\d{1,4}(\+\d{1,8})?$')
     platform: Literal['android', 'ios', 'other']
-    events: list[DiagnosticEvent] = Field(max_length=20)
+    events: list[DiagnosticEvent] = Field(default_factory=list, max_length=20)
     frames: DiagnosticFrames | None = None
+    operations: list[PerformanceOperation] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode='after')
     def nonempty(self):
-        if not self.events and self.frames is None:
+        if not self.events and self.frames is None and not self.operations:
             raise ValueError('Empty diagnostic batch')
         return self
 
@@ -129,6 +293,6 @@ def create_client_diagnostics_router(settings: Settings, session_factory, rate_l
         # Container stdout uses the deployment's bounded log rotation. Never
         # write credentials, account/room IDs, bodies or arbitrary exceptions.
         await run_in_threadpool(print, json.dumps(safe, ensure_ascii=True, separators=(',', ':')), flush=True)
-        return DiagnosticReceipt(accepted=len(batch.events))
+        return DiagnosticReceipt(accepted=len(batch.events) + len(batch.operations))
 
     return router

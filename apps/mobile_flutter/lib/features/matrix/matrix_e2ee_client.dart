@@ -50,6 +50,7 @@ import '../../core/network_state_manager.dart'
         networkFailureHttpStatus,
         defaultNetworkFailureClassifier;
 import '../../core/chat_diagnostics.dart';
+import '../../core/performance_trace.dart';
 import 'decryption_state_controller.dart';
 import 'emoji_vault.dart';
 import 'group_chat_controller.dart';
@@ -1884,21 +1885,35 @@ final class MatrixRoomLease
   }
 
   Future<MatrixOutgoingWorkJob> enqueueVideoFile(
-          {required String jobId,
-          required MatrixOutgoingVideoFile video,
-          required List<String> targetRoomIds}) =>
-      owner._enqueueVideoFile(
+      {required String jobId,
+      required MatrixOutgoingVideoFile video,
+      required List<String> targetRoomIds}) async {
+    try {
+      return await owner._enqueueVideoFile(
           jobId: jobId,
           video: video,
           targetRoomIds: targetRoomIds,
           session: _outgoingSessionFor(_activeRoom));
+    } catch (_) {
+      video._finishRejectedIfUnadmitted();
+      rethrow;
+    }
+  }
 
   /// Atomically accepts lightweight gallery-video handles for this lease. The
   /// owner resolves and prepares each handle later under its bounded budget.
   Future<List<MatrixOutgoingWorkJob>> enqueueVideoFiles(
-          {required List<MatrixOutgoingVideoFileRequest> requests}) =>
-      owner._enqueueVideoFiles(
+      {required List<MatrixOutgoingVideoFileRequest> requests}) async {
+    try {
+      return await owner._enqueueVideoFiles(
           requests: requests, session: _outgoingSessionFor(_activeRoom));
+    } catch (_) {
+      for (final request in requests) {
+        request.video._finishRejectedIfUnadmitted();
+      }
+      rethrow;
+    }
+  }
 
   Future<MatrixOutgoingWorkJob> enqueuePreparedMedia(
           {required String jobId,
@@ -5008,6 +5023,7 @@ final class MatrixOutgoingVideoFile {
     required this.filename,
     required this.body,
     required this.deleteSourceWhenDone,
+    this.performanceTrace,
   })  : _source = source,
         _resolveSource = resolveSource,
         _prepareMedia = null,
@@ -5021,6 +5037,7 @@ final class MatrixOutgoingVideoFile {
     required this.filename,
     required this.body,
     required this.deleteSourceWhenDone,
+    this.performanceTrace,
     required Future<MatrixOutgoingPreparedMedia> Function(File source)
         prepareMedia,
     Future<int> Function(File source)? sourceCost,
@@ -5036,6 +5053,10 @@ final class MatrixOutgoingVideoFile {
   final String filename;
   final String body;
   final bool deleteSourceWhenDone;
+
+  /// Ownership transfers to the outgoing job on admission. The trace contains
+  /// only typed stages, never [id], [filename], or the local source path.
+  final PerformanceTrace? performanceTrace;
   final Future<MatrixOutgoingPreparedMedia> Function(File source)?
       _prepareMedia;
   final Future<int> Function(File source)? _sourceCost;
@@ -5074,6 +5095,7 @@ final class MatrixOutgoingVideoFile {
     if (await source.length() <= 0) {
       throw ArgumentError.value(source, 'video.source', 'must be non-empty');
     }
+    performanceTrace?.mark(PerformanceStage.videoValidated);
     return source;
   }
 
@@ -5086,7 +5108,8 @@ final class MatrixOutgoingVideoFile {
     // same original. Terminal source release owns deletion instead.
     final prepared = await prepareLocalChatVideo(source,
         deleteSourceWhenDone: false,
-        onProgress: (progress) => _progressSink?.call(progress));
+        onProgress: (progress) => _progressSink?.call(progress),
+        performanceTrace: performanceTrace);
     final poster = prepared.poster?.lengthInBytes == null ||
             prepared.poster!.lengthInBytes > _maxOutgoingVideoPosterBytes
         ? null
@@ -5116,6 +5139,14 @@ final class MatrixOutgoingVideoFile {
     if (deleteSourceWhenDone && await source.exists()) {
       await source.delete();
     }
+  }
+
+  void _finishTrace(PerformanceResult result) {
+    performanceTrace?.finish(result: result);
+  }
+
+  void _finishRejectedIfUnadmitted() {
+    if (!_admitted) _finishTrace(PerformanceResult.rejected);
   }
 }
 
@@ -5182,16 +5213,28 @@ final class _DeferredOutgoingVideoSnapshot {
 
   final MatrixOutgoingVideoFile _video;
   _OwnedOutgoingMediaSnapshot? _owned;
+  MatrixOutgoingWorkJob? _job;
+
+  void attachJob(MatrixOutgoingWorkJob job) => _job = job;
+
+  void finishTrace(PerformanceResult result) => _video._finishTrace(result);
 
   Future<void> prepare(MatrixOutgoingWorkAttempt attempt) async {
-    attempt.ensureActive();
-    if (_owned == null) {
-      final media = await _video._prepare();
+    _video.performanceTrace?.mark(PerformanceStage.videoPrepareStarted);
+    try {
       attempt.ensureActive();
-      media._markAdmitted();
-      _owned = _OwnedOutgoingMediaSnapshot(media);
+      if (_owned == null) {
+        final media = await _video._prepare();
+        attempt.ensureActive();
+        media._markAdmitted();
+        _owned = _OwnedOutgoingMediaSnapshot(media);
+      }
+      attempt.ensureActive();
+      _video.performanceTrace?.mark(PerformanceStage.videoPrepareDone);
+    } catch (_) {
+      finishTrace(_videoTraceResultForAttempt(attempt));
+      rethrow;
     }
-    attempt.ensureActive();
   }
 
   Uint8List bytes() =>
@@ -5204,8 +5247,31 @@ final class _DeferredOutgoingVideoSnapshot {
   int? get thumbnailHeight => _owned?.thumbnailHeight;
 
   Future<void> release() async {
+    final trace = _video.performanceTrace;
+    if (trace != null && !trace.isFinished) {
+      final items = _job?.items;
+      final result = items != null &&
+              items.every((item) => item.state == MatrixOutgoingWorkState.sent)
+          ? PerformanceResult.success
+          : items != null &&
+                  items.any(
+                      (item) => item.state == MatrixOutgoingWorkState.failed)
+              ? PerformanceResult.failed
+              : PerformanceResult.cancelled;
+      trace.finish(result: result);
+    }
     await _owned?.release();
     await _video._release();
+  }
+}
+
+PerformanceResult _videoTraceResultForAttempt(
+    MatrixOutgoingWorkAttempt attempt) {
+  try {
+    attempt.ensureActive();
+    return PerformanceResult.failed;
+  } catch (_) {
+    return PerformanceResult.cancelled;
   }
 }
 
@@ -5879,21 +5945,35 @@ final class MatrixSdkE2eeClient
     required String jobId,
     required MatrixOutgoingVideoFile video,
     required List<String> targetRoomIds,
-  }) =>
-      _enqueueVideoFile(
+  }) async {
+    try {
+      return await _enqueueVideoFile(
         jobId: jobId,
         video: video,
         targetRoomIds: targetRoomIds,
         session: _captureOutgoingSession(),
       );
+    } catch (_) {
+      video._finishRejectedIfUnadmitted();
+      rethrow;
+    }
+  }
 
   Future<List<MatrixOutgoingWorkJob>> enqueueVideoFiles({
     required List<MatrixOutgoingVideoFileRequest> requests,
-  }) =>
-      _enqueueVideoFiles(
+  }) async {
+    try {
+      return await _enqueueVideoFiles(
         requests: requests,
         session: _captureOutgoingSession(),
       );
+    } catch (_) {
+      for (final request in requests) {
+        request.video._finishRejectedIfUnadmitted();
+      }
+      rethrow;
+    }
+  }
 
   Future<MatrixOutgoingWorkJob> _enqueueVideoFile({
     required String jobId,
@@ -5908,7 +5988,10 @@ final class MatrixSdkE2eeClient
       throw ArgumentError('Video forwarding source was already admitted');
     }
     final existing = session.coordinator.job(jobId);
-    if (existing != null) return existing;
+    if (existing != null) {
+      video._finishRejectedIfUnadmitted();
+      return existing;
+    }
     final targets =
         _freezeVideoTargets(await _prepareNewTargets(targetRoomIds, session));
     await video._waitForSourceMetadata();
@@ -5989,7 +6072,7 @@ final class MatrixSdkE2eeClient
     final targets = _freezeVideoTargets(targetRoomIds);
     final snapshot = _DeferredOutgoingVideoSnapshot(video);
     final createdAt = DateTime.now();
-    return MatrixOutgoingWorkJob(
+    final job = MatrixOutgoingWorkJob(
       id: jobId,
       createdAt: createdAt,
       source: MatrixOutgoingWorkSource(
@@ -6021,6 +6104,8 @@ final class MatrixSdkE2eeClient
           ),
       ],
     );
+    snapshot.attachJob(job);
+    return job;
   }
 
   _OutgoingSession _captureOutgoingSession() {
@@ -6122,8 +6207,9 @@ final class MatrixSdkE2eeClient
     required String targetRoomId,
     required _DeferredOutgoingVideoSnapshot snapshot,
     required MatrixOutgoingWorkAttempt attempt,
-  }) =>
-      _withClient((active) async {
+  }) async {
+    try {
+      return await _withClient((active) async {
         _ensureOutgoingSession(session, attempt);
         if (!identical(active, session.client)) {
           throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
@@ -6141,10 +6227,16 @@ final class MatrixSdkE2eeClient
           thumbnailBytes: snapshot.thumbnailBytes,
           thumbnailWidth: snapshot.thumbnailWidth,
           thumbnailHeight: snapshot.thumbnailHeight,
+          performanceTrace: snapshot._video.performanceTrace,
         );
         _ensureOutgoingSession(session, attempt);
         return eventId;
       });
+    } catch (_) {
+      snapshot.finishTrace(_videoTraceResultForAttempt(attempt));
+      rethrow;
+    }
+  }
 
   Future<void> _prepareForwardMedia({
     required _OutgoingSession session,
@@ -7545,6 +7637,7 @@ final class MatrixSdkE2eeClient
     Uint8List? thumbnailBytes,
     int? thumbnailWidth,
     int? thumbnailHeight,
+    PerformanceTrace? performanceTrace,
   }) async {
     void validateSendAccess() {
       if (_accessRevoked ||
@@ -7622,10 +7715,14 @@ final class MatrixSdkE2eeClient
       thumbnail: thumbnail,
       extraContent: media.extraContent,
     );
+    performanceTrace?.mark(PerformanceStage.videoEncrypted);
     // Preparation yields to worker isolates. Revoke/room replacement can happen
     // meanwhile; check both owner and originating lease before any SDK upload.
     await _requireRoomSend(room);
     validateSendAccess();
+    // The Matrix SDK combines media upload and event send in this call.
+    // Mark only its real start and completion; videoUploadDone is unsupported.
+    performanceTrace?.mark(PerformanceStage.videoUploadStarted);
     final eventId = await room.sendFileEvent(
       prepared.file,
       thumbnail: prepared.thumbnail,
@@ -7637,6 +7734,10 @@ final class MatrixSdkE2eeClient
       // MessageSendNetworkException 的文档。
       throw const MessageSendNetworkException('媒体消息发送失败');
     }
+    if (eventId.isEmpty) {
+      throw StateError('Matrix media event was not accepted');
+    }
+    performanceTrace?.mark(PerformanceStage.videoEventSent);
     return eventId;
   }
 

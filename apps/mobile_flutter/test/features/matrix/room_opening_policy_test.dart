@@ -73,6 +73,21 @@ RoomOpenRequest _request(
     );
 
 void main() {
+  test('room opening diagnostic strings omit raw room and cause details', () {
+    const secretRoom = '!private-room:example';
+    const failure = RoomOpenFailure(RoomOpenFailureKind.temporaryFailure,
+        roomId: secretRoom, source: RoomOpenSource.search,
+        cause: 'private payload');
+    const diagnostic = RoomOpenDiagnostic(
+        source: RoomOpenSource.search,
+        mode: RoomOpenMode.offlineFirst,
+        roomId: secretRoom,
+        outcome: RoomOpenOutcome.failed,
+        reason: 'failed');
+    expect(failure.toString(), isNot(contains(secretRoom)));
+    expect(failure.toString(), isNot(contains('private payload')));
+    expect(diagnostic.line, isNot(contains(secretRoom)));
+  });
   group('Test 1: RoomPage 创建点', () {
     test('生产代码中 RoomPage 构造点仍然只有 1 处（AppHome 协调器流程）', () {
       final lib = Directory('lib');
@@ -504,7 +519,13 @@ void main() {
       final appHome =
           _stripComments(File('lib/app_home.dart').readAsStringSync());
       expect(appHome, contains('_roomOpenFailureVisible'));
-      expect(appHome, contains('if (_roomOpenFailureVisible) return;'));
+      final duplicateFeedbackGate = appHome.substring(
+        appHome.indexOf('if (_roomOpenFailureVisible) {'),
+        appHome.indexOf('await widget.matrix.prepareConversationAssociations();',
+            appHome.indexOf('if (_roomOpenFailureVisible) {')),
+      );
+      expect(duplicateFeedbackGate, contains('request.performanceTrace?.dispose();'));
+      expect(duplicateFeedbackGate, contains('return;'));
       // 2026-09-19 用户修订：不再弹模态对话框、不再有弹窗内「重试」按钮；
       // 反馈走非阻断 toast，重试由再次点击入口幂等完成。
       expect(appHome, contains('showRoomOpenFailureToast('));

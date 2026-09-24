@@ -21,6 +21,7 @@ import '../../ui/components/user_avatar.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../core/business_api_client.dart';
+import '../../core/performance_trace.dart';
 import '../../core/cache/cache_repository.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
 import '../../ui/moments/wechat_moment_viewer.dart';
@@ -41,6 +42,7 @@ final class MomentsPage extends StatefulWidget {
     this.contactActions,
     this.onPostsDisplayed,
     this.unreadChanges,
+    this.performanceTrace,
   }) : _preparedAccount = null;
 
   const MomentsPage._prepared({
@@ -51,6 +53,7 @@ final class MomentsPage extends StatefulWidget {
     required String? account,
     this.onPostsDisplayed,
     this.unreadChanges,
+    this.performanceTrace,
   }) : _preparedAccount = account;
 
   /// Resolve the session and warm disk metadata before navigation. Only this
@@ -62,6 +65,7 @@ final class MomentsPage extends StatefulWidget {
     ContactActions? contactActions,
     void Function(Iterable<String> ids)? onPostsDisplayed,
     Listenable? unreadChanges,
+    PerformanceTrace? performanceTrace,
   }) async {
     String? account;
     try {
@@ -87,6 +91,7 @@ final class MomentsPage extends StatefulWidget {
       account: account,
       onPostsDisplayed: onPostsDisplayed,
       unreadChanges: unreadChanges,
+      performanceTrace: performanceTrace,
     );
   }
 
@@ -96,6 +101,7 @@ final class MomentsPage extends StatefulWidget {
   final ProfileRepository identityCache;
   final void Function(Iterable<String> ids)? onPostsDisplayed;
   final Listenable? unreadChanges;
+  final PerformanceTrace? performanceTrace;
   @override
   State<MomentsPage> createState() => _MomentsPageState();
 }
@@ -103,6 +109,21 @@ final class MomentsPage extends StatefulWidget {
 enum _ConfirmedMomentWrite { likes, comments, deletion }
 
 final class _MomentsPageState extends State<MomentsPage> {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.momentsLoad);
+  bool _initialFirstFrameRendered = false;
+  bool _initialRefreshSettled = false;
+  bool _initialRefreshFailed = false;
+
+  void _finishInitialPerformanceTrace() {
+    if (!_initialFirstFrameRendered || !_initialRefreshSettled) return;
+    _performanceTrace.finish(
+      result: _initialRefreshFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
   final _itemOverrides = <String, MomentItem>{};
   final _pendingLikeIds = <String>{};
   final _selectedComments = <String, String>{};
@@ -289,6 +310,14 @@ final class _MomentsPageState extends State<MomentsPage> {
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
+    _performanceTrace.mark(PerformanceStage.cacheLoadStarted);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initialFirstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialPerformanceTrace();
+    });
     momentCommentDeletions.addListener(_commentDeleted);
     _feedScroll.addListener(_onScroll);
     widget.unreadChanges?.addListener(_unreadChanged);
@@ -326,6 +355,10 @@ final class _MomentsPageState extends State<MomentsPage> {
       _accountKey = knownAccount;
       _moments = CacheRepository.current?.momentsFor(knownAccount);
       _feedData = _moments?.snapshot;
+      if (_feedData != null) {
+        _performanceTrace.mark(PerformanceStage.cacheLoadDone);
+        _performanceTrace.mark(PerformanceStage.contentReady);
+      }
       _coverUrl = _moments?.preferencesSnapshot?['cover_url']?.toString();
       _coverCacheKey =
           _moments?.preferencesSnapshot?['cover_cache_key']?.toString();
@@ -354,7 +387,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     final epoch = _accountEpoch;
     if (mounted) setState(() => _identityError = null);
     try {
-      await _identityCache.refresh();
+      await _performanceTrace.runChildOperations(_identityCache.refresh);
     } catch (_) {
       if (mounted && epoch == _accountEpoch && _identityCache.profile == null) {
         setState(() => _identityError = '资料加载失败');
@@ -367,7 +400,8 @@ final class _MomentsPageState extends State<MomentsPage> {
     final cache = _moments;
     final ticket = cache?.beginPreferencesRefresh();
     try {
-      final value = await widget.api.momentsPreferences();
+      final value = await _performanceTrace
+          .runChildOperations(widget.api.momentsPreferences);
       final url = value['cover_url']?.toString();
       // Keep an already visible cover if its renewed image cannot be fetched.
       if (mounted && _coverUrl != null && url != null && url != _coverUrl) {
@@ -449,6 +483,9 @@ final class _MomentsPageState extends State<MomentsPage> {
         _coverCacheKey = null;
       });
       _moments = null;
+      _initialRefreshFailed = true;
+      _initialRefreshSettled = true;
+      _finishInitialPerformanceTrace();
       return;
     }
     _accountKey = resolved;
@@ -477,6 +514,10 @@ final class _MomentsPageState extends State<MomentsPage> {
             _moments?.preferencesSnapshot?['cover_cache_key']?.toString();
       }
     });
+    if (_feedData != null) {
+      _performanceTrace.mark(PerformanceStage.cacheLoadDone);
+      _performanceTrace.mark(PerformanceStage.contentReady);
+    }
     unawaited(_loadViewerUserId());
     unawaited(_loadPreferences());
     _invalidationsReady = _moments?.restoreInvalidations();
@@ -512,7 +553,15 @@ final class _MomentsPageState extends State<MomentsPage> {
   }
 
   Future<void> _refreshFeed() async {
+    final trace = _initialRefreshSettled
+        ? _performanceTrace
+            .startSiblingOperation(PerformanceOperationType.momentsLoad)
+        : _performanceTrace;
+    final ownsRefreshTrace = !identical(trace, _performanceTrace);
+    trace.mark(PerformanceStage.remoteRefreshStarted);
     final request = ++_feedRequest;
+    var applied = false;
+    var failed = false;
     final mutation = _mutation;
     final cache = _moments;
     final ticket = cache?.beginRefresh();
@@ -524,7 +573,8 @@ final class _MomentsPageState extends State<MomentsPage> {
       _loadingMore = false;
     });
     try {
-      var fresh = await widget.api.momentsFeed(mode: 'latest');
+      var fresh = await trace
+          .runChildOperations(() => widget.api.momentsFeed(mode: 'latest'));
       await invalidationsReady;
       final sameAccount = await _stillSameAccount();
       if (!mounted ||
@@ -552,14 +602,32 @@ final class _MomentsPageState extends State<MomentsPage> {
         _interactionError = null;
         _itemOverrides.removeWhere((id, _) => !_pendingLikeIds.contains(id));
       });
+      applied = true;
+      trace.mark(PerformanceStage.contentReady);
     } catch (_) {
+      failed = true;
       if (mounted && request == _feedRequest) {
+        _initialRefreshFailed = true;
+        applied = true;
         setState(() {
           _initialFailed = true;
           if (_feedData != null) _interactionError = '刷新失败，请重试';
         });
       }
     } finally {
+      if (ownsRefreshTrace) {
+        trace.mark(PerformanceStage.remoteRefreshDone);
+        trace.finish(
+            result: !applied
+                ? PerformanceResult.cancelled
+                : failed
+                    ? PerformanceResult.failed
+                    : PerformanceResult.success);
+      } else if (applied && !_initialRefreshSettled) {
+        _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
+        _initialRefreshSettled = true;
+        _finishInitialPerformanceTrace();
+      }
       if (mounted && request == _feedRequest) {
         setState(() => _refreshing = false);
       }
@@ -621,6 +689,7 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   @override
   void dispose() {
+    _performanceTrace.dispose();
     momentsPrivacyChanges.removeListener(_privacyChanged);
     _feedScroll.dispose();
     widget.unreadChanges?.removeListener(_unreadChanged);

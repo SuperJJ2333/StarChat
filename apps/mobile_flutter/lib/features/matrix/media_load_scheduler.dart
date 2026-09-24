@@ -1,16 +1,27 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../core/performance_trace.dart';
+
 enum MediaLoadPriority { interactive, visible, prefetch, background }
+
+PerformanceMediaPriority _diagnosticPriority(MediaLoadPriority priority) =>
+    switch (priority) {
+      MediaLoadPriority.interactive => PerformanceMediaPriority.interactive,
+      MediaLoadPriority.visible => PerformanceMediaPriority.visible,
+      MediaLoadPriority.prefetch => PerformanceMediaPriority.prefetch,
+      MediaLoadPriority.background => PerformanceMediaPriority.background,
+    };
 
 final class MediaLoadCanceled extends StateError {
   MediaLoadCanceled() : super('Media load canceled');
 }
 
 final class MediaLoadLease {
-  MediaLoadLease._(this._cancel, this.priority);
+  MediaLoadLease._(this._cancel, this.priority, this._trace);
   final void Function(MediaLoadLease) _cancel;
   final MediaLoadPriority priority;
+  final PerformanceTrace? _trace;
   final _completion = Completer<Uint8List>();
   Future<Uint8List> get value => _completion.future;
   void cancel() {
@@ -44,26 +55,48 @@ final class MediaLoadScheduler {
   }
   final int maxConcurrent, maxVideos;
   final _tasks = <String, _MediaTask>{};
-  int _active = 0, _videos = 0, _sequence = 0;
+  int _active = 0, _videos = 0, _queued = 0, _sequence = 0;
+  int get activeCount => _active;
+  int get queuedCount => _queued;
+  int get videoActiveCount => _videos;
   int get debugActiveCount => _active;
-  int get debugQueuedCount =>
-      _tasks.values.where((task) => !task.running).length;
+  int get debugQueuedCount => _queued;
   int get debugConsumerCount =>
       _tasks.values.fold(0, (count, task) => count + task.consumers.length);
   bool _scheduled = false;
 
   MediaLoadLease request(String key, Future<Uint8List> Function() load,
       {MediaLoadPriority priority = MediaLoadPriority.visible,
-      bool isVideo = false}) {
-    final task = _tasks.putIfAbsent(
-        key, () => _MediaTask(key, load, isVideo, _sequence++));
+      bool isVideo = false,
+      PerformanceTrace? trace}) {
+    final task = _tasks.putIfAbsent(key, () {
+      _queued++;
+      return _MediaTask(key, load, isVideo, _sequence++);
+    });
     final lease = MediaLoadLease._((lease) {
       task.consumers.remove(lease);
       lease._completion.completeError(MediaLoadCanceled());
-      if (task.consumers.isEmpty && !task.running) _tasks.remove(key);
+      if (task.consumers.isEmpty &&
+          !task.running &&
+          identical(_tasks[key], task)) {
+        _tasks.remove(key);
+        _queued--;
+      }
       _schedule();
-    }, priority);
+    }, priority, trace);
     task.consumers.add(lease);
+    if (trace != null && trace.isRecording) {
+      trace.setMedia(
+        queued: _queued,
+        active: _active,
+        videoActive: _videos,
+        priority: _diagnosticPriority(priority),
+      );
+      trace.mark(PerformanceStage.queueEntered);
+      if (task.running) {
+        trace.mark(PerformanceStage.queueExited);
+      }
+    }
     _schedule();
     return lease;
   }
@@ -106,8 +139,22 @@ final class MediaLoadScheduler {
       }
       if (task.isVideo && _videos >= maxVideos) continue;
       task.running = true;
+      _queued--;
       _active++;
       if (task.isVideo) _videos++;
+      PerformanceMediaPriority? effectivePriority;
+      for (final lease in task.consumers) {
+        final trace = lease._trace;
+        if (trace == null || !trace.isRecording) continue;
+        effectivePriority ??=
+            _diagnosticPriority(MediaLoadPriority.values[task.priority]);
+        trace.mark(PerformanceStage.queueExited);
+        trace.setMedia(
+          active: _active,
+          videoActive: _videos,
+          priority: effectivePriority,
+        );
+      }
       unawaited(_run(task));
     }
   }

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/media_consumer_scope.dart';
 import 'package:liuhetong_mobile/features/matrix/media_load_scheduler.dart';
@@ -166,6 +167,136 @@ void main() {
     expect(decryptions, 1);
     expect(identical(cold, warm), isTrue);
     _expectCounter(PerformanceCounter.mediaDownload, equals(1));
+  });
+
+  test('cache traces distinguish miss, memory, and disk without false phases',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final bytes = Uint8List.fromList([17, 18, 19]);
+    final key = MediaCacheKey(
+      accountId: 'private-account',
+      roomId: 'private-room',
+      eventId: 'private-event',
+      contentSha256: sha256.convert(bytes).toString(),
+    );
+    Future<Uint8List> localBytes() async => bytes;
+
+    final cold = recorder.start(PerformanceOperationType.mediaLoad);
+    await loadMediaWithCache(key, localBytes, trace: cold);
+    cold.finish();
+    expect(records.last.cacheSource, PerformanceCacheSource.miss);
+    expect(records.last.sizeBucket, PerformanceSizeBucket.tiny);
+    expect(records.last.stagesUs, contains(PerformanceStage.cacheLoadDone));
+    expect(records.last.stagesUs, contains(PerformanceStage.queueExited));
+    expect(
+        records.last.stagesUs, isNot(contains(PerformanceStage.downloadDone)));
+    expect(
+        records.last.stagesUs, isNot(contains(PerformanceStage.decryptDone)));
+
+    final warm = recorder.start(PerformanceOperationType.mediaLoad);
+    await loadMediaWithCache(key, localBytes, trace: warm);
+    warm.finish();
+    expect(records.last.cacheSource, PerformanceCacheSource.memory);
+    expect(records.last.sizeBucket, PerformanceSizeBucket.tiny);
+    expect(
+        records.last.stagesUs, isNot(contains(PerformanceStage.queueEntered)));
+
+    clearMediaMemoryCaches();
+    final disk = recorder.start(PerformanceOperationType.mediaLoad);
+    await loadMediaWithCache(key, localBytes, trace: disk);
+    disk.finish();
+    expect(records.last.cacheSource, PerformanceCacheSource.disk);
+    expect(records.last.sizeBucket, PerformanceSizeBucket.tiny);
+    expect(
+        records.last.stagesUs, isNot(contains(PerformanceStage.queueEntered)));
+    expect(records.map((record) => record.operationId).toSet(), hasLength(3));
+    for (final record in records) {
+      expect(record.toJson().toString(), isNot(contains('private-room')));
+      expect(record.toJson().toString(), isNot(contains('private-account')));
+    }
+  });
+
+  test('joining an existing content flight measures shared wait only',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final bytes = Uint8List.fromList([31, 32, 33]);
+    final key = MediaCacheKey(
+      accountId: 'private-account',
+      roomId: 'private-room',
+      eventId: 'private-event',
+      contentSha256: sha256.convert(bytes).toString(),
+    );
+    final source = Completer<Uint8List>();
+    final started = Completer<void>();
+    var loads = 0;
+    Future<Uint8List> decrypt() {
+      loads++;
+      if (!started.isCompleted) started.complete();
+      return source.future;
+    }
+
+    final firstTrace = recorder.start(PerformanceOperationType.mediaLoad);
+    final joinedTrace = recorder.start(PerformanceOperationType.mediaLoad);
+    try {
+      final first = loadMediaWithCache(key, decrypt, trace: firstTrace);
+      await started.future;
+      final joined = loadMediaWithCache(key, decrypt, trace: joinedTrace);
+      await _waitFor(
+          () => joinedTrace.cacheSource == PerformanceCacheSource.unknown);
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      source.complete(bytes);
+      final values = await Future.wait([first, joined]);
+      firstTrace.finish();
+      joinedTrace.finish();
+
+      expect(loads, 1);
+      expect(identical(values.first, values.last), isTrue);
+      final record = records.last;
+      expect(record.cacheSource, PerformanceCacheSource.unknown);
+      expect(record.stagesUs, contains(PerformanceStage.sharedFlightJoined));
+      expect(record.stagesUs, contains(PerformanceStage.sharedFlightDone));
+      expect(record.timingSummaryMs['shared_flight_wait_ms'], greaterThan(0));
+      expect(record.stagesUs, isNot(contains(PerformanceStage.queueEntered)));
+      expect(record.stagesUs, isNot(contains(PerformanceStage.queueExited)));
+      expect(record.timingSummaryMs, isNot(contains('queue_wait_ms')));
+      expect(record.toJson().toString(), isNot(contains('private-room')));
+    } finally {
+      if (!source.isCompleted) source.complete(bytes);
+    }
+  });
+
+  test('outgoing local seed is not a network download or cache miss', () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final trace = recorder.start(PerformanceOperationType.mediaLoad);
+    final bytes = Uint8List.fromList([41, 42, 43]);
+    expect(
+        await cacheOutgoingMedia(
+          accountId: 'private-account',
+          roomId: 'private-room',
+          bytes: bytes,
+          trace: trace,
+        ),
+        bytes);
+    trace.finish();
+    expect(records.single.cacheSource, PerformanceCacheSource.unknown);
+    expect(records.single.stagesUs,
+        isNot(contains(PerformanceStage.downloadStarted)));
+    expect(records.single.stagesUs,
+        isNot(contains(PerformanceStage.downloadDone)));
+    expect(records.single.toJson().toString(), isNot(contains('private-room')));
+    _expectCounter(PerformanceCounter.mediaDownload, equals(0));
   });
 
   test('clearing memory retains a validated disk object without re-decrypting',

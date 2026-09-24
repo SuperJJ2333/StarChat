@@ -1,5 +1,13 @@
 # 移动交付恢复索引
 
+## 2026-09-25 MI 6 性能诊断 Debug2174 交付中
+
+用户要求向 MI 6 保留数据安装诊断 Debug 包并实测性能与网络。设备实际安装 0.4.10/2171 Debug，APK SHA 与历史记录一致；旧诊断分支 2165 不可直接覆盖。隔离分支 `codex/performance-debug-mi6` 以已发布 Android 源 `e7ba46a4`（2172）整合诊断提交 `8d044655`，版本递增至 0.4.11/2174，排除后续 iOS 身份恢复提交。整合后 Flutter analyze 零问题、Flutter 4277/9 跳过、Matrix 2108/9 跳过、移动边界 108/1 跳过及后端诊断聚焦 166/1 跳过均退出 0；尚未构建或安装。构建/设备测量与真实缺口见[独立任务记录](tasks/2026-09-25-performance-debug-mi6.md)。
+
+## 2026-09-25 ChatFlow 全链路性能诊断本地候选（未发布）
+
+隔离工作树从 `2442f0ab` 扩展现有 PerformanceMetrics、ChatDiagnostics、Matrix 同步阶段、媒体调度和通话质量监控；会话打开/恢复、发送、页面/API、服务端 route-template 与 SQL 分位数使用类型化有界诊断。最终 Flutter analyze 零问题、Matrix 2035/2035、Flutter 4128/4128 通过；后端 API/Worker 2861 通过、74 跳过、退出 0。`verify.ps1` 因工作树无 `.env` 在配置渲染前置步骤退出 1，分项门禁见[验证报告](../verification/2026-09-25-chatflow-performance-diagnostics.md)。未构建、安装、部署或真机测量；真实下载/解密、DNS/TCP/TLS、SDK 视频上传/事件拆分保持 unsupported。见[任务](tasks/2026-09-25-unified-performance-diagnostics.md)和[诊断手册](../performance/chatflow-performance-diagnostics.md)。
+
 ## 2026-09-24 “我”页、邀请码、朋友圈互动已部署，MI 6 Debug2171 已安装
 
 正式 Android 最新版本仍为 **v0.4.6/2165**，手机号注册/登录等代码此前已上线。本轮是保留用户数据的内部测试包 **0.4.10/2171 Debug**，没有改官网正式 APK 或更新弹窗。五项“我”页需求已在客户端和业务 API 实现；最终 Flutter 全量 4120 通过/9 条条件跳过、analyze 0，`verify.ps1` exit 0（后端/worker 2763 通过/77 条条件跳过、mobile 108 通过/1 条条件跳过、OpenAPI/Compose 通过），HTML 305 通过/429 屏。最终审查还补齐建群/编辑群名 12 字限制和“我”页互动红点前台/定时刷新。MI 6 `cbd0156b` 安装包 SHA256 `5f3ddee5…` 与设备读回一致，固定测试签名、原首次安装时间、启动和零崩溃验证通过，真实用户操作仍待反馈。

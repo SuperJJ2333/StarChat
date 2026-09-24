@@ -6,9 +6,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/app_config.dart';
 import '../../core/business_api_client.dart';
+import '../../core/performance_trace.dart';
 import '../../core/support_identity_repository.dart';
 import '../contacts/contacts_page.dart';
 import '../contacts/scan_qr_page.dart';
@@ -226,6 +228,7 @@ class MatrixHomePage extends StatefulWidget {
     this.onRoomProjection,
     this.onIdentityProjection,
     this.onConversationRowBuild,
+    this.performanceTrace,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -237,6 +240,7 @@ class MatrixHomePage extends StatefulWidget {
   final ContactAction? onVideo;
   final ProfileRepository? identityCache;
   final bool previewOnly;
+  final PerformanceTrace? performanceTrace;
   final VoidCallback? onUnreadChanged;
 
   /// 房间页面的统一打开入口（AppHome 注入）。消息列表只负责等待动画、
@@ -260,6 +264,29 @@ class MatrixHomePage extends StatefulWidget {
 
 class _MatrixHomePageState extends State<MatrixHomePage>
     with WidgetsBindingObserver {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.chatListLoad);
+  bool _initialFirstFrameRendered = false;
+  bool _initialSnapshotSettled = false;
+  bool _initialSnapshotFailed = false;
+
+  void _finishInitialPerformanceTrace() {
+    if (!_initialFirstFrameRendered || !_initialSnapshotSettled) return;
+    _performanceTrace.finish(
+      result: _initialSnapshotFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
+  void _markInitialSnapshotReady() {
+    if (_initialSnapshotSettled) return;
+    _performanceTrace.mark(PerformanceStage.cacheLoadDone);
+    _performanceTrace.mark(PerformanceStage.contentReady);
+    _initialSnapshotSettled = true;
+    _finishInitialPerformanceTrace();
+  }
+
   bool syncing = false;
   StreamSubscription<Object?>? syncSubscription;
   StreamSubscription<MatrixDecryptionUpdate>? decryptionSubscription;
@@ -530,6 +557,14 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
+    _performanceTrace.mark(PerformanceStage.cacheLoadStarted);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initialFirstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialPerformanceTrace();
+    });
     WidgetsBinding.instance.addObserver(this);
     decryptionStates = DecryptionStateController();
     _identityCache = widget.identityCache ?? ProfileRepository(widget.api);
@@ -713,6 +748,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
             _reminderRoomId != snapshot.reminderRoomId ||
             !_sameRoomSnapshots(_rooms, nextRooms);
         if (!changed) {
+          _markInitialSnapshotReady();
           _scheduleIdentityRecovery();
           return;
         }
@@ -723,10 +759,18 @@ class _MatrixHomePageState extends State<MatrixHomePage>
           _reminderRoomId = snapshot.reminderRoomId;
           _rooms = List.unmodifiable(nextRooms);
         });
+        _markInitialSnapshotReady();
         _scheduleIdentityRecovery();
         _warmSupportIdentities(nextRooms);
       });
-    } catch (_) {/* Keep cached presentation during sync/revocation. */}
+    } catch (_) {
+      if (!_initialSnapshotSettled && mounted) {
+        _initialSnapshotSettled = true;
+        _initialSnapshotFailed = true;
+        _finishInitialPerformanceTrace();
+      }
+      // Keep cached presentation during sync/revocation.
+    }
   }
 
   Future<void> _refreshMembers() async {
@@ -810,6 +854,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _routeAnimation?.removeStatusListener(_navigationStatusChanged);
     _nextRouteAnimation?.removeStatusListener(_navigationStatusChanged);
     _snapshotRefresh.dispose();
+    _performanceTrace.dispose();
     WidgetsBinding.instance.removeObserver(this);
     RoomDraftStore.shared.draftMembershipRevision
         .removeListener(_draftsChanged);
@@ -1102,10 +1147,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     // 同一房间的重复点击只保留一次等待动画；跨房间不互相阻塞
     // （旧实现用全局 bool，关掉房间后取消租约期间会吞掉下一个会话）。
     if (!_openingRooms.add(snapshot.id)) {
-      debugPrint('[room-open-list] BLOCKED room=${snapshot.id}');
+      if (kDebugMode) debugPrint('[chatflow/perf] room_open=blocked');
       return;
     }
-    debugPrint('[room-open-list] open room=${snapshot.id}');
+    if (kDebugMode) debugPrint('[chatflow/perf] room_open=started');
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
@@ -1152,8 +1197,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
     } finally {
       final removed = _openingRooms.remove(snapshot.id);
-      debugPrint(
-          '[room-open-list] settled room=${snapshot.id} removed=$removed');
+      if (kDebugMode) {
+        debugPrint('[chatflow/perf] room_open=settled guard_released=$removed');
+      }
     }
   }
 

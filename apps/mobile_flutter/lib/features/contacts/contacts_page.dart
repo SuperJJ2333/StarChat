@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/performance_trace.dart';
 import '../../core/permissions/blocked_contacts.dart';
 import '../../core/support_identity_repository.dart';
 import '../matrix/matrix_e2ee_client.dart';
@@ -83,6 +84,7 @@ final class ContactsPage extends StatefulWidget {
     this.onGroupAddressList,
     this.identityCache,
     this.supportIdentities,
+    this.performanceTrace,
   });
 
   final ContactsGateway api;
@@ -107,12 +109,28 @@ final class ContactsPage extends StatefulWidget {
   final VoidCallback? onGroupAddressList;
   final ProfileRepository? identityCache;
   final SupportIdentityRepository? supportIdentities;
+  final PerformanceTrace? performanceTrace;
 
   @override
   State<ContactsPage> createState() => _ContactsPageState();
 }
 
 final class _ContactsPageState extends State<ContactsPage> {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.contactsLoad);
+  bool _initialFirstFrameRendered = false;
+  bool _initialContentSettled = false;
+  bool _initialLoadFailed = false;
+
+  void _finishInitialPerformanceTrace() {
+    if (!_initialFirstFrameRendered || !_initialContentSettled) return;
+    _performanceTrace.finish(
+      result: _initialLoadFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
   late Future<List<ContactSummary>> contacts;
   final scrollController = ScrollController();
   final sectionOffsets = <String, double>{};
@@ -124,24 +142,40 @@ final class _ContactsPageState extends State<ContactsPage> {
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initialFirstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialPerformanceTrace();
+    });
+    _performanceTrace.mark(PerformanceStage.cacheLoadStarted);
     final cached = widget.identityCache?.contacts ?? const <ContactSummary>[];
+    _performanceTrace.mark(PerformanceStage.cacheLoadDone);
+    if (cached.isNotEmpty) {
+      _performanceTrace.mark(PerformanceStage.contentReady);
+      _initialContentSettled = true;
+    } else {
+      _performanceTrace.mark(PerformanceStage.remoteRefreshStarted);
+    }
     contacts = cached.isEmpty
-        ? widget.api.listContacts()
+        ? _performanceTrace.runChildOperations(widget.api.listContacts)
         : Future.value(List.unmodifiable(cached));
     widget.identityCache?.addListener(_identityChanged);
     _configureSupport();
     _observeSupportContacts(contacts);
-    unawaited(
-        widget.identityCache?.refreshContactsQuietly() ?? Future<void>.value());
+    unawaited(_performanceTrace.runChildOperations(() =>
+        widget.identityCache?.refreshContactsQuietly() ??
+        Future<void>.value()));
   }
 
   Future<void> _warmSupport(Iterable<ContactSummary> values) =>
       _support?.warm([
-            for (final contact in values) ...[
-              contact.userId,
-              contact.matrixUserId,
-            ],
-          ]) ??
+        for (final contact in values) ...[
+          contact.userId,
+          contact.matrixUserId,
+        ],
+      ]) ??
       Future<void>.value();
 
   void _setSupportContacts(List<ContactSummary> values) {
@@ -153,8 +187,22 @@ final class _ContactsPageState extends State<ContactsPage> {
     final generation = ++_contactsLoadGeneration;
     future.then((values) {
       if (!mounted || generation != _contactsLoadGeneration) return;
+      if (!_initialContentSettled) {
+        _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
+        _performanceTrace.mark(PerformanceStage.contentReady);
+        _initialContentSettled = true;
+        _finishInitialPerformanceTrace();
+      }
       _setSupportContacts(values);
-    }, onError: (_, __) {});
+    }, onError: (Object _, StackTrace __) {
+      if (!mounted || generation != _contactsLoadGeneration) return;
+      if (!_initialContentSettled) {
+        _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
+        _initialContentSettled = true;
+        _initialLoadFailed = true;
+        _finishInitialPerformanceTrace();
+      }
+    });
   }
 
   void _configureSupport() {
@@ -181,6 +229,10 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   void _identityChanged() {
     if (!mounted) return;
+    if (!_initialContentSettled &&
+        widget.identityCache?.contacts.isNotEmpty == true) {
+      _performanceTrace.mark(PerformanceStage.contentReady);
+    }
     setState(() {
       contacts = Future.value(
         List.unmodifiable(widget.identityCache?.contacts ?? const []),
@@ -190,7 +242,17 @@ final class _ContactsPageState extends State<ContactsPage> {
   }
 
   void reload() {
-    final next = widget.api.listContacts();
+    final trace = _performanceTrace
+        .startSiblingOperation(PerformanceOperationType.contactsLoad)
+      ..mark(PerformanceStage.remoteRefreshStarted);
+    final next = trace.runChildOperations(widget.api.listContacts);
+    unawaited(next.then<void>((_) {
+      trace.mark(PerformanceStage.remoteRefreshDone);
+      trace.finish();
+    }, onError: (Object _, StackTrace __) {
+      trace.mark(PerformanceStage.remoteRefreshDone);
+      trace.finish(result: PerformanceResult.failed);
+    }));
     _observeSupportContacts(next);
     setState(() {
       contacts = next;
@@ -199,6 +261,7 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   @override
   void dispose() {
+    _performanceTrace.dispose();
     if (_ownsSupport) _support?.dispose();
     widget.identityCache?.removeListener(_identityChanged);
     scrollController.dispose();
@@ -456,9 +519,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                             label: label == '★' ? '星标好友' : label,
                           ),
                         ),
-                        for (var i = 0;
-                            i < (grouped[label]?.length ?? 0);
-                            i++)
+                        for (var i = 0; i < (grouped[label]?.length ?? 0); i++)
                           WeChatContactTile(
                             nickname: grouped[label]![i].displayName,
                             fallbackSeed: widget.identityCache
@@ -776,8 +837,8 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
       _bindIdentity();
       _readIdentity();
       if (contactChanged) {
-        unawaited(_support?.warm([contact.userId, contact.matrixUserId],
-                force: true) ??
+        unawaited(_support
+                ?.warm([contact.userId, contact.matrixUserId], force: true) ??
             Future<void>.value());
       }
     }
@@ -948,13 +1009,15 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       }
       blockedContacts.replaceAll(ids,
           fromServer: true, matrixIdByUser: matrixIdByUser);
-      if (mounted) setState(() => blocked = ids.contains(widget.contact.userId));
+      if (mounted) {
+        setState(() => blocked = ids.contains(widget.contact.userId));
+      }
     } catch (_) {
       // 失败时只有「确实读过服务端」的本地投影才可作为已知状态；
       // 从未读过就保持 null（未知），不用默认 false 冒充权威结果。
       if (mounted && blockedContacts.hasSnapshot) {
-        setState(() =>
-            blocked = blockedContacts.isBlocked(widget.contact.userId));
+        setState(
+            () => blocked = blockedContacts.isBlocked(widget.contact.userId));
       }
     }
   }
@@ -966,7 +1029,8 @@ final class _ContactMorePageState extends State<ContactMorePage> {
     super.dispose();
   }
 
-  Future<bool> _confirm(String title, String content, {String confirmLabel = '删除'}) async =>
+  Future<bool> _confirm(String title, String content,
+          {String confirmLabel = '删除'}) async =>
       await showCupertinoDialog<bool>(
         context: context,
         builder: (dialogContext) => CupertinoAlertDialog(
@@ -1133,8 +1197,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       await widget.onContactUpdated?.call(current);
     } catch (_) {
       if (mounted) {
-        setState(() => errorMessage =
-            value ? '加入黑名单失败，请重试' : '移出黑名单失败，请重试');
+        setState(() => errorMessage = value ? '加入黑名单失败，请重试' : '移出黑名单失败，请重试');
       }
     } finally {
       if (mounted) setState(() => blocking = false);
@@ -1328,9 +1391,9 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
             future: tags,
             builder: (_, snapshot) {
               final items = (snapshot.data?['items'] as List?) ?? const [];
-              final loading = snapshot.connectionState ==
-                      ConnectionState.waiting &&
-                  !snapshot.hasData;
+              final loading =
+                  snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData;
               return ListView(
                 children: [
                   WeChatListTile(
@@ -1351,7 +1414,8 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
                       child: Column(children: [
                         const Text('标签加载失败',
                             style: TextStyle(
-                                fontSize: 14, color: WeChatColors.textSecondary)),
+                                fontSize: 14,
+                                color: WeChatColors.textSecondary)),
                         const SizedBox(height: 8),
                         CupertinoButton(
                           key: const Key('tag-picker-tags-retry'),
@@ -1973,8 +2037,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
         child: SafeArea(
           child: Builder(builder: (context) {
             final items = ((_payload?['items'] as List?) ?? const [])
-                .where(
-                    (item) => item is Map && item['direction'] != 'OUTGOING')
+                .where((item) => item is Map && item['direction'] != 'OUTGOING')
                 .toList();
             return ListView(
               children: [

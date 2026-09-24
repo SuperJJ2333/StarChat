@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:webrtc_interface/webrtc_interface.dart';
+
+import '../../core/performance_trace.dart';
 
 /// 一次 getStats 抽样（脱敏：仅网络/传输统计，不含媒体内容）。
 ///
@@ -10,13 +13,14 @@ import 'package:webrtc_interface/webrtc_interface.dart';
 /// **禁止**出现 IP 地址、TURN 用户名或凭据、SDP、ICE candidate 原文、
 /// 消息明文或任何媒体内容。本类只保存解析后的数值与枚举字符串。
 final class CallQualitySample {
-  const CallQualitySample({
+  const CallQualitySample._({
     this.localCandidateType,
     this.remoteCandidateType,
     this.rttMs,
     this.jitterMs,
     this.packetsReceived,
     this.packetsLost,
+    this.packetCountersPaired = true,
     this.iceState,
     this.availableOutgoingBitrateBps,
     this.concealmentEvents,
@@ -42,6 +46,24 @@ final class CallQualitySample {
   final double? jitterMs;
   final int? packetsReceived;
   final int? packetsLost;
+
+  /// False when any inbound stream reports only one usable packet counter.
+  final bool packetCountersPaired;
+
+  /// Null unless every counted inbound stream supplied a measured pair.
+  double? get packetLossPercent {
+    final received = packetsReceived;
+    final lost = packetsLost;
+    if (!packetCountersPaired ||
+        received == null ||
+        lost == null ||
+        received < 0 ||
+        lost < 0) {
+      return null;
+    }
+    final total = received + lost;
+    return total == 0 ? null : lost * 100.0 / total;
+  }
 
   /// 选中 candidate-pair 的 ICE 状态（succeeded/in-progress/failed…）。
   final String? iceState;
@@ -110,6 +132,7 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     if (values['state']?.toString() != 'succeeded') continue;
     final nominated = values['nominated']?.toString() == 'true' ||
         values['selected']?.toString() == 'true';
+    if (!nominated) continue;
     final priority = (int.tryParse(values['priority']?.toString() ?? '') ?? 0) +
         (nominated ? 1 << 40 : 0);
     if (priority > bestPriority) {
@@ -118,11 +141,30 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     }
   }
   final pair = selectedPair;
-  if (pair == null) return const CallQualitySample();
+
+  String? allow(String? value, Set<String> values) =>
+      value != null && values.contains(value) ? value : null;
+  const candidateTypes = {'host', 'srflx', 'prflx', 'relay'};
+  const protocols = {'udp', 'tcp', 'tls'};
+  const codecsAllowed = {
+    'audio/opus',
+    'audio/PCMU',
+    'audio/PCMA',
+    'audio/G722',
+    'audio/telephone-event',
+    'video/VP8',
+    'video/VP9',
+    'video/H264',
+    'video/AV1',
+    'video/rtx',
+    'video/red',
+    'video/ulpfec',
+  };
 
   String? candidateType(Object? candidateId) {
     if (candidateId is! String) return null;
-    return byId[candidateId]?.values['candidateType']?.toString();
+    return allow(
+        byId[candidateId]?.values['candidateType']?.toString(), candidateTypes);
   }
 
   /// candidate 传输协议（udp/tcp）。缺失返回 null。
@@ -131,15 +173,14 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     final values = byId[candidateId]?.values;
     if (values == null) return null;
     final protocol = values['protocol']?.toString();
-    if (protocol != null && protocol.isNotEmpty) return protocol;
-    return null;
+    return allow(protocol, protocols);
   }
 
   /// TURN 中继协议（candidate 上的 `relayProtocol`；平台不提供时为 null）。
   String? candidateRelayProtocol(Object? candidateId) {
     if (candidateId is! String) return null;
     final value = byId[candidateId]?.values['relayProtocol']?.toString();
-    return value == null || value.isEmpty ? null : value;
+    return allow(value, protocols);
   }
 
   double? secondsToMs(Object? value) {
@@ -156,10 +197,12 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
 
   int? asInt(Object? value) => int.tryParse(value?.toString() ?? '');
 
-  double? rttMs = secondsToMs(pair.values['currentRoundTripTime']);
+  double? rttMs =
+      pair == null ? null : secondsToMs(pair.values['currentRoundTripTime']);
   double? jitterMs;
   int? packetsReceived;
   int? packetsLost;
+  var packetCountersPaired = true;
   int? concealmentEvents;
   double? jitterBufferDelaySeconds;
   int? jitterBufferEmittedCount;
@@ -167,12 +210,32 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
   double? echoReturnLossEnhancement;
   final codecs = <String>[];
   for (final report in reports) {
+    if (report.type == 'remote-inbound-rtp') {
+      // RTP reports can retain measured RTT even before the selected ICE pair
+      // is exposed by the platform. They cannot establish a TURN/direct path.
+      rttMs ??= secondsToMs(report.values['roundTripTime']);
+      continue;
+    }
     if (report.type != 'inbound-rtp') continue;
+    rttMs ??= secondsToMs(report.values['roundTripTime']);
     jitterMs ??= secondsToMs(report.values['jitter']);
-    packetsReceived =
-        (packetsReceived ?? 0) + (asInt(report.values['packetsReceived']) ?? 0);
-    packetsLost =
-        (packetsLost ?? 0) + (asInt(report.values['packetsLost']) ?? 0);
+    final receivedNow = asInt(report.values['packetsReceived']);
+    final lostNow = asInt(report.values['packetsLost']);
+    if (report.values.containsKey('packetsReceived') ||
+        report.values.containsKey('packetsLost')) {
+      if (receivedNow == null ||
+          receivedNow < 0 ||
+          lostNow == null ||
+          lostNow < 0) {
+        packetCountersPaired = false;
+      }
+    }
+    if (receivedNow != null && receivedNow >= 0) {
+      packetsReceived = (packetsReceived ?? 0) + receivedNow;
+    }
+    if (lostNow != null && lostNow >= 0) {
+      packetsLost = (packetsLost ?? 0) + lostNow;
+    }
     final concealNow = asInt(report.values['concealmentEvents']);
     if (concealNow != null) {
       concealmentEvents = (concealmentEvents ?? 0) + concealNow;
@@ -194,32 +257,37 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     if (codecId is String) {
       final mimeType = byId[codecId]?.values['mimeType']?.toString();
       if (mimeType != null &&
-          mimeType.isNotEmpty &&
-          !codecs.contains(mimeType)) {
+          codecsAllowed.contains(mimeType) &&
+          !codecs.contains(mimeType) &&
+          codecs.length < 8) {
         codecs.add(mimeType);
       }
     }
   }
 
   // relayProtocol 可能出现在 candidate-pair 或选中 candidate 上。
-  String? relayProtocol = pair.values['relayProtocol']?.toString();
-  relayProtocol ??= candidateRelayProtocol(pair.values['localCandidateId']);
-  relayProtocol ??= candidateRelayProtocol(pair.values['remoteCandidateId']);
+  String? relayProtocol = pair == null
+      ? null
+      : allow(pair.values['relayProtocol']?.toString(), protocols);
+  relayProtocol ??= candidateRelayProtocol(pair?.values['localCandidateId']);
+  relayProtocol ??= candidateRelayProtocol(pair?.values['remoteCandidateId']);
 
-  return CallQualitySample(
-    localCandidateType: candidateType(pair.values['localCandidateId']),
-    remoteCandidateType: candidateType(pair.values['remoteCandidateId']),
+  return CallQualitySample._(
+    localCandidateType: candidateType(pair?.values['localCandidateId']),
+    remoteCandidateType: candidateType(pair?.values['remoteCandidateId']),
     rttMs: rttMs,
     jitterMs: jitterMs,
     packetsReceived: packetsReceived,
     packetsLost: packetsLost,
-    iceState: pair.values['state']?.toString(),
-    availableOutgoingBitrateBps: asInt(pair.values['availableOutgoingBitrate']),
+    packetCountersPaired: packetCountersPaired,
+    iceState: pair == null ? null : 'succeeded',
+    availableOutgoingBitrateBps:
+        asInt(pair?.values['availableOutgoingBitrate']),
     concealmentEvents: concealmentEvents,
-    codecs: codecs,
-    localCandidateProtocol: candidateProtocol(pair.values['localCandidateId']),
+    codecs: List<String>.unmodifiable(codecs),
+    localCandidateProtocol: candidateProtocol(pair?.values['localCandidateId']),
     remoteCandidateProtocol:
-        candidateProtocol(pair.values['remoteCandidateId']),
+        candidateProtocol(pair?.values['remoteCandidateId']),
     relayProtocol: relayProtocol,
     jitterBufferDelaySeconds: jitterBufferDelaySeconds,
     jitterBufferEmittedCount: jitterBufferEmittedCount,
@@ -236,25 +304,39 @@ final class CallQualityMonitor {
     this.interval = const Duration(seconds: 5),
     this.clock = DateTime.now,
     this.onSample,
-  }) : _getStats = getStats;
+    this.sampleCapacity = 128,
+    PerformanceTraceRecorder? performanceRecorder,
+  })  : assert(sampleCapacity > 0),
+        _getStats = getStats,
+        _performanceRecorder =
+            performanceRecorder ?? PerformanceTraceRecorder.instance;
 
   final Future<List<StatsReport>> Function() _getStats;
+  final PerformanceTraceRecorder _performanceRecorder;
   final Duration interval;
   final DateTime Function() clock;
   final void Function(CallQualitySample sample)? onSample;
+  final int sampleCapacity;
 
-  final List<CallQualitySample> samples = [];
+  final ListQueue<CallQualitySample> _samples = ListQueue<CallQualitySample>();
+  Iterable<CallQualitySample> get samples => _samples;
+  bool _turnUsed = false;
   Timer? _timer;
   bool _stopped = false;
+  bool _polling = false;
+  PerformanceTrace? _trace;
 
   bool get isRunning => _timer != null;
 
   /// 任意抽样出现 relay 候选 → 本通话经 TURN 中继。
-  bool get turnUsed => samples.any((sample) => sample.usesTurn);
+  bool get turnUsed => _turnUsed;
 
   void start() {
     if (_timer != null) return;
     _stopped = false;
+    if (_performanceRecorder.recordingEnabled) {
+      _trace = _performanceRecorder.start(PerformanceOperationType.callActive);
+    }
     unawaited(_poll());
     _timer = Timer.periodic(interval, (_) => unawaited(_poll()));
   }
@@ -263,22 +345,51 @@ final class CallQualityMonitor {
     _stopped = true;
     _timer?.cancel();
     _timer = null;
+    _trace?.finish();
+    _trace = null;
   }
 
   Future<void> _poll() async {
-    if (_stopped) return;
+    if (_stopped || _polling) return;
+    _polling = true;
     try {
       final reports = await _getStats();
       if (_stopped) return;
       final sample = parseCallQualityReports(reports);
       if (sample == null) return;
-      samples.add(sample);
+      if (_samples.length == sampleCapacity) _samples.removeFirst();
+      _samples.addLast(sample);
+      _turnUsed |= sample.usesTurn;
+      final hasCandidate = sample.localCandidateType != null ||
+          sample.remoteCandidateType != null;
+      final completePacketCounters = sample.packetLossPercent != null;
+      _trace?.setCallQuality(
+        rttMs: sample.rttMs,
+        jitterMs: sample.jitterMs,
+        packetsLost: completePacketCounters ? sample.packetsLost : null,
+        packetsReceived: completePacketCounters ? sample.packetsReceived : null,
+        usesTurn: _turnUsed || hasCandidate ? _turnUsed : null,
+        relayProtocol: _safePerformanceProtocol(sample.relayProtocol),
+        candidateProtocol: _safePerformanceProtocol(
+            sample.localCandidateProtocol ?? sample.remoteCandidateProtocol),
+      );
       onSample?.call(sample);
     } catch (error) {
-      debugPrint(
-          '[chatflow/callquality] getStats failed: ${error.runtimeType}');
+      if (_performanceRecorder.metrics.enabled) {
+        debugPrint('[chatflow/call] getStats failed: ${error.runtimeType}');
+      }
+    } finally {
+      _polling = false;
     }
   }
+
+  static PerformanceRelayProtocol? _safePerformanceProtocol(String? value) =>
+      switch (value) {
+        'udp' => PerformanceRelayProtocol.udp,
+        'tcp' => PerformanceRelayProtocol.tcp,
+        'tls' => PerformanceRelayProtocol.tls,
+        _ => null,
+      };
 
   /// 通话结束汇总（无抽样时如实返回 null）。
   String? summary() {
@@ -289,16 +400,15 @@ final class CallQualityMonitor {
         .map((s) => s.jitterMs)
         .whereType<double>()
         .toList(growable: false);
-    final received = samples
-        .map((s) => s.packetsReceived)
-        .whereType<int>()
-        .fold<int>(0, (a, b) => a + b);
-    final lost = samples
-        .map((s) => s.packetsLost)
-        .whereType<int>()
-        .fold<int>(0, (a, b) => a + b);
-    final lossPercent =
-        received + lost == 0 ? null : lost * 100.0 / (received + lost);
+    // WebRTC packet counters are cumulative. Re-adding each poll would count
+    // the same packets repeatedly; use the latest complete measured pair.
+    final lossSample = samples.lastWhere(
+      (sample) => sample.packetLossPercent != null,
+      orElse: () => const CallQualitySample._(),
+    );
+    final received = lossSample.packetsReceived;
+    final lost = lossSample.packetsLost;
+    final lossPercent = lossSample.packetLossPercent;
     final availOut = samples
         .map((s) => s.availableOutgoingBitrateBps)
         .whereType<int>()
@@ -346,8 +456,8 @@ final class CallQualityMonitor {
       'direct' => 'pathNote=p2p-direct-no-relay-observed',
       _ => 'pathNote=unknown',
     };
-    return '[chatflow/callquality] summary samples=${samples.length} '
-        'turn=${turnUsed ? 'used' : 'not-used'} '
+    return '[chatflow/call] summary samples=${samples.length} '
+        'turn=${pathText == '-' ? 'unknown' : (turnUsed ? 'used' : 'not-used')} '
         'path=$pathText '
         '$pathNote '
         'codec=${codecText.isEmpty ? '-' : codecText} '
@@ -358,7 +468,7 @@ final class CallQualityMonitor {
         'erl=${fmt(erl)}dB erle=${fmt(erle)}dB '
         'rttAvg=${fmt(rtts.isEmpty ? null : rtts.reduce((a, b) => a + b) / rtts.length)}ms '
         'jitterMax=${fmt(jitters.isEmpty ? null : jitters.reduce((a, b) => a > b ? a : b))}ms '
-        'lost=$lost/${received + lost}'
+        'lost=${lost ?? '-'}/${received == null || lost == null ? '-' : received + lost}'
         '${lossPercent == null ? '' : '(${lossPercent.toStringAsFixed(2)}%)'}';
   }
 }
