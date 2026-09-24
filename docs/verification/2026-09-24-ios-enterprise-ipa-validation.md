@@ -25,6 +25,7 @@ Apple [TN2319](https://developer.apple.com/library/archive/technotes/tn2319/_ind
 - `py -3.12 -m pytest tests/mobile -q --tb=short`：退出码 0，`170 passed, 1 skipped in 19.59s`；`py -3.12 scripts/verify_ui_contract.py`：退出码 0，32 components/429 screens；仓库策略和部署策略各退出码 0。`git diff --check`、Python 两个发布脚本编译均退出码 0。
 - `scripts/verify.ps1` 两次均主动停止：第一次在业务 API/Worker 约 10% 时因质量审查要求源码返工；第二次在该阶段约 2% 时，依据[项目变更影响复用规则](../runbooks/mobile-delivery-workflow.md)停止重复的约 28 分钟后端批次。不能把两次中止称为完整门禁 PASS。已过的仓库策略、模板、基础设施、Getui、Matrix Bot 有日志 `docs/verification/artifacts/2026-09-24/ios-enterprise-ipa-validation/verify-final2.log`。今天 09:18 HKT 的[前一功能任务完整门禁记录](2026-09-24-me-invitations-moments-interactions.md)为后端/Worker 2763 通过、77 跳过；`git diff e7ba46a4..HEAD` 加当前未提交差异对 business-api、business-worker、对应测试及 OpenAPI 导出脚本均无改动。本任务只复跑移动/发行及相关策略门禁，不重复无变化的后端输入。
 - 工具：Windows PowerShell 7.6.5、Python 3.12.10；本任务源码在工作树 `D:\pythonProject\outsource\StarChat\.worktrees\online-room-refresh`。最终脚本 SHA256：检查器 `a55bde063bbbdf3189846520b0b5f8058ab30a98ec8544589e6563d0b4a85243`；发布器 `a4dac87ff4d6b481a7e1278f1fe1016c5c40f6abaa90a96e4cddd3706d9e9f18`。本任务文档相对链接检查退出码 0；`current-state.md` 的全文件历史链接扫描仍报 16 个既有失效目标，本次新增三条链接均可解析。
+- Git：源码 `b5ec43a0`、记录 `1e967709` 已推送 `origin/codex/online-room-refresh`；尚未合入 main，也未将新脚本部署到服务器。
 
 ## 待完成验收
 

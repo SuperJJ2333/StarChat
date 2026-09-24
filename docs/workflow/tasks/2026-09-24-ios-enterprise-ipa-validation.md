@@ -6,8 +6,8 @@
 - 计划：[实施计划](../../superpowers/plans/2026-09-24-ios-enterprise-ipa-validation.md)；关联[分发任务](2026-09-24-ios-047-enterprise-distribution.md)。
 - 当前状态：源码门禁、发布器复检、设备覆盖验收记录门禁已实现，最终受影响门禁通过；未变化的后端全量批次依据同日完成证据复用。用户允许临时使用其他企业 Team，**但必须覆盖升级并保留已有数据**。已从服务器存档自行提取 2134/2144 旧包签名身份，确认与 2172 同证书/Team/Keychain、不同 App ID；用户无须重复提供旧 IPA。2172 本身仍被检查器拒绝，不能宣称可覆盖升级。
 - 负责人/所有权：`/root` 持有 `scripts/verify_ios_enterprise_ipa.py`、`scripts/release_metadata.py`、相关测试/工作流/文档；代理分别独占其受托测试文件或只读审计。工作树 `D:\pythonProject\outsource\StarChat\.worktrees\online-room-refresh`，基线 HEAD `04f2f97a04d7a615b9caaf999883131e0987a7b8`；源码提交 `b5ec43a0`。之前分发任务的四个文档变更保留，不与本任务测试/源码混淆。
-- 最后更新时间：2026-09-24 18:53 HKT。
-- 下一条操作：推送已验证的源码与记录到当前分支；有效重新签名 IPA、当前 iPhone 已装包身份和保留数据覆盖安装仍缺，生产写入还须先等用户明确确认并发流程暂停。
+- 最后更新时间：2026-09-24 18:59 HKT。
+- 下一条操作：取得有效重新签名 IPA，在持有旧数据的 iPhone 上不卸载覆盖验证，再据真实设备结果填写升级记录；生产写入还须先等用户明确确认并发流程暂停并重读生产现状。无需用户再提供旧发布 IPA。
 
 ## 验收台账
 
@@ -34,3 +34,4 @@
 - 当前回签 IPA SHA256 `12258dac74ace99c7d462b5a50ec99122b5d45861e753715e27c26fc6c0b53f2`，profile/Runner 已签 App ID 都为 `ZXB3TS7QD4.cn.edu.buaa.bhpan.fileProvider`，无 `aps-environment`；源码 `Runner.entitlements` 已有 production APNs。旧 2134/2144 包同证书和 Keychain、但 App ID 为 `ZXB3TS7QD4.cn.edu.buaa.wxwork.notifyext`。该事实不是当前 iPhone 安装身份证据。[存档对照及测试证据](../../verification/2026-09-24-ios-enterprise-ipa-validation.md)。
 - 另一并发流程在改生产；用户说会暂停并通知，本任务未收到暂停完成通知，不写生产、不覆盖其发布状态。
 - 本任务源码改动可回退 Git 提交；不涉及数据库/服务端或金融状态。实际 IPA 分发和 iPhone 安装验证由关联分发任务跟踪。
+- 源码提交 `b5ec43a0`、本次记录提交 `1e967709` 已推送到 `origin/codex/online-room-refresh`；工作树在推送后无未提交文件。首次推送遇 Windows schannel 握手失败，使用仍保持 TLS 校验的 Git OpenSSL 后端重试成功，未修改全局 Git 配置。

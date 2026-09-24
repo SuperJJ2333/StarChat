@@ -7,7 +7,7 @@
 - 当前状态：本任务只读审计完成，本任务未执行发布。另一并发流程已将回签 IPA、manifest、下载页及 iOS 版本设置部分写入生产；用户于 2026-09-24 表示会暂停该流程并通知本任务，尚未收到暂停完成通知。回签 IPA 的签名 App ID 与 Bundle ID 不一致，暂不能作为可安装的正式更新交付。
 - 负责人/所有权：`/root` 持有发布记录、静态源码、服务器写入及任务证据；`/root/ipa_audit` 和 `/root/ios_release_audit` 只读并行复核。工作树 `D:\pythonProject\outsource\StarChat\.worktrees\online-room-refresh`，起点 HEAD `04f2f97a04d7a615b9caaf999883131e0987a7b8`、跟踪文件干净。
 - 最后更新时间：2026-09-24 17:22 HKT。
-- 下一条操作：等待用户明确确认并发发布已暂停；然后重新读取完整生产状态和审计，以最新状态为基准处理错误的部分发布。有效回签包仍需匹配 `ZXB3TS7QD4.com.liuhetong.liuhetongMobile`，并经安装验证；若要求后台来电和消息提醒，还需生产 APNs 权限。
+- 下一条操作：等待用户明确确认并发发布已暂停；然后重新读取完整生产状态和审计，以最新状态为基准处理错误的部分发布。新回签包可使用其他企业 Team，但 profile/Runner 已签 App ID 必须与该 Team 和 Bundle ID 一致，且与实际已安装旧版身份兼容；在持有旧数据的 iPhone 上不卸载覆盖验证后才能发布。后台来电和消息提醒还需生产 APNs 权限。旧 2134/2144 发布包已从服务器归档核验，用户无需重传。
 
 ## 验收台账
 
@@ -38,3 +38,4 @@
 
 - 用户回传即为本次分发授权；签名身份仍要依据包和交接事实核对，不臆测重签工具。
 - 并发流程在本任务只读审计期间修改了生产，用户表示会暂停并通知；收到明确暂停通知前不执行任何生产写入。旧 manifest 的现场备份 SHA256 为 `a7b89bf847cdfe413c9ad2cb50eab3ffa897d5c363e472aa92cab5c2bfc4de6f`，旧下载页原字节已保存在 `docs/verification/artifacts/2026-09-24/ios-047-enterprise-distribution/preprod/`。回退须先重新读取完整设置与审计并核对静态 SHA，不能用审计前的旧前态盲写。
+- 后续源码门禁、旧 IPA 存档对照及用户“必须保留数据”约束见[关联任务](2026-09-24-ios-enterprise-ipa-validation.md)；2134/2144 与 2172 是同一证书/Team/Keychain，但实际签名 App ID 不同。

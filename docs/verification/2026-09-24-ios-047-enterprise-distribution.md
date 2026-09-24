@@ -50,5 +50,5 @@ Apple 的 [安装失败排障文档](https://developer.apple.com/library/archive
 ## 下一步门禁
 
 1. 收到用户明确确认另一发布流程已暂停；重新读取静态文件 SHA、iOS/Android 设置与设置审计，再确定恢复错误部分发布的顺序，所有设置修改经 SettingService 留审计。
-2. 获取与 `ZXB3TS7QD4.com.liuhetong.liuhetongMobile` 匹配的企业描述文件及完整重签 IPA，核对签名身份、版本、Team、Keychain 群组并在 iPhone 验证保留数据安装。若用户需要后台来电和聊天提醒，签名还必须具备生产 APNs 权限。
+2. 获取 profile/Runner 已签 App ID 与实际企业 Team、`com.liuhetong.liuhetongMobile` 一致的完整重签 IPA；可使用其他企业 Team，但须与真机已安装旧包兼容，并在持有旧数据的 iPhone 上不卸载覆盖验证登录和聊天记录。2134/2144 归档包已由本任务自行核验，用户无需重传；详见[源码门禁与旧包对照](2026-09-24-ios-enterprise-ipa-validation.md)。若用户需要后台来电和聊天提醒，签名还必须具备生产 APNs 权限。
 3. 仅在可用性门禁通过后，按发布计划发布不可变 IPA、manifest、下载页与更新弹窗并做前后态核验。
