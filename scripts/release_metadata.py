@@ -1,9 +1,13 @@
-"""Publish small release metadata. Never download or inspect APK/IPA bytes.
+"""Publish small release metadata without downloading APK/IPA bytes.
 
-Run prepare/check anywhere; publish on the production host. Signing confirmation
-is an operator attestation, not a claim that this script verifies signatures.
+Run prepare/check anywhere; publish on the production host. iOS publish requires
+evidence from the final signed IPA and checks the uploaded local file's SHA256.
+This module does not independently verify Apple signatures or device installation.
 """
 import argparse
+from datetime import datetime
+import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -13,6 +17,7 @@ import subprocess
 import tempfile
 import urllib.request
 from urllib.parse import urlsplit
+import zipfile
 
 BASE = 'https://www.liuhetong888.com'
 INSTALL = BASE + '/download?platform=ios&install=1'
@@ -100,6 +105,125 @@ def artifact_head(r, request=fetch):
         raise ValueError('artifact content length mismatch')
 
 
+def inspect_uploaded_ios_ipa(path, r):
+    """Reinspect the uploaded IPA, independently of the editable release JSON."""
+    checker = Path(__file__).with_name('verify_ios_enterprise_ipa.py')
+    spec = importlib.util.spec_from_file_location('verify_ios_enterprise_ipa', checker)
+    if spec is None or spec.loader is None:
+        raise ValueError('iOS IPA inspector is unavailable on the release host')
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+        return module.inspect_ipa(
+            path,
+            expected_bundle_id=r['bundle_id'],
+            expected_version=r['version'],
+            expected_build=r['build'],
+            expected_team_id=r['ios_ipa_evidence']['team_id'],
+            require_apns=r.get('ios_allow_no_apns') is not True,
+        )
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise ValueError('uploaded iOS IPA inspection failed') from exc
+
+
+def verify_ios_release_evidence(r, root, *, inspector=None):
+    """Bind handoff inspection to the exact IPA uploaded for this release."""
+    validate(r)
+    if r['platform'] != 'ios':
+        return
+    evidence = r.get('ios_ipa_evidence')
+    if not isinstance(evidence, dict):
+        raise ValueError('iOS signed IPA evidence is required before publish')
+    team_id = evidence.get('team_id')
+    if not isinstance(team_id, str) or not re.fullmatch(r'[A-Z0-9]{10}', team_id):
+        raise ValueError('iOS enterprise team identity is invalid')
+    expected_app_id = team_id + '.' + r['bundle_id']
+    if (evidence.get('bundle_id') != r['bundle_id']
+            or evidence.get('version') != r['version']
+            or type(evidence.get('build')) is not int
+            or evidence['build'] != r['build']
+            or evidence.get('profile_application_identifier') != expected_app_id
+            or evidence.get('signed_application_identifier') != expected_app_id):
+        raise ValueError('iOS signed IPA identity does not match release record')
+    if evidence.get('get_task_allow') is not False or evidence.get('provisions_all_devices') is not True:
+        raise ValueError('iOS signed IPA is not an enterprise distribution build')
+    if type(evidence.get('artifact_bytes')) is not int or evidence['artifact_bytes'] != r['artifact_bytes']:
+        raise ValueError('iOS signed IPA evidence size differs from release record')
+    profile_groups = evidence.get('profile_keychain_access_groups')
+    signed_groups = evidence.get('signed_keychain_access_groups')
+    for groups in (profile_groups, signed_groups):
+        if (not isinstance(groups, list) or not groups
+                or any(not isinstance(group, str) or not group for group in groups)
+                or len(groups) != len(set(groups))
+                or not any(group.startswith(team_id + '.') for group in groups)):
+            raise ValueError('iOS Keychain group evidence is missing or invalid')
+    for group in signed_groups:
+        if not any(
+            group == allowed or (
+                allowed.endswith('*') and allowed.count('*') == 1
+                and group.startswith(allowed[:-1])
+            )
+            for allowed in profile_groups
+        ):
+            raise ValueError('signed iOS Keychain group is not allowed by profile')
+    baseline = r.get('ios_upgrade_from')
+    if not isinstance(baseline, dict):
+        raise ValueError('installed iOS upgrade baseline is required to preserve app data')
+    old_groups = baseline.get('keychain_access_groups')
+    if (baseline.get('team_id') != team_id
+            or baseline.get('application_identifier') != expected_app_id
+            or not isinstance(baseline.get('version'), str)
+            or not re.fullmatch(r'\d+\.\d+\.\d+', baseline['version'])
+            or type(baseline.get('build')) is not int
+            or baseline['build'] <= 0 or baseline['build'] >= r['build']
+            or not isinstance(old_groups, list) or not old_groups
+            or any(not isinstance(group, str) or not group for group in old_groups)
+            or signed_groups[0] != old_groups[0]
+            or any(group not in signed_groups for group in old_groups)):
+        raise ValueError('iOS upgrade identity or Keychain baseline cannot preserve app data')
+    upgrade_test = r.get('ios_upgrade_test')
+    if not isinstance(upgrade_test, dict):
+        raise ValueError('iOS device cover-install test is required before publish')
+    performed_at = upgrade_test.get('performed_at')
+    try:
+        test_time = datetime.fromisoformat(performed_at) if isinstance(performed_at, str) else None
+    except ValueError:
+        test_time = None
+    if (upgrade_test.get('candidate_sha256') != evidence.get('sha256')
+            or upgrade_test.get('old_version') != baseline['version']
+            or type(upgrade_test.get('old_build')) is not int
+            or upgrade_test['old_build'] != baseline['build']
+            or test_time is None or test_time.tzinfo is None
+            or not isinstance(upgrade_test.get('performed_by'), str)
+            or not upgrade_test['performed_by'].strip()
+            or upgrade_test.get('installed_without_uninstall') is not True
+            or upgrade_test.get('chat_history_preserved') is not True
+            or upgrade_test.get('login_preserved') is not True):
+        raise ValueError('iOS device cover-install test does not prove this candidate preserved data')
+    apns = evidence.get('aps_environment')
+    if apns != 'production' and not (apns is None and r.get('ios_allow_no_apns') is True):
+        raise ValueError('production APNs evidence is required')
+    digest = evidence.get('sha256')
+    if not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('invalid iOS signed IPA SHA256 evidence')
+    root = Path(root).resolve()
+    artifact = (root / urlsplit(r['artifact_url']).path.lstrip('/')).resolve()
+    if not artifact.is_relative_to(root) or not artifact.is_file():
+        raise ValueError('uploaded iOS IPA file is missing')
+    if artifact.stat().st_size != r['artifact_bytes']:
+        raise ValueError('uploaded iOS IPA size differs from release record')
+    sha256 = hashlib.sha256()
+    with artifact.open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            sha256.update(chunk)
+    if sha256.hexdigest() != digest:
+        raise ValueError('uploaded iOS IPA SHA256 differs from signed handoff evidence')
+    inspected = (inspector(artifact) if inspector is not None
+                 else inspect_uploaded_ios_ipa(artifact, r))
+    if inspected != evidence:
+        raise ValueError('uploaded iOS IPA inspection differs from signed handoff evidence')
+
+
 def check(r, request=fetch):
     artifact_head(r, request)
     if r['platform'] == 'ios':
@@ -158,13 +282,14 @@ def db_settings(payload):
     return json.loads(result)
 
 
-def publish(r, root, backup, request=fetch, db=db_settings):
+def publish(r, root, backup, request=fetch, db=db_settings, *, inspector=None):
     import fcntl
     validate(r)
-    backup.mkdir(parents=True, exist_ok=False, mode=0o700)
     # Serialize this publisher on the host; fresh baseline plus CAS detects others.
     with open(root.parent / '.release-metadata.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        verify_ios_release_evidence(r, root, inspector=inspector)
+        backup.mkdir(parents=True, exist_ok=False, mode=0o700)
         artifact_head(r, request)
         before = db({'mode': 'inspect'})
         prefix = 'app_ios_' if r['platform'] == 'ios' else 'app_'
@@ -185,6 +310,7 @@ def publish(r, root, backup, request=fetch, db=db_settings):
                     raise ValueError('static drift: ' + name)
                 atomic_write(root/name, data); written.append(name)
             check(r, request)  # HTTP/XML/page gates precede the update popup write.
+            verify_ios_release_evidence(r, root, inspector=inspector)  # Catch a same-path IPA replacement.
         except Exception:
             for name in reversed(written):
                 if (root/name).read_bytes() == staged[name]:
@@ -196,7 +322,10 @@ def publish(r, root, backup, request=fetch, db=db_settings):
         after = db({'mode': 'apply', 'expected': before, 'values': desired,
                     'trace': 'release-metadata-' + backup.name})
         (backup/'after.json').write_text(json.dumps(after), encoding='utf-8')
-        print('PUBLISH_PASS: metadata verified; binary inspection not performed')
+        if r['platform'] == 'ios':
+            print('PUBLISH_PASS: metadata and uploaded IPA SHA256 verified; device install unverified')
+        else:
+            print('PUBLISH_PASS: metadata verified; binary inspection not performed')
 
 
 def main():
