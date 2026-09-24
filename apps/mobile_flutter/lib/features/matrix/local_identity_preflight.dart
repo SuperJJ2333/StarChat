@@ -221,7 +221,7 @@ final class ReadOnlySqlCipherIdentityReader
         }
         await db.execute("PRAGMA key = '${cipher.replaceAll("'", "''")}'");
       }
-      return readMatrixIdentityTables(db,
+      return await readMatrixIdentityTables(db,
           requiresAuthenticatedMigration: plaintext);
     } finally {
       await db.close();
