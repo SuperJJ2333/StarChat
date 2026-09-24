@@ -284,6 +284,140 @@ void main() {
     expect(storage.values, before);
   });
 
+  test('confirmed factory recovery re-probes and reuses one fresh scope',
+      () async {
+    final reader = _IdentityReader();
+    final storage = _RecordingSecureStore();
+    final store = SecureSessionStore(storage);
+    await store.selectMatrixAccount('https://matrix.test', '@old:matrix.test');
+    await store.saveMatrixBinding(_binding());
+    final oldKey = await store.matrixDatabaseKey();
+    final oldScope = await store.matrixStorageScope();
+    reader.records['/inventory/liuhetong_matrix_$oldScope.sqlite'] =
+        const MatrixLocalIdentityRecord(
+      hasRetainedData: true,
+      matrixUserId: '@old:matrix.test',
+      olmAccount: 'different-fingerprint',
+    );
+    final factory = MatrixClientFactory(
+      sessionStore: store,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/inventory',
+      localIdentityPreflight: _preflight(reader),
+    );
+
+    await factory.prepareFreshDeviceForConfirmedRecovery(
+      expectedHomeserver: 'https://matrix.test',
+      expectedUserId: '@old:matrix.test',
+    );
+    final freshScope = await store.matrixStorageScope();
+    await factory.prepareFreshDeviceForConfirmedRecovery(
+      expectedHomeserver: 'https://matrix.test',
+      expectedUserId: '@old:matrix.test',
+    );
+    await factory.selectAccount('https://matrix.test', '@old:matrix.test');
+
+    expect(freshScope, isNot(oldScope));
+    expect(await store.matrixStorageScope(), freshScope);
+    expect(
+        storage.values['liuhetong.matrix_database_key.v1.$oldScope'], oldKey);
+    expect(storage.values['liuhetong.matrix_local_binding.v1.$oldScope'],
+        jsonEncode(_binding().toJson()));
+    expect(storage.values['liuhetong.matrix_database_key.v1.$freshScope'],
+        isNot(oldKey));
+    expect(storage.values['liuhetong.matrix_archive_journal.v1'], isNull);
+  });
+
+  test('cold startup defers a committed fresh scope until authorized select',
+      () async {
+    final reader = _IdentityReader();
+    final storage = _RecordingSecureStore();
+    final store = SecureSessionStore(storage);
+    await store.selectMatrixAccount('https://matrix.test', '@old:matrix.test');
+    await store.saveMatrixBinding(_binding());
+    await store.matrixDatabaseKey();
+    final oldScope = await store.matrixStorageScope();
+    reader.records['/inventory/liuhetong_matrix_$oldScope.sqlite'] =
+        const MatrixLocalIdentityRecord(
+      hasRetainedData: true,
+      matrixUserId: '@old:matrix.test',
+      olmAccount: 'different-fingerprint',
+    );
+    final originalFactory = MatrixClientFactory(
+      sessionStore: store,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/inventory',
+      localIdentityPreflight: _preflight(reader),
+    );
+    await originalFactory.prepareFreshDeviceForConfirmedRecovery(
+      expectedHomeserver: 'https://matrix.test',
+      expectedUserId: '@old:matrix.test',
+    );
+    final freshScope = await store.matrixStorageScope();
+    var openerCalls = 0;
+    final restarted = MatrixClientFactory(
+      sessionStore: SecureSessionStore(storage),
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/inventory',
+      localIdentityPreflight: _preflight(reader),
+      opener: (
+          {required clientName, required databasePath, required cipher}) async {
+        openerCalls++;
+        return Client(clientName);
+      },
+    );
+    final before = Map<String, String>.from(storage.values);
+
+    await expectLater(
+      restarted.create(),
+      throwsA(isA<MatrixLocalIdentityPreflightException>().having(
+          (error) => error.cause,
+          'cause',
+          MatrixLocalIdentityCause.recoveryPending)),
+    );
+    expect(openerCalls, 0);
+    expect(storage.values, before);
+    await restarted.selectAccount('https://matrix.test', '@old:matrix.test');
+    await restarted.create();
+    expect(openerCalls, 1);
+    expect(await store.matrixStorageScope(), freshScope);
+  });
+
+  test('cold startup does not replay an uncommitted journal before auth',
+      () async {
+    final storage = _RecordingSecureStore();
+    final store = SecureSessionStore(storage);
+    await store.saveMatrixBinding(_binding());
+    await store.matrixDatabaseKey();
+    final before = Map<String, String>.from(storage.values);
+    storage.values['liuhetong.matrix_archive_journal.v1'] = '{corrupt';
+    var openerCalls = 0;
+    final factory = MatrixClientFactory(
+      sessionStore: store,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/inventory',
+      opener: (
+          {required clientName, required databasePath, required cipher}) async {
+        openerCalls++;
+        return Client(clientName);
+      },
+    );
+
+    await expectLater(
+      factory.create(),
+      throwsA(isA<MatrixLocalIdentityPreflightException>().having(
+          (error) => error.cause,
+          'cause',
+          MatrixLocalIdentityCause.recoveryPending)),
+    );
+    expect(openerCalls, 0);
+    expect(storage.values['liuhetong.matrix_database_key.v1'],
+        before['liuhetong.matrix_database_key.v1']);
+    expect(storage.values['liuhetong.matrix_local_binding.v1'],
+        before['liuhetong.matrix_local_binding.v1']);
+    expect(storage.values['liuhetong.matrix_account_slots.v1'], isNull);
+  });
+
   test('verified original in legacy slot blocks new-device choice', () async {
     final reader = _IdentityReader();
     final storage = _RecordingSecureStore();
@@ -322,6 +456,53 @@ void main() {
           .having((error) => error.canCreateNewDevice, 'canCreateNewDevice',
               false)),
     );
+  });
+
+  test('authorized selection adopts unique verified legacy original', () async {
+    final reader = _IdentityReader();
+    final storage = _RecordingSecureStore();
+    final store = SecureSessionStore(storage);
+    await store.selectMatrixAccount('https://matrix.test', '@old:matrix.test');
+    await store.saveMatrixBinding(_binding());
+    await store.matrixDatabaseKey();
+    final badScope = await store.matrixStorageScope();
+    final oldKey = storage.values['liuhetong.matrix_database_key.v1.$badScope'];
+    final oldBinding =
+        storage.values['liuhetong.matrix_local_binding.v1.$badScope'];
+    reader.records['/inventory/liuhetong_matrix_$badScope.sqlite'] =
+        const MatrixLocalIdentityRecord(
+      hasRetainedData: true,
+      matrixUserId: '@old:matrix.test',
+      olmAccount: 'different-fingerprint',
+    );
+    storage.values['liuhetong.matrix_local_binding.v1'] =
+        jsonEncode(_binding().toJson());
+    storage.values['liuhetong.matrix_database_key.v1'] = 'original-cipher';
+    reader.records['/inventory/liuhetong_matrix.sqlite'] =
+        const MatrixLocalIdentityRecord(
+      hasRetainedData: true,
+      matrixUserId: '@old:matrix.test',
+      olmAccount: 'original-fingerprint',
+    );
+    final factory = MatrixClientFactory(
+      sessionStore: store,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/inventory',
+      localIdentityPreflight: _preflight(reader),
+    );
+
+    await factory.selectAccount('https://matrix.test', '@old:matrix.test');
+
+    expect(await store.matrixStorageScope(), '');
+    expect(
+        storage.values['liuhetong.matrix_database_key.v1.$badScope'], oldKey);
+    expect(storage.values['liuhetong.matrix_local_binding.v1.$badScope'],
+        oldBinding);
+    expect(
+        storage.values['liuhetong.matrix_database_key.v1'], 'original-cipher');
+    expect(storage.values['liuhetong.matrix_archives.v1'],
+        contains('"kind":"adopt_original"'));
+    expect(storage.values['liuhetong.matrix_archive_journal.v1'], isNull);
   });
 
   test('two verified original candidates remain blocked and distinguishable',

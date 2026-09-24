@@ -162,6 +162,22 @@ final class IOSSecureSessionTests: XCTestCase {
     XCTAssertTrue(ops.additions.isEmpty)
     XCTAssertTrue(ops.deletions.isEmpty)
   }
+  func testArchiveMetadataPeekNeverMigratesOrEnablesNativeWrites() throws {
+    for key in ["liuhetong.matrix_archives.v1", "liuhetong.matrix_archive_journal.v1"] {
+      let ops = FakeSessionSecurity()
+      var stored = item("archive-value")
+      stored[kSecAttrAccount as String] = key
+      ops.copies = [(errSecSuccess, stored as CFDictionary)]
+      let store = IOSSecureSessionStore(security: ops)
+      XCTAssertEqual(try store.peek(key: key), "archive-value")
+      XCTAssertThrowsError(try store.read(key: key))
+      XCTAssertThrowsError(try store.write(key: key, value: "changed"))
+      XCTAssertThrowsError(try store.delete(key: key))
+      XCTAssertTrue(ops.updates.isEmpty)
+      XCTAssertTrue(ops.additions.isEmpty)
+      XCTAssertTrue(ops.deletions.isEmpty)
+    }
+  }
   func testLockedReadPropagatesWithoutFallbackOrMutation() {
     let ops = FakeSessionSecurity(); ops.copies = [(errSecInteractionNotAllowed, nil)]
     XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).read(key: key))

@@ -54,7 +54,14 @@ void main() {
     final store = SecureSessionStore();
     await expectLater(
         store.matrixDatabaseKey(), throwsA(isA<PlatformException>()));
-    expect(nativeCalls.map((c) => c.method), ['read']);
+    expect(nativeCalls.map((c) => c.method), ['peek']);
+    expect(pluginCalls, isEmpty);
+  });
+  test('archive metadata inspection uses native zero-write peek', () async {
+    final store = FlutterSecureKeyValueStore();
+    await store.peek('liuhetong.matrix_archives.v1');
+    await store.peek('liuhetong.matrix_archive_journal.v1');
+    expect(nativeCalls.map((call) => call.method), ['peek', 'peek']);
     expect(pluginCalls, isEmpty);
   });
   test('Android retains existing secure storage path', () async {

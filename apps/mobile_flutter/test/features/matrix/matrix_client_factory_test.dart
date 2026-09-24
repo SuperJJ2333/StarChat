@@ -2816,6 +2816,7 @@ void main() {
       business: business,
       matrix: matrix,
       deviceKey: () => 'device-key',
+      retainedHomeserver: Uri.parse('https://matrix.test'),
     );
 
     await expectLater(

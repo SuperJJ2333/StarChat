@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:matrix/matrix.dart';
 import 'package:olm/olm.dart' as olm;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -16,6 +17,7 @@ enum MatrixLocalIdentityCause {
   unreadable,
   originalIdentityElsewhere,
   multipleCandidates,
+  recoveryPending,
 }
 
 /// No key, account identifier, fingerprint, pickle or SQL is part of this error.
@@ -83,6 +85,61 @@ final class ReadOnlySqlCipherIdentityReader
 
   @override
   Future<MatrixLocalIdentityRecord> read(
+      String databasePath, String cipher) async {
+    // A SQLite read-only connection may still update WAL read marks in -shm.
+    // Inspect a short-lived copy of the encrypted DB and both sidecars so the
+    // original retained files are physically untouched. The old client must
+    // already be closed; if a file changes while copying, fail closed.
+    final snapshotDirectory =
+        await Directory.systemTemp.createTemp('matrix_identity_preflight_');
+    final snapshotPath =
+        '${snapshotDirectory.path}${Platform.pathSeparator}identity.sqlite';
+    const suffixes = ['', '-wal', '-shm'];
+    final before = <String, String?>{};
+    try {
+      for (final suffix in suffixes) {
+        final source = File('$databasePath$suffix');
+        final type =
+            await FileSystemEntity.type(source.path, followLinks: false);
+        if (type != FileSystemEntityType.notFound &&
+            type != FileSystemEntityType.file) {
+          throw const FormatException('Invalid Matrix database file');
+        }
+        if (type == FileSystemEntityType.notFound) {
+          before[suffix] = null;
+          continue;
+        }
+        final digest = await _fileDigest(source);
+        before[suffix] = digest;
+        final snapshot = await source.copy('$snapshotPath$suffix');
+        if (await _fileDigest(snapshot) != digest) {
+          throw const FormatException('Matrix database changed during copy');
+        }
+      }
+      final record = await _readSnapshot(snapshotPath, cipher);
+      for (final suffix in suffixes) {
+        final source = File('$databasePath$suffix');
+        final type =
+            await FileSystemEntity.type(source.path, followLinks: false);
+        final digest = type == FileSystemEntityType.notFound
+            ? null
+            : type == FileSystemEntityType.file
+                ? await _fileDigest(source)
+                : throw const FormatException('Invalid Matrix database file');
+        if (digest != before[suffix]) {
+          throw const FormatException('Matrix database changed during probe');
+        }
+      }
+      return record;
+    } finally {
+      await snapshotDirectory.delete(recursive: true);
+    }
+  }
+
+  Future<String> _fileDigest(File file) async =>
+      (await sha256.bind(file.openRead()).first).toString();
+
+  Future<MatrixLocalIdentityRecord> _readSnapshot(
       String databasePath, String cipher) async {
     final factory = createDatabaseFactoryFfi(
       ffiInit: SQfLiteEncryptionHelper.ffiInit,

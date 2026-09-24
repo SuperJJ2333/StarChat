@@ -44,6 +44,8 @@ final class FlutterSecureKeyValueStore
           (const {
                 'liuhetong.matrix_local_binding.v1',
                 'liuhetong.matrix_clear_tombstone.v1',
+                'liuhetong.matrix_archives.v1',
+                'liuhetong.matrix_archive_journal.v1',
               }.contains(key) ||
               RegExp(r'^liuhetong\.(matrix_local_binding|matrix_clear_tombstone)\.v1\.[a-f0-9]{64}$')
                   .hasMatch(key)));
@@ -79,6 +81,197 @@ final class MatrixStoredIdentitySnapshot {
   final String scope;
   final MatrixLocalBinding? binding;
   final String? databaseKey;
+}
+
+/// A pending archive must be replayed explicitly before inspecting a scope.
+/// This error deliberately carries no account or key material.
+final class MatrixArchiveRecoveryPending implements Exception {
+  const MatrixArchiveRecoveryPending();
+
+  @override
+  String toString() => 'MatrixArchiveRecoveryPending';
+}
+
+final class _MatrixArchiveEntry {
+  const _MatrixArchiveEntry({
+    required this.kind,
+    required this.accountHash,
+    required this.archiveId,
+    required this.oldScope,
+    required this.newScope,
+  });
+
+  final String kind;
+  final String accountHash;
+  final String archiveId;
+  final String oldScope;
+  final String newScope;
+
+  String get oldDatabaseFile => oldScope.isEmpty
+      ? 'liuhetong_matrix.sqlite'
+      : 'liuhetong_matrix_$oldScope.sqlite';
+
+  String oldKeyName(String base) => oldScope.isEmpty ? base : '$base.$oldScope';
+
+  Map<String, Object?> toJson() => {
+        'kind': kind,
+        'account': accountHash,
+        'archive_id': archiveId,
+        'old_scope': oldScope,
+        'new_scope': newScope,
+        'database_file': oldDatabaseFile,
+        'wal_file': '$oldDatabaseFile-wal',
+        'shm_file': '$oldDatabaseFile-shm',
+        'database_key_ref': oldKeyName('liuhetong.matrix_database_key.v1'),
+        'binding_ref': oldKeyName('liuhetong.matrix_local_binding.v1'),
+        'recovery_ref': oldKeyName('liuhetong.encrypted_recovery_key'),
+      };
+
+  static _MatrixArchiveEntry parse(Object? value) {
+    if (value is! Map<String, dynamic> ||
+        value.length != 11 ||
+        !const {'fresh_device', 'adopt_original'}.contains(value['kind']) ||
+        value['account'] is! String ||
+        value['archive_id'] is! String ||
+        value['old_scope'] is! String ||
+        value['new_scope'] is! String ||
+        value['database_file'] is! String ||
+        value['wal_file'] is! String ||
+        value['shm_file'] is! String ||
+        value['database_key_ref'] is! String ||
+        value['binding_ref'] is! String ||
+        value['recovery_ref'] is! String) {
+      throw const FormatException('Invalid Matrix archive entry');
+    }
+    final entry = _MatrixArchiveEntry(
+      kind: value['kind'] as String,
+      accountHash: value['account'] as String,
+      archiveId: value['archive_id'] as String,
+      oldScope: value['old_scope'] as String,
+      newScope: value['new_scope'] as String,
+    );
+    if (!_AccountScopedSecureStore._hash.hasMatch(entry.accountHash) ||
+        !_AccountScopedSecureStore._hash.hasMatch(entry.archiveId) ||
+        (entry.oldScope.isNotEmpty &&
+            !_AccountScopedSecureStore._hash.hasMatch(entry.oldScope)) ||
+        (entry.newScope.isEmpty
+            ? entry.kind != 'adopt_original'
+            : !_AccountScopedSecureStore._hash.hasMatch(entry.newScope)) ||
+        value['database_file'] != entry.oldDatabaseFile ||
+        value['wal_file'] != '${entry.oldDatabaseFile}-wal' ||
+        value['shm_file'] != '${entry.oldDatabaseFile}-shm' ||
+        value['database_key_ref'] !=
+            entry.oldKeyName('liuhetong.matrix_database_key.v1') ||
+        value['binding_ref'] !=
+            entry.oldKeyName('liuhetong.matrix_local_binding.v1') ||
+        value['recovery_ref'] !=
+            entry.oldKeyName('liuhetong.encrypted_recovery_key') ||
+        entry.oldScope == entry.newScope) {
+      throw const FormatException('Invalid Matrix archive entry');
+    }
+    return entry;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _MatrixArchiveEntry &&
+      other.kind == kind &&
+      other.accountHash == accountHash &&
+      other.archiveId == archiveId &&
+      other.oldScope == oldScope &&
+      other.newScope == newScope;
+
+  @override
+  int get hashCode =>
+      Object.hash(kind, accountHash, archiveId, oldScope, newScope);
+}
+
+final class _MatrixArchiveJournal {
+  const _MatrixArchiveJournal({
+    required this.entry,
+    required this.priorActiveScope,
+    required this.oldKeyDigest,
+    required this.oldBindingDigest,
+    required this.newKeyDigest,
+    required this.newBindingDigest,
+    required this.phase,
+  });
+
+  final _MatrixArchiveEntry entry;
+  final String priorActiveScope;
+  final String oldKeyDigest;
+  final String oldBindingDigest;
+  final String? newKeyDigest;
+  final String? newBindingDigest;
+  final String phase;
+
+  _MatrixArchiveJournal committed() => _MatrixArchiveJournal(
+        entry: entry,
+        priorActiveScope: priorActiveScope,
+        oldKeyDigest: oldKeyDigest,
+        oldBindingDigest: oldBindingDigest,
+        newKeyDigest: newKeyDigest,
+        newBindingDigest: newBindingDigest,
+        phase: 'committed',
+      );
+
+  Map<String, Object?> toJson() => {
+        'version': 1,
+        'kind': entry.kind,
+        'entry': entry.toJson(),
+        'prior_active_scope': priorActiveScope,
+        'old_key_digest': oldKeyDigest,
+        'old_binding_digest': oldBindingDigest,
+        'new_key_digest': newKeyDigest,
+        'new_binding_digest': newBindingDigest,
+        'phase': phase,
+      };
+
+  static _MatrixArchiveJournal parse(String encoded) {
+    final value = jsonDecode(encoded);
+    if (value is! Map<String, dynamic> ||
+        value.length != 9 ||
+        value['version'] != 1 ||
+        !const {'fresh_device', 'adopt_original'}.contains(value['kind']) ||
+        value['entry'] is! Map<String, dynamic> ||
+        value['prior_active_scope'] is! String ||
+        value['old_key_digest'] is! String ||
+        value['old_binding_digest'] is! String ||
+        !const {'prepared', 'committed'}.contains(value['phase'])) {
+      throw const FormatException('Invalid Matrix archive journal');
+    }
+    final priorActive = value['prior_active_scope'] as String;
+    final oldKeyDigest = value['old_key_digest'] as String;
+    final oldBindingDigest = value['old_binding_digest'] as String;
+    if ((priorActive.isNotEmpty &&
+            !_AccountScopedSecureStore._hash.hasMatch(priorActive)) ||
+        !_AccountScopedSecureStore._hash.hasMatch(oldKeyDigest) ||
+        !_AccountScopedSecureStore._hash.hasMatch(oldBindingDigest)) {
+      throw const FormatException('Invalid Matrix archive journal');
+    }
+    final entry = _MatrixArchiveEntry.parse(value['entry']);
+    final newKeyDigest = value['new_key_digest'];
+    final newBindingDigest = value['new_binding_digest'];
+    if (entry.kind != value['kind'] ||
+        (entry.kind == 'fresh_device' &&
+            (newKeyDigest != null || newBindingDigest != null)) ||
+        (entry.kind == 'adopt_original' &&
+            (newKeyDigest is! String ||
+                newBindingDigest is! String ||
+                !_AccountScopedSecureStore._hash.hasMatch(newKeyDigest) ||
+                !_AccountScopedSecureStore._hash.hasMatch(newBindingDigest)))) {
+      throw const FormatException('Invalid Matrix archive journal');
+    }
+    return _MatrixArchiveJournal(
+      entry: entry,
+      priorActiveScope: priorActive,
+      oldKeyDigest: oldKeyDigest,
+      oldBindingDigest: oldBindingDigest,
+      newKeyDigest: newKeyDigest as String?,
+      newBindingDigest: newBindingDigest as String?,
+      phase: value['phase'] as String,
+    );
+  }
 }
 
 final class StoredBusinessSession {
@@ -131,6 +324,8 @@ final class SecureSessionStore {
   static const _registrationDeviceKey = 'liuhetong.registration_device_key.v1';
   static const _matrixClearTombstoneKey = 'liuhetong.matrix_clear_tombstone.v1';
   static const _matrixClearTombstoneValue = '{"version":1,"pending":true}';
+  static const _matrixArchiveIndexKey = 'liuhetong.matrix_archives.v1';
+  static const _matrixArchiveJournalKey = 'liuhetong.matrix_archive_journal.v1';
 
   /// 按槽隔离的键名。清空一次安装时要连同它们的全部槽后缀一起删除。
   static const _scopedKeyNames = <String>[
@@ -235,6 +430,442 @@ final class SecureSessionStore {
       throw const FormatException('Invalid matrix local binding');
     }
     return MatrixLocalBinding.fromJson(value);
+  }
+
+  /// Replays a durable archive transaction before any scope decision or SDK
+  /// initialization. Inspection APIs deliberately never call this method.
+  Future<void> recoverPendingMatrixArchive({
+    required String expectedHomeserver,
+    required String expectedUserId,
+  }) =>
+      _runMatrixIdentityOperation(() async {
+        final encoded = await _storage.peekRaw(_matrixArchiveJournalKey);
+        if (encoded == null) return;
+        final journal = _MatrixArchiveJournal.parse(encoded);
+        if (_AccountScopedSecureStore.identity(
+                expectedHomeserver, expectedUserId) !=
+            journal.entry.accountHash) {
+          throw StateError('Matrix archive target is not authorized');
+        }
+        await _completeMatrixArchiveUnlocked(journal);
+      }, skipArchiveRecovery: true);
+
+  Future<String?> confirmedFreshDeviceScope(String homeserver, String userId) =>
+      _runMatrixIdentityOperation(
+          () => _confirmedFreshDeviceScopeUnlocked(homeserver, userId));
+
+  Future<bool> peekUnboundFreshDeviceAwaitingAuth() =>
+      _runMatrixIdentityOperation(() async {
+        final scope = await _storage.peekScope();
+        final snapshot = await _peekIdentityAtScopeUnlocked(scope);
+        if (snapshot.binding != null || snapshot.databaseKey == null) {
+          return false;
+        }
+        final slots = await _storage.peekSlots();
+        final archives = await _archiveEntriesUnlocked();
+        return archives.any((entry) =>
+            entry.kind == 'fresh_device' &&
+            entry.newScope == scope &&
+            slots[entry.accountHash] == scope);
+      });
+
+  Future<String?> _confirmedFreshDeviceScopeUnlocked(
+      String homeserver, String userId) async {
+    final target = _AccountScopedSecureStore.identity(homeserver, userId);
+    final slots = await _storage.peekSlots();
+    final current = await _storage.peekScope();
+    if (slots[target] != current || current.isEmpty) return null;
+    final snapshot = await _peekIdentityAtScopeUnlocked(current);
+    if (snapshot.binding != null || snapshot.databaseKey == null) return null;
+    final entries = await _archiveEntriesUnlocked();
+    return entries.any((entry) =>
+            entry.kind == 'fresh_device' &&
+            entry.accountHash == target &&
+            entry.newScope == current)
+        ? current
+        : null;
+  }
+
+  /// The caller has already stopped the old client and independently proved
+  /// that no complete original Olm identity exists in any local candidate.
+  /// A random, empty slot is committed only after its old scope is durable in
+  /// the archive index. The callback rejects main DBs and every sidecar.
+  Future<String> prepareFreshDeviceForConfirmedRecovery({
+    required String expectedHomeserver,
+    required String expectedUserId,
+    required MatrixStoredIdentitySnapshot expectedSnapshot,
+    required Future<bool> Function(String scope) scopeHasDatabaseFiles,
+  }) =>
+      _runMatrixIdentityOperation(() async {
+        if (Uri.tryParse(expectedHomeserver)?.hasAuthority != true ||
+            !expectedUserId.startsWith('@') ||
+            !expectedUserId.contains(':')) {
+          throw const FormatException('Invalid Matrix account identity');
+        }
+        final already = await _confirmedFreshDeviceScopeUnlocked(
+            expectedHomeserver, expectedUserId);
+        if (already != null) return already;
+
+        final slots = await _storage.slots();
+        final priorActive = await _storage.scope();
+        final activeBinding =
+            (await _peekIdentityAtScopeUnlocked(priorActive)).binding;
+        if (activeBinding != null) {
+          final activeAccount = _AccountScopedSecureStore.identity(
+              activeBinding.homeserver, activeBinding.matrixUserId);
+          if (slots.containsKey(activeAccount) &&
+              slots[activeAccount] != priorActive) {
+            throw const FormatException('Conflicting Matrix account registry');
+          }
+          slots[activeAccount] = priorActive;
+        }
+        final target = _AccountScopedSecureStore.identity(
+            expectedHomeserver, expectedUserId);
+        final oldScope = slots[target] ?? target;
+        final actual = await _peekIdentityAtScopeUnlocked(oldScope);
+        final oldBinding = actual.binding;
+        final oldKey = actual.databaseKey;
+        if (actual.scope != expectedSnapshot.scope ||
+            oldBinding != expectedSnapshot.binding ||
+            oldKey != expectedSnapshot.databaseKey ||
+            oldBinding == null ||
+            oldKey == null ||
+            oldKey.isEmpty ||
+            oldBinding.homeserver != expectedHomeserver ||
+            oldBinding.matrixUserId != expectedUserId) {
+          throw StateError('Matrix account changed during confirmed recovery');
+        }
+        final entries = await _archiveEntriesUnlocked();
+        final occupied = <String>{
+          oldScope,
+          priorActive,
+          ...slots.values,
+          for (final entry in entries) ...[entry.oldScope, entry.newScope],
+        };
+        String? newScope;
+        for (var attempt = 0; attempt < 32; attempt++) {
+          final candidate =
+              List<int>.generate(32, (_) => Random.secure().nextInt(256));
+          final scope = candidate
+              .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+              .join();
+          if (occupied.contains(scope) || await scopeHasDatabaseFiles(scope)) {
+            continue;
+          }
+          var occupiedKey = false;
+          for (final name in _scopedKeyNames) {
+            if (await _storage.peekRaw('$name.$scope') != null) {
+              occupiedKey = true;
+              break;
+            }
+          }
+          if (!occupiedKey) {
+            newScope = scope;
+            break;
+          }
+        }
+        if (newScope == null) {
+          throw StateError('No empty Matrix archive scope');
+        }
+        final archiveId = sha256
+            .convert(utf8.encode(jsonEncode([
+              'fresh_device',
+              expectedHomeserver,
+              expectedUserId,
+              oldBinding.databaseGeneration,
+              oldScope,
+            ])))
+            .toString();
+        final journal = _MatrixArchiveJournal(
+          entry: _MatrixArchiveEntry(
+            kind: 'fresh_device',
+            accountHash: target,
+            archiveId: archiveId,
+            oldScope: oldScope,
+            newScope: newScope,
+          ),
+          priorActiveScope: priorActive,
+          oldKeyDigest: sha256.convert(utf8.encode(oldKey)).toString(),
+          oldBindingDigest: sha256
+              .convert(utf8.encode(jsonEncode(oldBinding.toJson())))
+              .toString(),
+          newKeyDigest: null,
+          newBindingDigest: null,
+          phase: 'prepared',
+        );
+        await _storage.raw
+            .write(_matrixArchiveJournalKey, jsonEncode(journal.toJson()));
+        final checked = await _storage.peekRaw(_matrixArchiveJournalKey);
+        if (checked == null ||
+            jsonEncode(_MatrixArchiveJournal.parse(checked).toJson()) !=
+                jsonEncode(journal.toJson())) {
+          throw StateError('Matrix archive journal verification failed');
+        }
+        await _completeMatrixArchiveUnlocked(journal);
+        return newScope;
+      });
+
+  /// Switches to a separately verified copy of the original Olm identity.
+  /// The factory must prove the candidate DB and fingerprint before calling.
+  /// This transaction changes pointers only; neither slot's key or DB is
+  /// created, copied, deleted or rewritten.
+  Future<void> adoptVerifiedOriginalCandidate({
+    required String expectedHomeserver,
+    required String expectedUserId,
+    required MatrixStoredIdentitySnapshot expectedSnapshot,
+    required MatrixStoredIdentitySnapshot verifiedCandidateSnapshot,
+  }) =>
+      _runMatrixIdentityOperation(() async {
+        if (Uri.tryParse(expectedHomeserver)?.hasAuthority != true ||
+            !expectedUserId.startsWith('@') ||
+            !expectedUserId.contains(':')) {
+          throw const FormatException('Invalid Matrix account identity');
+        }
+        final slots = await _storage.slots();
+        final priorActive = await _storage.scope();
+        final activeBinding =
+            (await _peekIdentityAtScopeUnlocked(priorActive)).binding;
+        if (activeBinding != null) {
+          final activeAccount = _AccountScopedSecureStore.identity(
+              activeBinding.homeserver, activeBinding.matrixUserId);
+          if (slots.containsKey(activeAccount) &&
+              slots[activeAccount] != priorActive) {
+            throw const FormatException('Conflicting Matrix account registry');
+          }
+          slots[activeAccount] = priorActive;
+        }
+        final target = _AccountScopedSecureStore.identity(
+            expectedHomeserver, expectedUserId);
+        final oldScope = slots[target] ?? target;
+        final old = await _peekIdentityAtScopeUnlocked(oldScope);
+        final candidate =
+            await _peekIdentityAtScopeUnlocked(verifiedCandidateSnapshot.scope);
+        if (old.scope != expectedSnapshot.scope ||
+            old.binding != expectedSnapshot.binding ||
+            old.databaseKey != expectedSnapshot.databaseKey ||
+            candidate.scope != verifiedCandidateSnapshot.scope ||
+            candidate.binding != verifiedCandidateSnapshot.binding ||
+            candidate.databaseKey != verifiedCandidateSnapshot.databaseKey ||
+            candidate.scope == old.scope ||
+            old.binding == null ||
+            old.databaseKey == null ||
+            candidate.binding == null ||
+            candidate.databaseKey == null ||
+            candidate.binding!.homeserver != expectedHomeserver ||
+            candidate.binding!.matrixUserId != expectedUserId ||
+            old.binding!.homeserver != expectedHomeserver ||
+            old.binding!.matrixUserId != expectedUserId ||
+            old.binding!.ed25519Fingerprint == null ||
+            old.binding!.ed25519Fingerprint !=
+                candidate.binding!.ed25519Fingerprint ||
+            slots.entries.any((entry) =>
+                entry.key != target && entry.value == candidate.scope)) {
+          throw StateError('Verified Matrix original candidate changed');
+        }
+        final oldBinding = old.binding!;
+        final candidateBinding = candidate.binding!;
+        final oldKey = old.databaseKey!;
+        final candidateKey = candidate.databaseKey!;
+        final archiveId = sha256
+            .convert(utf8.encode(jsonEncode([
+              'adopt_original',
+              expectedHomeserver,
+              expectedUserId,
+              oldBinding.databaseGeneration,
+              oldScope,
+              candidate.scope,
+            ])))
+            .toString();
+        final journal = _MatrixArchiveJournal(
+          entry: _MatrixArchiveEntry(
+            kind: 'adopt_original',
+            accountHash: target,
+            archiveId: archiveId,
+            oldScope: oldScope,
+            newScope: candidate.scope,
+          ),
+          priorActiveScope: priorActive,
+          oldKeyDigest: sha256.convert(utf8.encode(oldKey)).toString(),
+          oldBindingDigest: sha256
+              .convert(utf8.encode(jsonEncode(oldBinding.toJson())))
+              .toString(),
+          newKeyDigest: sha256.convert(utf8.encode(candidateKey)).toString(),
+          newBindingDigest: sha256
+              .convert(utf8.encode(jsonEncode(candidateBinding.toJson())))
+              .toString(),
+          phase: 'prepared',
+        );
+        await _storage.raw
+            .write(_matrixArchiveJournalKey, jsonEncode(journal.toJson()));
+        final checked = await _storage.peekRaw(_matrixArchiveJournalKey);
+        if (checked == null ||
+            jsonEncode(_MatrixArchiveJournal.parse(checked).toJson()) !=
+                jsonEncode(journal.toJson())) {
+          throw StateError('Matrix archive journal verification failed');
+        }
+        await _completeMatrixArchiveUnlocked(journal);
+      });
+
+  Future<List<_MatrixArchiveEntry>> _archiveEntriesUnlocked() async {
+    final encoded = await _storage.peekRaw(_matrixArchiveIndexKey);
+    if (encoded == null) return <_MatrixArchiveEntry>[];
+    final parsed = jsonDecode(encoded);
+    if (parsed is! Map<String, dynamic> ||
+        parsed.length != 2 ||
+        parsed['version'] != 1 ||
+        parsed['entries'] is! List) {
+      throw const FormatException('Invalid Matrix archive index');
+    }
+    final rawEntries = parsed['entries'] as List;
+    if (rawEntries.length > 256) {
+      throw const FormatException('Invalid Matrix archive index');
+    }
+    final entries = rawEntries.map(_MatrixArchiveEntry.parse).toList();
+    if (entries.toSet().length != entries.length ||
+        entries.map((entry) => entry.newScope).toSet().length !=
+            entries.length) {
+      throw const FormatException('Invalid Matrix archive index');
+    }
+    return entries;
+  }
+
+  Future<void> _completeMatrixArchiveUnlocked(
+      _MatrixArchiveJournal journal) async {
+    final entry = journal.entry;
+    final old = await _peekIdentityAtScopeUnlocked(entry.oldScope);
+    if (old.binding == null ||
+        old.databaseKey == null ||
+        sha256.convert(utf8.encode(old.databaseKey!)).toString() !=
+            journal.oldKeyDigest ||
+        sha256
+                .convert(utf8.encode(jsonEncode(old.binding!.toJson())))
+                .toString() !=
+            journal.oldBindingDigest ||
+        _AccountScopedSecureStore.identity(
+                old.binding!.homeserver, old.binding!.matrixUserId) !=
+            entry.accountHash) {
+      throw StateError('Retained Matrix archive identity changed');
+    }
+
+    final slots = await _storage.slots();
+    final oldTarget = slots[entry.accountHash];
+    final rawActive =
+        await _storage.peekRaw(_AccountScopedSecureStore.activeKey);
+    if (oldTarget != null &&
+        oldTarget != entry.oldScope &&
+        oldTarget != entry.newScope) {
+      throw StateError('Conflicting Matrix archive registry');
+    }
+    if (slots.entries.any((slot) =>
+        slot.key != entry.accountHash && slot.value == entry.newScope)) {
+      throw StateError('Conflicting Matrix archive registry');
+    }
+    if (rawActive != journal.priorActiveScope &&
+        rawActive != entry.newScope &&
+        !(rawActive == null && journal.priorActiveScope.isEmpty)) {
+      throw StateError('Conflicting Matrix archive active scope');
+    }
+    if (journal.phase == 'committed' &&
+        (oldTarget != entry.newScope || rawActive != entry.newScope)) {
+      throw StateError('Invalid committed Matrix archive');
+    }
+
+    final archives = await _archiveEntriesUnlocked();
+    final related = archives.where((saved) =>
+        saved.archiveId == entry.archiveId || saved.newScope == entry.newScope);
+    if (related.any((saved) => saved != entry)) {
+      throw StateError('Conflicting Matrix archive index');
+    }
+    if (!archives.contains(entry)) {
+      final updated = [...archives, entry];
+      await _storage.raw.write(
+          _matrixArchiveIndexKey,
+          jsonEncode({
+            'version': 1,
+            'entries': updated.map((e) => e.toJson()).toList()
+          }));
+    }
+    final verifiedArchives = await _archiveEntriesUnlocked();
+    if (!verifiedArchives.contains(entry)) {
+      throw StateError('Matrix archive index verification failed');
+    }
+
+    if (entry.kind == 'fresh_device') {
+      final newKeyName = '$_matrixDatabaseKey.${entry.newScope}';
+      var newKey = await _storage.peekRaw(newKeyName);
+      if (newKey == null) {
+        final random = Random.secure();
+        newKey =
+            base64UrlEncode(List<int>.generate(32, (_) => random.nextInt(256)));
+        await _storage.raw.write(newKeyName, newKey);
+      }
+      if (newKey == old.databaseKey ||
+          !_validMatrixDatabaseKey(newKey) ||
+          await _storage.peekRaw(newKeyName) != newKey) {
+        throw StateError('Matrix fresh scope key verification failed');
+      }
+    } else {
+      final candidate = await _peekIdentityAtScopeUnlocked(entry.newScope);
+      final candidateBinding = candidate.binding;
+      final candidateKey = candidate.databaseKey;
+      if (candidateBinding == null ||
+          candidateKey == null ||
+          sha256.convert(utf8.encode(candidateKey)).toString() !=
+              journal.newKeyDigest ||
+          sha256
+                  .convert(utf8.encode(jsonEncode(candidateBinding.toJson())))
+                  .toString() !=
+              journal.newBindingDigest ||
+          _AccountScopedSecureStore.identity(
+                  candidateBinding.homeserver, candidateBinding.matrixUserId) !=
+              entry.accountHash ||
+          candidateBinding.ed25519Fingerprint == null ||
+          candidateBinding.ed25519Fingerprint !=
+              old.binding!.ed25519Fingerprint) {
+        throw StateError('Verified Matrix original candidate changed');
+      }
+    }
+
+    if (oldTarget != entry.newScope) {
+      slots[entry.accountHash] = entry.newScope;
+      await _storage.raw
+          .write(_AccountScopedSecureStore.registryKey, jsonEncode(slots));
+    }
+    final verifiedSlots = await _storage.peekSlots();
+    if (verifiedSlots[entry.accountHash] != entry.newScope) {
+      throw StateError('Matrix archive registry verification failed');
+    }
+    if (rawActive != entry.newScope) {
+      await _storage.raw
+          .write(_AccountScopedSecureStore.activeKey, entry.newScope);
+    }
+    if (await _storage.peekRaw(_AccountScopedSecureStore.activeKey) !=
+        entry.newScope) {
+      throw StateError('Matrix archive active scope verification failed');
+    }
+    if (journal.phase != 'committed') {
+      final committed = journal.committed();
+      await _storage.raw
+          .write(_matrixArchiveJournalKey, jsonEncode(committed.toJson()));
+      final checked = await _storage.peekRaw(_matrixArchiveJournalKey);
+      if (checked == null ||
+          jsonEncode(_MatrixArchiveJournal.parse(checked).toJson()) !=
+              jsonEncode(committed.toJson())) {
+        throw StateError('Matrix archive commit verification failed');
+      }
+    }
+    await _storage.raw.delete(_matrixArchiveJournalKey);
+    if (await _storage.peekRaw(_matrixArchiveJournalKey) != null) {
+      throw StateError('Matrix archive journal removal failed');
+    }
+  }
+
+  static bool _validMatrixDatabaseKey(String value) {
+    try {
+      return base64Url.decode(base64Url.normalize(value)).length == 32;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Read-only preflight before a password login can replace a remote session.
@@ -404,10 +1035,15 @@ final class SecureSessionStore {
 
   Future<void> clearBusinessSession() => _storage.delete(_sessionKey);
 
-  Future<T> _runMatrixIdentityOperation<T>(
-    Future<T> Function() operation,
-  ) {
-    final result = _matrixIdentityOperations.then<T>((_) => operation());
+  Future<T> _runMatrixIdentityOperation<T>(Future<T> Function() operation,
+      {bool skipArchiveRecovery = false}) {
+    final result = _matrixIdentityOperations.then<T>((_) async {
+      if (!skipArchiveRecovery &&
+          await _storage.peekRaw(_matrixArchiveJournalKey) != null) {
+        throw const MatrixArchiveRecoveryPending();
+      }
+      return operation();
+    });
     _matrixIdentityOperations = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace __) {},
@@ -655,7 +1291,8 @@ final class SecureSessionStore {
   /// 这里必须作用于 `raw`：要删除的正是作用域指针与注册表本身，不能先经过
   /// 作用域间接层。加密库文件已随沙盒消失，因此删除全部槽不会丢失可读数据。
   Future<void> clearInstallation() =>
-      _runMatrixIdentityOperation(_clearInstallationUnlocked);
+      _runMatrixIdentityOperation(_clearInstallationUnlocked,
+          skipArchiveRecovery: true);
 
   Future<void> _clearInstallationUnlocked() async {
     Object? firstError;
@@ -688,6 +1325,16 @@ final class SecureSessionStore {
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }
+    // Archive enumeration survives every partial deletion. The journal is
+    // removed before the index, and only after all scoped keys are gone.
+    await attemptDelete(_matrixArchiveJournalKey);
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
+    }
+    await attemptDelete(_matrixArchiveIndexKey);
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
+    }
   }
 
   /// 候选槽后缀：空后缀（ADR-0063 之前的单账号遗留）加上注册表中出现的槽。
@@ -695,12 +1342,17 @@ final class SecureSessionStore {
   /// 枚举方式，退化为从原始值中提取全部 64 位十六进制串。
   Future<Set<String>> _installationSlotSuffixes() async {
     final suffixes = <String>{''};
-    final encoded =
-        await _storage.raw.read(_AccountScopedSecureStore.registryKey);
-    if (encoded == null) return suffixes;
-    try {
-      suffixes.addAll((await _storage.slots()).values);
-    } catch (_) {
+    for (final key in [
+      _AccountScopedSecureStore.registryKey,
+      _AccountScopedSecureStore.activeKey,
+      _matrixArchiveIndexKey,
+      _matrixArchiveJournalKey,
+    ]) {
+      final encoded = await _storage.peekRaw(key);
+      if (encoded == null) continue;
+      // This cleanup is reachable only after the installation generation
+      // probe established that no DB/WAL/SHM survives. Extracting hash-like
+      // tokens also keeps malformed legacy metadata retryable.
       suffixes.addAll(
           _hashToken.allMatches(encoded).map((match) => match.group(0)!));
     }

@@ -33,7 +33,7 @@ enum IOSSecureSessionError: Error {
 final class IOSSecureSessionStore {
   private let security: IOSSessionSecurityOperations
   private static let keys: Set<String> = ["liuhetong.matrix_database_key.v1", "liuhetong.business_session.v1", "liuhetong.active_matrix_scope.v1", "liuhetong.matrix_account_slots.v1"]
-  private static let inspectionOnlyKeys: Set<String> = ["liuhetong.matrix_local_binding.v1", "liuhetong.matrix_clear_tombstone.v1"]
+  private static let inspectionOnlyKeys: Set<String> = ["liuhetong.matrix_local_binding.v1", "liuhetong.matrix_clear_tombstone.v1", "liuhetong.matrix_archives.v1", "liuhetong.matrix_archive_journal.v1"]
   private static let service = "flutter_secure_storage_service"
   private let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
 
