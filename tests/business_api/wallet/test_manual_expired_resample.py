@@ -81,7 +81,8 @@ def test_same_observation_never_refreshes_wait_deadline(core, monitor):
     assert service.run_once()["codes"] == ["MANUAL_SOURCE_UNHEALTHY"]
     assert 0 < elapsed[0] <= 3 and max(sleeps) <= 1
     with core[1]() as session:
-        assert session.get(WalletControl, "global").withdrawals_paused
+        # T3: staleness is advisory and must not pause the wallet.
+        assert not session.get(WalletControl, "global").withdrawals_paused
 
 
 def test_non_age_failure_does_not_wait(core, monitor):

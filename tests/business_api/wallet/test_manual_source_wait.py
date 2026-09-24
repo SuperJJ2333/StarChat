@@ -20,7 +20,8 @@ def test_brief_unverified_sampling_waits_without_permanent_pause(core, monitor):
     clock[0] += timedelta(minutes=5)
     assert service.run_once()['status'] == 'BLOCKED'
     with core[1]() as session:
-        assert session.get(WalletControl, 'global').withdrawals_paused
+        # T3: even the 5-minute pending budget must not pause the wallet.
+        assert not session.get(WalletControl, 'global').withdrawals_paused
 
 
 def test_pending_source_cannot_clear_pause_or_call_review_completion(core, monitor):
