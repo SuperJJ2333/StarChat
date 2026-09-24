@@ -1,12 +1,16 @@
 # 移动交付恢复索引
 
+## 2026-09-24 iOS 2144 旧账号 L07：真机定位到本地加密身份指纹不一致（当前）
+
+用户确认 2144 旧账号 L07 早于 2172 安装，同一 iPhone 新账号可登录。20:19:57 +08 真机再次复现后，过滤的安全事件依次为 `E2EE_ACCOUNT_SELECT_BEGIN`、`E2EE_CONTINUITY_FINGERPRINT_MISMATCH`、`E2EE_ACCOUNT_SELECT_CONTINUITY_MISMATCH`，同属旧账号。2144 源码仅在保存的 Matrix 绑定 Ed25519 指纹与现存客户端指纹不等时记录该事件并失败关闭；直接失败条件已确定，指纹最初为何分叉仍未知。没有清库、修改钥匙串、发布或新包；2172 启动错误尚未独立证实同根。见[独立任务记录](tasks/2026-09-24-ios2144-old-account-l07.md)与[脱敏事件证据](../verification/2026-09-24-ios2144-old-account-l07.md)。
+
 ## 2026-09-24 iOS 企业回签 IPA 源码门禁（当前）
 
 用户确认可暂用其他企业签名，但必须覆盖升级并保留 iPhone 旧数据。发布前源码门禁已增加最终 IPA 同字节身份/权益检查、服务端对已上传 IPA 重新解析、旧版 Team/App ID/Keychain 连续性及绑定候选 SHA 的真机覆盖记录要求；目标测试 76 项通过，移动边界 170 通过/1 跳过，独立复审完成，未变化的后端全量批次复用同日已完成证据。服务器归档 2134/2144 与回签 2172 确为同一企业证书/Team/Keychain，但 2172 换了 App ID 且无生产 APNs；当前包仍被门禁拒绝。无需用户重传旧 IPA；实际手机已装包身份与保留数据覆盖结果仍待验证。没有新增生产写入。见[任务](tasks/2026-09-24-ios-enterprise-ipa-validation.md)、[验证记录](../verification/2026-09-24-ios-enterprise-ipa-validation.md)和[计划](../superpowers/plans/2026-09-24-ios-enterprise-ipa-validation.md)。
 
-## 2026-09-24 v0.4.7/2172 iOS 企业包分发：签名阻断、并发流程部分发布（当前）
+## 2026-09-24 v0.4.7/2172 iOS 企业包分发：签名阻断与部分发布（历史阶段，后已停发）
 
-用户回传的企业签 IPA 是 0.4.7/2172，SHA256 `12258dac…`；但签名及描述文件的 `application-identifier=ZXB3TS7QD4.cn.edu.buaa.bhpan.fileProvider` 与实际 Bundle ID `com.liuhetong.liuhetongMobile` 不匹配，且没有 `aps-environment`。不能据此宣称可安装或提供后台来电/消息提醒。另一并发流程在本任务只读审计期间，把这份包及 manifest、下载页和 iOS 设置部分写入生产；截至 17:21 HKT，首页仍旧版，设置更新未见对应审计。用户表示会暂停另一流程并通知；**收到明确暂停完成通知前不要写生产**。随后重新读取生产状态，处理部分发布，并等待签名身份正确且安装验证通过的 IPA。见[分发任务](tasks/2026-09-24-ios-047-enterprise-distribution.md)、[验证记录](../verification/2026-09-24-ios-047-enterprise-distribution.md)与[计划](../superpowers/plans/2026-09-24-ios-047-enterprise-distribution.md)。
+用户回传的企业签 IPA 是 0.4.7/2172，SHA256 `12258dac…`；但签名及描述文件的 `application-identifier=ZXB3TS7QD4.cn.edu.buaa.bhpan.fileProvider` 与实际 Bundle ID `com.liuhetong.liuhetongMobile` 不匹配，且没有 `aps-environment`。用户确已安装，但不能据此宣称覆盖升级保留数据或具备后台来电/消息提醒。另一并发流程曾把这份包及 manifest、下载页和 iOS 设置部分写入生产；用户随后确认该流程已暂停并授权停用此 iOS 入口。生产 iOS 设置、manifest 和安装页已回退 0.3.102/2144，2172 IPA 已移入私有取证目录，公网原直链 HEAD 404；Android 0.4.7/2172 不变。见[停发与身份故障记录](tasks/2026-09-24-ios-047-reinstall-identity-failure.md)、[分发任务](tasks/2026-09-24-ios-047-enterprise-distribution.md)、[验证记录](../verification/2026-09-24-ios-047-enterprise-distribution.md)与[计划](../superpowers/plans/2026-09-24-ios-047-enterprise-distribution.md)。
 
 ## 2026-09-24 v0.4.7/2172 Android 更新已发布；iOS IPA 候选已交接（历史阶段）
 
