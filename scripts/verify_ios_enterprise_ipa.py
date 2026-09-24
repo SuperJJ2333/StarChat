@@ -33,6 +33,12 @@ _MAX_INFO_BYTES = 1024 * 1024
 _MAX_PROFILE_BYTES = 4 * 1024 * 1024
 _MAX_EXECUTABLE_BYTES = 256 * 1024 * 1024
 _MAX_IPA_BYTES = 512 * 1024 * 1024
+# The archived, device-used 0.3.102/2144 enterprise app has this anomalous
+# signed App ID. Recognizing it only identifies the package; a no-uninstall
+# iPhone cover test is still required to establish upgrade/data compatibility.
+_LEGACY_BUNDLE_ID = "com.liuhetong.liuhetongMobile"
+_LEGACY_TEAM_ID = "ZXB3TS7QD4"
+_LEGACY_APPLICATION_IDENTIFIER = "ZXB3TS7QD4.cn.edu.buaa.wxwork.notifyext"
 
 
 def _zip_entry(archive: zipfile.ZipFile, name: str, limit: int) -> bytes:
@@ -176,6 +182,7 @@ def inspect_ipa(
     expected_build: str | int,
     expected_team_id: str,
     require_apns: bool = True,
+    expected_legacy_application_identifier: str | None = None,
     decode_profile=None,
 ) -> dict:
     """Return release evidence only when the final IPA's identities agree."""
@@ -231,6 +238,12 @@ def inspect_ipa(
     if not isinstance(profile_entitlements, dict):
         raise ValueError("provisioning profile entitlements are missing")
     expected_app_id = expected_team_id + "." + expected_bundle_id
+    if expected_legacy_application_identifier is not None:
+        if (expected_bundle_id != _LEGACY_BUNDLE_ID
+                or expected_team_id != _LEGACY_TEAM_ID
+                or expected_legacy_application_identifier != _LEGACY_APPLICATION_IDENTIFIER):
+            raise ValueError("unsupported legacy application-identifier override")
+        expected_app_id = _LEGACY_APPLICATION_IDENTIFIER
     profile_app_id = profile_entitlements.get("application-identifier")
     signed_app_id = signed.get("application-identifier")
     if profile_app_id != expected_app_id or signed_app_id != expected_app_id:
@@ -280,6 +293,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--build", required=True)
     parser.add_argument("--team-id", required=True)
     parser.add_argument("--allow-no-apns", action="store_true")
+    parser.add_argument(
+        "--expected-legacy-application-identifier",
+        help="opt in only to the exact signed App ID of the archived 2144 enterprise app; "
+             "device cover-install evidence is still required",
+    )
     parser.add_argument("--output", type=Path, help="write passing evidence to a new JSON file")
     args = parser.parse_args(argv)
     try:
@@ -290,6 +308,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_build=args.build,
             expected_team_id=args.team_id,
             require_apns=not args.allow_no_apns,
+            expected_legacy_application_identifier=args.expected_legacy_application_identifier,
         )
         encoded = json.dumps(evidence, ensure_ascii=False, indent=2) + "\n"
         if args.output:

@@ -16,6 +16,7 @@ TEAM_ID = 'ZXB3TS7QD4'
 VERSION = '0.4.7'
 BUILD = '2172'
 APP_ID = f'{TEAM_ID}.{BUNDLE_ID}'
+LEGACY_APP_ID = f'{TEAM_ID}.cn.edu.buaa.wxwork.notifyext'
 KEYCHAIN_GROUPS = [f'{TEAM_ID}.*', 'com.apple.token']
 OTHER_TEAM_ID = 'ABCD123456'
 
@@ -107,7 +108,10 @@ def _ipa(
     return target
 
 
-def _inspect(path, *, expected_team_id=TEAM_ID, require_apns=True):
+def _inspect(
+    path, *, expected_team_id=TEAM_ID, require_apns=True,
+    expected_legacy_application_identifier=None,
+):
     script = Path(__file__).parents[2] / 'scripts/verify_ios_enterprise_ipa.py'
     spec = importlib.util.spec_from_file_location('verify_ios_enterprise_ipa', script)
     verifier = importlib.util.module_from_spec(spec)
@@ -119,6 +123,7 @@ def _inspect(path, *, expected_team_id=TEAM_ID, require_apns=True):
         expected_build=BUILD,
         expected_team_id=expected_team_id,
         require_apns=require_apns,
+        expected_legacy_application_identifier=expected_legacy_application_identifier,
         decode_profile=plistlib.loads,
     )
 
@@ -186,6 +191,98 @@ def test_rejects_app_id_for_another_app(tmp_path, field):
 
     with pytest.raises(ValueError):
         _inspect(path)
+
+
+def test_legacy_signed_app_id_requires_exact_explicit_opt_in(tmp_path):
+    path = _ipa(tmp_path, signed_app_id=LEGACY_APP_ID, profile_app_id=LEGACY_APP_ID)
+
+    with pytest.raises(ValueError, match='application-identifier'):
+        _inspect(path)
+
+    evidence = _inspect(
+        path, expected_legacy_application_identifier=LEGACY_APP_ID,
+    )
+
+    assert evidence['bundle_id'] == BUNDLE_ID
+    assert evidence['profile_application_identifier'] == LEGACY_APP_ID
+    assert evidence['signed_application_identifier'] == LEGACY_APP_ID
+    assert evidence['aps_environment'] == 'production'
+    assert evidence['signed_keychain_access_groups'] == KEYCHAIN_GROUPS
+
+
+@pytest.mark.parametrize('override', [
+    f'{TEAM_ID}.cn.edu.buaa.bhpan.fileProvider',
+    f'{TEAM_ID}.other.app',
+    f'{OTHER_TEAM_ID}.cn.edu.buaa.wxwork.notifyext',
+    APP_ID,
+    '',
+])
+def test_legacy_override_rejects_any_other_identifier(tmp_path, override):
+    path = _ipa(tmp_path, signed_app_id=override, profile_app_id=override)
+
+    with pytest.raises(ValueError, match='legacy|application-identifier'):
+        _inspect(path, expected_legacy_application_identifier=override)
+
+
+@pytest.mark.parametrize('field', ['signed_app_id', 'profile_app_id'])
+def test_legacy_override_still_requires_profile_and_signed_match(tmp_path, field):
+    path = _ipa(tmp_path, **{field: LEGACY_APP_ID})
+
+    with pytest.raises(ValueError, match='application-identifier'):
+        _inspect(path, expected_legacy_application_identifier=LEGACY_APP_ID)
+
+
+def test_legacy_override_does_not_allow_different_enterprise_team(tmp_path):
+    path = _ipa(
+        tmp_path, team_id=OTHER_TEAM_ID,
+        signed_app_id=LEGACY_APP_ID, profile_app_id=LEGACY_APP_ID,
+    )
+
+    with pytest.raises(ValueError, match='legacy|application-identifier'):
+        _inspect(
+            path,
+            expected_team_id=OTHER_TEAM_ID,
+            expected_legacy_application_identifier=LEGACY_APP_ID,
+        )
+
+
+@pytest.mark.parametrize('problem', ['apns', 'keychain'])
+def test_legacy_override_preserves_apns_and_keychain_gates(tmp_path, problem):
+    if problem == 'apns':
+        path = _ipa(
+            tmp_path, signed_app_id=LEGACY_APP_ID, profile_app_id=LEGACY_APP_ID,
+            signed_apns=None, profile_apns=None,
+        )
+    else:
+        path = _ipa(
+            tmp_path, signed_app_id=LEGACY_APP_ID, profile_app_id=LEGACY_APP_ID,
+            profile_keychain_groups=[f'{TEAM_ID}.shared'],
+            signed_keychain_groups=[f'{TEAM_ID}.other'],
+        )
+
+    with pytest.raises(ValueError, match='APNs|Keychain'):
+        _inspect(path, expected_legacy_application_identifier=LEGACY_APP_ID)
+
+
+def test_legacy_cli_requires_explicit_full_identifier(tmp_path, monkeypatch, capsys):
+    path = _ipa(tmp_path, signed_app_id=LEGACY_APP_ID, profile_app_id=LEGACY_APP_ID)
+    script = Path(__file__).parents[2] / 'scripts/verify_ios_enterprise_ipa.py'
+    spec = importlib.util.spec_from_file_location('verify_ios_enterprise_ipa_cli', script)
+    verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verifier)
+    monkeypatch.setattr(verifier, '_decode_profile', plistlib.loads)
+    args = [
+        str(path), '--bundle-id', BUNDLE_ID, '--version', VERSION,
+        '--build', BUILD, '--team-id', TEAM_ID,
+    ]
+
+    assert verifier.main(args) == 1
+    assert 'application-identifier' in capsys.readouterr().err
+
+    assert verifier.main([
+        *args, '--expected-legacy-application-identifier', LEGACY_APP_ID,
+    ]) == 0
+    assert LEGACY_APP_ID in capsys.readouterr().out
 
 
 def test_rejects_profile_from_another_team(tmp_path):
