@@ -1,8 +1,8 @@
 # 移动交付恢复索引
 
-## 2026-09-25 MI 6 性能诊断 Debug2174 交付中
+## 2026-09-25 MI 6 性能诊断 Debug2174 已安装，账号内实测待继续
 
-用户要求向 MI 6 保留数据安装诊断 Debug 包并实测性能与网络。设备实际安装 0.4.10/2171 Debug，APK SHA 与历史记录一致；旧诊断分支 2165 不可直接覆盖。隔离分支 `codex/performance-debug-mi6` 以已发布 Android 源 `e7ba46a4`（2172）整合诊断提交 `8d044655`，版本递增至 0.4.11/2174，排除后续 iOS 身份恢复提交。整合后 Flutter analyze 零问题、Flutter 4277/9 跳过、Matrix 2108/9 跳过、移动边界 108/1 跳过及后端诊断聚焦 166/1 跳过均退出 0；尚未构建或安装。构建/设备测量与真实缺口见[独立任务记录](tasks/2026-09-25-performance-debug-mi6.md)。
+用户要求向 MI 6 保留数据安装诊断 Debug 包并实测性能与网络。隔离分支 `codex/performance-debug-mi6` 从已发布 Android 源 `e7ba46a4`（2172）整合诊断 `8d044655`，0.4.11/2174 ARM64 Debug 经源码构建、常规 DEX/资源/Manifest 重建和固定测试身份签名，`adb install -r` 已成功。设备 APK SHA `3317ba91…` 与本地一致，原首次安装时间保留，启动和零崩溃通过。Flutter analyze 零问题、Flutter 4277/9 跳过、Matrix 2108/9 跳过、移动边界 108/1 跳过及后端诊断聚焦 166/1 跳过均退出 0。真机 VM 快照测到首次冷启动 1367 ms、6 帧中 4 慢帧；公开 Business/Matrix HTTPS 路径均 200，但短样本存在连接/TLS/首字节长尾。当前设备在登录页，账号内会话、媒体、Matrix `/sync` 待用户自行登录后测量。见[独立任务记录](tasks/2026-09-25-performance-debug-mi6.md)与[真机报告](../verification/2026-09-25-performance-debug-mi6.md)。
 
 ## 2026-09-25 ChatFlow 全链路性能诊断本地候选（未发布）
 

@@ -6,11 +6,11 @@
 
 ## Delivery steps
 
-- [ ] Resolve diagnostics cherry-pick conflicts by retaining 2172 navigation, contacts, profile, and room behavior; run focused tests, final Flutter analyze and full Flutter test on the integrated inputs.
-- [ ] Assign a new Debug version/build above installed 2171 and released 2172, keeping `pubspec.yaml` and `AppConfig` in sync. Freeze source and lock hashes; preflight device, tools, free disk, signer and three HTTPS dart-defines.
-- [ ] Build ARM64 `standard` Debug with `CHATFLOW_PERFORMANCE_METRICS=true`; use the source APK only as the intermediate. Rebuild with Apktool 2.12.1, align using build-tools 36.0.0, sign with the existing user-tested identity, and verify manifest/ABI/DEX/resources/native assets/Flutter assets/signature.
-- [ ] Recheck the device baseline; use `adb install -r` to preserve app data. Verify the installed APK SHA, version, signer continuity, original first-install time, launch and crash buffer.
-- [ ] Read `ext.chatflow.performance` from the Dart VM service. Exercise safe local navigation and lifecycle paths, inspect frame, operation, Matrix/network, media and API evidence without collecting message content or identities. Do not send messages, initiate calls or financial actions.
-- [ ] Record measured bottlenecks, unsupported metrics and optimization opportunities in a separate task record and `docs/verification/` report. Distinguish measured device facts from test coverage and user interactions still required.
+- [x] Resolve diagnostics cherry-pick conflicts by retaining 2172 navigation, contacts, profile, and room behavior; run focused tests, final Flutter analyze and full Flutter test on the integrated inputs.
+- [x] Assign a new Debug version/build above installed 2171 and released 2172, keeping `pubspec.yaml` and `AppConfig` in sync. Freeze source and lock hashes; preflight device, tools, free disk, signer and three HTTPS dart-defines.
+- [x] Build ARM64 `standard` Debug with `CHATFLOW_PERFORMANCE_METRICS=true`; use the source APK only as the intermediate. Rebuild with Apktool 2.12.1, align using build-tools 36.0.0, sign with the existing user-tested identity, and verify manifest/ABI/DEX/resources/native assets/Flutter assets/signature.
+- [x] Recheck the device baseline; use `adb install -r` to preserve app data. Verify the installed APK SHA, version, signer continuity, original first-install time, launch and crash buffer.
+- [ ] Read `ext.chatflow.performance` from the Dart VM service. Startup and pre-auth foreground frame metrics plus public Business/Matrix network paths measured; authenticated navigation, Matrix session, media and API trace remain pending until the user logs in. Do not send messages, initiate calls or financial actions.
+- [ ] Record measured bottlenecks, unsupported metrics and optimization opportunities in the [separate report](../../verification/2026-09-25-performance-debug-mi6.md); update after authenticated samples and server timing correlation.
 
 **Safety:** No downgrade, uninstall, data clear, arbitrary new signing key, sensitive log dump or unverified timing estimate. Keep all temporary artifacts below `docs/verification/artifacts/2026-09-25/performance-debug-mi6/`.
