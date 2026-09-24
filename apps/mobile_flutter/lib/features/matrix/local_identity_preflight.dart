@@ -10,6 +10,7 @@ import '../../core/matrix_local_binding.dart';
 
 enum MatrixLocalIdentityCause {
   missingDatabaseWithBinding,
+  missingDatabaseWithKey,
   missingKey,
   missingOlmAccount,
   fingerprintMismatch,
@@ -18,6 +19,7 @@ enum MatrixLocalIdentityCause {
   originalIdentityElsewhere,
   multipleCandidates,
   recoveryPending,
+  legacyPlaintextMigrationDeferred,
 }
 
 /// No key, account identifier, fingerprint, pickle or SQL is part of this error.
@@ -36,11 +38,17 @@ enum MatrixLocalIdentityStatus { pristine, verifiedRetained }
 
 final class MatrixLocalIdentityInspection {
   const MatrixLocalIdentityInspection(this.status,
-      {this.matrixUserId, this.ed25519Fingerprint});
+      {this.matrixUserId,
+      this.ed25519Fingerprint,
+      this.requiresAuthenticatedMigration = false});
 
   final MatrixLocalIdentityStatus status;
   final String? matrixUserId;
   final String? ed25519Fingerprint;
+
+  /// The SDK would encrypt a verified legacy plaintext DB when it opens it.
+  /// Its caller must obtain Business authorization before that write.
+  final bool requiresAuthenticatedMigration;
 
   @override
   String toString() => 'MatrixLocalIdentityInspection(${status.name})';
@@ -52,12 +60,14 @@ final class MatrixLocalIdentityRecord {
     this.matrixUserId,
     this.deviceId,
     this.olmAccount,
+    this.requiresAuthenticatedMigration = false,
   });
 
   final bool hasRetainedData;
   final String? matrixUserId;
   final String? deviceId;
   final String? olmAccount;
+  final bool requiresAuthenticatedMigration;
 }
 
 abstract interface class MatrixLocalIdentityReader {
@@ -65,14 +75,67 @@ abstract interface class MatrixLocalIdentityReader {
   Future<MatrixLocalIdentityRecord> read(String databasePath, String cipher);
 }
 
+/// Optional capability used only to inspect a legacy plaintext SQLite file
+/// when no SQLCipher key survived in Keychain. A missing key for an encrypted
+/// database still fails closed.
+abstract interface class MatrixPlaintextIdentityProbe {
+  Future<bool> hasPlaintextHeader(String databasePath);
+}
+
 /// Only this reader touches the on-disk DB. It never opens MatrixSdkDatabase,
 /// invokes SDK migrations, or creates a database file.
 final class ReadOnlySqlCipherIdentityReader
-    implements MatrixLocalIdentityReader {
+    implements MatrixLocalIdentityReader, MatrixPlaintextIdentityProbe {
   const ReadOnlySqlCipherIdentityReader();
+
+  static const _sqliteHeader = <int>[
+    83,
+    81,
+    76,
+    105,
+    116,
+    101,
+    32,
+    102,
+    111,
+    114,
+    109,
+    97,
+    116,
+    32,
+    51,
+    0,
+  ];
+
+  @override
+  Future<bool> hasPlaintextHeader(String databasePath) async {
+    final file = await File(databasePath).open(mode: FileMode.read);
+    try {
+      final bytes = await file.read(_sqliteHeader.length);
+      if (bytes.length != _sqliteHeader.length) return false;
+      for (var index = 0; index < bytes.length; index++) {
+        if (bytes[index] != _sqliteHeader[index]) return false;
+      }
+      return true;
+    } finally {
+      await file.close();
+    }
+  }
 
   @override
   Future<bool> exists(String databasePath) async {
+    // SQLCipher's plaintext migration uses a temporary .encrypted database.
+    // An interrupted migration may leave its only copy (or WAL) there.
+    // Its identity cannot be safely inferred from the normal database path.
+    for (final suffix in const [
+      '.encrypted',
+      '.encrypted-wal',
+      '.encrypted-shm',
+    ]) {
+      if (await File('$databasePath$suffix').exists()) {
+        throw const FormatException('Interrupted Matrix encryption migration');
+      }
+    }
     if (await File(databasePath).exists()) return true;
     // An orphaned WAL/SHM can still contain retained chat state. Never treat
     // that filesystem state as a pristine install.
@@ -141,6 +204,7 @@ final class ReadOnlySqlCipherIdentityReader
 
   Future<MatrixLocalIdentityRecord> _readSnapshot(
       String databasePath, String cipher) async {
+    final plaintext = await hasPlaintextHeader(databasePath);
     final factory = createDatabaseFactoryFfi(
       ffiInit: SQfLiteEncryptionHelper.ffiInit,
     );
@@ -151,49 +215,68 @@ final class ReadOnlySqlCipherIdentityReader
       // strictly read-only connection before touching sqlite_master.
       final cipherVersion = await db.rawQuery('PRAGMA cipher_version');
       if (cipherVersion.isEmpty) throw const FormatException('No SQLCipher');
-      await db.execute("PRAGMA key = '${cipher.replaceAll("'", "''")}'");
-      final clientTables = await db.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'box_client'");
-      if (clientTables.length != 1) {
-        throw const FormatException('Missing Matrix client table');
-      }
-      final rows = await db.rawQuery(
-          "SELECT k, v FROM box_client WHERE k IN ('user_id', 'device_id', 'olm_account')");
-      final values = <String, String>{};
-      for (final row in rows) {
-        final key = row['k'];
-        final value = row['v'];
-        if (key is! String || value is! String) {
-          throw const FormatException('Invalid Matrix client row');
+      if (!plaintext) {
+        if (cipher.isEmpty) {
+          throw const FormatException('Missing SQLCipher key');
         }
-        values[key] = value;
+        await db.execute("PRAGMA key = '${cipher.replaceAll("'", "''")}'");
       }
-      final count = await db.rawQuery(
-          "SELECT COUNT(*) AS amount FROM box_client WHERE k <> 'version'");
-      final clientHasData = (count.single['amount'] as int? ?? 0) > 0;
-      var otherHasData = false;
-      for (final table in const [
-        'box_rooms',
-        'box_olm_session',
-        'box_inbound_group_session',
-      ]) {
-        final tableRows = await db.rawQuery(
-            'SELECT name FROM sqlite_master WHERE type = ? AND name = ?',
-            ['table', table]);
-        if (tableRows.isEmpty) continue;
-        final contents = await db.rawQuery('SELECT 1 FROM $table LIMIT 1');
-        if (contents.isNotEmpty) otherHasData = true;
-      }
-      return MatrixLocalIdentityRecord(
-        hasRetainedData: clientHasData || otherHasData,
-        matrixUserId: values['user_id'],
-        deviceId: values['device_id'],
-        olmAccount: values['olm_account'],
-      );
+      return readMatrixIdentityTables(db,
+          requiresAuthenticatedMigration: plaintext);
     } finally {
       await db.close();
     }
   }
+}
+
+/// Inspects Matrix's existing SQLite boxes without invoking SDK migrations.
+/// The caller must provide a read-only connection to a temporary DB snapshot.
+Future<MatrixLocalIdentityRecord> readMatrixIdentityTables(Database db,
+    {bool requiresAuthenticatedMigration = false}) async {
+  final clientTables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'box_client'");
+  if (clientTables.length != 1) {
+    throw const FormatException('Missing Matrix client table');
+  }
+  final rows = await db.rawQuery(
+      "SELECT k, v FROM box_client WHERE k IN ('user_id', 'device_id', 'olm_account')");
+  final values = <String, String>{};
+  for (final row in rows) {
+    final key = row['k'];
+    final value = row['v'];
+    if (key is! String || value is! String) {
+      throw const FormatException('Invalid Matrix client row');
+    }
+    values[key] = value;
+  }
+  final count = await db.rawQuery(
+      "SELECT COUNT(*) AS amount FROM box_client WHERE k <> 'version'");
+  final clientHasData = (count.single['amount'] as int? ?? 0) > 0;
+  var otherHasData = false;
+  final tables =
+      await db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table'");
+  for (final row in tables) {
+    final table = row['name'];
+    if (table is! String || table.isEmpty) {
+      throw const FormatException('Invalid Matrix table name');
+    }
+    if (table == 'box_client' || table.startsWith('sqlite_')) continue;
+    // Matrix SDK has more than twenty boxes, and its schema may grow. A
+    // retained row in any user table must prevent a pristine classification.
+    final quotedName = table.replaceAll('"', '""');
+    final contents = await db.rawQuery('SELECT 1 FROM "$quotedName" LIMIT 1');
+    if (contents.isNotEmpty) {
+      otherHasData = true;
+      break;
+    }
+  }
+  return MatrixLocalIdentityRecord(
+    hasRetainedData: clientHasData || otherHasData,
+    matrixUserId: values['user_id'],
+    deviceId: values['device_id'],
+    olmAccount: values['olm_account'],
+    requiresAuthenticatedMigration: requiresAuthenticatedMigration,
+  );
 }
 
 typedef MatrixOlmFingerprintReader = Future<String> Function(
@@ -244,16 +327,31 @@ final class MatrixLocalIdentityPreflight {
         throw const MatrixLocalIdentityPreflightException(
             MatrixLocalIdentityCause.missingDatabaseWithBinding);
       }
+      if (cipher != null && cipher.isNotEmpty) {
+        throw const MatrixLocalIdentityPreflightException(
+            MatrixLocalIdentityCause.missingDatabaseWithKey);
+      }
       return const MatrixLocalIdentityInspection(
           MatrixLocalIdentityStatus.pristine);
     }
     if (cipher == null || cipher.isEmpty) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.missingKey);
+      bool plaintext;
+      try {
+        plaintext = reader is MatrixPlaintextIdentityProbe &&
+            await (reader as MatrixPlaintextIdentityProbe)
+                .hasPlaintextHeader(databasePath);
+      } catch (_) {
+        throw const MatrixLocalIdentityPreflightException(
+            MatrixLocalIdentityCause.unreadable);
+      }
+      if (!plaintext) {
+        throw const MatrixLocalIdentityPreflightException(
+            MatrixLocalIdentityCause.missingKey);
+      }
     }
     MatrixLocalIdentityRecord record;
     try {
-      record = await reader.read(databasePath, cipher);
+      record = await reader.read(databasePath, cipher ?? '');
     } catch (_) {
       throw const MatrixLocalIdentityPreflightException(
           MatrixLocalIdentityCause.unreadable);
@@ -287,6 +385,10 @@ final class MatrixLocalIdentityPreflight {
           MatrixLocalIdentityCause.unreadable);
     }
     final boundFingerprint = binding?.ed25519Fingerprint;
+    if (record.requiresAuthenticatedMigration && boundFingerprint == null) {
+      throw const MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.identityMismatch);
+    }
     if (boundFingerprint != null && boundFingerprint != fingerprint) {
       throw const MatrixLocalIdentityPreflightException(
           MatrixLocalIdentityCause.fingerprintMismatch);
@@ -295,6 +397,7 @@ final class MatrixLocalIdentityPreflight {
       MatrixLocalIdentityStatus.verifiedRetained,
       matrixUserId: userId,
       ed25519Fingerprint: fingerprint,
+      requiresAuthenticatedMigration: record.requiresAuthenticatedMigration,
     );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:matrix/matrix.dart';
 import 'package:path/path.dart' as p;
@@ -110,6 +111,96 @@ void main() {
         expect(after[suffix], before[suffix],
             reason: 'Read-only preflight created or changed a sidecar.');
       }
+    } finally {
+      await fixture.delete(recursive: true);
+    }
+  });
+
+  testWidgets('real iOS reader sees retained events without a user id',
+      (_) async {
+    expect(Platform.isIOS, isTrue);
+    final fixture = await Directory.systemTemp.createTemp('matrix_preflight_');
+    final path = p.join(fixture.path, 'retained.sqlite');
+    final factory = createDatabaseFactoryFfi(
+      ffiInit: SQfLiteEncryptionHelper.ffiInit,
+    );
+    final encryption = SQfLiteEncryptionHelper(
+      factory: factory,
+      path: path,
+      cipher: _cipher,
+    );
+    final writer = await factory.openDatabase(path,
+        options: OpenDatabaseOptions(
+            singleInstance: false, onConfigure: encryption.applyPragmaKey));
+    try {
+      await writer.execute('PRAGMA journal_mode=WAL');
+      await writer
+          .execute('CREATE TABLE box_client (k TEXT PRIMARY KEY, v TEXT)');
+      await writer.insert('box_client', {'k': 'version', 'v': '1'});
+      await writer
+          .execute('CREATE TABLE box_events (k TEXT PRIMARY KEY, v TEXT)');
+      await writer.insert('box_events', {'k': 'event', 'v': 'retained'});
+
+      final before = await _bytesOf(path);
+      final record =
+          await const ReadOnlySqlCipherIdentityReader().read(path, _cipher);
+      final after = await _bytesOf(path);
+
+      expect(record.matrixUserId, isNull);
+      expect(record.hasRetainedData, isTrue);
+      expect(after, before);
+    } finally {
+      await writer.close();
+      await fixture.delete(recursive: true);
+    }
+  });
+
+  testWidgets('real iOS reader verifies legacy plaintext without a key',
+      (_) async {
+    expect(Platform.isIOS, isTrue);
+    final fixture = await Directory.systemTemp.createTemp('matrix_preflight_');
+    final path = p.join(fixture.path, 'legacy.sqlite');
+    final factory = createDatabaseFactoryFfi(
+      ffiInit: SQfLiteEncryptionHelper.ffiInit,
+    );
+    final writer = await factory.openDatabase(path,
+        options: OpenDatabaseOptions(singleInstance: false));
+    try {
+      await writer
+          .execute('CREATE TABLE box_client (k TEXT PRIMARY KEY, v TEXT)');
+      await writer.insert('box_client', {'k': 'user_id', 'v': _matrixUser});
+      await writer.insert('box_client', {'k': 'device_id', 'v': 'LEGACY'});
+      await writer
+          .insert('box_client', {'k': 'olm_account', 'v': 'synthetic-pickle'});
+    } finally {
+      await writer.close();
+    }
+    try {
+      final before = await _bytesOf(path);
+      final inspection = await MatrixLocalIdentityPreflight(
+        fingerprintReader: (_, pickle) async {
+          expect(pickle, 'synthetic-pickle');
+          return 'matching-ed25519';
+        },
+      ).inspect(
+        databasePath: path,
+        cipher: null,
+        binding: MatrixLocalBinding(
+          version: 2,
+          matrixUserId: _matrixUser,
+          deviceId: 'LEGACY',
+          homeserver: 'https://matrix.test',
+          databaseGeneration: 'legacy',
+          ed25519Fingerprint: 'matching-ed25519',
+        ),
+        expectedHomeserver: 'https://matrix.test',
+        expectedUserId: _matrixUser,
+      );
+      final after = await _bytesOf(path);
+
+      expect(inspection.status, MatrixLocalIdentityStatus.verifiedRetained);
+      expect(inspection.requiresAuthenticatedMigration, isTrue);
+      expect(after, before);
     } finally {
       await fixture.delete(recursive: true);
     }

@@ -122,6 +122,34 @@ void main() {
         lessThan(raw.writes.indexOf(_activeName)));
   });
 
+  test(
+      'unbound confirmed scope remains discoverable after another account is selected',
+      () async {
+    final raw = _FaultStore();
+    final (store, oldSnapshot) = await _retained(raw);
+    final newScope = await _prepare(store, oldSnapshot);
+    expect(
+        await store.confirmedFreshDeviceScope(_homeserver, _userId), newScope);
+
+    await store.selectMatrixAccount(_homeserver, '@other:matrix.test');
+    expect((await store.peekActiveMatrixIdentity()).scope, isNot(newScope));
+    expect(
+        await store.confirmedFreshDeviceScope(_homeserver, _userId), newScope);
+    expect(
+        await store.confirmedFreshDeviceScope(
+            _homeserver, '@other:matrix.test'),
+        isNull);
+
+    final retained =
+        await store.peekAccountMatrixIdentity(_homeserver, _userId);
+    expect(retained.scope, newScope);
+    await store.selectMatrixAccount(_homeserver, _userId,
+        expectedSnapshot: retained);
+    expect((await store.peekActiveMatrixIdentity()).scope, newScope);
+    expect(raw.values[_bindingName], isNotNull);
+    expect(raw.values[_keyName], isNotNull);
+  });
+
   for (final failureKey in [
     _journalName,
     _indexName,

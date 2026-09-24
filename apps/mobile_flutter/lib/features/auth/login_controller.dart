@@ -96,6 +96,7 @@ final class DualDomainLoginService {
   final DateTime Function() now;
   MatrixAccountSwitchRequired? _pendingAccountSwitch;
   (String, Uri)? _pendingNewDeviceRecovery;
+  bool _pendingNewDeviceStorageCommitted = false;
   MatrixLoginGrant? _pendingGrant;
   DateTime? _pendingGrantExpiresAt;
   bool _operationRunning = false;
@@ -133,6 +134,7 @@ final class DualDomainLoginService {
   void _forgetPending() {
     _pendingAccountSwitch = null;
     _pendingNewDeviceRecovery = null;
+    _pendingNewDeviceStorageCommitted = false;
     _pendingGrant = null;
     _pendingGrantExpiresAt = null;
   }
@@ -161,7 +163,8 @@ final class DualDomainLoginService {
         }
         final (target, selectedHomeserver) = pending;
         _stage = 'local_identity';
-        if (await business.currentMatrixUserId() != target) {
+        final currentBusinessMxid = await business.currentMatrixUserId();
+        if (currentBusinessMxid != null && currentBusinessMxid != target) {
           throw StateError('Matrix recovery target changed');
         }
         // Obtain and validate authority before touching any local scope.
@@ -171,8 +174,28 @@ final class DualDomainLoginService {
           throw StateError('Matrix recovery grant identity changed');
         }
         _stage = 'account_storage';
-        await (recovery as MatrixNewDeviceRecoveryGateway)
-            .confirmNewDeviceRecovery(target, selectedHomeserver);
+        if (!_pendingNewDeviceStorageCommitted) {
+          await (recovery as MatrixNewDeviceRecoveryGateway)
+              .confirmNewDeviceRecovery(target, selectedHomeserver);
+          _pendingNewDeviceStorageCommitted = true;
+        } else {
+          // A suspended client may still report isLoggedIn, while its access
+          // has been revoked. Reopen the committed scope and refresh its
+          // broker-authorized session on every retry without another archive.
+          if (matrix.isLoggedIn && matrix.userId != target) {
+            throw StateError('Recovered Matrix identity changed');
+          }
+          final selector = matrix;
+          if (selector is! MatrixAccountSelectionGateway) {
+            throw StateError('Recovered Matrix account cannot be selected');
+          }
+          await (selector as MatrixAccountSelectionGateway)
+              .selectAccount(target, selectedHomeserver);
+        }
+        if ((matrix.userId != null && matrix.userId != target) ||
+            (matrix.userId != null && matrix.deviceId == null)) {
+          throw StateError('Recovered Matrix identity changed');
+        }
         // Archive can be slow. A one-time grant must still be valid when sent.
         if (_pendingGrantExpiresAt == null ||
             !now().isBefore(_pendingGrantExpiresAt!)) {
@@ -185,7 +208,8 @@ final class DualDomainLoginService {
         _pendingGrant = null;
         _pendingGrantExpiresAt = null;
         _stage = 'matrix_login';
-        await _loginWithAuthorizedGrant(grant, target, selectedHomeserver);
+        await _loginWithAuthorizedGrant(grant, target, selectedHomeserver,
+            deviceId: matrix.deviceId);
         if (matrix.userId != target || matrix.deviceId == null) {
           throw StateError('Matrix login returned an unexpected identity');
         }
@@ -379,8 +403,9 @@ final class DualDomainLoginService {
   }
 
   /// Caller must first validate the retained business session with the server.
-  /// Recover its existing family through the broker without a password login.
-  Future<void> restoreAuthenticatedSession(String expectedMatrixUserId) =>
+  /// If its legacy Matrix binding is absent, the broker grant supplies the
+  /// account identity before any local scope is opened.
+  Future<void> restoreAuthenticatedSession(String? expectedMatrixUserId) =>
       _run(() async {
         _forgetPending();
         _stage = 'local_identity';

@@ -11,7 +11,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:matrix/matrix.dart';
 
 final class FakeBusiness implements BusinessSessionGateway {
-  final Completer<void>? restoreGate;
+  Completer<void>? restoreGate;
   FakeBusiness(
     this.result, {
     this.matrixUserId,
@@ -19,8 +19,8 @@ final class FakeBusiness implements BusinessSessionGateway {
     this.logoutBlocker,
     this.restoreGate,
   });
-  final BusinessSessionRestore result;
-  final String? matrixUserId;
+  BusinessSessionRestore result;
+  String? matrixUserId;
   final Object? error;
   final Completer<void>? logoutBlocker;
   int logoutCalls = 0;
@@ -98,6 +98,229 @@ final class FakeMatrix implements MatrixSessionGateway {
 }
 
 void main() {
+  test(
+      'cold start after archive before Business binding asks broker to resolve a null MXID',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated);
+    final matrix = FakeMatrix(isLoggedIn: false);
+    var restoreCalls = 0;
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (identity) async {
+        expect(identity, isNull);
+        restoreCalls++;
+        // An authorized account selection finds the durable archive journal.
+        throw const MatrixNewDeviceRecoveryRequired();
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+
+    expect(restoreCalls, 1);
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    expect(controller.canShowCachedMessages, isFalse);
+    expect(matrix.syncCalls, 0);
+    expect(business.localClearCalls, 0);
+  });
+
+  test('cold start with unbound Business MXID reauthorizes a logged-in Matrix',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated);
+    final matrix =
+        FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost');
+    var restoreCalls = 0;
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (identity) async {
+        expect(identity, isNull);
+        restoreCalls++;
+        // Broker-authorized restoration finishes the missing Business bind.
+        business.matrixUserId = '@alice:matrix.localhost';
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+
+    expect(restoreCalls, 1);
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+    expect(matrix.syncCalls, 1);
+  });
+
+  test(
+      'retained identity recovery remains behind an authenticated Business session',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (_) async =>
+          throw const MatrixNewDeviceRecoveryRequired(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    expect(controller.canShowCachedMessages, isFalse);
+    expect(business.localClearCalls, 0);
+    expect(matrix.clearCalls, 0);
+  });
+
+  test(
+      'confirmed new device revalidates Business without replaying old restore',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    var restoreCalls = 0;
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (_) async {
+        restoreCalls++;
+        throw const MatrixNewDeviceRecoveryRequired();
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    matrix.isLoggedIn = true;
+    matrix.userId = '@alice:matrix.localhost';
+    await controller.bootstrapAfterConfirmedNewDevice();
+
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+    expect(restoreCalls, 1);
+    expect(matrix.syncCalls, 1);
+  });
+
+  test('confirmed recovery hides chats until Business revalidation completes',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (_) async =>
+          throw const MatrixNewDeviceRecoveryRequired(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    matrix.isLoggedIn = true;
+    matrix.userId = '@alice:matrix.localhost';
+    final revalidationGate = Completer<void>();
+    business.restoreGate = revalidationGate;
+    final pending = controller.bootstrapAfterConfirmedNewDevice();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.canShowCachedMessages, isFalse);
+    revalidationGate.complete();
+    await pending;
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+  });
+
+  test(
+      'retry after incomplete new-device login redoes session completion before chat access',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    var restores = 0;
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (identity) async {
+        restores++;
+        if (restores == 1) {
+          throw const MatrixNewDeviceRecoveryRequired();
+        }
+        expect(identity, '@alice:matrix.localhost');
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    // Token login may have succeeded before binding or broker completion
+    // failed. The recovery action did not return successfully.
+    matrix.isLoggedIn = true;
+    matrix.userId = '@alice:matrix.localhost';
+    await controller.bootstrap();
+
+    expect(restores, 2);
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+    expect(matrix.syncCalls, 1);
+  });
+
+  test(
+      'failed new-device binding with no Business MXID keeps recovery available',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (_) async =>
+          throw const MatrixNewDeviceRecoveryRequired(),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    // The new Matrix token was accepted, but Business binding failed, so the
+    // local Business identity is absent until the recovery action is retried.
+    matrix.isLoggedIn = true;
+    matrix.userId = '@alice:matrix.localhost';
+    business.matrixUserId = null;
+    await controller.bootstrap();
+
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    expect(controller.canShowCachedMessages, isFalse);
+    expect(matrix.syncCalls, 0);
+    expect(business.localClearCalls, 0);
+  });
+
+  test('offline retry preserves unfinished recovery for a later online retry',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
+    final matrix = FakeMatrix(isLoggedIn: false);
+    var restores = 0;
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      restoreLocalMatrixSession: (_) async {
+        if (++restores == 1) throw const MatrixNewDeviceRecoveryRequired();
+        matrix.isLoggedIn = true;
+        matrix.userId = '@alice:matrix.localhost';
+      },
+    );
+    addTearDown(controller.dispose);
+
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    business.result = BusinessSessionRestore.offline;
+    await controller.bootstrap();
+    expect(controller.state.status, SessionBootstrapStatus.recoveryRequired);
+    expect(controller.canShowCachedMessages, isFalse);
+    expect(restores, 1);
+
+    business.result = BusinessSessionRestore.authenticated;
+    await controller.bootstrap();
+    expect(restores, 2);
+    expect(controller.state.status, SessionBootstrapStatus.authenticated);
+  });
+
   test(
       'incomplete restore is retried even after local client becomes logged in',
       () async {

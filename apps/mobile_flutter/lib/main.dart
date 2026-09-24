@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:matrix/matrix.dart' show Client;
 
 import 'app_home.dart';
 import 'core/app_config.dart';
@@ -12,6 +13,7 @@ import 'core/chat_diagnostics_scope.dart';
 import 'core/business_api_client.dart';
 import 'core/performance_metrics.dart';
 import 'core/media_resource_policy.dart';
+import 'core/matrix_startup_client.dart';
 import 'features/matrix/media_cache.dart';
 import 'core/installation_container_probe.dart';
 import 'core/installation_marker.dart';
@@ -74,8 +76,9 @@ Future<void> main() async {
     );
     // 本地生命周期诊断只记录加盐哈希后的标识，原始 Matrix user/device id 与
     // token 永远不出现在日志里。
+    final diagnosticSalt = await loadStartupDiagnosticSalt(store);
     final diagnosticHasher =
-        MatrixDiagnosticHasher(await store.diagnosticSalt());
+        diagnosticSalt == null ? null : MatrixDiagnosticHasher(diagnosticSalt);
     final matrixFactory = MatrixClientFactory(
       sessionStore: store,
       homeserver: Uri.parse(AppConfig.matrixHomeserver),
@@ -84,15 +87,25 @@ Future<void> main() async {
     // Read/create the installation identifier before opening a DB handle so a
     // locked keychain cannot leave an initialized client behind on startup retry.
     final installationDeviceKey = await store.registrationDeviceKey();
-    final sdkClient = await matrixFactory.create();
+    final startupClient = await openStartupMatrixClient(
+      openRetained: matrixFactory.create,
+      createSafeShell: () => Client(MatrixClientFactory.clientName),
+    );
+    final sdkClient = startupClient.client;
     final matrix = MatrixSdkE2eeClient(
       sdkClient,
       homeserver: Uri.parse(AppConfig.matrixHomeserver),
       suspendClient: matrixFactory.suspend,
       resumeClient: matrixFactory.create,
       selectClientAccount: matrixFactory.selectAccount,
+      prepareNewDeviceStorage: (homeserver, userId) =>
+          matrixFactory.prepareFreshDeviceForConfirmedRecovery(
+        expectedHomeserver: homeserver,
+        expectedUserId: userId,
+      ),
       clearClientData: matrixFactory.clearLocalChatData,
-      readContinuityMetadata: matrixFactory.continuityMetadata,
+      readContinuityMetadata: guardStartupContinuityReader(
+          startupClient, matrixFactory.continuityMetadata),
       rotateDeviceBinding: matrixFactory.rotateDeviceBinding,
       diagnosticHasher: diagnosticHasher,
       // 历史孤儿房间登记簿：primary 规则数据源 + 收敛台账（只记录不删除）。
@@ -104,13 +117,14 @@ Future<void> main() async {
       matrix: matrix,
       securityLogger: matrix.securityLogger,
       restoreLocalMatrixSession: (identity) async {
-        await store.validateLocalLoginStorage();
+        await validateLocalLoginStorageForAuthentication(store);
         await login.restoreAuthenticatedSession(identity);
       },
     );
     final recovery = MatrixRecoveryService(matrix);
     login = DualDomainLoginService(
-      prepareLocalLogin: store.validateLocalLoginStorage,
+      prepareLocalLogin: () =>
+          validateLocalLoginStorageForAuthentication(store),
       business: api,
       matrix: matrix,
       deviceKey: () => installationDeviceKey,
@@ -156,8 +170,11 @@ Future<void> main() async {
         onPhoneLogin: login.loginPhone,
         onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
         onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
+        onConfirmNewDeviceRecovery: login.confirmNewDeviceAndLogin,
+        onCancelNewDeviceRecovery: login.cancelNewDeviceRecovery,
         onAuthenticated: session.bootstrap,
       ),
+      onConfirmNewDeviceRecovery: login.confirmNewDeviceAndLogin,
       authenticatedBuilder: (_) => ChatDiagnosticsScope(
           sessionEpoch: api.sessionEpoch,
           version:

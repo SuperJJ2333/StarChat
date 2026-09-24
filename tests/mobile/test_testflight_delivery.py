@@ -11,11 +11,46 @@ def test_testflight_signing_uses_profile_contents_and_preserves_app_identity():
     assert "IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}" in workflow
     assert "assert data['Entitlements']['application-identifier']" in workflow
     assert "flutter create" not in workflow
-    assert 'LIUHETONG_IN_APP_UPDATE=false' in workflow
+    assert "IN_APP_UPDATE_ENABLED: ${{ inputs.enterprise-candidate && 'true' || 'false' }}" in workflow
     assert 'build-unsigned-ipa:' not in workflow
     assert 'preflight-only:' in workflow
     assert 'scripts/testflight_status.mjs preflight' in workflow
     assert 'scripts/check_ios_permission_binary.py' in workflow
+
+
+def test_enterprise_candidate_enables_in_app_update_without_testflight_upload():
+    workflow = (ROOT / '.github/workflows/ios-testflight.yml').read_text(encoding='utf-8')
+    assert 'enterprise-candidate:' in workflow
+    assert "IN_APP_UPDATE_ENABLED: ${{ inputs.enterprise-candidate && 'true' || 'false' }}" in workflow
+    assert '--dart-define=LIUHETONG_IN_APP_UPDATE="$IN_APP_UPDATE_ENABLED"' in workflow
+    assert "if: ${{ !inputs.enterprise-candidate }}" in workflow
+    assert 'Upload to App Store Connect for TestFlight' in workflow
+
+
+def test_enterprise_candidate_requires_native_identity_preflight_before_ipa_build():
+    workflow = (ROOT / '.github/workflows/ios-testflight.yml').read_text(encoding='utf-8')
+    preflight = workflow.split('  identity-simulator-preflight:', 1)[1].split('  build-upload:', 1)[0]
+    build = workflow.split('  build-upload:', 1)[1]
+    assert 'inputs.enterprise-candidate' in preflight
+    assert 'mobile_scanner: 6.0.11' in preflight
+    assert 'simctl bootstatus' in preflight
+    assert 'flutter test --no-pub integration_test/sqlcipher_readonly_native_test.dart' in preflight
+    assert 'flutter test --no-pub integration_test/ios_keychain_archive_native_test.dart' in preflight
+    assert 'identity-simulator-preflight' in build.split('steps:', 1)[0]
+    assert "needs.identity-simulator-preflight.result == 'success'" in build.split('steps:', 1)[0]
+
+
+def test_signed_compatibility_candidate_checks_readonly_sqlcipher_on_ios_simulator():
+    workflow = (ROOT / '.github/workflows/ios-0353.yml').read_text(encoding='utf-8')
+    simulator = workflow.split('  simulator-preflight:', 1)[1].split('  build:', 1)[0]
+    build = workflow.split('  build:', 1)[1]
+    assert 'integration_test/sqlcipher_readonly_native_test.dart' in simulator
+    assert 'flutter test --no-pub' in simulator
+    assert 'simctl bootstatus' in simulator
+    assert 'mobile_scanner: 6.0.11' in simulator
+    assert 'needs: simulator-preflight' in build
+    assert '--dart-define=LIUHETONG_IN_APP_UPDATE=true' in workflow
+    assert 'ChatFlow-iOS-signed' in workflow
 
 
 def test_simulator_validates_real_permission_plugin_without_importing_excluded_scanner():

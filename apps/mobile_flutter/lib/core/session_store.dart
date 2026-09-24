@@ -473,16 +473,16 @@ final class SecureSessionStore {
       String homeserver, String userId) async {
     final target = _AccountScopedSecureStore.identity(homeserver, userId);
     final slots = await _storage.peekSlots();
-    final current = await _storage.peekScope();
-    if (slots[target] != current || current.isEmpty) return null;
-    final snapshot = await _peekIdentityAtScopeUnlocked(current);
+    final confirmedScope = slots[target];
+    if (confirmedScope == null || confirmedScope.isEmpty) return null;
+    final snapshot = await _peekIdentityAtScopeUnlocked(confirmedScope);
     if (snapshot.binding != null || snapshot.databaseKey == null) return null;
     final entries = await _archiveEntriesUnlocked();
     return entries.any((entry) =>
             entry.kind == 'fresh_device' &&
             entry.accountHash == target &&
-            entry.newScope == current)
-        ? current
+            entry.newScope == confirmedScope)
+        ? confirmedScope
         : null;
   }
 
@@ -872,10 +872,11 @@ final class SecureSessionStore {
   /// This checks the active local metadata, not an unauthenticated target user.
   Future<void> validateLocalLoginStorage() =>
       _runMatrixIdentityOperation(() async {
-        final slots = await _storage.slots();
-        final scope = await _storage.scope();
-        final binding = await _matrixBindingUnlocked();
-        final key = await _storage.read(_matrixDatabaseKey);
+        final slots = await _storage.peekSlots();
+        final scope = await _storage.peekScope();
+        final snapshot = await _peekIdentityAtScopeUnlocked(scope);
+        final binding = snapshot.binding;
+        final key = snapshot.databaseKey;
         if (binding != null) {
           final identity = _AccountScopedSecureStore.identity(
               binding.homeserver, binding.matrixUserId);
@@ -887,7 +888,10 @@ final class SecureSessionStore {
           }
         }
         // Decode the existing clear marker without carrying out a pending deletion.
-        final pending = await _storage.read(_matrixClearTombstoneKey);
+        final tombstoneKey = scope.isEmpty
+            ? _matrixClearTombstoneKey
+            : '$_matrixClearTombstoneKey.$scope';
+        final pending = await _storage.peekRaw(tombstoneKey);
         if (pending != null && pending != _matrixClearTombstoneValue) {
           throw const FormatException('Invalid Matrix clear tombstone');
         }

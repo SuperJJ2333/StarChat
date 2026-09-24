@@ -20,6 +20,8 @@ final class _RecoverableMatrix
   String? userId;
   @override
   String? deviceId;
+  String? _storedUserId;
+  String? _storedDeviceId;
 
   int selections = 0;
   int recoveries = 0;
@@ -42,8 +44,10 @@ final class _RecoverableMatrix
     if (offerRecoveryOnSelect && selections == 1) {
       throw const MatrixNewDeviceRecoveryRequired();
     }
-    userId = null;
-    deviceId = null;
+    userId = _storedUserId;
+    deviceId = _storedDeviceId;
+    isLoggedIn = _storedUserId != null;
+    credentialsInvalid = isLoggedIn;
   }
 
   @override
@@ -67,9 +71,10 @@ final class _RecoverableMatrix
     operations.add('login');
     loginDeviceIds.add(deviceId);
     if (loginError != null) throw loginError!;
-    userId = loginResultUserId;
-    this.deviceId = 'NEW-DEVICE';
+    userId = _storedUserId = loginResultUserId;
+    this.deviceId = _storedDeviceId = deviceId ?? 'NEW-DEVICE';
     isLoggedIn = true;
+    credentialsInvalid = false;
   }
 
   @override
@@ -235,6 +240,35 @@ void main() {
     expect(matrix.recoveries, 0);
   });
 
+  test('unbound legacy Business account uses the matching broker MXID',
+      () async {
+    final business = FakeDualDomainBusiness()..currentIdentity = null;
+    final matrix = _RecoverableMatrix();
+    final service = _service(business, matrix);
+    await expectLater(service.login('alice', 'password'),
+        throwsA(isA<MatrixNewDeviceRecoveryRequired>()));
+
+    await service.confirmNewDeviceAndLogin();
+
+    expect(matrix.recoveries, 1);
+    expect(matrix.expectedLoginUserIds, ['@alice:matrix.example.test']);
+    expect(business.boundMatrixUsers, ['@alice:matrix.example.test']);
+  });
+
+  test('retained Business restore can identify an unbound account by grant',
+      () async {
+    final business = FakeDualDomainBusiness()..currentIdentity = null;
+    final matrix = _RecoverableMatrix();
+    final service = _service(business, matrix);
+
+    await expectLater(service.restoreAuthenticatedSession(null),
+        throwsA(isA<MatrixNewDeviceRecoveryRequired>()));
+    expect(matrix.selections, 1);
+    expect(business.tokenRequests, 1);
+    await service.confirmNewDeviceAndLogin();
+    expect(business.boundMatrixUsers, ['@alice:matrix.example.test']);
+  });
+
   test('wrong homeserver grant blocks recovery before archive', () async {
     final business = FakeDualDomainBusiness()
       ..grants.addAll(const [
@@ -357,5 +391,59 @@ void main() {
     expect(matrix.recoveries, 1);
     expect(matrix.clears, 0);
     expect(business.boundMatrixUsers, isEmpty);
+  });
+
+  test(
+      'post-login completion retry reuses the new device without archiving again',
+      () async {
+    final business = FakeDualDomainBusiness();
+    final matrix = _RecoverableMatrix();
+    var completions = 0;
+    final service = DualDomainLoginService(
+      business: business,
+      matrix: matrix,
+      deviceKey: () => 'installation',
+      retainedHomeserver: Uri.parse('https://matrix.example.test'),
+      completeMatrixSession: () async {
+        if (++completions == 1) throw StateError('transient completion');
+      },
+    );
+    await expectLater(service.login('alice', 'password'),
+        throwsA(isA<MatrixNewDeviceRecoveryRequired>()));
+
+    await expectLater(service.confirmNewDeviceAndLogin(), throwsStateError);
+    expect(matrix.recoveries, 1);
+    expect(matrix.logins, 1);
+    expect(matrix.userId, '@alice:matrix.example.test');
+    expect(matrix.deviceId, 'NEW-DEVICE');
+
+    await service.confirmNewDeviceAndLogin();
+    expect(matrix.recoveries, 1);
+    expect(matrix.logins, 2);
+    expect(completions, 2);
+    expect(matrix.loginDeviceIds, [null, 'NEW-DEVICE']);
+    expect(matrix.operations.last, 'sync');
+  });
+
+  test('failed first token login reopens the committed new scope on retry',
+      () async {
+    final business = FakeDualDomainBusiness();
+    final matrix = _RecoverableMatrix()
+      ..loginError = StateError('temporary Matrix login failure');
+    final service = _service(business, matrix);
+    await expectLater(service.login('alice', 'password'),
+        throwsA(isA<MatrixNewDeviceRecoveryRequired>()));
+
+    await expectLater(service.confirmNewDeviceAndLogin(), throwsStateError);
+    expect(matrix.recoveries, 1);
+    expect(matrix.logins, 1);
+    matrix.loginError = null;
+
+    await service.confirmNewDeviceAndLogin();
+    expect(matrix.recoveries, 1);
+    expect(matrix.selections, 2);
+    expect(matrix.logins, 2);
+    expect(matrix.userId, '@alice:matrix.example.test');
+    expect(matrix.deviceId, 'NEW-DEVICE');
   });
 }

@@ -17,6 +17,7 @@ def release(platform='ios'):
                   artifact_bytes=44218488, signing_confirmed_by='release-owner',
                   bundle_id='com.liuhetong.liuhetongMobile')
     if platform == 'ios':
+        result['ios_ci_candidate_sha256'] = '0' * 64
         app_id = 'ZXB3TS7QD4.' + result['bundle_id']
         result['ios_upgrade_from'] = {
             'team_id': 'ZXB3TS7QD4',
@@ -33,6 +34,8 @@ def add_ios_ipa_evidence(root, r):
     artifact = root / urlsplit(r['artifact_url']).path.lstrip('/')
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_bytes(b'fake-enterprise-ipa-A')
+    candidate_path(root).write_bytes(b'fake-ci-candidate-A')
+    r['ios_ci_candidate_sha256'] = hashlib.sha256(candidate_path(root).read_bytes()).hexdigest()
     r['artifact_bytes'] = artifact.stat().st_size
     app_id = 'ZXB3TS7QD4.' + r['bundle_id']
     r['ios_ipa_evidence'] = {
@@ -57,10 +60,29 @@ def add_ios_ipa_evidence(root, r):
         'performed_at': '2026-09-24T10:00:00+08:00',
         'performed_by': 'release-owner',
         'installed_without_uninstall': True,
+        'pre_upgrade_healthy': True,
         'chat_history_preserved': True,
         'login_preserved': True,
+        'keychain_preserved': True,
+        'background_notifications_confirmed': True,
     }
     return artifact
+
+
+def candidate_path(root):
+    return root.parent / 'ci-candidate.ipa'
+
+
+def fake_payload_comparator(r):
+    """Only release orchestration is mocked; comparator byte parsing has its own tests."""
+    return lambda _candidate, _final: {
+        'candidate_sha256': r['ios_ci_candidate_sha256'],
+        'final_sha256': r['ios_ipa_evidence']['sha256'],
+        'status': 'pass',
+        'differences': [],
+        'payload_path_count': 1,
+        'final_payload_path_count': 1,
+    }
 
 
 def fake_ipa_inspector(r):
@@ -261,6 +283,59 @@ def test_ios_release_evidence_allows_other_enterprise_team_with_matching_upgrade
     m.verify_ios_release_evidence(r, root, inspector=fake_ipa_inspector(r))
 
 
+def test_ios_release_accepts_exact_legacy_signed_app_id_only_with_cover_evidence(
+        tmp_path):
+    root = tmp_path / 'frontend'
+    r = release()
+    r.update(version='0.4.7', build=2173,
+             artifact_url=f'{m.BASE}/downloads/ChatFlow-0.4.7-build2173.ipa')
+    add_ios_ipa_evidence(root, r)
+    legacy = 'ZXB3TS7QD4.cn.edu.buaa.wxwork.notifyext'
+    r['ios_upgrade_from'].update(application_identifier=legacy,
+                                 version='0.3.102', build=2144)
+    r['ios_ipa_evidence'].update(profile_application_identifier=legacy,
+                                 signed_application_identifier=legacy)
+    r['ios_upgrade_test'].update(old_version='0.3.102', old_build=2144)
+
+    with pytest.raises(ValueError, match='identity|identifier'):
+        m.verify_ios_release_evidence(r, root, inspector=fake_ipa_inspector(r))
+
+    r['ios_legacy_application_identifier'] = legacy
+    m.verify_ios_release_evidence(r, root, inspector=fake_ipa_inspector(r))
+
+    r['ios_upgrade_test']['installed_without_uninstall'] = False
+    with pytest.raises(ValueError, match='upgrade|install|device'):
+        m.verify_ios_release_evidence(r, root, inspector=fake_ipa_inspector(r))
+
+
+def test_legacy_identity_recovery_release_cannot_waive_production_apns():
+    r = release()
+    r['ios_legacy_application_identifier'] = m.LEGACY_IOS_APP_ID
+    r['ios_allow_no_apns'] = True
+    with pytest.raises(ValueError, match='APNs|push|notification'):
+        m.validate(r)
+
+
+@pytest.mark.parametrize('missing_proof', [
+    'pre_upgrade_healthy', 'keychain_preserved',
+    'background_notifications_confirmed',
+])
+def test_ios_release_requires_healthy_device_keychain_and_background_proof(
+        tmp_path, missing_proof):
+    root = tmp_path / 'frontend'
+    r = release()
+    add_ios_ipa_evidence(root, r)
+    r['ios_upgrade_test'].update({
+        'pre_upgrade_healthy': True,
+        'keychain_preserved': True,
+        'background_notifications_confirmed': True,
+    })
+    r['ios_upgrade_test'][missing_proof] = False
+
+    with pytest.raises(ValueError, match='upgrade|install|device|Keychain|notification'):
+        m.verify_ios_release_evidence(r, root, inspector=fake_ipa_inspector(r))
+
+
 @pytest.mark.parametrize('team_id', [
     'ABCD12345', 'ABCD1234567', 'abcd123456', 'ABCD-23456',
 ])
@@ -403,7 +478,8 @@ def test_publish_restores_pages_when_remote_verification_fails(tmp_path, monkeyp
         if method=='HEAD': return {'Content-Length':str(r['artifact_bytes'])},b''
         return {},b'<plist>'
     with pytest.raises(Exception): m.publish(
-        r, root, tmp_path/'backup', request, db, inspector=fake_ipa_inspector(r))
+        r, root, tmp_path/'backup', request, db, inspector=fake_ipa_inspector(r),
+        candidate=candidate_path(root), comparator=fake_payload_comparator(r))
     assert (root/'download.html').read_bytes() == old
     assert (root/'downloads/ios/manifest.plist').read_bytes() == b'old'
     assert calls == ['inspect']  # No popup published before static gates pass.
@@ -432,8 +508,13 @@ def test_publish_calls_settings_only_after_public_checks(tmp_path, monkeypatch):
         assert payload['expected'] == before
         assert payload['values'] == m.settings(r)
         return before | payload['values']
-    m.publish(r, root, tmp_path/'backup', request, db, inspector=fake_ipa_inspector(r))
+    m.publish(r, root, tmp_path/'backup', request, db,
+              inspector=fake_ipa_inspector(r), candidate=candidate_path(root),
+              comparator=fake_payload_comparator(r))
     assert (tmp_path/'backup/after.json').exists()
+    comparison = (tmp_path/'backup/ios-payload-comparison.json').read_text(encoding='utf-8')
+    assert r['ios_ci_candidate_sha256'] in comparison
+    assert r['ios_ipa_evidence']['sha256'] in comparison
 
 
 def test_publish_rechecks_ipa_sha_after_public_checks_before_setting_write(
@@ -485,7 +566,8 @@ def test_publish_rechecks_ipa_sha_after_public_checks_before_setting_write(
 
     with pytest.raises(ValueError, match='SHA|sha256|hash'):
         m.publish(r, root, tmp_path / 'backup', request, db,
-                  inspector=fake_ipa_inspector(r))
+                  inspector=fake_ipa_inspector(r), candidate=candidate_path(root),
+                  comparator=fake_payload_comparator(r))
     assert swapped
     assert modes == ['inspect']
     assert (root / 'download.html').read_bytes() == before_page
@@ -560,3 +642,134 @@ def test_publish_rejects_unverified_ios_ipa_before_static_or_db_write(
     assert ('db', 'apply') not in calls
     assert (root / 'download.html').read_bytes() == old_page
     assert not (root / 'downloads/ios/manifest.plist').exists()
+
+
+@pytest.mark.parametrize('invalid', [None, '', 'A' * 64, '0' * 63])
+def test_ios_release_record_requires_ci_candidate_sha256(invalid):
+    r = release()
+    if invalid is None:
+        del r['ios_ci_candidate_sha256']
+    else:
+        r['ios_ci_candidate_sha256'] = invalid
+    with pytest.raises(ValueError, match='CI candidate|SHA256'):
+        m.validate(r)
+
+
+@pytest.mark.parametrize('problem', [
+    'missing-ci-ipa', 'candidate-sha-mismatch', 'candidate-bytes-replaced',
+    'payload-change', 'reported-final-sha-mismatch', 'same-final-ipa',
+    'empty-inventory-report', 'changed-during-comparison',
+])
+def test_publish_rejects_unmatched_ci_payload_before_any_write(
+        tmp_path, monkeypatch, problem):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'fcntl', types.SimpleNamespace(
+        LOCK_EX=1, LOCK_NB=2, flock=lambda *a: None))
+    root = tmp_path / 'frontend'
+    (root / 'src').mkdir(parents=True)
+    source = Path(__file__).parents[2] / 'frontend'
+    for name in ['download.html', 'src/admin-home.js']:
+        (root / name).write_bytes((source / name).read_bytes())
+    r = release()
+    final = add_ios_ipa_evidence(root, r)
+    candidate = candidate_path(root)
+    if problem == 'missing-ci-ipa':
+        candidate = None
+    elif problem == 'candidate-sha-mismatch':
+        r['ios_ci_candidate_sha256'] = '1' * 64
+    elif problem == 'candidate-bytes-replaced':
+        candidate.write_bytes(b'fake-ci-candidate-B')
+    elif problem == 'same-final-ipa':
+        candidate = final
+        r['ios_ci_candidate_sha256'] = r['ios_ipa_evidence']['sha256']
+
+    def compare(first, second):
+        report = fake_payload_comparator(r)(first, second)
+        if problem == 'payload-change':
+            report.update(status='fail', differences=['added Payload path: injected.dylib'])
+        elif problem == 'reported-final-sha-mismatch':
+            report['final_sha256'] = '2' * 64
+        elif problem == 'empty-inventory-report':
+            report['payload_path_count'] = 0
+        elif problem == 'changed-during-comparison':
+            candidate.write_bytes(b'fake-ci-candidate-B')
+        return report
+
+    writes = []
+    real_atomic_write = m.atomic_write
+
+    def track_static_write(path, data):
+        writes.append(path)
+        real_atomic_write(path, data)
+
+    monkeypatch.setattr(m, 'atomic_write', track_static_write)
+    db_calls = []
+
+    def db(payload):
+        db_calls.append(payload['mode'])
+        raise AssertionError('DB inspected before the IPA payload gate')
+
+    def request(url, method='GET'):
+        raise AssertionError('public metadata read before the IPA payload gate')
+
+    with pytest.raises(ValueError, match='CI candidate|SHA|payload|compare'):
+        m.publish(r, root, tmp_path / 'backup', request, db,
+                  inspector=fake_ipa_inspector(r), candidate=candidate,
+                  comparator=compare)
+    assert writes == []
+    assert db_calls == []
+    assert not (tmp_path / 'backup').exists()
+
+
+def test_publish_rechecks_ci_payload_after_public_checks_and_restores_static(
+        tmp_path, monkeypatch):
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'fcntl', types.SimpleNamespace(
+        LOCK_EX=1, LOCK_NB=2, flock=lambda *a: None))
+    root = tmp_path / 'frontend'
+    (root / 'src').mkdir(parents=True)
+    (root / 'downloads/ios').mkdir(parents=True)
+    source = Path(__file__).parents[2] / 'frontend'
+    for name in ['download.html', 'src/admin-home.js']:
+        (root / name).write_bytes((source / name).read_bytes())
+    before_page = (root / 'download.html').read_bytes()
+    before_home = (root / 'src/admin-home.js').read_bytes()
+    (root / 'downloads/ios/manifest.plist').write_bytes(b'old manifest')
+    r = release()
+    add_ios_ipa_evidence(root, r)
+    comparisons = []
+
+    def compare(first, second):
+        comparisons.append((first, second))
+        report = fake_payload_comparator(r)(first, second)
+        if len(comparisons) == 2:
+            report.update(status='fail', differences=['Mach-O code changed'])
+        return report
+
+    def request(url, method='GET'):
+        if method == 'HEAD':
+            return {'Content-Length': str(r['artifact_bytes'])}, b''
+        path = {'/download': 'download.html',
+                '/src/admin-home.js': 'src/admin-home.js',
+                '/downloads/ios/manifest.plist': 'downloads/ios/manifest.plist'}[
+                    url.removeprefix(m.BASE)]
+        return {'Content-Type': 'application/xml', 'Cache-Control': 'no-store'}, (
+            root / path).read_bytes()
+
+    db_calls = []
+
+    def db(payload):
+        db_calls.append(payload['mode'])
+        return {'app_ios_latest_build': '2143'}
+
+    with pytest.raises(ValueError, match='payload|compare'):
+        m.publish(r, root, tmp_path / 'backup', request, db,
+                  inspector=fake_ipa_inspector(r), candidate=candidate_path(root),
+                  comparator=compare)
+    assert len(comparisons) == 2
+    assert db_calls == ['inspect']
+    assert (root / 'download.html').read_bytes() == before_page
+    assert (root / 'src/admin-home.js').read_bytes() == before_home
+    assert (root / 'downloads/ios/manifest.plist').read_bytes() == b'old manifest'

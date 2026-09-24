@@ -23,6 +23,7 @@ BASE = 'https://www.liuhetong888.com'
 INSTALL = BASE + '/download?platform=ios&install=1'
 MANIFEST = BASE + '/downloads/ios/manifest.plist'
 BUNDLE = 'com.liuhetong.liuhetongMobile'
+LEGACY_IOS_APP_ID = 'ZXB3TS7QD4.cn.edu.buaa.wxwork.notifyext'
 
 
 def validate(r):
@@ -44,6 +45,15 @@ def validate(r):
         raise ValueError('final signing handoff must be confirmed by release owner')
     if r['platform'] == 'ios' and r.get('bundle_id') != BUNDLE:
         raise ValueError('bundle identity changed')
+    if r['platform'] == 'ios' and not re.fullmatch(
+            r'[0-9a-f]{64}', str(r.get('ios_ci_candidate_sha256', ''))):
+        raise ValueError('iOS CI candidate SHA256 is required in the release record')
+    legacy_app_id = r.get('ios_legacy_application_identifier')
+    if legacy_app_id is not None and (
+            r['platform'] != 'ios' or legacy_app_id != LEGACY_IOS_APP_ID):
+        raise ValueError('unsupported legacy iOS application identifier')
+    if legacy_app_id is not None and r.get('ios_allow_no_apns') is True:
+        raise ValueError('legacy iOS recovery release requires production APNs')
 
 
 def settings(r):
@@ -120,10 +130,69 @@ def inspect_uploaded_ios_ipa(path, r):
             expected_version=r['version'],
             expected_build=r['build'],
             expected_team_id=r['ios_ipa_evidence']['team_id'],
+            expected_legacy_application_identifier=r.get(
+                'ios_legacy_application_identifier'),
             require_apns=r.get('ios_allow_no_apns') is not True,
         )
     except (OSError, zipfile.BadZipFile) as exc:
         raise ValueError('uploaded iOS IPA inspection failed') from exc
+
+
+def compare_uploaded_ios_payload(candidate, final):
+    """Load the strict CI-to-enterprise IPA payload checker on the release host."""
+    checker = Path(__file__).with_name('compare_ios_ipa_payload.py')
+    spec = importlib.util.spec_from_file_location('compare_ios_ipa_payload', checker)
+    if spec is None or spec.loader is None:
+        raise ValueError('iOS IPA payload comparator is unavailable on the release host')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.compare_ipa_payload(candidate, final)
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with Path(path).open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_ios_payload_comparison(r, root, candidate, *, comparator=None):
+    """Check actual CI and final IPA bytes against both recorded immutable hashes."""
+    if r['platform'] != 'ios':
+        return None
+    if candidate is None:
+        raise ValueError('iOS CI candidate IPA path is required for publish')
+    candidate = Path(candidate).resolve()
+    if not candidate.is_file():
+        raise ValueError('iOS CI candidate IPA is missing on release host')
+    root = Path(root).resolve()
+    final = (root / urlsplit(r['artifact_url']).path.lstrip('/')).resolve()
+    if not final.is_relative_to(root) or not final.is_file():
+        raise ValueError('uploaded final iOS IPA is missing')
+    candidate_sha = r['ios_ci_candidate_sha256']
+    final_sha = r['ios_ipa_evidence']['sha256']
+    if candidate == final or candidate_sha == final_sha:
+        raise ValueError('CI candidate must be distinct from final enterprise IPA')
+    if sha256_file(candidate) != candidate_sha:
+        raise ValueError('local iOS CI candidate SHA256 differs from release record')
+    if sha256_file(final) != final_sha:
+        raise ValueError('uploaded final iOS IPA SHA256 differs from handoff evidence')
+    compare = comparator or compare_uploaded_ios_payload
+    report = compare(candidate, final)
+    if (not isinstance(report, dict) or report.get('status') != 'pass'
+            or report.get('differences') != []
+            or report.get('candidate_sha256') != candidate_sha
+            or report.get('final_sha256') != final_sha
+            or type(report.get('payload_path_count')) is not int
+            or report['payload_path_count'] <= 0
+            or type(report.get('final_payload_path_count')) is not int
+            or report['final_payload_path_count'] <= 0):
+        raise ValueError('iOS CI candidate and final IPA payload comparison failed')
+    # Detect replacements while the comparator was reading either file.
+    if sha256_file(candidate) != candidate_sha or sha256_file(final) != final_sha:
+        raise ValueError('iOS IPA SHA256 changed during payload comparison')
+    return report
 
 
 def verify_ios_release_evidence(r, root, *, inspector=None):
@@ -137,7 +206,10 @@ def verify_ios_release_evidence(r, root, *, inspector=None):
     team_id = evidence.get('team_id')
     if not isinstance(team_id, str) or not re.fullmatch(r'[A-Z0-9]{10}', team_id):
         raise ValueError('iOS enterprise team identity is invalid')
-    expected_app_id = team_id + '.' + r['bundle_id']
+    legacy_app_id = r.get('ios_legacy_application_identifier')
+    if legacy_app_id is not None and team_id != 'ZXB3TS7QD4':
+        raise ValueError('legacy iOS application identifier requires original Team')
+    expected_app_id = legacy_app_id or team_id + '.' + r['bundle_id']
     if (evidence.get('bundle_id') != r['bundle_id']
             or evidence.get('version') != r['version']
             or type(evidence.get('build')) is not int
@@ -197,8 +269,11 @@ def verify_ios_release_evidence(r, root, *, inspector=None):
             or not isinstance(upgrade_test.get('performed_by'), str)
             or not upgrade_test['performed_by'].strip()
             or upgrade_test.get('installed_without_uninstall') is not True
+            or upgrade_test.get('pre_upgrade_healthy') is not True
             or upgrade_test.get('chat_history_preserved') is not True
-            or upgrade_test.get('login_preserved') is not True):
+            or upgrade_test.get('login_preserved') is not True
+            or upgrade_test.get('keychain_preserved') is not True
+            or upgrade_test.get('background_notifications_confirmed') is not True):
         raise ValueError('iOS device cover-install test does not prove this candidate preserved data')
     apns = evidence.get('aps_environment')
     if apns != 'production' and not (apns is None and r.get('ios_allow_no_apns') is True):
@@ -282,13 +357,15 @@ def db_settings(payload):
     return json.loads(result)
 
 
-def publish(r, root, backup, request=fetch, db=db_settings, *, inspector=None):
+def publish(r, root, backup, request=fetch, db=db_settings, *, inspector=None,
+            candidate=None, comparator=None):
     import fcntl
     validate(r)
     # Serialize this publisher on the host; fresh baseline plus CAS detects others.
     with open(root.parent / '.release-metadata.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         verify_ios_release_evidence(r, root, inspector=inspector)
+        verify_ios_payload_comparison(r, root, candidate, comparator=comparator)
         backup.mkdir(parents=True, exist_ok=False, mode=0o700)
         artifact_head(r, request)
         before = db({'mode': 'inspect'})
@@ -311,6 +388,12 @@ def publish(r, root, backup, request=fetch, db=db_settings, *, inspector=None):
                 atomic_write(root/name, data); written.append(name)
             check(r, request)  # HTTP/XML/page gates precede the update popup write.
             verify_ios_release_evidence(r, root, inspector=inspector)  # Catch a same-path IPA replacement.
+            comparison = verify_ios_payload_comparison(
+                r, root, candidate, comparator=comparator)
+            if comparison is not None:
+                (backup/'ios-payload-comparison.json').write_text(
+                    json.dumps(comparison, ensure_ascii=False, indent=2, sort_keys=True),
+                    encoding='utf-8')
         except Exception:
             for name in reversed(written):
                 if (root/name).read_bytes() == staged[name]:
@@ -323,7 +406,7 @@ def publish(r, root, backup, request=fetch, db=db_settings, *, inspector=None):
                     'trace': 'release-metadata-' + backup.name})
         (backup/'after.json').write_text(json.dumps(after), encoding='utf-8')
         if r['platform'] == 'ios':
-            print('PUBLISH_PASS: metadata and uploaded IPA SHA256 verified; device install unverified')
+            print('PUBLISH_PASS: metadata, signed IPA and CI payload comparison verified')
         else:
             print('PUBLISH_PASS: metadata verified; binary inspection not performed')
 
@@ -334,6 +417,8 @@ def main():
     parser.add_argument('record', type=Path)
     parser.add_argument('--root', type=Path, default=Path('/opt/starchat/frontend'))
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--ios-candidate', type=Path,
+                        help='local immutable CI-generated IPA used to verify enterprise re-sign')
     args = parser.parse_args()
     r = json.loads(args.record.read_text(encoding='utf-8'));validate(r)
     if args.mode == 'check': check(r); print('METADATA_CHECK_PASS (no binary download)')
@@ -345,7 +430,9 @@ def main():
     else:
         if not args.output or not args.output.resolve().is_relative_to(Path('/opt/starchat/docs/verification/artifacts')):
             parser.error('publish --output must be a NEW private backup directory under /opt/starchat/docs/verification/artifacts')
-        publish(r, args.root, args.output)
+        if r['platform'] == 'ios' and args.ios_candidate is None:
+            parser.error('iOS publish requires --ios-candidate <local CI IPA>')
+        publish(r, args.root, args.output, candidate=args.ios_candidate)
 
 
 if __name__ == '__main__': main()

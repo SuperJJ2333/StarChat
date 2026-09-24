@@ -26,6 +26,10 @@ on:
         description: Existing build number for status-only
         type: string
         default: ''
+      enterprise-candidate:
+        description: Build an IPA for enterprise re-signing without TestFlight upload
+        type: boolean
+        default: false
   pull_request:
     paths: ['apps/mobile_flutter/**', '.github/workflows/ios-testflight.yml']
 permissions:
@@ -221,9 +225,46 @@ jobs:
           name: testflight-native-permission-check
           path: ${{ runner.temp }}/permissions-*.log
           if-no-files-found: ignore
+  identity-simulator-preflight:
+    needs: flutter-checks
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.enterprise-candidate && !inputs.preflight-only && !inputs.status-only && !inputs.distribute-only }}
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Prepare simulator dependencies
+        working-directory: apps/mobile_flutter
+        run: |
+          flutter config --no-enable-swift-package-manager
+          mkdir -p build/ios/SourcePackages
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('pubspec.yaml')
+          source = path.read_text()
+          dependency = '  mobile_scanner: 6.0.11\n'
+          assert source.count(dependency) == 1
+          path.write_text(source.replace(dependency, ''))
+          PY
+          flutter pub get
+      - name: Check SQLCipher, WAL and Keychain archive on a real iOS simulator
+        working-directory: apps/mobile_flutter
+        run: |
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("isAvailable") and "iOS" in x["name"]]; print(sorted(r,key=lambda x:tuple(map(int,x["version"].split("."))))[-1]["identifier"])')
+          simulator=$(xcrun simctl create TestFlightIdentityPreflight com.apple.CoreSimulator.SimDeviceType.iPhone-15 "$runtime")
+          xcrun simctl boot "$simulator"
+          xcrun simctl bootstatus "$simulator" -b
+          flutter test --no-pub integration_test/sqlcipher_readonly_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
+          flutter test --no-pub integration_test/ios_keychain_archive_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
   build-upload:
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && !inputs.preflight-only && !inputs.status-only && !inputs.distribute-only && needs.apple-preflight.result == 'success' && needs.flutter-checks.result == 'success' && (needs.simulator-build.result == 'success' || needs.native-evidence.result == 'success') }}
-    needs: [apple-preflight, flutter-checks, simulator-build, native-evidence]
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && !inputs.preflight-only && !inputs.status-only && !inputs.distribute-only && needs.apple-preflight.result == 'success' && needs.flutter-checks.result == 'success' && (needs.simulator-build.result == 'success' || needs.native-evidence.result == 'success') && (!inputs.enterprise-candidate || needs.identity-simulator-preflight.result == 'success') }}
+    needs: [apple-preflight, flutter-checks, simulator-build, native-evidence, identity-simulator-preflight]
     runs-on: macos-15
     timeout-minutes: 40
     env:
@@ -341,12 +382,13 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+          IN_APP_UPDATE_ENABLED: ${{ inputs.enterprise-candidate && 'true' || 'false' }}
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
           export DEVELOPMENT_TEAM=$APPLE_TEAM_ID
           export PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID
-          flutter build ipa --release --build-number="$IOS_CANDIDATE_BUILD"  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+          flutter build ipa --release --build-number="$IOS_CANDIDATE_BUILD"  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE="$IN_APP_UPDATE_ENABLED" --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
       - name: Verify signed IPA
         working-directory: apps/mobile_flutter
         run: |
@@ -397,6 +439,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload to App Store Connect for TestFlight
+        if: ${{ !inputs.enterprise-candidate }}
         working-directory: apps/mobile_flutter
         env:
           APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
@@ -410,6 +453,7 @@ jobs:
           chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
           xcrun altool --upload-app --type ios -f build/ios/ipa/*.ipa --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$RUNNER_TEMP/ios-upload.log"
       - name: Read Apple processing and TestFlight status
+        if: ${{ !inputs.enterprise-candidate }}
         env:
           APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}

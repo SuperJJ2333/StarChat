@@ -2,11 +2,11 @@
 
 ## 2026-09-24 iOS 2144 旧账号 L07：真机定位到本地加密身份指纹不一致（当前）
 
-用户确认 2144 旧账号 L07 早于 2172 安装，同一 iPhone 新账号可登录。20:19:57 +08 真机再次复现后，过滤的安全事件依次为 `E2EE_ACCOUNT_SELECT_BEGIN`、`E2EE_CONTINUITY_FINGERPRINT_MISMATCH`、`E2EE_ACCOUNT_SELECT_CONTINUITY_MISMATCH`，同属旧账号。2144 源码仅在保存的 Matrix 绑定 Ed25519 指纹与现存客户端指纹不等时记录该事件并失败关闭；直接失败条件已确定，指纹最初为何分叉仍未知。没有清库、修改钥匙串、发布或新包；2172 启动错误尚未独立证实同根。见[独立任务记录](tasks/2026-09-24-ios2144-old-account-l07.md)与[脱敏事件证据](../verification/2026-09-24-ios2144-old-account-l07.md)。
+用户确认 2144 旧账号 L07 早于 2172 安装，同一 iPhone 新账号可登录。20:19:57 +08 真机再次复现后，过滤的安全事件依次为 `E2EE_ACCOUNT_SELECT_BEGIN`、`E2EE_CONTINUITY_FINGERPRINT_MISMATCH`、`E2EE_ACCOUNT_SELECT_CONTINUITY_MISMATCH`，同属旧账号。2144 保存的 Matrix 绑定 Ed25519 指纹与现存客户端指纹不等；直接失败条件已确定，最初为何分叉仍未知。SDK 在缺 Olm pickle 时可能于应用校验前新建并上传身份，这是源码风险，尚未证明在故障机发生。用户已接受保留旧库后显式建立新设备及旧消息可能无法解密的后果；[ADR-0086](../adr/0086-ios-retained-matrix-identity-recovery.md)与[实施计划](../superpowers/plans/2026-09-24-ios-retained-identity-recovery.md)的 Domain/Quality-Security **设计**评审通过。`0.4.7+2173` 源码已实现只读预检、旧库归档、授权确认与安全启动，Windows 全量 Flutter 回归 4230 项通过、9 项跳过，新增损坏新设备密钥的失败关闭测试已红绿通过；实施 Domain 与 Quality/Security 源码复核通过。macOS iOS 原生与健康旧版真机不卸载覆盖尚未验收，也无新 IPA 或生产发布。2172 启动错误仍未独立证实同根，旧 2172 包继续停发。见[独立任务记录](tasks/2026-09-24-ios2144-old-account-l07.md)与[脱敏事件/红绿测试证据](../verification/2026-09-24-ios2144-old-account-l07.md)。
 
 ## 2026-09-24 iOS 企业回签 IPA 源码门禁（当前）
 
-用户确认可暂用其他企业签名，但必须覆盖升级并保留 iPhone 旧数据。发布前源码门禁已增加最终 IPA 同字节身份/权益检查、服务端对已上传 IPA 重新解析、旧版 Team/App ID/Keychain 连续性及绑定候选 SHA 的真机覆盖记录要求；目标测试 76 项通过，移动边界 170 通过/1 跳过，独立复审完成，未变化的后端全量批次复用同日已完成证据。服务器归档 2134/2144 与回签 2172 确为同一企业证书/Team/Keychain，但 2172 换了 App ID 且无生产 APNs；当前包仍被门禁拒绝。无需用户重传旧 IPA；实际手机已装包身份与保留数据覆盖结果仍待验证。没有新增生产写入。见[任务](tasks/2026-09-24-ios-enterprise-ipa-validation.md)、[验证记录](../verification/2026-09-24-ios-enterprise-ipa-validation.md)和[计划](../superpowers/plans/2026-09-24-ios-enterprise-ipa-validation.md)。
+用户确认可暂用其他企业签名，但必须覆盖升级并保留 iPhone 旧数据。发布前源码门禁已增加最终 IPA 身份/权益检查、服务端重新解析上传包、旧版 Team/App ID/Keychain 连续性、最终同 SHA 真机覆盖记录，以及 CI 原 IPA 与回签 IPA 全部非签名 Payload 的实际比对。相关 Python 联跑 217 项通过、1 项跳过；既有 2172 回签包的比对预期失败，发现新增两个动态库、一个文件及 Runner 加载命令变化。服务器归档 2134/2144 与回签 2172 虽为同一企业证书/Team/Keychain，2172 换了 App ID 且无生产 APNs，继续拒绝发布。无需用户重传旧 IPA；健康旧版 iPhone 的保留数据覆盖结果仍待验证。没有新增生产写入。见[任务](tasks/2026-09-24-ios-enterprise-ipa-validation.md)、[验证记录](../verification/2026-09-24-ios-enterprise-ipa-validation.md)、[2172 包体比对](../verification/2026-09-24-ios2144-old-account-l07.md)和[计划](../superpowers/plans/2026-09-24-ios-enterprise-ipa-validation.md)。
 
 ## 2026-09-24 v0.4.7/2172 iOS 企业包分发：签名阻断与部分发布（历史阶段，后已停发）
 

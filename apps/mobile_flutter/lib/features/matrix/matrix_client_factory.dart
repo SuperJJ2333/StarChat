@@ -114,6 +114,16 @@ final class MatrixClientFactory {
   final MatrixDiagnosticHasher? diagnosticHasher;
   String? _unboundDatabaseGeneration;
   String? _authorizedFreshScope;
+  String? _authorizedPlaintextScope;
+
+  static bool _validStoredCipher(String? cipher) {
+    if (cipher == null) return false;
+    try {
+      return base64Url.decode(base64Url.normalize(cipher)).length == 32;
+    } catch (_) {
+      return false;
+    }
+  }
 
   MatrixDiagnosticIdentity? _identity({
     String? matrixUserId,
@@ -139,8 +149,8 @@ final class MatrixClientFactory {
       directory,
       scope.isEmpty ? databaseFileName : 'liuhetong_matrix_$scope.sqlite');
 
-  static final _scopedDatabaseName =
-      RegExp(r'^liuhetong_matrix_([a-f0-9]{64})\.sqlite(?:-wal|-shm)?$');
+  static final _scopedDatabaseName = RegExp(
+      r'^liuhetong_matrix_([a-f0-9]{64})\.sqlite(\.encrypted)?(?:-wal|-shm)?$');
 
   Future<Set<String>> _candidateScopes(String directory) async {
     final scopes = await sessionStore.peekKnownMatrixScopes();
@@ -149,6 +159,10 @@ final class MatrixClientFactory {
       await for (final entry in folder.list(followLinks: false)) {
         final match = _scopedDatabaseName.firstMatch(p.basename(entry.path));
         if (match == null) continue;
+        if (match.group(2) != null) {
+          throw const MatrixLocalIdentityPreflightException(
+              MatrixLocalIdentityCause.unreadable);
+        }
         if (entry is Link) {
           throw const MatrixLocalIdentityPreflightException(
               MatrixLocalIdentityCause.unreadable);
@@ -222,14 +236,14 @@ final class MatrixClientFactory {
     return matches == 1 ? matchingScope : null;
   }
 
-  Future<void> _inspectBeforeSdk({
+  Future<MatrixLocalIdentityInspection> _inspectBeforeSdk({
     required String directory,
     required String databasePath,
     required MatrixStoredIdentitySnapshot snapshot,
     String? expectedUserId,
   }) async {
     try {
-      await localIdentityPreflight.inspect(
+      return await localIdentityPreflight.inspect(
         databasePath: databasePath,
         cipher: snapshot.databaseKey,
         binding: snapshot.binding,
@@ -237,12 +251,37 @@ final class MatrixClientFactory {
         expectedUserId: expectedUserId,
       );
     } on MatrixLocalIdentityPreflightException catch (error) {
-      final userId = expectedUserId ?? snapshot.binding?.matrixUserId;
-      final fingerprint = snapshot.binding?.ed25519Fingerprint;
-      if (userId == null ||
-          fingerprint == null ||
-          error.cause == MatrixLocalIdentityCause.unreadable ||
-          error.cause == MatrixLocalIdentityCause.missingKey) {
+      if (error.cause == MatrixLocalIdentityCause.missingDatabaseWithKey) {
+        // A committed fresh-device transaction deliberately has a Keychain
+        // cipher before its first database exists. Only the exact account
+        // scope confirmed by the archive index and Business-granted select
+        // may take that first SDK initialization step.
+        if (_validStoredCipher(snapshot.databaseKey) &&
+            ((expectedUserId != null &&
+                await sessionStore.confirmedFreshDeviceScope(
+                        homeserver.toString(), expectedUserId) ==
+                    snapshot.scope) ||
+            (expectedUserId == null &&
+                _authorizedFreshScope == snapshot.scope))) {
+          return const MatrixLocalIdentityInspection(
+              MatrixLocalIdentityStatus.pristine);
+        }
+      }
+      final binding = snapshot.binding;
+      final userId = expectedUserId ?? binding?.matrixUserId;
+      // A wrong database account, ambiguous local state, or an unarchivable
+      // old scope must never be offered as a recoverable new-device choice.
+      if (binding == null ||
+          userId == null ||
+          binding.matrixUserId != userId ||
+          binding.homeserver != homeserver.toString() ||
+          binding.ed25519Fingerprint == null ||
+          !_validStoredCipher(snapshot.databaseKey) ||
+          !const {
+            MatrixLocalIdentityCause.fingerprintMismatch,
+            MatrixLocalIdentityCause.missingOlmAccount,
+            MatrixLocalIdentityCause.missingDatabaseWithBinding,
+          }.contains(error.cause)) {
         rethrow;
       }
       try {
@@ -250,7 +289,7 @@ final class MatrixClientFactory {
               directory: directory,
               currentScope: snapshot.scope,
               expectedUserId: userId,
-              expectedFingerprint: fingerprint,
+              expectedFingerprint: binding.ed25519Fingerprint!,
             ) !=
             null) {
           throw const MatrixLocalIdentityPreflightException(
@@ -271,6 +310,8 @@ final class MatrixClientFactory {
   }
 
   Future<void> selectAccount(String selectedHomeserver, String userId) async {
+    _authorizedFreshScope = null;
+    _authorizedPlaintextScope = null;
     if (selectedHomeserver != homeserver.toString()) {
       throw StateError('Matrix account homeserver mismatch');
     }
@@ -289,8 +330,9 @@ final class MatrixClientFactory {
     }
     final databasePath = _databasePathForScope(directory, snapshot.scope);
     await _DatabaseInitLocks.run(databasePath, () async {
+      MatrixLocalIdentityInspection inspection;
       try {
-        await _inspectBeforeSdk(
+        inspection = await _inspectBeforeSdk(
           directory: directory,
           databasePath: databasePath,
           snapshot: snapshot,
@@ -314,6 +356,12 @@ final class MatrixClientFactory {
         }
         final candidate =
             await sessionStore.peekMatrixIdentityAtScope(candidateScope);
+        inspection = await _inspectBeforeSdk(
+          directory: directory,
+          databasePath: _databasePathForScope(directory, candidate.scope),
+          snapshot: candidate,
+          expectedUserId: userId,
+        );
         await sessionStore.adoptVerifiedOriginalCandidate(
           expectedHomeserver: selectedHomeserver,
           expectedUserId: userId,
@@ -326,6 +374,8 @@ final class MatrixClientFactory {
           expectedSnapshot: snapshot);
       _authorizedFreshScope = await sessionStore.confirmedFreshDeviceScope(
           selectedHomeserver, userId);
+      _authorizedPlaintextScope =
+          inspection.requiresAuthenticatedMigration ? snapshot.scope : null;
       _unboundDatabaseGeneration = null;
     });
   }
@@ -376,14 +426,19 @@ final class MatrixClientFactory {
         await _completePendingClear(databasePath);
         snapshot = await sessionStore.peekActiveMatrixIdentity();
       }
-      await _inspectBeforeSdk(
-        directory: directory,
-        databasePath: databasePath,
-        snapshot: snapshot,
-      );
-      final cipher = await sessionStore.matrixDatabaseKey();
       Client client;
       try {
+        final inspection = await _inspectBeforeSdk(
+          directory: directory,
+          databasePath: databasePath,
+          snapshot: snapshot,
+        );
+        if (inspection.requiresAuthenticatedMigration &&
+            _authorizedPlaintextScope != snapshot.scope) {
+          throw const MatrixLocalIdentityPreflightException(
+              MatrixLocalIdentityCause.legacyPlaintextMigrationDeferred);
+        }
+        final cipher = await sessionStore.matrixDatabaseKey();
         client = await opener(
           clientName: clientName,
           databasePath: databasePath,
@@ -391,6 +446,7 @@ final class MatrixClientFactory {
         );
       } finally {
         _authorizedFreshScope = null;
+        _authorizedPlaintextScope = null;
       }
       try {
         await clientMigrator(client, homeserver);
@@ -453,7 +509,14 @@ final class MatrixClientFactory {
           expectedSnapshot: snapshot,
           scopeHasDatabaseFiles: (scope) async {
             final path = _databasePathForScope(directory, scope);
-            for (final suffix in const ['', '-wal', '-shm', '.encrypted']) {
+            for (final suffix in const [
+              '',
+              '-wal',
+              '-shm',
+              '.encrypted',
+              '.encrypted-wal',
+              '.encrypted-shm',
+            ]) {
               if (await File('$path$suffix').exists()) return true;
             }
             return false;
