@@ -98,7 +98,9 @@ void main() {
     // native read-only Security.framework query used by startup preflight.
     expect(await _nativePeek(_bindingKey), originalBinding);
     expect(await _nativePeek(_oldKey), originalKey);
-    expect(await raw.read(_recoveryKey), 'opaque-old-recovery');
+    final originalRecoveryValue = await raw.read(_recoveryKey);
+    expect(originalRecoveryValue, isNotNull);
+    expect(await interrupted.encryptedRecoveryKey(), 'opaque-old-recovery');
 
     final original =
         await interrupted.peekAccountMatrixIdentity(_homeserver, _userId);
@@ -142,7 +144,7 @@ void main() {
     expect(fresh.databaseKey, isNot(originalKey));
     expect(await _nativePeek(_bindingKey), originalBinding);
     expect(await _nativePeek(_oldKey), originalKey);
-    expect(await raw.read(_recoveryKey), 'opaque-old-recovery');
+    expect(await raw.read(_recoveryKey), originalRecoveryValue);
     expect(await _nativePeek(_journalKey), isNull);
     expect(await _nativePeek(_indexKey), contains('"kind":"fresh_device"'));
     expect(await oldDatabase.readAsBytes(), oldBytes);
