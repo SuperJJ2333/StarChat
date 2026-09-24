@@ -222,6 +222,44 @@ async def test_registration_requires_invitation_and_rejects_phone(api_components
 
 
 @pytest.mark.asyncio
+async def test_registration_http_accepts_visible_emoji_and_bounds_raw_input(api_components) -> None:
+    app, factory = api_components
+    family = "👨‍👩‍👧‍👦"
+    body = {
+        "username": "emojiowner",
+        "nickname": family * 12,
+        "email": "emojiowner@example.com",
+        "password": "correct horse battery staple",
+        "invitation_code": "API-INVITE",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        accepted = await client.post(
+            "/api/v1/auth/register",
+            headers={"Idempotency-Key": "emoji-owner"},
+            json=body,
+        )
+        visible_overflow = await client.post(
+            "/api/v1/auth/register",
+            headers={"Idempotency-Key": "emoji-overflow"},
+            json={**body, "username": "emojiextra", "email": "emojiextra@example.com", "nickname": family * 13},
+        )
+        raw_overflow = await client.post(
+            "/api/v1/auth/register",
+            headers={"Idempotency-Key": "raw-overflow"},
+            json={**body, "username": "rawextra", "email": "rawextra@example.com", "nickname": "a" + "\u0301" * 512},
+        )
+
+    assert accepted.status_code == 202
+    assert visible_overflow.status_code == 422
+    assert visible_overflow.json()["error"]["code"] == "REGISTRATION_INVALID"
+    assert raw_overflow.status_code == 422
+    with factory() as session:
+        assert session.query(User).filter(User.username == "emojiowner").one().nickname == family * 12
+        assert session.query(User).filter(User.username == "emojiextra").count() == 0
+        assert session.query(User).filter(User.username == "rawextra").count() == 0
+
+
+@pytest.mark.asyncio
 async def test_login_accepts_email_address_and_clear_error(api_components) -> None:
     app, _ = api_components
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

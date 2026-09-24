@@ -88,6 +88,7 @@ final class AddFriendProfilePage extends StatelessWidget {
           children: [
             ProfileIdentityCard(
               userId: userId,
+              supportIdentities: api is BusinessApiClient ? (api as BusinessApiClient).supportIdentities : null,
               username: username,
               nickname: nickname,
               avatarUrl: avatarUrl,

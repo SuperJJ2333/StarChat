@@ -14,6 +14,14 @@ abstract interface class AvatarMediaCapability {
   });
 }
 
+/// Optional local-only lookup so a cold disk cache never waits on discovery.
+abstract interface class ImmediateAvatarMediaCapability {
+  ResolvedAvatarUrl? resolveAvatarImmediately({
+    required Uri? avatarUri,
+    required double size,
+  });
+}
+
 /// Converts Matrix mxc avatars into cacheable thumbnail requests without ever
 /// placing the Matrix access token in a cache key or URL.
 final class MatrixUserAvatar extends StatefulWidget {
@@ -49,6 +57,7 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _retry.setActive(TickerMode.valuesOf(context).enabled);
+    if (resolved == null) _primeImmediate();
   }
 
   @override
@@ -71,7 +80,23 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
         resolved = null;
       }
       _retry.reset();
+      _primeImmediate();
       _resolve();
+    }
+  }
+
+  void _primeImmediate() {
+    final media = widget.avatarMedia;
+    if (!_retry.isActive || media is! ImmediateAvatarMediaCapability) return;
+    try {
+      resolved =
+          (media as ImmediateAvatarMediaCapability).resolveAvatarImmediately(
+        avatarUri: widget.matrixAvatarUri,
+        size: widget.size,
+      );
+    } catch (_) {
+      // A suspended/revoked owner must not publish its former credentials.
+      resolved = null;
     }
   }
 

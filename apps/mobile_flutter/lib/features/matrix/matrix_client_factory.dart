@@ -495,7 +495,9 @@ final class MatrixClientFactory {
   @visibleForTesting
   static Future<Client> initializeClient(Client client) async {
     try {
-      await client.init();
+      // Restore the encrypted local account and rooms before painting. The SDK
+      // starts its first sync itself; a slow network must not hide cached data.
+      await client.init(waitForFirstSync: false);
       return client;
     } catch (_) {
       await client.dispose();

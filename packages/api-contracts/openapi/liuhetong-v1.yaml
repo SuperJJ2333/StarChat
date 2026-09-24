@@ -1931,6 +1931,50 @@
         "title": "ComplaintBody",
         "type": "object"
       },
+      "CompletedMomentMediaUpload": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "media_cache_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable cache identity for this completed media reference; clients namespace it by account.",
+            "title": "Media Cache Key"
+          },
+          "media_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Url"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "media_url",
+          "media_cache_key"
+        ],
+        "title": "CompletedMomentMediaUpload",
+        "type": "object"
+      },
       "ContactBody": {
         "additionalProperties": false,
         "properties": {
@@ -5113,6 +5157,199 @@
         "title": "MobileRefreshRequest",
         "type": "object"
       },
+      "MomentNotificationActor": {
+        "additionalProperties": false,
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Short-lived avatar URL when currently authorized.",
+            "title": "Avatar Url"
+          },
+          "display_name": {
+            "description": "Visible actor's public display name.",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "nickname": {
+            "description": "Visible actor's public nickname, never a contact remark.",
+            "title": "Nickname",
+            "type": "string"
+          },
+          "user_id": {
+            "description": "Visible actor's opaque business user ID.",
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "description": "Visible actor's account name.",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username",
+          "nickname",
+          "display_name",
+          "avatar_url"
+        ],
+        "title": "MomentNotificationActor",
+        "type": "object"
+      },
+      "MomentNotificationRow": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MomentNotificationActor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current visible actor, or null after access is lost."
+          },
+          "comment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque triggering comment/reply ID when present.",
+            "title": "Comment Id"
+          },
+          "content_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current authorized triggering comment/reply excerpt, at most 80 characters; null when unavailable.",
+            "title": "Content Excerpt"
+          },
+          "created_at": {
+            "description": "Interaction time.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "Opaque interaction notification ID.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Interaction type.",
+            "enum": [
+              "LIKE",
+              "COMMENT",
+              "REPLY"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "moment_id": {
+            "description": "Opaque target Moment ID; does not grant detail access.",
+            "title": "Moment Id",
+            "type": "string"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Read time, or null while unread.",
+            "title": "Read At"
+          },
+          "source_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current authorized source Moment excerpt, at most 80 characters; null when unavailable.",
+            "title": "Source Excerpt"
+          },
+          "target_available": {
+            "description": "Current authorization hint; clients must still GET detail before opening.",
+            "title": "Target Available",
+            "type": "boolean"
+          },
+          "unread": {
+            "description": "Whether this notification is currently unread.",
+            "title": "Unread",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "moment_id",
+          "comment_id",
+          "kind",
+          "actor",
+          "content_excerpt",
+          "source_excerpt",
+          "target_available",
+          "created_at",
+          "read_at",
+          "unread"
+        ],
+        "title": "MomentNotificationRow",
+        "type": "object"
+      },
+      "MomentNotificationsPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "Recipient-only historical interactions, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/MomentNotificationRow"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque (created_at, id) keyset cursor for the next page.",
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "MomentNotificationsPage",
+        "type": "object"
+      },
       "MomentsPreferencesResponse": {
         "additionalProperties": false,
         "properties": {
@@ -6684,14 +6921,16 @@
           "nickname": {
             "anyOf": [
               {
-                "maxLength": 64,
+                "maxLength": 512,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Nickname"
+            "description": "昵称最多 12 个 Unicode 扩展字素簇；maxLength 为原始码点资源上限。",
+            "title": "Nickname",
+            "x-graphemeMaxLength": 12
           },
           "nudge_suffix": {
             "anyOf": [
@@ -6708,14 +6947,16 @@
           "signature": {
             "anyOf": [
               {
-                "maxLength": 140,
+                "maxLength": 512,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Signature"
+            "description": "个性签名最多 20 个 Unicode 扩展字素簇；maxLength 为原始码点资源上限。",
+            "title": "Signature",
+            "x-graphemeMaxLength": 20
           }
         },
         "title": "ProfilePatch",
@@ -7521,14 +7762,16 @@
           "nickname": {
             "anyOf": [
               {
-                "maxLength": 64,
+                "maxLength": 512,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Nickname"
+            "description": "显式昵称最多 12 个 Unicode 扩展字素簇；maxLength 为原始码点资源上限。",
+            "title": "Nickname",
+            "x-graphemeMaxLength": 12
           },
           "password": {
             "maxLength": 256,
@@ -26214,7 +26457,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CompletedMomentMediaUpload"
+                }
               }
             },
             "description": "Successful Response"
@@ -26429,12 +26674,43 @@
     "/api/v1/moments/notifications": {
       "get": {
         "operationId": "notifications_api_v1_moments_notifications_get",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MomentNotificationsPage"
+                }
               }
             },
             "description": "Successful Response"

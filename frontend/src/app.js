@@ -172,12 +172,31 @@ const routeMap = Object.freeze({
   "friend:message": "chat-room-mixed"
 });
 
+function openScreen(id) {
+  setQuery({ screen: id, module: "", state: "", theme: "", q: "" });
+}
+
+function meBackDestination(screenId) {
+  if (screenId.startsWith("moments-interactions-")) return "moments-personal-default";
+  if (screenId.startsWith("moments-personal-")) return "profile-home-default";
+  if (screenId.startsWith("profile-invitation-")) return "profile-details-default";
+  if (screenId.startsWith("profile-details-")) return "profile-home-default";
+  if (screenId.startsWith("profile-settings-")) return "profile-home-default";
+  return null;
+}
+
 document.addEventListener("click", async (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
   const action = target.dataset.action;
+  const screenId = target.closest(".ui-screen")?.dataset.screenId ?? "";
   const offlineRetryDialog = target.closest(".u-offline-retry-dialog");
-  if (action.startsWith("open:")) setQuery({ screen: action.slice(5), module: "", state: "", theme: "", q: "" });
+  if (action.startsWith("open:")) openScreen(action.slice(5));
+  else if (action === "back" && meBackDestination(screenId)) openScreen(meBackDestination(screenId));
+  else if (action === "navigation-action" && screenId.startsWith("moments-personal-")) openScreen("moments-interactions-default");
+  else if (action === "navigation-action" && screenId === "profile-details-default") openScreen("profile-details-edit");
+  else if (action === "moment:unavailable") openScreen("moments-interactions-unavailable");
+  else if (action === "dialog-confirm" && screenId === "moments-interactions-unavailable") openScreen("moments-interactions-default");
   else if (action.startsWith("moment:profile:")) setQuery({ screen: "friend-profile-default", module: "", state: "", theme: "", q: "" });
   else if (action === "moment:reply" || action === "moment:comment-actions") {
     const row = target.closest('.c-moment-reactions__comment');

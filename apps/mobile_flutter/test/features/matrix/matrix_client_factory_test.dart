@@ -20,6 +20,31 @@ import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class LocalFirstInitClient extends Client {
+  LocalFirstInitClient() : super('local-first-init');
+
+  final localRead = Completer<void>();
+  final networkSync = Completer<void>();
+
+  @override
+  Future<void> init({
+    String? newToken,
+    DateTime? newTokenExpiresAt,
+    String? newRefreshToken,
+    Uri? newHomeserver,
+    String? newUserID,
+    String? newDeviceName,
+    String? newDeviceID,
+    String? newOlmAccount,
+    bool waitForFirstSync = true,
+    bool waitUntilLoadCompletedLoaded = true,
+    void Function()? onMigration,
+  }) async {
+    if (waitUntilLoadCompletedLoaded) await localRead.future;
+    if (waitForFirstSync) await networkSync.future;
+  }
+}
+
 class SnapshotClient extends LogoutTrackingClient {
   SnapshotClient() : super('snapshot', matrixUserId: '@me:test');
   final snapshotRooms = <Room>[];
@@ -978,6 +1003,27 @@ void main() {
     } finally {
       await errors.cancel();
       if (!client.disposed) await client.dispose();
+    }
+  });
+
+  test('startup waits for local data but never a stalled first network sync',
+      () async {
+    final client = LocalFirstInitClient();
+    var ready = false;
+    final startup = MatrixClientFactory.initializeClient(client).then((_) {
+      ready = true;
+    });
+    try {
+      await Future<void>.delayed(Duration.zero);
+      expect(ready, isFalse,
+          reason: 'local account and room reads must finish');
+      client.localRead.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(ready, isTrue, reason: 'network must not block cached startup');
+    } finally {
+      client.networkSync.complete();
+      await startup;
+      await client.dispose();
     }
   });
 

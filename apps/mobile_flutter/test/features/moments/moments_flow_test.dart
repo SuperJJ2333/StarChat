@@ -715,6 +715,8 @@ void main() {
     expect(find.text('朋友圈正文'), findsOneWidget);
     expect(find.byKey(const Key('moment-interaction-error')), findsOneWidget);
     expect(find.text('服务繁忙'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.exclamationmark_triangle_fill),
+        findsOneWidget);
   });
 }
 

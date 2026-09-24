@@ -18,9 +18,7 @@ final class _SaveGateway implements ProfileGateway {
   Future<ProfileData> loadProfile() async => _profile;
   @override
   Future<ProfileData> updateProfile(
-      {required String nickname,
-      String? signature,
-      String? nudgeSuffix}) async {
+      {String? nickname, String? signature, String? nudgeSuffix}) async {
     updates++;
     if (fail) throw Exception('offline');
     return _profile.copyWith(nickname: nickname, signature: signature);
@@ -32,7 +30,7 @@ final class _SaveGateway implements ProfileGateway {
       const AvatarUploadSession(uploadId: 'u', uploadUrl: '/u');
   @override
   Future<void> putAvatar(
-          AvatarUploadSession session, AvatarCandidate candidate) async {}
+      AvatarUploadSession session, AvatarCandidate candidate) async {}
   @override
   Future<ProfileData> completeAvatar(String uploadId) async => _profile;
   @override
@@ -110,6 +108,7 @@ void main() {
       home: ProfileDetailsPage(controller: controller),
     ));
 
+    await tester.enterText(find.byType(CupertinoTextField).first, 'Alice New');
     await tester.tap(find.text('保存'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));

@@ -43,7 +43,7 @@ def test_unknown_phone_is_created_only_after_proof_and_invitation(env):
     with factory() as session:
         user = session.scalar(select(User))
         assert user.phone_verified_at and user.status == AccountStatus.PENDING_MATRIX
-        assert '13800000001' not in user.username and user.nickname.endswith('0001')
+        assert '13800000001' not in user.username and user.nickname == '畅聊用户0001'
         assert user.email is None
         assert session.scalar(select(Invitation)).use_count == 1
         assert len(session.scalars(select(OutboxEvent)).all()) == 1

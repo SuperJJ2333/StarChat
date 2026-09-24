@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import '../../core/support_identity_repository.dart';
+import '../components/wechat_official_name.dart';
 
 import '../../features/contacts/user_identity.dart';
 import '../../features/moments/moment_models.dart';
@@ -14,6 +16,7 @@ final class WeChatMomentReactions extends StatelessWidget {
   const WeChatMomentReactions(
       {super.key,
       required this.item,
+      this.supportIdentities,
       required this.resolveIdentity,
       this.onPersonTap,
       this.onCommentTap,
@@ -23,6 +26,7 @@ final class WeChatMomentReactions extends StatelessWidget {
       this.mediaAccountKey,
       this.mediaOrigin,
       this.cacheNamespace = ''});
+  final SupportIdentityRepository? supportIdentities;
   final MomentItem item;
   final UserIdentity Function(MomentAuthor) resolveIdentity;
   final ValueChanged<MomentAuthor>? onPersonTap;
@@ -59,8 +63,9 @@ final class WeChatMomentReactions extends StatelessWidget {
   Widget _name(BuildContext context, MomentAuthor author, String key) =>
       _person(
           author,
-          Text(resolveIdentity(author).displayName,
-              style: TextStyle(
+          WeChatOfficialName(name: resolveIdentity(author).displayName,
+              userId: author.userId, supportIdentities: supportIdentities,
+              nameStyle: TextStyle(
                   color: CupertinoDynamicColor.resolve(
                       MomentReactionTokens.name, context),
                   fontSize: 13,

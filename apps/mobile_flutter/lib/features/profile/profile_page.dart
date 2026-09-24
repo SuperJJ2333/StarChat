@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../core/support_identity_repository.dart';
+import '../../ui/components/wechat_official_name.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
@@ -10,6 +12,7 @@ import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/wechat_nav_title.dart';
+import '../../ui/chat/wechat_unread_badge.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
@@ -28,8 +31,14 @@ final class ProfileExperiencePage extends StatefulWidget {
     required this.onSettings,
     this.onQrCode,
     this.inviteGateway,
+    this.supportIdentities,
+    this.matrixUserId,
+    this.momentInteractionUnreadCount = 0,
   });
 
+  final SupportIdentityRepository? supportIdentities;
+  final String? matrixUserId;
+  final int momentInteractionUnreadCount;
   final ProfileController controller;
   final VoidCallback onMoments;
   final VoidCallback onCaibi;
@@ -68,8 +77,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
     if (mounted) setState(() {});
   }
 
-  void _openDetails() => Navigator.push(
-        context,
+  void _openDetails() => Navigator.of(context, rootNavigator: true).push(
         MotionPageRoute(
           builder: (_) => ProfileDetailsPage(
             controller: widget.controller,
@@ -103,6 +111,8 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
             else ...[
               _IdentityCard(
                 profile: profile,
+                supportIdentities: widget.supportIdentities,
+                matrixUserId: widget.matrixUserId,
                 avatarCacheKey: widget.controller.avatarCacheKey,
                 onTap: _openDetails,
                 onQrCode: widget.onQrCode,
@@ -119,6 +129,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
               icon: CupertinoIcons.photo_on_rectangle,
               label: '朋友圈',
               onTap: widget.onMoments,
+              badgeCount: widget.momentInteractionUnreadCount,
             ),
             _ProfileMenuTile(
               icon: CupertinoIcons.money_dollar_circle,
@@ -168,10 +179,14 @@ final class _IdentityCard extends StatelessWidget {
   const _IdentityCard({
     required this.profile,
     required this.avatarCacheKey,
+    this.supportIdentities,
+    this.matrixUserId,
     required this.onTap,
     this.onQrCode,
   });
 
+  final SupportIdentityRepository? supportIdentities;
+  final String? matrixUserId;
   final ProfileData profile;
   final String? avatarCacheKey;
   final VoidCallback onTap;
@@ -215,11 +230,11 @@ final class _IdentityCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        profile.nickname,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                      WeChatOfficialName(
+                        name: profile.nickname,
+                        supportIdentities: supportIdentities,
+                        matrixUserId: matrixUserId,
+                        nameStyle: TextStyle(
                           fontSize: 22,
                           height: 30 / 22,
                           fontWeight: FontWeight.w700,
@@ -279,11 +294,13 @@ final class _ProfileMenuTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -319,6 +336,10 @@ final class _ProfileMenuTile extends StatelessWidget {
                       style: TextStyle(fontSize: 16, color: foreground),
                     ),
                   ),
+                  if (badgeCount > 0)
+                    WeChatUnreadBadge(
+                        key: const Key('profile-moments-unread-badge'),
+                        count: badgeCount),
                   const SizedBox(width: 4),
                   const Icon(
                     CupertinoIcons.chevron_right,
@@ -362,6 +383,7 @@ final class ProfileDetailsPage extends StatefulWidget {
 final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   InviteCodeController? _inviteController;
   StreamSubscription<ProfileSaveEvent>? _saveEvents;
+  bool _limitDialogOpen = false;
 
   late final nickname = TextEditingController(
     text: widget.controller.state.profile?.nickname ?? '',
@@ -369,6 +391,44 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   late final signature = TextEditingController(
     text: widget.controller.state.profile?.signature ?? '',
   );
+  late final _nicknameFormatter = _ProfileGraphemeFormatter(
+      maxLength: 12, onOverflow: () => _showValidationDialog('昵称最多支持12个字符'));
+  late final _signatureFormatter = _ProfileGraphemeFormatter(
+      maxLength: 20, onOverflow: () => _showValidationDialog('个性签名最多支持20个字符'));
+
+  void _showValidationDialog(String message) {
+    if (_limitDialogOpen || !mounted) return;
+    _limitDialogOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _limitDialogOpen = false;
+        return;
+      }
+      await showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+                title: Text(message),
+                actions: [
+                  CupertinoDialogAction(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('知道了'))
+                ],
+              ));
+      _limitDialogOpen = false;
+    });
+  }
+
+  void _saveProfile() {
+    final name = nickname.text.trim();
+    final about = signature.text.trim();
+    final validation = profileSaveValidationMessage(name, about,
+        original: widget.controller.state.profile);
+    if (validation != null) {
+      _showValidationDialog(validation);
+      return;
+    }
+    unawaited(widget.controller.save(name, about));
+  }
 
   @override
   void initState() {
@@ -425,12 +485,7 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
         middle: const Text('个人信息'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: state.status == ProfileStatus.saving
-              ? null
-              : () => widget.controller.save(
-                    nickname.text.trim(),
-                    signature.text.trim(),
-                  ),
+          onPressed: state.status == ProfileStatus.saving ? null : _saveProfile,
           child: const Text('保存'),
         ),
       ),
@@ -503,19 +558,29 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
             ],
             CupertinoTextField(
               controller: nickname,
+              inputFormatters: [_nicknameFormatter],
               textAlign:
                   nickname.text.isEmpty ? TextAlign.left : TextAlign.right,
               placeholder: '昵称',
               padding: const EdgeInsets.all(16),
             ),
+            Align(
+                alignment: Alignment.centerRight,
+                child: Text('${nickname.text.characters.length}/12',
+                    key: const Key('profile-nickname-counter'))),
             const SizedBox(height: 12),
             CupertinoTextField(
               controller: signature,
+              inputFormatters: [_signatureFormatter],
               textAlign:
                   signature.text.isEmpty ? TextAlign.left : TextAlign.right,
               placeholder: '个性签名',
               padding: const EdgeInsets.all(16),
             ),
+            Align(
+                alignment: Alignment.centerRight,
+                child: Text('${signature.text.characters.length}/20',
+                    key: const Key('profile-signature-counter'))),
             if (state.message != null)
               Text(
                 state.message!,
@@ -525,6 +590,39 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
         ),
       ),
     );
+  }
+}
+
+final class _ProfileGraphemeFormatter extends TextInputFormatter {
+  _ProfileGraphemeFormatter(
+      {required this.maxLength, required this.onOverflow});
+
+  final int maxLength;
+  final VoidCallback onOverflow;
+  TextEditingValue? _beforeComposition;
+  bool _reportedOverflow = false;
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.composing.isValid && !newValue.composing.isCollapsed) {
+      _beforeComposition ??= oldValue;
+      return newValue;
+    }
+    final nextLength = newValue.text.characters.length;
+    final oldLength = oldValue.text.characters.length;
+    if (nextLength <= maxLength || nextLength < oldLength) {
+      _beforeComposition = null;
+      _reportedOverflow = false;
+      return newValue;
+    }
+    final accepted = _beforeComposition ?? oldValue;
+    _beforeComposition = null;
+    if (!_reportedOverflow) {
+      _reportedOverflow = true;
+      onOverflow();
+    }
+    return accepted;
   }
 }
 

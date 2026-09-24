@@ -22,6 +22,7 @@ from app.modules.identity.models import (
     User,
 )
 from app.modules.identity.passwords import PasswordHasher
+from app.modules.identity.profile_text import registration_nickname, valid_nickname
 
 
 def phone_registration_user_id(session, registration_session: str) -> str | None:
@@ -42,6 +43,7 @@ class RegistrationResult:
     verification_token: str | None = None
     # 好友推荐码是否成功绑定（重放路径恒为 False，审计不重复记录）。
     referral_bound: bool = False
+    replayed: bool = False
 
 
 @dataclass(frozen=True)
@@ -147,6 +149,35 @@ class RegistrationService:
             reason_code='PHONE_OTP_ONBOARDING', trace_id=str(uuid4()))
         return user
 
+    def _registration_request_hash(
+        self,
+        *,
+        email_normalized: str,
+        phone_normalized: str | None,
+        invitation_code: str,
+        nickname_clean: str,
+        password: str,
+        referral_code_clean: str | None,
+        username_normalized: str,
+    ) -> str:
+        payload = json.dumps(
+            {
+                "email": email_normalized or None,
+                **({"phone": phone_normalized} if phone_normalized is not None else {}),
+                "invitation_code": invitation_code.strip(),
+                "nickname": nickname_clean,
+                "password": password,
+                "referral_code": referral_code_clean,
+                "username": username_normalized,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        return self._token_codec.digest(
+            purpose="registration-idempotency", value=payload
+        )
+
     def register(
         self,
         *,
@@ -160,7 +191,8 @@ class RegistrationService:
         phone: str | None = None,
     ) -> RegistrationResult:
         username_clean = username.strip()
-        nickname_clean = (nickname or username_clean).strip()
+        legacy_nickname_clean = (nickname or username_clean).strip()
+        nickname_clean = registration_nickname(nickname, username_clean)
         # ADR-0075：邮箱或中国大陆手机号二选一注册；禁止虚构邮箱占位。
         phone_normalized = None
         if phone is not None:
@@ -179,8 +211,8 @@ class RegistrationService:
         fields: list[FieldError] = []
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{2,63}", username_clean):
             fields.append(FieldError(loc=["body", "username"], msg="畅聊号格式无效", type="value_error"))
-        if not nickname_clean or len(nickname_clean) > 64:
-            fields.append(FieldError(loc=["body", "nickname"], msg="用户名长度需为 1-64 个字符", type="value_error"))
+        if not nickname_clean:
+            fields.append(FieldError(loc=["body", "nickname"], msg="昵称最多支持12个字符", type="value_error"))
         if email_clean and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_clean):
             fields.append(FieldError(loc=["body", "email"], msg="邮箱格式无效", type="value_error"))
         if len(password) < 12:
@@ -198,23 +230,19 @@ class RegistrationService:
         referral_code_clean = (
             referral_code.strip().upper() if referral_code else None
         )
-        request_payload = json.dumps(
-            {
-                "email": email_normalized or None,
-                **({"phone": phone_normalized} if phone_normalized is not None else {}),
-                "invitation_code": invitation_code.strip(),
-                "nickname": nickname_clean,
-                "password": password,
-                "referral_code": referral_code_clean,
-                "username": username_normalized,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
+        hash_fields = dict(
+            email_normalized=email_normalized,
+            phone_normalized=phone_normalized,
+            invitation_code=invitation_code,
+            password=password,
+            referral_code_clean=referral_code_clean,
+            username_normalized=username_normalized,
         )
-        request_hash = self._token_codec.digest(
-            purpose="registration-idempotency",
-            value=request_payload,
+        request_hash = self._registration_request_hash(
+            nickname_clean=nickname_clean, **hash_fields
+        )
+        legacy_hash = self._registration_request_hash(
+            nickname_clean=legacy_nickname_clean, **hash_fields
         )
         user_id = str(uuid4())
         challenge_id = str(uuid4())
@@ -228,6 +256,31 @@ class RegistrationService:
         }
         try:
             with self._session_factory.begin() as session:
+                previous = session.scalar(
+                    select(IdempotencyRecord)
+                    .where(
+                        IdempotencyRecord.scope == "identity.registration",
+                        IdempotencyRecord.idempotency_key == idempotency_key_clean,
+                    )
+                    .with_for_update()
+                )
+                if previous is not None:
+                    if previous.status != "COMPLETED" or previous.request_hash not in (
+                        request_hash, legacy_hash
+                    ):
+                        raise AppError(
+                            code="IDEMPOTENCY_CONFLICT",
+                            message="幂等键已用于不同的注册请求",
+                            status_code=409,
+                        )
+                    return self._replayed_result(session, previous)
+                if not valid_nickname(nickname_clean):
+                    raise AppError(
+                        code="REGISTRATION_INVALID",
+                        message="注册信息无效",
+                        status_code=422,
+                        fields=[FieldError(loc=["body", "nickname"], msg="昵称最多支持12个字符", type="value_error")],
+                    )
                 idempotency_record = self._claim_idempotency_key(
                     session,
                     scope="identity.registration",
@@ -434,24 +487,24 @@ class RegistrationService:
         if not email_clean and phone is None:
             raise AppError(code="REGISTRATION_INVALID", message="注册信息无效", status_code=422,
                 fields=[FieldError(loc=["body", "email"], msg="需要邮箱或手机号之一", type="value_error")])
-        request_payload = json.dumps(
-            {
-                "email": email_clean.casefold() or None,
-                **({"phone": phone} if phone is not None else {}),
-                "invitation_code": invitation_code.strip(),
-                "nickname": (nickname or username.strip()).strip(),
-                "password": password,
-                "referral_code": (referral_code or "").strip().upper() or None,
-                "username": username.strip().casefold(),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
+        username_clean = username.strip()
+        username_normalized = username_clean.casefold()
+        legacy_nickname_clean = (nickname or username_clean).strip()
+        nickname_clean = registration_nickname(nickname, username_clean)
+        hash_fields = dict(
+            email_normalized=email_clean.casefold(),
+            phone_normalized=phone,
+            invitation_code=invitation_code,
+            password=password,
+            referral_code_clean=(referral_code or "").strip().upper() or None,
+            username_normalized=username_normalized,
         )
-        request_hash = self._token_codec.digest(
-            purpose="registration-idempotency", value=request_payload
+        request_hash = self._registration_request_hash(
+            nickname_clean=nickname_clean, **hash_fields
         )
-        username_normalized = username.strip().casefold()
+        legacy_hash = self._registration_request_hash(
+            nickname_clean=legacy_nickname_clean, **hash_fields
+        )
         with self._session_factory() as session:
             existing_email = session.scalar(
                 select(User.id).where(User.email_normalized == email_clean.casefold())
@@ -459,16 +512,29 @@ class RegistrationService:
             existing_username = session.scalar(
                 select(User.id).where(User.username_normalized == username_normalized)
             )
-            replay = session.scalar(
-                select(IdempotencyRecord.id).where(
+            previous = session.scalar(
+                select(IdempotencyRecord).where(
                     IdempotencyRecord.scope == "identity.registration",
                     IdempotencyRecord.idempotency_key == idempotency_key.strip(),
-                    IdempotencyRecord.request_hash == request_hash,
-                    IdempotencyRecord.status == "COMPLETED",
                 )
             )
-        if replay is not None:
-            return
+        if previous is not None:
+            if previous.status == "COMPLETED" and previous.request_hash in (
+                request_hash, legacy_hash
+            ):
+                return
+            raise AppError(
+                code="IDEMPOTENCY_CONFLICT",
+                message="幂等键已用于不同的注册请求",
+                status_code=409,
+            )
+        if not valid_nickname(nickname_clean):
+            raise AppError(
+                code="REGISTRATION_INVALID",
+                message="注册信息无效",
+                status_code=422,
+                fields=[FieldError(loc=["body", "nickname"], msg="昵称最多支持12个字符", type="value_error")],
+            )
         if existing_username is not None:
             raise AppError(code="USERNAME_TAKEN", message="畅聊号已被使用", status_code=409)
         if existing_email is not None:
@@ -522,7 +588,8 @@ class RegistrationService:
             raise RuntimeError("completed registration is missing its public session")
         if response.get("phone_user_id"):
             return RegistrationResult(user_id=response["phone_user_id"], registration_session=registration_session,
-                status=AccountStatus(response["status"]), resend_after_seconds=int(response["resend_after_seconds"]))
+                status=AccountStatus(response["status"]), resend_after_seconds=int(response["resend_after_seconds"]),
+                replayed=True)
         challenge = session.scalar(
             select(EmailVerificationChallenge).where(
                 EmailVerificationChallenge.registration_session_hash
@@ -536,6 +603,7 @@ class RegistrationService:
             registration_session=registration_session,
             status=AccountStatus(response["status"]),
             resend_after_seconds=int(response["resend_after_seconds"]),
+            replayed=True,
         )
 
 

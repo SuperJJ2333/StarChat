@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta, timezone
 import base64
+import binascii
 import hashlib
 import json
-import hashlib
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 
 from app.modules.identity.models import User
 
@@ -103,8 +103,13 @@ class MomentsService:
             return row
 
     @staticmethod
+    def _cursor_time(moment):
+        created_at = moment.created_at
+        return created_at.replace(tzinfo=timezone.utc) if created_at.utcoffset() is None else created_at
+
+    @staticmethod
     def _encode_cursor(moment):
-        value = {'created_at': moment.created_at.isoformat(), 'id': moment.id}
+        value = {'created_at': MomentsService._cursor_time(moment).isoformat(), 'id': moment.id}
         return base64.urlsafe_b64encode(json.dumps(value, separators=(',', ':')).encode()).decode()
 
     @staticmethod
@@ -113,8 +118,13 @@ class MomentsService:
             return None
         try:
             value = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-            return datetime.fromisoformat(value['created_at']), str(value['id'])
-        except (ValueError, KeyError, json.JSONDecodeError):
+            if not isinstance(value, dict) or not isinstance(value.get('created_at'), str) or not isinstance(value.get('id'), str) or not value['id']:
+                raise ValueError('malformed cursor')
+            created_at = datetime.fromisoformat(value['created_at'])
+            if created_at.utcoffset() is None:
+                raise ValueError('cursor timestamp requires a timezone')
+            return created_at, value['id']
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError, binascii.Error):
             raise AppError(code='MOMENT_CURSOR_INVALID', message='分页游标无效', status_code=422)
 
     def feed(self, actor, q=None, mode="latest", cursor=None, limit=20):
@@ -146,7 +156,7 @@ class MomentsService:
                 visible_rows.sort(key=score, reverse=True)
             if marker:
                 marker_time, marker_id = marker
-                visible_rows = [moment for moment in visible_rows if (moment.created_at, moment.id) < (marker_time, marker_id)]
+                visible_rows = [moment for moment in visible_rows if (self._cursor_time(moment), moment.id) < (marker_time, marker_id)]
             page_rows = visible_rows[:limit]
             return {'items': [self.dto(session, moment, actor) for moment in page_rows], 'next_cursor': self._encode_cursor(page_rows[-1]) if len(visible_rows) > limit else None}
 
@@ -240,7 +250,7 @@ class MomentsService:
     def like(self, actor, moment_id, key):
         with self.factory.begin() as session:
             moment = session.get(Moment, moment_id)
-            if not moment or moment.deleted_at or not VisibilityPolicy(session).can_view(actor, moment):
+            if not moment or moment.deleted_at or moment.status != 'PUBLISHED' or not VisibilityPolicy(session).can_view(actor, moment):
                 raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             existing = session.scalar(select(MomentLike).where(MomentLike.moment_id == moment_id, MomentLike.user_id == actor))
             if existing:
@@ -254,7 +264,7 @@ class MomentsService:
     def unlike(self, actor, moment_id, key):
         with self.factory.begin() as session:
             moment = session.get(Moment, moment_id)
-            if not moment or moment.deleted_at or not VisibilityPolicy(session).can_view(actor, moment):
+            if not moment or moment.deleted_at or moment.status != 'PUBLISHED' or not VisibilityPolicy(session).can_view(actor, moment):
                 raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             row = session.scalar(select(MomentLike).where(MomentLike.moment_id == moment_id, MomentLike.user_id == actor))
             if row:
@@ -269,7 +279,7 @@ class MomentsService:
             raise AppError(code="MOMENT_COMMENT_INVALID", message="请输入评论或选择最多9张图片", status_code=422)
         with self.factory.begin() as session:
             moment = session.get(Moment, moment_id)
-            if not moment or moment.deleted_at or not VisibilityPolicy(session).can_view(actor, moment):
+            if not moment or moment.deleted_at or moment.status != 'PUBLISHED' or not VisibilityPolicy(session).can_view(actor, moment):
                 raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             existing = session.scalar(select(MomentComment).where(MomentComment.user_id == actor, MomentComment.idempotency_key == key))
             if existing:
@@ -282,6 +292,7 @@ class MomentsService:
                 if not upload or upload.owner_id != actor or upload.status != "COMPLETED" or upload.purpose != "MOMENT_IMAGE":
                     raise AppError(code="MOMENT_COMMENT_MEDIA_INVALID", message="请选择自己已上传完成的图片", status_code=422)
                 image_object_keys.append(upload.object_key)
+            parent = None
             if parent_id:
                 parent = session.get(MomentComment, parent_id)
                 if not parent or parent.moment_id != moment_id or parent.deleted_at or parent.user_id not in moment_comment_audience(session, actor, moment.author_id):
@@ -291,7 +302,12 @@ class MomentsService:
                 text=text, image_object_keys=image_object_keys, idempotency_key=key, created_at=datetime.now(timezone.utc),
             )
             session.add(row)
-            self._notify(session, moment.author_id, moment_id, actor, "COMMENT", row.id)
+            if parent and parent.user_id == moment.author_id:
+                self._notify(session, moment.author_id, moment_id, actor, "REPLY", row.id)
+            else:
+                self._notify(session, moment.author_id, moment_id, actor, "COMMENT", row.id)
+                if parent:
+                    self._notify(session, parent.user_id, moment_id, actor, "REPLY", row.id)
             self._audit(session, actor, moment_id, "moment.commented", "MOMENT_COMMENT", key)
             return row
 
@@ -309,15 +325,86 @@ class MomentsService:
                 notification.invalidated_at = comment.deleted_at
             self._audit(session, actor, moment_id, "moment.comment_deleted", "MOMENT_COMMENT_DELETE", key)
 
-    def notifications(self, actor):
+    @staticmethod
+    def _notification_excerpt(value):
+        normalized = ' '.join((value or '').split())
+        return normalized[:80] or None
+
+    def _notification_dto(self, session, policy, row, actor):
+        item = {
+            'id': row.id,
+            'moment_id': row.moment_id,
+            'comment_id': row.comment_id,
+            'kind': row.kind,
+            'actor': None,
+            'content_excerpt': None,
+            'source_excerpt': None,
+            'target_available': False,
+            'created_at': row.created_at,
+            'read_at': row.read_at,
+            'unread': row.read_at is None,
+        }
+        moment = session.get(Moment, row.moment_id)
+        if not moment or moment.deleted_at or moment.status != 'PUBLISHED' or not policy.can_view(actor, moment):
+            return item
+        if row.actor_id not in reaction_audience(session, actor):
+            return item
+        comment = None
+        if row.kind == 'LIKE':
+            authorized = actor == moment.author_id
+        elif row.kind in ('COMMENT', 'REPLY'):
+            comment = session.get(MomentComment, row.comment_id) if row.comment_id else None
+            if not comment or comment.deleted_at or comment.moment_id != moment.id or comment.user_id != row.actor_id:
+                return item
+            if row.actor_id not in moment_comment_audience(session, actor, moment.author_id):
+                return item
+            if row.kind == 'COMMENT':
+                authorized = actor == moment.author_id
+            else:
+                parent = session.get(MomentComment, comment.parent_id) if comment.parent_id else None
+                authorized = bool(parent and not parent.deleted_at and parent.moment_id == moment.id and parent.user_id == actor)
+        else:
+            return item
+        if not authorized:
+            return item
+        item['actor'] = self._user_projection(session, row.actor_id, actor)
+        item['content_excerpt'] = (
+            self._notification_excerpt(comment.text) or ('图片' if comment.image_object_keys else '评论')
+        ) if comment else None
+        item['source_excerpt'] = self._notification_excerpt(moment.text) or ('图片或视频' if moment.image_urls else '动态')
+        item['target_available'] = True
+        return item
+
+    def notifications(self, actor, *, cursor=None, limit=30):
+        marker = self._decode_cursor(cursor)
         with self.factory() as session:
-            rows = session.scalars(select(MomentNotification).where(MomentNotification.recipient_id == actor, MomentNotification.invalidated_at.is_(None)).order_by(MomentNotification.created_at.desc(), MomentNotification.id.desc())).all()
+            statement = select(MomentNotification).where(
+                MomentNotification.recipient_id == actor,
+                MomentNotification.invalidated_at.is_(None),
+            )
+            if marker:
+                marker_time, marker_id = marker
+                statement = statement.where(or_(
+                    MomentNotification.created_at < marker_time,
+                    and_(MomentNotification.created_at == marker_time, MomentNotification.id < marker_id),
+                ))
+            rows = session.scalars(statement.order_by(
+                MomentNotification.created_at.desc(), MomentNotification.id.desc(),
+            ).limit(limit + 1)).all()
+            page = rows[:limit]
             policy = VisibilityPolicy(session)
-            rows = [row for row in rows if (moment := session.get(Moment, row.moment_id)) and not moment.deleted_at and moment.status == 'PUBLISHED' and policy.can_view(actor, moment) and (row.kind != 'COMMENT' or row.actor_id in moment_comment_audience(session, actor, moment.author_id))]
-            return [{'id': row.id, 'moment_id': row.moment_id, 'kind': row.kind, 'actor': self._user_projection(session, row.actor_id, actor), 'created_at': row.created_at, 'read_at': row.read_at} for row in rows]
+            return {
+                'items': [self._notification_dto(session, policy, row, actor) for row in page],
+                'next_cursor': self._encode_cursor(page[-1]) if len(rows) > limit else None,
+            }
 
     def notification_unread_count(self, actor):
-        return sum(row['read_at'] is None for row in self.notifications(actor))
+        with self.factory() as session:
+            return session.scalar(select(func.count()).select_from(MomentNotification).where(
+                MomentNotification.recipient_id == actor,
+                MomentNotification.invalidated_at.is_(None),
+                MomentNotification.read_at.is_(None),
+            )) or 0
 
     def mark_notifications_read(self, actor, ids):
         with self.factory.begin() as session:
@@ -330,17 +417,26 @@ class MomentsService:
             if row is None:
                 raise AppError(code='MOMENT_DRAFT_NOT_FOUND', message='草稿不存在', status_code=404)
             payload = dict(row.payload)
+            # A draft may have been saved by an older or untrusted client.
+            # Derive cache identities from owned media, never submitted hints.
+            payload.pop('video_cache_keys', None)
             if payload.get('video_urls'):
                 urls = []
+                keys = []
                 for reference in payload['video_urls']:
                     object_key = owned_key(session, self.avatar_storage, reference, actor, purpose='MOMENT_VIDEO')
                     upload = session.scalar(select(MomentMediaUpload).where(MomentMediaUpload.object_key == object_key))
                     urls.append(upload_url(self.avatar_storage, upload))
+                    keys.append(self._media_cache_key('media://' + object_key))
                 payload['video_urls'] = urls
+                payload['video_cache_keys'] = keys
             return payload
 
     def save_draft(self, actor, payload):
         with self.factory.begin() as session:
+            # Upload/media cache keys are server-derived read hints, not draft
+            # input. Never persist or echo a caller-supplied cache identity.
+            payload = {key: value for key, value in payload.items() if key != 'video_cache_keys'}
             videos = payload.get('video_urls', [])
             images = payload.get('image_urls', [])
             if any(not isinstance(urls, list) or any(not isinstance(url, str) for url in urls) for urls in (images, videos)):

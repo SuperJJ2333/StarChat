@@ -27,9 +27,7 @@ final class FakeProfileGateway implements ProfileGateway {
   Future<ProfileData> loadProfile() async => loadedProfile;
   @override
   Future<ProfileData> updateProfile(
-          {required String nickname,
-          String? signature,
-          String? nudgeSuffix}) async =>
+          {String? nickname, String? signature, String? nudgeSuffix}) async =>
       profile.copyWith(
           nickname: nickname, signature: signature, nudgeSuffix: nudgeSuffix);
   @override
@@ -423,11 +421,11 @@ void main() {
     await tester.tap(find.byKey(const Key('profile-details-entry')));
     await tester.pumpAndSettle();
     final fields = find.byType(CupertinoTextField);
-    await tester.enterText(fields.first, 'Alice Updated');
+    await tester.enterText(fields.first, 'Alice Update');
     await tester.enterText(fields.last, 'Updated signature');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
-    expect(controller.state.profile!.nickname, 'Alice Updated');
+    expect(controller.state.profile!.nickname, 'Alice Update');
     expect(controller.state.profile!.signature, 'Updated signature');
   });
 

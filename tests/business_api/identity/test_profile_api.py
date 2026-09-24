@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+import json
 from pathlib import Path
 import struct
 from urllib.parse import parse_qs, unquote, urlparse
@@ -14,6 +16,7 @@ from app.core.database import Base, create_session_factory
 from app.core.outbox import OutboxEvent
 from app.main import create_app
 from app.core.errors import AppError
+from app.core.idempotency import IdempotencyRecord
 from app.integrations.private_storage import LocalPrivateObjectStorage
 from app.modules.audit.models import AuditEvent
 from app.modules.identity.enums import AccountStatus
@@ -259,6 +262,152 @@ async def test_profile_patch_is_strict_atomic_and_idempotent() -> None:
         )
         assert len(events) == len(audits) == 2
         assert events[0].payload == {"user_id": "user-1"}
+        audit_metadata = str([(entry.before_data, entry.after_data) for entry in audits])
+        assert "Alice Chen" not in audit_metadata
+        assert "Hello" not in audit_metadata
+        assert "nickname" in audits[0].after_data["changed_fields"]
+    engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_profile_patch_counts_visible_graphemes_and_rejects_overflow_atomically() -> None:
+    engine, factory, _, app = _components()
+    token = _add_user(factory, "grapheme-user", "Owner", "owner@example.test")
+    family = "👨‍👩‍👧‍👦"
+    couple = "👩🏽‍❤️‍💋‍👨🏻"
+    assert len(family * 12) > 64
+    assert len(couple * 20) > 140
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        accepted = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(token), "Idempotency-Key": "grapheme-accepted"},
+            json={"nickname": family * 12, "signature": couple * 20},
+        )
+        too_many_nickname = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(token), "Idempotency-Key": "grapheme-name-overflow"},
+            json={"nickname": family * 13},
+        )
+        too_many_signature = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(token), "Idempotency-Key": "grapheme-signature-overflow"},
+            json={"signature": couple * 21},
+        )
+
+    assert accepted.status_code == 200
+    assert accepted.json()["nickname"] == family * 12
+    assert accepted.json()["signature"] == couple * 20
+    assert too_many_nickname.status_code == 422
+    assert too_many_nickname.json()["error"]["code"] == "PROFILE_NICKNAME_INVALID"
+    assert too_many_signature.status_code == 422
+    assert too_many_signature.json()["error"]["code"] == "PROFILE_SIGNATURE_INVALID"
+    with factory() as session:
+        user = session.get(User, "grapheme-user")
+        assert user.nickname == family * 12
+        assert user.signature == couple * 20
+    engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_profile_patch_rejects_new_overflow_but_preserves_legacy_long_other_field() -> None:
+    engine, factory, _, app = _components()
+    token = _add_user(factory, "legacy-user", "Owner", "legacy@example.test")
+    with factory.begin() as session:
+        user = session.get(User, "legacy-user")
+        user.nickname = "N" * 13
+        user.signature = "S" * 21
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        signature_only = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(token), "Idempotency-Key": "legacy-signature-only"},
+            json={"signature": "新的个签"},
+        )
+        new_overflow = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(token), "Idempotency-Key": "legacy-new-overflow"},
+            json={"nickname": "N" * 13},
+        )
+
+    assert signature_only.status_code == 200
+    assert signature_only.json()["nickname"] == "N" * 13
+    assert signature_only.json()["signature"] == "新的个签"
+    assert new_overflow.status_code == 422
+    assert new_overflow.json()["error"]["code"] == "PROFILE_NICKNAME_INVALID"
+    with factory() as session:
+        user = session.get(User, "legacy-user")
+        assert user.nickname == "N" * 13
+        assert user.signature == "新的个签"
+    engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_completed_legacy_profile_request_replays_only_matching_actor_key_and_hash() -> None:
+    engine, factory, _, app = _components()
+    owner = _add_user(factory, "legacy-replay", "Owner", "replay@example.test")
+    other = _add_user(factory, "different-actor", "Other", "other@example.test")
+    old_nickname = "N" * 13
+    old_hash = sha256(
+        json.dumps({"nickname": old_nickname}, sort_keys=True, separators=(",", ":"))
+        .encode("utf-8")
+    ).hexdigest()
+    with factory.begin() as session:
+        session.get(User, "legacy-replay").nickname = old_nickname
+        session.add(IdempotencyRecord(
+            id="legacy-profile-record",
+            scope="identity.profile.update:legacy-replay",
+            idempotency_key="legacy-key",
+            request_hash=old_hash,
+            status="COMPLETED",
+            response_status=200,
+            response_body={"completed": True},
+            created_at=NOW,
+            completed_at=NOW,
+        ))
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        replay = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(owner), "Idempotency-Key": "legacy-key"},
+            json={"nickname": old_nickname},
+        )
+        changed = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(owner), "Idempotency-Key": "legacy-key"},
+            json={"nickname": "M" * 13},
+        )
+        new_key = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(owner), "Idempotency-Key": "new-key"},
+            json={"nickname": old_nickname},
+        )
+        wrong_actor = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(other), "Idempotency-Key": "legacy-key"},
+            json={"nickname": old_nickname},
+        )
+
+    assert replay.status_code == 200
+    assert replay.json()["nickname"] == old_nickname
+    assert changed.status_code == 409
+    assert changed.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    assert new_key.status_code == wrong_actor.status_code == 422
+    with factory() as session:
+        assert session.get(User, "legacy-replay").nickname == old_nickname
+        assert session.get(User, "different-actor").nickname == "Other"
+        assert session.scalar(select(func.count(AuditEvent.id)).where(
+            AuditEvent.action == "identity.profile.updated"
+        )) == 0
+        assert session.scalar(select(func.count(OutboxEvent.id)).where(
+            OutboxEvent.event_type == "identity.profile.changed"
+        )) == 0
     engine.dispose()
 
 

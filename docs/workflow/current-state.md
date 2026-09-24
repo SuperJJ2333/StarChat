@@ -1,5 +1,15 @@
 # 移动交付恢复索引
 
+## 2026-09-24 “我”页、邀请码、朋友圈互动已部署，MI 6 Debug2171 已安装
+
+正式 Android 最新版本仍为 **v0.4.6/2165**，手机号注册/登录等代码此前已上线。本轮是保留用户数据的内部测试包 **0.4.10/2171 Debug**，没有改官网正式 APK 或更新弹窗。五项“我”页需求已在客户端和业务 API 实现；最终 Flutter 全量 4120 通过/9 条条件跳过、analyze 0，`verify.ps1` exit 0（后端/worker 2763 通过/77 条条件跳过、mobile 108 通过/1 条条件跳过、OpenAPI/Compose 通过），HTML 305 通过/429 屏。最终审查还补齐建群/编辑群名 12 字限制和“我”页互动红点前台/定时刷新。MI 6 `cbd0156b` 安装包 SHA256 `5f3ddee5…` 与设备读回一致，固定测试签名、原首次安装时间、启动和零崩溃验证通过，真实用户操作仍待反馈。
+
+本轮发现上一轮最小增量 API/worker 容器及环境变量未完整保留正式 v0.4.6 的手机号等功能。基于正式 v0.4.6 文件和配置补齐候选，生产数据库增量升级到 0088；冻结的生产数据在隔离 PostgreSQL 恢复后 137 表/225466 行原值不变。首次切换沿用旧环境变量导致新服务配置校验失败，已立即恢复旧服务；随后取正式 v0.4.6 已发布配置重做预检，最终 API `c41dfffc…`、worker `90696ffa…` 均 healthy/零重启，其他 22 容器未变，HTTPS ready 200、鉴权 401、手机号/邀请/互动路由在位且新错误日志 0。备份和兼容回退镜像保留在服务器私有目录。见[任务](tasks/2026-09-24-me-invitations-moments-interactions.md)、[证据](../verification/2026-09-24-me-invitations-moments-interactions.md)。
+
+## 2026-09-24 群聊/朋友圈/钱包 Debug2169 历史交付记录
+
+本次八项需求的客户端已完成：群公告淡黄消隐、连续编辑与统一图片相册（隐藏视频、保留 GIF），群名 12 字、群管理/群主转让、朋友圈 GIF/视频/统一账户缓存与警告样式、钱包指定文案。候选中发现群公告明文发送回归，已恢复现有 Matrix E2EE 事件及附件路径；不改密钥协议。生产业务 API 两次最小增量后为 `f63cb266`，worker `237162be` 与其余 23 容器/schema0087 不变，双侧 HTTPS/鉴权通过。MI 6 保留数据安装 0.4.10+2169 Debug，SHA256 `6168daef`、首次安装时间、启动、零崩溃验证通过。Flutter 4087/9 条条件跳过、analyze 0，frontend303、Moments API119。原完整 `verify.ps1` 因两个旧 UI 屏幕数断言 exit1；修正后 mobile108/1 跳过及未跑的 UI 合同、导入、AST、迁移、OpenAPI、Compose 门禁均 exit0，前段 2735/77 跳过复用，未声称原完整脚本 exit0。用户真机体验待反馈。见[任务](tasks/2026-09-24-group-moments-wallet-debug.md)、[证据](../verification/2026-09-24-group-moments-wallet-debug.md)。
+
 ## 2026-09-23 Android0.4.6/2165已发布：头像缓存/统一相册/公告恢复/朋友圈视频
 
 本人头像缓存身份统一；相册头像仅静态图片、隐藏视频/GIF，复用Flutter方形编辑器；公告补标准SDK缺密钥请求；朋友圈复用相册/播放器/账户媒体缓存，MP4/QuickTime≤20MiB。Android正式重建固定签名，最终SHA60826c92，官网APK和Android更新弹窗发布成功；iOS设置未动。APIe15807b2/worker90696ffa、schema0087，22其他容器不变。Flutter3971+更新delta18、frontend299；后端2727/74条件跳过、最终草稿delta21；原verify因备用版本号旧值exit1，修正后mobile108/1及后续门禁exit0。代码提交12ded275已推送main，本地/远程仅保留main，分支归档保留。见[报告](../verification/2026-09-23-avatar-album-android-release.md)、[任务](tasks/2026-09-23-avatar-album-release.md)。本轮未真机验收/未发布iOS。

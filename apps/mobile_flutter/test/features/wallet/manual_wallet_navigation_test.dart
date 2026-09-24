@@ -22,6 +22,8 @@ void main() {
         .json(request.url.path.endsWith('/binding') ? fixtures.binding : {}));
     await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
     await tester.pumpAndSettle();
+    expect(find.text('仅支持 TRON 网络 · 1 点钻 = 1 CNY · 手续费 0'), findsOneWidget);
+    expect(find.textContaining('1 点钻 = 1 USDT'), findsNothing);
     expect(find.byKey(const Key('manual-deposit-open')), findsOneWidget);
     expect(find.byKey(const Key('manual-payout-open')), findsOneWidget);
     expect(find.byKey(const Key('wallet-withdraw-address')), findsNothing);

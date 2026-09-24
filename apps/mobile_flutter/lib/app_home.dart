@@ -49,7 +49,7 @@ import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
 import 'features/contacts/user_display_name_resolver.dart';
 import 'features/discovery/discovery_page.dart';
-import 'features/moments/moments_page.dart';
+import 'features/moments/personal_moments_page.dart';
 import 'features/moments/moments_unread_controller.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_security_logger.dart';
@@ -204,6 +204,7 @@ final class AppHome extends StatefulWidget {
 }
 
 final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
+  final ValueNotifier<int> _profileEntryRevision = ValueNotifier<int>(0);
   void _warmMomentPreviewCache() {
     final cache = _chatIdentityCache;
     if (cache == null) return;
@@ -1047,6 +1048,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
     appResumed = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed) {
+      unawaited(widget.api.supportIdentities.refreshKnown());
       unawaited(_momentsUnread?.refresh());
       // 规格§四（后台恢复）：收到电话后回前台（点图标/切回）→ 立即
       // 进入通话页——不再"只响铃无页面"。
@@ -2269,7 +2271,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 initialIdentityCache: identityCache,
                 readOnly: request.readOnly,
               ));
-      handle.register(route, onReopen: (next) => navigationRequests!.value = next);
+      handle.register(route,
+          onReopen: (next) => navigationRequests!.value = next);
       // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
       // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程）。
       StatisticsRoomScope.enter(roomId);
@@ -2331,7 +2334,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       await visible;
       await route.completed;
     } catch (error) {
-      debugPrint('[room-open-flow] FAILED stage=$stage room=$roomId error=$error');
+      debugPrint(
+          '[room-open-flow] FAILED stage=$stage room=$roomId error=$error');
       rethrow;
     } finally {
       StatisticsRoomScope.leave(roomId);
@@ -2431,6 +2435,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void dispose() {
     _disposed = true;
+    _profileEntryRevision.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _unreadSubscription?.cancel();
     _friendRequestPollTimer?.cancel();
@@ -2637,6 +2642,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               onTap: (index) {
                 if (index == 2) unawaited(_momentsUnread?.refresh());
                 if (index == 0) unawaited(_refreshUnreadCount());
+                if (index == 3) _profileEntryRevision.value++;
               },
               activeColor: const Color(0xff07c160),
               items: [
@@ -2753,6 +2759,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                     onLogout: widget.onLogout,
                     onClearLocalChatData: widget.matrix.clearLocalChatData,
                     identityCache: _chatIdentityCache,
+                    refreshSignal: _profileEntryRevision,
                   ),
               },
             ),
@@ -2889,11 +2896,13 @@ final class ProfileTabPage extends StatefulWidget {
     this.onClearLocalChatData,
     this.identityCache,
     this.contactActions,
+    this.refreshSignal,
   });
   final BusinessApiClient api;
   final ContactActions? contactActions;
   final Future<void> Function() onLogout;
   final ProfileRepository? identityCache;
+  final ValueListenable<int>? refreshSignal;
   final Future<void> Function()? onClearLocalChatData;
   @override
   State<ProfileTabPage> createState() => _ProfileTabPageState();
@@ -2903,21 +2912,78 @@ final class ProfileTabPage extends StatefulWidget {
 void _openLedgerAllBills(BuildContext context, BusinessApiClient? api,
     ProfileRepository? identityCache) {
   if (api == null) return;
-  Navigator.of(context).push(MotionPageRoute<void>(
+  Navigator.of(context, rootNavigator: true).push(MotionPageRoute<void>(
       builder: (_) => LedgerListPage(
           gateway: BusinessLedgerGateway(api), identityCache: identityCache)));
 }
 
-final class _ProfileTabPageState extends State<ProfileTabPage> {
+final class _ProfileTabPageState extends State<ProfileTabPage>
+    with WidgetsBindingObserver {
   late ProfileController controller;
   late BusinessApiClient _controllerApi;
   late int _controllerSessionEpoch;
   String? _controllerAccountKey;
+  int _momentUnreadCount = 0;
+  int _momentUnreadRequest = 0;
+  Timer? _momentUnreadRefreshTimer;
+
+  bool get _mePageVisible {
+    if (!mounted || !TickerMode.valuesOf(context).enabled) return false;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      return false;
+    }
+    // Me children use the root Navigator. Do not poll while a child covers it.
+    return !Navigator.of(context, rootNavigator: true).canPop();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _mePageVisible) {
+      unawaited(_refreshMomentUnread());
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     controller = _createController();
+    widget.refreshSignal?.addListener(_profileEntered);
+    _momentUnreadRefreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (_mePageVisible) unawaited(_refreshMomentUnread());
+    });
+    unawaited(_refreshMomentUnread());
+  }
+
+  void _profileEntered() => unawaited(_refreshMomentUnread());
+
+  Future<void> _refreshMomentUnread() async {
+    final api = widget.api;
+    final cache = widget.identityCache;
+    final accountKey = cache?.accountKey;
+    final epoch = api.sessionEpoch;
+    final request = ++_momentUnreadRequest;
+    if (accountKey == null) return;
+    try {
+      final userId = await api.currentUserId();
+      if (userId == null || userId.isEmpty) return;
+      final response = await api.momentUnreadCount();
+      if (!mounted ||
+          request != _momentUnreadRequest ||
+          !identical(widget.api, api) ||
+          api.sessionEpoch != epoch ||
+          !identical(widget.identityCache, cache) ||
+          cache?.accountKey != accountKey ||
+          await api.currentUserId() != userId) {
+        return;
+      }
+      final count = response['count'];
+      setState(
+          () => _momentUnreadCount = count is int && count > 0 ? count : 0);
+    } catch (_) {
+      // A transient inbox failure preserves the last account-scoped badge.
+    }
   }
 
   ProfileController _createController() {
@@ -2947,7 +3013,9 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
         if (!ownsCurrentSession() || cache == null) return;
         await cache.applyUpdatedProfile(profile);
       },
-      avatarCacheIdentity: (profile) => cache?.resolveIdentity(username: profile.username).cacheKey ?? profile.fallbackSeed,
+      avatarCacheIdentity: (profile) =>
+          cache?.resolveIdentity(username: profile.username).cacheKey ??
+          profile.fallbackSeed,
       onAvatarUpdated: _refreshAvatarDisplays,
       initialProfile: cache?.profile,
     );
@@ -2956,12 +3024,19 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   void didUpdateWidget(covariant ProfileTabPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshSignal != widget.refreshSignal) {
+      oldWidget.refreshSignal?.removeListener(_profileEntered);
+      widget.refreshSignal?.addListener(_profileEntered);
+    }
     if (!identical(_controllerApi, widget.api) ||
         _controllerSessionEpoch != widget.api.sessionEpoch ||
         !identical(oldWidget.identityCache, widget.identityCache) ||
         _controllerAccountKey != widget.identityCache?.accountKey) {
       controller.dispose();
       controller = _createController();
+      _momentUnreadRequest++;
+      _momentUnreadCount = 0;
+      unawaited(_refreshMomentUnread());
     }
   }
 
@@ -2972,6 +3047,10 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _momentUnreadRefreshTimer?.cancel();
+    widget.refreshSignal?.removeListener(_profileEntered);
+    _momentUnreadRequest++;
     controller.dispose();
     super.dispose();
   }
@@ -2980,46 +3059,73 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   Widget build(BuildContext context) => ProfileExperiencePage(
       key: ObjectKey(controller),
       controller: controller,
+      supportIdentities: widget.api.supportIdentities,
+      matrixUserId:
+          widget.identityCache?.accountKey?.replaceFirst('matrix:', ''),
+      momentInteractionUnreadCount: _momentUnreadCount,
       onMoments: () async {
+        final api = widget.api;
         final cache = widget.identityCache;
         if (cache == null) return;
-        final page = await MomentsPage.prepare(
-          api: widget.api,
+        final accountKey = cache.accountKey;
+        final epoch = api.sessionEpoch;
+        String? userId;
+        String? verifiedUserId;
+        try {
+          userId = await api.currentUserId();
+          verifiedUserId = await api.currentUserId();
+        } catch (_) {
+          return;
+        }
+        if (!mounted ||
+            userId == null ||
+            userId.isEmpty ||
+            !identical(widget.api, api) ||
+            api.sessionEpoch != epoch ||
+            !identical(widget.identityCache, cache) ||
+            cache.accountKey != accountKey ||
+            verifiedUserId != userId) {
+          return;
+        }
+        final page = PersonalMomentsPage(
+          api: api,
           identityCache: cache,
           contactActions: widget.contactActions,
+          userId: userId,
+          displayName: controller.state.profile?.nickname ??
+              cache.profile?.nickname ??
+              '',
+          publishedOnly: true,
+          onNotificationsChanged: _profileEntered,
         );
         if (!context.mounted) return;
-        Navigator.of(context, rootNavigator: true).push(
-            MotionPageRoute(fullscreenDialog: true, builder: (_) => page));
+        await Navigator.of(context, rootNavigator: true)
+            .push(MotionPageRoute<void>(builder: (_) => page));
+        if (mounted) unawaited(_refreshMomentUnread());
       },
-      onCaibi: () => Navigator.push(
-          context,
+      onCaibi: () => Navigator.of(context, rootNavigator: true).push(
           MotionPageRoute(
               builder: (_) => CaibiPage(
                   api: widget.api,
                   onOpenAllBills: () => _openLedgerAllBills(
                       context, widget.api, widget.identityCache)))),
-      onWallet: () => Navigator.push(context,
-          MotionPageRoute(builder: (_) => WalletPage(api: widget.api))),
+      onWallet: () => Navigator.of(context, rootNavigator: true)
+          .push(MotionPageRoute(builder: (_) => WalletPage(api: widget.api))),
       inviteGateway: widget.api,
-      onInvite: () => Navigator.push(
-          context,
+      onInvite: () => Navigator.of(context, rootNavigator: true).push(
           MotionPageRoute(
               builder: (_) => InviteCodePage(
-                  controller: InviteCodeController(gateway: widget.api)))),
+                  controller: InviteCodeController(
+                      gateway: widget.api, historyGateway: widget.api)))),
       onQrCode: () {
         final profile = controller.state.profile;
         if (profile == null) return;
-        Navigator.push(context,
-            MotionPageRoute(builder: (_) => MyQrCodePage(profile: profile, avatarCacheKey: controller.avatarCacheKey)));
+        Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+            builder: (_) => MyQrCodePage(
+                profile: profile, avatarCacheKey: controller.avatarCacheKey)));
       },
-      onSettings: () => Navigator.push(
-          context,
-          MotionPageRoute(
-              builder: (_) => SettingsPage(
-                  api: widget.api,
-                  onLogout: widget.onLogout,
-                  onClearLocalChatData: widget.onClearLocalChatData))));
+      onSettings: () => Navigator.of(context, rootNavigator: true).push(
+          MotionPageRoute(builder: (_) => SettingsPage(api: widget.api, onLogout: widget.onLogout, onClearLocalChatData: widget.onClearLocalChatData))));
 }
 
 final class ProfilePage extends StatelessWidget {

@@ -16,10 +16,46 @@ import 'package:liuhetong_mobile/features/matrix/matrix_home_snapshot_refresh_co
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('real push and pop animations defer nonurgent home snapshots',
+      (tester) async {
+    var loads = 0;
+    await _pumpHome(tester,
+        snapshotLoader: () async => _snapshot('room${++loads}'));
+    await tester.pumpAndSettle();
+    final navigator = Navigator.of(tester.element(find.byType(MatrixHomePage)));
+    final beforePush = loads;
+    unawaited(navigator.push(CupertinoPageRoute<void>(
+        builder: (_) =>
+            const CupertinoPageScaffold(child: Text('Other room')))));
+    await tester.pump();
+    for (var i = 0; i < 20; i++) {
+      conversationPreferencesChanged.publish();
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(loads, beforePush, reason: 'do not compute snapshots during push');
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(loads, beforePush + 1);
+    final beforePop = loads;
+    navigator.pop();
+    await tester.pump();
+    conversationPreferencesChanged.publish();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(loads, beforePop, reason: 'do not compute snapshots during pop');
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(loads, beforePop + 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   test('support API fixture decodes a Matrix identity', () async {
-    final items = await _supportApi().lookupSupportIdentities(['@peer:matrix.example']);
+    final items = await (await _supportApi())
+        .lookupSupportIdentities(['@peer:matrix.example']);
     expect(items.single.verifiedBadge, '官方客服');
   });
   test('coalesces a burst into one running pass and one fresh trailing pass',
@@ -126,12 +162,12 @@ void main() {
     expect(calls, 1);
     conversationPreferencesChanged.publish();
     conversationPreferencesChanged.publish();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
     expect(calls, 1);
 
     first.complete(_snapshot('first'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 40));
     expect(calls, 2);
     expect(peakActive, 1);
 
@@ -154,14 +190,14 @@ void main() {
     }
 
     await _pumpHome(tester, snapshotLoader: load);
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
     conversationPreferencesChanged.publish();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
     expect(calls, 2, reason: 'a later notification retries after failure');
 
     await tester.pumpWidget(const SizedBox());
     held.complete(_snapshot('late'));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
     expect(tester.takeException(), isNull);
   });
 
@@ -182,7 +218,7 @@ void main() {
           oldCalls++;
           return oldHeld.future;
         }));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
     expect(oldCalls, 1);
 
     await tester.pumpWidget(_home(
@@ -192,8 +228,8 @@ void main() {
           return newHeld.future;
         }));
     oldHeld.complete(_snapshot('old'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 40));
     expect(newCalls, 1);
 
     newHeld.complete(_snapshot('new'));
@@ -227,11 +263,12 @@ void main() {
               ? Future.value(_snapshot('old'))
               : oldHeld.future;
         }));
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 40));
     expect(find.byKey(const ValueKey<String>('conversation-!old:test')),
         findsOneWidget);
-    expect(oldCalls, greaterThanOrEqualTo(2));
+    expect(oldCalls, greaterThanOrEqualTo(1),
+        reason: 'initial background requests may coalesce');
     await tester.pumpWidget(_home(
         matrix: newMatrix,
         previewOnly: false,
@@ -245,21 +282,21 @@ void main() {
         findsNothing,
         reason: 'a different account clears an already-published old room');
     oldHeld.complete(_snapshot('old-late'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 40));
     expect(newCalls, 1);
 
     oldClient.completeSync();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
     expect(newCalls, 1,
         reason: 'the detached old stream cannot refresh new UI');
 
     newClient.completeSync();
     await newMatrix.syncIfActive();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
     newHeld.complete(_snapshot('new'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 40));
     expect(newCalls, 2,
         reason: 'the replacement client stream schedules fresh work');
     await tester.pumpAndSettle();
@@ -301,9 +338,15 @@ void main() {
     expect(calls, greaterThanOrEqualTo(2));
     await tester.pumpWidget(const SizedBox());
   });
-  testWidgets('direct row shows a business-verified support suffix', (tester) async {
-    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(), homeserver: Uri.parse('https://matrix.example'));
-    await tester.pumpWidget(_home(matrix: matrix, snapshotLoader: () async => _directSnapshot(), api: _supportApi()));
+  testWidgets('direct row shows a business-verified support suffix',
+      (tester) async {
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    await tester.pumpWidget(_home(
+        matrix: matrix,
+        previewOnly: false,
+        snapshotLoader: () async => _directSnapshot(),
+        api: await _supportApi()));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('@官方客服'), findsOneWidget);
@@ -311,8 +354,12 @@ void main() {
   });
 
   testWidgets('group row never receives a support suffix', (tester) async {
-    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(), homeserver: Uri.parse('https://matrix.example'));
-    await tester.pumpWidget(_home(matrix: matrix, snapshotLoader: () async => _snapshot('官方群'), api: _supportApi()));
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
+        homeserver: Uri.parse('https://matrix.example'));
+    await tester.pumpWidget(_home(
+        matrix: matrix,
+        snapshotLoader: () async => _snapshot('官方群'),
+        api: await _supportApi()));
     await tester.pumpAndSettle();
     expect(find.text('@官方客服'), findsNothing);
     await tester.pumpWidget(const SizedBox());
@@ -320,11 +367,13 @@ void main() {
 }
 
 Future<void> _pumpHome(WidgetTester tester,
-    {required Future<MatrixConversationSnapshot> Function() snapshotLoader}) {
+    {required Future<MatrixConversationSnapshot> Function()
+        snapshotLoader}) async {
   final matrix = MatrixSdkE2eeClient(_NoNetworkClient(),
       homeserver: Uri.parse('https://matrix.example'));
-  return tester
+  await tester
       .pumpWidget(_home(matrix: matrix, snapshotLoader: snapshotLoader));
+  await tester.pump(const Duration(milliseconds: 40));
 }
 
 Widget _home({
@@ -333,27 +382,43 @@ Widget _home({
   bool previewOnly = true,
   ProfileRepository? identityCache,
   BusinessApiClient? api,
-}) =>
-    CupertinoApp(
-        home: MatrixHomePage(
-      api: api ?? _api(),
-      matrix: matrix,
-      themeController: ThemeController(store: _MemoryThemeStore()),
-      onCreateGroup: () {},
-      previewOnly: previewOnly,
-      identityCache: identityCache,
-      snapshotLoader: snapshotLoader,
-    ));
+}) {
+  // These tests isolate snapshot scheduling; disk hydration is covered by
+  // cold_start_identity_test with an actual persisted profile fixture.
+  final identities = identityCache ?? ProfileRepository(api ?? _api());
+  if (identityCache == null) addTearDown(identities.dispose);
+  return CupertinoApp(
+      home: MatrixHomePage(
+    api: api ?? _api(),
+    matrix: matrix,
+    themeController: ThemeController(store: _MemoryThemeStore()),
+    onCreateGroup: () {},
+    previewOnly: previewOnly,
+    identityCache: identities,
+    snapshotLoader: snapshotLoader,
+  ));
+}
 
 BusinessApiClient _api() => BusinessApiClient(
     baseUri: Uri.parse('https://business.example'),
     sessionStore: SecureSessionStore(_MemoryStore()),
     client: MockClient((_) async => http.Response('{}', 500)));
 
-BusinessApiClient _supportApi() => BusinessApiClient(
-    baseUri: Uri.parse('https://business.example'),
-    sessionStore: SecureSessionStore(_MemoryStore()),
-    client: MockClient((_) async => http.Response.bytes(utf8.encode('{"items":[{"query_id":"@peer:matrix.example","user_id":"support","matrix_user_id":"@peer:matrix.example","badge":"官方客服","role":"SUPPORT_AGENT"}]}'), 200, headers: const {'content-type': 'application/json; charset=utf-8'})));
+Future<BusinessApiClient> _supportApi() async {
+  final sessionStore = SecureSessionStore(_MemoryStore());
+  await sessionStore.saveSession(
+      accessToken: 'test-access',
+      refreshToken: 'test-refresh',
+      matrixUserId: '@self:matrix.example');
+  return BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: sessionStore,
+      client: MockClient((_) async => http.Response.bytes(
+          utf8.encode(
+              '{"items":[{"query_id":"@peer:matrix.example","user_id":"support","matrix_user_id":"@peer:matrix.example","badge":"官方客服","role":"SUPPORT_AGENT"}]}'),
+          200,
+          headers: const {'content-type': 'application/json; charset=utf-8'})));
+}
 
 MatrixConversationSnapshot _snapshot(String id) => MatrixConversationSnapshot(
       vaultRoomId: null,
@@ -435,12 +500,13 @@ final class _HeldSyncClient extends Client {
 }
 
 final class _MemoryStore implements SecureKeyValueStore {
+  final values = <String, String>{};
   @override
-  Future<void> delete(String key) async {}
+  Future<void> delete(String key) async => values.remove(key);
   @override
-  Future<String?> read(String key) async => null;
+  Future<String?> read(String key) async => values[key];
   @override
-  Future<void> write(String key, String value) async {}
+  Future<void> write(String key, String value) async => values[key] = value;
 }
 
 final class _MemoryThemeStore implements ThemePreferenceStore {

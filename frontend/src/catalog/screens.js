@@ -57,8 +57,12 @@ function register(module, page, states, options = {}) {
 }
 
 register("chat", "announcement", [
-  ["mixed", "群公告 / 图文"], ["decrypting", "群公告 / 等待解密"], ["malformed", "群公告 / 格式异常"]
+  ["mixed", "群公告 / 图文"], ["decrypting", "群公告 / 等待解密"], ["malformed", "群公告 / 格式异常"],
+  ["notice", "群公告 / 淡黄通知条"], ["dismissed", "群公告 / 不再提醒"], ["new-notice", "群公告 / 新公告重新提醒"],
+  ["editor", "群公告 / 连续正文编辑"], ["album", "群公告 / 仅图片相册"]
 ]);
+register("chat", "group-info", [["default", "聊天信息 / 12 字群聊名称"]]);
+register("chat", "group-management", [["owner", "群管理 / 群主"], ["transfer-confirm", "群管理 / 群主转让确认"], ["dissolve-confirm", "群管理 / 解散确认"]]);
 
 register("foundation", "tokens", [
   ["overview", "Foundations / 语义 Token / 浅色", 1180]
@@ -176,21 +180,24 @@ register("friend", "delete", [["confirm", "好友更多 / 删除确认"], ["succ
 register("discovery", "home", [["default", "发现 / 默认"], ["moments-new", "发现 / 朋友圈有新内容"], ["recommended", "发现 / 推荐入口"], ["loading", "发现 / 加载"], ["error-network", "发现 / 网络异常"]]);
 
 register("moments", "timeline", [["default", "朋友圈 / 时间线"], ["loading", "朋友圈 / 加载"], ["empty", "朋友圈 / 空"], ["refresh-failed", "朋友圈 / 刷新失败"], ["pagination-failed", "朋友圈 / 分页失败"], ["cached-offline", "朋友圈 / 离线保留已缓存内容"], ["no-cache-offline", "朋友圈 / 离线无缓存"], ["explicit-retry", "朋友圈 / 手动刷新重试"]], { height: 1280 });
-register("moments", "media", [["text", "朋友圈动态 / 纯文字"], ["single", "朋友圈动态 / 单图"], ["two", "朋友圈动态 / 双图"], ["four", "朋友圈动态 / 四图"], ["nine", "朋友圈动态 / 九图"]], { height: 980 });
+register("moments", "media", [["text", "朋友圈动态 / 纯文字"], ["single", "朋友圈动态 / 单图"], ["two", "朋友圈动态 / 双图"], ["four", "朋友圈动态 / 四图"], ["nine", "朋友圈动态 / 九图"], ["gif", "朋友圈动态 / GIF 动图"], ["video", "朋友圈动态 / 视频播放"]], { height: 980 });
 register("moments", "actions", [["menu", "朋友圈 / 操作菜单"], ["liked", "朋友圈 / 已点赞"], ["comment", "朋友圈 / 评论输入"]]);
 register("moments", "visibility", [["public", "朋友圈 / 公开"], ["friends", "朋友圈 / 好友"], ["partial", "朋友圈 / 部分可见"], ["excluded", "朋友圈 / 不给谁看"], ["private", "朋友圈 / 仅自己"]]);
 register("moments", "governance", [["uploading", "朋友圈 / 上传中"], ["reviewing", "朋友圈 / 审核中"], ["published", "朋友圈 / 已发布"], ["limited", "朋友圈 / 部分可见"], ["removed", "朋友圈 / 已下架"], ["failed", "朋友圈 / 发布失败"]]);
 register("moments", "recommendation", [["recommended", "公开时间线 / 推荐"], ["latest", "公开时间线 / 最新"], ["personalization-off", "公开时间线 / 关闭个性化"]]);
-register("moments", "composer", [["video", "发布朋友圈 / 视频"], ["video-too-large", "发布朋友圈 / 视频超过20MB"], ["text", "发布朋友圈 / 纯文字"], ["images", "发布朋友圈 / 图片"], ["location", "发布朋友圈 / 位置"], ["mention", "发布朋友圈 / 提醒谁看"], ["visibility", "发布朋友圈 / 可见范围"], ["disabled", "发布朋友圈 / 发布禁用"], ["uploading", "发布朋友圈 / 上传中"], ["upload-failed", "发布朋友圈 / 上传失败"]], { height: 980 });
+register("moments", "composer", [["video", "发布朋友圈 / 视频"], ["gif", "发布朋友圈 / GIF 动图"], ["video-too-large", "发布朋友圈 / 视频超过20MB"], ["text", "发布朋友圈 / 纯文字"], ["images", "发布朋友圈 / 图片"], ["location", "发布朋友圈 / 位置"], ["mention", "发布朋友圈 / 提醒谁看"], ["visibility", "发布朋友圈 / 可见范围"], ["disabled", "发布朋友圈 / 发布禁用"], ["uploading", "发布朋友圈 / 上传中"], ["upload-failed", "发布朋友圈 / 上传失败"]], { height: 980 });
 register("moments", "composer-sheet", [["leave-confirm", "发布朋友圈 / 离开确认"], ["location", "发布朋友圈 / 位置面板"], ["mention", "发布朋友圈 / 提醒好友面板"], ["visibility", "发布朋友圈 / 可见范围面板"]]);
-register("moments", "detail", [["default", "动态详情 / 默认", 1180], ["comment-reply", "动态详情 / 回复评论", 1180], ["comment-delete", "动态详情 / 删除评论确认", 1180]]);
+register("moments", "detail", [["default", "动态详情 / 默认", 1180], ["comment-reply", "动态详情 / 回复评论", 1180], ["comment-delete", "动态详情 / 删除评论确认", 1180], ["notification-target", "动态详情 / 从互动定位评论", 1180]]);
 register("moments", "search", [["default", "朋友圈搜索 / 默认"], ["results", "朋友圈搜索 / 结果"], ["filters", "朋友圈搜索 / 筛选"], ["no-result", "朋友圈搜索 / 无结果"], ["permission-filtered", "朋友圈搜索 / 无权限过滤"]]);
 register("moments", "notifications", [["default", "朋友圈互动通知 / 列表"], ["empty", "朋友圈互动通知 / 空"]]);
+register("moments", "personal", [["default", "我的朋友圈 / 本人动态"], ["empty", "我的朋友圈 / 尚未发布"]], { height: 980 });
+register("moments", "interactions", [["default", "全部互动消息 / 评论与回复"], ["empty", "全部互动消息 / 空"], ["more", "全部互动消息 / 加载更多"], ["unavailable", "全部互动消息 / 内容不可查看"]], { height: 980 });
 register("moments", "settings", [["default", "朋友圈设置 / 默认"], ["strangers", "朋友圈设置 / 陌生人查看"], ["range", "朋友圈设置 / 时间范围"], ["exclude", "朋友圈设置 / 不让他看"], ["block", "朋友圈设置 / 屏蔽他的朋友圈"], ["personalization", "朋友圈设置 / 个性化推荐"]]);
 register("moments", "settings", [["range-sheet", "朋友圈设置 / 时间范围面板"]]);
 
 register("profile", "home", [["default", "我 / 默认"], ["cached-offline", "我 / 离线保留本机资料"], ["no-cache-offline", "我 / 离线无本机资料"]]);
-register("profile", "details", [["default", "个人资料 / 默认"], ["edit", "个人资料 / 编辑"]]);
+register("profile", "details", [["default", "个人资料 / 默认"], ["edit", "个人资料 / 编辑"], ["nickname-limit", "个人资料 / 昵称字数上限"], ["signature-limit", "个人资料 / 个性签名字数上限"]]);
+register("profile", "invitation", [["history", "邀请码 / 邀请历史"], ["empty", "邀请码 / 无邀请记录"], ["loading", "邀请码 / 历史加载中"], ["error", "邀请码 / 历史加载失败"], ["more", "邀请码 / 加载更多"]], { height: 980 });
 register("profile", "avatar", [["picker", "头像 / 相册选择"], ["permission-denied", "头像 / 权限拒绝"], ["crop", "头像 / 裁剪"], ["preview", "头像 / 预览"], ["uploading", "头像 / 上传中"], ["upload-failed", "头像 / 上传失败"], ["restore-confirm", "头像 / 恢复默认确认"], ["fallback", "头像 / 加载失败回退"]]);
 register("profile", "settings", [["default", "设置 / 默认"], ["privacy", "设置 / 账号与隐私"], ["logout-confirm", "设置 / 退出确认"], ["logout-loading", "设置 / 退出中"], ["logout-failed", "设置 / 退出失败"]]);
 

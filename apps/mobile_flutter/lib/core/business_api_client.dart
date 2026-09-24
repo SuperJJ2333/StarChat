@@ -75,6 +75,15 @@ final class BusinessApiClient
   final http.Client _client;
   bool _diagnosticUploadActive = false;
 
+  /// Account-scoped shared presentation cache; widgets only remove listeners.
+  late final SupportIdentityRepository supportIdentities =
+      SupportIdentityRepository(this, scope: () async {
+    final session = await sessionStore.session();
+    final account = session?.matrixUserId;
+    if (account == null || account.isEmpty) return null;
+    return sha256.convert(utf8.encode('$baseUri|$account')).toString();
+  }, store: const PreferencesSupportIdentitySnapshotStore());
+
   /// Best-effort metadata transport, deliberately outside _authorized/_decode.
   /// 401/429 never refresh credentials, revoke a session or recurse into logs.
   /// A dedicated socket is force-closed on deadline/abort, including stalled
@@ -191,6 +200,7 @@ final class BusinessApiClient
   Future<void> _invalidateSession(int epoch, String code) async {
     if (epoch != _sessionEpoch) return;
     final invalidatedEpoch = ++_sessionEpoch;
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -237,6 +247,7 @@ final class BusinessApiClient
     required String deviceName,
   }) async {
     final loginEpoch = ++_sessionEpoch;
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -523,7 +534,7 @@ final class BusinessApiClient
       _profile(await getJson('/profile/me'));
   @override
   Future<ProfileData> updateProfile({
-    required String nickname,
+    String? nickname,
     String? signature,
     String? nudgeSuffix,
   }) async =>
@@ -531,9 +542,9 @@ final class BusinessApiClient
         await patchJson(
             '/profile/me',
             {
-              'nickname': nickname,
-              'signature': signature,
-              'nudge_suffix': nudgeSuffix,
+              if (nickname != null) 'nickname': nickname,
+              if (signature != null) 'signature': signature,
+              if (nudgeSuffix != null) 'nudge_suffix': nudgeSuffix,
             },
             idempotencyKey: newIdempotencyKey()),
       );
@@ -679,6 +690,7 @@ final class BusinessApiClient
   @override
   Future<BusinessSessionRevocation?> clearLocalSession() async {
     final epoch = ++_sessionEpoch;
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -1511,17 +1523,22 @@ final class BusinessApiClient
 
   Future<Map<String, dynamic>> momentProfilePreview(String userId) =>
       getJson('/moments/users/${Uri.encodeComponent(userId)}/preview');
-  Future<Map<String, dynamic>> momentNotifications() =>
-      getJson('/moments/notifications');
+  Future<Map<String, dynamic>> momentNotifications(
+      {int limit = 30, String? cursor}) =>
+      getJson('/moments/notifications?limit=$limit'
+          '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}');
   Future<Map<String, dynamic>> momentUnreadCount() =>
       getJson('/moments/notifications/unread-count');
   Future<void> markMomentNotificationsRead(List<String> ids) async {
-    await postJson(
-        '/moments/notifications/read',
-        {
-          'ids': ids,
-        },
-        idempotencyKey: newIdempotencyKey());
+    if (ids.isEmpty) return;
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/moments/notifications/read'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode(ids),
+      ),
+    );
+    if (response.statusCode != 204) _decode(response);
   }
 
   Future<Map<String, dynamic>> momentsPreferences() =>
@@ -1671,6 +1688,7 @@ final class BusinessApiClient
     bool Function()? shouldContinue,
   }) async {
     final loginEpoch = ++_sessionEpoch;
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;

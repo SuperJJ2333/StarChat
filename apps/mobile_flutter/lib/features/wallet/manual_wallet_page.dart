@@ -1748,7 +1748,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   ManualWalletSection.payout, canWithdraw)),
         ]),
         const SizedBox(height: 8),
-        const Text('仅支持 TRON 网络 · 1 点钻 = 1 USDT · 手续费 0',
+        const Text('仅支持 TRON 网络 · 1 点钻 = 1 CNY · 手续费 0',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary)),
         if (pointsError != null) warningBox(pointsError!),

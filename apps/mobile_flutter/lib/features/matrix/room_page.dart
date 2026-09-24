@@ -758,7 +758,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       widget.initialContact?.matrixUserId ??
       roomInfo.id;
   late SupportIdentityRepository _supportIdentities;
-  Timer? _supportTimer;
 
   /// E2：金融卡片缓存提升到会话级（进程共享、会话失效才重建），
   /// 每次进入房间不再清零重拉——气泡状态稳定不闪烁（微信式机制）。
@@ -799,7 +798,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
     widget.navigationRequests?.addListener(_onNavigationRequest);
     roomInfo = widget.roomLease.roomInfo;
-    _supportIdentities = SupportIdentityRepository(widget.api);
+    _supportIdentities = widget.api.supportIdentities;
     peer = widget.initialContact;
     joinedMemberCount = _joinedMembers.length;
     ownProfile = _identityCache.profile;
@@ -816,9 +815,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final supportPeerId = roomInfo.directPeerId ?? peer?.matrixUserId;
     if (!isGroup && supportPeerId != null) {
       unawaited(_supportIdentities.warm([supportPeerId]));
-      _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        unawaited(_supportIdentities.warm([supportPeerId], force: true));
-      });
     }
     unawaited(_trackMatrixOperation(_refreshJoinedMemberCount()));
     unawaited(
@@ -839,8 +835,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   void didUpdateWidget(covariant RoomPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.api, widget.api)) {
-      _supportIdentities.dispose();
-      _supportIdentities = SupportIdentityRepository(widget.api);
+      _supportIdentities = widget.api.supportIdentities;
       if (!isGroup && roomInfo.directPeerId != null) {
         unawaited(_supportIdentities.warm([roomInfo.directPeerId]));
       }
@@ -1334,7 +1329,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _refreshEmojiVault(MatrixEmojiVault session) async {
     try {
-      await session.refresh();
+      await session.refresh(force: false);
       if (!mounted || !identical(emojiVault, session)) return;
       setState(() => customEmojiItems = [
             for (final item in session.vault.items)
@@ -1583,7 +1578,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       var changed = next.name != roomInfo.name ||
           next.canMentionAll != roomInfo.canMentionAll ||
           next.members.length != roomInfo.members.length;
-      if (!changed) {
+      if (!changed && !identical(next.members, roomInfo.members)) {
         for (var i = 0; i < next.members.length; i++) {
           final a = next.members[i];
           final b = roomInfo.members[i];
@@ -2866,12 +2861,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           widget.roomLease.membershipChanges,
           roomId: roomInfo.id,
         );
-      final contacts = await widget.api.listContacts();
-      if (!mounted) return;
-      final contactsById = {
-        for (final contact in contacts)
-          contact.matrixUserId: contact.toDetails(),
-      };
+      // The account-scoped identity repository already owns hydration,
+      // throttling and invalidation. Navigation must not await the network.
+      unawaited(_identityCache.refreshContactsQuietly());
       await Navigator.push<void>(
         context,
         MotionPageRoute(
@@ -2895,7 +2887,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ),
               member: member,
               selfMatrixUserId: roomInfo.currentUserId,
-              friendContact: contactsById[member.matrixUserId],
+              friendContact:
+                  _identityCache.contactsByMatrixId[member.matrixUserId],
               onOpenFriendContact: _openContact,
             ),
             onLeft: () {
@@ -2924,6 +2917,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       context,
       MotionPageRoute(
         builder: (_) => DirectChatInfoPage(
+          supportIdentities: _supportIdentities,
           // 规格§八：头像点击 → APP 好友资料页（非 Matrix Profile）。
           onTapPerson: (matrixUserId) =>
               unawaited(_openPeerProfile(matrixUserId)),
@@ -3999,7 +3993,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 : MessageDirection.incoming,
             state: deliveryState,
             onRetry: () => _trackAction(() => _retryMessage(message)),
+            senderBadge: message.isOwn ? null : _senderBadge(message),
             senderName: message.isOwn ? null : displayName,
+            senderMatrixId: message.senderId,
+            supportIdentities: _supportIdentities,
             avatar: _avatar(message),
             onAvatarTap: () => _openMessageSender(message),
             onAvatarDoubleTap: () =>
@@ -4025,6 +4022,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             ),
             senderBadge: message.isOwn ? null : _senderBadge(message),
             senderName: message.isOwn ? null : displayName,
+            senderMatrixId: message.senderId,
+            supportIdentities: _supportIdentities,
             avatar: _avatar(message),
             onAvatarTap: () => _openMessageSender(message),
             onAvatarDoubleTap: () =>
@@ -4049,6 +4048,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             content: _flashPhotoBubble(message),
             senderBadge: message.isOwn ? null : _senderBadge(message),
             senderName: message.isOwn ? null : displayName,
+            senderMatrixId: message.senderId,
+            supportIdentities: _supportIdentities,
             avatar: _avatar(message),
             onAvatarTap: () => _openMessageSender(message),
             onAvatarDoubleTap: () =>
@@ -4098,6 +4099,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               },
             ),
             senderName: message.isOwn ? null : displayName,
+            senderMatrixId: message.senderId,
+            supportIdentities: _supportIdentities,
             senderBadge: message.isOwn ? null : _senderBadge(message),
             avatar: _avatar(message),
             onAvatarTap: () => _openMessageSender(message),
@@ -4122,6 +4125,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 unawaited(_trackAction(() => _retryMessage(message))),
             decorateContent: messageBubbleIsDecorated(message.kind),
             senderName: message.isOwn ? null : displayName,
+            senderMatrixId: message.senderId,
+            supportIdentities: _supportIdentities,
             senderBadge: message.isOwn ? null : _senderBadge(message),
             avatar: _avatar(message),
             onAvatarTap: () => _openMessageSender(message),
@@ -4673,7 +4678,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final epoch = repository.accountEpoch;
     _searchIndexPump ??= RoomSearchIndexPump(
       source: () => controller?.newestFirstMessages ?? const [],
-      isActive: () => mounted && !_disposing && !widget.roomLease.canceled &&
+      isActive: () =>
+          mounted &&
+          !_disposing &&
+          !widget.roomLease.canceled &&
           repository.accountEpoch == epoch,
       remove: repository.removeMessages,
       upsert: (messages) => repository.recordRoomMessages([
@@ -4687,7 +4695,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             roomId: (_logicalTimeline is RoomEventSourceCapability
                     ? (_logicalTimeline as RoomEventSourceCapability)
                         .sourceRoomId(message.id)
-                    : null) ?? roomInfo.id,
+                    : null) ??
+                roomInfo.id,
             roomName: roomInfo.name,
             isGroup: isGroup,
             senderIsSelf: message.isOwn,
@@ -4732,8 +4741,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _identityCache.removeListener(_identityChanged);
     _nudgeToastTimer?.cancel();
     _nudgeToast?.remove();
-    _supportTimer?.cancel();
-    _supportIdentities.dispose();
     final playback = _voicePlayback;
     if (playback != null) {
       unawaited(_trackMatrixOperation(

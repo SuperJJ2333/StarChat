@@ -356,10 +356,137 @@ function announcementScreen(definition) {
   return root;
 }
 
+function announcementNotice(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("周末徒步群", { leading: "返回", action: "详情" }));
+  const content = element("div", "p-chat-announcement__conversation");
+  const announcementId = definition.state === "new-notice" ? "weekend-20260925" : "weekend-20260924";
+  const dismissalKey = "chatflow-demo-dismissed-group-announcement";
+  let dismissedId = "";
+  try { dismissedId = window.localStorage.getItem(dismissalKey) ?? ""; } catch { /* Embedded demos may disable storage. */ }
+  if (definition.state !== "dismissed" && dismissedId !== announcementId) {
+    const banner = element("div", "c-announcement-notice");
+    banner.dataset.announcementId = announcementId;
+    banner.append(icon("speaker", "c-announcement-notice__icon"));
+    const preview = element("span", "c-announcement-notice__preview", definition.state === "new-notice"
+      ? "新公告：周日徒步集合时间改为 08:30"
+      : "群公告：欢迎加入周末徒步群，请查看集合安排");
+    const dismiss = button("c-announcement-notice__dismiss", "不再提醒", "announcement:dismiss");
+    dismiss.title = "不再提醒";
+    dismiss.append(icon("close"));
+    dismiss.addEventListener("click", () => {
+      try { window.localStorage.setItem(dismissalKey, announcementId); } catch { /* Keep this view dismissible. */ }
+      banner.remove();
+    });
+    banner.append(preview, dismiss);
+    content.append(banner);
+  }
+  content.append(component("app-timestamp", { label: "今天 09:41" }),
+    component("app-message-bubble", { direction: "incoming", sender: "林晓", content: "明天见，记得带水。", delivery: "sent" }));
+  root.append(content, component("app-composer", { mode: "text" }));
+  return root;
+}
+
+function announcementEditor(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("编辑群公告", { leading: "取消", action: "完成" }));
+  const content = element("div", "p-chat-announcement__editor");
+  const body = element("textarea", "c-announcement-editor__body");
+  body.rows = 10;
+  body.setAttribute("aria-label", "群公告正文");
+  body.placeholder = "输入群公告";
+  body.value = "欢迎加入周末徒步群！\n周日早上八点在公园东门集合。";
+  const toolbar = element("div", "c-announcement-editor__toolbar");
+  const addImage = button("c-announcement-editor__image", "添加图片", "open:chat-announcement-album");
+  addImage.title = "添加图片";
+  addImage.append(icon("image"));
+  toolbar.append(addImage);
+  content.append(body, toolbar, element("p", "c-announcement-editor__hint", "群公告发布后将提醒群成员"));
+  root.append(content);
+  return root;
+}
+
+function announcementAlbum(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("相册", { leading: "取消", action: "完成" }));
+  const content = element("div", "p-chat-announcement__album");
+  const grid = element("div", "c-announcement-album__grid");
+  for (const [index, title] of ["山间晨光", "集合地点", "路线地图"].entries()) {
+    const picture = button("c-announcement-album__item", title, "announcement:select-image");
+    picture.dataset.mediaType = "image";
+    picture.dataset.tone = String(index + 1);
+    picture.append(icon("image"), element("span", "u-visually-hidden", title));
+    picture.addEventListener("click", () => {
+      for (const item of grid.children) item.setAttribute("aria-pressed", String(item === picture));
+    });
+    grid.append(picture);
+  }
+  content.append(element("p", "c-announcement-album__caption", "照片"), grid);
+  root.append(content);
+  return root;
+}
+
+function groupInfo(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("聊天信息", { leading: "返回" }));
+  const content = element("div", "p-chat-group-info__content");
+  const row = element("label", "c-group-name-row");
+  const name = element("input", "c-group-name-row__input");
+  name.type = "text";
+  name.value = "周末徒步群";
+  name.setAttribute("aria-label", "群聊名称");
+  const segmenter = new Intl.Segmenter("zh", { granularity: "grapheme" });
+  const graphemes = value => Array.from(segmenter.segment(value), part => part.segment);
+  const count = element("span", "c-group-name-row__count", `${graphemes(name.value).length}/12`);
+  let composing = false;
+  const updateName = () => {
+    const parts = graphemes(name.value);
+    if (!composing && parts.length > 12) name.value = parts.slice(0, 12).join("");
+    count.textContent = `${graphemes(name.value).length}/12`;
+  };
+  name.addEventListener("compositionstart", () => { composing = true; });
+  name.addEventListener("compositionend", () => { composing = false; updateName(); });
+  name.addEventListener("input", updateName);
+  row.append(element("span", "c-group-name-row__label", "群聊名称"), name, count);
+  content.append(row,
+    component("app-list-tile", { title: "群公告", trailing: "查看", leading: "speaker", action: "open:chat-announcement-notice" }),
+    component("app-list-tile", { title: "群管理", trailing: "›", leading: "group", action: "open:chat-group-management-owner" }));
+  root.append(content);
+  return root;
+}
+
+function groupManagement(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("群管理", { leading: "返回" }));
+  const content = element("div", "p-chat-group-management__content");
+  content.append(component("app-list-tile", {
+    title: "群主转让", trailing: "›", leading: "group", action: "open:chat-group-management-transfer-confirm"
+  }));
+  const dissolve = button("c-group-management__dissolve", "解散该群聊", "open:chat-group-management-dissolve-confirm");
+  dissolve.textContent = "解散该群聊";
+  content.append(dissolve);
+  root.append(content);
+  if (definition.state === "transfer-confirm") root.append(component("app-dialog", {
+    kind: "confirm", title: "转让群主", message: "请选择新群主并确认转让。", cancel: "取消", confirm: "选择成员"
+  }));
+  if (definition.state === "dissolve-confirm") root.append(component("app-dialog", {
+    kind: "danger", title: "解散该群聊？", message: "解散后，所有群成员将退出此群。", cancel: "取消", confirm: "解散"
+  }));
+  return root;
+}
+
 export function renderScreen(definition) {
   let root;
   if (definition.page === "announcement") {
-    root = announcementScreen(definition);
+    root = ["notice", "dismissed", "new-notice"].includes(definition.state)
+      ? announcementNotice(definition)
+      : definition.state === "editor" ? announcementEditor(definition)
+        : definition.state === "album" ? announcementAlbum(definition)
+          : announcementScreen(definition);
+  } else if (definition.page === "group-info") {
+    root = groupInfo(definition);
+  } else if (definition.page === "group-management") {
+    root = groupManagement(definition);
   } else if (definition.page === "image-editor") {
     root = pageRoot(definition, [component("app-image-editor", { state: definition.state })]);
   } else if (definition.page === "image-gallery") {

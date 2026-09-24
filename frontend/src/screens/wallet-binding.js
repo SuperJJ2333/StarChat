@@ -86,7 +86,7 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
       }
       card.append(heading, element("p", "", bound ? "已绑定私人钱包" : "尚未绑定私人钱包"), addressRow);
       if (!ready) card.append(element("p", "c-wallet-demo__error", "钱包暂不可用，请稍后重试"));
-      body.append(card);
+      body.append(card, element("p", "c-wallet-demo__muted", "仅支持 TRON 网络 · 1 点钻 = 1 CNY · 手续费 0"));
       const shortcuts = element("div", "c-wallet-demo__shortcuts");
       shortcuts.append(action("充值", () => jump("deposit"), { disabled: !bound || !ready }),
         action("提现", () => jump("withdrawal"), { disabled: !bound || !ready }));

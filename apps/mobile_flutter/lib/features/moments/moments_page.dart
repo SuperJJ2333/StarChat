@@ -7,6 +7,8 @@ import 'moment_reactions.dart';
 import 'dart:typed_data';
 
 import 'dart:async';
+import '../../ui/components/wechat_official_name.dart';
+import '../../ui/moments/moment_warning_banner.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -905,14 +907,9 @@ final class _MomentsPageState extends State<MomentsPage> {
                     if (_interactionError != null)
                       Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Text(
-                          _interactionError!,
-                          key: const Key('moment-interaction-error'),
-                          // 失败不覆盖（微信级加载模型 L4）：动态仍在屏幕上，这里只是
-                          // 「本次刷新/操作没成功」的内联提示，不再用系统红冒充错误条。
-                          style: TextStyle(
-                              color: WeChatColors.resolve(
-                                  context, WeChatColors.textSecondary)),
+                        child: MomentWarningBanner(
+                          message: _interactionError!,
+                          messageKey: const Key('moment-interaction-error'),
                         ),
                       ),
                     GestureDetector(
@@ -954,6 +951,7 @@ final class _MomentsPageState extends State<MomentsPage> {
                       }
                       final item = _itemOverrides[parsed.id] ?? parsed;
                       return WeChatMomentTile(
+                        supportIdentities: widget.api.supportIdentities,
                         key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
                         identityCache: _identityCache,
                         item: visibleMomentReactions(item, _identityCache),
@@ -1071,15 +1069,21 @@ final class _MomentsPageState extends State<MomentsPage> {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Text(
-            nickname,
-            key: const Key('moment-owner-nickname'),
-            style: const TextStyle(
-              color: CupertinoColors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          child: ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width - 120),
+              child: WeChatOfficialName(
+                name: nickname,
+                supportIdentities: widget.api.supportIdentities,
+                matrixUserId:
+                    _identityCache.accountKey?.replaceFirst('matrix:', ''),
+                key: const Key('moment-owner-nickname'),
+                nameStyle: const TextStyle(
+                  color: CupertinoColors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              )),
         ),
         const SizedBox(width: 12),
         Container(

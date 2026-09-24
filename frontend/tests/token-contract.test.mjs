@@ -21,6 +21,7 @@ test("light and dark themes expose the same semantic color keys", async () => {
 
   assert.deepEqual(dark, light);
   assert.deepEqual(light, [
+    "--color-announcement-surface",
     "--color-brand-pressed",
     "--color-brand-primary",
     "--color-bubble-incoming",

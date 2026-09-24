@@ -29,18 +29,30 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
   var _checking = false;
   var _started = false;
   String? _startFailure;
+  bool _firstFrameDeferred = false;
 
   @override
   void initState() {
     super.initState();
+    // Keep the platform launch surface until local startup is ready. This
+    // removes the intermediate checking page without bypassing reconciliation.
+    WidgetsBinding.instance.deferFirstFrame();
+    _firstFrameDeferred = true;
     WidgetsBinding.instance.addObserver(this);
     unawaited(_reconcileAndStart());
   }
 
   @override
   void dispose() {
+    _releaseFirstFrame();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _releaseFirstFrame() {
+    if (!_firstFrameDeferred) return;
+    _firstFrameDeferred = false;
+    WidgetsBinding.instance.allowFirstFrame();
   }
 
   @override
@@ -67,6 +79,7 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
     if (!mounted) return;
     if (outcome == InstallationResetOutcome.failed) {
       setState(() => _phase = _GatePhase.failed);
+      _releaseFirstFrame();
       return;
     }
 
@@ -79,6 +92,7 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
         _child = child;
         _phase = _GatePhase.ready;
       });
+      _releaseFirstFrame();
     } catch (error) {
       _started = false;
       if (!mounted) return;
@@ -86,14 +100,17 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
         _startFailure = sessionFailureMessage(error, stage: 'startup');
         _phase = _GatePhase.startFailed;
       });
+      _releaseFirstFrame();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_phase == _GatePhase.ready) return _child!;
+    if (_phase == _GatePhase.checking || _phase == _GatePhase.starting) {
+      return const SizedBox.shrink();
+    }
     final failed = _phase == _GatePhase.failed;
-    final startFailed = _phase == _GatePhase.startFailed;
     return CupertinoPageScaffold(
       navigationBar: const CupertinoNavigationBar(middle: Text('畅聊')),
       child: SafeArea(
@@ -103,32 +120,24 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  failed || startFailed
-                      ? CupertinoIcons.exclamationmark_circle
-                      : CupertinoIcons.shield,
-                  color: failed || startFailed
-                      ? WeChatColors.danger
-                      : WeChatColors.brandPrimary,
+                const Icon(
+                  CupertinoIcons.exclamationmark_circle,
+                  color: WeChatColors.danger,
                   size: WeChatDimensions.minimumTouchTarget,
                 ),
                 const SizedBox(height: WeChatSpacing.lg),
                 Text(
                   failed
                       ? '启动检查未完成，请重试'
-                      : startFailed
-                          ? (_startFailure ?? '本地聊天初始化失败，请解锁设备后重试')
-                          : '正在检查启动状态…',
+                      : (_startFailure ?? '本地聊天初始化失败，请解锁设备后重试'),
                   textAlign: TextAlign.center,
                 ),
-                if (failed || startFailed) ...[
-                  const SizedBox(height: WeChatSpacing.lg),
-                  CupertinoButton.filled(
-                    key: const Key('installation-startup-retry'),
-                    onPressed: _checking ? null : _reconcileAndStart,
-                    child: const Text('重试'),
-                  ),
-                ],
+                const SizedBox(height: WeChatSpacing.lg),
+                CupertinoButton.filled(
+                  key: const Key('installation-startup-retry'),
+                  onPressed: _checking ? null : _reconcileAndStart,
+                  child: const Text('重试'),
+                ),
               ],
             ),
           ),

@@ -1,6 +1,89 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-24-me-invitations-moments-interactions": {
+      "flutter": "apps/mobile_flutter/lib/features/profile/profile_page.dart",
+      "html": "frontend/src/screens/profile.js",
+      "demos": [
+        "profile-home-default",
+        "profile-details-edit",
+        "profile-details-nickname-limit",
+        "profile-details-signature-limit",
+        "profile-invitation-history",
+        "profile-invitation-empty",
+        "profile-invitation-more",
+        "moments-personal-default",
+        "moments-personal-empty",
+        "moments-interactions-default",
+        "moments-interactions-empty",
+        "moments-interactions-unavailable",
+        "moments-detail-notification-target"
+      ],
+      "additionalFlutter": [
+        "apps/mobile_flutter/lib/app_home.dart",
+        "apps/mobile_flutter/lib/session_gate.dart",
+        "apps/mobile_flutter/lib/features/moments/personal_moments_page.dart",
+        "apps/mobile_flutter/lib/features/moments/moment_detail_page.dart"
+      ],
+      "props": ["routeDepth", "nickname", "signature", "invitationHistory", "selfUserId", "interactionUnreadCount", "notificationId", "commentId"],
+      "states": ["tab-visible-only-on-primary", "grapheme-counting", "over-limit-dialog", "invitation-history-paged", "invitation-empty", "self-published-only", "interaction-unread", "interaction-paged", "interaction-unavailable"],
+      "tokens": ["WeChatColors.surface = --color-surface-primary", "WeChatColors.textSecondary = --color-text-secondary", "WeChatColors.brandPrimary = --color-brand-primary", "WeChatSpacing.md = --space-md"],
+      "behavior": "All Me secondary routes cover the primary Tab and return to it on pop; profile input counts Unicode graphemes and rejects overflow. Invitation history shows real paged registrations. Me opens only published own Moments with a separate interaction badge and inbox; a notification target is revalidated before detail, while inaccessible history remains generic."
+    },
+    "2026-09-24-group-moments-wallet-debug": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demos": [
+        "chat-announcement-notice",
+        "chat-announcement-dismissed",
+        "chat-announcement-new-notice",
+        "chat-announcement-editor",
+        "chat-announcement-album",
+        "chat-group-info-default",
+        "chat-group-management-owner",
+        "moments-composer-gif",
+        "moments-composer-video",
+        "moments-media-gif",
+        "moments-media-video",
+        "wallet-home-default"
+      ],
+      "additionalFlutter": [
+        "apps/mobile_flutter/lib/features/matrix/group_announcement_page.dart",
+        "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
+        "apps/mobile_flutter/lib/features/moments/moment_composer_page.dart",
+        "apps/mobile_flutter/lib/ui/moments/moment_media_cache.dart",
+        "apps/mobile_flutter/lib/features/wallet/manual_wallet_page.dart"
+      ],
+      "props": [
+        "announcementId",
+        "dismissedAnnouncementId",
+        "body",
+        "images",
+        "groupName",
+        "mediaType",
+        "error"
+      ],
+      "states": [
+        "announcement-visible",
+        "announcement-dismissed",
+        "new-announcement-visible",
+        "editor-multiline",
+        "still-image-album",
+        "owner-transfer",
+        "dissolve-confirmation",
+        "gif-selected",
+        "video-selected",
+        "video-playing",
+        "media-error"
+      ],
+      "tokens": [
+        "WeChatColors.announcementSurface = --color-announcement-surface",
+        "WeChatColors.dangerFill = --color-danger",
+        "WeChatColors.textSecondary = --color-text-secondary",
+        "WeChatSpacing.md = --space-md"
+      ],
+      "behavior": "The current group notice can be dismissed until its announcement ID changes; the editor is one multiline text field with a still-image-only album icon. Group name is one line and 12 characters maximum, owner transfer remains reachable, and dissolution has a filled danger action. Moments selects GIF and video, previews playback and errors with the recharge/withdraw warning treatment while Flutter reuses its account media cache. The wallet overview displays the exact TRON/CNY/zero-fee hint."
+    },
     "2026-09-23-announcement-decryption": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/group_announcement_page.dart",
       "html": "frontend/src/screens/messaging.js",
@@ -427,6 +510,7 @@
   },
   "tokenMappings": {
     "colors": [
+      "announcementSurface",
       "brandPrimary",
       "brandTint",
       "chatNavigationBackground",
@@ -1573,6 +1657,11 @@
   "tokenParity": [
     {
       "category": "colors",
+      "html": "--color-announcement-surface: #fff8e5",
+      "flutter": "static const announcementSurface = Color(0xFFFFF8E5);"
+    },
+    {
+      "category": "colors",
       "html": "--color-brand-primary: #07c160",
       "flutter": "static const brandPrimary = Color(0xFF07C160);"
     },
@@ -1902,7 +1991,7 @@
     }
   },
   "screens": {
-    "expectedCount": 403
+    "expectedCount": 429
   },
   "adminCompletion20260910": {
     "html": [

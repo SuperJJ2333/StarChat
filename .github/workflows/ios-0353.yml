@@ -2,7 +2,7 @@ name: iOS signed compatibility candidate
 on:
   workflow_dispatch:
   push:
-    branches: [main, codex/ios-0353-testflight, codex/mobile-parity-20260909]
+    branches: [main, codex/ios-0353-testflight, codex/mobile-parity-20260909, codex/online-room-refresh]
     paths:
       - apps/mobile_flutter/**
       - .github/workflows/ios-0353.yml

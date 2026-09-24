@@ -7,6 +7,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file/local.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../../features/matrix/media_cache.dart';
+import '../../features/matrix/media_index.dart';
+import '../../features/matrix/video_poster_pipeline.dart'
+    show videoPosterCacheRefId;
 import '../foundation/retained_image_cache_manager.dart';
 
 /// Shared by feed thumbnails and the full-screen viewer. Flutter retains decoded
@@ -26,6 +29,104 @@ class _MomentImageProvider extends CachedNetworkImageProvider {
 
 abstract final class MomentMediaCache {
   static final _videoLoads = <String, Future<io.File>>{};
+
+  static _MomentMediaSource _videoSource(String url,
+      {required String? cacheKey,
+      required String? accountKey,
+      required String? trustedOrigin}) {
+    final provider = imageProvider(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    final source = _sources[provider.cacheKey];
+    if (source == null) throw StateError('Untrusted Moments video reference');
+    source.ensureCurrent();
+    return source;
+  }
+
+  /// Posters are variants in the existing account object store, never a second
+  /// cache and never a reason to download a remote video.
+  static Future<void> storeVideoPoster(String url, Uint8List bytes,
+      {required String? cacheKey,
+      required String? accountKey,
+      required String? trustedOrigin,
+      required int expectedAccountGeneration}) async {
+    final source = _videoSource(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    if (source.generation != expectedAccountGeneration) {
+      throw StateError('Moments media account was cleared');
+    }
+    if (bytes.isEmpty) return;
+    await MediaCache.store(
+        'moments', videoPosterCacheRefId(source.cacheKey), bytes,
+        accountId: source.accountKey,
+        expectedAccountGeneration: expectedAccountGeneration,
+        variant: MediaVariantKind.poster,
+        familyId: source.cacheKey);
+    source.ensureCurrent();
+  }
+
+  static Future<Uint8List?> cachedVideoPoster(String url,
+      {required String? cacheKey,
+      required String? accountKey,
+      required String? trustedOrigin}) async {
+    final source = _videoSource(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    final file = await MediaCache.cached(
+        'moments', videoPosterCacheRefId(source.cacheKey),
+        accountId: source.accountKey);
+    source.ensureCurrent();
+    if (file == null) return null;
+    final bytes = await file.readAsBytes();
+    source.ensureCurrent();
+    return bytes;
+  }
+
+  static Future<void> removeVideoPoster(String url,
+      {required String? cacheKey,
+      required String? accountKey,
+      required String? trustedOrigin}) async {
+    final source = _videoSource(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    await MediaCache.removeReference(
+        'moments', videoPosterCacheRefId(source.cacheKey),
+        accountId: source.accountKey);
+  }
+
+  /// Reuse the validated upload bytes when a newly published video's
+  /// capability is renewed. Feed playback resolves the same account-scoped
+  /// reference as a later network download, so no second media store exists.
+  static Future<io.File> storeUploadedVideo(String url, Uint8List bytes,
+      {required String? cacheKey,
+      required String? accountKey,
+      required String? trustedOrigin,
+      required int expectedAccountGeneration,
+      required String mimeType}) async {
+    final source = _videoSource(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    if (source.generation != expectedAccountGeneration) {
+      throw StateError('Moments media account was cleared');
+    }
+    if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+      throw StateError('Moments video exceeds 20MB');
+    }
+    final file = await MediaCache.store('moments', source.cacheKey, bytes,
+        accountId: source.accountKey,
+        expectedAccountGeneration: expectedAccountGeneration,
+        variant: MediaVariantKind.video,
+        familyId: source.cacheKey,
+        mimeType: mimeType);
+    source.ensureCurrent();
+    return file;
+  }
 
   /// Uses the same verified, account-scoped object store as Moments images and
   /// chat. The response is bounded while streaming, before writing any object.

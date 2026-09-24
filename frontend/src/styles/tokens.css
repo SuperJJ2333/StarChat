@@ -159,6 +159,7 @@
   --color-on-accent: #ffffff;
   --color-danger: #fa5151;
   --color-warning: #fa9d3b;
+  --color-announcement-surface: #fff8e5;
   --color-support-identity: #f6c343;
   --color-red-packet-muted: #f2b7a8;
   --color-bubble-outgoing: #d7e7f0;
@@ -180,6 +181,7 @@
   --color-on-accent: #ffffff;
   --color-danger: #fa5151;
   --color-warning: #fa9d3b;
+  --color-announcement-surface: #fff8e5;
   --color-support-identity: #f6c343;
   --color-red-packet-muted: #f2b7a8;
   --color-bubble-outgoing: #2e4556;

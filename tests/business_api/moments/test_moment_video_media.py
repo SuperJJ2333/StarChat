@@ -30,13 +30,21 @@ async def test_video_upload_publish_projection_ownership_and_revocation(ctx, tmp
         assert (await c.put(upload['upload_url'], headers={**headers, 'Content-Type':'video/mp4'}, content=VIDEO)).status_code == 204
         complete = await c.post(f"/api/v1/moments/media/uploads/{upload['id']}/complete", headers=headers)
         assert complete.status_code == 200
+        assert len(complete.json()['media_cache_key']) == 64
         url = complete.json()['media_url']
         assert (await c.get(url)).content == VIDEO
         payload = {'visibility': 'FRIENDS', 'video_urls': [url]}
         assert (await c.put('/api/v1/moments/draft', headers=auth(settings,'u2'), json={'payload':payload})).status_code == 422
-        assert (await c.put('/api/v1/moments/draft', headers=headers, json={'payload':payload})).status_code == 200
+        saved_draft = await c.put('/api/v1/moments/draft', headers=headers,
+                                  json={'payload': {**payload, 'video_cache_keys': ['0' * 64]}})
+        assert saved_draft.status_code == 200
+        assert 'video_cache_keys' not in saved_draft.json()
         draft = (await c.get('/api/v1/moments/draft', headers=headers)).json()
+        assert draft['video_cache_keys'] == [complete.json()['media_cache_key']]
         assert (await c.get(draft['video_urls'][0])).content == VIDEO
+        renewed_draft = (await c.get('/api/v1/moments/draft', headers=headers)).json()
+        assert renewed_draft['video_cache_keys'] == draft['video_cache_keys']
+        assert (await c.get(renewed_draft['video_urls'][0])).content == VIDEO
         assert (await c.post('/api/v1/moments', headers={**auth(settings,'u2'), 'Idempotency-Key':'foreign'}, json=payload)).status_code == 422
         assert (await c.post('/api/v1/moments', headers={**headers, 'Idempotency-Key':'disguise'}, json={'visibility':'PUBLIC','image_urls':[url]})).status_code == 422
         posted = await c.post('/api/v1/moments', headers={**headers, 'Idempotency-Key':'post'}, json=payload)
@@ -45,6 +53,7 @@ async def test_video_upload_publish_projection_ownership_and_revocation(ctx, tmp
         assert post['image_urls'] == []
         assert post['image_cache_keys'] == []
         assert len(post['video_urls']) == len(post['video_cache_keys']) == 1
+        assert post['video_cache_keys'][0] == complete.json()['media_cache_key']
         viewer = (await c.get('/api/v1/moments/' + post['id'], headers=auth(settings,'u2'))).json()
         media = await c.get(viewer['video_urls'][0])
         assert media.content == VIDEO

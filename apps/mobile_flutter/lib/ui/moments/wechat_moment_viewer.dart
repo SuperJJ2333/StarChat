@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../components/wechat_scaffold.dart';
 import 'moment_media_cache.dart';
+import 'moment_warning_banner.dart';
 import 'moment_image_prefetcher.dart';
 import 'moment_viewer_source.dart';
 
@@ -281,12 +282,9 @@ final class _WeChatMomentCoverViewerState
                   left: 16,
                   right: 16,
                   bottom: 80,
-                  child: Text(
-                    _error!,
-                    key: const Key('moment-cover-error'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: CupertinoColors.systemRed),
-                  ),
+                  child: MomentWarningBanner(
+                      message: _error!,
+                      messageKey: const Key('moment-cover-error')),
                 ),
             ],
           ),

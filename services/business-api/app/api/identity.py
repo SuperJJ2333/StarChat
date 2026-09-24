@@ -24,6 +24,7 @@ from app.modules.identity.matrix_login import MatrixLoginTokenService
 from app.modules.identity.matrix_sessions import MatrixSessionService
 from app.modules.identity.models import User, Device
 from app.modules.identity.passwords import PasswordHasher
+from app.modules.identity.profile_text import MAX_PROFILE_RAW_CODEPOINTS
 from app.modules.identity.recovery import PasswordRecoveryService, PasswordResetTokenCodec
 from app.modules.identity.referral import ReferralCodec, ReferralService
 from app.modules.identity.registration import (
@@ -51,7 +52,12 @@ class InvitationRequest(StrictModel):
 
 class RegisterRequest(StrictModel):
     username: str = Field(min_length=3, max_length=64)
-    nickname: str | None = Field(default=None, max_length=64)
+    nickname: str | None = Field(
+        default=None,
+        max_length=MAX_PROFILE_RAW_CODEPOINTS,
+        description="显式昵称最多 12 个 Unicode 扩展字素簇；maxLength 为原始码点资源上限。",
+        json_schema_extra={"x-graphemeMaxLength": 12},
+    )
     # ADR-0075：邮箱或中国大陆手机号二选一注册。
     email: str | None = Field(default=None, min_length=3, max_length=320)
     phone: str | None = Field(default=None, min_length=5, max_length=20)
@@ -456,14 +462,15 @@ def create_identity_router(
             **body.model_dump(),
             idempotency_key=idempotency_key,
         )
-        record_audit(
-            request,
-            actor_id=result.user_id,
-            subject_id=result.user_id,
-            action="identity.registration.created",
-            reason_code="SELF_REGISTRATION",
-        )
-        if result.referral_bound:
+        if not result.replayed:
+            record_audit(
+                request,
+                actor_id=result.user_id,
+                subject_id=result.user_id,
+                action="identity.registration.created",
+                reason_code="SELF_REGISTRATION",
+            )
+        if result.referral_bound and not result.replayed:
             record_audit(
                 request,
                 actor_id=result.user_id,

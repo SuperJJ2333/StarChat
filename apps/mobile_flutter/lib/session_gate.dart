@@ -25,9 +25,20 @@ final class SessionGate extends StatefulWidget {
 final class _SessionGateState extends State<SessionGate>
     with WidgetsBindingObserver {
   String? _shownSessionMessage;
+  late bool _wasAuthenticated;
+  bool _rootResetPending = false;
+
+  bool get _isAuthenticated => switch (widget.controller.state.status) {
+        SessionBootstrapStatus.authenticated ||
+        SessionBootstrapStatus.offlineAuthenticated =>
+          true,
+        _ => false,
+      };
+
   @override
   void initState() {
     super.initState();
+    _wasAuthenticated = _isAuthenticated;
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_changed);
     _showSessionMessage();
@@ -39,6 +50,8 @@ final class _SessionGateState extends State<SessionGate>
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_changed);
       widget.controller.addListener(_changed);
+      if (_wasAuthenticated && !_isAuthenticated) _clearOldAccountRoutes();
+      _wasAuthenticated = _isAuthenticated;
     }
   }
 
@@ -58,8 +71,22 @@ final class _SessionGateState extends State<SessionGate>
   }
 
   void _changed() {
+    final authenticated = _isAuthenticated;
+    if (_wasAuthenticated && !authenticated) _clearOldAccountRoutes();
+    _wasAuthenticated = authenticated;
     setState(() {});
     _showSessionMessage();
+  }
+
+  void _clearOldAccountRoutes() {
+    if (_rootResetPending) return;
+    _rootResetPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _rootResetPending = false;
+      if (!mounted) return;
+      Navigator.maybeOf(context, rootNavigator: true)
+          ?.popUntil((route) => route.isFirst);
+    });
   }
 
   void _showSessionMessage() {

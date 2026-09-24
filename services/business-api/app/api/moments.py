@@ -73,6 +73,33 @@ class MomentsProfilePreview(Strict):
     items: list[dict] = Field(max_length=4, description="Up to four authorized published Moment DTOs, newest first. Hidden entries never include content.")
 
 
+class MomentNotificationActor(Strict):
+    user_id: str = Field(description="Visible actor's opaque business user ID.")
+    username: str = Field(description="Visible actor's account name.")
+    nickname: str = Field(description="Visible actor's public nickname, never a contact remark.")
+    display_name: str = Field(description="Visible actor's public display name.")
+    avatar_url: str | None = Field(description="Short-lived avatar URL when currently authorized.")
+
+
+class MomentNotificationRow(Strict):
+    id: str = Field(description="Opaque interaction notification ID.")
+    moment_id: str = Field(description="Opaque target Moment ID; does not grant detail access.")
+    comment_id: str | None = Field(description="Opaque triggering comment/reply ID when present.")
+    kind: Literal['LIKE', 'COMMENT', 'REPLY'] = Field(description="Interaction type.")
+    actor: MomentNotificationActor | None = Field(description="Current visible actor, or null after access is lost.")
+    content_excerpt: str | None = Field(description="Current authorized triggering comment/reply excerpt, at most 80 characters; null when unavailable.")
+    source_excerpt: str | None = Field(description="Current authorized source Moment excerpt, at most 80 characters; null when unavailable.")
+    target_available: bool = Field(description="Current authorization hint; clients must still GET detail before opening.")
+    created_at: datetime = Field(description="Interaction time.")
+    read_at: datetime | None = Field(description="Read time, or null while unread.")
+    unread: bool = Field(description="Whether this notification is currently unread.")
+
+
+class MomentNotificationsPage(Strict):
+    items: list[MomentNotificationRow] = Field(description="Recipient-only historical interactions, newest first.")
+    next_cursor: str | None = Field(description="Opaque (created_at, id) keyset cursor for the next page.")
+
+
 class Report(Strict):
     reason_code: str = Field(min_length=1, max_length=100)
 
@@ -80,6 +107,13 @@ class BeginUpload(Strict):
     file_name: str = Field(min_length=1, max_length=255)
     mime_type: str = Field(min_length=1, max_length=100)
     byte_size: int = Field(gt=0)
+
+
+class CompletedMomentMediaUpload(Strict):
+    id: str
+    status: str
+    media_url: str | None
+    media_cache_key: str | None = Field(description="Stable cache identity for this completed media reference; clients namespace it by account.")
 
 
 class SetCover(Strict):
@@ -142,9 +176,9 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     def ads(user=Depends(actor)):
         return {'items': service.native_ads()}
 
-    @router.get('/notifications')
-    def notifications(user=Depends(actor)):
-        return {'items': service.notifications(user)}
+    @router.get('/notifications', response_model=MomentNotificationsPage)
+    def notifications(cursor: str | None = None, limit: int = Query(default=30, ge=1, le=100), user=Depends(actor)):
+        return service.notifications(user, cursor=cursor, limit=limit)
 
     @router.get('/notifications/unread-count')
     def notification_unread_count(user=Depends(actor)):
@@ -186,12 +220,13 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
         row = media.begin(user, body.file_name, body.mime_type, body.byte_size, idempotency_key)
         return {"id": row.id, "upload_url": f"/api/v1/moments/media/uploads/{row.id}/content", "expires_at": row.expires_at}
 
-    @router.post("/media/uploads/{upload_id}/complete")
+    @router.post("/media/uploads/{upload_id}/complete", response_model=CompletedMomentMediaUpload)
     def complete_upload(upload_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
         row = media.complete(user, upload_id)
         from app.modules.moments.media_access import upload_url
         media_url = upload_url(avatar_storage, row) if row.status == "COMPLETED" else f"media://{row.object_key}"
-        return {"id": row.id, "status": row.status, "media_url": media_url}
+        return {"id": row.id, "status": row.status, "media_url": media_url,
+                "media_cache_key": service._media_cache_key(f"media://{row.object_key}") if row.status == "COMPLETED" else None}
 
     @router.put("/media/uploads/{upload_id}/content", status_code=204)
     async def put_upload_content(upload_id: str, request: Request, content_type: Annotated[str | None, Header(alias="Content-Type")] = None, user=Depends(actor)):

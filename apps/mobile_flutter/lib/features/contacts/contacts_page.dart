@@ -117,7 +117,6 @@ final class _ContactsPageState extends State<ContactsPage> {
   final scrollController = ScrollController();
   final sectionOffsets = <String, double>{};
   SupportIdentityRepository? _support;
-  Timer? _supportTimer;
   bool _ownsSupport = false;
   List<ContactSummary> _supportContacts = const [];
   int _contactsLoadGeneration = 0;
@@ -160,19 +159,12 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   void _configureSupport() {
     _support = widget.supportIdentities ??
-        (widget.api is SupportIdentityGateway
-            ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
-            : null);
-    _ownsSupport = widget.supportIdentities == null && _support != null;
-    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_support?.warm([
-            for (final contact in _supportContacts) ...[
-              contact.userId,
-              contact.matrixUserId,
-            ],
-          ], force: true) ??
-          Future<void>.value());
-    });
+        (widget.api is BusinessApiClient
+            ? (widget.api as BusinessApiClient).supportIdentities
+            : widget.api is SupportIdentityGateway
+                ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+                : null);
+    _ownsSupport = widget.supportIdentities == null && widget.api is! BusinessApiClient && _support != null;
   }
 
   @override
@@ -180,7 +172,6 @@ final class _ContactsPageState extends State<ContactsPage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.api, widget.api) ||
         oldWidget.supportIdentities != widget.supportIdentities) {
-      _supportTimer?.cancel();
       if (_ownsSupport) _support?.dispose();
       _configureSupport();
       _contactsLoadGeneration++;
@@ -208,7 +199,6 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   @override
   void dispose() {
-    _supportTimer?.cancel();
     if (_ownsSupport) _support?.dispose();
     widget.identityCache?.removeListener(_identityChanged);
     scrollController.dispose();
@@ -614,7 +604,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   ContactSelection? _contactSelection;
   var _presenceRequestGeneration = 0;
   SupportIdentityRepository? _support;
-  Timer? _supportTimer;
   bool _ownsSupport = false;
 
   @override
@@ -628,16 +617,14 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
 
   void _configureSupport() {
     _support = widget.supportIdentities ??
-        (widget.api is SupportIdentityGateway
-            ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
-            : null);
-    _ownsSupport = widget.supportIdentities == null && _support != null;
+        (widget.api is BusinessApiClient
+            ? (widget.api as BusinessApiClient).supportIdentities
+            : widget.api is SupportIdentityGateway
+                ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+                : null);
+    _ownsSupport = widget.supportIdentities == null && widget.api is! BusinessApiClient && _support != null;
     unawaited(_support?.warm([contact.userId, contact.matrixUserId]) ??
         Future<void>.value());
-    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_support?.warm([contact.userId, contact.matrixUserId], force: true) ??
-          Future<void>.value());
-    });
   }
 
   /// 任意入口（会话/朋友圈/搜索/通讯录）打开资料页即向服务端自取
@@ -799,7 +786,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     }
     if (!identical(oldWidget.api, widget.api) ||
         oldWidget.supportIdentities != widget.supportIdentities) {
-      _supportTimer?.cancel();
       if (_ownsSupport) _support?.dispose();
       _configureSupport();
     }
@@ -808,7 +794,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   void dispose() {
     _presenceRequestGeneration++;
-    _supportTimer?.cancel();
     if (_ownsSupport) _support?.dispose();
     _contactSelection?.removeListener(_identityChanged);
     _contactSelection?.dispose();

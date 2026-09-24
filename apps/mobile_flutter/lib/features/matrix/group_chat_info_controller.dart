@@ -196,6 +196,13 @@ abstract interface class GroupChatInfoGateway {
   Future<void> removeMembers(List<String> matrixUserIds);
 }
 
+/// A projection of the active room's SDK state, with no network or global cache.
+abstract interface class GroupChatInfoLocalGateway {
+  GroupChatInfoSnapshot readLocalSnapshot();
+  Stream<void> get announcementChanges;
+  Future<GroupChatInfoSnapshot> refreshAnnouncement();
+}
+
 abstract interface class GroupChatInfoReloadGateway {
   Future<GroupChatInfoSnapshot> load();
 }
@@ -339,13 +346,50 @@ final class GroupChatInfoController extends ChangeNotifier {
       String roomId, List<String> inviteeUserIds)? serverAutoJoin;
   GroupChatInfoState state = const GroupChatInfoState();
   StreamSubscription<void>? _membershipSubscription;
+  StreamSubscription<GroupChatInfoSnapshot>? _announcementSubscription;
+  bool _disposed = false;
+  Future<void>? _loading;
+
+  GroupChatInfoSnapshot _withTransferOwner(GroupChatInfoSnapshot snapshot) =>
+      ownershipTransferPending
+          ? snapshot.copyWith(
+              ownerId: ownershipTransfer?['expected_old_owner_matrix_id']
+                      as String? ??
+                  state.snapshot?.ownerId ??
+                  '')
+          : snapshot;
+
+  void _publishLocal() {
+    final local = gateway;
+    if (local is! GroupChatInfoLocalGateway || _disposed) return;
+    try {
+      _set(GroupChatInfoState(
+        status: state.status,
+        snapshot: _withTransferOwner(
+            (local as GroupChatInfoLocalGateway).readLocalSnapshot()),
+        message: state.message,
+      ));
+    } catch (_) {/* A revoked room lease must not expose a cached snapshot. */}
+  }
 
   /// Binds Matrix room updates so membership changes refresh this controller
   /// while the chat-info route stays open.
   void bindMembershipChanges(Stream<void> updates, {required String roomId}) {
     _membershipSubscription?.cancel();
+    _announcementSubscription?.cancel();
+    final local = gateway;
+    if (local is GroupChatInfoLocalGateway) {
+      final projection = local as GroupChatInfoLocalGateway;
+      _announcementSubscription = projection.announcementChanges
+          .asyncMap((_) => projection.refreshAnnouncement())
+          .listen((_) => _publishLocal(), onError: (Object _) {});
+    }
     _membershipSubscription = updates.listen((_) {
-      if (state.status != GroupChatInfoStatus.loading &&
+      // This stream includes ordinary syncs, not only membership changes.
+      // SDK sync already applied member/power/account-data changes locally.
+      if (gateway is GroupChatInfoLocalGateway) {
+        _publishLocal();
+      } else if (state.status != GroupChatInfoStatus.loading &&
           state.status != GroupChatInfoStatus.saving) {
         unawaited(load());
       }
@@ -354,11 +398,19 @@ final class GroupChatInfoController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _membershipSubscription?.cancel();
+    _announcementSubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> load() async {
+  Future<void> load() {
+    if (_disposed) return Future.value();
+    return _loading ??= _load().whenComplete(() => _loading = null);
+  }
+
+  Future<void> _load() async {
+    _publishLocal();
     _set(GroupChatInfoState(
       status: GroupChatInfoStatus.loading,
       snapshot: state.snapshot,
@@ -366,6 +418,7 @@ final class GroupChatInfoController extends ChangeNotifier {
     try {
       final previousOwner = state.snapshot?.ownerId;
       var snapshot = await gateway.load();
+      if (_disposed) return;
       if (ownershipTransfer == null && loadOwnershipTransfers != null) {
         try {
           final intents = await loadOwnershipTransfers!();
@@ -375,6 +428,11 @@ final class GroupChatInfoController extends ChangeNotifier {
           ownershipTransferReadUnsupported = _isUnsupportedTransferRead(error);
           /* Group metadata remains available when status cannot load. */
         }
+      }
+      // Sync can change members and powers while business status is in flight.
+      // Never republish the earlier projection over those newer room events.
+      if (gateway is GroupChatInfoLocalGateway) {
+        snapshot = (gateway as GroupChatInfoLocalGateway).readLocalSnapshot();
       }
       if (ownershipTransferPending) {
         snapshot = snapshot.copyWith(
@@ -724,6 +782,7 @@ final class GroupChatInfoController extends ChangeNotifier {
   }
 
   void _set(GroupChatInfoState next) {
+    if (_disposed) return;
     state = next;
     notifyListeners();
   }

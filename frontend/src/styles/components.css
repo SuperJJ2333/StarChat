@@ -61,6 +61,12 @@
   background: transparent;
 }
 
+.c-navigation-bar__button--text {
+  color: var(--color-brand-primary);
+  font-size: var(--type-body-size);
+  white-space: nowrap;
+}
+
 .c-navigation-bar__icon {
   width: var(--size-icon-lg);
   height: var(--size-icon-lg);

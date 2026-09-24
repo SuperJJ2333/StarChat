@@ -180,7 +180,7 @@ void main() {
         reason: '预选必须与通讯录求交，避免选中不可建聊的账号');
   });
 
-  test('group name is limited to twenty unicode characters', () async {
+  test('group name is limited to twelve visible characters', () async {
     final groups = FakeGroupChatGateway();
     final controller = GroupChatController(
       contacts: FakeContactsGateway(),
@@ -191,9 +191,28 @@ void main() {
     controller.toggle('@bob:example.test');
     controller.toggle('@carol:example.test');
 
-    await controller.create('一二三四五六七八九十一二三四五六七八九十超出');
+    await controller.create('👨‍👩‍👧‍👦一二三四五六七八九十一二超出');
 
-    expect(groups.name, '一二三四五六七八九十一二三四五六七八九十');
+    expect(groups.name, '👨‍👩‍👧‍👦一二三四五六七八九十一');
+  });
+
+  testWidgets('group creation name is a single line limited to twelve',
+      (tester) async {
+    final controller = GroupChatController(
+      contacts: FakeContactsGateway(),
+      groups: FakeGroupChatGateway(),
+      currentUserDisplayName: 'Alice',
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatPage(controller: controller, onCreated: (_) {}),
+    ));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<CupertinoTextField>(
+      find.byKey(const Key('group-chat-name')),
+    );
+    expect(field.maxLines, 1);
+    expect(field.maxLength, 12);
   });
 
   testWidgets('group creation page selects contacts and returns the room id',
