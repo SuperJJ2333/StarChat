@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-26 分支集成已推送 GitHub main
+
+已在独立干净工作树合入 `codex/auth-login-2178`（含性能诊断及 2179）和 `codex/online-room-refresh`（含 iOS 2173 源码）；`c2fe9f05` 首次推送与远端回读通过。两个旧功能分支已有等效整合，根 `main` 工作树的既有未提交内容保持原样。Flutter 全量 4443/9 跳过、analyze、前端及相关 Python 门禁通过；总 `verify.ps1` 因独立工作树无 `.env` 停在配置渲染，Business API/Worker 全量复用同输入的前轮通过证据。iOS 真机保留数据验收与 2179 实际视频发送仍按各自任务记录推进。见[集成任务](tasks/2026-09-26-branch-integration-main.md)。
+
 ## 2026-09-26 视频转码诊断与四位 Build：雷电 Debug2179 已安装
 
 MI 6 的 2178 实测视频在本地转码阶段约 23.9 秒后失败，未开始上传；2179 保持两档压缩、20 MiB 和原片保护策略，新增 Android 固定失败/取消代码、每档本地有界耗时/结果及失败阶段真实分类，修复非有限时长可能误报成功并遗留临时文件。Android 仅对匹配当前编译构建号的 ABI 偏移归一化，雷电 Debug VM 实读 build 2179。`codex/auth-login-2178` 提交 `d7d09ffb` 的 Flutter analyze、Matrix 2115/9 跳过、Flutter 4333/9 跳过、Kotlin 编译与 `verify.ps1`（Business API/Worker 2905/75 跳过）均 exit 0；固定身份 ARM64 Debug APK 常规重建 18/18 门禁通过，SHA `0dd6ba52…`，仅装机 `emulator-5556` 并启动。模拟器基础 Business/Matrix HTTPS 均 200，本地性能扩展启用；新并行包无登录态，真实视频发送/MI 6 编码器原因尚未复现。生产、iOS 与 MI 6 未改；雷电此实例装机前未列出旧主包，本次无卸载。见[任务](tasks/2026-09-26-video-transcode-build-ld.md)、[验证](../verification/2026-09-26-video-build-ld.md)和[诊断手册](../performance/chatflow-performance-diagnostics.md)。
