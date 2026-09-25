@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-25 MI 6 Debug2174 登录与短信故障调查
+
+用户报告密码/手机号登录均转圈超过两分钟后提示“网络连接中断”，短信提示暂不可用。只读生产检查证实 09-24 wallet-360 API/worker Compose 替换漏掉 09-23 已核准的 16 项配置；手机号认证回落关闭，短信 OTP 请求 503 `PHONE_AUTH_DISABLED`，未进入阿里云。同一遗漏使原关闭的红包群主抽成开关落到默认开启；截至 08:40 HKT 漂移后新红包/抽成账本均 0。密码接口和部分 Matrix 登录/同步请求均 200，MI 6 有一条 auth POST 31 秒 socket timeout；完整登录链缺总预算，最后卡点尚未定位。生产 DB 为 0088，但当前 API 镜像缺其迁移脚本，禁止整体旧镜像回退。本次未改生产或重装设备，ADB 当前 offline；见[任务](tasks/2026-09-25-mi6-login-sms-regression.md)与[事故报告](../verification/2026-09-25-mi6-login-sms-incident.md)。
+
 ## 2026-09-25 MI 6 性能诊断 Debug2174 已安装，账号内实测待继续
 
 用户要求向 MI 6 保留数据安装诊断 Debug 包并实测性能与网络。隔离分支 `codex/performance-debug-mi6` 从已发布 Android 源 `e7ba46a4`（2172）整合诊断 `8d044655`，0.4.11/2174 ARM64 Debug 经源码构建、常规 DEX/资源/Manifest 重建和固定测试身份签名，`adb install -r` 已成功。设备 APK SHA `3317ba91…` 与本地一致，原首次安装时间保留，启动和零崩溃通过。Flutter analyze 零问题、Flutter 4277/9 跳过、Matrix 2108/9 跳过、移动边界 108/1 跳过及后端诊断聚焦 166/1 跳过均退出 0。真机 VM 快照测到首次冷启动 1367 ms、6 帧中 4 慢帧；公开 Business/Matrix HTTPS 路径均 200，但短样本存在连接/TLS/首字节长尾。当前设备在登录页，账号内会话、媒体、Matrix `/sync` 待用户自行登录后测量。见[独立任务记录](tasks/2026-09-25-performance-debug-mi6.md)与[真机报告](../verification/2026-09-25-performance-debug-mi6.md)。
