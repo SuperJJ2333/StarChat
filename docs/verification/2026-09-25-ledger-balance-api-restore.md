@@ -33,4 +33,4 @@
 
 发布后 `postdeploy_check.py` 退出 0：API healthy、restart0、两份源码 SHA 匹配、运行时 OpenAPI 包含 `balance_after`、HTTPS ready JSON `database=ready`、未授权账单 401、数据库仍为 0088、其余 27 个运行容器身份未变。工作站使用既有跳板临时 SOCKS 并保持 TLS 验证，HTTPS ready 200/匿名账单 401，隧道已关闭。新 API 日志 290 行中 ERROR/CRITICAL=0、Traceback=0。隔离 PostgreSQL 测试容器已按准确容器 ID 与 `NetworkMode=none` 验证后清理，生产备份及回退配置留在服务器 0700 目录。
 
-没有生产登录态，也未读取真实用户账单响应。仍需用户在 Android/iOS 成功刷新“全部账单”并确认逐笔余额；本地旧快照首帧可能短暂显示“—”。若需要回退，先确认运行镜像仍是本次候选、无后续第三次发布，再使用 `business_release_guard.py rollback --compose /opt/starchat/releases/bill-balance-20260925-01/rollback-api.json --service business-api` 回到切换前 `25954c6a…`，复核健康及续期协议。
+没有收集生产登录态或真实用户账单明细。用户于 2026-09-25 确认 Android 与 iOS 的 V0.4.7 在重新打开“全部账单”并下拉刷新后均显示点钻余额数字；这完成了两端页面验收。旧本地快照在刷新前仍可能短暂显示“—”。若需要回退，先确认运行镜像仍是本次候选、无后续第三次发布，再使用 `business_release_guard.py rollback --compose /opt/starchat/releases/bill-balance-20260925-01/rollback-api.json --service business-api` 回到切换前 `25954c6a…`，复核健康及续期协议。
