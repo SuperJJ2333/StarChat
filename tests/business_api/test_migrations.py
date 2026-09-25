@@ -4,6 +4,9 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import importlib.util
+
+import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +41,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
     # 2026-09-21：迁移链扩至 0080（ADR-0075..0079 及实施补充），仍单头。
-    assert _alembic("heads").strip() == "0087_support_payout_workflow (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0088_profile_grapheme_limits (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history
@@ -50,6 +53,44 @@ def test_wallet_and_moments_merge_is_the_only_head() -> None:
     assert "0067_wallet_owner_transfers -> 0068_red_packet_fee" in history
     # Media Engine Phase 4 rides on the wallet head and only adds new tables.
     assert "0068_red_packet_fee -> 0069_media_platform" in history
+
+
+def test_profile_grapheme_migration_only_widens_existing_columns() -> None:
+    sql = _normalized_sql(
+        _alembic("upgrade", "0087_support_payout_workflow:0088_profile_grapheme_limits", "--sql")
+    )
+    assert "alter table users alter column nickname type text" in sql
+    assert "alter table users alter column signature type text" in sql
+    assert "drop column" not in sql
+    assert "update users" not in sql
+
+
+def test_profile_grapheme_downgrade_checks_saved_values_before_narrowing(monkeypatch) -> None:
+    path = BUSINESS_API_ROOT / "migrations" / "versions" / "0088_profile_grapheme_limits.py"
+    spec = importlib.util.spec_from_file_location("profile_grapheme_migration", path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    class Connection:
+        def __init__(self, has_overlong: bool) -> None:
+            self.has_overlong = has_overlong
+
+        def scalar(self, statement):
+            assert "char_length(nickname) > 64" in str(statement)
+            assert "char_length(signature) > 140" in str(statement)
+            return self.has_overlong
+
+    changed = []
+    monkeypatch.setattr(migration.op, "get_bind", lambda: Connection(True))
+    monkeypatch.setattr(migration.op, "alter_column", lambda *args, **kwargs: changed.append((args, kwargs)))
+    with pytest.raises(RuntimeError, match="without truncating"):
+        migration.downgrade()
+    assert changed == []
+
+    monkeypatch.setattr(migration.op, "get_bind", lambda: Connection(False))
+    migration.downgrade()
+    assert [args[1] for args, _ in changed] == ["signature", "nickname"]
 
 
 def test_direct_room_history_is_expand_only():

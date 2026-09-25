@@ -21,16 +21,20 @@ abstract final class WeChatColors {
   static const divider = Color(0xFFD9D9D9);
   static const darkDivider = Color(0xFF2C2C2C);
   static const controlBorder = divider;
+
   /// 品牌色淡底（约 12% alpha）：已完成/已添加等状态徽标的填充。
   /// 半透明品牌色在浅色与深色底上都能保持正文对比度，因此不随主题改成实色。
   static const brandTint = Color(0x1F07C160);
   static const danger = CupertinoColors.systemRed;
+
   /// 设计规范 `--color-danger`（#fa5151）：危险动作的**填充**背景色。
   /// 与用于文字/图标的 [danger]（Cupertino systemRed）区分。
   static const dangerFill = Color(0xFFFA5151);
   static const errorSurface = Color(0xFFFFF1F0);
   static const errorBorder = Color(0xFFFFCCC7);
   static const warning = Color(0xFFFA9D3B);
+  static const announcementSurface = Color(0xFFFFF8E5);
+
   /// Authoritative business-support identity only; never derived from Matrix.
   static const supportIdentityYellow = Color(0xFFF6C343);
   static const redPacketPrimary = Color(0xFFE95C3A);
@@ -75,6 +79,7 @@ abstract final class WeChatColors {
       0xFF576B95 => const Color(0xFF9AAECE),
       0xFFFFF1F0 => const Color(0xFF331D1D),
       0xFFFFCCC7 => const Color(0xFF613434),
+      0xFFFFF8E5 => const Color(0xFF332B16),
       0xD9FFFFFF => const Color(0xD9232323),
       0x22000000 => const Color(0x33FFFFFF),
       0xFFE7F5EA => const Color(0xFF17251B),

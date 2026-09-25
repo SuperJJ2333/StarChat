@@ -87,21 +87,25 @@ async def test_five_accounts_all_read_paths_pagination_and_reply_mutation(ctx):
 
 
 @pytest.mark.asyncio
-async def test_hidden_notification_actor_and_unread_count_use_reaction_policy(ctx):
+async def test_legacy_notification_rows_remain_but_cannot_disclose_foreign_content(ctx):
     app, settings = ctx
     seed_audience(app.state.session_factory)
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
         headers = auth(settings, 'u2')
         response = await client.get('/api/v1/moments/notifications', headers=headers)
-        assert {row['actor']['user_id'] for row in response.json()['items']} == {'u1', 'u2', 'u4'}
+        assert len(response.json()['items']) == 10
+        assert all(row['actor'] is None and row['content_excerpt'] is None
+                   and row['source_excerpt'] is None and not row['target_available']
+                   for row in response.json()['items'])
         count = await client.get('/api/v1/moments/notifications/unread-count', headers=headers)
-        assert count.json()['count'] == 6
+        assert count.json()['count'] == 10
         with app.state.session_factory.begin() as session:
             session.execute(delete(Friendship).where(Friendship.id == 'u2u4'))
         response = await client.get('/api/v1/moments/notifications', headers=headers)
-        assert {row['actor']['user_id'] for row in response.json()['items']} == {'u1', 'u2'}
+        assert len(response.json()['items']) == 10
+        assert all(row['actor'] is None for row in response.json()['items'])
         count = await client.get('/api/v1/moments/notifications/unread-count', headers=headers)
-        assert count.json()['count'] == 4
+        assert count.json()['count'] == 10
         detail = (await client.get('/api/v1/moments/post-0', headers=headers)).json()
         assert_filtered(detail, {'u1', 'u2'})
 
@@ -134,7 +138,7 @@ async def test_former_author_friend_hidden_in_reads_and_replayed_reply(ctx):
 
 
 @pytest.mark.asyncio
-async def test_like_notifications_preserve_original_post_visibility_policy(ctx):
+async def test_legacy_like_notification_is_retained_without_foreign_actor_leak(ctx):
     app, settings = ctx
     seed_audience(app.state.session_factory)
     with app.state.session_factory.begin() as session:
@@ -144,4 +148,6 @@ async def test_like_notifications_preserve_original_post_visibility_policy(ctx):
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
         response = await client.get('/api/v1/moments/notifications', headers=auth(settings, 'u2'))
         likes = [row for row in response.json()['items'] if row['kind'] == 'LIKE']
-        assert [row['actor']['user_id'] for row in likes] == ['u5']
+        assert [row['id'] for row in likes] == ['legacy-like']
+        assert likes[0]['actor'] is None
+        assert likes[0]['source_excerpt'] is None

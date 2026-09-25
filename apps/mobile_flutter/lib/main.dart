@@ -11,6 +11,7 @@ import 'core/chat_diagnostics.dart';
 import 'core/chat_diagnostics_scope.dart';
 import 'core/business_api_client.dart';
 import 'core/performance_metrics.dart';
+import 'core/performance_trace.dart';
 import 'core/media_resource_policy.dart';
 import 'features/matrix/media_cache.dart';
 import 'core/installation_container_probe.dart';
@@ -20,6 +21,7 @@ import 'core/installation_startup_gate.dart';
 import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
 import 'features/auth/login_controller.dart';
+import 'features/auth/login_stage_diagnostics.dart';
 import 'features/auth/authentication_flow.dart';
 import 'features/matrix/call_ui_manager.dart' show callNavigatorKey;
 import 'features/matrix/duplicate_room_registry.dart';
@@ -37,6 +39,7 @@ import 'ui/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  scheduleAppStartupFirstFrame();
   installChatErrorReporter();
   MediaResourcePolicy(clearEncoded: clearMediaMemoryCaches).install();
   PerformanceMetrics.instance.startFrameObservation();
@@ -116,10 +119,37 @@ Future<void> main() async {
       deviceKey: () => installationDeviceKey,
       retainedHomeserver: Uri.parse(AppConfig.matrixHomeserver),
       completeMatrixSession: () async {
-        final credentials = await matrix.currentSessionCredentials();
-        await api.completeMatrixSession(
-            matrixAccessToken: credentials.token,
-            matrixDeviceId: credentials.deviceId);
+        final credentialsWatch = kDebugMode ? (Stopwatch()..start()) : null;
+        late final ({String token, String deviceId}) credentials;
+        try {
+          credentials = await matrix.currentSessionCredentials();
+        } catch (error) {
+          recordMatrixSessionFailure(
+              MatrixSessionFailureBoundary.credentialsRead, error,
+              durationMs: credentialsWatch?.elapsedMilliseconds);
+          rethrow;
+        }
+        if (credentialsWatch != null) {
+          recordMatrixSessionSuccess(
+              MatrixSessionFailureBoundary.credentialsRead,
+              durationMs: credentialsWatch.elapsedMilliseconds);
+        }
+        final requestWatch = kDebugMode ? (Stopwatch()..start()) : null;
+        try {
+          await api.completeMatrixSession(
+              matrixAccessToken: credentials.token,
+              matrixDeviceId: credentials.deviceId);
+        } catch (error) {
+          recordMatrixSessionFailure(
+              MatrixSessionFailureBoundary.confirmationRequest, error,
+              durationMs: requestWatch?.elapsedMilliseconds);
+          rethrow;
+        }
+        if (requestWatch != null) {
+          recordMatrixSessionSuccess(
+              MatrixSessionFailureBoundary.confirmationRequest,
+              durationMs: requestWatch.elapsedMilliseconds);
+        }
       },
     );
     final gate = SessionGate(
@@ -154,6 +184,7 @@ Future<void> main() async {
         api: api,
         onLogin: login.login,
         onPhoneLogin: login.loginPhone,
+        onPhoneInvitationContinue: login.continuePhoneInvitation,
         onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
         onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
         onAuthenticated: session.bootstrap,
@@ -207,6 +238,38 @@ Future<void> main() async {
     ),
     themeController: themeController,
   ));
+}
+
+/// Starts at the first app-controlled boundary after Flutter binding setup.
+/// A post-frame callback marks only the first rendered shell frame; content
+/// readiness is tracked by each page where a real content signal exists.
+/// Startup stays local to PerformanceMetrics because the authenticated
+/// ChatDiagnostics session may change before the first frame. This also keeps
+/// pre-login timing out of account-scoped diagnostic uploads.
+@visibleForTesting
+PerformanceTrace? scheduleAppStartupFirstFrame({
+  PerformanceTraceRecorder? recorder,
+  PerformanceMetrics? localMetrics,
+}) {
+  final PerformanceTraceRecorder active;
+  if (recorder != null) {
+    active = recorder;
+  } else {
+    final metrics = localMetrics ?? PerformanceMetrics.instance;
+    if (!metrics.enabled) return null;
+    active = PerformanceTraceRecorder(
+      metrics: metrics,
+      timestampedFrameAttribution: true,
+      enabled: () => metrics.enabled,
+    );
+  }
+  if (!active.recordingEnabled) return null;
+  final trace = active.start(PerformanceOperationType.appStartup);
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    trace.mark(PerformanceStage.firstFrameRendered);
+    trace.finish();
+  });
+  return trace;
 }
 
 final class LiuhetongApp extends StatefulWidget {

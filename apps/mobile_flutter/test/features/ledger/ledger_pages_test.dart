@@ -10,6 +10,28 @@ import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 
 void main() {
+  testWidgets('each statement row shows its authoritative balance below amount',
+      (tester) async {
+    final gateway = _Gateway();
+    await tester.pumpWidget(_app(gateway));
+    gateway.completeList(items: [
+      _row('balance-a')..['balance_after'] = '9007199254740993.01',
+      _row('balance-b')..['balance_after'] = '0.00',
+      _row('balance-missing'),
+      _row('balance-invalid')..['balance_after'] = 12.34,
+    ]);
+    await tester.pump();
+    expect(find.text('点钻余额 9007199254740993.01'), findsOneWidget);
+    expect(find.text('点钻余额 0.00'), findsOneWidget);
+    expect(find.text('点钻余额 —'), findsNWidgets(2));
+    expect(
+        tester.getTopLeft(find.text('点钻余额 0.00')).dy,
+        greaterThan(tester
+                .getBottomLeft(
+                    find.byKey(const Key('ledger-row-amount-balance-b')))
+                .dy -
+            1));
+  });
   test(
       'formats decimal strings without floating-point conversion or truncation',
       () {
@@ -72,8 +94,8 @@ void main() {
     // 未选中：表面底+品牌绿字（不再绿底绿字）。
     final unselected = find.descendant(
         of: find.byKey(const Key('ledger-kind-红包')), matching: find.text('红包'));
-    expect(
-        tester.widget<Text>(unselected).style?.color, WeChatColors.brandPrimary);
+    expect(tester.widget<Text>(unselected).style?.color,
+        WeChatColors.brandPrimary);
     final unselectedButton =
         tester.widget<CupertinoButton>(find.byKey(const Key('ledger-kind-红包')));
     expect(unselectedButton.color, isNot(WeChatColors.brandPrimary));
@@ -84,7 +106,10 @@ void main() {
 
     // 选中：品牌绿底+白字+加粗。
     expect(tester.widget<Text>(unselected).style?.color, CupertinoColors.white);
-    expect(tester.widget<CupertinoButton>(find.byKey(const Key('ledger-kind-红包'))).color,
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const Key('ledger-kind-红包')))
+            .color,
         WeChatColors.brandPrimary);
     expect(chipOf(const Key('ledger-kind-红包')), isNotNull);
     // 其他未选项依旧绿字可读。
@@ -267,35 +292,63 @@ void main() {
     expect(find.text('转账-新备注'), findsOneWidget);
   });
 
-  testWidgets('uses API counterparty nickname then username when no contact is cached',
+  testWidgets(
+      'uses API counterparty nickname then username when no contact is cached',
       (tester) async {
     final gateway = _Gateway();
     await tester.pumpWidget(_app(gateway));
     gateway.completeList(items: [
-      {..._row('api-peer'), 'kind': 'transfer', 'counterparty_id': 'not-friend', 'counterparty_nickname': '  远方朋友  ', 'counterparty_username': 'remote-id'},
-      {..._row('username-peer'), 'kind': 'transfer', 'counterparty_id': 'blank-name', 'counterparty_nickname': ' ', 'counterparty_username': '  remote-id  '},
+      {
+        ..._row('api-peer'),
+        'kind': 'transfer',
+        'counterparty_id': 'not-friend',
+        'counterparty_nickname': '  远方朋友  ',
+        'counterparty_username': 'remote-id'
+      },
+      {
+        ..._row('username-peer'),
+        'kind': 'transfer',
+        'counterparty_id': 'blank-name',
+        'counterparty_nickname': ' ',
+        'counterparty_username': '  remote-id  '
+      },
     ]);
     await tester.pump();
     expect(find.text('转账-远方朋友'), findsOneWidget);
     expect(find.text('转账-remote-id'), findsOneWidget);
   });
 
-  testWidgets('keeps transfer counterparty and signed amount right edge at large text', (tester) async {
+  testWidgets(
+      'keeps transfer counterparty and signed amount right edge at large text',
+      (tester) async {
     await tester.binding.setSurfaceSize(const Size(393, 852));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final gateway = _Gateway();
-    await tester.pumpWidget(CupertinoApp(home: MediaQuery(
+    await tester.pumpWidget(CupertinoApp(
+        home: MediaQuery(
       data: const MediaQueryData(textScaler: TextScaler.linear(2)),
       child: LedgerListPage(gateway: gateway),
     )));
     gateway.completeList(items: [
-      {..._row('short'), 'kind': 'transfer', 'amount': '12', 'counterparty_nickname': '甲'},
-      {..._row('long'), 'kind': 'transfer', 'amount': '12345678901234567890', 'counterparty_username': 'long-account'},
+      {
+        ..._row('short'),
+        'kind': 'transfer',
+        'amount': '12',
+        'counterparty_nickname': '甲'
+      },
+      {
+        ..._row('long'),
+        'kind': 'transfer',
+        'amount': '12345678901234567890',
+        'counterparty_username': 'long-account'
+      },
     ]);
     await tester.pump();
     expect(find.text('转账-甲'), findsOneWidget);
-    final shortBox = tester.getRect(find.byKey(const Key('ledger-row-amount-short')));
-    final longBox = tester.getRect(find.byKey(const Key('ledger-row-amount-long')));
+    final shortBox =
+        tester.getRect(find.byKey(const Key('ledger-row-amount-short')));
+    final longBox =
+        tester.getRect(find.byKey(const Key('ledger-row-amount-long')));
     expect(shortBox.right, closeTo(longBox.right, 0.01));
     expect(tester.takeException(), isNull);
   });

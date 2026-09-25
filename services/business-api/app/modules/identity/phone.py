@@ -24,6 +24,8 @@ from app.core.errors import AppError
 PHONE_CANONICAL = re.compile(r"^1[3-9][0-9]{9}$")
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
+INVITATION_PROOF_TTL_SECONDS = 300
+INVITATION_PROOF_MAX_ATTEMPTS = 5
 SEND_WINDOW_10M = 600
 SEND_LIMIT_10M = 3
 SEND_WINDOW_1H = 3600
@@ -303,7 +305,7 @@ class PhoneAuthService:
 
     def login(self, *, phone: str, code: str, tokens: object, device_key: str,
               device_name: str, invitation_code: str = "", terms_accepted: bool = False,
-              on_new_account=None):
+              allow_invitation_continuation: bool = False, on_new_account=None):
         if not self.otp.phone_enabled:
             raise AppError(code="PHONE_AUTH_DISABLED", message="手机号功能未开启", status_code=503)
         from app.modules.identity.enums import AccountStatus
@@ -332,6 +334,18 @@ class PhoneAuthService:
             if user is None:
                 if self.registration is None:
                     raise AppError(code="CREDENTIALS_INVALID", message="账号或验证码错误", status_code=401)
+                if allow_invitation_continuation:
+                    # The supplier may accept an OTP only once. Commit that
+                    # verification together with a short-lived continuation;
+                    # invitation corrections must never call it again.
+                    session.add(OtpChallenge(id=str(uuid4()), purpose='login_invitation',
+                        target=self._ticket_digest(ticket),
+                        registration_session=self._ticket_digest(device_key),
+                        code_hash=self._ticket_digest(normalized),
+                        expires_at=now + timedelta(seconds=INVITATION_PROOF_TTL_SECONDS),
+                        attempts_left=INVITATION_PROOF_MAX_ATTEMPTS, created_at=now))
+                    result['invitation_verified'] = True
+                    return
                 if not terms_accepted:
                     raise AppError(code="TERMS_REQUIRED", message="请先阅读并同意用户协议和隐私政策", status_code=422)
                 user = self.registration.create_verified_phone_in_session(session,
@@ -354,9 +368,127 @@ class PhoneAuthService:
                     expires_at=now + timedelta(minutes=5), attempts_left=1, created_at=now))
                 result['pending'] = True
         self.otp.verify_code(purpose="login", target=normalized, code=code, on_verified=complete)
+        if result.get('invitation_verified'):
+            return {'status': 'INVITATION_VERIFIED', 'invitation_ticket': ticket}
         if result.get('pending'):
             return {'status': 'PENDING_MATRIX', 'login_ticket': ticket, 'retry_after_seconds': 2}
         return tokens.issue_pair(user_id=result['user_id'], device_key=device_key, display_name=device_name)
+
+    def complete_invitation(self, *, invitation_ticket: str, phone: str,
+                            device_key: str, device_name: str, invitation_code: str,
+                            terms_accepted: bool, tokens, on_new_account=None):
+        """Continue a supplier-verified, single-use phone signup without OTP replay.
+
+        The invitation proof is a 256-bit bearer secret, stored only as an HMAC.
+        Its phone and device association is checked before any registration
+        write. Successful registration turns this row into the existing
+        login_resume proof, so a lost response can be retried with the ticket.
+        """
+        from app.modules.identity.enums import AccountStatus
+        from app.modules.identity.models import OtpChallenge, User
+        from app.core.outbox import OutboxPublisher
+
+        if not self.otp.phone_enabled:
+            raise AppError(code="PHONE_AUTH_DISABLED", message="手机号功能未开启", status_code=503)
+        if self.registration is None:
+            raise AppError(code="CREDENTIALS_INVALID", message="账号或验证码错误", status_code=401)
+        normalized = normalize_phone(phone)
+        now = self._utcnow()
+        result = {}
+        with self._factory.begin() as session:
+            if session.get_bind().dialect.name == 'sqlite':
+                # SQLite's legacy transaction mode does not BEGIN for SELECT.
+                # Start the outer write transaction before any nested SAVEPOINT
+                # so a late proof-expiry rollback also removes the new user.
+                session.execute(text('BEGIN IMMEDIATE'))
+            proof = session.scalar(select(OtpChallenge).where(
+                OtpChallenge.purpose.in_(('login_invitation', 'login_resume')),
+                OtpChallenge.target == self._ticket_digest(invitation_ticket),
+                OtpChallenge.registration_session == self._ticket_digest(device_key),
+                OtpChallenge.consumed_at.is_(None), OtpChallenge.invalidated_at.is_(None),
+                OtpChallenge.expires_at > now).with_for_update())
+            if proof is None or not hmac.compare_digest(
+                    proof.code_hash, self._ticket_digest(normalized)):
+                raise AppError(code='INVITATION_TICKET_INVALID',
+                    message='验证状态已失效，请重新获取验证码', status_code=401)
+            # The SQL predicate uses the time before a possible row-lock wait.
+            # Recheck against the clock after acquiring the row so an expired
+            # proof cannot authorize registration or a replayed login ticket.
+            expires_at = proof.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            else:
+                expires_at = expires_at.astimezone(timezone.utc)
+
+            def current_proof_time():
+                current = self._utcnow()
+                if expires_at <= current:
+                    raise AppError(code='INVITATION_TICKET_INVALID',
+                        message='验证状态已失效，请重新获取验证码', status_code=401)
+                return current
+
+            now = current_proof_time()
+            if proof.purpose == 'login_resume':
+                # An invitation completion response may have been lost. The
+                # same ticket is now safe to use at /login/complete.
+                user = session.get(User, proof.user_id)
+                if user is None or user.status not in (
+                        AccountStatus.PENDING_MATRIX, AccountStatus.ACTIVE) or (
+                        user.phone_normalized != normalized or user.phone_verified_at is None):
+                    raise AppError(code='INVITATION_TICKET_INVALID',
+                        message='验证状态已失效，请重新获取验证码', status_code=401)
+                result['completed'] = True
+            elif proof.attempts_left <= 0:
+                raise AppError(code='INVITATION_TICKET_INVALID',
+                    message='验证状态已失效，请重新获取验证码', status_code=401)
+            elif not terms_accepted:
+                result['correction'] = 'TERMS_REQUIRED'
+            elif not invitation_code.strip():
+                result['correction'] = 'INVITATION_REQUIRED'
+            else:
+                if session.get_bind().dialect.name == 'postgresql':
+                    session.execute(text('SELECT pg_advisory_xact_lock(hashtext(:key))'),
+                        {'key': 'identity:onboard:' + sha256(normalized.encode()).hexdigest()})
+                now = current_proof_time()
+                if self._user_by_phone(session, normalized) is not None:
+                    raise AppError(code='INVITATION_TICKET_INVALID',
+                        message='验证状态已失效，请重新获取验证码', status_code=401)
+                try:
+                    # Invalid invitation and registration failures must not
+                    # leave an invitation use, user, or Outbox event behind.
+                    with session.begin_nested():
+                        user = self.registration.create_verified_phone_in_session(
+                            session, phone=normalized, invitation_code=invitation_code, now=now)
+                        if on_new_account is not None:
+                            on_new_account()
+                        OutboxPublisher.enqueue(session, topic='identity.matrix',
+                            event_type='identity.matrix.provision.requested', aggregate_type='user',
+                            aggregate_id=user.id, payload={'user_id': user.id}, now=now)
+                except AppError as error:
+                    if error.code not in ('INVITATION_REQUIRED', 'INVITATION_INVALID',
+                                          'INVITATION_EXPIRED', 'INVITATION_EXHAUSTED'):
+                        raise
+                    proof.attempts_left -= 1
+                    if proof.attempts_left <= 0:
+                        proof.invalidated_at = now
+                        result['exhausted'] = True
+                    else:
+                        result['correction'] = error.code
+                else:
+                    proof.purpose = 'login_resume'
+                    proof.user_id = user.id
+                    proof.attempts_left = 1
+                    result['completed'] = True
+            # Account creation and rate checks may wait after the row lock.
+            # Abort the whole transaction if the proof expires before commit.
+            current_proof_time()
+        if result.get('exhausted'):
+            raise AppError(code='INVITATION_TICKET_INVALID',
+                message='验证状态已失效，请重新获取验证码', status_code=401)
+        if result.get('correction'):
+            return {'status': result['correction'], 'invitation_ticket': invitation_ticket}
+        return {'status': 'PENDING_MATRIX', 'login_ticket': invitation_ticket,
+                'retry_after_seconds': 2}
 
     def complete_login(self, *, login_ticket: str, device_key: str, device_name: str, tokens):
         """Single-use, device-bound proof. Never invokes the SMS verifier."""

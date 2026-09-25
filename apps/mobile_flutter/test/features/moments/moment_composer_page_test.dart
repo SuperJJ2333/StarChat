@@ -102,8 +102,7 @@ void main() {
         WeChatColors.darkSurface);
     final editor = tester
         .widget<CupertinoTextField>(find.byType(CupertinoTextField).first);
-    expect(
-        editor.decoration!.color, WeChatColors.darkElevated);
+    expect(editor.decoration!.color, WeChatColors.darkElevated);
     await tester.pumpWidget(const SizedBox());
   });
   testWidgets('composer keeps only approved WeChat-style option rows',
@@ -171,6 +170,16 @@ void main() {
 
     expect(find.text('保留的内容'), findsOneWidget);
     expect(find.text('暂时无法发表'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.exclamationmark_triangle_fill),
+        findsOneWidget);
+    final warning = tester.widget<Container>(find
+        .ancestor(
+            of: find.byKey(const Key('moment-compose-error')),
+            matching: find.byType(Container))
+        .first);
+    final decoration = warning.decoration! as BoxDecoration;
+    expect(decoration.borderRadius, BorderRadius.circular(8));
+    expect(decoration.border, isNotNull);
     expect(find.byType(MomentComposerPage), findsOneWidget);
   });
 

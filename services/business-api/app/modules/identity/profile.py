@@ -17,6 +17,7 @@ from app.modules.audit.writer import AuditWriter
 from sqlalchemy import case, func, or_, select
 from app.modules.identity.models import AvatarUpload, User, Device
 from app.modules.identity.enums import AccountStatus
+from app.modules.identity.profile_text import valid_nickname, valid_signature
 
 
 ALLOWED_AVATAR_MIME = {"image/jpeg", "image/png", "image/webp"}
@@ -173,6 +174,33 @@ class ProfileService:
         request_hash = self._request_hash(normalized)
         now = self._now_factory()
         with self._session_factory.begin() as session:
+            # A completed pre-policy request may contain a longer nickname or
+            # signature. Exact scope/key/hash replays read its existing result;
+            # every new write below still passes the current visible limit.
+            existing = session.scalar(
+                select(IdempotencyRecord)
+                .where(
+                    IdempotencyRecord.scope == f"identity.profile.update:{user_id}",
+                    IdempotencyRecord.idempotency_key == idempotency_key,
+                )
+                .with_for_update()
+            )
+            if existing is not None:
+                if existing.request_hash != request_hash:
+                    self._idempotency_reused()
+                if existing.status != "COMPLETED":
+                    raise AppError(
+                        code="IDEMPOTENCY_IN_PROGRESS",
+                        message="幂等请求正在处理中",
+                        status_code=409,
+                    )
+                user = session.scalar(
+                    select(User).where(User.id == user_id).with_for_update()
+                )
+                if user is None:
+                    self._not_found()
+                return self._profile(user)
+            self._validate_visible_changes(normalized)
             record = self._claim_idempotency(
                 session,
                 scope=f"identity.profile.update:{user_id}",
@@ -185,7 +213,7 @@ class ProfileService:
                 self._not_found()
             if record.status == "COMPLETED":
                 return self._profile(user)
-            before = {"nickname": user.nickname, "signature": user.signature, "nudge_suffix": user.nudge_suffix}
+            previous_profile_updated_at = user.profile_updated_at
             if "nickname" in normalized:
                 user.nickname = normalized["nickname"]
             if "signature" in normalized:
@@ -205,8 +233,10 @@ class ProfileService:
                 reason_code="SELF_PROFILE_UPDATE",
                 trace_id=trace_id,
                 source_ip=source_ip,
-                before=before,
-                after={"nickname": user.nickname, "signature": user.signature, "nudge_suffix": user.nudge_suffix},
+                before={"profile_updated_at": (
+                    previous_profile_updated_at.isoformat() if previous_profile_updated_at else None
+                )},
+                after={"profile_updated_at": now.isoformat(), "changed_fields": sorted(normalized)},
             )
             self._complete_idempotency(record, now)
             return self._profile(user)
@@ -471,22 +501,16 @@ class ProfileService:
         normalized = {}
         if "nickname" in changes:
             nickname = changes["nickname"].strip()
-            if not nickname or len(nickname) > 64:
+            if not nickname:
                 raise AppError(
                     code="PROFILE_NICKNAME_INVALID",
-                    message="昵称长度必须为 1 到 64 个字符",
+                    message="昵称最多支持12个字符",
                     status_code=422,
                 )
             normalized["nickname"] = nickname
         if "signature" in changes:
             signature = changes["signature"]
             signature = signature.strip() if signature is not None else None
-            if signature and len(signature) > 140:
-                raise AppError(
-                    code="PROFILE_SIGNATURE_INVALID",
-                    message="个性签名不得超过 140 个字符",
-                    status_code=422,
-                )
             normalized["signature"] = signature or None
         if "nudge_suffix" in changes:
             nudge_suffix = changes["nudge_suffix"]
@@ -499,6 +523,21 @@ class ProfileService:
                 )
             normalized["nudge_suffix"] = nudge_suffix or None
         return normalized
+
+    @staticmethod
+    def _validate_visible_changes(normalized: dict) -> None:
+        if "nickname" in normalized and not valid_nickname(normalized["nickname"]):
+            raise AppError(
+                code="PROFILE_NICKNAME_INVALID",
+                message="昵称最多支持12个字符",
+                status_code=422,
+            )
+        if "signature" in normalized and not valid_signature(normalized["signature"]):
+            raise AppError(
+                code="PROFILE_SIGNATURE_INVALID",
+                message="个性签名最多支持20个字符",
+                status_code=422,
+            )
 
     @staticmethod
     def _validate_image(content: bytes, declared_mime: str) -> None:

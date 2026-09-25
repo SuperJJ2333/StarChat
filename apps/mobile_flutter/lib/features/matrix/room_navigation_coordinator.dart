@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 
+import '../../core/performance_trace.dart';
 import '../contacts/contact_models.dart';
 
 /// 会话打开入口的来源。
@@ -86,6 +87,7 @@ final class RoomOpenRequest {
     this.onRoomReady,
     this.onRoomClosed,
     this.onRoomLanded,
+    this.performanceTrace,
     this.outbox = const <String>[],
     this.readOnly = false,
     this.anchorRoomId,
@@ -126,6 +128,9 @@ final class RoomOpenRequest {
   /// 路由落地（已进栈且成为当前路由）后回调：调用方据此移除打开期的反馈遮罩，覆盖「点击→房间首帧」的整个间隙。
   final void Function()? onRoomLanded;
 
+  /// Anonymous operation-scoped marks; no room/user identifiers are recorded.
+  final PerformanceTrace? performanceTrace;
+
   /// Offline First：pending conversation 期间排队、进入房间后要自动发送的
   /// 文本（按输入顺序）。只承载数据，不含 SDK 对象。
   final List<String> outbox;
@@ -157,6 +162,8 @@ RoomOpenRequest normalizeDuplicateRoomOpen(
     modeOverride: request.modeOverride,
     onRoomReady: request.onRoomReady,
     onRoomClosed: request.onRoomClosed,
+    onRoomLanded: request.onRoomLanded,
+    performanceTrace: request.performanceTrace,
     outbox: request.outbox,
     outboxLocalIds: request.outboxLocalIds,
     readOnly: request.readOnly,
@@ -256,6 +263,9 @@ final class RoomNavigationCoordinator {
   Route<void>? activeRoute(String roomId) =>
       _active[_conversationKeyOf(roomId.trim())];
 
+  /// True only while a registered room route is currently visible.
+  bool get hasActiveRoom => _active.values.any((route) => route.isCurrent);
+
   @visibleForTesting
   int get openingCount => _opening.length;
 
@@ -266,9 +276,15 @@ final class RoomNavigationCoordinator {
   final _reopen = <String, void Function(RoomOpenRequest)>{};
 
   Future<void> open(RoomOpenRequest request) {
-    if (request.roomId.trim().isEmpty || _disposed) return Future<void>.value();
+    if (request.roomId.trim().isEmpty || _disposed) {
+      request.performanceTrace?.dispose();
+      return Future<void>.value();
+    }
     final roomId = _conversationKeyOf(request.roomId.trim());
-    if (roomId.isEmpty || _disposed) return Future<void>.value();
+    if (roomId.isEmpty || _disposed) {
+      request.performanceTrace?.dispose();
+      return Future<void>.value();
+    }
 
     // 已打开优先于正在打开：打开流程会一直持有到页面关闭，因此「正在打开」
     // 不能覆盖「已打开」，否则再次请求会并进旧的 future 而不是回到原页面。
@@ -279,6 +295,7 @@ final class RoomNavigationCoordinator {
       _reopen[roomId]?.call(request);
       // 情况 2：房间已打开——回到原页面，绝不 push 第二层。
       _navigatorOf()?.popUntil((candidate) => identical(candidate, active));
+      request.performanceTrace?.dispose();
       return Future<void>.value();
     }
     if (active != null) _active.remove(roomId); // 失效登记兜底
@@ -295,10 +312,11 @@ final class RoomNavigationCoordinator {
         if (request.anchorEventId?.isNotEmpty == true) {
           _openingAnchors[roomId] = request;
         }
+        // This click joins the first route and does not own its lifecycle.
+        request.performanceTrace?.dispose();
         return opening;
       }
-      debugPrint(
-          '[room-nav] STUCK cleared room=$roomId age='
+      debugPrint('[chatflow/perf] room_open_stuck_cleared age='
           '${clock.now().difference(since).inMilliseconds}ms');
       _opening.remove(roomId);
       _openingAnchors.remove(roomId);

@@ -1,5 +1,5 @@
 from hashlib import sha256
-from typing import Annotated
+from typing import Annotated, Literal
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -24,6 +24,7 @@ from app.modules.identity.matrix_login import MatrixLoginTokenService
 from app.modules.identity.matrix_sessions import MatrixSessionService
 from app.modules.identity.models import User, Device
 from app.modules.identity.passwords import PasswordHasher
+from app.modules.identity.profile_text import MAX_PROFILE_RAW_CODEPOINTS
 from app.modules.identity.recovery import PasswordRecoveryService, PasswordResetTokenCodec
 from app.modules.identity.referral import ReferralCodec, ReferralService
 from app.modules.identity.registration import (
@@ -51,7 +52,12 @@ class InvitationRequest(StrictModel):
 
 class RegisterRequest(StrictModel):
     username: str = Field(min_length=3, max_length=64)
-    nickname: str | None = Field(default=None, max_length=64)
+    nickname: str | None = Field(
+        default=None,
+        max_length=MAX_PROFILE_RAW_CODEPOINTS,
+        description="显式昵称最多 12 个 Unicode 扩展字素簇；maxLength 为原始码点资源上限。",
+        json_schema_extra={"x-graphemeMaxLength": 12},
+    )
     # ADR-0075：邮箱或中国大陆手机号二选一注册。
     email: str | None = Field(default=None, min_length=3, max_length=320)
     phone: str | None = Field(default=None, min_length=5, max_length=20)
@@ -456,14 +462,15 @@ def create_identity_router(
             **body.model_dump(),
             idempotency_key=idempotency_key,
         )
-        record_audit(
-            request,
-            actor_id=result.user_id,
-            subject_id=result.user_id,
-            action="identity.registration.created",
-            reason_code="SELF_REGISTRATION",
-        )
-        if result.referral_bound:
+        if not result.replayed:
+            record_audit(
+                request,
+                actor_id=result.user_id,
+                subject_id=result.user_id,
+                action="identity.registration.created",
+                reason_code="SELF_REGISTRATION",
+            )
+        if result.referral_bound and not result.replayed:
             record_audit(
                 request,
                 actor_id=result.user_id,
@@ -965,6 +972,20 @@ def create_identity_router(
         device_name: str = Field(min_length=1, max_length=128)
         invitation_code: str = Field(default="", max_length=128)
         terms_accepted: bool = False
+        allow_invitation_continuation: bool = False
+
+    class PhoneInvitationBody(StrictModel):
+        invitation_ticket: str = Field(min_length=32, max_length=128)
+        phone: str = Field(min_length=5, max_length=20)
+        device_key: str = Field(min_length=8, max_length=128)
+        device_name: str = Field(min_length=1, max_length=128)
+        invitation_code: str = Field(default="", max_length=128)
+        terms_accepted: bool = False
+
+    class PhoneInvitationResponse(StrictModel):
+        status: Literal["INVITATION_VERIFIED", "INVITATION_REQUIRED", "INVITATION_INVALID",
+                        "INVITATION_EXPIRED", "INVITATION_EXHAUSTED", "TERMS_REQUIRED"]
+        invitation_ticket: str
 
     class PhoneLoginCompleteBody(StrictModel):
         login_ticket: str = Field(min_length=32, max_length=128)
@@ -1011,7 +1032,7 @@ def create_identity_router(
         return phone_auth.request_login_otp(phone=body.phone)
 
     @router.post("/auth/phone/login", response_model=PasswordLoginResponse,
-                 responses={202: {"model": PhoneLoginPendingResponse}})
+                 responses={202: {"model": PhoneLoginPendingResponse | PhoneInvitationResponse}})
     def phone_login(body: PhoneLoginBody, request: Request):
         rate_limiter.hit(public_rate_limit_key("auth:phone-login", request.client.host if request.client else "unknown"), limit=10, window_seconds=3600)
         pair = phone_auth.login(**body.model_dump(), tokens=tokens,
@@ -1025,6 +1046,23 @@ def create_identity_router(
     def phone_login_complete(body: PhoneLoginCompleteBody, request: Request):
         rate_limiter.hit(public_rate_limit_key("auth:phone-login-complete", request.client.host if request.client else "unknown"), limit=60, window_seconds=60)
         pair = phone_auth.complete_login(**body.model_dump(), tokens=tokens)
+        return phone_login_response(pair, request)
+
+    @router.post("/auth/phone/login/invitation", response_model=PasswordLoginResponse,
+                 responses={202: {"model": PhoneLoginPendingResponse | PhoneInvitationResponse}})
+    def phone_login_invitation(body: PhoneInvitationBody, request: Request):
+        source_ip = request.client.host if request.client else "unknown"
+        # A caller can vary random tickets. Bound the IP independently before
+        # applying the narrower per-ticket correction budget.
+        rate_limiter.hit(public_rate_limit_key("auth:phone-login-invitation-ip",
+            source_ip), limit=30, window_seconds=600)
+        rate_limiter.hit(public_rate_limit_key("auth:phone-login-invitation",
+            source_ip, body.invitation_ticket),
+            limit=10, window_seconds=600)
+        pair = phone_auth.complete_invitation(**body.model_dump(), tokens=tokens,
+            on_new_account=lambda: rate_limiter.hit(public_rate_limit_key(
+                "auth:register:v2", request.client.host if request.client else "unknown",
+                body.device_key), limit=3, window_seconds=3600))
         return phone_login_response(pair, request)
 
     def phone_login_response(pair, request):

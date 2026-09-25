@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../contacts/contact_actions.dart';
 import 'moment_comment_interaction.dart';
 import 'moment_reactions.dart';
@@ -6,9 +8,12 @@ import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
 import '../matrix/profile_repository.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
+import '../../ui/moments/moment_warning_banner.dart';
 import 'moment_models.dart';
 import 'moment_detail_page.dart';
+import 'moment_interaction_inbox_page.dart';
 import 'moments_privacy_changes.dart';
 import '../../ui/motion/motion_page_route.dart';
 
@@ -17,21 +22,25 @@ class PersonalMomentsPage extends StatefulWidget {
       {super.key,
       required this.api,
       this.identityCache,
-    this.contactActions,
-    required this.userId,
+      this.contactActions,
+      required this.userId,
       required this.displayName,
-      this.initialItems = const []});
+      this.initialItems = const [],
+      this.publishedOnly = false,
+      this.onNotificationsChanged});
   final BusinessApiClient api;
   final ContactActions? contactActions;
   final ProfileRepository? identityCache;
   final String userId, displayName;
   final List<MomentItem> initialItems;
+  final bool publishedOnly;
+  final VoidCallback? onNotificationsChanged;
   @override
   State<PersonalMomentsPage> createState() => _PersonalMomentsState();
 }
 
 class _PersonalMomentsState extends State<PersonalMomentsPage> {
-  late List<MomentItem> _items = widget.initialItems;
+  late List<MomentItem> _items = _presented(widget.initialItems);
   bool _loading = true;
   int _generation = 0;
   final _selectedComments = <String, String>{};
@@ -39,7 +48,17 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   String? _error;
   String _username = '';
   String? _viewerId;
+  String? _mediaAccountKey;
+  int _mediaAccountResolution = 0;
   bool _openingPerson = false;
+  List<MomentItem> _presented(List<MomentItem> items) => widget.publishedOnly
+      ? items
+          .where((item) =>
+              item.kind != 'AD' &&
+              item.author.userId == widget.userId &&
+              item.status == 'PUBLISHED')
+          .toList(growable: false)
+      : items;
   void _commentDeleted() {
     final change = momentCommentDeletions.value;
     if (change == null ||
@@ -59,10 +78,9 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
     momentCommentDeletions.addListener(_commentDeleted);
     widget.identityCache?.addListener(_identityChanged);
     momentsPrivacyChanges.addListener(_privacyChanged);
+    unawaited(_resolveMediaAccountKey());
     _reload();
-    widget.api.currentUserId().then((id) {
-      if (mounted) setState(() => _viewerId = id);
-    });
+    unawaited(_resolveViewerId());
     widget.api.loadProfile().then((p) {
       if (mounted) _username = p.username;
     }).catchError((Object _) {});
@@ -77,7 +95,9 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   }
 
   void _identityChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_resolveMediaAccountKey());
   }
 
   @override
@@ -87,12 +107,71 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
       oldWidget.identityCache?.removeListener(_identityChanged);
       widget.identityCache?.addListener(_identityChanged);
     }
+    if (oldWidget.api != widget.api ||
+        oldWidget.identityCache != widget.identityCache) {
+      _mediaAccountKey = null;
+      unawaited(_resolveMediaAccountKey());
+    }
+    if (oldWidget.api != widget.api ||
+        oldWidget.userId != widget.userId ||
+        oldWidget.publishedOnly != widget.publishedOnly) {
+      _items = _presented(widget.initialItems);
+      _loading = true;
+      _viewerId = null;
+      _reload();
+      unawaited(_resolveViewerId());
+    }
+  }
+
+  Future<void> _resolveViewerId() async {
+    final api = widget.api;
+    final epoch = api.sessionEpoch;
+    final userId = widget.userId;
+    try {
+      final viewerId = await api.currentUserId();
+      if (mounted &&
+          identical(widget.api, api) &&
+          api.sessionEpoch == epoch &&
+          widget.userId == userId) {
+        setState(() => _viewerId = viewerId);
+      }
+    } catch (_) {
+      // The More action performs a fresh identity check before opening.
+    }
+  }
+
+  Future<String?> _resolveMediaAccountKey() async {
+    final resolution = ++_mediaAccountResolution;
+    final api = widget.api;
+    String? accountKey;
+    try {
+      final matrixUserId = await api.currentMatrixUserId();
+      if (matrixUserId != null && matrixUserId.isNotEmpty) {
+        accountKey = 'matrix:$matrixUserId';
+      }
+    } catch (_) {
+      // An unknown session cannot authorize access to cached media.
+    }
+    if (!mounted ||
+        resolution != _mediaAccountResolution ||
+        !identical(widget.api, api)) {
+      return null;
+    }
+    final identityKey = widget.identityCache?.accountKey;
+    if (identityKey != null && identityKey != accountKey) {
+      accountKey = null;
+    }
+    if (_mediaAccountKey != accountKey) {
+      setState(() => _mediaAccountKey = accountKey);
+    }
+    return accountKey;
   }
 
   void _privacyChanged() {
     // 失败不覆盖：可见性变化只需重取，不预先清空已展示的动态（有内容时也不显示
     // 整页加载圈，避免"切换设置 → 页面闪白"）。
     setState(() => _loading = _items.isEmpty);
+    unawaited(_resolveMediaAccountKey());
     _reload();
   }
 
@@ -102,9 +181,9 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
       final response = await widget.api.personalMoments(widget.userId);
       if (!mounted || generation != _generation) return;
       setState(() {
-        _items = (response['items'] as List? ?? [])
+        _items = _presented((response['items'] as List? ?? [])
             .map((e) => MomentItem.fromJson(Map<String, dynamic>.from(e)))
-            .toList();
+            .toList());
         _error = null;
       });
     } catch (_) {
@@ -122,12 +201,14 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   }
 
   Future<void> _open(MomentItem item) async {
+    final mediaAccountKey = await _resolveMediaAccountKey();
+    if (!mounted) return;
     await Navigator.push(
         context,
         MotionPageRoute(
             builder: (_) => MomentDetailPage(
-          contactActions: widget.contactActions,
-          identityCache: widget.identityCache,
+                  contactActions: widget.contactActions,
+                  identityCache: widget.identityCache,
                   api: widget.api,
                   initialItem: item,
                   currentUsername:
@@ -142,6 +223,8 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
                     }
                   },
                   cacheNamespace: 'profile:${widget.userId}',
+                  mediaAccountKey: mediaAccountKey,
+                  mediaOrigin: widget.api.baseUri.origin,
                 )));
   }
 
@@ -237,8 +320,10 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
     _openingPerson = true;
     try {
       await openMomentPerson(context,
-        contactActions: widget.contactActions,
-        api: widget.api, identityCache: widget.identityCache, person: person);
+          contactActions: widget.contactActions,
+          api: widget.api,
+          identityCache: widget.identityCache,
+          person: person);
     } catch (_) {
       if (mounted) setState(() => _error = '资料加载失败，请重试');
     } finally {
@@ -246,15 +331,83 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
     }
   }
 
+  Future<void> _openNotifications() async {
+    final api = widget.api;
+    final epoch = api.sessionEpoch;
+    final userId = widget.userId;
+    String? viewerId;
+    try {
+      viewerId = await api.currentUserId();
+    } catch (_) {
+      return;
+    }
+    if (!mounted ||
+        !identical(widget.api, api) ||
+        api.sessionEpoch != epoch ||
+        widget.userId != userId ||
+        viewerId != userId) {
+      return;
+    }
+    final mediaAccountKey = await _resolveMediaAccountKey();
+    String? verifiedId;
+    try {
+      verifiedId = await api.currentUserId();
+    } catch (_) {
+      return;
+    }
+    if (!mounted ||
+        !identical(widget.api, api) ||
+        api.sessionEpoch != epoch ||
+        widget.userId != userId ||
+        verifiedId != userId) {
+      return;
+    }
+    setState(() => _viewerId = viewerId);
+    await Navigator.push(
+        context,
+        MotionPageRoute(
+            builder: (_) => MomentInteractionInboxPage(
+                  api: widget.api,
+                  identityCache: widget.identityCache,
+                  contactActions: widget.contactActions,
+                  currentUsername: _username,
+                  viewerUserId: viewerId,
+                  mediaAccountKey: mediaAccountKey,
+                  mediaOrigin: widget.api.baseUri.origin,
+                  onNotificationsChanged: widget.onNotificationsChanged,
+                )));
+    if (mounted && identical(widget.api, api) && api.sessionEpoch == epoch) {
+      widget.onNotificationsChanged?.call();
+    }
+  }
+
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-            middle: Text(
-                '${widget.identityCache?.resolveIdentity(userId: widget.userId, displayName: widget.displayName).displayName ?? widget.displayName}的朋友圈')),
+            middle: widget.publishedOnly
+                ? const Text('我的朋友圈')
+                : WeChatNavTitle(
+                    '${widget.identityCache?.resolveIdentity(userId: widget.userId, displayName: widget.displayName).displayName ?? widget.displayName}的朋友圈',
+                    userId: widget.userId,
+                    supportIdentities: widget.api.supportIdentities),
+            trailing: widget.publishedOnly
+                ? CupertinoButton(
+                    key: const Key('personal-moments-more'),
+                    padding: EdgeInsets.zero,
+                    onPressed: _openNotifications,
+                    child: const Icon(CupertinoIcons.ellipsis),
+                  )
+                : null),
         child: SafeArea(
             child: ListView(children: [
           if (_error != null)
-            CupertinoButton(onPressed: _reload, child: Text(_error!)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Column(children: [
+                MomentWarningBanner(message: _error!),
+                CupertinoButton(onPressed: _reload, child: const Text('重试')),
+              ]),
+            ),
           if (_items.isEmpty && _error == null)
             Padding(
                 padding: const EdgeInsets.all(40),
@@ -266,10 +419,13 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
                                 TextStyle(color: CupertinoColors.systemGrey)))),
           for (final item in _items)
             WeChatMomentTile(
+              supportIdentities: widget.api.supportIdentities,
               identityCache: widget.identityCache,
               item: visibleMomentReactions(item, widget.identityCache,
                   username: _username),
               cacheNamespace: 'profile:${widget.userId}',
+              mediaAccountKey: _mediaAccountKey,
+              mediaOrigin: widget.api.baseUri.origin,
               onOpen: () => _open(item),
               onAuthorTap: () => _openPerson(item.author),
               onPersonTap: _openPerson,

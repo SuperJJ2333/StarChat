@@ -5,6 +5,8 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 
 class _MemoryStore implements SecureKeyValueStore {
@@ -49,6 +51,7 @@ void main() {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(() => server.close(force: true));
       final store = SecureSessionStore(_MemoryStore());
+      final performance = <PerformanceRecord>[];
       await store.saveSession(
           accessToken: 'test-token',
           refreshToken: 'refresh-secret',
@@ -66,7 +69,10 @@ void main() {
       });
       final api = BusinessApiClient(
           baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
-          sessionStore: store);
+          sessionStore: store,
+          performanceRecorder: PerformanceTraceRecorder(
+              metrics: PerformanceMetrics(enabled: true),
+              onRecord: performance.add));
       var invalidations = 0;
       final subscription =
           api.sessionInvalidations.listen((_) => invalidations++);
@@ -74,6 +80,8 @@ void main() {
       expect(await api.uploadChatDiagnostics(batch(), Completer<void>().future),
           status);
       expect(requests, 1);
+      expect(performance, isEmpty,
+          reason: 'diagnostic upload must not recursively record itself');
       expect(invalidations, 0);
       expect((await store.session())?.accessToken, 'test-token');
       expect((await store.session())?.refreshToken, 'refresh-secret');

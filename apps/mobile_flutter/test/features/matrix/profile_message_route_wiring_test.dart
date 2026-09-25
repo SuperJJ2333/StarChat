@@ -69,7 +69,8 @@ void main() {
       root.indexOf('Future<void> _openMessage(ContactDetails contact)'),
       root.indexOf('Future<DirectMessageTarget?> _resolveLocalDirectMessageTarget('),
     );
-    expect(openMessage, contains('() => _resolveLocalDirectMessageTarget(contact)'),
+    expect(openMessage,
+        contains('() => _resolveLocalDirectMessageTarget(contact, trace: trace)'),
         reason: 'DirectMessageOpenGate 只能持有身份 + canonical 房间解析');
     expect(openMessage, contains('await _openManagedRoom(target.roomId'),
         reason: '_openManagedRoom 必须在闸门之外');

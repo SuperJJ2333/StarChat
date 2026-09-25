@@ -77,7 +77,7 @@ final class RoomOpenFailure implements Exception {
 
   @override
   String toString() =>
-      'RoomOpenFailure(${kind.name}, source=${source.wireName}, room=$roomId'
+      'RoomOpenFailure(${kind.name}, source=${source.wireName}'
       '${cause == null ? '' : ', cause=${cause.runtimeType}'})';
 }
 
@@ -150,7 +150,7 @@ final class RoomOpenVerdict {
 /// 诊断阶段（供日志/埋点使用；不含消息内容）。
 enum RoomOpenOutcome { openedLocal, openedAfterWait, denied, failed }
 
-/// 打开诊断事件。roomId 是 Matrix 不透明房间号（与既有通知诊断同源）。
+/// 打开诊断事件。roomId 仅供本地路由关联，绝不进入日志文本。
 final class RoomOpenDiagnostic {
   const RoomOpenDiagnostic({
     required this.source,
@@ -169,7 +169,7 @@ final class RoomOpenDiagnostic {
   final RoomOpenFailureKind? failureKind;
 
   String get line => 'room-open source=${source.wireName} mode=${mode.name} '
-      'outcome=${outcome.name} reason=$reason room=$roomId'
+      'outcome=${outcome.name}'
       '${failureKind == null ? '' : ' failure=${failureKind!.name}'}';
 }
 

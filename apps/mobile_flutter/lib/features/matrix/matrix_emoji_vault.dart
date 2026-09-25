@@ -55,6 +55,11 @@ abstract interface class MatrixEmojiVaultCacheIdentity {
   String get cacheIdentity;
 }
 
+/// Changes in the account vault invalidate short-lived background freshness.
+abstract interface class MatrixEmojiVaultRevisionBackend {
+  int get metadataRevision;
+}
+
 abstract interface class MatrixEmojiVaultContentLoader {
   Future<Uint8List> loadContent(String roomId, EmojiVaultItem item);
 }
@@ -97,14 +102,48 @@ final class MatrixEmojiVault {
     }
   }
 
-  /// Metadata refresh never blocks opening the cached panel.
-  Future<void> refresh() async =>
-      vault.apply(await _backend.loadEvents(roomId));
+  Future<void>? _refreshing;
+  DateTime? _refreshedAt;
+  int? _refreshedRevision;
+  int get _revision => _backend is MatrixEmojiVaultRevisionBackend
+      ? (_backend as MatrixEmojiVaultRevisionBackend).metadataRevision
+      : 0;
+
+  /// User actions may force a refresh; room entry reuses recent successful work.
+  /// Concurrent callers share both failures and success, never duplicate history.
+  Future<void> refresh({bool force = true}) {
+    final revision = _revision;
+    final current = _refreshing;
+    if (current != null) return current;
+    final refreshed = _refreshedAt;
+    if (!force &&
+        refreshed != null &&
+        revision == _refreshedRevision &&
+        DateTime.now().difference(refreshed) < const Duration(seconds: 30)) {
+      return Future.value();
+    }
+    return _refreshing = _refresh().whenComplete(() => _refreshing = null);
+  }
+
+  Future<void> _refresh() async {
+    // One trailing pass handles a change arriving during the first load. A
+    // continuously changing vault remains dirty instead of looping forever.
+    for (var pass = 0; pass < 2; pass++) {
+      final revision = _revision;
+      final events = await _backend.loadEvents(roomId);
+      final latest = _revision; // Also verifies the account session is active.
+      vault.apply(events);
+      _refreshedRevision = revision;
+      _refreshedAt = DateTime.now();
+      if (latest == revision) return;
+    }
+  }
 
   Future<Uint8List> loadBytes(EmojiVaultItem item) async {
     final backend = _backend;
     if (backend is MatrixEmojiVaultContentLoader) {
-      return (backend as MatrixEmojiVaultContentLoader).loadContent(roomId, item);
+      return (backend as MatrixEmojiVaultContentLoader)
+          .loadContent(roomId, item);
     }
     final bytes = await backend.downloadAndDecrypt(roomId, item.encryptedFile);
     verifyMediaContent(bytes, item.sha256);
@@ -118,8 +157,12 @@ final class MatrixEmojiVault {
       final sessions = _sessions[backend] ??= {};
       final account =
           '${(backend as MatrixEmojiVaultCacheIdentity).cacheIdentity}|${backend.readStoredRoomId()}';
-      return sessions[account] ??=
-          _open(backend).onError((Object error, StackTrace stack) {
+      return sessions[account] ??= _open(backend).then((session) {
+        final resolved =
+            '${(backend as MatrixEmojiVaultCacheIdentity).cacheIdentity}|${session.roomId}';
+        sessions.putIfAbsent(resolved, () => Future.value(session));
+        return session;
+      }).onError((Object error, StackTrace stack) {
         sessions.remove(account);
         Error.throwWithStackTrace(error, stack);
       });
@@ -148,8 +191,18 @@ final class MatrixEmojiVault {
             .readCachedEvents(roomId);
       } catch (_) {/* Fall back to authoritative history. */}
     }
+    final initialRevision = backend is MatrixEmojiVaultRevisionBackend
+        ? (backend as MatrixEmojiVaultRevisionBackend).metadataRevision
+        : 0;
     vault.apply(cached ?? await backend.loadEvents(roomId));
-    return MatrixEmojiVault._(roomId: roomId, vault: vault, backend: backend);
+    final session =
+        MatrixEmojiVault._(roomId: roomId, vault: vault, backend: backend);
+    // Cached disk metadata still needs its first background refresh.
+    if (cached == null) {
+      session._refreshedAt = DateTime.now();
+      session._refreshedRevision = initialRevision;
+    }
+    return session;
   }
 }
 

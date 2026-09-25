@@ -10,8 +10,10 @@ from app.core.config import Settings
 from app.core.database import Base, create_session_factory
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
+from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxEvent, OutboxPublisher
 from app.main import create_app
+from app.modules.audit.models import AuditEvent
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.invitations import InvitationService
 from app.modules.identity.models import EmailVerificationChallenge, Invitation, User
@@ -194,6 +196,167 @@ def test_register_persists_repeatable_chinese_nickname_and_validates_chat_id(
             idempotency_key="registration-nickname-2",
         )
     assert error.value.code == "REGISTRATION_INVALID"
+
+
+def test_registration_accepts_twelve_family_emoji_and_truncates_only_default_nickname(
+    registration_components,
+) -> None:
+    factory, invitations, service, _, now = registration_components
+    invitations.issue(
+        code="GRAPHEME-REGISTRATION",
+        max_uses=3,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    family = "👨‍👩‍👧‍👦"
+    assert len(family * 12) > 64
+    explicit = service.register(
+        username="emoji_registration",
+        nickname=family * 12,
+        email="emoji@example.test",
+        password="correct horse battery staple",
+        invitation_code="GRAPHEME-REGISTRATION",
+        idempotency_key="grapheme-registration-explicit",
+    )
+    default = service.register(
+        username="abcdefghijklmnop",
+        nickname=None,
+        email="default@example.test",
+        password="correct horse battery staple",
+        invitation_code="GRAPHEME-REGISTRATION",
+        idempotency_key="grapheme-registration-default",
+    )
+    empty = service.register(
+        username="qrstuvwxyzabcdef",
+        nickname="",
+        email="empty@example.test",
+        password="correct horse battery staple",
+        invitation_code="GRAPHEME-REGISTRATION",
+        idempotency_key="grapheme-registration-empty",
+    )
+    with factory() as session:
+        assert session.get(User, explicit.user_id).nickname == family * 12
+        assert session.get(User, default.user_id).nickname == "abcdefghijkl"
+        assert session.get(User, empty.user_id).nickname == "qrstuvwxyzab"
+
+
+def test_registration_rejects_explicit_thirteen_graphemes_before_consuming_invite(
+    registration_components,
+) -> None:
+    factory, invitations, service, _, now = registration_components
+    invitation = invitations.issue(
+        code="GRAPHEME-REJECT",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    with pytest.raises(AppError) as overflow:
+        service.register(
+            username="too_many_visible",
+            nickname="昵称" * 13,
+            email="overflow@example.test",
+            password="correct horse battery staple",
+            invitation_code="GRAPHEME-REJECT",
+            idempotency_key="grapheme-reject",
+        )
+    assert overflow.value.code == "REGISTRATION_INVALID"
+    assert overflow.value.status_code == 422
+    with factory() as session:
+        assert session.get(Invitation, invitation.id).use_count == 0
+        assert session.scalar(
+            select(User.id).where(User.username_normalized == "too_many_visible")
+        ) is None
+
+
+@pytest.mark.parametrize("legacy_nickname", [None, "N" * 13])
+def test_completed_legacy_registration_replays_exact_key_and_payload_without_new_write(
+    registration_components, legacy_nickname,
+) -> None:
+    factory, invitations, service, _, now = registration_components
+    invitation = invitations.issue(
+        code="LEGACY-GRAPHEME-REPLAY",
+        max_uses=3,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    username = "abcdefghijklmnop"
+    email = "legacy-replay@example.test"
+    key = "legacy-grapheme-key"
+    initial_nickname = None if legacy_nickname is None else "N" * 12
+    first = service.register(
+        username=username,
+        nickname=initial_nickname,
+        email=email,
+        password="correct horse battery staple",
+        invitation_code="LEGACY-GRAPHEME-REPLAY",
+        idempotency_key=key,
+    )
+    old_stored_nickname = legacy_nickname or username
+    old_hash = service._registration_request_hash(
+        email_normalized=email,
+        phone_normalized=None,
+        invitation_code="LEGACY-GRAPHEME-REPLAY",
+        nickname_clean=old_stored_nickname,
+        password="correct horse battery staple",
+        referral_code_clean=None,
+        username_normalized=username,
+    )
+    with factory.begin() as session:
+        session.get(User, first.user_id).nickname = old_stored_nickname
+        record = session.scalar(select(IdempotencyRecord).where(
+            IdempotencyRecord.scope == "identity.registration",
+            IdempotencyRecord.idempotency_key == key,
+        ))
+        record.request_hash = old_hash
+
+    args = dict(
+        username=username,
+        nickname=legacy_nickname,
+        email=email,
+        password="correct horse battery staple",
+        invitation_code="LEGACY-GRAPHEME-REPLAY",
+        idempotency_key=key,
+    )
+    service.validate_email_eligible(**args)
+    replay = service.register(**args)
+    assert replay.registration_session == first.registration_session
+    assert replay.user_id == first.user_id
+    with pytest.raises(AppError) as changed:
+        service.validate_email_eligible(**{**args, "nickname": "changed"})
+    assert changed.value.status_code == 409
+    with pytest.raises(AppError) as new_key_overflow:
+        service.register(**{
+            **args,
+            "username": "new_legacy_user",
+            "email": "new-legacy@example.test",
+            "nickname": "N" * 13,
+            "idempotency_key": "new-overflow-key",
+        })
+    assert new_key_overflow.value.status_code == 422
+    with factory() as session:
+        assert session.get(Invitation, invitation.id).use_count == 1
+        assert session.scalar(select(func.count(User.id))) == 1
+        assert session.get(User, first.user_id).nickname == old_stored_nickname
+
+
+def test_registration_rejects_whitespace_only_nickname(registration_components) -> None:
+    _, invitations, service, _, now = registration_components
+    invitations.issue(
+        code="WHITESPACE-REJECT",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    with pytest.raises(AppError) as invalid:
+        service.register(
+            username="valid_user",
+            nickname="   ",
+            email="whitespace@example.test",
+            password="correct horse battery staple",
+            invitation_code="WHITESPACE-REJECT",
+            idempotency_key="whitespace-reject",
+        )
+    assert invalid.value.status_code == 422
 
 
 def test_expired_or_consumed_invitation_is_rejected(registration_components) -> None:
@@ -567,3 +730,7 @@ async def test_registration_api_requires_idempotency_and_returns_only_public_ses
     }
     assert accepted.json()["status"] == "PENDING_EMAIL"
     assert "user_id" not in accepted.json()
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(AuditEvent).where(
+            AuditEvent.action == "identity.registration.created"
+        )) == 1

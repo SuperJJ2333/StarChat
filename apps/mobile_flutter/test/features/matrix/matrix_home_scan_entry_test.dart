@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/scan_qr_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/ui/components/conversation_list_tile.dart';
@@ -73,11 +74,16 @@ void main() {
       sdk,
       homeserver: Uri.parse('https://matrix.example'),
     );
+    // Scan/navigation and room projection start with caller-owned identities;
+    // cold_start_identity_test covers the independent disk hydration boundary.
+    final identities = ProfileRepository(api);
+    addTearDown(identities.dispose);
     await tester.pumpWidget(CupertinoApp(
       theme: CupertinoThemeData(
           brightness: dark ? Brightness.dark : Brightness.light),
       home: MatrixHomePage(
         api: api,
+        identityCache: identities,
         previewOnly: previewOnly,
         matrix: matrix,
         themeController: ThemeController(store: _MemoryThemeStore()),

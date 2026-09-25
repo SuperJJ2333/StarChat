@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../ui/foundation/avatar_cache.dart';
@@ -47,7 +48,7 @@ final class AvatarUploadSession {
 abstract interface class ProfileGateway {
   Future<ProfileData> loadProfile();
   Future<ProfileData> updateProfile(
-      {required String nickname, String? signature, String? nudgeSuffix});
+      {String? nickname, String? signature, String? nudgeSuffix});
   Future<AvatarUploadSession> createAvatarUpload(
       {required String mimeType, required int byteSize});
   Future<void> putAvatar(
@@ -95,6 +96,22 @@ final class ProfileSaveSuccess extends ProfileSaveEvent {
 final class ProfileSaveFailure extends ProfileSaveEvent {
   const ProfileSaveFailure(this.message);
   final String message;
+}
+
+String? profileSaveValidationMessage(String nickname, String? signature,
+    {ProfileData? original}) {
+  final name = nickname.trim();
+  if (name.isEmpty) return '请输入昵称';
+  if ((original == null || name != original.nickname.trim()) &&
+      name.characters.length > 12) {
+    return '昵称最多支持12个字符';
+  }
+  final about = signature?.trim() ?? '';
+  if ((original == null || about != (original.signature?.trim() ?? '')) &&
+      about.characters.length > 20) {
+    return '个性签名最多支持20个字符';
+  }
+  return null;
 }
 
 final class ProfileController extends ChangeNotifier {
@@ -204,17 +221,36 @@ final class ProfileController extends ChangeNotifier {
   Future<void> save(String nickname, String? signature,
       {String? nudgeSuffix}) async {
     if (_disposed) return;
+    final original = state.profile;
+    final validation =
+        profileSaveValidationMessage(nickname, signature, original: original);
+    if (validation != null) {
+      _emitSaveEvent(ProfileSaveFailure(validation));
+      return;
+    }
+    nickname = nickname.trim();
+    signature = signature?.trim() ?? '';
+    final changedNickname =
+        original == null || nickname != original.nickname.trim();
+    final changedSignature =
+        original == null || signature != (original.signature?.trim() ?? '');
+    final normalizedNudgeSuffix = nudgeSuffix?.trim();
+    final changedNudgeSuffix = normalizedNudgeSuffix != null &&
+        normalizedNudgeSuffix != (original?.nudgeSuffix?.trim() ?? '');
+    if (!changedNickname && !changedSignature && !changedNudgeSuffix) {
+      _emitSaveEvent(const ProfileSaveSuccess());
+      return;
+    }
     final generation = ++_generation;
     _set(ProfileState(ProfileStatus.saving, profile: state.profile));
     try {
-      final requestedNudgeSuffix = nudgeSuffix ?? state.profile?.nudgeSuffix;
       final updated = await gateway.updateProfile(
-        nickname: nickname,
-        signature: signature,
-        nudgeSuffix: requestedNudgeSuffix,
+        nickname: changedNickname ? nickname : null,
+        signature: changedSignature ? signature : null,
+        nudgeSuffix: changedNudgeSuffix ? normalizedNudgeSuffix : null,
       );
       if (!_isCurrent(generation)) return;
-      final next = requestedNudgeSuffix != null && requestedNudgeSuffix.isEmpty
+      final next = changedNudgeSuffix && normalizedNudgeSuffix.isEmpty
           ? updated.copyWith(clearNudgeSuffix: true)
           : updated;
       _set(ProfileState(

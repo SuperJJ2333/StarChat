@@ -6,9 +6,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../core/app_config.dart';
 import '../../core/business_api_client.dart';
+import '../../core/performance_trace.dart';
 import '../../core/support_identity_repository.dart';
 import '../contacts/contacts_page.dart';
 import '../contacts/scan_qr_page.dart';
@@ -226,6 +228,7 @@ class MatrixHomePage extends StatefulWidget {
     this.onRoomProjection,
     this.onIdentityProjection,
     this.onConversationRowBuild,
+    this.performanceTrace,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -237,6 +240,7 @@ class MatrixHomePage extends StatefulWidget {
   final ContactAction? onVideo;
   final ProfileRepository? identityCache;
   final bool previewOnly;
+  final PerformanceTrace? performanceTrace;
   final VoidCallback? onUnreadChanged;
 
   /// 房间页面的统一打开入口（AppHome 注入）。消息列表只负责等待动画、
@@ -260,11 +264,58 @@ class MatrixHomePage extends StatefulWidget {
 
 class _MatrixHomePageState extends State<MatrixHomePage>
     with WidgetsBindingObserver {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.chatListLoad);
+  bool _initialFirstFrameRendered = false;
+  bool _initialSnapshotSettled = false;
+  bool _initialSnapshotFailed = false;
+
+  void _finishInitialPerformanceTrace() {
+    if (!_initialFirstFrameRendered || !_initialSnapshotSettled) return;
+    _performanceTrace.finish(
+      result: _initialSnapshotFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
+  void _markInitialSnapshotReady() {
+    if (_initialSnapshotSettled) return;
+    _performanceTrace.mark(PerformanceStage.cacheLoadDone);
+    _performanceTrace.mark(PerformanceStage.contentReady);
+    _initialSnapshotSettled = true;
+    _finishInitialPerformanceTrace();
+  }
+
   bool syncing = false;
   StreamSubscription<Object?>? syncSubscription;
   StreamSubscription<MatrixDecryptionUpdate>? decryptionSubscription;
   final SnapshotRefreshCoordinator<MatrixConversationSnapshot>
-      _snapshotRefresh = SnapshotRefreshCoordinator();
+      _snapshotRefresh = SnapshotRefreshCoordinator(
+          coalesceWindow: const Duration(milliseconds: 32));
+  Animation<double>? _routeAnimation, _nextRouteAnimation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    _routeAnimation?.removeStatusListener(_navigationStatusChanged);
+    _nextRouteAnimation?.removeStatusListener(_navigationStatusChanged);
+    _routeAnimation = route?.animation;
+    _nextRouteAnimation = route?.secondaryAnimation;
+    _routeAnimation?.addStatusListener(_navigationStatusChanged);
+    _nextRouteAnimation?.addStatusListener(_navigationStatusChanged);
+    _navigationStatusChanged(AnimationStatus.completed);
+  }
+
+  void _navigationStatusChanged(AnimationStatus _) {
+    bool moving(Animation<double>? animation) =>
+        animation?.status == AnimationStatus.forward ||
+        animation?.status == AnimationStatus.reverse;
+    _snapshotRefresh.setPaused(_hasClientSnapshot &&
+        (moving(_routeAnimation) || moving(_nextRouteAnimation)));
+  }
+
   var _snapshotOwnerEpoch = 0;
   int _unresolvedRoomCount = 0;
   Object? _directRecoveryJob;
@@ -338,6 +389,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
 
   late DecryptionStateController decryptionStates;
   List<_RoomSnapshot> _rooms = const [];
+  bool _hasClientSnapshot = false;
   final Map<String, _RoomProjectionCacheEntry> _roomProjectionCache = {};
   final Map<String, _ConversationRowCacheEntry> _conversationRows = {};
   String? _vaultRoomId;
@@ -352,8 +404,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   final Set<String> _directJoinInFlight = {};
   List<MatrixGroupInviteSnapshot> _invites = const [];
   late ProfileRepository _identityCache;
+  bool _ownsIdentityCache = false;
+  int _previewIdentityEpoch = 0;
+  String? _identityAccountId;
   late SupportIdentityRepository _supportIdentities;
-  Timer? _supportTimer;
 
   Future<void> _loadAutoAllowPreference() async {
     if (_autoAllowGroupJoin != null) return;
@@ -503,16 +557,26 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
+    _performanceTrace.mark(PerformanceStage.cacheLoadStarted);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initialFirstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialPerformanceTrace();
+    });
     WidgetsBinding.instance.addObserver(this);
     decryptionStates = DecryptionStateController();
     _identityCache = widget.identityCache ?? ProfileRepository(widget.api);
-    _supportIdentities = SupportIdentityRepository(widget.api);
+    _ownsIdentityCache = widget.identityCache == null;
+    _identityAccountId = widget.matrix.userId;
+    _supportIdentities = widget.api.supportIdentities;
     conversationPreferencesChanged.addListener(_preferencesChanged);
     // BUG-20（真机回归修订）：仅当房间进入/离开草稿态时重排列表
     // （文本编辑由逐 tile 通知器处理，不重建列表）。
     RoomDraftStore.shared.draftMembershipRevision.addListener(_draftsChanged);
     if (widget.previewOnly) {
-      unawaited(_refreshClientSnapshot());
+      unawaited(_restorePreviewIdentity());
       return;
     }
     _identityCache.addListener(_identityChanged);
@@ -529,12 +593,47 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       // Renew short-lived profile image URLs without clearing visible avatars.
       unawaited(_identityCache.refreshContactsQuietly());
     });
-    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _warmSupportIdentities(_rooms, force: true);
-    });
     unawaited(_refreshClientSnapshot());
     unawaited(_refreshMembers());
     unawaited(sync().catchError((_) {}));
+  }
+
+  Future<void> _restorePreviewIdentity() async {
+    final epoch = ++_previewIdentityEpoch;
+    final matrix = widget.matrix;
+    final api = widget.api;
+    final accountId = matrix.userId;
+    bool current() =>
+        mounted &&
+        epoch == _previewIdentityEpoch &&
+        widget.previewOnly &&
+        identical(widget.matrix, matrix) &&
+        identical(widget.api, api) &&
+        matrix.userId == accountId;
+    ProfileRepository? restored;
+    try {
+      if (widget.identityCache == null && accountId != null) {
+        restored = await ProfileRepository.create(
+            api: api, accountKey: 'matrix:$accountId');
+        if (!current()) return;
+        // Preview is authorized only for local, same-account presentation.
+        // hydrate never invokes the business profile/contact refresh endpoints.
+        await restored.hydrate();
+        if (!current()) return;
+        _identityCache.removeListener(_identityChanged);
+        if (_ownsIdentityCache) _identityCache.dispose();
+        _identityCache = restored;
+        _ownsIdentityCache = true;
+        restored = null;
+        _roomProjectionCache.clear();
+        _conversationRows.clear();
+      }
+    } catch (_) {
+      // A local storage failure must not hide available Matrix history.
+    } finally {
+      restored?.dispose();
+    }
+    if (current()) await _refreshClientSnapshot();
   }
 
   void _attachMatrixListeners() {
@@ -609,7 +708,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     final matrix = widget.matrix;
     final loader = widget.snapshotLoader ?? matrix.conversations.snapshot;
     try {
-      await _snapshotRefresh.request(loader, onValue: (snapshot) {
+      await _snapshotRefresh.request(loader, immediate: !_hasClientSnapshot,
+          onValue: (snapshot) {
         if (!mounted ||
             ownerEpoch != _snapshotOwnerEpoch ||
             !identical(widget.matrix, matrix)) {
@@ -642,24 +742,35 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         _roomProjectionCache.removeWhere((id, _) => !liveRoomIds.contains(id));
         _conversationRows.removeWhere((id, _) => !liveRoomIds.contains(id));
         _conversationKeys.removeWhere((id, _) => !liveRoomIds.contains(id));
-        final changed = _unresolvedRoomCount != snapshot.unresolvedRoomCount ||
+        final changed = !_hasClientSnapshot ||
+            _unresolvedRoomCount != snapshot.unresolvedRoomCount ||
             _vaultRoomId != snapshot.vaultRoomId ||
             _reminderRoomId != snapshot.reminderRoomId ||
             !_sameRoomSnapshots(_rooms, nextRooms);
         if (!changed) {
+          _markInitialSnapshotReady();
           _scheduleIdentityRecovery();
           return;
         }
         setState(() {
+          _hasClientSnapshot = true;
           _unresolvedRoomCount = snapshot.unresolvedRoomCount;
           _vaultRoomId = snapshot.vaultRoomId;
           _reminderRoomId = snapshot.reminderRoomId;
           _rooms = List.unmodifiable(nextRooms);
         });
+        _markInitialSnapshotReady();
         _scheduleIdentityRecovery();
         _warmSupportIdentities(nextRooms);
       });
-    } catch (_) {/* Keep cached presentation during sync/revocation. */}
+    } catch (_) {
+      if (!_initialSnapshotSettled && mounted) {
+        _initialSnapshotSettled = true;
+        _initialSnapshotFailed = true;
+        _finishInitialPerformanceTrace();
+      }
+      // Keep cached presentation during sync/revocation.
+    }
   }
 
   Future<void> _refreshMembers() async {
@@ -740,23 +851,28 @@ class _MatrixHomePageState extends State<MatrixHomePage>
 
   @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_navigationStatusChanged);
+    _nextRouteAnimation?.removeStatusListener(_navigationStatusChanged);
+    _snapshotRefresh.dispose();
+    _performanceTrace.dispose();
     WidgetsBinding.instance.removeObserver(this);
     RoomDraftStore.shared.draftMembershipRevision
         .removeListener(_draftsChanged);
     _snapshotOwnerEpoch++;
+    _previewIdentityEpoch++;
     conversationPreferencesChanged.removeListener(_preferencesChanged);
     RoomMentionStore.shared.removeListener(_mentionsChanged);
     _identityCache.removeListener(_identityChanged);
+    if (_ownsIdentityCache) _identityCache.dispose();
     _detachMatrixListeners();
     _presenceTimer?.cancel();
-    _supportTimer?.cancel();
-    _supportIdentities.dispose();
     decryptionStates.dispose();
     super.dispose();
   }
 
   void _warmSupportIdentities(Iterable<_RoomSnapshot> rooms,
       {bool force = false}) {
+    if (widget.previewOnly) return;
     unawaited(_supportIdentities.warm([
       for (final room in rooms)
         if (room.isDirect && room.directPeerId != null) room.directPeerId,
@@ -775,29 +891,37 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   @override
   void didUpdateWidget(covariant MatrixHomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final accountChanged = !identical(widget.matrix, oldWidget.matrix) &&
-        oldWidget.matrix.userId != widget.matrix.userId;
+    final accountChanged = _identityAccountId != widget.matrix.userId;
+    _identityAccountId = widget.matrix.userId;
+    final ownerChanged = accountChanged ||
+        !identical(widget.matrix, oldWidget.matrix) ||
+        !identical(widget.api, oldWidget.api) ||
+        !identical(widget.identityCache, oldWidget.identityCache) ||
+        widget.previewOnly != oldWidget.previewOnly;
+    if (ownerChanged) _previewIdentityEpoch++;
     if (!identical(widget.api, oldWidget.api)) {
-      _supportIdentities.dispose();
-      _supportIdentities = SupportIdentityRepository(widget.api);
+      _supportIdentities = widget.api.supportIdentities;
       _conversationRows.clear();
       _warmSupportIdentities(_rooms);
     }
     if (accountChanged && identical(widget.api, oldWidget.api)) {
-      _supportIdentities.dispose();
-      _supportIdentities = SupportIdentityRepository(widget.api);
+      _supportIdentities = widget.api.supportIdentities;
       _conversationRows.clear();
     }
     final replacementIdentity = widget.identityCache;
     var identityChanged = false;
     if (replacementIdentity != null && replacementIdentity != _identityCache) {
       _identityCache.removeListener(_identityChanged);
+      if (_ownsIdentityCache) _identityCache.dispose();
       _identityCache = replacementIdentity;
+      _ownsIdentityCache = false;
       identityChanged = true;
       if (!widget.previewOnly) _identityCache.addListener(_identityChanged);
-    } else if (accountChanged && replacementIdentity == null) {
+    } else if (ownerChanged && replacementIdentity == null) {
       _identityCache.removeListener(_identityChanged);
+      if (_ownsIdentityCache) _identityCache.dispose();
       _identityCache = ProfileRepository(widget.api);
+      _ownsIdentityCache = true;
       identityChanged = true;
       if (!widget.previewOnly) _identityCache.addListener(_identityChanged);
     }
@@ -807,11 +931,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       if (!widget.previewOnly) {
         unawaited(_identityCache.preload().catchError((_) {}));
       }
-      unawaited(_refreshClientSnapshot());
+      if (!widget.previewOnly) unawaited(_refreshClientSnapshot());
     }
-    if (!identical(widget.matrix, oldWidget.matrix) ||
-        !identical(widget.api, oldWidget.api) ||
-        identityChanged) {
+    if (ownerChanged || identityChanged) {
       _snapshotOwnerEpoch++;
       _directRecoveryJob = null;
       _roomProjectionCache.clear();
@@ -823,6 +945,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         decryptionStates = DecryptionStateController();
         setState(() {
           _rooms = const [];
+          _hasClientSnapshot = false;
           _unresolvedRoomCount = 0;
           _roomProjectionCache.clear();
           _conversationRows.clear();
@@ -835,7 +958,11 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         _attachMatrixListeners();
         unawaited(_processPendingDirectInvites());
       }
-      unawaited(_refreshClientSnapshot());
+      if (widget.previewOnly) {
+        unawaited(_restorePreviewIdentity());
+      } else {
+        unawaited(_refreshClientSnapshot());
+      }
     }
   }
 
@@ -1020,10 +1147,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     // 同一房间的重复点击只保留一次等待动画；跨房间不互相阻塞
     // （旧实现用全局 bool，关掉房间后取消租约期间会吞掉下一个会话）。
     if (!_openingRooms.add(snapshot.id)) {
-      debugPrint('[room-open-list] BLOCKED room=${snapshot.id}');
+      if (kDebugMode) debugPrint('[chatflow/perf] room_open=blocked');
       return;
     }
-    debugPrint('[room-open-list] open room=${snapshot.id}');
+    if (kDebugMode) debugPrint('[chatflow/perf] room_open=started');
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
@@ -1070,7 +1197,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
     } finally {
       final removed = _openingRooms.remove(snapshot.id);
-      debugPrint('[room-open-list] settled room=${snapshot.id} removed=$removed');
+      if (kDebugMode) {
+        debugPrint('[chatflow/perf] room_open=settled guard_released=$removed');
+      }
     }
   }
 
@@ -1099,7 +1228,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         key: ValueKey<String>('conversation-${room.id}'),
         title: room.title,
         draftListenable: RoomDraftStore.shared.draftListenable(room.id),
-        supportIdentities: room.isDirect ? _supportIdentities : null,
+        supportIdentities:
+            room.isDirect && !widget.previewOnly ? _supportIdentities : null,
         matrixUserId: room.isDirect ? room.directPeerId : null,
         subtitle: room.subtitle,
         hasPendingMention: hasMention,
@@ -1304,7 +1434,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
         child: Builder(builder: (context) {
           final invites = _pendingInviteRooms;
           final body = rooms.isEmpty && foldedRooms.isEmpty && invites.isEmpty
-              ? (_unresolvedRoomCount > 0
+              ? (!_hasClientSnapshot || _unresolvedRoomCount > 0
                   ? const SizedBox.expand()
                   : const _MessagesEmptyState())
               : ListView.separated(

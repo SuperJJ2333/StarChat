@@ -5,6 +5,7 @@ import '../../core/business_api_client.dart';
 import '../../core/cache/cache_repository.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/moments/moment_warning_banner.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import '../matrix/profile_repository.dart';
@@ -147,8 +148,7 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
             Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(children: [
-                  Text(_error!,
-                      style: const TextStyle(color: CupertinoColors.systemRed)),
+                  MomentWarningBanner(message: _error!),
                   CupertinoButton(
                       key: const Key('moments-privacy-retry'),
                       onPressed: _loading ? _load : _save,
@@ -182,8 +182,8 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
                               }),
                 ]),
             CupertinoListSection.insetGrouped(
-                footer: const Text(
-                    '关闭后，其他人无法查看你的朋友圈，资料页也不再显示朋友圈入口。你仍可查看和管理自己的动态。'),
+                footer:
+                    const Text('关闭后，其他人无法查看你的朋友圈，资料页也不再显示朋友圈入口。你仍可查看和管理自己的动态。'),
                 children: [
                   CupertinoListTile(
                       key: const Key('moments-excluded-people'),
@@ -278,6 +278,7 @@ class _ExcludedPeopleState extends State<_ExcludedPeoplePage> {
       });
     }
   }
+
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
@@ -292,8 +293,7 @@ class _ExcludedPeopleState extends State<_ExcludedPeoplePage> {
               padding: const EdgeInsets.all(12),
               child: CupertinoSearchTextField(
                   onChanged: (v) => setState(() => _query = v))),
-          Expanded(
-              child: Builder(builder: (context) {
+          Expanded(child: Builder(builder: (context) {
             final contacts = _contacts
                 .where((c) => '${c.displayName} ${c.username}'
                     .toLowerCase()

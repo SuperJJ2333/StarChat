@@ -600,6 +600,14 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
           rooms[room.id] = room;
         }
 
+        try {
+          await _restoreRoomPreviews(rooms.values.toList(), client);
+        } on FormatException {
+          Logs().w('Ignore malformed optional room preview cache');
+        } on TypeError {
+          Logs().w('Ignore malformed optional room preview cache');
+        }
+
         final roomStatesDataRaws = await _preloadRoomStateBox.getAllValues();
         for (final entry in roomStatesDataRaws.entries) {
           final keys = TupleKey.fromString(entry.key);
@@ -641,6 +649,129 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
         return rooms.values.toList();
       });
+
+  /// Repair legacy room snapshots from a bounded canonical timeline head.
+  /// Normal sync already commits both stores together. Independent event
+  /// persistence and older caches can nevertheless leave last_event behind.
+  Future<void> _restoreRoomPreviews(List<Room> rooms, Client client) async {
+    if (rooms.isEmpty) return;
+    final fragmentKeys = [
+      for (final room in rooms) ...[
+        TupleKey(room.id, '').toString(),
+        TupleKey(room.id, 'SENDING').toString(),
+      ],
+    ];
+    final fragments = await _timelineFragmentsBox.getAll(fragmentKeys);
+    final heads = <List<String>>[];
+    final pending = <List<String>>[];
+    final eventKeys = <String>{};
+    for (var i = 0; i < rooms.length; i++) {
+      final head =
+          (fragments[i * 2] ?? []).take(32).whereType<String>().toList();
+      final local =
+          (fragments[i * 2 + 1] ?? []).take(8).whereType<String>().toList();
+      heads.add(head);
+      pending.add(local);
+      for (final id in [
+        ...head,
+        ...local,
+        if (rooms[i].lastEvent != null) rooms[i].lastEvent!.eventId,
+        if (rooms[i].lastEvent?.relationshipType == RelationshipTypes.edit &&
+            rooms[i].lastEvent?.relationshipEventId != null)
+          rooms[i].lastEvent!.relationshipEventId!,
+      ]) {
+        eventKeys.add(TupleKey(rooms[i].id, id).toString());
+      }
+    }
+    final keys = eventKeys.toList();
+    final values = await _eventsBox.getAll(keys);
+    final raws = Map<String, Map?>.fromIterables(keys, values);
+    for (var i = 0; i < rooms.length; i++) {
+      final room = rooms[i];
+      Event? read(String id) {
+        final raw = raws[TupleKey(room.id, id).toString()];
+        if (raw == null) return null;
+        try {
+          final json = copyMap(raw);
+          final status = eventStatusFromInt(json.tryGet<int>('status') ??
+              json
+                  .tryGetMap<String, dynamic>('unsigned')
+                  ?.tryGet<int>(messageSendingStatusKey) ??
+              EventStatus.synced.intValue);
+          // Event's constructor self-heals old sending events via handleSync.
+          // This optional projection must not start that write lifecycle.
+          json['status'] = EventStatus.synced.intValue;
+          return Event.fromJson(json, room)..status = status;
+        } on FormatException {
+          Logs().w('Ignore malformed optional room preview event');
+          return null;
+        } on TypeError {
+          Logs().w('Ignore malformed optional room preview event');
+          return null;
+        }
+      }
+
+      var selected = room.lastEvent;
+      if (selected != null) {
+        final canonical = read(selected.eventId);
+        if (canonical != null &&
+            (canonical.redacted ||
+                (!selected.redacted &&
+                    !(selected.type != EventTypes.Encrypted &&
+                        canonical.type == EventTypes.Encrypted)))) {
+          selected = canonical;
+        } else if (canonical != null && !selected.redacted) {
+          // Keep decrypted content while advancing durable acknowledgement
+          // metadata; do not retain the earlier local sending state.
+          selected.status = canonical.status;
+          selected.originServerTs = canonical.originServerTs;
+        }
+      }
+      final baselineIndex = room.lastEvent == null
+          ? -1
+          : heads[i].indexOf(room.lastEvent!.eventId);
+      final head =
+          baselineIndex < 0 ? heads[i] : heads[i].take(baselineIndex).toList();
+
+      void consider(Event? event, {required bool timelineOrder}) {
+        if (event == null ||
+            event.stateKey != null ||
+            !client.roomPreviewLastEvents.contains(event.type)) {
+          return;
+        }
+        final previous = selected;
+        if (event.relationshipType == RelationshipTypes.edit) {
+          if (previous == null || previous.redacted) return;
+          if (event.relationshipEventId != previous.eventId &&
+              !(previous.relationshipType == RelationshipTypes.edit &&
+                  event.relationshipEventId == previous.relationshipEventId)) {
+            return;
+          }
+        }
+        // Without a baseline in this fragment (limited sync/gap), timestamps
+        // are only a conservative fallback: never regress a newer snapshot.
+        if (previous == null ||
+            timelineOrder ||
+            event.originServerTs.isAfter(previous.originServerTs)) {
+          selected = event;
+        }
+      }
+
+      for (final id in head.reversed) {
+        consider(read(id), timelineOrder: baselineIndex >= 0);
+      }
+      for (final id in pending[i].reversed) {
+        consider(read(id), timelineOrder: false);
+      }
+      final editRoot = selected?.relationshipType == RelationshipTypes.edit
+          ? selected?.relationshipEventId
+          : null;
+      final rootRecall =
+          editRoot == null ? null : read(editRoot)?.redactedBecause;
+      if (rootRecall != null) selected?.setRedactionEvent(rootRecall);
+      room.lastEvent = selected;
+    }
+  }
 
   @override
   Future<SSSSCache?> getSSSSCache(String type) async {

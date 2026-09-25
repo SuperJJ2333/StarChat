@@ -18,8 +18,10 @@ void main() {
       const [SupportIdentity(queryId: 'support-1', userId: 'support-1', matrixUserId: '@support:test', badge: '官方客服', role: SupportRole.supportAgent)],
       const [],
     ]);
+    final repository = SupportIdentityRepository(api);
     await tester.pumpWidget(CupertinoApp(home: ContactsPage(
       api: api, onOpenRoom: (_, {anchorEventId}) async {},
+      supportIdentities: repository,
       pendingFriendRequests: ValueNotifier(0),
     )));
     await tester.pump();
@@ -27,7 +29,12 @@ void main() {
 
     await tester.pump(const Duration(seconds: 30));
     await tester.pump();
+    expect(find.text('@官方客服'), findsOneWidget);
+    await repository.refreshKnown();
+    await tester.pump();
     expect(find.text('@官方客服'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    repository.dispose();
   });
 
   testWidgets('late old API support result cannot color a replaced profile',

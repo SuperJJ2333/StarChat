@@ -1,5 +1,30 @@
 import 'package:flutter/foundation.dart';
 
+enum PhoneInvitationIssue {
+  required,
+  invalid,
+  expired,
+  exhausted,
+  terms,
+  uncertain,
+  provisioning,
+}
+
+/// A server-issued, short-lived proof that SMS verification succeeded.
+/// Keep the ticket in memory and never include it in errors or diagnostics.
+final class PhoneInvitationContinuationRequired implements Exception {
+  const PhoneInvitationContinuationRequired({
+    required this.ticket,
+    required this.issue,
+  });
+
+  final String ticket;
+  final PhoneInvitationIssue issue;
+
+  @override
+  String toString() => 'Phone invitation correction required';
+}
+
 /// ADR-0075：手机号认证与人工充值/汇率/转让意图的客户端契约。
 ///
 /// 独立于 [RegistrationGateway]（避免破坏既有邮箱注册替身）；实现方
@@ -57,6 +82,19 @@ abstract interface class PhoneAuthGateway {
 
   /// 隐私开关：允许通过手机号找到我。
   Future<void> setPhoneFindable(bool enabled);
+}
+
+/// Optional capability for a server-verified OTP continuation.
+abstract interface class PhoneInvitationContinuationGateway {
+  Future<Map<String, dynamic>> completePhoneLoginInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    bool Function()? shouldContinue,
+  });
 }
 
 /// ADR-0077：人工充值（客服结算）与 ADR-0076 参考汇率 / ADR-0079 转让意图。

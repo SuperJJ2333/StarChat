@@ -6,9 +6,15 @@ import 'login_controller_test.dart'
     show FakeDualDomainBusiness, FakeMatrixTokenLogin;
 import 'retained_account_login_test.dart' show RetainedMatrix;
 
-class PhoneBusiness implements DualDomainBusinessGateway, PhoneAuthGateway {
+class PhoneBusiness
+    implements
+        DualDomainBusinessGateway,
+        PhoneAuthGateway,
+        PhoneInvitationContinuationGateway {
   final delegate = FakeDualDomainBusiness();
   int phoneLogins = 0;
+  int invitationContinuations = 0;
+  String? continuationTicket;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
   @override
@@ -22,6 +28,25 @@ class PhoneBusiness implements DualDomainBusinessGateway, PhoneAuthGateway {
     bool Function()? shouldContinue,
   }) async {
     phoneLogins++;
+    return {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> completePhoneLoginInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    bool Function()? shouldContinue,
+  }) async {
+    invitationContinuations++;
+    continuationTicket = invitationTicket;
+    expect(phone, '13800000001');
+    expect(invitationCode, 'GOOD-INVITE');
+    expect(deviceKey, 'installation');
+    expect(termsAccepted, true);
     return {};
   }
 
@@ -68,5 +93,24 @@ void main() {
     await service.cancelAccountSwitch();
     expect(business.delegate.logouts, 1);
     expect(matrix.clears, 0);
+  });
+  test('verified invitation continuation enters Matrix without OTP replay',
+      () async {
+    final business = PhoneBusiness();
+    final matrix = RetainedMatrix();
+    var completions = 0;
+    final service = DualDomainLoginService(
+        business: business,
+        matrix: matrix,
+        deviceKey: () => 'installation',
+        retainedHomeserver: Uri.parse('https://matrix.example.test'),
+        completeMatrixSession: () async => completions++);
+    await service.continuePhoneInvitation(
+        '13800000001', 'opaque-verified-ticket', 'GOOD-INVITE',
+        termsAccepted: true);
+    expect(business.phoneLogins, 0);
+    expect(business.invitationContinuations, 1);
+    expect(business.continuationTicket, 'opaque-verified-ticket');
+    expect(completions, 1);
   });
 }

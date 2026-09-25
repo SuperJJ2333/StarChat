@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/search/global_search_index.dart';
@@ -58,12 +62,15 @@ final class _Nav {
   }
 }
 
-Future<BusinessApiClient> _api({List<Uri>? requests}) async {
+Future<BusinessApiClient> _api(
+    {List<Uri>? requests,
+    PerformanceTraceRecorder? performanceRecorder}) async {
   final store = SecureSessionStore(_MemoryStore());
   await store.saveSession(accessToken: 'a', refreshToken: 'r');
   return BusinessApiClient(
     baseUri: Uri.parse('https://business.test'),
     sessionStore: store,
+    performanceRecorder: performanceRecorder,
     client: MockClient((request) async {
       requests?.add(request.url);
       return http.Response('{"items":[]}', 200,
@@ -80,6 +87,10 @@ Widget _page({
   List<GlobalSearchRoomResult> rooms = _rooms,
   List<ContactSummary> contacts = _contacts,
   Duration debounce = Duration.zero,
+  Future<List<ContactSummary>> Function()? contactsLoader,
+  bool loadContactsFromApi = false,
+  PerformanceTrace? performanceTrace,
+  PerformanceTrace? searchPerformanceTrace,
 }) =>
     CupertinoApp(
       home: GlobalSearchPage(
@@ -87,8 +98,11 @@ Widget _page({
         index: index,
         repository: repository,
         debounce: debounce,
-        contactsLoader: () async => contacts,
+        contactsLoader:
+            loadContactsFromApi ? null : contactsLoader ?? () async => contacts,
         roomsLoader: () async => rooms,
+        performanceTrace: performanceTrace,
+        searchPerformanceTrace: searchPerformanceTrace,
         onOpenRoom: nav == null
             ? (_, {anchorEventId}) async {}
             : (room, {anchorEventId}) =>
@@ -125,6 +139,74 @@ Future<void> _search(WidgetTester tester, String query) async {
 }
 
 void main() {
+  testWidgets('search page initial contacts request shares page operation ID',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final pageTrace = recorder.start(PerformanceOperationType.searchPageOpen);
+    final api = await _api(performanceRecorder: recorder);
+
+    await tester.pumpWidget(_page(
+      api: api,
+      index: GlobalSearchIndex(),
+      loadContactsFromApi: true,
+      performanceTrace: pageTrace,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+        records.any((record) =>
+            record.operation == PerformanceOperationType.apiRequest &&
+            record.endpointCategory == PerformanceEndpointCategory.friendship &&
+            record.operationId == pageTrace.operationId),
+        isTrue);
+  });
+
+  testWidgets('search page paints before sources and first query has own trace',
+      (tester) async {
+    final api = await _api();
+    final contacts = Completer<List<ContactSummary>>();
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    await tester.pumpWidget(_page(
+      api: api,
+      contactsLoader: () => contacts.future,
+      performanceTrace: recorder.start(PerformanceOperationType.searchPageOpen),
+      searchPerformanceTrace: recorder.start(PerformanceOperationType.search),
+    ));
+    await tester.pump();
+    expect(records, isEmpty);
+    contacts.complete(_contacts);
+    await tester.pump();
+    expect(records, hasLength(1));
+    expect(records.single.operation, PerformanceOperationType.searchPageOpen);
+    expect(
+        records.single.stagesUs.keys,
+        containsAll([
+          PerformanceStage.routeEnter,
+          PerformanceStage.firstFrameRendered,
+          PerformanceStage.contentReady,
+        ]));
+
+    await _search(tester, '项目');
+    expect(records, hasLength(2));
+    final query = records.last;
+    expect(query.operation, PerformanceOperationType.search);
+    expect(
+        query.stagesUs.keys,
+        containsAll([
+          PerformanceStage.localSearchStarted,
+          PerformanceStage.localSearchDone,
+          PerformanceStage.renderResults,
+        ]));
+    expect(query.stagesUs.containsKey(PerformanceStage.databaseSearchDone),
+        isFalse);
+  });
+
   testWidgets('blank query keeps the page clean (no sections, no results)',
       (tester) async {
     final api = await _api();
@@ -320,8 +402,7 @@ void main() {
 
     await _search(tester, '项目');
     expect(find.byKey(const Key('global-search-section-联系人')), findsOneWidget);
-    expect(
-        find.byKey(const Key('global-search-section-聊天记录')), findsOneWidget,
+    expect(find.byKey(const Key('global-search-section-聊天记录')), findsOneWidget,
         reason: '聊天记录分组必须可用（打开能力必填）');
   });
 

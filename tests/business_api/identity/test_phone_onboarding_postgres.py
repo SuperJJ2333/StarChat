@@ -12,7 +12,7 @@ from app.core.database import Base
 from app.core.errors import AppError
 from app.core.outbox import OutboxEvent
 from app.modules.identity.enums import AccountStatus
-from app.modules.identity.invitations import InvitationService
+from app.modules.identity.invitations import InvitationService, hash_opaque_token
 from app.modules.identity.models import User, Invitation
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.phone import PhoneAuthService, PhoneOtpService, RecordingSmsSender
@@ -74,6 +74,37 @@ def test_parallel_verified_signup_and_ticket_exchange_each_have_one_winner():
             results = list(pool.map(exchange, range(8)))
         assert sum(hasattr(result, 'access_token') for result in results) == 1
         assert results.count('LOGIN_TICKET_INVALID') == 7
+
+        # A verified invitation ticket can be submitted concurrently by a
+        # flaky client without consuming the invitation or Outbox twice.
+        invitation.issue(code='continuation-invite', max_uses=1,
+            expires_at=clock()+timedelta(days=1), created_by='test')
+        auth.request_login_otp(phone='13900000002')
+        continuation = auth.login(phone='13900000002', code=sender.messages[-1][1],
+            tokens=None, device_key='parallel-device', device_name='test',
+            allow_invitation_continuation=True)
+        assert continuation['status'] == 'INVITATION_VERIFIED'
+        continuation_ticket = continuation['invitation_ticket']
+
+        def finish_invitation(_):
+            try:
+                return auth.complete_invitation(invitation_ticket=continuation_ticket,
+                    phone='13900000002', device_key='parallel-device', device_name='test',
+                    invitation_code='continuation-invite', terms_accepted=True,
+                    tokens=None)
+            except AppError as error:
+                return error.code
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            completions = list(pool.map(finish_invitation, range(8)))
+        assert all(isinstance(item, dict) and item['status'] == 'PENDING_MATRIX'
+                   and item['login_ticket'] == continuation_ticket
+                   for item in completions)
+        with factory() as session:
+            assert len(session.scalars(select(User)).all()) == 2
+            assert session.scalar(select(Invitation).where(
+                Invitation.code_hash == hash_opaque_token('continuation-invite'))).use_count == 1
+            assert len(session.scalars(select(OutboxEvent)).all()) == 2
     finally:
         # Only this test's freshly generated, fixed-prefix schema is removed.
         with engine.begin() as connection:

@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'chat_diagnostics.dart';
+import 'performance_metrics.dart';
+import 'performance_trace.dart';
 
 /// Diagnostics live exactly as long as the authenticated application. No
 /// account identifier is persisted or sent by this scope.
@@ -14,18 +16,21 @@ final class ChatDiagnosticsScope extends StatefulWidget {
       required this.platform,
       required this.upload,
       required this.child,
-      this.diagnostics});
+      this.diagnostics,
+      this.performanceMetrics});
   final int sessionEpoch;
   final String version;
   final ChatDiagnosticPlatform platform;
   final ChatDiagnosticUploader upload;
   final ChatDiagnostics? diagnostics;
+  final PerformanceMetrics? performanceMetrics;
   final Widget child;
   @override
   State<ChatDiagnosticsScope> createState() => _ChatDiagnosticsScopeState();
 }
 
-final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope> {
+final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
+    with WidgetsBindingObserver {
   late ChatDiagnostics _diagnostics;
   int _generation = -1;
   void _start() {
@@ -35,11 +40,19 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope> {
         platform: widget.platform,
         upload: widget.upload);
     _generation = _diagnostics.sessionGeneration;
+    PerformanceTraceRecorder.instance.lifecycle =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed
+            ? PerformanceLifecycle.foreground
+            : PerformanceLifecycle.background;
   }
 
   void _stop() {
     if (_diagnostics.sessionGeneration == _generation) {
       _diagnostics.stopSession();
+      PerformanceTraceRecorder.instance.clear();
+      (widget.performanceMetrics ?? PerformanceMetrics.instance).reset();
+      PerformanceTraceRecorder.instance.lifecycle =
+          PerformanceLifecycle.unknown;
     }
   }
 
@@ -47,7 +60,24 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope> {
   void initState() {
     super.initState();
     _start();
+    WidgetsBinding.instance.addObserver(this);
     SchedulerBinding.instance.addTimingsCallback(_timings);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final recorder = PerformanceTraceRecorder.instance;
+    if (state != AppLifecycleState.resumed) {
+      recorder.lifecycle = PerformanceLifecycle.background;
+      return;
+    }
+    recorder.lifecycle = PerformanceLifecycle.resuming;
+    final generation = _generation;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && generation == _generation) {
+        recorder.lifecycle = PerformanceLifecycle.foreground;
+      }
+    });
   }
 
   @override
@@ -92,6 +122,7 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     SchedulerBinding.instance.removeTimingsCallback(_timings);
     _stop();
     super.dispose();

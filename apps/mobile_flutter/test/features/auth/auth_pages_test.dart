@@ -22,10 +22,11 @@ final class PageGateway implements RegistrationGateway {
   @override
   Future<InvitationValidationResult> validateInvitation(
     String invitationCode,
-  ) async => const InvitationValidationResult(
-    InvitationValidationState.ready,
-    '邀请码可用',
-  );
+  ) async =>
+      const InvitationValidationResult(
+        InvitationValidationState.ready,
+        '邀请码可用',
+      );
   @override
   Future<RegistrationReceipt> register({
     required String username,
@@ -33,13 +34,14 @@ final class PageGateway implements RegistrationGateway {
     required String email,
     required String password,
     required String invitationCode,
-  }) async => registerError != null
-      ? throw registerError!
-      : const RegistrationReceipt(
-          registrationSession: 'session',
-          status: 'PENDING_EMAIL',
-          resendAfterSeconds: 60,
-        );
+  }) async =>
+      registerError != null
+          ? throw registerError!
+          : const RegistrationReceipt(
+              registrationSession: 'session',
+              status: 'PENDING_EMAIL',
+              resendAfterSeconds: 60,
+            );
   @override
   Future<int> resendVerification(String registrationSession) async => 60;
 
@@ -187,9 +189,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final top = tester
-        .getTopLeft(find.byKey(const Key('auth-surface-card')))
-        .dy;
+    final top =
+        tester.getTopLeft(find.byKey(const Key('auth-surface-card'))).dy;
     expect(top, greaterThanOrEqualTo(96));
     expect(top, lessThanOrEqualTo(160));
   });
@@ -211,8 +212,8 @@ void main() {
     );
 
     ModernActionButton loginButton() => tester.widget<ModernActionButton>(
-      find.widgetWithText(ModernActionButton, '登录'),
-    );
+          find.widgetWithText(ModernActionButton, '登录'),
+        );
 
     expect(find.byKey(const Key('auth-agreement-checkbox')), findsOneWidget);
     expect(loginButton().onPressed, isNull);
@@ -413,6 +414,133 @@ void main() {
     );
     final title = tester.widget<Text>(find.text('畅聊'));
     expect(title.style?.color, WeChatColors.darkTextPrimary);
+  });
+  testWidgets('login and registration dark surfaces dim the light landing art',
+      (tester) async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('http://localhost'),
+      sessionStore: SecureSessionStore(),
+    );
+    final registration = RegistrationController(gateway: PageGateway());
+    for (final page in <Widget>[
+      LoginPage(api: api, onLogin: (_, __) async {}),
+      RegistrationPage(
+          controller: registration, onVerification: (_) {}, onBack: () {}),
+      VerificationPage(controller: registration, onCompleted: () {}),
+    ]) {
+      await tester.pumpWidget(CupertinoApp(
+        theme: const CupertinoThemeData(brightness: Brightness.dark),
+        home: page,
+      ));
+      final scrim = tester
+          .widget<ColoredBox>(find.byKey(const Key('auth-background-scrim')));
+      expect(scrim.color.a, greaterThan(0.6));
+    }
+  });
+  testWidgets('tapping non-input content dismisses keyboard on both auth pages',
+      (tester) async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('http://localhost'),
+      sessionStore: SecureSessionStore(),
+    );
+    final registration = RegistrationController(gateway: PageGateway());
+    for (final (page, fieldKey, title) in <(Widget, Key, String)>[
+      (
+        LoginPage(api: api, onLogin: (_, __) async {}),
+        const Key('auth-login-identity'),
+        '畅聊'
+      ),
+      (
+        RegistrationPage(
+            controller: registration, onVerification: (_) {}, onBack: () {}),
+        const Key('auth-registration-nickname'),
+        '创建畅聊账号'
+      ),
+    ]) {
+      await tester.pumpWidget(CupertinoApp(home: page));
+      final field = find.descendant(
+          of: find.byKey(fieldKey), matching: find.byType(CupertinoTextField));
+      await tester.tap(field);
+      await tester.pump();
+      expect(
+          tester
+              .widget<EditableText>(find.descendant(
+                  of: field, matching: find.byType(EditableText)))
+              .focusNode
+              .hasFocus,
+          isTrue);
+      await tester.tap(find.text(title));
+      await tester.pump();
+      expect(
+          tester
+              .widget<EditableText>(find.descendant(
+                  of: field, matching: find.byType(EditableText)))
+              .focusNode
+              .hasFocus,
+          isFalse);
+    }
+  });
+  testWidgets('code request actions have visible outlines and press feedback',
+      (tester) async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('http://localhost'),
+      sessionStore: SecureSessionStore(),
+    );
+    await tester.pumpWidget(
+        CupertinoApp(home: LoginPage(api: api, onLogin: (_, __) async {})));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('手机号登录'));
+    await tester.pumpAndSettle();
+    for (final action in <Finder>[
+      find.byKey(const Key('auth-login-send-code')),
+    ]) {
+      final decoration = tester
+          .widget<Container>(find
+              .descendant(of: action, matching: find.byType(Container))
+              .first)
+          .decoration as BoxDecoration;
+      expect(decoration.border, isNotNull);
+      final gesture = await tester.startGesture(tester.getCenter(action));
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(
+          tester
+              .widget<AnimatedScale>(find.descendant(
+                  of: action, matching: find.byType(AnimatedScale)))
+              .scale,
+          lessThan(1));
+      await gesture.up();
+      await tester.pump();
+    }
+    final registration = RegistrationController(gateway: PageGateway());
+    await tester.pumpWidget(CupertinoApp(
+        home: RegistrationPage(
+            controller: registration, onVerification: (_) {}, onBack: () {})));
+    final action = find.byKey(const Key('auth-registration-send-code'));
+    final decoration = tester
+        .widget<Container>(
+            find.descendant(of: action, matching: find.byType(Container)).first)
+        .decoration as BoxDecoration;
+    expect(decoration.border, isNotNull);
+  });
+  testWidgets('code request disables press scale when motion is reduced',
+      (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+        builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: true),
+            child: child!),
+        home: Center(
+            child: AuthCodeRequestButton(
+                buttonKey: const Key('reduced-motion-code'),
+                label: '获取验证码',
+                onPressed: () {}))));
+    final action = find.byKey(const Key('reduced-motion-code'));
+    final gesture = await tester.startGesture(tester.getCenter(action));
+    await tester.pump();
+    final animation = tester.widget<AnimatedScale>(
+        find.descendant(of: action, matching: find.byType(AnimatedScale)));
+    expect(animation.scale, 1);
+    expect(animation.duration, Duration.zero);
+    await gesture.up();
   });
   testWidgets('unchecked agreement gives login a muted disabled treatment', (
     tester,
@@ -743,7 +871,7 @@ void main() {
         CupertinoApp(
           home: VerificationPage(
             controller: controller,
-              onCompleted: () {},
+            onCompleted: () {},
           ),
         ),
       );

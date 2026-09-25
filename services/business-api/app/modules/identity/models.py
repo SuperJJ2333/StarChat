@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -37,11 +38,11 @@ class User(Base):
     matrix_user_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     nickname: Mapped[str] = mapped_column(
-        String(64),
+        Text,
         nullable=False,
         default=lambda context: context.get_current_parameters()["username"],
     )
-    signature: Mapped[str | None] = mapped_column(String(140))
+    signature: Mapped[str | None] = mapped_column(Text)
     nudge_suffix: Mapped[str | None] = mapped_column(String(32))
     auto_allow_group_join: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('true'))
     avatar_object_key: Mapped[str | None] = mapped_column(String(512))

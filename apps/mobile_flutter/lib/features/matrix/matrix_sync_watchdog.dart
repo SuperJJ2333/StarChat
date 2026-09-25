@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart' show Client, SyncStatus, SyncStatusUpdate;
 
+import '../../core/performance_metrics.dart';
 import 'matrix_sync_recovery_controller.dart';
 import 'matrix_sync_phase_metrics.dart';
 
@@ -51,8 +52,8 @@ final class ClientSyncWatchdogTarget implements SyncWatchdogTarget {
 ///   强制重建循环；15 秒仅输出诊断，绝不在 SDK 清理未完成时抢跑，并补一次
 ///   `oneShotSync` 立即对账漏掉的消息。
 ///
-/// 所有行动经 debugPrint 打 `chatflow/syncwatchdog` 标签（release 构建
-/// logcat 可见），真机复现时可据此定位悬挂形态。
+/// Profile/diagnostic builds can print detailed actions under the
+/// `chatflow/matrix` tag. Release keeps only bounded typed counters.
 final class MatrixSyncWatchdog {
   MatrixSyncWatchdog({
     required this.target,
@@ -82,6 +83,11 @@ final class MatrixSyncWatchdog {
   final MatrixSyncPhaseMetrics _syncPhaseMetrics;
   final ValueNotifier<MatrixConnectionStatus> connectionStatus =
       ValueNotifier(MatrixConnectionStatus.unknown);
+  final ValueNotifier<bool?> _transportAvailable = ValueNotifier<bool?>(null);
+
+  /// Actual device transport observation. Null until the transport monitor
+  /// reports; SDK sync errors never change this signal.
+  ValueListenable<bool?> get transportAvailable => _transportAvailable;
 
   StreamSubscription<SyncStatusUpdate>? _subscription;
   Timer? _timer;
@@ -96,10 +102,38 @@ final class MatrixSyncWatchdog {
               transport: _transport,
               onCandidate: _recoverFromTransport,
               onOffline: () => _setStatus(MatrixConnectionStatus.offline),
-              onTransportStateChanged: (online) => _transportOffline = !online,
+              onTransportStateChanged: (online) {
+                _transportOffline = !online;
+                if (!_disposed && _transportAvailable.value != online) {
+                  _transportAvailable.value = online;
+                }
+              },
             );
   bool _disposed = false;
   DateTime _lastProgress = DateTime.now();
+  DateTime? _lastHealthySyncAt;
+  bool _hasConnected = false;
+  int _softKickCount = 0;
+  int _hardRestartCount = 0;
+  int _syncErrorCount = 0;
+  int _reconnectCount = 0;
+  static const int _maxDiagnosticCount = 1000000;
+
+  /// Monotonic action counts for per-resume deltas, even in low-overhead
+  /// release builds where PerformanceMetrics sampling is disabled.
+  int get softKickCount => _softKickCount;
+  int get hardRestartCount => _hardRestartCount;
+  int get syncErrorCount => _syncErrorCount;
+  int get reconnectCount => _reconnectCount;
+
+  /// Age of the last SDK `finished` status while transport was available.
+  /// A waiting/processing heartbeat does not establish a healthy sync.
+  Duration? get lastHealthySyncAge {
+    final healthyAt = _lastHealthySyncAt;
+    if (healthyAt == null || _disposed) return null;
+    final age = _clock().difference(healthyAt);
+    return age.isNegative ? Duration.zero : age;
+  }
 
   void start() {
     if (_disposed || _timer != null) return;
@@ -115,7 +149,19 @@ final class MatrixSyncWatchdog {
           update.status == SyncStatus.finished) {
         _lastProgress = _clock();
       }
+      if (update.status == SyncStatus.error) {
+        if (_syncErrorCount < _maxDiagnosticCount) _syncErrorCount++;
+        _syncPhaseMetrics.metrics.increment(PerformanceCounter.syncErrors);
+      }
       if (update.status == SyncStatus.finished && !_transportOffline) {
+        if (_hasConnected &&
+            connectionStatus.value != MatrixConnectionStatus.connected) {
+          if (_reconnectCount < _maxDiagnosticCount) _reconnectCount++;
+          _syncPhaseMetrics.metrics
+              .increment(PerformanceCounter.syncReconnects);
+        }
+        _hasConnected = true;
+        _lastHealthySyncAt = _clock();
         _setStatus(MatrixConnectionStatus.connected);
       } else if (update.status == SyncStatus.error &&
           connectionStatus.value != MatrixConnectionStatus.offline) {
@@ -148,6 +194,12 @@ final class MatrixSyncWatchdog {
     }
   }
 
+  void _logDiagnostic(String details) {
+    if (_syncPhaseMetrics.metrics.enabled) {
+      debugPrint('[chatflow/matrix] $details');
+    }
+  }
+
   /// 看门狗拍：按停跳时长分级处置。测试可直接驱动。
   @visibleForTesting
   Future<void> tick() async {
@@ -157,13 +209,12 @@ final class MatrixSyncWatchdog {
     final idle = _clock().difference(_lastProgress);
     if (idle <= softStallThreshold) return;
     if (idle <= hardStallThreshold) {
-      debugPrint('[chatflow/syncwatchdog] sync stalled ${idle.inSeconds}s, '
-          'kicking oneShotSync');
+      _logDiagnostic('sync stalled ${idle.inSeconds}s, kicking oneShotSync');
       unawaited(_softKick());
       return;
     }
-    debugPrint('[chatflow/syncwatchdog] sync stalled ${idle.inSeconds}s, '
-        'queuing serialized loop restart');
+    _logDiagnostic(
+        'sync stalled ${idle.inSeconds}s, queuing serialized loop restart');
     _lastProgress = _clock(); // 重置阈值，避免连环重启。
     unawaited(_restartLoop());
   }
@@ -171,6 +222,8 @@ final class MatrixSyncWatchdog {
   Future<void> _restartLoop() {
     final existing = _restarting;
     if (existing != null) return existing;
+    _hardRestartCount++;
+    _syncPhaseMetrics.metrics.increment(PerformanceCounter.syncHardRestarts);
     late final Future<void> restart;
     restart = _restartLoopSafely().whenComplete(() {
       if (identical(_restarting, restart)) _restarting = null;
@@ -182,7 +235,7 @@ final class MatrixSyncWatchdog {
     _abortDiagnosticTimer?.cancel();
     final diagnostic = Timer(const Duration(seconds: 15), () {
       if (!_disposed) {
-        debugPrint('[chatflow/syncwatchdog] abortSync is still settling; '
+        _logDiagnostic('abortSync is still settling; '
             'waiting to avoid corrupting the replacement loop');
       }
     });
@@ -225,13 +278,15 @@ final class MatrixSyncWatchdog {
   Future<void> _softKick() {
     final existing = _softKicking;
     if (existing != null) return existing;
+    _softKickCount++;
+    _syncPhaseMetrics.metrics.increment(PerformanceCounter.syncSoftKicks);
     late final Future<void> kick;
     kick = target
         .oneShotSync()
         .timeout(
           const Duration(seconds: 45),
-          onTimeout: () => debugPrint('[chatflow/syncwatchdog] oneShotSync '
-              'kick timed out; escalating on next tick'),
+          onTimeout: () => _logDiagnostic(
+              'oneShotSync kick timed out; escalating on next tick'),
         )
         .catchError((_) {})
         .whenComplete(() {
@@ -249,6 +304,8 @@ final class MatrixSyncWatchdog {
     _abortDiagnosticTimer = null;
     _recoveryController?.dispose();
     _syncPhaseMetrics.dispose();
+    _lastHealthySyncAt = null;
+    _transportAvailable.dispose();
     connectionStatus.dispose();
     unawaited(_subscription?.cancel());
     _subscription = null;

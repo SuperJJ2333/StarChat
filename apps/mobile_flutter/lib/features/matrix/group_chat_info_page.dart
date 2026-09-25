@@ -1,4 +1,6 @@
 import '../../core/business_api_client.dart';
+import '../../core/support_identity_repository.dart';
+import '../../ui/components/wechat_official_name.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
@@ -219,6 +221,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
             : ListView(
                 children: [
                   _MemberGrid(
+                    supportIdentities: widget.api?.supportIdentities,
                     members: expanded
                         ? snapshot.members
                         : snapshot.members.take(collapsedMemberCount).toList(),
@@ -263,7 +266,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     () => _edit(
                       title: '群聊名称',
                       initialValue: snapshot.name,
-                      maxLength: 20,
+                      maxLength: 12,
                       save: widget.controller.rename,
                     ),
                   ),
@@ -617,6 +620,7 @@ final class _FollowedGroupMemberPickerPageState
 final class _MemberGrid extends StatelessWidget {
   const _MemberGrid(
       {required this.members,
+      this.supportIdentities,
       required this.onAdd,
       this.avatarMedia,
       this.onMemberTap,
@@ -624,6 +628,7 @@ final class _MemberGrid extends StatelessWidget {
       this.identityCache});
 
   final List<GroupChatMember> members;
+  final SupportIdentityRepository? supportIdentities;
   final VoidCallback onAdd;
   final AvatarMediaCapability? avatarMedia;
   final ValueChanged<GroupChatMember>? onMemberTap;
@@ -641,10 +646,12 @@ final class _MemberGrid extends StatelessWidget {
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 14,
             crossAxisSpacing: 14,
-            childAspectRatio: .72,
+            mainAxisExtent:
+                96 * MediaQuery.textScalerOf(context).scale(1).clamp(1, 1.8),
             children: [
               for (var index = 0; index < members.length; index++)
                 _MemberCell(
+                  supportIdentities: supportIdentities,
                   key: Key('group-member-${members[index].matrixUserId}'),
                   member: members[index],
                   identityCache: identityCache,
@@ -712,12 +719,6 @@ final class GroupManagementPage extends StatelessWidget {
           navigationBar: const CupertinoNavigationBar(middle: Text('群管理')),
           child: SafeArea(
               child: ListView(children: [
-            if (controller.ownershipTransferCompatibilityMessage != null)
-              Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(controller.ownershipTransferCompatibilityMessage!,
-                      style:
-                          const TextStyle(color: WeChatColors.textSecondary))),
             if (controller.state.message != null)
               Padding(
                   padding: const EdgeInsets.all(16),
@@ -733,12 +734,6 @@ final class GroupManagementPage extends StatelessWidget {
                   'join_approval_required', !busy),
               _setting('仅群主/群管理员可修改群聊名称', snapshot.onlyManagersCanRename,
                   'only_managers_can_rename', !busy && snapshot.isOwner),
-              if (!snapshot.isOwner)
-                const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('群名修改权限仅群主可设置（服务器权限限制）',
-                        style: TextStyle(
-                            color: WeChatColors.textSecondary, fontSize: 12))),
             ],
             if (snapshot.isOwner) ...[
               WeChatListTile(
@@ -750,11 +745,16 @@ final class GroupManagementPage extends StatelessWidget {
                   subtitle: Text('最多3位（${snapshot.adminIds.length}/3）'),
                   trailing: const CupertinoListTileChevron(),
                   onTap: busy ? null : () => _pick(context, transfer: false)),
-              CupertinoButton(
-                  onPressed: busy ? null : () => _dissolve(context),
-                  child: const Center(
-                      child: Text('解散该群聊',
-                          style: TextStyle(color: WeChatColors.danger)))),
+              Container(
+                  key: const Key('group-dissolve-button'),
+                  color: WeChatColors.dangerFill,
+                  margin: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                  child: CupertinoButton(
+                      onPressed: busy ? null : () => _dissolve(context),
+                      child: const Center(
+                          child: Text('解散该群聊',
+                              style:
+                                  TextStyle(color: CupertinoColors.white))))),
             ],
           ])),
         );
@@ -882,13 +882,6 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
                 child: const Text('完成'))),
         child: SafeArea(
             child: ListView(children: [
-          if (widget.transfer &&
-              widget.controller.ownershipTransferCompatibilityMessage != null)
-            Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                    widget.controller.ownershipTransferCompatibilityMessage!,
-                    style: const TextStyle(color: WeChatColors.textSecondary))),
           if (widget.controller.state.status == GroupChatInfoStatus.failed)
             Padding(
                 padding: const EdgeInsets.all(16),
@@ -1102,11 +1095,13 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
 final class _MemberCell extends StatelessWidget {
   const _MemberCell(
       {super.key,
+      this.supportIdentities,
       required this.member,
       this.onTap,
       this.identityCache,
       this.avatarMedia});
   final GroupChatMember member;
+  final SupportIdentityRepository? supportIdentities;
   final AvatarMediaCapability? avatarMedia;
   final VoidCallback? onTap;
   final ProfileRepository? identityCache;
@@ -1119,11 +1114,12 @@ final class _MemberCell extends StatelessWidget {
         children: [
           _memberAvatar(identityCache, member, size: 48, media: avatarMedia),
           const SizedBox(height: 5),
-          Text(
-            _resolvedMemberName(identityCache, member),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12),
+          WeChatOfficialName(
+            name: _resolvedMemberName(identityCache, member),
+            matrixUserId: member.matrixUserId,
+            supportIdentities: supportIdentities,
+            badgeBelow: true,
+            nameStyle: const TextStyle(fontSize: 12),
           ),
         ],
       ));
@@ -1175,6 +1171,26 @@ final class _GroupTextEditPageState extends State<_GroupTextEditPage> {
   late final TextEditingController input =
       TextEditingController(text: widget.initialValue);
 
+  void _complete() {
+    final value = input.text.trim();
+    if (value.characters.length > widget.maxLength) {
+      showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          content: Text('${widget.title}最多支持${widget.maxLength}个字符'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    Navigator.pop(context, value);
+  }
+
   @override
   void dispose() {
     input.dispose();
@@ -1190,7 +1206,7 @@ final class _GroupTextEditPageState extends State<_GroupTextEditPage> {
           middle: Text(widget.title),
           trailing: CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: () => Navigator.pop(context, input.text.trim()),
+            onPressed: _complete,
             child: const Text('完成'),
           ),
         ),

@@ -93,6 +93,93 @@ final class AuthErrorMessage extends StatelessWidget {
       );
 }
 
+/// A compact verification action with an explicit outline and press response.
+/// The surrounding form remains responsible for format checks and cooldowns.
+final class AuthCodeRequestButton extends StatefulWidget {
+  const AuthCodeRequestButton({
+    super.key,
+    required this.buttonKey,
+    required this.label,
+    required this.onPressed,
+    this.filled = false,
+  });
+
+  final Key buttonKey;
+  final String label;
+  final VoidCallback? onPressed;
+  final bool filled;
+
+  @override
+  State<AuthCodeRequestButton> createState() => _AuthCodeRequestButtonState();
+}
+
+final class _AuthCodeRequestButtonState extends State<AuthCodeRequestButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed != value) setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return Listener(
+      onPointerDown: enabled ? (_) => _setPressed(true) : null,
+      onPointerUp: (_) => _setPressed(false),
+      onPointerCancel: (_) => _setPressed(false),
+      child: CupertinoButton(
+        key: widget.buttonKey,
+        minimumSize: const Size(
+          WeChatDimensions.minimumTouchTarget,
+          WeChatDimensions.minimumTouchTarget,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.sm),
+        pressedOpacity: 1,
+        onPressed: widget.onPressed,
+        child: AnimatedScale(
+          scale: enabled && _pressed && !reduceMotion
+              ? WeChatMotion.actionPressScale
+              : 1,
+          duration:
+              reduceMotion ? Duration.zero : WeChatMotion.actionPressDuration,
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: WeChatSpacing.sm,
+              vertical: WeChatSpacing.xs,
+            ),
+            decoration: BoxDecoration(
+              color: widget.filled
+                  ? (enabled
+                      ? WeChatColors.brandPrimary
+                      : WeChatColors.textTertiary)
+                  : CupertinoColors.transparent,
+              border: Border.all(
+                color: enabled
+                    ? WeChatColors.brandPrimary
+                    : WeChatColors.textTertiary,
+              ),
+              borderRadius: BorderRadius.circular(WeChatRadius.tag),
+            ),
+            child: Text(
+              widget.label,
+              style: TextStyle(
+                color: widget.filled
+                    ? CupertinoColors.white
+                    : (enabled
+                        ? WeChatColors.brandPrimary
+                        : WeChatColors.textTertiary),
+                fontSize: WeChatTypography.caption,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 final class AuthAgreementRow extends StatelessWidget {
   const AuthAgreementRow({
     super.key,
@@ -280,6 +367,7 @@ final class AuthTextField extends StatelessWidget {
     required this.placeholder,
     required this.controller,
     this.enabled = true,
+    this.readOnly = false,
     this.obscureText = false,
     this.keyboardType,
     this.textInputAction,
@@ -292,6 +380,7 @@ final class AuthTextField extends StatelessWidget {
   final String placeholder;
   final TextEditingController controller;
   final bool enabled;
+  final bool readOnly;
   final bool obscureText;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
@@ -326,6 +415,7 @@ final class AuthTextField extends StatelessWidget {
             child: CupertinoTextField(
               controller: controller,
               enabled: enabled,
+              readOnly: readOnly,
               obscureText: obscureText,
               keyboardType: keyboardType,
               textInputAction: textInputAction,

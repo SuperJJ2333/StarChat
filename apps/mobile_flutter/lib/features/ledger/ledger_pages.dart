@@ -38,6 +38,14 @@ String formatLedgerRowAmount(Object? value) {
   return number.startsWith('-') || number.startsWith('+') ? number : '+$number';
 }
 
+/// The API supplies the balance in ledger order; missing old responses stay unknown.
+String formatLedgerBalance(Object? value) {
+  final formatted = formatLedgerAmount(value);
+  return formatted == '--'
+      ? '点钻余额 —'
+      : '点钻余额 ${formatted.substring(0, formatted.length - 3)}';
+}
+
 String formatLedgerSignedAmount(Object? value) {
   final amount = formatLedgerRowAmount(value);
   return amount == '--' ? amount : '$amount 点钻';
@@ -459,7 +467,7 @@ final class _LedgerListPageState extends State<LedgerListPage> {
       subtitle:
           '${formatLedgerShortTime(row['created_at'])}${description.isEmpty ? '' : ' · $description'}',
       amount: amount,
-      status: _statusText(row),
+      status: formatLedgerBalance(row['balance_after']),
       onPressed: () => Navigator.of(context).push(MotionPageRoute<void>(
           builder: (_) => LedgerDetailPage(
               gateway: widget.gateway,
@@ -512,25 +520,6 @@ final class _LedgerListPageState extends State<LedgerListPage> {
       if (trimmed != null && trimmed.isNotEmpty) return trimmed;
     }
     return null;
-  }
-
-  /// 账单状态→展示文案（金额下方行）。
-  String _statusText(Map<String, dynamic> row) {
-    final status = '${row['status'] ?? ''}';
-    final reason = '${row['reason_code'] ?? ''}';
-    if (reason == 'RED_PACKET_CLAIM') return '领取红包';
-    if (reason == 'RED_PACKET_CREATE') return '发出红包';
-    if (reason == 'RED_PACKET_REFUND' || reason == 'RED_PACKET_EXPIRED') {
-      return '退回';
-    }
-    return switch (status) {
-      'ACCEPTED' => '已接受',
-      'DECLINED' => '已拒收',
-      'PENDING' => '待处理',
-      'COMPLETED' => '已完成',
-      'EXPIRED' => '已过期',
-      _ => status.isEmpty ? '已入账' : status,
-    };
   }
 
   Widget _tail() {
@@ -987,9 +976,12 @@ final class LedgerRecordRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                Text(status,
-                    style: const TextStyle(
-                        fontSize: 11, color: WeChatColors.textTertiary)),
+                FittedBox(
+                    alignment: Alignment.centerRight,
+                    fit: BoxFit.scaleDown,
+                    child: Text(status,
+                        style: const TextStyle(
+                            fontSize: 11, color: WeChatColors.textTertiary))),
               ],
             ),
           ),

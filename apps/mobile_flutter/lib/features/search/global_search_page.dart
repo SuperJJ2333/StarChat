@@ -4,6 +4,7 @@ import '../contacts/contact_actions.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/performance_trace.dart';
 import '../matrix/conversation_presentation.dart';
 import '../matrix/decryption_state_controller.dart';
 import '../matrix/matrix_e2ee_client.dart';
@@ -58,8 +59,12 @@ final class GlobalSearchPage extends StatefulWidget {
     this.visibility,
     this.debounce = const Duration(milliseconds: 250),
     this.sectionLimit = 3,
+    this.performanceTrace,
+    this.searchPerformanceTrace,
   });
   final BusinessApiClient api;
+  final PerformanceTrace? performanceTrace;
+  final PerformanceTrace? searchPerformanceTrace;
   final ContactActions? contactActions;
   final ProfileRepository? identityCache;
 
@@ -96,6 +101,69 @@ final class GlobalSearchPage extends StatefulWidget {
 final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   late final GlobalSearchController controller;
   Future<List<ContactSummary>>? contacts;
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(
+          operation: PerformanceOperationType.searchPageOpen);
+  PerformanceTrace? _searchTrace;
+  bool _injectedSearchTraceUsed = false;
+  bool _firstQueryObserved = false;
+  bool _firstFrameRendered = false;
+  bool _initialSourcesSettled = false;
+  bool _initialSourcesFailed = false;
+  bool _queryContactsDone = false;
+  bool _queryRenderScheduled = false;
+  int _queryGeneration = 0;
+
+  void _finishPageTrace() {
+    if (!_firstFrameRendered || !_initialSourcesSettled) return;
+    if (!_initialSourcesFailed) {
+      _performanceTrace.mark(PerformanceStage.contentReady);
+    }
+    _performanceTrace.finish(
+      result: _initialSourcesFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
+  void _queryChanged(String value) {
+    if (!_firstQueryObserved) {
+      _searchTrace?.dispose();
+      _searchTrace = null;
+      _queryContactsDone = false;
+      _queryRenderScheduled = false;
+      _queryGeneration++;
+    }
+    controller.setQuery(value);
+  }
+
+  void _finishFirstQuery(PerformanceResult result) {
+    final trace = _searchTrace;
+    if (trace == null || _firstQueryObserved) return;
+    if (result == PerformanceResult.success) {
+      trace.mark(PerformanceStage.renderResults);
+    }
+    trace.finish(result: result);
+    _searchTrace = null;
+    _firstQueryObserved = true;
+  }
+
+  void _scheduleFirstQueryRender() {
+    if (_queryRenderScheduled) return;
+    _queryRenderScheduled = true;
+    final trace = _searchTrace;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !identical(_searchTrace, trace) ||
+          _firstQueryObserved ||
+          controller.loading ||
+          controller.isBlank ||
+          controller.error != null) {
+        return;
+      }
+      _finishFirstQuery(PerformanceResult.success);
+    });
+  }
 
   /// 显式注入 index（既有测试/调用方）时不接管仓库；否则默认共享仓库。
   LocalMessageSearchRepository? get _repository =>
@@ -112,29 +180,63 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
     widget.identityCache?.addListener(_identityChanged);
     contacts = _loadContactSummaries();
-    widget.identityCache?.refreshContactsQuietly();
+    if (widget.identityCache != null) {
+      unawaited(_performanceTrace
+          .runChildOperations(widget.identityCache!.refreshContactsQuietly));
+    }
     final repository = _repository;
     controller = GlobalSearchController(
       loadContacts: _loadContacts,
       loadRooms: _loadRooms,
       index: widget.index ?? repository?.index ?? GlobalSearchIndex.shared,
       repository: repository,
+      searchTrace: () => _searchTrace,
       debounce: widget.debounce,
       sectionLimit: widget.sectionLimit,
-      primaryRoomIdOf: widget.matrix == null ? null : (roomId) async {
-        await widget.matrix!.prepareConversationAssociations();
-        return widget.matrix!.logicalPrimaryRoomIdSync(roomId);
-      },
+      primaryRoomIdOf: widget.matrix == null
+          ? null
+          : (roomId) async {
+              await widget.matrix!.prepareConversationAssociations();
+              return widget.matrix!.logicalPrimaryRoomIdSync(roomId);
+            },
     )..addListener(_changed);
     // 打开搜索页即触发一次**有界的本机库回填**（零网络、每账号一次）。
+    final sourceFutures = <Future<void>>[
+      contacts!.then<void>((_) {}),
+    ];
     if (repository != null && repository.isAttached) {
-      unawaited(repository.ensureBackfilled());
+      sourceFutures.add(repository.ensureBackfilled().then<void>((_) {}));
     }
+    unawaited(Future.wait(sourceFutures).then<void>((_) {
+      if (!mounted) return;
+      _initialSourcesSettled = true;
+      _finishPageTrace();
+    }, onError: (Object _, StackTrace __) {
+      if (!mounted) return;
+      _initialSourcesSettled = true;
+      _initialSourcesFailed = true;
+      _finishPageTrace();
+    }));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _firstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishPageTrace();
+    });
   }
 
   void _changed() {
+    final trace = _searchTrace;
+    if (trace != null && !_firstQueryObserved && !controller.isBlank) {
+      if (controller.error != null) {
+        _finishFirstQuery(PerformanceResult.failed);
+      } else if (!controller.loading) {
+        if (_queryContactsDone) _scheduleFirstQueryRender();
+      }
+    }
     if (mounted) setState(() {});
   }
 
@@ -143,7 +245,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   Future<List<ContactSummary>> _loadContactSummaries() {
     final future = widget.contactsLoader?.call() ??
         (widget.identityCache == null
-            ? widget.api.listContacts()
+            ? _performanceTrace.runChildOperations(widget.api.listContacts)
             : Future.value(widget.identityCache!.contacts));
     unawaited(future.then<void>((_) {}, onError: (Object _, StackTrace __) {}));
     return future;
@@ -160,6 +262,9 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   @override
   void dispose() {
     widget.identityCache?.removeListener(_identityChanged);
+    _performanceTrace.dispose();
+    _searchTrace?.dispose();
+    if (!_injectedSearchTraceUsed) widget.searchPerformanceTrace?.dispose();
     controller.removeListener(_changed);
     controller.dispose();
     super.dispose();
@@ -177,7 +282,9 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
 
   /// 联系人结果来自本机身份缓存（不发起网络明文检索）。
   Future<List<GlobalSearchContactResult>> _loadContacts() async {
+    final generation = _queryGeneration;
     final loaded = await (contacts ?? Future.value(const <ContactSummary>[]));
+    if (generation == _queryGeneration) _queryContactsDone = true;
     return [
       for (final item in loaded)
         GlobalSearchContactResult(
@@ -201,11 +308,20 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   /// 展示并允许打开。判定只用 roomId + accountData，不用展示名；
   /// **注入的 roomsLoader 也走同一条过滤**（否则测试/未来数据源会绕过策略）。
   Future<List<GlobalSearchRoomResult>> _loadRooms() async {
+    if (!_firstQueryObserved && _searchTrace == null) {
+      final injected = widget.searchPerformanceTrace;
+      if (injected != null && !_injectedSearchTraceUsed) {
+        _searchTrace = injected;
+        _injectedSearchTraceUsed = true;
+      } else {
+        _searchTrace =
+            PerformanceTrace.start(operation: PerformanceOperationType.search);
+      }
+    }
     final visibility = _visibility;
     final loader = widget.roomsLoader;
-    final rooms = loader != null
-        ? await loader()
-        : await _roomsFromLocalSnapshot();
+    final rooms =
+        loader != null ? await loader() : await _roomsFromLocalSnapshot();
     return [
       for (final room in rooms)
         if (visibility.isVisible(room.roomId)) room,
@@ -269,7 +385,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                 key: const Key('global-search-field'),
                 autofocus: true,
                 placeholder: '搜索联系人、群聊和聊天记录',
-                onChanged: controller.setQuery,
+                onChanged: _queryChanged,
               ),
             ),
             Expanded(child: _body()),

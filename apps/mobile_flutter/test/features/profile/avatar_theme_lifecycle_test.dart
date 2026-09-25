@@ -131,9 +131,7 @@ class _AvatarGateway implements ProfileGateway {
   Future<ProfileData> loadProfile() async => profile;
   @override
   Future<ProfileData> updateProfile(
-          {required String nickname,
-          String? signature,
-          String? nudgeSuffix}) async =>
+          {String? nickname, String? signature, String? nudgeSuffix}) async =>
       profile;
   @override
   Future<AvatarUploadSession> createAvatarUpload(

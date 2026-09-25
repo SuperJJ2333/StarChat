@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/performance_trace.dart';
+
 import 'global_search_index.dart';
 import 'global_search_models.dart';
 import 'local_message_search_repository.dart';
@@ -24,6 +26,7 @@ final class GlobalSearchController extends ChangeNotifier {
     this.sectionLimit = 3,
     this.hitLimit = 200,
     this.primaryRoomIdOf,
+    this.searchTrace,
   }) {
     repository?.addListener(_onLocalHistoryChanged);
   }
@@ -41,6 +44,7 @@ final class GlobalSearchController extends ChangeNotifier {
   final Duration debounce;
   final int sectionLimit;
   final int hitLimit;
+  final PerformanceTrace? Function()? searchTrace;
 
   String _query = '';
   String get query => _query;
@@ -140,9 +144,17 @@ final class GlobalSearchController extends ChangeNotifier {
       Future<void> publish() async {
         final needle = _query.trim().toLowerCase();
         final activeRepository = repository;
-        final hits = activeRepository == null
-            ? index.search(needle, limit: hitLimit)
-            : activeRepository.search(needle, limit: hitLimit);
+        final trace = searchTrace?.call();
+        final List<GlobalSearchMessageHit> hits;
+        if (activeRepository == null) {
+          trace?.mark(PerformanceStage.localSearchStarted);
+          hits = index.search(needle, limit: hitLimit);
+          trace?.mark(PerformanceStage.localSearchDone);
+          trace?.setSearchResultCount(hits.length);
+        } else {
+          hits = activeRepository.search(needle,
+              limit: hitLimit, trace: trace);
+        }
         results = GlobalSearchResults(
           contacts: [
             for (final contact in contacts)

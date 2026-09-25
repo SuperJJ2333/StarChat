@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/cache/cache_repository.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/moments/moments_page.dart';
@@ -52,20 +54,87 @@ Map<String, dynamic> momentJson(
     };
 
 Future<BusinessApiClient> momentsApi(
-    Future<http.Response> Function(http.Request) handler) async {
+    Future<http.Response> Function(http.Request) handler,
+    {PerformanceTraceRecorder? performanceRecorder}) async {
   final store = SecureSessionStore(MemoryStore());
   await store.saveSession(accessToken: 'access', refreshToken: 'refresh');
   return BusinessApiClient(
     baseUri: Uri.parse('https://business.example'),
     sessionStore: store,
+    performanceRecorder: performanceRecorder,
     client: MockClient(handler),
   );
 }
 
 void main() {
+  testWidgets('initial feed request shares its moments page operation ID',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final pageTrace = recorder.start(PerformanceOperationType.momentsLoad);
+    SharedPreferences.setMockInitialValues({});
+    await CacheRepository.resetForTest();
+    final feedHeaders = <String?>[];
+    final api = await momentsApi(
+      (request) async {
+        if (request.url.path.endsWith('/moments/feed')) {
+          for (final header in request.headers.entries) {
+            if (header.key.toLowerCase() == 'x-chatflow-performance-id') {
+              feedHeaders.add(header.value);
+            }
+          }
+        }
+        return http.Response(
+            request.url.path.endsWith('/moments/feed')
+                ? '{"items":[],"next_cursor":null}'
+                : '{}',
+            200,
+            headers: {'content-type': 'application/json'});
+      },
+      performanceRecorder: recorder,
+    );
+    final identity = ProfileRepository.forTesting(
+        accountKey: 'matrix:@me:test', store: MomentsIdentityStore());
+
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(
+        api: api,
+        identityCache: identity,
+        performanceTrace: pageTrace,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(feedHeaders, [pageTrace.operationId]);
+    expect(
+        records.any((record) =>
+            record.operation == PerformanceOperationType.apiRequest &&
+            record.endpointCategory == PerformanceEndpointCategory.moments &&
+            record.operationId == pageTrace.operationId),
+        isTrue);
+
+    final refreshControl = tester
+        .widget<CustomScrollView>(find.byType(CustomScrollView))
+        .slivers
+        .first as CupertinoSliverRefreshControl;
+    await refreshControl.onRefresh!();
+    await tester.pumpAndSettle();
+    expect(feedHeaders, hasLength(2));
+    expect(feedHeaders.last, isNot(pageTrace.operationId));
+    expect(records.any((record) =>
+        record.operation == PerformanceOperationType.momentsLoad &&
+        record.operationId == feedHeaders.last), isTrue);
+  });
+
   testWidgets(
       'only visible posts are consumed and older feed pages are reachable',
       (tester) async {
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.momentsLoad);
     SharedPreferences.setMockInitialValues({});
     await CacheRepository.resetForTest();
     final seen = <String>{};
@@ -96,8 +165,21 @@ void main() {
         accountKey: 'matrix:@me:test', store: MomentsIdentityStore());
     await tester.pumpWidget(CupertinoApp(
         home: MomentsPage(
-            api: api, identityCache: identity, onPostsDisplayed: seen.addAll)));
+            api: api,
+            identityCache: identity,
+            onPostsDisplayed: seen.addAll,
+            performanceTrace: trace)));
     await tester.pumpAndSettle();
+    expect(records, hasLength(1));
+    expect(
+        records.single.stagesUs.keys,
+        containsAll([
+          PerformanceStage.routeEnter,
+          PerformanceStage.firstFrameRendered,
+          PerformanceStage.remoteRefreshStarted,
+          PerformanceStage.remoteRefreshDone,
+          PerformanceStage.contentReady,
+        ]));
     final feed = tester.widget<CustomScrollView>(find.byType(CustomScrollView));
     expect(feed.scrollCacheExtent, const ScrollCacheExtent.viewport(0.5));
     expect(seen, contains('post-0'));
@@ -715,6 +797,8 @@ void main() {
     expect(find.text('朋友圈正文'), findsOneWidget);
     expect(find.byKey(const Key('moment-interaction-error')), findsOneWidget);
     expect(find.text('服务繁忙'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.exclamationmark_triangle_fill),
+        findsOneWidget);
   });
 }
 

@@ -176,12 +176,12 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
 
                             override fun onTranscodeCanceled() {
                                 File(destPath).delete()
-                                result.success(null)
+                                result.error("video_transcode_cancelled", null, null)
                             }
 
                             override fun onTranscodeFailed(exception: Throwable) {
                                 File(destPath).delete()
-                                result.success(null)
+                                result.error("video_transcode_failed", null, null)
                             }
                         }).transcode()
             }

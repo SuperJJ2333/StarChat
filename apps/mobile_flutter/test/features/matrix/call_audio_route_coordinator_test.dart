@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/features/matrix/call_audio_route_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
 
@@ -11,6 +13,31 @@ import 'call_backend_test_defaults.dart';
 /// - 用户手动选择在 stream 重建 / ICE restart / connected 之后不得被覆盖；
 /// - 自动策略只在用户**没有**明确选择时生效。
 void main() {
+  test('audio route details are diagnostic-only with the call tag', () async {
+    final previous = debugPrint;
+    final lines = <String>[];
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) lines.add(message);
+    };
+    addTearDown(() => debugPrint = previous);
+
+    final quiet = CallAudioRouteCoordinator(
+      apply: (_) async {},
+      metrics: PerformanceMetrics(enabled: false),
+    );
+    await quiet.applyPreMediaRoute(CallMediaType.audio);
+    expect(lines, isEmpty);
+
+    final diagnostic = CallAudioRouteCoordinator(
+      apply: (_) async {},
+      metrics: PerformanceMetrics(enabled: true),
+    );
+    await diagnostic.applyPreMediaRoute(CallMediaType.audio);
+    await diagnostic.toggleSpeaker(CallMediaType.audio);
+    expect(lines, hasLength(2));
+    expect(lines, everyElement(startsWith('[chatflow/call] ')));
+  });
+
   group('CallAudioRouteCoordinator 自动策略', () {
     test('语音默认听筒；视频默认免提', () async {
       final voice = _RouteSink();

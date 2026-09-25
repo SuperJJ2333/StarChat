@@ -1,5 +1,49 @@
 # 移动交付恢复索引
 
+## 2026-09-26 视频转码诊断与四位 Build：雷电 Debug2179 已安装
+
+MI 6 的 2178 实测视频在本地转码阶段约 23.9 秒后失败，未开始上传；2179 保持两档压缩、20 MiB 和原片保护策略，新增 Android 固定失败/取消代码、每档本地有界耗时/结果及失败阶段真实分类，修复非有限时长可能误报成功并遗留临时文件。Android 仅对匹配当前编译构建号的 ABI 偏移归一化，雷电 Debug VM 实读 build 2179。`codex/auth-login-2178` 提交 `d7d09ffb` 的 Flutter analyze、Matrix 2115/9 跳过、Flutter 4333/9 跳过、Kotlin 编译与 `verify.ps1`（Business API/Worker 2905/75 跳过）均 exit 0；固定身份 ARM64 Debug APK 常规重建 18/18 门禁通过，SHA `0dd6ba52…`，仅装机 `emulator-5556` 并启动。模拟器基础 Business/Matrix HTTPS 均 200，本地性能扩展启用；新并行包无登录态，真实视频发送/MI 6 编码器原因尚未复现。生产、iOS 与 MI 6 未改；雷电此实例装机前未列出旧主包，本次无卸载。见[任务](tasks/2026-09-26-video-transcode-build-ld.md)、[验证](../verification/2026-09-26-video-build-ld.md)和[诊断手册](../performance/chatflow-performance-diagnostics.md)。
+
+## 2026-09-25 登录/注册六项交互修复 Debug2178 已安装 MI 6
+
+登录限频逐秒倒计时、空白点击收键盘、手机号字段下格式提示、取码按钮轮廓/反馈及非法号本地校验、深色认证背景已整合进 2177 邀请码续行源并升级为 0.4.13+2178。Flutter analyze、Flutter 4316/9 跳过、Matrix 2108/9 跳过、前端 311、`verify.ps1` 退出 0；固定签名 Android 重建 18 项通过，MI 6 保留数据安装、设备 SHA `1a03074f…`、首次安装时间及零崩溃核对通过。MI 6 三次 Debug Dart 冷启动 1338–1358 ms，慢帧聚合不能归因到启动 trace。安装前 Matrix 公网探测 0/3 约 10 秒连接超时，装机后两轮公开探测 12/12 返回 200，显示网络问题有时间窗波动，不能归功于本次 UI 版本。广州试点域名本轮 6/6 在 TLS 握手前期失败；主机本地 Caddy 正常而公网 HTTP 返回阿里云 `Non-compliance ICP Filing` 403，强烈指向备案过滤，在备案及接入备案核实前不能接入客户端轮询。真实短信、登录及认证界面触感仍待用户操作反馈。见[任务](tasks/2026-09-25-auth-login-interactions.md)与[验证](../verification/2026-09-25-auth-login-interactions.md)。
+
+## 2026-09-25 广州节点公开 HTTPS 试点已启用；正式业务尚未切流
+
+用户要求使用阿里云广州节点改善国内连接，已新增 `edge-cn-probe.liuhetong888.com` 测试 A 记录，权威 DNS TTL 600 秒核对通过。原 Employ26 Caddy 站点块保留，增量添加只允许 Business ready 和 Matrix versions 两个公开 GET 的 HTTPS 试点，MI 6 严格 TLS、无代理验证及非公开路径拒绝通过。MI 6 同窗口 10 轮对照：边缘 20/20 返回 200，直连源站 8/20 返回 200、12/20 超时；经边缘 Business P50/P95 98.7/123.9 ms，Matrix 99.1/341.9 ms。生产 API healthy/零重启。**主域名和正式业务尚未切换**：TURN 3478/5349 同用主域名；广州 Caddy→源站 Caddy→Docker Nginx→Uvicorn 的真实 IP 信任链还未形成，直接切换会破坏通话与验证码/通话限流。广州节点 RAM 总量 1966 MiB、五次采样可用仅 271–303 MiB；边缘主域名证书、源站 Certbot standalone 续期、正式并发容量和 ICP 状态均需验证。客户端多节点随机轮询还会碰到 Matrix 会话绑定及非幂等登录请求。原 Employ26 IP HTTPS 握手在试点前后均失败，不能视为已验收。见[试点报告](../verification/2026-09-25-domestic-edge-network.md)、[任务](tasks/2026-09-25-domestic-edge-network.md)与[分阶段计划](../superpowers/plans/2026-09-25-domestic-edge-network.md)。
+
+## 2026-09-25 手机号验证码通过后补填邀请码（API 已发布，MI 6 2177 已安装）
+
+用户确认新手机号尚未注册、首次提交时漏填邀请码；供应商可能在第一次校验 PASS 后拒绝同一验证码重验。新增 opt-in 服务端五分钟、设备与手机号绑定的已验证续行票据；补填/纠正邀请码不再调用短信校验。客户端 0.4.13+2176 只在收到服务端票据后显示“验证码已通过”，内存保存票据，换号码或重发码即清除。旧客户端默认协议保持。领域及安全增量复核通过，锁等待越过有效期问题已补红绿测试和锁后/提交前复核；后端全量 2893/77 跳过、Flutter analyze、Matrix 2108/9 跳过、Flutter 全量 4295/9 跳过均退出 0；真实 PostgreSQL 8 路并发通过。API-only 生产切换后镜像 `b20c1be0…` healthy/零重启，Business ready 与 Matrix versions 200，新路由在位且旧客户端默认兼容，worker/其它容器/环境/DB 0088 不变。固定签名 2176 Debug 构建 18 项验包退出 0，MI 6 保留数据安装、设备 APK SHA、首次安装时间、启动和零崩溃均验证通过。真实短信送达和 Matrix 首次会话结果仍需用户自行操作确认。见[计划](../superpowers/plans/2026-09-25-phone-invitation-continuation.md)、[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)、[事故任务](tasks/2026-09-25-mi6-login-sms-regression.md)。
+
+2176 无账号真机性能/网络对照：Debug 冷启动 1373 ms、6 帧中聚合 4 慢帧，但启动 trace 的 0 慢帧因 timing 延迟回调不能采信。帧归因修复已在 2177 固定签名 Debug 中保留数据装机；生产 API-only 接收端 `25954c6a…` 已在用户授权后发布，健康/零重启，worker/其它 25 容器、环境及 DB 0088 不变。2177 冷启动一次 1407 ms、聚合 6 帧中 5 慢帧；trace 如实标记 `frame_attribution_complete=false`，尚不能将聚合帧归入该操作。旧 MI 6 公网 12 次有 5 次约 10 秒超时，2177 同入口 6/6 为 200、142–654 ms，表明问题间歇出现。短信开关/供应商配置已启用，但无终端送达回执与新版真实登录结果。见[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)。
+
+## 2026-09-25 生产认证与配置已恢复；MI 6 登录仍待实测
+
+用户明确要求恢复原有生产部署。09:45 HKT 从当时运行的 `wallet-360` API/worker 配置补回 09-24 上午已核准但后续遗漏的 16 项环境变量，并纠正两项钱包转换开关；沿用现行镜像和 DB 0088，其他 25 个容器未变化。09:57 HKT 两服务 healthy/零重启、实际配置完全匹配候选，公网 ready 200、Matrix versions 200，手机号/密码路由对空 JSON 对象 `{}` 均返回 422；所列范围的只读财务聚合自配置漂移起仍为 0。用户随后反馈 MI 6 手机号登录在聊天设备会话确认阶段失败，点“重试”后旧验证码被拒；生产只读聚合与客户端路径证实旧码重复提交风险。客户端防重提和封闭 Debug 失败分类已通过 Flutter 全量 4289/9 跳过及 analyze；2175 固定签名 Debug 已保留数据安装、设备 SHA 和零崩溃通过。用户在新版报告未收到新短信；03:05 UTC 服务端发码 202、供应商即时 OK、新挑战可用，但没有终端投递回执。手机匿名 trace 一次 auth POST 31 秒 socket failure，公开 Business TLS 探测亦有长尾，首次 Matrix 会话失败的具体原因仍待真机真实新码复现。worker 的 Outbox 无消费者死信在切换前已存在，API 镜像仍缺 0088 迁移脚本。见[恢复证据](../verification/2026-09-25-mi6-production-restore.md)、[2175 验证](../verification/2026-09-25-mi6-phone-login-debug-2175.md)、[任务](tasks/2026-09-25-mi6-login-sms-regression.md)。
+
+## 2026-09-25 MI 6 Debug2174 登录与短信故障调查
+
+用户报告密码/手机号登录均转圈超过两分钟后提示“网络连接中断”，短信提示暂不可用。只读生产检查证实 09-24 wallet-360 API/worker Compose 替换漏掉 09-23 已核准的 16 项配置；手机号认证回落关闭，短信 OTP 请求 503 `PHONE_AUTH_DISABLED`，未进入阿里云。同一遗漏使原关闭的红包群主抽成开关落到默认开启；截至 08:40 HKT 漂移后新红包/抽成账本均 0。密码接口和部分 Matrix 登录/同步请求均 200，MI 6 有一条 auth POST 31 秒 socket timeout；完整登录链缺总预算，最后卡点尚未定位。生产 DB 为 0088，但当前 API 镜像缺其迁移脚本，禁止整体旧镜像回退。**调查阶段**未改生产或重装设备；后续恢复与手机复现见上条。见[任务](tasks/2026-09-25-mi6-login-sms-regression.md)与[事故报告](../verification/2026-09-25-mi6-login-sms-incident.md)。
+
+## 2026-09-25 MI 6 性能诊断 Debug2174 已安装，账号内实测待继续
+
+用户要求向 MI 6 保留数据安装诊断 Debug 包并实测性能与网络。隔离分支 `codex/performance-debug-mi6` 从已发布 Android 源 `e7ba46a4`（2172）整合诊断 `8d044655`，0.4.11/2174 ARM64 Debug 经源码构建、常规 DEX/资源/Manifest 重建和固定测试身份签名，`adb install -r` 已成功。设备 APK SHA `3317ba91…` 与本地一致，原首次安装时间保留，启动和零崩溃通过。Flutter analyze 零问题、Flutter 4277/9 跳过、Matrix 2108/9 跳过、移动边界 108/1 跳过及后端诊断聚焦 166/1 跳过均退出 0。真机 VM 快照测到首次冷启动 1367 ms、6 帧中 4 慢帧；公开 Business/Matrix HTTPS 路径均 200，但短样本存在连接/TLS/首字节长尾。当前设备在登录页，账号内会话、媒体、Matrix `/sync` 待用户自行登录后测量。见[独立任务记录](tasks/2026-09-25-performance-debug-mi6.md)与[真机报告](../verification/2026-09-25-performance-debug-mi6.md)。
+
+## 2026-09-25 ChatFlow 全链路性能诊断本地候选（未发布）
+
+隔离工作树从 `2442f0ab` 扩展现有 PerformanceMetrics、ChatDiagnostics、Matrix 同步阶段、媒体调度和通话质量监控；会话打开/恢复、发送、页面/API、服务端 route-template 与 SQL 分位数使用类型化有界诊断。最终 Flutter analyze 零问题、Matrix 2035/2035、Flutter 4128/4128 通过；后端 API/Worker 2861 通过、74 跳过、退出 0。`verify.ps1` 因工作树无 `.env` 在配置渲染前置步骤退出 1，分项门禁见[验证报告](../verification/2026-09-25-chatflow-performance-diagnostics.md)。未构建、安装、部署或真机测量；真实下载/解密、DNS/TCP/TLS、SDK 视频上传/事件拆分保持 unsupported。见[任务](tasks/2026-09-25-unified-performance-diagnostics.md)和[诊断手册](../performance/chatflow-performance-diagnostics.md)。
+
+## 2026-09-24 “我”页、邀请码、朋友圈互动已部署，MI 6 Debug2171 已安装
+
+正式 Android 最新版本仍为 **v0.4.6/2165**，手机号注册/登录等代码此前已上线。本轮是保留用户数据的内部测试包 **0.4.10/2171 Debug**，没有改官网正式 APK 或更新弹窗。五项“我”页需求已在客户端和业务 API 实现；最终 Flutter 全量 4120 通过/9 条条件跳过、analyze 0，`verify.ps1` exit 0（后端/worker 2763 通过/77 条条件跳过、mobile 108 通过/1 条条件跳过、OpenAPI/Compose 通过），HTML 305 通过/429 屏。最终审查还补齐建群/编辑群名 12 字限制和“我”页互动红点前台/定时刷新。MI 6 `cbd0156b` 安装包 SHA256 `5f3ddee5…` 与设备读回一致，固定测试签名、原首次安装时间、启动和零崩溃验证通过，真实用户操作仍待反馈。
+
+本轮发现上一轮最小增量 API/worker 容器及环境变量未完整保留正式 v0.4.6 的手机号等功能。基于正式 v0.4.6 文件和配置补齐候选，生产数据库增量升级到 0088；冻结的生产数据在隔离 PostgreSQL 恢复后 137 表/225466 行原值不变。首次切换沿用旧环境变量导致新服务配置校验失败，已立即恢复旧服务；随后取正式 v0.4.6 已发布配置重做预检，最终 API `c41dfffc…`、worker `90696ffa…` 均 healthy/零重启，其他 22 容器未变，HTTPS ready 200、鉴权 401、手机号/邀请/互动路由在位且新错误日志 0。备份和兼容回退镜像保留在服务器私有目录。见[任务](tasks/2026-09-24-me-invitations-moments-interactions.md)、[证据](../verification/2026-09-24-me-invitations-moments-interactions.md)。
+
+## 2026-09-24 群聊/朋友圈/钱包 Debug2169 历史交付记录
+
+本次八项需求的客户端已完成：群公告淡黄消隐、连续编辑与统一图片相册（隐藏视频、保留 GIF），群名 12 字、群管理/群主转让、朋友圈 GIF/视频/统一账户缓存与警告样式、钱包指定文案。候选中发现群公告明文发送回归，已恢复现有 Matrix E2EE 事件及附件路径；不改密钥协议。生产业务 API 两次最小增量后为 `f63cb266`，worker `237162be` 与其余 23 容器/schema0087 不变，双侧 HTTPS/鉴权通过。MI 6 保留数据安装 0.4.10+2169 Debug，SHA256 `6168daef`、首次安装时间、启动、零崩溃验证通过。Flutter 4087/9 条条件跳过、analyze 0，frontend303、Moments API119。原完整 `verify.ps1` 因两个旧 UI 屏幕数断言 exit1；修正后 mobile108/1 跳过及未跑的 UI 合同、导入、AST、迁移、OpenAPI、Compose 门禁均 exit0，前段 2735/77 跳过复用，未声称原完整脚本 exit0。用户真机体验待反馈。见[任务](tasks/2026-09-24-group-moments-wallet-debug.md)、[证据](../verification/2026-09-24-group-moments-wallet-debug.md)。
+
 ## 2026-09-23 Android0.4.6/2165已发布：头像缓存/统一相册/公告恢复/朋友圈视频
 
 本人头像缓存身份统一；相册头像仅静态图片、隐藏视频/GIF，复用Flutter方形编辑器；公告补标准SDK缺密钥请求；朋友圈复用相册/播放器/账户媒体缓存，MP4/QuickTime≤20MiB。Android正式重建固定签名，最终SHA60826c92，官网APK和Android更新弹窗发布成功；iOS设置未动。APIe15807b2/worker90696ffa、schema0087，22其他容器不变。Flutter3971+更新delta18、frontend299；后端2727/74条件跳过、最终草稿delta21；原verify因备用版本号旧值exit1，修正后mobile108/1及后续门禁exit0。代码提交12ded275已推送main，本地/远程仅保留main，分支归档保留。见[报告](../verification/2026-09-23-avatar-album-android-release.md)、[任务](tasks/2026-09-23-avatar-album-release.md)。本轮未真机验收/未发布iOS。

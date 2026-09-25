@@ -477,6 +477,108 @@ void main() {
     expect(await render('bob', 'signed-B'), isNot(first));
   });
 
+  test(
+      'video poster uses shared account cache across renewed draft URLs and clears',
+      () async {
+    const origin = 'https://media.example';
+    const first = '$origin/api/v1/moments/media/content/old';
+    const renewed = '$origin/api/v1/moments/media/content/new';
+    const account = '@poster:example';
+    const other = '@other-poster:example';
+    final key = 'a' * 64;
+    final generation = MediaCache.accountGeneration(account);
+    await MomentMediaCache.storeVideoPoster(first, png,
+        cacheKey: key,
+        accountKey: account,
+        trustedOrigin: origin,
+        expectedAccountGeneration: generation);
+    expect(
+        await MomentMediaCache.cachedVideoPoster(renewed,
+            cacheKey: key, accountKey: account, trustedOrigin: origin),
+        png);
+    expect(
+        await MomentMediaCache.cachedVideoPoster(renewed,
+            cacheKey: key, accountKey: other, trustedOrigin: origin),
+        isNull);
+    expect(
+        await MomentMediaCache.cachedVideoPoster(renewed,
+            cacheKey: 'b' * 64, accountKey: account, trustedOrigin: origin),
+        isNull);
+    await MomentMediaCache.removeVideoPoster(renewed,
+        cacheKey: key, accountKey: account, trustedOrigin: origin);
+    expect(
+        await MomentMediaCache.cachedVideoPoster(first,
+            cacheKey: key, accountKey: account, trustedOrigin: origin),
+        isNull);
+    await MomentMediaCache.storeVideoPoster(first, png,
+        cacheKey: key,
+        accountKey: account,
+        trustedOrigin: origin,
+        expectedAccountGeneration: generation);
+    await MediaCache.clearAccount(account);
+    expect(
+        await MomentMediaCache.cachedVideoPoster(renewed,
+            cacheKey: key, accountKey: account, trustedOrigin: origin),
+        isNull);
+    await expectLater(
+        MomentMediaCache.storeVideoPoster(first, png,
+            cacheKey: key,
+            accountKey: account,
+            trustedOrigin: origin,
+            expectedAccountGeneration: generation),
+        throwsStateError);
+    await expectLater(
+        MomentMediaCache.storeVideoPoster(
+            'https://foreign.example/api/v1/moments/media/content/a', png,
+            cacheKey: key,
+            accountKey: account,
+            trustedOrigin: origin,
+            expectedAccountGeneration: MediaCache.accountGeneration(account)),
+        throwsStateError);
+    await MediaCache.clearAccount(other);
+  });
+
+  testWidgets('cached original GIF keeps multiple frames in feed thumbnail',
+      (tester) async {
+    const url = 'https://example.invalid/animated.gif';
+    final gif = base64Decode(
+        'R0lGODlhAgACAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAgACAAAIBgABCAQQEAAh+QQBCgABACwAAAAAAgACAIEAAP8AAAAAAAAAAAAIBgABCAQQEAA7');
+    await tester.runAsync(() async {
+      await MomentMediaCache.manager.putFile(url, gif, fileExtension: 'gif');
+    });
+    final frames = <ui.Image>[];
+    late ImageStream stream;
+    final firstFrame = Completer<void>();
+    final listener = ImageStreamListener((info, _) {
+      frames.add(info.image.clone());
+      if (!firstFrame.isCompleted) firstFrame.complete();
+    });
+    await tester.runAsync(() async {
+      stream = MomentThumbnailProvider(MomentMediaCache.imageProvider(url),
+              extent: 540)
+          .resolve(ImageConfiguration.empty);
+      stream.addListener(listener);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    try {
+      for (var i = 0; i < 20 && frames.length < 2; i++) {
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        });
+      }
+      expect(frames.length, greaterThanOrEqualTo(2));
+      final first = await tester.runAsync(() => frames[0].toByteData());
+      final second = await tester.runAsync(() => frames[1].toByteData());
+      expect(first!.buffer.asUint8List(), isNot(second!.buffer.asUint8List()));
+    } finally {
+      stream.removeListener(listener);
+      for (final frame in frames) {
+        frame.dispose();
+      }
+    }
+  });
+
   testWidgets('Moments thumbnails use a disk-backed image provider',
       (tester) async {
     await tester.pumpWidget(const CupertinoApp(

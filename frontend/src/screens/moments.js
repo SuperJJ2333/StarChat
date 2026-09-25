@@ -1,6 +1,42 @@
 import { fixtures } from "../catalog/fixtures.js";
 import { button, element } from "../components/base.js";
+import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
+
+function momentWarning(message) {
+  const warning = element("div", "c-moments-warning");
+  warning.setAttribute("role", "alert");
+  warning.setAttribute("aria-live", "polite");
+  warning.append(icon("warning"), element("span", "c-moments-warning__text", message));
+  return warning;
+}
+
+function motionPreview(kind) {
+  const preview = element("div", `c-moments-${kind}`);
+  if (kind === "gif") {
+    preview.setAttribute("aria-label", "GIF 动图预览");
+    preview.append(element("span", "c-moments-gif__badge", "GIF"),
+      element("span", "c-moments-gif__caption", "海边云层 · 动图"));
+    return preview;
+  }
+  preview.dataset.playing = "false";
+  preview.setAttribute("aria-label", "视频预览");
+  const play = button("c-moments-video__play", "播放视频", "moment:play-video");
+  const status = element("span", "c-moments-video__status", "00:00 / 00:18");
+  const update = () => {
+    const playing = preview.dataset.playing === "true";
+    play.replaceChildren(icon(playing ? "pause" : "play"));
+    play.setAttribute("aria-label", playing ? "暂停视频" : "播放视频");
+    status.textContent = playing ? "播放中 · 00:18" : "00:00 / 00:18";
+  };
+  play.addEventListener("click", () => {
+    preview.dataset.playing = String(preview.dataset.playing !== "true");
+    update();
+  });
+  preview.append(play, status, element("span", "c-moments-video__progress"));
+  update();
+  return preview;
+}
 
 function discovery(definition) {
   const root = pageRoot(definition);
@@ -66,7 +102,73 @@ function media(definition) {
   const counts = { text: 0, single: 1, two: 2, four: 4, nine: 9 };
   const root = pageRoot(definition);
   root.append(navigation("动态媒体", { leading: "返回" }), element("div", "p-moments-media__content"));
-  root.querySelector(".p-moments-media__content").append(momentCard(definition, counts[definition.state] ?? 3));
+  const content = root.querySelector(".p-moments-media__content");
+  content.append(momentCard(definition, counts[definition.state] ?? 0));
+  if (["gif", "video"].includes(definition.state)) content.append(motionPreview(definition.state));
+  return root;
+}
+
+function personal(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("我的朋友圈", { leading: "返回", action: "更多" }));
+  const content = element("div", "p-moments-personal__content");
+  const cover = element("section", "c-moments-cover");
+  cover.append(element("div", "c-moments-cover__art", "我的朋友圈"),
+    component("app-avatar", { name: fixtures.currentUser.name, size: "detail" }),
+    element("h2", "c-moments-cover__name", fixtures.currentUser.name));
+  content.append(cover);
+  if (definition.state === "empty") {
+    content.append(component("app-empty-state", { title: "还没有发布朋友圈", message: "发布后，只有你自己的动态会显示在这里" }));
+  } else {
+    const entry = element("section", "c-moment-card");
+    entry.append(component("app-moment-tile", {
+      author: fixtures.currentUser.name,
+      content: "今天的海风很舒服。",
+      location: "海滨步道",
+      time: "18 分钟前",
+      state: "published",
+    }));
+    entry.append(component("app-moment-grid", { count: 1 }));
+    content.append(entry);
+  }
+  const inbox = button("c-moments-interaction-entry", "查看全部互动消息", "open:moments-interactions-default");
+  inbox.append(icon("comment"), element("span", "c-moments-interaction-entry__label", "全部互动消息"),
+    component("app-unread-badge", { count: "2" }));
+  content.append(inbox);
+  root.append(content);
+  return root;
+}
+
+function interactionRow(name, kind, summary, source, time, action) {
+  const row = button("c-moment-interaction-row", `${name}${kind}，${summary}，${source}，${time}`, action);
+  row.append(component("app-avatar", { name, size: "moment" }));
+  const body = element("span", "c-moment-interaction-row__body");
+  body.append(element("strong", "c-moment-interaction-row__name", name),
+    element("span", "c-moment-interaction-row__kind", kind),
+    element("span", "c-moment-interaction-row__summary", summary),
+    element("span", "c-moment-interaction-row__source", `来自：${source}`),
+    element("time", "c-moment-interaction-row__time", time));
+  row.append(body);
+  return row;
+}
+
+function interactions(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("全部互动消息", { leading: "返回" }));
+  const content = element("div", "p-moments-interactions__content");
+  if (definition.state === "empty") {
+    content.append(component("app-empty-state", { title: "暂无互动消息", message: "好友的评论和回复会显示在这里" }));
+  } else {
+    content.append(
+      interactionRow("周然", "评论了你的朋友圈", "海边的照片真好看！", "今天的海风很舒服。", "2026-09-24 08:43", "open:moments-detail-notification-target"),
+      interactionRow("陈默", "回复了你的评论", "下周也一起去吧。", "周末沿海散步", "2026-09-23 21:16", "open:moments-detail-notification-target"),
+      interactionRow("唐宁", "评论了你的朋友圈", "该内容不可查看", "该内容不可查看", "2026-09-21 10:05", "moment:unavailable"),
+    );
+    if (definition.state === "default") content.append(component("app-action-button", { label: "加载更多", icon: "more", action: "open:moments-interactions-more" }));
+    if (definition.state === "more") content.append(interactionRow("叶青", "回复了你的评论", "收到，谢谢！", "午后的咖啡", "2026-09-20 16:28", "open:moments-detail-notification-target"));
+  }
+  root.append(content);
+  if (definition.state === "unavailable") root.append(component("app-dialog", { kind: "error", title: "无法打开朋友圈", message: "该内容不可查看", confirm: "知道了", "hide-cancel": "true" }));
   return root;
 }
 
@@ -81,14 +183,17 @@ function composer(definition) {
   content.append(field);
   content.append(component("app-action-button", { icon: "camera", label: "相册", action: "moment:album" }));
   if (definition.state === "video") {
-    content.append(component("app-list-tile", { title: "海边日落.mp4", subtitle: "12.4 MB · 视频", leading: "video", trailing: "00:18" }));
+    content.append(motionPreview("video"), component("app-list-tile", { title: "海边日落.mp4", subtitle: "12.4 MB · 视频", leading: "video", trailing: "00:18" }));
   }
+  if (definition.state === "gif") content.append(motionPreview("gif"),
+    component("app-list-tile", { title: "海边云层.gif", subtitle: "GIF 动图 · 原格式上传", leading: "image" }));
   if (definition.state === "video-too-large") {
-    content.append(component("app-toast", { kind: "error", message: "视频不能超过20MB，请重新选择" }));
+    content.append(momentWarning("视频不能超过20MB，请重新选择"));
   }
   if (["images", "uploading", "upload-failed"].includes(definition.state)) content.append(component("app-moment-grid", { count: 4, failed: definition.state === "upload-failed" }));
   for (const [title, trailing] of [["所在位置", "海滨步道"], ["提醒谁看", "周然"], ["谁可以看", "好友"]]) content.append(component("app-list-tile", { title, trailing, leading: "info" }));
-  if (definition.state === "upload-failed") content.append(component("app-action-button", { kind: "danger", icon: "retry", label: "重试上传", action: "moment:retry" }));
+  if (definition.state === "upload-failed") content.append(momentWarning("发表失败，内容已保留，请检查网络后重试"),
+    component("app-action-button", { kind: "danger", icon: "retry", label: "重试上传", action: "moment:retry" }));
   if (definition.state === "uploading") content.append(component("app-status-chip", { status: "processing", label: "正在上传媒体" }));
   root.append(content);
   return root;
@@ -131,6 +236,7 @@ function genericMoment(definition) {
     if (definition.page === "visibility") content.append(component("app-visibility-icon", { visibility: definition.state }));
     if (definition.page === "detail" && ["comment-delete", "own-comment"].includes(definition.state)) content.append(element("p", "c-system-message", "长按自己的评论可复制或删除"));
     if (definition.page === "detail" && definition.state === "comment-reply") content.append(component("app-composer", { placeholder: "回复林晓", mode: "text" }));
+    if (definition.page === "detail" && definition.state === "notification-target") content.append(element("p", "c-system-message", "已定位到对应评论"));
     if (definition.page === "governance") content.append(component("app-status-chip", { status: definition.state === "failed" || definition.state === "removed" ? "error" : definition.state === "reviewing" || definition.state === "uploading" ? "processing" : "success", label: definition.title }));
     if (definition.page === "recommendation") content.prepend(element("div", "c-segmented-control", definition.state === "latest" || definition.state === "personalization-off" ? "推荐　最新 ✓" : "推荐 ✓　最新"));
   }
@@ -142,6 +248,8 @@ export function renderScreen(definition) {
   let root;
   if (definition.module === "discovery") root = discovery(definition);
   else if (definition.page === "timeline") root = timeline(definition);
+  else if (definition.page === "personal") root = personal(definition);
+  else if (definition.page === "interactions") root = interactions(definition);
   else if (definition.page === "media") root = media(definition);
   else if (definition.page === "composer") root = composer(definition);
   else if (definition.page === "composer-sheet") {

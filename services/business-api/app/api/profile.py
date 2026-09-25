@@ -8,6 +8,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.integrations.private_storage import LocalPrivateObjectStorage, PrivateObjectStorage
 from app.modules.identity.profile import MAX_AVATAR_BYTES, ProfileResult, ProfileService
+from app.modules.identity.profile_text import MAX_PROFILE_RAW_CODEPOINTS
 from app.modules.identity.tokens import TokenService
 
 
@@ -16,8 +17,18 @@ class StrictModel(BaseModel):
 
 
 class ProfilePatch(StrictModel):
-    nickname: str | None = Field(default=None, max_length=64)
-    signature: str | None = Field(default=None, max_length=140)
+    nickname: str | None = Field(
+        default=None,
+        max_length=MAX_PROFILE_RAW_CODEPOINTS,
+        description="昵称最多 12 个 Unicode 扩展字素簇；maxLength 为原始码点资源上限。",
+        json_schema_extra={"x-graphemeMaxLength": 12},
+    )
+    signature: str | None = Field(
+        default=None,
+        max_length=MAX_PROFILE_RAW_CODEPOINTS,
+        description="个性签名最多 20 个 Unicode 扩展字素簇；maxLength 为原始码点资源上限。",
+        json_schema_extra={"x-graphemeMaxLength": 20},
+    )
     nudge_suffix: str | None = Field(default=None, max_length=10)
 
     @field_validator("nickname")

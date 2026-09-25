@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/features/matrix/turn_credentials_cache.dart';
 
 TurnServerCredentials credentials(String password, {int ttl = 60}) =>
@@ -12,6 +14,42 @@ TurnServerCredentials credentials(String password, {int ttl = 60}) =>
         username: 'test-only');
 
 void main() {
+  test('TURN discovery details are diagnostic-only and use the call tag',
+      () async {
+    final previous = debugPrint;
+    final lines = <String>[];
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) lines.add(message);
+    };
+    addTearDown(() => debugPrint = previous);
+
+    final disabled = TurnCredentialsCache(
+      fetch: () async => credentials('private-disabled'),
+      metrics: PerformanceMetrics(enabled: false),
+    );
+    await disabled.getIceServers();
+    final disabledFailure = TurnCredentialsCache(
+      fetch: () async => throw StateError('private-failure'),
+      metrics: PerformanceMetrics(enabled: false),
+    );
+    await disabledFailure.getIceServers();
+    expect(lines, isEmpty);
+
+    final enabled = TurnCredentialsCache(
+      fetch: () async => credentials('private-enabled'),
+      metrics: PerformanceMetrics(enabled: true),
+    );
+    await enabled.getIceServers();
+    final enabledFailure = TurnCredentialsCache(
+      fetch: () async => throw StateError('private-failure'),
+      metrics: PerformanceMetrics(enabled: true),
+    );
+    await enabledFailure.getIceServers();
+    expect(lines, hasLength(2));
+    expect(lines, everyElement(startsWith('[chatflow/call] discovery=')));
+    expect(lines.join(), isNot(contains('private-')));
+  });
+
   test(
       'refreshes credentials before expiry instead of reusing SDK lifetime cache',
       () async {

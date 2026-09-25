@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
 import '../../ui/chat/chat_emoji_panel.dart';
 import '../../ui/chat/contain_image_bubble.dart' show boundedChatImageProvider;
+import '../../ui/moments/moment_warning_banner.dart';
 import '../matrix/gallery_media_payload.dart';
 import '../matrix/image_picker_page.dart';
 import '../matrix/profile_repository.dart';
@@ -17,8 +18,8 @@ typedef MomentGallerySelection = ({
   bool flash,
 });
 
-typedef MomentGalleryPicker
-    = Future<MomentGallerySelection?> Function(BuildContext context, int maxCount);
+typedef MomentGalleryPicker = Future<MomentGallerySelection?> Function(
+    BuildContext context, int maxCount);
 
 Future<MomentCommentView?> showMomentCommentComposer(BuildContext context,
         {required BusinessApiClient api,
@@ -117,8 +118,8 @@ class _CommentComposerState extends State<_CommentComposer> {
       final selected = await (widget.galleryPicker?.call(context, maxCount) ??
           Navigator.of(context, rootNavigator: true)
               .push<MomentGallerySelection>(MotionPageRoute(
-                  builder: (_) => ImagePickerPage(
-                      photosOnly: true, maxCount: maxCount))));
+                  builder: (_) =>
+                      ImagePickerPage(photosOnly: true, maxCount: maxCount))));
       if (!mounted || selected == null) return;
       await ensureAccount();
       if (!mounted) return;
@@ -306,10 +307,7 @@ class _CommentComposerState extends State<_CommentComposer> {
                                             child: const Text('移除')),
                                       ])
                               ])),
-                    if (error != null)
-                      Text(error!,
-                          style: const TextStyle(
-                              color: CupertinoColors.systemRed)),
+                    if (error != null) MomentWarningBanner(message: error!),
                     Row(children: [
                       CupertinoButton(
                           onPressed: locked

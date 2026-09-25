@@ -34,7 +34,7 @@ async def test_range_belongs_to_author_not_viewer(ctx):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('privacy', [{'profile_entry_enabled': False}, {'excluded_user_ids': ['u2']}])
-async def test_privacy_blocks_all_foreign_routes_and_old_client_preserves(ctx, privacy):
+async def test_privacy_blocks_foreign_content_but_retains_recipient_history(ctx, privacy):
     app, settings = ctx
     now = seed(app.state.session_factory, days=0)
     with app.state.session_factory.begin() as session:
@@ -48,8 +48,15 @@ async def test_privacy_blocks_all_foreign_routes_and_old_client_preserves(ctx, p
             assert preserved[key] == value
         for viewer in ['u2', 'u3']:
             headers = {**auth(settings, viewer), 'Idempotency-Key': 'privacy-test'}
-            for route in ['/feed', '/search?q=private', '/users/u1', '/notifications', '/new-posts?since=2020-01-01T00:00:00Z']:
+            for route in ['/feed', '/search?q=private', '/users/u1', '/new-posts?since=2020-01-01T00:00:00Z']:
                 assert (await client.get('/api/v1/moments' + route, headers=headers)).json()['items'] == []
+            history = (await client.get('/api/v1/moments/notifications', headers=headers)).json()['items']
+            if viewer == 'u2':
+                assert len(history) == 1 and history[0]['id'] == 'notice'
+                assert history[0]['actor'] is None and history[0]['source_excerpt'] is None
+                assert history[0]['content_excerpt'] is None and not history[0]['target_available']
+            else:
+                assert history == []
             assert (await client.get('/api/v1/moments/users/u1/preview', headers=headers)).json() == {'entry_visible': False, 'items': []}
             assert (await client.get('/api/v1/moments/old', headers=headers)).status_code == 404
             for suffix, body in [('/likes', None), ('/comments', {'text': 'hidden'}), ('/reports', {'reason_code': 'SPAM'})]:

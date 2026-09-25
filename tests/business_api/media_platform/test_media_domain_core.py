@@ -454,3 +454,24 @@ def test_orphan_grace_deadline_is_in_the_past() -> None:
 
     now = datetime.now(timezone.utc)
     assert orphan_grace_deadline(now, grace_seconds=60) < now
+
+
+def test_media_timing_percentiles_use_bounded_real_samples(monkeypatch) -> None:
+    monkeypatch.setenv("CHATFLOW_MEDIA_METRICS", "1")
+    metrics = MediaPlatformMetrics()
+    for duration_ms in range(1, 601):
+        metrics.observe_ms("media_resolve_ms", duration_ms)
+    timing = metrics.timing("media_resolve_ms")
+    assert timing["count"] == 512
+    assert timing["p50_ms"] == 344
+    assert timing["p95_ms"] == 575
+    assert timing["p99_ms"] == 595
+    assert timing["max_ms"] == 600
+
+
+def test_media_timing_without_samples_has_no_fabricated_percentiles() -> None:
+    timing = MediaPlatformMetrics().timing("media_resolve_ms")
+    assert timing["count"] == 0
+    assert timing["p50_ms"] is None
+    assert timing["p95_ms"] is None
+    assert timing["p99_ms"] is None

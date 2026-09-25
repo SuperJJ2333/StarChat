@@ -7,6 +7,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../../core/performance_trace.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/chat/encrypted_media_view.dart' show ViewerStatusHint;
 import '../../ui/chat/wechat_image_editor.dart';
@@ -296,6 +297,7 @@ final class ImagePickerPage extends StatefulWidget {
     this.maxCount = 9,
     this.albumsLoader,
     this.pagerFactory,
+    this.performanceTrace,
   });
 
   final DeviceGalleryPager Function()? pagerBuilder;
@@ -307,6 +309,7 @@ final class ImagePickerPage extends StatefulWidget {
   final int maxCount;
   final GalleryAlbumsLoader? albumsLoader;
   final GalleryPagerFactory? pagerFactory;
+  final PerformanceTrace? performanceTrace;
 
   @override
   State<ImagePickerPage> createState() => _ImagePickerPageState();
@@ -314,6 +317,32 @@ final class ImagePickerPage extends StatefulWidget {
 
 final class _ImagePickerPageState extends State<ImagePickerPage>
     with WidgetsBindingObserver {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(
+          operation: PerformanceOperationType.recentPicturesLoad);
+  bool _firstFrameRendered = false;
+
+  /// A cached preview is ready on the first frame; otherwise wait until the
+  /// initial page (including an empty or permission result) has been painted.
+  void _observeInitialContent() {
+    if (!_firstFrameRendered || _performanceTrace.isFinished || loading) return;
+    if (permissionDenied) {
+      _performanceTrace.finish(result: PerformanceResult.rejected);
+    } else if (loadError != null) {
+      _performanceTrace.finish(result: PerformanceResult.failed);
+    } else {
+      _performanceTrace.mark(PerformanceStage.contentReady);
+      _performanceTrace.finish();
+    }
+  }
+
+  void _observeInitialContentAfterFrame() {
+    if (_performanceTrace.isFinished) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _observeInitialContent();
+    });
+  }
+
   late final selection = GallerySelection(maxCount: widget.maxCount);
   late DeviceGalleryPager pager;
   DeviceGalleryPager _pagerFor(GalleryAlbum? album) =>
@@ -351,6 +380,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
     WidgetsBinding.instance.addObserver(this);
     photos = widget.staticImagesOnly
         ? const []
@@ -358,6 +388,12 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     loading = photos.isEmpty;
     unawaited(_reloadAfterExternalChange());
     unawaited(_observeGalleryChanges());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _firstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _observeInitialContent();
+    });
   }
 
   Future<void> _observeGalleryChanges() async {
@@ -427,12 +463,14 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         permissionDenied = true;
         loading = false;
       });
+      _observeInitialContentAfterFrame();
     } catch (_) {
       if (!mounted || refresh != _refreshEpoch) return;
       setState(() {
         loadError = '相册加载失败，请重试';
         loading = false;
       });
+      _observeInitialContentAfterFrame();
     } finally {
       if (mounted && refresh == _refreshEpoch) {
         setState(() => refreshing = false);
@@ -455,6 +493,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
 
   @override
   void dispose() {
+    _performanceTrace.dispose();
     WidgetsBinding.instance.removeObserver(this);
     try {
       PhotoManager.removeChangeCallback(_onGalleryChanged);
@@ -534,6 +573,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           }
         }
       });
+      _observeInitialContentAfterFrame();
       // 首屏若未填满一屏，立即预取下一页，保证滚动无缝。
       if (firstPage.length < 12) unawaited(_loadMore());
     } on GalleryPermissionDenied {
@@ -545,6 +585,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         GalleryAccessCache.forMode(widget.photosOnly).preview = const [];
         photos = const [];
       });
+      _observeInitialContentAfterFrame();
     } catch (failure) {
       if (!mounted || epoch != _loadEpoch) return;
       setState(() {
@@ -552,6 +593,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         loadError =
             failure is GallerySourceError ? failure.message : '相册加载失败，请重试';
       });
+      _observeInitialContentAfterFrame();
     }
   }
 

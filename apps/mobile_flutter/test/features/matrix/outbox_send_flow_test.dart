@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
 import 'package:liuhetong_mobile/core/outbox/message_send_scheduler.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_room_sender_registry.dart';
@@ -17,6 +19,8 @@ final class _FakeTransport
   final events = <RoomMessageViewModel>[];
   final txids = <String>[];
   final responses = <Future<String> Function()>[];
+  void Function()? onSnapshot;
+  void Function()? onRetrySuccess;
 
   @override
   Future<String> sendTextWithTransaction(String text, String transactionId) {
@@ -32,10 +36,14 @@ final class _FakeTransport
   Future<void> retry(String transactionId) async {
     txids.add(transactionId);
     if (responses.isNotEmpty) await responses.removeAt(0)();
+    onRetrySuccess?.call();
   }
 
   @override
-  List<RoomMessageViewModel> snapshot() => List.of(events);
+  List<RoomMessageViewModel> snapshot() {
+    onSnapshot?.call();
+    return List.of(events);
+  }
 
   @override
   Future<Uint8List> loadAttachment(String eventId) async => Uint8List(0);
@@ -145,6 +153,306 @@ void main() {
           networkStateManager: manager,
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
+
+  test('message send trace spans persistence, admission, ACK and visible row',
+      () async {
+    final records = <PerformanceRecord>[];
+    var clockUs = 0;
+    final recorder = PerformanceTraceRecorder(
+      enabled: () => true,
+      clockUs: () => clockUs += 1000,
+      onRecord: records.add,
+    );
+    manager.reportSuccess();
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        networkStateManager: manager,
+        outboxJournal: outbox.journalFor(
+            roomId: '!private-room:example', receiverId: '@private:example'));
+    addTearDown(controller.dispose);
+    await controller.sendText('private message payload');
+    final record = records.single;
+    expect(record.operation, PerformanceOperationType.messageSend);
+    expect(record.result, PerformanceResult.success);
+    expect(
+        record.stagesUs.keys,
+        containsAll(<PerformanceStage>[
+          PerformanceStage.composerSubmit,
+          PerformanceStage.outboxPersist,
+          PerformanceStage.sendAdmission,
+          PerformanceStage.matrixSendStart,
+          PerformanceStage.matrixSendFinish,
+          PerformanceStage.ack,
+          PerformanceStage.timelineVisible,
+        ]));
+    expect(
+        record.betweenMs(
+            PerformanceStage.composerSubmit, PerformanceStage.outboxPersist),
+        greaterThan(0));
+    expect(record.databaseOperation, PerformanceDatabaseOperation.outboxQuery);
+    expect(record.stagesUs, contains(PerformanceStage.databaseSearchStarted));
+    expect(record.stagesUs, contains(PerformanceStage.databaseSearchDone));
+    final encoded = jsonEncode(record.toJson());
+    expect(encoded, isNot(contains('private message payload')));
+    expect(encoded, isNot(contains('!private-room:example')));
+    expect(encoded, isNot(contains('@private:example')));
+    expect(encoded, isNot(contains(transport.txids.single)));
+  });
+
+  test('composer submit trace includes local projection before persistence',
+      () async {
+    final records = <PerformanceRecord>[];
+    var clockUs = 0;
+    final recorder = PerformanceTraceRecorder(
+      enabled: () => true,
+      clockUs: () => clockUs,
+      onRecord: records.add,
+    );
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        networkStateManager: manager,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    addTearDown(controller.dispose);
+    bool? firstSnapshotHadTrace;
+    transport.onSnapshot = () {
+      firstSnapshotHadTrace ??= recorder.activeCount == 1;
+      clockUs += 30000;
+    };
+
+    await controller.sendText('private text');
+
+    expect(firstSnapshotHadTrace, isTrue);
+    expect(
+      records.single.betweenMs(
+          PerformanceStage.composerSubmit, PerformanceStage.outboxPersist),
+      greaterThanOrEqualTo(30),
+    );
+  });
+
+  test('projection failure releases the newly started send trace', () async {
+    final records = <PerformanceRecord>[];
+    final recorder =
+        PerformanceTraceRecorder(enabled: () => true, onRecord: records.add);
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder, networkStateManager: manager);
+    addTearDown(controller.dispose);
+    transport.onSnapshot = () => throw StateError('projection fixture');
+
+    await expectLater(controller.sendText('private text'), throwsStateError);
+
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.failed);
+    expect(recorder.activeCount, 0);
+  });
+
+  test('manual retry keeps one send trace through the final ACK', () async {
+    final records = <PerformanceRecord>[];
+    var clockUs = 0;
+    final recorder = PerformanceTraceRecorder(
+        enabled: () => true,
+        clockUs: () => clockUs += 1000,
+        onRecord: records.add);
+    final transport = _FakeTransport()
+      ..responses.add(_networkDown)
+      ..responses.add(() => Future<String>.value('event-ok'));
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        networkStateManager: manager,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    addTearDown(controller.dispose);
+
+    await controller.sendText('private text');
+    expect(records, isEmpty);
+    expect(recorder.activeCount, 1);
+    final tx = transport.txids.single;
+    await controller.retry(tx);
+
+    expect(transport.txids, [tx, tx]);
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.success);
+    expect(records.single.retryCount, 1);
+    expect(records.single.stagesUs.keys,
+        containsAll([PerformanceStage.ack, PerformanceStage.timelineVisible]));
+    expect(records.single.stagesUs[PerformanceStage.timelineVisible],
+        greaterThanOrEqualTo(records.single.stagesUs[PerformanceStage.ack]!));
+    expect(recorder.activeCount, 0);
+  });
+
+  test('send stage measures first attempt without retry waiting time',
+      () async {
+    final records = <PerformanceRecord>[];
+    var clockUs = 0;
+    final recorder = PerformanceTraceRecorder(
+        enabled: () => true, clockUs: () => clockUs, onRecord: records.add);
+    final transport = _FakeTransport()
+      ..responses.add(() {
+        clockUs += 10000;
+        return _networkDown();
+      })
+      ..responses.add(() {
+        clockUs += 20000;
+        return Future<String>.value('event-ok');
+      });
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        networkStateManager: manager,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    addTearDown(controller.dispose);
+
+    await controller.sendText('private text');
+    clockUs += 1800000;
+    await controller.retry(transport.txids.single);
+
+    final firstAttemptMs = records.single.betweenMs(
+        PerformanceStage.matrixSendStart, PerformanceStage.matrixSendFinish);
+    expect(firstAttemptMs, 10);
+    expect(records.single.totalMs, greaterThan(1800));
+  });
+
+  test('network recovery keeps one send trace through automatic retry',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder =
+        PerformanceTraceRecorder(enabled: () => true, onRecord: records.add);
+    final transport = _FakeTransport()
+      ..responses.add(_networkDown)
+      ..responses.add(() => Future<String>.value('event-ok'));
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        networkStateManager: manager,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    addTearDown(controller.dispose);
+
+    await controller.sendText('private text');
+    expect(records, isEmpty);
+    manager.reportSuccess();
+    await pumpEventQueue();
+
+    expect(transport.txids, hasLength(2));
+    expect(transport.txids[1], transport.txids[0]);
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.success);
+    expect(records.single.retryCount, 1);
+    expect(recorder.activeCount, 0);
+  });
+
+  test('adapter retry of local media also settles the retained send trace',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder =
+        PerformanceTraceRecorder(enabled: () => true, onRecord: records.add);
+    final transport = _FakeTransport()
+      ..responses.add(_networkDown)
+      ..responses.add(() => Future<String>.value('event-ok'));
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder, networkStateManager: manager);
+    addTearDown(controller.dispose);
+
+    await controller.sendText('private media marker',
+        kind: RoomMessageKind.image);
+    expect(records, isEmpty);
+    final tx = transport.txids.single;
+    transport.events.add(RoomMessageViewModel(
+      id: tx,
+      transactionId: tx,
+      senderId: '',
+      text: 'private media marker',
+      isOwn: true,
+      kind: RoomMessageKind.image,
+      deliveryState: RoomDeliveryState.sending,
+      timestamp: DateTime.now(),
+    ));
+    transport.onRetrySuccess = () => transport.events[0] =
+        transport.events[0].copyWith(deliveryState: RoomDeliveryState.sent);
+
+    await controller.retry(tx);
+
+    expect(transport.txids, [tx, tx]);
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.success);
+    expect(records.single.retryCount, 1);
+    expect(records.single.stagesUs.keys,
+        containsAll([PerformanceStage.ack, PerformanceStage.timelineVisible]));
+    expect(recorder.activeCount, 0);
+  });
+
+  testWidgets('send trace expires as waiting network without a Matrix send',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder =
+        PerformanceTraceRecorder(enabled: () => true, onRecord: records.add);
+    manager.report(transportAvailable: false);
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        networkStateManager: manager,
+        outboxJournal: outbox.journalFor(
+            roomId: '!private-room:example', receiverId: '@private:example'));
+    addTearDown(controller.dispose);
+    await controller.sendText('private text');
+    expect(records, isEmpty);
+    expect(recorder.activeCount, 1);
+    await tester.pump(PerformanceThresholds.messageTraceObservationWindow);
+    final record = records.single;
+    expect(record.result, PerformanceResult.waitingNetwork);
+    expect(record.networkError, PerformanceNetworkError.socketFailure);
+    expect(record.transportAvailable, isFalse);
+    expect(record.stagesUs, contains(PerformanceStage.outboxPersist));
+    expect(record.stagesUs, isNot(contains(PerformanceStage.matrixSendStart)));
+    expect(transport.txids, isEmpty);
+    expect(recorder.activeCount, 0);
+  });
+
+  test('waiting send trace retention obeys recorder capacity', () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        enabled: () => true, activeCapacity: 2, onRecord: records.add);
+    manager.report(transportAvailable: false);
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        networkStateManager: manager,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    addTearDown(controller.dispose);
+
+    await controller.sendText('a');
+    await controller.sendText('b');
+    expect(recorder.activeCount, 2);
+    await controller.sendText('c');
+
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.waitingNetwork);
+    expect(recorder.activeCount, 2);
+    expect(transport.txids, isEmpty);
+  });
+
+  test('send trace reports local admission rejection without transport',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder =
+        PerformanceTraceRecorder(enabled: () => true, onRecord: records.add);
+    final transport = _FakeTransport();
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        canSendNow: () => false,
+        networkStateManager: manager,
+        outboxJournal: outbox.journalFor(
+            roomId: '!private-room:example', receiverId: '@private:example'));
+    addTearDown(controller.dispose);
+    await controller.sendText('private text');
+    expect(records.single.result, PerformanceResult.rejected);
+    expect(records.single.stagesUs.keys,
+        isNot(contains(PerformanceStage.matrixSendStart)));
+    expect(transport.txids, isEmpty);
+  });
 
   test('expired deadline with failed writes wakes only once per owner',
       () async {
@@ -286,6 +594,43 @@ void main() {
       }
     });
   }
+
+  testWidgets('late ACK after UI timeout finishes the same send trace as sent',
+      (tester) async {
+    outbox.dispose();
+    outbox = PersistentOutboxManager(InMemoryOutboxStore(),
+        accountId: 'me', clock: tester.binding.clock.now);
+    manager.reportSuccess();
+    final records = <PerformanceRecord>[];
+    final recorder =
+        PerformanceTraceRecorder(enabled: () => true, onRecord: records.add);
+    final response = Completer<String>();
+    final transport = _FakeTransport()..responses.add(() => response.future);
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        sendDispatchTimeout: const Duration(seconds: 1),
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'));
+    addTearDown(controller.dispose);
+    final pending = controller.sendText('late ACK fixture');
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(await pending, isNull);
+    expect(records, isEmpty);
+    expect(recorder.activeCount, 1);
+    response.complete('ack');
+    await tester.pump();
+    await tester.pump();
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.success);
+    expect(
+        records.single.stagesUs.keys,
+        containsAll(<PerformanceStage>[
+          PerformanceStage.matrixSendFinish,
+          PerformanceStage.ack,
+        ]));
+    expect(recorder.activeCount, 0);
+  });
 
   testWidgets(
       'direct foreground late failure wakes background after page disposal',

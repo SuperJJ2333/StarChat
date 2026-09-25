@@ -8,7 +8,9 @@ import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 import 'business_api_error.dart';
+import 'business_api_performance_client.dart';
 import 'chat_diagnostics.dart';
+import 'performance_trace.dart';
 import 'business_auth_contracts.dart';
 import '../features/profile/profile_controller.dart';
 import '../features/profile/invite_controller.dart';
@@ -64,16 +66,28 @@ final class BusinessApiClient
         InviteCacheScopeProvider,
         SupportIdentityGateway,
         phone_contracts.PhoneAuthGateway,
+        phone_contracts.PhoneInvitationContinuationGateway,
         phone_contracts.RechargeGateway {
   BusinessApiClient({
     required this.baseUri,
     required this.sessionStore,
     http.Client? client,
-  }) : _client = client ?? http.Client();
+    PerformanceTraceRecorder? performanceRecorder,
+  }) : _client = BusinessApiPerformanceClient(client ?? http.Client(),
+            recorder: performanceRecorder);
   final Uri baseUri;
   final SecureSessionStore sessionStore;
-  final http.Client _client;
+  final BusinessApiPerformanceClient _client;
   bool _diagnosticUploadActive = false;
+
+  /// Account-scoped shared presentation cache; widgets only remove listeners.
+  late final SupportIdentityRepository supportIdentities =
+      SupportIdentityRepository(this, scope: () async {
+    final session = await sessionStore.session();
+    final account = session?.matrixUserId;
+    if (account == null || account.isEmpty) return null;
+    return sha256.convert(utf8.encode('$baseUri|$account')).toString();
+  }, store: const PreferencesSupportIdentitySnapshotStore());
 
   /// Best-effort metadata transport, deliberately outside _authorized/_decode.
   /// 401/429 never refresh credentials, revoke a session or recurse into logs.
@@ -191,6 +205,7 @@ final class BusinessApiClient
   Future<void> _invalidateSession(int epoch, String code) async {
     if (epoch != _sessionEpoch) return;
     final invalidatedEpoch = ++_sessionEpoch;
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -223,11 +238,9 @@ final class BusinessApiClient
   String _pendingIdempotencyKey(String operation) =>
       _pendingIdempotencyKeys.putIfAbsent(operation, newIdempotencyKey);
   Uri _uri(String path) {
-    final url = baseUri.resolve(
+    return baseUri.resolve(
       path.startsWith('/api/v1/') ? path : '/api/v1$path',
     );
-    _lastRequestUrl = url; // 供 debug 日志记录（不含 query 密钥）
-    return url;
   }
 
   Future<Map<String, dynamic>> login({
@@ -237,6 +250,7 @@ final class BusinessApiClient
     required String deviceName,
   }) async {
     final loginEpoch = ++_sessionEpoch;
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -523,7 +537,7 @@ final class BusinessApiClient
       _profile(await getJson('/profile/me'));
   @override
   Future<ProfileData> updateProfile({
-    required String nickname,
+    String? nickname,
     String? signature,
     String? nudgeSuffix,
   }) async =>
@@ -531,9 +545,9 @@ final class BusinessApiClient
         await patchJson(
             '/profile/me',
             {
-              'nickname': nickname,
-              'signature': signature,
-              'nudge_suffix': nudgeSuffix,
+              if (nickname != null) 'nickname': nickname,
+              if (signature != null) 'signature': signature,
+              if (nudgeSuffix != null) 'nudge_suffix': nudgeSuffix,
             },
             idempotencyKey: newIdempotencyKey()),
       );
@@ -679,6 +693,7 @@ final class BusinessApiClient
   @override
   Future<BusinessSessionRevocation?> clearLocalSession() async {
     final epoch = ++_sessionEpoch;
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -1511,17 +1526,22 @@ final class BusinessApiClient
 
   Future<Map<String, dynamic>> momentProfilePreview(String userId) =>
       getJson('/moments/users/${Uri.encodeComponent(userId)}/preview');
-  Future<Map<String, dynamic>> momentNotifications() =>
-      getJson('/moments/notifications');
+  Future<Map<String, dynamic>> momentNotifications(
+          {int limit = 30, String? cursor}) =>
+      getJson('/moments/notifications?limit=$limit'
+          '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}');
   Future<Map<String, dynamic>> momentUnreadCount() =>
       getJson('/moments/notifications/unread-count');
   Future<void> markMomentNotificationsRead(List<String> ids) async {
-    await postJson(
-        '/moments/notifications/read',
-        {
-          'ids': ids,
-        },
-        idempotencyKey: newIdempotencyKey());
+    if (ids.isEmpty) return;
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/moments/notifications/read'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode(ids),
+      ),
+    );
+    if (response.statusCode != 204) _decode(response);
   }
 
   Future<Map<String, dynamic>> momentsPreferences() =>
@@ -1670,12 +1690,7 @@ final class BusinessApiClient
     bool termsAccepted = false,
     bool Function()? shouldContinue,
   }) async {
-    final loginEpoch = ++_sessionEpoch;
-    _refreshFlight = null;
-    _refreshRetryAt = null;
-    _refreshFailures = 0;
-    _matrixGrantFlight = null;
-    _matrixGrantRetryAt = null;
+    final loginEpoch = _beginPhoneLogin();
     final response = await _client
         .post(
           _uri('/auth/phone/login'),
@@ -1683,6 +1698,7 @@ final class BusinessApiClient
           body: jsonEncode({
             'phone': phone,
             'code': code,
+            'allow_invitation_continuation': true,
             if (invitationCode.isNotEmpty) 'invitation_code': invitationCode,
             if (termsAccepted) 'terms_accepted': true,
             'device_key': deviceKey,
@@ -1691,6 +1707,175 @@ final class BusinessApiClient
         )
         .timeout(_httpTimeout);
     var body = _decode(response);
+    String? invitationTicket;
+    if (body['status'] == 'INVITATION_VERIFIED') {
+      if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+        throw _ended;
+      }
+      final ticket = _invitationTicket(body);
+      invitationTicket = ticket;
+      if (invitationCode.trim().isEmpty) {
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+            ticket: ticket,
+            issue: phone_contracts.PhoneInvitationIssue.required);
+      }
+      try {
+        body = await _submitPhoneInvitation(
+            invitationTicket: ticket,
+            phone: phone,
+            invitationCode: invitationCode,
+            termsAccepted: termsAccepted,
+            deviceKey: deviceKey,
+            deviceName: deviceName,
+            shouldContinue: shouldContinue,
+            loginEpoch: loginEpoch);
+      } on phone_contracts.PhoneInvitationContinuationRequired {
+        rethrow;
+      } on BusinessApiException catch (error) {
+        if (error.code == 'INVITATION_TICKET_INVALID' ||
+            error.code == 'AUTH_SESSION_ENDED') {
+          rethrow;
+        }
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+            ticket: ticket,
+            issue: phone_contracts.PhoneInvitationIssue.uncertain);
+      } on Exception {
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+            ticket: ticket,
+            issue: phone_contracts.PhoneInvitationIssue.uncertain);
+      }
+    }
+    try {
+      return await _finishPhoneLogin(body,
+          deviceKey: deviceKey,
+          deviceName: deviceName,
+          shouldContinue: shouldContinue,
+          loginEpoch: loginEpoch);
+    } on BusinessApiException catch (error) {
+      if (invitationTicket == null ||
+          error.code == 'AUTH_SESSION_ENDED' ||
+          error.code == 'LOGIN_TICKET_INVALID') {
+        rethrow;
+      }
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: invitationTicket,
+          issue: error.code == 'PHONE_PROVISIONING_PENDING'
+              ? phone_contracts.PhoneInvitationIssue.provisioning
+              : phone_contracts.PhoneInvitationIssue.uncertain);
+    } on Exception {
+      if (invitationTicket == null) rethrow;
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: invitationTicket,
+          issue: phone_contracts.PhoneInvitationIssue.uncertain);
+    }
+  }
+
+  int _beginPhoneLogin() {
+    final loginEpoch = ++_sessionEpoch;
+    supportIdentities.clear();
+    _refreshFlight = null;
+    _refreshRetryAt = null;
+    _refreshFailures = 0;
+    _matrixGrantFlight = null;
+    _matrixGrantRetryAt = null;
+    return loginEpoch;
+  }
+
+  String _invitationTicket(Map<String, dynamic> body) {
+    final ticket = body['invitation_ticket'];
+    if (ticket is! String || ticket.length < 32 || ticket.length > 128) {
+      throw const FormatException('Invalid phone invitation response');
+    }
+    return ticket;
+  }
+
+  phone_contracts.PhoneInvitationIssue? _invitationIssue(Object? status) =>
+      switch (status) {
+        'INVITATION_REQUIRED' => phone_contracts.PhoneInvitationIssue.required,
+        'INVITATION_INVALID' => phone_contracts.PhoneInvitationIssue.invalid,
+        'INVITATION_EXPIRED' => phone_contracts.PhoneInvitationIssue.expired,
+        'INVITATION_EXHAUSTED' =>
+          phone_contracts.PhoneInvitationIssue.exhausted,
+        'TERMS_REQUIRED' => phone_contracts.PhoneInvitationIssue.terms,
+        _ => null,
+      };
+
+  Future<Map<String, dynamic>> _submitPhoneInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    required int loginEpoch,
+    bool Function()? shouldContinue,
+  }) async {
+    if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+      throw _ended;
+    }
+    final response = await _client
+        .post(
+          _uri('/auth/phone/login/invitation'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'phone': phone,
+            'invitation_ticket': invitationTicket,
+            'invitation_code': invitationCode,
+            'terms_accepted': termsAccepted,
+            'device_key': deviceKey,
+            'device_name': deviceName,
+          }),
+        )
+        .timeout(_httpTimeout);
+    final body = _decode(response);
+    if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+      throw _ended;
+    }
+    final issue = _invitationIssue(body['status']);
+    if (issue != null) {
+      if (_invitationTicket(body) != invitationTicket) {
+        throw const FormatException('Mismatched phone invitation response');
+      }
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: invitationTicket, issue: issue);
+    }
+    return body;
+  }
+
+  @override
+  Future<Map<String, dynamic>> completePhoneLoginInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    bool Function()? shouldContinue,
+  }) async {
+    final loginEpoch = _beginPhoneLogin();
+    final body = await _submitPhoneInvitation(
+        invitationTicket: invitationTicket,
+        phone: phone,
+        invitationCode: invitationCode,
+        termsAccepted: termsAccepted,
+        deviceKey: deviceKey,
+        deviceName: deviceName,
+        loginEpoch: loginEpoch,
+        shouldContinue: shouldContinue);
+    return _finishPhoneLogin(body,
+        deviceKey: deviceKey,
+        deviceName: deviceName,
+        shouldContinue: shouldContinue,
+        loginEpoch: loginEpoch);
+  }
+
+  Future<Map<String, dynamic>> _finishPhoneLogin(
+    Map<String, dynamic> body, {
+    required String deviceKey,
+    required String deviceName,
+    required int loginEpoch,
+    bool Function()? shouldContinue,
+  }) async {
     final waiting = Stopwatch()..start();
     final ticket = body['login_ticket']?.toString();
     while (body['status'] == 'PENDING_MATRIX') {
@@ -1723,6 +1908,10 @@ final class BusinessApiClient
                   message: '账号开通结果待确认，请稍后重新登录；无需再次注册',
                   statusCode: 202));
       body = _decode(completion);
+    }
+    if (!body.containsKey('access_token') ||
+        !body.containsKey('refresh_token')) {
+      throw const FormatException('Invalid phone login response');
     }
     if (shouldContinue?.call() == false) throw _ended;
     if (loginEpoch != _sessionEpoch) throw _ended;
@@ -1971,11 +2160,11 @@ final class BusinessApiClient
   /// A03：会话代数——登出递增；在途刷新的迟到结果据此失效。
   int _sessionEpoch = 0;
 
-  /// debug 模式请求观测：只记录 method/URL/HTTP 状态/错误类型，
-  /// 绝不输出 header、body、token、密码或完整邀请码。
-  void _logRequest(String method, Uri? url, Object outcome) {
+  /// Debug output uses no request path: path segments can hold room, user or
+  /// upload identifiers even when the query string is omitted.
+  void _logRequest(Object outcome) {
     if (!kDebugMode) return;
-    debugPrint('[api] $method ${url?.path ?? ''} -> $outcome');
+    debugPrint('[chatflow/network] business_request -> $outcome');
   }
 
   Future<http.Response> _authorized(
@@ -1984,73 +2173,84 @@ final class BusinessApiClient
     String? expectedWalletScope,
     String? expectedPaymentScope,
   }) async {
-    final epoch = _sessionEpoch;
-    // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
-    // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
-    final deadline = DateTime.now().add(_authorizedTotalTimeout);
-    Future<Duration> remaining() async => deadline.difference(DateTime.now());
-    final initial = await sessionStore.session();
-    if (epoch != _sessionEpoch) throw _ended;
-    void guardPayment(StoredBusinessSession? session) {
-      if (expectedPaymentScope != null &&
-          _paymentSessionScope(session) != expectedPaymentScope) {
-        throw StateError('支付会话已变化，请重新打开支付页面');
-      }
-    }
-
-    guardPayment(initial);
-    if (expectedWalletScope != null &&
-        _walletSessionScope(initial) != expectedWalletScope) {
-      throw StateError('账户已切换，请重新打开钱包');
-    }
-    final requestUrl = _lastRequestUrl;
-    http.Response response;
+    final performanceScope = _client.beginLogicalRequest();
+    Object? failure;
+    Future<http.Response> attempt(Map<String, String> headers) =>
+        performanceScope == null
+            ? operation(headers)
+            : performanceScope.run(() => operation(headers));
     try {
-      response = await operation({
-        if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}',
-      }).timeout(timeout);
-    } catch (error) {
-      _logRequest('REQUEST', requestUrl, 'ERROR:${error.runtimeType}');
-      rethrow;
-    }
-    if (response.statusCode >= 400) {
-      _logRequest('REQUEST', requestUrl, 'HTTP ${response.statusCode}');
-    }
-    await _checkReplacement(response, epoch);
-    if (response.statusCode != 401 || initial == null) {
+      final epoch = _sessionEpoch;
+      // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
+      // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
+      final deadline = DateTime.now().add(_authorizedTotalTimeout);
+      Future<Duration> remaining() async => deadline.difference(DateTime.now());
+      final initial = await sessionStore.session();
+      if (epoch != _sessionEpoch) throw _ended;
+      void guardPayment(StoredBusinessSession? session) {
+        if (expectedPaymentScope != null &&
+            _paymentSessionScope(session) != expectedPaymentScope) {
+          throw StateError('支付会话已变化，请重新打开支付页面');
+        }
+      }
+
+      guardPayment(initial);
+      if (expectedWalletScope != null &&
+          _walletSessionScope(initial) != expectedWalletScope) {
+        throw StateError('账户已切换，请重新打开钱包');
+      }
+      http.Response response;
+      try {
+        response = await attempt({
+          if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}',
+        }).timeout(timeout);
+      } catch (error) {
+        _logRequest('ERROR:${error.runtimeType}');
+        rethrow;
+      }
+      if (response.statusCode >= 400) {
+        _logRequest('HTTP ${response.statusCode}');
+      }
+      await _checkReplacement(response, epoch);
+      if (response.statusCode != 401 || initial == null) {
+        if (expectedPaymentScope != null) {
+          guardPayment(await sessionStore.session());
+        }
+        return response;
+      }
+      final refreshBudget = await remaining();
+      if (refreshBudget <= Duration.zero) {
+        throw TimeoutException('authorized request budget exhausted');
+      }
+      // Bound this caller, not the shared refresh: its durable result must still
+      // be saved for other callers if this request's budget runs out.
+      final replacement = await refreshSession().timeout(refreshBudget);
+      if (epoch != _sessionEpoch) throw _ended;
+      guardPayment(replacement);
+      if (expectedWalletScope != null &&
+          _walletSessionScope(replacement) != expectedWalletScope) {
+        throw StateError('账户已切换，请重新打开钱包');
+      }
+      final budget = await remaining();
+      if (budget.isNegative) {
+        throw TimeoutException('authorized request budget exhausted');
+      }
+      performanceScope?.retryCount++;
+      final retried = await attempt({
+        'Authorization': 'Bearer ${replacement.accessToken}',
+      }).timeout(budget < timeout ? budget : timeout);
+      await _checkReplacement(retried, epoch);
       if (expectedPaymentScope != null) {
         guardPayment(await sessionStore.session());
       }
-      return response;
+      return retried;
+    } catch (error) {
+      failure = error;
+      rethrow;
+    } finally {
+      performanceScope?.finish(failure: failure);
     }
-    final refreshBudget = await remaining();
-    if (refreshBudget <= Duration.zero) {
-      throw TimeoutException('authorized request budget exhausted');
-    }
-    // Bound this caller, not the shared refresh: its durable result must still
-    // be saved for other callers if this request's budget runs out.
-    final replacement = await refreshSession().timeout(refreshBudget);
-    if (epoch != _sessionEpoch) throw _ended;
-    guardPayment(replacement);
-    if (expectedWalletScope != null &&
-        _walletSessionScope(replacement) != expectedWalletScope) {
-      throw StateError('账户已切换，请重新打开钱包');
-    }
-    final budget = await remaining();
-    if (budget.isNegative) {
-      throw TimeoutException('authorized request budget exhausted');
-    }
-    final retried = await operation({
-      'Authorization': 'Bearer ${replacement.accessToken}',
-    }).timeout(budget < timeout ? budget : timeout);
-    await _checkReplacement(retried, epoch);
-    if (expectedPaymentScope != null) {
-      guardPayment(await sessionStore.session());
-    }
-    return retried;
   }
-
-  Uri? _lastRequestUrl;
 
   Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic>? body;

@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/app_connection_status.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_recovery_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_sync_phase_metrics.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
 
@@ -11,6 +14,217 @@ import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
 /// 停跳先踢一次 oneShotSync，仍停跳强制 abortSync + 重启循环。
 void main() {
   SyncStatusUpdate status(SyncStatus s) => SyncStatusUpdate(s);
+
+  test('release-style watchdog stall records no detailed log', () async {
+    final previous = debugPrint;
+    final lines = <String>[];
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) lines.add(message);
+    };
+    addTearDown(() => debugPrint = previous);
+    final target = _FakeWatchdogTarget();
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      syncPhaseMetrics:
+          MatrixSyncPhaseMetrics(metrics: PerformanceMetrics(enabled: false)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(target.oneShots, 1);
+    expect(lines, isEmpty);
+    watchdog.dispose();
+  });
+
+  test('diagnostic watchdog stall uses the unified matrix tag', () async {
+    final previous = debugPrint;
+    final lines = <String>[];
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) lines.add(message);
+    };
+    addTearDown(() => debugPrint = previous);
+    final target = _FakeWatchdogTarget();
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      syncPhaseMetrics:
+          MatrixSyncPhaseMetrics(metrics: PerformanceMetrics(enabled: true)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(lines, isNotEmpty);
+    expect(lines, everyElement(startsWith('[chatflow/matrix]')));
+    watchdog.dispose();
+  });
+
+  test('transport availability follows only actual transport observations',
+      () async {
+    final target = _FakeWatchdogTarget();
+    final transport = _FakeTransport({MatrixTransport.wifi});
+    final watchdog = MatrixSyncWatchdog(target: target, transport: transport);
+    expect(watchdog.transportAvailable.value, isNull);
+    watchdog.start();
+    await _settle();
+    await _settle();
+    expect(watchdog.transportAvailable.value, isTrue);
+
+    target.emit(status(SyncStatus.error));
+    await _settle();
+    expect(watchdog.connectionStatus.value,
+        MatrixConnectionStatus.serviceUnavailable);
+    expect(watchdog.transportAvailable.value, isTrue,
+        reason: 'Matrix sync failure is not device transport failure');
+
+    transport.emit({});
+    await _settle();
+    expect(watchdog.transportAvailable.value, isFalse);
+    transport.emit({MatrixTransport.wifi});
+    await _settle();
+    expect(watchdog.transportAvailable.value, isTrue);
+    watchdog.dispose();
+  });
+
+  test('without a transport monitor sync statuses leave availability unknown',
+      () async {
+    final target = _FakeWatchdogTarget();
+    final watchdog = MatrixSyncWatchdog(target: target);
+    watchdog.start();
+    target.emit(status(SyncStatus.finished));
+    target.emit(status(SyncStatus.error));
+    await _settle();
+    expect(watchdog.transportAvailable.value, isNull);
+    watchdog.dispose();
+  });
+
+  test('sync errors and reconnects retain the age of the last healthy cycle',
+      () async {
+    final target = _FakeWatchdogTarget();
+    final metrics = PerformanceMetrics(enabled: true);
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      syncPhaseMetrics: MatrixSyncPhaseMetrics(metrics: metrics),
+    );
+    watchdog.start();
+    expect(watchdog.lastHealthySyncAge, isNull);
+
+    target.emit(status(SyncStatus.finished));
+    await _settle();
+    expect(watchdog.lastHealthySyncAge, Duration.zero);
+    target.clock.elapse(const Duration(seconds: 7));
+    expect(watchdog.lastHealthySyncAge, const Duration(seconds: 7));
+
+    target.emit(status(SyncStatus.error));
+    await _settle();
+    expect(watchdog.connectionStatus.value,
+        MatrixConnectionStatus.serviceUnavailable);
+    target.clock.elapse(const Duration(seconds: 1));
+    target.emit(status(SyncStatus.finished));
+    await _settle();
+    final counters = metrics.snapshot()['counters'] as Map;
+    expect(counters['syncErrors'], 1);
+    expect(counters['syncReconnects'], 1);
+    expect(watchdog.lastHealthySyncAge, Duration.zero);
+    watchdog.dispose();
+  });
+
+  test('sync error and reconnect counts survive disabled local metrics',
+      () async {
+    final target = _FakeWatchdogTarget();
+    final metrics = PerformanceMetrics(enabled: false);
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      syncPhaseMetrics: MatrixSyncPhaseMetrics(metrics: metrics),
+    );
+    watchdog.start();
+    expect(watchdog.syncErrorCount, 0);
+    expect(watchdog.reconnectCount, 0);
+
+    target.emit(status(SyncStatus.finished));
+    await _settle();
+    expect(watchdog.reconnectCount, 0,
+        reason: 'first healthy sync is not a reconnect');
+    target.emit(status(SyncStatus.error));
+    target.emit(status(SyncStatus.error));
+    await _settle();
+    expect(watchdog.syncErrorCount, 2);
+    expect(watchdog.reconnectCount, 0);
+    target.emit(status(SyncStatus.finished));
+    await _settle();
+    expect(watchdog.reconnectCount, 1);
+    target.emit(status(SyncStatus.finished));
+    await _settle();
+    expect(watchdog.reconnectCount, 1,
+        reason: 'healthy status repeats do not count as reconnects');
+    expect(metrics.snapshot()['counters'], isEmpty);
+    watchdog.dispose();
+  });
+
+  test('counts actual soft kicks and hard restart attempts once', () async {
+    final target = _FakeWatchdogTarget()..holdOneShot = true;
+    final metrics = PerformanceMetrics(enabled: true);
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      syncPhaseMetrics: MatrixSyncPhaseMetrics(metrics: metrics),
+    );
+    watchdog.start();
+    target.emit(status(SyncStatus.waitingForResponse));
+    await _settle();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await watchdog.tick();
+    await _settle();
+    expect((metrics.snapshot()['counters'] as Map)['syncSoftKicks'], 1);
+    target.releaseOneShot();
+    await _settle();
+
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect((metrics.snapshot()['counters'] as Map)['syncHardRestarts'], 1);
+    watchdog.dispose();
+  });
+
+  test('resume action counts remain available when metrics are disabled',
+      () async {
+    final target = _FakeWatchdogTarget()..holdOneShot = true;
+    final metrics = PerformanceMetrics(enabled: false);
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      syncPhaseMetrics: MatrixSyncPhaseMetrics(metrics: metrics),
+    );
+    expect(watchdog.softKickCount, 0);
+    expect(watchdog.hardRestartCount, 0);
+    watchdog.start();
+    target.emit(status(SyncStatus.waitingForResponse));
+    await _settle();
+
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await watchdog.tick();
+    await _settle();
+    expect(watchdog.softKickCount, 1,
+        reason: 'joining an in-flight kick must not count twice');
+    expect(watchdog.hardRestartCount, 0);
+    target.releaseOneShot();
+    await _settle();
+
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(watchdog.softKickCount, 1);
+    expect(watchdog.hardRestartCount, 1);
+    expect(metrics.snapshot()['counters'], isEmpty,
+        reason: 'release action counts must not depend on metrics sampling');
+    watchdog.dispose();
+  });
 
   test('健康循环（心跳持续）不采取任何行动', () async {
     final target = _FakeWatchdogTarget();

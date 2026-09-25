@@ -32,7 +32,12 @@ export class AppNavigationBar extends StrictElement {
     const actions = element("div", "c-navigation-bar__actions");
     if (this.attr("action")) {
       const action = button("c-navigation-bar__button", this.attr("action"), "navigation-action");
-      action.append(icon("more", "c-navigation-bar__icon"));
+      if (["编辑", "保存"].includes(this.attr("action"))) {
+        action.classList.add("c-navigation-bar__button--text");
+        action.append(element("span", "", this.attr("action")));
+      } else {
+        action.append(icon("more", "c-navigation-bar__icon"));
+      }
       actions.append(action);
     }
     root.append(leading, title, actions);

@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/performance_metrics.dart';
+
 /// 通话关键路径阶段（诊断埋点，脱敏——不含任何通话内容）。
 ///
 /// 被叫链路（[CallDiagStage.incomingUiShown] … [CallDiagStage.firstRemoteTrack]）
@@ -38,8 +40,8 @@ enum CallDiagStage {
 /// 通话关键路径耗时诊断：invite→来电UI→点击接听→接听信令→ICE 接通。
 ///
 /// 由组合根创建并注入 backend 与 controller（同一实例，同一时间线）；
-/// 每次新通话 reset。仅记录时间戳与差值 + debugPrint
-/// `[chatflow/calldiag]`，供真机 logcat 定位慢阶段。
+/// 每次新通话 reset。Profile/diagnostic 模式才输出阶段详情，统一使用
+/// `[chatflow/call]`；正常 Release 保留时间戳供 typed trace 使用。
 ///
 /// 真机判断（不硬编码质量阈值，只用于定位）：
 /// - `tap→sent` 高 → 本地 media / 应用架构延迟；
@@ -49,10 +51,14 @@ enum CallDiagStage {
 final class CallDiagnostics {
   CallDiagnostics({DateTime Function()? now, ValueChanged<String>? log})
       : _now = now ?? DateTime.now,
-        _log = log ?? _defaultLog;
+        _log = log;
 
   final DateTime Function() _now;
-  final ValueChanged<String> _log;
+  final ValueChanged<String>? _log;
+
+  /// An explicit diagnostic sink is an opt-in used by local diagnostics/tests.
+  bool get detailedLoggingEnabled =>
+      _log != null || PerformanceMetrics.instance.enabled;
 
   final Map<CallDiagStage, DateTime> _stamps = {};
 
@@ -66,8 +72,14 @@ final class CallDiagnostics {
   void mark(CallDiagStage stage) {
     if (_stamps.containsKey(stage)) return;
     _stamps[stage] = _now();
-    _log('[chatflow/calldiag] ${describe(stage)}');
-    debugPrint('[chatflow/calldiag] ${describe(stage)}');
+    if (!detailedLoggingEnabled) return;
+    final line = '[chatflow/call] ${describe(stage)}';
+    final log = _log;
+    if (log == null) {
+      debugPrint(line);
+    } else {
+      log(line);
+    }
   }
 
   /// 阶段描述（含与「上一个已记录阶段」的差值，logcat 一眼定位慢阶段）。
@@ -128,7 +140,7 @@ final class CallDiagnostics {
         CallDiagStage.outgoingInviteSent, CallDiagStage.remoteAnswerReceived);
     final answerToIce =
         deltaMs(CallDiagStage.remoteAnswerReceived, CallDiagStage.iceConnected);
-    return '[chatflow/calldiag] summary '
+    return '[chatflow/call] summary '
         'invite→ui=${_ms(inviteToUi)} '
         'ui→tap=${_ms(uiToTap)} '
         'tap→sent=${_ms(tapToSent)} '
@@ -143,9 +155,5 @@ final class CallDiagnostics {
         'media→invite=${_ms(mediaToInvite)} '
         'invite→answer=${_ms(inviteToAnswer)} '
         'answer→ice=${_ms(answerToIce)}';
-  }
-
-  static void _defaultLog(String line) {
-    // debugPrint 已在 mark 内输出；默认落 logcat 即可。
   }
 }
