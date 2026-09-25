@@ -273,6 +273,9 @@ Future<
 }
 
 final class MemoryStore implements SecureKeyValueStore {
+  MemoryStore({this.persistMatrixDatabaseKey = true});
+
+  final bool persistMatrixDatabaseKey;
   final values = <String, String>{};
   String? failDeleteOnceFor;
   @override
@@ -287,7 +290,14 @@ final class MemoryStore implements SecureKeyValueStore {
   @override
   Future<String?> read(String key) async => values[key];
   @override
-  Future<void> write(String key, String value) async => values[key] = value;
+  Future<void> write(String key, String value) async {
+    // The lock-only tests inject an opener which never creates SQLite. Avoid
+    // modelling an orphaned persistent key as if that fake opened a database.
+    if (!persistMatrixDatabaseKey && key.endsWith('matrix_database_key.v1')) {
+      return;
+    }
+    values[key] = value;
+  }
 }
 
 class LogoutTrackingClient extends Client {
@@ -606,7 +616,8 @@ void main() {
       }
 
       final factory = MatrixClientFactory(
-        sessionStore: SecureSessionStore(MemoryStore()),
+        sessionStore:
+            SecureSessionStore(MemoryStore(persistMatrixDatabaseKey: false)),
         homeserver: Uri.parse('https://matrix.test'),
         supportDirectoryPath: () async => _matrixTestDirectory.path,
         opener: slowOpener,
@@ -639,7 +650,8 @@ void main() {
       }
 
       final factory = MatrixClientFactory(
-        sessionStore: SecureSessionStore(MemoryStore()),
+        sessionStore:
+            SecureSessionStore(MemoryStore(persistMatrixDatabaseKey: false)),
         homeserver: Uri.parse('https://matrix.test'),
         supportDirectoryPath: () async => _matrixTestDirectory.path,
         opener: slowOpener,
@@ -658,7 +670,8 @@ void main() {
 
     test('串行 create 仍然各自成功（锁不破坏正常路径）', () async {
       final factory = MatrixClientFactory(
-        sessionStore: SecureSessionStore(MemoryStore()),
+        sessionStore:
+            SecureSessionStore(MemoryStore(persistMatrixDatabaseKey: false)),
         homeserver: Uri.parse('https://matrix.test'),
         supportDirectoryPath: () async => _matrixTestDirectory.path,
         opener: ({
@@ -2816,6 +2829,7 @@ void main() {
       business: business,
       matrix: matrix,
       deviceKey: () => 'device-key',
+      retainedHomeserver: Uri.parse('https://matrix.test'),
     );
 
     await expectLater(

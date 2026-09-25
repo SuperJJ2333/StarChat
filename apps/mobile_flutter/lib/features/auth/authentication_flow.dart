@@ -16,6 +16,8 @@ final class AuthenticationFlow extends StatefulWidget {
       this.onPhoneInvitationContinue,
       this.onConfirmMatrixAccountSwitch,
       this.onCancelMatrixAccountSwitch,
+      this.onConfirmNewDeviceRecovery,
+      this.onCancelNewDeviceRecovery,
       required this.onAuthenticated});
   final BusinessApiClient api;
   final Future<void> Function(String, String,
@@ -28,6 +30,8 @@ final class AuthenticationFlow extends StatefulWidget {
   final Future<void> Function(String, String) onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
+  final Future<void> Function()? onConfirmNewDeviceRecovery;
+  final Future<void> Function()? onCancelNewDeviceRecovery;
   final Future<void> Function() onAuthenticated;
   @override
   State<AuthenticationFlow> createState() => _AuthenticationFlowState();
@@ -52,6 +56,8 @@ final class _AuthenticationFlowState extends State<AuthenticationFlow> {
             onPhoneInvitationContinue: widget.onPhoneInvitationContinue,
             onConfirmMatrixAccountSwitch: widget.onConfirmMatrixAccountSwitch,
             onCancelMatrixAccountSwitch: widget.onCancelMatrixAccountSwitch,
+            onConfirmNewDeviceRecovery: widget.onConfirmNewDeviceRecovery,
+            onCancelNewDeviceRecovery: widget.onCancelNewDeviceRecovery,
             onAuthenticated: widget.onAuthenticated,
             onRegister: () => setState(() => page = _AuthPage.register)),
         _AuthPage.register => RegistrationPage(

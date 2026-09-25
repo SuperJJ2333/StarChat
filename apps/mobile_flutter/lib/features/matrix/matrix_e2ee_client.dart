@@ -71,6 +71,7 @@ import 'room_history_day_index.dart';
 import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
+import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
 import 'message_interaction_service.dart';
@@ -5347,6 +5348,8 @@ final class MatrixSdkE2eeClient
         MatrixRecoveryBackend,
         MatrixTokenLoginGateway,
         MatrixAccountSelectionGateway,
+        MatrixNewDeviceRecoveryGateway,
+        MatrixExpectedIdentityTokenLoginGateway,
         AvatarMediaCapability,
         ImmediateAvatarMediaCapability {
   Future<void>? _memberRefresh;
@@ -5383,6 +5386,8 @@ final class MatrixSdkE2eeClient
     Future<Client> Function()? resumeClient,
     Future<void> Function(String homeserver, String userId)?
         selectClientAccount,
+    Future<void> Function(String homeserver, String userId)?
+        prepareNewDeviceStorage,
     Future<void> Function(Client? client)? clearClientData,
     Future<MatrixClientContinuityMetadata> Function(Client client)?
         readContinuityMetadata,
@@ -5400,6 +5405,7 @@ final class MatrixSdkE2eeClient
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
         _selectClientAccount = selectClientAccount,
+        _prepareNewDeviceStorage = prepareNewDeviceStorage,
         _clearClientData = clearClientData ?? _defaultClear,
         _readContinuityMetadata =
             readContinuityMetadata ?? _unconfiguredContinuityMetadata,
@@ -5568,6 +5574,8 @@ final class MatrixSdkE2eeClient
   final Future<Client> Function()? _resumeClient;
   final Future<void> Function(String homeserver, String userId)?
       _selectClientAccount;
+  final Future<void> Function(String homeserver, String userId)?
+      _prepareNewDeviceStorage;
   final Future<void> Function(Client? client) _clearClientData;
   final Future<MatrixClientContinuityMetadata> Function(Client client)
       _readContinuityMetadata;
@@ -5591,6 +5599,10 @@ final class MatrixSdkE2eeClient
   bool _freshLoginAfterClear = false;
   bool _activeContinuityValidated = false;
   bool _credentialsInvalid = false;
+  // Set only after confirmed recovery opens a new, blank local scope. This
+  // target must be checked against the raw server login response before the
+  // SDK can persist credentials or initialize/upload fresh Olm keys.
+  String? _confirmedNewDeviceUserId;
   Future<void> _accountSelectionQueue = Future<void>.value();
   final Uri homeserver;
   final StreamController<void> _syncEvents = StreamController.broadcast();
@@ -6397,7 +6409,39 @@ final class MatrixSdkE2eeClient
           {required String loginToken,
           required Uri homeserver,
           String? deviceId}) =>
-      _withClient((active) async {
+      _loginWithToken(
+          loginToken: loginToken,
+          homeserver: homeserver,
+          deviceId: deviceId,
+          authorizedUserId: _confirmedNewDeviceUserId);
+
+  @override
+  Future<void> loginWithTokenForExpectedIdentity({
+    required String expectedMatrixUserId,
+    required String loginToken,
+    required Uri homeserver,
+    String? deviceId,
+  }) =>
+      _loginWithToken(
+        loginToken: loginToken,
+        homeserver: homeserver,
+        deviceId: deviceId,
+        authorizedUserId: expectedMatrixUserId,
+      );
+
+  Future<void> _loginWithToken({
+    required String loginToken,
+    required Uri homeserver,
+    String? deviceId,
+    String? authorizedUserId,
+  }) async {
+    try {
+      await _withClient((active) async {
+        if (_confirmedNewDeviceUserId != null &&
+            authorizedUserId != null &&
+            _confirmedNewDeviceUserId != authorizedUserId) {
+          throw StateError('Confirmed Matrix recovery target changed');
+        }
         await active.checkHomeserver(homeserver);
         if (active.userID != null && active.deviceID != null) {
           _credentialsInvalid = true;
@@ -6405,6 +6449,9 @@ final class MatrixSdkE2eeClient
           final expectedDeviceId = active.deviceID;
           if (expectedUserId == null || expectedDeviceId == null) {
             throw StateError('Matrix continuity identity is unavailable');
+          }
+          if (authorizedUserId != null && authorizedUserId != expectedUserId) {
+            throw StateError('Matrix credential refresh identity mismatch');
           }
           // 调用方传进来的 device id 只是"保留身份"的提示。它来自挂起时的观察值，
           // 而本机库可能已经在上一次轮换里被服务端改写。真正能刷新的设备是本进程
@@ -6485,16 +6532,65 @@ final class MatrixSdkE2eeClient
             }
           }
         } else {
-          await active.login(
-            'm.login.token',
-            token: loginToken,
-            deviceId: deviceId,
-            initialDeviceDisplayName: '畅聊移动端',
-          );
+          final confirmedUserId = authorizedUserId;
+          if (confirmedUserId == null) {
+            await active.login(
+              'm.login.token',
+              token: loginToken,
+              deviceId: deviceId,
+              initialDeviceDisplayName: '畅聊移动端',
+            );
+          } else {
+            if (deviceId != null) {
+              throw StateError('New Matrix device must not reuse an old ID');
+            }
+            // Client.login() calls init() before returning LoginResponse.
+            // Inspect the raw response first so an unexpected MXID cannot
+            // reach local binding or publish fresh device keys.
+            final response = await MatrixApi(
+              homeserver: homeserver,
+              httpClient: active.httpClient,
+            ).login(
+              'm.login.token',
+              token: loginToken,
+              initialDeviceDisplayName: '畅聊移动端',
+            );
+            if (response.userId != confirmedUserId) {
+              throw StateError('Matrix new-device identity mismatch');
+            }
+            await active.init(
+              newToken: response.accessToken,
+              newTokenExpiresAt: response.expiresInMs == null
+                  ? null
+                  : DateTime.now().add(
+                      Duration(milliseconds: response.expiresInMs!),
+                    ),
+              newRefreshToken: response.refreshToken,
+              newHomeserver: homeserver,
+              newUserID: response.userId,
+              newDeviceID: response.deviceId,
+              newDeviceName: '畅聊移动端',
+            );
+          }
         }
         _credentialsInvalid = false;
         await _persistLoggedInContinuity(active);
+        _confirmedNewDeviceUserId = null;
       }, authorizeAccess: true, freshLogin: true);
+    } catch (error, stackTrace) {
+      if (authorizedUserId != null) {
+        // _withClient authorizes lifecycle access before network login. A
+        // failed identity check must close that access again even if the
+        // caller keeps its Business session for an explicit retry.
+        try {
+          await suspend();
+        } catch (_) {
+          // suspend() revokes access synchronously; preserve the first error.
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
 
   Future<void> _persistLoggedInContinuity(Client active) async {
     _activeContinuityValidated = false;
@@ -6870,8 +6966,27 @@ final class MatrixSdkE2eeClient
 
   @override
   Future<void> selectAccount(String matrixUserId, Uri selectedHomeserver) {
-    final operation = _accountSelectionQueue
-        .then((_) => _selectAccount(matrixUserId, selectedHomeserver));
+    return _queueAccountSelection(matrixUserId, selectedHomeserver);
+  }
+
+  @override
+  Future<void> confirmNewDeviceRecovery(
+      String matrixUserId, Uri selectedHomeserver) {
+    final prepare = _prepareNewDeviceStorage;
+    if (prepare == null) {
+      throw StateError('New-device recovery storage is not configured');
+    }
+    return _queueAccountSelection(matrixUserId, selectedHomeserver,
+        beforeSelect: () =>
+            prepare(selectedHomeserver.toString(), matrixUserId));
+  }
+
+  Future<void> _queueAccountSelection(
+      String matrixUserId, Uri selectedHomeserver,
+      {Future<void> Function()? beforeSelect}) {
+    final operation = _accountSelectionQueue.then((_) => _selectAccount(
+        matrixUserId, selectedHomeserver,
+        beforeSelect: beforeSelect));
     _accountSelectionQueue =
         operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return operation;
@@ -6882,8 +6997,9 @@ final class MatrixSdkE2eeClient
   ///
   /// 若把 suspend 留在临界区之外，bootstrap/后台恢复的并发 suspend 就可能插进
   /// 「A 已关闭、B 尚未打开」之间，或让 scope 已经切到 B 而 client 仍属于 A。
-  Future<void> _selectAccount(
-      String matrixUserId, Uri selectedHomeserver) async {
+  Future<void> _selectAccount(String matrixUserId, Uri selectedHomeserver,
+      {Future<void> Function()? beforeSelect}) async {
+    _confirmedNewDeviceUserId = null;
     final select = _selectClientAccount;
     final resume = _resumeClient;
     if (select == null || resume == null || selectedHomeserver != homeserver) {
@@ -6913,6 +7029,7 @@ final class MatrixSdkE2eeClient
       _suspendedContinuity = MatrixSuspendedContinuity.none;
       _activeContinuityValidated = false;
       try {
+        await beforeSelect?.call();
         await select(selectedHomeserver.toString(), matrixUserId);
       } catch (error, stackTrace) {
         securityLogger.record(
@@ -6921,9 +7038,24 @@ final class MatrixSdkE2eeClient
           eventCode: MatrixSecurityCode.accountSelectResumeFailed,
           identity: _identity(matrixUserId: matrixUserId),
         );
+        if (beforeSelect == null &&
+            error is MatrixLocalIdentityPreflightException &&
+            error.canCreateNewDevice) {
+          Error.throwWithStackTrace(
+              const MatrixNewDeviceRecoveryRequired(), stackTrace);
+        }
         Error.throwWithStackTrace(error, stackTrace);
       }
-      final next = await resume();
+      late final Client next;
+      try {
+        next = await resume();
+      } on MatrixLocalIdentityPreflightException catch (error, stackTrace) {
+        if (beforeSelect == null && error.canCreateNewDevice) {
+          Error.throwWithStackTrace(
+              const MatrixNewDeviceRecoveryRequired(), stackTrace);
+        }
+        rethrow;
+      }
       try {
         if (next.userID != null && next.userID != matrixUserId) {
           throw StateError(
@@ -6934,6 +7066,7 @@ final class MatrixSdkE2eeClient
         _replaceOutgoingWork(next);
         _suspendedMetadata = metadata;
         _activeContinuityValidated = true;
+        _confirmedNewDeviceUserId = beforeSelect == null ? null : matrixUserId;
         // 语义：刚从库里恢复出来的 token 不可信，必须先经过 broker token 刷新
         // （保留身份刷新路径）。它不是"已登出"，刷新成功后会被复位为 false。
         _credentialsInvalid = next.isLogged();
@@ -6952,6 +7085,7 @@ final class MatrixSdkE2eeClient
         _suspendedMetadata = null;
         _suspendedIdentity = null;
         _activeContinuityValidated = false;
+        _confirmedNewDeviceUserId = null;
         securityLogger.record(
           stage: MatrixSecurityStage.accountSelection,
           outcome: MatrixSecurityOutcome.failure,

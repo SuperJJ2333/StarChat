@@ -30,6 +30,15 @@ final class MatrixAccountSwitchRequired implements Exception {
   String toString() => 'MATRIX_ACCOUNT_SWITCH_REQUIRED';
 }
 
+/// Raised only after a conclusive local identity check finds that the old
+/// encrypted device cannot be reused. No account or key material is exposed.
+final class MatrixNewDeviceRecoveryRequired implements Exception {
+  const MatrixNewDeviceRecoveryRequired();
+
+  @override
+  String toString() => 'MATRIX_NEW_DEVICE_RECOVERY_REQUIRED';
+}
+
 abstract interface class MatrixTokenLoginGateway {
   bool get isLoggedIn;
   bool get credentialsInvalid;
@@ -47,6 +56,22 @@ abstract interface class MatrixTokenLoginGateway {
 
 abstract interface class MatrixAccountSelectionGateway {
   Future<void> selectAccount(String matrixUserId, Uri homeserver);
+}
+
+abstract interface class MatrixNewDeviceRecoveryGateway {
+  /// Called only after the user confirms that the old store is kept intact.
+  Future<void> confirmNewDeviceRecovery(String matrixUserId, Uri homeserver);
+}
+
+/// Production gateways validate the raw Matrix login response against this
+/// Business-authorized identity before the SDK stores it or uploads keys.
+abstract interface class MatrixExpectedIdentityTokenLoginGateway {
+  Future<void> loginWithTokenForExpectedIdentity({
+    required String expectedMatrixUserId,
+    required String loginToken,
+    required Uri homeserver,
+    String? deviceId,
+  });
 }
 
 final class DualDomainLoginService {
@@ -70,6 +95,8 @@ final class DualDomainLoginService {
       (throw StateError('Account homeserver is not configured'));
   final DateTime Function() now;
   MatrixAccountSwitchRequired? _pendingAccountSwitch;
+  (String, Uri)? _pendingNewDeviceRecovery;
+  bool _pendingNewDeviceStorageCommitted = false;
   MatrixLoginGrant? _pendingGrant;
   DateTime? _pendingGrantExpiresAt;
   bool _operationRunning = false;
@@ -106,9 +133,96 @@ final class DualDomainLoginService {
 
   void _forgetPending() {
     _pendingAccountSwitch = null;
+    _pendingNewDeviceRecovery = null;
+    _pendingNewDeviceStorageCommitted = false;
     _pendingGrant = null;
     _pendingGrantExpiresAt = null;
   }
+
+  /// Dismisses the recovery choice without changing the authenticated
+  /// Business session, old Matrix store, or its Keychain material.
+  Future<void> cancelNewDeviceRecovery() async {
+    if (_operationRunning) {
+      throw const BusinessApiException(
+          statusCode: 409, code: 'LOGIN_IN_PROGRESS', message: '登录正在进行，请稍候');
+    }
+    _forgetPending();
+  }
+
+  Future<void> confirmNewDeviceAndLogin() => _run(() async {
+        final pending = _pendingNewDeviceRecovery;
+        if (pending == null) {
+          throw StateError('No new-device recovery is pending');
+        }
+        final recovery = matrix;
+        if (recovery is! MatrixNewDeviceRecoveryGateway) {
+          throw const BusinessApiException(
+              statusCode: 409,
+              code: 'ACCOUNT_STORAGE_UNAVAILABLE',
+              message: '此客户端无法安全恢复聊天设备，请升级后重试');
+        }
+        final (target, selectedHomeserver) = pending;
+        _stage = 'local_identity';
+        final currentBusinessMxid = await business.currentMatrixUserId();
+        if (currentBusinessMxid != null && currentBusinessMxid != target) {
+          throw StateError('Matrix recovery target changed');
+        }
+        // Obtain and validate authority before touching any local scope.
+        var grant = await _issueGrant();
+        if (grant.matrixUserId != target ||
+            grant.homeserver != selectedHomeserver.toString()) {
+          throw StateError('Matrix recovery grant identity changed');
+        }
+        _stage = 'account_storage';
+        if (!_pendingNewDeviceStorageCommitted) {
+          await (recovery as MatrixNewDeviceRecoveryGateway)
+              .confirmNewDeviceRecovery(target, selectedHomeserver);
+          _pendingNewDeviceStorageCommitted = true;
+        } else {
+          // A suspended client may still report isLoggedIn, while its access
+          // has been revoked. Reopen the committed scope and refresh its
+          // broker-authorized session on every retry without another archive.
+          if (matrix.isLoggedIn && matrix.userId != target) {
+            throw StateError('Recovered Matrix identity changed');
+          }
+          final selector = matrix;
+          if (selector is! MatrixAccountSelectionGateway) {
+            throw StateError('Recovered Matrix account cannot be selected');
+          }
+          await (selector as MatrixAccountSelectionGateway)
+              .selectAccount(target, selectedHomeserver);
+        }
+        if ((matrix.userId != null && matrix.userId != target) ||
+            (matrix.userId != null && matrix.deviceId == null)) {
+          throw StateError('Recovered Matrix identity changed');
+        }
+        // Archive can be slow. A one-time grant must still be valid when sent.
+        if (_pendingGrantExpiresAt == null ||
+            !now().isBefore(_pendingGrantExpiresAt!)) {
+          grant = await _issueGrant();
+          if (grant.matrixUserId != target ||
+              grant.homeserver != selectedHomeserver.toString()) {
+            throw StateError('Matrix recovery grant identity changed');
+          }
+        }
+        _pendingGrant = null;
+        _pendingGrantExpiresAt = null;
+        _stage = 'matrix_login';
+        await _loginWithAuthorizedGrant(grant, target, selectedHomeserver,
+            deviceId: matrix.deviceId);
+        if (matrix.userId != target || matrix.deviceId == null) {
+          throw StateError('Matrix login returned an unexpected identity');
+        }
+        _stage = 'identity_binding';
+        await business.bindMatrixUserId(target);
+        if (completeMatrixSession != null) {
+          _stage = 'matrix_session';
+          await completeMatrixSession!();
+        }
+        _stage = 'matrix_sync';
+        await matrix.sync();
+        _forgetPending();
+      });
 
   Future<void> cancelAccountSwitch() async {
     if (_operationRunning) {
@@ -146,6 +260,31 @@ final class DualDomainLoginService {
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(
           LoginStageException.fromCause(_stage, error), stackTrace);
+    }
+  }
+
+  Future<void> _loginWithAuthorizedGrant(
+      MatrixLoginGrant grant, String expectedMatrixUserId, Uri homeserver,
+      {String? deviceId}) async {
+    if (grant.matrixUserId != expectedMatrixUserId ||
+        grant.homeserver != homeserver.toString()) {
+      throw StateError('Matrix login grant identity changed');
+    }
+    final gateway = matrix;
+    if (gateway is MatrixExpectedIdentityTokenLoginGateway) {
+      await (gateway as MatrixExpectedIdentityTokenLoginGateway)
+          .loginWithTokenForExpectedIdentity(
+        expectedMatrixUserId: expectedMatrixUserId,
+        loginToken: grant.loginToken,
+        homeserver: homeserver,
+        deviceId: deviceId,
+      );
+    } else {
+      await matrix.loginWithToken(
+        loginToken: grant.loginToken,
+        homeserver: homeserver,
+        deviceId: deviceId,
+      );
     }
   }
 
@@ -248,11 +387,9 @@ final class DualDomainLoginService {
         _pendingGrant = null;
         _pendingGrantExpiresAt = null;
         _stage = 'matrix_login';
-        await matrix.loginWithToken(
-          loginToken: grant.loginToken,
-          homeserver: Uri.parse(grant.homeserver),
-          deviceId: matrix.deviceId,
-        );
+        await _loginWithAuthorizedGrant(
+            grant, grant.matrixUserId, Uri.parse(grant.homeserver),
+            deviceId: matrix.deviceId);
       }
       if (matrix.userId != grant.matrixUserId) {
         throw StateError('Matrix login returned an unexpected identity');
@@ -263,6 +400,8 @@ final class DualDomainLoginService {
       await business.bindMatrixUserId(grant.matrixUserId);
       _forgetPending();
     } on MatrixAccountSwitchRequired {
+      rethrow;
+    } on MatrixNewDeviceRecoveryRequired {
       rethrow;
     } catch (error, stackTrace) {
       _forgetPending();
@@ -283,17 +422,20 @@ final class DualDomainLoginService {
   }
 
   /// Caller must first validate the retained business session with the server.
-  /// Recover its existing family through the broker without a password login.
-  Future<void> restoreAuthenticatedSession(String expectedMatrixUserId) =>
+  /// If its legacy Matrix binding is absent, the broker grant supplies the
+  /// account identity before any local scope is opened.
+  Future<void> restoreAuthenticatedSession(String? expectedMatrixUserId) =>
       _run(() async {
         _forgetPending();
         _stage = 'local_identity';
         try {
           await _loginRetained(expectedMatrixUserId: expectedMatrixUserId);
         } catch (error, stackTrace) {
-          _forgetPending();
+          if (error is! MatrixNewDeviceRecoveryRequired) _forgetPending();
           // A local recovery failure does not revoke an authenticated family.
-          if (error is BusinessApiException || error is LoginStageException) {
+          if (error is BusinessApiException ||
+              error is LoginStageException ||
+              error is MatrixNewDeviceRecoveryRequired) {
             Error.throwWithStackTrace(error, stackTrace);
           }
           Error.throwWithStackTrace(
@@ -308,32 +450,38 @@ final class DualDomainLoginService {
     if (expectedMatrixUserId != null && target != expectedMatrixUserId) {
       throw StateError('Matrix login returned an unexpected identity');
     }
-    MatrixLoginGrant? grant;
-    if (target == null) {
-      grant = await _issueGrant();
-      target = grant.matrixUserId;
+    // The server's broker grant must authorize the account and homeserver
+    // before any retained local store is selected or a recovery choice shown.
+    var grant = await _issueGrant();
+    target ??= grant.matrixUserId;
+    if (grant.matrixUserId != target ||
+        grant.homeserver != _retainedHomeserver) {
+      throw StateError('Matrix login grant identity changed');
     }
     if (matrix.userId != target) {
       _stage = 'account_storage';
-      await selector.selectAccount(
-          target, Uri.parse(grant?.homeserver ?? _retainedHomeserver));
+      final selectedHomeserver = Uri.parse(_retainedHomeserver);
+      try {
+        await selector.selectAccount(target, selectedHomeserver);
+      } on MatrixNewDeviceRecoveryRequired {
+        _pendingNewDeviceRecovery = (target, selectedHomeserver);
+        rethrow;
+      }
     }
     // A new business family must consume a broker grant even if the previous
     // Matrix token still works. Otherwise its older tokens would stay online.
-    if (grant == null ||
-        _pendingGrantExpiresAt == null ||
+    if (_pendingGrantExpiresAt == null ||
         !now().isBefore(_pendingGrantExpiresAt!)) {
       grant = await _issueGrant();
     }
-    if (grant.matrixUserId != target) {
-      throw StateError('Matrix login target changed');
+    if (grant.matrixUserId != target ||
+        grant.homeserver != _retainedHomeserver) {
+      throw StateError('Matrix login grant identity changed');
     }
     _pendingGrant = null;
     _pendingGrantExpiresAt = null;
     _stage = 'matrix_login';
-    await matrix.loginWithToken(
-        loginToken: grant.loginToken,
-        homeserver: Uri.parse(grant.homeserver),
+    await _loginWithAuthorizedGrant(grant, target, Uri.parse(grant.homeserver),
         deviceId: matrix.deviceId);
     if (matrix.userId != target || matrix.deviceId == null) {
       throw StateError('Matrix login returned an unexpected identity');
@@ -378,9 +526,8 @@ final class DualDomainLoginService {
           await (matrix as MatrixAccountSelectionGateway)
               .selectAccount(pending.toMxid, Uri.parse(grant.homeserver));
           _stage = 'matrix_login';
-          await matrix.loginWithToken(
-              loginToken: grant.loginToken,
-              homeserver: Uri.parse(grant.homeserver));
+          await _loginWithAuthorizedGrant(
+              grant, pending.toMxid, Uri.parse(grant.homeserver));
           if (matrix.userId != pending.toMxid || matrix.deviceId == null) {
             throw StateError('Matrix login returned an unexpected identity');
           }
@@ -534,6 +681,8 @@ final class LoginController extends ChangeNotifier {
         notifyListeners();
         return false;
       } on MatrixAccountSwitchRequired {
+        rethrow;
+      } on MatrixNewDeviceRecoveryRequired {
         rethrow;
       } catch (_) {
         state = const LoginState(LoginStatus.failed, message: '服务暂时不可用，请稍后重试');

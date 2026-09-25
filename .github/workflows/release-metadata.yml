@@ -3,8 +3,12 @@ on:
   pull_request:
     paths:
       - 'scripts/release_metadata.py'
+      - 'scripts/verify_ios_enterprise_ipa.py'
+      - 'scripts/compare_ios_ipa_payload.py'
       - 'scripts/release*.ps1'
       - 'tests/mobile/test_release_metadata.py'
+      - 'tests/mobile/test_verify_ios_enterprise_ipa.py'
+      - 'tests/mobile/test_compare_ios_ipa_payload.py'
       - '.github/workflows/release-metadata.yml'
   workflow_dispatch:
     inputs:
@@ -23,7 +27,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install pytest==8.3.5
-      - run: python -m pytest tests/mobile/test_release_metadata.py -q
+      - run: python -m pytest tests/mobile/test_release_metadata.py tests/mobile/test_verify_ios_enterprise_ipa.py tests/mobile/test_compare_ios_ipa_payload.py -q
       - name: Verify published metadata (read only, HEAD for binary)
         if: github.event_name == 'workflow_dispatch'
         env:

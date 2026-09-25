@@ -26,6 +26,8 @@ final class LoginPage extends StatefulWidget {
     this.onPhoneInvitationContinue,
     this.onConfirmMatrixAccountSwitch,
     this.onCancelMatrixAccountSwitch,
+    this.onConfirmNewDeviceRecovery,
+    this.onCancelNewDeviceRecovery,
     this.onAuthenticated,
     this.destination,
     this.onRegister,
@@ -52,6 +54,8 @@ final class LoginPage extends StatefulWidget {
   final Future<void> Function(String username, String password)? onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
+  final Future<void> Function()? onConfirmNewDeviceRecovery;
+  final Future<void> Function()? onCancelNewDeviceRecovery;
   final Future<void> Function()? onAuthenticated;
   final WidgetBuilder? destination;
   final VoidCallback? onRegister;
@@ -377,6 +381,29 @@ final class _LoginPageState extends State<LoginPage>
       if (mounted && _phoneMode && _normalizedPhone == username) {
         setState(() => _acceptInvitationProof(proof, username));
       }
+    } on MatrixNewDeviceRecoveryRequired {
+      final confirmed = await _confirmNewDeviceRecovery();
+      if (confirmed && mounted) {
+        try {
+          final recover = widget.onConfirmNewDeviceRecovery;
+          if (recover == null) {
+            throw StateError('New-device recovery is not configured');
+          }
+          await recover();
+          if (_agreementAccepted) {
+            await const SharedPreferencesPrivacyConsentStore().accept();
+          }
+          await widget.onAuthenticated?.call();
+        } on BusinessApiException catch (error) {
+          if (mounted) setState(() => _error = error.message);
+        } on LoginStageException catch (error) {
+          if (mounted) setState(() => _error = error.message);
+        } catch (_) {
+          if (mounted) setState(() => _error = '聊天设备恢复未完成，请重试');
+        }
+      } else {
+        await widget.onCancelNewDeviceRecovery?.call();
+      }
     } on MatrixAccountSwitchRequired {
       final confirmed = await _confirmMatrixAccountSwitch();
       if (confirmed && mounted) {
@@ -478,6 +505,30 @@ final class _LoginPageState extends State<LoginPage>
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('确认切换'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  Future<bool> _confirmNewDeviceRecovery() async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('恢复聊天设备'),
+        content: const Text(
+          '旧聊天记录可能无法解密，原有本机聊天数据将保留。建立新设备后，其他设备可能因单设备登录策略退出。',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('保留旧库并建立新设备'),
           ),
         ],
       ),

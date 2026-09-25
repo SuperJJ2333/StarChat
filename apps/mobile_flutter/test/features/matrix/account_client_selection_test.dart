@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
+import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_outgoing_work_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
@@ -1378,11 +1379,19 @@ void main() {
       () async {
     final store = SecureSessionStore(MemorySecureKeyValueStore());
     await store.saveMatrixBinding(binding('@a:test', 'device-A'));
+    await store.matrixDatabaseKey();
     final opened = <({String path, String cipher})>[];
     final factory = MatrixClientFactory(
         sessionStore: store,
         homeserver: Uri.parse('https://matrix.example'),
         supportDirectoryPath: () async => '/private/support',
+        // This path-only fixture does not write SQLCipher files. Model the
+        // retained A identity explicitly; physical read-only probing has its
+        // own tests.
+        localIdentityPreflight: MatrixLocalIdentityPreflight(
+          reader: _OriginalIdentityFixtureReader(),
+          fingerprintReader: (_, pickle) async => pickle,
+        ),
         clientMigrator: (_, __) async {},
         opener: (
             {required clientName,
@@ -1403,6 +1412,23 @@ void main() {
     expect(opened[1].cipher, isNot(opened[0].cipher));
     expect(opened[2], opened[0]);
   });
+}
+
+final class _OriginalIdentityFixtureReader
+    implements MatrixLocalIdentityReader {
+  @override
+  Future<bool> exists(String databasePath) async =>
+      databasePath.endsWith('liuhetong_matrix.sqlite');
+
+  @override
+  Future<MatrixLocalIdentityRecord> read(
+          String databasePath, String cipher) async =>
+      const MatrixLocalIdentityRecord(
+        hasRetainedData: true,
+        matrixUserId: '@a:test',
+        deviceId: 'device-A',
+        olmAccount: 'fingerprint-@a:test',
+      );
 }
 
 class _OutgoingTrackingClient extends LogoutTrackingClient {

@@ -35,8 +35,33 @@ MI 6 的 2178 实测视频在本地转码阶段约 23.9 秒后失败，未开始
 隔离工作树从 `2442f0ab` 扩展现有 PerformanceMetrics、ChatDiagnostics、Matrix 同步阶段、媒体调度和通话质量监控；会话打开/恢复、发送、页面/API、服务端 route-template 与 SQL 分位数使用类型化有界诊断。最终 Flutter analyze 零问题、Matrix 2035/2035、Flutter 4128/4128 通过；后端 API/Worker 2861 通过、74 跳过、退出 0。`verify.ps1` 因工作树无 `.env` 在配置渲染前置步骤退出 1，分项门禁见[验证报告](../verification/2026-09-25-chatflow-performance-diagnostics.md)。未构建、安装、部署或真机测量；真实下载/解密、DNS/TCP/TLS、SDK 视频上传/事件拆分保持 unsupported。见[任务](tasks/2026-09-25-unified-performance-diagnostics.md)和[诊断手册](../performance/chatflow-performance-diagnostics.md)。
 
 ## 2026-09-24 “我”页、邀请码、朋友圈互动已部署，MI 6 Debug2171 已安装
+## 2026-09-25 iOS 0.4.7/2173 应用内更新弹窗已发布（当前）
 
-正式 Android 最新版本仍为 **v0.4.6/2165**，手机号注册/登录等代码此前已上线。本轮是保留用户数据的内部测试包 **0.4.10/2171 Debug**，没有改官网正式 APK 或更新弹窗。五项“我”页需求已在客户端和业务 API 实现；最终 Flutter 全量 4120 通过/9 条条件跳过、analyze 0，`verify.ps1` exit 0（后端/worker 2763 通过/77 条条件跳过、mobile 108 通过/1 条条件跳过、OpenAPI/Compose 通过），HTML 305 通过/429 屏。最终审查还补齐建群/编辑群名 12 字限制和“我”页互动红点前台/定时刷新。MI 6 `cbd0156b` 安装包 SHA256 `5f3ddee5…` 与设备读回一致，固定测试签名、原首次安装时间、启动和零崩溃验证通过，真实用户操作仍待反馈。
+用户反馈官网分发的 2173 包“使用没问题”，随后明确要求推送更新弹窗。现已通过独立的仅 iOS 设置发布器，将应用内最新版本改为 0.4.7/2173，并更新本版说明；最低支持 build 仍为 3，属于非强制更新，按钮沿用已发布的 HTTPS 安装页。Android 五项设置与 iOS 下载 URL 均未变化。服务器最终 IPA SHA256 `29d9946b…acc3d0`、官网静态哈希、公网小元数据检查、十项设置回读及三条审计通过。发布后的首次独立回读恰遇 API 容器重建，检查进程退出 137；稍后容器 healthy、HTTPS ready、十项设置回读和官网检查再次通过。用户反馈不等于独立证明旧数据覆盖升级或后台提醒的全部场景。见[任务](tasks/2026-09-25-ios2173-update-popup.md)与[发布证据](../verification/2026-09-25-ios2173-update-popup.md)。
+
+## 2026-09-25 iOS 0.4.7/2173 官网链接分发（前一阶段）
+
+用户明确只更新官网下载/安装链接，不触发应用内弹窗，并接受既有企业签名服务对 IPA 注入两库/`flag` 的方式后要求直接发布。本次针对精确 CI/final SHA 和四项已知差异记录一次性例外；签名身份、旧 App ID/Keychain、生产 APNs 通过，归档 2144 具有同形态注入。官网 2173 IPA、manifest、下载页与首页已发布，服务器和工作站 HTTPS 小元数据/HEAD 回读通过；10 项更新设置前后相同，应用内 iOS 检查仍 2144，Android 仍 2172，无应用内 2173 弹窗。健康旧版 iPhone 的不卸载覆盖与旧数据保留、后台提醒仍待真机验证，不能宣称完成。见[任务](tasks/2026-09-25-ios2173-link-only-distribution.md)与[证据](../verification/2026-09-25-ios2173-link-only-distribution.md)。
+
+## 2026-09-24 iOS 2144 旧账号 L07：真机定位到本地加密身份指纹不一致（历史定位）
+
+用户确认 2144 旧账号 L07 早于 2172 安装，同一 iPhone 新账号可登录。20:19:57 +08 真机再次复现后，过滤的安全事件依次为 `E2EE_ACCOUNT_SELECT_BEGIN`、`E2EE_CONTINUITY_FINGERPRINT_MISMATCH`、`E2EE_ACCOUNT_SELECT_CONTINUITY_MISMATCH`，同属旧账号。2144 保存的 Matrix 绑定 Ed25519 指纹与现存客户端指纹不等；直接失败条件已确定，最初为何分叉仍未知。SDK 在缺 Olm pickle 时可能于应用校验前新建并上传身份，这是源码风险，尚未证明在故障机发生。用户已接受保留旧库后显式建立新设备及旧消息可能无法解密的后果；[ADR-0086](../adr/0086-ios-retained-matrix-identity-recovery.md)与[实施计划](../superpowers/plans/2026-09-24-ios-retained-identity-recovery.md)的 Domain/Quality-Security **设计**评审通过。`0.4.7+2173` 源码已实现只读预检、旧库归档、授权确认与安全启动，Windows 全量 Flutter 回归 4230 项通过、9 项跳过，新增损坏新设备密钥的失败关闭测试已红绿通过；实施 Domain 与 Quality/Security 源码复核通过。macOS iOS Simulator SQLCipher/WAL 4/4 与 Keychain 1/1 已通过；健康旧版真机不卸载覆盖尚未验收，2173 CI 原 IPA 已构建并校验，SHA256 `d05e4ea1…`。此处记录的是当时尚未发布的阶段，后续用户接受精确注入例外并发布官网与弹窗，见顶部条目。2172 启动错误仍未独立证实同根，旧 2172 包继续停发。见[独立任务记录](tasks/2026-09-24-ios2144-old-account-l07.md)与[脱敏事件/红绿测试证据](../verification/2026-09-24-ios2144-old-account-l07.md)。
+
+## 2026-09-24 iOS 企业回签 IPA 源码门禁（历史阶段）
+
+用户确认可暂用其他企业签名，但必须覆盖升级并保留 iPhone 旧数据。发布前源码门禁已增加最终 IPA 身份/权益检查、服务端重新解析上传包、旧版 Team/App ID/Keychain 连续性、最终同 SHA 真机覆盖记录，以及 CI 原 IPA 与回签 IPA 全部非签名 Payload 的实际比对。相关 Python 联跑 217 项通过、1 项跳过；既有 2172 回签包的比对预期失败，发现新增两个动态库、一个文件及 Runner 加载命令变化。服务器归档 2134/2144 与回签 2172 虽为同一企业证书/Team/Keychain，2172 换了 App ID 且无生产 APNs，继续拒绝发布。无需用户重传旧 IPA；健康旧版 iPhone 的保留数据覆盖结果仍待验证。没有新增生产写入。见[任务](tasks/2026-09-24-ios-enterprise-ipa-validation.md)、[验证记录](../verification/2026-09-24-ios-enterprise-ipa-validation.md)、[2172 包体比对](../verification/2026-09-24-ios2144-old-account-l07.md)和[计划](../superpowers/plans/2026-09-24-ios-enterprise-ipa-validation.md)。
+
+## 2026-09-24 v0.4.7/2172 iOS 企业包分发：签名阻断与部分发布（历史阶段，后已停发）
+
+用户回传的企业签 IPA 是 0.4.7/2172，SHA256 `12258dac…`；但签名及描述文件的 `application-identifier=ZXB3TS7QD4.cn.edu.buaa.bhpan.fileProvider` 与实际 Bundle ID `com.liuhetong.liuhetongMobile` 不匹配，且没有 `aps-environment`。用户确已安装，但不能据此宣称覆盖升级保留数据或具备后台来电/消息提醒。另一并发流程曾把这份包及 manifest、下载页和 iOS 设置部分写入生产；用户随后确认该流程已暂停并授权停用此 iOS 入口。生产 iOS 设置、manifest 和安装页已回退 0.3.102/2144，2172 IPA 已移入私有取证目录，公网原直链 HEAD 404；Android 0.4.7/2172 不变。见[停发与身份故障记录](tasks/2026-09-24-ios-047-reinstall-identity-failure.md)、[分发任务](tasks/2026-09-24-ios-047-enterprise-distribution.md)、[验证记录](../verification/2026-09-24-ios-047-enterprise-distribution.md)与[计划](../superpowers/plans/2026-09-24-ios-047-enterprise-distribution.md)。
+
+## 2026-09-24 v0.4.7/2172 Android 更新已发布；iOS IPA 候选已交接（历史阶段）
+
+用户选择 v0.4.7/2172。已验证的 ARM64 正式 APK SHA256 `7741e45a…` 与固定证书发布到不可变 [下载地址](https://www.liuhetong888.com/downloads/ChatFlow-0.4.7-build2172-arm64.apk)；Android 更新弹窗设置、版本说明、latest-arm64 链接、公网 HEAD、四条审计与回读通过，最低支持构建号仍为 3。iOS 同源候选 IPA SHA256 `4ee3a233…` 已从成功的 [macOS CI run 35969111874](https://github.com/SuperJJ2333/StarChat/actions/runs/35969111874) 取回供企业重签；此历史阶段尚未更新 iOS 弹窗或分发入口，当时现网 iOS 为 0.3.102/2144，后续生产变化见上方当前条目。MI 6 当时不在 ADB 设备列表，正式包未做保留数据覆盖烟测。见[任务](tasks/2026-09-24-android-047-ios-ipa.md)与[验证](../verification/2026-09-24-android-047-ios-ipa.md)。
+
+## 2026-09-24 “我”页、邀请码、朋友圈互动已部署，MI 6 Debug2171 已安装（历史阶段）
+
+本历史阶段正式 Android 为 **v0.4.6/2165**，手机号注册/登录等代码此前已上线。该阶段交付保留用户数据的内部测试包 **0.4.10/2171 Debug**，当时没有改官网正式 APK 或更新弹窗。五项“我”页需求已在客户端和业务 API 实现；最终 Flutter 全量 4120 通过/9 条条件跳过、analyze 0，`verify.ps1` exit 0（后端/worker 2763 通过/77 条条件跳过、mobile 108 通过/1 条条件跳过、OpenAPI/Compose 通过），HTML 305 通过/429 屏。最终审查还补齐建群/编辑群名 12 字限制和“我”页互动红点前台/定时刷新。MI 6 `cbd0156b` 安装包 SHA256 `5f3ddee5…` 与设备读回一致，固定测试签名、原首次安装时间、启动和零崩溃验证通过，真实用户操作仍待反馈。
 
 本轮发现上一轮最小增量 API/worker 容器及环境变量未完整保留正式 v0.4.6 的手机号等功能。基于正式 v0.4.6 文件和配置补齐候选，生产数据库增量升级到 0088；冻结的生产数据在隔离 PostgreSQL 恢复后 137 表/225466 行原值不变。首次切换沿用旧环境变量导致新服务配置校验失败，已立即恢复旧服务；随后取正式 v0.4.6 已发布配置重做预检，最终 API `c41dfffc…`、worker `90696ffa…` 均 healthy/零重启，其他 22 容器未变，HTTPS ready 200、鉴权 401、手机号/邀请/互动路由在位且新错误日志 0。备份和兼容回退镜像保留在服务器私有目录。见[任务](tasks/2026-09-24-me-invitations-moments-interactions.md)、[证据](../verification/2026-09-24-me-invitations-moments-interactions.md)。
 

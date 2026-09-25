@@ -27,6 +27,7 @@ dependencies:
   sqflite_common_ffi: 2.3.6
   sqlcipher_flutter_libs: 0.6.8
   flutter_olm: ^2.0.0
+  olm: 2.0.4
   flutter_openssl_crypto: ^0.5.0
   flutter_svg: 2.2.0
   url_launcher: 6.3.1
