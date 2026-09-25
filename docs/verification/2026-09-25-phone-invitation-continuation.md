@@ -61,7 +61,21 @@ API 验收后运行固定签名[2176 安装脚本](artifacts/2026-09-25/phone-in
 
 2176 样本暴露了首帧 post-frame 结束 trace 早于 Flutter raster timing 回调的问题。修正后的客户端候选使用真实 VM timeline 时间戳按操作窗口增量归因，`finish()` 的业务耗时仍同步冻结；最长等待 1200 ms 回调，未覆盖或时钟不一致时报告 `frame_attribution_complete=false`、省略 `slow_*`，不再伪报 0。普通 Release 未启用本地帧指标时同样保持 unknown；账号代次切换丢弃待归因记录。45 秒/2691 帧且本地样本容量为 3 的测试确认长操作不会因环形样本淘汰而丢失帧计数。帧专项 7/7、`flutter test --no-pub test/performance` 94/94、`dart analyze lib/core test/performance` 无问题，均退出码 0；startup 接线先红后绿，3/3 通过。**这项修正尚未装入 MI 6 的 2176，不应把该设备现有 trace 的慢帧 0 当成实测 0。**
 
-服务端现行严格诊断接收 schema 不认识 `frame_attribution_complete`，必须先发布兼容接收端，否则新版客户端上传 422 后会停止该会话的操作上传。候选接收端兼容 legacy 三计数、complete=true 三计数和 complete=false 无计数，拒绝矛盾形态；OpenAPI 的条件 oneOf 与运行时校验一致。后端测试先红后绿，`test_client_diagnostics.py` 156/156、OpenAPI export/check 均退出码 0。当前生产仍运行旧接收端，客户端修正版尚未安装；生产发布与真机复测须按服务端先行顺序完成。
+切换前生产诊断接收 schema 不认识 `frame_attribution_complete`，且缺整个 operation 模型；若先装新版客户端，其上传会收到 422 后停止该会话的操作上传。候选接收端兼容 legacy 三计数、complete=true 三计数和 complete=false 无计数，拒绝矛盾形态；OpenAPI 的条件 oneOf 与运行时校验一致。后端测试先红后绿，`test_client_diagnostics.py` 156/156、OpenAPI export/check 均退出码 0。
+
+### 2177 构建与发布前置
+
+帧归因修复提交 `da4d9e7a` 后，使用锁定的 `pubspec.lock` 重新运行 `flutter analyze --no-pub lib test`：No issues found、退出 0；`flutter test --no-pub test/features/matrix`：2108 通过/9 跳过、退出 0；`flutter test --no-pub`：4304 通过/9 跳过、退出 0。服务端诊断测试 156 通过、OpenAPI 漂移检查退出 0。版本 2177 的 AppConfig 测试先因实际 2176 失败，再同步 `pubspec.yaml` 与 `AppConfig` 后 3/3 通过；`tests/mobile/test_app_build_contract.py` 2/2、版本改动后的 Flutter analyze 仍无问题，均退出 0。未重跑与版本号无关的完整 Flutter 套件；复用上述锁定输入的全量结果。
+
+2177 ARM64 Debug 从提交 `7a443479` 源码构建，并按固定流程完成 Apktool 2.12.1 重建、build-tools 36.0.0 对齐、既有证书签名、独立重解包/语义核对；18/18 步退出 0。候选 SHA256 `79cdac5b4bcfa4c6f2b4e30f2a328c5f5a4d1b963ad391a5f97d2bcd070c658c`，145,658,155 字节，证书 SHA256 `75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff`。[构建元数据](artifacts/2026-09-25/phone-invitation-continuation/android-build-2177/run-20260925-142131/artifact.json)与[18 项退出码](artifacts/2026-09-25/phone-invitation-continuation/android-build-2177/run-20260925-142131/steps.tsv)保存于本地验证目录。2177 的独立安装脚本已预填当前 2176 与候选 2177 的包哈希，**尚未执行**；覆盖安装会清除客户端内存中的五分钟已验证邀请码续行状态，须先确认用户当前没有使用该状态。
+
+仅覆盖 `client_diagnostics.py` 的最小 API 镜像候选 `sha256:25954c6a1f1b1fd5f11d9a5150d99d3a70629d45e29a953674afaba8aee21cff` 已在私有服务器目录构建；应用目录与 site-packages 文件哈希一致。隔离无网络协议检查覆盖旧帧、legacy operation、新完整/未知帧 attribution、错误与隐私拒绝；实际 `uvicorn` 启动/OpenAPI 检查、候选和回退镜像门禁均退出 0。生产 DB 0088 新备份 SHA256 `f538d1798c57f3889289d6001b4074f0e7243d067a74f4c0c41478cb7b06adda` 在独立 PostgreSQL 16.9 恢复出 137 张表；API-only Compose 候选与此前配置除 API 镜像外一致。原 MI 6 性能计划未授权生产 API 发布，用户随后明确授权此最小接收端切换及 2177 装机。
+
+服务端发布脚本首次前检因私有目录实际权限为 755 而按设计退出 1，**未切换服务**；收紧目录为 700、目录内文件为 600 后，备份、运行镜像、环境、schema 和候选/回退配置前检通过。API-only guard 与自动后检退出 0：生产现为 `sha256:25954c6a…`，API healthy/零重启；worker 和其余 25 个容器未变，API 环境未变，schema 仍 0088；Business ready 与 Matrix versions 均 200，未认证资料 401，旧/新手机号空请求均 422，旧客户端 opt-in 默认 false，OpenAPI 诊断 oneOf 两种帧归因形态在位，API 新错误标记 0。回退镜像与配置已冻结，不触发真实短信或资金操作。
+
+用户确认可安装后，MI 6 使用 `adb install -r` 保留数据从 2176 覆盖到 2177。装前/装后设备 APK SHA 分别与已验 2176 `4ea926…`、2177 `79cdac…` 一致；原首次安装时间 `2026-09-20 09:35:24` 保留，`DEBUGGABLE`、启动进程、安装后本应用 crash buffer 0 条均通过。[设备验收 JSON](artifacts/2026-09-25/phone-invitation-continuation/android-build-2177/device-verification-2177-20260925T0630452260624Z.json)。未代用户进行真实登录或验证码操作。
+
+2177 [匿名 VM 快照](artifacts/2026-09-25/phone-invitation-continuation/device-diagnostics-2177/vm-summary-20260925T063354861404Z.json)测得一次 Debug 冷启动 1406.595 ms；聚合 6 帧、其中 5 帧超过当前帧预算，build/raster/total 最大分别 737.082/156.209/770.563 ms。`app_startup` 的 `frame_attribution_complete=false`，慢帧计数被正确省略，没有再伪报 0。首帧 post-frame 标记可能早于真正 rasterized 的可见帧；仍需区分回调未覆盖结束时刻与时钟无效，不能将聚合 5 帧全归到本次启动 trace。2177 公开 HTTPS 复测 [6/6 返回 200](artifacts/2026-09-25/phone-invitation-continuation/device-diagnostics-2177/network-public-2177-20260925T0653226941836Z.json)，单次 141.9–654.0 ms；与此前 5/12 超时并存，说明手机公网故障间歇出现，并未凭新版 APK 消除。
 
 ## 已知限制
 
