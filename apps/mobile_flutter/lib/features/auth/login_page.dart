@@ -77,7 +77,8 @@ final class _LoginPageState extends State<LoginPage>
       !_loading && _normalizedPhone != null && _phoneController.canRequestOtp;
 
   Future<void> _requestPhoneCode() async {
-    if (_normalizedPhone == null) {
+    final requestedPhone = _normalizedPhone;
+    if (requestedPhone == null) {
       setState(() => _error = '请输入中国大陆 11 位手机号');
       return;
     }
@@ -86,8 +87,23 @@ final class _LoginPageState extends State<LoginPage>
       return;
     }
     setState(() => _error = null);
-    await _phoneController.requestOtp(_normalizedPhone!);
-    if (mounted) setState(() => _error = _phoneController.state.message);
+    final accepted = await _phoneController.requestOtp(requestedPhone);
+    if (!mounted) return;
+    setState(() {
+      if (accepted) {
+        _code.clear();
+        if (_normalizedPhone == requestedPhone) {
+          // A 202 acknowledges the request, not actual SMS delivery.
+          _requiresFreshPhoneCode = false;
+          _error = '如收到新验证码，请输入；未收到请稍后再试';
+        } else {
+          _requiresFreshPhoneCode = true;
+          _error = '手机号已更改，请重新请求验证码';
+        }
+      } else {
+        _error = _phoneController.state.message;
+      }
+    });
   }
 
   late final AnimationController _intro = AnimationController(
@@ -96,6 +112,7 @@ final class _LoginPageState extends State<LoginPage>
   )..forward();
 
   bool _loading = false;
+  bool _requiresFreshPhoneCode = false;
   bool _agreementAccepted = false;
   bool _passwordVisible = false;
   String? _error;
@@ -114,6 +131,10 @@ final class _LoginPageState extends State<LoginPage>
   }
 
   Future<void> _submit() async {
+    if (_phoneMode && _requiresFreshPhoneCode) {
+      setState(() => _error = '原验证码不可再次提交，请重新获取验证码');
+      return;
+    }
     final username =
         _phoneMode ? _normalizedPhone ?? '' : _username.text.trim();
     final password = _phoneMode ? _code.text.trim() : _password.text;
@@ -136,6 +157,9 @@ final class _LoginPageState extends State<LoginPage>
     setState(() {
       _loading = true;
       _error = null;
+      // The server may consume a one-time code even when its response is lost.
+      // Once submitted, only an explicitly requested new code can unlock login.
+      if (_phoneMode) _requiresFreshPhoneCode = true;
     });
     final controller = LoginController(
       operation: (user, secret) async {
@@ -189,7 +213,7 @@ final class _LoginPageState extends State<LoginPage>
       }
       if (!success && mounted) {
         setState(() => _error = _phoneMode
-            ? _phoneController.state.message
+            ? '${_phoneController.state.message ?? '登录结果待确认'}；原验证码不可再次提交，请重新获取验证码'
             : controller.state.message);
       }
     } on MatrixAccountSwitchRequired {
@@ -199,25 +223,47 @@ final class _LoginPageState extends State<LoginPage>
           await widget.onConfirmMatrixAccountSwitch?.call();
           await widget.onAuthenticated?.call();
         } on BusinessApiException catch (error) {
-          if (mounted) setState(() => _error = error.message);
+          if (mounted) {
+            setState(() => _error = _phoneMode
+                ? '${error.message}；原验证码不可再次提交，请重新获取验证码'
+                : error.message);
+          }
         } on LoginStageException catch (error) {
-          if (mounted) setState(() => _error = error.message);
+          if (mounted) {
+            setState(() => _error =
+                _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : error.message);
+          }
         } catch (_) {
-          if (mounted) setState(() => _error = '服务暂时不可用，请稍后重试');
+          if (mounted) {
+            setState(() => _error =
+                _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : '服务暂时不可用，请稍后重试');
+          }
         }
       } else {
         await widget.onCancelMatrixAccountSwitch?.call();
+        if (mounted && _phoneMode) {
+          setState(() => _error = '已取消切换；原验证码不可再次提交，请重新获取验证码');
+        }
       }
     } on BusinessApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() => _error = _phoneMode
+            ? '${error.message}；原验证码不可再次提交，请重新获取验证码'
+            : error.message);
+      }
     } on LoginStageException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() => _error =
+            _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : error.message);
+      }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = '服务暂时不可用，请稍后重试');
+        setState(() => _error =
+            _phoneMode ? '登录结果待确认；原验证码不可再次提交，请重新获取验证码' : '服务暂时不可用，请稍后重试');
       }
     } finally {
       controller.dispose();
+      if (_phoneMode) _code.clear();
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -418,9 +464,19 @@ final class _LoginPageState extends State<LoginPage>
                   icon: _error == null
                       ? ChangliaoIcons.confirm
                       : ChangliaoIcons.retry,
-                  label: _error == null ? '登录' : '重试',
+                  label: _requiresFreshPhoneCode && _phoneMode
+                      ? '重新获取验证码'
+                      : _error == null
+                          ? '登录'
+                          : '重试',
                   loading: _loading,
-                  onPressed: _loading || !_agreementAccepted ? null : _submit,
+                  onPressed: _loading || !_agreementAccepted
+                      ? null
+                      : _requiresFreshPhoneCode && _phoneMode
+                          ? _canRequestPhoneCode
+                              ? _requestPhoneCode
+                              : null
+                          : _submit,
                 ),
               ),
               if (widget.onRegister != null) ...[

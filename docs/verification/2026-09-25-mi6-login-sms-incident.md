@@ -1,5 +1,7 @@
 # MI 6 Debug2174 登录与短信故障：只读调查
 
+> 后续进展：2026-09-25 09:45 HKT 已按[生产恢复报告](2026-09-25-mi6-production-restore.md)恢复服务器既有配置。本报告描述**恢复前**的只读现场；其中“未修改生产”仅指调查阶段。后续审查还发现两个已有钱包转换开关漂移，均已按已核准值恢复。真实短信送达及 MI 6 登录仍待实测。
+
 ## 结论
 
 1. **验证码暂不可用已定位为生产配置回退。** 2026-09-24 19:29 HKT 的 `wallet-360` API Compose 替换遗漏了 16 项已核准环境配置；worker 的层叠配置也遗漏同 16 项。当前容器实际 `phone_auth_enabled=false`、`sms_provider=disabled`，OTP 申请在 `PhoneAuthService.request_login_otp` 的第一项开关检查就返回 `PHONE_AUTH_DISABLED`/HTTP 503，未请求阿里云。2026-09-23 的[已上线记录](2026-09-23-phone-wallet-live-restore.md)证明此前手机号认证与短信供应商已启用并验证。旧版 Debug2171 与新版2174指向同一生产域名，降级客户端不会恢复短信。
