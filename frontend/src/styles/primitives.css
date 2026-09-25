@@ -1617,8 +1617,12 @@ app-transfer-card {
   color: var(--color-text-tertiary);
 }
 @media (prefers-reduced-motion: reduce) {
+  .c-phone-flows__otp-row app-secondary-button .c-secondary-button {
+    transition: none;
+  }
   .c-phone-flows__otp-row app-secondary-button .c-secondary-button:active:not(:disabled) {
     transform: none;
+    transition: none;
   }
 }
 .c-phone-flows__otp-row[data-eligible="true"] app-secondary-button .c-secondary-button {

@@ -32,8 +32,8 @@ void main() {
       await tester.pumpAndSettle();
       final phone = find.byKey(const Key('auth-login-phone'));
       CupertinoButton button() => tester.widget<CupertinoButton>(
-        find.widgetWithText(CupertinoButton, '获取验证码'),
-      );
+            find.widgetWithText(CupertinoButton, '获取验证码'),
+          );
       expect(button().onPressed, isNotNull);
       await tester.tap(find.text('获取验证码'));
       await tester.pump();
@@ -121,14 +121,14 @@ void main() {
             home: LoginPage(
               api: api,
               onLogin: (_, __) => rejected(),
-              onPhoneLogin:
-                  (
-                    _,
-                    __, {
-                    invitationCode = '',
-                    termsAccepted = false,
-                    shouldContinue,
-                  }) => rejected(),
+              onPhoneLogin: (
+                _,
+                __, {
+                invitationCode = '',
+                termsAccepted = false,
+                shouldContinue,
+              }) =>
+                  rejected(),
               now: () => now,
               onAuthenticated: () async {},
             ),
@@ -263,17 +263,16 @@ void main() {
         CupertinoApp(
           home: LoginPage(
             api: api,
-            onPhoneLogin:
-                (
-                  phone,
-                  code, {
-                  invitationCode = '',
-                  termsAccepted = false,
-                  shouldContinue,
-                }) async {
-                  calls++;
-                  await pending.future;
-                },
+            onPhoneLogin: (
+              phone,
+              code, {
+              invitationCode = '',
+              termsAccepted = false,
+              shouldContinue,
+            }) async {
+              calls++;
+              await pending.future;
+            },
             onAuthenticated: () async {
               authenticated++;
             },
@@ -355,17 +354,16 @@ void main() {
       CupertinoApp(
         home: LoginPage(
           api: api,
-          onPhoneLogin:
-              (
-                phone,
-                code, {
-                invitationCode = '',
-                termsAccepted = false,
-                shouldContinue,
-              }) async {
-                phoneLogins++;
-                throw const LoginStageException('matrix_session');
-              },
+          onPhoneLogin: (
+            phone,
+            code, {
+            invitationCode = '',
+            termsAccepted = false,
+            shouldContinue,
+          }) async {
+            phoneLogins++;
+            throw const LoginStageException('matrix_session');
+          },
         ),
       ),
     );
@@ -435,23 +433,22 @@ void main() {
       CupertinoApp(
         home: LoginPage(
           api: api,
-          onPhoneLogin:
-              (
-                phone,
-                code, {
-                invitationCode = '',
-                termsAccepted = false,
-                shouldContinue,
-              }) async {
-                logins++;
-                if (logins == 1) {
-                  throw const BusinessApiException(
-                    statusCode: 400,
-                    code: 'OTP_INVALID',
-                    message: '验证码无效或已过期',
-                  );
-                }
-              },
+          onPhoneLogin: (
+            phone,
+            code, {
+            invitationCode = '',
+            termsAccepted = false,
+            shouldContinue,
+          }) async {
+            logins++;
+            if (logins == 1) {
+              throw const BusinessApiException(
+                statusCode: 400,
+                code: 'OTP_INVALID',
+                message: '验证码无效或已过期',
+              );
+            }
+          },
         ),
       ),
     );
@@ -511,43 +508,41 @@ void main() {
       CupertinoApp(
         home: LoginPage(
           api: api,
-          onPhoneLogin:
-              (
-                phone,
-                code, {
-                invitationCode = '',
-                termsAccepted = false,
-                shouldContinue,
-              }) async {
-                initialLogins++;
-                throw const PhoneInvitationContinuationRequired(
-                  ticket: 'opaque-verified-ticket-with-enough-length',
-                  issue: PhoneInvitationIssue.required,
-                );
-              },
-          onPhoneInvitationContinue:
-              (
-                phone,
-                ticket,
-                invitationCode, {
-                termsAccepted = false,
-                shouldContinue,
-              }) async {
-                invitationContinuations++;
-                expect(phone, '13800000001');
-                expect(ticket, 'opaque-verified-ticket-with-enough-length');
-                expect(
-                  invitationCode,
-                  invitationContinuations == 1 ? 'BAD-INVITE' : 'GOOD-INVITE',
-                );
-                expect(termsAccepted, true);
-                if (invitationContinuations == 1) {
-                  throw const PhoneInvitationContinuationRequired(
-                    ticket: 'opaque-verified-ticket-with-enough-length',
-                    issue: PhoneInvitationIssue.invalid,
-                  );
-                }
-              },
+          onPhoneLogin: (
+            phone,
+            code, {
+            invitationCode = '',
+            termsAccepted = false,
+            shouldContinue,
+          }) async {
+            initialLogins++;
+            throw const PhoneInvitationContinuationRequired(
+              ticket: 'opaque-verified-ticket-with-enough-length',
+              issue: PhoneInvitationIssue.required,
+            );
+          },
+          onPhoneInvitationContinue: (
+            phone,
+            ticket,
+            invitationCode, {
+            termsAccepted = false,
+            shouldContinue,
+          }) async {
+            invitationContinuations++;
+            expect(phone, '13800000001');
+            expect(ticket, 'opaque-verified-ticket-with-enough-length');
+            expect(
+              invitationCode,
+              invitationContinuations == 1 ? 'BAD-INVITE' : 'GOOD-INVITE',
+            );
+            expect(termsAccepted, true);
+            if (invitationContinuations == 1) {
+              throw const PhoneInvitationContinuationRequired(
+                ticket: 'opaque-verified-ticket-with-enough-length',
+                issue: PhoneInvitationIssue.invalid,
+              );
+            }
+          },
           onAuthenticated: () async => authenticated++,
         ),
       ),
@@ -676,17 +671,16 @@ void main() {
         CupertinoApp(
           home: LoginPage(
             api: api,
-            onPhoneLogin:
-                (
-                  phone,
-                  code, {
-                  invitationCode = '',
-                  termsAccepted = false,
-                  shouldContinue,
-                }) async {
-                  submissions++;
-                  throw failure.$2;
-                },
+            onPhoneLogin: (
+              phone,
+              code, {
+              invitationCode = '',
+              termsAccepted = false,
+              shouldContinue,
+            }) async {
+              submissions++;
+              throw failure.$2;
+            },
           ),
         ),
       );
@@ -726,20 +720,19 @@ void main() {
         CupertinoApp(
           home: LoginPage(
             api: api,
-            onPhoneLogin:
-                (
-                  phone,
-                  code, {
-                  invitationCode = '',
-                  termsAccepted = false,
-                  shouldContinue,
-                }) async {
-                  submissions++;
-                  throw const MatrixAccountSwitchRequired(
-                    fromMxid: '@old:example.invalid',
-                    toMxid: '@new:example.invalid',
-                  );
-                },
+            onPhoneLogin: (
+              phone,
+              code, {
+              invitationCode = '',
+              termsAccepted = false,
+              shouldContinue,
+            }) async {
+              submissions++;
+              throw const MatrixAccountSwitchRequired(
+                fromMxid: '@old:example.invalid',
+                toMxid: '@new:example.invalid',
+              );
+            },
             onCancelMatrixAccountSwitch: () async => cancellations++,
           ),
         ),
@@ -776,16 +769,15 @@ void main() {
       CupertinoApp(
         home: LoginPage(
           api: api,
-          onPhoneLogin:
-              (
-                phone,
-                code, {
-                invitationCode = '',
-                termsAccepted = false,
-                shouldContinue,
-              }) async {
-                submissions++;
-              },
+          onPhoneLogin: (
+            phone,
+            code, {
+            invitationCode = '',
+            termsAccepted = false,
+            shouldContinue,
+          }) async {
+            submissions++;
+          },
           onAuthenticated: () async => throw StateError('startup failed'),
         ),
       ),
@@ -814,14 +806,14 @@ void main() {
       CupertinoApp(
         home: LoginPage(
           api: api,
-          onPhoneLogin:
-              (
-                phone,
-                code, {
-                invitationCode = '',
-                termsAccepted = false,
-                shouldContinue,
-              }) async => throw TimeoutException('unknown'),
+          onPhoneLogin: (
+            phone,
+            code, {
+            invitationCode = '',
+            termsAccepted = false,
+            shouldContinue,
+          }) async =>
+              throw TimeoutException('unknown'),
         ),
       ),
     );

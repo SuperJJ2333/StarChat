@@ -28,6 +28,7 @@ const requiredScreens = [
   "feedback-type-scale-140",
   "auth-login-default-dark",
   "auth-registration-default-dark",
+  "auth-verification-code-dark",
   "phone-login-phone-default-dark",
   "phone-registration-phone-default-dark",
   "messages-inbox-default-dark",
@@ -65,6 +66,7 @@ test("dark frames are restricted to foundations, components, and approved key sc
   assert.deepEqual(darkIds.sort(), [
     "auth-login-default-dark",
     "auth-registration-default-dark",
+    "auth-verification-code-dark",
     "phone-login-phone-default-dark",
     "phone-registration-phone-default-dark",
     "chat-room-mixed-dark",

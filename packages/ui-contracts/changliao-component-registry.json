@@ -202,6 +202,7 @@
       ],
       "props": [
         "normalizedPhone",
+        "readOnlyPhoneDestination",
         "invitationCode",
         "termsAccepted"
       ],
@@ -227,7 +228,7 @@
         "--color-page-background",
         "--scale-pressed"
       ],
-      "behavior": "OTP actions remain tappable before phone entry and validate the mainland number on tap, with format feedback immediately below its field; cooldown disables resend. The outlined action provides press feedback. Dark login and registration keep the landing image beneath a dark scrim. Unchecked consent explains and sends nothing. New accounts need invitation plus verified OTP, derive opaque handles and await Matrix through a device-bound single-use ticket. Normal OTP prompts identify 畅聊 ChatFlow; no provider-signature explanation. Provider SMS body remains its approved template."
+      "behavior": "OTP actions remain tappable before phone entry and validate the mainland number on tap, with format feedback immediately below its field; cooldown disables resend. After registration starts, the phone destination is read only while resend remains tappable after cooldown. The outlined action provides press feedback. Dark login, registration and verification keep the landing image beneath a dark scrim. Unchecked consent explains and sends nothing. New accounts need invitation plus verified OTP, derive opaque handles and await Matrix through a device-bound single-use ticket. Normal OTP prompts identify 畅聊 ChatFlow; no provider-signature explanation. Provider SMS body remains its approved template."
     },
     "2026-09-19-conversation-identity-admission": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
@@ -2000,7 +2001,7 @@
     }
   },
   "screens": {
-    "expectedCount": 432
+    "expectedCount": 433
   },
   "adminCompletion20260910": {
     "html": [

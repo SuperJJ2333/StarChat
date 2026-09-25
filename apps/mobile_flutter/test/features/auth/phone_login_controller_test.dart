@@ -62,6 +62,23 @@ void main() {
     expect(gateway.otpRequests.length, 1);
   });
 
+  testWidgets('OTP cooldown tick preserves login rate limit metadata',
+      (tester) async {
+    await controller.requestOtp('13800000001');
+    gateway.loginError = const BusinessApiException(
+        code: 'MATRIX_LOGIN_RATE_LIMITED',
+        message: '登录请求较频繁',
+        statusCode: 429,
+        retryAfterSeconds: 60);
+    expect(await controller.submit('13800000001', '123456'), isFalse);
+    expect(controller.state.loginRetryAfterSeconds, 60);
+    now = fixedNow.add(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    expect(controller.state.loginRetryAfterSeconds, 60);
+    expect(controller.state.resendAfterSeconds, 59);
+    controller.dispose();
+  });
+
   test('correct code succeeds and lands session via gateway', () async {
     await controller.requestOtp('+8613800000001');
     expect(await controller.submit('+8613800000001', '243697'), isTrue);

@@ -367,6 +367,7 @@ final class AuthTextField extends StatelessWidget {
     required this.placeholder,
     required this.controller,
     this.enabled = true,
+    this.readOnly = false,
     this.obscureText = false,
     this.keyboardType,
     this.textInputAction,
@@ -379,6 +380,7 @@ final class AuthTextField extends StatelessWidget {
   final String placeholder;
   final TextEditingController controller;
   final bool enabled;
+  final bool readOnly;
   final bool obscureText;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
@@ -413,6 +415,7 @@ final class AuthTextField extends StatelessWidget {
             child: CupertinoTextField(
               controller: controller,
               enabled: enabled,
+              readOnly: readOnly,
               obscureText: obscureText,
               keyboardType: keyboardType,
               textInputAction: textInputAction,

@@ -41,16 +41,14 @@ final class LoginPage extends StatefulWidget {
     String invitationCode,
     bool termsAccepted,
     bool Function()? shouldContinue,
-  })?
-  onPhoneLogin;
+  })? onPhoneLogin;
   final Future<void> Function(
     String phone,
     String ticket,
     String invitationCode, {
     bool termsAccepted,
     bool Function()? shouldContinue,
-  })?
-  onPhoneInvitationContinue;
+  })? onPhoneInvitationContinue;
   final Future<void> Function(String username, String password)? onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
@@ -102,9 +100,8 @@ final class _LoginPageState extends State<LoginPage>
     final seconds = retryAfterSeconds?.clamp(1, 86400);
     setState(() {
       _error = seconds == null ? message : null;
-      _loginRetryUntil = seconds == null
-          ? null
-          : _now().add(Duration(seconds: seconds));
+      _loginRetryUntil =
+          seconds == null ? null : _now().add(Duration(seconds: seconds));
       _loginRetrySeconds = seconds ?? 0;
     });
     if (seconds != null) {
@@ -118,9 +115,8 @@ final class _LoginPageState extends State<LoginPage>
   void _refreshLoginRetry() {
     final until = _loginRetryUntil;
     if (until == null || !mounted) return;
-    final seconds = (until.difference(_now()).inMilliseconds / 1000)
-        .ceil()
-        .clamp(0, 86400);
+    final seconds =
+        (until.difference(_now()).inMilliseconds / 1000).ceil().clamp(0, 86400);
     if (seconds == _loginRetrySeconds) return;
     setState(() {
       _loginRetrySeconds = seconds;
@@ -197,14 +193,14 @@ final class _LoginPageState extends State<LoginPage>
   String? _error;
 
   String _invitationMessage(PhoneInvitationIssue issue) => switch (issue) {
-    PhoneInvitationIssue.required => '验证码已通过，请输入邀请码后完成注册',
-    PhoneInvitationIssue.invalid => '验证码已通过，邀请码无效，请更换后继续',
-    PhoneInvitationIssue.expired => '验证码已通过，邀请码已过期，请更换后继续',
-    PhoneInvitationIssue.exhausted => '验证码已通过，邀请码使用次数已满，请更换后继续',
-    PhoneInvitationIssue.terms => '验证码已通过，请同意用户协议和隐私政策后继续',
-    PhoneInvitationIssue.uncertain => '验证码已通过，邀请码提交结果待确认；请在本页继续',
-    PhoneInvitationIssue.provisioning => '验证码已通过，聊天账号仍在开通；请稍后在本页继续',
-  };
+        PhoneInvitationIssue.required => '验证码已通过，请输入邀请码后完成注册',
+        PhoneInvitationIssue.invalid => '验证码已通过，邀请码无效，请更换后继续',
+        PhoneInvitationIssue.expired => '验证码已通过，邀请码已过期，请更换后继续',
+        PhoneInvitationIssue.exhausted => '验证码已通过，邀请码使用次数已满，请更换后继续',
+        PhoneInvitationIssue.terms => '验证码已通过，请同意用户协议和隐私政策后继续',
+        PhoneInvitationIssue.uncertain => '验证码已通过，邀请码提交结果待确认；请在本页继续',
+        PhoneInvitationIssue.provisioning => '验证码已通过，聊天账号仍在开通；请稍后在本页继续',
+      };
 
   void _acceptInvitationProof(
     PhoneInvitationContinuationRequired proof,
@@ -238,9 +234,8 @@ final class _LoginPageState extends State<LoginPage>
       setState(() => _error = '原验证码不可再次提交，请重新获取验证码');
       return;
     }
-    final username = _phoneMode
-        ? _normalizedPhone ?? ''
-        : _username.text.trim();
+    final username =
+        _phoneMode ? _normalizedPhone ?? '' : _username.text.trim();
     final password = _phoneMode ? _code.text.trim() : _password.text;
     if (_phoneMode && username.isEmpty) {
       setState(() {
@@ -402,17 +397,15 @@ final class _LoginPageState extends State<LoginPage>
         } on LoginStageException catch (error) {
           if (mounted) {
             setState(
-              () => _error = _phoneMode
-                  ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码'
-                  : error.message,
+              () => _error =
+                  _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : error.message,
             );
           }
         } catch (_) {
           if (mounted) {
             setState(
-              () => _error = _phoneMode
-                  ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码'
-                  : '服务暂时不可用，请稍后重试',
+              () => _error =
+                  _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : '服务暂时不可用，请稍后重试',
             );
           }
         }
@@ -434,20 +427,18 @@ final class _LoginPageState extends State<LoginPage>
         _showLoginError(
           _phoneMode
               ? continuing && _invitationTicket != null
-                    ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
-                    : '${error.message}；原验证码不可再次提交，请重新获取验证码'
+                  ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
+                  : '${error.message}；原验证码不可再次提交，请重新获取验证码'
               : error.message,
-          retryAfterSeconds: error.statusCode == 429
-              ? error.retryAfterSeconds ?? 60
-              : null,
+          retryAfterSeconds:
+              error.statusCode == 429 ? error.retryAfterSeconds ?? 60 : null,
         );
       }
     } on LoginStageException catch (error) {
       if (mounted) {
         setState(
-          () => _error = _phoneMode
-              ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码'
-              : error.message,
+          () => _error =
+              _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : error.message,
         );
       }
     } catch (_) {
@@ -455,8 +446,8 @@ final class _LoginPageState extends State<LoginPage>
         setState(
           () => _error = _phoneMode
               ? continuing && _invitationTicket != null
-                    ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
-                    : '登录结果待确认；原验证码不可再次提交，请重新获取验证码'
+                  ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
+                  : '登录结果待确认；原验证码不可再次提交，请重新获取验证码'
               : '服务暂时不可用，请稍后重试',
         );
       }
@@ -536,14 +527,14 @@ final class _LoginPageState extends State<LoginPage>
                 onValueChanged: _loading
                     ? (_) {}
                     : (value) => setState(() {
-                        _phoneMode = value ?? false;
-                        _invitationTicket = null;
-                        _invitationPhone = null;
-                        if (!_phoneMode) _requiresFreshPhoneCode = false;
-                        _error = null;
-                        _phoneFormatError = null;
-                        _phoneFormatValidated = false;
-                      }),
+                          _phoneMode = value ?? false;
+                          _invitationTicket = null;
+                          _invitationPhone = null;
+                          if (!_phoneMode) _requiresFreshPhoneCode = false;
+                          _error = null;
+                          _phoneFormatError = null;
+                          _phoneFormatValidated = false;
+                        }),
               ),
               const SizedBox(height: WeChatSpacing.md),
               if (_phoneMode) ...[
@@ -661,8 +652,8 @@ final class _LoginPageState extends State<LoginPage>
                     onPressed: _loading
                         ? null
                         : () => setState(
-                            () => _passwordVisible = !_passwordVisible,
-                          ),
+                              () => _passwordVisible = !_passwordVisible,
+                            ),
                     child: Icon(
                       _passwordVisible
                           ? CupertinoIcons.eye_slash
@@ -690,11 +681,9 @@ final class _LoginPageState extends State<LoginPage>
                     setState(() => _agreementAccepted = value),
                 // BUG-02：入口必须有真实实现——调用方未注入回调时打开
                 // 应用内置正文，保证点击一定打开而不是静默无响应。
-                onUserAgreement:
-                    widget.onUserAgreement ??
+                onUserAgreement: widget.onUserAgreement ??
                     () => openLegalDocument(context, userAgreement),
-                onPrivacyPolicy:
-                    widget.onPrivacyPolicy ??
+                onPrivacyPolicy: widget.onPrivacyPolicy ??
                     () => openLegalDocument(context, privacyPolicy),
               ),
               if (visibleError != null) ...[
@@ -714,19 +703,19 @@ final class _LoginPageState extends State<LoginPage>
                   label: _invitationTicket != null && _phoneMode
                       ? '完成注册'
                       : _requiresFreshPhoneCode && _phoneMode
-                      ? '重新获取验证码'
-                      : visibleError == null
-                      ? '登录'
-                      : '重试',
+                          ? '重新获取验证码'
+                          : visibleError == null
+                              ? '登录'
+                              : '重试',
                   loading: _loading,
                   onPressed:
                       _loading || !_agreementAccepted || _loginRetrySeconds > 0
-                      ? null
-                      : _requiresFreshPhoneCode && _phoneMode
-                      ? _canRequestPhoneCode
-                            ? _requestPhoneCode
-                            : null
-                      : _submit,
+                          ? null
+                          : _requiresFreshPhoneCode && _phoneMode
+                              ? _canRequestPhoneCode
+                                  ? _requestPhoneCode
+                                  : null
+                              : _submit,
                 ),
               ),
               if (widget.onRegister != null) ...[
@@ -757,10 +746,10 @@ final class _LoginPageState extends State<LoginPage>
         : FadeTransition(
             opacity: CurvedAnimation(parent: _intro, curve: Curves.easeOut),
             child: SlideTransition(
-              position: Tween(begin: const Offset(0, .035), end: Offset.zero)
-                  .animate(
-                    CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic),
-                  ),
+              position:
+                  Tween(begin: const Offset(0, .035), end: Offset.zero).animate(
+                CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic),
+              ),
               child: scrollable,
             ),
           );

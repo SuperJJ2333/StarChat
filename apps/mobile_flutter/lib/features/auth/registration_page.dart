@@ -140,11 +140,11 @@ final class _RegistrationPageState extends State<RegistrationPage> {
       InvitationValidationState.ready => const Color(0xFF07C160),
       InvitationValidationState.loading => WeChatColors.textSecondary,
       InvitationValidationState.networkError ||
-      InvitationValidationState.serverError => WeChatColors.warning,
+      InvitationValidationState.serverError =>
+        WeChatColors.warning,
       _ => WeChatColors.danger,
     };
-    final retryable =
-        _inviteState == InvitationValidationState.networkError ||
+    final retryable = _inviteState == InvitationValidationState.networkError ||
         _inviteState == InvitationValidationState.serverError;
     return Padding(
       key: const Key('auth-invitation-status'),
@@ -190,13 +190,13 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   }
 
   void _saveDraft() => widget.controller.saveDraft(
-    nickname: nickname.text,
-    username: username.text,
-    password: password.text,
-    passwordConfirmation: passwordConfirmation.text,
-    invitationCode: invitation.text,
-    email: email.text,
-  );
+        nickname: nickname.text,
+        username: username.text,
+        password: password.text,
+        passwordConfirmation: passwordConfirmation.text,
+        invitationCode: invitation.text,
+        email: email.text,
+      );
 
   Map<String, String> get _errors {
     final errors = RegistrationController.validateFields(
@@ -319,13 +319,12 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                             false: Text('邮箱注册'),
                             true: Text('手机号注册'),
                           },
-                          onValueChanged:
-                              loading ||
+                          onValueChanged: loading ||
                                   widget.controller.state.registrationSession !=
                                       null
                               ? (_) {}
                               : (value) =>
-                                    setState(() => _phoneMode = value ?? false),
+                                  setState(() => _phoneMode = value ?? false),
                         ),
                         const SizedBox(height: WeChatSpacing.md),
                       ],
@@ -375,8 +374,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                           onPressed: loading
                               ? null
                               : () => setState(
-                                  () => _passwordVisible = !_passwordVisible,
-                                ),
+                                    () => _passwordVisible = !_passwordVisible,
+                                  ),
                           child: Icon(
                             _passwordVisible
                                 ? CupertinoIcons.eye_slash
@@ -405,9 +404,9 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                           onPressed: loading
                               ? null
                               : () => setState(
-                                  () => _confirmationVisible =
-                                      !_confirmationVisible,
-                                ),
+                                    () => _confirmationVisible =
+                                        !_confirmationVisible,
+                                  ),
                           child: Icon(
                             _confirmationVisible
                                 ? CupertinoIcons.eye_slash
@@ -441,15 +440,12 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                               : 'auth-registration-email',
                         ),
                         label: _phoneMode ? '手机号' : '邮箱',
-                        placeholder: _phoneMode
-                            ? '中国大陆 +86'
-                            : 'name@example.invalid',
+                        placeholder:
+                            _phoneMode ? '中国大陆 +86' : 'name@example.invalid',
                         controller: _phoneMode ? phone : email,
-                        enabled:
-                            !loading &&
-                            (!_phoneMode ||
-                                widget.controller.state.registrationSession ==
-                                    null),
+                        enabled: !loading,
+                        readOnly: _phoneMode &&
+                            widget.controller.state.registrationSession != null,
                         keyboardType: _phoneMode
                             ? TextInputType.phone
                             : TextInputType.emailAddress,

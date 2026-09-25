@@ -181,6 +181,10 @@ void main() {
   testWidgets('pending phone registration locks the OTP destination', (
     tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     final gateway = Gateway();
     final controller = RegistrationController(gateway: gateway);
     expect(
@@ -210,7 +214,18 @@ void main() {
         matching: find.byType(CupertinoTextField),
       ),
     );
-    expect(input.enabled, isFalse);
+    expect(input.enabled, isTrue);
+    expect(input.readOnly, isTrue);
+    final resend = find.byKey(const Key('auth-registration-send-code'));
+    expect(gateway.sends, 1);
+    await tester.pump(const Duration(seconds: 60));
+    await tester.pump();
+    await tester.ensureVisible(resend);
+    await tester.pumpAndSettle();
+    expect(tester.widget<CupertinoButton>(resend).onPressed, isNotNull);
+    await tester.tap(resend);
+    await tester.pump();
+    expect(gateway.sends, 2);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     controller.dispose();
   });

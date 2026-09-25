@@ -238,6 +238,7 @@ const darkKeys = [
   ["foundation-components-catalog", "foundation-components-catalog-dark"],
   ["auth-login-default", "auth-login-default-dark"],
   ["auth-registration-default", "auth-registration-default-dark"],
+  ["auth-verification-code", "auth-verification-code-dark"],
   ["phone-login-phone-default", "phone-login-phone-default-dark"],
   ["phone-registration-phone-default", "phone-registration-phone-default-dark"],
   ["messages-inbox-default", "messages-inbox-default-dark"],

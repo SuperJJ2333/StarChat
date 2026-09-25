@@ -105,6 +105,7 @@ test("phone OTP and dark auth background expose visible interaction styles", () 
  assert.match(css, /\.c-phone-flows__otp-row app-secondary-button \.c-secondary-button\s*\{[^}]*border:[^;]*var\(--color-brand-primary\)/s);
  assert.match(css, /\.c-phone-flows__otp-row app-secondary-button \.c-secondary-button:active:not\(:disabled\)/);
  assert.match(css, /\.ui-screen\[data-theme="dark"\] \.p-auth__background/);
+ assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.c-phone-flows__otp-row app-secondary-button \.c-secondary-button\s*\{[^}]*transition:\s*none/s);
 });
 
 test("phone registration can request a code and reports format below the number", async () => {
@@ -170,7 +171,8 @@ test("simulated login 429 counts down without re-submitting or rate-limiting OTP
    consent.checked=true;
    button.handlers.click();
    assert.equal(nodes.some(n=>n.textContent?.includes('登录频繁')),false);
-   for(let second=0;second<60;second++) ticks.at(-1)();
+   now+=60000;
+   ticks.at(-1)();
    assert.equal(typeof login.handlers.click,'function');
    login.handlers.click();
    const warning=nodes.find(n=>n.textContent?.includes('登录频繁'));
@@ -196,5 +198,69 @@ test("simulated login 429 counts down without re-submitting or rate-limiting OTP
    globalThis.setInterval=originalSet;
    globalThis.clearInterval=originalClear;
    Date.now=originalNow;
+ }
+});
+
+test('OTP cooldowns use wall-clock deadlines after background throttling', async () => {
+ const originalNow=Date.now;
+ const originalSet=globalThis.setInterval;
+ const originalClear=globalThis.clearInterval;
+ let now=100000;
+ const callbacks=[];
+ const cleared=[];
+ Date.now=()=>now;
+ globalThis.setInterval=callback=>{callbacks.push(callback);return callbacks.length;};
+ globalThis.clearInterval=id=>{cleared.push(id);};
+ globalThis.HTMLElement=class {};
+ const documentHandlers={};
+ globalThis.document={
+   createElement:tag=>new Node(tag),createElementNS:(_namespace,tag)=>new Node(tag),
+   addEventListener:(name,handler)=>{documentHandlers[name]=handler;},
+   removeEventListener:(name)=>{delete documentHandlers[name];}
+ };
+ try {
+   const loginNodes=walk(await getScreen('phone-login-phone-default').component());
+   const phone=loginNodes.find(n=>n.tag==='input' && n.placeholder==='+86 手机号');
+   const consent=loginNodes.find(n=>n.tag==='input' && n.type==='checkbox');
+   const loginOtp=loginNodes.find(n=>n.tag==='app-secondary-button');
+   phone.value='13800000001'; phone.handlers.input(); consent.checked=true;
+   loginOtp.handlers.click();
+   assert.equal(loginOtp.attributes.label,'60 秒后重发');
+   now+=30000;
+   documentHandlers.visibilitychange();
+   assert.equal(loginOtp.attributes.label,'30 秒后重发');
+   now+=29000;
+   callbacks[0]();
+   assert.equal(loginOtp.attributes.label,'1 秒后重发');
+   now+=1000;
+   callbacks[0]();
+   assert.equal(loginOtp.attributes.label,'获取验证码');
+   assert.equal(loginOtp.attributes.disabled,undefined);
+   assert.ok(cleared.includes(1));
+
+   const registrationNodes=walk(await getScreen('phone-registration-phone-default').component());
+   const registrationPhone=registrationNodes.find(n=>n.tag==='input' && n.placeholder==='+86 手机号');
+   const registrationOtp=registrationNodes.find(n=>n.tag==='app-secondary-button');
+   registrationPhone.value='13800000001'; registrationPhone.handlers.input();
+   registrationOtp.handlers.click();
+   assert.equal(registrationOtp.attributes.label,'60 秒后重发');
+   now+=60000;
+   callbacks[1]();
+   assert.equal(registrationOtp.attributes.label,'获取验证码');
+   assert.equal(registrationOtp.attributes.disabled,undefined);
+   assert.ok(cleared.includes(2));
+
+   const initialNodes=walk(await getScreen('phone-login-phone-cooldown').component());
+   const initialOtp=initialNodes.find(n=>n.tag==='app-secondary-button');
+   assert.equal(initialOtp.attributes.label,'54 秒后重发');
+   now+=54000;
+   callbacks[2]();
+   assert.equal(initialOtp.attributes.label,'获取验证码');
+   assert.equal(initialOtp.attributes.disabled,undefined);
+   assert.ok(cleared.includes(3));
+ } finally {
+   Date.now=originalNow;
+   globalThis.setInterval=originalSet;
+   globalThis.clearInterval=originalClear;
  }
 });

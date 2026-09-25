@@ -96,6 +96,8 @@ function authShell(definition, title, buildBody) {
 function buildPhoneLogin(state) {
   const nodes = [];
   let seconds = state === "cooldown" ? 54 : 0;
+  let otpDeadline = seconds > 0 ? Date.now() + seconds * 1000 : 0;
+  let otpTimer = null;
   let loginSeconds = 0;
   let loginDeadline = 0;
   let loginTimer = null;
@@ -128,20 +130,27 @@ function buildPhoneLogin(state) {
     // after changing validity/cooldown, keeping this behavior local to the page.
     button.renderContract?.();
   };
+  const stopOtpCooldown = () => {
+    if (otpTimer !== null) { clearInterval(otpTimer); otpTimer = null; }
+    document.removeEventListener?.('visibilitychange', refreshOtpCooldown);
+  };
+  const refreshOtpCooldown = () => {
+    if (button.isConnected === false) { stopOtpCooldown(); return; }
+    seconds = Math.max(0, Math.ceil((otpDeadline - Date.now()) / 1000));
+    if (seconds === 0) stopOtpCooldown();
+    draw();
+  };
   const startCooldown = () => {
+    stopOtpCooldown();
+    otpDeadline = Date.now() + 60000;
     seconds = 60;
     draw();
-    const timer = setInterval(() => {
-      seconds -= 1;
-      if (seconds <= 0) {
-        clearInterval(timer);
-        seconds = 0;
-      }
-      draw();
-    }, 1000);
+    document.addEventListener?.('visibilitychange', refreshOtpCooldown);
+    otpTimer = setInterval(refreshOtpCooldown, 1000);
   };
   phone.input.addEventListener('input', draw);
   button.addEventListener("click", () => {
+    if (seconds > 0) refreshOtpCooldown();
     if (seconds > 0 || !phoneCheck.validate()) return;
     if (!consent.checked) {
       errorNode.textContent = '请先阅读并同意用户协议和隐私政策';
@@ -196,11 +205,8 @@ function buildPhoneLogin(state) {
   draw();
   // 启动初始冷却演示（cooldown 态）
   if (seconds > 0) {
-    const timer = setInterval(() => {
-      seconds -= 1;
-      if (seconds <= 0) { clearInterval(timer); draw(); return; }
-      draw();
-    }, 1000);
+    document.addEventListener?.('visibilitychange', refreshOtpCooldown);
+    otpTimer = setInterval(refreshOtpCooldown, 1000);
   }
   return nodes;
 }
@@ -209,6 +215,8 @@ function buildPhoneLogin(state) {
 function buildPhoneRegistration(state) {
   const nodes = [];
   let seconds = 0;
+  let otpDeadline = 0;
+  let otpTimer = null;
   const channel = element("div", "c-phone-flows__channel");
   const phoneOption = element("label", "c-phone-flows__channel-option");
   const phoneRadio = element("input");
@@ -236,16 +244,26 @@ function buildPhoneRegistration(state) {
     else button.removeAttribute('disabled');
     button.renderContract?.();
   };
+  const stopOtpCooldown = () => {
+    if (otpTimer !== null) { clearInterval(otpTimer); otpTimer = null; }
+    document.removeEventListener?.('visibilitychange', refreshOtpCooldown);
+  };
+  const refreshOtpCooldown = () => {
+    if (button.isConnected === false) { stopOtpCooldown(); return; }
+    seconds = Math.max(0, Math.ceil((otpDeadline - Date.now()) / 1000));
+    if (seconds === 0) stopOtpCooldown();
+    draw();
+  };
   phone.input.addEventListener('input', draw);
   button.addEventListener('click', () => {
+    if (seconds > 0) refreshOtpCooldown();
     if (seconds > 0 || state === 'matrix-wait' || !phoneCheck.validate()) return;
+    stopOtpCooldown();
+    otpDeadline = Date.now() + 60000;
     seconds = 60;
     draw();
-    const timer = setInterval(() => {
-      seconds -= 1;
-      if (seconds <= 0) { clearInterval(timer); seconds = 0; }
-      draw();
-    }, 1000);
+    document.addEventListener?.('visibilitychange', refreshOtpCooldown);
+    otpTimer = setInterval(refreshOtpCooldown, 1000);
   });
   nodes.push(phoneCheck.wrapper);
   draw();
