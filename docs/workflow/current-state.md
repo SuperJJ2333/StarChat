@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-26 视频转码诊断与四位 Build：雷电 Debug2179 已安装
+
+MI 6 的 2178 实测视频在本地转码阶段约 23.9 秒后失败，未开始上传；2179 保持两档压缩、20 MiB 和原片保护策略，新增 Android 固定失败/取消代码、每档本地有界耗时/结果及失败阶段真实分类，修复非有限时长可能误报成功并遗留临时文件。Android 仅对匹配当前编译构建号的 ABI 偏移归一化，雷电 Debug VM 实读 build 2179。`codex/auth-login-2178` 提交 `d7d09ffb` 的 Flutter analyze、Matrix 2115/9 跳过、Flutter 4333/9 跳过、Kotlin 编译与 `verify.ps1`（Business API/Worker 2905/75 跳过）均 exit 0；固定身份 ARM64 Debug APK 常规重建 18/18 门禁通过，SHA `0dd6ba52…`，仅装机 `emulator-5556` 并启动。模拟器基础 Business/Matrix HTTPS 均 200，本地性能扩展启用；新并行包无登录态，真实视频发送/MI 6 编码器原因尚未复现。生产、iOS 与 MI 6 未改；雷电此实例装机前未列出旧主包，本次无卸载。见[任务](tasks/2026-09-26-video-transcode-build-ld.md)、[验证](../verification/2026-09-26-video-build-ld.md)和[诊断手册](../performance/chatflow-performance-diagnostics.md)。
+
 ## 2026-09-25 登录/注册六项交互修复 Debug2178 已安装 MI 6
 
 登录限频逐秒倒计时、空白点击收键盘、手机号字段下格式提示、取码按钮轮廓/反馈及非法号本地校验、深色认证背景已整合进 2177 邀请码续行源并升级为 0.4.13+2178。Flutter analyze、Flutter 4316/9 跳过、Matrix 2108/9 跳过、前端 311、`verify.ps1` 退出 0；固定签名 Android 重建 18 项通过，MI 6 保留数据安装、设备 SHA `1a03074f…`、首次安装时间及零崩溃核对通过。MI 6 三次 Debug Dart 冷启动 1338–1358 ms，慢帧聚合不能归因到启动 trace。安装前 Matrix 公网探测 0/3 约 10 秒连接超时，装机后两轮公开探测 12/12 返回 200，显示网络问题有时间窗波动，不能归功于本次 UI 版本。广州试点域名本轮 6/6 在 TLS 握手前期失败；主机本地 Caddy 正常而公网 HTTP 返回阿里云 `Non-compliance ICP Filing` 403，强烈指向备案过滤，在备案及接入备案核实前不能接入客户端轮询。真实短信、登录及认证界面触感仍待用户操作反馈。见[任务](tasks/2026-09-25-auth-login-interactions.md)与[验证](../verification/2026-09-25-auth-login-interactions.md)。
