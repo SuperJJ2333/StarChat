@@ -43,7 +43,8 @@ final class AppConfig {
   /// pubspec.yaml; tests/mobile/test_app_build_contract.py asserts the match.
   /// 运行时由 [loadRuntimeVersion] 用安装包真实版本覆盖（见 main）。
   static String appVersionName = '0.4.13';
-  static int appBuildNumber = 2178;
+  static const int compiledBuildNumber = 2179;
+  static int appBuildNumber = compiledBuildNumber;
 
   /// 从安装包清单读取真实版本，保证「关于畅聊」与更新判断使用实际值。
   static Future<void> loadRuntimeVersion() async {
@@ -61,9 +62,13 @@ final class AppConfig {
     }
   }
 
-  /// Android 按 ABI 分包会把 versionCode 写成 `abiIndex * 1000 + build`
-  /// （如 arm64=2xxx、x86_64=4xxx）。与更新设置（pubspec 构建号）比较前
-  /// 必须剥掉该偏移，否则 latest_build 永远小于当前构建、更新弹窗失效。
-  static int normalizeBuildNumber(int build) =>
-      build >= 1000 ? build % 1000 : build;
+  /// Flutter 的 Android ABI 分包会给编译构建号加固定偏移。只有安装包
+  /// versionCode 与本次编译构建号加已知偏移完全一致时才去掉偏移；普通
+  /// 四位构建号（如 2179）及未知版本码须保留原值。
+  static int normalizeBuildNumber(int build) {
+    final offset = build - compiledBuildNumber;
+    return offset == 1000 || offset == 2000 || offset == 4000
+        ? compiledBuildNumber
+        : build;
+  }
 }

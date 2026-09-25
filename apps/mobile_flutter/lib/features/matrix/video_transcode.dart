@@ -177,10 +177,16 @@ Future<VideoRendition> _transcodeForChat(File origin,
     if (normalized >= 0 && normalized <= 1) onProgress?.call(normalized);
   });
   try {
-    for (final profile in [
+    final profiles = [
       ChatVideoProfile.normal,
-      ChatVideoProfile.aggressive(durationMs)
-    ]) {
+      ChatVideoProfile.aggressive(durationMs),
+    ];
+    for (final (index, profile) in profiles.indexed) {
+      final traceProfile = index == 0
+          ? PerformanceVideoTranscodeProfile.normal
+          : PerformanceVideoTranscodeProfile.aggressive;
+      final attemptWatch = Stopwatch()..start();
+      var outcome = PerformanceVideoTranscodeOutcome.unknownFailure;
       File? output;
       try {
         final info = await VideoCompress.compressVideo(origin.path,
@@ -197,28 +203,65 @@ Future<VideoRendition> _transcodeForChat(File origin,
         if (output != null && output.absolute.path != origin.absolute.path) {
           generated.add(output);
         }
-        if (info?.isCancel == true ||
-            output == null ||
-            output.absolute.path == origin.absolute.path ||
+        if (info?.isCancel == true) {
+          outcome = PerformanceVideoTranscodeOutcome.cancelled;
+          continue;
+        }
+        if (output == null) {
+          outcome = PerformanceVideoTranscodeOutcome.missingOutput;
+          continue;
+        }
+        if (output.absolute.path == origin.absolute.path ||
             !await output.exists()) {
+          outcome = PerformanceVideoTranscodeOutcome.invalidOutput;
           continue;
         }
         final size = await output.length();
         if (size > maxOriginalVideoBytes) {
           hadOversize = true;
+          outcome = PerformanceVideoTranscodeOutcome.overLimit;
           await output.delete();
           continue;
         }
-        if (size <= 0) continue;
-        performanceTrace?.mark(PerformanceStage.videoValidated);
-        accepted = output;
-        return VideoRendition(
+        if (size <= 0) {
+          outcome = PerformanceVideoTranscodeOutcome.invalidOutput;
+          continue;
+        }
+        final encodedDuration = info?.duration;
+        final rendition = VideoRendition(
             file: output,
             usedCompressed: true,
             compressionRatio: size / originSize,
-            durationMs: durationMs ?? info?.duration?.round());
+            durationMs: durationMs ??
+                (encodedDuration != null &&
+                        encodedDuration.isFinite &&
+                        encodedDuration > 0
+                    ? encodedDuration.round()
+                    : null));
+        performanceTrace?.mark(PerformanceStage.videoValidated);
+        accepted = output;
+        outcome = PerformanceVideoTranscodeOutcome.success;
+        return rendition;
+      } on VideoCompressFailure catch (failure) {
+        // Only the closed kind crosses into diagnostics; exception details and
+        // source paths are intentionally inaccessible here.
+        outcome = switch (failure.kind) {
+          VideoCompressFailureKind.failed =>
+            PerformanceVideoTranscodeOutcome.nativeFailure,
+          VideoCompressFailureKind.cancelled =>
+            PerformanceVideoTranscodeOutcome.cancelled,
+          VideoCompressFailureKind.unknown =>
+            PerformanceVideoTranscodeOutcome.unknownFailure,
+        };
       } catch (_) {
         // Native failure is retried with lower settings; no original bypass.
+      } finally {
+        attemptWatch.stop();
+        performanceTrace?.recordVideoTranscodeAttempt(
+          profile: traceProfile,
+          outcome: outcome,
+          duration: attemptWatch.elapsed,
+        );
       }
     }
     if (hadOversize) throw const GroupVideoTooLargeException(compressed: true);

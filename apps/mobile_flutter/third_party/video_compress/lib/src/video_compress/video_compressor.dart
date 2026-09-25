@@ -28,6 +28,17 @@ class _VideoCompressImpl extends IVideoCompress {
 // ignore: non_constant_identifier_names
 IVideoCompress get VideoCompress => _VideoCompressImpl.instance;
 
+enum VideoCompressFailureKind { failed, cancelled, unknown }
+
+final class VideoCompressFailure implements Exception {
+  const VideoCompressFailure(this.kind);
+
+  final VideoCompressFailureKind kind;
+
+  @override
+  String toString() => 'VideoCompressFailure(${kind.name})';
+}
+
 extension Compress on IVideoCompress {
   void dispose() {
     _VideoCompressImpl._dispose();
@@ -39,10 +50,15 @@ extension Compress on IVideoCompress {
       result = params != null
           ? await channel.invokeMethod(name, params)
           : await channel.invokeMethod(name);
-    } on PlatformException catch (e) {
-      debugPrint('''Error from VideoCompress:
-      Method: $name
-      $e''');
+    } on PlatformException catch (error) {
+      if (name == 'compressVideo') {
+        final kind = switch (error.code) {
+          'video_transcode_failed' => VideoCompressFailureKind.failed,
+          'video_transcode_cancelled' => VideoCompressFailureKind.cancelled,
+          _ => VideoCompressFailureKind.unknown,
+        };
+        throw VideoCompressFailure(kind);
+      }
     }
     return result;
   }

@@ -46,6 +46,62 @@ void main() {
     });
   });
 
+  test('video attempts reach local snapshot but never diagnostic upload', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      final diagnostics = ChatDiagnostics(
+          now: () => DateTime(2026).add(time.elapsed), normalSamplePercent: 0);
+      diagnostics.startSession(
+        version: '0.4.13+2179',
+        platform: ChatDiagnosticPlatform.android,
+        upload: (batch, abort) async {
+          batches.add(batch);
+          return 202;
+        },
+      );
+      final metrics = PerformanceMetrics(enabled: true);
+      final recorder = PerformanceTraceRecorder(
+        metrics: metrics,
+        clockUs: () => time.elapsed.inMicroseconds,
+        sessionGeneration: () => diagnostics.sessionGeneration,
+        onRecord: diagnostics.recordPerformance,
+      );
+      final trace = recorder.start(PerformanceOperationType.videoPrepare);
+      trace.mark(PerformanceStage.videoTranscodeStarted);
+      trace.recordVideoTranscodeAttempt(
+        profile: PerformanceVideoTranscodeProfile.normal,
+        outcome: PerformanceVideoTranscodeOutcome.nativeFailure,
+        duration: const Duration(seconds: 2),
+      );
+      trace.recordVideoTranscodeAttempt(
+        profile: PerformanceVideoTranscodeProfile.aggressive,
+        outcome: PerformanceVideoTranscodeOutcome.cancelled,
+        duration: const Duration(seconds: 1),
+      );
+      time.elapse(const Duration(seconds: 4));
+      final record = trace.finish(result: PerformanceResult.failed);
+      final local = (metrics.snapshot()['recentTraces'] as List).single as Map;
+      expect(local['video_transcode_attempts'], [
+        {'profile': 'normal', 'outcome': 'native_failure', 'duration_ms': 2000},
+        {'profile': 'aggressive', 'outcome': 'cancelled', 'duration_ms': 1000},
+      ]);
+      expect(local['transcode_until_failure_ms'], 4000);
+      expect(local['bottleneck'], 'media_transcode');
+      expect(local['operation_id'], record.operationId);
+
+      time.elapse(const Duration(minutes: 1));
+      expect(batches, hasLength(1));
+      final batch = batches.single.toJson();
+      expect(batch['version'], '0.4.13+2179');
+      final uploaded = (batch['operations'] as List).single as Map;
+      expect(uploaded['operation_id'], record.operationId);
+      expect(uploaded, isNot(contains('video_transcode_attempts')));
+      expect(uploaded, isNot(contains('transcode_until_failure_ms')));
+      expect(uploaded, isNot(contains('timings_ms')));
+      diagnostics.stopSession();
+    });
+  });
+
   test('normal sampling is configurable; error and slow always retained', () {
     final diagnostics = ChatDiagnostics(normalSamplePercent: 0);
     diagnostics.startSession(
@@ -99,7 +155,8 @@ void main() {
     waiting.finish();
     expect(diagnostics.pendingCount, 1);
 
-    final processing = recorder.start(PerformanceOperationType.conversationOpen);
+    final processing =
+        recorder.start(PerformanceOperationType.conversationOpen);
     processing.mark(PerformanceStage.userAction);
     nowUs = 2150000;
     processing.mark(PerformanceStage.localTimelineReady);
@@ -134,8 +191,8 @@ void main() {
     expect(diagnostics.pendingCount, 0);
 
     final healthyCall = recorder.start(PerformanceOperationType.callActive);
-    healthyCall.setCallQuality(rttMs: 55, jitterMs: 5,
-        packetsLost: 0, packetsReceived: 100);
+    healthyCall.setCallQuality(
+        rttMs: 55, jitterMs: 5, packetsLost: 0, packetsReceived: 100);
     nowUs = 95000000;
     healthyCall.finish();
     expect(diagnostics.pendingCount, 0);
@@ -148,8 +205,8 @@ void main() {
     expect(diagnostics.pendingCount, 1);
 
     final poorCall = recorder.start(PerformanceOperationType.callActive);
-    poorCall.setCallQuality(rttMs: 240, jitterMs: 66,
-        packetsLost: 7, packetsReceived: 93);
+    poorCall.setCallQuality(
+        rttMs: 240, jitterMs: 66, packetsLost: 7, packetsReceived: 93);
     poorCall.finish();
     expect(diagnostics.pendingCount, 2);
     diagnostics.stopSession();

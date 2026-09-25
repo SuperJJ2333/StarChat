@@ -78,6 +78,12 @@ Flutter 的 `FrameTiming` 在 raster 完成后才回调，且后续帧可批量�
 
 页面图片等高频项沿用现有媒体计数/诊断，不会为每条朋友圈动态无限建立 trace。本文的“本地 timeline”是房间本地恢复总耗时，不等同于 SQLite 单条 query；Business API 的 SQLAlchemy cursor hook 才是服务端 SQL 执行耗时。
 
+### 视频转码失败的本地诊断（2026-09-26）
+
+`video_prepare` 的转码阶段最多保存 `normal` 与 `aggressive` 两次尝试。每次以实际 `Stopwatch` 计时，结果仅为封闭枚举：`success`、`native_failure`、`cancelled`、`unknown_failure`、`missing_output`、`invalid_output`、`over_limit`。Android 原生插件只返回固定失败/取消代码，不传异常描述；旧 iOS 插件返回的 `null` 继续记作缺失产物并按原策略尝试第二档。成功产物仍须满足压缩文件存在且不超过 20 MiB，失败时绝不改送原片。
+
+本地 `ext.chatflow.performance` 快照的 `recentTraces` 额外含 `video_transcode_attempts`（每档结果和毫秒数）。只有最终结果为 `failed`、有真实 `videoTranscodeStarted`、且无完成标记时，才输出 `transcode_until_failure_ms` 并可据此判为 `media_transcode`；该值是从开始转码到操作结束的实测区间，可能包含重试及临时文件清理，不能冒充单档编码时间。取消、超限拒绝或无开始标记不产生这个失败区间。两项新字段不进入 `ChatDiagnostics` 上传 JSON，旧生产接收端无需改变 schema；分析具体机型/编码器失败仍需在设备上复现并读本地 Debug 快照。记录不接受媒体路径、原生异常文本、消息内容或用户身份。
+
 ### 聊天打开的一条记录
 
 ```text

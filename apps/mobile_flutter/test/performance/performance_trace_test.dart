@@ -259,4 +259,97 @@ void main() {
     offline.mark(PerformanceStage.localTimelineReady);
     expect(offline.finish().timingSummaryMs, isNot(contains('sync_wait_ms')));
   });
+
+  test('video profile attempts are typed, bounded, local-only and immutable',
+      () {
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    trace.mark(PerformanceStage.videoTranscodeStarted);
+    trace.recordVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.normal,
+      outcome: PerformanceVideoTranscodeOutcome.nativeFailure,
+      duration: const Duration(milliseconds: 2300),
+    );
+    trace.recordVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.normal,
+      outcome: PerformanceVideoTranscodeOutcome.success,
+      duration: const Duration(milliseconds: 1),
+    );
+    trace.recordVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.aggressive,
+      outcome: PerformanceVideoTranscodeOutcome.missingOutput,
+      duration: const Duration(milliseconds: 900),
+    );
+    trace.recordVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.aggressive,
+      outcome: PerformanceVideoTranscodeOutcome.success,
+      duration: const Duration(milliseconds: 1),
+    );
+    nowUs = 4000000;
+    final record = trace.finish(result: PerformanceResult.failed);
+    expect(identical(record, trace.finish()), isTrue);
+    expect(record.videoTranscodeAttempts, hasLength(2));
+    expect(record.videoTranscodeAttempts.first.profile,
+        PerformanceVideoTranscodeProfile.normal);
+    expect(record.videoTranscodeAttempts.first.durationMs, 2300);
+    expect(record.videoTranscodeAttempts.last.outcome,
+        PerformanceVideoTranscodeOutcome.missingOutput);
+    expect(() => record.videoTranscodeAttempts.clear(), throwsUnsupportedError);
+    final local = record.toLocalDiagnosticJson();
+    expect(local['video_transcode_attempts'], [
+      {'profile': 'normal', 'outcome': 'native_failure', 'duration_ms': 2300},
+      {
+        'profile': 'aggressive',
+        'outcome': 'missing_output',
+        'duration_ms': 900
+      },
+    ]);
+    expect(local['transcode_until_failure_ms'], 4000);
+    expect(record.toJson(), isNot(contains('video_transcode_attempts')));
+    expect(record.toJson(), isNot(contains('transcode_until_failure_ms')));
+    final attributed = record.withFrameAttribution(
+        const PerformanceFrameCounts(total: 4, slow: 2),
+        complete: true);
+    expect(attributed.videoTranscodeAttempts, record.videoTranscodeAttempts);
+    final encoded = jsonEncode(local);
+    for (final secret in [
+      '!privateRoom:host',
+      '@alice:host',
+      'plaintext body',
+      'Bearer token',
+      'mxc://host/private',
+      'C:\\private\\clip.mov',
+    ]) {
+      expect(encoded, isNot(contains(secret)));
+    }
+    final dynamic unsafe = trace;
+    expect(
+      () => unsafe.recordVideoTranscodeAttempt(
+        profile: 'C:\\private\\clip.mov',
+        outcome: PerformanceVideoTranscodeOutcome.success,
+        duration: const Duration(seconds: 1),
+      ),
+      throwsA(isA<TypeError>()),
+    );
+  });
+
+  test('abandoned and disabled traces do not retain video attempts', () {
+    final abandoned = recorder.start(PerformanceOperationType.videoPrepare);
+    abandoned.recordVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.normal,
+      outcome: PerformanceVideoTranscodeOutcome.cancelled,
+      duration: const Duration(seconds: 1),
+    );
+    abandoned.dispose();
+    expect(recorder.activeCount, 0);
+    final disabled = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: false),
+      clockUs: () => nowUs,
+    ).start(PerformanceOperationType.videoPrepare);
+    disabled.recordVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.normal,
+      outcome: PerformanceVideoTranscodeOutcome.nativeFailure,
+      duration: const Duration(seconds: 1),
+    );
+    expect(disabled.finish().videoTranscodeAttempts, isEmpty);
+  });
 }

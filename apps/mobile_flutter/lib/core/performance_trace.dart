@@ -374,6 +374,7 @@ final class PerformanceTrace {
   PerformanceRelayProtocol? _candidateProtocol;
 
   final _stagesUs = <PerformanceStage, int>{};
+  final _videoTranscodeAttempts = <PerformanceVideoTranscodeAttempt>[];
   bool _recording;
   bool _disposed = false;
   PerformanceRecord? _finished;
@@ -389,6 +390,27 @@ final class PerformanceTrace {
     }
     final elapsed = _recorder._clockUs() - _startedUs;
     _stagesUs[stage] = elapsed < 0 ? 0 : elapsed;
+  }
+
+  /// Records at most one observation per supported encoder profile. The API
+  /// accepts no path, exception message, metadata map or other free text.
+  void recordVideoTranscodeAttempt({
+    required PerformanceVideoTranscodeProfile profile,
+    required PerformanceVideoTranscodeOutcome outcome,
+    required Duration duration,
+  }) {
+    if (!isRecording ||
+        operation != PerformanceOperationType.videoPrepare ||
+        duration.isNegative ||
+        _videoTranscodeAttempts.length >= 2 ||
+        _videoTranscodeAttempts.any((attempt) => attempt.profile == profile)) {
+      return;
+    }
+    _videoTranscodeAttempts.add(PerformanceVideoTranscodeAttempt(
+      profile: profile,
+      outcome: outcome,
+      durationMs: duration.inMilliseconds.clamp(0, 3600000),
+    ));
   }
 
   void setOpeningSource(PerformanceOpeningSource source) {
@@ -535,6 +557,7 @@ final class PerformanceTrace {
       usesTurn: _usesTurn,
       relayProtocol: _relayProtocol,
       candidateProtocol: _candidateProtocol,
+      videoTranscodeAttempts: _videoTranscodeAttempts,
     );
     _finished = record;
     _recorder._active.remove(this);
@@ -560,6 +583,7 @@ final class PerformanceTrace {
     _recording = false;
     _recorder._active.remove(this);
     _stagesUs.clear();
+    _videoTranscodeAttempts.clear();
     _recorder._releaseFrameListenerIfIdle();
   }
 }

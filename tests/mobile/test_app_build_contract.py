@@ -12,8 +12,12 @@ def test_app_config_build_matches_pubspec_version():
 
     config = (ROOT / "apps" / "mobile_flutter" / "lib" / "core" / "app_config.dart").read_text(encoding="utf-8")
     name = re.search(r"appVersionName\s*=\s*'([^']+)'", config)
-    build = re.search(r"appBuildNumber\s*=\s*(\d+)", config)
-    assert name and build, "app_config.dart must pin appVersionName/appBuildNumber"
+    build = re.search(r"compiledBuildNumber\s*=\s*(\d+)", config)
+    runtime_build = re.search(r"appBuildNumber\s*=\s*compiledBuildNumber", config)
+    assert name and build and runtime_build, (
+        "app_config.dart must pin appVersionName/compiledBuildNumber "
+        "and initialize the runtime build from it"
+    )
 
     expected_name = f"{match.group(1)}.{match.group(2)}.{match.group(3)}"
     assert name.group(1) == expected_name, f"appVersionName should be {expected_name}"
@@ -25,3 +29,12 @@ def test_update_dialog_covers_both_update_scenarios():
     assert "稍后再说" in dialog, "dismissible updates need a defer action"
     assert "立即更新" in dialog, "forced updates need an explicit update action"
     assert "canPop: !forced" in dialog, "forced updates must block route pops"
+
+
+def test_diagnostics_version_uses_runtime_full_build():
+    main = (ROOT / "apps" / "mobile_flutter" / "lib" / "main.dart").read_text(encoding="utf-8")
+    scope = re.search(r"ChatDiagnosticsScope\s*\((?P<body>.*?)\bplatform\s*:", main, re.DOTALL)
+    assert scope, "authenticated diagnostics scope must provide a version"
+    assert re.search(r"\bversion\s*:\s*.*?AppConfig\.appBuildNumber", scope.group("body"), re.DOTALL), (
+        "diagnostics must use the normalized full runtime build number"
+    )

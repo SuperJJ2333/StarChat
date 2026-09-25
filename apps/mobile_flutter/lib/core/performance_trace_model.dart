@@ -195,6 +195,32 @@ enum PerformanceRowCountBucket {
 
 enum PerformanceRelayProtocol { udp, tcp, tls, unknown }
 
+/// A fixed, identity-free summary of one actual encoder pass. These fields are
+/// local diagnostics only until the server's strict upload schema supports them.
+enum PerformanceVideoTranscodeProfile { normal, aggressive }
+
+enum PerformanceVideoTranscodeOutcome {
+  success,
+  nativeFailure,
+  cancelled,
+  unknownFailure,
+  missingOutput,
+  invalidOutput,
+  overLimit,
+}
+
+final class PerformanceVideoTranscodeAttempt {
+  const PerformanceVideoTranscodeAttempt({
+    required this.profile,
+    required this.outcome,
+    required this.durationMs,
+  });
+
+  final PerformanceVideoTranscodeProfile profile;
+  final PerformanceVideoTranscodeOutcome outcome;
+  final int durationMs;
+}
+
 enum PerformanceBottleneck {
   clientUi,
   localDatabase,
@@ -286,8 +312,11 @@ final class PerformanceRecord {
     this.usesTurn,
     this.relayProtocol,
     this.candidateProtocol,
+    List<PerformanceVideoTranscodeAttempt> videoTranscodeAttempts = const [],
   })  : operationId = _checkedOperationId(operationId),
-        stagesUs = Map.unmodifiable(stagesUs);
+        stagesUs = Map.unmodifiable(stagesUs),
+        videoTranscodeAttempts =
+            List.unmodifiable(videoTranscodeAttempts.take(2));
 
   static final RegExp _operationIdPattern = RegExp(
       r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$');
@@ -343,6 +372,7 @@ final class PerformanceRecord {
   final bool? usesTurn;
   final PerformanceRelayProtocol? relayProtocol;
   final PerformanceRelayProtocol? candidateProtocol;
+  final List<PerformanceVideoTranscodeAttempt> videoTranscodeAttempts;
 
   /// Replaces only frame attribution after a delayed Flutter timing report.
   /// The operation and all business measurements remain frozen at finish().
@@ -389,6 +419,7 @@ final class PerformanceRecord {
         usesTurn: usesTurn,
         relayProtocol: relayProtocol,
         candidateProtocol: candidateProtocol,
+        videoTranscodeAttempts: videoTranscodeAttempts,
       );
 
   int get totalMs => totalUs ~/ 1000;
@@ -401,6 +432,19 @@ final class PerformanceRecord {
     final last = stagesUs[end];
     if (first == null || last == null || last < first) return null;
     return (last - first) ~/ 1000;
+  }
+
+  /// The observed encoder-start-to-operation-end interval when encoding did
+  /// not complete. It can include retry and cleanup; no native phase is guessed.
+  int? get transcodeUntilFailureMs {
+    if (operation != PerformanceOperationType.videoPrepare ||
+        result != PerformanceResult.failed ||
+        stagesUs.containsKey(PerformanceStage.videoTranscodeDone)) {
+      return null;
+    }
+    final startedUs = stagesUs[PerformanceStage.videoTranscodeStarted];
+    if (startedUs == null || startedUs > totalUs) return null;
+    return (totalUs - startedUs) ~/ 1000;
   }
 
   /// A completed sync observed before the local timeline has no sync wait.
@@ -552,6 +596,17 @@ final class PerformanceRecord {
   Map<String, Object?> toLocalDiagnosticJson() => {
         ...toJson(),
         if (timingSummaryMs.isNotEmpty) 'timings_ms': timingSummaryMs,
+        if (videoTranscodeAttempts.isNotEmpty)
+          'video_transcode_attempts': [
+            for (final attempt in videoTranscodeAttempts)
+              {
+                'profile': attempt.profile.wireName,
+                'outcome': attempt.outcome.wireName,
+                'duration_ms': attempt.durationMs,
+              },
+          ],
+        if (transcodeUntilFailureMs case final elapsed?)
+          'transcode_until_failure_ms': elapsed,
       };
 
   double? get packetLossPercent {
@@ -749,7 +804,8 @@ abstract final class PerformanceBottleneckClassifier {
     add(
         PerformanceBottleneck.mediaTranscode,
         record.betweenMs(PerformanceStage.videoTranscodeStarted,
-            PerformanceStage.videoTranscodeDone),
+                PerformanceStage.videoTranscodeDone) ??
+            record.transcodeUntilFailureMs,
         PerformanceThresholds.mediaTranscodeMs);
     add(
         PerformanceBottleneck.messageSend,

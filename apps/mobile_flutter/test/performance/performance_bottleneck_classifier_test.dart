@@ -196,8 +196,7 @@ void main() {
         PerformanceBottleneck.webRtc);
   });
 
-  test('API status does not turn total client latency into server latency',
-      () {
+  test('API status does not turn total client latency into server latency', () {
     final api = recorder.start(PerformanceOperationType.apiRequest);
     nowUs = 1200000;
     expect(
@@ -267,5 +266,47 @@ void main() {
     nowUs = 1000000;
     expect(PerformanceBottleneckClassifier.classify(uiOnly.finish()),
         PerformanceBottleneck.clientUi);
+  });
+
+  test('failed in-flight transcode is classified from its measured interval',
+      () {
+    var frames = const PerformanceFrameCounts();
+    final frameRecorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      clockUs: () => nowUs,
+      frameCounts: () => frames,
+    );
+    final failed = frameRecorder.start(PerformanceOperationType.videoPrepare);
+    nowUs = 838000;
+    failed.mark(PerformanceStage.videoTranscodeStarted);
+    frames = const PerformanceFrameCounts(total: 60, slow: 52);
+    nowUs = 24776000;
+    final record = failed.finish(result: PerformanceResult.failed);
+    expect(
+        record.stagesUs, isNot(contains(PerformanceStage.videoTranscodeDone)));
+    expect(record.toLocalDiagnosticJson()['transcode_until_failure_ms'], 23938);
+    expect(PerformanceBottleneckClassifier.classify(record),
+        PerformanceBottleneck.mediaTranscode);
+
+    nowUs = 0;
+    frames = const PerformanceFrameCounts();
+    final unmeasured =
+        frameRecorder.start(PerformanceOperationType.videoPrepare);
+    nowUs = 24776000;
+    expect(
+        PerformanceBottleneckClassifier.classify(
+            unmeasured.finish(result: PerformanceResult.failed)),
+        PerformanceBottleneck.unknown);
+
+    nowUs = 0;
+    final cancelled =
+        frameRecorder.start(PerformanceOperationType.videoPrepare);
+    cancelled.mark(PerformanceStage.videoTranscodeStarted);
+    nowUs = 24776000;
+    final cancelledRecord =
+        cancelled.finish(result: PerformanceResult.cancelled);
+    expect(cancelledRecord.transcodeUntilFailureMs, isNull);
+    expect(PerformanceBottleneckClassifier.classify(cancelledRecord),
+        PerformanceBottleneck.unknown);
   });
 }

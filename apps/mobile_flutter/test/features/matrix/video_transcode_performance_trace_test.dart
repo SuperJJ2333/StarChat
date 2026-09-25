@@ -108,4 +108,132 @@ void main() {
             .containsKey(PerformanceStage.videoTranscodeDone),
         isFalse);
   });
+
+  test('native first-pass failure records both measured profiles', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('video_compress'),
+            (call) async {
+      if (call.method == 'getMediaInfo') {
+        return jsonEncode({'path': source.path, 'duration': 1000});
+      }
+      if (call.method != 'compressVideo') return null;
+      encoderCalls++;
+      if (encoderCalls == 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        throw PlatformException(
+            code: 'video_transcode_failed',
+            message: 'private-selected-video.mov / sensitive native detail');
+      }
+      final output = File('${temp.path}/private-output.mp4');
+      await output.writeAsBytes([4, 5]);
+      return jsonEncode(
+          {'path': output.path, 'duration': 1000, 'isCancel': false});
+    });
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.videoPrepare);
+
+    final rendition = await transcodeForChat(source, performanceTrace: trace);
+    trace.finish();
+
+    expect(encoderCalls, 2);
+    expect(rendition.usedCompressed, isTrue);
+    final attempts = records.single.videoTranscodeAttempts;
+    expect(attempts, hasLength(2));
+    expect(attempts.first.profile, PerformanceVideoTranscodeProfile.normal);
+    expect(
+        attempts.first.outcome, PerformanceVideoTranscodeOutcome.nativeFailure);
+    expect(attempts.first.durationMs, greaterThanOrEqualTo(20));
+    expect(attempts.last.profile, PerformanceVideoTranscodeProfile.aggressive);
+    expect(attempts.last.outcome, PerformanceVideoTranscodeOutcome.success);
+    expect(records.single.toLocalDiagnosticJson()['video_transcode_attempts'],
+        isNotNull);
+    expect(
+        records.single.toJson(), isNot(contains('video_transcode_attempts')));
+    final encoded = jsonEncode(records.single.toLocalDiagnosticJson());
+    expect(encoded, isNot(contains('private-selected-video')));
+    expect(encoded, isNot(contains('sensitive native detail')));
+    await rendition.dispose();
+  });
+
+  test('two typed native failures retain original and do not claim success',
+      () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('video_compress'),
+            (call) async {
+      if (call.method == 'getMediaInfo') {
+        return jsonEncode({'path': source.path, 'duration': 1000});
+      }
+      if (call.method != 'compressVideo') return null;
+      encoderCalls++;
+      throw PlatformException(
+          code: encoderCalls == 1
+              ? 'video_transcode_failed'
+              : 'video_transcode_cancelled',
+          message: 'private-selected-video.mov / sensitive native detail');
+    });
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.videoPrepare);
+
+    await expectLater(transcodeForChat(source, performanceTrace: trace),
+        throwsA(isA<VideoCompressionException>()));
+    trace.finish(result: PerformanceResult.failed);
+
+    expect(encoderCalls, 2);
+    expect(await source.exists(), isTrue);
+    expect(records.single.stagesUs,
+        isNot(contains(PerformanceStage.videoTranscodeDone)));
+    expect(
+        records.single.videoTranscodeAttempts.map((attempt) => attempt.outcome),
+        [
+          PerformanceVideoTranscodeOutcome.nativeFailure,
+          PerformanceVideoTranscodeOutcome.cancelled,
+        ]);
+    final encoded = jsonEncode(records.single.toLocalDiagnosticJson());
+    expect(encoded, isNot(contains('private-selected-video')));
+    expect(encoded, isNot(contains('sensitive native detail')));
+  });
+
+  test(
+      'non-finite output duration does not misreport or leak a valid rendition',
+      () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('video_compress'),
+            (call) async {
+      if (call.method == 'getMediaInfo') {
+        return jsonEncode({'path': source.path, 'duration': null});
+      }
+      if (call.method != 'compressVideo') return null;
+      encoderCalls++;
+      if (encoderCalls > 1) {
+        throw PlatformException(code: 'video_transcode_failed');
+      }
+      final output = File('${temp.path}/nonfinite-output.mp4');
+      await output.writeAsBytes([4, 5]);
+      return jsonEncode(
+          {'path': output.path, 'duration': 'NaN', 'isCancel': false});
+    });
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.videoPrepare);
+
+    final rendition = await transcodeForChat(source, performanceTrace: trace);
+    trace.finish();
+
+    expect(encoderCalls, 1);
+    expect(rendition.durationMs, isNull);
+    expect(records.single.videoTranscodeAttempts.single.outcome,
+        PerformanceVideoTranscodeOutcome.success);
+    expect(await rendition.file.exists(), isTrue);
+    await rendition.dispose();
+    expect(await rendition.file.exists(), isFalse);
+    expect(await source.exists(), isTrue);
+  });
 }
