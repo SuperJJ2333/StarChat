@@ -8155,6 +8155,18 @@
             "title": "Asset",
             "type": "string"
           },
+          "balance_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "CAIBI running balance in statement order (created_at, id), before display filters; not a commit-time balance snapshot.",
+            "title": "Balance After"
+          },
           "business_id": {
             "anyOf": [
               {
