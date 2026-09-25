@@ -18,6 +18,7 @@ abstract final class PerformanceThresholds {
   static const normalSamplePercent = 5;
   static const maxActiveTraces = 100;
   static const maxStagesPerTrace = 64;
+  static const frameTimingAttributionTimeout = Duration(milliseconds: 1200);
   static const remoteSyncObservationWindow = Duration(seconds: 45);
   static const messageTraceObservationWindow = Duration(minutes: 5);
 }
@@ -252,6 +253,7 @@ final class PerformanceRecord {
     required this.result,
     required this.lifecycle,
     required this.frames,
+    this.frameAttributionComplete = true,
     this.openingSource,
     this.appNetworkState = PerformanceAppNetworkState.unknown,
     this.matrixState = PerformanceMatrixState.unknown,
@@ -305,6 +307,10 @@ final class PerformanceRecord {
   final PerformanceResult result;
   final PerformanceLifecycle lifecycle;
   final PerformanceFrameCounts frames;
+
+  /// False means frame timing has not covered the trace interval. Counts must
+  /// not be interpreted as zero or used to classify a UI bottleneck.
+  final bool frameAttributionComplete;
   final PerformanceOpeningSource? openingSource;
   final PerformanceAppNetworkState appNetworkState;
   final PerformanceMatrixState matrixState;
@@ -337,6 +343,53 @@ final class PerformanceRecord {
   final bool? usesTurn;
   final PerformanceRelayProtocol? relayProtocol;
   final PerformanceRelayProtocol? candidateProtocol;
+
+  /// Replaces only frame attribution after a delayed Flutter timing report.
+  /// The operation and all business measurements remain frozen at finish().
+  PerformanceRecord withFrameAttribution(PerformanceFrameCounts newFrames,
+          {required bool complete}) =>
+      PerformanceRecord(
+        operationId: operationId,
+        operation: operation,
+        totalUs: totalUs,
+        stagesUs: stagesUs,
+        result: result,
+        lifecycle: lifecycle,
+        frames: newFrames,
+        frameAttributionComplete: complete,
+        openingSource: openingSource,
+        appNetworkState: appNetworkState,
+        matrixState: matrixState,
+        transportAvailable: transportAvailable,
+        serviceReachable: serviceReachable,
+        networkError: networkError,
+        endpointCategory: endpointCategory,
+        httpMethod: httpMethod,
+        statusCode: statusCode,
+        retryCount: retryCount,
+        softKickCount: softKickCount,
+        hardRestartCount: hardRestartCount,
+        syncErrorCount: syncErrorCount,
+        reconnectCount: reconnectCount,
+        lastHealthySyncAgeMs: lastHealthySyncAgeMs,
+        cacheSource: cacheSource,
+        mediaType: mediaType,
+        sizeBucket: sizeBucket,
+        databaseOperation: databaseOperation,
+        rowCountBucket: rowCountBucket,
+        resultCountBucket: resultCountBucket,
+        schedulerQueue: schedulerQueue,
+        schedulerActive: schedulerActive,
+        schedulerVideoActive: schedulerVideoActive,
+        mediaPriority: mediaPriority,
+        rttMs: rttMs,
+        jitterMs: jitterMs,
+        packetsLost: packetsLost,
+        packetsReceived: packetsReceived,
+        usesTurn: usesTurn,
+        relayProtocol: relayProtocol,
+        candidateProtocol: candidateProtocol,
+      );
 
   int get totalMs => totalUs ~/ 1000;
   int get slowFrameCount => frames.slow;
@@ -402,8 +455,7 @@ final class PerformanceRecord {
         if (conversationSyncWaitMs case final wait?) {
           timings['sync_wait_ms'] = wait;
         }
-        add('sync_response_wait_ms',
-            PerformanceStage.syncResponseWaitStarted,
+        add('sync_response_wait_ms', PerformanceStage.syncResponseWaitStarted,
             PerformanceStage.syncResponseReceived);
         add('sync_processing_ms', PerformanceStage.syncResponseReceived,
             PerformanceStage.syncProcessingDone);
@@ -525,9 +577,10 @@ final class PerformanceRecord {
             },
         ],
         'lifecycle': lifecycle.wireName,
-        'slow_frame_count': slowFrameCount,
-        'slow_build_count': slowBuildCount,
-        'slow_raster_count': slowRasterCount,
+        'frame_attribution_complete': frameAttributionComplete,
+        if (frameAttributionComplete) 'slow_frame_count': slowFrameCount,
+        if (frameAttributionComplete) 'slow_build_count': slowBuildCount,
+        if (frameAttributionComplete) 'slow_raster_count': slowRasterCount,
         if (openingSource != null) 'opening_source': openingSource!.wireName,
         if (appNetworkState != PerformanceAppNetworkState.unknown)
           'app_network_state': appNetworkState.wireName,
@@ -550,8 +603,7 @@ final class PerformanceRecord {
         if (reconnectCount != null)
           'reconnect_count': reconnectCount!.clamp(0, 1000),
         if (lastHealthySyncAgeMs != null)
-          'last_healthy_sync_age_ms':
-              lastHealthySyncAgeMs!.clamp(0, 3600000),
+          'last_healthy_sync_age_ms': lastHealthySyncAgeMs!.clamp(0, 3600000),
         if (cacheSource != null) 'cache_source': cacheSource!.wireName,
         if (mediaType != null) 'media_type': mediaType!.wireName,
         if (sizeBucket != null) 'size_bucket': sizeBucket!.wireName,
@@ -609,7 +661,7 @@ abstract final class PerformanceBottleneckClassifier {
         transportFailureObserved) {
       return PerformanceBottleneck.networkTransport;
     }
-    final slowFramesObserved =
+    final slowFramesObserved = record.frameAttributionComplete &&
         record.frames.slow >= PerformanceThresholds.slowFrameCountWarning;
     final candidates = <(PerformanceBottleneck, int)>[];
     void add(PerformanceBottleneck kind, int? duration, int threshold) {

@@ -52,6 +52,8 @@ Business API 请求启用诊断时额外发送 `X-ChatFlow-Performance-Id=operat
 
 `mark` 仅在内存中写入枚举键和单调时钟偏移；容量耗尽或诊断关闭时不创建随机 ID、不启动请求、不查询数据库、不写文件。`finish` 幂等，废弃 trace 可 `dispose`；切换账号清除未完成 trace，旧会话结果不能进入新会话。操作同时最多 100 个，每个最多 64 个阶段；`PerformanceMetrics` 的样本、`ChatDiagnostics` 的待发数据及服务端各指标序列均有上限。排序和 JSON 编码只在读取 snapshot 或后台批处理时发生，不在 `mark` 路径。普通 Release 的完整本地指标默认关闭；profile 或 `CHATFLOW_PERFORMANCE_METRICS` 才打开本地详细指标；认证会话的已有 `ChatDiagnostics` 保留低频聚合与抽样。
 
+Flutter 的 `FrameTiming` 在 raster 完成后才回调，且后续帧可批量延迟上报。诊断/profile 模式下，`finish` 立即冻结业务阶段和总耗时，随后最多等待集中配置的 1200 ms 帧回调；用同一 VM timeline 时钟的真实 build start 与操作起止边界归因，按批次对有界活跃/待归因操作增量计数。只有真实 raster 时间戳覆盖操作终点、时钟校验通过时，`frame_attribution_complete=true` 并输出三个 `slow_*` 计数；回调缺席、超时、时钟异常或容量淘汰时标为 `false` 并省略计数，不能把未知写成 0。会话切换直接丢弃旧会话待归因记录。普通 Release 未打开本地帧指标时，仍可保留已有低频操作诊断，但单操作慢帧归因为未知；聚合帧指标的支持范围与单操作归因分开解释。服务端接收端兼容旧版带三计数的记录，并严格校验新版 complete/unknown 两种形态；服务端应先于新版客户端发布。
+
 消息发送的同进程等待网络重试最多保留 5 分钟，并受 active trace 容量限制；超过窗口先输出 `waiting_network`，后续 ACK 不能改写已完成记录。Outbox 仍负责跨页面/进程可靠送达，但新 controller 或重启后无法恢复原随机短期 operation ID；pending conversation 页键入的 Outbox 消息也不在 RoomTimelineController 的 composer→ACK trace 范围。单一 `matrix_send_start/finish` 阶段只代表首个实测尝试，不把离线等待时间当成 Matrix 发送耗时。消息 `timeline_visible` 是控制器发布模型，不是像素首帧。
 
 本地 `snapshot().recentTraces` 为单条诊断记录增加 `timings_ms` 和纯函数推导的 `bottleneck`；上传记录保留相同操作 ID 与实际阶段偏移，接收端可按相同边界计算区间。没有起止两个真实标记时，区间键缺席，不能解释为 0。`conversation_open` 的 `sync_wait_ms` 仅在本地 timeline 和远端 sync 均被观察到时产生；远端早于本地完成则为已测得的 0。只有本地已就绪而没有 sync 证据时，该字段保持缺席，状态为 `waiting_network` 或相应终态。

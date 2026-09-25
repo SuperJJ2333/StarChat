@@ -262,6 +262,76 @@ def test_performance_operation_only_accepts_closed_metadata(endpoint, capsys):
     assert headers['Authorization'] not in json.dumps(logged)
 
 
+def test_performance_operation_accepts_unknown_frame_attribution(endpoint, capsys):
+    client, _, headers = endpoint
+    data = performance_batch()
+    operation = data['operations'][0]
+    operation['frame_attribution_complete'] = False
+    for key in ('slow_frame_count', 'slow_build_count', 'slow_raster_count'):
+        del operation[key]
+
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)['operations'][0]
+    assert logged['frame_attribution_complete'] is False
+    assert not any(key in logged for key in
+                   ('slow_frame_count', 'slow_build_count', 'slow_raster_count'))
+
+
+def test_performance_operation_accepts_complete_frame_attribution(endpoint, capsys):
+    client, _, headers = endpoint
+    data = performance_batch()
+    data['operations'][0]['frame_attribution_complete'] = True
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)['operations'][0]
+    assert logged['frame_attribution_complete'] is True
+    assert logged['slow_frame_count'] == 0
+
+
+def test_performance_openapi_matches_conditional_frame_contract():
+    jsonschema = pytest.importorskip('jsonschema')
+    from app.api.client_diagnostics import PerformanceOperation
+
+    validator = jsonschema.Draft202012Validator(
+        PerformanceOperation.model_json_schema())
+    legacy = performance_operation()
+    assert validator.is_valid(legacy)
+    complete = {**legacy, 'frame_attribution_complete': True}
+    assert validator.is_valid(complete)
+    unknown = {key: value for key, value in legacy.items()
+               if key not in ('slow_frame_count', 'slow_build_count',
+                              'slow_raster_count')}
+    unknown['frame_attribution_complete'] = False
+    assert validator.is_valid(unknown)
+    assert not validator.is_valid({key: value for key, value in unknown.items()
+                                   if key != 'frame_attribution_complete'})
+    assert not validator.is_valid({**legacy, 'frame_attribution_complete': False})
+    assert not validator.is_valid({**unknown, 'frame_attribution_complete': True})
+
+
+@pytest.mark.parametrize('complete,remove_counts', [
+    (False, False),
+    (True, True),
+    (None, True),
+    ('false', True),
+])
+def test_performance_operation_rejects_inconsistent_frame_attribution(
+        endpoint, capsys, complete, remove_counts):
+    client, _, headers = endpoint
+    data = performance_batch()
+    operation = data['operations'][0]
+    if complete is not None:
+        operation['frame_attribution_complete'] = complete
+    if remove_counts:
+        for key in ('slow_frame_count', 'slow_build_count', 'slow_raster_count'):
+            del operation[key]
+
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert capsys.readouterr().out == ''
+
+
 def test_search_page_open_operation_uses_the_closed_upload_schema(endpoint, capsys):
     client, _, headers = endpoint
     data = performance_batch()

@@ -150,17 +150,43 @@ class PerformanceOperationStage(BaseModel):
     elapsed_ms: int = Field(ge=0, le=3600000)
 
 
+_PERFORMANCE_FRAME_FIELDS = ('slow_frame_count', 'slow_build_count', 'slow_raster_count')
+_PERFORMANCE_FRAME_SCHEMA = {
+    'oneOf': [
+        {
+            'required': list(_PERFORMANCE_FRAME_FIELDS),
+            'properties': {
+                'frame_attribution_complete': {'enum': [True, None]},
+                **{field: {'type': 'integer'} for field in _PERFORMANCE_FRAME_FIELDS},
+            },
+        },
+        {
+            'required': ['frame_attribution_complete'],
+            'properties': {'frame_attribution_complete': {'const': False}},
+            'not': {'anyOf': [
+                {'required': [field]} for field in _PERFORMANCE_FRAME_FIELDS
+            ]},
+        },
+    ],
+}
+
+
 class PerformanceOperation(BaseModel):
-    model_config = ConfigDict(extra='forbid', strict=True)
+    model_config = ConfigDict(extra='forbid', strict=True,
+                              json_schema_extra=_PERFORMANCE_FRAME_SCHEMA)
     operation_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
     operation: OperationWire
     result: PerformanceResultWire
     total_ms: int = Field(ge=0, le=3600000)
     stages: list[PerformanceOperationStage] = Field(max_length=64)
     lifecycle: PerformanceLifecycleWire
-    slow_frame_count: int = Field(ge=0, le=1000000)
-    slow_build_count: int = Field(ge=0, le=1000000)
-    slow_raster_count: int = Field(ge=0, le=1000000)
+    slow_frame_count: int | None = Field(default=None, ge=0, le=1000000)
+    slow_build_count: int | None = Field(default=None, ge=0, le=1000000)
+    slow_raster_count: int | None = Field(default=None, ge=0, le=1000000)
+    frame_attribution_complete: bool | None = Field(
+        default=None,
+        description='Omit slow-frame counts when false; legacy records omit this field and include all counts.',
+    )
     soft_kick_count: int | None = Field(default=None, ge=0, le=1000)
     hard_restart_count: int | None = Field(default=None, ge=0, le=1000)
     sync_error_count: int | None = Field(default=None, ge=0, le=1000)
@@ -195,10 +221,16 @@ class PerformanceOperation(BaseModel):
 
     @model_validator(mode='after')
     def consistent_stages_and_frames(self):
-        if not (max(self.slow_build_count, self.slow_raster_count)
-                <= self.slow_frame_count
-                <= self.slow_build_count + self.slow_raster_count):
-            raise ValueError('Inconsistent operation frame counts')
+        if self.frame_attribution_complete is False:
+            if any(field in self.model_fields_set for field in _PERFORMANCE_FRAME_FIELDS):
+                raise ValueError('Unconfirmed operation frame counts must be omitted')
+        else:
+            if any(getattr(self, field) is None for field in _PERFORMANCE_FRAME_FIELDS):
+                raise ValueError('Complete operation frame counts are required')
+            if not (max(self.slow_build_count, self.slow_raster_count)
+                    <= self.slow_frame_count
+                    <= self.slow_build_count + self.slow_raster_count):
+                raise ValueError('Inconsistent operation frame counts')
         seen = set()
         previous_ms = -1
         for item in self.stages:

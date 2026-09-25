@@ -62,6 +62,12 @@ enum PerformanceCounter {
   avatarRetry,
 }
 
+typedef PerformanceFrameTimingListener = void Function(
+  List<FrameTiming> timings,
+  int budgetUs,
+  bool clockValid,
+);
+
 /// Local, bounded diagnostics. No persistence, network upload, or user data.
 /// Release defaults to disabled; enable explicitly only for diagnostic builds.
 final class PerformanceMetrics {
@@ -84,6 +90,9 @@ final class PerformanceMetrics {
   final _recentTraces = ListQueue<PerformanceRecord>();
   final _counts = <PerformanceOperation, int>{};
   final _counters = <PerformanceCounter, int>{};
+  int? _lastRasterFinishUs;
+  int? _lastBuildStartUs;
+  final _frameTimingListeners = <PerformanceFrameTimingListener>{};
   bool _observing = false;
   bool _extensionRegistered = false;
 
@@ -124,6 +133,19 @@ final class PerformanceMetrics {
         slowBuild: _counters[PerformanceCounter.slowBuildFrames] ?? 0,
         slowRaster: _counters[PerformanceCounter.slowRasterFrames] ?? 0,
       );
+
+  bool addFrameTimingListener(PerformanceFrameTimingListener listener) {
+    if (_frameTimingListeners.contains(listener)) return true;
+    if (_frameTimingListeners.length >= PerformanceThresholds.maxActiveTraces) {
+      return false;
+    }
+    _frameTimingListeners.add(listener);
+    return true;
+  }
+
+  void removeFrameTimingListener(PerformanceFrameTimingListener listener) {
+    _frameTimingListeners.remove(listener);
+  }
 
   /// The trace closes on this path. Work is bounded by the fixed stage enum;
   /// the hot-path mark/recordFrame methods never sort, encode or perform I/O.
@@ -183,11 +205,18 @@ final class PerformanceMetrics {
   }
 
   void reset() {
+    // Flush pending records before clearing local samples so a VM extension
+    // reset cannot repopulate the just-cleared snapshot.
+    for (final listener in _frameTimingListeners.toList(growable: false)) {
+      listener(const [], 0, false);
+    }
     _samples.clear();
     _stageSamples.clear();
     _recentTraces.clear();
     _counts.clear();
     _counters.clear();
+    _lastRasterFinishUs = null;
+    _lastBuildStartUs = null;
   }
 
   /// Attach once after WidgetsFlutterBinding.ensureInitialized(). Query locally
@@ -217,6 +246,16 @@ final class PerformanceMetrics {
     final hz =
         PlatformDispatcher.instance.implicitView?.display.refreshRate ?? 60;
     final budgetUs = (1000000 / (hz > 0 ? hz : 60)).round();
+    recordFrameTimingBatch(timings, budgetUs: budgetUs);
+  }
+
+  /// Consumes the existing Flutter timing callback. An optional report time
+  /// lets tests inject the same VM Timeline clock used at operation boundaries.
+  void recordFrameTimingBatch(List<FrameTiming> timings,
+      {required int budgetUs, int? reportedAtUs}) {
+    if (!enabled || budgetUs <= 0) return;
+    final reportUs = reportedAtUs ?? developer.Timeline.now;
+    var clockValid = true;
     for (final timing in timings) {
       // totalSpan contains pipeline latency and is NOT a dropped-frame count.
       recordFrame(
@@ -225,6 +264,32 @@ final class PerformanceMetrics {
         totalUs: timing.totalSpan.inMicroseconds,
         budgetUs: budgetUs,
       );
+      final buildStartUs =
+          timing.timestampInMicroseconds(FramePhase.buildStart);
+      final rasterFinishUs =
+          timing.timestampInMicroseconds(FramePhase.rasterFinish);
+      final reportLagUs = reportUs - rasterFinishUs;
+      if (buildStartUs < 0 ||
+          rasterFinishUs < buildStartUs ||
+          reportLagUs < 0 ||
+          reportLagUs >
+              PerformanceThresholds
+                      .frameTimingAttributionTimeout.inMicroseconds *
+                  2 ||
+          (_lastBuildStartUs != null && buildStartUs < _lastBuildStartUs!) ||
+          (_lastRasterFinishUs != null &&
+              rasterFinishUs < _lastRasterFinishUs!)) {
+        clockValid = false;
+      }
+      _lastBuildStartUs = buildStartUs;
+      _lastRasterFinishUs = rasterFinishUs;
+    }
+    if (!clockValid) {
+      _lastBuildStartUs = null;
+      _lastRasterFinishUs = null;
+    }
+    for (final listener in _frameTimingListeners.toList(growable: false)) {
+      listener(timings, budgetUs, clockValid);
     }
   }
 }

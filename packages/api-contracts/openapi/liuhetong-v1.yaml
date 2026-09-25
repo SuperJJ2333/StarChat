@@ -20073,6 +20073,61 @@
                   "operations": {
                     "items": {
                       "additionalProperties": false,
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "frame_attribution_complete": {
+                              "enum": [
+                                true,
+                                null
+                              ]
+                            },
+                            "slow_build_count": {
+                              "type": "integer"
+                            },
+                            "slow_frame_count": {
+                              "type": "integer"
+                            },
+                            "slow_raster_count": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "slow_frame_count",
+                            "slow_build_count",
+                            "slow_raster_count"
+                          ]
+                        },
+                        {
+                          "not": {
+                            "anyOf": [
+                              {
+                                "required": [
+                                  "slow_frame_count"
+                                ]
+                              },
+                              {
+                                "required": [
+                                  "slow_build_count"
+                                ]
+                              },
+                              {
+                                "required": [
+                                  "slow_raster_count"
+                                ]
+                              }
+                            ]
+                          },
+                          "properties": {
+                            "frame_attribution_complete": {
+                              "const": false
+                            }
+                          },
+                          "required": [
+                            "frame_attribution_complete"
+                          ]
+                        }
+                      ],
                       "properties": {
                         "app_network_state": {
                           "anyOf": [
@@ -20170,6 +20225,18 @@
                             }
                           ],
                           "title": "Endpoint Category"
+                        },
+                        "frame_attribution_complete": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Omit slow-frame counts when false; legacy records omit this field and include all counts.",
+                          "title": "Frame Attribution Complete"
                         },
                         "hard_restart_count": {
                           "anyOf": [
@@ -20551,22 +20618,43 @@
                           "title": "Size Bucket"
                         },
                         "slow_build_count": {
-                          "maximum": 1000000,
-                          "minimum": 0,
-                          "title": "Slow Build Count",
-                          "type": "integer"
+                          "anyOf": [
+                            {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Slow Build Count"
                         },
                         "slow_frame_count": {
-                          "maximum": 1000000,
-                          "minimum": 0,
-                          "title": "Slow Frame Count",
-                          "type": "integer"
+                          "anyOf": [
+                            {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Slow Frame Count"
                         },
                         "slow_raster_count": {
-                          "maximum": 1000000,
-                          "minimum": 0,
-                          "title": "Slow Raster Count",
-                          "type": "integer"
+                          "anyOf": [
+                            {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Slow Raster Count"
                         },
                         "soft_kick_count": {
                           "anyOf": [
@@ -20735,10 +20823,7 @@
                         "result",
                         "total_ms",
                         "stages",
-                        "lifecycle",
-                        "slow_frame_count",
-                        "slow_build_count",
-                        "slow_raster_count"
+                        "lifecycle"
                       ],
                       "title": "PerformanceOperation",
                       "type": "object"

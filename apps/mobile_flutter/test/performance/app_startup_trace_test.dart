@@ -83,11 +83,15 @@ void main() {
       child: Text('startup'),
     ));
 
+    expect(metrics.snapshot()['recentTraces'], isEmpty);
+    await tester.pump(PerformanceThresholds.frameTimingAttributionTimeout);
     final recent = metrics.snapshot()['recentTraces'] as List<Object?>;
     expect(recent, hasLength(1));
     final record = recent.single as Map<String, Object?>;
     expect(record['operation_id'], trace!.operationId);
     expect(record['operation'], 'app_startup');
+    expect(record['frame_attribution_complete'], false);
+    expect(record.containsKey('slow_frame_count'), false);
     expect(ChatDiagnostics.instance.pendingCount, 0);
   });
 }

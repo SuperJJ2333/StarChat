@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:collection';
+import 'dart:developer' as developer;
+import 'dart:ui';
 
 import 'package:uuid/uuid.dart';
 
@@ -8,19 +11,63 @@ import 'performance_trace_model.dart';
 
 export 'performance_trace_model.dart';
 
+final class _PendingFrameRecord {
+  _PendingFrameRecord(
+    this.record,
+    this.startUs,
+    this.endUs,
+    this.sessionGeneration,
+    this.frames,
+  );
+
+  final PerformanceRecord record;
+  final int startUs;
+  final int endUs;
+  final int? sessionGeneration;
+  final _MutableFrameCounts frames;
+  Timer? deadline;
+}
+
+final class _MutableFrameCounts {
+  int total = 0;
+  int slow = 0;
+  int slowBuild = 0;
+  int slowRaster = 0;
+
+  void add(FrameTiming timing, int budgetUs) {
+    final build = timing.buildDuration.inMicroseconds > budgetUs;
+    final raster = timing.rasterDuration.inMicroseconds > budgetUs;
+    total++;
+    if (build) slowBuild++;
+    if (raster) slowRaster++;
+    if (build || raster) slow++;
+  }
+
+  PerformanceFrameCounts snapshot() => PerformanceFrameCounts(
+        total: total,
+        slow: slow,
+        slowBuild: slowBuild,
+        slowRaster: slowRaster,
+      );
+}
+
 /// Coordinates active operations while the existing PerformanceMetrics and
 /// ChatDiagnostics remain the bounded stores. Tests inject a monotonic clock.
 final class PerformanceTraceRecorder {
   PerformanceTraceRecorder({
     PerformanceMetrics? metrics,
     int Function()? clockUs,
+    int Function()? frameClockUs,
     PerformanceFrameCounts Function()? frameCounts,
     int Function()? sessionGeneration,
     bool Function()? enabled,
+    this.timestampedFrameAttribution = false,
+    this.frameAttributionSupported = true,
     this.activeCapacity = PerformanceThresholds.maxActiveTraces,
     this.onRecord,
   })  : metrics = metrics ?? PerformanceMetrics.instance,
         _clockUs = clockUs ?? _defaultClockUs,
+        _frameClockUs = frameClockUs ?? _defaultFrameClockUs,
         _frameCounts = frameCounts ??
             (() => (metrics ?? PerformanceMetrics.instance).frameCounts),
         _sessionGeneration = sessionGeneration,
@@ -29,11 +76,19 @@ final class PerformanceTraceRecorder {
     if (activeCapacity <= 0) {
       throw ArgumentError.value(activeCapacity, 'activeCapacity');
     }
+    if (timestampedFrameAttribution) {
+      if (!this.metrics.enabled) {
+        throw ArgumentError('Timestamped frames require enabled metrics');
+      }
+    }
   }
 
   static final Stopwatch _clock = Stopwatch()..start();
   static int _defaultClockUs() => _clock.elapsedMicroseconds;
+  static int _defaultFrameClockUs() => developer.Timeline.now;
   static final instance = PerformanceTraceRecorder(
+    timestampedFrameAttribution: PerformanceMetrics.instance.enabled,
+    frameAttributionSupported: PerformanceMetrics.instance.enabled,
     frameCounts: () => PerformanceMetrics.instance.enabled
         ? PerformanceMetrics.instance.frameCounts
         : ChatDiagnostics.instance.cumulativeFrameCounts,
@@ -46,14 +101,20 @@ final class PerformanceTraceRecorder {
 
   final PerformanceMetrics metrics;
   final int Function() _clockUs;
+  final int Function() _frameClockUs;
   final PerformanceFrameCounts Function() _frameCounts;
   final int Function()? _sessionGeneration;
   final bool Function() _enabled;
   final int activeCapacity;
+  final bool timestampedFrameAttribution;
+  final bool frameAttributionSupported;
   final void Function(PerformanceRecord record)? onRecord;
   final Set<PerformanceTrace> _active = <PerformanceTrace>{};
+  final _pendingFrames = ListQueue<_PendingFrameRecord>();
+  bool _frameListenerRegistered = false;
   PerformanceLifecycle lifecycle = PerformanceLifecycle.unknown;
   int get activeCount => _active.length;
+  int get pendingFrameAttributionCount => _pendingFrames.length;
   bool get recordingEnabled => _enabled() && _active.length < activeCapacity;
 
   PerformanceTrace start(
@@ -69,6 +130,10 @@ final class PerformanceTraceRecorder {
     PerformanceHttpMethod? httpMethod,
   }) {
     final canRecord = recordingEnabled;
+    if (canRecord && timestampedFrameAttribution && !_frameListenerRegistered) {
+      _frameListenerRegistered =
+          metrics.addFrameTimingListener(_onFrameTimings);
+    }
     final generation = _sessionGeneration?.call();
     final inheritId = canRecord &&
         parentOperation != null &&
@@ -85,6 +150,10 @@ final class PerformanceTraceRecorder {
               : const Uuid().v4()
           : '00000000-0000-4000-8000-000000000000',
       startedUs: _clockUs(),
+      frameStartedUs:
+          canRecord && timestampedFrameAttribution && _frameListenerRegistered
+              ? _frameClockUs()
+              : null,
       frameStart: _frameCounts(),
       sessionGeneration: generation,
       recording: canRecord,
@@ -106,6 +175,92 @@ final class PerformanceTraceRecorder {
       trace.dispose();
     }
     _active.clear();
+    for (final pending in _pendingFrames) {
+      pending.deadline?.cancel();
+    }
+    _pendingFrames.clear();
+    _releaseFrameListenerIfIdle();
+  }
+
+  void _releaseFrameListenerIfIdle() {
+    if (_frameListenerRegistered && _active.isEmpty && _pendingFrames.isEmpty) {
+      metrics.removeFrameTimingListener(_onFrameTimings);
+      _frameListenerRegistered = false;
+    }
+  }
+
+  void _emit(PerformanceRecord record, int? generation) {
+    if (generation != null && generation != _sessionGeneration?.call()) return;
+    metrics.recordTrace(record);
+    onRecord?.call(record);
+  }
+
+  void _finalizeFrameRecord(
+      _PendingFrameRecord pending, PerformanceFrameCounts? frames) {
+    if (!_pendingFrames.remove(pending)) return;
+    pending.deadline?.cancel();
+    _emit(
+      frames == null
+          ? pending.record
+          : pending.record.withFrameAttribution(frames, complete: true),
+      pending.sessionGeneration,
+    );
+    _releaseFrameListenerIfIdle();
+  }
+
+  /// Incremental attribution keeps a long operation's counts without scanning
+  /// a global sample ring. Each batch visits at most the bounded active and
+  /// pending traces, and only real build/raster timestamps decide membership.
+  void _onFrameTimings(
+      List<FrameTiming> timings, int budgetUs, bool clockValid) {
+    if (!clockValid) {
+      for (final trace in _active) {
+        trace._frameClockValid = false;
+      }
+      for (final pending in _pendingFrames.toList(growable: false)) {
+        _finalizeFrameRecord(pending, null);
+      }
+      return;
+    }
+    if (timings.isEmpty) return;
+    for (final timing in timings) {
+      final buildStartUs =
+          timing.timestampInMicroseconds(FramePhase.buildStart);
+      for (final trace in _active) {
+        final startUs = trace._frameStartedUs;
+        if (trace._frameClockValid &&
+            startUs != null &&
+            buildStartUs >= startUs) {
+          trace._timedFrames!.add(timing, budgetUs);
+        }
+      }
+      for (final pending in _pendingFrames) {
+        if (buildStartUs >= pending.startUs && buildStartUs <= pending.endUs) {
+          pending.frames.add(timing, budgetUs);
+        }
+      }
+    }
+    final rasterFinishUs =
+        timings.last.timestampInMicroseconds(FramePhase.rasterFinish);
+    for (final pending in _pendingFrames.toList(growable: false)) {
+      if (rasterFinishUs >= pending.endUs) {
+        _finalizeFrameRecord(pending, pending.frames.snapshot());
+      }
+    }
+  }
+
+  void _queueFrameRecord(PerformanceRecord record, int startUs, int endUs,
+      int? sessionGeneration, _MutableFrameCounts frames) {
+    if (_pendingFrames.length == activeCapacity) {
+      _finalizeFrameRecord(_pendingFrames.first, null);
+    }
+    final pending =
+        _PendingFrameRecord(record, startUs, endUs, sessionGeneration, frames);
+    _pendingFrames.addLast(pending);
+    pending.deadline =
+        Timer(PerformanceThresholds.frameTimingAttributionTimeout, () {
+      _finalizeFrameRecord(pending, null);
+    });
   }
 }
 
@@ -133,6 +288,7 @@ final class PerformanceTrace {
     required this.operation,
     required this.operationId,
     required int startedUs,
+    required int? frameStartedUs,
     required PerformanceFrameCounts frameStart,
     int? sessionGeneration,
     required bool recording,
@@ -146,6 +302,8 @@ final class PerformanceTrace {
     this.httpMethod,
   })  : _recorder = recorder,
         _startedUs = startedUs,
+        _frameStartedUs = frameStartedUs,
+        _timedFrames = frameStartedUs == null ? null : _MutableFrameCounts(),
         _frameStart = frameStart,
         _sessionGeneration = sessionGeneration,
         _recording = recording;
@@ -176,7 +334,10 @@ final class PerformanceTrace {
   final PerformanceOperationType operation;
   final String operationId;
   final int _startedUs;
+  final int? _frameStartedUs;
   final PerformanceFrameCounts _frameStart;
+  final _MutableFrameCounts? _timedFrames;
+  bool _frameClockValid = true;
   final int? _sessionGeneration;
   final PerformanceLifecycle lifecycle;
   PerformanceOpeningSource? openingSource;
@@ -323,6 +484,12 @@ final class PerformanceTrace {
     final completed = _finished;
     if (completed != null) return completed;
     final elapsed = _recorder._clockUs() - _startedUs;
+    final frameEndedUs =
+        _frameStartedUs == null ? null : _recorder._frameClockUs();
+    final canEmit = _recording &&
+        !_disposed &&
+        (_sessionGeneration == null ||
+            _sessionGeneration == _recorder._sessionGeneration?.call());
     final record = PerformanceRecord(
       operationId: operationId,
       operation: operation,
@@ -330,7 +497,12 @@ final class PerformanceTrace {
       stagesUs: _stagesUs,
       result: result,
       lifecycle: lifecycle,
-      frames: _recorder._frameCounts().difference(_frameStart),
+      frames: _recorder.frameAttributionSupported &&
+              !_recorder.timestampedFrameAttribution
+          ? _recorder._frameCounts().difference(_frameStart)
+          : const PerformanceFrameCounts(),
+      frameAttributionComplete: _recorder.frameAttributionSupported &&
+          !_recorder.timestampedFrameAttribution,
       openingSource: openingSource,
       appNetworkState: appNetworkState,
       matrixState: matrixState,
@@ -366,14 +538,19 @@ final class PerformanceTrace {
     );
     _finished = record;
     _recorder._active.remove(this);
-    if (_recording &&
-        !_disposed &&
-        (_sessionGeneration == null ||
-            _sessionGeneration == _recorder._sessionGeneration?.call())) {
-      _recorder.metrics.recordTrace(record);
-      _recorder.onRecord?.call(record);
+    if (canEmit) {
+      if (frameEndedUs != null &&
+          _frameStartedUs != null &&
+          _frameClockValid &&
+          frameEndedUs >= _frameStartedUs) {
+        _recorder._queueFrameRecord(record, _frameStartedUs, frameEndedUs,
+            _sessionGeneration, _timedFrames!);
+      } else {
+        _recorder._emit(record, _sessionGeneration);
+      }
     }
     _recording = false;
+    _recorder._releaseFrameListenerIfIdle();
     return record;
   }
 
@@ -383,5 +560,6 @@ final class PerformanceTrace {
     _recording = false;
     _recorder._active.remove(this);
     _stagesUs.clear();
+    _recorder._releaseFrameListenerIfIdle();
   }
 }

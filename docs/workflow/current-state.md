@@ -1,8 +1,10 @@
 # 移动交付恢复索引
 
-## 2026-09-25 手机号验证码通过后补填邀请码（本地候选，待服务端先行发布）
+## 2026-09-25 手机号验证码通过后补填邀请码（API 已发布，MI 6 2176 已安装）
 
-用户确认新手机号尚未注册、首次提交时漏填邀请码；供应商可能在第一次校验 PASS 后拒绝同一验证码重验。新增 opt-in 服务端五分钟、设备与手机号绑定的已验证续行票据；补填/纠正邀请码不再调用短信校验。客户端 0.4.13+2176 只在收到服务端票据后显示“验证码已通过”，内存保存票据，换号码或重发码即清除。旧客户端默认协议保持。领域复核及安全增量复核通过，安全复核提出的锁等待越过有效期问题已补红绿测试和锁后/提交前复核；后端全量门禁仍在进行。Flutter analyze、Matrix 2108/9 跳过、Flutter 全量 4295/9 跳过均退出 0；真实 PostgreSQL 8 路并发通过。生产当前仍是旧 API，必须先发布并验证 API 后才能安装 2176，否则旧 API 的 StrictModel 会以 422 拒绝新字段。MI 6 仍运行 2175；真实短信送达和 Matrix 首次会话结果未确认。见[计划](../superpowers/plans/2026-09-25-phone-invitation-continuation.md)、[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)、[事故任务](tasks/2026-09-25-mi6-login-sms-regression.md)。
+用户确认新手机号尚未注册、首次提交时漏填邀请码；供应商可能在第一次校验 PASS 后拒绝同一验证码重验。新增 opt-in 服务端五分钟、设备与手机号绑定的已验证续行票据；补填/纠正邀请码不再调用短信校验。客户端 0.4.13+2176 只在收到服务端票据后显示“验证码已通过”，内存保存票据，换号码或重发码即清除。旧客户端默认协议保持。领域及安全增量复核通过，锁等待越过有效期问题已补红绿测试和锁后/提交前复核；后端全量 2893/77 跳过、Flutter analyze、Matrix 2108/9 跳过、Flutter 全量 4295/9 跳过均退出 0；真实 PostgreSQL 8 路并发通过。API-only 生产切换后镜像 `b20c1be0…` healthy/零重启，Business ready 与 Matrix versions 200，新路由在位且旧客户端默认兼容，worker/其它容器/环境/DB 0088 不变。固定签名 2176 Debug 构建 18 项验包退出 0，MI 6 保留数据安装、设备 APK SHA、首次安装时间、启动和零崩溃均验证通过。真实短信送达和 Matrix 首次会话结果仍需用户自行操作确认。见[计划](../superpowers/plans/2026-09-25-phone-invitation-continuation.md)、[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)、[事故任务](tasks/2026-09-25-mi6-login-sms-regression.md)。
+
+2176 无账号真机性能/网络对照：Debug 冷启动 1373 ms、6 帧中聚合 4 慢帧，但启动 trace 的 0 慢帧受 Flutter timing 延迟回调影响不能采信；客户端帧归因修复正在本地验证，尚未装机。MI 6 公网探测 12 次有 5 次约 10 秒超时、服务器同入口 6/6 成功；IPv4 自身存在建连/TLS 长尾。生产短信开关/供应商配置仍为启用，最近两小时无新验证码签发，尚无终端送达回执。见[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)。
 
 ## 2026-09-25 生产认证与配置已恢复；MI 6 登录仍待实测
 

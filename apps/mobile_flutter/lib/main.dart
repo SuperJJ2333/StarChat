@@ -259,6 +259,7 @@ PerformanceTrace? scheduleAppStartupFirstFrame({
     if (!metrics.enabled) return null;
     active = PerformanceTraceRecorder(
       metrics: metrics,
+      timestampedFrameAttribution: true,
       enabled: () => metrics.enabled,
     );
   }
