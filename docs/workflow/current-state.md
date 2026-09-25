@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-25 iOS 0.4.7/2173 官网链接分发：回签包 Payload 门禁阻断
+
+用户明确只更新官网下载/安装链接，不触发应用内弹窗。2173 回签包的旧企业身份/Keychain/生产 APNs 通过，但相对 CI 原包新增两个动态库和 `flag`，Runner 加载命令被改写，Payload 比对失败；健康旧版真机的保留数据覆盖证据也未取得。生产 iOS 仍 0.3.102/2144、Android 仍 0.4.7/2172，本轮零写入。下一步从 CI 原包关闭注入纯回签，再核验并只切换官网静态入口。见[任务](tasks/2026-09-25-ios2173-link-only-distribution.md)与[证据](../verification/2026-09-25-ios2173-link-only-distribution.md)。
+
 ## 2026-09-24 iOS 2144 旧账号 L07：真机定位到本地加密身份指纹不一致（当前）
 
 用户确认 2144 旧账号 L07 早于 2172 安装，同一 iPhone 新账号可登录。20:19:57 +08 真机再次复现后，过滤的安全事件依次为 `E2EE_ACCOUNT_SELECT_BEGIN`、`E2EE_CONTINUITY_FINGERPRINT_MISMATCH`、`E2EE_ACCOUNT_SELECT_CONTINUITY_MISMATCH`，同属旧账号。2144 保存的 Matrix 绑定 Ed25519 指纹与现存客户端指纹不等；直接失败条件已确定，最初为何分叉仍未知。SDK 在缺 Olm pickle 时可能于应用校验前新建并上传身份，这是源码风险，尚未证明在故障机发生。用户已接受保留旧库后显式建立新设备及旧消息可能无法解密的后果；[ADR-0086](../adr/0086-ios-retained-matrix-identity-recovery.md)与[实施计划](../superpowers/plans/2026-09-24-ios-retained-identity-recovery.md)的 Domain/Quality-Security **设计**评审通过。`0.4.7+2173` 源码已实现只读预检、旧库归档、授权确认与安全启动，Windows 全量 Flutter 回归 4230 项通过、9 项跳过，新增损坏新设备密钥的失败关闭测试已红绿通过；实施 Domain 与 Quality/Security 源码复核通过。macOS iOS Simulator SQLCipher/WAL 4/4 与 Keychain 1/1 已通过；健康旧版真机不卸载覆盖尚未验收，2173 CI 原 IPA 已构建并校验，SHA256 `d05e4ea1…`，等待旧企业身份纯回签与真机覆盖验收，尚未生产发布。2172 启动错误仍未独立证实同根，旧 2172 包继续停发。见[独立任务记录](tasks/2026-09-24-ios2144-old-account-l07.md)与[脱敏事件/红绿测试证据](../verification/2026-09-24-ios2144-old-account-l07.md)。
