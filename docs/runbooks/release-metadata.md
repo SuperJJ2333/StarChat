@@ -59,3 +59,9 @@ python scripts/verify_ios_enterprise_ipa.py <最终IPA绝对路径> --bundle-id 
 用户明确要求官网 iOS 下载/安装链接更新到 0.4.7/2173，同时保持应用内更新检查设置不变；随后明确接受既有企业签名服务的两库、`flag` 与 Runner 加载命令注入，要求直接发布。此**单次、精确 SHA** 例外详见[任务](../workflow/tasks/2026-09-25-ios2173-link-only-distribution.md)及[证据](../verification/2026-09-25-ios2173-link-only-distribution.md)，不改变上面的常规纯回签与真机覆盖门禁。
 
 本次使用 `scripts/publish_ios_static_links.py`，而非会写 `app_ios_*` 的 `release_metadata.py publish`。它要求最终 IPA 签名权益证据、CI/最终双 SHA、固定四项差异、官网三静态文件 SHA 前态、Android/iOS 共十项设置完整前态；在共享发布锁内重检并写 0700 备份，只落不可变 IPA、安装清单、下载页和首页 iOS 文案，再检查公网小元数据及十项设置未变。已发布 IPA 的哈希不等于真机覆盖升级、旧数据保留或注入代码运行安全的证明；仍须单独收集设备结果。
+
+## 2026-09-25 iOS 2173 已发布官网包的应用内弹窗启用
+
+用户在前述官网分发后明确要求启用 iOS 2173 应用内更新弹窗。本次用 `scripts/publish_ios_update_popup.py` 对**已发布且精确匹配上述一次性例外记录**的 2173 IPA 做设置切换；这不是后续 IPA 的通用豁免。命令输入之前官网发布的 `release.json`、私有备份中的 `result.json`、官网根目录、全新私有备份目录、非空新版说明及唯一审计 trace。它在共享发布锁内核对记录与固定签名差异、服务器 IPA SHA/大小、三个官网静态 SHA、公网 HEAD/小元数据、十项设置前态和空审计 trace，然后仅通过 `SettingService.set_many` 设置 `app_ios_latest_version=0.4.7`、`app_ios_latest_build=2173`、`app_ios_update_notes`。写入后核对十项设置及恰好三条审计；不改 iOS URL/最低支持 build 或 Android 设置。生产备份和验证见[弹窗任务](../workflow/tasks/2026-09-25-ios2173-update-popup.md)与[证据](../verification/2026-09-25-ios2173-update-popup.md)。
+
+当前设置服务的前态检查与写入不在同一数据库事务。发布时保持其他设置操作暂停，发布后核对完整现值与审计；若结果不明，先检查现值/trace，不能盲目重放或静默回退。将来若再次使用同类设置发布器，应先把 expected 比较纳入写事务。

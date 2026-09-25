@@ -1,14 +1,18 @@
 # 移动交付恢复索引
 
-## 2026-09-25 iOS 0.4.7/2173 官网链接已分发，未启用 2173 更新弹窗
+## 2026-09-25 iOS 0.4.7/2173 应用内更新弹窗已发布（当前）
+
+用户反馈官网分发的 2173 包“使用没问题”，随后明确要求推送更新弹窗。现已通过独立的仅 iOS 设置发布器，将应用内最新版本改为 0.4.7/2173，并更新本版说明；最低支持 build 仍为 3，属于非强制更新，按钮沿用已发布的 HTTPS 安装页。Android 五项设置与 iOS 下载 URL 均未变化。服务器最终 IPA SHA256 `29d9946b…acc3d0`、官网静态哈希、公网小元数据检查、十项设置回读及三条审计通过。发布后的首次独立回读恰遇 API 容器重建，检查进程退出 137；稍后容器 healthy、HTTPS ready、十项设置回读和官网检查再次通过。用户反馈不等于独立证明旧数据覆盖升级或后台提醒的全部场景。见[任务](tasks/2026-09-25-ios2173-update-popup.md)与[发布证据](../verification/2026-09-25-ios2173-update-popup.md)。
+
+## 2026-09-25 iOS 0.4.7/2173 官网链接分发（前一阶段）
 
 用户明确只更新官网下载/安装链接，不触发应用内弹窗，并接受既有企业签名服务对 IPA 注入两库/`flag` 的方式后要求直接发布。本次针对精确 CI/final SHA 和四项已知差异记录一次性例外；签名身份、旧 App ID/Keychain、生产 APNs 通过，归档 2144 具有同形态注入。官网 2173 IPA、manifest、下载页与首页已发布，服务器和工作站 HTTPS 小元数据/HEAD 回读通过；10 项更新设置前后相同，应用内 iOS 检查仍 2144，Android 仍 2172，无应用内 2173 弹窗。健康旧版 iPhone 的不卸载覆盖与旧数据保留、后台提醒仍待真机验证，不能宣称完成。见[任务](tasks/2026-09-25-ios2173-link-only-distribution.md)与[证据](../verification/2026-09-25-ios2173-link-only-distribution.md)。
 
-## 2026-09-24 iOS 2144 旧账号 L07：真机定位到本地加密身份指纹不一致（当前）
+## 2026-09-24 iOS 2144 旧账号 L07：真机定位到本地加密身份指纹不一致（历史定位）
 
-用户确认 2144 旧账号 L07 早于 2172 安装，同一 iPhone 新账号可登录。20:19:57 +08 真机再次复现后，过滤的安全事件依次为 `E2EE_ACCOUNT_SELECT_BEGIN`、`E2EE_CONTINUITY_FINGERPRINT_MISMATCH`、`E2EE_ACCOUNT_SELECT_CONTINUITY_MISMATCH`，同属旧账号。2144 保存的 Matrix 绑定 Ed25519 指纹与现存客户端指纹不等；直接失败条件已确定，最初为何分叉仍未知。SDK 在缺 Olm pickle 时可能于应用校验前新建并上传身份，这是源码风险，尚未证明在故障机发生。用户已接受保留旧库后显式建立新设备及旧消息可能无法解密的后果；[ADR-0086](../adr/0086-ios-retained-matrix-identity-recovery.md)与[实施计划](../superpowers/plans/2026-09-24-ios-retained-identity-recovery.md)的 Domain/Quality-Security **设计**评审通过。`0.4.7+2173` 源码已实现只读预检、旧库归档、授权确认与安全启动，Windows 全量 Flutter 回归 4230 项通过、9 项跳过，新增损坏新设备密钥的失败关闭测试已红绿通过；实施 Domain 与 Quality/Security 源码复核通过。macOS iOS Simulator SQLCipher/WAL 4/4 与 Keychain 1/1 已通过；健康旧版真机不卸载覆盖尚未验收，2173 CI 原 IPA 已构建并校验，SHA256 `d05e4ea1…`，等待旧企业身份纯回签与真机覆盖验收，尚未生产发布。2172 启动错误仍未独立证实同根，旧 2172 包继续停发。见[独立任务记录](tasks/2026-09-24-ios2144-old-account-l07.md)与[脱敏事件/红绿测试证据](../verification/2026-09-24-ios2144-old-account-l07.md)。
+用户确认 2144 旧账号 L07 早于 2172 安装，同一 iPhone 新账号可登录。20:19:57 +08 真机再次复现后，过滤的安全事件依次为 `E2EE_ACCOUNT_SELECT_BEGIN`、`E2EE_CONTINUITY_FINGERPRINT_MISMATCH`、`E2EE_ACCOUNT_SELECT_CONTINUITY_MISMATCH`，同属旧账号。2144 保存的 Matrix 绑定 Ed25519 指纹与现存客户端指纹不等；直接失败条件已确定，最初为何分叉仍未知。SDK 在缺 Olm pickle 时可能于应用校验前新建并上传身份，这是源码风险，尚未证明在故障机发生。用户已接受保留旧库后显式建立新设备及旧消息可能无法解密的后果；[ADR-0086](../adr/0086-ios-retained-matrix-identity-recovery.md)与[实施计划](../superpowers/plans/2026-09-24-ios-retained-identity-recovery.md)的 Domain/Quality-Security **设计**评审通过。`0.4.7+2173` 源码已实现只读预检、旧库归档、授权确认与安全启动，Windows 全量 Flutter 回归 4230 项通过、9 项跳过，新增损坏新设备密钥的失败关闭测试已红绿通过；实施 Domain 与 Quality/Security 源码复核通过。macOS iOS Simulator SQLCipher/WAL 4/4 与 Keychain 1/1 已通过；健康旧版真机不卸载覆盖尚未验收，2173 CI 原 IPA 已构建并校验，SHA256 `d05e4ea1…`。此处记录的是当时尚未发布的阶段，后续用户接受精确注入例外并发布官网与弹窗，见顶部条目。2172 启动错误仍未独立证实同根，旧 2172 包继续停发。见[独立任务记录](tasks/2026-09-24-ios2144-old-account-l07.md)与[脱敏事件/红绿测试证据](../verification/2026-09-24-ios2144-old-account-l07.md)。
 
-## 2026-09-24 iOS 企业回签 IPA 源码门禁（当前）
+## 2026-09-24 iOS 企业回签 IPA 源码门禁（历史阶段）
 
 用户确认可暂用其他企业签名，但必须覆盖升级并保留 iPhone 旧数据。发布前源码门禁已增加最终 IPA 身份/权益检查、服务端重新解析上传包、旧版 Team/App ID/Keychain 连续性、最终同 SHA 真机覆盖记录，以及 CI 原 IPA 与回签 IPA 全部非签名 Payload 的实际比对。相关 Python 联跑 217 项通过、1 项跳过；既有 2172 回签包的比对预期失败，发现新增两个动态库、一个文件及 Runner 加载命令变化。服务器归档 2134/2144 与回签 2172 虽为同一企业证书/Team/Keychain，2172 换了 App ID 且无生产 APNs，继续拒绝发布。无需用户重传旧 IPA；健康旧版 iPhone 的保留数据覆盖结果仍待验证。没有新增生产写入。见[任务](tasks/2026-09-24-ios-enterprise-ipa-validation.md)、[验证记录](../verification/2026-09-24-ios-enterprise-ipa-validation.md)、[2172 包体比对](../verification/2026-09-24-ios2144-old-account-l07.md)和[计划](../superpowers/plans/2026-09-24-ios-enterprise-ipa-validation.md)。
 
