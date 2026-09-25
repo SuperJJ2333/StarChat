@@ -11,13 +11,15 @@ import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../core/business_auth_contracts.dart';
 import 'registration_controller.dart';
+import 'phone_number_format.dart';
 
 final class RegistrationPage extends StatefulWidget {
-  const RegistrationPage(
-      {super.key,
-      required this.controller,
-      required this.onVerification,
-      required this.onBack});
+  const RegistrationPage({
+    super.key,
+    required this.controller,
+    required this.onVerification,
+    required this.onBack,
+  });
   final RegistrationController controller;
   final ValueChanged<String> onVerification;
   final VoidCallback onBack;
@@ -37,6 +39,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   bool _passwordVisible = false;
   bool _confirmationVisible = false;
   bool _submittedAttempted = false;
+  bool _phoneFormatAttempted = false;
+  bool _phoneFormatValidated = false;
   // 邀请码校验状态机（BUG 1）：防抖触发、8s 超时、可"重新加载"。
   InvitationValidationState _inviteState = InvitationValidationState.initial;
   String _inviteMessage = '';
@@ -136,63 +140,76 @@ final class _RegistrationPageState extends State<RegistrationPage> {
       InvitationValidationState.ready => const Color(0xFF07C160),
       InvitationValidationState.loading => WeChatColors.textSecondary,
       InvitationValidationState.networkError ||
-      InvitationValidationState.serverError =>
-        WeChatColors.warning,
+      InvitationValidationState.serverError => WeChatColors.warning,
       _ => WeChatColors.danger,
     };
-    final retryable = _inviteState == InvitationValidationState.networkError ||
+    final retryable =
+        _inviteState == InvitationValidationState.networkError ||
         _inviteState == InvitationValidationState.serverError;
     return Padding(
       key: const Key('auth-invitation-status'),
       padding: const EdgeInsets.only(top: 6),
-      child: Row(children: [
-        if (_inviteState == InvitationValidationState.loading)
-          const SizedBox(
+      child: Row(
+        children: [
+          if (_inviteState == InvitationValidationState.loading)
+            const SizedBox(
               width: 12,
               height: 12,
-              child: CupertinoActivityIndicator(radius: 6)),
-        if (_inviteState == InvitationValidationState.ready)
-          const Icon(CupertinoIcons.check_mark,
-              size: 13, color: Color(0xFF07C160)),
-        if (retryable)
-          CupertinoButton(
-            key: const Key('auth-invitation-reload'),
-            minimumSize: Size.zero,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            onPressed: _runInvitationCheck,
-            child: const Text('重新加载',
-                style:
-                    TextStyle(fontSize: 12, color: WeChatColors.brandPrimary)),
+              child: CupertinoActivityIndicator(radius: 6),
+            ),
+          if (_inviteState == InvitationValidationState.ready)
+            const Icon(
+              CupertinoIcons.check_mark,
+              size: 13,
+              color: Color(0xFF07C160),
+            ),
+          if (retryable)
+            CupertinoButton(
+              key: const Key('auth-invitation-reload'),
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              onPressed: _runInvitationCheck,
+              child: const Text(
+                '重新加载',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: WeChatColors.brandPrimary,
+                ),
+              ),
+            ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              _inviteMessage,
+              style: TextStyle(fontSize: 12, color: color),
+            ),
           ),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(_inviteMessage,
-              style: TextStyle(fontSize: 12, color: color)),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
   void _saveDraft() => widget.controller.saveDraft(
-        nickname: nickname.text,
-        username: username.text,
-        password: password.text,
-        passwordConfirmation: passwordConfirmation.text,
-        invitationCode: invitation.text,
-        email: email.text,
-      );
+    nickname: nickname.text,
+    username: username.text,
+    password: password.text,
+    passwordConfirmation: passwordConfirmation.text,
+    invitationCode: invitation.text,
+    email: email.text,
+  );
 
   Map<String, String> get _errors {
     final errors = RegistrationController.validateFields(
-        nickname: nickname.text,
-        username: username.text,
-        email: email.text,
-        password: password.text,
-        passwordConfirmation: passwordConfirmation.text,
-        invitationCode: invitation.text);
+      nickname: nickname.text,
+      username: username.text,
+      email: email.text,
+      password: password.text,
+      passwordConfirmation: passwordConfirmation.text,
+      invitationCode: invitation.text,
+    );
     if (_phoneMode) {
       errors.remove('email');
-      if (!RegExp(r'^1[3-9]\d{9}$').hasMatch(phone.text.trim())) {
+      if (normalizeMainlandPhone(phone.text) == null) {
         errors['phone'] = '请输入中国大陆 11 位手机号';
       }
     }
@@ -208,6 +225,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
     if (message == null ||
         (serverMessage == null &&
             !_submittedAttempted &&
+            !(key == 'phone' && _phoneFormatAttempted) &&
             key != 'password_confirmation')) {
       return const SizedBox.shrink();
     }
@@ -222,6 +240,14 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   }
 
   Future<void> _sendVerification() async {
+    if (_phoneMode) {
+      final valid = _errors['phone'] == null;
+      setState(() {
+        _phoneFormatAttempted = true;
+        _phoneFormatValidated = valid;
+      });
+      if (!valid) return;
+    }
     if (widget.controller.state.registrationSession != null) {
       await widget.controller.resend();
       return;
@@ -235,13 +261,14 @@ final class _RegistrationPageState extends State<RegistrationPage> {
       return;
     }
     final ok = await widget.controller.register(
-        username: username.text.trim(),
-        nickname: nickname.text.trim(),
-        email: email.text.trim(),
-        phone: _phoneMode ? phone.text.trim() : null,
-        password: password.text,
-        passwordConfirmation: passwordConfirmation.text,
-        invitationCode: invitation.text.trim());
+      username: username.text.trim(),
+      nickname: nickname.text.trim(),
+      email: email.text.trim(),
+      phone: _phoneMode ? normalizeMainlandPhone(phone.text) : null,
+      password: password.text,
+      passwordConfirmation: passwordConfirmation.text,
+      invitationCode: invitation.text.trim(),
+    );
     if (ok && mounted) setState(() {});
   }
 
@@ -251,215 +278,259 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         widget.controller.state.status == RegistrationFlowStatus.submitting;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return ImmersiveAuthScaffold(
-        child: ListView(
-            key: const Key('auth-registration-scroll'),
-            padding: EdgeInsets.fromLTRB(WeChatSpacing.xl, 96, WeChatSpacing.xl,
-                WeChatSpacing.xl + bottomInset),
-            children: [
+      child: ListView(
+        key: const Key('auth-registration-scroll'),
+        padding: EdgeInsets.fromLTRB(
+          WeChatSpacing.xl,
+          96,
+          WeChatSpacing.xl,
+          WeChatSpacing.xl + bottomInset,
+        ),
+        children: [
           Center(
-              child: Form(
-                  key: const Key('auth-registration-form'),
-                  child: AuthSurfaceCard(
-                      child: AutofillGroup(
-                          child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                        const AuthBrandMark(),
-                        const SizedBox(height: WeChatSpacing.lg),
-                        const Text('创建畅聊账号',
+            child: Form(
+              key: const Key('auth-registration-form'),
+              child: AuthSurfaceCard(
+                child: AutofillGroup(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const AuthBrandMark(),
+                      const SizedBox(height: WeChatSpacing.lg),
+                      const Text(
+                        '创建畅聊账号',
+                        style: TextStyle(
+                          fontSize: WeChatTypography.display,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Text(
+                        '使用邀请码注册安全账号',
+                        style: TextStyle(
+                          color: WeChatColors.textSecondary,
+                          fontSize: WeChatTypography.subhead,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      if (widget.controller.gateway is PhoneAuthGateway) ...[
+                        CupertinoSlidingSegmentedControl<bool>(
+                          groupValue: _phoneMode,
+                          children: const {
+                            false: Text('邮箱注册'),
+                            true: Text('手机号注册'),
+                          },
+                          onValueChanged:
+                              loading ||
+                                  widget.controller.state.registrationSession !=
+                                      null
+                              ? (_) {}
+                              : (value) =>
+                                    setState(() => _phoneMode = value ?? false),
+                        ),
+                        const SizedBox(height: WeChatSpacing.md),
+                      ],
+                      if (_phoneMode)
+                        walletStepIndicator(
+                          context,
+                          const ['填写注册信息', '验证手机号'],
+                          0,
+                          keyPrefix: 'phone-registration-step',
+                        ),
+                      AuthTextField(
+                        key: const Key('auth-registration-nickname'),
+                        label: '用户名',
+                        placeholder: '可填写中文昵称',
+                        controller: nickname,
+                        enabled: !loading,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      _fieldError('nickname'),
+                      const SizedBox(height: WeChatSpacing.md),
+                      AuthTextField(
+                        key: const Key('auth-registration-username'),
+                        label: '畅聊号',
+                        placeholder: '3-64 位字母、数字、下划线或连字符',
+                        controller: username,
+                        enabled: !loading,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      _fieldError('username'),
+                      const SizedBox(height: WeChatSpacing.md),
+                      AuthTextField(
+                        key: const Key('auth-registration-password'),
+                        label: '密码',
+                        placeholder: '至少 12 位',
+                        controller: password,
+                        enabled: !loading,
+                        obscureText: !_passwordVisible,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                        trailing: CupertinoButton(
+                          key: const Key(
+                            'auth-registration-password-visibility',
+                          ),
+                          padding: EdgeInsets.zero,
+                          onPressed: loading
+                              ? null
+                              : () => setState(
+                                  () => _passwordVisible = !_passwordVisible,
+                                ),
+                          child: Icon(
+                            _passwordVisible
+                                ? CupertinoIcons.eye_slash
+                                : CupertinoIcons.eye,
+                            size: 19,
+                            color: WeChatColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      _fieldError('password'),
+                      const SizedBox(height: WeChatSpacing.md),
+                      AuthTextField(
+                        key: const Key('auth-registration-password-confirm'),
+                        label: '再次输入密码',
+                        placeholder: '再次输入密码',
+                        controller: passwordConfirmation,
+                        enabled: !loading,
+                        obscureText: !_confirmationVisible,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) => setState(() {}),
+                        trailing: CupertinoButton(
+                          key: const Key(
+                            'auth-registration-password-confirm-visibility',
+                          ),
+                          padding: EdgeInsets.zero,
+                          onPressed: loading
+                              ? null
+                              : () => setState(
+                                  () => _confirmationVisible =
+                                      !_confirmationVisible,
+                                ),
+                          child: Icon(
+                            _confirmationVisible
+                                ? CupertinoIcons.eye_slash
+                                : CupertinoIcons.eye,
+                            size: 19,
+                            color: WeChatColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      _fieldError('password_confirmation'),
+                      const SizedBox(height: WeChatSpacing.md),
+                      AuthTextField(
+                        key: const Key('auth-registration-invitation'),
+                        label: '邀请码',
+                        placeholder: '邀请码（必填）',
+                        controller: invitation,
+                        enabled: !loading,
+                        textInputAction: TextInputAction.next,
+                        onChanged: (_) {
+                          setState(() {});
+                          _scheduleInvitationCheck();
+                        },
+                      ),
+                      _inviteStatusRow(),
+                      _fieldError('invitation_code'),
+                      const SizedBox(height: WeChatSpacing.md),
+                      AuthTextField(
+                        key: Key(
+                          _phoneMode
+                              ? 'auth-registration-phone'
+                              : 'auth-registration-email',
+                        ),
+                        label: _phoneMode ? '手机号' : '邮箱',
+                        placeholder: _phoneMode
+                            ? '中国大陆 +86'
+                            : 'name@example.invalid',
+                        controller: _phoneMode ? phone : email,
+                        enabled:
+                            !loading &&
+                            (!_phoneMode ||
+                                widget.controller.state.registrationSession ==
+                                    null),
+                        keyboardType: _phoneMode
+                            ? TextInputType.phone
+                            : TextInputType.emailAddress,
+                        textInputAction: TextInputAction.done,
+                        onChanged: (_) => setState(() {
+                          if (_phoneMode && _phoneFormatAttempted) {
+                            _phoneFormatValidated =
+                                normalizeMainlandPhone(phone.text) != null;
+                          }
+                        }),
+                        trailing: AuthCodeRequestButton(
+                          buttonKey: const Key('auth-registration-send-code'),
+                          label: widget.controller.state.resendAfterSeconds > 0
+                              ? '${widget.controller.state.resendAfterSeconds}s'
+                              : (_phoneMode ? '获取验证码' : '发送验证邮件'),
+                          filled: !_phoneMode,
+                          onPressed: loading || _resendCoolingDown
+                              ? null
+                              : _sendVerification,
+                        ),
+                      ),
+                      _fieldError(_phoneMode ? 'phone' : 'email'),
+                      if (_phoneMode && _phoneFormatValidated)
+                        const Padding(
+                          padding: EdgeInsets.only(top: WeChatSpacing.xs),
+                          child: Text(
+                            '手机号格式正确',
+                            key: Key('auth-registration-phone-valid'),
                             style: TextStyle(
-                                fontSize: WeChatTypography.display,
-                                fontWeight: FontWeight.w700)),
-                        const Text('使用邀请码注册安全账号',
-                            style: TextStyle(
-                                color: WeChatColors.textSecondary,
-                                fontSize: WeChatTypography.subhead)),
-                        const SizedBox(height: 20),
-                        if (widget.controller.gateway is PhoneAuthGateway) ...[
-                          CupertinoSlidingSegmentedControl<bool>(
-                              groupValue: _phoneMode,
-                              children: const {
-                                false: Text('邮箱注册'),
-                                true: Text('手机号注册')
-                              },
-                              onValueChanged: loading ||
-                                      widget.controller.state
-                                              .registrationSession !=
-                                          null
-                                  ? (_) {}
-                                  : (value) => setState(
-                                      () => _phoneMode = value ?? false)),
-                          const SizedBox(height: WeChatSpacing.md),
-                        ],
-                        if (_phoneMode)
-                          walletStepIndicator(
-                              context, const ['填写注册信息', '验证手机号'], 0,
-                              keyPrefix: 'phone-registration-step'),
-                        AuthTextField(
-                            key: const Key('auth-registration-nickname'),
-                            label: '用户名',
-                            placeholder: '可填写中文昵称',
-                            controller: nickname,
-                            enabled: !loading,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => setState(() {})),
-                        _fieldError('nickname'),
-                        const SizedBox(height: WeChatSpacing.md),
-                        AuthTextField(
-                            key: const Key('auth-registration-username'),
-                            label: '畅聊号',
-                            placeholder: '3-64 位字母、数字、下划线或连字符',
-                            controller: username,
-                            enabled: !loading,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => setState(() {})),
-                        _fieldError('username'),
-                        const SizedBox(height: WeChatSpacing.md),
-                        AuthTextField(
-                            key: const Key('auth-registration-password'),
-                            label: '密码',
-                            placeholder: '至少 12 位',
-                            controller: password,
-                            enabled: !loading,
-                            obscureText: !_passwordVisible,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => setState(() {}),
-                            trailing: CupertinoButton(
-                                key: const Key(
-                                    'auth-registration-password-visibility'),
-                                padding: EdgeInsets.zero,
-                                onPressed: loading
-                                    ? null
-                                    : () => setState(() =>
-                                        _passwordVisible = !_passwordVisible),
-                                child: Icon(
-                                    _passwordVisible
-                                        ? CupertinoIcons.eye_slash
-                                        : CupertinoIcons.eye,
-                                    size: 19,
-                                    color: WeChatColors.textSecondary))),
-                        _fieldError('password'),
-                        const SizedBox(height: WeChatSpacing.md),
-                        AuthTextField(
-                            key:
-                                const Key('auth-registration-password-confirm'),
-                            label: '再次输入密码',
-                            placeholder: '再次输入密码',
-                            controller: passwordConfirmation,
-                            enabled: !loading,
-                            obscureText: !_confirmationVisible,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => setState(() {}),
-                            trailing: CupertinoButton(
-                                key: const Key(
-                                    'auth-registration-password-confirm-visibility'),
-                                padding: EdgeInsets.zero,
-                                onPressed: loading
-                                    ? null
-                                    : () => setState(() =>
-                                        _confirmationVisible =
-                                            !_confirmationVisible),
-                                child: Icon(
-                                    _confirmationVisible
-                                        ? CupertinoIcons.eye_slash
-                                        : CupertinoIcons.eye,
-                                    size: 19,
-                                    color: WeChatColors.textSecondary))),
-                        _fieldError('password_confirmation'),
-                        const SizedBox(height: WeChatSpacing.md),
-                        AuthTextField(
-                            key: const Key('auth-registration-invitation'),
-                            label: '邀请码',
-                            placeholder: '邀请码（必填）',
-                            controller: invitation,
-                            enabled: !loading,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) {
-                              setState(() {});
-                              _scheduleInvitationCheck();
-                            }),
-                        _inviteStatusRow(),
-                        _fieldError('invitation_code'),
-                        const SizedBox(height: WeChatSpacing.md),
-                        AuthTextField(
-                            key: Key(_phoneMode
-                                ? 'auth-registration-phone'
-                                : 'auth-registration-email'),
-                            label: _phoneMode ? '手机号' : '邮箱',
-                            placeholder: _phoneMode
-                                ? '中国大陆 +86'
-                                : 'name@example.invalid',
-                            controller: _phoneMode ? phone : email,
-                            enabled: !loading,
-                            keyboardType: _phoneMode
-                                ? TextInputType.phone
-                                : TextInputType.emailAddress,
-                            textInputAction: TextInputAction.done,
-                            onChanged: (_) => setState(() {}),
-                            trailing: CupertinoButton(
-                                key: const Key('auth-registration-send-code'),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 8),
-                                onPressed: loading || _resendCoolingDown
-                                    ? null
-                                    : _sendVerification,
-                                child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: WeChatSpacing.sm,
-                                        vertical: WeChatSpacing.xs),
-                                    decoration: BoxDecoration(
-                                        color: loading || _resendCoolingDown
-                                            ? WeChatColors.textTertiary
-                                            : WeChatColors.brandPrimary,
-                                        borderRadius: BorderRadius.circular(
-                                            WeChatRadius.tag)),
-                                    child: Text(
-                                        widget.controller.state
-                                                    .resendAfterSeconds >
-                                                0
-                                            ? '${widget.controller.state.resendAfterSeconds}s'
-                                            : (_phoneMode ? '获取验证码' : '发送验证邮件'),
-                                        style: const TextStyle(
-                                            color: CupertinoColors.white,
-                                            fontSize: WeChatTypography.caption,
-                                            fontWeight: FontWeight.w600))))),
-                        _fieldError(_phoneMode ? 'phone' : 'email'),
-                        if (widget.controller.state.message != null &&
-                            widget.controller.state.fieldErrors.isEmpty)
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(top: WeChatSpacing.sm),
-                            child: AuthErrorMessage(
-                              key: const Key('auth-registration-error'),
-                              message: widget.controller.state.message!,
-                              compact: true,
+                              color: WeChatColors.brandPrimary,
+                              fontSize: WeChatTypography.caption,
                             ),
                           ),
-                        if (widget.controller.state.registrationSession !=
-                            null) ...[
-                          const SizedBox(height: WeChatSpacing.sm),
-                          SizedBox(
-                              width: double.infinity,
-                              child: ModernActionButton(
-                                  icon: ChangliaoIcons.confirm,
-                                  label: _phoneMode ? '继续验证手机' : '继续验证邮箱',
-                                  onPressed: () => widget.onVerification(widget
-                                      .controller.state.registrationSession!))),
-                        ],
+                        ),
+                      if (widget.controller.state.message != null &&
+                          widget.controller.state.fieldErrors.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: WeChatSpacing.sm),
+                          child: AuthErrorMessage(
+                            key: const Key('auth-registration-error'),
+                            message: widget.controller.state.message!,
+                            compact: true,
+                          ),
+                        ),
+                      if (widget.controller.state.registrationSession !=
+                          null) ...[
                         const SizedBox(height: WeChatSpacing.sm),
                         SizedBox(
-                            width: double.infinity,
-                            child: ModernActionButton(
-                                icon: ChangliaoIcons.back,
-                                label: '返回登录',
-                                kind: ModernActionKind.secondary,
-                                onPressed: loading
-                                    ? null
-                                    : () {
-                                        _saveDraft();
-                                        widget.onBack();
-                                      })),
-                      ]))))),
-        ]));
+                          width: double.infinity,
+                          child: ModernActionButton(
+                            icon: ChangliaoIcons.confirm,
+                            label: _phoneMode ? '继续验证手机' : '继续验证邮箱',
+                            onPressed: () => widget.onVerification(
+                              widget.controller.state.registrationSession!,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: WeChatSpacing.sm),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ModernActionButton(
+                          icon: ChangliaoIcons.back,
+                          label: '返回登录',
+                          kind: ModernActionKind.secondary,
+                          onPressed: loading
+                              ? null
+                              : () {
+                                  _saveDraft();
+                                  widget.onBack();
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

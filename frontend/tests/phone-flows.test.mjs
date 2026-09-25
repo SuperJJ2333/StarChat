@@ -1,14 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { getScreen } from "../src/catalog/screens.js";
 import { contractFor } from "../src/catalog/contracts.js";
 class Node {
- constructor(tag) { this.tag=tag; this.children=[]; this.dataset={}; this.attributes={}; this.handlers={}; this.classList={add(){},toggle(){}}; }
+ constructor(tag) { this.tag=tag; this.children=[]; this.dataset={}; this.attributes={}; this.handlers={}; this.classList={add:(name)=>{this.className=[this.className,name].filter(Boolean).join(' ');},toggle(){}}; }
  append(...nodes) { assert.ok(nodes.every(n=>n!==undefined),"undefined child"); this.children.push(...nodes); }
  replaceChildren(...nodes) { this.children=[]; this.append(...nodes); }
  setAttribute(k,v) { this.attributes[k]=v; }
  removeAttribute(k) { delete this.attributes[k]; }
- addEventListener(event, handler) { this.handlers[event]=handler; }
+ addEventListener(event, handler) {
+   const previous=this.handlers[event];
+   this.handlers[event]=previous ? (...args)=>{previous(...args);handler(...args);} : handler;
+ }
 }
 const walk=n=>[n,...n.children.flatMap(walk)];
 for (const [id,check] of [
@@ -54,10 +58,10 @@ test("recharge demo advances to payment without claiming credit", async () => {
 
 
 
-test("phone OTP validates live and explains consent before send", async () => {
+test("phone OTP validates on tap beside the phone field and explains consent", async () => {
  globalThis.HTMLElement=class {};
  globalThis.document={createElement:tag=>new Node(tag),createElementNS:(_ns,tag)=>new Node(tag)};
- const nodes=walk(await getScreen("phone-login-phone-error").component());
+ const nodes=walk(await getScreen("phone-login-phone-default").component());
  const phone=nodes.find(n=>n.tag==="input");
  const button=nodes.find(n=>n.attributes.label==="获取验证码");
  for (const node of nodes.filter(n=>n.tag.startsWith('app-'))) {
@@ -67,23 +71,130 @@ test("phone OTP validates live and explains consent before send", async () => {
    assert.ok(attributes.every(name=>allowed.includes(name)),
      `${node.tag} rejects attributes: ${attributes.filter(name=>!allowed.includes(name)).join(', ')}`);
  }
- assert.equal(button.attributes.disabled,"true");
+ assert.equal(button.attributes.disabled,undefined);
  // StrictElement does not observe attributes: mounted button state only
  // changes when the page explicitly re-renders the existing component.
  button.renderContract = () => {
    button.renderedDisabled = button.attributes.disabled === 'true';
  };
  button.renderContract();
+ button.handlers.click();
+ const phoneField=nodes.find(n=>n.className==='c-phone-flows__phone-field');
+ const formatError=nodes.find(n=>n.textContent==='请输入中国大陆 11 位手机号');
+ assert.ok(formatError);
+ assert.ok(phoneField?.children[0].children.includes(phone));
+ assert.equal(phoneField.children[1],formatError, 'format error must sit directly under the phone input');
+ assert.equal(button.attributes.label,'获取验证码', 'invalid phone must not start cooldown');
  phone.value="+86 138 0000 0001";
  phone.handlers.input();
  assert.equal(button.attributes.disabled,undefined);
  assert.equal(button.renderedDisabled,false);
  assert.ok(nodes.some(n=>n.tag==='div' && n.dataset.eligible==='true'));
  button.handlers.click();
+ assert.ok(nodes.some(n=>n.textContent==='手机号格式正确'));
  assert.ok(nodes.some(n=>n.textContent==="请先阅读并同意用户协议和隐私政策"));
  phone.value="1380000000x";
  phone.handlers.input();
- assert.equal(button.attributes.disabled,"true");
- assert.equal(button.renderedDisabled,true);
+ assert.equal(button.attributes.disabled,undefined);
+ assert.equal(button.renderedDisabled,false);
  assert.ok(nodes.some(n=>n.textContent==="邀请码（仅新用户必填）"));
+});
+
+test("phone OTP and dark auth background expose visible interaction styles", () => {
+ const css=readFileSync(new URL('../src/styles/primitives.css', import.meta.url), 'utf8');
+ assert.match(css, /\.c-phone-flows__otp-row app-secondary-button \.c-secondary-button\s*\{[^}]*border:[^;]*var\(--color-brand-primary\)/s);
+ assert.match(css, /\.c-phone-flows__otp-row app-secondary-button \.c-secondary-button:active:not\(:disabled\)/);
+ assert.match(css, /\.ui-screen\[data-theme="dark"\] \.p-auth__background/);
+});
+
+test("phone registration can request a code and reports format below the number", async () => {
+ globalThis.HTMLElement=class {};
+ globalThis.document={createElement:tag=>new Node(tag),createElementNS:(_ns,tag)=>new Node(tag)};
+ const nodes=walk(await getScreen('phone-registration-phone-default').component());
+ const phone=nodes.find(n=>n.tag==='input' && n.placeholder==='+86 手机号');
+ const button=nodes.find(n=>n.attributes.label==='获取验证码');
+ assert.ok(button, 'registration must expose a code request action');
+ assert.equal(button.attributes.disabled,undefined);
+ button.handlers.click();
+ const phoneField=nodes.find(n=>n.className==='c-phone-flows__phone-field');
+ assert.equal(phoneField.children[1].textContent,'请输入中国大陆 11 位手机号');
+ assert.equal(button.attributes.label,'获取验证码');
+ phone.value='13800000001';
+ phone.handlers.input();
+ assert.equal(phoneField.children[1].textContent,'手机号格式正确');
+});
+
+test("phone auth pages dismiss the keyboard when the page background is tapped", async () => {
+ globalThis.HTMLElement=class {};
+ let blurred=0;
+ globalThis.document={
+   createElement:tag=>new Node(tag),createElementNS:(_ns,tag)=>new Node(tag),
+   activeElement:{blur(){blurred+=1;}}
+ };
+ for(const id of ['phone-login-phone-default','phone-registration-phone-default']) {
+   const page=walk(await getScreen(id).component()).find(n=>n.className?.split(' ').includes('p-auth'));
+   assert.equal(typeof page.handlers.pointerdown,'function');
+   page.handlers.pointerdown({target:{closest:()=>null}});
+   page.handlers.pointerdown({target:{closest:()=>({tagName:'INPUT'})}});
+ }
+ assert.equal(blurred,2);
+});
+
+test("simulated login 429 counts down without re-submitting or rate-limiting OTP", async () => {
+ globalThis.HTMLElement=class {};
+ const documentHandlers={};
+ globalThis.document={
+   createElement:tag=>new Node(tag),createElementNS:(_ns,tag)=>new Node(tag),
+   addEventListener:(name,handler)=>{documentHandlers[name]=handler;},
+   removeEventListener:(name)=>{delete documentHandlers[name];}
+ };
+ const originalSet=globalThis.setInterval;
+ const originalClear=globalThis.clearInterval;
+ const originalNow=Date.now;
+ const ticks=[];
+ const cleared=[];
+ let now=100000;
+ Date.now=()=>now;
+ globalThis.setInterval=(callback)=>{ticks.push(callback);return ticks.length;};
+ globalThis.clearInterval=(id)=>{cleared.push(id);};
+ try {
+   const nodes=walk(await getScreen('phone-login-phone-default').component());
+   const phone=nodes.find(n=>n.tag==='input' && n.placeholder==='+86 手机号');
+   const otp=nodes.find(n=>n.tag==='input' && n.placeholder==='6 位验证码');
+   const consent=nodes.find(n=>n.tag==='input' && n.type==='checkbox');
+   const button=nodes.find(n=>n.tag==='app-secondary-button');
+   const login=nodes.find(n=>n.tag==='app-action-button' && n.attributes.label==='登录');
+   phone.value='13800000001';
+   otp.value='123456';
+   phone.handlers.input();
+   consent.checked=true;
+   button.handlers.click();
+   assert.equal(nodes.some(n=>n.textContent?.includes('登录频繁')),false);
+   for(let second=0;second<60;second++) ticks.at(-1)();
+   assert.equal(typeof login.handlers.click,'function');
+   login.handlers.click();
+   const warning=nodes.find(n=>n.textContent?.includes('登录频繁'));
+   assert.match(warning.textContent,/演示.*60 秒/);
+   assert.equal(login.attributes.disabled,'true');
+   now+=30000;
+   documentHandlers.visibilitychange();
+   assert.match(warning.textContent,/30 秒/);
+   now+=29000;
+   ticks.at(-1)();
+   assert.match(warning.textContent,/1 秒/);
+   now+=1000;
+   ticks.at(-1)();
+   assert.equal(login.attributes.disabled,undefined);
+   assert.equal(button.attributes.disabled,undefined);
+   assert.equal(warning.textContent,'', 'expiry only permits a new user action');
+   assert.ok(cleared.includes(2));
+   login.handlers.click();
+   login.isConnected=false;
+   ticks.at(-1)();
+   assert.ok(cleared.includes(3), 'unmount must clear the active countdown timer');
+ } finally {
+   globalThis.setInterval=originalSet;
+   globalThis.clearInterval=originalClear;
+   Date.now=originalNow;
+ }
 });

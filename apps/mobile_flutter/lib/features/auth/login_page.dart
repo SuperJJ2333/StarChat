@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'phone_login_controller.dart';
+import 'phone_number_format.dart';
 import '../../core/privacy_consent.dart';
 import 'package:flutter/cupertino.dart';
 
@@ -28,17 +31,26 @@ final class LoginPage extends StatefulWidget {
     this.onRegister,
     this.onUserAgreement,
     this.onPrivacyPolicy,
+    this.now,
   });
 
   final BusinessApiClient api;
-  final Future<void> Function(String phone, String code,
-      {String invitationCode,
-      bool termsAccepted,
-      bool Function()? shouldContinue})? onPhoneLogin;
   final Future<void> Function(
-      String phone, String ticket, String invitationCode,
-      {bool termsAccepted,
-      bool Function()? shouldContinue})? onPhoneInvitationContinue;
+    String phone,
+    String code, {
+    String invitationCode,
+    bool termsAccepted,
+    bool Function()? shouldContinue,
+  })?
+  onPhoneLogin;
+  final Future<void> Function(
+    String phone,
+    String ticket,
+    String invitationCode, {
+    bool termsAccepted,
+    bool Function()? shouldContinue,
+  })?
+  onPhoneInvitationContinue;
   final Future<void> Function(String username, String password)? onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
@@ -47,13 +59,14 @@ final class LoginPage extends StatefulWidget {
   final VoidCallback? onRegister;
   final VoidCallback? onUserAgreement;
   final VoidCallback? onPrivacyPolicy;
+  final DateTime Function()? now;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
 final class _LoginPageState extends State<LoginPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _phone = TextEditingController();
@@ -61,36 +74,86 @@ final class _LoginPageState extends State<LoginPage>
   final _invitation = TextEditingController();
   bool _phoneMode = false;
   late final PhoneLoginController _phoneController = PhoneLoginController(
-      gateway: widget.api,
-      deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}',
-      deviceName: '畅聊移动端')
-    ..addListener(_phoneChanged);
+    gateway: widget.api,
+    deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}',
+    deviceName: '畅聊移动端',
+  )..addListener(_phoneChanged);
   void _phoneChanged() {
     if (mounted) setState(() {});
   }
 
-  String? get _normalizedPhone {
-    var value = _phone.text.replaceAll(RegExp(r'[ \-\(\)]'), '');
-    if (value.startsWith('+86')) {
-      value = value.substring(3);
-    } else if (value.startsWith('86') && value.length == 13) {
-      value = value.substring(2);
-    }
-    return RegExp(r'^1[3-9][0-9]{9}$').hasMatch(value) ? value : null;
-  }
+  String? get _normalizedPhone => normalizeMainlandPhone(_phone.text);
 
   bool get _canRequestPhoneCode =>
-      !_loading &&
-      _invitationTicket == null &&
-      _normalizedPhone != null &&
-      _phoneController.canRequestOtp;
+      !_loading && _invitationTicket == null && _phoneController.canRequestOtp;
+
+  DateTime _now() => widget.now?.call() ?? DateTime.now();
+  DateTime? _loginRetryUntil;
+  Timer? _loginRetryTimer;
+  int _loginRetrySeconds = 0;
+  String? _phoneFormatError;
+  bool _phoneFormatValidated = false;
+
+  String? get _visibleError =>
+      _loginRetrySeconds > 0 ? '登录请求较频繁，请等待 $_loginRetrySeconds 秒后重试' : _error;
+
+  void _showLoginError(String? message, {int? retryAfterSeconds}) {
+    _loginRetryTimer?.cancel();
+    final seconds = retryAfterSeconds?.clamp(1, 86400);
+    setState(() {
+      _error = seconds == null ? message : null;
+      _loginRetryUntil = seconds == null
+          ? null
+          : _now().add(Duration(seconds: seconds));
+      _loginRetrySeconds = seconds ?? 0;
+    });
+    if (seconds != null) {
+      _loginRetryTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _refreshLoginRetry(),
+      );
+    }
+  }
+
+  void _refreshLoginRetry() {
+    final until = _loginRetryUntil;
+    if (until == null || !mounted) return;
+    final seconds = (until.difference(_now()).inMilliseconds / 1000)
+        .ceil()
+        .clamp(0, 86400);
+    if (seconds == _loginRetrySeconds) return;
+    setState(() {
+      _loginRetrySeconds = seconds;
+      if (seconds == 0) _loginRetryUntil = null;
+    });
+    if (seconds == 0) _loginRetryTimer?.cancel();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshLoginRetry();
+  }
 
   Future<void> _requestPhoneCode() async {
     final requestedPhone = _normalizedPhone;
     if (requestedPhone == null) {
-      setState(() => _error = '请输入中国大陆 11 位手机号');
+      setState(() {
+        _phoneFormatError = '请输入中国大陆 11 位手机号';
+        _phoneFormatValidated = false;
+        _error = null;
+      });
       return;
     }
+    setState(() {
+      _phoneFormatError = null;
+      _phoneFormatValidated = true;
+    });
     if (!_agreementAccepted) {
       setState(() => _error = '请先阅读并同意用户协议和隐私政策');
       return;
@@ -134,17 +197,19 @@ final class _LoginPageState extends State<LoginPage>
   String? _error;
 
   String _invitationMessage(PhoneInvitationIssue issue) => switch (issue) {
-        PhoneInvitationIssue.required => '验证码已通过，请输入邀请码后完成注册',
-        PhoneInvitationIssue.invalid => '验证码已通过，邀请码无效，请更换后继续',
-        PhoneInvitationIssue.expired => '验证码已通过，邀请码已过期，请更换后继续',
-        PhoneInvitationIssue.exhausted => '验证码已通过，邀请码使用次数已满，请更换后继续',
-        PhoneInvitationIssue.terms => '验证码已通过，请同意用户协议和隐私政策后继续',
-        PhoneInvitationIssue.uncertain => '验证码已通过，邀请码提交结果待确认；请在本页继续',
-        PhoneInvitationIssue.provisioning => '验证码已通过，聊天账号仍在开通；请稍后在本页继续',
-      };
+    PhoneInvitationIssue.required => '验证码已通过，请输入邀请码后完成注册',
+    PhoneInvitationIssue.invalid => '验证码已通过，邀请码无效，请更换后继续',
+    PhoneInvitationIssue.expired => '验证码已通过，邀请码已过期，请更换后继续',
+    PhoneInvitationIssue.exhausted => '验证码已通过，邀请码使用次数已满，请更换后继续',
+    PhoneInvitationIssue.terms => '验证码已通过，请同意用户协议和隐私政策后继续',
+    PhoneInvitationIssue.uncertain => '验证码已通过，邀请码提交结果待确认；请在本页继续',
+    PhoneInvitationIssue.provisioning => '验证码已通过，聊天账号仍在开通；请稍后在本页继续',
+  };
 
   void _acceptInvitationProof(
-      PhoneInvitationContinuationRequired proof, String phone) {
+    PhoneInvitationContinuationRequired proof,
+    String phone,
+  ) {
     _invitationTicket = proof.ticket;
     _invitationPhone = phone;
     _requiresFreshPhoneCode = false;
@@ -153,6 +218,8 @@ final class _LoginPageState extends State<LoginPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _loginRetryTimer?.cancel();
     _intro.dispose();
     _username.dispose();
     _password.dispose();
@@ -171,13 +238,19 @@ final class _LoginPageState extends State<LoginPage>
       setState(() => _error = '原验证码不可再次提交，请重新获取验证码');
       return;
     }
-    final username =
-        _phoneMode ? _normalizedPhone ?? '' : _username.text.trim();
+    final username = _phoneMode
+        ? _normalizedPhone ?? ''
+        : _username.text.trim();
     final password = _phoneMode ? _code.text.trim() : _password.text;
-    if (_phoneMode &&
-        (!RegExp(r'^1[3-9]\d{9}$').hasMatch(username) ||
-            (!continuing && !RegExp(r'^\d{6}$').hasMatch(password)))) {
-      setState(() => _error = '请输入有效手机号和 6 位验证码');
+    if (_phoneMode && username.isEmpty) {
+      setState(() {
+        _phoneFormatError = '请输入中国大陆 11 位手机号';
+        _phoneFormatValidated = false;
+      });
+      return;
+    }
+    if (_phoneMode && !continuing && !RegExp(r'^\d{6}$').hasMatch(password)) {
+      setState(() => _error = '请输入 6 位验证码');
       return;
     }
     if (continuing && username != _invitationPhone) {
@@ -231,31 +304,41 @@ final class _LoginPageState extends State<LoginPage>
         if (continuing) {
           if (widget.onPhoneInvitationContinue != null) {
             await widget.onPhoneInvitationContinue!(
-                username, continuationTicket, _invitation.text.trim(),
-                termsAccepted: _agreementAccepted,
-                shouldContinue: _loginIsCurrent);
+              username,
+              continuationTicket,
+              _invitation.text.trim(),
+              termsAccepted: _agreementAccepted,
+              shouldContinue: _loginIsCurrent,
+            );
           } else {
             await widget.api.completePhoneLoginInvitation(
-                invitationTicket: continuationTicket,
-                phone: username,
-                invitationCode: _invitation.text.trim(),
-                termsAccepted: _agreementAccepted,
-                deviceKey: _phoneController.deviceKey,
-                deviceName: _phoneController.deviceName,
-                shouldContinue: _loginIsCurrent);
+              invitationTicket: continuationTicket,
+              phone: username,
+              invitationCode: _invitation.text.trim(),
+              termsAccepted: _agreementAccepted,
+              deviceKey: _phoneController.deviceKey,
+              deviceName: _phoneController.deviceName,
+              shouldContinue: _loginIsCurrent,
+            );
           }
           success = true;
         } else if (widget.onPhoneLogin != null) {
-          await widget.onPhoneLogin!(username, password,
-              invitationCode: _invitation.text.trim(),
-              termsAccepted: _agreementAccepted,
-              shouldContinue: _loginIsCurrent);
+          await widget.onPhoneLogin!(
+            username,
+            password,
+            invitationCode: _invitation.text.trim(),
+            termsAccepted: _agreementAccepted,
+            shouldContinue: _loginIsCurrent,
+          );
           success = true;
         } else {
-          success = await _phoneController.submit(username, password,
-              invitationCode: _invitation.text.trim(),
-              termsAccepted: _agreementAccepted,
-              shouldContinue: _loginIsCurrent);
+          success = await _phoneController.submit(
+            username,
+            password,
+            invitationCode: _invitation.text.trim(),
+            termsAccepted: _agreementAccepted,
+            shouldContinue: _loginIsCurrent,
+          );
         }
       } else {
         success = await controller.submit(username, password);
@@ -284,9 +367,15 @@ final class _LoginPageState extends State<LoginPage>
         if (_phoneMode && proof != null) {
           setState(() => _acceptInvitationProof(proof, username));
         } else {
-          setState(() => _error = _phoneMode
-              ? '${_phoneController.state.message ?? '登录结果待确认'}；原验证码不可再次提交，请重新获取验证码'
-              : controller.state.message);
+          final retrySeconds = _phoneMode
+              ? _phoneController.state.loginRetryAfterSeconds
+              : controller.state.retryAfterSeconds;
+          _showLoginError(
+            _phoneMode
+                ? '${_phoneController.state.message ?? '登录结果待确认'}；原验证码不可再次提交，请重新获取验证码'
+                : controller.state.message,
+            retryAfterSeconds: retrySeconds,
+          );
         }
       }
     } on PhoneInvitationContinuationRequired catch (proof) {
@@ -301,19 +390,30 @@ final class _LoginPageState extends State<LoginPage>
           await widget.onAuthenticated?.call();
         } on BusinessApiException catch (error) {
           if (mounted) {
-            setState(() => _error = _phoneMode
-                ? '${error.message}；原验证码不可再次提交，请重新获取验证码'
-                : error.message);
+            _showLoginError(
+              _phoneMode
+                  ? '${error.message}；原验证码不可再次提交，请重新获取验证码'
+                  : error.message,
+              retryAfterSeconds: error.statusCode == 429
+                  ? error.retryAfterSeconds ?? 60
+                  : null,
+            );
           }
         } on LoginStageException catch (error) {
           if (mounted) {
-            setState(() => _error =
-                _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : error.message);
+            setState(
+              () => _error = _phoneMode
+                  ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码'
+                  : error.message,
+            );
           }
         } catch (_) {
           if (mounted) {
-            setState(() => _error =
-                _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : '服务暂时不可用，请稍后重试');
+            setState(
+              () => _error = _phoneMode
+                  ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码'
+                  : '服务暂时不可用，请稍后重试',
+            );
           }
         }
       } else {
@@ -324,33 +424,41 @@ final class _LoginPageState extends State<LoginPage>
       }
     } on BusinessApiException catch (error) {
       if (mounted) {
-        setState(() {
-          if (continuing &&
-              (error.code == 'LOGIN_TICKET_INVALID' ||
-                  error.code == 'INVITATION_TICKET_INVALID')) {
-            _invitationTicket = null;
-            _invitationPhone = null;
-            _requiresFreshPhoneCode = true;
-          }
-          _error = _phoneMode
+        if (continuing &&
+            (error.code == 'LOGIN_TICKET_INVALID' ||
+                error.code == 'INVITATION_TICKET_INVALID')) {
+          _invitationTicket = null;
+          _invitationPhone = null;
+          _requiresFreshPhoneCode = true;
+        }
+        _showLoginError(
+          _phoneMode
               ? continuing && _invitationTicket != null
-                  ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
-                  : '${error.message}；原验证码不可再次提交，请重新获取验证码'
-              : error.message;
-        });
+                    ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
+                    : '${error.message}；原验证码不可再次提交，请重新获取验证码'
+              : error.message,
+          retryAfterSeconds: error.statusCode == 429
+              ? error.retryAfterSeconds ?? 60
+              : null,
+        );
       }
     } on LoginStageException catch (error) {
       if (mounted) {
-        setState(() => _error =
-            _phoneMode ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码' : error.message);
+        setState(
+          () => _error = _phoneMode
+              ? '聊天登录未完成；原验证码不可再次提交，请重新获取验证码'
+              : error.message,
+        );
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _error = _phoneMode
-            ? continuing && _invitationTicket != null
-                ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
-                : '登录结果待确认；原验证码不可再次提交，请重新获取验证码'
-            : '服务暂时不可用，请稍后重试');
+        setState(
+          () => _error = _phoneMode
+              ? continuing && _invitationTicket != null
+                    ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
+                    : '登录结果待确认；原验证码不可再次提交，请重新获取验证码'
+              : '服务暂时不可用，请稍后重试',
+        );
       }
     } finally {
       controller.dispose();
@@ -391,6 +499,7 @@ final class _LoginPageState extends State<LoginPage>
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final visibleError = _visibleError;
     final form = Form(
       key: const Key('auth-login-form'),
       child: AuthSurfaceCard(
@@ -427,68 +536,102 @@ final class _LoginPageState extends State<LoginPage>
                 onValueChanged: _loading
                     ? (_) {}
                     : (value) => setState(() {
-                          _phoneMode = value ?? false;
-                          _invitationTicket = null;
-                          _invitationPhone = null;
-                          if (!_phoneMode) _requiresFreshPhoneCode = false;
-                          _error = null;
-                        }),
+                        _phoneMode = value ?? false;
+                        _invitationTicket = null;
+                        _invitationPhone = null;
+                        if (!_phoneMode) _requiresFreshPhoneCode = false;
+                        _error = null;
+                        _phoneFormatError = null;
+                        _phoneFormatValidated = false;
+                      }),
               ),
               const SizedBox(height: WeChatSpacing.md),
               if (_phoneMode) ...[
-                const Text('请输入畅聊 ChatFlow 短信验证码',
-                    style: TextStyle(
+                const Text(
+                  '请输入畅聊 ChatFlow 短信验证码',
+                  style: TextStyle(
+                    fontSize: WeChatTypography.caption,
+                    color: WeChatColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: WeChatSpacing.sm),
+                AuthTextField(
+                  key: const Key('auth-login-phone'),
+                  label: '手机号',
+                  placeholder: '中国大陆 +86',
+                  controller: _phone,
+                  onChanged: (_) => setState(() {
+                    final showFormatFeedback =
+                        _phoneFormatError != null || _phoneFormatValidated;
+                    if (showFormatFeedback) {
+                      final valid = _normalizedPhone != null;
+                      _phoneFormatError = valid ? null : '请输入中国大陆 11 位手机号';
+                      _phoneFormatValidated = valid;
+                    }
+                    if (_invitationTicket != null &&
+                        _normalizedPhone != _invitationPhone) {
+                      _invitationTicket = null;
+                      _invitationPhone = null;
+                      _requiresFreshPhoneCode = true;
+                      _error = '手机号已更改，请重新获取验证码';
+                    }
+                  }),
+                  keyboardType: TextInputType.phone,
+                  enabled: !_loading,
+                ),
+                if (_phoneFormatError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: WeChatSpacing.xs),
+                    child: AuthErrorMessage(
+                      key: const Key('auth-login-phone-error'),
+                      message: _phoneFormatError!,
+                      compact: true,
+                    ),
+                  ),
+                if (_phoneFormatValidated)
+                  const Padding(
+                    padding: EdgeInsets.only(top: WeChatSpacing.xs),
+                    child: Text(
+                      '手机号格式正确',
+                      key: Key('auth-login-phone-valid'),
+                      style: TextStyle(
+                        color: WeChatColors.brandPrimary,
                         fontSize: WeChatTypography.caption,
-                        color: WeChatColors.textSecondary)),
-                const SizedBox(height: WeChatSpacing.sm),
-                AuthTextField(
-                    key: const Key('auth-login-phone'),
-                    label: '手机号',
-                    placeholder: '中国大陆 +86',
-                    controller: _phone,
-                    onChanged: (_) => setState(() {
-                          if (_invitationTicket != null &&
-                              _normalizedPhone != _invitationPhone) {
-                            _invitationTicket = null;
-                            _invitationPhone = null;
-                            _requiresFreshPhoneCode = true;
-                            _error = '手机号已更改，请重新获取验证码';
-                          }
-                        }),
-                    keyboardType: TextInputType.phone,
-                    enabled: !_loading),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: WeChatSpacing.md),
                 AuthTextField(
-                    key: const Key('auth-login-code'),
-                    label: _invitationTicket == null ? '短信验证码' : '短信验证码（已通过）',
-                    placeholder:
-                        _invitationTicket == null ? '输入 6 位验证码' : '已验证',
-                    controller: _code,
-                    keyboardType: TextInputType.number,
-                    enabled: !_loading && _invitationTicket == null,
-                    trailing: CupertinoButton(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        onPressed:
-                            _canRequestPhoneCode ? _requestPhoneCode : null,
-                        child: Text(
-                            _phoneController.state.resendAfterSeconds > 0
-                                ? '${_phoneController.state.resendAfterSeconds}s'
-                                : '获取验证码',
-                            style: TextStyle(
-                                color: _canRequestPhoneCode
-                                    ? WeChatColors.brandPrimary
-                                    : WeChatColors.textTertiary)))),
+                  key: const Key('auth-login-code'),
+                  label: _invitationTicket == null ? '短信验证码' : '短信验证码（已通过）',
+                  placeholder: _invitationTicket == null ? '输入 6 位验证码' : '已验证',
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  enabled: !_loading && _invitationTicket == null,
+                  trailing: AuthCodeRequestButton(
+                    buttonKey: const Key('auth-login-send-code'),
+                    label: _phoneController.state.resendAfterSeconds > 0
+                        ? '${_phoneController.state.resendAfterSeconds}s'
+                        : '获取验证码',
+                    onPressed: _canRequestPhoneCode ? _requestPhoneCode : null,
+                  ),
+                ),
                 const SizedBox(height: WeChatSpacing.md),
                 AuthTextField(
-                    key: const Key('auth-login-invitation'),
-                    label: '邀请码（仅新用户必填）',
-                    placeholder: '已有账号无需填写',
-                    controller: _invitation,
-                    enabled: !_loading),
+                  key: const Key('auth-login-invitation'),
+                  label: '邀请码（仅新用户必填）',
+                  placeholder: '已有账号无需填写',
+                  controller: _invitation,
+                  enabled: !_loading,
+                ),
                 const SizedBox(height: WeChatSpacing.sm),
-                const Text('新手机号验证后自动注册，用户名和畅聊号由系统生成',
-                    style: TextStyle(
-                        fontSize: 12, color: WeChatColors.textSecondary)),
+                const Text(
+                  '新手机号验证后自动注册，用户名和畅聊号由系统生成',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: WeChatColors.textSecondary,
+                  ),
+                ),
               ] else ...[
                 AuthTextField(
                   key: const Key('auth-login-identity'),
@@ -518,8 +661,8 @@ final class _LoginPageState extends State<LoginPage>
                     onPressed: _loading
                         ? null
                         : () => setState(
-                              () => _passwordVisible = !_passwordVisible,
-                            ),
+                            () => _passwordVisible = !_passwordVisible,
+                          ),
                     child: Icon(
                       _passwordVisible
                           ? CupertinoIcons.eye_slash
@@ -543,45 +686,47 @@ final class _LoginPageState extends State<LoginPage>
               AuthAgreementRow(
                 value: _agreementAccepted,
                 enabled: !_loading,
-                onChanged: (value) => setState(
-                  () => _agreementAccepted = value,
-                ),
+                onChanged: (value) =>
+                    setState(() => _agreementAccepted = value),
                 // BUG-02：入口必须有真实实现——调用方未注入回调时打开
                 // 应用内置正文，保证点击一定打开而不是静默无响应。
-                onUserAgreement: widget.onUserAgreement ??
+                onUserAgreement:
+                    widget.onUserAgreement ??
                     () => openLegalDocument(context, userAgreement),
-                onPrivacyPolicy: widget.onPrivacyPolicy ??
+                onPrivacyPolicy:
+                    widget.onPrivacyPolicy ??
                     () => openLegalDocument(context, privacyPolicy),
               ),
-              if (_error != null) ...[
+              if (visibleError != null) ...[
                 const SizedBox(height: WeChatSpacing.md),
                 AuthErrorMessage(
                   key: const Key('auth-login-error'),
-                  message: _error!,
+                  message: visibleError,
                 ),
               ],
               const SizedBox(height: WeChatSpacing.md),
               SizedBox(
                 width: double.infinity,
                 child: ModernActionButton(
-                  icon: _error == null
+                  icon: visibleError == null
                       ? ChangliaoIcons.confirm
                       : ChangliaoIcons.retry,
                   label: _invitationTicket != null && _phoneMode
                       ? '完成注册'
                       : _requiresFreshPhoneCode && _phoneMode
-                          ? '重新获取验证码'
-                          : _error == null
-                              ? '登录'
-                              : '重试',
+                      ? '重新获取验证码'
+                      : visibleError == null
+                      ? '登录'
+                      : '重试',
                   loading: _loading,
-                  onPressed: _loading || !_agreementAccepted
+                  onPressed:
+                      _loading || !_agreementAccepted || _loginRetrySeconds > 0
                       ? null
                       : _requiresFreshPhoneCode && _phoneMode
-                          ? _canRequestPhoneCode
-                              ? _requestPhoneCode
-                              : null
-                          : _submit,
+                      ? _canRequestPhoneCode
+                            ? _requestPhoneCode
+                            : null
+                      : _submit,
                 ),
               ),
               if (widget.onRegister != null) ...[
@@ -612,10 +757,10 @@ final class _LoginPageState extends State<LoginPage>
         : FadeTransition(
             opacity: CurvedAnimation(parent: _intro, curve: Curves.easeOut),
             child: SlideTransition(
-              position:
-                  Tween(begin: const Offset(0, .035), end: Offset.zero).animate(
-                CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic),
-              ),
+              position: Tween(begin: const Offset(0, .035), end: Offset.zero)
+                  .animate(
+                    CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic),
+                  ),
               child: scrollable,
             ),
           );

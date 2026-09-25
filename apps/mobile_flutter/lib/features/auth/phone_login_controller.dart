@@ -28,11 +28,13 @@ final class PhoneLoginState {
     this.status, {
     this.message,
     this.resendAfterSeconds = 0,
+    this.loginRetryAfterSeconds,
   });
 
   final PhoneLoginStatus status;
   final String? message;
   final int resendAfterSeconds;
+  final int? loginRetryAfterSeconds;
 
   bool get canSubmitCode =>
       status == PhoneLoginStatus.otpSent || status == PhoneLoginStatus.failed;
@@ -145,7 +147,13 @@ final class PhoneLoginController extends ChangeNotifier {
         return false;
       }
       state = PhoneLoginState(PhoneLoginStatus.failed,
-          message: _messageFor(error, fallback: '账号或验证码错误'));
+          message: error is BusinessApiException && error.statusCode == 429
+              ? '登录请求较频繁，请稍后重试'
+              : _messageFor(error, fallback: '账号或验证码错误'),
+          loginRetryAfterSeconds:
+              error is BusinessApiException && error.statusCode == 429
+                  ? (error.retryAfterSeconds ?? 60).clamp(1, 86400)
+                  : null);
       notifyListeners();
       return false;
     }
@@ -165,7 +173,9 @@ final class PhoneLoginController extends ChangeNotifier {
       final remain = _cooldownUntil!.difference(_now()).inSeconds.clamp(0, 60);
       if (state.status != PhoneLoginStatus.otpSending) {
         state = PhoneLoginState(state.status,
-            message: state.message, resendAfterSeconds: remain);
+            message: state.message,
+            resendAfterSeconds: remain,
+            loginRetryAfterSeconds: state.loginRetryAfterSeconds);
         notifyListeners();
       }
       if (remain == 0) timer.cancel();

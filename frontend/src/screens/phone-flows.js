@@ -38,6 +38,31 @@ const row = (label, value) => {
 };
 const hint = (text) => element("p", "c-form-help", text);
 const errorLine = (text) => element("p", "c-form-error", text);
+const validPhone = (raw) => {
+  let value = (raw || '').replace(/[ \-()]/g, '');
+  if (value.startsWith('+86')) value = value.slice(3);
+  else if (value.startsWith('86') && value.length === 13) value = value.slice(2);
+  return /^1[3-9][0-9]{9}$/.test(value);
+};
+const phoneValidation = (phone, control = phone.wrapper) => {
+  const wrapper = element('div', 'c-phone-flows__phone-field');
+  const status = element('p', 'c-form-help', '');
+  status.hidden = true;
+  status.setAttribute('aria-live', 'polite');
+  wrapper.append(control, status);
+  let checked = false;
+  const validate = () => {
+    checked = true;
+    const valid = validPhone(phone.input.value);
+    status.className = valid ? 'c-form-help' : 'c-form-error';
+    status.textContent = valid ? '手机号格式正确' : '请输入中国大陆 11 位手机号';
+    status.hidden = false;
+    phone.input.setAttribute('aria-invalid', String(!valid));
+    return valid;
+  };
+  phone.input.addEventListener('input', () => { if (checked) validate(); });
+  return { wrapper, validate, isValid: () => validPhone(phone.input.value) };
+};
 const primaryButton = (label, { disabled = false } = {}) =>
   component("app-action-button", { label, kind: "primary", disabled });
 const appLogo = () => {
@@ -49,6 +74,11 @@ const appLogo = () => {
 function authShell(definition, title, buildBody) {
   const root = pageRoot(definition);
   root.classList.add("p-auth");
+  root.addEventListener('pointerdown', (event) => {
+    if (!event.target?.closest?.('input, textarea, [contenteditable="true"]')) {
+      document.activeElement?.blur?.();
+    }
+  });
   const background = element("img", "p-auth__background");
   background.src = "/assets/landing-changliao.png";
   background.alt = "";
@@ -66,71 +96,102 @@ function authShell(definition, title, buildBody) {
 function buildPhoneLogin(state) {
   const nodes = [];
   let seconds = state === "cooldown" ? 54 : 0;
-  let requests = state === "cooldown" ? 1 : 0;
+  let loginSeconds = 0;
+  let loginDeadline = 0;
+  let loginTimer = null;
+  let refreshLoginLimit = () => {};
   const phone = field("手机号", "+86 手机号",
     state === "error" ? "" : "");
+  const phoneCheck = phoneValidation(phone);
   const otp = otpField();
   const invitation = field('邀请码（仅新用户必填）', '已有账号无需填写');
   const consent = element('input');
   consent.type = 'checkbox';
   const consentRow = element('label', 'c-form-help');
   consentRow.append(consent, element('span', null, '我已阅读并同意用户协议和隐私政策'));
-  const validPhone = () => {
-    let value = (phone.input.value || '').replace(/[ \-()]/g, '');
-    if (value.startsWith('+86')) value = value.slice(3);
-    else if (value.startsWith('86') && value.length === 13) value = value.slice(2);
-    return /^1[3-9][0-9]{9}$/.test(value);
-  };
   const button = component("app-secondary-button", { label: "获取验证码" });
   const otpRow = element("div", "c-phone-flows__otp-row");
   otpRow.append(otp.wrapper, button);
   const errorNode = errorLine(state === "error"
     ? "手机号或验证码错误（剩余 4 次尝试）" : "");
   errorNode.hidden = state !== "error";
+  const loginButton = primaryButton('登录');
   const hintNode = hint(state === "otp-sent" ? "验证码已发送，请在 5 分钟内填写。" : "仅支持中国大陆 +86 手机号。历史聊天记录仍需恢复密钥。");
 
   const draw = () => {
     errorNode.hidden = errorNode.textContent.length === 0;
     button.setAttribute("label", seconds > 0 ? seconds + " 秒后重发" : "获取验证码");
-    otpRow.dataset.eligible = String(validPhone() && seconds === 0 && requests < 3);
-    if (!validPhone() || seconds > 0 || requests >= 3) button.setAttribute("disabled", "true");
+    otpRow.dataset.eligible = String(phoneCheck.isValid() && seconds === 0);
+    if (seconds > 0) button.setAttribute("disabled", "true");
     else button.removeAttribute("disabled");
     // StrictElement does not observe attributes. Refresh its native button
     // after changing validity/cooldown, keeping this behavior local to the page.
     button.renderContract?.();
   };
+  const startCooldown = () => {
+    seconds = 60;
+    draw();
+    const timer = setInterval(() => {
+      seconds -= 1;
+      if (seconds <= 0) {
+        clearInterval(timer);
+        seconds = 0;
+      }
+      draw();
+    }, 1000);
+  };
   phone.input.addEventListener('input', draw);
   button.addEventListener("click", () => {
-    if (!validPhone() || seconds > 0 || requests >= 3) return;
+    if (seconds > 0 || !phoneCheck.validate()) return;
     if (!consent.checked) {
       errorNode.textContent = '请先阅读并同意用户协议和隐私政策';
       draw();
       return;
     }
-    requests += 1;
-    if (requests >= 3) {
-      errorNode.textContent = "请求较频繁，请稍后再试。";
-      errorNode.hidden = false;
-      draw();
-      seconds = 60;
-      const timer = setInterval(() => {
-        seconds -= 1;
-        if (seconds <= 0) { clearInterval(timer); seconds = 0; draw(); return; }
-        draw();
-      }, 1000);
-      return;
-    }
-    seconds = 60;
-    draw();
-    const timer = setInterval(() => {
-      seconds -= 1;
-      if (seconds <= 0) { clearInterval(timer); seconds = 0; draw(); return; }
-      draw();
-    }, 1000);
+    startCooldown();
   });
 
-  nodes.push(phone.wrapper, otpRow, invitation.wrapper, consentRow, errorNode,
-    primaryButton("登录"), hintNode,
+  loginButton.addEventListener('click', () => {
+    refreshLoginLimit();
+    if (loginSeconds > 0 || !phoneCheck.validate()) return;
+    if (!/^\d{6}$/.test(otp.input.value || '')) {
+      errorNode.textContent = '请输入 6 位短信验证码';
+      draw();
+      return;
+    }
+    if (!consent.checked) {
+      errorNode.textContent = '请先阅读并同意用户协议和隐私政策';
+      draw();
+      return;
+    }
+    // Local design-demo response: a simulated login API 429, not an OTP limit.
+    loginDeadline = Date.now() + 60000;
+    const renderLoginLimit = () => {
+      errorNode.textContent = loginSeconds > 0
+        ? `仅演示本地状态：登录频繁，请在 ${loginSeconds} 秒后重试。`
+        : '';
+      if (loginSeconds > 0) loginButton.setAttribute('disabled', 'true');
+      else loginButton.removeAttribute('disabled');
+      loginButton.renderContract?.();
+      draw();
+    };
+    const stopLoginLimit = () => {
+      if (loginTimer !== null) { clearInterval(loginTimer); loginTimer = null; }
+      document.removeEventListener?.('visibilitychange', refreshLoginLimit);
+    };
+    refreshLoginLimit = () => {
+      if (loginButton.isConnected === false) { stopLoginLimit(); return; }
+      loginSeconds = Math.max(0, Math.ceil((loginDeadline - Date.now()) / 1000));
+      if (loginSeconds === 0) stopLoginLimit();
+      renderLoginLimit();
+    };
+    document.addEventListener?.('visibilitychange', refreshLoginLimit);
+    refreshLoginLimit();
+    loginTimer = setInterval(refreshLoginLimit, 1000);
+  });
+
+  nodes.push(phoneCheck.wrapper, otpRow, invitation.wrapper, consentRow, errorNode,
+    loginButton, hintNode,
     hint('新手机号验证后自动注册，用户名和畅聊号由系统生成；需要有效邀请码。'));
   draw();
   // 启动初始冷却演示（cooldown 态）
@@ -147,6 +208,7 @@ function buildPhoneLogin(state) {
 // ---------------------------------------------------------------- 手机注册
 function buildPhoneRegistration(state) {
   const nodes = [];
+  let seconds = 0;
   const channel = element("div", "c-phone-flows__channel");
   const phoneOption = element("label", "c-phone-flows__channel-option");
   const phoneRadio = element("input");
@@ -162,7 +224,31 @@ function buildPhoneRegistration(state) {
   emailRadio.addEventListener("change", () => { if (emailRadio.checked) window.location.search = "?screen=auth-registration-default"; });
   channel.append(phoneOption, emailOption);
   nodes.push(channel);
-  nodes.push(field("手机号", "+86 手机号").wrapper);
+  const phone = field('手机号', '+86 手机号');
+  const button = component('app-secondary-button', { label: '获取验证码' });
+  const phoneRow = element('div', 'c-phone-flows__otp-row');
+  phoneRow.append(phone.wrapper, button);
+  const phoneCheck = phoneValidation(phone, phoneRow);
+  const draw = () => {
+    button.setAttribute('label', seconds > 0 ? `${seconds} 秒后重发` : '获取验证码');
+    phoneRow.dataset.eligible = String(phoneCheck.isValid() && seconds === 0 && state !== 'matrix-wait');
+    if (seconds > 0 || state === 'matrix-wait') button.setAttribute('disabled', 'true');
+    else button.removeAttribute('disabled');
+    button.renderContract?.();
+  };
+  phone.input.addEventListener('input', draw);
+  button.addEventListener('click', () => {
+    if (seconds > 0 || state === 'matrix-wait' || !phoneCheck.validate()) return;
+    seconds = 60;
+    draw();
+    const timer = setInterval(() => {
+      seconds -= 1;
+      if (seconds <= 0) { clearInterval(timer); seconds = 0; }
+      draw();
+    }, 1000);
+  });
+  nodes.push(phoneCheck.wrapper);
+  draw();
   if (state === "otp" || state === "error") {
     nodes.push(otpField().wrapper);
   }

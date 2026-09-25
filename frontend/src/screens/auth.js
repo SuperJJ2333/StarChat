@@ -109,6 +109,11 @@ function verificationForm(definition) {
 export function renderScreen(definition) {
   const root = pageRoot(definition);
   root.classList.add("p-auth");
+  root.addEventListener('pointerdown', (event) => {
+    if (!event.target?.closest?.('input, textarea, [contenteditable="true"]')) {
+      document.activeElement?.blur?.();
+    }
+  });
   const background = element("img", "p-auth__background");
   background.src = "/assets/landing-changliao.png";
   background.alt = "";

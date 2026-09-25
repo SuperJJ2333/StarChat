@@ -27,6 +27,9 @@ const requiredScreens = [
   "wallet-withdrawal-unknown-result",
   "feedback-type-scale-140",
   "auth-login-default-dark",
+  "auth-registration-default-dark",
+  "phone-login-phone-default-dark",
+  "phone-registration-phone-default-dark",
   "messages-inbox-default-dark",
   "chat-room-mixed-dark",
   "contacts-index-default-dark",
@@ -61,6 +64,9 @@ test("dark frames are restricted to foundations, components, and approved key sc
   const darkIds = screens.filter((screen) => screen.theme === "dark").map((screen) => screen.id);
   assert.deepEqual(darkIds.sort(), [
     "auth-login-default-dark",
+    "auth-registration-default-dark",
+    "phone-login-phone-default-dark",
+    "phone-registration-phone-default-dark",
     "chat-room-mixed-dark",
     "contacts-index-default-dark",
     "foundation-components-catalog-dark",

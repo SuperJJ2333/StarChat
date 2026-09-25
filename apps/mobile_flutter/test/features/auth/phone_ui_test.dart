@@ -14,113 +14,316 @@ import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 void main() {
   testWidgets(
-      'valid phone immediately enables green OTP action and explains consent',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    var sends = 0;
-    final api = BusinessApiClient(
+    'OTP action validates invalid phone beside its field before any request',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      var sends = 0;
+      final api = BusinessApiClient(
         baseUri: Uri.parse('https://example.invalid'),
         sessionStore: SecureSessionStore(_MemoryStore()),
         client: MockClient((_) async {
           sends++;
           return http.Response('{"status":"accepted"}', 202);
-        }));
-    await tester.pumpWidget(CupertinoApp(home: LoginPage(api: api)));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('手机号登录'));
-    await tester.pumpAndSettle();
-    final phone = find.byKey(const Key('auth-login-phone'));
-    CupertinoButton button() => tester
-        .widget<CupertinoButton>(find.widgetWithText(CupertinoButton, '获取验证码'));
-    expect(button().onPressed, isNull);
-    await tester.enterText(phone, '+86 138 0000 0001');
-    await tester.pump();
-    expect(button().onPressed, isNotNull);
-    expect(tester.widget<Text>(find.text('获取验证码')).style?.color,
-        WeChatColors.brandPrimary);
-    await tester.tap(find.text('获取验证码'));
-    await tester.pump();
-    expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
-    expect(sends, 0);
-    await tester.enterText(phone, '1380000000a');
-    await tester.pump();
-    expect(button().onPressed, isNull);
-    await tester.enterText(phone, '13800000001');
-    await tester.pump();
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
-    await tester
-        .ensureVisible(find.byKey(const Key('auth-agreement-checkbox')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('auth-agreement-checkbox')));
-    await tester.pump();
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('获取验证码'));
-    await tester.tap(find.text('获取验证码'));
-    await tester.pump();
-    expect(sends, 1);
-    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
-  });
-  testWidgets(
-      'phone host login completes before authentication callback and is never auto retried',
+        }),
+      );
+      await tester.pumpWidget(CupertinoApp(home: LoginPage(api: api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('手机号登录'));
+      await tester.pumpAndSettle();
+      final phone = find.byKey(const Key('auth-login-phone'));
+      CupertinoButton button() => tester.widget<CupertinoButton>(
+        find.widgetWithText(CupertinoButton, '获取验证码'),
+      );
+      expect(button().onPressed, isNotNull);
+      await tester.tap(find.text('获取验证码'));
+      await tester.pump();
+      final phoneError = find.byKey(const Key('auth-login-phone-error'));
+      expect(phoneError, findsOneWidget);
+      expect(find.text('请输入中国大陆 11 位手机号'), findsOneWidget);
+      expect(
+        tester.getTopLeft(phoneError).dy,
+        greaterThan(tester.getBottomLeft(phone).dy),
+      );
+      expect(
+        tester.getBottomLeft(phoneError).dy,
+        lessThan(
+          tester.getTopLeft(find.byKey(const Key('auth-login-code'))).dy,
+        ),
+      );
+      expect(sends, 0);
+      await tester.enterText(phone, '+86 138 0000 0001');
+      await tester.pump();
+      expect(phoneError, findsNothing);
+      expect(find.byKey(const Key('auth-login-phone-valid')), findsOneWidget);
+      expect(button().onPressed, isNotNull);
+      expect(
+        tester.widget<Text>(find.text('获取验证码')).style?.color,
+        WeChatColors.brandPrimary,
+      );
+      await tester.tap(find.text('获取验证码'));
+      await tester.pump();
+      expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
+      expect(sends, 0);
+      await tester.enterText(phone, '1380000000a');
+      await tester.pump();
+      expect(phoneError, findsOneWidget);
+      expect(button().onPressed, isNotNull);
+      await tester.tap(find.text('获取验证码'));
+      await tester.pump();
+      expect(phoneError, findsOneWidget);
+      expect(sends, 0);
+      await tester.enterText(phone, '13800000001');
+      await tester.pump();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const Key('auth-agreement-checkbox')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('auth-agreement-checkbox')));
+      await tester.pump();
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('获取验证码'));
+      await tester.tap(find.text('获取验证码'));
+      await tester.pump();
+      expect(sends, 1);
+      await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    },
+  );
+  for (final phoneMode in [false, true]) {
+    testWidgets(
+      '${phoneMode ? 'phone' : 'password'} login rate limit counts down without retrying',
       (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(393, 852);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        SharedPreferences.setMockInitialValues({});
+        var attempts = 0;
+        var now = DateTime.utc(2026, 9, 25);
+        final api = BusinessApiClient(
+          baseUri: Uri.parse('https://example.invalid'),
+          sessionStore: SecureSessionStore(),
+        );
+        Future<void> rejected() async {
+          attempts++;
+          throw const BusinessApiException(
+            statusCode: 429,
+            code: 'MATRIX_LOGIN_RATE_LIMITED',
+            message: '聊天登录请求较频繁，请等待 60 秒后重试',
+            retryAfterSeconds: 60,
+          );
+        }
+
+        await tester.pumpWidget(
+          CupertinoApp(
+            home: LoginPage(
+              api: api,
+              onLogin: (_, __) => rejected(),
+              onPhoneLogin:
+                  (
+                    _,
+                    __, {
+                    invitationCode = '',
+                    termsAccepted = false,
+                    shouldContinue,
+                  }) => rejected(),
+              now: () => now,
+              onAuthenticated: () async {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (phoneMode) {
+          await tester.tap(find.text('手机号登录'));
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            find.byKey(const Key('auth-login-phone')),
+            '13800000001',
+          );
+          await tester.enterText(
+            find.byKey(const Key('auth-login-code')),
+            '123456',
+          );
+        } else {
+          await tester.enterText(
+            find.byKey(const Key('auth-login-identity')),
+            'alice',
+          );
+          await tester.enterText(
+            find.byKey(const Key('auth-login-password')),
+            'password',
+          );
+        }
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pump();
+        final agreement = find.byKey(const Key('auth-agreement-checkbox'));
+        await tester.ensureVisible(agreement);
+        await tester.pumpAndSettle();
+        await tester.tap(agreement);
+        await tester.pump();
+        final login = find.widgetWithText(ModernActionButton, '登录');
+        await tester.ensureVisible(login);
+        await tester.pumpAndSettle();
+        await tester.tap(login);
+        await tester.pump();
+        expect(attempts, 1);
+        expect(find.textContaining('60 秒后重试'), findsOneWidget);
+        now = now.add(const Duration(seconds: 1));
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.textContaining('59 秒后重试'), findsOneWidget);
+        expect(attempts, 1);
+        now = now.add(const Duration(seconds: 59));
+        await tester.pump(const Duration(seconds: 59));
+        expect(find.textContaining('秒后重试'), findsNothing);
+        expect(attempts, 1);
+        await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+      },
+    );
+  }
+  testWidgets('login retry countdown catches up after app resumes', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     SharedPreferences.setMockInitialValues({});
-    final pending = Completer<void>();
-    var calls = 0;
-    var authenticated = 0;
+    var now = DateTime.utc(2026, 9, 25);
+    var attempts = 0;
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore());
-    await tester.pumpWidget(CupertinoApp(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(),
+    );
+    await tester.pumpWidget(
+      CupertinoApp(
         home: LoginPage(
-            api: api,
-            onPhoneLogin: (phone, code,
-                {invitationCode = '',
-                termsAccepted = false,
-                shouldContinue}) async {
-              calls++;
-              await pending.future;
-            },
-            onAuthenticated: () async {
-              authenticated++;
-            })));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('手机号登录'));
+          api: api,
+          now: () => now,
+          onLogin: (_, __) async {
+            attempts++;
+            throw const BusinessApiException(
+              statusCode: 429,
+              code: 'MATRIX_LOGIN_RATE_LIMITED',
+              message: '登录请求较频繁',
+              retryAfterSeconds: 60,
+            );
+          },
+          onAuthenticated: () async {},
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.byKey(const Key('auth-login-phone')), '13800000001');
-    await tester.enterText(find.byKey(const Key('auth-login-code')), '123456');
-    final agreement = find.byKey(const Key('auth-agreement-checkbox'));
+      find.byKey(const Key('auth-login-identity')),
+      'alice',
+    );
+    await tester.enterText(
+      find.byKey(const Key('auth-login-password')),
+      'password',
+    );
     FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(agreement);
-    await tester.pumpAndSettle();
-    await tester.tap(agreement);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('auth-agreement-checkbox')));
     await tester.pump();
     final login = find.widgetWithText(ModernActionButton, '登录');
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
     await tester.ensureVisible(login);
+    await tester.pumpAndSettle();
     await tester.tap(login);
     await tester.pump();
-    expect(calls, 1);
-    expect(authenticated, 0);
-    pending.complete();
-    await tester.pumpAndSettle();
-    expect(authenticated, 1);
-    expect(calls, 1);
+    expect(find.textContaining('60 秒后重试'), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    now = now.add(const Duration(seconds: 37));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(find.textContaining('23 秒后重试'), findsOneWidget);
+    expect(attempts, 1);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    now = now.add(const Duration(minutes: 2));
+    await tester.pump(const Duration(seconds: 2));
+    expect(tester.takeException(), isNull);
   });
-  testWidgets('phone login is explicit and mounting sends no SMS',
-      (tester) async {
+  testWidgets(
+    'phone host login completes before authentication callback and is never auto retried',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final pending = Completer<void>();
+      var calls = 0;
+      var authenticated = 0;
+      final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: SecureSessionStore(),
+      );
+      await tester.pumpWidget(
+        CupertinoApp(
+          home: LoginPage(
+            api: api,
+            onPhoneLogin:
+                (
+                  phone,
+                  code, {
+                  invitationCode = '',
+                  termsAccepted = false,
+                  shouldContinue,
+                }) async {
+                  calls++;
+                  await pending.future;
+                },
+            onAuthenticated: () async {
+              authenticated++;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('手机号登录'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('auth-login-phone')),
+        '13800000001',
+      );
+      await tester.enterText(
+        find.byKey(const Key('auth-login-code')),
+        '123456',
+      );
+      final agreement = find.byKey(const Key('auth-agreement-checkbox'));
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(agreement);
+      await tester.pumpAndSettle();
+      await tester.tap(agreement);
+      await tester.pump();
+      final login = find.widgetWithText(ModernActionButton, '登录');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(login);
+      await tester.tap(login);
+      await tester.pump();
+      expect(calls, 1);
+      expect(authenticated, 0);
+      pending.complete();
+      await tester.pumpAndSettle();
+      expect(authenticated, 1);
+      expect(calls, 1);
+    },
+  );
+  testWidgets('phone login is explicit and mounting sends no SMS', (
+    tester,
+  ) async {
     var calls = 0;
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()),
-        client: MockClient((_) async {
-          calls++;
-          return http.Response('{}', 200);
-        }));
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+      client: MockClient((_) async {
+        calls++;
+        return http.Response('{}', 200);
+      }),
+    );
     await tester.pumpWidget(CupertinoApp(home: LoginPage(api: api)));
     await tester.pumpAndSettle();
     expect(find.text('手机号登录'), findsOneWidget);
@@ -130,8 +333,9 @@ void main() {
     expect(find.byKey(const Key('auth-login-code')), findsOneWidget);
     expect(calls, 0);
   });
-  testWidgets('Matrix stage failure cannot resubmit a consumed phone code',
-      (tester) async {
+  testWidgets('Matrix stage failure cannot resubmit a consumed phone code', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(393, 852);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -140,32 +344,44 @@ void main() {
     var phoneLogins = 0;
     var otpRequests = 0;
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()),
-        client: MockClient((_) async {
-          otpRequests++;
-          return http.Response('{"status":"accepted"}', 202);
-        }));
-    await tester.pumpWidget(CupertinoApp(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+      client: MockClient((_) async {
+        otpRequests++;
+        return http.Response('{"status":"accepted"}', 202);
+      }),
+    );
+    await tester.pumpWidget(
+      CupertinoApp(
         home: LoginPage(
-            api: api,
-            onPhoneLogin: (phone, code,
-                {invitationCode = '',
+          api: api,
+          onPhoneLogin:
+              (
+                phone,
+                code, {
+                invitationCode = '',
                 termsAccepted = false,
-                shouldContinue}) async {
-              phoneLogins++;
-              throw const LoginStageException('matrix_session');
-            })));
+                shouldContinue,
+              }) async {
+                phoneLogins++;
+                throw const LoginStageException('matrix_session');
+              },
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('手机号登录'));
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.byKey(const Key('auth-login-phone')), '13800000001');
+      find.byKey(const Key('auth-login-phone')),
+      '13800000001',
+    );
     await tester.enterText(find.byKey(const Key('auth-login-code')), '123456');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
-    await tester
-        .ensureVisible(find.byKey(const Key('auth-agreement-checkbox')));
+    await tester.ensureVisible(
+      find.byKey(const Key('auth-agreement-checkbox')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('auth-agreement-checkbox')));
     await tester.pump();
@@ -175,30 +391,36 @@ void main() {
 
     expect(phoneLogins, 1);
     expect(find.textContaining('原验证码不可再次提交'), findsOneWidget);
-    final codeField = tester.widget<CupertinoTextField>(find.descendant(
-      of: find.byKey(const Key('auth-login-code')),
-      matching: find.byType(CupertinoTextField),
-    ));
+    final codeField = tester.widget<CupertinoTextField>(
+      find.descendant(
+        of: find.byKey(const Key('auth-login-code')),
+        matching: find.byType(CupertinoTextField),
+      ),
+    );
     expect(codeField.controller?.text, isEmpty);
     expect(find.widgetWithText(ModernActionButton, '重试'), findsNothing);
     expect(otpRequests, 0);
-    await tester
-        .ensureVisible(find.widgetWithText(ModernActionButton, '重新获取验证码'));
+    await tester.ensureVisible(
+      find.widgetWithText(ModernActionButton, '重新获取验证码'),
+    );
     await tester.pumpAndSettle();
     expect(
-        tester
-            .widget<ModernActionButton>(
-                find.widgetWithText(ModernActionButton, '重新获取验证码'))
-            .onPressed,
-        isNotNull);
+      tester
+          .widget<ModernActionButton>(
+            find.widgetWithText(ModernActionButton, '重新获取验证码'),
+          )
+          .onPressed,
+      isNotNull,
+    );
     await tester.tap(find.widgetWithText(ModernActionButton, '重新获取验证码'));
     await tester.pump(const Duration(milliseconds: 100));
     expect(phoneLogins, 1);
     expect(otpRequests, 1);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
   });
-  testWidgets('rejected code cannot silently replay and does not auto resend',
-      (tester) async {
+  testWidgets('rejected code cannot silently replay and does not auto resend', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(393, 852);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -206,31 +428,46 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     var logins = 0;
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()));
-    await tester.pumpWidget(CupertinoApp(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+    );
+    await tester.pumpWidget(
+      CupertinoApp(
         home: LoginPage(
-            api: api,
-            onPhoneLogin: (phone, code,
-                {invitationCode = '',
+          api: api,
+          onPhoneLogin:
+              (
+                phone,
+                code, {
+                invitationCode = '',
                 termsAccepted = false,
-                shouldContinue}) async {
-              logins++;
-              if (logins == 1) {
-                throw const BusinessApiException(
-                    statusCode: 400, code: 'OTP_INVALID', message: '验证码无效或已过期');
-              }
-            })));
+                shouldContinue,
+              }) async {
+                logins++;
+                if (logins == 1) {
+                  throw const BusinessApiException(
+                    statusCode: 400,
+                    code: 'OTP_INVALID',
+                    message: '验证码无效或已过期',
+                  );
+                }
+              },
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('手机号登录'));
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.byKey(const Key('auth-login-phone')), '13800000001');
+      find.byKey(const Key('auth-login-phone')),
+      '13800000001',
+    );
     await tester.enterText(find.byKey(const Key('auth-login-code')), '111111');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
-    await tester
-        .ensureVisible(find.byKey(const Key('auth-agreement-checkbox')));
+    await tester.ensureVisible(
+      find.byKey(const Key('auth-agreement-checkbox')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('auth-agreement-checkbox')));
     await tester.pump();
@@ -240,15 +477,19 @@ void main() {
     expect(logins, 1);
     expect(find.widgetWithText(ModernActionButton, '重试'), findsNothing);
     expect(find.textContaining('原验证码不可再次提交'), findsOneWidget);
-    final codeField = tester.widget<CupertinoTextField>(find.descendant(
+    final codeField = tester.widget<CupertinoTextField>(
+      find.descendant(
         of: find.byKey(const Key('auth-login-code')),
-        matching: find.byType(CupertinoTextField)));
+        matching: find.byType(CupertinoTextField),
+      ),
+    );
     expect(codeField.controller?.text, isEmpty);
     expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
     expect(logins, 1);
   });
-  testWidgets('verified new phone can add invitation without another SMS',
-      (tester) async {
+  testWidgets('verified new phone can add invitation without another SMS', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(393, 852);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -259,39 +500,58 @@ void main() {
     var smsRequests = 0;
     var authenticated = 0;
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()),
-        client: MockClient((_) async {
-          smsRequests++;
-          return http.Response('{"status":"accepted"}', 202);
-        }));
-    await tester.pumpWidget(CupertinoApp(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+      client: MockClient((_) async {
+        smsRequests++;
+        return http.Response('{"status":"accepted"}', 202);
+      }),
+    );
+    await tester.pumpWidget(
+      CupertinoApp(
         home: LoginPage(
-            api: api,
-            onPhoneLogin: (phone, code,
-                {invitationCode = '',
+          api: api,
+          onPhoneLogin:
+              (
+                phone,
+                code, {
+                invitationCode = '',
                 termsAccepted = false,
-                shouldContinue}) async {
-              initialLogins++;
-              throw const PhoneInvitationContinuationRequired(
-                  ticket: 'opaque-verified-ticket-with-enough-length',
-                  issue: PhoneInvitationIssue.required);
-            },
-            onPhoneInvitationContinue: (phone, ticket, invitationCode,
-                {termsAccepted = false, shouldContinue}) async {
-              invitationContinuations++;
-              expect(phone, '13800000001');
-              expect(ticket, 'opaque-verified-ticket-with-enough-length');
-              expect(invitationCode,
-                  invitationContinuations == 1 ? 'BAD-INVITE' : 'GOOD-INVITE');
-              expect(termsAccepted, true);
-              if (invitationContinuations == 1) {
+                shouldContinue,
+              }) async {
+                initialLogins++;
                 throw const PhoneInvitationContinuationRequired(
+                  ticket: 'opaque-verified-ticket-with-enough-length',
+                  issue: PhoneInvitationIssue.required,
+                );
+              },
+          onPhoneInvitationContinue:
+              (
+                phone,
+                ticket,
+                invitationCode, {
+                termsAccepted = false,
+                shouldContinue,
+              }) async {
+                invitationContinuations++;
+                expect(phone, '13800000001');
+                expect(ticket, 'opaque-verified-ticket-with-enough-length');
+                expect(
+                  invitationCode,
+                  invitationContinuations == 1 ? 'BAD-INVITE' : 'GOOD-INVITE',
+                );
+                expect(termsAccepted, true);
+                if (invitationContinuations == 1) {
+                  throw const PhoneInvitationContinuationRequired(
                     ticket: 'opaque-verified-ticket-with-enough-length',
-                    issue: PhoneInvitationIssue.invalid);
-              }
-            },
-            onAuthenticated: () async => authenticated++)));
+                    issue: PhoneInvitationIssue.invalid,
+                  );
+                }
+              },
+          onAuthenticated: () async => authenticated++,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await _submitPhoneCode(tester);
     expect(initialLogins, 1);
@@ -299,12 +559,17 @@ void main() {
     expect(smsRequests, 0);
     expect(find.textContaining('验证码已通过'), findsOneWidget);
     expect(find.widgetWithText(ModernActionButton, '完成注册'), findsOneWidget);
-    final codeField = tester.widget<CupertinoTextField>(find.descendant(
+    final codeField = tester.widget<CupertinoTextField>(
+      find.descendant(
         of: find.byKey(const Key('auth-login-code')),
-        matching: find.byType(CupertinoTextField)));
+        matching: find.byType(CupertinoTextField),
+      ),
+    );
     expect(codeField.controller?.text, isEmpty);
     await tester.enterText(
-        find.byKey(const Key('auth-login-invitation')), 'BAD-INVITE');
+      find.byKey(const Key('auth-login-invitation')),
+      'BAD-INVITE',
+    );
     await tester.ensureVisible(find.widgetWithText(ModernActionButton, '完成注册'));
     await tester.tap(find.widgetWithText(ModernActionButton, '完成注册'));
     await tester.pumpAndSettle();
@@ -312,7 +577,9 @@ void main() {
     expect(find.widgetWithText(ModernActionButton, '完成注册'), findsOneWidget);
     expect(smsRequests, 0);
     await tester.enterText(
-        find.byKey(const Key('auth-login-invitation')), 'GOOD-INVITE');
+      find.byKey(const Key('auth-login-invitation')),
+      'GOOD-INVITE',
+    );
     await tester.tap(find.widgetWithText(ModernActionButton, '完成注册'));
     await tester.pumpAndSettle();
     expect(initialLogins, 1);
@@ -320,30 +587,41 @@ void main() {
     expect(authenticated, 1);
     expect(smsRequests, 0);
   });
-  testWidgets('password Matrix failure never mentions phone code',
-      (tester) async {
+  testWidgets('password Matrix failure never mentions phone code', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(393, 852);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     SharedPreferences.setMockInitialValues({});
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()));
-    await tester.pumpWidget(CupertinoApp(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+    );
+    await tester.pumpWidget(
+      CupertinoApp(
         home: LoginPage(
-            api: api,
-            onLogin: (_, __) async =>
-                throw const LoginStageException('matrix_session'))));
+          api: api,
+          onLogin: (_, __) async =>
+              throw const LoginStageException('matrix_session'),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.enterText(
-        find.byKey(const Key('auth-login-identity')), 'alice');
+      find.byKey(const Key('auth-login-identity')),
+      'alice',
+    );
     await tester.enterText(
-        find.byKey(const Key('auth-login-password')), 'password');
+      find.byKey(const Key('auth-login-password')),
+      'password',
+    );
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
-    await tester
-        .ensureVisible(find.byKey(const Key('auth-agreement-checkbox')));
+    await tester.ensureVisible(
+      find.byKey(const Key('auth-agreement-checkbox')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('auth-agreement-checkbox')));
     await tester.pump();
@@ -358,27 +636,32 @@ void main() {
     (
       'provisioning pending after OTP was accepted',
       const BusinessApiException(
-          statusCode: 202,
-          code: 'PHONE_PROVISIONING_PENDING',
-          message: '账号仍在开通'),
+        statusCode: 202,
+        code: 'PHONE_PROVISIONING_PENDING',
+        message: '账号仍在开通',
+      ),
     ),
     (
       'Matrix grant rejected after OTP was accepted',
       const BusinessApiException(
-          statusCode: 429, code: 'MATRIX_LOGIN_RATE_LIMITED', message: '请稍后重试'),
+        statusCode: 429,
+        code: 'MATRIX_LOGIN_RATE_LIMITED',
+        message: '请稍后重试',
+      ),
     ),
     (
       'account selection failed after OTP was accepted',
-      const LoginStageException('account_storage')
+      const LoginStageException('account_storage'),
     ),
     (
       'phone login response timed out with unknown OTP outcome',
-      TimeoutException('response lost')
+      TimeoutException('response lost'),
     ),
     ('unexpected post-login failure', StateError('post-login failed')),
   ]) {
-    testWidgets('${failure.$1} requires a new code without replay',
-        (tester) async {
+    testWidgets('${failure.$1} requires a new code without replay', (
+      tester,
+    ) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(393, 852);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -386,69 +669,99 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       var submissions = 0;
       final api = BusinessApiClient(
-          baseUri: Uri.parse('https://example.invalid'),
-          sessionStore: SecureSessionStore(_MemoryStore()));
-      await tester.pumpWidget(CupertinoApp(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+      );
+      await tester.pumpWidget(
+        CupertinoApp(
           home: LoginPage(
-              api: api,
-              onPhoneLogin: (phone, code,
-                  {invitationCode = '',
+            api: api,
+            onPhoneLogin:
+                (
+                  phone,
+                  code, {
+                  invitationCode = '',
                   termsAccepted = false,
-                  shouldContinue}) async {
-                submissions++;
-                throw failure.$2;
-              })));
+                  shouldContinue,
+                }) async {
+                  submissions++;
+                  throw failure.$2;
+                },
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       await _submitPhoneCode(tester);
       expect(submissions, 1);
       expect(
-          find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
+        find.widgetWithText(ModernActionButton, '重新获取验证码'),
+        findsOneWidget,
+      );
       expect(find.widgetWithText(ModernActionButton, '重试'), findsNothing);
-      final codeField = tester.widget<CupertinoTextField>(find.descendant(
+      final codeField = tester.widget<CupertinoTextField>(
+        find.descendant(
           of: find.byKey(const Key('auth-login-code')),
-          matching: find.byType(CupertinoTextField)));
+          matching: find.byType(CupertinoTextField),
+        ),
+      );
       expect(codeField.controller?.text, isEmpty);
     });
   }
 
-  testWidgets('cancelled account switch cannot replay its consumed phone code',
-      (tester) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(393, 852);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    SharedPreferences.setMockInitialValues({});
-    var submissions = 0;
-    var cancellations = 0;
-    final api = BusinessApiClient(
+  testWidgets(
+    'cancelled account switch cannot replay its consumed phone code',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(393, 852);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      SharedPreferences.setMockInitialValues({});
+      var submissions = 0;
+      var cancellations = 0;
+      final api = BusinessApiClient(
         baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()));
-    await tester.pumpWidget(CupertinoApp(
-        home: LoginPage(
+        sessionStore: SecureSessionStore(_MemoryStore()),
+      );
+      await tester.pumpWidget(
+        CupertinoApp(
+          home: LoginPage(
             api: api,
-            onPhoneLogin: (phone, code,
-                {invitationCode = '',
-                termsAccepted = false,
-                shouldContinue}) async {
-              submissions++;
-              throw const MatrixAccountSwitchRequired(
-                  fromMxid: '@old:example.invalid',
-                  toMxid: '@new:example.invalid');
-            },
-            onCancelMatrixAccountSwitch: () async => cancellations++)));
-    await tester.pumpAndSettle();
-    await _submitPhoneCode(tester, settle: false);
-    await tester.pump();
-    expect(find.text('切换聊天账号'), findsOneWidget);
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
-    expect(submissions, 1);
-    expect(cancellations, 1);
-    expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
-  });
+            onPhoneLogin:
+                (
+                  phone,
+                  code, {
+                  invitationCode = '',
+                  termsAccepted = false,
+                  shouldContinue,
+                }) async {
+                  submissions++;
+                  throw const MatrixAccountSwitchRequired(
+                    fromMxid: '@old:example.invalid',
+                    toMxid: '@new:example.invalid',
+                  );
+                },
+            onCancelMatrixAccountSwitch: () async => cancellations++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _submitPhoneCode(tester, settle: false);
+      await tester.pump();
+      expect(find.text('切换聊天账号'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(submissions, 1);
+      expect(cancellations, 1);
+      expect(
+        find.widgetWithText(ModernActionButton, '重新获取验证码'),
+        findsOneWidget,
+      );
+    },
+  );
 
-  testWidgets('post-login callback failure cannot replay a phone code',
-      (tester) async {
+  testWidgets('post-login callback failure cannot replay a phone code', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(393, 852);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -456,26 +769,36 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     var submissions = 0;
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()));
-    await tester.pumpWidget(CupertinoApp(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+    );
+    await tester.pumpWidget(
+      CupertinoApp(
         home: LoginPage(
-            api: api,
-            onPhoneLogin: (phone, code,
-                {invitationCode = '',
+          api: api,
+          onPhoneLogin:
+              (
+                phone,
+                code, {
+                invitationCode = '',
                 termsAccepted = false,
-                shouldContinue}) async {
-              submissions++;
-            },
-            onAuthenticated: () async => throw StateError('startup failed'))));
+                shouldContinue,
+              }) async {
+                submissions++;
+              },
+          onAuthenticated: () async => throw StateError('startup failed'),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await _submitPhoneCode(tester);
     expect(submissions, 1);
     expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
   });
 
-  testWidgets('OTP response for a previous phone cannot unlock current phone',
-      (tester) async {
+  testWidgets('OTP response for a previous phone cannot unlock current phone', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(393, 852);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -483,26 +806,37 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final otpResponse = Completer<http.Response>();
     final api = BusinessApiClient(
-        baseUri: Uri.parse('https://example.invalid'),
-        sessionStore: SecureSessionStore(_MemoryStore()),
-        client: MockClient((_) => otpResponse.future));
-    await tester.pumpWidget(CupertinoApp(
+      baseUri: Uri.parse('https://example.invalid'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+      client: MockClient((_) => otpResponse.future),
+    );
+    await tester.pumpWidget(
+      CupertinoApp(
         home: LoginPage(
-            api: api,
-            onPhoneLogin: (phone, code,
-                    {invitationCode = '',
-                    termsAccepted = false,
-                    shouldContinue}) async =>
-                throw TimeoutException('unknown'))));
+          api: api,
+          onPhoneLogin:
+              (
+                phone,
+                code, {
+                invitationCode = '',
+                termsAccepted = false,
+                shouldContinue,
+              }) async => throw TimeoutException('unknown'),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await _submitPhoneCode(tester);
     expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
-    await tester
-        .ensureVisible(find.widgetWithText(ModernActionButton, '重新获取验证码'));
+    await tester.ensureVisible(
+      find.widgetWithText(ModernActionButton, '重新获取验证码'),
+    );
     await tester.tap(find.widgetWithText(ModernActionButton, '重新获取验证码'));
     await tester.pump();
     await tester.enterText(
-        find.byKey(const Key('auth-login-phone')), '13800000002');
+      find.byKey(const Key('auth-login-phone')),
+      '13800000002',
+    );
     otpResponse.complete(http.Response('{"status":"accepted"}', 202));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
@@ -513,7 +847,9 @@ Future<void> _submitPhoneCode(WidgetTester tester, {bool settle = true}) async {
   await tester.tap(find.text('手机号登录'));
   await tester.pumpAndSettle();
   await tester.enterText(
-      find.byKey(const Key('auth-login-phone')), '13800000001');
+    find.byKey(const Key('auth-login-phone')),
+    '13800000001',
+  );
   await tester.enterText(find.byKey(const Key('auth-login-code')), '123456');
   FocusManager.instance.primaryFocus?.unfocus();
   await tester.pumpAndSettle();

@@ -451,9 +451,10 @@ final class LoginAuthenticationException implements Exception {
 }
 
 final class LoginState {
-  const LoginState(this.status, {this.message});
+  const LoginState(this.status, {this.message, this.retryAfterSeconds});
   final LoginStatus status;
   final String? message;
+  final int? retryAfterSeconds;
 }
 
 final class LoginController extends ChangeNotifier {
@@ -498,6 +499,9 @@ final class LoginController extends ChangeNotifier {
         state = LoginState(
           LoginStatus.failed,
           message: error.statusCode == 401 ? '账号或密码错误' : error.message,
+          retryAfterSeconds: error.statusCode == 429
+              ? (error.retryAfterSeconds ?? 60).clamp(1, 86400)
+              : null,
         );
         notifyListeners();
         return false;

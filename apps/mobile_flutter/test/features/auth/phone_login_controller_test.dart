@@ -49,6 +49,19 @@ void main() {
     expect(gateway.otpRequests.length, 1, reason: '失败后不自动重发');
   });
 
+  test('SMS rate limit remains an OTP warning rather than login rate limit',
+      () async {
+    gateway.otpError = const BusinessApiException(
+        code: 'OTP_SEND_RATE_LIMITED',
+        message: '发送过于频繁',
+        statusCode: 429,
+        retryAfterSeconds: 60);
+    expect(await controller.requestOtp('13800000001'), isFalse);
+    expect(controller.state.message, '发送过于频繁，请稍后再试');
+    expect(controller.state.loginRetryAfterSeconds, isNull);
+    expect(gateway.otpRequests.length, 1);
+  });
+
   test('correct code succeeds and lands session via gateway', () async {
     await controller.requestOtp('+8613800000001');
     expect(await controller.submit('+8613800000001', '243697'), isTrue);

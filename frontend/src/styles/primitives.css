@@ -113,6 +113,20 @@ app-transfer-card {
   object-fit: cover;
 }
 
+.ui-screen[data-theme="dark"] .p-auth__background {
+  filter: brightness(var(--opacity-muted));
+}
+
+.ui-screen[data-theme="dark"] .p-auth::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-content);
+  background: var(--color-page-background);
+  opacity: var(--opacity-pressed);
+  pointer-events: none;
+}
+
 .p-auth__panel {
   position: relative;
   z-index: var(--z-content);
@@ -1586,6 +1600,27 @@ app-transfer-card {
 .c-phone-flows__otp-row { align-items: end; }
 .c-phone-flows__otp-row .c-form-field { min-width: 0; }
 .c-phone-flows__otp-row app-secondary-button { flex: 0 0 auto; }
+.c-phone-flows__phone-field { display: grid; gap: var(--space-xs); }
+.c-phone-flows__phone-field > p { margin: 0; }
+.c-phone-flows__otp-row app-secondary-button .c-secondary-button {
+  border: var(--size-hairline) solid var(--color-brand-primary);
+  color: var(--color-brand-primary);
+  transition: transform var(--motion-press-out), opacity var(--motion-press-out);
+}
+.c-phone-flows__otp-row app-secondary-button .c-secondary-button:active:not(:disabled) {
+  opacity: var(--opacity-pressed);
+  transform: scale(var(--scale-pressed));
+  transition-duration: var(--motion-press-in);
+}
+.c-phone-flows__otp-row app-secondary-button .c-secondary-button:disabled {
+  border-color: var(--color-divider);
+  color: var(--color-text-tertiary);
+}
+@media (prefers-reduced-motion: reduce) {
+  .c-phone-flows__otp-row app-secondary-button .c-secondary-button:active:not(:disabled) {
+    transform: none;
+  }
+}
 .c-phone-flows__otp-row[data-eligible="true"] app-secondary-button .c-secondary-button {
   color: var(--color-brand-primary);
 }
