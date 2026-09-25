@@ -3,6 +3,7 @@ import '../../core/privacy_consent.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/business_phone_contracts.dart';
 import '../../ui/components/auth_surface_card.dart';
 import '../../ui/components/immersive_auth_scaffold.dart';
 import '../../ui/components/modern_action_button.dart';
@@ -19,6 +20,7 @@ final class LoginPage extends StatefulWidget {
     required this.api,
     this.onLogin,
     this.onPhoneLogin,
+    this.onPhoneInvitationContinue,
     this.onConfirmMatrixAccountSwitch,
     this.onCancelMatrixAccountSwitch,
     this.onAuthenticated,
@@ -33,6 +35,10 @@ final class LoginPage extends StatefulWidget {
       {String invitationCode,
       bool termsAccepted,
       bool Function()? shouldContinue})? onPhoneLogin;
+  final Future<void> Function(
+      String phone, String ticket, String invitationCode,
+      {bool termsAccepted,
+      bool Function()? shouldContinue})? onPhoneInvitationContinue;
   final Future<void> Function(String username, String password)? onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
@@ -74,7 +80,10 @@ final class _LoginPageState extends State<LoginPage>
   }
 
   bool get _canRequestPhoneCode =>
-      !_loading && _normalizedPhone != null && _phoneController.canRequestOtp;
+      !_loading &&
+      _invitationTicket == null &&
+      _normalizedPhone != null &&
+      _phoneController.canRequestOtp;
 
   Future<void> _requestPhoneCode() async {
     final requestedPhone = _normalizedPhone;
@@ -86,7 +95,12 @@ final class _LoginPageState extends State<LoginPage>
       setState(() => _error = '请先阅读并同意用户协议和隐私政策');
       return;
     }
-    setState(() => _error = null);
+    setState(() {
+      _invitationTicket = null;
+      _invitationPhone = null;
+      _requiresFreshPhoneCode = true;
+      _error = null;
+    });
     final accepted = await _phoneController.requestOtp(requestedPhone);
     if (!mounted) return;
     setState(() {
@@ -113,9 +127,29 @@ final class _LoginPageState extends State<LoginPage>
 
   bool _loading = false;
   bool _requiresFreshPhoneCode = false;
+  String? _invitationTicket;
+  String? _invitationPhone;
   bool _agreementAccepted = false;
   bool _passwordVisible = false;
   String? _error;
+
+  String _invitationMessage(PhoneInvitationIssue issue) => switch (issue) {
+        PhoneInvitationIssue.required => '验证码已通过，请输入邀请码后完成注册',
+        PhoneInvitationIssue.invalid => '验证码已通过，邀请码无效，请更换后继续',
+        PhoneInvitationIssue.expired => '验证码已通过，邀请码已过期，请更换后继续',
+        PhoneInvitationIssue.exhausted => '验证码已通过，邀请码使用次数已满，请更换后继续',
+        PhoneInvitationIssue.terms => '验证码已通过，请同意用户协议和隐私政策后继续',
+        PhoneInvitationIssue.uncertain => '验证码已通过，邀请码提交结果待确认；请在本页继续',
+        PhoneInvitationIssue.provisioning => '验证码已通过，聊天账号仍在开通；请稍后在本页继续',
+      };
+
+  void _acceptInvitationProof(
+      PhoneInvitationContinuationRequired proof, String phone) {
+    _invitationTicket = proof.ticket;
+    _invitationPhone = phone;
+    _requiresFreshPhoneCode = false;
+    _error = _invitationMessage(proof.issue);
+  }
 
   @override
   void dispose() {
@@ -131,6 +165,8 @@ final class _LoginPageState extends State<LoginPage>
   }
 
   Future<void> _submit() async {
+    final continuationTicket = _phoneMode ? _invitationTicket : null;
+    final continuing = continuationTicket != null;
     if (_phoneMode && _requiresFreshPhoneCode) {
       setState(() => _error = '原验证码不可再次提交，请重新获取验证码');
       return;
@@ -140,11 +176,24 @@ final class _LoginPageState extends State<LoginPage>
     final password = _phoneMode ? _code.text.trim() : _password.text;
     if (_phoneMode &&
         (!RegExp(r'^1[3-9]\d{9}$').hasMatch(username) ||
-            !RegExp(r'^\d{6}$').hasMatch(password))) {
+            (!continuing && !RegExp(r'^\d{6}$').hasMatch(password)))) {
       setState(() => _error = '请输入有效手机号和 6 位验证码');
       return;
     }
-    if (username.isEmpty || password.isEmpty) {
+    if (continuing && username != _invitationPhone) {
+      setState(() {
+        _invitationTicket = null;
+        _invitationPhone = null;
+        _requiresFreshPhoneCode = true;
+        _error = '手机号已更改，请重新获取验证码';
+      });
+      return;
+    }
+    if (continuing && _invitation.text.trim().isEmpty) {
+      setState(() => _error = '验证码已通过，请输入邀请码后完成注册');
+      return;
+    }
+    if (username.isEmpty || (!continuing && password.isEmpty)) {
       setState(() => _error = '请输入畅聊号/邮箱和密码');
       return;
     }
@@ -157,9 +206,9 @@ final class _LoginPageState extends State<LoginPage>
     setState(() {
       _loading = true;
       _error = null;
-      // The server may consume a one-time code even when its response is lost.
-      // Once submitted, only an explicitly requested new code can unlock login.
-      if (_phoneMode) _requiresFreshPhoneCode = true;
+      // An unknown OTP result cannot be replayed. Only a server-issued
+      // invitation proof permits continuation without another SMS check.
+      if (_phoneMode && !continuing) _requiresFreshPhoneCode = true;
     });
     final controller = LoginController(
       operation: (user, secret) async {
@@ -179,7 +228,24 @@ final class _LoginPageState extends State<LoginPage>
     try {
       final bool success;
       if (_phoneMode) {
-        if (widget.onPhoneLogin != null) {
+        if (continuing) {
+          if (widget.onPhoneInvitationContinue != null) {
+            await widget.onPhoneInvitationContinue!(
+                username, continuationTicket, _invitation.text.trim(),
+                termsAccepted: _agreementAccepted,
+                shouldContinue: _loginIsCurrent);
+          } else {
+            await widget.api.completePhoneLoginInvitation(
+                invitationTicket: continuationTicket,
+                phone: username,
+                invitationCode: _invitation.text.trim(),
+                termsAccepted: _agreementAccepted,
+                deviceKey: _phoneController.deviceKey,
+                deviceName: _phoneController.deviceName,
+                shouldContinue: _loginIsCurrent);
+          }
+          success = true;
+        } else if (widget.onPhoneLogin != null) {
           await widget.onPhoneLogin!(username, password,
               invitationCode: _invitation.text.trim(),
               termsAccepted: _agreementAccepted,
@@ -195,6 +261,8 @@ final class _LoginPageState extends State<LoginPage>
         success = await controller.submit(username, password);
       }
       if (success && mounted) {
+        _invitationTicket = null;
+        _invitationPhone = null;
         // 勾选《用户协议和隐私政策》是登录前置条件；成功后持久化，
         // 作为个推等第三方 SDK 初始化的同意依据（docs/PUSH_SETUP.md）。
         if (_agreementAccepted) {
@@ -212,9 +280,18 @@ final class _LoginPageState extends State<LoginPage>
         }
       }
       if (!success && mounted) {
-        setState(() => _error = _phoneMode
-            ? '${_phoneController.state.message ?? '登录结果待确认'}；原验证码不可再次提交，请重新获取验证码'
-            : controller.state.message);
+        final proof = _phoneController.invitationContinuation;
+        if (_phoneMode && proof != null) {
+          setState(() => _acceptInvitationProof(proof, username));
+        } else {
+          setState(() => _error = _phoneMode
+              ? '${_phoneController.state.message ?? '登录结果待确认'}；原验证码不可再次提交，请重新获取验证码'
+              : controller.state.message);
+        }
+      }
+    } on PhoneInvitationContinuationRequired catch (proof) {
+      if (mounted && _phoneMode && _normalizedPhone == username) {
+        setState(() => _acceptInvitationProof(proof, username));
       }
     } on MatrixAccountSwitchRequired {
       final confirmed = await _confirmMatrixAccountSwitch();
@@ -247,9 +324,20 @@ final class _LoginPageState extends State<LoginPage>
       }
     } on BusinessApiException catch (error) {
       if (mounted) {
-        setState(() => _error = _phoneMode
-            ? '${error.message}；原验证码不可再次提交，请重新获取验证码'
-            : error.message);
+        setState(() {
+          if (continuing &&
+              (error.code == 'LOGIN_TICKET_INVALID' ||
+                  error.code == 'INVITATION_TICKET_INVALID')) {
+            _invitationTicket = null;
+            _invitationPhone = null;
+            _requiresFreshPhoneCode = true;
+          }
+          _error = _phoneMode
+              ? continuing && _invitationTicket != null
+                  ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
+                  : '${error.message}；原验证码不可再次提交，请重新获取验证码'
+              : error.message;
+        });
       }
     } on LoginStageException catch (error) {
       if (mounted) {
@@ -258,8 +346,11 @@ final class _LoginPageState extends State<LoginPage>
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _error =
-            _phoneMode ? '登录结果待确认；原验证码不可再次提交，请重新获取验证码' : '服务暂时不可用，请稍后重试');
+        setState(() => _error = _phoneMode
+            ? continuing && _invitationTicket != null
+                ? '补填结果待确认；请在本页重试，凭据失效后再获取新验证码'
+                : '登录结果待确认；原验证码不可再次提交，请重新获取验证码'
+            : '服务暂时不可用，请稍后重试');
       }
     } finally {
       controller.dispose();
@@ -337,6 +428,9 @@ final class _LoginPageState extends State<LoginPage>
                     ? (_) {}
                     : (value) => setState(() {
                           _phoneMode = value ?? false;
+                          _invitationTicket = null;
+                          _invitationPhone = null;
+                          if (!_phoneMode) _requiresFreshPhoneCode = false;
                           _error = null;
                         }),
               ),
@@ -352,17 +446,26 @@ final class _LoginPageState extends State<LoginPage>
                     label: '手机号',
                     placeholder: '中国大陆 +86',
                     controller: _phone,
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (_) => setState(() {
+                          if (_invitationTicket != null &&
+                              _normalizedPhone != _invitationPhone) {
+                            _invitationTicket = null;
+                            _invitationPhone = null;
+                            _requiresFreshPhoneCode = true;
+                            _error = '手机号已更改，请重新获取验证码';
+                          }
+                        }),
                     keyboardType: TextInputType.phone,
                     enabled: !_loading),
                 const SizedBox(height: WeChatSpacing.md),
                 AuthTextField(
                     key: const Key('auth-login-code'),
-                    label: '短信验证码',
-                    placeholder: '输入 6 位验证码',
+                    label: _invitationTicket == null ? '短信验证码' : '短信验证码（已通过）',
+                    placeholder:
+                        _invitationTicket == null ? '输入 6 位验证码' : '已验证',
                     controller: _code,
                     keyboardType: TextInputType.number,
-                    enabled: !_loading,
+                    enabled: !_loading && _invitationTicket == null,
                     trailing: CupertinoButton(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         onPressed:
@@ -464,11 +567,13 @@ final class _LoginPageState extends State<LoginPage>
                   icon: _error == null
                       ? ChangliaoIcons.confirm
                       : ChangliaoIcons.retry,
-                  label: _requiresFreshPhoneCode && _phoneMode
-                      ? '重新获取验证码'
-                      : _error == null
-                          ? '登录'
-                          : '重试',
+                  label: _invitationTicket != null && _phoneMode
+                      ? '完成注册'
+                      : _requiresFreshPhoneCode && _phoneMode
+                          ? '重新获取验证码'
+                          : _error == null
+                              ? '登录'
+                              : '重试',
                   loading: _loading,
                   onPressed: _loading || !_agreementAccepted
                       ? null

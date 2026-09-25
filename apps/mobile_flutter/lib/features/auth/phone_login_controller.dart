@@ -52,6 +52,7 @@ final class PhoneLoginController extends ChangeNotifier {
   final DateTime Function() _now;
 
   PhoneLoginState state = const PhoneLoginState(PhoneLoginStatus.idle);
+  PhoneInvitationContinuationRequired? invitationContinuation;
   DateTime? _cooldownUntil;
   Timer? _cooldownTimer;
   bool _disposed = false;
@@ -75,6 +76,7 @@ final class PhoneLoginController extends ChangeNotifier {
   /// 请求验证码。超时/失败不改变"是否已发送"的事实——提示用户稍后重试，
   /// 由服务端限频兜底；本地不自动重发。
   Future<bool> requestOtp(String phone) async {
+    invitationContinuation = null;
     if (state.status == PhoneLoginStatus.otpSending ||
         state.status == PhoneLoginStatus.verifying) {
       return false;
@@ -114,6 +116,7 @@ final class PhoneLoginController extends ChangeNotifier {
       bool termsAccepted = false,
       bool Function()? shouldContinue}) async {
     if (state.status == PhoneLoginStatus.verifying) return false;
+    invitationContinuation = null;
     state = const PhoneLoginState(PhoneLoginStatus.verifying);
     notifyListeners();
     try {
@@ -126,6 +129,12 @@ final class PhoneLoginController extends ChangeNotifier {
         deviceKey: deviceKey,
         deviceName: deviceName,
       );
+    } on PhoneInvitationContinuationRequired catch (error) {
+      invitationContinuation = error;
+      state = const PhoneLoginState(PhoneLoginStatus.failed,
+          message: '验证码已通过，请补填邀请码后继续注册');
+      notifyListeners();
+      return false;
     } on Exception catch (error) {
       final code_ = _errorCode(error);
       if (code_ == 'SMS_VERIFY_UNAVAILABLE' ||
@@ -167,6 +176,8 @@ final class PhoneLoginController extends ChangeNotifier {
     switch (_errorCode(error)) {
       case 'INVITATION_REQUIRED':
       case 'INVITATION_INVALID':
+      case 'INVITATION_EXPIRED':
+      case 'INVITATION_EXHAUSTED':
         return '新用户需要填写有效邀请码';
       case 'PHONE_PROVISIONING_PENDING':
         return '账号仍在开通，请稍后重新登录；无需再次注册';

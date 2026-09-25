@@ -6263,9 +6263,89 @@
         "title": "PerformanceSnapshot",
         "type": "object"
       },
+      "PhoneInvitationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "device_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Device Key",
+            "type": "string"
+          },
+          "device_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Device Name",
+            "type": "string"
+          },
+          "invitation_code": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Invitation Code",
+            "type": "string"
+          },
+          "invitation_ticket": {
+            "maxLength": 128,
+            "minLength": 32,
+            "title": "Invitation Ticket",
+            "type": "string"
+          },
+          "phone": {
+            "maxLength": 20,
+            "minLength": 5,
+            "title": "Phone",
+            "type": "string"
+          },
+          "terms_accepted": {
+            "default": false,
+            "title": "Terms Accepted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "invitation_ticket",
+          "phone",
+          "device_key",
+          "device_name"
+        ],
+        "title": "PhoneInvitationBody",
+        "type": "object"
+      },
+      "PhoneInvitationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "invitation_ticket": {
+            "title": "Invitation Ticket",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "INVITATION_VERIFIED",
+              "INVITATION_REQUIRED",
+              "INVITATION_INVALID",
+              "INVITATION_EXPIRED",
+              "INVITATION_EXHAUSTED",
+              "TERMS_REQUIRED"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "invitation_ticket"
+        ],
+        "title": "PhoneInvitationResponse",
+        "type": "object"
+      },
       "PhoneLoginBody": {
         "additionalProperties": false,
         "properties": {
+          "allow_invitation_continuation": {
+            "default": false,
+            "title": "Allow Invitation Continuation",
+            "type": "boolean"
+          },
           "code": {
             "maxLength": 8,
             "minLength": 4,
@@ -18128,7 +18208,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PhoneLoginPendingResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PhoneLoginPendingResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PhoneInvitationResponse"
+                    }
+                  ],
+                  "title": "Response 202 Phone Login Api V1 Auth Phone Login Post"
                 }
               }
             },
@@ -18237,6 +18325,85 @@
           }
         },
         "summary": "Phone Login Complete",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/phone/login/invitation": {
+      "post": {
+        "operationId": "phone_login_invitation_api_v1_auth_phone_login_invitation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneInvitationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordLoginResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PhoneLoginPendingResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PhoneInvitationResponse"
+                    }
+                  ],
+                  "title": "Response 202 Phone Login Invitation Api V1 Auth Phone Login Invitation Post"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Phone Login Invitation",
         "tags": [
           "identity"
         ]

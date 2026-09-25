@@ -184,6 +184,7 @@ Future<void> main() async {
         api: api,
         onLogin: login.login,
         onPhoneLogin: login.loginPhone,
+        onPhoneInvitationContinue: login.continuePhoneInvitation,
         onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
         onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
         onAuthenticated: session.bootstrap,

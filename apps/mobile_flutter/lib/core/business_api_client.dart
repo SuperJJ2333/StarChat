@@ -66,6 +66,7 @@ final class BusinessApiClient
         InviteCacheScopeProvider,
         SupportIdentityGateway,
         phone_contracts.PhoneAuthGateway,
+        phone_contracts.PhoneInvitationContinuationGateway,
         phone_contracts.RechargeGateway {
   BusinessApiClient({
     required this.baseUri,
@@ -1526,7 +1527,7 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> momentProfilePreview(String userId) =>
       getJson('/moments/users/${Uri.encodeComponent(userId)}/preview');
   Future<Map<String, dynamic>> momentNotifications(
-      {int limit = 30, String? cursor}) =>
+          {int limit = 30, String? cursor}) =>
       getJson('/moments/notifications?limit=$limit'
           '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}');
   Future<Map<String, dynamic>> momentUnreadCount() =>
@@ -1689,13 +1690,7 @@ final class BusinessApiClient
     bool termsAccepted = false,
     bool Function()? shouldContinue,
   }) async {
-    final loginEpoch = ++_sessionEpoch;
-    supportIdentities.clear();
-    _refreshFlight = null;
-    _refreshRetryAt = null;
-    _refreshFailures = 0;
-    _matrixGrantFlight = null;
-    _matrixGrantRetryAt = null;
+    final loginEpoch = _beginPhoneLogin();
     final response = await _client
         .post(
           _uri('/auth/phone/login'),
@@ -1703,6 +1698,7 @@ final class BusinessApiClient
           body: jsonEncode({
             'phone': phone,
             'code': code,
+            'allow_invitation_continuation': true,
             if (invitationCode.isNotEmpty) 'invitation_code': invitationCode,
             if (termsAccepted) 'terms_accepted': true,
             'device_key': deviceKey,
@@ -1711,6 +1707,175 @@ final class BusinessApiClient
         )
         .timeout(_httpTimeout);
     var body = _decode(response);
+    String? invitationTicket;
+    if (body['status'] == 'INVITATION_VERIFIED') {
+      if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+        throw _ended;
+      }
+      final ticket = _invitationTicket(body);
+      invitationTicket = ticket;
+      if (invitationCode.trim().isEmpty) {
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+            ticket: ticket,
+            issue: phone_contracts.PhoneInvitationIssue.required);
+      }
+      try {
+        body = await _submitPhoneInvitation(
+            invitationTicket: ticket,
+            phone: phone,
+            invitationCode: invitationCode,
+            termsAccepted: termsAccepted,
+            deviceKey: deviceKey,
+            deviceName: deviceName,
+            shouldContinue: shouldContinue,
+            loginEpoch: loginEpoch);
+      } on phone_contracts.PhoneInvitationContinuationRequired {
+        rethrow;
+      } on BusinessApiException catch (error) {
+        if (error.code == 'INVITATION_TICKET_INVALID' ||
+            error.code == 'AUTH_SESSION_ENDED') {
+          rethrow;
+        }
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+            ticket: ticket,
+            issue: phone_contracts.PhoneInvitationIssue.uncertain);
+      } on Exception {
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+            ticket: ticket,
+            issue: phone_contracts.PhoneInvitationIssue.uncertain);
+      }
+    }
+    try {
+      return await _finishPhoneLogin(body,
+          deviceKey: deviceKey,
+          deviceName: deviceName,
+          shouldContinue: shouldContinue,
+          loginEpoch: loginEpoch);
+    } on BusinessApiException catch (error) {
+      if (invitationTicket == null ||
+          error.code == 'AUTH_SESSION_ENDED' ||
+          error.code == 'LOGIN_TICKET_INVALID') {
+        rethrow;
+      }
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: invitationTicket,
+          issue: error.code == 'PHONE_PROVISIONING_PENDING'
+              ? phone_contracts.PhoneInvitationIssue.provisioning
+              : phone_contracts.PhoneInvitationIssue.uncertain);
+    } on Exception {
+      if (invitationTicket == null) rethrow;
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: invitationTicket,
+          issue: phone_contracts.PhoneInvitationIssue.uncertain);
+    }
+  }
+
+  int _beginPhoneLogin() {
+    final loginEpoch = ++_sessionEpoch;
+    supportIdentities.clear();
+    _refreshFlight = null;
+    _refreshRetryAt = null;
+    _refreshFailures = 0;
+    _matrixGrantFlight = null;
+    _matrixGrantRetryAt = null;
+    return loginEpoch;
+  }
+
+  String _invitationTicket(Map<String, dynamic> body) {
+    final ticket = body['invitation_ticket'];
+    if (ticket is! String || ticket.length < 32 || ticket.length > 128) {
+      throw const FormatException('Invalid phone invitation response');
+    }
+    return ticket;
+  }
+
+  phone_contracts.PhoneInvitationIssue? _invitationIssue(Object? status) =>
+      switch (status) {
+        'INVITATION_REQUIRED' => phone_contracts.PhoneInvitationIssue.required,
+        'INVITATION_INVALID' => phone_contracts.PhoneInvitationIssue.invalid,
+        'INVITATION_EXPIRED' => phone_contracts.PhoneInvitationIssue.expired,
+        'INVITATION_EXHAUSTED' =>
+          phone_contracts.PhoneInvitationIssue.exhausted,
+        'TERMS_REQUIRED' => phone_contracts.PhoneInvitationIssue.terms,
+        _ => null,
+      };
+
+  Future<Map<String, dynamic>> _submitPhoneInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    required int loginEpoch,
+    bool Function()? shouldContinue,
+  }) async {
+    if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+      throw _ended;
+    }
+    final response = await _client
+        .post(
+          _uri('/auth/phone/login/invitation'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'phone': phone,
+            'invitation_ticket': invitationTicket,
+            'invitation_code': invitationCode,
+            'terms_accepted': termsAccepted,
+            'device_key': deviceKey,
+            'device_name': deviceName,
+          }),
+        )
+        .timeout(_httpTimeout);
+    final body = _decode(response);
+    if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+      throw _ended;
+    }
+    final issue = _invitationIssue(body['status']);
+    if (issue != null) {
+      if (_invitationTicket(body) != invitationTicket) {
+        throw const FormatException('Mismatched phone invitation response');
+      }
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: invitationTicket, issue: issue);
+    }
+    return body;
+  }
+
+  @override
+  Future<Map<String, dynamic>> completePhoneLoginInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    bool Function()? shouldContinue,
+  }) async {
+    final loginEpoch = _beginPhoneLogin();
+    final body = await _submitPhoneInvitation(
+        invitationTicket: invitationTicket,
+        phone: phone,
+        invitationCode: invitationCode,
+        termsAccepted: termsAccepted,
+        deviceKey: deviceKey,
+        deviceName: deviceName,
+        loginEpoch: loginEpoch,
+        shouldContinue: shouldContinue);
+    return _finishPhoneLogin(body,
+        deviceKey: deviceKey,
+        deviceName: deviceName,
+        shouldContinue: shouldContinue,
+        loginEpoch: loginEpoch);
+  }
+
+  Future<Map<String, dynamic>> _finishPhoneLogin(
+    Map<String, dynamic> body, {
+    required String deviceKey,
+    required String deviceName,
+    required int loginEpoch,
+    bool Function()? shouldContinue,
+  }) async {
     final waiting = Stopwatch()..start();
     final ticket = body['login_ticket']?.toString();
     while (body['status'] == 'PENDING_MATRIX') {
@@ -1743,6 +1908,10 @@ final class BusinessApiClient
                   message: '账号开通结果待确认，请稍后重新登录；无需再次注册',
                   statusCode: 202));
       body = _decode(completion);
+    }
+    if (!body.containsKey('access_token') ||
+        !body.containsKey('refresh_token')) {
+      throw const FormatException('Invalid phone login response');
     }
     if (shouldContinue?.call() == false) throw _ended;
     if (loginEpoch != _sessionEpoch) throw _ended;

@@ -1,0 +1,17 @@
+# Verified Phone Invitation Continuation
+
+**Authorization:** On 2026-09-25 the user clarified that a new phone account lacked an invitation code and explicitly requested entering it after SMS verification without requesting another code. This extends the MI 6 login incident task and ADR-0075. Authentication changes require domain and quality/security reviews before production or device delivery.
+
+**Evidence:** The current `/auth/phone/login` checks the supplier OTP before `InvitationService.consume_in_session`. An invitation error rolls back the local OTP update, but cannot roll back `CheckSmsVerifyCode`; the supplier does not promise that a second check of the same code succeeds. Debug2175 consequently requires a new code after every failed submit. A 202 SMS send response does not prove device delivery.
+
+**Goal:** For a newly registering phone user, a verified OTP yields a short-lived, device-bound, one-time server proof when invitation or terms need correction. The user can provide an invitation and continue registration without another SMS check. Unknown or failed OTP checks never produce this proof. Existing account, password login, Matrix session, E2EE and business authority remain unchanged.
+
+## Steps
+
+1. Add backend red tests for no-invitation and invalid-invitation correction, one supplier check only, proof expiry/device binding/replay/concurrency, wrong OTP, and no account/invitation/outbox before valid continuation. Then implement an opt-in response and endpoint using an opaque random ticket stored only as a digest in an expiring existing OTP challenge row. For an unknown phone with opt-in, consume the verified OTP and persist the proof atomically, before any invitation check. Validate the invitation and terms in the continuation endpoint with bounded attempts. Complete registration and transform the proof to the existing Matrix login-resume ticket atomically, so a lost invitation response can be retried safely.
+2. Update the public API schema and ADR-0075. Do not add raw phone, OTP, invitation, device key or ticket to logs. Preserve the old response behavior for clients that do not opt in.
+3. Add Flutter red widget and client-contract tests. Keep the server-issued proof in memory only, bound to the entered phone and current page; clear it on phone change or new OTP request. Show a correction action without asking for another SMS. Use the proof through the existing DualDomainLoginService, then follow the current Matrix flow. On uncertain or unrelated failures, retain the existing one-time OTP guard.
+4. Run focused and relevant full gates; inspect tests and changed contract. Request independent specification/domain review followed by quality/security review. Freeze the source and build the next Debug APK with the mandatory APK rebuild, fixed signer and preserved MI 6 data.
+5. Deploy only the reviewed API change under the production workflow after live baseline/backup/rollback checks. Install the verified Debug build and collect anonymized device performance/network evidence. Real SMS and invitation entry remain user actions; do not request their values.
+
+**Acceptance:** A verified OTP plus missing invitation returns a one-time continuation. Correcting the invitation calls no SMS verifier, creates at most one user/invitation use/outbox event and proceeds to Matrix provisioning. A consumed/expired/foreign-device proof fails; uncertain OTP outcomes do not claim verification. State accurately that Debug2175 cannot recover a ticket that its server never issued.

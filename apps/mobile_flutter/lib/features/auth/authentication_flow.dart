@@ -13,6 +13,7 @@ final class AuthenticationFlow extends StatefulWidget {
       required this.api,
       required this.onLogin,
       this.onPhoneLogin,
+      this.onPhoneInvitationContinue,
       this.onConfirmMatrixAccountSwitch,
       this.onCancelMatrixAccountSwitch,
       required this.onAuthenticated});
@@ -21,6 +22,9 @@ final class AuthenticationFlow extends StatefulWidget {
       {String invitationCode,
       bool termsAccepted,
       bool Function()? shouldContinue})? onPhoneLogin;
+  final Future<void> Function(String, String, String,
+      {bool termsAccepted,
+      bool Function()? shouldContinue})? onPhoneInvitationContinue;
   final Future<void> Function(String, String) onLogin;
   final Future<void> Function()? onConfirmMatrixAccountSwitch;
   final Future<void> Function()? onCancelMatrixAccountSwitch;
@@ -45,6 +49,7 @@ final class _AuthenticationFlowState extends State<AuthenticationFlow> {
             api: widget.api,
             onLogin: widget.onLogin,
             onPhoneLogin: widget.onPhoneLogin,
+            onPhoneInvitationContinue: widget.onPhoneInvitationContinue,
             onConfirmMatrixAccountSwitch: widget.onConfirmMatrixAccountSwitch,
             onCancelMatrixAccountSwitch: widget.onCancelMatrixAccountSwitch,
             onAuthenticated: widget.onAuthenticated,

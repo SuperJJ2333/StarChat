@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/business_phone_contracts.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_page.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
@@ -245,6 +246,79 @@ void main() {
     expect(codeField.controller?.text, isEmpty);
     expect(find.widgetWithText(ModernActionButton, '重新获取验证码'), findsOneWidget);
     expect(logins, 1);
+  });
+  testWidgets('verified new phone can add invitation without another SMS',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    var initialLogins = 0;
+    var invitationContinuations = 0;
+    var smsRequests = 0;
+    var authenticated = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        client: MockClient((_) async {
+          smsRequests++;
+          return http.Response('{"status":"accepted"}', 202);
+        }));
+    await tester.pumpWidget(CupertinoApp(
+        home: LoginPage(
+            api: api,
+            onPhoneLogin: (phone, code,
+                {invitationCode = '',
+                termsAccepted = false,
+                shouldContinue}) async {
+              initialLogins++;
+              throw const PhoneInvitationContinuationRequired(
+                  ticket: 'opaque-verified-ticket-with-enough-length',
+                  issue: PhoneInvitationIssue.required);
+            },
+            onPhoneInvitationContinue: (phone, ticket, invitationCode,
+                {termsAccepted = false, shouldContinue}) async {
+              invitationContinuations++;
+              expect(phone, '13800000001');
+              expect(ticket, 'opaque-verified-ticket-with-enough-length');
+              expect(invitationCode,
+                  invitationContinuations == 1 ? 'BAD-INVITE' : 'GOOD-INVITE');
+              expect(termsAccepted, true);
+              if (invitationContinuations == 1) {
+                throw const PhoneInvitationContinuationRequired(
+                    ticket: 'opaque-verified-ticket-with-enough-length',
+                    issue: PhoneInvitationIssue.invalid);
+              }
+            },
+            onAuthenticated: () async => authenticated++)));
+    await tester.pumpAndSettle();
+    await _submitPhoneCode(tester);
+    expect(initialLogins, 1);
+    expect(invitationContinuations, 0);
+    expect(smsRequests, 0);
+    expect(find.textContaining('验证码已通过'), findsOneWidget);
+    expect(find.widgetWithText(ModernActionButton, '完成注册'), findsOneWidget);
+    final codeField = tester.widget<CupertinoTextField>(find.descendant(
+        of: find.byKey(const Key('auth-login-code')),
+        matching: find.byType(CupertinoTextField)));
+    expect(codeField.controller?.text, isEmpty);
+    await tester.enterText(
+        find.byKey(const Key('auth-login-invitation')), 'BAD-INVITE');
+    await tester.ensureVisible(find.widgetWithText(ModernActionButton, '完成注册'));
+    await tester.tap(find.widgetWithText(ModernActionButton, '完成注册'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('邀请码无效'), findsOneWidget);
+    expect(find.widgetWithText(ModernActionButton, '完成注册'), findsOneWidget);
+    expect(smsRequests, 0);
+    await tester.enterText(
+        find.byKey(const Key('auth-login-invitation')), 'GOOD-INVITE');
+    await tester.tap(find.widgetWithText(ModernActionButton, '完成注册'));
+    await tester.pumpAndSettle();
+    expect(initialLogins, 1);
+    expect(invitationContinuations, 2);
+    expect(authenticated, 1);
+    expect(smsRequests, 0);
   });
   testWidgets('password Matrix failure never mentions phone code',
       (tester) async {

@@ -184,6 +184,25 @@ final class DualDomainLoginService {
                 deviceName: '畅聊移动端');
           }));
 
+  Future<void> continuePhoneInvitation(
+          String phone, String invitationTicket, String invitationCode,
+          {bool termsAccepted = false, bool Function()? shouldContinue}) =>
+      _run(() => _login(() async {
+            final gateway = business;
+            if (gateway is! PhoneInvitationContinuationGateway) {
+              throw StateError('Phone invitation continuation unavailable');
+            }
+            await (gateway as PhoneInvitationContinuationGateway)
+                .completePhoneLoginInvitation(
+                invitationTicket: invitationTicket,
+                phone: phone,
+                invitationCode: invitationCode,
+                termsAccepted: termsAccepted,
+                shouldContinue: shouldContinue,
+                deviceKey: deviceKey(),
+                deviceName: '畅聊移动端');
+          }));
+
   Future<void> _login(Future<void> Function() authenticate) async {
     _forgetPending();
     _stage = 'account_storage';
