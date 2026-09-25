@@ -1,10 +1,14 @@
 # 移动交付恢复索引
 
-## 2026-09-25 手机号验证码通过后补填邀请码（API 已发布，MI 6 2176 已安装）
+## 2026-09-25 广州节点公开 HTTPS 试点已启用；正式业务尚未切流
+
+用户要求使用阿里云广州节点改善国内连接，已新增 `edge-cn-probe.liuhetong888.com` 测试 A 记录，权威 DNS TTL 600 秒核对通过。原 Employ26 Caddy 站点块保留，增量添加只允许 Business ready 和 Matrix versions 两个公开 GET 的 HTTPS 试点，MI 6 严格 TLS、无代理验证及非公开路径拒绝通过。MI 6 同窗口 10 轮对照：边缘 20/20 返回 200，直连源站 8/20 返回 200、12/20 超时；经边缘 Business P50/P95 98.7/123.9 ms，Matrix 99.1/341.9 ms。生产 API healthy/零重启。**主域名和正式业务尚未切换**：TURN 3478/5349 同用主域名；广州 Caddy→源站 Caddy→Docker Nginx→Uvicorn 的真实 IP 信任链还未形成，直接切换会破坏通话与验证码/通话限流。广州节点 RAM 总量 1966 MiB、五次采样可用仅 271–303 MiB；边缘主域名证书、源站 Certbot standalone 续期、正式并发容量和 ICP 状态均需验证。客户端多节点随机轮询还会碰到 Matrix 会话绑定及非幂等登录请求。原 Employ26 IP HTTPS 握手在试点前后均失败，不能视为已验收。见[试点报告](../verification/2026-09-25-domestic-edge-network.md)、[任务](tasks/2026-09-25-domestic-edge-network.md)与[分阶段计划](../superpowers/plans/2026-09-25-domestic-edge-network.md)。
+
+## 2026-09-25 手机号验证码通过后补填邀请码（API 已发布，MI 6 2177 已安装）
 
 用户确认新手机号尚未注册、首次提交时漏填邀请码；供应商可能在第一次校验 PASS 后拒绝同一验证码重验。新增 opt-in 服务端五分钟、设备与手机号绑定的已验证续行票据；补填/纠正邀请码不再调用短信校验。客户端 0.4.13+2176 只在收到服务端票据后显示“验证码已通过”，内存保存票据，换号码或重发码即清除。旧客户端默认协议保持。领域及安全增量复核通过，锁等待越过有效期问题已补红绿测试和锁后/提交前复核；后端全量 2893/77 跳过、Flutter analyze、Matrix 2108/9 跳过、Flutter 全量 4295/9 跳过均退出 0；真实 PostgreSQL 8 路并发通过。API-only 生产切换后镜像 `b20c1be0…` healthy/零重启，Business ready 与 Matrix versions 200，新路由在位且旧客户端默认兼容，worker/其它容器/环境/DB 0088 不变。固定签名 2176 Debug 构建 18 项验包退出 0，MI 6 保留数据安装、设备 APK SHA、首次安装时间、启动和零崩溃均验证通过。真实短信送达和 Matrix 首次会话结果仍需用户自行操作确认。见[计划](../superpowers/plans/2026-09-25-phone-invitation-continuation.md)、[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)、[事故任务](tasks/2026-09-25-mi6-login-sms-regression.md)。
 
-2176 无账号真机性能/网络对照：Debug 冷启动 1373 ms、6 帧中聚合 4 慢帧，但启动 trace 的 0 慢帧受 Flutter timing 延迟回调影响不能采信；客户端帧归因修复正在本地验证，尚未装机。MI 6 公网探测 12 次有 5 次约 10 秒超时、服务器同入口 6/6 成功；IPv4 自身存在建连/TLS 长尾。生产短信开关/供应商配置仍为启用，最近两小时无新验证码签发，尚无终端送达回执。见[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)。
+2176 无账号真机性能/网络对照：Debug 冷启动 1373 ms、6 帧中聚合 4 慢帧，但启动 trace 的 0 慢帧因 timing 延迟回调不能采信。帧归因修复已在 2177 固定签名 Debug 中保留数据装机；生产 API-only 接收端 `25954c6a…` 已在用户授权后发布，健康/零重启，worker/其它 25 容器、环境及 DB 0088 不变。2177 冷启动一次 1407 ms、聚合 6 帧中 5 慢帧；trace 如实标记 `frame_attribution_complete=false`，尚不能将聚合帧归入该操作。旧 MI 6 公网 12 次有 5 次约 10 秒超时，2177 同入口 6/6 为 200、142–654 ms，表明问题间歇出现。短信开关/供应商配置已启用，但无终端送达回执与新版真实登录结果。见[本轮验证](../verification/2026-09-25-phone-invitation-continuation.md)。
 
 ## 2026-09-25 生产认证与配置已恢复；MI 6 登录仍待实测
 
