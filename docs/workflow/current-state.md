@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-25 登录/注册六项交互修复 Debug2178 已安装 MI 6
+
+登录限频逐秒倒计时、空白点击收键盘、手机号字段下格式提示、取码按钮轮廓/反馈及非法号本地校验、深色认证背景已整合进 2177 邀请码续行源并升级为 0.4.13+2178。Flutter analyze、Flutter 4316/9 跳过、Matrix 2108/9 跳过、前端 311、`verify.ps1` 退出 0；固定签名 Android 重建 18 项通过，MI 6 保留数据安装、设备 SHA `1a03074f…`、首次安装时间及零崩溃核对通过。MI 6 三次 Debug Dart 冷启动 1338–1358 ms，慢帧聚合不能归因到启动 trace。安装前 Matrix 公网探测 0/3 约 10 秒连接超时，装机后两轮公开探测 12/12 返回 200，显示网络问题有时间窗波动，不能归功于本次 UI 版本。广州试点域名本轮 6/6 在 TLS 握手前期失败；主机本地 Caddy 正常而公网 HTTP 返回阿里云 `Non-compliance ICP Filing` 403，强烈指向备案过滤，在备案及接入备案核实前不能接入客户端轮询。真实短信、登录及认证界面触感仍待用户操作反馈。见[任务](tasks/2026-09-25-auth-login-interactions.md)与[验证](../verification/2026-09-25-auth-login-interactions.md)。
+
 ## 2026-09-25 广州节点公开 HTTPS 试点已启用；正式业务尚未切流
 
 用户要求使用阿里云广州节点改善国内连接，已新增 `edge-cn-probe.liuhetong888.com` 测试 A 记录，权威 DNS TTL 600 秒核对通过。原 Employ26 Caddy 站点块保留，增量添加只允许 Business ready 和 Matrix versions 两个公开 GET 的 HTTPS 试点，MI 6 严格 TLS、无代理验证及非公开路径拒绝通过。MI 6 同窗口 10 轮对照：边缘 20/20 返回 200，直连源站 8/20 返回 200、12/20 超时；经边缘 Business P50/P95 98.7/123.9 ms，Matrix 99.1/341.9 ms。生产 API healthy/零重启。**主域名和正式业务尚未切换**：TURN 3478/5349 同用主域名；广州 Caddy→源站 Caddy→Docker Nginx→Uvicorn 的真实 IP 信任链还未形成，直接切换会破坏通话与验证码/通话限流。广州节点 RAM 总量 1966 MiB、五次采样可用仅 271–303 MiB；边缘主域名证书、源站 Certbot standalone 续期、正式并发容量和 ICP 状态均需验证。客户端多节点随机轮询还会碰到 Matrix 会话绑定及非幂等登录请求。原 Employ26 IP HTTPS 握手在试点前后均失败，不能视为已验收。见[试点报告](../verification/2026-09-25-domestic-edge-network.md)、[任务](tasks/2026-09-25-domestic-edge-network.md)与[分阶段计划](../superpowers/plans/2026-09-25-domestic-edge-network.md)。
