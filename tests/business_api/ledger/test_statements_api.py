@@ -110,6 +110,7 @@ async def test_my_statement_is_caibi_scoped_filterable_and_private(context):
         assert page.headers["cache-control"] == "private, no-store"
         assert [item["id"] for item in page.json()["items"]] == [transfer.id]
         assert page.json()["items"][0]["amount"] == "-5.05"
+        assert page.json()["items"][0]["balance_after"] == "91.95"
         assert page.json()["items"][0]["kind"] == "transfer"
         assert (await client.get(f"/api/v1/ledger/transactions/me/{redpacket.id}", headers=bearer(settings, "alice"))).status_code == 200
         assert (await client.get(f"/api/v1/ledger/transactions/me/{redpacket.id}", headers=bearer(settings, "mallory"))).status_code == 404
@@ -216,3 +217,28 @@ async def test_transfer_bill_detail_exact_fields_and_refund_identity(context):
         assert sender.json()["amount"] == "-10.05"
     with factory() as session:
         assert session.get(LedgerTransaction, receiver_bill).scope == "chat_transfer.accept"
+
+
+def test_statement_balance_is_unfiltered_decimal_ledger_order(context):
+    _app, factory, _settings, ledger = context
+    first = ledger.post(entries={"alice": Decimal("-5.05"), "bob": Decimal("5.00"), "PLATFORM_FEE": Decimal("0.05")}, actor_id="alice", reason_code="USER_TRANSFER", idempotency_key="balance-first", scope="caibi.transfer")
+    second = ledger.adjust(user_id="alice", amount=Decimal("2.00"), actor_id="finance", reason_code="BALANCE_CREDIT", idempotency_key="balance-second")
+    # Equal timestamp ties use the same stable transaction-id order as pagination.
+    with factory.begin() as session:
+        when = datetime.now(timezone.utc) + timedelta(seconds=1)
+        session.get(LedgerTransaction, first.id).created_at = when
+        session.get(LedgerTransaction, second.id).created_at = when
+    service = StatementService(factory)
+    expected = {}
+    total = Decimal("100.00")
+    for tx_id, delta in sorted([(first.id, Decimal("-5.05")), (second.id, Decimal("2.00"))]):
+        total += delta
+        expected[tx_id] = f"{total:.2f}"
+    page = service.list(user_id="alice", limit=1)
+    assert page["items"][0]["balance_after"] == expected[page["items"][0]["id"]]
+    next_page = service.list(user_id="alice", cursor=page["next_cursor"], limit=1)
+    assert next_page["items"][0]["balance_after"] == expected[next_page["items"][0]["id"]]
+    assert service.list(user_id="alice", kind="transfer", q=first.id)["items"][0]["balance_after"] == expected[first.id]
+    assert service.get(user_id="alice", transaction_id=first.id)["balance_after"] == expected[first.id]
+    assert service.get(user_id="mallory", transaction_id=first.id) is None
+    assert service.get(user_id="bob", transaction_id=first.id)["balance_after"] == "5.00"

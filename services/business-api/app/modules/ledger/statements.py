@@ -70,6 +70,7 @@ class StatementService:
 
     def _project_rows(self, session, rows, user_id=None):
         tx_ids = [transaction.id for transaction, _amount in rows]
+        balances = self._balances_in_ledger_order(session, user_id, tx_ids)
         transfer_for_tx = TransferReadProjection.for_transactions(session, tx_ids)
         # 每笔交易的对手方账号 + 红包上下文（按 escrow 前缀连接）。
         accounts_by_tx = {}
@@ -116,12 +117,39 @@ class StatementService:
                 transfer_for_tx.get(transaction.id),
                 counterparty=counterparties.get(transaction.id),
                 packet=packet_ctx.get(transaction.id),
-                counterparty_profile=profiles.get(counterparties.get(transaction.id))))
+                counterparty_profile=profiles.get(counterparties.get(transaction.id)),
+                balance_after=balances.get(transaction.id)))
         return result
 
-    def _project(self, transaction, amount, transfer, counterparty=None, packet=None, counterparty_profile=None):
+    @staticmethod
+    def _balances_in_ledger_order(session, user_id, tx_ids):
+        """Read-only statement running balance, not a commit-time snapshot.
+
+        Aggregate all of this user's CAIBI entries before the window; filters,
+        search and pagination must not alter the running balance. UUID ties use
+        the same deterministic order as the statement list. Only requested rows
+        leave the database, never an unbounded client-side ledger history.
+        """
+        if not tx_ids:
+            return {}
+        totals = (select(LedgerTransaction.id.label("id"),
+                         LedgerTransaction.created_at.label("created_at"),
+                         func.sum(LedgerEntry.amount).label("amount"))
+            .join(LedgerEntry, LedgerEntry.transaction_id == LedgerTransaction.id)
+            .where(LedgerEntry.account_id == user_id, LedgerEntry.asset == "CAIBI",
+                   LedgerTransaction.asset == "CAIBI")
+            .group_by(LedgerTransaction.id, LedgerTransaction.created_at).subquery())
+        balances = select(totals.c.id, func.sum(totals.c.amount).over(
+            order_by=(totals.c.created_at, totals.c.id), rows=(None, 0)
+        ).label("balance_after")).subquery()
+        return {tx_id: f"{money(value):.2f}" for tx_id, value in session.execute(
+            select(balances.c.id, balances.c.balance_after)
+            .where(balances.c.id.in_(tx_ids)))}
+
+    def _project(self, transaction, amount, transfer, counterparty=None, packet=None, counterparty_profile=None, balance_after=None):
         # 账单名称后缀：交易对手（备注/昵称由客户端按通讯录优先渲染）。
         return {"id": transaction.id, "asset": "CAIBI", "amount": f"{money(Decimal(amount)):.2f}",
+            "balance_after": balance_after,
             "kind": self.kind_for(transaction), "reason_code": transaction.reason_code,
             "created_at": self._utc(transaction.created_at), "reversal_of_id": transaction.reversal_of_id,
             "status": transfer.status if transfer else None,

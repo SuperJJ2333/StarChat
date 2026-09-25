@@ -119,7 +119,19 @@ class ManualReserveMonitor:
         if code is None:
             row.last_success_at = now
 
+    # Owner decision 2026-09-24 (T3): a stale chain observation is advisory.
+    # It opens a P1 incident — which never escalates and never pages — and must
+    # NOT pause the wallet; the last published reserve stays in effect. Every
+    # other block code keeps the fail-closed pause.
+    _advisory_block_codes = frozenset({'MANUAL_SOURCE_UNHEALTHY'})
+
     def _block(self, session, code, now):
+        if code in self._advisory_block_codes:
+            diag.emit('WARNING', 'monitor_block_requested', component='manual_monitor', reason_code=code)
+            self.incidents.observe_in_session(session, [dict(fingerprint='manual-reserve:'+code,
+                code=code, severity='P1', subject_id='global')], actor_id=ACTOR, complete=False)
+            self._heartbeat(session, now, code)
+            return dict(complete=False, status='BLOCKED', codes=[code])
         diag.emit('ERROR', 'monitor_block_requested', component='manual_monitor', reason_code=code)
         apply_manual_pause(session, ledger=LedgerService(self.factory), actor_id=ACTOR,
             reason_code=code, now=now)

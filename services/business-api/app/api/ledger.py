@@ -39,6 +39,7 @@ class StatementItem(StrictModel):
     id: str
     asset: str
     amount: str
+    balance_after: str | None = Field(default=None, description="CAIBI running balance in statement order (created_at, id), before display filters; not a commit-time balance snapshot.")
     kind: str
     reason_code: str
     created_at: datetime

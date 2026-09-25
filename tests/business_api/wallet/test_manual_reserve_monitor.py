@@ -222,9 +222,17 @@ def test_unavailable_or_incomplete_reserve_pauses_without_publishing(core, cover
     assert not result['complete'] and result['status'] == 'BLOCKED'
     assert 'private-provider-error' not in str(result)
     with core[1]() as session:
-        assert session.get(WalletControl, 'global').withdrawals_paused
-        assert session.get(RedeemabilityReserve, 'global').outgoing_restricted
-        assert session.scalar(select(WalletIncident)) is not None
+        if fault in ('stale', 'unhealthy'):
+            # T3: observation staleness is advisory — P1 incident, no pause,
+            # and the last published reserve is never fabricated or refreshed.
+            assert not session.get(WalletControl, 'global').withdrawals_paused
+            incident = session.scalar(select(WalletIncident))
+            assert incident is not None and incident.severity == 'P1'
+        else:
+            assert session.get(WalletControl, 'global').withdrawals_paused
+            assert session.get(RedeemabilityReserve, 'global').outgoing_restricted
+            assert session.scalar(select(WalletIncident)) is not None
+        assert session.get(RedeemabilityReserve, 'global').observed_at.year == 1970
         assert session.scalar(select(WalletLedgerTransaction)) is None
 
 
@@ -593,3 +601,18 @@ def test_published_observed_at_follows_source_margin(core, monitor):
     with core[1]() as session:
         reserve = session.get(RedeemabilityReserve, 'global')
         assert reserve.observed_at.replace(tzinfo=timezone.utc) == EPOCH+timedelta(milliseconds=ms)
+
+
+def test_source_staleness_is_advisory_and_never_pauses_wallet(core, monitor):
+    service, source, clock = monitor
+    healthy = source.value
+    source.value = digest_cut(healthy, healthy=False,
+        fresh_until_ms=int(clock[0].timestamp()*1000)-1)
+    result = service.run_once()
+    assert result == dict(complete=False, status='BLOCKED', codes=['MANUAL_SOURCE_UNHEALTHY'])
+    with core[1]() as session:
+        assert session.get(WalletControl, 'global').withdrawals_paused is False
+        incident = session.scalar(select(WalletIncident).where(
+            WalletIncident.fingerprint == 'manual-reserve:MANUAL_SOURCE_UNHEALTHY'))
+        assert incident.severity == 'P1' and incident.status == 'OPEN'
+        assert incident.condition_active and incident.acknowledged_at is None

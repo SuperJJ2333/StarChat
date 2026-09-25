@@ -72,6 +72,8 @@ def claimed_payout(session, clock, *, age):
 def test_domain_fault_prevents_age_only_wait(core, monitor, fault, code, status):
     service, source, clock, _, sleeps = setup_wait(monitor)
     expire(source, clock)
+    with core[1].begin() as session:
+        reserve_version = session.get(RedeemabilityReserve, "global").version
     if fault == "baseline":
         source.value = digest_cut(source.value, solid_block=service.baseline_height - 1)
     elif fault == "deficit":
@@ -113,7 +115,17 @@ def test_domain_fault_prevents_age_only_wait(core, monitor, fault, code, status)
     assert outcome["status"] == status
     assert sleeps == []
     with core[1]() as session:
-        assert session.get(RedeemabilityReserve, "global").observed_at.year == 1970
+        reserve = session.get(RedeemabilityReserve, "global")
+        if fault == "baseline":
+            # T3 advisory: no pause, no invalidation, and never a publication.
+            assert reserve.observed_at.replace(tzinfo=None).year == 2026
+            assert reserve.version == reserve_version
+            assert (
+                session.get(WalletControl, "global").withdrawals_paused
+                is False
+            )
+        else:
+            assert reserve.observed_at.year == 1970
         if status == "BLOCKED":
             assert (
                 session.scalar(

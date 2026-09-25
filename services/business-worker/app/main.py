@@ -104,7 +104,7 @@ def build_wallet_tasks(settings, session_factory):
                 return datetime.now(timezone.utc)
             source = SQLiteFundingSource(settings.tron_observer_database_path,
                 official_address=settings.wallet_official_address.get_secret_value(), clock=clock,
-                solid_head_max_age_seconds=180)
+                max_age_seconds=360, solid_head_max_age_seconds=360)
             official = OfficialFundingConfig(settings.wallet_official_address.get_secret_value(),
                 settings.wallet_official_config_version)
             coverage = FundingCoverageService(session_factory, finality_adapter=runtime.finality,
