@@ -46,7 +46,7 @@ PerformanceNetworkError _sendPerformanceNetworkError(Object error) {
   return switch (error) {
     SocketException() => PerformanceNetworkError.socketFailure,
     // A generic timeout does not identify connect versus read.
-    TimeoutException() => PerformanceNetworkError.unknown,
+    TimeoutException() => PerformanceNetworkError.requestTimeout,
     _ => PerformanceNetworkError.unknown,
   };
 }
@@ -403,6 +403,8 @@ final class RoomTimelineController extends ChangeNotifier {
       NetworkStateManager? networkStateManager,
       OutboxJournal? outboxJournal,
       PerformanceTraceRecorder? performanceRecorder,
+      this.onOutboxCorrelation,
+      this.outboxCorrelationFor,
       this.sendDispatchTimeout = const Duration(seconds: 20)})
       : _injectedNetworkState = networkStateManager,
         _outboxJournal = outboxJournal,
@@ -423,6 +425,10 @@ final class RoomTimelineController extends ChangeNotifier {
 
   final RoomTimelineAdapter adapter;
   final PerformanceTraceRecorder _performanceRecorder;
+  final void Function(String localId, PerformanceCorrelationContext context)?
+      onOutboxCorrelation;
+  final PerformanceCorrelationContext? Function(String localId)?
+      outboxCorrelationFor;
 
   /// 规格§二/§三：互动权限门（非好友/拉黑 → 消息进入本地 failed，
   /// 绝不触达发送服务；UI 与服务层同一守卫）。
@@ -678,8 +684,13 @@ final class RoomTimelineController extends ChangeNotifier {
           oldest.key, oldest.value.trace, PerformanceResult.waitingNetwork);
     }
     final network = _networkState;
+    final context = outboxRow == null
+        ? null
+        : outboxCorrelationFor?.call(outboxRow.localId);
     final trace = _performanceRecorder.start(
       PerformanceOperationType.messageSend,
+      correlationContext: context,
+      attemptIndex: outboxRow?.retryCount,
       transportAvailable: network?.transportAvailable,
       serviceReachable: network?.serviceReachable,
       appNetworkState: switch (network?.current) {
@@ -689,9 +700,9 @@ final class RoomTimelineController extends ChangeNotifier {
         NetworkState.recovering => PerformanceAppNetworkState.recovering,
         null => PerformanceAppNetworkState.unknown,
       },
-    )..mark(PerformanceStage.composerSubmit);
-    trace.retryCount =
-        (outboxRow?.retryCount ?? 0) + (outboxRow?.serverRetryCount ?? 0);
+    );
+    if (outboxRow == null) trace.mark(PerformanceStage.composerSubmit);
+    trace.retryCount = outboxRow?.retryCount ?? 0;
     if (trace.isRecording) {
       final expiry = Timer(PerformanceThresholds.messageTraceObservationWindow,
           () => _finishSendTrace(tx, trace, PerformanceResult.waitingNetwork));
@@ -1066,17 +1077,19 @@ final class RoomTimelineController extends ChangeNotifier {
       return;
     }
     final journal = _outboxJournal;
+    OutboxMessage? retryRow;
     if (journal != null) {
       final row = await journal.findByTxid(transactionId);
       if (row != null && !await journal.resetServerRetry(row.localId)) return;
+      retryRow = row;
     }
     _serverRetryTimers.remove(transactionId)?.cancel();
     _serverRetryAttempts.remove(transactionId);
-    return _retry(transactionId, rethrowErrors: true);
+    return _retry(transactionId, rethrowErrors: true, outboxRow: retryRow);
   }
 
   Future<void> _retry(String transactionId,
-      {required bool rethrowErrors}) async {
+      {required bool rethrowErrors, OutboxMessage? outboxRow}) async {
     if (_disposed ||
         _inFlightTxids.contains(transactionId) ||
         !(canSendNow?.call() ?? true) ||
@@ -1090,7 +1103,11 @@ final class RoomTimelineController extends ChangeNotifier {
         : _localEchoes.containsKey(alias)
             ? alias
             : null;
-    final trace = tx == null ? null : _retainedSendTrace(tx);
+    final retainedTrace = tx == null ? null : _retainedSendTrace(tx);
+    final trace = retainedTrace ??
+        (tx != null && outboxRow != null
+            ? _openSendTrace(tx, outboxRow)
+            : null);
     if (tx != null) _waitingNetworkIds.remove(tx);
     _attachNetworkRecoveryWatch();
     final attemptRevision = _networkRecoveryRevision;
@@ -1110,14 +1127,14 @@ final class RoomTimelineController extends ChangeNotifier {
             .snapshot()
             .any((m) => m.id == transactionId || m.stableId == tx);
         if ((!exists || _tracksOutbox(fresh)) && _senders.containsKey(tx)) {
-          if (trace?.isRecording ?? false) trace!.retryCount++;
+          if (retainedTrace?.isRecording ?? false) retainedTrace!.retryCount++;
           await _dispatch(tx, fresh, trace: trace);
           return;
         }
       }
       if (trace?.isRecording ?? false) {
-        trace!.retryCount++;
-        trace.mark(PerformanceStage.matrixSendStart);
+        if (retainedTrace != null) trace!.retryCount++;
+        trace!.mark(PerformanceStage.matrixSendStart);
       }
       adapterRetryAttempted = true;
       await adapter.retry(transactionId);
@@ -1156,7 +1173,7 @@ final class RoomTimelineController extends ChangeNotifier {
       } finally {
         if (adapterRetryAttempted && tx != null) {
           if (adapterRetrySucceeded) {
-            if (refreshed) trace?.mark(PerformanceStage.timelineVisible);
+            if (refreshed) trace?.mark(PerformanceStage.timelinePublished);
             _finishSendTrace(tx, trace, PerformanceResult.success);
           } else if (adapterRetryFailure != PerformanceResult.waitingNetwork) {
             _finishSendTrace(tx, trace, PerformanceResult.failed);
@@ -1550,7 +1567,7 @@ final class RoomTimelineController extends ChangeNotifier {
         Timer(remaining.isNegative ? Duration.zero : remaining, () {
       _serverRetryTimers.remove(row.txid);
       if (!_disposed && (_networkState == null || _networkIsUsable)) {
-        unawaited(_retry(row.txid, rethrowErrors: false));
+        unawaited(_retry(row.txid, rethrowErrors: false, outboxRow: row));
       }
     });
   }
@@ -1688,6 +1705,9 @@ final class RoomTimelineController extends ChangeNotifier {
         if (outboxRow == null && row != null) {
           trace?.mark(PerformanceStage.outboxPersist);
         }
+        if (row != null && trace != null) {
+          onOutboxCorrelation?.call(row.localId, trace.correlationContext);
+        }
         if (row != null) {
           // ② 原子认领：认领失败 = 这一行已被（别的派发者）认领或已送达，
           //    本次绝不再发一遍。
@@ -1742,7 +1762,7 @@ final class RoomTimelineController extends ChangeNotifier {
       NotificationFeedback.shared.play(SoundType.messageSent);
       messages = _snapshot();
       _publish();
-      trace?.mark(PerformanceStage.timelineVisible);
+      trace?.mark(PerformanceStage.timelinePublished);
       _finishSendTrace(tx, trace, PerformanceResult.success);
       return eventId;
     } catch (error) {

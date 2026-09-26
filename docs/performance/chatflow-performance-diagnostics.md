@@ -1,5 +1,37 @@
 # ChatFlow 全链路性能诊断
 
+## 2026-09-26 修补模型与测量口径
+
+本轮实现见[任务](../workflow/tasks/2026-09-26-network-diagnostics-remediation.md)。沿用原有两个采集器及上传通道，没有另建遥测系统。交付和生产状态以任务末次验收为准；下方2026-09-25审计为历史基线。
+
+```text
+用户动作 → PerformanceTrace / 有生命周期的 correlation context
+  → 实测阶段、真实 frame timing、网络状态
+  → 完成记录 / checkpoint / expired（共同 operation_id）
+  → PerformanceMetrics 有界本地窗口
+  → ChatDiagnostics 有界队列、v3 暂存、后台批上传
+  → 严格接收端 → 请求 route template / SQL cursor 有界摘要
+```
+
+- `operation_id` 关联同一次动作；本地 `queue_entry_id` 单独识别每条不可变记录，永不上报。不同阶段、请求和重试共享根 ID，202 ACK 只扣实际发出的条目，保留上传期间新产生的同根记录。
+- spool v3 原位读取既有 v2 key，迁移同根多记录；延续100条/64KiB/24小时。退出/切换账号使 correlation context 失效。进程重启后的 Outbox 不能恢复不存在的 composer 时间或跨进程根上下文，因此新根只测真实恢复与发送尝试。
+- 在途本地 `active_operations` 显示真实最后阶段、观察时长和 idle。慢操作最多一个 checkpoint；conversation 45秒、其他5分钟释放诊断槽位并保留 expired。二者不是完成结果，不进入完成分位数，不取消业务 Future；业务晚到完成仍沿同根生成 final。attempt/window 的 partial 也携带真实索引。
+- 同进程文本 Outbox 和视频 retry 创建独立实测 attempt span；只准备一次的素材重试不重记转码。echo 先于 HTTP 错误时以既有 coordinator 的权威最终发送状态结算。
+- `timeline_published` 是本地 echo/投影发布，不能解释为屏幕真正绘制；没有观测可见消息 frame 时 `send_to_visible_ms` 不产生。页面 `first_frame` 和内容 `content_ready` 仍分开。
+- 通话复用已有 getStats，默认每5秒一次，不增加采样调用。单调时钟窗口在下一个有效 poll 到达且已持续至少30秒时结算，结束时补最后非空窗口；并非精确30秒的时间切片。窗口保留按集中阈值归一化后最差的**同一次真实样本**，RTT/jitter/loss/TURN/协议不跨样本拼接；空报告不冒称健康。包计数为该样本的真实累计配对值，百分比不是该窗口的增量丢包率。setup 与 active 窗口使用同根 ID。
+- `operation_timings.<operation>.<operation|attempt|window>.<metric>` 分操作与语义区间提供 count、retained_samples、P50/P95/P99/MAX（ms）。统计基于最近最多 sampleCapacity 个真实完成样本，观察记录不进入；count 可大于保留窗口。`sample_source=complete_local_window` 描述启用本地采集后的完整窗口，不能当作全天历史。兼容 `operations` 为 `legacy_operations_scope=all_completed_spans`，包含子 attempt/window，不作为整次业务的 P95。
+- 上传为正常5%、慢/错100%（真实且完整慢帧达到集中阈值也保留），属于偏采样。上传样本的分位数不能声称全部用户的总体分位数；正常 Release 不额外开启 profile 帧采集。
+- SQLite 媒体索引只在实际 `db.query` 边界记录 `media_index_lookup/database_ms/row_count_bucket`；内存命中、打开库及批量 flush 不冒称 SQL 查询。SQL、参数、身份、路径和返回内容不进入记录。锁等待和 SDK 内部 SQL 仍 unsupported。
+- 通用 `TimeoutException` 为 `request_timeout`，不能猜成 connect/read timeout。Curl 分阶段来自外部探针自己的请求；Flutter/Matrix 的 DNS/TCP/TLS/TTFB 仍 unsupported/null。下载与解密、上传与 Matrix event 缺少独立边界时保留合并时段，视频提供真实 `thumbnail_ms`、`upload_and_event_send_ms`。
+
+### 服务端与区域观测
+
+请求/SQL hooks 复用真实响应完成与 SQL cursor 边界。快照受现有维护令牌保护、no-store、只用已注册 route template；并发、后台和分离 task 的数据不串入原请求。无法可靠确认 async-to-worker 派发归属时 `attribution_complete=false`，`connection_wait_ms=null`。读取快照没有监控专用 SQL 查询。
+
+NETMON 旧SSH22探针有真实3秒期限及8秒service保护；两点 HTTPS 每分钟轮询公开 Business ready/Matrix versions，域名和固定IP对照，保持SNI/TLS验证。每轮30秒总预算，无重叠；预算跳过、采集故障、分钟缺测与网络失败分别统计。HTTPS日志上限16MiB/日×7日（为12条/分钟的真实体积修订），原TCP日志2MiB/日×7日不变。窗口统计给出样本数、失败率、连续失败、缺测和真实成功分位数；最近60次状态不能称24小时报告。
+
+当前观察点只能代表源站和阿里云ECS路径，不能代替大陆电信/移动/联通用户出口。次服务器尚未进入SSH认证且业务角色未确认时不加入客户端节点池。24小时/7天、多运营商、真实发送和跨境通话的验收状态分别列于任务记录；短窗口成功不能证明长期稳定。
+
 ## 代码审计（2026-09-25，实施前）
 
 审计基线为 `2442f0ab`。仓库没有 `.codegraph/`，因此按仓库规则使用 `rg` 定位。扫描了客户端 `core`、`matrix`、`contacts`、`moments`、`finance`、`profile`，以及 `services`；涉及 `Stopwatch`、`PerformanceMetrics`、`ChatDiagnostics`、`debugPrint`、`Duration`、`elapsed`、`timeout`、`sync`、`upload`、`download`、`getStats`、HTTP、数据库、导航及 `RoomPage` 的文件共 98 个。主工作区有其他任务的未提交改动，本任务使用独立 worktree，不把这些改动视作已交付基线。

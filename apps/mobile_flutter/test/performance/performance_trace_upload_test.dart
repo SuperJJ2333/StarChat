@@ -129,6 +129,36 @@ void main() {
     diagnostics.stopSession();
   });
 
+  test('measured slow frames bypass normal sampling even for a fast success',
+      () {
+    final diagnostics = ChatDiagnostics(normalSamplePercent: 0);
+    diagnostics.startSession(
+      version: '1.2.3',
+      platform: ChatDiagnosticPlatform.android,
+      upload: (_, __) async => 202,
+    );
+    PerformanceRecord record({required bool complete, required int slow}) =>
+        PerformanceRecord(
+          operationId: '00000000-0000-4000-8000-000000000001',
+          operation: PerformanceOperationType.apiRequest,
+          totalUs: 500000,
+          stagesUs: const {},
+          result: PerformanceResult.success,
+          lifecycle: PerformanceLifecycle.foreground,
+          frames: PerformanceFrameCounts(
+              total: 4, slow: slow, slowBuild: slow, slowRaster: 0),
+          frameAttributionComplete: complete,
+        );
+    diagnostics.recordPerformance(record(complete: false, slow: 4));
+    expect(diagnostics.pendingCount, 0,
+        reason: 'incomplete attribution cannot establish measured slow frames');
+    diagnostics.recordPerformance(record(complete: true, slow: 3));
+    expect(diagnostics.pendingCount, 0);
+    diagnostics.recordPerformance(record(complete: true, slow: 4));
+    expect(diagnostics.pendingCount, 1);
+    diagnostics.stopSession();
+  });
+
   test('slow Matrix wait or processing retains a successful chat open', () {
     final diagnostics = ChatDiagnostics(normalSamplePercent: 0);
     diagnostics.startSession(

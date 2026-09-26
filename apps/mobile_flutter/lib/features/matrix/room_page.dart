@@ -194,12 +194,18 @@ class RoomPage extends StatefulWidget {
     this.initialAnchorRoomId,
     this.navigationRequests,
     this.requestOutboxDrain,
+    this.onOutboxCorrelation,
+    this.outboxCorrelationFor,
     this.resolveDirectSendTarget,
     this.onDirectTargetChanged,
     this.initialOutboxLocalIds = const <String>[],
   });
 
   final BusinessApiClient api;
+  final void Function(String localId, PerformanceCorrelationContext context)?
+      onOutboxCorrelation;
+  final PerformanceCorrelationContext? Function(String localId)?
+      outboxCorrelationFor;
   final PerformanceTrace? performanceTrace;
   final VoidCallback? onPerformanceContentReady;
   final Stream<SyncStatusUpdate>? remoteSyncStatus;
@@ -1262,6 +1268,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         // Offline First：发送前先落盘；重试/重启复用同一 txid。
         outboxJournal: _outboxJournal,
         outboxRoomId: roomInfo.id,
+        onOutboxCorrelation: widget.onOutboxCorrelation,
+        outboxCorrelationFor: widget.outboxCorrelationFor,
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
       _observedOutbox = _outbox;

@@ -229,6 +229,11 @@ abstract interface class CallBackend {
   bool get hasActiveSession;
 }
 
+/// Optional diagnostic metadata only; no change to signaling or call state.
+abstract interface class CallPerformanceCorrelationBackend {
+  void setPerformanceCorrelationContext(PerformanceCorrelationContext? context);
+}
+
 final class CallViewState {
   const CallViewState(
     this.phase, {
@@ -322,6 +327,7 @@ final class CallController extends ChangeNotifier {
   final CallAudioRouteCoordinator audioRoute;
   final PerformanceTraceRecorder _performanceRecorder;
   PerformanceTrace? _callSetupTrace;
+  PerformanceCorrelationContext? _callCorrelationContext;
 
   /// 主叫等待超时：到点未接通自动挂断并提示。
   final Duration ringTimeout;
@@ -342,10 +348,27 @@ final class CallController extends ChangeNotifier {
 
   void _beginCallSetup() {
     _finishCallSetup(PerformanceResult.cancelled);
+    _releaseCallCorrelation();
     if (!_performanceRecorder.recordingEnabled) return;
     _callSetupTrace = _performanceRecorder
         .start(PerformanceOperationType.callSetup)
       ..mark(PerformanceStage.callStart);
+    _callCorrelationContext = _callSetupTrace!.correlationContext;
+    final target = backend;
+    if (target is CallPerformanceCorrelationBackend) {
+      (target as CallPerformanceCorrelationBackend)
+          .setPerformanceCorrelationContext(_callCorrelationContext);
+    }
+  }
+
+  void _releaseCallCorrelation() {
+    _callCorrelationContext?.close();
+    _callCorrelationContext = null;
+    final target = backend;
+    if (target is CallPerformanceCorrelationBackend) {
+      (target as CallPerformanceCorrelationBackend)
+          .setPerformanceCorrelationContext(null);
+    }
   }
 
   void _finishCallSetup(PerformanceResult result) {
@@ -714,6 +737,7 @@ final class CallController extends ChangeNotifier {
         CallPhase.permissionDenied => PerformanceResult.rejected,
         _ => PerformanceResult.cancelled,
       });
+      _releaseCallCorrelation();
       _callGeneration++;
       _ringTimeoutTimer?.cancel();
       _connectTimeoutTimer?.cancel();
@@ -743,6 +767,7 @@ final class CallController extends ChangeNotifier {
     _disposed = true;
     _callSetupTrace?.dispose();
     _callSetupTrace = null;
+    _releaseCallCorrelation();
     _callGeneration++;
     _ringTimeoutTimer?.cancel();
     _connectTimeoutTimer?.cancel();

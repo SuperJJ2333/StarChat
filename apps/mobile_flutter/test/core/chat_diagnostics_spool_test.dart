@@ -45,7 +45,219 @@ const scopeA =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const scopeB =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+PerformanceRecord sameRootRecord(int millis,
+        {PerformanceOperationType operation =
+            PerformanceOperationType.apiRequest}) =>
+    PerformanceRecord(
+        operationId: '00000000-0000-4000-8000-000000000001',
+        operation: operation,
+        totalUs: millis * 1000,
+        stagesUs: const {},
+        result: PerformanceResult.failed,
+        lifecycle: PerformanceLifecycle.foreground,
+        frames: const PerformanceFrameCounts(),
+        frameAttributionComplete: false);
+
 void main() {
+  test('same-root wallet and two API records survive durable restore', () {
+    fakeAsync((time) {
+      final store = DelayedStore();
+      final original =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      void start(ChatDiagnostics diagnostics) => diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 401,
+          store: store,
+          spoolScope: () async => scopeA);
+      start(original);
+      time.flushMicrotasks();
+      original.recordPerformance(
+          sameRootRecord(100, operation: PerformanceOperationType.walletLoad));
+      original.recordPerformance(sameRootRecord(200));
+      original.recordPerformance(sameRootRecord(300));
+      time.elapse(const Duration(seconds: 2));
+      time.flushMicrotasks();
+      original.stopSession();
+      time.flushMicrotasks();
+      final restored =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      start(restored);
+      time.flushMicrotasks();
+      expect(restored.pendingCount, 3);
+      final saved = jsonDecode(store.payload!) as Map;
+      expect(saved['schema'], 3);
+      final entries = saved['operations'] as List;
+      expect(entries.map((entry) => entry['queue_entry_id']).toSet(),
+          hasLength(3));
+      expect(
+          entries.map((entry) => entry['operation_id']).toSet(), hasLength(1));
+      restored.stopSession();
+      time.flushMicrotasks();
+    });
+  });
+
+  test('same-root v2 migration preserves each record and adds local identity',
+      () {
+    fakeAsync((time) {
+      final store = DelayedStore()
+        ..payload = jsonEncode({
+          'schema': 2,
+          'scope': scopeA,
+          'created_ms': DateTime(2026).millisecondsSinceEpoch,
+          'events': [],
+          'operations': [
+            for (final record in [
+              sameRootRecord(100,
+                  operation: PerformanceOperationType.walletLoad),
+              sameRootRecord(200),
+              sameRootRecord(300)
+            ])
+              {...record.toJson(), 'frames_total': 0}
+          ]
+        });
+      final d = ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      d.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 401,
+          store: store,
+          spoolScope: () async => scopeA);
+      time.flushMicrotasks();
+      expect(d.pendingCount, 3);
+      expect((jsonDecode(store.payload!) as Map)['schema'], 3);
+      d.stopSession();
+      time.flushMicrotasks();
+    });
+  });
+
+  for (final replaceAfterExpiry in [false, true]) {
+    test('same-root held ACK preserves new record expiry=$replaceAfterExpiry',
+        () {
+      fakeAsync((time) {
+        final held = Completer<int>();
+        final batches = <ChatDiagnosticBatch>[];
+        final d = ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+        d.startSession(
+            version: '1.2.3',
+            platform: ChatDiagnosticPlatform.android,
+            upload: (batch, _) {
+              batches.add(batch);
+              return batches.length == 1 ? held.future : Future.value(202);
+            });
+        d.recordPerformance(sameRootRecord(100,
+            operation: PerformanceOperationType.walletLoad));
+        d.recordPerformance(sameRootRecord(200));
+        d.recordPerformance(sameRootRecord(300));
+        time.elapse(const Duration(minutes: 1));
+        time.flushMicrotasks();
+        expect(batches.single.toJson()['operations'], hasLength(3));
+        if (replaceAfterExpiry) time.elapse(const Duration(hours: 25));
+        d.recordPerformance(sameRootRecord(400));
+        held.complete(202);
+        time.flushMicrotasks();
+        expect(d.pendingCount, 1);
+        time.elapse(const Duration(minutes: 1));
+        time.flushMicrotasks();
+        final operation =
+            (batches.last.toJson()['operations'] as List).single as Map;
+        expect(operation['total_ms'], 400);
+        expect(operation.containsKey('queue_entry_id'), isFalse);
+        expect(d.pendingCount, 0);
+        d.stopSession();
+        time.flushMicrotasks();
+      });
+    });
+  }
+
+  for (final oldStatus in [202, 401]) {
+    test('same-root late $oldStatus cannot ACK or back off a new account', () {
+      fakeAsync((time) {
+        final heldUpload = Completer<int>();
+        final oldBatches = <ChatDiagnosticBatch>[];
+        final newBatches = <ChatDiagnosticBatch>[];
+        final d = ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+        d.startSession(
+            version: '1.2.3',
+            platform: ChatDiagnosticPlatform.android,
+            upload: (batch, _) {
+              oldBatches.add(batch);
+              return heldUpload.future;
+            });
+        d.recordPerformance(sameRootRecord(100));
+        time.elapse(const Duration(minutes: 1));
+        time.flushMicrotasks();
+        expect(oldBatches, hasLength(1));
+
+        d.startSession(
+            version: '1.2.3',
+            platform: ChatDiagnosticPlatform.android,
+            upload: (batch, _) async {
+              newBatches.add(batch);
+              return 202;
+            });
+        d.recordPerformance(sameRootRecord(400));
+        heldUpload.complete(oldStatus);
+        time.flushMicrotasks();
+        expect(d.pendingCount, 1);
+        time.elapse(const Duration(minutes: 1));
+        time.flushMicrotasks();
+        expect(newBatches, hasLength(1));
+        final fresh =
+            (newBatches.single.toJson()['operations'] as List).single as Map;
+        expect(fresh['total_ms'], 400);
+        expect(fresh, isNot(contains('queue_entry_id')));
+        expect(d.pendingCount, 0);
+        d.stopSession();
+      });
+    });
+  }
+  test('queue identity v3 validates UUID and deduplicates only the same entry',
+      () {
+    fakeAsync((time) {
+      final valid = {
+        ...sameRootRecord(100).toJson(),
+        'frames_total': 0,
+        'queue_entry_id': '00000000-0000-4000-8000-000000000011'
+      };
+      final store = DelayedStore()
+        ..payload = jsonEncode({
+          'schema': 3,
+          'scope': scopeA,
+          'created_ms': DateTime(2026).millisecondsSinceEpoch,
+          'events': [],
+          'operations': [
+            valid,
+            valid,
+            {
+              ...sameRootRecord(200).toJson(),
+              'frames_total': 0,
+              'queue_entry_id': '00000000-0000-4000-8000-000000000012'
+            },
+            {...valid, 'queue_entry_id': 'PRIVATE'},
+            {
+              ...valid,
+              'queue_entry_id': '00000000-0000-4000-8000-000000000013',
+              'message': 'PRIVATE'
+            }
+          ]
+        });
+      final d = ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      d.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 401,
+          store: store,
+          spoolScope: () async => scopeA);
+      time.flushMicrotasks();
+      expect(d.pendingCount, 2);
+      expect(store.payload, isNot(contains('PRIVATE')));
+      d.stopSession();
+      time.flushMicrotasks();
+    });
+  });
+
   for (final failure in [0, 401, 503]) {
     test(
         'failed $failure upload restores only same account then clears durable queue',

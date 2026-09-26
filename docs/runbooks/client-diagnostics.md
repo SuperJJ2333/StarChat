@@ -1,5 +1,15 @@
 # 客户端聊天诊断通道
 
+## 2026-09-26 队列与 partial 协议修补
+
+本轮沿用本通道及原SharedPreferences key；v3本地条目用私有随机 `queue_entry_id` 做restore/ACK，wire仍为根 `operation_id`。同根多条请求、尝试与观察不再去重丢失。原100条/64KiB/24小时、账号盐隔离与后台退避保持。
+
+`operations` 接受严格 final 或 checkpoint/expired：partial 只有实测 `observed_elapsed_ms`/stages/lifecycle及 false frame attribution，不包含 result/total/慢帧；idle仅本地。attempt_index（0..20，仅video_prepare/message_send）与window_index（0..1,000,000，仅call_active）互斥，适用于实测 final/partial；不存在的测量保持缺省。每批events+operations合计最多20条，16KiB总上限仍有效。
+
+旧端422会隔离本次新增 partial 扩展并保留支持的基线记录；final新增索引可省略后按既有节拍重发。旧端不支持 `request_timeout` 时只兼容为 unknown，绝不伪造 connect/read。不会因一条扩展被拒而清空全部已支持操作。暂停或401失败的上传沿原暂存/退避恢复，认证通道不增加业务重发。
+
+真实实施/部署/装机证据见[本轮任务](../workflow/tasks/2026-09-26-network-diagnostics-remediation.md)，采样与窗口口径见[性能手册](../performance/chatflow-performance-diagnostics.md)。此节不是正式Android/iOS新包已分发的声明。
+
 ## 接线与边界
 
 `ChatDiagnostics.instance` 默认未启动，`record` 为 no-op。认证会话建立后调用：

@@ -67,14 +67,18 @@ typedef ChatDiagnosticUploader = Future<int> Function(
 
 final class ChatDiagnosticBatch {
   ChatDiagnosticBatch._(this.version, this.platform, List<_Event> events,
-      this._frames, List<PerformanceRecord> operations)
+      this._frames, List<_QueuedPerformanceOperation> operations,
+      {bool operationExtensionsSupported = true})
       : _events = List.unmodifiable(events.map((e) => e.copy())),
-        _operations = List.unmodifiable(operations);
+        _operationExtensionsSupported = operationExtensionsSupported,
+        _operations =
+            List.unmodifiable(operations.map((entry) => entry.record));
   final String version;
   final ChatDiagnosticPlatform platform;
   final List<_Event> _events;
   final _FrameCounts? _frames;
-  final List<PerformanceRecord> _operations;
+  final List<PerformanceDiagnosticOperation> _operations;
+  final bool _operationExtensionsSupported;
   Map<String, Object?> toJson() => {
         'version': version,
         'platform': platform.name,
@@ -82,9 +86,43 @@ final class ChatDiagnosticBatch {
         if (_frames != null) 'frames': _frames!.toJson(),
         if (_operations.isNotEmpty)
           'operations': [
-            for (final operation in _operations) operation.toJson()
+            for (final operation in _operations)
+              _operationWireJson(operation, _operationExtensionsSupported)
           ],
       };
+}
+
+/// Local delivery identity is independent of the shared correlation ID.
+/// Immutable entries survive spool restoration; this UUID never enters wire JSON.
+final class _QueuedPerformanceOperation {
+  _QueuedPerformanceOperation(this.record, {String? queueEntryId})
+      : queueEntryId = queueEntryId ?? const Uuid().v4();
+
+  final String queueEntryId;
+  final PerformanceDiagnosticOperation record;
+}
+
+bool _hasOperationExtension(_QueuedPerformanceOperation entry) {
+  final record = entry.record;
+  return record is PerformanceRecord &&
+      (record.attemptIndex != null ||
+          record.windowIndex != null ||
+          record.networkError == PerformanceNetworkError.requestTimeout);
+}
+
+Map<String, Object?> _operationWireJson(
+    PerformanceDiagnosticOperation operation, bool extensionsSupported) {
+  final json = operation.toJson();
+  if (!extensionsSupported && operation is PerformanceRecord) {
+    json.remove('attempt_index');
+    json.remove('window_index');
+    if (operation.networkError == PerformanceNetworkError.requestTimeout) {
+      // An older schema cannot express the measured generic deadline. Do not
+      // relabel it as DNS/connect/read timeout or infer a network phase.
+      json['network_error'] = PerformanceNetworkError.unknown.wireName;
+    }
+  }
+  return json;
 }
 
 final class _FrameCounts {
@@ -162,11 +200,13 @@ final class ChatDiagnostics {
   final int normalSamplePercent;
   final int maxUploadBytes;
   final _pending = <_EventKey, _Event>{};
-  final _pendingOperations = ListQueue<PerformanceRecord>();
+  final _pendingOperations = ListQueue<_QueuedPerformanceOperation>();
   _FrameCounts _frames = _FrameCounts();
   _FrameCounts _cumulativeFrames = _FrameCounts();
   bool _framesSupported = true;
   bool _operationsSupported = true;
+  bool _observationsSupported = true;
+  bool _operationExtensionsSupported = true;
   ChatDiagnosticUploader? _upload;
   String _version = '';
   ChatDiagnosticPlatform _platform = ChatDiagnosticPlatform.other;
@@ -183,7 +223,7 @@ final class ChatDiagnostics {
     ChatDiagnosticSpoolStore store,
     Future<String?> scope,
     List<_Event> events,
-    List<PerformanceRecord> operations,
+    List<_QueuedPerformanceOperation> operations,
     _FrameCounts frames,
     DateTime created,
     int epoch
@@ -253,6 +293,8 @@ final class ChatDiagnostics {
     _cumulativeFrames = _FrameCounts();
     _framesSupported = true;
     _operationsSupported = true;
+    _observationsSupported = true;
+    _operationExtensionsSupported = true;
     _networkStageSupported = true;
     _failures = 0;
     _nextAllowed = null;
@@ -326,8 +368,21 @@ final class ChatDiagnostics {
     if (_upload == null || !_operationsSupported) {
       return;
     }
+    _admitPerformance(record, mustKeep: _mustKeepPerformance(record));
+  }
+
+  /// A partial observation has no final result. Keep checkpoints and expired
+  /// evidence in the established bounded queue without normal-event sampling.
+  void recordObservation(PerformanceTraceObservation observation) {
+    if (_upload == null || !_operationsSupported || !_observationsSupported) {
+      return;
+    }
+    _admitPerformance(observation, mustKeep: true);
+  }
+
+  void _admitPerformance(PerformanceDiagnosticOperation record,
+      {required bool mustKeep}) {
     _expirePending();
-    final mustKeep = _mustKeepPerformance(record);
     if (!mustKeep) {
       var hash = 0;
       for (final code in record.operationId.codeUnits) {
@@ -350,12 +405,16 @@ final class ChatDiagnostics {
       }
     }
     _beginPendingRecord();
-    _pendingOperations.addLast(record);
+    _pendingOperations.addLast(_QueuedPerformanceOperation(record));
     _scheduleSpoolWrite();
   }
 
   bool _mustKeepPerformance(PerformanceRecord record) {
     if (record.result != PerformanceResult.success) return true;
+    if (record.frameAttributionComplete &&
+        record.frames.slow >= PerformanceThresholds.slowFrameCountWarning) {
+      return true;
+    }
     if (record.operation == PerformanceOperationType.conversationOpen) {
       final firstFrame = record.betweenMs(PerformanceStage.routePushStarted,
           PerformanceStage.firstFrameRendered);
@@ -425,7 +484,7 @@ final class ChatDiagnostics {
     _inFlight = true;
     final epoch = _epoch;
     final events = <_Event>[];
-    final operations = <PerformanceRecord>[];
+    final operations = <_QueuedPerformanceOperation>[];
     final frameGroup = _frames;
     _FrameCounts? frames = frameGroup.total > 0 ? frameGroup.copy() : null;
 
@@ -434,7 +493,8 @@ final class ChatDiagnostics {
     bool fits() =>
         utf8
             .encode(jsonEncode(ChatDiagnosticBatch._(
-                    _version, _platform, events, frames, operations)
+                    _version, _platform, events, frames, operations,
+                    operationExtensionsSupported: _operationExtensionsSupported)
                 .toJson()))
             .length <=
         maxUploadBytes;
@@ -482,7 +542,7 @@ final class ChatDiagnostics {
           break;
         }
         if (_pendingOperations.isNotEmpty &&
-            _pendingOperations.first.operationId == operation.operationId) {
+            identical(_pendingOperations.first, operation)) {
           _pendingOperations.removeFirst();
         }
       }
@@ -491,8 +551,9 @@ final class ChatDiagnostics {
       _inFlight = false;
       return;
     }
-    final batch =
-        ChatDiagnosticBatch._(_version, _platform, events, frames, operations);
+    final batch = ChatDiagnosticBatch._(
+        _version, _platform, events, frames, operations,
+        operationExtensionsSupported: _operationExtensionsSupported);
     final abort = Completer<void>();
     _abort = abort;
     _nextAllowed = now.add(const Duration(minutes: 1));
@@ -513,9 +574,24 @@ final class ChatDiagnostics {
     }
     if (epoch != _epoch) return;
     if (status == 422 && operations.isNotEmpty) {
-      // An older receiver may know legacy events/frames but not operations.
-      _operationsSupported = false;
-      _pendingOperations.clear();
+      final hasObservation = operations
+          .any((entry) => entry.record is PerformanceTraceObservation);
+      final hasNewFields = _operationExtensionsSupported &&
+          operations.any(_hasOperationExtension);
+      if (hasObservation || hasNewFields) {
+        // First remove only the new extension. Preserve baseline final records
+        // and retry them at the existing cadence with their immutable identity.
+        if (hasObservation) {
+          _observationsSupported = false;
+          _pendingOperations.removeWhere(
+              (entry) => entry.record is PerformanceTraceObservation);
+        }
+        if (hasNewFields) _operationExtensionsSupported = false;
+      } else {
+        // An older receiver may know events/frames but no baseline operations.
+        _operationsSupported = false;
+        _pendingOperations.clear();
+      }
     } else if (status == 422 && frames != null) {
       // Old servers have a closed schema. Keep existing events for the next
       // bounded attempt, but stop sending the extension for this session.
@@ -548,7 +624,7 @@ final class ChatDiagnostics {
       }
       for (final operation in operations) {
         if (_pendingOperations.isNotEmpty &&
-            _pendingOperations.first.operationId == operation.operationId) {
+            identical(_pendingOperations.first, operation)) {
           _pendingOperations.removeFirst();
         }
       }
@@ -638,7 +714,7 @@ final class ChatDiagnostics {
               final events = <Map<String, Object?>>[];
               final operations = <Map<String, Object?>>[];
               final body = <String, Object?>{
-                'schema': 2,
+                'schema': 3,
                 'scope': scope,
                 'created_ms': write.created.millisecondsSinceEpoch,
                 'events': events,
@@ -662,14 +738,21 @@ final class ChatDiagnostics {
               for (final event in write.events) {
                 if (!append(events, event.toJson())) break;
               }
-              for (final operation in write.operations) {
+              for (final entry in write.operations) {
+                final operation = entry.record;
                 if (!append(operations, {
+                  'queue_entry_id': entry.queueEntryId,
                   ...operation.toJson(),
-                  'frames_total': operation.frames.total,
-                  if (operation.packetsLost != null)
-                    'packets_lost': operation.packetsLost,
-                  if (operation.packetsReceived != null)
-                    'packets_received': operation.packetsReceived,
+                  if (operation is PerformanceTraceObservation)
+                    'observed_idle_ms':
+                        (operation.idleUs ~/ 1000).clamp(0, 3600000),
+                  if (operation is PerformanceRecord) ...{
+                    'frames_total': operation.frames.total,
+                    if (operation.packetsLost != null)
+                      'packets_lost': operation.packetsLost,
+                    if (operation.packetsReceived != null)
+                      'packets_received': operation.packetsReceived,
+                  },
                 })) {
                   break;
                 }
@@ -700,7 +783,7 @@ final class ChatDiagnostics {
             }
             final decoded = jsonDecode(raw);
             if (decoded is! Map ||
-                decoded['schema'] != 2 ||
+                (decoded['schema'] != 2 && decoded['schema'] != 3) ||
                 decoded['scope'] != scope ||
                 decoded['created_ms'] is! int) {
               await restore.store.clear();
@@ -797,13 +880,19 @@ final class ChatDiagnostics {
             }
             final operations = decoded['operations'];
             if (operations is List) {
+              final restoredIds = {
+                for (final entry in _pendingOperations) entry.queueEntryId
+              };
               for (final rawOperation in operations.take(100)) {
                 if (pendingCount >= 100) break;
-                final operation = restoreDiagnosticOperation(rawOperation);
-                if (operation != null &&
-                    !_pendingOperations
-                        .any((e) => e.operationId == operation.operationId)) {
-                  _pendingOperations.addLast(operation);
+                final restored = restoreDiagnosticQueueOperation(rawOperation,
+                    schema: decoded['schema'] as int);
+                if (restored != null) {
+                  final entry = _QueuedPerformanceOperation(restored.record,
+                      queueEntryId: restored.queueEntryId);
+                  if (restoredIds.add(entry.queueEntryId)) {
+                    _pendingOperations.addLast(entry);
+                  }
                 }
               }
             }

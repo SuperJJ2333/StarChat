@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import '../../core/performance_trace.dart';
+import '../../core/network_state_manager.dart';
 
 enum MatrixOutgoingWorkState {
   queued,
@@ -41,9 +44,7 @@ final class MatrixRoomVideoWorkSummary {
     if (preparing > 0) {
       final p = progress;
       final count = preparing > 1 ? '（$preparing）' : '';
-      return p == null
-          ? '视频转码中…$count'
-          : '视频转码中 ${(p * 100).round()}%$count';
+      return p == null ? '视频转码中…$count' : '视频转码中 ${(p * 100).round()}%$count';
     }
     if (sending > 0) return '视频上传中…';
     return '';
@@ -84,10 +85,12 @@ final class MatrixOutgoingWorkAttempt {
   MatrixOutgoingWorkAttempt._(
       {required this.accountId,
       required this.txid,
+      this.performanceTrace,
       required bool Function() isActive})
       : _isActive = isActive;
   final String accountId;
   final String txid;
+  final PerformanceTrace? performanceTrace;
   final bool Function() _isActive;
   void ensureActive() {
     if (!_isActive()) throw StateError('MATRIX_OUTGOING_WORK_REVOKED');
@@ -183,6 +186,9 @@ final class MatrixOutgoingWorkItem {
     required Future<String> Function(MatrixOutgoingWorkAttempt attempt) send,
     Future<void> Function()? release,
     MatrixOutgoingWorkPresentation? presentation,
+    this.performanceContext,
+    this.onAttemptSettled,
+    this.onTimelinePublished,
   })  : _legacyPrepare = prepare,
         _send = send,
         _legacyRelease = release,
@@ -207,6 +213,11 @@ final class MatrixOutgoingWorkItem {
   String? _eventId;
   String? get eventId => _eventId;
   bool _echoed = false;
+  final PerformanceCorrelationContext? performanceContext;
+  final void Function(MatrixOutgoingWorkState state)? onAttemptSettled;
+  final void Function()? onTimelinePublished;
+  PerformanceTrace? _activePerformanceTrace;
+  int _diagnosticAttempts = 0;
 
   MatrixOutgoingWorkSource? _sourceFor(MatrixOutgoingWorkJob job) {
     if (job.source != null) return job.source;
@@ -453,6 +464,9 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
       if (eventId != null && transactionId != null) item._eventId = eventId;
       if (!item._echoed) {
         item._echoed = true;
+        item._activePerformanceTrace?.mark(PerformanceStage.ack);
+        item._activePerformanceTrace?.mark(PerformanceStage.timelinePublished);
+        _observeDiagnostic(item.onTimelinePublished);
         changed = true;
       }
       switch (item._state) {
@@ -848,11 +862,13 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
             .any((item) => item._state == MatrixOutgoingWorkState.sending);
   }
 
-  MatrixOutgoingWorkAttempt _attemptFor(MatrixOutgoingWorkItem item) {
+  MatrixOutgoingWorkAttempt _attemptFor(MatrixOutgoingWorkItem item,
+      {PerformanceTrace? performanceTrace}) {
     final epoch = _epoch;
     return MatrixOutgoingWorkAttempt._(
         accountId: accountId,
         txid: item.txid,
+        performanceTrace: performanceTrace,
         isActive: () => _active && epoch == _epoch);
   }
 
@@ -881,6 +897,7 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
           // future later fails or is cancelled.
           item._state = item._echoed ? MatrixOutgoingWorkState.sent : state;
         }
+        _observeDiagnostic(() => item.onAttemptSettled?.call(item._state));
       }
       _releaseSourceIfTerminal(job);
     } finally {
@@ -922,7 +939,14 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
 
   Future<void> _runTransfer(
       MatrixOutgoingWorkJob job, MatrixOutgoingWorkItem item) async {
-    final attempt = _attemptFor(item);
+    final index = item._diagnosticAttempts++;
+    final trace = item.performanceContext?.startOperation(
+        PerformanceOperationType.messageSend,
+        attemptIndex: index);
+    if (trace != null) trace.retryCount = index;
+    item._activePerformanceTrace = trace;
+    trace?.mark(PerformanceStage.sendAdmission);
+    final attempt = _attemptFor(item, performanceTrace: trace);
     try {
       attempt.ensureActive();
       final eventId = await item._sendWith(attempt);
@@ -932,14 +956,40 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
       item._state = MatrixOutgoingWorkState.sent;
       if (_consumeEarlyEchoEvent(item.targetRoomId, eventId)) {
         item._echoed = true;
+        trace?.mark(PerformanceStage.timelinePublished);
+        _observeDiagnostic(item.onTimelinePublished);
       }
-    } catch (_) {
+      trace?.mark(PerformanceStage.ack);
+    } catch (error) {
+      final status = networkFailureHttpStatus(error);
+      trace?.setNetwork(
+          error: switch (error) {
+        TimeoutException() => PerformanceNetworkError.requestTimeout,
+        SocketException() => PerformanceNetworkError.socketFailure,
+        HandshakeException() => PerformanceNetworkError.tlsFailure,
+        _ when status == 429 => PerformanceNetworkError.rateLimit,
+        _ when status == 401 || status == 403 =>
+          PerformanceNetworkError.authFailure,
+        _ when status != null && status >= 500 =>
+          PerformanceNetworkError.server5xx,
+        _ when status != null && status >= 400 =>
+          PerformanceNetworkError.businessRejection,
+        _ => PerformanceNetworkError.unknown,
+      });
       item._state = !attempt._isActive()
           ? MatrixOutgoingWorkState.canceled
           : item._echoed
               ? MatrixOutgoingWorkState.sent
               : MatrixOutgoingWorkState.failed;
     } finally {
+      final result = switch (item._state) {
+        MatrixOutgoingWorkState.sent => PerformanceResult.success,
+        MatrixOutgoingWorkState.canceled => PerformanceResult.cancelled,
+        _ => PerformanceResult.failed,
+      };
+      _observeDiagnostic(() => trace?.finish(result: result));
+      item._activePerformanceTrace = null;
+      _observeDiagnostic(() => item.onAttemptSettled?.call(item._state));
       _activeTransfers--;
       if (job.source == null) _releaseLegacyItemIfTerminal(item);
       _releaseSourceIfTerminal(job);
@@ -947,6 +997,14 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
       _schedule();
       _notifyListeners();
       _signalProgress();
+    }
+  }
+
+  static void _observeDiagnostic(void Function()? record) {
+    try {
+      record?.call();
+    } catch (_) {
+      // Observation cannot change settlement or hold a transfer slot.
     }
   }
 

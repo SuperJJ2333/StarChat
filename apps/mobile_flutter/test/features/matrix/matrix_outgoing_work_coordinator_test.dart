@@ -24,6 +24,33 @@ MatrixOutgoingWorkItem _item({
     );
 
 void main() {
+  test(
+      'diagnostic callback failures cannot change send result or strand transfer',
+      () async {
+    final coordinator = MatrixOutgoingWorkCoordinator(accountId: '@me:test');
+    final first = MatrixOutgoingWorkItem(
+        id: 'first',
+        targetRoomId: '!room:test',
+        txid: 'tx-first',
+        send: (_) async {
+          coordinator.acknowledgeEcho(
+              transactionId: 'tx-first', eventId: 'event-first');
+          return 'event-first';
+        },
+        onTimelinePublished: () => throw StateError('diagnostic callback'),
+        onAttemptSettled: (_) => throw StateError('diagnostic settled'));
+    final second = _item(
+        id: 'second',
+        targetRoomId: '!room:test',
+        txid: 'tx-second',
+        send: (_) async {});
+    await coordinator.enqueue(
+        MatrixOutgoingWorkJob(id: 'diagnostic-safe', items: [first, second]));
+    await coordinator.drain();
+    expect(first.state, MatrixOutgoingWorkState.sent);
+    expect(second.state, MatrixOutgoingWorkState.sent);
+  });
+
   test('returns after registration while preparation remains held', () async {
     final preparation = Completer<void>();
     final sent = Completer<void>();

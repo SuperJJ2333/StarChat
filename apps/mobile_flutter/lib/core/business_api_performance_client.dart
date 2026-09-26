@@ -227,6 +227,7 @@ PerformanceNetworkError? _statusError(int status) => switch (status) {
 /// `http.Client` has no DNS/connect/read phase API. A generic timeout or
 /// ClientException cannot truthfully be assigned to one of those phases.
 PerformanceNetworkError _transportError(Object error) => switch (error) {
+      TimeoutException() => PerformanceNetworkError.requestTimeout,
       HandshakeException() ||
       TlsException() =>
         PerformanceNetworkError.tlsFailure,

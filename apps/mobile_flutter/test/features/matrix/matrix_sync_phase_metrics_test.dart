@@ -1,13 +1,221 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_phase_metrics.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
-import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
+import 'package:matrix/matrix.dart'
+    show
+        SyncStatus,
+        SyncStatusUpdate,
+        SdkError,
+        SyncConnectionException,
+        MatrixException;
 
 void main() {
+  for (final sample in <(Object, PerformanceNetworkError, int?)>[
+    (
+      SyncConnectionException(TimeoutException('PRIVATE')),
+      PerformanceNetworkError.requestTimeout,
+      null
+    ),
+    (
+      const HandshakeException('PRIVATE'),
+      PerformanceNetworkError.tlsFailure,
+      null
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 429)),
+      PerformanceNetworkError.rateLimit,
+      429
+    ),
+    (
+      MatrixException(http.Response(
+          '{"errcode":"M_UNKNOWN_TOKEN","error":"PRIVATE"}', 401)),
+      PerformanceNetworkError.authFailure,
+      401
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_FORBIDDEN","error":"PRIVATE"}', 403)),
+      PerformanceNetworkError.authFailure,
+      403
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 503)),
+      PerformanceNetworkError.server5xx,
+      503
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 400)),
+      PerformanceNetworkError.businessRejection,
+      400
+    ),
+    (StateError('PRIVATE processing'), PerformanceNetworkError.unknown, null),
+  ]) {
+    test(
+        'sync failure ${sample.$2.name} ${sample.$3} keeps only closed error facts',
+        () {
+      final records = <PerformanceRecord>[];
+      final metrics = PerformanceMetrics(enabled: true);
+      final recorder =
+          PerformanceTraceRecorder(metrics: metrics, onRecord: records.add);
+      final phases =
+          MatrixSyncPhaseMetrics(metrics: metrics, traceRecorder: recorder);
+      phases.record(SyncStatus.error, error: SdkError(exception: sample.$1));
+      expect(records.single.networkError, sample.$2);
+      expect(records.single.statusCode, sample.$3);
+      expect(records.single.stagesUs, isEmpty);
+      expect(jsonEncode(records.single.toJson()), isNot(contains('PRIVATE')));
+      phases.dispose();
+      recorder.clear();
+    });
+  }
+  test('normal 35s long polling has no slow checkpoint or asserted bottleneck',
+      () {
+    var now = 0;
+    final records = <PerformanceRecord>[];
+    final partial = <PerformanceTraceObservation>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder = PerformanceTraceRecorder(
+        metrics: metrics,
+        clockUs: () => now,
+        onRecord: records.add,
+        onObservation: partial.add);
+    final phases = MatrixSyncPhaseMetrics(
+        metrics: metrics, clockUs: () => now, traceRecorder: recorder);
+    phases.record(SyncStatus.waitingForResponse);
+    now = 35000000;
+    recorder.sweepObservations();
+    expect(partial, isEmpty);
+    phases.record(SyncStatus.processing);
+    now += 40000;
+    phases.record(SyncStatus.cleaningUp);
+    now += 10000;
+    phases.record(SyncStatus.finished);
+    expect(records.single.stagesUs[PerformanceStage.syncResponseReceived],
+        35000000);
+    expect(PerformanceBottleneckClassifier.classify(records.single),
+        PerformanceBottleneck.unknown);
+    phases.dispose();
+  });
+
+  test('watchdog preserves real SDK timeout without inventing transport loss',
+      () async {
+    var now = 0;
+    final records = <PerformanceRecord>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder = PerformanceTraceRecorder(
+        metrics: metrics, clockUs: () => now, onRecord: records.add);
+    final phases = MatrixSyncPhaseMetrics(
+        metrics: metrics, clockUs: () => now, traceRecorder: recorder);
+    final target = _Target();
+    final watchdog =
+        MatrixSyncWatchdog(target: target, syncPhaseMetrics: phases);
+    watchdog.start();
+    target.emit(SyncStatus.waitingForResponse);
+    await _settle();
+    now = 2000000;
+    target.emit(SyncStatus.error,
+        error: TimeoutException('PRIVATE 192.0.2.3 token=PRIVATE'));
+    await _settle();
+    expect(records.single.networkError, PerformanceNetworkError.requestTimeout);
+    expect(records.single.syncErrorCount, 1);
+    expect(watchdog.transportAvailable.value, isNull);
+    expect(jsonEncode(records.single.toJson()), isNot(contains('PRIVATE')));
+    expect(jsonEncode(records.single.toJson()), isNot(contains('192.0.2.3')));
+    watchdog.dispose();
+    await target.close();
+  });
+
+  test('SDK socket error without waiting retains only actual error evidence',
+      () async {
+    final records = <PerformanceRecord>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder =
+        PerformanceTraceRecorder(metrics: metrics, onRecord: records.add);
+    final phases =
+        MatrixSyncPhaseMetrics(metrics: metrics, traceRecorder: recorder);
+    final target = _Target();
+    final watchdog =
+        MatrixSyncWatchdog(target: target, syncPhaseMetrics: phases);
+    watchdog.start();
+    target.emit(SyncStatus.error,
+        error: const SocketException('PRIVATE 192.0.2.4'));
+    await _settle();
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.failed);
+    expect(records.single.networkError, PerformanceNetworkError.socketFailure);
+    expect(records.single.stagesUs, isEmpty);
+    expect(watchdog.transportAvailable.value, isNull);
+    watchdog.dispose();
+    await target.close();
+  });
+
+  test('watchdog counter deltas belong only to their real sync cycle',
+      () async {
+    var nowUs = 0;
+    var now = DateTime.utc(2026, 9, 26);
+    final records = <PerformanceRecord>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder = PerformanceTraceRecorder(
+        metrics: metrics, clockUs: () => nowUs, onRecord: records.add);
+    final phases = MatrixSyncPhaseMetrics(
+        metrics: metrics, clockUs: () => nowUs, traceRecorder: recorder);
+    final target = _Target();
+    final watchdog = MatrixSyncWatchdog(
+        target: target, syncPhaseMetrics: phases, clock: () => now);
+    watchdog.start();
+    target.emit(SyncStatus.finished); // A real previous healthy SDK cycle.
+    await _settle();
+    target.emit(SyncStatus.waitingForResponse);
+    await _settle();
+    now = now.add(const Duration(minutes: 3));
+    nowUs += 180000000;
+    await watchdog.tick();
+    await _settle();
+    now = now.add(const Duration(minutes: 3));
+    nowUs += 180000000;
+    await watchdog.tick();
+    await _settle();
+    target.emit(SyncStatus.error, error: TimeoutException('private'));
+    await _settle();
+    expect(records.single.softKickCount, 1);
+    expect(records.single.hardRestartCount, 1);
+    expect(records.single.syncErrorCount, 1);
+    expect(records.single.reconnectCount, 0);
+    expect(records.single.lastHealthySyncAgeMs, 360000);
+    for (var cycle = 0; cycle < 2; cycle++) {
+      target.emit(SyncStatus.waitingForResponse);
+      await _settle();
+      nowUs += 100000;
+      target.emit(SyncStatus.processing);
+      await _settle();
+      nowUs += 40000;
+      target.emit(SyncStatus.cleaningUp);
+      await _settle();
+      nowUs += 10000;
+      target.emit(SyncStatus.finished);
+      await _settle();
+      expect(records.last.softKickCount, 0);
+      expect(records.last.hardRestartCount, 0);
+      expect(records.last.syncErrorCount, 0);
+      expect(records.last.reconnectCount, cycle == 0 ? 1 : 0);
+      expect(records.last.lastHealthySyncAgeMs, 0);
+    }
+    expect(records.map((r) => r.operationId).toSet(), hasLength(3));
+    watchdog.dispose();
+    recorder.clear();
+    await target.close();
+  });
+
   test('one completed sync cycle shares a trace ID across real stages', () {
     var now = 100;
     final metrics = PerformanceMetrics(enabled: true);
@@ -260,7 +468,9 @@ Future<void> _settle() => Future<void>.delayed(Duration.zero);
 
 final class _Target implements SyncWatchdogTarget {
   final _updates = StreamController<SyncStatusUpdate>.broadcast();
-  void emit(SyncStatus status) => _updates.add(SyncStatusUpdate(status));
+  void emit(SyncStatus status, {Object? error}) =>
+      _updates.add(SyncStatusUpdate(status,
+          error: error == null ? null : SdkError(exception: error)));
   Future<void> close() => _updates.close();
   @override
   Stream<SyncStatusUpdate> get syncStatus => _updates.stream;

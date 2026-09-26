@@ -122,6 +122,7 @@ final class CallQualitySample {
 /// - candidate-pair 的 currentRoundTripTime（秒→毫秒）；
 /// - inbound-rtp 的 jitter（秒→毫秒）与 packetsLost / packetsReceived。
 CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
+  if (reports.isEmpty) return null;
   final byId = {for (final report in reports) report.id: report};
 
   StatsReport? selectedPair;
@@ -303,11 +304,14 @@ final class CallQualityMonitor {
     required Future<List<StatsReport>> Function() getStats,
     this.interval = const Duration(seconds: 5),
     this.clock = DateTime.now,
+    this.elapsedUs,
     this.onSample,
     this.sampleCapacity = 128,
     PerformanceTraceRecorder? performanceRecorder,
+    PerformanceCorrelationContext? correlationContext,
   })  : assert(sampleCapacity > 0),
         _getStats = getStats,
+        _correlationContext = correlationContext,
         _performanceRecorder =
             performanceRecorder ?? PerformanceTraceRecorder.instance;
 
@@ -315,6 +319,8 @@ final class CallQualityMonitor {
   final PerformanceTraceRecorder _performanceRecorder;
   final Duration interval;
   final DateTime Function() clock;
+  final int Function()? elapsedUs;
+  final _windowClock = Stopwatch();
   final void Function(CallQualitySample sample)? onSample;
   final int sampleCapacity;
 
@@ -325,6 +331,10 @@ final class CallQualityMonitor {
   bool _stopped = false;
   bool _polling = false;
   PerformanceTrace? _trace;
+  PerformanceCorrelationContext? _correlationContext;
+  int? _windowStartedUs;
+  CallQualitySample? _representative;
+  int _windowIndex = 0;
 
   bool get isRunning => _timer != null;
 
@@ -334,8 +344,9 @@ final class CallQualityMonitor {
   void start() {
     if (_timer != null) return;
     _stopped = false;
+    _windowClock.start();
     if (_performanceRecorder.recordingEnabled) {
-      _trace = _performanceRecorder.start(PerformanceOperationType.callActive);
+      _startWindow();
     }
     unawaited(_poll());
     _timer = Timer.periodic(interval, (_) => unawaited(_poll()));
@@ -345,8 +356,8 @@ final class CallQualityMonitor {
     _stopped = true;
     _timer?.cancel();
     _timer = null;
-    _trace?.finish();
-    _trace = null;
+    _finishWindow();
+    _windowClock.stop();
   }
 
   Future<void> _poll() async {
@@ -357,22 +368,24 @@ final class CallQualityMonitor {
       if (_stopped) return;
       final sample = parseCallQualityReports(reports);
       if (sample == null) return;
+      final now = _nowUs;
+      final started = _windowStartedUs;
+      if (started != null &&
+          now - started >=
+              PerformanceThresholds.callQualityObservationWindow.inMicroseconds) {
+        _finishWindow();
+        _windowIndex = (_windowIndex + 1).clamp(0, 1000000);
+        _startWindow();
+      }
       if (_samples.length == sampleCapacity) _samples.removeFirst();
       _samples.addLast(sample);
       _turnUsed |= sample.usesTurn;
-      final hasCandidate = sample.localCandidateType != null ||
-          sample.remoteCandidateType != null;
-      final completePacketCounters = sample.packetLossPercent != null;
-      _trace?.setCallQuality(
-        rttMs: sample.rttMs,
-        jitterMs: sample.jitterMs,
-        packetsLost: completePacketCounters ? sample.packetsLost : null,
-        packetsReceived: completePacketCounters ? sample.packetsReceived : null,
-        usesTurn: _turnUsed || hasCandidate ? _turnUsed : null,
-        relayProtocol: _safePerformanceProtocol(sample.relayProtocol),
-        candidateProtocol: _safePerformanceProtocol(
-            sample.localCandidateProtocol ?? sample.remoteCandidateProtocol),
-      );
+      // Preserve a real sample tuple. A later healthy poll cannot erase the
+      // degraded sample or combine its RTT with an unrelated TURN path.
+      if (_representative == null ||
+          _severity(sample) > _severity(_representative!)) {
+        _representative = sample;
+      }
       onSample?.call(sample);
     } catch (error) {
       if (_performanceRecorder.metrics.enabled) {
@@ -381,6 +394,55 @@ final class CallQualityMonitor {
     } finally {
       _polling = false;
     }
+  }
+
+  void _startWindow() {
+    _windowStartedUs = _nowUs;
+    _representative = null;
+    _trace = _performanceRecorder.start(
+      PerformanceOperationType.callActive,
+      correlationContext: _correlationContext,
+      windowIndex: _windowIndex,
+    );
+    _correlationContext ??= _trace!.correlationContext;
+  }
+
+  int get _nowUs => elapsedUs?.call() ?? _windowClock.elapsedMicroseconds;
+
+  void _finishWindow() {
+    final trace = _trace;
+    final sample = _representative;
+    _trace = null;
+    _representative = null;
+    if (trace == null) return;
+    if (sample == null) {
+      trace.dispose();
+      return;
+    }
+    final hasCandidate =
+        sample.localCandidateType != null || sample.remoteCandidateType != null;
+    final paired = sample.packetLossPercent != null;
+    trace.setCallQuality(
+      rttMs: sample.rttMs,
+      jitterMs: sample.jitterMs,
+      packetsLost: paired ? sample.packetsLost : null,
+      packetsReceived: paired ? sample.packetsReceived : null,
+      usesTurn: hasCandidate ? sample.usesTurn : null,
+      relayProtocol: sample.usesTurn
+          ? _safePerformanceProtocol(sample.relayProtocol)
+          : null,
+      candidateProtocol: _safePerformanceProtocol(
+          sample.localCandidateProtocol ?? sample.remoteCandidateProtocol),
+    );
+    trace.finish();
+  }
+
+  static double _severity(CallQualitySample sample) {
+    final rtt = (sample.rttMs ?? 0) / PerformanceThresholds.callRttMs;
+    final jitter = (sample.jitterMs ?? 0) / PerformanceThresholds.callJitterMs;
+    final loss = (sample.packetLossPercent ?? 0) /
+        PerformanceThresholds.callPacketLossPercent;
+    return [rtt, jitter, loss].reduce((a, b) => a > b ? a : b);
   }
 
   static PerformanceRelayProtocol? _safePerformanceProtocol(String? value) =>

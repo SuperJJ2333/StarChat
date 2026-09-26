@@ -140,7 +140,6 @@ final class MatrixSyncWatchdog {
     _lastProgress = _clock();
     _subscription = target.syncStatus.listen((update) {
       if (_disposed) return;
-      _syncPhaseMetrics.record(update.status);
       // waitingForResponse 每轮长轮询必发，是最可靠的心跳；
       // finished/processing 视为额外进展。error 不算心跳——持续报错
       // 的循环同样需要被强制重建。
@@ -167,6 +166,14 @@ final class MatrixSyncWatchdog {
           connectionStatus.value != MatrixConnectionStatus.offline) {
         _setStatus(MatrixConnectionStatus.serviceUnavailable);
       }
+      _syncPhaseMetrics.record(update.status,
+          error: update.error,
+          counters: MatrixSyncCounterSnapshot(
+              softKicks: _softKickCount,
+              hardRestarts: _hardRestartCount,
+              errors: _syncErrorCount,
+              reconnects: _reconnectCount,
+              lastHealthyAge: lastHealthySyncAge));
     });
     _timer = Timer.periodic(interval, (_) => tick());
     _recoveryController?.start();

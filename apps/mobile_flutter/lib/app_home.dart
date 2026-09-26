@@ -2229,12 +2229,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
     // 逻辑会话归一化（缺陷 0919 项 3）：搜索/通知命中历史孤儿房间时，
     // 只允许只读定位打开（保留 roomId+anchor），不作为独立可发送会话。
-    await widget.matrix.prepareConversationAssociations();
-    final normalized = normalizeDuplicateRoomOpen(request,
-        primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync);
     try {
-      await _roomOpening.open(
-        normalized,
+      await _roomOpening.openPrepared(
+        request,
+        prepare: widget.matrix.prepareConversationAssociations,
+        normalize: (traced) => normalizeDuplicateRoomOpen(traced,
+            primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync),
         navigate: _roomNavigation.open,
         awaitLocalRoom: _awaitLocalRoom,
       );
@@ -2362,6 +2362,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 initialAnchorRoomId: request.anchorRoomId,
                 navigationRequests: navigationRequests,
                 requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
+                onOutboxCorrelation: (id, correlation) =>
+                    _outboxScheduler?.registerCorrelation(id, correlation),
+                outboxCorrelationFor: (id) =>
+                    _outboxScheduler?.correlationFor(id),
                 resolveDirectSendTarget: _resolveNewDirectSend,
                 onDirectTargetChanged: (target) => _replaceRecoveredPage(
                     roomId,

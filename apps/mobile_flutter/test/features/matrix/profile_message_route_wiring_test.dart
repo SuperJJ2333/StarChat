@@ -41,7 +41,11 @@ void main() {
     expect(source, contains('RoomNavigationCoordinator('));
     // 打开前策略：RoomOpenRequest → RoomOpeningPolicy → 协调器。
     expect(source, contains('RoomOpeningPolicy('));
-    expect(source, contains('_roomOpening.open('));
+    // The policy now measures the existing association preparation before it
+    // awaits; room navigation still uses the same policy and coordinator.
+    expect(source, contains('_roomOpening.openPrepared('));
+    expect(source,
+        contains('prepare: widget.matrix.prepareConversationAssociations'));
     expect(source, contains('navigate: _roomNavigation.open'));
     expect(source, contains('_openManagedRoomRequest(RoomOpenRequest('));
     expect(source, contains('onOpenRoom: _openManagedRoomRequest'));
@@ -67,10 +71,13 @@ void main() {
     // 会被闸门吞掉（真机 BUG）。
     final openMessage = root.substring(
       root.indexOf('Future<void> _openMessage(ContactDetails contact)'),
-      root.indexOf('Future<DirectMessageTarget?> _resolveLocalDirectMessageTarget('),
+      root.indexOf(
+          'Future<DirectMessageTarget?> _resolveLocalDirectMessageTarget('),
     );
-    expect(openMessage,
-        contains('() => _resolveLocalDirectMessageTarget(contact, trace: trace)'),
+    expect(
+        openMessage,
+        contains(
+            '() => _resolveLocalDirectMessageTarget(contact, trace: trace)'),
         reason: 'DirectMessageOpenGate 只能持有身份 + canonical 房间解析');
     expect(openMessage, contains('await _openManagedRoom(target.roomId'),
         reason: '_openManagedRoom 必须在闸门之外');

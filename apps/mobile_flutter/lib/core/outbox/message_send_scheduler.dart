@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import '../../core/network_state_manager.dart';
 import '../chat_diagnostic_operation.dart';
 import '../chat_diagnostics.dart';
+import '../performance_trace.dart';
 import 'outbox_message.dart';
 import 'outbox_room_sender_registry.dart';
 import 'persistent_outbox_manager.dart';
@@ -99,6 +101,51 @@ final class MessageSendScheduler {
   final Map<String, int> _resolutionRetries = <String, int>{};
   bool _disposed = false;
   int _dispatched = 0;
+  final _correlations = <String, (PerformanceCorrelationContext, DateTime)>{};
+
+  /// Local delivery keys never enter telemetry. This bridge survives a page
+  /// span finishing, but is bounded and invalidated by its account generation.
+  void registerCorrelation(
+      String localId, PerformanceCorrelationContext context) {
+    if (_disposed || !context.isCurrent) return;
+    final existing = _correlations[localId];
+    if (existing != null && identical(existing.$1, context)) return;
+    if (existing != null) existing.$1.close();
+    if (_correlations.length >= PerformanceThresholds.maxActiveTraces) {
+      _correlations.remove(_correlations.keys.first)?.$1.close();
+    }
+    _correlations[localId] = (
+      context,
+      outbox.now.add(PerformanceThresholds.messageTraceObservationWindow)
+    );
+  }
+
+  PerformanceCorrelationContext? correlationFor(String localId) {
+    final entry = _correlations[localId];
+    if (entry == null) return null;
+    if (_disposed || !entry.$1.isCurrent || outbox.now.isAfter(entry.$2)) {
+      _correlations.remove(localId);
+      entry.$1.close();
+      return null;
+    }
+    return entry.$1;
+  }
+
+  int get correlationCount => _correlations.length;
+
+  PerformanceTrace _backgroundTrace(OutboxMessage row) {
+    final context = correlationFor(row.localId);
+    final trace = context?.startOperation(PerformanceOperationType.messageSend,
+            attemptIndex: row.retryCount) ??
+        PerformanceTraceRecorder.instance.start(
+            PerformanceOperationType.messageSend,
+            attemptIndex: row.retryCount);
+    trace.retryCount = row.retryCount;
+    if (context == null && trace.isRecording) {
+      registerCorrelation(row.localId, trace.correlationContext);
+    }
+    return trace;
+  }
 
   /// 本调度器成功派发的行数（测试与诊断用）。
   int get dispatchedCount => _dispatched;
@@ -423,6 +470,9 @@ final class MessageSendScheduler {
     OutboxLeaseFactory factory,
   ) async {
     if (!_openingRooms.add(roomId)) return 0;
+    final acquisitionTrace = _backgroundTrace(rows.first);
+    acquisitionTrace.mark(PerformanceStage.roomAttachStarted);
+    var acquisitionTraceUsed = false;
     OutboxLease? lease;
     var acquisitionExpired = false;
     try {
@@ -437,7 +487,10 @@ final class MessageSendScheduler {
         throw TimeoutException(
             'Outbox room acquisition timed out', operationTimeout);
       });
+      acquisitionTrace.mark(PerformanceStage.roomAttachDone);
     } catch (error) {
+      acquisitionTrace.setNetwork(error: _performanceNetworkError(error));
+      acquisitionTrace.finish(result: PerformanceResult.waitingNetwork);
       if (!acquisitionExpired) _openingRooms.remove(roomId);
       await _keepWaitingNetwork(rows, error);
       return 0;
@@ -460,6 +513,12 @@ final class MessageSendScheduler {
         final recoveryRevision = _recoveryRevision;
         var retryAfterSettlement = false;
         OutboxMessage? attempt;
+        final trace = identical(row, rows.first)
+            ? acquisitionTrace
+            : _backgroundTrace(row);
+        if (identical(trace, acquisitionTrace)) acquisitionTraceUsed = true;
+        var traceResult = PerformanceResult.cancelled;
+        var matrixSendStarted = false;
         final sending = () async {
           try {
             // 原子认领：失败说明已被别的派发者认领/已送达。
@@ -470,13 +529,27 @@ final class MessageSendScheduler {
               await outbox.updateStatus(row.localId, OutboxStatus.queued);
               return false;
             }
-            if (!await _authorize(row, claimed: true)) return false;
+            if (!await _authorize(row, claimed: true,
+                onDiagnostic: (result, error) {
+              traceResult = result;
+              if (error != null) {
+                trace.setNetwork(error: _performanceNetworkError(error));
+              }
+            })) {
+              return false;
+            }
             if (_disposed) {
               await outbox.updateStatus(row.localId, OutboxStatus.queued);
               return false;
             }
+            trace.mark(PerformanceStage.sendAdmission);
+            trace.mark(PerformanceStage.matrixSendStart);
+            matrixSendStarted = true;
             final eventId = await _observe(ChatDiagnosticStage.matrixSend,
                 () => activeLease.send(row.content, row.txid));
+            if (matrixSendStarted) {
+              trace.mark(PerformanceStage.matrixSendFinish);
+            }
             if (eventId.isEmpty) {
               throw StateError('Matrix event was not accepted');
             }
@@ -484,10 +557,19 @@ final class MessageSendScheduler {
               await outbox.removeOrArchive(row.localId);
             }
             _dispatched++;
+            trace.mark(PerformanceStage.ack);
+            traceResult = PerformanceResult.success;
             return true;
           } catch (error) {
             // 网络问题 → 等待网络（自动续发）；服务端明确拒绝 → failed。
             final networkFailure = defaultNetworkFailureClassifier(error);
+            if (matrixSendStarted) {
+              trace.mark(PerformanceStage.matrixSendFinish);
+            }
+            traceResult = networkFailure
+                ? PerformanceResult.waitingNetwork
+                : PerformanceResult.failed;
+            trace.setNetwork(error: _performanceNetworkError(error));
             if (attempt != null) {
               await outbox.settleAttempt(
                   attempt!,
@@ -509,6 +591,10 @@ final class MessageSendScheduler {
             if (networkFailure && !retryAfterSettlement) _reportFailure(error);
             return false;
           } finally {
+            trace.finish(result: traceResult);
+            if (traceResult == PerformanceResult.success) {
+              _correlations.remove(row.localId)?.$1.close();
+            }
             _inFlight.remove(row.localId);
             if (retryAfterSettlement && !_disposed) unawaited(drain());
           }
@@ -526,6 +612,9 @@ final class MessageSendScheduler {
         if (outcome) sent++;
       }
     } finally {
+      if (!acquisitionTraceUsed) {
+        acquisitionTrace.finish(result: PerformanceResult.cancelled);
+      }
       if (lease != null) await _release(lease);
     }
     return sent;
@@ -584,7 +673,27 @@ final class MessageSendScheduler {
     });
   }
 
-  Future<bool> _authorize(OutboxMessage row, {required bool claimed}) async {
+  static PerformanceNetworkError _performanceNetworkError(Object error) {
+    final status = networkFailureHttpStatus(error);
+    return switch (error) {
+      TimeoutException() => PerformanceNetworkError.requestTimeout,
+      SocketException() => PerformanceNetworkError.socketFailure,
+      HandshakeException() => PerformanceNetworkError.tlsFailure,
+      _ when status == 429 => PerformanceNetworkError.rateLimit,
+      _ when status == 401 || status == 403 =>
+        PerformanceNetworkError.authFailure,
+      _ when status != null && status >= 500 =>
+        PerformanceNetworkError.server5xx,
+      _ when status != null && status >= 400 =>
+        PerformanceNetworkError.businessRejection,
+      _ => PerformanceNetworkError.unknown,
+    };
+  }
+
+  Future<bool> _authorize(OutboxMessage row,
+      {required bool claimed,
+      void Function(PerformanceResult result, Object? error)?
+          onDiagnostic}) async {
     final authorize = authorizeSend;
     if (authorize == null) return true;
     var reason = 'send_authorization_denied';
@@ -605,6 +714,13 @@ final class MessageSendScheduler {
         _reportFailure(error);
       }
     }
+    onDiagnostic?.call(
+        status == OutboxStatus.waitingNetwork
+            ? PerformanceResult.waitingNetwork
+            : failure == null
+                ? PerformanceResult.rejected
+                : PerformanceResult.failed,
+        failure);
     // A registered page sender owns claiming on its successful path. On denial,
     // claim only a still-pending row so another dispatcher's live claim is safe.
     if (claimed ||
@@ -648,5 +764,9 @@ final class MessageSendScheduler {
     _serverRetryTimers.clear();
     _serverRetryWakeups.clear();
     _inFlight.clear();
+    for (final entry in _correlations.values) {
+      entry.$1.close();
+    }
+    _correlations.clear();
   }
 }

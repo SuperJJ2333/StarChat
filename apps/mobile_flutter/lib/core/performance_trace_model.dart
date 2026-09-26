@@ -21,6 +21,86 @@ abstract final class PerformanceThresholds {
   static const frameTimingAttributionTimeout = Duration(milliseconds: 1200);
   static const remoteSyncObservationWindow = Duration(seconds: 45);
   static const messageTraceObservationWindow = Duration(minutes: 5);
+  static const traceObservationSweep = Duration(seconds: 1);
+  static const callQualityObservationWindow = Duration(seconds: 30);
+
+  static int? checkpointMs(PerformanceOperationType operation) =>
+      switch (operation) {
+        PerformanceOperationType.conversationOpen => conversationLocalReadyMs,
+        PerformanceOperationType.messageSend => messageSendMs,
+        PerformanceOperationType.apiRequest => businessApiMs,
+        PerformanceOperationType.videoPrepare => mediaTranscodeMs,
+        PerformanceOperationType.callSetup => callSetupMs,
+        PerformanceOperationType.mediaLoad ||
+        PerformanceOperationType.videoPoster =>
+          mediaFirstVisibleMs,
+        // Long polling and quality windows are expected to remain in progress.
+        _ => null,
+      };
+}
+
+enum PerformanceObservationKind { checkpoint, expired }
+
+/// The established diagnostic batch may contain final or partial evidence.
+sealed class PerformanceDiagnosticOperation {
+  const PerformanceDiagnosticOperation();
+  String get operationId;
+  PerformanceOperationType get operation;
+  Map<String, Object?> toJson();
+}
+
+/// Partial evidence never pretends that a pending business operation finished.
+/// The only identifiers are internally generated, short-lived UUIDs.
+final class PerformanceTraceObservation extends PerformanceDiagnosticOperation {
+  PerformanceTraceObservation({
+    required String operationId,
+    required this.operation,
+    required this.kind,
+    required this.observedUs,
+    required this.idleUs,
+    required this.lifecycle,
+    required Map<PerformanceStage, int> stagesUs,
+    this.attemptIndex,
+    this.windowIndex,
+  })  : operationId = PerformanceRecord._checkedOperationId(operationId),
+        stagesUs = Map.unmodifiable(stagesUs);
+
+  @override
+  final String operationId;
+  @override
+  final PerformanceOperationType operation;
+  final PerformanceObservationKind kind;
+  final int observedUs;
+  final int idleUs;
+  final PerformanceLifecycle lifecycle;
+  final Map<PerformanceStage, int> stagesUs;
+  final int? attemptIndex;
+  final int? windowIndex;
+
+  @override
+  Map<String, Object?> toJson() => {
+        'operation_id': operationId,
+        'operation': operation.wireName,
+        'observation_kind': kind.wireName,
+        if (attemptIndex != null) 'attempt_index': attemptIndex!.clamp(0, 20),
+        if (windowIndex != null) 'window_index': windowIndex!.clamp(0, 1000000),
+        'observed_elapsed_ms': (observedUs ~/ 1000).clamp(0, 3600000),
+        'stages': [
+          for (final entry in stagesUs.entries)
+            {
+              'stage': entry.key.wireName,
+              'elapsed_ms': (entry.value ~/ 1000).clamp(0, 3600000),
+            },
+        ],
+        'lifecycle': lifecycle.wireName,
+        'frame_attribution_complete': false,
+      };
+
+  Map<String, Object?> toLocalDiagnosticJson() => {
+        ...toJson(),
+        'observed_idle_ms': (idleUs ~/ 1000).clamp(0, 3600000),
+        if (stagesUs.isNotEmpty) 'last_stage': stagesUs.keys.last.wireName,
+      };
 }
 
 enum PerformanceOperationType {
@@ -72,6 +152,7 @@ enum PerformanceStage {
   matrixSendFinish,
   ack,
   timelineVisible,
+  timelinePublished,
   syncResponseWaitStarted,
   syncResponseReceived,
   syncProcessingDone,
@@ -92,6 +173,7 @@ enum PerformanceStage {
   videoPrepareDone,
   videoTranscodeStarted,
   videoTranscodeDone,
+  videoThumbnailStarted,
   videoThumbnailDone,
   videoEncrypted,
   videoUploadStarted,
@@ -132,6 +214,7 @@ enum PerformanceMatrixState { connected, connecting, disconnected, unknown }
 
 enum PerformanceNetworkError {
   dnsFailure,
+  requestTimeout,
   connectTimeout,
   readTimeout,
   socketFailure,
@@ -270,7 +353,7 @@ final class PerformanceFrameCounts {
 
 /// An immutable, identity-free operation record. Stage values are elapsed
 /// offsets from start; interval durations are derived only from observed marks.
-final class PerformanceRecord {
+final class PerformanceRecord extends PerformanceDiagnosticOperation {
   PerformanceRecord({
     required String operationId,
     required this.operation,
@@ -290,6 +373,8 @@ final class PerformanceRecord {
     this.httpMethod,
     this.statusCode,
     this.retryCount = 0,
+    this.attemptIndex,
+    this.windowIndex,
     this.softKickCount = 0,
     this.hardRestartCount = 0,
     this.syncErrorCount,
@@ -329,7 +414,9 @@ final class PerformanceRecord {
     return value;
   }
 
+  @override
   final String operationId;
+  @override
   final PerformanceOperationType operation;
   final int totalUs;
   final Map<PerformanceStage, int> stagesUs;
@@ -350,6 +437,8 @@ final class PerformanceRecord {
   final PerformanceHttpMethod? httpMethod;
   final int? statusCode;
   final int retryCount;
+  final int? attemptIndex;
+  final int? windowIndex;
   final int softKickCount;
   final int hardRestartCount;
   final int? syncErrorCount;
@@ -397,6 +486,8 @@ final class PerformanceRecord {
         httpMethod: httpMethod,
         statusCode: statusCode,
         retryCount: retryCount,
+        attemptIndex: attemptIndex,
+        windowIndex: windowIndex,
         softKickCount: softKickCount,
         hardRestartCount: hardRestartCount,
         syncErrorCount: syncErrorCount,
@@ -515,6 +606,8 @@ final class PerformanceRecord {
             PerformanceStage.matrixSendFinish);
         add('send_to_visible_ms', PerformanceStage.matrixSendFinish,
             PerformanceStage.timelineVisible);
+        add('send_to_publish_ms', PerformanceStage.matrixSendStart,
+            PerformanceStage.timelinePublished);
       case PerformanceOperationType.matrixSync:
         timings['sync_cycle_total_ms'] = totalMs;
         final response = stagesUs[PerformanceStage.syncResponseReceived];
@@ -544,6 +637,10 @@ final class PerformanceRecord {
             PerformanceStage.videoPrepareDone);
         add('transcode_ms', PerformanceStage.videoTranscodeStarted,
             PerformanceStage.videoTranscodeDone);
+        add('thumbnail_ms', PerformanceStage.videoThumbnailStarted,
+            PerformanceStage.videoThumbnailDone);
+        add('upload_and_event_send_ms', PerformanceStage.videoUploadStarted,
+            PerformanceStage.videoEventSent);
         add('upload_ms', PerformanceStage.videoUploadStarted,
             PerformanceStage.videoUploadDone);
         add('send_event_ms', PerformanceStage.videoUploadDone,
@@ -590,6 +687,10 @@ final class PerformanceRecord {
         // Other operations still retain their measured stage offsets.
         break;
     }
+    if (databaseOperation == PerformanceDatabaseOperation.mediaIndexLookup) {
+      add('database_ms', PerformanceStage.cacheLoadStarted,
+          PerformanceStage.cacheLoadDone);
+    }
     return Map.unmodifiable(timings);
   }
 
@@ -619,6 +720,7 @@ final class PerformanceRecord {
     return total > 0 ? 100 * lost / total : null;
   }
 
+  @override
   Map<String, Object?> toJson() => {
         'operation_id': operationId,
         'operation': operation.wireName,
@@ -650,6 +752,8 @@ final class PerformanceRecord {
         if (httpMethod != null) 'method': httpMethod!.wireName,
         if (statusCode != null) 'status_code': statusCode,
         if (retryCount > 0) 'retry_count': retryCount.clamp(0, 20),
+        if (attemptIndex != null) 'attempt_index': attemptIndex!.clamp(0, 20),
+        if (windowIndex != null) 'window_index': windowIndex!.clamp(0, 1000000),
         if (softKickCount > 0) 'soft_kick_count': softKickCount.clamp(0, 1000),
         if (hardRestartCount > 0)
           'hard_restart_count': hardRestartCount.clamp(0, 1000),
@@ -705,6 +809,7 @@ abstract final class PerformanceBottleneckClassifier {
       PerformanceNetworkError.dnsFailure ||
       PerformanceNetworkError.connectTimeout ||
       PerformanceNetworkError.readTimeout ||
+      PerformanceNetworkError.requestTimeout ||
       PerformanceNetworkError.socketFailure ||
       PerformanceNetworkError.tlsFailure ||
       PerformanceNetworkError.offline =>
@@ -745,6 +850,14 @@ abstract final class PerformanceBottleneckClassifier {
         record.betweenMs(PerformanceStage.databaseSearchStarted,
             PerformanceStage.databaseSearchDone),
         PerformanceThresholds.localDatabaseMs);
+    if (record.databaseOperation ==
+        PerformanceDatabaseOperation.mediaIndexLookup) {
+      add(
+          PerformanceBottleneck.localDatabase,
+          record.betweenMs(PerformanceStage.cacheLoadStarted,
+              PerformanceStage.cacheLoadDone),
+          PerformanceThresholds.localDatabaseMs);
+    }
     final syncWait = record.betweenMs(
         PerformanceStage.localTimelineReady, PerformanceStage.remoteSyncReady);
     if (syncWait != null && syncWait >= PerformanceThresholds.syncWaitMs) {
