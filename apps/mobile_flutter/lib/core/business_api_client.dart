@@ -1,6 +1,7 @@
 import 'package:crypto/crypto.dart' show sha256, Hmac;
 import 'dart:convert';
 import 'business_phone_contracts.dart' as phone_contracts;
+import 'account_credentials_gateway.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -48,6 +49,40 @@ final class _BusinessSessionRevocation implements BusinessSessionRevocation {
   Future<void> revoke() => _revoke();
 }
 
+final class _GroupJoinPreferenceWrite {
+  _GroupJoinPreferenceWrite(this.epoch);
+  final int epoch;
+  final settled = Completer<void>();
+}
+
+final class _AccountBindingConfirmation {
+  _AccountBindingConfirmation(this.epoch);
+  final int epoch;
+  final settled = Completer<void>();
+}
+
+final class _CredentialsRequestSession {
+  _CredentialsRequestSession(this.epoch, this.acceptedAccessToken);
+  final int epoch;
+  String? acceptedAccessToken;
+}
+
+final class _AccountSettingsRead<T> {
+  int? epoch;
+  int revision = 0;
+  T? value;
+  DateTime? savedAt;
+  Future<T>? flight;
+
+  void invalidate(int nextEpoch, {bool keepValue = false}) {
+    epoch = nextEpoch;
+    revision++;
+    if (!keepValue) value = null;
+    savedAt = null;
+    flight = null;
+  }
+}
+
 final class BusinessApiClient
     implements
         BusinessSessionGateway,
@@ -66,18 +101,22 @@ final class BusinessApiClient
         InviteCacheScopeProvider,
         SupportIdentityGateway,
         phone_contracts.PhoneAuthGateway,
+        AccountCredentialsGateway,
         phone_contracts.PhoneInvitationContinuationGateway,
         phone_contracts.RechargeGateway {
   BusinessApiClient({
     required this.baseUri,
     required this.sessionStore,
     http.Client? client,
+    DateTime Function()? clock,
     PerformanceTraceRecorder? performanceRecorder,
-  }) : _client = BusinessApiPerformanceClient(client ?? http.Client(),
-            recorder: performanceRecorder);
+  })  : _client = BusinessApiPerformanceClient(client ?? http.Client(),
+            recorder: performanceRecorder),
+        _settingsClock = clock ?? DateTime.now;
   final Uri baseUri;
   final SecureSessionStore sessionStore;
   final BusinessApiPerformanceClient _client;
+  final DateTime Function() _settingsClock;
   bool _diagnosticUploadActive = false;
 
   /// Account-scoped shared presentation cache; widgets only remove listeners.
@@ -220,6 +259,8 @@ final class BusinessApiClient
   Future<void> _invalidateSession(int epoch, String code) async {
     if (epoch != _sessionEpoch) return;
     final invalidatedEpoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
     supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
@@ -265,6 +306,8 @@ final class BusinessApiClient
     required String deviceName,
   }) async {
     final loginEpoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
     supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
@@ -542,6 +585,7 @@ final class BusinessApiClient
         username: body['username'] as String,
         nickname: body['nickname'] as String,
         maskedEmail: body['masked_email'] as String,
+        maskedPhone: body['masked_phone'] as String?,
         fallbackSeed: body['avatar_fallback_seed'] as String,
         signature: body['signature']?.toString(),
         nudgeSuffix: body['nudge_suffix']?.toString(),
@@ -708,6 +752,8 @@ final class BusinessApiClient
   @override
   Future<BusinessSessionRevocation?> clearLocalSession() async {
     final epoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
     supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
@@ -957,19 +1003,343 @@ final class BusinessApiClient
     return '${baseUri.origin}:$subject';
   }
 
-  Future<bool> autoAllowGroupJoin() async =>
-      (await getJson('/profile/privacy'))['auto_allow_group_join'] == true;
-  Future<bool> setAutoAllowGroupJoin(bool enabled) async =>
-      _setAutoAllowGroupJoin(enabled);
-  Future<bool> _setAutoAllowGroupJoin(bool enabled) async {
-    final response = await _authorized(
-      (headers) => _client.put(
-        _uri('/profile/privacy/auto-allow-group-join'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'enabled': enabled}),
-      ),
-    );
-    return _decode(response)['auto_allow_group_join'] == true;
+  static const _accountSettingsTtl = Duration(minutes: 5);
+  final _accountSecurityRead = _AccountSettingsRead<AccountSecurityData>();
+  final _groupJoinRead = _AccountSettingsRead<bool>();
+
+  /// Display snapshots only: no passwords, codes, proofs or full contacts.
+  AccountSecurityData? get cachedAccountSecurityData =>
+      !hasPendingAccountBindingConfirmation &&
+              _accountSecurityRead.epoch == _sessionEpoch
+          ? _accountSecurityRead.value
+          : null;
+  bool? get cachedAutoAllowGroupJoin =>
+      _groupJoinRead.epoch == _sessionEpoch ? _groupJoinRead.value : null;
+  bool get accountSecurityCacheIsFresh =>
+      !hasPendingAccountBindingConfirmation &&
+      _settingsReadIsFresh(_accountSecurityRead);
+  bool get autoAllowGroupJoinCacheIsFresh =>
+      !hasPendingAutoAllowGroupJoinWrite &&
+      _settingsReadIsFresh(_groupJoinRead);
+
+  bool _settingsReadIsFresh<T>(_AccountSettingsRead<T> cache) {
+    final saved = cache.savedAt;
+    final now = _settingsClock();
+    return cache.epoch == _sessionEpoch &&
+        cache.value != null &&
+        saved != null &&
+        !now.isBefore(saved) &&
+        now.difference(saved) < _accountSettingsTtl;
+  }
+
+  void _clearAccountSettingsCaches() {
+    _accountSecurityRead.invalidate(_sessionEpoch);
+    _groupJoinRead.invalidate(_sessionEpoch);
+  }
+
+  /// A binding confirmation can succeed despite a lost response. Discard its
+  /// previous action eligibility before requesting an authoritative summary.
+  void invalidateAccountSecurityCache() =>
+      _accountSecurityRead.invalidate(_sessionEpoch);
+
+  _AccountBindingConfirmation? _accountBindingConfirmation;
+
+  bool get hasPendingAccountBindingConfirmation =>
+      _accountBindingConfirmation?.epoch == _sessionEpoch;
+
+  Future<void> waitForAccountBindingConfirmation() =>
+      hasPendingAccountBindingConfirmation
+          ? _accountBindingConfirmation!.settled.future
+          : Future<void>.value();
+
+  _AccountBindingConfirmation _beginAccountBindingConfirmation() {
+    if (hasPendingAccountBindingConfirmation) {
+      throw const BusinessApiException(
+          statusCode: 409,
+          code: 'ACCOUNT_BINDING_CONFIRM_PENDING',
+          message: '绑定结果待确认');
+    }
+    final confirmation = _AccountBindingConfirmation(_sessionEpoch);
+    _accountBindingConfirmation = confirmation;
+    invalidateAccountSecurityCache();
+    return confirmation;
+  }
+
+  void _settleAccountBindingConfirmation(
+      _AccountBindingConfirmation confirmation) {
+    // Timeout only ends the caller's wait, never the actual HTTP request.
+    // A late settlement invalidates again before any authority read resumes.
+    if (confirmation.epoch == _sessionEpoch) {
+      invalidateAccountSecurityCache();
+    }
+    if (identical(_accountBindingConfirmation, confirmation)) {
+      _accountBindingConfirmation = null;
+    }
+    confirmation.settled.complete();
+  }
+
+  Future<T> _loadAccountSetting<T>(
+      _AccountSettingsRead<T> cache, Future<T> Function() read,
+      {required bool forceRefresh}) {
+    final epoch = _sessionEpoch;
+    if (cache.epoch != epoch) cache.invalidate(epoch);
+    if (!forceRefresh && _settingsReadIsFresh(cache)) {
+      return Future<T>.value(cache.value!);
+    }
+    final existing = cache.flight;
+    if (existing != null) return existing;
+    final revision = cache.revision;
+    late final Future<T> flight;
+    flight = read().then((value) {
+      if (epoch != _sessionEpoch) throw _ended;
+      if (revision != cache.revision) {
+        throw StateError('设置读取已更新，请重试');
+      }
+      cache.value = value;
+      cache.savedAt = _settingsClock();
+      return value;
+    }).whenComplete(() {
+      if (identical(cache.flight, flight)) cache.flight = null;
+    });
+    cache.flight = flight;
+    return flight;
+  }
+
+  Future<bool> autoAllowGroupJoin({bool forceRefresh = false}) async {
+    final epoch = _sessionEpoch;
+    while (hasPendingAutoAllowGroupJoinWrite) {
+      await waitForAutoAllowGroupJoinWrite();
+      if (epoch != _sessionEpoch) throw _ended;
+      // Read the authority after an uncertain write, even if a previous
+      // confirmed snapshot or a successful PUT response is already cached.
+      forceRefresh = true;
+    }
+    return _loadAccountSetting(
+        _groupJoinRead,
+        () async =>
+            (await getJson('/profile/privacy'))['auto_allow_group_join'] ==
+            true,
+        forceRefresh: forceRefresh);
+  }
+
+  /// OTP mutations are single attempts with a fixed session identity. In
+  /// particular a failed authenticated attempt cannot fall back to recovery
+  /// anonymously, refresh credentials, or automatically send a second code.
+  final _credentialsRequestSessions = <_CredentialsRequestSession>{};
+
+  void _acceptCredentialsRefresh(
+      int epoch, StoredBusinessSession expected, StoredBusinessSession target) {
+    if (epoch != _sessionEpoch) {
+      return;
+    }
+    for (final flight in _credentialsRequestSessions) {
+      if (flight.epoch == epoch &&
+          flight.acceptedAccessToken == expected.accessToken) {
+        flight.acceptedAccessToken = target.accessToken;
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _credentialsRequest(String path,
+      {Map<String, dynamic>? body,
+      required bool authenticated,
+      bool invalidateOnSuccess = false,
+      _AccountBindingConfirmation? bindingConfirmation}) {
+    final epoch = _sessionEpoch;
+    Future<Map<String, dynamic>> send() async {
+      _CredentialsRequestSession? flight;
+      try {
+        final capturedSession = await _writeCurrentSession(epoch, () async {
+          final captured = await sessionStore.session();
+          if (epoch != _sessionEpoch || (authenticated && captured == null)) {
+            throw _ended;
+          }
+          flight = _CredentialsRequestSession(epoch, captured?.accessToken);
+          _credentialsRequestSessions.add(flight!);
+          return captured;
+        });
+        final session = authenticated ? capturedSession : null;
+        if (epoch != _sessionEpoch || (authenticated && session == null)) {
+          throw _ended;
+        }
+        final headers = <String, String>{
+          'Content-Type': 'application/json',
+          if (session != null) 'Authorization': 'Bearer ${session.accessToken}',
+        };
+        final response = body == null
+            ? await _client.get(_uri(path), headers: headers)
+            : await _client.post(_uri(path),
+                headers: headers, body: jsonEncode(body));
+        if (epoch != _sessionEpoch) throw _ended;
+        // Serialize with trusted refresh persistence so its lineage is recorded
+        // before checking the stored token. A manual save never advances it.
+        await _writeCurrentSession(epoch, () async {
+          final current = await sessionStore.session();
+          if (epoch != _sessionEpoch ||
+              current?.accessToken != flight!.acceptedAccessToken) {
+            throw _ended;
+          }
+        });
+        await _checkReplacement(response, epoch);
+        final result = response.statusCode == 204
+            ? <String, dynamic>{}
+            : _decode(response);
+        if (invalidateOnSuccess && authenticated) {
+          await _invalidateSession(epoch, 'PASSWORD_CHANGED');
+        }
+        return result;
+      } finally {
+        _credentialsRequestSessions.remove(flight);
+        if (bindingConfirmation != null) {
+          _settleAccountBindingConfirmation(bindingConfirmation);
+        }
+      }
+    }
+
+    return send().timeout(const Duration(seconds: 8));
+  }
+
+  @override
+  Future<AccountSecurityData> loadAccountSecurity(
+      {bool forceRefresh = false}) async {
+    final epoch = _sessionEpoch;
+    while (hasPendingAccountBindingConfirmation) {
+      await waitForAccountBindingConfirmation();
+      if (epoch != _sessionEpoch) throw _ended;
+      forceRefresh = true;
+    }
+    return _loadAccountSetting(_accountSecurityRead, () async {
+      final session = await sessionStore.session();
+      if (epoch != _sessionEpoch || session == null) throw _ended;
+      // Only this read-only GET can refresh and retry. OTP writes below keep
+      // their captured Bearer and single-attempt delivery semantics.
+      return AccountSecurityData.fromJson(
+          await getJson('/auth/account-security'));
+    }, forceRefresh: forceRefresh);
+  }
+
+  @override
+  Future<int> requestPasswordCode(
+      {required String channel,
+      required String target,
+      required bool authenticated}) async {
+    final receipt = await _credentialsRequest('/auth/password/code/request',
+        body: {'channel': channel, 'target': target},
+        authenticated: authenticated);
+    return receipt['resend_after_seconds'] as int? ?? 60;
+  }
+
+  @override
+  Future<String> verifyPasswordCode(
+      {required String channel,
+      required String target,
+      required String code,
+      required bool authenticated}) async {
+    final receipt = await _credentialsRequest('/auth/password/code/verify',
+        body: {'channel': channel, 'target': target, 'code': code},
+        authenticated: authenticated);
+    final token = receipt['reset_token'];
+    if (token is! String || token.isEmpty) {
+      throw const FormatException('Invalid recovery proof');
+    }
+    return token;
+  }
+
+  @override
+  Future<void> resetPassword(
+      {required String token,
+      required String newPassword,
+      required bool authenticated}) async {
+    await _credentialsRequest('/auth/password/code/reset',
+        body: {'token': token, 'new_password': newPassword},
+        authenticated: authenticated,
+        invalidateOnSuccess: true);
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestEmailRebindOldCode() =>
+      _credentialsRequest('/auth/email/rebind/old-request',
+          body: const {}, authenticated: true);
+  @override
+  Future<void> verifyEmailRebindOldCode(String code) async {
+    await _credentialsRequest('/auth/email/rebind/old-confirm',
+        body: {'code': code}, authenticated: true);
+  }
+
+  @override
+  Future<int> requestEmailRebindNewCode(String email) async {
+    final receipt = await _credentialsRequest('/auth/email/rebind/new-request',
+        body: {'email': email}, authenticated: true);
+    return receipt['resend_after_seconds'] as int? ?? 60;
+  }
+
+  @override
+  Future<void> confirmEmailRebind(
+      {required String email, required String code}) async {
+    final confirmation = _beginAccountBindingConfirmation();
+    await _credentialsRequest('/auth/email/rebind/confirm',
+        body: {'new_email': email, 'code': code},
+        authenticated: true,
+        bindingConfirmation: confirmation);
+  }
+
+  _GroupJoinPreferenceWrite? _groupJoinPreferenceWrite;
+
+  bool get hasPendingAutoAllowGroupJoinWrite =>
+      _groupJoinPreferenceWrite?.epoch == _sessionEpoch;
+
+  Future<void> waitForAutoAllowGroupJoinWrite() =>
+      hasPendingAutoAllowGroupJoinWrite
+          ? _groupJoinPreferenceWrite!.settled.future
+          : Future<void>.value();
+
+  Future<bool> setAutoAllowGroupJoin(bool enabled) {
+    if (hasPendingAutoAllowGroupJoinWrite) {
+      return Future<bool>.error(const BusinessApiException(
+          statusCode: 409,
+          code: 'GROUP_JOIN_SAVE_PENDING',
+          message: '保存结果待确认'));
+    }
+    final flight = _GroupJoinPreferenceWrite(_sessionEpoch);
+    _groupJoinPreferenceWrite = flight;
+    _groupJoinRead.invalidate(_sessionEpoch, keepValue: true);
+    return _setAutoAllowGroupJoin(enabled, flight);
+  }
+
+  Future<bool> _setAutoAllowGroupJoin(
+      bool enabled, _GroupJoinPreferenceWrite flight) async {
+    final transports = <Future<http.Response>>[];
+    try {
+      final response = await _authorized((headers) {
+        if (flight.epoch != _sessionEpoch) {
+          throw _ended;
+        }
+        final transport = _client.put(
+          _uri('/profile/privacy/auto-allow-group-join'),
+          headers: {...headers, 'Content-Type': 'application/json'},
+          body: jsonEncode({'enabled': enabled}),
+        );
+        transports.add(transport);
+        return transport;
+      });
+      if (flight.epoch != _sessionEpoch) {
+        throw _ended;
+      }
+      final saved = _decode(response)['auto_allow_group_join'] == true;
+      _groupJoinRead.value = saved;
+      _groupJoinRead.savedAt = _settingsClock();
+      return saved;
+    } finally {
+      // _authorized bounds the caller, but Future.timeout does not cancel PUT.
+      // Keep the account's lock until every actual transport (including a
+      // retry after an explicit 401) settles; unknown outcomes never retry.
+      await Future.wait(transports.map((transport) =>
+          transport.then<void>((_) {}, onError: (Object _, StackTrace __) {})));
+      if (identical(_groupJoinPreferenceWrite, flight)) {
+        _groupJoinPreferenceWrite = null;
+      }
+      flight.settled.complete();
+    }
   }
 
   /// BUG2 群二维码：签发入群令牌（群主/管理员；返回 `changliao://g/<token>`）。
@@ -1787,6 +2157,8 @@ final class BusinessApiClient
 
   int _beginPhoneLogin() {
     final loginEpoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
     supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
@@ -1947,52 +2319,30 @@ final class BusinessApiClient
   }
 
   @override
-  Future<Map<String, dynamic>> rebindOldRequest() async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/old-request'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({}),
-      ),
-    );
-    return _decode(response);
-  }
+  Future<Map<String, dynamic>> rebindOldRequest() =>
+      _credentialsRequest('/auth/phone/rebind/old-request',
+          body: const {}, authenticated: true);
 
   @override
   Future<void> rebindOldConfirm({required String code}) async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/old-confirm'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'code': code}),
-      ),
-    );
-    _decode(response);
+    await _credentialsRequest('/auth/phone/rebind/old-confirm',
+        body: {'code': code}, authenticated: true);
   }
 
   @override
   Future<void> rebindNewRequest({required String phone}) async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/new-request'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'phone': phone}),
-      ),
-    );
-    _decode(response);
+    await _credentialsRequest('/auth/phone/rebind/new-request',
+        body: {'phone': phone}, authenticated: true);
   }
 
   @override
   Future<void> rebindNewConfirm(
       {required String phone, required String code}) async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/confirm'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'new_phone': phone, 'code': code}),
-      ),
-    );
-    _decode(response);
+    final confirmation = _beginAccountBindingConfirmation();
+    await _credentialsRequest('/auth/phone/rebind/confirm',
+        body: {'new_phone': phone, 'code': code},
+        authenticated: true,
+        bindingConfirmation: confirmation);
   }
 
   @override

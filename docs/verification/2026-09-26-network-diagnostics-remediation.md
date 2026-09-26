@@ -247,3 +247,13 @@ NETMON Linux 与阿里云 Windows 已受控安装：原443调度不变，旧SSH2
 发现此前自动pub步骤意外升级image_picker_ios与octo_image并改写hosted URL；该中间锁文件未发布。已从6f11c603恢复原锁文件字节，SHA256为5220715970aa207f7201fbe12b428c30e3e1ef76a0cca7f4bbee3e94f588d68b。flutter pub get --offline --enforce-lockfile实际exit0，随后所有门禁使用--no-pub。
 
 原固定依赖下00:47:25–00:52:34完整复验：analyze No issues/exit0；Matrix2204 passed/9条件skip/exit0；全量4593 passed/9条件skip/exit0。flutter-2182-gates.json及同名日志为最终输入证据；此前00:38门禁保留为历史记录，不能替代这次固定依赖验收。verify.ps1的隔离.env缺失exit1仍如实保留，不导入生产秘密。下一步仅构建冻结源码的原生x86_64 2182并验实际ELF/签名、保留数据安装。
+## 2182版本冲突与2183合并对照包（2026-09-27）
+
+本任务2182原生x86_64包已18/18重建门禁通过，最终SHA1287bb0b8ae88df8ab84f667e9b2f36cc5f3e6af06e6614a317e537a80c35d24，固定证书不变，源码91225424。独立检查源/最终各13个ELF64 LE ET_DYN machine62通过。实际安装前后的设备显示另一任务已经安装0.4.15/2182 ARM64，00:47:51更新；暂停并终止本任务唯一待安装ADB进程，安装命令exit1，不冒称2182对照包已安装。设备SHA仍44bce182f4321b7051206807a7c59e794d1b22b33da68b8895580cf0456bf1a3、firstInstallTime不变。未卸载/清数据。旧VM banner滚动后采集exit1，未重启另任务应用。
+
+账号任务已获独立授权并发布0.4.15/2182，含最新6f11c603移动诊断基线。为了保留其新账号/界面功能，本任务只按其冻结清单SHA055c67f2f22ddb6c0b965bd67f2f983c93c9032a60b80082b90b64d4610abbb8逐文件核验并复制1346个移动输入，全部一致，未复制清单外活动WIP或regional待发布摘要。保留本任务三个post6f文件（转码分类模型/测试及held-forward测试同步）。独立源码差异审查PASS，诊断retention/SDK上下文语义未丢失。
+
+新候选保留0.4.15，冻结四位Build2183，只改变进程ABI与上述诊断增量；不新改鉴权、账户规则、视频H264/AAC/20MB或E2EE，不执行生产部署。构建号合同测试先RED3项真实2182→2183不符，然后同步compiledBuild/pubspec与ABI偏移。正在执行2183合并输入完整门禁；旧2182的通过证据不能冒充新合并输入。后续用--no-streaming保留数据覆盖安装，并在测试前即时核对当前包身份。
+## 2183最终合并源码门禁（01:46:15结束）
+
+0.4.15/2183固定依赖输入（锁SHA52207159…）完整analyze No issues/exit0；Matrix最终见flutter-2183-matrix.log、exit0；全量Flutter4675 passed/9条件skip/exit0。00:52的4593通过仅属于旧2182输入，当前交付以flutter-2183-gates.json为准。账号冻结复用与三处post6f差异已经独立规格和安全核对，原生x64构建/安装仍待完成。独立签名/ELF门禁与设备内容漂移守卫保留。未部署生产、未清设备数据，视频恢复等待真实测量。

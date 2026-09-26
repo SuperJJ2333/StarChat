@@ -11,22 +11,29 @@ final class ProfileData {
       required this.nickname,
       required this.maskedEmail,
       required this.fallbackSeed,
+      this.maskedPhone,
       this.signature,
       this.nudgeSuffix,
       this.avatarUrl});
   final String username, nickname, maskedEmail, fallbackSeed;
-  final String? signature, nudgeSuffix, avatarUrl;
+  final String? maskedPhone, signature, nudgeSuffix, avatarUrl;
   ProfileData copyWith(
-          {String? nickname,
+          {String? username,
+          String? maskedEmail,
+          String? maskedPhone,
+          bool clearMaskedPhone = false,
+          String? nickname,
           String? signature,
           String? nudgeSuffix,
           bool clearNudgeSuffix = false,
           String? avatarUrl,
           bool clearAvatar = false}) =>
       ProfileData(
-          username: username,
+          username: username ?? this.username,
           nickname: nickname ?? this.nickname,
-          maskedEmail: maskedEmail,
+          maskedEmail: maskedEmail ?? this.maskedEmail,
+          maskedPhone:
+              clearMaskedPhone ? null : maskedPhone ?? this.maskedPhone,
           fallbackSeed: fallbackSeed,
           signature: signature ?? this.signature,
           nudgeSuffix:
@@ -238,6 +245,7 @@ final class ProfileController extends ChangeNotifier {
     final changedNudgeSuffix = normalizedNudgeSuffix != null &&
         normalizedNudgeSuffix != (original?.nudgeSuffix?.trim() ?? '');
     if (!changedNickname && !changedSignature && !changedNudgeSuffix) {
+      _set(ProfileState(ProfileStatus.ready, profile: original));
       _emitSaveEvent(const ProfileSaveSuccess());
       return;
     }
@@ -266,6 +274,19 @@ final class ProfileController extends ChangeNotifier {
       _set(ProfileState(ProfileStatus.failed, profile: state.profile));
       _emitSaveEvent(const ProfileSaveFailure('资料保存失败，请重试'));
     }
+  }
+
+  /// Publish the business username while retaining the stable identity seed.
+  Future<void> applyUsername(String username) async {
+    if (_disposed ||
+        state.profile == null ||
+        state.profile!.username == username) {
+      return;
+    }
+    final generation = ++_generation;
+    final updated = state.profile!.copyWith(username: username);
+    _set(ProfileState(ProfileStatus.ready, profile: updated));
+    await _persist(updated, generation);
   }
 
   Future<void> chooseAvatar() async {

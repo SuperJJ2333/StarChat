@@ -410,11 +410,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   late SupportIdentityRepository _supportIdentities;
 
   Future<void> _loadAutoAllowPreference() async {
-    if (_autoAllowGroupJoin != null) return;
     try {
       _autoAllowGroupJoin = await widget.api.autoAllowGroupJoin();
     } catch (_) {
-      _autoAllowGroupJoin = true;
+      _autoAllowGroupJoin = null;
     }
     if (mounted) setState(() {});
   }
@@ -423,7 +422,9 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     if (widget.previewOnly) return;
     try {
       await _loadAutoAllowPreference();
-      if (_autoAllowGroupJoin == true) {
+      if (_autoAllowGroupJoin == true &&
+          widget.api.cachedAutoAllowGroupJoin == true &&
+          !widget.api.hasPendingAutoAllowGroupJoinWrite) {
         await widget.matrix.conversations
             .autoJoinGroupInvites(_autoJoinInFlight);
       }
@@ -509,7 +510,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   }
 
   List<MatrixGroupInviteSnapshot> get _pendingInviteRooms =>
-      _autoAllowGroupJoin == false ? _invites : const [];
+      _autoAllowGroupJoin != true ? _invites : const [];
 
   Future<void> _acceptGroupInvite(MatrixGroupInviteSnapshot room) async {
     try {

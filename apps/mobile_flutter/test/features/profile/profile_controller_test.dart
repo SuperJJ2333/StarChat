@@ -44,7 +44,7 @@ final class FakeProfileGateway implements ProfileGateway {
   @override
   Future<ProfileData> updateProfile(
           {String? nickname, String? signature, String? nudgeSuffix}) async =>
-      profile.copyWith(
+      loadedProfile = loadedProfile.copyWith(
           nickname: nickname, signature: signature, nudgeSuffix: nudgeSuffix);
   @override
   Future<AvatarUploadSession> createAvatarUpload(
@@ -481,10 +481,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ProfileDetailsPage), findsOneWidget);
       final invitation = find.byKey(const Key('profile-invite-entry'));
-      final fields = find.byType(CupertinoTextField);
       expect(invitation, findsOneWidget);
-      expect(tester.getTopLeft(invitation).dy,
-          lessThan(tester.getTopLeft(fields.first).dy));
+      expect(
+          tester.getTopLeft(invitation).dy,
+          greaterThan(tester
+              .getTopLeft(find.byKey(const Key('profile-nudge-row')))
+              .dy));
+      await tester.ensureVisible(invitation);
       await tester.tap(invitation);
       await tester.pumpAndSettle();
       Navigator.of(tester.element(find.byType(ProfileDetailsPage))).pop();
@@ -493,9 +496,17 @@ void main() {
     expect(invites, 2);
     await tester.tap(find.byKey(const Key('profile-details-entry')));
     await tester.pumpAndSettle();
-    final fields = find.byType(CupertinoTextField);
-    await tester.enterText(fields.first, 'Alice Update');
-    await tester.enterText(fields.last, 'Updated signature');
+    await tester.tap(find.text('昵称'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(CupertinoTextField), 'Alice Update');
+    await tester.pump();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('个性签名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byType(CupertinoTextField), 'Updated signature');
+    await tester.pump();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect(controller.state.profile!.nickname, 'Alice Update');
@@ -547,26 +558,31 @@ void main() {
     expect(clipboard, 'https://www.liuhetong888.com/download?platform=ios');
   });
 
-  testWidgets(
-      'profile fields align entered values right and empty placeholders left',
+  testWidgets('separate profile editors align empty and entered values right',
       (tester) async {
     final controller = ProfileController(
         gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
+    addTearDown(controller.dispose);
     await controller.load();
     await tester.pumpWidget(
         CupertinoApp(home: ProfileDetailsPage(controller: controller)));
-    final fields = find.byType(CupertinoTextField);
-    for (final field in [fields.first, fields.last]) {
+    for (final label in ['昵称', '个性签名']) {
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      final field = find.byType(CupertinoTextField);
+      expect(field, findsOneWidget);
       expect(
           tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
       await tester.enterText(field, '');
       await tester.pump();
       expect(
-          tester.widget<CupertinoTextField>(field).textAlign, TextAlign.left);
+          tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
       await tester.enterText(field, 'new');
       await tester.pump();
       expect(
           tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
     }
   });
 
@@ -619,6 +635,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('设置拍一拍'), findsOneWidget);
     final field = find.byKey(const Key('profile-nudge-field'));
+    expect(tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
+    expect(find.text('拍一拍'), findsOneWidget);
     await tester.enterText(field, '拍了拍我一下');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();

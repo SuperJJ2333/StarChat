@@ -1,5 +1,10 @@
 # 移动交付恢复索引
 
+## 2026-09-27 原生模拟器对照包改为0.4.15/2183，等待门禁/装机
+
+本任务0.4.13/2182 x64打包18项通过，但发现设备已由账号任务升级0.4.15/2182 ARM64；停止本次待安装命令(exit1)，设备SHA44bce…不变，未清数据。已逐文件核验账号版冻结1346项输入并整合，保留其功能与本任务3个诊断/测试增量，不复制regional活动WIP。新四位2183完整门禁进行中，尚未安装或声称视频恢复。先前2181真实新视频700ms失败于本地native转码、尚未上传；具体codec/ABI因果待原生x64对照。服务器r4/0088仅为本任务历史发布身份；账号任务已独立授权更新API9083f027/worker15659d6c、schema0089，本任务不回退或重新部署生产。
+
+
 ## 2026-09-27 全链路诊断：雷电2181已安装，视频失败定位到本地转码
 
 源码 `b74cefc8` 完成同根多记录/ACK、在途checkpoint、视频/Outbox真实重试、TLS/Timeout分类、Matrix cycle和通话代表样本；沿用既有PerformanceMetrics/ChatDiagnostics。API-only r4 `cf7c4926…` 已healthy，真实request→SQL关联验收；源站和大陆ECS分钟HTTPS探针已运行。Flutter analyze No issues、Matrix2180/full4549及API/Worker2956均exit0；verify.ps1缺隔离.env真实exit1。固定签名0.4.13/2180重建18项通过，19:29雷电保留数据覆盖安装，21:40 VM实读2180/metrics启用及1001ms checkpoint→5007ms TLS失败。21:41雷电/宿主机各4/4 TLS失败，源站ready200；本次探针按端口确证Meta TUN→Vmess，21:48恢复但约1.9秒。实际会话729ms/消息2102ms成功，sync processing最大6750ms/55慢帧；59条同根server请求对齐，一例客户端1492ms而server16.9ms/SQL4.1ms，具体网络hop仍待定位。一次额外profiling启动Debug进程native崩溃（处于ARM64桥接环境，原因未证实）单独记录，不能声称零崩溃。13节点SSH、真实视频/重试与恢复补报/Profile开销、24h/7天/多运营商和正式两端发布尚未完成。详见[任务](tasks/2026-09-26-network-diagnostics-remediation.md)与[验收](../verification/2026-09-26-network-diagnostics-remediation.md)。用户随后反馈新视频与一次重试失败；2180未留下可关联视频记录，已确认满载诊断尾部淘汰缺陷，另补容量/SDK重试上下文，2181于23:07:04冻结并独立复核PASS，最终analyze无issues、Matrix2204/full4586均exit0/9条件skip；2181已于23:26保留数据安装，VM实读成功；新视频700ms失败于双native转码，未上传。2182快速转码失败分类修正已复核，最终analyze无issues/Matrix2204/full4593均exit0；正在构建原生x86_64对照包，同UIDnativecodec创建基线正常，ARM桥接/codec配置具体因果仍待对照，不声称视频恢复。不能称视频业务故障已修复。本轮尚未合入或推送GitHub main，原main WIP保持。

@@ -78,7 +78,7 @@ void main() {
   });
 
   testWidgets(
-      'profile editor shows live limits and one closeable overflow alert',
+      'independent editors hide counters and retain grapheme overflow protection',
       (tester) async {
     final gateway = _Gateway();
     final controller =
@@ -88,13 +88,15 @@ void main() {
     await tester.pumpWidget(
         CupertinoApp(home: ProfileDetailsPage(controller: controller)));
 
-    final fields = find.byType(CupertinoTextField);
-    expect(find.text('5/12'), findsOneWidget);
-    expect(find.text('5/20'), findsOneWidget);
+    await tester.tap(find.text('昵称'));
+    await tester.pumpAndSettle();
+    var fields = find.byType(CupertinoTextField);
+    expect(find.text('5/12'), findsNothing);
+    expect(find.text('5/20'), findsNothing);
 
     await tester.enterText(fields.first, _family * 12);
     await tester.pump();
-    expect(find.text('12/12'), findsOneWidget);
+    expect(find.text('12/12'), findsNothing);
     await tester.enterText(fields.first, _family * 13);
     await tester.pumpAndSettle();
     expect(find.text('昵称最多支持12个字符'), findsOneWidget);
@@ -106,9 +108,15 @@ void main() {
     await tester.tap(find.text('知道了'));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('个性签名'));
+    await tester.pumpAndSettle();
+    fields = find.byType(CupertinoTextField);
+
     await tester.enterText(fields.last, '中文A1!${_family * 15}');
     await tester.pump();
-    expect(find.text('20/20'), findsOneWidget);
+    expect(find.text('20/20'), findsNothing);
     await tester.enterText(fields.last, '中文A1!${_family * 16}');
     await tester.pumpAndSettle();
     expect(find.text('个性签名最多支持20个字符'), findsOneWidget);
@@ -118,7 +126,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
-    expect(gateway.updates, 1);
+    expect(gateway.updates, 2);
   });
 
   testWidgets('over-limit preloaded draft refuses save without losing text',
@@ -131,6 +139,9 @@ void main() {
     await controller.load();
     await tester.pumpWidget(
         CupertinoApp(home: ProfileDetailsPage(controller: controller)));
+
+    await tester.tap(find.text('昵称'));
+    await tester.pumpAndSettle();
 
     // A legacy value may remain visible and unchanged. Editing it to another
     // invalid value is the attempted write that must be refused.
@@ -163,6 +174,8 @@ void main() {
     addTearDown(controller.dispose);
     await tester.pumpWidget(
         CupertinoApp(home: ProfileDetailsPage(controller: controller)));
+    await tester.tap(find.text('昵称'));
+    await tester.pumpAndSettle();
     final field = find.byType(CupertinoTextField).first;
     await tester.tap(field);
     await tester.pump();

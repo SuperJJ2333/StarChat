@@ -102,7 +102,8 @@ void main() {
     });
   });
 
-  test('old server rejects frames once, existing events retry without frames',
+  test(
+      'old server rejects frames once; existing and later events retry without frames',
       () {
     fakeAsync((time) {
       final batches = <ChatDiagnosticBatch>[];
@@ -119,11 +120,18 @@ void main() {
           stage: ChatDiagnosticStage.framework,
           error: ChatDiagnosticError.unknown);
       time.elapse(const Duration(minutes: 1));
-      frame(d, 20000, 20000);
+      // The installed client preserves events on the first frame-schema 422,
+      // then retries without the optional frames payload.
+      d.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.network);
       time.elapse(const Duration(minutes: 1));
       expect(batches, hasLength(2));
       expect(batches.last.toJson().containsKey('frames'), isFalse);
-      expect(batches.last.toJson()['events'], hasLength(1));
+      final events = batches.last.toJson()['events'] as List;
+      expect(events, hasLength(2));
+      expect(events.map((event) => (event as Map)['stage']),
+          ['framework', 'matrixSend']);
       d.stopSession();
     });
   });

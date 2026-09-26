@@ -198,4 +198,139 @@ void main() {
       diagnostics.stopSession();
     });
   });
+
+  test('network request failures ride the wire as network_request events', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return 202;
+          });
+      diagnostics.record(
+          stage: ChatDiagnosticStage.networkRequest,
+          error: ChatDiagnosticError.timeout,
+          count: 7);
+      time.elapse(const Duration(minutes: 1));
+      final event = (batches.single.toJson()['events'] as List).single as Map;
+      expect(event['stage'], 'network_request');
+      expect(event['error'], 'timeout');
+      expect(event['count'], 7);
+      diagnostics.stopSession();
+    });
+  });
+
+  test('failed uploads persist pending metadata; next session backfills', () {
+    fakeAsync((time) {
+      final spool = _SpoolMemory();
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 503,
+          store: spool,
+          spoolScope: () async => List.filled(64, 'a').join());
+      diagnostics.record(
+          stage: ChatDiagnosticStage.networkRequest,
+          error: ChatDiagnosticError.timeout,
+          count: 2);
+      time.elapse(const Duration(minutes: 1));
+      time.flushMicrotasks();
+      expect(spool.payload, isNotNull);
+      expect(spool.payload, contains('network_request'));
+
+      final batches = <ChatDiagnosticBatch>[];
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, __) async {
+            batches.add(batch);
+            return 202;
+          },
+          store: spool,
+          spoolScope: () async => List.filled(64, 'a').join());
+      time.flushMicrotasks();
+      time.elapse(const Duration(minutes: 1));
+      time.flushMicrotasks();
+      expect(batches, hasLength(1));
+      final restored =
+          (batches.single.toJson()['events'] as List).single as Map;
+      expect(restored['stage'], 'network_request');
+      expect(restored['count'], 2);
+      // Spool cleared once everything uploaded.
+      time.flushMicrotasks();
+      expect(spool.payload, isNull);
+      diagnostics.stopSession();
+    });
+  });
+
+  test('stopSession persists pending metadata across logout', () {
+    fakeAsync((time) {
+      final spool = _SpoolMemory();
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.ios,
+          upload: (_, __) async => 202,
+          store: spool,
+          spoolScope: () async => List.filled(64, 'a').join());
+      diagnostics.record(
+          stage: ChatDiagnosticStage.historyLoad,
+          error: ChatDiagnosticError.network);
+      diagnostics.stopSession();
+      time.flushMicrotasks();
+      expect(spool.payload, contains('historyLoad'));
+    });
+  });
+
+  test('422 drops attempted events instead of poisoning later batches', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      var status = 422;
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return status;
+          });
+      diagnostics.record(
+          stage: ChatDiagnosticStage.networkRequest,
+          error: ChatDiagnosticError.timeout);
+      time.elapse(const Duration(minutes: 1));
+      expect(batches, hasLength(1));
+      status = 202;
+      diagnostics.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.network);
+      time.elapse(const Duration(minutes: 2));
+      final event = (batches.last.toJson()['events'] as List).single as Map;
+      expect(event['stage'], 'matrixSend');
+      expect(diagnostics.pendingCount, 0);
+      diagnostics.stopSession();
+    });
+  });
+}
+
+final class _SpoolMemory implements ChatDiagnosticSpoolStore {
+  String? payload;
+  @override
+  Future<void> clear() async {
+    payload = null;
+  }
+
+  @override
+  Future<String?> read() async => payload;
+  @override
+  Future<void> write(String value) async {
+    payload = value;
+  }
 }
