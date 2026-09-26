@@ -116,6 +116,8 @@ Flutter 的 `FrameTiming` 在 raster 完成后才回调，且后续帧可批量�
 
 本地 `ext.chatflow.performance` 快照的 `recentTraces` 额外含 `video_transcode_attempts`（每档结果和毫秒数）。只有最终结果为 `failed`、有真实 `videoTranscodeStarted`、且无完成标记时，才输出 `transcode_until_failure_ms` 并可据此判为 `media_transcode`；该值是从开始转码到操作结束的实测区间，可能包含重试及临时文件清理，不能冒充单档编码时间。取消、超限拒绝或无开始标记不产生这个失败区间。两项新字段不进入 `ChatDiagnostics` 上传 JSON，旧生产接收端无需改变 schema；分析具体机型/编码器失败仍需在设备上复现并读本地 Debug 快照。记录不接受媒体路径、原生异常文本、消息内容或用户身份。
 
+快速失败也需要识别故障层：`video_prepare` 最终 `failed`、真实尝试非空且全部为 `native_failure`，并且没有完成准备、转码成功或上传/发送/ACK进展时，直接分类为 `media_transcode`，不要求达到慢转码阈值。同期慢帧计数仍保留，不能据此替换阻断层。取消、缺失尝试、成功回退或已经进入后续阶段不适用此规则。该分类说明实际失败阶段，不推断具体 codec、ARM bridge 或设备原因。
+
 ### 聊天打开的一条记录
 
 ```text

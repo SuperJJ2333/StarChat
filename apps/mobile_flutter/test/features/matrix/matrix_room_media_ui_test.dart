@@ -526,15 +526,27 @@ void main() {
 
     lease.revokeNow();
     await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
-    releaseDownload.complete(http.Response.bytes(envelope.encrypted.data, 200));
-    var drained = false;
-    unawaited(matrix.outgoingWork.drain().then((_) => drained = true));
-    for (var tick = 0; tick < 100 && !drained; tick++) {
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-      await tester.pump(const Duration(milliseconds: 20));
-    }
-    expect(drained, isTrue);
+    await tester.runAsync(() async {
+      releaseDownload
+          .complete(http.Response.bytes(envelope.encrypted.data, 200));
+      var drained = false;
+      final completion = matrix.outgoingWork
+          .drain()
+          .timeout(const Duration(seconds: 10))
+          .then<void>((_) => drained = true);
+      // Real file/crypto work needs runAsync; its widget-zone continuations
+      // still need pumping. Await the owner's actual completion rather than
+      // assuming disk cleanup finishes within a fixed number of short polls.
+      while (!drained) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await Future.any<void>([
+          completion,
+          Future<void>.delayed(const Duration(milliseconds: 10)),
+        ]);
+      }
+      await completion;
+    });
+    await tester.pump();
     expect(target.sentTxids, hasLength(1));
     expect(tester.takeException(), isNull);
   });

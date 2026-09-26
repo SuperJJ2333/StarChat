@@ -146,7 +146,7 @@ NETMON Linux 与阿里云 Windows 已受控安装：原443调度不变，旧SSH2
 |`apps/mobile_flutter/lib/features/matrix/room_timeline_controller.dart`|真实发送/发布阶段、lease失败、同根重试|
 |`apps/mobile_flutter/lib/features/matrix/video_poster_extractor.dart`|固定安全错误tag，删除原生错误路径输出|
 |`apps/mobile_flutter/lib/features/search/global_search_page.dart`|每次真实搜索新根，不记录搜索词|
-|`apps/mobile_flutter/pubspec.yaml`|Debug 0.4.13+2180|
+|`apps/mobile_flutter/pubspec.yaml`|Debug构建字段：首轮2180、纠正2181、原生环境对照2182|
 |`apps/mobile_flutter/test/core/app_config_test.dart`|验证对应真实边界、关联、失败/恢复或隐私约束；具体RED/GREEN见专项与全量日志|
 |`apps/mobile_flutter/test/core/business_api_timeout_classification_test.dart`|验证对应真实边界、关联、失败/恢复或隐私约束；具体RED/GREEN见专项与全量日志|
 |`apps/mobile_flutter/test/core/chat_diagnostics_observation_test.dart`|验证对应真实边界、关联、失败/恢复或隐私约束；具体RED/GREEN见专项与全量日志|
@@ -223,3 +223,21 @@ NETMON Linux 与阿里云 Windows 已受控安装：原443调度不变，旧SSH2
 冻结23:07:04源码通过完整门禁：flutter analyze lib test：No issues found / exit0；flutter test test/features/matrix：2204 passed / 9条件skip / exit0；flutter test：4586 passed / 9条件skip / exit0。执行使用--no-pub，锁文件SHA52207159…未变。23:13再次verify.ps1真实exit1：Repository/Deployment/Template PASS；缺隔离.env使Render-only停止，未导入生产配置。API/infra无新改动，沿用本轮先前2956/224等同输入证据。
 
 证据：[最终门禁](artifacts/2026-09-26/network-diagnostics-remediation/flutter-2181-gates.json)、[冻结源码清单](artifacts/2026-09-26/network-diagnostics-remediation/send-context-source-manifest.json)、[独立审查](artifacts/2026-09-26/network-diagnostics-remediation/coverage-context-review.md)。源码可用于固定身份重建；截至本节仍未声称2181安装或视频恢复。
+
+## 2181装机及真正视频失败边界
+
+源码提交6f11c6038703865fb279471f4a4e1f0dc29c5354。23:21–23:24固定身份ARM64 Debug重建18/18 exit0；最终SHA ed49ba31a8397266ba66f9d7db96936fe2f79cf7e85707dd85eaf7f8c14ed156，145789227 bytes，证书75b31c66…不变。23:26:44–52保留数据安装、正常启动exit0，firstInstallTime仍为04:06:20，安装后device APK SHA相等。VM实读Build2181/metrics enabled；正常quit后forward已清理，owned Y映射已删除。
+
+用户旧视频重试报告“重发失败，请稍后再试”，同期仅有另一条message_send success1665ms/outbox retry_count2，缺少旧视频的可关联失败；不得把该成功归因用户视频。随后用户新选视频，闭集VM捕获根eb2566db…video_prepare failed，总700ms，video_validated225ms，queue wait0，transcode起点431ms，normal native_failure181ms、aggressive native_failure77ms，transcode_until_failure269ms；没有上传/SDK发送阶段。4同期慢帧单独记录；此视频实际阻断层为本地转码，网络原因未进入这条操作。
+
+当前PID保留native日志仅内存处理：IllegalArgumentException、MediaCodec.createDecoderByType/native_setup、AVC codec初始化失败，且有EGL_BAD_MATCH0x3009；EGL与ARM bridge具体因果未证实，不能将同期标记等同于根因。独立同UIDapp_process探针exit0，可创建OMX.google.h264.decoder和encoder，原生系统创建基线正常；它的ABI/SELinux域与Flutter进程可能不同，不能代替configure/真实转码复现。探针不读媒体/账号，临时JAR清理exit0。
+
+下一步Build2182使用已有android-x64路径原生运行，独立x64 APK门禁仍执行18项重建/固定签名验收，不放宽正式ARM64门禁。纠正classifier对快速native失败误落client_ui的口径（已观测失败阶段优先，同期慢帧保留）。现有H.264/AAC及20MB规则、原视频禁止绕过、E2EE保持；这是有证据的进程环境对照，尚未声称2182构建安装或视频恢复。
+
+## 2182最终源码门禁与测试同步修正
+
+分类器21专项及独立规格/质量安全复核通过，只将真实终态、全部native_failure且没有后续成功/上传/发送进展的视频归为media_transcode；不推断codec或桥接原因。四位2182及ABI偏移合同同步更新。
+
+首次完整门禁唯一失败为matrix_room_media_ui_test的关闭source lease后drain断言；旧focused1仍通过，不能称稳定复现。测试原来仅等待约1秒，改为在runAsync内等待真实drain Future（10秒上限）并驱动widget续行；保留加密媒体、关闭lease后继续、一条发送和无异常断言，未改生产发送/E2EE代码。4项focused和analyze exit0，原失败日志保留flutter-2182-attempt1-*。
+
+最终00:32:32–00:38:21 HKT完整门禁：analyze No issues / exit0；Matrix2204 passed / 9条件skip / exit0；全量Flutter4593 passed / 9条件skip / exit0。verify2182仍因隔离.env缺失exit1，前三项政策/模板PASS。API/infra输入未变，复用原2956/224门禁。独立x64门禁额外验证每个.so为ELF64小端machine62，11正反例与10旧合同case exit0；最终真实APK另验ET_DYN，正式ARM门禁未改。截至本节2182尚未构建安装或声称视频恢复。

@@ -7,8 +7,8 @@
 - 现有事实：[只读审计](../../verification/artifacts/2026-09-26/network-coverage-audit/findings.md)；已完成基础任务：[TCP与暂存](2026-09-26-netmon-tcp-diagnostics.md)。禁止把旧部署历史当实时状态。
 - 当前状态：源码/专项和完整 Flutter 门禁通过；NETMON 两点已安装验收，API r4 cf7c4926…已受控发布、健康/零重启且真实request/SQL关联通过。Debug `0.4.13+2180` 固定签名重建18项通过，19:29已保留数据安装雷电，21:40实际VM回读2180/metrics启用。当前捕获真实5007ms TLS失败，继续定位本机Meta TUN共同出口。基线971fb50d193ab1a34610bd7908c2dbf6272db431，分支 `codex/network-diagnostics-remediation`。
 - 工作树：`C:/Users/Administrator/.codex/worktrees/merge-main-20260926/StarChat`；root 拥有 core trace/model/metrics、call/search/room_page 和交付文档；独立 agents 拥有诊断队列、Matrix/Outbox 接线、netmon 和 API，文件顺序交接。原main WIP保持。
-- 最后更新时间：2026-09-26 23:14香港时间。
-- 下一条操作：2181纠正源码23:07:04冻结，独立复核PASS；完整analyze/Matrix2204/full4586均exit0。提交冻结源码后固定签名重建、保留数据安装并接通实时VM采集，再请用户一次短视频实测。视频业务原因仍未知，不改业务节点池/重试/E2EE。
+- 最后更新时间：2026-09-27 00:40香港时间。
+- 下一条操作：2182源码/分类器复核通过，最终完整analyze No issues/Matrix2204/full4593均exit0，9条件skip。提交冻结后原生x86_64重建、真实ELF/固定签名验收、保留数据安装并接通VM，请用户新短视频对照。不绕过H264/AAC/20MB/E2EE，具体ABI因果仍待实测。
 - 必要外部输入：13节点真实SSH用户/端口及云控制台权限、目标用户地区/运营商；审计已发出问题，尚无答复，分别阻断N01或N04，不阻断其他工作包。
 
 ## 验收台账
@@ -63,3 +63,11 @@
 ## 2181最终源码验收
 
 满载保留68专项、发送/TTL/observer隔离28专项、对应回归321通过，最后小型完成标记保护也经专项及root完整门禁。23:13结束完整analyze No issues/Matrix2204/full4586均exit0、9条件skip。23:13verify仍exit1（隔离.env缺失），前三项政策/模板PASS。独立复核并逐文件SHA匹配。此前等待冻结和正在修补文字是阶段历史，当前下一步为提交/重建/装机。2181尚未安装，真实视频业务根因未确认。
+
+## 2181实际装机反馈与2182原生环境对照
+
+2181已安装23:26:52，设备SHA/firstInstallTime一致，metrics VM回读成功；用户新视频实际root转码双native_failure（700ms总/269ms至失败），未进入网络阶段。原始日志不保存，同UIDcodec probe仅公共创建能力成功并清理。2182已核对本地/remote refs和任务构建占用，未发现冲突并冻结字段；原生x64 helper独立生成，正式ARM门禁不改。源码classifier修补TDD进行中，尚未执行2182全门禁/构建/安装。与同期旧消息成功1665ms分开，旧视频重试缺可关联记录不作归因。
+
+## 2182源码冻结前最终验收
+
+分类器21专项/独立规格及安全复核PASS；真实native失败优先，未知/取消/成功回退/后续进展不误归因。完整测试初次held-forward的1秒等待断言失败，focused旧版1仍通过；只将测试同步改为真实drain Future+10秒期限+必要pump，原加密/一次发送断言保留，4专项通过。最终00:38:21全量analyze/Matrix2204/full4593均exit0、9条件skip。源码待本次提交后原生x64构建；2182尚未安装，不声称视频恢复。

@@ -190,3 +190,9 @@ pwsh.exe -NoProfile -File scripts/verify.ps1
 ### 2181冻结与门禁增量
 
 23:07:04纠正源码冻结/独立复核PASS；28专项、最终完成标记前321回归及root完整analyze无issues/Matrix2204/full4586均exit0，9条件skip。五分钟租约/容量释放不再提前编造waitingNetwork终态，诊断异常不改变业务结果。23:13verify.ps1仍因缺.env exit1，政策/模板PASS。下一步固定签名重建、保留数据装机和同根视频实测；未把诊断缺陷修正称为视频业务故障修复。
+
+### 2181实测与2182最小进程环境对照
+
+2181已23:26保留数据安装/VM实读；用户新视频root700ms在normal/aggressive两次native转码失败，未上传或SDK发送。修正快速失败classifier遗漏并做原生x64对照，代码只用已有ABI支持，不改codec策略/原视频禁止绕过/20MB/H264/AAC/E2EE。2182四位字段已核对ref/task占用，独立x64重建门禁18项仍保持；完整源码/装机/用户实测待后续真实门禁。
+
+2182最终源码门禁于2026-09-27 00:38:21完成：analyze No issues/Matrix2204/full4593 exit0、9条件skip。分类器21专项及独立复核PASS；仅测试的held-forward同步修正4专项通过，初次全量失败保留。下一步提交冻结并执行原生x64重建/装机/用户实测，具体ABI因果不先行定论。

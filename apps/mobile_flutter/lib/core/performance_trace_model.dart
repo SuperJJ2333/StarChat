@@ -793,6 +793,26 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
 /// Pure classification. A long total alone is deliberately insufficient.
 abstract final class PerformanceBottleneckClassifier {
   static PerformanceBottleneck classify(PerformanceRecord record) {
+    // A terminal native error identifies the failed execution layer even when
+    // it returns before the latency threshold. Slow frames remain separate data.
+    if (record.operation == PerformanceOperationType.videoPrepare &&
+        record.result == PerformanceResult.failed &&
+        record.videoTranscodeAttempts.isNotEmpty &&
+        record.videoTranscodeAttempts.every((attempt) =>
+            attempt.outcome ==
+            PerformanceVideoTranscodeOutcome.nativeFailure) &&
+        !const [
+          PerformanceStage.videoTranscodeDone,
+          PerformanceStage.videoPrepareDone,
+          PerformanceStage.videoUploadStarted,
+          PerformanceStage.videoUploadDone,
+          PerformanceStage.videoEventSent,
+          PerformanceStage.matrixSendStart,
+          PerformanceStage.matrixSendFinish,
+          PerformanceStage.ack,
+        ].any(record.stagesUs.containsKey)) {
+      return PerformanceBottleneck.mediaTranscode;
+    }
     final loss = record.packetLossPercent;
     if (record.operation == PerformanceOperationType.callActive &&
         ((record.rttMs != null &&
