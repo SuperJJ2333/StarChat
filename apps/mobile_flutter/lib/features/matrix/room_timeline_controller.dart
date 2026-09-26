@@ -52,10 +52,12 @@ PerformanceNetworkError _sendPerformanceNetworkError(Object error) {
 }
 
 final class _SendTraceLease {
-  const _SendTraceLease(this.trace, this.expiry);
+  _SendTraceLease(this.trace, this.expiry);
 
-  final PerformanceTrace trace;
+  PerformanceTrace trace;
   final Timer expiry;
+  bool retainSdkContext = false;
+  bool sdkInFlight = false;
 }
 
 /// 内存投递状态 → 持久化 outbox 状态（唯一映射点，避免两套词表漂移）。
@@ -314,6 +316,13 @@ abstract interface class RoomTimelineAdapter {
 
 abstract interface class RoomOptimisticTextAdapter {
   Future<String> sendTextWithTransaction(String text, String transactionId);
+}
+
+/// Optional observation at the actual SDK send boundary. Queue admission and
+/// no-op retries must not invoke the factory or imply a server acknowledgement.
+abstract interface class RoomRetryDiagnostics {
+  Future<void> retryWithDiagnostics(
+      String transactionId, PerformanceTrace Function() startSdkAttempt);
 }
 
 abstract interface class RoomHistoryStatus {
@@ -665,23 +674,35 @@ final class RoomTimelineController extends ChangeNotifier {
   PerformanceTrace? _retainedSendTrace(String tx) {
     final lease = _sendTraceLeases[tx];
     if (lease == null) return null;
-    if (lease.trace.isRecording) return lease.trace;
+    if (lease.trace.isRecording && lease.trace.correlationContext.isCurrent) {
+      return lease.trace;
+    }
+    if (lease.retainSdkContext && lease.trace.correlationContext.isCurrent) {
+      final previous = lease.trace;
+      final next = previous.correlationContext.startOperation(
+          PerformanceOperationType.messageSend,
+          attemptIndex: previous.retryCount + 1);
+      next.retryCount = previous.retryCount;
+      lease.trace = next;
+      return next;
+    }
     // An account switch clears the recorder. Never keep its old operation ID
     // or timer in this controller if a retry races with session teardown.
     lease.expiry.cancel();
+    if (lease.retainSdkContext) lease.trace.correlationContext.close();
     _sendTraceLeases.remove(tx);
     return null;
   }
 
-  PerformanceTrace _openSendTrace(String tx, OutboxMessage? outboxRow) {
+  PerformanceTrace _openSendTrace(String tx, OutboxMessage? outboxRow,
+      {bool fromComposer = true}) {
     final capacity = _performanceRecorder.activeCapacity <
             PerformanceThresholds.maxActiveTraces
         ? _performanceRecorder.activeCapacity
         : PerformanceThresholds.maxActiveTraces;
     if (_sendTraceLeases.length >= capacity) {
       final oldest = _sendTraceLeases.entries.first;
-      _finishSendTrace(
-          oldest.key, oldest.value.trace, PerformanceResult.waitingNetwork);
+      _expireSendTraceLease(oldest.key);
     }
     final network = _networkState;
     final context = outboxRow == null
@@ -701,24 +722,51 @@ final class RoomTimelineController extends ChangeNotifier {
         null => PerformanceAppNetworkState.unknown,
       },
     );
-    if (outboxRow == null) trace.mark(PerformanceStage.composerSubmit);
+    if (fromComposer && outboxRow == null) {
+      trace.mark(PerformanceStage.composerSubmit);
+    }
     trace.retryCount = outboxRow?.retryCount ?? 0;
-    if (trace.isRecording) {
+    if (trace.correlationContext.isCurrent) {
       final expiry = Timer(PerformanceThresholds.messageTraceObservationWindow,
-          () => _finishSendTrace(tx, trace, PerformanceResult.waitingNetwork));
+          () => _expireSendTraceLease(tx));
       _sendTraceLeases[tx] = _SendTraceLease(trace, expiry);
     }
     return trace;
   }
 
-  void _finishSendTrace(
-      String tx, PerformanceTrace? trace, PerformanceResult result) {
+  void _expireSendTraceLease(String tx) {
     final lease = _sendTraceLeases[tx];
-    if (lease != null && identical(lease.trace, trace)) {
+    if (lease == null) return;
+    if (lease.sdkInFlight) {
       lease.expiry.cancel();
       _sendTraceLeases.remove(tx);
+      lease.trace.correlationContext.close();
+      // Core observation expiry releases its slot separately. The existing
+      // SDK Future still owns this trace and may emit its actual late result.
+      return;
     }
-    trace?.finish(result: result);
+    _finishSendTrace(tx, lease.trace, PerformanceResult.waitingNetwork);
+  }
+
+  void _finishSendTrace(
+      String tx, PerformanceTrace? trace, PerformanceResult result,
+      {bool retainSdkContext = false}) {
+    final lease = _sendTraceLeases[tx];
+    if (lease != null && identical(lease.trace, trace)) {
+      if (retainSdkContext) {
+        lease.retainSdkContext = true;
+      } else {
+        lease.expiry.cancel();
+        _sendTraceLeases.remove(tx);
+        if (lease.retainSdkContext) lease.trace.correlationContext.close();
+      }
+    }
+    try {
+      trace?.finish(result: result);
+    } catch (_) {
+      // Failed observation must preserve the actual SDK result and cleanup.
+      trace?.dispose();
+    }
   }
 
   /// 最近一次 outbox 持久化错误（诊断；不阻断发送）。
@@ -1103,11 +1151,8 @@ final class RoomTimelineController extends ChangeNotifier {
         : _localEchoes.containsKey(alias)
             ? alias
             : null;
-    final retainedTrace = tx == null ? null : _retainedSendTrace(tx);
-    final trace = retainedTrace ??
-        (tx != null && outboxRow != null
-            ? _openSendTrace(tx, outboxRow)
-            : null);
+    PerformanceTrace? trace;
+    final standaloneRetry = tx == null && outboxRow == null;
     if (tx != null) _waitingNetworkIds.remove(tx);
     _attachNetworkRecoveryWatch();
     final attemptRevision = _networkRecoveryRevision;
@@ -1127,30 +1172,45 @@ final class RoomTimelineController extends ChangeNotifier {
             .snapshot()
             .any((m) => m.id == transactionId || m.stableId == tx);
         if ((!exists || _tracksOutbox(fresh)) && _senders.containsKey(tx)) {
+          final retainedTrace = _retainedSendTrace(tx);
+          trace = retainedTrace ??
+              _openSendTrace(tx, outboxRow, fromComposer: false);
           if (retainedTrace?.isRecording ?? false) retainedTrace!.retryCount++;
           await _dispatch(tx, fresh, trace: trace);
           return;
         }
       }
-      if (trace?.isRecording ?? false) {
-        if (retainedTrace != null) trace!.retryCount++;
-        trace!.mark(PerformanceStage.matrixSendStart);
-      }
       adapterRetryAttempted = true;
-      await adapter.retry(transactionId);
-      trace?.mark(PerformanceStage.matrixSendFinish);
-      // 适配器重试成功（SDK 已确认）：outbox 行同样落定，避免重启后再发一次。
+      final retryDiagnostics = adapter;
+      if (retryDiagnostics is RoomRetryDiagnostics) {
+        await (retryDiagnostics as RoomRetryDiagnostics)
+            .retryWithDiagnostics(transactionId, () {
+          final key = tx ?? transactionId;
+          final retainedTrace = _retainedSendTrace(key);
+          final current = retainedTrace ??
+              _openSendTrace(key, outboxRow, fromComposer: false);
+          // Attempts happen even when the recorder cannot admit a span.
+          if (retainedTrace != null || standaloneRetry) current.retryCount++;
+          _sendTraceLeases[key]?.sdkInFlight = true;
+          trace = current;
+          return current;
+        });
+      } else {
+        // A void retry Future may mean queue admission or a no-op. Unknown
+        // adapters keep their existing behavior without fabricated SDK data.
+        await adapter.retry(transactionId);
+      }
+      // 保留适配器已有完成语义和 outbox 结算；SDK 诊断仅由实际发送回调确认。
       if (tx != null && _localEchoes.containsKey(tx)) {
         await _persistOutboxOutcome(
             tx, _localEchoes[tx]!, RoomDeliveryState.sent,
             error: null);
       }
-      trace?.mark(PerformanceStage.ack);
       adapterRetrySucceeded = true;
     } catch (error) {
       if (adapterRetryAttempted) {
-        trace?.mark(PerformanceStage.matrixSendFinish);
         trace?.setNetwork(error: _sendPerformanceNetworkError(error));
+        adapterRetryFailure = PerformanceResult.failed;
       }
       if (tx != null && _localEchoes.containsKey(tx)) {
         _echoRevision++;
@@ -1171,13 +1231,27 @@ final class RoomTimelineController extends ChangeNotifier {
         await refresh();
         refreshed = true;
       } finally {
-        if (adapterRetryAttempted && tx != null) {
+        final current = trace;
+        if (adapterRetryAttempted && current != null) {
+          _sendTraceLeases[tx ?? transactionId]?.sdkInFlight = false;
           if (adapterRetrySucceeded) {
-            if (refreshed) trace?.mark(PerformanceStage.timelinePublished);
-            _finishSendTrace(tx, trace, PerformanceResult.success);
+            if (refreshed && !_disposed) {
+              try {
+                current.mark(PerformanceStage.timelinePublished);
+              } catch (_) {
+                // Observation failure cannot replace the actual SDK result.
+              }
+            }
+            _finishSendTrace(
+                tx ?? transactionId, current, PerformanceResult.success);
           } else if (adapterRetryFailure != PerformanceResult.waitingNetwork) {
-            _finishSendTrace(tx, trace, PerformanceResult.failed);
+            _finishSendTrace(
+                tx ?? transactionId, current, PerformanceResult.failed,
+                retainSdkContext: standaloneRetry);
           }
+        }
+        if (standaloneRetry && adapterRetrySucceeded) {
+          current?.correlationContext.close();
         }
       }
     }
@@ -1826,7 +1900,9 @@ final class RoomTimelineController extends ChangeNotifier {
     // An in-flight transport may still ACK after this page is gone. Retain only
     // those leases until ACK or the central observation deadline.
     for (final entry in _sendTraceLeases.entries.toList(growable: false)) {
-      if (_inFlightTxids.contains(entry.key)) continue;
+      if (_inFlightTxids.contains(entry.key) || entry.value.sdkInFlight) {
+        continue;
+      }
       _finishSendTrace(
           entry.key,
           entry.value.trace,

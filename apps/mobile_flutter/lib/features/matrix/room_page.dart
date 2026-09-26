@@ -1908,7 +1908,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ? mimeFromFileName(file.name)
               : file.mimeType!;
       if (mime.startsWith('video/') &&
-          PerformanceTraceRecorder.instance.recordingEnabled) {
+          PerformanceTraceRecorder.instance.diagnosticsEnabled) {
         videoTrace = PerformanceTrace.start(
             operation: PerformanceOperationType.videoPrepare)
           ..mark(PerformanceStage.videoSelected);
@@ -2320,7 +2320,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     for (final photo in result.photos) {
       final videoSource = photo.localVideoFile;
       if (photo.isVideo && videoSource != null) {
-        final videoTrace = PerformanceTraceRecorder.instance.recordingEnabled
+        final videoTrace = PerformanceTraceRecorder.instance.diagnosticsEnabled
             ? (PerformanceTrace.start(
                 operation: PerformanceOperationType.videoPrepare)
               ..mark(PerformanceStage.videoSelected))
@@ -2508,7 +2508,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       _dismissComposerExtensions();
       final capture = File(capturePath);
-      if (PerformanceTraceRecorder.instance.recordingEnabled) {
+      if (PerformanceTraceRecorder.instance.diagnosticsEnabled) {
         videoTrace = PerformanceTrace.start(
             operation: PerformanceOperationType.videoPrepare)
           ..mark(PerformanceStage.videoSelected);

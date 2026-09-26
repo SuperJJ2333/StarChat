@@ -95,11 +95,88 @@ final class ChatDiagnosticBatch {
 /// Local delivery identity is independent of the shared correlation ID.
 /// Immutable entries survive spool restoration; this UUID never enters wire JSON.
 final class _QueuedPerformanceOperation {
-  _QueuedPerformanceOperation(this.record, {String? queueEntryId})
+  _QueuedPerformanceOperation(this.record,
+      {String? queueEntryId, required this.retentionPriority})
       : queueEntryId = queueEntryId ?? const Uuid().v4();
 
   final String queueEntryId;
   final PerformanceDiagnosticOperation record;
+  final int retentionPriority;
+}
+
+/// FIFO delivery with constant-time admission/eviction indexes. Only entries
+/// in the actual upload snapshot are frozen; an old backlog is not protected.
+final class _PerformanceOperationQueue
+    extends IterableBase<_QueuedPerformanceOperation> {
+  final _entries = <String, _QueuedPerformanceOperation>{};
+  final _evictable =
+      List.generate(3, (_) => <String, _QueuedPerformanceOperation>{});
+
+  @override
+  Iterator<_QueuedPerformanceOperation> get iterator =>
+      _entries.values.iterator;
+  @override
+  int get length => _entries.length;
+  @override
+  bool get isEmpty => _entries.isEmpty;
+  @override
+  bool get isNotEmpty => _entries.isNotEmpty;
+  @override
+  _QueuedPerformanceOperation get first => _entries.values.first;
+
+  void addLast(_QueuedPerformanceOperation entry) {
+    _entries[entry.queueEntryId] = entry;
+    _evictable[entry.retentionPriority][entry.queueEntryId] = entry;
+  }
+
+  void remove(_QueuedPerformanceOperation entry) {
+    if (!identical(_entries[entry.queueEntryId], entry)) return;
+    _entries.remove(entry.queueEntryId);
+    _evictable[entry.retentionPriority].remove(entry.queueEntryId);
+  }
+
+  void removeFirst() => remove(first);
+
+  bool evictAtPriority(int priority) {
+    final candidates = _evictable[priority];
+    if (candidates.isNotEmpty) {
+      remove(candidates.values.first);
+      return true;
+    }
+    return false;
+  }
+
+  void freeze(List<_QueuedPerformanceOperation> batch) {
+    for (final entry in batch) {
+      if (identical(_entries[entry.queueEntryId], entry)) {
+        _evictable[entry.retentionPriority].remove(entry.queueEntryId);
+      }
+    }
+  }
+
+  // Rebuild chronological indexes only on the deferred upload path, never
+  // while recording. This visits at most the existing 100-entry capacity.
+  void releaseFrozen() {
+    for (final tier in _evictable) {
+      tier.clear();
+    }
+    for (final entry in _entries.values) {
+      _evictable[entry.retentionPriority][entry.queueEntryId] = entry;
+    }
+  }
+
+  void removeWhere(bool Function(_QueuedPerformanceOperation) predicate) {
+    for (final entry in _entries.values.toList(growable: false)) {
+      if (predicate(entry)) remove(entry);
+    }
+  }
+
+  void clear() {
+    _entries.clear();
+    for (final tier in _evictable) {
+      tier.clear();
+    }
+  }
 }
 
 bool _hasOperationExtension(_QueuedPerformanceOperation entry) {
@@ -200,7 +277,9 @@ final class ChatDiagnostics {
   final int normalSamplePercent;
   final int maxUploadBytes;
   final _pending = <_EventKey, _Event>{};
-  final _pendingOperations = ListQueue<_QueuedPerformanceOperation>();
+  final _pendingOperations = _PerformanceOperationQueue();
+  final _evictableEventKeys =
+      List.generate(3, (_) => LinkedHashSet<_EventKey>());
   _FrameCounts _frames = _FrameCounts();
   _FrameCounts _cumulativeFrames = _FrameCounts();
   bool _framesSupported = true;
@@ -289,6 +368,9 @@ final class ChatDiagnostics {
     _upload = null;
     _pending.clear();
     _pendingOperations.clear();
+    for (final tier in _evictableEventKeys) {
+      tier.clear();
+    }
     _frames = _FrameCounts();
     _cumulativeFrames = _FrameCounts();
     _framesSupported = true;
@@ -333,9 +415,10 @@ final class ChatDiagnostics {
       existing.elapsedMs = math.max(existing.elapsedMs, ms);
       return;
     }
-    if (pendingCount >= 100) return;
-    _pending[key] = _Event(stage, error, safeStatus, ms, safeCount,
+    final event = _Event(stage, error, safeStatus, ms, safeCount,
         retryCount: safeRetryCount, lifecycle: lifecycle);
+    if (pendingCount >= 100 && !_makeRoomAtMost(_eventPriority(event))) return;
+    _addPendingEvent(event);
   }
 
   /// Foreground frames only (enforced by the scope). A slow frame exceeds
@@ -390,23 +473,68 @@ final class ChatDiagnostics {
       }
       if (hash % 100 >= normalSamplePercent) return;
     }
-    if (pendingCount >= 100) {
-      if (!mustKeep) return;
-      // Keep the newest slow/error evidence without growing the queue. Both
-      // collections preserve insertion order; removal is constant time.
-      if (_pendingOperations.length > 20) {
-        // Flush reads the oldest records. Evict the tail so a concurrent
-        // in-flight batch keeps its identity and cannot be sent twice.
-        _pendingOperations.removeLast();
-      } else if (_pending.isNotEmpty) {
-        _pending.remove(_pending.keys.first);
-      } else if (_pendingOperations.isNotEmpty) {
-        _pendingOperations.removeLast();
-      }
+    final priority = _retentionPriority(record, mustKeep: mustKeep);
+    if (pendingCount >= 100 && !_makeRoomAtMost(priority)) {
+      return;
     }
     _beginPendingRecord();
-    _pendingOperations.addLast(_QueuedPerformanceOperation(record));
+    _pendingOperations.addLast(
+        _QueuedPerformanceOperation(record, retentionPriority: priority));
     _scheduleSpoolWrite();
+  }
+
+  int _retentionPriority(PerformanceDiagnosticOperation record,
+          {required bool mustKeep}) =>
+      switch (record) {
+        PerformanceTraceObservation(kind: PerformanceObservationKind.expired) =>
+          2,
+        PerformanceTraceObservation() => 1,
+        PerformanceRecord(
+          result: PerformanceResult.failed ||
+              PerformanceResult.rejected ||
+              PerformanceResult.waitingNetwork ||
+              PerformanceResult.cancelled
+        ) =>
+          2,
+        _ => mustKeep ? 1 : 0,
+      };
+
+  bool _makeRoomAtMost(int priority) {
+    for (var tier = 0; tier <= priority; tier++) {
+      if (_pendingOperations.evictAtPriority(tier)) return true;
+      final keys = _evictableEventKeys[tier];
+      if (keys.isNotEmpty) {
+        _removePendingEvent(keys.first);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  int _eventPriority(_Event event) => event.error == ChatDiagnosticError.slow ||
+          event.error == ChatDiagnosticError.recovered
+      ? 1
+      : 2;
+
+  void _addPendingEvent(_Event event) {
+    _pending[event.key] = event;
+    _evictableEventKeys[_eventPriority(event)].add(event.key);
+  }
+
+  void _removePendingEvent(_EventKey key) {
+    final event = _pending.remove(key);
+    if (event != null) {
+      _evictableEventKeys[_eventPriority(event)].remove(key);
+    }
+  }
+
+  void _releaseFrozenEvents() {
+    for (final tier in _evictableEventKeys) {
+      tier.clear();
+    }
+    for (final event in _pending.values) {
+      _evictableEventKeys[_eventPriority(event)].add(event.key);
+    }
   }
 
   bool _mustKeepPerformance(PerformanceRecord record) {
@@ -519,7 +647,7 @@ final class ChatDiagnostics {
         break;
       }
       // A single unsendable item must not permanently pin the queue head.
-      _pending.remove(event.key);
+      _removePendingEvent(event.key);
     }
     if (!batchFull) {
       for (final operation
@@ -554,6 +682,10 @@ final class ChatDiagnostics {
     final batch = ChatDiagnosticBatch._(
         _version, _platform, events, frames, operations,
         operationExtensionsSupported: _operationExtensionsSupported);
+    _pendingOperations.freeze(operations);
+    for (final event in events) {
+      _evictableEventKeys[_eventPriority(event)].remove(event.key);
+    }
     final abort = Completer<void>();
     _abort = abort;
     _nextAllowed = now.add(const Duration(minutes: 1));
@@ -620,19 +752,18 @@ final class ChatDiagnostics {
           continue;
         }
         current.count -= event.count;
-        if (current.count <= 0) _pending.remove(event.key);
+        if (current.count <= 0) _removePendingEvent(event.key);
       }
       for (final operation in operations) {
-        if (_pendingOperations.isNotEmpty &&
-            identical(_pendingOperations.first, operation)) {
-          _pendingOperations.removeFirst();
-        }
+        _pendingOperations.remove(operation);
       }
     } else {
       _failures = math.min(_failures + 1, 5);
       final delayMinutes = math.min(1 << (_failures - 1), 15);
       _nextAllowed = _now().add(Duration(minutes: delayMinutes));
     }
+    _pendingOperations.releaseFrozen();
+    _releaseFrozenEvents();
     _queueSpoolWrite();
   }
 
@@ -641,6 +772,9 @@ final class ChatDiagnostics {
     if (created != null && _now().difference(created) > spoolExpiry) {
       _pending.clear();
       _pendingOperations.clear();
+      for (final tier in _evictableEventKeys) {
+        tier.clear();
+      }
       _frames = _FrameCounts();
       _spoolCreated = null;
     }
@@ -870,7 +1004,7 @@ final class ChatDiagnostics {
                     lifecycle: lifecycle);
                 final existing = _pending[e.key];
                 if (existing == null) {
-                  _pending[e.key] = e;
+                  _addPendingEvent(e);
                 } else {
                   existing.count = (existing.count + e.count).clamp(1, 1000000);
                   existing.elapsedMs =
@@ -889,7 +1023,12 @@ final class ChatDiagnostics {
                     schema: decoded['schema'] as int);
                 if (restored != null) {
                   final entry = _QueuedPerformanceOperation(restored.record,
-                      queueEntryId: restored.queueEntryId);
+                      queueEntryId: restored.queueEntryId,
+                      retentionPriority: _retentionPriority(restored.record,
+                          mustKeep: restored.record is PerformanceRecord
+                              ? _mustKeepPerformance(
+                                  restored.record as PerformanceRecord)
+                              : true));
                   if (restoredIds.add(entry.queueEntryId)) {
                     _pendingOperations.addLast(entry);
                   }

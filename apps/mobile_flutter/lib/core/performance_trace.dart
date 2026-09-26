@@ -123,7 +123,23 @@ final class PerformanceTraceRecorder {
   PerformanceLifecycle lifecycle = PerformanceLifecycle.unknown;
   int get activeCount => _active.length;
   int get pendingFrameAttributionCount => _pendingFrames.length;
-  bool get recordingEnabled => _enabled() && _active.length < activeCapacity;
+  bool get diagnosticsEnabled => _enabled();
+  bool get recordingEnabled =>
+      diagnosticsEnabled && _active.length < activeCapacity;
+
+  /// A job owns this lease; the recorder stores no additional pending entry.
+  /// Capacity controls measured spans, not the anonymous identity of later
+  /// attempts. Disabled diagnostics allocate no random identity.
+  PerformanceCorrelationContext createCorrelationContext() {
+    final enabled = diagnosticsEnabled;
+    return PerformanceCorrelationContext._(
+      recorder: this,
+      operationId:
+          enabled ? const Uuid().v4() : '00000000-0000-4000-8000-000000000000',
+      sessionGeneration: _sessionGeneration?.call(),
+      admitted: enabled,
+    );
+  }
 
   PerformanceTrace start(
     PerformanceOperationType operation, {
@@ -140,30 +156,38 @@ final class PerformanceTraceRecorder {
     PerformanceEndpointCategory? endpointCategory,
     PerformanceHttpMethod? httpMethod,
   }) {
-    final canRecord = recordingEnabled &&
+    final enabled = diagnosticsEnabled &&
         (correlationContext == null ||
             (identical(correlationContext._recorder, this) &&
                 correlationContext.isCurrent));
+    final canRecord = enabled && _active.length < activeCapacity;
     if (canRecord && timestampedFrameAttribution && !_frameListenerRegistered) {
       _frameListenerRegistered =
           metrics.addFrameTimingListener(_onFrameTimings);
     }
     final generation = _sessionGeneration?.call();
-    final inheritId = canRecord &&
+    final inheritId = enabled &&
         parentOperation != null &&
         identical(parentOperation._recorder, this) &&
-        parentOperation.isRecording &&
+        parentOperation.correlationContext.isCurrent &&
         (parentOperation._sessionGeneration == null ||
             parentOperation._sessionGeneration == generation);
+    final context = correlationContext ??
+        (inheritId
+            ? parentOperation.correlationContext
+            : PerformanceCorrelationContext._(
+                recorder: this,
+                operationId: enabled
+                    ? const Uuid().v4()
+                    : '00000000-0000-4000-8000-000000000000',
+                sessionGeneration: generation,
+                admitted: enabled,
+              ));
     final trace = PerformanceTrace._(
       recorder: this,
       operation: operation,
-      operationId: canRecord
-          ? correlationContext != null
-              ? correlationContext.operationId
-              : inheritId
-                  ? parentOperation.operationId
-                  : const Uuid().v4()
+      operationId: enabled
+          ? context.operationId
           : '00000000-0000-4000-8000-000000000000',
       startedUs: _clockUs(),
       frameStartedUs:
@@ -173,8 +197,7 @@ final class PerformanceTraceRecorder {
       frameStart: _frameCounts(),
       sessionGeneration: generation,
       recording: canRecord,
-      correlationContext: correlationContext ??
-          (inheritId ? parentOperation.correlationContext : null),
+      correlationContext: context,
       attemptIndex: operation == PerformanceOperationType.videoPrepare ||
               operation == PerformanceOperationType.messageSend
           ? attemptIndex?.clamp(0, 20)
@@ -234,8 +257,7 @@ final class PerformanceTraceRecorder {
         trace._checkpointEmitted = true;
         final observation =
             trace._observation(now, PerformanceObservationKind.checkpoint);
-        metrics.recordObservation(observation);
-        onObservation?.call(observation);
+        _emitObservation(observation);
       }
       final limit = trace.operation == PerformanceOperationType.conversationOpen
           ? PerformanceThresholds.remoteSyncObservationWindow
@@ -246,8 +268,7 @@ final class PerformanceTraceRecorder {
       _active.remove(trace);
       trace._observationExpired = true;
       trace._frameClockValid = false;
-      metrics.recordObservation(observation);
-      onObservation?.call(observation);
+      _emitObservation(observation);
     }
     _releaseFrameListenerIfIdle();
   }
@@ -279,8 +300,29 @@ final class PerformanceTraceRecorder {
 
   void _emit(PerformanceRecord record, int? generation) {
     if (generation != null && generation != _sessionGeneration?.call()) return;
-    metrics.recordTrace(record);
-    onRecord?.call(record);
+    try {
+      metrics.recordTrace(record);
+    } catch (_) {
+      // A diagnostic sink cannot change completion of the observed operation.
+    }
+    try {
+      onRecord?.call(record);
+    } catch (_) {
+      // No arbitrary observer exception text enters logs or business results.
+    }
+  }
+
+  void _emitObservation(PerformanceTraceObservation observation) {
+    try {
+      metrics.recordObservation(observation);
+    } catch (_) {
+      // Keep expiry bounded even when a diagnostic sink fails.
+    }
+    try {
+      onObservation?.call(observation);
+    } catch (_) {
+      // Continue expiring other traces and releasing the observation timer.
+    }
   }
 
   void _finalizeFrameRecord(

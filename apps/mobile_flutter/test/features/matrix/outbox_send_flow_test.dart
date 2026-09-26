@@ -15,7 +15,10 @@ import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 
 /// 记录每次派发使用的 txid 的假传输层（应答脚本由测试注入）。
 final class _FakeTransport
-    implements RoomTimelineAdapter, RoomOptimisticTextAdapter {
+    implements
+        RoomTimelineAdapter,
+        RoomOptimisticTextAdapter,
+        RoomRetryDiagnostics {
   final events = <RoomMessageViewModel>[];
   final txids = <String>[];
   final responses = <Future<String> Function()>[];
@@ -37,6 +40,19 @@ final class _FakeTransport
     txids.add(transactionId);
     if (responses.isNotEmpty) await responses.removeAt(0)();
     onRetrySuccess?.call();
+  }
+
+  @override
+  Future<void> retryWithDiagnostics(
+      String transactionId, PerformanceTrace Function() startSdkAttempt) async {
+    final trace = startSdkAttempt();
+    trace.mark(PerformanceStage.matrixSendStart);
+    try {
+      await retry(transactionId);
+      trace.mark(PerformanceStage.ack);
+    } finally {
+      trace.mark(PerformanceStage.matrixSendFinish);
+    }
   }
 
   @override

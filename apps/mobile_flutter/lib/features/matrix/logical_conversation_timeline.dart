@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:typed_data';
+import '../../core/performance_trace.dart';
 
 import 'incremental_timeline_merge.dart';
 
@@ -22,6 +23,7 @@ abstract interface class RoomEventSourceCapability {
 final class LogicalConversationTimelineCapability
     implements
         RoomTimelineCapability,
+        RoomRetryDiagnostics,
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomMessageLookupSource,
@@ -162,7 +164,15 @@ final class LogicalConversationTimelineCapability
       (await _source(eventId)).loadThumbnail(eventId);
 
   @override
-  Future<void> retry(String transactionId) async {
+  Future<void> retry(String transactionId) => _retry(transactionId);
+
+  @override
+  Future<void> retryWithDiagnostics(
+          String transactionId, PerformanceTrace Function() startSdkAttempt) =>
+      _retry(transactionId, startSdkAttempt: startSdkAttempt);
+
+  Future<void> _retry(String transactionId,
+      {PerformanceTrace Function()? startSdkAttempt}) async {
     _checkActive();
     final owners = <String>{};
     for (final entry in _sources.entries) {
@@ -175,7 +185,13 @@ final class LogicalConversationTimelineCapability
       throw StateError(
           'Retry requires an unambiguous primary-room transaction');
     }
-    await _primary.retry(transactionId);
+    final primary = _primary;
+    if (startSdkAttempt != null && primary is RoomRetryDiagnostics) {
+      await (primary as RoomRetryDiagnostics)
+          .retryWithDiagnostics(transactionId, startSdkAttempt);
+    } else {
+      await primary.retry(transactionId);
+    }
   }
 
   @override

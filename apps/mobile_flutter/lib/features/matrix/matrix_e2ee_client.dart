@@ -2462,6 +2462,7 @@ final class _SdkRoomTimelineCapability
     implements
         RoomVisibleReadCapability,
         RoomTimelineCapability,
+        RoomRetryDiagnostics,
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
@@ -3205,7 +3206,16 @@ final class _SdkRoomTimelineCapability
       });
 
   @override
-  Future<void> retry(String transactionId) => _withSendOperation(() async {
+  Future<void> retry(String transactionId) => _retry(transactionId);
+
+  @override
+  Future<void> retryWithDiagnostics(
+          String transactionId, PerformanceTrace Function() startSdkAttempt) =>
+      _retry(transactionId, startSdkAttempt: startSdkAttempt);
+
+  Future<void> _retry(String transactionId,
+          {PerformanceTrace Function()? startSdkAttempt}) =>
+      _withSendOperation(() async {
         if (await _outgoingWork.retryTransaction(transactionId)) return;
         if (!_retrying.add(transactionId)) return;
         try {
@@ -3243,19 +3253,41 @@ final class _SdkRoomTimelineCapability
             throw StateError('附件已不可用，请重新选择文件');
           }
           await event.cancelSend();
-          final result = media && !uploaded
-              ? await event.sendAgain(txid: txid)
-              : await _lease._activeRoom.sendEvent(
-                  Map<String, dynamic>.from(event.content),
-                  type: event.type,
-                  txid: txid);
+          PerformanceTrace? trace;
+          try {
+            trace = startSdkAttempt?.call();
+          } catch (_) {
+            // Diagnostics cannot reject a permitted encrypted send.
+          }
+          _observeRetryStage(trace, PerformanceStage.matrixSendStart);
+          String? result;
+          try {
+            result = media && !uploaded
+                ? await event.sendAgain(txid: txid)
+                : await _lease._activeRoom.sendEvent(
+                    Map<String, dynamic>.from(event.content),
+                    type: event.type,
+                    txid: txid);
+          } finally {
+            _observeRetryStage(trace, PerformanceStage.matrixSendFinish);
+          }
           if (result == null) {
             throw const MessageSendNetworkException('消息发送失败');
           }
+          _observeRetryStage(trace, PerformanceStage.ack);
         } finally {
           _retrying.remove(transactionId);
         }
       });
+
+  static void _observeRetryStage(
+      PerformanceTrace? trace, PerformanceStage stage) {
+    try {
+      trace?.mark(stage);
+    } catch (_) {
+      // An unavailable diagnostic clock must not stop or replace SDK work.
+    }
+  }
 
   @override
   Future<void> loadHistory() {
@@ -5414,12 +5446,15 @@ final class MatrixSdkE2eeClient
     MatrixSecurityLogger? securityLogger,
     MatrixOutgoingWorkCoordinator Function(String accountId)?
         outgoingWorkFactory,
+    PerformanceTraceRecorder? performanceRecorder,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
     DateTime Function()? memberRefreshNow,
     Duration memberRefreshTtl = const Duration(minutes: 10),
     Duration memberRefreshRetryDelay = const Duration(seconds: 15),
     DuplicateRoomRegistry? duplicateRooms,
   })  : _client = client,
+        _performanceRecorder =
+            performanceRecorder ?? PerformanceTraceRecorder.instance,
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
         _selectClientAccount = selectClientAccount,
@@ -5447,6 +5482,7 @@ final class MatrixSdkE2eeClient
     _attachMemberRefreshListener(client);
   }
   Client? _client;
+  final PerformanceTraceRecorder _performanceRecorder;
 
   Future<bool> Function(String accountId, String roomId, String? peerId)?
       authorizeRoomSend;
@@ -5817,85 +5853,102 @@ final class MatrixSdkE2eeClient
     }
     final ids = <String>{};
     final jobs = <MatrixOutgoingWorkJob>[];
-    for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
-      final message = messages[sourceIndex];
-      if (message.id.isEmpty || !ids.add(message.id)) {
-        throw ArgumentError(
-            'Forwarding message ids must be non-empty and unique');
-      }
-      if (message is MatrixOutgoingForwardMedia &&
-          (message.sourceAccountId != session.accountId ||
-              !identical(message.sourceClient, session.client))) {
-        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
-      }
-      if (message is MatrixOutgoingForwardMedia &&
-          message.downloadLimitBytes > _maxFileSendBytes) {
-        throw const MatrixOutgoingFileTooLargeException();
-      }
-      final createdAt = DateTime.now();
-      final text = message is MatrixOutgoingForwardText ? message : null;
-      final media = message is MatrixOutgoingForwardMedia ? message : null;
-      final body = switch (message) {
-        MatrixOutgoingForwardText(:final body) => body,
-        MatrixOutgoingForwardMedia(:final body) => body,
-      };
-      final content = text != null
-          ? Map<String, dynamic>.unmodifiable({
-              'msgtype': MessageTypes.Text,
-              'body': body,
-              if (text.format != null) 'format': text.format,
-              if (text.formattedBody != null)
-                'formatted_body': text.formattedBody,
-            })
-          : null;
-      final mediaSnapshot =
-          media == null ? null : _DeferredOutgoingForwardMediaSnapshot(media);
-      jobs.add(MatrixOutgoingWorkJob(
-        id: '$batchId-$sourceIndex',
-        createdAt: createdAt,
-        source: MatrixOutgoingWorkSource(
-          id: 'forward:$batchId:$sourceIndex',
-          retainedBytes: media?.reservationBytes ?? 0,
-          prepare: mediaSnapshot == null
-              ? null
-              : (attempt) => _prepareForwardMedia(
-                  session: session, snapshot: mediaSnapshot, attempt: attempt),
-          release: mediaSnapshot?.release,
-        ),
-        items: [
-          for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
-            MatrixOutgoingWorkItem(
-              id: '${message.id}:$targetIndex',
-              targetRoomId: targets[targetIndex],
-              txid: 'outgoing-$batchId-$sourceIndex-$targetIndex',
-              presentation: MatrixOutgoingWorkPresentation(
-                kind: media?.presentationKind ??
-                    MatrixOutgoingPresentationKind.text,
-                text: body,
-                mimeType: media?.mimeType,
-                filename: media?.filename,
-                voiceDuration: media?.voiceDuration,
-                createdAt: createdAt,
+    try {
+      for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
+        final message = messages[sourceIndex];
+        if (message.id.isEmpty || !ids.add(message.id)) {
+          throw ArgumentError(
+              'Forwarding message ids must be non-empty and unique');
+        }
+        if (message is MatrixOutgoingForwardMedia &&
+            (message.sourceAccountId != session.accountId ||
+                !identical(message.sourceClient, session.client))) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        if (message is MatrixOutgoingForwardMedia &&
+            message.downloadLimitBytes > _maxFileSendBytes) {
+          throw const MatrixOutgoingFileTooLargeException();
+        }
+        final createdAt = DateTime.now();
+        final text = message is MatrixOutgoingForwardText ? message : null;
+        final media = message is MatrixOutgoingForwardMedia ? message : null;
+        final body = switch (message) {
+          MatrixOutgoingForwardText(:final body) => body,
+          MatrixOutgoingForwardMedia(:final body) => body,
+        };
+        final content = text != null
+            ? Map<String, dynamic>.unmodifiable({
+                'msgtype': MessageTypes.Text,
+                'body': body,
+                if (text.format != null) 'format': text.format,
+                if (text.formattedBody != null)
+                  'formatted_body': text.formattedBody,
+              })
+            : null;
+        final mediaSnapshot =
+            media == null ? null : _DeferredOutgoingForwardMediaSnapshot(media);
+        final performanceContext =
+            _performanceRecorder.createCorrelationContext();
+        jobs.add(MatrixOutgoingWorkJob(
+          id: '$batchId-$sourceIndex',
+          createdAt: createdAt,
+          source: MatrixOutgoingWorkSource(
+            id: 'forward:$batchId:$sourceIndex',
+            retainedBytes: media?.reservationBytes ?? 0,
+            prepare: mediaSnapshot == null
+                ? null
+                : (attempt) => _prepareForwardMedia(
+                    session: session,
+                    snapshot: mediaSnapshot,
+                    attempt: attempt),
+            release: () {
+              performanceContext.close();
+              return mediaSnapshot?.release() ?? Future<void>.value();
+            },
+          ),
+          items: [
+            for (var targetIndex = 0;
+                targetIndex < targets.length;
+                targetIndex++)
+              MatrixOutgoingWorkItem(
+                id: '${message.id}:$targetIndex',
+                targetRoomId: targets[targetIndex],
+                txid: 'outgoing-$batchId-$sourceIndex-$targetIndex',
+                performanceContext: performanceContext,
+                presentation: MatrixOutgoingWorkPresentation(
+                  kind: media?.presentationKind ??
+                      MatrixOutgoingPresentationKind.text,
+                  text: body,
+                  mimeType: media?.mimeType,
+                  filename: media?.filename,
+                  voiceDuration: media?.voiceDuration,
+                  createdAt: createdAt,
+                ),
+                send: (attempt) => mediaSnapshot == null
+                    ? _sendOutgoingText(
+                        session: session,
+                        targetRoomId: targets[targetIndex],
+                        content: content!,
+                        attempt: attempt,
+                      )
+                    : _sendOutgoingForwardMedia(
+                        session: session,
+                        targetRoomId: targets[targetIndex],
+                        snapshot: mediaSnapshot,
+                        attempt: attempt,
+                      ),
               ),
-              send: (attempt) => mediaSnapshot == null
-                  ? _sendOutgoingText(
-                      session: session,
-                      targetRoomId: targets[targetIndex],
-                      content: content!,
-                      attempt: attempt,
-                    )
-                  : _sendOutgoingForwardMedia(
-                      session: session,
-                      targetRoomId: targets[targetIndex],
-                      snapshot: mediaSnapshot,
-                      attempt: attempt,
-                    ),
-            ),
-        ],
-      ));
+          ],
+        ));
+      }
+    } catch (_) {
+      _closeOutgoingDiagnosticContexts(jobs);
+      rethrow;
     }
-    _ensureOutgoingSessionCurrent(session);
-    return session.coordinator.enqueueBatch(jobs);
+    return _observeOutgoingAdmission(jobs, () {
+      _ensureOutgoingSessionCurrent(session);
+      return session.coordinator.enqueueBatch(jobs);
+    });
   }
 
   /// Admits one prepared camera/file media source for multiple targets. The
@@ -5930,6 +5983,7 @@ final class MatrixSdkE2eeClient
           'Media forwarding targets must be non-empty and unique');
     }
     final snapshot = _DeferredOutgoingMediaSnapshot(media);
+    final performanceContext = _performanceRecorder.createCorrelationContext();
     final createdAt = DateTime.now();
     final job = MatrixOutgoingWorkJob(
       id: jobId,
@@ -5938,7 +5992,10 @@ final class MatrixSdkE2eeClient
         id: 'media:$jobId:${media.id}',
         retainedBytes: media.retainedBytes,
         prepare: snapshot.prepare,
-        release: snapshot.release,
+        release: () {
+          performanceContext.close();
+          return snapshot.release();
+        },
       ),
       items: [
         for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
@@ -5946,6 +6003,7 @@ final class MatrixSdkE2eeClient
             id: '${media.id}:$targetIndex',
             targetRoomId: targets[targetIndex],
             txid: 'outgoing-$jobId-0-$targetIndex',
+            performanceContext: performanceContext,
             presentation: MatrixOutgoingWorkPresentation(
               kind: media.mimeType.startsWith('video/')
                   ? MatrixOutgoingPresentationKind.video
@@ -5964,8 +6022,34 @@ final class MatrixSdkE2eeClient
           ),
       ],
     );
-    _ensureOutgoingSessionCurrent(session);
-    return session.coordinator.enqueue(job, onAccepted: media._markAdmitted);
+    return _observeOutgoingAdmission([job], () {
+      _ensureOutgoingSessionCurrent(session);
+      return session.coordinator.enqueue(job, onAccepted: media._markAdmitted);
+    });
+  }
+
+  static void _closeOutgoingDiagnosticContexts(
+      Iterable<MatrixOutgoingWorkJob> jobs) {
+    for (final job in jobs) {
+      for (final item in job.items) {
+        item.performanceContext?.close();
+      }
+    }
+  }
+
+  /// Admission retains its original result and error. Rejection closes only
+  /// anonymous job leases; it neither releases nor changes caller media.
+  static Future<T> _observeOutgoingAdmission<T>(
+      Iterable<MatrixOutgoingWorkJob> jobs, Future<T> Function() admit) {
+    try {
+      return admit().onError((Object error, StackTrace stack) {
+        _closeOutgoingDiagnosticContexts(jobs);
+        Error.throwWithStackTrace(error, stack);
+      });
+    } catch (_) {
+      _closeOutgoingDiagnosticContexts(jobs);
+      rethrow;
+    }
   }
 
   /// Admits an uncompressed local video before compression begins. The account
@@ -6205,10 +6289,16 @@ final class MatrixSdkE2eeClient
         }
         await _requireRoomSend(target);
         _ensureOutgoingSession(session, attempt);
-        final eventId = await target.sendEvent(
-          Map<String, dynamic>.from(content),
-          txid: attempt.txid,
-        );
+        attempt.performanceTrace?.mark(PerformanceStage.matrixSendStart);
+        String? eventId;
+        try {
+          eventId = await target.sendEvent(
+            Map<String, dynamic>.from(content),
+            txid: attempt.txid,
+          );
+        } finally {
+          attempt.performanceTrace?.mark(PerformanceStage.matrixSendFinish);
+        }
         _ensureOutgoingSession(session, attempt);
         return eventId ??
             (throw StateError('Matrix room event was not accepted'));
@@ -6238,6 +6328,7 @@ final class MatrixSdkE2eeClient
           thumbnailBytes: snapshot.thumbnailBytes,
           thumbnailWidth: snapshot.thumbnailWidth,
           thumbnailHeight: snapshot.thumbnailHeight,
+          performanceTrace: attempt.performanceTrace,
         );
         _ensureOutgoingSession(session, attempt);
         return eventId;
@@ -6377,6 +6468,7 @@ final class MatrixSdkE2eeClient
           thumbnailBytes: snapshot.thumbnail,
           thumbnailWidth: media.thumbnailWidth,
           thumbnailHeight: media.thumbnailHeight,
+          performanceTrace: attempt.performanceTrace,
         );
         _ensureOutgoingSession(session, attempt);
         return eventId;
