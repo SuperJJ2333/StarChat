@@ -2,6 +2,8 @@
 
 ## 2026-09-26 TCP443 每分钟观测已安装，Release 网络失败暂存门禁通过
 
+本轮功能源码提交 `31efd61f`；Git发布/远端回读和本轮临时分支清理证据见任务工件，源码、探针/API部署与客户端安装状态分别记录。
+
 源站与阿里云大陆ECS各新增独立每分钟TCP443探针，旧TCP22 netmon保持；两个不同定时分钟各3/3成功，大陆实测11–18ms。API接收端只扩展network_request白名单，API-only候选ea950a2f已healthy/零重启，schema0088与其他38容器不变。客户端复用ChatDiagnostics记录授权业务请求Timeout/socket/401，新增64KiB/100条/24小时本地账号盐HMAC暂存及恢复补报；认证Release上报本来已开启，帧采集继续由PerformanceMetrics的profile/diagnostic条件决定。最终71专项及规格/安全复审通过；Flutter analyze无issues、Matrix2153/full4479、API/Worker2912、infra201、mobile238均exit0。verify.ps1因缺.env真实exit1，适用独立门禁与未变输入复用见[任务](tasks/2026-09-26-netmon-tcp-diagnostics.md)。本轮未构建/分发新APK或IPA，已安装2179和正式包不会自动获得新客户端行为；TCP成功也不证明TLS/登录/Matrix恢复。运行配置、权限、回退与测量边界见[探针手册](../runbooks/netmon-tcp-probe.md)和[客户端诊断](../runbooks/client-diagnostics.md)。
 
 ## 2026-09-26 原 main 工作区遗漏补集成与分支清理

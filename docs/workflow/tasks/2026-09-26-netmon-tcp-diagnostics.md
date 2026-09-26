@@ -7,8 +7,8 @@
 - 原root仍b9eca8a4，诊断WIP另有快照；本轮从新main隔离实施，不整文件覆盖。
 - 设计/计划：2026-09-26-netmon-tcp-diagnostics-design.md / 2026-09-26-netmon-tcp-diagnostics.md。
 - 文件所有权：agent mobile=Flutter核心与测试；agent netmon=脚本/infra测试/runbook；root=API接收端、契约、设计计划、任务和索引。
-- 当前状态：实现、生产探针/API发布、最终门禁和独立复审完成；正在Git交付。开始：2026-09-26 Asia/Hong_Kong，精确起点未采集；各门禁记录工具耗时，不编造总墙钟。
-- 下一步：核对最后文档/源码身份、提交/推送main。原已安装2179与正式APK/IPA未在本轮重新构建。
+- 当前状态：实现、生产探针/API发布、最终门禁和独立复审完成；源码提交 `31efd61f2f3ec633d2634d1f30cb2636d838c409`。开始：2026-09-26 Asia/Hong_Kong，精确起点未采集；各门禁记录工具耗时，不编造总墙钟。
+- 下一步：后续新客户端构建时绑定本源码并验证弱网/401恢复；本轮Git发布结果以私有 `git-delivery.json` 的远端回读为凭据。原已安装2179与正式APK/IPA未在本轮重新构建。
 
 ## 验收台账
 
@@ -73,3 +73,32 @@ Getui/Matrix Bot、迁移、未变UI等源码与测试输入和此前已通过�
 - SharedPreferences尽力持久化：record只改有界内存和安排1秒尾随任务，磁盘/编码在异步批处理；强杀或存储失败可能丢最后少量事件，响应丢失重试可能重复，不承诺exactly-once。
 - 普通登出保留同账号24小时待报元数据，既有salt仍有效时同账号可恢复；切换账号/服务scope丢弃不匹配载荷，Matrix身份清理仍删除salt。scope仅本地核对，不进入wire或header。
 - 源站对自身公网IP探测主要验证本地监听/路径；大陆点只代表该ECS路径。客户端DNS/TCP/TLS/TTFB拆分仍unsupported/null，此服务器侧主动TCP探针不能补写为某次客户端请求的TCP阶段。
+
+## 修改文件与源码交付
+
+本轮功能提交 `31efd61f` 仅20个归属文件，不包含本地工件、配置秘密或运行数据库：
+
+| 文件 | 目的 |
+| --- | --- |
+| apps/mobile_flutter/lib/core/business_api_client.dart | 公共授权入口真实失败记录；只在本地计算账号盐HMAC scope |
+| apps/mobile_flutter/lib/core/chat_diagnostics.dart | networkRequest闭集阶段、异步有界暂存/恢复、TTL、ACK和代次隔离 |
+| apps/mobile_flutter/lib/core/chat_diagnostics_spool_store.dart | SharedPreferences adapter与严格typed恢复，拒绝腐损完整帧数据 |
+| apps/mobile_flutter/lib/core/chat_diagnostics_scope.dart | 会话接线与持久化恢复；复用PerformanceMetrics帧listener |
+| apps/mobile_flutter/lib/main.dart | 认证scope传入本地store/拥有者resolver，保留Release上报 |
+| apps/mobile_flutter/test/core/business_api_diagnostics_test.dart | Timeout/socket/401及旧会话晚到失败隔离 |
+| apps/mobile_flutter/test/core/chat_diagnostics_scope_test.dart | 认证与帧采集开关/生命周期接线 |
+| apps/mobile_flutter/test/core/chat_diagnostics_spool_test.dart | 故障暂存、恢复、容量、过期、并发、损坏输入和ACK红绿 |
+| scripts/netmon_tcp_probe.py | 真正connect计时、每分钟3尝试、闭集输出与有界state/log |
+| tests/infra/test_netmon_tcp_probe.py | POSIX/Windows错误、成功率、计时边界和容量29断言 |
+| services/business-api/app/api/client_diagnostics.py | 只扩展接收stage白名单，不改鉴权/限流/响应安全 |
+| tests/business_api/test_client_diagnostics.py | 新stage三条正常与四条隐私拒绝红绿，保持旧协议 |
+| packages/api-contracts/openapi/liuhetong-v1.yaml | 生成契约的单enum增量 |
+| docs/runbooks/netmon-tcp-probe.md | 实际部署、分钟实测、权限、失败及回退边界 |
+| docs/runbooks/client-diagnostics.md | Release与补报策略、隐私、兼容和限制 |
+| docs/performance/chatflow-performance-diagnostics.md | TCP主动探测与客户端请求阶段的区别 |
+| docs/superpowers/specs/2026-09-26-netmon-tcp-diagnostics-design.md | 用户批准的增量方案与责任边界 |
+| docs/superpowers/plans/2026-09-26-netmon-tcp-diagnostics.md | 红绿/部署/独立门禁执行台账 |
+| docs/workflow/tasks/2026-09-26-netmon-tcp-diagnostics.md | 本记录及真实证据身份 |
+| docs/workflow/current-state.md | 跨会话恢复入口 |
+
+Git工作树仅提交本轮归属文件。原root的不同基线/并发WIP没有被reset或整文件覆盖；后续清理只针对本轮codex/netmon-tcp-diagnostics临时分支，保留工件工作树。最终远端main SHA与回读时间写入私有工件，不以文档预写状态代替实际push验证。

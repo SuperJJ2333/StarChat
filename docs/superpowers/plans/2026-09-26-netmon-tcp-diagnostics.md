@@ -31,4 +31,4 @@
 
 - [x] 规格审查PASS→质量安全审查PASS；netmon timer两处实证；无敏感字段或额外业务I/O。
 - [x] Flutter analyze lib test、flutter test test/features/matrix、flutter test；API/Worker2912、infra201、mobile238通过；scripts/verify.ps1因缺.env真实exit1，已记录环境缺口及适用独立门禁与未变输入复用证据。
-- [ ] 文档记录源码与生产分开、回退、限制、样本证据；用户已授权的Git集成push按最终门禁完成。
+- [x] 文档记录源码与生产分开、回退、限制、样本证据；源码提交31efd61f，按用户已有授权发布main，实际push/远端回读与临时分支清理结果以本轮git-delivery.json为凭据。
