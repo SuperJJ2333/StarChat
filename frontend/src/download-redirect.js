@@ -1,3 +1,6 @@
+// itms-services 的 url= 参数里禁止携带查询串（?v=...）：部分 iOS 版本会
+// 静默失败，点击安装毫无反应（2026-09-24 实测）。防缓存靠 manifest 的
+// no-store 响应头即可；若未来真需要按版本区分，用独立文件名而不是查询串。
 const iosInstall = 'itms-services://?action=download-manifest&url=https://www.liuhetong888.com/downloads/ios/manifest.plist';
 
 export function downloadDestination(search, device) {

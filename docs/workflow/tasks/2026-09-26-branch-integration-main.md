@@ -37,7 +37,7 @@
 | `pytest tests/getui_bridge -q` | exit 0，28 通过；2 个既有弃用警告 |
 | `pytest tests/matrix_bot -q` | exit 0，9 通过 |
 | UI contract、OpenAPI check、Compose render、Alembic 单头与离线升级 | 均 exit 0 |
-| `scripts/verify.ps1` | exit 1：独立工作树无 `.env`，停在配置渲染；此前 Repository/Deployment policy 与 TemplateTools 均通过。尝试从示例配置生成临时 `.env` 被自动审批以 `blocked by policy` 拒绝；未创建该文件，也未绕过审批 |
+| `scripts/verify.ps1` | exit 1：独立工作树无 `.env`，停在配置渲染；此前 Repository/Deployment policy 与 TemplateTools 均通过。尝试从示例配置生成临时 `.env` 被执行工具以 `blocked by policy` 在创建进程前拒绝（具体命中规则未暴露，后续审计纠正了自动审批归因）；未创建该文件，也未绕过工具策略 |
 | Business API/Worker 全量 | 复用 2179 原分支 `verify.ps1` exit 0 的 2905 通过、75 跳过：本次 iOS 分支合并未改变 `services/business-api`、`services/business-worker`、`tests/business_api`、`tests/business_worker` 的任何路径。一次重复运行到 16% 后主动中止，保留中止日志，不把它记作本次通过 |
 
 ## 剩余限制与回退
@@ -57,3 +57,7 @@
 | 其余分项验证与推送 | 截至 05:38 +08 | 主动/工具 | 本节退出码、远端回读 |
 
 总墙钟因开工时间未记录，保持未知；未将并行工具时间相加。
+
+## 2026-09-26 后续审计纠正
+
+用户追加要求检查67项和删除残余分支。原记录中保留工作区/分支是前轮状态；审计发现6个已批准守卫源码/测试确实漏集成，现补合并。其余旧移动文件不覆盖后续实现，草案/临时文件完整归档。具体处理、真实测试及删除结果见[后续任务](2026-09-26-main-wip-policy-cleanup.md)。

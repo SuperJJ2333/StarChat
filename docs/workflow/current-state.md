@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-26 原 main 工作区遗漏补集成与分支清理
+
+原 main 的 67 项已逐文件审计、忽略目录完整归档及 SHA256 验证。19 项移动功能已被 main 吸收，保留新实现；补入 6 个已批准、生产已有的续期守卫源码/测试和遗漏历史文档。前端只补独立 OTA 无 query 断言与当前 2173 cache key；未批准 E2EE 退役草案和临时响应头只归档。infra 172、frontend 311 项 exit 0，Repository/Deployment policy 通过；Flutter 和 API/Worker 无实现变化，复用同输入门禁。用户追加授权删除残余分支，保留历史工作树和证据。远端身份与最终清理见[67项审计](tasks/2026-09-26-main-wip-policy-cleanup.md)。本轮没有生产部署或新包。策略拒绝只能定位到工具执行前，具体规则未暴露，已纠正“自动审批拒绝”的归因。
+
 ## 2026-09-26 分支集成已推送 GitHub main
 
 已在独立干净工作树合入 `codex/auth-login-2178`（含性能诊断及 2179）和 `codex/online-room-refresh`（含 iOS 2173 源码）；`c2fe9f05` 首次推送与远端回读通过。两个旧功能分支已有等效整合，根 `main` 工作树的既有未提交内容保持原样。Flutter 全量 4443/9 跳过、analyze、前端及相关 Python 门禁通过；总 `verify.ps1` 因独立工作树无 `.env` 停在配置渲染，Business API/Worker 全量复用同输入的前轮通过证据。iOS 真机保留数据验收与 2179 实际视频发送仍按各自任务记录推进。见[集成任务](tasks/2026-09-26-branch-integration-main.md)。
@@ -72,6 +76,17 @@ MI 6 的 2178 实测视频在本地转码阶段约 23.9 秒后失败，未开始
 ## 2026-09-24 群聊/朋友圈/钱包 Debug2169 历史交付记录
 
 本次八项需求的客户端已完成：群公告淡黄消隐、连续编辑与统一图片相册（隐藏视频、保留 GIF），群名 12 字、群管理/群主转让、朋友圈 GIF/视频/统一账户缓存与警告样式、钱包指定文案。候选中发现群公告明文发送回归，已恢复现有 Matrix E2EE 事件及附件路径；不改密钥协议。生产业务 API 两次最小增量后为 `f63cb266`，worker `237162be` 与其余 23 容器/schema0087 不变，双侧 HTTPS/鉴权通过。MI 6 保留数据安装 0.4.10+2169 Debug，SHA256 `6168daef`、首次安装时间、启动、零崩溃验证通过。Flutter 4087/9 条条件跳过、analyze 0，frontend303、Moments API119。原完整 `verify.ps1` 因两个旧 UI 屏幕数断言 exit1；修正后 mobile108/1 跳过及未跑的 UI 合同、导入、AST、迁移、OpenAPI、Compose 门禁均 exit0，前段 2735/77 跳过复用，未声称原完整脚本 exit0。用户真机体验待反馈。见[任务](tasks/2026-09-24-group-moments-wallet-debug.md)、[证据](../verification/2026-09-24-group-moments-wallet-debug.md)。
+
+## 2026-09-24 遗漏交接补录（历史，不代替上方最新状态）
+
+以下完成记录于 2026-09-26 补回 Git；当时“未提交/未发布”仅描述原阶段，源码已随后续提交吸收，本轮未重新部署：
+
+- 续期守卫：生产安装与旧镜像回退拦截见[报告](../verification/2026-09-24-refresh-release-guards.md)、[运行手册](../runbooks/refresh-release-guards.md)。本轮补合并源码，不改变生产。
+- 业务续期兼容：旧 0.4.6 的朋友圈/钱包/资料失败调查与恢复见[故障](../verification/2026-09-24-moments-auth-incident.md)、[恢复](../verification/2026-09-24-refresh-restore.md)。后续生产版本见上方记录，不将历史镜像视为当前。
+- 在线刷新：无关房间同步/回执造成多余更新的[诊断](../verification/2026-09-24-online-room-transition-audit.md)及 2168 候选[修复](../verification/2026-09-24-online-room-refresh.md)，功能已在主线。
+- 公告/钱包/客服：2167 [交付](../verification/2026-09-24-announcement-wallet-support.md)，公告局部授权例外 ADR 已重编号为[0087](../adr/0087-public-group-announcements.md)，不扩展普通聊天加密边界。
+- 冷启动与错误撤回预览：[报告](../verification/2026-09-24-cold-start-cache.md)中的旧主目录副本已由更新实现吸收，不用旧副本覆盖主线。
+- 2166 Debug [交接](../verification/2026-09-24-feedback-2165.md)：历史装机事实与待真机项目保持原记录，不当作 2179 验收。
 
 ## 2026-09-23 Android0.4.6/2165已发布：头像缓存/统一相册/公告恢复/朋友圈视频
 

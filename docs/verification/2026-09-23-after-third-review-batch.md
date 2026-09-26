@@ -119,3 +119,11 @@
 2. business-api / worker 容器在事件前后各有一次重启记录（`Up About an hour`），若与事件时间吻合建议查 `docker logs` 与重启原因。
 3. 服务器上遗留无端口发布的 postgres 容器 `phone-wallet-restore-20260923`（复审演练容器？），请确认是否清理。
 4. 事件根因（前置中断 vs 源站重启窗口 vs 运营商路径）无日志可回溯，若再发生请第一时间保留客户端报错时间与服务器侧 `docker ps`/Caddy 日志。
+
+## 十二、iOS 0.4.6（2165）候选 IPA 交付（待企业签名）
+
+- 源头：CI ios-0353.yml run 35878445787 @ 12ded275（push 触发，2026-09-23T15:01Z，**success**）。该提交已包含手机号客户端契约层（business_phone_contracts.dart / phone_login_controller.dart 均在位，已核实）。
+- 下载：GitHub Actions artifact `ChatFlow-iOS-signed`（60,326,094 字节），因直连 GitHub 仅 ~20KB/s，改走本地 socks5 代理 + 6 线程分段并行（661 秒完成）。zip SHA256 `f10e4b509065ee082f9cf128444ce5e157d796193ee87b4c2de2c4dbc7648ded`。
+- **交付物（待企业重签）**：`docs/verification/artifacts/2026-09-22/phone-flows/ChatFlow-0.4.6-2165-unsigned.ipa`（60,703,795 字节，SHA256 `83cc254274521cf896ea06447a0ed3dc42c3378ede48d0c2f6723383ac7a9164`）。
+- 核验：Bundle ID `com.liuhetong.liuhetongMobile`、**0.4.6 / 2165**、MinimumOSVersion 16.0、UIBackgroundModes 保留、17 个 Framework（WebRTC/SQLCipher/OpenSSL 等通话与加密组件齐全）、embedded.mobileprovision 在位（CI 签名候选，可重签）。
+- **未验证**：真机安装与通话（待企业签名→回传→分发后进行）；本环境为 Windows，无法本地构建 iOS，构建由 macOS CI 完成。

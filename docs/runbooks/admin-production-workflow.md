@@ -17,6 +17,8 @@
 
 ## 生产
 
+business-api/business-worker发布和回退必须遵循[续期协议门禁](refresh-release-guards.md)：验证最终镜像、绑定实际Compose配置，禁止回退至缺少已发布客户端续期协议的镜像。健康接口200不能代替协议验收。
+
 读docs/runbooks/app-release-deployment.md及对应发布runbook；确认当前镜像、Compose层、schema和源文件差异。基于当前镜像作最小覆盖，禁止从整个脏工作区重新构建并覆盖其他任务。
 
 明确manifest及SHA256；服务器敏感快照留0700目录，数据库备份留服务器。先隔离恢复、候选与回退配置比对、需要的迁移及真实PG并发验证。开启功能前核对迁移真实head/表及候选digest，不仅依赖文件存在。仅重建清单内服务。

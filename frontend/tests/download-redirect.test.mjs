@@ -5,7 +5,10 @@ import {downloadDestination, startDownload} from '../src/download-redirect.js';
 const ios = {userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X)', platform: 'iPhone'};
 const android = {userAgent: 'Mozilla/5.0 (Linux; Android 14)', platform: 'Linux armv8l'};
 test('legacy bridge routes iPhone to OTA and Android to its existing APK', () => {
-  assert.match(downloadDestination('?install=1', ios), /^itms-services:\/\/.*manifest\.plist/);
+  const destination = downloadDestination('?install=1', ios);
+  assert.match(destination, /^itms-services:\/\/.*manifest\.plist$/);
+  // itms url= 内带查询串（?v=）会让部分 iOS 点击安装静默失败（无任何反应）。
+  assert.doesNotMatch(destination, /manifest\.plist\?/);
   assert.equal(downloadDestination('?install=1', android), '/downloads/latest-arm64.apk');
 });
 test('iPad desktop UA uses OTA, desktop and unknown browsers stay on choices', () => {
