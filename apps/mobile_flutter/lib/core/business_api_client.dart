@@ -1,4 +1,4 @@
-import 'package:crypto/crypto.dart' show sha256;
+import 'package:crypto/crypto.dart' show sha256, Hmac;
 import 'dart:convert';
 import 'business_phone_contracts.dart' as phone_contracts;
 import 'dart:async';
@@ -88,6 +88,21 @@ final class BusinessApiClient
     if (account == null || account.isEmpty) return null;
     return sha256.convert(utf8.encode('$baseUri|$account')).toString();
   }, store: const PreferencesSupportIdentitySnapshotStore());
+
+  /// Salted local-only namespace; never included in telemetry or HTTP headers.
+  Future<String?> diagnosticSpoolScope() async {
+    final epoch = _sessionEpoch;
+    final session = await sessionStore.session();
+    final account = session?.matrixUserId;
+    if (account == null || account.isEmpty || epoch != _sessionEpoch) {
+      return null;
+    }
+    final salt = await sessionStore.diagnosticSalt();
+    if (epoch != _sessionEpoch) return null;
+    return Hmac(sha256, utf8.encode(salt))
+        .convert(utf8.encode('$baseUri|$account'))
+        .toString();
+  }
 
   /// Best-effort metadata transport, deliberately outside _authorized/_decode.
   /// 401/429 never refresh credentials, revoke a session or recurse into logs.
@@ -2173,6 +2188,23 @@ final class BusinessApiClient
     String? expectedWalletScope,
     String? expectedPaymentScope,
   }) async {
+    final diagnostics = ChatDiagnostics.instance;
+    final diagnosticGeneration = diagnostics.sessionGeneration;
+    final requestEpoch = _sessionEpoch;
+    final watch = Stopwatch()..start();
+    void networkDiagnostic(ChatDiagnosticError error, {int? status}) {
+      if (!identical(ChatDiagnostics.instance, diagnostics) ||
+          requestEpoch != _sessionEpoch ||
+          diagnostics.sessionGeneration != diagnosticGeneration) {
+        return;
+      }
+      diagnostics.record(
+          stage: ChatDiagnosticStage.networkRequest,
+          error: error,
+          elapsed: watch.elapsed,
+          status: status);
+    }
+
     final performanceScope = _client.beginLogicalRequest();
     Object? failure;
     Future<http.Response> attempt(Map<String, String> headers) =>
@@ -2211,6 +2243,9 @@ final class BusinessApiClient
       if (response.statusCode >= 400) {
         _logRequest('HTTP ${response.statusCode}');
       }
+      if (response.statusCode == 401) {
+        networkDiagnostic(ChatDiagnosticError.rejected, status: 401);
+      }
       await _checkReplacement(response, epoch);
       if (response.statusCode != 401 || initial == null) {
         if (expectedPaymentScope != null) {
@@ -2246,6 +2281,13 @@ final class BusinessApiClient
       return retried;
     } catch (error) {
       failure = error;
+      if (error is TimeoutException) {
+        networkDiagnostic(ChatDiagnosticError.timeout);
+      } else if (error is SocketException ||
+          error is HandshakeException ||
+          error is http.ClientException) {
+        networkDiagnostic(ChatDiagnosticError.network);
+      }
       rethrow;
     } finally {
       performanceScope?.finish(failure: failure);

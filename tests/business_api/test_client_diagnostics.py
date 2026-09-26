@@ -43,6 +43,38 @@ def payload():
          'elapsed_ms': 5000, 'count': 1, 'status': None}]}
 
 
+@pytest.mark.parametrize(('error', 'status'), [
+    ('timeout', None), ('network', None), ('rejected', 401),
+])
+def test_network_failure_diagnostics_closed_metadata(endpoint, capsys, error, status):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='network_request', error=error,
+                             status=status, elapsed_ms=1250)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    assert logged['events'] == data['events']
+    assert 'private-user-sentinel' not in json.dumps(logged)
+    assert headers['Authorization'] not in json.dumps(logged)
+
+
+@pytest.mark.parametrize('extra', [
+    {'url': 'PRIVATE_NETWORK_SENTINEL'},
+    {'exception': 'PRIVATE_NETWORK_SENTINEL'},
+    {'token': 'PRIVATE_NETWORK_SENTINEL'},
+    {'user_id': 'PRIVATE_NETWORK_SENTINEL'},
+])
+def test_network_failure_diagnostics_reject_free_text(endpoint, capsys, extra):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='network_request', **extra)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert 'PRIVATE_NETWORK_SENTINEL' not in response.text
+    assert capsys.readouterr().out == ''
+
+
 def frame_summary():
     return {'frame_count': 100, 'slow_frame_count': 7,
             'slow_build_count': 4, 'slow_raster_count': 5}

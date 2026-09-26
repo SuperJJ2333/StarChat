@@ -19999,6 +19999,7 @@
                             "dateLocate",
                             "scrollAnchor",
                             "framework",
+                            "network_request",
                             "pending_write_failed",
                             "request_uncertain",
                             "result_write_failed",

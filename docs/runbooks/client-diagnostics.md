@@ -16,7 +16,7 @@ ChatDiagnostics.instance.startSession(
 
 既有 `events` 只传 `ChatDiagnosticStage` / `ChatDiagnosticError` 枚举、耗时、计数与可选 HTTP 状态。操作UUID由收集器随机生成；不接受任意异常、堆栈、message/room/user ID、搜索词、正文、token、密钥或媒体。既有事件通道中普通成功操作不采集；帧预算聚合会计入正常前台帧作为分母；`slow` 小于250ms丢弃。调用方不得通过填入数字字段或UUID编码私密数据。版本仅数字 semver 加可选 `+build`，非法版本停用采集，不原样上传。
 
-既有 `events` 同 `(stage,error,status,retry_count,lifecycle)` 聚合。内存上限100条、每批最多20条、两次启动上传至少60秒。聚合 count 封顶1,000,000，elapsed_ms封顶3,600,000；超限新类别丢弃，不持久化。错误退避1/2/4/8/15分钟并保持15分钟上限。失败本身不递归记录。高频异常只更新固定大小的字典，不触发逐条JSON序列化或IO。
+既有 `events` 同 `(stage,error,status,retry_count,lifecycle)` 聚合。内存上限100条、每批最多20条、两次启动上传至少60秒。聚合 count 封顶1,000,000，elapsed_ms封顶3,600,000；超限新类别丢弃；本轮增加的有界持久化规则见下方网络诊断补强。错误退避1/2/4/8/15分钟并保持15分钟上限。失败本身不递归记录。高频异常只更新固定大小的字典，不触发逐条JSON序列化或IO。
 
 `BusinessApiClient.uploadChatDiagnostics` 使用独立 `dart:io HttpClient`、既有会话内存读出的 Bearer 凭据、5秒总截止时间。停止/截止均 `close(force: true)`，不是仅 Future.timeout。该方法不调用 `_authorized` / `_decode`，401/429/失败不刷新token、不登出、不操作网络离线状态。禁止重定向，响应仅看状态，不缓存或读取任意响应正文。TLS使用系统默认验证。
 
@@ -35,7 +35,7 @@ ChatDiagnostics.instance.startSession(
 | frames.slow_frame_count | build 或 raster 超出该帧刷新预算的帧数，两者同时超时只计一次 |
 | frames.slow_build_count / slow_raster_count | 各阶段超预算帧数，严格整数0–1,000,000 |
 | events.operation_id | 随机UUID v4（客户端内部生成） |
-| events.stage | sendAdmission / matrixSend / historyLoad / historySearch / dateMonth / dateLocate / scrollAnchor / framework，以及既有刷新恢复闭合枚举（见 OpenAPI） |
+| events.stage | sendAdmission / matrixSend / historyLoad / historySearch / dateMonth / dateLocate / scrollAnchor / framework / network_request，以及既有刷新恢复闭合枚举（见 OpenAPI） |
 | events.error | slow / network / timeout / rejected / cancelled / incomplete / unknown / recovered |
 | events.elapsed_ms | 严格整数0–3,600,000 |
 | events.count | 严格整数1–1,000,000 |
@@ -120,3 +120,19 @@ ChatDiagnostics.instance.startSession(
 | `media` | 复用既有 Media Platform 的计数及 P50/P95/P99/MAX 耗时摘要。 |
 
 `create_app` 注入 `session_factory` 而未创建 engine 的测试/嵌入场景返回 `database.supported=false`，其查询、慢查询和池字段均为 `null`；接口不为了填充指标临时连接数据库。快照仅代表当前 worker 的滚动内存窗口，不是跨 worker 或跨重启汇总。服务端不接受任何查询参数作为筛选标签，也不返回用户、房间、IP、令牌、完整 URL、SQL 或参数值。最近请求窗口只在进程内保存，不能跨账号持久关联；`operation_id` 仅用于与客户端同一次操作的诊断记录人工对照，不能作为业务或审计身份。
+
+## 2026-09-26 网络失败、暂存与 Release 策略
+
+认证后的 Release 原本已建立 ChatDiagnosticsScope；本轮明确保留该上报入口，并把公共授权业务请求的真实 TimeoutException、SocketException、HandshakeException、http.ClientException 与 401 计入 network_request 闭合阶段。复用 error=timeout/network/rejected，记录逻辑请求实测耗时和可选状态，不上传异常消息、URL/query、IP、token或身份。异步前捕获诊断 instance/generation 及业务 sessionEpoch，晚到的旧会话失败不进入新会话。
+
+未认证的登录/注册不会产生账号上报；其既有 LoginStageDiagnostics/refresh 专项记录保持原职责，不能把这里的授权请求事件说成覆盖所有匿名登录请求。诊断传输失败也不递归产生 network_request。上传仍是独立客户端，401不触发刷新、登出或业务重试。
+
+可选 SharedPreferencesChatDiagnosticSpoolStore 存储只接收收集器输出的闭合元数据。载荷上限64KiB、队列100、TTL24小时；schema/UUID/数值和帧一致性必须通过检查，损坏、超大、过期数据不能作为真实测量补零上传。暂存的scope来自现有账号诊断随机salt的本地HMAC，只用于核对拥有者，不在上报JSON或HTTP头中；原账号/原地址不保存在载荷中。同账号在既有salt有效时可恢复待报记录，不同账号/服务scope恢复时丢弃不匹配的旧载荷。既有Matrix身份清理会删除salt；本轮不更改登录或E2EE身份清理政策。
+
+record仍为同步近O(1)，只修改有界内存并安排一次尾随任务；编码和磁盘操作在有界批处理任务中进行。暂存最多一个I/O、一个尾随快照和一个最新恢复请求；恢复先合并旧记录，再写新快照，不能用空队列覆盖旧待报数据。上传202只减去发送快照，保留期间新增事件；401/离线/超时保留并按既有60秒节拍/1至15分钟退避补报。尽力上报可能因响应丢失重复，不承诺exactly-once。成功清空队列后重新开始的失败记录使用新的TTL。
+
+422兼容继续先停用旧服务端未知的operations/frames扩展；新network_request阶段不支持时只隔离该阶段并保留legacy事件，不无条件丢整批。生产接收端应先同步白名单。记录/大小/抽样/退避均不改变业务结果。
+
+FrameTiming仅由现有PerformanceMetrics采集器提供，scope复用其listener。正常Release的PerformanceMetrics仍关闭；profile或显式diagnostic build保留帧测量。没有实测帧数据时操作frame_attribution_complete=false、慢帧字段缺省，不能把它报告为0。无需增加第二个FrameTiming采集器。
+
+新源码的客户端行为只在后续从本源码构建的包生效；本轮没有自动改动已安装2179或正式APK/IPA。TCP持续观测的安装与语义见[Netmon TCP](netmon-tcp-probe.md)，完整状态见[任务](../workflow/tasks/2026-09-26-netmon-tcp-diagnostics.md)。

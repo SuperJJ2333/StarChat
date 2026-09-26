@@ -10,6 +10,7 @@ import 'app_home.dart';
 import 'core/app_config.dart';
 import 'core/chat_diagnostics.dart';
 import 'core/chat_diagnostics_scope.dart';
+import 'core/chat_diagnostics_spool_store.dart';
 import 'core/business_api_client.dart';
 import 'core/performance_metrics.dart';
 import 'core/performance_trace.dart';
@@ -63,6 +64,8 @@ Future<void> main() async {
     await SharedPreferences.getInstance(),
   ));
   await voiceAutoPlayPreferences.load();
+  final diagnosticsSpool = SharedPreferencesChatDiagnosticSpoolStore(
+      await SharedPreferences.getInstance());
   final store = SecureSessionStore();
   final installationReconciler = InstallationReconciler(
     marker: SharedPreferencesInstallationMarker(
@@ -216,6 +219,8 @@ Future<void> main() async {
             _ => ChatDiagnosticPlatform.other,
           },
           upload: api.uploadChatDiagnostics,
+          spool: diagnosticsSpool,
+          spoolScope: api.diagnosticSpoolScope,
           child: AppHome(
             api: api,
             matrix: matrix,

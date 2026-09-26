@@ -19,7 +19,7 @@ class DiagnosticEvent(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     operation_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
     stage: Literal['sendAdmission', 'matrixSend', 'historyLoad', 'historySearch',
-                   'dateMonth', 'dateLocate', 'scrollAnchor', 'framework',
+                   'dateMonth', 'dateLocate', 'scrollAnchor', 'framework', 'network_request',
                    'pending_write_failed', 'request_uncertain', 'result_write_failed',
                    'retry_recovered', 'terminal_invalidated', 'result_superseded']
     error: Literal['slow', 'network', 'timeout', 'rejected', 'cancelled', 'incomplete', 'unknown', 'recovered']

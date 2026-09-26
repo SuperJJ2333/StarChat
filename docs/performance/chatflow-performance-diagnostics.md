@@ -124,3 +124,11 @@ matrix_state=connecting
 Trace API 不接受任意 Map/string 标签。Operation、stage、错误、缓存、媒体类别、HTTP 类别、数据库操作和协议均为封闭枚举；数值字段有边界。操作 ID 为每次操作生成的随机 UUID v4，绝不由 room/user/event/txid 推导。既有视频封面短指纹使用实例内随机盐，不能跨实例长期关联。账号切换清空本地指标、待发诊断和未完成 trace。上传服务端严格拒绝额外字段，日志只收验证后的白名单。业务审计用的 `X-Trace-Id` 不接收性能 ID；进程内性能请求窗口有界且不存用户身份。消息/搜索词/姓名/电话/邮箱、用户/Matrix/房间/事件原始 ID、token、完整 URL/query、媒体 URI/路径/内容、IP、SDP/ICE candidate/TURN 凭据和 E2EE 密钥均不进入本诊断模型；相关旧调试日志已在本次触及路径脱敏。
 
 当前 HTTP/Matrix SDK 未提供可信 DNS/TCP/TLS/TTFB 分段；媒体缓存的 `decrypt()` 回调同时覆盖下载和解密，生产路径没有独立 `download_ms`、`decrypt_ms` 或图片 `decode_ms` 标记，只能报告缓存/调度排队与合并加载总时长，不能凭这条记录独断 CDN。SDK `sendFileEvent` 合并媒体上传与事件发送，因此只能量其合并时段，不能把它拆成虚构 `upload_ms`/`send_event_ms`。封面 loader 内部是否网络命中不可直接得知，因此 `server_poster` 仅是来源，不填虚构下载/解码时长。WebRTC 没有真实首包回调时 `media_first_packet_ms` 不产生。Matrix SDK 本地库的锁等待与单条 SQL 时间当前不可读，timeline 总耗时不可当作纯 DB 时间；服务端连接池等待同样 unsupported。搜索当前主要查询本机内存索引，没有真实数据库或远程查询就不填对应阶段或历史范围。已有缓存的联系人/钱包首屏 trace 可以先完成，之后后台刷新为新操作，不把远程等待合并进首屏耗时。pending conversation 在用户停留、且后台房间仲裁尚未终结时仍是 active trace，本地已完成记录在成功或退出后出现。没有真机/弱网/跨境通话实测或生产启用证据；诊断结论需要用真实记录复核。
+
+### 2026-09-26 TCP观测与失败补报增量
+
+上段的HTTP阶段限制继续有效；新[netmon探针](../runbooks/netmon-tcp-probe.md)在源站与一个大陆ECS每分钟分别做3次到源站443的真实TCP connect测量，记录成功率和成功建连耗时，失败时TCP耗时为null。这是两个观察点的主动探测，不能写入某次客户端请求的TCP阶段，也不测DNS/TLS/HTTP。源站对自身公网IP主要验证本地监听/路径；国内ECS仅代表该路径，不是全国运营商可达率。
+
+公共授权Business API请求的Timeout/socket/TLS/client exception与401进入既有ChatDiagnostics的network_request闭合阶段。认证Release继续开启该诊断上报；PerformanceMetrics仍按profile或diagnostic开关采集帧，正常Release没有真实帧样本时保留unknown/incomplete。失败上传在本地以64KiB/100条/24小时有界暂存，恢复后按既有节拍/退避补报，401不触发诊断通道的token refresh、登出或业务重发。所有payload仍只允许闭合元数据；本地账号盐HMAC拥有者标记不上传。
+
+本增量的API接收端已上线并通过健康门禁，两处TCP定时探针已验收。客户端源码仍需后续新包：已安装2179/正式APK/IPA没有被本轮替换。认证前登录和Matrix SDK直连请求不属于此次_authorized hook的全部覆盖范围；SharedPreferences有尾随写入/崩溃窗口，补报不保证exactly-once。实测与完整状态见[本轮任务](../workflow/tasks/2026-09-26-netmon-tcp-diagnostics.md)，补报协议见[运行手册](../runbooks/client-diagnostics.md)。

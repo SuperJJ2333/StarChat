@@ -7,6 +7,71 @@ import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 
 void main() {
+  testWidgets('profile scope reuses metrics frame collector exactly once',
+      (tester) async {
+    var now = DateTime(2026);
+    final diagnostics = ChatDiagnostics(now: () => now);
+    final metrics = PerformanceMetrics(enabled: true);
+    final batches = <ChatDiagnosticBatch>[];
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(ChatDiagnosticsScope(
+        sessionEpoch: 1,
+        version: '1.2.3',
+        platform: ChatDiagnosticPlatform.android,
+        diagnostics: diagnostics,
+        performanceMetrics: metrics,
+        upload: (b, _) async {
+          batches.add(b);
+          return 202;
+        },
+        child: const SizedBox()));
+    metrics.recordFrameTimingBatch([
+      FrameTiming(
+          vsyncStart: 0,
+          buildStart: 1000,
+          buildFinish: 21000,
+          rasterStart: 21000,
+          rasterFinish: 22000,
+          rasterFinishWallTime: 22000)
+    ], budgetUs: 16667, reportedAtUs: 22000);
+    now = now.add(const Duration(minutes: 1));
+    await diagnostics.flush();
+    expect(batches, hasLength(1));
+    expect((batches.single.toJson()['frames'] as Map)['frame_count'], 1);
+    expect(metrics.frameCounts.total, 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets(
+      'release policy uploads metadata when local frame metrics are disabled',
+      (tester) async {
+    var now = DateTime(2026);
+    final d = ChatDiagnostics(now: () => now);
+    final batches = <ChatDiagnosticBatch>[];
+    final metrics = PerformanceMetrics(enabled: false);
+    final scope = ChatDiagnosticsScope(
+        sessionEpoch: 1,
+        version: '1.2.3',
+        platform: ChatDiagnosticPlatform.android,
+        diagnostics: d,
+        performanceMetrics: metrics,
+        upload: (b, _) async {
+          batches.add(b);
+          return 202;
+        },
+        child: const SizedBox());
+    await tester.pumpWidget(scope);
+    expect(d.isActive, true);
+    expect(scope.collectsFrames, false);
+    d.record(
+        stage: ChatDiagnosticStage.networkRequest,
+        error: ChatDiagnosticError.timeout);
+    now = now.add(const Duration(minutes: 1));
+    await d.flush();
+    expect(batches, hasLength(1));
+    expect(batches.single.toJson().containsKey('frames'), false);
+    expect((metrics.snapshot()['operations'] as Map), isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('scope tracks foreground, background and resume lifecycle',
       (tester) async {
     final recorder = PerformanceTraceRecorder.instance;
@@ -39,6 +104,7 @@ void main() {
     var now = DateTime(2026);
     final diagnostics = ChatDiagnostics(now: () => now);
     final batches = <ChatDiagnosticBatch>[];
+    final metrics = PerformanceMetrics(enabled: true);
     tester.view.display.refreshRate = 120;
     addTearDown(tester.view.display.resetRefreshRate);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -46,6 +112,7 @@ void main() {
       sessionEpoch: 1,
       version: '1.2.3',
       platform: ChatDiagnosticPlatform.android,
+      performanceMetrics: metrics,
       diagnostics: diagnostics,
       upload: (batch, _) async {
         batches.add(batch);
@@ -61,13 +128,13 @@ void main() {
           rasterFinish: 100000 + raster,
           rasterFinishWallTime: 100000 + raster,
         );
-    tester.binding.platformDispatcher.onReportTimings!([
+    metrics.recordFrameTimingBatch([
       frame(9000, 1000),
       frame(1000, 9000),
       frame(1000, 1000),
-    ]);
+    ], budgetUs: 8333);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.platformDispatcher.onReportTimings!([frame(20000, 20000)]);
+    metrics.recordFrameTimingBatch([frame(20000, 20000)], budgetUs: 8333);
     now = now.add(const Duration(minutes: 1));
     await diagnostics.flush();
     expect(batches.single.toJson()['frames'], {

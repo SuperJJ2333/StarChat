@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/testing.dart';
+import 'package:http/http.dart' as http;
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
@@ -45,6 +47,134 @@ ChatDiagnosticBatch batch() {
 }
 
 void main() {
+  for (final error in [
+    TimeoutException('private'),
+    const SocketException('private')
+  ]) {
+    test('release metadata observes ${error.runtimeType} without payloads',
+        () async {
+      final original = ChatDiagnostics.instance;
+      final diagnostics = ChatDiagnostics();
+      ChatDiagnostics.instance = diagnostics;
+      addTearDown(() {
+        diagnostics.stopSession();
+        ChatDiagnostics.instance = original;
+      });
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 202);
+      final api = BusinessApiClient(
+          baseUri: Uri.parse('https://private.example'),
+          sessionStore: SecureSessionStore(_MemoryStore()),
+          performanceRecorder: PerformanceTraceRecorder(
+              metrics: PerformanceMetrics(enabled: false)),
+          client: MockClient((_) async => throw error));
+      await expectLater(api.getJson('/wallet/private'), throwsA(same(error)));
+      expect(diagnostics.pendingCount, 1);
+    });
+  }
+  test('late network failure cannot contaminate a newer diagnostics session',
+      () async {
+    final original = ChatDiagnostics.instance;
+    final d = ChatDiagnostics();
+    ChatDiagnostics.instance = d;
+    addTearDown(() {
+      d.stopSession();
+      ChatDiagnostics.instance = original;
+    });
+    void start() => d.startSession(
+        version: '1.2.3',
+        platform: ChatDiagnosticPlatform.android,
+        upload: (_, __) async => 202);
+    start();
+    final entered = Completer<void>();
+    final pending = Completer<http.Response>();
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://private.example'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        performanceRecorder: PerformanceTraceRecorder(
+            metrics: PerformanceMetrics(enabled: false)),
+        client: MockClient((_) {
+          entered.complete();
+          return pending.future;
+        }));
+    final request = api.getJson('/private');
+    final result = expectLater(request, throwsA(isA<SocketException>()));
+    await entered.future;
+    start();
+    pending.completeError(const SocketException('private'));
+    await result;
+    expect(d.pendingCount, 0);
+  });
+  test(
+      'singleton replacement rejects a late request even when former recorder remains active',
+      () async {
+    final original = ChatDiagnostics.instance;
+    final old = ChatDiagnostics(), fresh = ChatDiagnostics();
+    addTearDown(() {
+      old.stopSession();
+      fresh.stopSession();
+      ChatDiagnostics.instance = original;
+    });
+    for (final d in [old, fresh]) {
+      d.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 202);
+    }
+    ChatDiagnostics.instance = old;
+    final entered = Completer<void>(), pending = Completer<http.Response>();
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://private.example'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        performanceRecorder: PerformanceTraceRecorder(
+            metrics: PerformanceMetrics(enabled: false)),
+        client: MockClient((_) {
+          entered.complete();
+          return pending.future;
+        }));
+    final request = api.getJson('/private');
+    final result = expectLater(request, throwsA(isA<SocketException>()));
+    await entered.future;
+    ChatDiagnostics.instance = fresh;
+    pending.completeError(const SocketException('private'));
+    await result;
+    expect(old.pendingCount, 0);
+    expect(fresh.pendingCount, 0);
+  });
+  test('real 401 is recorded without changing existing authentication policy',
+      () async {
+    final original = ChatDiagnostics.instance;
+    var now = DateTime(2026);
+    final d = ChatDiagnostics(now: () => now);
+    ChatDiagnostics.instance = d;
+    addTearDown(() {
+      d.stopSession();
+      ChatDiagnostics.instance = original;
+    });
+    final batches = <ChatDiagnosticBatch>[];
+    d.startSession(
+        version: '1.2.3',
+        platform: ChatDiagnosticPlatform.android,
+        upload: (b, _) async {
+          batches.add(b);
+          return 202;
+        });
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://private.example'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        performanceRecorder: PerformanceTraceRecorder(
+            metrics: PerformanceMetrics(enabled: false)),
+        client: MockClient((_) async => http.Response('{}', 401)));
+    await expectLater(api.getJson('/private'), throwsA(isA<Exception>()));
+    now = now.add(const Duration(minutes: 1));
+    await d.flush();
+    final event = (batches.single.toJson()['events'] as List).single as Map;
+    expect(event['stage'], 'network_request');
+    expect(event['error'], 'rejected');
+    expect(event['status'], 401);
+  });
   for (final status in [202, 401, 429]) {
     test('dedicated transport $status does not refresh or invalidate session',
         () async {

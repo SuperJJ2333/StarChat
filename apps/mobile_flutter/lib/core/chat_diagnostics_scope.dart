@@ -1,6 +1,5 @@
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'chat_diagnostics.dart';
 import 'performance_metrics.dart';
@@ -17,13 +16,19 @@ final class ChatDiagnosticsScope extends StatefulWidget {
       required this.upload,
       required this.child,
       this.diagnostics,
-      this.performanceMetrics});
+      this.performanceMetrics,
+      this.spool,
+      this.spoolScope});
   final int sessionEpoch;
   final String version;
   final ChatDiagnosticPlatform platform;
   final ChatDiagnosticUploader upload;
   final ChatDiagnostics? diagnostics;
   final PerformanceMetrics? performanceMetrics;
+  final ChatDiagnosticSpoolStore? spool;
+  final Future<String?> Function()? spoolScope;
+  bool get collectsFrames =>
+      (performanceMetrics ?? PerformanceMetrics.instance).enabled;
   final Widget child;
   @override
   State<ChatDiagnosticsScope> createState() => _ChatDiagnosticsScopeState();
@@ -33,12 +38,15 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
     with WidgetsBindingObserver {
   late ChatDiagnostics _diagnostics;
   int _generation = -1;
+  late PerformanceMetrics _metrics;
   void _start() {
     _diagnostics = widget.diagnostics ?? ChatDiagnostics.instance;
     _diagnostics.startSession(
         version: widget.version,
         platform: widget.platform,
-        upload: widget.upload);
+        upload: widget.upload,
+        store: widget.spool,
+        spoolScope: widget.spoolScope);
     _generation = _diagnostics.sessionGeneration;
     PerformanceTraceRecorder.instance.lifecycle =
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed
@@ -50,7 +58,7 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
     if (_diagnostics.sessionGeneration == _generation) {
       _diagnostics.stopSession();
       PerformanceTraceRecorder.instance.clear();
-      (widget.performanceMetrics ?? PerformanceMetrics.instance).reset();
+      _metrics.reset();
       PerformanceTraceRecorder.instance.lifecycle =
           PerformanceLifecycle.unknown;
     }
@@ -61,7 +69,8 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
     super.initState();
     _start();
     WidgetsBinding.instance.addObserver(this);
-    SchedulerBinding.instance.addTimingsCallback(_timings);
+    _metrics = widget.performanceMetrics ?? PerformanceMetrics.instance;
+    if (widget.collectsFrames) _metrics.addFrameTimingListener(_timings);
   }
 
   @override
@@ -84,20 +93,21 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
   void didUpdateWidget(covariant ChatDiagnosticsScope oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sessionEpoch != widget.sessionEpoch ||
-        oldWidget.diagnostics != widget.diagnostics) {
+        oldWidget.diagnostics != widget.diagnostics ||
+        oldWidget.spool != widget.spool ||
+        oldWidget.performanceMetrics != widget.performanceMetrics) {
+      _metrics.removeFrameTimingListener(_timings);
       _stop();
+      _metrics = widget.performanceMetrics ?? PerformanceMetrics.instance;
       _start();
+      if (widget.collectsFrames) _metrics.addFrameTimingListener(_timings);
     }
   }
 
-  void _timings(List<FrameTiming> timings) {
+  void _timings(List<FrameTiming> timings, int budgetUs, bool clockValid) {
     if (_diagnostics.sessionGeneration != _generation) return;
     final foreground =
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    final refreshRate = View.maybeOf(context)?.display.refreshRate ?? 60;
-    final budgetUs =
-        (1000000 / (refreshRate.isFinite && refreshRate > 0 ? refreshRate : 60))
-            .round();
     var maximum = Duration.zero;
     var count = 0;
     for (final frame in timings) {
@@ -123,7 +133,7 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    SchedulerBinding.instance.removeTimingsCallback(_timings);
+    _metrics.removeFrameTimingListener(_timings);
     _stop();
     super.dispose();
   }
