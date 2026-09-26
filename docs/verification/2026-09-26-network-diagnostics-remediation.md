@@ -257,3 +257,12 @@ NETMON Linux 与阿里云 Windows 已受控安装：原443调度不变，旧SSH2
 ## 2183最终合并源码门禁（01:46:15结束）
 
 0.4.15/2183固定依赖输入（锁SHA52207159…）完整analyze No issues/exit0；Matrix最终见flutter-2183-matrix.log、exit0；全量Flutter4675 passed/9条件skip/exit0。00:52的4593通过仅属于旧2182输入，当前交付以flutter-2183-gates.json为准。账号冻结复用与三处post6f差异已经独立规格和安全核对，原生x64构建/安装仍待完成。独立签名/ELF门禁与设备内容漂移守卫保留。未部署生产、未清设备数据，视频恢复等待真实测量。
+## 2183实际交付与待测用户视频（2026-09-27 01:53）
+
+源码aef05cee97fba84c4285a19bffa3967404355787，0.4.15/2183固定依赖（SHA52207159…）。最终analyze No issues/exit0、Matrix2206 passed/9条件skip/exit0、Flutter4675 passed/9条件skip/exit0。独立审核1346冻结输入：1340完全相同，6处仅3个已审核post6f诊断/测试文件及3个版本字段文件；账号ADR/设计/计划一致，未复制清单外移动WIP。
+
+01:49:03–01:51:08原生x86_64固定身份重建18/18 exit0。最终APK135164072 bytes、SHA1984ecd8972e1244c081726499490b5cb02625cd49957dc5313a5cbf33d58db6，证书75b31c66…不变。独立源/最终各13个ELF64 LE ET_DYN machine62检查exit0。01:51:40–46先按旧0.4.15/2182及SHA44bce…核对共享设备，再--no-streaming install-r exit0，启动exit0；firstInstallTime仍2026-09-26 04:06:20，deviceAPK SHA吻合，primaryCpuAbi=x86_64。未卸载/清数据。VM读取version0.4.15/build2183/metrics enabled成功，实时采集只低频按用户操作读取，认证URI仅内存。owned Y已清理。
+
+已请求用户新选择同一无敏感短测试视频一次；当前等待其反馈，尚无2183真实视频准备/上传/发送终态，不声称视频恢复。此前2181实际失败仍是video_prepare700ms、queuewait0、native双失败、没有上传；2183对照用以分辨原生运行与ARM转译，不据此预先声称ABI根因。一般间歇TLS/TUN缺陷与这条本地失败分别保留。verify.ps1先前隔离.env缺失exit1如实保留，不将其写作通过；当前合并源码以上述真实Flutter门禁为准。未新部署生产、未GitHub推送。
+
+证据：android-debug/run-20260927-014903/artifact.json、steps.tsv、independent-x64-elf.json；device-install-2183.json、runtime-snapshot-2183-baseline.json、flutter-2183-gates.json、account-freeze-integration.json（均位于本任务artifacts目录）。后续只需在当前实时采集会话读取用户视频操作，再按真实终态继续修复或关闭业务验收。
