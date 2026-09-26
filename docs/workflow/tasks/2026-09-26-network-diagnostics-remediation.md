@@ -71,3 +71,9 @@
 ## 2182源码冻结前最终验收
 
 分类器21专项/独立规格及安全复核PASS；真实native失败优先，未知/取消/成功回退/后续进展不误归因。完整测试初次held-forward的1秒等待断言失败，focused旧版1仍通过；只将测试同步改为真实drain Future+10秒期限+必要pump，原加密/一次发送断言保留，4专项通过。最终00:38:21全量analyze/Matrix2204/full4593均exit0、9条件skip。源码待本次提交后原生x64构建；2182尚未安装，不声称视频恢复。
+
+## 2182固定依赖最终验收（2026-09-27 00:52）
+
+发现此前自动pub步骤意外升级image_picker_ios与octo_image并改写hosted URL；该中间锁文件未发布。已从6f11c603恢复原锁文件字节，SHA256为5220715970aa207f7201fbe12b428c30e3e1ef76a0cca7f4bbee3e94f588d68b。flutter pub get --offline --enforce-lockfile实际exit0，随后所有门禁使用--no-pub。
+
+原固定依赖下00:47:25–00:52:34完整复验：analyze No issues/exit0；Matrix2204 passed/9条件skip/exit0；全量4593 passed/9条件skip/exit0。flutter-2182-gates.json及同名日志为最终输入证据；此前00:38门禁保留为历史记录，不能替代这次固定依赖验收。verify.ps1的隔离.env缺失exit1仍如实保留，不导入生产秘密。下一步仅构建冻结源码的原生x86_64 2182并验实际ELF/签名、保留数据安装。

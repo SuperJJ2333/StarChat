@@ -241,3 +241,9 @@ NETMON Linux 与阿里云 Windows 已受控安装：原443调度不变，旧SSH2
 首次完整门禁唯一失败为matrix_room_media_ui_test的关闭source lease后drain断言；旧focused1仍通过，不能称稳定复现。测试原来仅等待约1秒，改为在runAsync内等待真实drain Future（10秒上限）并驱动widget续行；保留加密媒体、关闭lease后继续、一条发送和无异常断言，未改生产发送/E2EE代码。4项focused和analyze exit0，原失败日志保留flutter-2182-attempt1-*。
 
 最终00:32:32–00:38:21 HKT完整门禁：analyze No issues / exit0；Matrix2204 passed / 9条件skip / exit0；全量Flutter4593 passed / 9条件skip / exit0。verify2182仍因隔离.env缺失exit1，前三项政策/模板PASS。API/infra输入未变，复用原2956/224门禁。独立x64门禁额外验证每个.so为ELF64小端machine62，11正反例与10旧合同case exit0；最终真实APK另验ET_DYN，正式ARM门禁未改。截至本节2182尚未构建安装或声称视频恢复。
+
+## 2182固定依赖最终验收（2026-09-27 00:52）
+
+发现此前自动pub步骤意外升级image_picker_ios与octo_image并改写hosted URL；该中间锁文件未发布。已从6f11c603恢复原锁文件字节，SHA256为5220715970aa207f7201fbe12b428c30e3e1ef76a0cca7f4bbee3e94f588d68b。flutter pub get --offline --enforce-lockfile实际exit0，随后所有门禁使用--no-pub。
+
+原固定依赖下00:47:25–00:52:34完整复验：analyze No issues/exit0；Matrix2204 passed/9条件skip/exit0；全量4593 passed/9条件skip/exit0。flutter-2182-gates.json及同名日志为最终输入证据；此前00:38门禁保留为历史记录，不能替代这次固定依赖验收。verify.ps1的隔离.env缺失exit1仍如实保留，不导入生产秘密。下一步仅构建冻结源码的原生x86_64 2182并验实际ELF/签名、保留数据安装。
