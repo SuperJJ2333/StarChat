@@ -1,4 +1,59 @@
-# NETMON 源站 TCP 443 补充探测
+# NETMON 源站 TCP 443 与分层 HTTPS 观测
+
+## 2026-09-26 网络修补（已安装）
+
+以下记录用户批准的修补设计；本次已完成安装及真实调度验收，证据见本节末。前次 TCP443 安装事实见后文。本次保留原443代码、service、timer及Windows任务；新代码部署到独立目录。
+
+### 旧22有界执行
+
+`scripts/netmon_tcp_probe.py` 增加固定 `secondary_ssh22`：只允许已存在的源站观察点至 `13.229.60.153:22`，每次调用1个真实尝试、connect最多3秒。原 `--origin-ip 207.56.8.8 --observer ...` 参数、默认3尝试与origin状态schema保持兼容。次目标状态schema=2并带固定target，拒绝混用原目标历史；仍限制60个布尔结果、7个2MiB日志。失败connect时间null，完整尝试实测时间独立记录；没有SSH认证或业务可用性的含义。
+
+受控增量为 `/opt/starchat/netmon-sg.sh` 与 `/etc/systemd/system/netmon-sg.service`，timer的哈希与分钟频率不变。wrapper调用 `/opt/starchat/ops/netmon-network/netmon_tcp_probe.py`，私有新状态目录 `/var/lib/starchat-netmon-ssh/`；保留旧 `/opt/starchat/netmon-sg.log`。service增加 `TimeoutStartSec=8`，不把探针执行成功当作连接成功。网络失败仍形成typed记录并正常退出；存储/测量自身故障退出1。安装时只结束本次旧monitor的无限等待调用，不重启业务容器。
+
+### HTTPS观察模块
+
+源码 [netmon_https_probe.py](../../scripts/netmon_https_probe.py) 复用本目录TCP模块的固定观察标签、权限检查与分位数算法，不建立新平台。目标为既有域名公开Business ready和Matrix versions，各自分域名/`--resolve`固定源站两组，共4个闭集target；每分钟每组最多3次，round-robin。connect最多3秒、单请求总预算最多6秒、一轮最多30秒，预算耗尽的剩余尝试标为跳过，不能当网络失败。systemd/Task Scheduler另加35秒兜底且禁止重叠。
+
+curl使用绝对可执行路径、首参数 `--disable` 忽略全局curlrc，`--noproxy '*'`、默认TLS证书验证、真实域名/SNI，不跟随重定向、不发送认证或用户数据；不绕过TUN/NAT。DNS/TCP/TLS/首字节阶段只从本次curl的完成计时相减；固定IP组DNS=null，未完成阶段null。curl28保留 `request_timeout`，完成阶段全为0且非pinned时故障阶段unknown，不能猜DNS。401/5xx是已完成HTTP往返后的分类，不等于离线。此测量不写入APP trace。
+
+HTTPS正常日志上限16MiB/日、7日共112MiB，最新window.json另有固定小型容量。四target×三尝试/分钟的原始闭集记录无法在TCP旧2MiB日上限内覆盖24小时，因此用户批准的设计复核集中调整HTTPS容量，TCP容量保持不变。达到容量标记log_capped；未知缺测原因不能猜成网络失败。每条记录在完成时写UTC时间；window.json保留最后一轮真实预算跳过/探针故障计数。
+
+按target/observer单独汇总，读取7个有界文件、每文件最多18000行、每行最多2048字符，逐行筛选，单target最多30240样本（7日×1440分钟×3）。分位数使用这些有界真实样本的nearest-rank，不把最后60尝试冒充24h。输出各阶段分母/失败/分位数、HTTP结果、缺分钟、少尝试分钟和探针故障；连续3个完整分钟轮失败或TCP成功样本P95>1000ms只触发排查标识，不控制业务。未完成阶段及空样本分位数null。
+
+汇总窗口是UTC闭区间；完整7个自然日使用首日 `00:00:00Z` 至第七日 `23:59:59Z`，不能把第八日同一秒也包括进去（会成为10081分钟而被拒绝）。用 `--summary-start`、`--summary-end` 指定实际观察范围；上线前缺数据单列缺测，不充当失败。
+
+对象清单：源站 `/opt/starchat/ops/netmon-network/` 两个Python文件、`starchat-netmon-https.service/.timer`、`/var/lib/starchat-netmon-https/`；阿里云 `C:\ProgramData\StarChat\NetmonHttps\` 两个文件/私有state和新 `StarChat-NETMON-HTTPS` 任务。Linux代码/日志0600、私有目录0700、unit0644；Windows只SYSTEM/Administrators ACL、任务SYSTEM、PT1M、IgnoreNew、PT35S。原443脚本和任务不覆盖。
+
+### 预检、验收与回退
+
+安装前冻结原22三文件哈希/权限/timer启用状态、原443代码和调度、全部运行容器ID/镜像/启动时间与Windows原任务XML。新对象若已存在或旧对象漂移，停止覆盖。私有备份只存服务器，候选 manifest/SHA 绑定实际安装。先做Linux `systemd-analyze verify` / Windows validate-only，再执行审查清单；只动monitor。
+
+验收源站和阿里云HTTPS各两个不同分钟的真实调度、每组3次与严格TLS；旧22在当前不可达时单次3秒返回失败并有typed记录、服务不会无限等待。查看实际Linux权限/Windows ACL、原443哈希和任务不变、业务容器不变、日志轮转/容量测试。候选手动试跑与随后真实调度证据分开。
+
+回退先检查当前安装对象仍匹配候选哈希；漂移时停止。停新HTTPStimer/任务，恢复备份的旧22wrapper/service/权限与原timer启用状态，daemon-reload；保留旧/新日志。首次新增对象按归属清单移除代码/unit/任务，不递归删除未知目录。回退不改DNS、网关、数据库、APP、Matrix或TURN；回退到旧22会重新暴露旧无限等待盲区，需明确记录。
+
+### 区域覆盖与次节点前提
+
+现有观察点只有源站自测和阿里云ECS，不能宣称国内电信/联通/移动、香港或东南亚真实用户出口已覆盖。新增出口需先核对归属/线路，审查闭集observer配置，再运行同规格24h（含晚高峰）和7日；记录完整时间范围、各阶段尝试数、缺测与失败，不凭低成功延迟宣称全天稳定。
+
+13节点SSH实际用户/端口和业务角色未知；本次仅沿历史root/22入口一次有界重核，banner超时、未到认证，密钥有效性unknown。需云控制台核对实例、安全组/ACL、监听/sshd与路由，凭真实错误再修配置；无控制台权限时不得猜测或开放全部端口。尚未确认TLS、身份、Matrix/TURN前不加入客户端发送节点轮询。
+
+红绿、候选Linux/Windows手动测量、远端重新只读权限/哈希与冻结清单位于 `docs/verification/artifacts/2026-09-26/network-diagnostics-remediation/`，最终完整门禁由主任务汇总。
+
+### 本次实际验收与已知限制
+
+专项52通过exit0，红/绿及Linuxunit/WindowsXML校验有工件。运行TCP SHA `b6a640d485786c40ebc97193a77c0adb242559730082538cc39916eb2469d42c`、HTTPS SHA `898fd9092d96acbd79cc5e4abe5826f954bf412b9af374d0a33e09a238e0c74e`。
+
+| UTC / 香港时间 | 真实定时结果 |
+| --- | --- |
+| 源站10:42、10:43 / 18:42、18:43 | 四HTTPS组各3/3且TLS验证；旧22各1次有限超时，实际3003.287/3003.247ms，connect=null |
+| 阿里云10:44、10:45、10:46 / 18:44、18:45、18:46 | 四HTTPS组每分钟各3/3且TLS验证，LastTaskResult=0 |
+
+Linux旧22TimeoutStart=8s、运行后inactive，HTTPS35s；新目录0700、日志0600、候选hash/权限一致。原443代码/调度和旧22timer文件不变，安装前后27运行容器指纹一致。Windows递归包括隐藏任务的原145项definition+enabled全部不变；新task仅SYSTEM、PT1M/IgnoreNew/PT35S，所有新目录DACL保护、文件仅SYSTEM/Administrators。上述是本次monitor安装验收基线；主任务后续合法API发布不受该历史容器指纹限制。
+
+远端无pwsh7及Python COM包，生产部署/回退使用Python标准库直接调用系统schtasks.exe，根SSH从pwsh7发起；未安装新依赖、未改全机PATH。首次注册因Task Scheduler导出将UTC换成同瞬时+08:00并省略三个schema默认值，严格语义检查失败；automaticrollback的漂移guard停止，没有删除未知对象。按独立评审通过的UTC/default规范化（显式disabled/SID/参数/频率仍拒绝）复核候选hash、原145任务和自有task后，只升级私有backup helper/manifest并完成验收，未删除重建该健康task。此过程不是成功回退演练。
+
+私有备份：源站 `/opt/starchat/releases/network-diagnostics-20260926/`，Windows `C:\ProgramData\StarChat\NetmonHttpsBackup20260926\`。运行回退前检查rollback.py SHA与manifest的rollback_code_sha256；Windows还检查windows_task_helpers.py的helpers_sha256。正常安装后的完整回退未执行。13入口仍未恢复，尚需外部控制台和真实用户/端口；24h/7d及真实运营商出口仍未取得，不以本次短窗口替代。
 
 本扩展增加两处观察点每分钟对真实源站 IP 的 TCP 443 连接成功率及实测耗时，保留原探针和业务服务。2026-09-26 已安装并取得两个不同分钟的实际定时记录，详见文末；历史结果不替代下一次实时检查。
 
