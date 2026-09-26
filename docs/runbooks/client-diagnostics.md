@@ -84,7 +84,8 @@ ChatDiagnostics.instance.startSession(
 | total_ms | 必填，严格整数 0–3,600,000 |
 | stages | 必填数组，最多64个 `{stage, elapsed_ms}`；stage 唯一，elapsed_ms 非递减且不大于 total_ms |
 | lifecycle | 必填，foreground / background / resuming / unknown |
-| slow_frame_count / slow_build_count / slow_raster_count | 必填，严格整数 0–1,000,000；`max(build,raster) ≤ slow ≤ build+raster` |
+| frame_attribution_complete | 可选严格布尔值；false表示未完成真实帧归因，必须省略三项慢帧计数；旧记录省略此标记时必须提供三项计数 |
+| slow_frame_count / slow_build_count / slow_raster_count | true或旧记录时三项均必填，严格整数 0–1,000,000；`max(build,raster) ≤ slow ≤ build+raster`；false时均不得提供 |
 | soft_kick_count / hard_restart_count | 可选，严格整数 0–1,000；仅承载本次操作期间实际观察到的 Watchdog 计数增量 |
 | sync_error_count / reconnect_count | 可选，严格整数 0–1,000；仅承载本次操作期间真实观察到的 Matrix sync 错误及重连计数增量 |
 | last_healthy_sync_age_ms | 可选，严格整数 0–3,600,000；从已记录的最近健康 sync 时刻测得，未观测到时省略，不补零 |
