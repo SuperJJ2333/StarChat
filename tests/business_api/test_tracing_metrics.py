@@ -1,5 +1,12 @@
 from uuid import uuid4
 
+import asyncio
+from fastapi import BackgroundTasks
+from sqlalchemy import text
+from app.core.config import Settings
+from app.core.database import create_engine, create_session_factory
+from starlette.concurrency import run_in_threadpool
+
 from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 import pytest
@@ -156,3 +163,143 @@ def test_recent_operation_request_buffer_is_bounded_and_rejects_raw_ids():
     assert [item["operation_id"] for item in recent] == ids[-3:]
     assert all(item["route_template"] == "/safe" for item in recent)
     assert "private-id" not in str(recent)
+
+
+def _database_app(tmp_path):
+    app = FastAPI()
+    engine = create_engine(Settings(_env_file=None, environment='test',
+        database_url=f"sqlite+pysqlite:///{tmp_path / 'request-scopes.db'}",
+        redis_url='redis://unused'))
+    app.state.engine = engine
+    install_trace_middleware(app)
+    return app, engine, create_session_factory(engine)
+
+
+@pytest.mark.asyncio
+async def test_request_database_queries_are_correlated_and_concurrent_scopes_isolated(tmp_path):
+    app, engine, sessions = _database_app(tmp_path)
+    ready = asyncio.Event()
+    count = 0
+
+    @app.get('/query/{number}')
+    async def query(number: int):
+        nonlocal count
+        count += 1
+        if count == 2:
+            ready.set()
+        await ready.wait()
+        with sessions() as session:
+            for _ in range(number):
+                session.execute(text('SELECT :private_value'), {'private_value': 'PRIVATE_SQL'})
+        return {'ok': True}
+
+    ids = [str(uuid4()), str(uuid4())]
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            responses = await asyncio.gather(*[
+                client.get(f'/query/{number}?token=PRIVATE_QUERY',
+                           headers={'X-ChatFlow-Performance-Id': operation_id})
+                for number, operation_id in zip((1, 3), ids)
+            ])
+        assert all(response.status_code == 200 for response in responses)
+        by_id = {row['operation_id']: row
+                 for row in app.state.request_latency_metrics.snapshot()['recent_operation_requests']}
+        for number, operation_id in zip((1, 3), ids):
+            database = by_id[operation_id]['database']
+            assert database['query_count'] == number
+            assert database['query_error_count'] == 0
+            assert database['query_total_ms'] >= database['query_max_ms'] >= 0
+            assert database['connection_wait_ms'] is None
+            assert database['attribution_complete'] is True
+        assert 'PRIVATE' not in str(by_id) and 'SELECT' not in str(by_id)
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sync_worker_queries_are_measured_but_background_queries_are_not(tmp_path):
+    app, engine, sessions = _database_app(tmp_path)
+
+    def do_query():
+        with sessions() as session:
+            session.execute(text('SELECT 1'))
+
+    @app.get('/sync')
+    def sync(background: BackgroundTasks):
+        do_query()
+        do_query()
+        background.add_task(do_query)
+        return {'ok': True}
+
+    @app.get('/child')
+    async def child():
+        do_query()
+        async def detached():
+            do_query()
+        await asyncio.create_task(detached())
+        return {'ok': True}
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            for path in ('/sync', '/child'):
+                assert (await client.get(path, headers={
+                    'X-ChatFlow-Performance-Id': str(uuid4())})).status_code == 200
+        recent = app.state.request_latency_metrics.snapshot()['recent_operation_requests']
+        counts = {row['route_template']: row['database']['query_count'] for row in recent}
+        assert counts == {'/sync': 2, '/child': 1}
+        # Global DB metrics continue to include every real query.
+        assert engine._chatflow_database_metrics.snapshot(engine.pool)['query_latency']['count'] == 5
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_request_and_failed_query_keep_safe_correlated_measurements(tmp_path):
+    app, engine, sessions = _database_app(tmp_path)
+
+    @app.get('/failed/{identity}')
+    async def failed(identity: str):
+        with sessions() as session:
+            session.execute(text('SELECT * FROM PRIVATE_MISSING_TABLE'))
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                               base_url='http://test') as client:
+            response = await client.get('/failed/PRIVATE_PERSON', headers={
+                'X-ChatFlow-Performance-Id': str(uuid4())})
+        assert response.status_code == 500
+        row = app.state.request_latency_metrics.snapshot()['recent_operation_requests'][0]
+        assert row['status_code'] == 500
+        assert row['route_template'] == '/failed/{identity}'
+        assert row['database']['query_count'] == row['database']['query_error_count'] == 1
+        assert 'PRIVATE' not in str(row) and 'SELECT' not in str(row)
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_async_to_worker_query_attribution_is_incomplete_instead_of_guessed(tmp_path):
+    app, engine, sessions = _database_app(tmp_path)
+
+    def do_query():
+        with sessions() as session:
+            session.execute(text('SELECT 1'))
+
+    @app.get('/async-worker')
+    async def worker():
+        await run_in_threadpool(do_query)
+        async def detached():
+            await run_in_threadpool(do_query)
+        await asyncio.create_task(detached())
+        return {'ok': True}
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            assert (await client.get('/async-worker', headers={
+                'X-ChatFlow-Performance-Id': str(uuid4())})).status_code == 200
+        row = app.state.request_latency_metrics.snapshot()['recent_operation_requests'][0]
+        assert row['database']['query_count'] == 0
+        assert row['database']['attribution_complete'] is False
+        assert engine._chatflow_database_metrics.snapshot(engine.pool)['query_latency']['count'] == 2
+    finally:
+        engine.dispose()

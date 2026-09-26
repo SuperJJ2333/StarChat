@@ -151,6 +151,72 @@ def test_staging_without_maintenance_token_fails_closed(snapshot_app):
     assert session_calls == []
 
 
+@pytest.mark.asyncio
+async def test_actual_included_health_route_retains_full_template_and_request_db(tmp_path):
+    from httpx import ASGITransport, AsyncClient
+
+    settings = Settings(_env_file=None, environment='test',
+        database_url='sqlite+pysqlite:///:memory:',
+        jwt_secret='test-included-router-secret-32bytes',
+        media_maintenance_token='SYNTHETIC_MAINTENANCE',
+        avatar_storage_root=str(tmp_path / 'private-media'))
+    app = create_app(settings)
+    operation_id = str(uuid4())
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://isolated') as client:
+            ready = await client.get('/api/v1/health/ready',
+                headers={'X-ChatFlow-Performance-Id': operation_id})
+            assert ready.status_code == 200
+            snapshot = await client.get('/api/v1/diagnostics/performance',
+                headers={'X-Media-Maintenance-Token': 'SYNTHETIC_MAINTENANCE'})
+        assert snapshot.status_code == 200
+        row = next(row for row in snapshot.json()['recent_operation_requests']
+                   if row['operation_id'] == operation_id)
+        assert row['route_template'] == '/api/v1/health/ready'
+        assert row['database']['query_count'] == 1
+        assert row['database']['attribution_complete'] is True
+    finally:
+        app.state.engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_nested_included_route_templates_are_safe_and_keep_prefixes(tmp_path):
+    from fastapi import APIRouter
+    from httpx import ASGITransport, AsyncClient
+
+    settings = Settings(_env_file=None, environment='test',
+        database_url='sqlite+pysqlite:///:memory:',
+        jwt_secret='test-nested-router-secret-32bytes',
+        media_maintenance_token='SYNTHETIC_MAINTENANCE',
+        avatar_storage_root=str(tmp_path / 'private-media'))
+    app = create_app(settings)
+    outer, inner = APIRouter(), APIRouter()
+    @inner.get('/items/{private_id}', include_in_schema=False)
+    async def private_item(private_id: str):
+        return {'ok': True}
+    outer.include_router(inner, prefix='/nested')
+    app.include_router(outer, prefix='/api/v1/safe')
+    operation_id = str(uuid4())
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://isolated') as client:
+            assert (await client.get('/api/v1/safe/nested/items/PRIVATE_ID?token=PRIVATE_QUERY',
+                headers={'X-ChatFlow-Performance-Id': operation_id})).status_code == 200
+            snapshot = await client.get('/api/v1/diagnostics/performance',
+                headers={'X-Media-Maintenance-Token': 'SYNTHETIC_MAINTENANCE'})
+        row = next(row for row in snapshot.json()['recent_operation_requests']
+                   if row['operation_id'] == operation_id)
+        assert row['route_template'] == '/api/v1/safe/nested/items/{private_id}'
+        assert 'PRIVATE_ID' not in snapshot.text and 'PRIVATE_QUERY' not in snapshot.text
+        # Invalid raw-path injection remains excluded, even after nested expansion.
+        app.state.request_latency_metrics.record('GET', '/api/v1/safe/nested/items/PRIVATE_ID', 200, 1)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://isolated') as client:
+            filtered = await client.get('/api/v1/diagnostics/performance',
+                headers={'X-Media-Maintenance-Token': 'SYNTHETIC_MAINTENANCE'})
+        assert 'PRIVATE_ID' not in filtered.text
+    finally:
+        app.state.engine.dispose()
+
+
 def test_protected_snapshot_exposes_only_safe_recent_operation_requests(snapshot_app):
     app, settings, session_calls = snapshot_app
     settings.media_maintenance_token = "private-maintenance-token"

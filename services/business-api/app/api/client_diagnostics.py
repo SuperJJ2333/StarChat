@@ -62,10 +62,10 @@ PerformanceStageWire = Literal[
     'first_frame_rendered', 'room_attach_started', 'room_attach_done', 'timeline_local_started', 'local_timeline_ready', 'remote_sync_ready', 'content_ready',
     'cache_load_started', 'cache_load_done', 'remote_refresh_started', 'remote_refresh_done', 'composer_submit',
     'outbox_persist', 'send_admission', 'matrix_send_start', 'matrix_send_finish', 'ack',
-    'timeline_visible', 'sync_response_wait_started', 'sync_response_received', 'sync_processing_done', 'sync_cleanup_done', 'queue_entered',
+    'timeline_visible', 'timeline_published', 'sync_response_wait_started', 'sync_response_received', 'sync_processing_done', 'sync_cleanup_done', 'queue_entered',
     'queue_exited', 'shared_flight_joined', 'shared_flight_done', 'download_started', 'download_done', 'decrypt_started', 'decrypt_done',
     'decode_started', 'decode_done', 'video_selected', 'video_validated', 'video_prepare_started',
-    'video_prepare_done', 'video_transcode_started', 'video_transcode_done', 'video_thumbnail_done', 'video_encrypted',
+    'video_prepare_done', 'video_transcode_started', 'video_transcode_done', 'video_thumbnail_started', 'video_thumbnail_done', 'video_encrypted',
     'video_upload_started', 'video_upload_done', 'video_event_sent', 'call_start', 'signaling_ready',
     'ice_gathering', 'ice_connected', 'media_first_packet', 'call_connected', 'matrix_connected',
     'sync_finished', 'conversation_ready', 'local_search_started',
@@ -95,7 +95,7 @@ MatrixStateWire = Literal[
 ]
 
 NetworkErrorWire = Literal[
-    'dns_failure', 'connect_timeout', 'read_timeout', 'socket_failure', 'tls_failure',
+    'dns_failure', 'connect_timeout', 'read_timeout', 'request_timeout', 'socket_failure', 'tls_failure',
     'offline', 'server5xx', 'rate_limit', 'auth_failure', 'business_rejection',
     'cancelled', 'unknown',
 ]
@@ -151,6 +151,18 @@ class PerformanceOperationStage(BaseModel):
 
 
 _PERFORMANCE_FRAME_FIELDS = ('slow_frame_count', 'slow_build_count', 'slow_raster_count')
+_SPAN_INDEX_SCHEMA = {
+    'allOf': [
+        {'if': {'required': ['attempt_index']}, 'then': {'properties': {
+            'attempt_index': {'type': 'integer'},
+            'operation': {'enum': ['video_prepare', 'message_send']},
+        }}},
+        {'if': {'required': ['window_index']}, 'then': {'properties': {
+            'window_index': {'type': 'integer'}, 'operation': {'const': 'call_active'},
+        }}},
+        {'not': {'required': ['attempt_index', 'window_index']}},
+    ],
+}
 _PERFORMANCE_FRAME_SCHEMA = {
     'oneOf': [
         {
@@ -171,22 +183,14 @@ _PERFORMANCE_FRAME_SCHEMA = {
 }
 
 
-class PerformanceOperation(BaseModel):
-    model_config = ConfigDict(extra='forbid', strict=True,
-                              json_schema_extra=_PERFORMANCE_FRAME_SCHEMA)
+class _PerformanceMetadata(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
     operation_id: str = Field(pattern=r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
     operation: OperationWire
-    result: PerformanceResultWire
-    total_ms: int = Field(ge=0, le=3600000)
     stages: list[PerformanceOperationStage] = Field(max_length=64)
     lifecycle: PerformanceLifecycleWire
-    slow_frame_count: int | None = Field(default=None, ge=0, le=1000000)
-    slow_build_count: int | None = Field(default=None, ge=0, le=1000000)
-    slow_raster_count: int | None = Field(default=None, ge=0, le=1000000)
-    frame_attribution_complete: bool | None = Field(
-        default=None,
-        description='Omit slow-frame counts when false; legacy records omit this field and include all counts.',
-    )
+    attempt_index: int | None = Field(default=None, ge=0, le=20)
+    window_index: int | None = Field(default=None, ge=0, le=1000000)
     soft_kick_count: int | None = Field(default=None, ge=0, le=1000)
     hard_restart_count: int | None = Field(default=None, ge=0, le=1000)
     sync_error_count: int | None = Field(default=None, ge=0, le=1000)
@@ -220,6 +224,45 @@ class PerformanceOperation(BaseModel):
     candidate_protocol: RelayProtocolWire | None = None
 
     @model_validator(mode='after')
+    def consistent_span_indices(self):
+        if 'attempt_index' in self.model_fields_set:
+            if self.attempt_index is None or self.operation not in ('video_prepare', 'message_send'):
+                raise ValueError('Attempt index requires a send operation')
+        if 'window_index' in self.model_fields_set:
+            if self.window_index is None or self.operation != 'call_active':
+                raise ValueError('Window index requires an active call')
+        if self.attempt_index is not None and self.window_index is not None:
+            raise ValueError('Attempt and window indices are mutually exclusive')
+        return self
+
+
+def _validate_stages(stages: list[PerformanceOperationStage], elapsed_ms: int) -> None:
+    seen = set()
+    previous_ms = -1
+    for item in stages:
+        if (item.stage in seen or item.elapsed_ms < previous_ms
+                or item.elapsed_ms > elapsed_ms):
+            raise ValueError('Inconsistent operation stages')
+        seen.add(item.stage)
+        previous_ms = item.elapsed_ms
+
+
+class PerformanceOperation(_PerformanceMetadata):
+    """Completed span. Missing kind preserves the original final protocol."""
+    model_config = ConfigDict(extra='forbid', strict=True,
+                              json_schema_extra={**_PERFORMANCE_FRAME_SCHEMA, **_SPAN_INDEX_SCHEMA})
+    observation_kind: Literal['final'] = 'final'
+    result: PerformanceResultWire
+    total_ms: int = Field(ge=0, le=3600000)
+    slow_frame_count: int | None = Field(default=None, ge=0, le=1000000)
+    slow_build_count: int | None = Field(default=None, ge=0, le=1000000)
+    slow_raster_count: int | None = Field(default=None, ge=0, le=1000000)
+    frame_attribution_complete: bool | None = Field(
+        default=None,
+        description='Omit slow-frame counts when false; legacy records omit this field and include all counts.',
+    )
+
+    @model_validator(mode='after')
     def consistent_stages_and_frames(self):
         if self.frame_attribution_complete is False:
             if any(field in self.model_fields_set for field in _PERFORMANCE_FRAME_FIELDS):
@@ -231,14 +274,22 @@ class PerformanceOperation(BaseModel):
                     <= self.slow_frame_count
                     <= self.slow_build_count + self.slow_raster_count):
                 raise ValueError('Inconsistent operation frame counts')
-        seen = set()
-        previous_ms = -1
-        for item in self.stages:
-            if (item.stage in seen or item.elapsed_ms < previous_ms
-                    or item.elapsed_ms > self.total_ms):
-                raise ValueError('Inconsistent operation stages')
-            seen.add(item.stage)
-            previous_ms = item.elapsed_ms
+        _validate_stages(self.stages, self.total_ms)
+        return self
+
+
+class PerformanceObservation(_PerformanceMetadata):
+    """Incomplete measurement; neither a duration sample nor a business result."""
+    model_config = ConfigDict(extra='forbid', strict=True, json_schema_extra=_SPAN_INDEX_SCHEMA)
+    observation_kind: Literal['checkpoint', 'expired']
+    observed_elapsed_ms: int = Field(ge=0, le=3600000)
+    frame_attribution_complete: bool = Field(json_schema_extra={'const': False})
+
+    @model_validator(mode='after')
+    def consistent_observation(self):
+        if self.frame_attribution_complete is not False:
+            raise ValueError('Incomplete observations cannot confirm frame attribution')
+        _validate_stages(self.stages, self.observed_elapsed_ms)
         return self
 
 
@@ -248,12 +299,14 @@ class DiagnosticBatch(BaseModel):
     platform: Literal['android', 'ios', 'other']
     events: list[DiagnosticEvent] = Field(default_factory=list, max_length=20)
     frames: DiagnosticFrames | None = None
-    operations: list[PerformanceOperation] = Field(default_factory=list, max_length=20)
+    operations: list[PerformanceOperation | PerformanceObservation] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode='after')
     def nonempty(self):
         if not self.events and self.frames is None and not self.operations:
             raise ValueError('Empty diagnostic batch')
+        if len(self.events) + len(self.operations) > 20:
+            raise ValueError('Diagnostic record budget exceeded')
         return self
 
 

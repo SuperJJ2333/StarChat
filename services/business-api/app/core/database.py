@@ -11,6 +11,7 @@ from sqlalchemy import Engine, create_engine as sqlalchemy_create_engine, event,
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import Settings
+from app.core.tracing import capture_request_database_scope
 
 
 SLOW_QUERY_THRESHOLD_MS = 100.0
@@ -84,14 +85,19 @@ def _install_database_metrics(engine: Engine) -> None:
 
     @event.listens_for(engine, "before_cursor_execute")
     def before_execute(conn, cursor, statement, parameters, context, executemany):
-        conn.info.setdefault(_QUERY_START_KEY, []).append(perf_counter())
+        conn.info.setdefault(_QUERY_START_KEY, []).append(
+            (perf_counter(), capture_request_database_scope(engine)))
 
-    def finish_execute(conn) -> None:
+    def finish_execute(conn, *, failed: bool = False) -> None:
         starts = conn.info.get(_QUERY_START_KEY)
         if not starts:
             return
-        started = starts.pop()
-        metrics.record_query((perf_counter() - started) * 1000.0)
+        started, request_scope = starts.pop()
+        elapsed_ms = (perf_counter() - started) * 1000.0
+        metrics.record_query(elapsed_ms)
+        if request_scope is not None:
+            request_scope.record(elapsed_ms, failed=failed,
+                                 slow=elapsed_ms >= SLOW_QUERY_THRESHOLD_MS)
 
     @event.listens_for(engine, "after_cursor_execute")
     def after_execute(conn, cursor, statement, parameters, context, executemany):
@@ -101,7 +107,7 @@ def _install_database_metrics(engine: Engine) -> None:
     def on_error(exception_context):
         connection = exception_context.connection
         if connection is not None:
-            finish_execute(connection)
+            finish_execute(connection, failed=True)
 
 
 def create_engine(settings: Settings) -> Engine:

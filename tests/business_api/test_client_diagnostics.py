@@ -294,6 +294,144 @@ def test_performance_operation_only_accepts_closed_metadata(endpoint, capsys):
     assert headers['Authorization'] not in json.dumps(logged)
 
 
+def test_generic_request_timeout_does_not_claim_connect_or_read_phase(endpoint, capsys):
+    client, _, headers = endpoint
+    data = performance_batch()
+    data['operations'][0].update(
+        operation='api_request', network_error='request_timeout',
+        result='failed', status_code=None,
+    )
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    recorded = json.loads(capsys.readouterr().out)['operations'][0]
+    assert recorded['network_error'] == 'request_timeout'
+    assert 'connect_timeout' not in json.dumps(recorded)
+    assert 'read_timeout' not in json.dumps(recorded)
+
+
+@pytest.mark.parametrize('kind', ['checkpoint', 'expired'])
+def test_incomplete_observation_is_distinct_from_finished_operation(endpoint, capsys, kind):
+    client, _, headers = endpoint
+    op = performance_operation()
+    for key in ('result', 'total_ms', 'slow_frame_count', 'slow_build_count',
+                'slow_raster_count'):
+        op.pop(key, None)
+    op.update(observation_kind=kind, observed_elapsed_ms=2200,
+              frame_attribution_complete=False)
+    data = performance_batch()
+    data['operations'] = [op]
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    recorded = json.loads(capsys.readouterr().out)['operations'][0]
+    assert recorded == op
+    assert 'result' not in recorded and 'total_ms' not in recorded
+
+
+@pytest.mark.parametrize('change', [
+    {'result': 'failed'}, {'total_ms': 2200}, {'observed_elapsed_ms': -1},
+    {'observed_elapsed_ms': True}, {'observed_elapsed_ms': 3600001},
+    {'observed_elapsed_ms': '2200'}, {'observed_idle_ms': 0},
+    {'frame_attribution_complete': True}, {'slow_frame_count': 0},
+    {'stages': [{'stage': 'user_action', 'elapsed_ms': 2201}]},
+    {'observation_kind': 'PRIVATE_SENTINEL'}, {'token': 'PRIVATE_SENTINEL'},
+])
+def test_incomplete_observation_rejects_false_completion_and_private_data(
+        endpoint, capsys, change):
+    client, _, headers = endpoint
+    op = {'operation_id': str(uuid4()), 'operation': 'video_prepare',
+          'observation_kind': 'checkpoint', 'observed_elapsed_ms': 2200,
+          'frame_attribution_complete': False, 'stages': [],
+          'lifecycle': 'foreground', **change}
+    response = client.post('/api/v1/client-diagnostics',
+                           json={'version': '0.4.10+2180', 'platform': 'android',
+                                 'operations': [op]}, headers=headers)
+    assert response.status_code == 422
+    assert 'PRIVATE_SENTINEL' not in response.text
+    assert capsys.readouterr().out == ''
+
+
+@pytest.mark.parametrize('operation,field,index', [
+    ('video_prepare', 'attempt_index', 0), ('message_send', 'attempt_index', 20),
+    ('call_active', 'window_index', 0), ('call_active', 'window_index', 1000000),
+])
+def test_attempt_and_call_windows_share_root_id_without_deduplication(
+        endpoint, capsys, operation, field, index):
+    client, _, headers = endpoint
+    op = {**performance_operation(), 'operation': operation,
+          'observation_kind': 'final', field: index}
+    data = performance_batch()
+    data['operations'] = [op, {**op, 'total_ms': 3000}]
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    assert response.json() == {'accepted': 2}
+    assert json.loads(capsys.readouterr().out)['operations'] == data['operations']
+
+
+@pytest.mark.parametrize('operation,field,index', [
+    ('video_prepare', 'attempt_index', 0), ('message_send', 'attempt_index', 20),
+    ('call_active', 'window_index', 0), ('call_active', 'window_index', 1000000),
+])
+def test_partial_attempts_and_windows_preserve_their_root_and_span_index(
+        endpoint, capsys, operation, field, index):
+    client, _, headers = endpoint
+    root_id = str(uuid4())
+    op = {'operation_id': root_id, 'operation': operation,
+          'observation_kind': 'checkpoint', field: index,
+          'observed_elapsed_ms': 1200, 'stages': [],
+          'lifecycle': 'foreground', 'frame_attribution_complete': False}
+    data = {'version': '0.4.10+2180', 'platform': 'android',
+            'operations': [op, {**op, 'observation_kind': 'expired'}]}
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    assert json.loads(capsys.readouterr().out)['operations'] == data['operations']
+
+
+@pytest.mark.parametrize('change', [
+    {'attempt_index': -1}, {'attempt_index': 21}, {'attempt_index': True},
+    {'attempt_index': '1'}, {'window_index': 1000001},
+    {'window_index': True}, {'window_index': -1},
+    {'operation': 'api_request', 'attempt_index': 1},
+    {'operation': 'message_send', 'window_index': 1},
+    {'operation': 'call_active', 'attempt_index': 1},
+    {'operation': 'call_active', 'attempt_index': 0, 'window_index': 0},
+    {'observed_elapsed_ms': 2200}, {'observation_kind': 'expired'},
+])
+def test_final_operation_rejects_invalid_span_semantics(endpoint, capsys, change):
+    client, _, headers = endpoint
+    data = performance_batch()
+    data['operations'][0].update({'operation': 'video_prepare', **change})
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert capsys.readouterr().out == ''
+
+
+def test_legacy_events_and_operations_share_twenty_record_budget(endpoint, capsys):
+    client, _, headers = endpoint
+    data = performance_batch()
+    data['events'] = [payload()['events'][0] for _ in range(20)]
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert capsys.readouterr().out == ''
+
+
+def test_observation_openapi_closes_completion_and_span_indices():
+    from app.api.client_diagnostics import DiagnosticBatch
+    jsonschema = pytest.importorskip('jsonschema')
+    validator = jsonschema.Draft202012Validator(DiagnosticBatch.model_json_schema())
+    final = performance_batch()
+    assert validator.is_valid(final)
+    final['operations'][0].update(operation='api_request', attempt_index=0)
+    assert not validator.is_valid(final)
+    checkpoint = {'version': '0.4.10+2180', 'platform': 'android', 'operations': [{
+        'operation_id': str(uuid4()), 'operation': 'call_active', 'window_index': 0,
+        'observation_kind': 'checkpoint', 'observed_elapsed_ms': 30000,
+        'stages': [], 'lifecycle': 'foreground', 'frame_attribution_complete': False,
+    }]}
+    assert validator.is_valid(checkpoint)
+    checkpoint['operations'][0]['result'] = 'failed'
+    assert not validator.is_valid(checkpoint)
+
+
 def test_performance_operation_accepts_unknown_frame_attribution(endpoint, capsys):
     client, _, headers = endpoint
     data = performance_batch()
@@ -760,3 +898,13 @@ def test_performance_accepts_twenty_small_records(endpoint, capsys):
     assert response.status_code == 202
     assert response.json() == {'accepted': 20}
     assert len(json.loads(capsys.readouterr().out)['operations']) == 20
+
+
+@pytest.mark.parametrize('stage', ['video_thumbnail_started', 'timeline_published'])
+def test_measured_video_thumbnail_and_timeline_publication_stages(endpoint, capsys, stage):
+    client, _, headers = endpoint
+    data = performance_batch()
+    data['operations'][0]['stages'] = [{'stage': stage, 'elapsed_ms': 10}]
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    assert json.loads(capsys.readouterr().out)['operations'][0]['stages'][0]['stage'] == stage
