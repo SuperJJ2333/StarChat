@@ -123,3 +123,13 @@ auth-login-six-fixes 的 03c851a5 与 performance-diagnostics 的 8d044655 不�
 ## 本轮最终验收结果
 
 infra 172 passed，21.29s，exit 0；frontend 311 passed，exit 0；Repository policy / Deployment policy exit 0。日志位于本集成树忽略目录 docs/verification/artifacts/2026-09-26/main-wip-policy-audit/。独立规格后质量安全审查：无阻断项、无真实凭证。
+
+## 已执行结果与并发边界
+
+- 补集成提交 d1c8879637de805ae270502906bd5c7b325aa32b 已普通快进推送 GitHub main，push exit 0。
+- 8 个本地 codex 分支全部删除，named 历史工作树先在原 tip detach，文件与证据保持。2 个远端 codex 分支删除成功，push exit 0。本地只保留 main，远端只保留 main；最终远端回读由本轮结尾验收日志记录。
+- 原 67 项清理前再次验证原文件及归档 SHA256。23 tracked 逐文件恢复到旧 HEAD，44 untracked 原路径副本移除；完整归档保留，没有删除唯一文件。
+- 清理时出现另一批实时新增的诊断持久化/网络错误源码与测试，涉及 chat_diagnostics_spool_store、main.dart、客户端和接收端。本次未批准其完成状态、未测试、未合并、未删除。继续写入迹象已观察到，因此原 main 工作树仍停在 b9eca8a4 且有新增 WIP，没有强制更新或宣称它干净。
+- 新增 WIP 单独快照位于原根忽略目录 docs/verification/artifacts/2026-09-26/concurrent-diagnostics-wip/，包含文件、SHA256清单与tracked.patch。它与原67归档分开，保留后续作者工作。其他历史 detached 工作树也未删除。
+- 下一可执行步骤：确认并发作者停止/隔离其工作，再以 b9eca8a4 为共同基线增量迁移该 WIP 到新 main，保留统一trace/生命周期并重新测试。不能整文件覆盖新 main，会丢已有诊断实现。用户关于是否有并发作者的澄清仍待答复。
+- 此次没有重新运行完整 verify.ps1，复用上一任务 exit 1 的真实缺配置结果与同输入独立门禁；本轮完整 infra/frontend 和独立两级审查均通过。没有生产/API/SMTP/设备写入。
