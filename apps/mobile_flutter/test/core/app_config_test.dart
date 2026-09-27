@@ -56,7 +56,7 @@ void main() {
     // 平台通道不可用时（如测试环境）保留默认值，不抛错。
     await AppConfig.loadRuntimeVersion();
     expect(AppConfig.appVersionName, isNotEmpty);
-    expect(AppConfig.appBuildNumber, 2184);
+    expect(AppConfig.appBuildNumber, AppConfig.compiledBuildNumber);
   });
 
   test('Android non-split four-digit build remains intact at runtime',
@@ -66,7 +66,8 @@ void main() {
 
   test('Android known ABI split offsets map to the compiled build', () async {
     for (final offset in [1000, 2000, 4000]) {
-      expect(await loadAndroidBuild(2184 + offset), 2184,
+      expect(await loadAndroidBuild(AppConfig.compiledBuildNumber + offset),
+          AppConfig.compiledBuildNumber,
           reason: 'ABI offset $offset');
     }
   });
@@ -99,9 +100,13 @@ void main() {
   });
 
   test('build number normalization strips only known ABI offsets', () {
-    expect(AppConfig.normalizeBuildNumber(6184), 2184, reason: 'x86_64 包');
-    expect(AppConfig.normalizeBuildNumber(4184), 2184, reason: 'arm64 包');
-    expect(AppConfig.normalizeBuildNumber(3184), 2184, reason: 'arm32 包');
+    const compiled = AppConfig.compiledBuildNumber;
+    expect(AppConfig.normalizeBuildNumber(compiled + 4000), compiled,
+        reason: 'x86_64 包');
+    expect(AppConfig.normalizeBuildNumber(compiled + 2000), compiled,
+        reason: 'arm64 包');
+    expect(AppConfig.normalizeBuildNumber(compiled + 1000), compiled,
+        reason: 'arm32 包');
     expect(AppConfig.normalizeBuildNumber(2184), 2184, reason: '普通四位包');
     expect(AppConfig.normalizeBuildNumber(3197), 3197, reason: '未知四位包');
     expect(AppConfig.normalizeBuildNumber(20), 20, reason: '旧三位内构建号');

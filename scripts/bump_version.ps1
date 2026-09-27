@@ -20,8 +20,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$OutputEncoding = [System.Text.UTF8Encoding]::new()
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 
@@ -49,30 +50,61 @@ $config = [System.IO.File]::ReadAllText($configPath)
 
 $versionLine = [regex]::Matches($pubspec, '(?m)(?<=^version:[ \t])\d+\.\d+\.\d+\+\d+(?=[ \t]*\r?$)')
 if ($versionLine.Count -ne 1) { throw 'pubspec.yaml 必须恰好声明一行 version: X.Y.Z+build' }
-$nameDecl = [regex]::Matches($config, "appVersionName[ \t]*=[ \t]*'[^']+'")
-if ($nameDecl.Count -ne 1) { throw 'app_config.dart 必须恰好声明一处 appVersionName' }
-$buildDecl = [regex]::Matches($config, 'appBuildNumber[ \t]*=[ \t]*\d+')
-if ($buildDecl.Count -ne 1) { throw 'app_config.dart 必须恰好声明一处 appBuildNumber' }
+$nameDeclarationPattern = '(?m)^[ \t]*static[ \t]+(?:const[ \t]+)?String[ \t]+appVersionName\b[^\r\n]*'
+$nameDecl = [regex]::Matches($config, $nameDeclarationPattern)
+if ($nameDecl.Count -ne 1 -or $nameDecl[0].Value -notmatch "appVersionName[ \t]*=[ \t]*'[^']+'[ \t]*;[ \t]*(?://[^\r\n]*)?$") {
+    throw 'app_config.dart 必须恰好声明一处字符串 appVersionName'
+}
+$runtimeDecl = [regex]::Matches($config, '(?m)^[ \t]*static[ \t]+(?:const[ \t]+)?int[ \t]+appBuildNumber\b[^\r\n]*')
+$compiledDecl = [regex]::Matches($config, '(?m)^[ \t]*static[ \t]+(?:const[ \t]+)?int[ \t]+compiledBuildNumber\b[^\r\n]*')
+if ($runtimeDecl.Count -ne 1) { throw 'app_config.dart 必须恰好声明一处 appBuildNumber' }
+if ($runtimeDecl[0].Value -match 'appBuildNumber[ \t]*=[ \t]*compiledBuildNumber[ \t]*;[ \t]*(?://[^\r\n]*)?$') {
+    if ($compiledDecl.Count -ne 1 -or $compiledDecl[0].Value -notmatch 'static[ \t]+const[ \t]+int[ \t]+compiledBuildNumber[ \t]*=[ \t]*\d+[ \t]*;[ \t]*(?://[^\r\n]*)?$') {
+        throw 'app_config.dart 必须恰好声明一处整数 compiledBuildNumber'
+    }
+    $buildName = 'compiledBuildNumber'
+} elseif ($runtimeDecl[0].Value -match 'appBuildNumber[ \t]*=[ \t]*\d+[ \t]*;[ \t]*(?://[^\r\n]*)?$' -and $compiledDecl.Count -eq 0) {
+    $buildName = 'appBuildNumber'
+} else {
+    throw 'app_config.dart 构建号声明格式无效或存在歧义'
+}
+$namePattern = "appVersionName[ \t]*=[ \t]*'[^']+'"
+$buildDeclarationPattern = "(?m)^[ \t]*static[ \t]+(?:const[ \t]+)?int[ \t]+$buildName\b[^\r\n]*"
+$buildPattern = "\b$buildName[ \t]*=[ \t]*\d+"
+$nameValue = [regex]::Match($nameDecl[0].Value, $namePattern).Value
+$buildValue = [regex]::Match([regex]::Match($config, $buildDeclarationPattern).Value, $buildPattern).Value
+
+function Set-DeclarationValue {
+    param([string]$Text, [string]$DeclarationPattern, [string]$ValuePattern, [string]$Replacement)
+    $declaration = [regex]::Match($Text, $DeclarationPattern)
+    $updated = [regex]::Replace($declaration.Value, $ValuePattern, $Replacement)
+    return $Text.Remove($declaration.Index, $declaration.Length).Insert($declaration.Index, $updated)
+}
 
 $changed = @()
+$configChanged = $false
+# 先验证并准备两份完整文本，避免格式异常时仅改写其中一份。
+$pubspecNew = $pubspec
 if ($versionLine[0].Value -cne $Version) {
     $pubspecNew = [regex]::Replace($pubspec, '(?m)(?<=^version:[ \t])\d+\.\d+\.\d+\+\d+(?=[ \t]*\r?$)', $Version)
     if ($pubspecNew -ceq $pubspec) { throw 'pubspec.yaml 替换失败——格式漂移？请人工检查' }
-    $pubspecEncoding = Get-TextEncoding $pubspecPath
-    [System.IO.File]::WriteAllText($pubspecPath, $pubspecNew, $pubspecEncoding)
-    $changed += 'pubspec.yaml'
 }
-if ($nameDecl[0].Value -cne "appVersionName = '$name'") {
-    $configNew = [regex]::Replace($config, "appVersionName[ \t]*=[ \t]*'[^']+'", "appVersionName = '$name'")
+if ($nameValue -cne "appVersionName = '$name'") {
+    $configNew = Set-DeclarationValue $config $nameDeclarationPattern $namePattern "appVersionName = '$name'"
     if ($configNew -ceq $config) { throw 'app_config.dart appVersionName 替换失败——格式漂移？请人工检查' }
     $config = $configNew
     $configChanged = $true
 }
-if ($buildDecl[0].Value -cne "appBuildNumber = $build") {
-    $configNew = [regex]::Replace($config, 'appBuildNumber[ \t]*=[ \t]*\d+', "appBuildNumber = $build")
-    if ($configNew -ceq $config) { throw 'app_config.dart appBuildNumber 替换失败——格式漂移？请人工检查' }
+if ($buildValue -cne "$buildName = $build") {
+    $configNew = Set-DeclarationValue $config $buildDeclarationPattern $buildPattern "$buildName = $build"
+    if ($configNew -ceq $config) { throw 'app_config.dart 构建号替换失败——格式漂移？请人工检查' }
     $config = $configNew
     $configChanged = $true
+}
+if ($pubspecNew -cne $pubspec) {
+    $pubspecEncoding = Get-TextEncoding $pubspecPath
+    [System.IO.File]::WriteAllText($pubspecPath, $pubspecNew, $pubspecEncoding)
+    $changed += 'pubspec.yaml'
 }
 if ($configChanged) {
     $configEncoding = Get-TextEncoding $configPath
