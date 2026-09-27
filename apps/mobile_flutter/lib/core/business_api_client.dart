@@ -119,6 +119,7 @@ final class BusinessApiClient
     _client = DiagnosticHttpClient(
       _performanceClient,
       () => ChatDiagnostics.instance.networks,
+      primaryApiBaseUri: baseUri,
     );
   }
   final Uri baseUri;

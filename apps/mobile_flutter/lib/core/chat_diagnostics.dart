@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'network_diagnostics.dart';
+import 'network_request_diagnostics.dart';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -75,8 +76,10 @@ final class ChatDiagnosticBatch {
     List<_QueuedPerformanceOperation> operations, {
     bool operationExtensionsSupported = true,
     List<NetworkDiagnosticSnapshot> networks = const [],
+    List<NetworkRequestDiagnosticSnapshot> networkRequests = const [],
   })  : _events = List.unmodifiable(events.map((e) => e.copy())),
         _networks = List.unmodifiable(networks),
+        _networkRequests = List.unmodifiable(networkRequests),
         _operationExtensionsSupported = operationExtensionsSupported,
         _operations =
             List.unmodifiable(operations.map((entry) => entry.record));
@@ -86,6 +89,7 @@ final class ChatDiagnosticBatch {
   final _FrameCounts? _frames;
   final List<PerformanceDiagnosticOperation> _operations;
   final List<NetworkDiagnosticSnapshot> _networks;
+  final List<NetworkRequestDiagnosticSnapshot> _networkRequests;
   final bool _operationExtensionsSupported;
   Map<String, Object?> toJson() => {
         'version': version,
@@ -93,6 +97,10 @@ final class ChatDiagnosticBatch {
         'events': [for (final event in _events) event.toJson()],
         if (_networks.isNotEmpty)
           'networks': [for (final sample in _networks) sample.toJson()],
+        if (_networkRequests.isNotEmpty)
+          'network_requests': [
+            for (final request in _networkRequests) request.toJson()
+          ],
         if (_frames != null) 'frames': _frames!.toJson(),
         if (_operations.isNotEmpty)
           'operations': [
@@ -383,8 +391,11 @@ final class ChatDiagnostics {
     DateTime Function()? now,
     this.normalSamplePercent = PerformanceThresholds.normalSamplePercent,
     this.maxUploadBytes = defaultMaxUploadBytes,
-  })  : _now = now ?? DateTime.now,
-        networks = NetworkDiagnostics(now: now) {
+  }) : _now = now ?? DateTime.now {
+    networks = NetworkDiagnostics(
+        now: now,
+        retainedRequestCount: () => _regionalBackfill.fold<int>(
+            0, (sum, batch) => sum + batch._networkRequests.length));
     if (normalSamplePercent < 0 || normalSamplePercent > 100) {
       throw ArgumentError.value(normalSamplePercent, 'normalSamplePercent');
     }
@@ -394,7 +405,7 @@ final class ChatDiagnostics {
   }
   static ChatDiagnostics instance = ChatDiagnostics();
   final DateTime Function() _now;
-  final NetworkDiagnostics networks;
+  late final NetworkDiagnostics networks;
   final _regionalBackfill = <ChatDiagnosticBatch>[];
   int _reportedNetworkDrops = 0;
   final int normalSamplePercent;
@@ -429,6 +440,7 @@ final class ChatDiagnostics {
     List<_Event> events,
     List<_QueuedPerformanceOperation> operations,
     List<NetworkDiagnosticSnapshot> networks,
+    List<NetworkRequestDiagnosticSnapshot> networkRequests,
     List<Map<String, Object?>> regional,
     String version,
     String platform,
@@ -786,7 +798,8 @@ final class ChatDiagnostics {
         (_pending.isEmpty &&
             _pendingOperations.isEmpty &&
             _frames.total == 0 &&
-            !networks.hasPending) ||
+            !networks.hasPending &&
+            !networks.hasPendingRequests) ||
         _inFlight ||
         _restoring ||
         (_nextAllowed != null && now.isBefore(_nextAllowed!))) {
@@ -797,6 +810,7 @@ final class ChatDiagnostics {
     final events = <_Event>[];
     final operations = <_QueuedPerformanceOperation>[];
     final samples = <NetworkDiagnosticSnapshot>[];
+    final requests = <NetworkRequestDiagnosticSnapshot>[];
     final waitingSamples = networks.pending();
     _reportNetworkLoss();
     final frameGroup = _frames;
@@ -816,6 +830,7 @@ final class ChatDiagnostics {
                   operations,
                   operationExtensionsSupported: _operationExtensionsSupported,
                   networks: samples,
+                  networkRequests: requests,
                 ).toJson(),
               ),
             )
@@ -877,10 +892,19 @@ final class ChatDiagnostics {
         break;
       }
     }
+    for (final request in networks.pendingRequests()) {
+      if (events.length + operations.length + requests.length >= 20) break;
+      requests.add(request);
+      if (!fits()) {
+        requests.removeLast();
+        break;
+      }
+    }
     if (events.isEmpty &&
         operations.isEmpty &&
         frames == null &&
-        samples.isEmpty) {
+        samples.isEmpty &&
+        requests.isEmpty) {
       _inFlight = false;
       return;
     }
@@ -892,6 +916,7 @@ final class ChatDiagnostics {
       operations,
       operationExtensionsSupported: _operationExtensionsSupported,
       networks: samples,
+      networkRequests: requests,
     );
     _pendingOperations.freeze(operations);
     for (final event in events) {
@@ -916,6 +941,15 @@ final class ChatDiagnostics {
       if (identical(_abort, abort)) _abort = null;
     }
     if (epoch != _epoch) return;
+    if (status == 422 && requests.isNotEmpty) {
+      _disableRequestExtension();
+      _failures = 0;
+      _nextAllowed = _now().add(const Duration(minutes: 1));
+      _pendingOperations.releaseFrozen();
+      _releaseFrozenEvents();
+      _queueSpoolWrite();
+      return;
+    }
     if (status == 422 && samples.isNotEmpty) {
       // Remove only the optional network extension. Retry baseline channels
       // unchanged at their existing cadence, before their own compatibility fallbacks.
@@ -969,6 +1003,7 @@ final class ChatDiagnostics {
     }
     if (success) {
       networks.acknowledge(samples);
+      networks.acknowledgeRequests(requests);
       _failures = 0;
       if (frames != null && identical(_frames, frameGroup)) {
         _frames.subtract(frames);
@@ -995,14 +1030,33 @@ final class ChatDiagnostics {
   }
 
   void _reportNetworkLoss() {
-    final lost = networks.droppedAttempts - _reportedNetworkDrops;
+    final lost = networks.droppedAttempts +
+        networks.droppedRequests -
+        _reportedNetworkDrops;
     if (lost <= 0) return;
     record(
       stage: ChatDiagnosticStage.networkRequest,
       error: ChatDiagnosticError.incomplete,
       count: lost,
     );
-    _reportedNetworkDrops = networks.droppedAttempts;
+    _reportedNetworkDrops = networks.droppedAttempts + networks.droppedRequests;
+  }
+
+  void _disableRequestExtension() {
+    networks.disableRequests();
+    for (var i = 0; i < _regionalBackfill.length; i++) {
+      final old = _regionalBackfill[i];
+      _regionalBackfill[i] = ChatDiagnosticBatch._(
+        old.version,
+        old.platform,
+        old._events,
+        old._frames,
+        const [],
+        networks: old._networks,
+      );
+    }
+    _regionalBackfill.removeWhere(
+        (b) => b._events.isEmpty && b._frames == null && b._networks.isEmpty);
   }
 
   void _disableNetworkExtension() {
@@ -1015,10 +1069,12 @@ final class ChatDiagnostics {
         old._events,
         old._frames,
         const [],
+        networkRequests: old._networkRequests,
       );
     }
     _regionalBackfill.removeWhere(
-      (b) => b._events.isEmpty && b._frames == null,
+      (b) =>
+          b._events.isEmpty && b._frames == null && b._networkRequests.isEmpty,
     );
   }
 
@@ -1054,10 +1110,30 @@ final class ChatDiagnostics {
       }
     }
     var frames = _FrameCounts.tryParse(raw['frames']);
-    while ((events.isNotEmpty || samples.isNotEmpty || frames != null) &&
+    final requests = <NetworkRequestDiagnosticSnapshot>[];
+    final requestSlots = NetworkDiagnostics.maximumRequests -
+        networks.forRequestPersistence().length -
+        _regionalBackfill.fold<int>(
+            0, (sum, batch) => sum + batch._networkRequests.length);
+    if (raw['network_requests'] is List) {
+      for (final value in (raw['network_requests'] as List)
+          .take(requestSlots.clamp(0, 64))) {
+        final request = NetworkRequestDiagnosticSnapshot.tryParse(value);
+        if (request != null &&
+            !requests.any((r) => r.requestId == request.requestId)) {
+          requests.add(request);
+        }
+      }
+    }
+    while ((events.isNotEmpty ||
+            samples.isNotEmpty ||
+            requests.isNotEmpty ||
+            frames != null) &&
         _regionalBackfill.length < 16) {
       final selectedEvents = events.take(20).toList();
       final selectedSamples = samples.take(8).toList();
+      final selectedRequests =
+          requests.take(math.min(8, 20 - selectedEvents.length)).toList();
       _regionalBackfill.add(
         ChatDiagnosticBatch._(
           version,
@@ -1066,10 +1142,12 @@ final class ChatDiagnostics {
           frames,
           const [],
           networks: selectedSamples,
+          networkRequests: selectedRequests,
         ),
       );
       events.removeRange(0, selectedEvents.length);
       samples.removeRange(0, selectedSamples.length);
+      requests.removeRange(0, selectedRequests.length);
       frames = null;
     }
   }
@@ -1078,6 +1156,8 @@ final class ChatDiagnostics {
     final old = _regionalBackfill.first;
     final events = List<_Event>.of(old._events);
     final samples = List<NetworkDiagnosticSnapshot>.of(old._networks);
+    final requests =
+        List<NetworkRequestDiagnosticSnapshot>.of(old._networkRequests);
     var frames = old._frames;
     ChatDiagnosticBatch snapshot() => ChatDiagnosticBatch._(
           old.version,
@@ -1086,11 +1166,14 @@ final class ChatDiagnostics {
           frames,
           const [],
           networks: samples,
+          networkRequests: requests,
         );
     bool fits() =>
         utf8.encode(jsonEncode(snapshot().toJson())).length <= maxUploadBytes;
     while (!fits()) {
-      if (samples.isNotEmpty) {
+      if (requests.isNotEmpty) {
+        requests.removeLast();
+      } else if (samples.isNotEmpty) {
         samples.removeLast();
       } else if (events.isNotEmpty) {
         events.removeLast();
@@ -1098,7 +1181,10 @@ final class ChatDiagnostics {
         frames = null;
       }
     }
-    if (events.isEmpty && samples.isEmpty && frames == null) {
+    if (events.isEmpty &&
+        samples.isEmpty &&
+        requests.isEmpty &&
+        frames == null) {
       // Default batches are always smaller than the receiver budget. A caller
       // with a smaller custom budget must still be able to advance its queue.
       _regionalBackfill.removeAt(0);
@@ -1127,10 +1213,13 @@ final class ChatDiagnostics {
     if (status == 202) {
       final remainingEvents = old._events.skip(events.length).toList();
       final remainingSamples = old._networks.skip(samples.length).toList();
+      final remainingRequests =
+          old._networkRequests.skip(requests.length).toList();
       final remainingFrames = frames == null ? old._frames : null;
       _regionalBackfill.removeAt(0);
       if (remainingEvents.isNotEmpty ||
           remainingSamples.isNotEmpty ||
+          remainingRequests.isNotEmpty ||
           remainingFrames != null) {
         _regionalBackfill.insert(
           0,
@@ -1141,9 +1230,13 @@ final class ChatDiagnostics {
             remainingFrames,
             const [],
             networks: remainingSamples,
+            networkRequests: remainingRequests,
           ),
         );
       }
+      _failures = 0;
+    } else if (status == 422 && requests.isNotEmpty) {
+      _disableRequestExtension();
       _failures = 0;
     } else if (status == 422 && samples.isNotEmpty) {
       _disableNetworkExtension();
@@ -1160,6 +1253,7 @@ final class ChatDiagnostics {
           null,
           const [],
           networks: b._networks,
+          networkRequests: b._networkRequests,
         );
       }
     } else {
@@ -1178,6 +1272,7 @@ final class ChatDiagnostics {
       _pendingOperations.clear();
       _regionalBackfill.clear();
       networks.acknowledge(networks.persisted);
+      networks.acknowledgeRequests(networks.forRequestPersistence());
       for (final tier in _evictableEventKeys) {
         tier.clear();
       }
@@ -1191,7 +1286,8 @@ final class ChatDiagnostics {
     if (_pending.isEmpty &&
         _pendingOperations.isEmpty &&
         _regionalBackfill.isEmpty &&
-        !networks.hasPending) {
+        !networks.hasPending &&
+        !networks.hasPendingRequests) {
       _spoolCreated = _now();
     }
   }
@@ -1218,6 +1314,7 @@ final class ChatDiagnostics {
       events: [for (final e in _pending.values) e.copy()],
       operations: _pendingOperations.toList(growable: false),
       networks: networkSamples,
+      networkRequests: networks.forRequestPersistence(),
       regional: [for (final batch in _regionalBackfill) batch.toJson()],
       version: _version,
       platform: _platform.name,
@@ -1260,6 +1357,7 @@ final class ChatDiagnostics {
               if (write.events.isEmpty &&
                       write.operations.isEmpty &&
                       write.networks.isEmpty &&
+                      write.networkRequests.isEmpty &&
                       write.regional.isEmpty &&
                       write.frames.total == 0 ||
                   _now().difference(write.created) > spoolExpiry) {
@@ -1269,6 +1367,7 @@ final class ChatDiagnostics {
               final events = <Map<String, Object?>>[];
               final operations = <Map<String, Object?>>[];
               final samples = <Map<String, Object?>>[];
+              final requests = <Map<String, Object?>>[];
               final regional = <Map<String, Object?>>[];
               final body = <String, Object?>{
                 'schema': 3,
@@ -1277,6 +1376,8 @@ final class ChatDiagnostics {
                 'source_version': write.version,
                 'source_platform': write.platform,
                 'networks': samples,
+                if (write.networkRequests.isNotEmpty)
+                  'network_requests': requests,
                 'regional_backfill': regional,
                 'events': events,
                 'operations': operations,
@@ -1306,6 +1407,9 @@ final class ChatDiagnostics {
               }
               for (final sample in write.networks) {
                 if (!append(samples, sample.toJson())) break;
+              }
+              for (final request in write.networkRequests) {
+                if (!append(requests, request.toJson())) break;
               }
               for (final entry in write.operations) {
                 final operation = entry.record;
@@ -1390,6 +1494,14 @@ final class ChatDiagnostics {
                     if (sample != null) networks.restore(sample);
                   }
                 }
+                final requests = decoded['network_requests'];
+                if (requests is List) {
+                  for (final item in requests.take(64)) {
+                    final request =
+                        NetworkRequestDiagnosticSnapshot.tryParse(item);
+                    if (request != null) networks.restoreRequest(request);
+                  }
+                }
               } else {
                 _restoreRegional({
                   'version': sourceVersion,
@@ -1397,6 +1509,7 @@ final class ChatDiagnostics {
                   'events': decoded['events'],
                   'frames': decoded['frames'],
                   'networks': decoded['networks'],
+                  'network_requests': decoded['network_requests'],
                 });
                 // Preserve past releases' envelopes; current-release records
                 // retain the existing scoped-spool coalescing behavior.
