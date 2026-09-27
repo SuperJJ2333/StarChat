@@ -49,6 +49,16 @@ jobs:
           flutter test --no-pub integration_test/sqlcipher_readonly_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
           flutter test --no-pub integration_test/ios_keychain_archive_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
           flutter test --no-pub integration_test/ios_conversation_notification_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
+          # flutter test removes its temporary listener target; restore the app
+          # configuration before invoking Xcode's native test target directly.
+          flutter build ios --config-only --simulator --debug --no-codesign --no-pub --target=lib/main.dart
+          python3 - <<'PY'
+          from pathlib import Path
+          for relative in ['ios/Flutter/Generated.xcconfig', 'ios/Flutter/flutter_export_environment.sh']:
+              text = Path(relative).read_text()
+              assert 'flutter_test_listener' not in text, relative
+              assert 'FLUTTER_TARGET=lib/main.dart' in text, relative
+          PY
           set -o pipefail
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
             -destination "id=$simulator" \
