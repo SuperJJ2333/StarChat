@@ -4,27 +4,27 @@
 
 - 用户本次九项要求：异步朋友圈上传/会话同限制、房间通知及角标即时清除、二态日历、无感续页与旧检索、密钥丢失公告管理、公告关闭持久化、多媒体批量转发/选中背景、视频封面、待企业签名 IPA。
 - 授权边界：修复与 iOS 候选构建；用户重签回传后再分发。未授权本轮服务候选发布、Android 发布或 TestFlight 上传。
-- 状态：实现冻结并已推送候选，Mac原生/IPA及独立Linux/PG门禁构建中；尚无IPA成品、服务部署或公开分发。
+- 状态：待企业签名。实现冻结、主目录回填、Linux/PG/迁移及iOS兼容/原生/签名门禁完成，0.4.20+2189 IPA已核验。API261f/0091发布确认待答复，尚未部署或公开分发。
 - 隔离工作树 C:/Users/Administrator/.codex/worktrees/ios-media-room-followup/StarChat，native 工具创建且注册成功；基线 f433381a14d4549b25001059870857d1bfe57a42。
 - [设计](../../superpowers/specs/2026-09-28-ios-media-room-followup-design.md)。[执行计划](../../superpowers/plans/2026-09-28-ios-media-room-followup.md)已记录任务/归属，按红绿和双阶段审查执行。
 - 主目录 1779 项冻结移动输入：1104 完全相同、672 仅 CRLF/LF、3 项只增加空行，缺失 0。具体见非Git baseline-source-comparison.json；不覆盖主目录其他任务修改。
 - 负责人：root 负责通知、转发、共享 lease/API 接线、文档/集成/IPA；并行实施分别朋友圈、历史检索、公告；历史完成后转服务器poster/CAS。各代理只改归属文件，无共享index写。
-- 下一步：跟进同源Mac运行36349326466/36349326541，定位首次有效失败；Linux36349326488的测试sandbox环境失败正窄修。通过后取IPA；服务候选261f及0091单独请求发布批准。
+- 下一步：交付已核验IPA待用户企业重签/回传；收到API261f/0091独立发布批准后执行冻结脚本与fresh guards，随后等最终签名包确认再分发。
 
 ## 验收台账
 
 |ID|预期|已确认原因/方案|测试与交付|
 |---|---|---|---|
 |I01|朋友圈离开发表页后继续、失败可恢复|账号持久队列、最多4pending、1GiB素材、逐项处理|red/green与质量通过；真实OS暂停/恢复待设备验收|
-|I02|会话一致的图片/视频限制|共用压缩/transcode，最终20MiB、有界小封面|客户端专项通过；iOS H264/HEVC真实poster门禁运行中|
-|I03|打开房间清通知、即时刷新角标|公开read事件、账号代际/串行通知与badge、精确iOS matcher|实际RoomPage/alias/切号与竞态通过；Mac桥与UIKit运行中，真实APNs另验|
+|I02|会话一致的图片/视频限制|共用压缩/transcode，最终20MiB、有界小封面|客户端专项及iOS18.6/26.2真实H264/HEVC封面/编码通过|
+|I03|打开房间清通知、即时刷新角标|公开read事件、账号代际/串行通知与badge、精确iOS matcher|实际RoomPage/alias/切号与竞态、原生通知桥通过；UIKit两例实际通过，真实APNs另验|
 |I04|仅本机有消息日可点|所有可显示本地源日期与anchor，修订失效刷新|快照/SDK缺行/日期disabled/撤回刷新通过|
 |I05|滚动无感续页、旧记录快|复用有界投影、自动续页/短屏/无进展保护|10k/100k实验通过；热查询0重复DB投影，仍O(N)内存匹配，非真机延迟结论|
 |I06|缺旧密钥管理员可清除/更改|区分不可读引用、当前joined+state权限、加密重写|专项及独立规格/安全审查通过；未弱化E2EE|
 |I07|已关闭公告重进仍隐藏|账号/room/publication共同持久scope|实际RoomPage重新进入与lease撤销断言通过|
 |I08|批量媒体转发、持续选中背景|4096描述符/128执行窗口/128MiB准备、稳定txid|200扇出、重试/撤销/echo回收及选中背景通过|
-|I09|跨设备朋友圈封面|独立静态小图DTO、可见范围，旧无封面兼容|源/本地API/PG旧四例通过；最终Linux/PG5待CI，0091发布待独立批准|
-|I10|提供待企业签名IPA|0.4.20+2189、e9b5349、TestFlight关闭|Mac两运行构建中；待成品/签名/资产验包交接|
+|I09|跨设备朋友圈封面|独立静态小图DTO、可见范围，旧无封面兼容|最终Linux154/PG5/迁移2及既有备份恢复通过；0091发布待独立批准|
+|I10|提供待企业签名IPA|0.4.20+2189、e9b5349应用/083041d8工作流、TestFlight关闭|compat/原生/签名全部通过；IPA61246031字节/SHA59fa118c…0073e，待企业重签|
 
 ## 阶段计时
 
@@ -88,3 +88,19 @@ Flutter3.44.9/Dart3.12.2可用，C盘约143GB可用；无.env。隔离工作树�
 - [签名候选36349326466](https://github.com/SuperJJ2333/StarChat/actions/runs/36349326466) 与 [iOS18/26完整兼容36349326541](https://github.com/SuperJJ2333/StarChat/actions/runs/36349326541) 同源运行中。签名job须前置native通过，交付还须独立compat两矩阵及完整生产compile通过。
 - 首Linux [36349326488](https://github.com/SuperJJ2333/StarChat/actions/runs/36349326488) 实际153通过1失败/175.85s；旧fixture默认写/data导致非root CI PermissionError，PG5/expand被前序阻止未执行。正将BUSINESS_AVATAR_STORAGE_ROOT设本run临时目录，仅workflow窄修；不改业务权限或跳过失败。
 - 服务器恢复后最终候选image261f六输入实际hash与冻结源一致，生产e304/a508保持；任务PG无dependents已停止，backup/data/log保留。旧Linux151通过的hostexitmissing和旧源限制保留；最终CI不得冒用该结果。
+
+## 原生预检通过、签名构建与发布确认（2026-09-28 05:55 +08 左右）
+
+- 签名运行36351498193/source083041d8，simulator-preflight job108711034572已成功。SQLCipher4/Keychain1/原生通知1实际通过，真实UIKit xcodebuild于21:51:35Z报告TEST SUCCEEDED；具体两测试执行结果独立核验中。build job108715881218已启动，尚无IPA，TestFlight入口关闭。
+- API261f/0091候选与本地发布脚本完成规格→质量安全复核，0P1/0待处理P2；Linux154/PG5/迁移2及实际生产备份隔离恢复证据已齐。已发送独立服务发布确认，尚未收到答复。脚本仅本地准备，未上传或执行生产变更；最后只读现场仍e304/a508、schema0090。
+- 下一步：取得同源签名job实际成功及IPA_SHA256，下载并核验artifact摘要/IPA内容与资产后提供待企业重签包。服务发布仅在本轮明确批准后执行已冻结脚本；用户重签回传后另行核验与分发。
+
+## IPA 已交付待企业重签（2026-09-28 06:05 +08 左右）
+
+- 同源签名运行[36351498193](https://github.com/SuperJJ2333/StarChat/actions/runs/36351498193)，精确源083041d86bf2db8541a601689e1ef69e57748aa6，21:22:36Z创建、22:02:22Z完成更新，结论success；build job108715881218成功。应用源码仍e9b5349，后续只CI/文档改变，兼容证据按已核输入复用。
+- 原生预检两条UIKit导航测试真实执行通过；SQLCipher4/Keychain1/通知1通过。签名job实际Swift31测试零失败（通知2/安全会话20/通话9），push门禁通过。CI实际codesign --deep --strict、生产APNs/application-identifier、无get-task-allow、SQLCipher加载顺序/完整插件/资源SHA/版本/iPad/后台模式验证通过。TestFlight步骤明确skipped，临时签名凭据清理success。
+- 下载artifact10943003558，ZIP60,866,129字节，SHA256 0f27f236a90aeb2f941ef03b2bca29d697201ebec8f1a5ed8698c05d7b98a8b8与GitHub digest完全一致；未下载证书、密钥或描述文件工件。安全复制IPA后核验内容，只有通过后才原子产生交付文件。
+- IPA0.4.20+2189，Bundle ID com.liuhetong.liuhetongMobile，最低iOS16.0，大小61,246,031字节，SHA256 59fa118c8ec1890dd4f6fff15c97c9b6de7693d5bb4245619de874258ea0073e，与Mac实际输出完全一致。statistics资源SHA89eab23270dc87ce6fd07715d9abb2606455d94ce1fc16cd56d2deeaeeafb9d5与冻结源相同。Windows本地只验证摘要与内容，不冒称本地codesign。
+- 已将校验后的IPA复制到主目录[待企业重签IPA](../../verification/artifacts/2026-09-28/ios-media-room-followup/ios-ipa/畅聊_iOS_0.4.20_2189_待企业重签.ipa)，副本SHA完全一致；构建期签名不是用户最终企业签名。用户重签回传后再确认最终包身份/大小并准备分发。真机APNs角标、实际锁屏和OS终止后恢复仍需设备反馈。
+- API261f/0091独立发布确认仍待答复，尚未上传/执行发布脚本。本次未部署新API、改Android/公开iOS分发或发送更新弹窗；新封面服务需批准后上线。旧服务兼容客户端，未宣称跨设备新封面已经在生产生效。
+- 已停止本任务4192 HTML临时预览进程（95100，Ctrl-C退出），不清理其他任务资源或工作树。待执行：交付IPA给用户企业重签；收到独立服务批准后使用冻结脚本/fresh guards部署API261f/0091；收到重签包后进入轻量分发流程。
