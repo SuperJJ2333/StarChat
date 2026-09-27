@@ -4,27 +4,27 @@
 
 - 用户本次九项要求：异步朋友圈上传/会话同限制、房间通知及角标即时清除、二态日历、无感续页与旧检索、密钥丢失公告管理、公告关闭持久化、多媒体批量转发/选中背景、视频封面、待企业签名 IPA。
 - 授权边界：修复与 iOS 候选构建；用户重签回传后再分发。未授权本轮服务候选发布、Android 发布或 TestFlight 上传。
-- 状态：方案已获用户“按推荐方案实现”批准，进入实施；尚未构建或发布。
+- 状态：实现冻结并已推送候选，Mac原生/IPA及独立Linux/PG门禁构建中；尚无IPA成品、服务部署或公开分发。
 - 隔离工作树 C:/Users/Administrator/.codex/worktrees/ios-media-room-followup/StarChat，native 工具创建且注册成功；基线 f433381a14d4549b25001059870857d1bfe57a42。
 - [设计](../../superpowers/specs/2026-09-28-ios-media-room-followup-design.md)。[执行计划](../../superpowers/plans/2026-09-28-ios-media-room-followup.md)已记录任务/归属，按红绿和双阶段审查执行。
 - 主目录 1779 项冻结移动输入：1104 完全相同、672 仅 CRLF/LF、3 项只增加空行，缺失 0。具体见非Git baseline-source-comparison.json；不覆盖主目录其他任务修改。
 - 负责人：root 负责通知、转发、共享 lease/API 接线、文档/集成/IPA；并行实施分别朋友圈、历史检索、公告；历史完成后转服务器poster/CAS。各代理只改归属文件，无共享index写。
-- 下一步：并行实现朋友圈、历史和公告；root负责通知/转发/共享接线。候选冻结并完成门禁后触发iOS构建。
+- 下一步：跟进同源Mac运行36349326466/36349326541，定位首次有效失败；Linux36349326488的测试sandbox环境失败正窄修。通过后取IPA；服务候选261f及0091单独请求发布批准。
 
 ## 验收台账
 
 |ID|预期|已确认原因/方案|测试与交付|
 |---|---|---|---|
-|I01|朋友圈离开发表页后继续、失败可恢复|页面持有 upload/mounted/busy；改账号任务队列|待 red/green|
-|I02|会话一致的图片/视频限制|现有朋友圈原视频20MiB直接拒绝，先全读原件|待准备接口联测|
-|I03|打开房间清通知、即时刷新角标|缺读状态触发；iOS远端须精确room_id匹配|待两端原生/竞态验证|
-|I04|仅本机有消息日可点|unknown可点及远端两探测不能覆盖整月|待本地快照/anchor验证|
-|I05|滚动无感续页、旧记录快|按钮与短列表死角；每关键词重新O(N)投影|待10k/100k实验|
-|I06|缺旧密钥管理员可清除/更改|确认epoch被无关sync取消；失效引用分类不完整|待权限/E2EE审查|
-|I07|已关闭公告重进仍隐藏|真实lease wrapper没有持久scope|待真实接线失败用例|
-|I08|批量媒体转发、持续选中背景|元数据误计完整附件内存；仅圆圈选中|待有界调度/幂等用例|
-|I09|跨设备朋友圈封面|只有上传者本地poster；远端无封面DTO|用户已批准独立小封面接口|
-|I10|提供待企业签名IPA|Windows无Xcode；已有GitHub macOS仅构建能力|待修复、冻结、原生门禁与构建|
+|I01|朋友圈离开发表页后继续、失败可恢复|账号持久队列、最多4pending、1GiB素材、逐项处理|red/green与质量通过；真实OS暂停/恢复待设备验收|
+|I02|会话一致的图片/视频限制|共用压缩/transcode，最终20MiB、有界小封面|客户端专项通过；iOS H264/HEVC真实poster门禁运行中|
+|I03|打开房间清通知、即时刷新角标|公开read事件、账号代际/串行通知与badge、精确iOS matcher|实际RoomPage/alias/切号与竞态通过；Mac桥与UIKit运行中，真实APNs另验|
+|I04|仅本机有消息日可点|所有可显示本地源日期与anchor，修订失效刷新|快照/SDK缺行/日期disabled/撤回刷新通过|
+|I05|滚动无感续页、旧记录快|复用有界投影、自动续页/短屏/无进展保护|10k/100k实验通过；热查询0重复DB投影，仍O(N)内存匹配，非真机延迟结论|
+|I06|缺旧密钥管理员可清除/更改|区分不可读引用、当前joined+state权限、加密重写|专项及独立规格/安全审查通过；未弱化E2EE|
+|I07|已关闭公告重进仍隐藏|账号/room/publication共同持久scope|实际RoomPage重新进入与lease撤销断言通过|
+|I08|批量媒体转发、持续选中背景|4096描述符/128执行窗口/128MiB准备、稳定txid|200扇出、重试/撤销/echo回收及选中背景通过|
+|I09|跨设备朋友圈封面|独立静态小图DTO、可见范围，旧无封面兼容|源/本地API/PG旧四例通过；最终Linux/PG5待CI，0091发布待独立批准|
+|I10|提供待企业签名IPA|0.4.20+2189、e9b5349、TestFlight关闭|Mac两运行构建中；待成品/签名/资产验包交接|
 
 ## 阶段计时
 
@@ -81,3 +81,10 @@ Flutter3.44.9/Dart3.12.2可用，C盘约143GB可用；无.env。隔离工作树�
 ## 候选冻结（2026-09-28 04:45 +08 左右）
 
 最终analyzer exit0。第二次full Flutter实际4926通过/9跳过/1旧UI调用数断言失败；实现未改，仅该test把50+1后多余空页期望3改为2，关联两文件18通过/exit0闭合，复用不变实现全量证据。三模块与iOS构建准备独立质量闭合PASS。Linux workflow固定版本/无生产访问静态复核PASS。准备唯一根代理stage/commit/push本任务branch；具体结果写[交付验证记录](../../verification/2026-09-28-ios-media-room-followup.md)。本地额外CAS运行曾漏PYTHONPATH错误导入main，5失败保留；显式本工作树导入预检后6通过/exit0，不误算candidate失败或red。
+
+## CI 构建（精确创建 2026-09-28 04:47:27 +08）
+
+- 源码commit `e9b5349cc81fff29f90cf50d4596c35128030a7f` 已推送独立branch，94文件freeze/依赖锁/凭据扫描独立复核通过；工作树仅无行为差异的visibility换行已恢复。
+- [签名候选36349326466](https://github.com/SuperJJ2333/StarChat/actions/runs/36349326466) 与 [iOS18/26完整兼容36349326541](https://github.com/SuperJJ2333/StarChat/actions/runs/36349326541) 同源运行中。签名job须前置native通过，交付还须独立compat两矩阵及完整生产compile通过。
+- 首Linux [36349326488](https://github.com/SuperJJ2333/StarChat/actions/runs/36349326488) 实际153通过1失败/175.85s；旧fixture默认写/data导致非root CI PermissionError，PG5/expand被前序阻止未执行。正将BUSINESS_AVATAR_STORAGE_ROOT设本run临时目录，仅workflow窄修；不改业务权限或跳过失败。
+- 服务器恢复后最终候选image261f六输入实际hash与冻结源一致，生产e304/a508保持；任务PG无dependents已停止，backup/data/log保留。旧Linux151通过的hostexitmissing和旧源限制保留；最终CI不得冒用该结果。

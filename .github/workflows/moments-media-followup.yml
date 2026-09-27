@@ -28,6 +28,7 @@ jobs:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: utf-8
       PYTHONPATH: services/business-api
+      BUSINESS_AVATAR_STORAGE_ROOT: ${{ runner.temp }}/moments-ci-media
       MOMENTS_TEST_DATABASE_URL: postgresql+psycopg://moments_ci:synthetic_ci_only@127.0.0.1:5432/moments_ci
     services:
       # The previous task-owned restore used PostgreSQL 16.9. Its Docker config
