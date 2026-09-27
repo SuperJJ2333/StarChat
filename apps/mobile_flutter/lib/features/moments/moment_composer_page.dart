@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -13,6 +12,7 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/image_picker_page.dart';
 import '../matrix/gif_image_policy.dart';
+import '../matrix/video_transcode.dart';
 import '../matrix/media_cache.dart';
 import '../../ui/moments/moment_media_cache.dart';
 import '../../ui/moments/moment_warning_banner.dart';
@@ -21,6 +21,7 @@ import 'moment_comment_composer.dart'
 import 'moment_visibility_page.dart';
 import 'moment_draft_store.dart';
 import 'moment_image_preprocessor.dart';
+import 'moment_publish_coordinator.dart';
 import '../../ui/motion/motion_page_route.dart';
 
 final class MomentComposerPage extends StatefulWidget {
@@ -31,10 +32,12 @@ final class MomentComposerPage extends StatefulWidget {
     this.imagePreprocessor,
     this.identityCache,
     this.galleryPicker,
+    this.publishCoordinator,
   });
 
   final BusinessApiClient api;
   final MomentGalleryPicker? galleryPicker;
+  final MomentPublishCoordinator? publishCoordinator;
   final List<XFile> initialImages;
 
   /// 可注入的图片压缩管线（缺省为原生 JPEG 压缩实现）。
@@ -56,6 +59,11 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   final _fileNames = <XFile, String>{};
   final _uploadedVideoPreviews = <String, Uint8List>{};
   final _videoCacheKeys = <String, String>{};
+  final _videoPosterIds = <String, String>{};
+  Map<String, dynamic> _serverDraftPayload = {};
+  late final Future<MomentPublishSession?> _composerSession;
+  int _editorRevision = 0;
+  bool _applyingDraft = false;
   int get _mediaCount =>
       images.length + remoteImageUrls.length + remoteVideoUrls.length;
   MomentVisibilitySelection visibility =
@@ -68,7 +76,6 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   bool _allowPop = false;
   bool _draftSaved = false;
   bool _published = false;
-  String? _publishKey, _publishPayload;
 
   bool get dirty =>
       text.text.trim().isNotEmpty ||
@@ -82,33 +89,72 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   @override
   void initState() {
     super.initState();
+    _composerSession = widget.api
+        .captureMomentPublishSession()
+        .then<MomentPublishSession?>((value) => value,
+            onError: (Object _) => null);
+    MomentDraftStores.noteEditing();
+    text.addListener(_textEdited);
     images.addAll(widget.initialImages.take(9));
+    for (final file
+        in images.where((f) => f.path.isEmpty && momentVideoMime(f) == null)) {
+      unawaited(file.readAsBytes().then((bytes) {
+        if (mounted &&
+            images.contains(file) &&
+            bytes.length <= 20 * 1024 * 1024) {
+          setState(() => _previews[file] = bytes);
+        }
+      }).catchError((Object _) {}));
+    }
     // 本地优先：先用本地草稿渲染，再与服务端对齐。
     final localHydration = _hydrateLocalDraft();
     unawaited(_loadDraft(localHydration));
   }
 
-  /// 本地草稿（账号作用域）：断网也能接着上次写；跨账号一律丢弃。
+  void _textEdited() {
+    if (_applyingDraft) return;
+    _editorRevision++;
+    MomentDraftStores.noteEditing();
+  }
+
+  Future<bool> _canHydrate(MomentPublishSession session, int revision) async =>
+      mounted &&
+      !_published &&
+      !busy &&
+      _editorRevision == revision &&
+      await widget.api.isMomentPublishSessionCurrent(session) &&
+      mounted &&
+      !_published &&
+      !busy &&
+      _editorRevision == revision;
+
+  /// Hydration belongs to the editor's captured session and cannot overwrite edits.
   Future<void> _hydrateLocalDraft() async {
+    final revision = _editorRevision;
     final store = MomentDraftStores.shared;
     final snapshot = store?.read();
-    if (snapshot == null || mounted == false) return;
-    String? scope;
-    try {
-      final userId = await widget.api.currentMatrixUserId();
-      scope = userId == null || userId.isEmpty ? null : 'matrix:$userId';
-    } catch (_) {
-      scope = null;
-    }
-    if (scope == null || scope != snapshot.scope) {
-      unawaited(store?.clear());
+    if (snapshot == null) return;
+    final session = await _composerSession;
+    if (session == null || !await _canHydrate(session, revision)) return;
+    if (snapshot.scope != 'matrix:${session.accountId}') {
+      // A new account may leave the old snapshot until lifecycle cleanup.
+      // This editor never clears a snapshot that appeared during an await.
       return;
     }
-    if (!mounted) return;
+    if (!identical(store?.read(), snapshot)) return;
     setState(() => _applyDraft(snapshot.payload));
   }
 
   void _applyDraft(Map<String, dynamic> draft) {
+    _applyingDraft = true;
+    try {
+      _applyDraftValues(draft);
+    } finally {
+      _applyingDraft = false;
+    }
+  }
+
+  void _applyDraftValues(Map<String, dynamic> draft) {
     final mode = draft['visibility']?.toString() ?? 'PUBLIC';
     final users = Set<String>.from(
       mode == 'EXCLUDE'
@@ -137,6 +183,14 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           .where((v) => v.isNotEmpty)
           .take(9 - images.length - remoteImageUrls.length));
     _videoCacheKeys.clear();
+    _videoPosterIds.clear();
+    final posterIds = draft['video_poster_media_ids'] as List? ?? const [];
+    for (var i = 0; i < remoteVideoUrls.length && i < posterIds.length; i++) {
+      final id = posterIds[i];
+      if (id is String && RegExp(r'^[a-f0-9-]{36}$').hasMatch(id)) {
+        _videoPosterIds[remoteVideoUrls[i]] = id;
+      }
+    }
     final keys = draft['video_cache_keys'] as List? ?? const [];
     for (var i = 0; i < remoteVideoUrls.length && i < keys.length; i++) {
       final key = keys[i]?.toString();
@@ -197,9 +251,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   Future<Map<String, dynamic>?> _mergeDraftVideoCacheKeys(
       Map<String, dynamic> draft) async {
     final account = await widget.api.currentMatrixUserId();
-    final accountKey = account == null || account.isEmpty
-        ? null
-        : 'matrix:$account';
+    final accountKey =
+        account == null || account.isEmpty ? null : 'matrix:$account';
     final local = MomentDraftStores.shared?.read();
     final localKeys = <String, String>{};
     if (accountKey != null && local?.scope == accountKey) {
@@ -222,7 +275,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         mergedKeys.add(localKey);
         continue;
       }
-      final serverKey = i < serverKeys.length ? serverKeys[i]?.toString() : null;
+      final serverKey =
+          i < serverKeys.length ? serverKeys[i]?.toString() : null;
       if (accountKey == null ||
           serverKey == null ||
           !RegExp(r'^[a-f0-9]{64}$').hasMatch(serverKey)) {
@@ -247,32 +301,49 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   }
 
   Future<void> _loadDraft(Future<void> localHydration) async {
+    final revision = _editorRevision;
+    final session = await _composerSession;
+    if (session == null) return;
     try {
-      final draft = await widget.api.momentDraft();
       await localHydration;
+      if (!await _canHydrate(session, revision)) return;
+      final draft = await widget.api.getMomentTaskDraft(session);
+      if (!await widget.api.isMomentPublishSessionCurrent(session)) return;
+      _serverDraftPayload = Map<String, dynamic>.from(draft);
+      if (!await _canHydrate(session, revision)) return;
       final merged = await _mergeDraftVideoCacheKeys(draft);
-      if (merged == null) return;
-      if (!mounted) return;
-      // 服务端草稿优先（本地草稿只是离线兜底）。
+      if (merged == null || !await _canHydrate(session, revision)) return;
       setState(() => _applyDraft(merged));
-      unawaited(_persistLocalDraft());
+      unawaited(_persistLocalDraft(
+          session: session, expectedEditorRevision: revision));
     } on BusinessApiException catch (error) {
-      if (!mounted || error.code == 'MOMENT_DRAFT_NOT_FOUND') return;
+      if (error.code == 'MOMENT_DRAFT_NOT_FOUND' ||
+          !await _canHydrate(session, revision)) {
+        return;
+      }
       setState(() => errorMessage = error.message);
     } catch (_) {
-      if (!mounted) return;
+      if (!await _canHydrate(session, revision)) return;
       setState(() => errorMessage = '草稿加载失败，可继续编辑并稍后重试');
     }
   }
 
-  Future<void> _persistLocalDraft() async {
+  Future<void> _persistLocalDraft(
+      {MomentPublishSession? session, int? expectedEditorRevision}) async {
     final store = MomentDraftStores.shared;
     if (store == null) return;
     try {
-      final userId = await widget.api.currentMatrixUserId();
-      if (userId == null || userId.isEmpty) return;
+      final lease = session ?? await _composerSession;
+      if (lease == null ||
+          !await widget.api.isMomentPublishSessionCurrent(lease) ||
+          (expectedEditorRevision != null &&
+              (!mounted ||
+                  _published ||
+                  _editorRevision != expectedEditorRevision))) {
+        return;
+      }
       await store.write(MomentDraftSnapshot(
-        scope: 'matrix:$userId',
+        scope: 'matrix:${lease.accountId}',
         payload: {
           ..._payload(),
           if (_videoCacheKeys.isNotEmpty)
@@ -299,6 +370,10 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         'image_urls': remoteImageUrls.toList(growable: false),
         if (remoteVideoUrls.isNotEmpty)
           'video_urls': remoteVideoUrls.toList(growable: false),
+        if (_videoPosterIds.isNotEmpty)
+          'video_poster_media_ids': [
+            for (final url in remoteVideoUrls) _videoPosterIds[url]
+          ],
         'link_url': linkUrl,
         'include_user_ids': visibility.visibility == 'INCLUDE'
             ? visibility.userIds.toList()
@@ -315,10 +390,16 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       };
 
   Future<void> _saveDraft() async {
-    await _uploadPendingImages();
+    final session = await _composerSession;
+    if (session == null ||
+        !await widget.api.isMomentPublishSessionCurrent(session)) {
+      throw const MomentImageException('账号已切换，请重新打开发表页面');
+    }
+    await _uploadPendingImages(session);
     // 先落本地：断网/服务端拒绝时草稿也不丢（微信级加载模型 L1）。
-    await _persistLocalDraft();
-    await widget.api.saveMomentDraft(_payload());
+    await _persistLocalDraft(session: session);
+    _serverDraftPayload = await widget.api.putMomentTaskDraft(
+        session, _payload(), widget.api.newIdempotencyKey());
   }
 
   String _jpegFileName(String original) {
@@ -327,7 +408,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     return '$safe.jpg';
   }
 
-  Future<List<String>> _uploadPendingImages() async {
+  Future<List<String>> _uploadPendingImages(MomentPublishSession lease) async {
     final preprocessor = widget.imagePreprocessor ?? MomentImagePreprocessor();
     while (images.isNotEmpty) {
       final image = images.first;
@@ -335,12 +416,24 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       final generation =
           account == null ? null : MediaCache.accountGeneration(account);
       final videoMime = momentVideoMime(image);
+      Uint8List? smallPoster;
       final Uint8List bytes;
       try {
-        if (videoMime != null && await image.length() > 20 * 1024 * 1024) {
-          throw const MomentImageException('视频大小不能超过20MB');
+        if (videoMime != null && image.path.isNotEmpty) {
+          final rendition = await transcodeForChat(File(image.path));
+          try {
+            bytes = await rendition.file.readAsBytes();
+            smallPoster = await prepareMomentVideoPoster(rendition.file,
+                source: _previews[image]);
+          } finally {
+            await rendition.dispose();
+          }
+        } else {
+          if (await image.length() > 20 * 1024 * 1024) {
+            throw const MomentImageException('媒体大小不能超过20MB');
+          }
+          bytes = await image.readAsBytes();
         }
-        bytes = await image.readAsBytes();
       } on MomentImageException {
         rethrow;
       } catch (_) {
@@ -349,6 +442,12 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       if (videoMime != null &&
           (bytes.isEmpty || bytes.length > 20 * 1024 * 1024)) {
         throw const MomentImageException('视频大小不能超过20MB');
+      }
+      if (videoMime != null &&
+          smallPoster == null &&
+          _previews[image]?.isNotEmpty == true) {
+        smallPoster = await prepareMomentVideoPoster(File(image.path),
+            source: _previews[image]);
       }
       final gif = videoMime == null && isGifBytes(bytes);
       if (gif) {
@@ -360,7 +459,11 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       }
       final processed =
           videoMime == null && !gif ? await preprocessor.process(bytes) : bytes;
-      final mimeType = videoMime ?? (gif ? 'image/gif' : 'image/jpeg');
+      if (processed.isEmpty || processed.length > 20 * 1024 * 1024) {
+        throw const MomentImageException('媒体大小不能超过20MB');
+      }
+      final mimeType =
+          videoMime != null ? 'video/mp4' : (gif ? 'image/gif' : 'image/jpeg');
       // XFile.fromData ignores name on native platforms. Keep upload metadata
       // separately; never send its empty native name to BeginUpload.
       final suffix = videoMime == 'video/quicktime'
@@ -371,26 +474,59 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                   ? 'gif'
                   : 'jpg';
       final fileName = _fileNames[image] ?? 'moment.$suffix';
-      final begun = await widget.api.beginMomentUpload(
-        fileName: gif
-            ? 'moment.gif'
-            : videoMime == null
-                ? _jpegFileName(fileName)
-                : fileName,
-        mimeType: mimeType,
-        byteSize: processed.lengthInBytes,
-      );
+      final begun = await widget.api.postMomentTask(
+          lease,
+          '/moments/media/uploads',
+          {
+            'file_name': gif
+                ? 'moment.gif'
+                : videoMime == null
+                    ? _jpegFileName(fileName)
+                    : '${fileName.replaceAll(RegExp(r'\.[^.]+$'), '')}.mp4',
+            'mime_type': mimeType,
+            'byte_size': processed.lengthInBytes,
+          },
+          widget.api.newIdempotencyKey());
       final uploadId = begun['id']?.toString();
       if (uploadId == null || uploadId.isEmpty) {
         throw StateError('Moment upload session is missing an id');
       }
-      await widget.api.putMomentUpload(uploadId, processed, mimeType);
-      final completed = await widget.api.completeMomentUpload(uploadId);
+      await widget.api.putMomentTask(lease, uploadId, processed, mimeType);
+      final completed = await widget.api.postMomentTask(
+          lease,
+          '/moments/media/uploads/$uploadId/complete',
+          {},
+          widget.api.newIdempotencyKey());
       final mediaUrl = completed['media_url']?.toString().trim();
       if (mediaUrl == null || mediaUrl.isEmpty) {
         throw StateError('Moment upload completion is missing a media URL');
       }
       final key = completed['media_cache_key']?.toString();
+      String? posterId;
+      if (videoMime != null && smallPoster != null) {
+        try {
+          final begunPoster = await widget.api.postMomentTask(
+              lease,
+              '/moments/video-posters/uploads',
+              {
+                'file_name': 'poster.jpg',
+                'mime_type': 'image/jpeg',
+                'byte_size': smallPoster.length,
+              },
+              widget.api.newIdempotencyKey());
+          final id = begunPoster['id'] as String;
+          await widget.api.putMomentTask(lease, id, smallPoster, 'image/jpeg');
+          final completePoster = await widget.api.postMomentTask(
+              lease,
+              '/moments/media/uploads/$id/complete',
+              {},
+              widget.api.newIdempotencyKey());
+          if (completePoster['status'] == 'COMPLETED') posterId = id;
+        } on BusinessApiException catch (error) {
+          // Previous servers have no poster route; a readable video remains valid.
+          if (error.statusCode != 404) rethrow;
+        }
+      }
       final poster = _previews[image];
       if (videoMime != null &&
           key != null &&
@@ -403,7 +539,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
               accountKey: 'matrix:$account',
               trustedOrigin: widget.api.baseUri.origin,
               expectedAccountGeneration: generation,
-              mimeType: videoMime);
+              mimeType: mimeType);
           if (poster != null && poster.isNotEmpty) {
             await MomentMediaCache.storeVideoPoster(mediaUrl, poster,
                 cacheKey: key,
@@ -422,6 +558,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         throw const MomentImageException('账号已切换，请重新打开发表页面');
       }
       setState(() {
+        if (posterId != null) _videoPosterIds[mediaUrl] = posterId;
         if (videoMime != null && key != null) _videoCacheKeys[mediaUrl] = key;
         images.removeAt(0);
         final preview = _previews.remove(image);
@@ -483,19 +620,34 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     }
     if (result == 'discard') {
       _allowPop = true;
-      for (final url in remoteVideoUrls.toList()) {
-        unawaited(_removeVideoPoster(url));
+      final session = await _composerSession;
+      final revision = MomentDraftStores.editingRevision;
+      if (session == null ||
+          !await widget.api.isMomentPublishSessionCurrent(session)) {
+        return true;
       }
-      unawaited(MomentDraftStores.shared?.clear());
       try {
-        await widget.api.deleteMomentDraft();
+        await widget.api.clearMomentTaskDraft(
+            session, _serverDraftPayload, widget.api.newIdempotencyKey());
       } catch (_) {
-        // A local discard still closes the editor; the stale server draft is
-        // harmless and can be overwritten by a later explicit save.
+        // Older/offline servers retain their draft; never fall back to DELETE.
       }
+      if (revision == MomentDraftStores.editingRevision &&
+          await widget.api.isMomentPublishSessionCurrent(session) &&
+          MomentDraftStores.shared?.read()?.scope ==
+              'matrix:${session.accountId}') {
+        await MomentDraftStores.shared?.clear();
+      }
+      // Unused previews are reclaimed by the account cache quota/lifecycle.
       return true;
     }
     return false;
+  }
+
+  void _editPayload(VoidCallback mutation) {
+    _editorRevision++;
+    MomentDraftStores.noteEditing();
+    setState(mutation);
   }
 
   Future<void> _pickImages() async {
@@ -521,14 +673,23 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
             !const ['video/mp4', 'video/quicktime'].contains(photo.mimeType)) {
           throw const MomentImageException('仅支持MP4/MOV视频');
         }
-        if (photo.isVideo &&
-            photo.originalSizeBytes != null &&
-            await photo.originalSizeBytes!() > 20 * 1024 * 1024) {
-          throw const MomentImageException('视频大小不能超过20MB');
+        // Keep a file-backed video source. Its eventual chat rendition, rather
+        // than its original bytes, is measured against the shared 20MiB limit.
+        final videoFile =
+            photo.isVideo ? await photo.localVideoFile?.call() : null;
+        final gif = !photo.isVideo && photo.mimeType == 'image/gif';
+        if (gif &&
+            (await photo.originalSizeBytes?.call() ?? 0) > 20 * 1024 * 1024) {
+          throw const MomentImageException('图片大小不能超过20MB');
         }
-        final bytes = await photo.originalBytes();
+        final bytes = videoFile != null
+            ? Uint8List(0)
+            : gif
+                ? await photo.originalBytes()
+                : await photo.compressedBytes();
         if (!mounted) return;
-        if (photo.isVideo &&
+        if (videoFile == null &&
+            photo.isVideo &&
             (bytes.isEmpty || bytes.length > 20 * 1024 * 1024)) {
           throw const MomentImageException('视频大小不能超过20MB');
         }
@@ -547,12 +708,13 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         }
         if (!mounted) return;
         final fileName = 'moment-${images.length}.$suffix';
-        final file =
-            XFile.fromData(bytes, name: fileName, mimeType: photo.mimeType);
+        final file = videoFile != null
+            ? XFile(videoFile.path, name: fileName, mimeType: photo.mimeType)
+            : XFile.fromData(bytes, name: fileName, mimeType: photo.mimeType);
         if (photo.isVideo && momentVideoMime(file) == null) {
           throw const MomentImageException('仅支持MP4/MOV视频');
         }
-        setState(() {
+        _editPayload(() {
           images.add(file);
           _fileNames[file] = fileName;
           _previews[file] = preview.isNotEmpty
@@ -584,7 +746,9 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         ),
       ),
     );
-    if (selected != null && mounted) setState(() => visibility = selected);
+    if (selected != null && mounted) {
+      _editPayload(() => visibility = selected);
+    }
   }
 
   Future<void> _editLink() async {
@@ -619,44 +783,33 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     );
     controller.dispose();
     if (value == null || !mounted) return;
-    setState(() => linkUrl = value.isEmpty ? null : value);
+    _editPayload(() => linkUrl = value.isEmpty ? null : value);
   }
 
   Future<void> _publish() async {
-    if (busy || !dirty) return;
+    if (_published || busy || !dirty) return;
     setState(() {
       saving = true;
       errorMessage = null;
     });
     try {
-      final imageUrls = await _uploadPendingImages();
-      final payloadIdentity = jsonEncode(_payload());
-      if (_publishPayload != payloadIdentity) {
-        _publishPayload = payloadIdentity;
-        _publishKey = widget.api.newIdempotencyKey();
+      final session = await _composerSession;
+      if (session == null ||
+          !await widget.api.isMomentPublishSessionCurrent(session)) {
+        throw const MomentImageException('账号已切换，请重新打开发表页面');
       }
-      await widget.api.publishMoment(
-        idempotencyKey: _publishKey,
-        text: text.text,
-        visibility: visibility.visibility,
-        imageUrls: imageUrls,
-        videoUrls: remoteVideoUrls,
-        includeUserIds: visibility.visibility == 'INCLUDE'
-            ? visibility.userIds.toList()
-            : const [],
-        includeTagIds: visibility.visibility == 'INCLUDE'
-            ? visibility.tagIds.toList()
-            : const [],
-        excludeUserIds: visibility.visibility == 'EXCLUDE'
-            ? visibility.userIds.toList()
-            : const [],
-        excludeTagIds: visibility.visibility == 'EXCLUDE'
-            ? visibility.tagIds.toList()
-            : const [],
-        linkUrl: linkUrl,
-      );
-      await widget.api.deleteMomentDraft();
-      unawaited(MomentDraftStores.shared?.clear());
+      final queue = widget.publishCoordinator ??
+          await MomentPublishQueues.open(widget.api);
+      await queue.enqueue(
+          _payload(),
+          [
+            for (final file in images)
+              MomentPublishMedia(file,
+                  video: momentVideoMime(file) != null,
+                  poster: _previews[file]),
+          ],
+          preprocessor: widget.imagePreprocessor,
+          expectedDraft: _serverDraftPayload);
       _published = true;
       _allowPop = true;
       if (mounted && Navigator.canPop(context)) Navigator.pop(context, true);
@@ -710,7 +863,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
             trailing: CupertinoButton(
               key: const Key('moment-compose-publish'),
               padding: EdgeInsets.zero,
-              onPressed: busy || !dirty ? null : _publish,
+              onPressed: _published || busy || !dirty ? null : _publish,
               child: busy
                   ? const CupertinoActivityIndicator()
                   : Text(
@@ -776,7 +929,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                                 padding: EdgeInsets.zero,
                                 onPressed: busy
                                     ? null
-                                    : () => setState(
+                                    : () => _editPayload(
                                           () =>
                                               remoteImageUrls.remove(imageUrl),
                                         ),
@@ -809,7 +962,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                                       padding: EdgeInsets.zero,
                                       onPressed: busy
                                           ? null
-                                          : () => setState(() {
+                                          : () => _editPayload(() {
                                                 remoteVideoUrls
                                                     .remove(videoUrl);
                                                 unawaited(_removeVideoPoster(
@@ -839,6 +992,11 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                                   width: 84,
                                   height: 84,
                                   fit: BoxFit.cover)
+                            else if (image.path.isEmpty)
+                              const SizedBox(
+                                  width: 84,
+                                  height: 84,
+                                  child: Icon(CupertinoIcons.photo))
                             else
                               Image.file(
                                 File(image.path),
@@ -852,8 +1010,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                                 padding: EdgeInsets.zero,
                                 onPressed: busy
                                     ? null
-                                    : () =>
-                                        setState(() => images.remove(image)),
+                                    : () => _editPayload(
+                                        () => images.remove(image)),
                                 child: const Icon(
                                   CupertinoIcons.clear_circled_solid,
                                   color: CupertinoColors.systemGrey,

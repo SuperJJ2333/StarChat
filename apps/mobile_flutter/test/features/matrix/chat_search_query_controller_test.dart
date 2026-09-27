@@ -25,6 +25,15 @@ void main() {
         hasMedia: hasMedia,
       );
 
+  test('legacy short result page is exhausted without an extra request',
+      () async {
+    final controller = ChatSearchQueryController(
+      search: (f, {cursor, limit = 50}) async => [msg('only', 'hello')],
+    )..setKeyword('hello');
+    final page = await controller.executeNow();
+    expect(page.nextCursor, isNull);
+  });
+
   group('#4 默认空态与组合筛选', () {
     test('首次进入（无条件）为空态：不查询', () async {
       var queries = 0;
@@ -106,7 +115,9 @@ void main() {
           search: (f, {cursor, limit = 50}) async => const []);
       controller.setMediaCategory(ChatSearchMediaCategory.imageVideo);
       controller.setMediaCategory(ChatSearchMediaCategory.file);
-      expect(controller.activeFilters.where((f) => f.kind == ChatSearchFilterKind.media),
+      expect(
+          controller.activeFilters
+              .where((f) => f.kind == ChatSearchFilterKind.media),
           hasLength(1));
     });
   });
@@ -121,12 +132,14 @@ void main() {
     });
 
     test('分类匹配：图片视频含说明文字匹配；文件匹配正文/文件名；链接匹配正文与 URL 文字', () {
-      final image = msg('i1', 'holiday.jpg', order: 1,
-          category: ChatSearchMediaCategory.imageVideo, hasMedia: true);
-      final file = msg('f1', 'report.pdf', order: 2,
-          category: ChatSearchMediaCategory.file, hasMedia: true);
-      final link = msg('l1', '看这个 https://example.test/a', order: 3,
-          category: ChatSearchMediaCategory.link);
+      final image = msg('i1', 'holiday.jpg',
+          order: 1,
+          category: ChatSearchMediaCategory.imageVideo,
+          hasMedia: true);
+      final file = msg('f1', 'report.pdf',
+          order: 2, category: ChatSearchMediaCategory.file, hasMedia: true);
+      final link = msg('l1', '看这个 https://example.test/a',
+          order: 3, category: ChatSearchMediaCategory.link);
       expect(
           ChatSearchFilters(mediaCategory: ChatSearchMediaCategory.imageVideo)
               .matches(image),
@@ -153,7 +166,8 @@ void main() {
         final matched = data.where(f.matches).toList();
         int start = 0;
         if (cursor != null) {
-          start = matched.indexWhere((m) => m.timelineOrder == cursor.order) + 1;
+          start =
+              matched.indexWhere((m) => m.timelineOrder == cursor.order) + 1;
         }
         final end = (start + limit).clamp(0, matched.length);
         return matched.sublist(start, end);
@@ -216,9 +230,10 @@ void main() {
   group('高亮与时间', () {
     test('安全文本高亮片段（不执行 HTML）', () {
       const text = '<script>alert(1)</script> Hello <b>world</b>';
-      final segments =
-          buildHighlightSnippet(text, 'hello');
-      expect(segments.any((s) => s.highlighted && s.text.toLowerCase().contains('hello')),
+      final segments = buildHighlightSnippet(text, 'hello');
+      expect(
+          segments.any(
+              (s) => s.highlighted && s.text.toLowerCase().contains('hello')),
           isTrue);
       expect(segments.map((s) => s.text).join(), contains('script>'),
           reason: '原文保留（作为纯文本）但不执行');
@@ -226,7 +241,8 @@ void main() {
 
     test('时间格式：当天 HH:mm；其他日期 yyyy-MM-dd HH:mm', () {
       final now = DateTime(2026, 9, 6, 15, 0);
-      expect(formatSearchResultTime(DateTime(2026, 9, 6, 9, 5), now: now), '09:05');
+      expect(formatSearchResultTime(DateTime(2026, 9, 6, 9, 5), now: now),
+          '09:05');
       expect(formatSearchResultTime(DateTime(2026, 9, 5, 9, 5), now: now),
           '2026-09-05 09:05');
     });

@@ -5,6 +5,7 @@ import '../../features/matrix/gallery_video_preview.dart';
 import '../../features/matrix/video_transcode.dart';
 import '../motion/motion_page_route.dart';
 import '../foundation/wechat_tokens.dart';
+import '../chat/media_visibility.dart';
 import 'moment_media_cache.dart';
 
 /// Explicit playback keeps the feed light and uses the existing native player,
@@ -15,9 +16,12 @@ final class MomentVideoTile extends StatefulWidget {
       required this.url,
       this.cacheKey,
       this.accountKey,
-      this.trustedOrigin});
+      this.trustedOrigin,
+      this.posterUrl,
+      this.posterCacheKey});
   final String url;
   final String? cacheKey, accountKey, trustedOrigin;
+  final String? posterUrl, posterCacheKey;
 
   @override
   State<MomentVideoTile> createState() => _MomentVideoTileState();
@@ -26,6 +30,7 @@ final class MomentVideoTile extends StatefulWidget {
 final class _MomentVideoTileState extends State<MomentVideoTile> {
   Uint8List? _poster;
   int _posterRevision = 0;
+  bool _visible = false;
 
   @override
   void initState() {
@@ -39,7 +44,9 @@ final class _MomentVideoTileState extends State<MomentVideoTile> {
     if (oldWidget.url != widget.url ||
         oldWidget.cacheKey != widget.cacheKey ||
         oldWidget.accountKey != widget.accountKey ||
-        oldWidget.trustedOrigin != widget.trustedOrigin) {
+        oldWidget.trustedOrigin != widget.trustedOrigin ||
+        oldWidget.posterUrl != widget.posterUrl ||
+        oldWidget.posterCacheKey != widget.posterCacheKey) {
       _poster = null;
       _loadPoster();
     }
@@ -47,11 +54,15 @@ final class _MomentVideoTileState extends State<MomentVideoTile> {
 
   void _loadPoster() {
     final revision = ++_posterRevision;
-    if (widget.cacheKey == null || widget.accountKey == null) return;
-    unawaited(MomentMediaCache.cachedVideoPoster(widget.url,
+    if (!_visible || widget.cacheKey == null || widget.accountKey == null) {
+      return;
+    }
+    unawaited(MomentMediaCache.resolveVideoPoster(widget.url,
             cacheKey: widget.cacheKey,
             accountKey: widget.accountKey,
-            trustedOrigin: widget.trustedOrigin)
+            trustedOrigin: widget.trustedOrigin,
+            posterUrl: widget.posterUrl,
+            posterCacheKey: widget.posterCacheKey)
         .then((bytes) {
       if (mounted && revision == _posterRevision && bytes != null) {
         setState(() => _poster = bytes);
@@ -62,13 +73,23 @@ final class _MomentVideoTileState extends State<MomentVideoTile> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoButton(
+  Widget build(BuildContext context) => MediaVisibility(
+      onChanged: (visible) {
+        _visible = visible;
+        if (visible) {
+          _loadPoster();
+        } else {
+          ++_posterRevision;
+        }
+      },
+      child: CupertinoButton(
         key: const Key('moment-video-play'),
         color: WeChatColors.resolve(context, WeChatColors.lightSurface),
         padding: EdgeInsets.zero,
         onPressed: () {
           var retry = false;
-          Navigator.of(context, rootNavigator: true).push(
+          Navigator.of(context, rootNavigator: true)
+              .push(
             MotionPageRoute(
                 builder: (_) => GalleryVideoPreviewPage(
                       viewerOnly: true,
@@ -89,7 +110,10 @@ final class _MomentVideoTileState extends State<MomentVideoTile> {
                         );
                       },
                     )),
-          );
+          )
+              .then((_) {
+            if (mounted && _visible) _loadPoster();
+          });
         },
         child: SizedBox(
           width: 160,
@@ -111,5 +135,5 @@ final class _MomentVideoTileState extends State<MomentVideoTile> {
                       child: Text('播放视频'))),
           ]),
         ),
-      );
+      ));
 }

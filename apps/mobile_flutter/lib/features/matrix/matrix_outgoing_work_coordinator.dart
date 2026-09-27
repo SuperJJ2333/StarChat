@@ -213,6 +213,7 @@ final class MatrixOutgoingWorkItem {
   String? _eventId;
   String? get eventId => _eventId;
   bool _echoed = false;
+  bool _admittedToWindow = true;
   final PerformanceCorrelationContext? performanceContext;
   final void Function(MatrixOutgoingWorkState state)? onAttemptSettled;
   final void Function()? onTimelinePublished;
@@ -283,6 +284,7 @@ final class MatrixOutgoingWorkJob {
 /// Bounded account-owned work. It survives route changes during one Matrix
 /// session but is not a durable OS-background outbox.
 final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
+  static const maxFrozenForwardItems = 4096;
   MatrixOutgoingWorkCoordinator({
     required this.accountId,
     this.maxConcurrentTransfers = 3,
@@ -559,6 +561,7 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
   Future<List<MatrixOutgoingWorkJob>> enqueueBatch(
     List<MatrixOutgoingWorkJob> incoming, {
     void Function()? onAccepted,
+    bool windowed = false,
   }) async {
     if (!_active) throw StateError('MATRIX_OUTGOING_WORK_REVOKED');
     if (incoming.isEmpty) return const [];
@@ -585,12 +588,20 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
         sourceBytes += source.retainedBytes;
       }
     }
-    if (_outstandingItemCount + itemCount > maxOutstandingItems ||
+    if (windowed) _trimTerminalJobs(requiredItemSlots: itemCount);
+    if ((!windowed &&
+            _outstandingItemCount + itemCount > maxOutstandingItems) ||
+        (windowed && _allItems().length + itemCount > maxFrozenForwardItems) ||
         _retainedSourceBytes + sourceBytes > maxRetainedSourceBytes) {
       throw const MatrixOutgoingWorkCapacityException();
     }
     onAccepted?.call();
     for (final job in incoming) {
+      if (windowed) {
+        for (final item in job.items) {
+          item._admittedToWindow = false;
+        }
+      }
       final source = job.source;
       if (source != null) _ownedSources.add(source);
       _retainedSourceBytes += source?.retainedBytes ?? 0;
@@ -661,6 +672,7 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
       case MatrixOutgoingWorkState.canceled:
         break;
     }
+    _schedule();
     _notifyListeners();
     _signalProgress();
   }
@@ -736,12 +748,14 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
 
   int get _outstandingItemCount => _allItems()
       .where((item) =>
+          item._admittedToWindow &&
           (item._state != MatrixOutgoingWorkState.sent || !item._echoed) &&
           item._state != MatrixOutgoingWorkState.canceled)
       .length;
 
   void _schedule() {
     if (!_active) return;
+    _promoteWindow();
     _markReadyItems();
     _startPreparationIfAllowed();
     while (_activeTransfers < maxConcurrentTransfers) {
@@ -759,6 +773,27 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
     _startPreparationIfAllowed();
   }
 
+  /// Frozen forwarding descriptors wait without starting preparation or transfer.
+  /// SDK acknowledgements free execution slots even before timeline echoes arrive.
+  int get activeWindowItemCount => _allItems()
+      .where((item) =>
+          item._admittedToWindow &&
+          item._state != MatrixOutgoingWorkState.sent &&
+          item._state != MatrixOutgoingWorkState.canceled)
+      .length;
+
+  void _promoteWindow() {
+    var slots = maxOutstandingItems - activeWindowItemCount;
+    for (final item in _allItems()) {
+      if (slots <= 0) break;
+      if (!item._admittedToWindow &&
+          item._state == MatrixOutgoingWorkState.queued) {
+        item._admittedToWindow = true;
+        slots--;
+      }
+    }
+  }
+
   void _startPreparationIfAllowed() {
     while (_activePreparation == 0 && readySourceCount < maxReadySources) {
       final job = _nextUnpreparedJob();
@@ -767,7 +802,8 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
         if (!_reservePreparationIfAllowed(source)) return;
         job._preparing = true;
         for (final item in job.items) {
-          if (item._state == MatrixOutgoingWorkState.queued) {
+          if (item._admittedToWindow &&
+              item._state == MatrixOutgoingWorkState.queued) {
             item._state = MatrixOutgoingWorkState.preparing;
           }
         }
@@ -792,8 +828,9 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
       if (source != null &&
           !source.isPrepared &&
           _canReservePreparation(source) &&
-          job.items
-              .any((item) => item._state == MatrixOutgoingWorkState.queued)) {
+          job.items.any((item) =>
+              item._admittedToWindow &&
+              item._state == MatrixOutgoingWorkState.queued)) {
         return job;
       }
     }
@@ -818,7 +855,8 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
       if (job.source != null) continue;
       for (final item in job.items) {
         final source = item._sourceFor(job);
-        if (item._state == MatrixOutgoingWorkState.queued &&
+        if (item._admittedToWindow &&
+            item._state == MatrixOutgoingWorkState.queued &&
             source != null &&
             !source.isPrepared) {
           return (job, item, source);
@@ -834,7 +872,8 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
       if (job._preparing || (source != null && !source.isPrepared)) continue;
       for (final item in job.items) {
         final legacySource = job.source == null ? item._sourceFor(job) : null;
-        if (item._state == MatrixOutgoingWorkState.queued &&
+        if (item._admittedToWindow &&
+            item._state == MatrixOutgoingWorkState.queued &&
             (legacySource == null || legacySource.isPrepared)) {
           item._state = MatrixOutgoingWorkState.ready;
         }
@@ -1058,7 +1097,7 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  void _trimTerminalJobs() {
+  void _trimTerminalJobs({int requiredItemSlots = 0}) {
     final terminal = <String>[
       for (final entry in _jobs.entries)
         if (entry.value.items.every((item) =>
@@ -1066,10 +1105,14 @@ final class MatrixOutgoingWorkCoordinator extends ChangeNotifier {
             (item._state == MatrixOutgoingWorkState.sent && item._echoed)))
           entry.key
     ];
-    final excess = terminal.length - maxRetainedTerminalJobs;
-    if (excess <= 0) return;
-    for (final id in terminal.take(excess)) {
-      _jobs.remove(id);
+    var excess = terminal.length - maxRetainedTerminalJobs;
+    var slotsToFree =
+        _allItems().length + requiredItemSlots - maxFrozenForwardItems;
+    for (final id in terminal) {
+      if (excess <= 0 && slotsToFree <= 0) break;
+      final removed = _jobs.remove(id)!;
+      slotsToFree -= removed.items.length;
+      excess--;
     }
   }
 

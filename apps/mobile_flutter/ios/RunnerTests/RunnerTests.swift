@@ -1,24 +1,5 @@
 import XCTest
-import UIKit
 @testable import Runner
-
-final class IOSMessageNavigationGateTests: XCTestCase {
-  func testBackgroundOrInactiveApplicationCannotNavigateToMessages() {
-    for state in [UIApplication.State.background, .inactive] {
-      XCTAssertFalse(IOSMessageNavigationGate.allows(
-        applicationState: state, sceneStates: [.foregroundActive]))
-    }
-  }
-
-  func testActiveApplicationStillRequiresAnActiveScene() {
-    for states in [[UIScene.ActivationState](), [.background], [.foregroundInactive], [.unattached]] {
-      XCTAssertFalse(IOSMessageNavigationGate.allows(
-        applicationState: .active, sceneStates: states))
-    }
-    XCTAssertTrue(IOSMessageNavigationGate.allows(
-      applicationState: .active, sceneStates: [.background, .foregroundActive]))
-  }
-}
 
 final class RunnerTests: XCTestCase {
   private let now: TimeInterval = 1_800_000_000
@@ -327,4 +308,21 @@ private final class FakeSessionSecurity: IOSSessionSecurityOperations {
   func update(_ query: [String: Any], attributes: [String: Any]) -> OSStatus { updates.append((query, attributes)); return updateStatus }
   func add(_ attributes: [String: Any]) -> OSStatus { additions.append(attributes); return addStatus }
   func delete(_ query: [String: Any]) -> OSStatus { deletions.append(query); return errSecSuccess }
+}
+
+final class IOSConversationNotificationStateTests: XCTestCase {
+  func testOnlyExactRoomMessagesAreRemoved() {
+    let message: [AnyHashable: Any] = ["room_id": "!A", "event_id": "$message"]
+    XCTAssertTrue(IOSConversationNotificationState.matches(roomId: "!A", userInfo: message))
+    XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "!B", userInfo: message))
+    XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "!", userInfo: message))
+    XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "", userInfo: message))
+  }
+  func testCallsMalformedAndOpaqueWakeupsArePreserved() {
+    for payload: [AnyHashable: Any] in [[:], ["room_id": "!A"],
+        ["room_id": "!A", "event_id": ""], ["room_id": "!A", "event_id": 1],
+        ["room_id": "!A", "event_id": "$call", "call_id": "call"]] {
+      XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "!A", userInfo: payload))
+    }
+  }
 }

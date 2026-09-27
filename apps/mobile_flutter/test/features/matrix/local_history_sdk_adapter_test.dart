@@ -1,0 +1,95 @@
+import 'dart:convert';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:matrix/matrix.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/local_room_history_search.dart';
+import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/room_history_day_index.dart';
+
+class LocalClient extends Client {
+  LocalClient(this.store) : super('synthetic-local-adapter');
+  final MatrixSdkDatabase store;
+  late Room room;
+  @override
+  DatabaseApi get database => store;
+  @override
+  Room? getRoomById(String id) => id == room.id ? room : null;
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(sqfliteFfiInit);
+  test(
+      'actual SDK database holes retain raw offsets and date/search remain local',
+      () async {
+    final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final db = MatrixSdkDatabase(inMemoryDatabasePath,
+        database: raw, sqfliteFactory: databaseFactoryFfi);
+    await db.open();
+    final client = LocalClient(db);
+    final room = client.room = Room(id: '!synthetic:local', client: client);
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://matrix.invalid'),
+        readContinuityMetadata: (c) async => MatrixClientContinuityMetadata(
+            isLoggedIn: c.isLogged(),
+            userId: c.userID,
+            deviceId: c.deviceID,
+            ed25519Fingerprint: 'synthetic',
+            databaseGeneration: 'synthetic'));
+    MatrixRoomLease? lease;
+    try {
+      for (var i = 0; i < 4; i++) {
+        await db.storeEventUpdate(
+            EventUpdate(
+                roomID: room.id,
+                type: EventUpdateType.timeline,
+                content: {
+                  'event_id': 'e$i',
+                  'sender': '@synthetic:local',
+                  'type': EventTypes.Message,
+                  'origin_server_ts':
+                      DateTime(2026, 9, i + 1).millisecondsSinceEpoch,
+                  'content': {
+                    'msgtype': MessageTypes.Text,
+                    'body': 'synthetic needle $i'
+                  }
+                }),
+            client);
+      }
+      final ids = await db.getEventIdList(room);
+      final first = ids.first;
+      final stored = await raw.query('box_events');
+      final missing = stored.singleWhere(
+          (r) => (jsonDecode(r['v'] as String) as Map)['event_id'] == first);
+      await raw.delete('box_events', where: 'k = ?', whereArgs: [missing['k']]);
+      // Reopen box wrappers to reproduce a persisted missing row without the
+      // SDK's storeEventUpdate in-memory cache masking the disk hole.
+      await db.open();
+      lease = await owner.openRoomLease(room.id);
+      final page = await lease.readLocalSearchPage(room.id, 0, 2);
+      expect(page, hasLength(2));
+      expect(page.first.eventId, first);
+      expect(page.first.isDisplayable, isFalse);
+      final search = LocalRoomHistorySearch(
+          roomIds: () => [room.id],
+          readPage: lease.readLocalSearchPage,
+          sourceRevision: () => lease!.localHistorySearchRevision,
+          snapshot: lease.localHistorySnapshot,
+          project: (_, row) => row.visibleText.isEmpty ? null : row);
+      final result =
+          await search.search(const ChatSearchFilters(keyword: 'needle'));
+      expect(result.items, hasLength(3));
+      expect(result.coverageIncomplete, isTrue);
+      final month =
+          await lease.loadLocalHistoryMonthDays(const CalendarMonth(2026, 9));
+      expect(
+          month.anchors.values.toSet(), ids.where((id) => id != first).toSet());
+      expect(lease.notificationRoomIds, [room.id]);
+    } finally {
+      await lease?.cancel();
+      await db.close();
+      await client.dispose();
+    }
+  });
+}

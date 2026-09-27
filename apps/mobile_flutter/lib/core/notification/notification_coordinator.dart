@@ -21,6 +21,7 @@ import 'sound_type.dart';
 import 'system_notification_presenter.dart';
 
 import '../../features/matrix/mute_exception_policy.dart';
+import '../../features/matrix/conversation_read_state.dart';
 
 /// Matrix 同步侧预计算后的入站通知事实。
 final class IncomingNotification {
@@ -63,12 +64,14 @@ final class NotificationCoordinator {
     SoundCooldownGate? cooldownGate,
     NotificationUsageRecorder? usageRecorder,
     NotificationDiagnostics? diagnostics,
+    ConversationReadState? readState,
     DateTime Function()? now,
   })  : deduplicator = deduplicator ?? NotificationDeduplicator(),
         cooldownGate = cooldownGate ?? SoundCooldownGate(),
         usageRecorder =
             usageRecorder ?? const SharedPreferencesNotificationUsageRecorder(),
         diagnostics = diagnostics ?? NotificationDiagnostics.shared,
+        readState = readState ?? ConversationReadState.shared(),
         now = now ?? DateTime.now;
 
   final NotificationPreferenceStore preferenceStore;
@@ -85,6 +88,7 @@ final class NotificationCoordinator {
   final NotificationUsageRecorder usageRecorder;
   final NotificationDiagnostics diagnostics;
   final DateTime Function() now;
+  final ConversationReadState readState;
 
   NotificationPreferenceValues _prefs = const NotificationPreferenceValues();
 
@@ -95,15 +99,82 @@ final class NotificationCoordinator {
   bool _started = false;
   Timer? _pushWakeTimer;
   int _pushWakeGeneration = 0;
+  StreamSubscription<ConversationReadChange>? _readSubscription;
+  String? _readAccount;
+  int _epoch = 0;
+  int _badgeGeneration = 0;
+  Future<void> _badgeWrites = Future<void>.value();
+  final Map<String, int> _roomRevisions = {};
+  final Map<String, Future<void>> _roomWrites = {};
 
   Future<void> start() async {
     if (_started) return;
     _started = true;
     _prefs = await preferenceStore.load();
     await systemNotifications.initialize();
+    _readAccount = readState.accountId;
+    _readSubscription = readState.changes.listen(_onReadChange);
     _subscription = eventSource.events.listen(
       (notification) => unawaited(handleEvent(notification)),
     );
+    for (final roomId in readState.openRoomIds) {
+      _onReadChange(ConversationReadChange(
+          accountId: _readAccount, roomId: roomId, isOpen: true));
+    }
+  }
+
+  void _onReadChange(ConversationReadChange change) {
+    if (!_started) return;
+    if (change.accountId != _readAccount) {
+      ++_epoch;
+      ++_badgeGeneration;
+      return;
+    }
+    final roomId = change.roomId;
+    // Viewing already suppresses alerts and unread counts. Receipt updates
+    // inside that room must not rescan all conversations for every message.
+    if (change.cleared && change.isOpen) return;
+    if (roomId != null) {
+      _roomRevisions[roomId] = (_roomRevisions[roomId] ?? 0) + 1;
+      if (change.isOpen || change.cleared) {
+        unawaited(_writeRoom(roomId, (epoch) => _cancelRoom(roomId, epoch)));
+      }
+    }
+    unawaited(refreshLauncherBadge());
+  }
+
+  bool _isCurrent(int epoch) =>
+      _started && epoch == _epoch && readState.accountId == _readAccount;
+
+  Future<void> _cancelRoom(String roomId, int epoch) async {
+    if (!_isCurrent(epoch)) return;
+    await systemNotifications
+        .cancelConversation(notificationIdForConversation(roomId));
+    if (!_isCurrent(epoch)) return;
+    final presenter = systemNotifications;
+    if (presenter is DeliveredConversationNotificationPresenter) {
+      await (presenter as DeliveredConversationNotificationPresenter)
+          .cancelDeliveredConversation(roomId);
+    }
+  }
+
+  Future<void> _writeRoom(String roomId, Future<void> Function(int) action) {
+    final epoch = _epoch;
+    final prior = _roomWrites[roomId] ?? Future<void>.value();
+    late final Future<void> flight;
+    flight = prior.then((_) async {
+      if (!_started || epoch != _epoch || readState.accountId != _readAccount) {
+        return;
+      }
+      await action(epoch);
+    }).catchError((Object error) {
+      diagnostics.record(NotificationDiagStage.suppressed,
+          'room reconciliation failed: ${error.runtimeType}');
+    }).whenComplete(() {
+      if (identical(_roomWrites[roomId], flight)) _roomWrites.remove(roomId);
+    });
+    _roomWrites[roomId] = flight;
+    return flight;
   }
 
   /// 设置页更新偏好后同步内存快照（PRD §38 即时生效）。
@@ -196,6 +267,7 @@ final class NotificationCoordinator {
     NotificationDecision decision,
     NotificationEvent event,
   ) async {
+    final roomRevision = _roomRevisions[event.conversationId] ?? 0;
     if (decision.updateBadge) {
       await refreshLauncherBadge();
     }
@@ -224,15 +296,25 @@ final class NotificationCoordinator {
     if (decision.showSystemNotification) {
       unawaited(usageRecorder.count(NotificationUsageEvents.displayed));
       final unreadCount = await _unreadForRoom(event.conversationId);
-      await systemNotifications.showConversationMessage(
-        notificationId: notificationIdForConversation(event.conversationId),
-        title: decision.previewTitle,
-        body: decision.previewBody,
-        channel: decision.systemChannel,
-        roomIdPayload: event.conversationId,
-        avatarUrl: event.avatarUrl,
-        unreadCount: unreadCount,
-      );
+      await _writeRoom(event.conversationId, (epoch) async {
+        if (readState.isRoomOpen(event.conversationId) ||
+            (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
+          return;
+        }
+        await systemNotifications.showConversationMessage(
+          notificationId: notificationIdForConversation(event.conversationId),
+          title: decision.previewTitle,
+          body: decision.previewBody,
+          channel: decision.systemChannel,
+          roomIdPayload: event.conversationId,
+          avatarUrl: event.avatarUrl,
+          unreadCount: unreadCount,
+        );
+        if (readState.isRoomOpen(event.conversationId) ||
+            (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
+          await _cancelRoom(event.conversationId, epoch);
+        }
+      });
     }
   }
 
@@ -254,11 +336,27 @@ final class NotificationCoordinator {
   /// PRD §36：角标以服务器未读为事实来源，聚合后整笔刷新（不做 badge++）。
   Future<void> refreshLauncherBadge() async {
     if (!_prefs.badgeEnabled) return;
+    final generation = ++_badgeGeneration;
+    final epoch = _epoch;
     try {
       final snapshots = await unreadSource.load();
+      if (generation != _badgeGeneration ||
+          epoch != _epoch ||
+          readState.accountId != _readAccount) {
+        return;
+      }
       final total =
           aggregateLauncherBadge(prefs: _prefs, conversations: snapshots);
-      await badgeGateway.updateCount(total);
+      final write = _badgeWrites.then((_) async {
+        if (generation != _badgeGeneration ||
+            epoch != _epoch ||
+            readState.accountId != _readAccount) {
+          return;
+        }
+        await badgeGateway.updateCount(total);
+      });
+      _badgeWrites = write.catchError((Object _) {});
+      await write;
     } catch (_) {
       // 快照加载失败保留上次角标；下次事件或前台同步会重新对齐。
     }
@@ -319,6 +417,12 @@ final class NotificationCoordinator {
 
   Future<void> dispose() async {
     _started = false;
+    ++_epoch;
+    ++_badgeGeneration;
+    await _readSubscription?.cancel();
+    _readSubscription = null;
+    await Future.wait(_roomWrites.values.toList());
+    await _badgeWrites;
     await cancelPushWakeNotification();
     await _subscription?.cancel();
     _subscription = null;

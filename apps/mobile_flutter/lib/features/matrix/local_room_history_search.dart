@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'bounded_history_search.dart';
 import 'chat_search_query_controller.dart';
+import 'local_room_history_snapshot.dart';
 
 /// Bounded device-local scan. SQLCipher pages never enter the rendered timeline
 /// and never trigger SDK remote pagination. Each source retains one 512-row
@@ -12,7 +13,15 @@ final class LocalRoomHistorySearch {
       required this.readPage,
       required this.project,
       this.sourceRevision,
-      this.pageSize = 512});
+      LocalRoomHistorySnapshot? snapshot,
+      this.pageSize = 512})
+      : snapshot = snapshot ??
+            LocalRoomHistorySnapshot(
+                roomIds: roomIds,
+                readPage: readPage,
+                sourceRevision: sourceRevision,
+                pageSize: pageSize);
+  final LocalRoomHistorySnapshot snapshot;
   final List<String> Function() roomIds;
   final Future<List<ChatSearchMessage>> Function(
       String roomId, int offset, int limit) readPage;
@@ -47,6 +56,7 @@ final class LocalRoomHistorySearch {
         cursor.order != _page) {
       throw const HistorySearchCancelled();
     }
+    final snapshotGeneration = snapshot.generation;
     if (cursor != null &&
         sourceRevision != null &&
         _sourceRevision != sourceRevision!()) {
@@ -65,6 +75,7 @@ final class LocalRoomHistorySearch {
     final added = <String>[], evicted = <String>[];
     void check() {
       if (generation != _generation ||
+          snapshotGeneration != snapshot.generation ||
           (sourceRevision != null && revision != sourceRevision!())) {
         throw const HistorySearchCancelled();
       }
@@ -80,7 +91,7 @@ final class LocalRoomHistorySearch {
             state.buffer = const [];
             break;
           }
-          final page = await readPage(roomId, state.offset, pageSize);
+          final page = await snapshot.page(roomId, state.offset, pageSize);
           check();
           state.offset += page.length;
           state.buffer = page;

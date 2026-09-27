@@ -128,8 +128,7 @@ void main() {
             matching: find.byType(Scrollable)),
         maxScrolls: 40);
     await tester.pumpAndSettle();
-    expect(
-        calls, 3); // Initial page, final item, then empty end-of-history page.
+    expect(calls, 2); // The short final page already proves local exhaustion.
     expect(find.byKey(const Key('category-media-media-50')), findsOneWidget);
     expect(find.byKey(const Key('chat-search-load-more')), findsNothing);
     final scrollable = tester.state<ScrollableState>(find.descendant(
@@ -165,7 +164,13 @@ void main() {
               latestMonth: const logic.CalendarMonth(2026, 9),
               loadCalendarMonth: (month) async => logic.RoomHistoryMonthDays(
                 month: month,
-                dayStates: const {6: logic.RoomHistoryDayState.knownPresent},
+                coverageComplete: true,
+                dayStates: {
+                  for (var d = 1; d <= month.daysInMonth; d++)
+                    d: d == 6
+                        ? logic.RoomHistoryDayState.knownPresent
+                        : logic.RoomHistoryDayState.knownEmpty
+                },
               ),
               onJumpToDate: (_) => Navigator.of(roomContext)
                   .popUntil((route) => route == roomRoute),

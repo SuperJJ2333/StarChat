@@ -205,7 +205,9 @@ final class ChatSearchQueryController {
       }
       final result = ChatSearchResultPage(
         items: dedupeByEventId(page),
-        nextCursor: slice == null ? _cursorOf(page) : slice.nextCursor,
+        nextCursor: slice == null
+            ? (page.length < limit ? null : _cursorOf(page))
+            : slice.nextCursor,
         epoch: epoch,
         coverageIncomplete: slice?.coverageIncomplete ?? false,
       );
@@ -245,10 +247,18 @@ final class ChatSearchQueryController {
       return ChatSearchResultPage(
           items: current.items, nextCursor: cursor, epoch: epoch, stale: true);
     }
+    final nextCursor = slice == null
+        ? (more.length < limit ? null : _cursorOf(more))
+        : slice.nextCursor;
+    if (nextCursor != null &&
+        nextCursor.order == cursor.order &&
+        nextCursor.eventId == cursor.eventId) {
+      throw StateError('Local search continuation did not advance');
+    }
     final merged = dedupeByEventId([...current.items, ...more]);
     return ChatSearchResultPage(
       items: merged,
-      nextCursor: slice == null ? _cursorOf(more) : slice.nextCursor,
+      nextCursor: nextCursor,
       epoch: epoch,
       coverageIncomplete:
           current.coverageIncomplete || (slice?.coverageIncomplete ?? false),
@@ -287,6 +297,7 @@ final class ChatSearchMessage {
     this.isVideo = false,
     this.isFlashPhoto = false,
     this.isUndecrypted = false,
+    this.isDisplayable = true,
     this.duration,
   });
 
@@ -312,6 +323,7 @@ final class ChatSearchMessage {
   /// 闪照（阅后即焚）：不属于普通媒体资产，见 [MediaMessageAccessPolicy]。
   final bool isFlashPhoto;
   final bool isUndecrypted;
+  final bool isDisplayable;
   final Duration? duration;
 }
 

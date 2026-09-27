@@ -24,15 +24,19 @@ class PrivateObjectStorage(Protocol):
 
 
 class LocalPrivateObjectStorage:
-    def __init__(self, *, root: str, signing_secret: str, public_base_url: str) -> None:
+    def __init__(self, *, root: str, signing_secret: str, public_base_url: str, backend=None) -> None:
         if len(signing_secret) < 16:
             raise ValueError("avatar signing secret must be at least 16 characters")
         self._root = Path(root).resolve()
+        self.byte_backend = backend
         key = urlsafe_b64encode(sha256(signing_secret.encode("utf-8")).digest())
         self._fernet = Fernet(key)
         self._public_base_url = public_base_url.rstrip("/")
 
     def put(self, object_key: str, content: bytes) -> None:
+        if self.byte_backend is not None:
+            self.byte_backend.put(object_key, content)
+            return
         target = self._path(object_key)
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(target.suffix + ".tmp")
@@ -41,7 +45,13 @@ class LocalPrivateObjectStorage:
 
     def get(self, object_key: str) -> bytes:
         try:
+            if self.byte_backend is not None:
+                return self.byte_backend.get(object_key)
             return self._path(object_key).read_bytes()
+        except AppError as error:
+            if error.code != 'MEDIA_BLOB_MISSING':
+                raise
+            raise AppError(code='AVATAR_NOT_FOUND', message='头像不存在', status_code=404) from None
         except FileNotFoundError:
             raise AppError(
                 code="AVATAR_NOT_FOUND",
@@ -50,6 +60,9 @@ class LocalPrivateObjectStorage:
             ) from None
 
     def delete(self, object_key: str) -> None:
+        if self.byte_backend is not None:
+            self.byte_backend.delete(object_key)
+            return
         self._path(object_key).unlink(missing_ok=True)
 
     def signed_read_url(self, object_key: str, expires_in: int) -> str:
@@ -79,7 +92,7 @@ class LocalPrivateObjectStorage:
     def moment_read_url(self, payload: str) -> str:
         return f"{self._public_base_url}/api/v1/moments/media/content/{quote(self.sign_key(payload), safe='')}"
 
-    def read_signed(self, token: str, expires_in: int) -> tuple[bytes, str]:
+    def read_signed(self, token: str, expires_in: int, *, authorize=None) -> tuple[bytes, str]:
         if expires_in not in self.allowed_read_ttls:
             self._invalid_signed_url()
         try:
@@ -90,6 +103,8 @@ class LocalPrivateObjectStorage:
         except (InvalidToken, UnicodeError):
             self._invalid_signed_url()
         if object_key.startswith("moments/") and not object_key.startswith("moments/covers/"):
+            self._invalid_signed_url()
+        if authorize is not None and not authorize(object_key):
             self._invalid_signed_url()
         mime_type = {
             ".jpg": "image/jpeg",

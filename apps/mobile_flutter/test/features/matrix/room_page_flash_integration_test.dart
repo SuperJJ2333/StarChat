@@ -184,6 +184,45 @@ final class _MemoryStore implements SecureKeyValueStore {
 }
 
 void main() {
+  testWidgets('selected message keeps a full row highlight until deselected',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await _pumpRoom(tester, _FlashClient('selection'));
+    await tester.pump(const Duration(milliseconds: 200));
+    final bubble = tester
+        .widget<WeChatMessageBubble>(find.byType(WeChatMessageBubble).first);
+    bubble.onLongPress!();
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('多选'));
+    await tester.pump();
+    final checkbox =
+        find.byKey(const ValueKey('message-select-\$normal-after'));
+    final button = tester.widget<CupertinoButton>(checkbox);
+    if ((button.child as Icon).icon == CupertinoIcons.circle) {
+      await tester.tap(checkbox);
+      await tester.pump();
+    }
+    expect((tester.widget<CupertinoButton>(checkbox).child as Icon).icon,
+        CupertinoIcons.checkmark_circle_fill);
+    final selected = find
+        .byKey(const ValueKey('message-selection-highlight-\$normal-after'));
+    expect(selected, findsOneWidget);
+    final decoration =
+        tester.widget<DecoratedBox>(selected).decoration as BoxDecoration;
+    expect(decoration.color!.a, greaterThan(0));
+    await tester.pump(const Duration(seconds: 2));
+    expect(
+        find.byKey(
+            const ValueKey('message-selection-highlight-\$normal-after')),
+        findsOneWidget);
+    await tester.tap(checkbox);
+    await tester.pump();
+    expect(selected, findsNothing);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+
   testWidgets('flash photo: no forward action, destroyed caption blocks reopen',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

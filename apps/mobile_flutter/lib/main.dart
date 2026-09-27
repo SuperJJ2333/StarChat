@@ -18,6 +18,7 @@ import 'core/performance_trace.dart';
 import 'core/media_resource_policy.dart';
 import 'core/matrix_startup_client.dart';
 import 'features/matrix/media_cache.dart';
+import 'features/moments/moment_publish_coordinator.dart';
 import 'core/installation_container_probe.dart';
 import 'core/installation_marker.dart';
 import 'core/installation_reconciler.dart';
@@ -294,9 +295,14 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
           child: AppHome(
             api: api,
             matrix: matrix,
-            onLogout: () {
+            onLogout: () async {
               ChatDiagnostics.instance.stopSession();
-              return session.logout();
+              try {
+                await MomentPublishQueues.revoke(api);
+              } catch (_) {
+                // Session revocation remains authoritative if queue restore failed.
+              }
+              await session.logout();
             },
             themeController: themeController,
           )),

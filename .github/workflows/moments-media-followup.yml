@@ -1,0 +1,150 @@
+name: Moments media Linux and PostgreSQL follow-up
+
+# Synthetic CI only. This does not deploy or connect to production.
+on:
+  push:
+    branches: [codex/ios-media-room-followup]
+    paths:
+      - .github/workflows/moments-media-followup.yml
+      - services/business-api/app/api/moments.py
+      - services/business-api/app/modules/moments/**
+      - services/business-api/migrations/versions/0091_moment_video_posters.py
+      - services/business-api/requirements.lock
+      - tests/business_api/moments/**
+      - tests/business_api/test_migrations.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: moments-media-followup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONPATH: services/business-api
+      MOMENTS_TEST_DATABASE_URL: postgresql+psycopg://moments_ci:synthetic_ci_only@127.0.0.1:5432/moments_ci
+    services:
+      # The previous task-owned restore used PostgreSQL 16.9. Its Docker config
+      # image ID is not a registry manifest digest; record this image separately.
+      postgres:
+        image: postgres:16.9-bookworm
+        env:
+          POSTGRES_USER: moments_ci
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: moments_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --cpus=1 --memory=512m
+          --health-cmd="pg_isready -U moments_ci -d moments_ci"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.11'
+      - name: Install fixed public dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r services/business-api/requirements.lock pytest==8.4.2 pytest-asyncio==0.26.0
+          python -m pip check
+      - name: Record synthetic gate inputs
+        run: |
+          set -euo pipefail
+          mkdir -p ci-evidence
+          git rev-parse HEAD > ci-evidence/source-commit.txt
+          python --version > ci-evidence/python-version.txt
+          python -m pip freeze > ci-evidence/dependencies.txt
+          docker inspect --format='{{.Image}}' '${{ job.services.postgres.id }}' > ci-evidence/postgres-image-id.txt
+          docker image inspect postgres:16.9-bookworm --format='{{json .RepoDigests}}' > ci-evidence/postgres-registry-digests.json
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          paths = [Path('services/business-api/app/api/moments.py'), *Path('services/business-api/app/modules/moments').glob('*.py'), Path('services/business-api/migrations/versions/0091_moment_video_posters.py'), *Path('tests/business_api/moments').glob('test_*.py'), Path('services/business-api/requirements.lock'), Path('.github/workflows/moments-media-followup.yml')]
+          Path('ci-evidence/input-sha256.json').write_text(json.dumps({p.as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(paths)}, indent=2))
+          PY
+      - name: Linux Moments and media regressions including real GET CAS cases
+        run: |
+          set -euo pipefail
+          python -m pytest tests/business_api/moments --ignore=tests/business_api/moments/test_moment_draft_cas_postgresql.py -q --junitxml=ci-evidence/linux-moments.xml
+          python - <<'PY'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          cases = list(ET.parse('ci-evidence/linux-moments.xml').iter('testcase'))
+          required = {
+              'test_reopened_get_video_draft_publish_then_compare_clear',
+              'test_get_snapshot_cannot_clear_newer_metadata_or_foreign_video',
+              'test_owned_image_identity_equivalence_keeps_media_order_exact',
+              'test_clear_draft_only_if_entire_owner_payload_unchanged',
+              'test_draft_compare_is_json_exact_and_legacy_delete_still_works',
+              'test_draft_poster_validated_and_saved_snapshot_can_compare_clear',
+          }
+          selected = [c for c in cases if c.attrib['name'] in required]
+          assert len(selected) == 6 and {c.attrib['name'] for c in selected} == required
+          assert all(not list(c) for c in selected), 'CAS cases must pass, never skip'
+          Path('ci-evidence/cas-six-summary.json').write_text(json.dumps({'passed': True, 'cases': sorted(required), 'count': 6}))
+          PY
+      - name: PostgreSQL 16 five final concurrency and JSON cases
+        run: |
+          set -euo pipefail
+          python -m pytest tests/business_api/moments/test_moment_draft_cas_postgresql.py -q --junitxml=ci-evidence/postgres-five.xml
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = list(ET.parse('ci-evidence/postgres-five.xml').iter('testcase'))
+          assert len(cases) == 5 and all(not list(c) for c in cases), 'All five PG cases must pass, never skip'
+          PY
+      - name: Single migration head and PostgreSQL expand preservation
+        run: |
+          set -euo pipefail
+          python -m pytest tests/business_api/test_migrations.py::test_wallet_and_moments_merge_is_the_only_head tests/business_api/moments/test_moment_poster_migration.py -q --junitxml=ci-evidence/migration.xml
+          python - <<'PY'
+          import importlib.util, json, os
+          from pathlib import Path
+          from uuid import uuid4
+          from alembic.migration import MigrationContext
+          from alembic.operations import Operations
+          from sqlalchemy import create_engine, inspect, text
+          path = Path('services/business-api/migrations/versions/0091_moment_video_posters.py')
+          spec = importlib.util.spec_from_file_location('poster_expand', path)
+          migration = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(migration)
+          assert migration.down_revision == '0090_friend_discovery_index'
+          engine = create_engine(os.environ['MOMENTS_TEST_DATABASE_URL'])
+          schema = 'moments_expand_' + uuid4().hex
+          try:
+              with engine.begin() as conn:
+                  version = conn.execute(text('SHOW server_version')).scalar_one()
+                  assert version.startswith('16.9')
+                  conn.execute(text('CREATE SCHEMA "' + schema + '"'))
+                  conn.execute(text('SET LOCAL search_path TO "' + schema + '"'))
+                  conn.execute(text('CREATE TABLE moments (id TEXT PRIMARY KEY)'))
+                  conn.execute(text("INSERT INTO moments (id) VALUES ('synthetic-legacy')"))
+                  with Operations.context(MigrationContext.configure(conn)):
+                      migration.upgrade()
+                  assert conn.execute(text('SELECT id,video_poster_keys,request_fingerprint FROM moments')).one() == ('synthetic-legacy', None, None)
+                  conn.execute(text("UPDATE moments SET video_poster_keys='[null]',request_fingerprint=:value"), {'value': 'a'*64})
+                  with Operations.context(MigrationContext.configure(conn)):
+                      migration.downgrade()
+                  assert {'video_poster_keys', 'request_fingerprint'}.issubset({c['name'] for c in inspect(conn).get_columns('moments', schema=schema)})
+                  assert conn.execute(text('SELECT video_poster_keys,request_fingerprint FROM moments')).one() == ([None], 'a'*64)
+              Path('ci-evidence/postgres-expand-summary.json').write_text(json.dumps({'passed': True, 'version': version, 'legacy_preserved': True, 'application_rollback_preserved': True}))
+          finally:
+              with engine.begin() as conn:
+                  conn.execute(text('DROP SCHEMA IF EXISTS "' + schema + '" CASCADE'))
+              engine.dispose()
+          PY
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: moments-media-linux-pg-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence/
+          retention-days: 14
+          if-no-files-found: error

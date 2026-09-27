@@ -24,11 +24,9 @@ void main() {
     await tester.enterText(find.byKey(const Key('chat-search-input')), 'rare');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-search-continue')));
-    await tester.pumpAndSettle();
     expect(find.text('加载失败，点击重试'), findsOneWidget);
     failed = false;
-    await tester.tap(find.byKey(const Key('chat-search-continue')));
+    await tester.tap(find.byKey(const Key('chat-search-page-retry')));
     await tester.pumpAndSettle();
     expect(find.text('未找到符合条件的聊天记录'), findsOneWidget);
   });
@@ -53,10 +51,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('chat-search-input')), 'rare');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
-    expect(find.text('未找到符合条件的聊天记录'), findsNothing);
-    expect(find.byKey(const Key('chat-search-continue')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('chat-search-continue')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('chat-search-continue')), findsNothing);
     expect(batches, 2);
     expect(find.text('未找到符合条件的聊天记录'), findsOneWidget);
   });

@@ -30,6 +30,7 @@ import 'moment_models.dart';
 import 'moment_detail_page.dart';
 import 'moment_comment_interaction.dart';
 import 'moment_composer_page.dart';
+import 'moment_publish_coordinator.dart';
 import '../matrix/profile_repository.dart';
 import '../../ui/motion/motion_page_route.dart';
 
@@ -326,8 +327,64 @@ final class _MomentsPageState extends State<MomentsPage> {
     _startAccount();
   }
 
+  MomentPublishCoordinator? _publishQueue;
+  int _publishedRevision = 0;
+
+  Future<void> _connectPublishQueue() async {
+    final api = widget.api;
+    final epoch = _accountEpoch;
+    try {
+      final queue = await MomentPublishQueues.open(api);
+      if (!mounted || epoch != _accountEpoch || !identical(api, widget.api)) {
+        return;
+      }
+      _publishQueue?.removeListener(_publishQueueChanged);
+      _publishQueue = queue;
+      _publishedRevision = queue.publishedRevision;
+      queue.addListener(_publishQueueChanged);
+      setState(() {});
+    } catch (_) {/* A logged-out feed cannot acquire an upload queue. */}
+  }
+
+  void _publishQueueChanged() {
+    if (!mounted) return;
+    final queue = _publishQueue;
+    if (queue == null) return;
+    setState(() {});
+    if (queue.publishedRevision != _publishedRevision) {
+      _publishedRevision = queue.publishedRevision;
+      _reloadFeed();
+    }
+  }
+
+  Widget _pendingPublish(MomentPublishJob job) => Padding(
+        key: ValueKey('moment-pending-${job.id}'),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(children: [
+          if (job.state != MomentPublishState.failed)
+            const CupertinoActivityIndicator(),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(
+                  job.state == MomentPublishState.failed
+                      ? job.message ?? '动态发送失败，点击重试'
+                      : '动态正在发送…',
+                  style: const TextStyle(fontSize: 13))),
+          if (job.state == MomentPublishState.failed)
+            CupertinoButton(
+                onPressed: () => _publishQueue?.retry(job.id),
+                child: const Text('重试')),
+          CupertinoButton(
+              onPressed: () => _publishQueue?.cancel(job.id),
+              child: const Text('取消')),
+        ]),
+      );
+
   void _startAccount() {
     ++_accountEpoch;
+    _publishQueue?.removeListener(_publishQueueChanged);
+    _publishQueue = null;
+    unawaited(_connectPublishQueue());
     ++_feedRequest;
     ++_preferencesRequest;
     _itemOverrides.clear();
@@ -689,6 +746,7 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   @override
   void dispose() {
+    _publishQueue?.removeListener(_publishQueueChanged);
     _performanceTrace.dispose();
     momentsPrivacyChanges.removeListener(_privacyChanged);
     _feedScroll.dispose();
@@ -973,6 +1031,12 @@ final class _MomentsPageState extends State<MomentsPage> {
                 slivers: [
                   CupertinoSliverRefreshControl(onRefresh: _refreshFeed),
                   SliverList.list(children: [
+                    for (final job
+                        in _publishQueue?.jobs ?? const <MomentPublishJob>[])
+                      if (_publishQueue?.active == true &&
+                          job.state != MomentPublishState.succeeded &&
+                          job.state != MomentPublishState.cancelled)
+                        _pendingPublish(job),
                     if (_interactionError != null)
                       Padding(
                         padding: const EdgeInsets.all(12),

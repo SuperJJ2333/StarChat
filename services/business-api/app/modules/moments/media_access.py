@@ -1,5 +1,6 @@
 """Viewer-scoped media capabilities, checked against live Moment visibility."""
 import json
+from uuid import UUID
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 from sqlalchemy import select
@@ -45,6 +46,27 @@ def owned_key(session, storage, reference, owner, *, purpose=None):
     return key
 
 
+def owned_video_poster_keys(session, media_ids, owner, video_count):
+    if not isinstance(media_ids, list) or len(media_ids) > 9 or (media_ids and len(media_ids) != video_count):
+        invalid(422)
+    keys = []
+    for media_id in media_ids:
+        if media_id is None:
+            keys.append(None)
+            continue
+        try:
+            if not isinstance(media_id, (str, UUID)):
+                invalid(422)
+            normalized = str(UUID(str(media_id)))
+        except (ValueError, TypeError, AttributeError):
+            invalid(422)
+        upload = session.get(MomentMediaUpload, normalized)
+        if not upload or upload.owner_id != owner or upload.status != "COMPLETED" or upload.purpose != "MOMENT_VIDEO_POSTER":
+            invalid(422)
+        keys.append(upload.object_key)
+    return keys
+
+
 def signed_url(storage, key, moment_id, viewer):
     if not viewer or not hasattr(storage, "moment_read_url"):
         return ""
@@ -65,7 +87,7 @@ def read_content(factory, storage, token):
         if data.get("domain") == "moment-upload-v1":
             with factory() as session:
                 upload = session.get(MomentMediaUpload, data["upload"])
-                if not upload or upload.owner_id != data["viewer"] or upload.object_key != data["key"] or upload.status != "COMPLETED" or upload.purpose not in ("MOMENT_IMAGE", "MOMENT_VIDEO"):
+                if not upload or upload.owner_id != data["viewer"] or upload.object_key != data["key"] or upload.status != "COMPLETED" or upload.purpose not in ("MOMENT_IMAGE", "MOMENT_VIDEO", "MOMENT_VIDEO_POSTER"):
                     invalid()
                 return storage.get(upload.object_key), upload.mime_type
         if data.get("domain") != "moment-media-v1":
@@ -85,6 +107,13 @@ def read_content(factory, storage, token):
                     break
             except AppError:
                 continue
+        if not attached and key in (moment.video_poster_keys or []):
+            upload = session.scalar(select(MomentMediaUpload).where(
+                MomentMediaUpload.object_key == key,
+                MomentMediaUpload.owner_id == moment.author_id,
+                MomentMediaUpload.status == "COMPLETED",
+                MomentMediaUpload.purpose == "MOMENT_VIDEO_POSTER"))
+            attached = upload is not None
         if not attached:
             comments = session.scalars(select(MomentComment).where(MomentComment.moment_id == moment_id, MomentComment.deleted_at.is_(None), MomentComment.user_id.in_(moment_comment_audience(session, viewer, moment.author_id))))
             attached = any(key in (comment.image_object_keys or []) for comment in comments)

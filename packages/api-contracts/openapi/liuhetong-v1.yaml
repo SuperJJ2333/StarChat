@@ -1833,6 +1833,36 @@
         "title": "ClaimView",
         "type": "object"
       },
+      "ClearUnchangedDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_payload": {
+            "additionalProperties": true,
+            "description": "Entire payload returned by get_draft or save_draft. Changed image/video references are owner-validated and compared by durable media identity; every other JSON value and media order must match the current owner's stored snapshot exactly.",
+            "title": "Expected Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "expected_payload"
+        ],
+        "title": "ClearUnchangedDraft",
+        "type": "object"
+      },
+      "ClearUnchangedDraftResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cleared"
+        ],
+        "title": "ClearUnchangedDraftResponse",
+        "type": "object"
+      },
       "CloseBody": {
         "additionalProperties": false,
         "properties": {
@@ -1968,6 +1998,55 @@
           "description"
         ],
         "title": "ComplaintBody",
+        "type": "object"
+      },
+      "CompletedMomentUploadResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "media_cache_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Cache Key"
+          },
+          "media_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable owner-validated media:// reference after completion, for queued publication; not a public read capability.",
+            "title": "Media Ref"
+          },
+          "media_url": {
+            "title": "Media Url",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "media_url",
+          "media_ref",
+          "media_cache_key"
+        ],
+        "title": "CompletedMomentUploadResponse",
         "type": "object"
       },
       "ContactBody": {
@@ -2163,6 +2242,23 @@
             "maxLength": 5000,
             "title": "Text",
             "type": "string"
+          },
+          "video_poster_media_ids": {
+            "description": "Optional owner-completed static video-poster upload IDs, aligned with video_urls; null means no poster. Empty preserves legacy videos.",
+            "items": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxItems": 9,
+            "title": "Video Poster Media Ids",
+            "type": "array"
           },
           "video_urls": {
             "description": "Owner-completed MP4/MOV upload references; at most nine images and videos combined, each <=20MiB.",
@@ -5417,6 +5513,55 @@
           "refresh_token"
         ],
         "title": "MobileRefreshRequest",
+        "type": "object"
+      },
+      "MomentResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "video_poster_cache_keys": {
+            "description": "Stable poster cache identities aligned with video_urls; clients must namespace by current account.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Video Poster Cache Keys",
+            "type": "array"
+          },
+          "video_poster_urls": {
+            "description": "Small viewer-bound video posters, aligned with video_urls; null for old/no-poster videos. Live Moment visibility is rechecked on access.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Video Poster Urls",
+            "type": "array"
+          },
+          "video_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Video Urls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "video_urls",
+          "video_poster_urls",
+          "video_poster_cache_keys"
+        ],
+        "title": "MomentResponse",
         "type": "object"
       },
       "MomentsPreferencesResponse": {
@@ -28814,7 +28959,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MomentResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -29382,6 +29529,73 @@
         ]
       }
     },
+    "/api/v1/moments/draft/clear-if-unchanged": {
+      "post": {
+        "operationId": "clear_unchanged_draft_api_v1_moments_draft_clear_if_unchanged_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearUnchangedDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearUnchangedDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Clear Unchanged Draft",
+        "tags": [
+          "moments"
+        ]
+      }
+    },
     "/api/v1/moments/feed": {
       "get": {
         "operationId": "feed_api_v1_moments_feed_get",
@@ -29676,7 +29890,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/CompletedMomentUploadResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -30411,6 +30627,82 @@
         ]
       }
     },
+    "/api/v1/moments/video-posters/uploads": {
+      "post": {
+        "description": "Begin an owner-scoped video poster upload: static JPEG/PNG/WebP, at most 512 KiB and 480 pixels per edge. PUT and complete use the standard media upload endpoints.",
+        "operationId": "begin_video_poster_upload_api_v1_moments_video_posters_uploads_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Begin Video Poster Upload",
+        "tags": [
+          "moments"
+        ]
+      }
+    },
     "/api/v1/moments/{moment_id}": {
       "delete": {
         "operationId": "delete_api_v1_moments__moment_id__delete",
@@ -30496,7 +30788,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MomentResponse"
+                }
               }
             },
             "description": "Successful Response"

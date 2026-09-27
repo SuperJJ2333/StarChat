@@ -16,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
@@ -122,6 +123,15 @@ class _OfflineRoom extends Room {
   }
 }
 
+void _bindOfflineAccount(_OfflineClient client, MatrixRoomLease lease) {
+  // Production binds the active account before opening a room. This fixture
+  // mounts RoomPage directly, so supply the same real lease account boundary.
+  expect(lease.roomInfo.currentUserId, client.userID);
+  ConversationReadState.shared()
+    ..resetForTest()
+    ..bindAccount(client.userID);
+}
+
 Future<MatrixRoomLease> _mount(WidgetTester tester, _OfflineClient client,
     {bool friend = false,
     ScrollBehavior? scrollBehavior,
@@ -134,6 +144,7 @@ Future<MatrixRoomLease> _mount(WidgetTester tester, _OfflineClient client,
   final matrix = MatrixSdkE2eeClient(client,
       homeserver: Uri.parse('https://offline.test'));
   final lease = await matrix.openRoomLease(client.localRoom.id);
+  _bindOfflineAccount(client, lease);
   final api = BusinessApiClient(
       baseUri: Uri.parse('https://business.test'),
       sessionStore: SecureSessionStore(),
@@ -186,6 +197,8 @@ void _newEvent(_OfflineRoom room) {
 }
 
 void main() {
+  setUp(() => ConversationReadState.shared().resetForTest());
+  tearDown(() => ConversationReadState.shared().resetForTest());
   testWidgets('sync bursts preserve composing range, selection and focus',
       (tester) async {
     final client = _OfflineClient();
@@ -836,6 +849,7 @@ void main() {
       final matrix = MatrixSdkE2eeClient(client,
           homeserver: Uri.parse('https://offline.test'));
       final lease = await matrix.openRoomLease(client.localRoom.id);
+      _bindOfflineAccount(client, lease);
       final api = BusinessApiClient(
           baseUri: Uri.parse('https://business.test'),
           sessionStore: SecureSessionStore(),
@@ -873,6 +887,7 @@ void main() {
     final matrix = MatrixSdkE2eeClient(client,
         homeserver: Uri.parse('https://offline.test'));
     final lease = await matrix.openRoomLease(client.localRoom.id);
+    _bindOfflineAccount(client, lease);
     final cache = ProfileRepository.forTesting(
         accountKey: 'offline-fixture', store: MemoryProfileStore());
     final api = BusinessApiClient(

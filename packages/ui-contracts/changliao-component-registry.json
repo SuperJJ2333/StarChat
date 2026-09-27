@@ -423,6 +423,124 @@
         "admin-table",
         "admin-audit-note"
       ]
+    },
+    "2026-09-28-local-history": {
+      "flutter": "apps/mobile_flutter/lib/ui/chat/chat_search_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-history-calendar",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "present",
+        "empty",
+        "paging",
+        "retry"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "Only local complete snapshot message dates are selectable; normal continuation is scroll-driven without a more button."
+    },
+    "2026-09-28-message-multi-select": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-multi-select-active",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "selected",
+        "unselected"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "A selected message retains the same divider-color full-row background as quote navigation until deselected."
+    },
+    "2026-09-28-announcement-admin": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/group_announcement_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-announcement-unavailable-admin",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "unavailable",
+        "editing",
+        "delete-confirmation"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "An authorized administrator may rewrite or clear a missing historical document; clearing needs confirmation and never exposes plaintext."
+    },
+    "2026-09-28-moment-publish": {
+      "flutter": "apps/mobile_flutter/lib/features/moments/moments_page.dart",
+      "html": "frontend/src/screens/moments.js",
+      "demo": "moments-timeline-background-upload",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "queued",
+        "uploading",
+        "failed",
+        "cancelled",
+        "published"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "Per-account durable publication continues after leaving compose. Failure keeps retry/cancel; process suspension resumes at next launch."
+    },
+    "2026-09-28-moment-video-poster": {
+      "flutter": "apps/mobile_flutter/lib/ui/moments/moment_video_tile.dart",
+      "html": "frontend/src/screens/moments.js",
+      "demo": "moments-media-video-poster",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "poster",
+        "local-fallback",
+        "no-poster",
+        "failed"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "New videos load bounded viewer-authorized small posters; older videos never download in full just to obtain a cover."
     }
   },
   "tokenMappings": {
@@ -1902,7 +2020,7 @@
     }
   },
   "screens": {
-    "expectedCount": 403
+    "expectedCount": 410
   },
   "adminCompletion20260910": {
     "html": [

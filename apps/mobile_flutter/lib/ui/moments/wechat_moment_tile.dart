@@ -168,6 +168,13 @@ final class WeChatMomentTile extends StatelessWidget {
                           padding: const EdgeInsets.only(top: 8),
                           child: MomentVideoTile(
                               url: item.videos[index],
+                              posterUrl: index < item.videoPosterUrls.length
+                                  ? item.videoPosterUrls[index]
+                                  : null,
+                              posterCacheKey:
+                                  index < item.videoPosterCacheKeys.length
+                                      ? item.videoPosterCacheKeys[index]
+                                      : null,
                               cacheKey: index < item.videoCacheKeys.length
                                   ? item.videoCacheKeys[index]
                                   : null,

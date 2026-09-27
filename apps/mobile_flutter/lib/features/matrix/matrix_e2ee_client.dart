@@ -68,6 +68,8 @@ import 'matrix_message_reminder_backend.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
 import 'room_history_day_index.dart';
+import 'local_room_history_snapshot.dart';
+import 'bounded_history_search.dart';
 import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
@@ -1496,6 +1498,11 @@ final class MatrixForwardDestinationSnapshot {
   final List<MatrixRoomMemberSnapshot> members;
 }
 
+final class _RoomHistoryChangeSignal extends ChangeNotifier {
+  bool get isObserved => hasListeners;
+  void publish() => notifyListeners();
+}
+
 final class MatrixRoomLease
     implements
         _ManagedClientResourceBase,
@@ -1514,12 +1521,76 @@ final class MatrixRoomLease
   final _searchEventDelta = RoomSearchEventDelta();
   final _mentionEventDelta = RoomSearchEventDelta();
   int _localHistorySearchRevision = 0;
-  int get localHistorySearchRevision => _localHistorySearchRevision;
+  final _RoomHistoryChangeSignal _localHistoryChanges =
+      _RoomHistoryChangeSignal();
+  Listenable get localHistoryChanges => _localHistoryChanges;
+  bool _historyChangeQueued = false;
+  final _localSearchEventIds = <String, List<String>>{};
+  final _localSearchCutoffs = <String, DateTime?>{};
+  int _localSearchIdsRevision = -1;
+  LocalRoomHistorySnapshot? _localHistorySnapshot;
+  int get localHistorySearchRevision {
+    var changed = false;
+    for (final id in localHistorySearchRoomIds) {
+      final cutoff = owner._localHistoryStore?.lastHistoryCutoff(id);
+      if (_localSearchCutoffs[id] != cutoff) changed = true;
+      _localSearchCutoffs[id] = cutoff;
+    }
+    if (changed) invalidateLocalHistorySearch();
+    return _localHistorySearchRevision;
+  }
+
+  void invalidateLocalHistorySearch() {
+    _localHistorySearchRevision++;
+    _localSearchEventIds.clear();
+    _localHistorySnapshot?.clear();
+    if (!_historyChangeQueued && _localHistoryChanges.isObserved) {
+      _historyChangeQueued = true;
+      scheduleMicrotask(() {
+        _historyChangeQueued = false;
+        if (!canceled) _localHistoryChanges.publish();
+      });
+    }
+  }
+
+  LocalRoomHistorySnapshot get localHistorySnapshot =>
+      _localHistorySnapshot ??= LocalRoomHistorySnapshot(
+        roomIds: () => localHistorySearchRoomIds,
+        readPage: readLocalSearchPage,
+        sourceRevision: () => localHistorySearchRevision,
+      );
+  Future<RoomHistoryMonthDays> loadLocalHistoryMonthDays(CalendarMonth month) {
+    final filters = {
+      for (final id in localHistorySearchRoomIds)
+        id: owner._localHistoryStore?.readFilter(id)
+    };
+    return localHistorySnapshot.monthDays(month,
+        isVisible: (id, row) =>
+            !(filters[id]?.call(row.eventId, row.timestamp) ?? false));
+  }
+
+  String? localAnchorForDay(DateTime day) {
+    final snapshot = localHistorySnapshot;
+    final anchor = snapshot.anchorForDay(day);
+    final source = snapshot.anchorSourceForDay(day);
+    if (anchor != null &&
+        source != null &&
+        (source == roomId || _historyLeases.containsKey(source))) {
+      _logicalTimeline?.hintSource(anchor, source);
+    }
+    return anchor;
+  }
+
+  String? localAnchorSourceForDay(DateTime day) =>
+      localHistorySnapshot.anchorSourceForDay(day);
+
   ({List<String> ids, bool rescan}) takeSearchEventDelta() =>
       _searchEventDelta.drain();
 
   List<String> get localHistorySearchRoomIds =>
       [roomId, ..._historyLeases.keys];
+  List<String> get notificationRoomIds => List<String>.unmodifiable(
+      {roomId, ...owner.logicalRoomSourcesSync(roomId)});
 
   /// Direct SQLCipher read: never SDK timeline/requestHistory or remote fallback.
   Future<List<ChatSearchMessage>> readLocalSearchPage(
@@ -1541,9 +1612,24 @@ final class MatrixRoomLease
             parentOperation: PerformanceTrace.currentOperation);
         trace.mark(PerformanceStage.databaseSearchStarted);
         late final List<Event> events;
+        late final List<String> pageIds;
         try {
-          events =
-              await database.getEventList(source, start: offset, limit: limit);
+          final revision = localHistorySearchRevision;
+          if (_localSearchIdsRevision != revision) {
+            _localSearchEventIds.clear();
+            _localSearchIdsRevision = revision;
+          }
+          final cachedIds = _localSearchEventIds[sourceRoomId];
+          final ids = cachedIds ?? await database.getEventIdList(source);
+          if (revision != localHistorySearchRevision) {
+            throw const HistorySearchCancelled();
+          }
+          _localSearchEventIds[sourceRoomId] = ids;
+          pageIds = ids.skip(offset).take(limit).toList(growable: false);
+          events = pageIds.isEmpty
+              ? const <Event>[]
+              : await database.getEventList(source,
+                  start: offset, limit: limit);
           trace.mark(PerformanceStage.databaseSearchDone);
           trace.setDatabase(
               operation: PerformanceDatabaseOperation.messageSearch,
@@ -1562,7 +1648,6 @@ final class MatrixRoomLease
         }
 
         checkActiveSearch();
-        final hidden = owner._localHistoryStore?.readFilter(sourceRoomId);
         final projected = <ChatSearchMessage>[];
         for (var i = 0; i < events.length; i++) {
           final event = events[i];
@@ -1570,7 +1655,7 @@ final class MatrixRoomLease
           // separate queue, while retaining all rows in the sent timeline so
           // the next SQL offset and exhaustion test stay correct.
           if (event.status.isSent) {
-            projected.add(projectDeviceLocalSearchEvent(event, hidden: hidden));
+            projected.add(projectDeviceLocalSearchEvent(event));
           }
           if ((i + 1) % 64 == 0) {
             await Future<void>.delayed(Duration.zero);
@@ -1578,7 +1663,7 @@ final class MatrixRoomLease
           }
         }
         checkActiveSearch();
-        return projected;
+        return completeLocalHistoryPage(pageIds, projected);
       });
   FutureOr<void> Function()? _onRevoked;
   Future<void> Function()? _drainOwner;
@@ -1814,6 +1899,7 @@ final class MatrixRoomLease
             merged.addSource(sourceId, timeline);
             sourcesChanged = true;
             _historyLeases[sourceId] = source;
+            invalidateLocalHistorySearch();
           } catch (_) {
             await source.cancel();
             rethrow;
@@ -1851,7 +1937,7 @@ final class MatrixRoomLease
             _historyLeases.containsKey(update.roomID)) {
           _searchEventDelta.add(update.content);
           _mentionEventDelta.add(update.content);
-          _localHistorySearchRevision++;
+          invalidateLocalHistorySearch();
         }
         if (update.roomID == roomId &&
             update.type == EventUpdateType.accountData &&
@@ -1910,7 +1996,8 @@ final class MatrixRoomLease
     required DateTime cutoff,
   }) =>
       owner.conversations
-          .clearLocalHistory(roomId, messageIds: messageIds, cutoff: cutoff);
+          .clearLocalHistory(roomId, messageIds: messageIds, cutoff: cutoff)
+          .then((_) => invalidateLocalHistorySearch());
 
   Future<DateTime?> serverNow() => _withLeaseOperation((room) async {
         final homeserver = room.client.homeserver;
@@ -2033,18 +2120,42 @@ final class MatrixRoomLease
   GroupAnnouncementService openAnnouncementService() =>
       _LeaseAnnouncementService(this);
 
-  bool get canEditAnnouncement =>
-      MatrixGroupAnnouncementService(_activeRoom).canEdit;
-  Future<GroupAnnouncement> loadAnnouncement() => _withLeaseOperation(
-      (room) => MatrixGroupAnnouncementService(room).load());
-  Future<void> saveAnnouncement(GroupAnnouncement value) => _withLeaseOperation(
-      (room) => MatrixGroupAnnouncementService(room).save(value));
+  void _ensureAnnouncementRoomCurrent(Room room) {
+    owner._requireLifecycleAccess();
+    if (canceled ||
+        !identical(_room, room) ||
+        !identical(owner._client, room.client)) {
+      throw StateError('Matrix announcement room lease is not active');
+    }
+  }
+
+  bool get canEditAnnouncement {
+    try {
+      final room = _activeRoom;
+      _ensureAnnouncementRoomCurrent(room);
+      return MatrixGroupAnnouncementService(room).canEdit;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String get announcementReferenceIdentity =>
+      MatrixGroupAnnouncementService(_activeRoom).announcementReferenceIdentity;
+  Future<GroupAnnouncement> loadAnnouncement() =>
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+          ensureCurrent: () => _ensureAnnouncementRoomCurrent(room)).load());
+  Future<void> saveAnnouncement(GroupAnnouncement value) =>
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+              ensureCurrent: () => _ensureAnnouncementRoomCurrent(room))
+          .save(value));
   Future<Uint8List> loadAnnouncementImage(String eventId) =>
-      _withLeaseOperation(
-          (room) => MatrixGroupAnnouncementService(room).loadImage(eventId));
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+              ensureCurrent: () => _ensureAnnouncementRoomCurrent(room))
+          .loadImage(eventId));
   Future<String> uploadAnnouncementImage(Uint8List bytes, String name) =>
-      _withLeaseOperation((room) =>
-          MatrixGroupAnnouncementService(room).uploadImage(bytes, name));
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+              ensureCurrent: () => _ensureAnnouncementRoomCurrent(room))
+          .uploadImage(bytes, name));
   Future<String> sendMessageContent(Map<String, Object?> content,
           {required String txid}) =>
       _withLeaseSend((room) async =>
@@ -2432,6 +2543,8 @@ final class MatrixRoomLease
   }
 
   void revokeNow() {
+    invalidateLocalHistorySearch();
+    _localHistorySnapshot = null;
     _mentionIngest.cancel();
     _mentionEventDelta.drain();
     if (_room == null) return;
@@ -2536,11 +2649,15 @@ MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room,
   );
 }
 
-final class _LeaseAnnouncementService implements GroupAnnouncementService {
+final class _LeaseAnnouncementService
+    implements GroupAnnouncementService, GroupAnnouncementReferenceSource {
   _LeaseAnnouncementService(this._lease);
   final MatrixRoomLease _lease;
   @override
   bool get canEdit => _lease.canEditAnnouncement;
+  @override
+  String get announcementReferenceIdentity =>
+      _lease.announcementReferenceIdentity;
   @override
   Stream<void> get changes => _lease.membershipChanges;
   @override
@@ -3731,17 +3848,9 @@ final class _SdkRoomTimelineCapability
   void _recordLoadedDaysIntoIndex(RoomHistoryDayIndex index) {
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
     final events = <({String eventId, DateTime timestamp})>[];
-    DateTime? oldest;
-    DateTime? newest;
     for (final event in _loadedEvents) {
       if (!_visibleDateEvent(event, hidden)) continue;
       events.add((eventId: event.eventId, timestamp: event.originServerTs));
-      if (oldest == null || event.originServerTs.isBefore(oldest)) {
-        oldest = event.originServerTs;
-      }
-      if (newest == null || event.originServerTs.isAfter(newest)) {
-        newest = event.originServerTs;
-      }
     }
     index.recordVisibleEvents(_lease.roomId, events);
     final createdAt = _lease.creationDate;
@@ -3752,9 +3861,8 @@ final class _SdkRoomTimelineCapability
     // 每次加载只**追加**一段区间（相邻/重叠自动合并），区间之间的空档保持
     // unknown —— 旧的单跨度 coveredFrom/coveredTo 会把两次加载之间的空档
     // 谎报成“无消息”。
-    if (oldest != null && newest != null) {
-      index.recordCoverage(_lease.roomId, from: oldest, to: newest);
-    }
+    // Loaded live/context fragments may have a gap. Presence is evidence;
+    // their combined extrema do not prove any empty date in between.
   }
 
   @override
@@ -5069,6 +5177,26 @@ final class MatrixOutgoingForwardMedia extends MatrixOutgoingForwardMessage {
       (thumbnailSha256 == null && !hasEncryptedThumbnail
           ? 0
           : _maxOutgoingVideoPosterBytes);
+
+  /// A queued forward retains descriptors, not downloaded attachment bytes.
+  /// Conservatively budget JSON strings and object overhead; preparation adds
+  /// the bounded payload reservation only when this source starts work.
+  int get descriptorReservationBytes =>
+      utf8.encode(jsonEncode(_content)).length * 4 +
+      utf8
+              .encode([
+                id,
+                sourceRoomId,
+                sourceEventId,
+                sourceAccountId,
+                body,
+                mimeType,
+                filename,
+                senderId
+              ].join())
+              .length *
+          2 +
+      2048;
   MatrixOutgoingPresentationKind get presentationKind =>
       mimeType.startsWith('video/')
           ? MatrixOutgoingPresentationKind.video
@@ -5927,6 +6055,10 @@ final class MatrixSdkE2eeClient
     if (batchId.isEmpty || messages.isEmpty || targetRoomIds.isEmpty) {
       throw ArgumentError('Forwarding requires a batch, messages, and targets');
     }
+    if (messages.length * targetRoomIds.length >
+        MatrixOutgoingWorkCoordinator.maxFrozenForwardItems) {
+      throw const MatrixOutgoingWorkCapacityException();
+    }
     final existing = [
       for (var i = 0; i < messages.length; i++)
         session.coordinator.job('$batchId-$i')
@@ -5996,7 +6128,10 @@ final class MatrixSdkE2eeClient
           createdAt: createdAt,
           source: MatrixOutgoingWorkSource(
             id: 'forward:$batchId:$sourceIndex',
-            retainedBytes: media?.reservationBytes ?? 0,
+            retainedBytes: (media?.descriptorReservationBytes ??
+                    utf8.encode(jsonEncode(content)).length * 4 + 1024) +
+                targets.length * 1024,
+            preparationBytes: media?.reservationBytes ?? 0,
             prepare: mediaSnapshot == null
                 ? null
                 : (attempt) => _prepareForwardMedia(
@@ -6049,7 +6184,7 @@ final class MatrixSdkE2eeClient
     }
     return _observeOutgoingAdmission(jobs, () {
       _ensureOutgoingSessionCurrent(session);
-      return session.coordinator.enqueueBatch(jobs);
+      return session.coordinator.enqueueBatch(jobs, windowed: true);
     });
   }
 
@@ -8307,8 +8442,9 @@ ChatSearchMessage projectDeviceLocalSearchEvent(Event event,
   final type = event.messageType;
   final flash =
       type == MessageTypes.Image && event.content['flash']?.toString() == '1';
-  final text = visible && !flash ? event.text : '';
-  final category = !visible || flash
+  final displayable = visible && type != groupAnnouncementMessageType;
+  final text = displayable && !flash ? event.text : '';
+  final category = !displayable || flash
       ? null
       : switch (type) {
           MessageTypes.Image ||
@@ -8336,6 +8472,7 @@ ChatSearchMessage projectDeviceLocalSearchEvent(Event event,
       visibleText: text,
       mediaCategory: category,
       hasMedia: category == ChatSearchMediaCategory.imageVideo,
+      isDisplayable: displayable,
       isUndecrypted: event.type == EventTypes.Encrypted && !event.redacted,
       isVideo: type == MessageTypes.Video,
       isFlashPhoto: flash);

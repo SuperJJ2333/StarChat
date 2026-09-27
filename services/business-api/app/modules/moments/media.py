@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from io import BytesIO
 from struct import error as StructError
+import warnings
 from PIL import Image, UnidentifiedImageError
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, select
@@ -15,8 +16,32 @@ IMAGE_SUFFIX_BY_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp":
 ALLOWED_IMAGE_MIME = set(IMAGE_SUFFIX_BY_MIME)
 VIDEO_SUFFIX_BY_MIME = {"video/mp4": ".mp4", "video/quicktime": ".mov"}
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_VIDEO_POSTER_BYTES = 512 * 1024
+MAX_VIDEO_POSTER_EDGE = 480
+VIDEO_POSTER_MIME_FORMATS = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}
 MAX_GIF_PIXELS = 4 * 1024 * 1024
 MAX_GIF_TOTAL_PIXELS = 128 * 1024 * 1024
+
+
+def validate_video_poster(content, mime_type):
+    """Decode only a bounded static image, and require its actual declared format."""
+    try:
+        if not content or len(content) > MAX_VIDEO_POSTER_BYTES:
+            raise ValueError("invalid poster size")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(content)) as image:
+                if image.format != VIDEO_POSTER_MIME_FORMATS.get(mime_type):
+                    raise ValueError("poster format mismatch")
+                if not 0 < image.width <= MAX_VIDEO_POSTER_EDGE or not 0 < image.height <= MAX_VIDEO_POSTER_EDGE:
+                    raise ValueError("poster dimensions exceed limit")
+                if getattr(image, "is_animated", False) or getattr(image, "n_frames", 1) != 1:
+                    raise ValueError("animated poster")
+                image.verify()
+            with Image.open(BytesIO(content)) as image:
+                image.load()
+    except (UnidentifiedImageError, OSError, ValueError, EOFError, IndexError, StructError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise AppError(code="MOMENT_MEDIA_INVALID", message="视频封面须为512KiB以内、边长不超过480像素的静态JPEG、PNG或WebP图片", status_code=422) from exc
 
 
 def validate_video_container(content, mime_type):
@@ -164,17 +189,22 @@ class MomentMediaService:
         self.factory = factory
         self.storage = storage
     def begin(self, actor, file_name, mime_type, byte_size, key, *, purpose="MOMENT_IMAGE"):
-        allowed = ALLOWED_IMAGE_MIME | (set(VIDEO_SUFFIX_BY_MIME) if purpose == "MOMENT_IMAGE" else set())
-        if mime_type not in allowed or byte_size < 1 or byte_size > MAX_IMAGE_BYTES:
-            raise AppError(code="MOMENT_MEDIA_INVALID", message="仅支持20MiB以内图片或MP4/MOV视频（封面仅图片）", status_code=422)
+        poster = purpose == "MOMENT_VIDEO_POSTER"
+        allowed = set(VIDEO_POSTER_MIME_FORMATS) if poster else ALLOWED_IMAGE_MIME | (set(VIDEO_SUFFIX_BY_MIME) if purpose == "MOMENT_IMAGE" else set())
+        if mime_type not in allowed or byte_size < 1 or byte_size > (MAX_VIDEO_POSTER_BYTES if poster else MAX_IMAGE_BYTES):
+            message = "视频封面须为512KiB以内、边长不超过480像素的静态JPEG、PNG或WebP图片" if poster else "仅支持20MiB以内图片或MP4/MOV视频（封面仅图片）"
+            raise AppError(code="MOMENT_MEDIA_INVALID", message=message, status_code=422)
         if mime_type in VIDEO_SUFFIX_BY_MIME:
             purpose = "MOMENT_VIDEO"
         with self.factory.begin() as session:
             old = session.scalar(select(MomentMediaUpload).where(MomentMediaUpload.owner_id == actor, MomentMediaUpload.idempotency_key == key))
-            if old: return old
+            if old:
+                if (old.purpose, old.file_name, old.mime_type, old.byte_size) != (purpose, file_name, mime_type, byte_size):
+                    raise AppError(code="IDEMPOTENCY_CONFLICT", message="幂等请求内容不一致", status_code=409)
+                return old
             now = datetime.now(timezone.utc); upload_id = str(uuid4())
             suffix = {**IMAGE_SUFFIX_BY_MIME, **VIDEO_SUFFIX_BY_MIME}[mime_type]
-            directory = "moments/covers" if purpose == "MOMENT_COVER" else "moments"
+            directory = "moments/video-posters" if poster else "moments/covers" if purpose == "MOMENT_COVER" else "moments"
             row = MomentMediaUpload(id=upload_id, owner_id=actor, file_name=file_name, mime_type=mime_type, byte_size=byte_size, status="PENDING", object_key=f"{directory}/{actor}/{upload_id}{suffix}", purpose=purpose, idempotency_key=key, created_at=now, expires_at=now + timedelta(minutes=30))
             session.add(row); return row
     def complete(self, actor, upload_id):
@@ -188,8 +218,26 @@ class MomentMediaService:
             if row.status != "UPLOADED":
                 row.status = "SCANNING"
             else:
+                if row.purpose == "MOMENT_VIDEO_POSTER":
+                    if not self.storage or not hasattr(self.storage, "get"):
+                        raise AppError(code="MOMENT_MEDIA_UNAVAILABLE", message="媒体存储暂不可用", status_code=503)
+                    content = self.storage.get(row.object_key)
+                    if len(content) != row.byte_size:
+                        raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体内容校验失败", status_code=422)
+                    validate_video_poster(content, row.mime_type)
                 row.status = "COMPLETED"
             return row
+
+    def content_limit(self, actor, upload_id):
+        # Authenticate and bound the stream before allocating its request body.
+        with self.factory() as session:
+            row = session.get(MomentMediaUpload, upload_id)
+            if not row or row.owner_id != actor:
+                raise AppError(code="MOMENT_MEDIA_NOT_FOUND", message="上传不存在", status_code=404)
+            if row.status == "COMPLETED":
+                raise AppError(code="MOMENT_MEDIA_COMPLETED", message="已完成的媒体不可覆盖，请重新上传", status_code=409)
+            maximum = MAX_VIDEO_POSTER_BYTES if row.purpose == "MOMENT_VIDEO_POSTER" else MAX_IMAGE_BYTES
+            return min(maximum, row.byte_size) if row.purpose == "MOMENT_VIDEO_POSTER" else maximum
 
     def put_content(self, actor, upload_id, content, content_type):
         with self.factory.begin() as session:
@@ -201,6 +249,10 @@ class MomentMediaService:
                 raise AppError(code="MOMENT_MEDIA_COMPLETED", message="已完成的媒体不可覆盖，请重新上传", status_code=409)
             if content_type != row.mime_type or len(content) != row.byte_size:
                 raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体内容校验失败", status_code=422)
+            if row.purpose == "MOMENT_VIDEO_POSTER":
+                validate_video_poster(content, row.mime_type)
+                if not self.storage:
+                    raise AppError(code="MOMENT_MEDIA_UNAVAILABLE", message="媒体存储暂不可用", status_code=503)
             if content[:6] in (b"GIF87a", b"GIF89a") and row.mime_type != "image/gif":
                 raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体格式与声明不一致", status_code=422)
             if row.mime_type == "image/gif":

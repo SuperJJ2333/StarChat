@@ -94,6 +94,21 @@ enum IOSMessageNavigationGate {
       case "clear":
         UIApplication.shared.applicationIconBadgeNumber = 0
         result(true)
+      case "clearConversation":
+        guard let arguments = call.arguments as? [String: Any],
+              let roomId = arguments["roomId"] as? String, !roomId.isEmpty else {
+          result(FlutterError(code: "INVALID_ROOM", message: "Invalid room", details: nil))
+          return
+        }
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { notifications in
+          let identifiers = notifications.filter {
+            IOSConversationNotificationState.matches(
+              roomId: roomId, userInfo: $0.request.content.userInfo)
+          }.map { $0.request.identifier }
+          center.removeDeliveredNotifications(withIdentifiers: identifiers)
+          DispatchQueue.main.async { result(true) }
+        }
       default:
         result(FlutterMethodNotImplemented)
       }

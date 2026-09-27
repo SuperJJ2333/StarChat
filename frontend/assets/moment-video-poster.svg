@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" role="img" aria-label="海边日落视频封面示例">
+  <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#f4c08b"/><stop offset="1" stop-color="#e5a5a2"/></linearGradient></defs>
+  <path fill="url(#sky)" d="M0 0h480v300H0z"/>
+  <circle cx="310" cy="132" r="38" fill="#ffe4b0"/>
+  <path fill="#7ba8ae" d="M0 176q120-16 240 0t240 0v124H0z"/>
+  <path d="M0 208q120-16 240 0t240 0M0 246q120-12 240 0t240 0" stroke="#cee0dc" stroke-width="3" fill="none"/>
+</svg>

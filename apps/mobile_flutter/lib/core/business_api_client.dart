@@ -84,6 +84,15 @@ final class _AccountSettingsRead<T> {
   }
 }
 
+/// A process-local lease. Tokens are never copied into queued job metadata.
+final class MomentPublishSession {
+  MomentPublishSession._(this._client, this._epoch, this.accountId);
+  final BusinessApiClient _client;
+  final int _epoch;
+  final String accountId;
+  bool get active => _client._sessionEpoch == _epoch;
+}
+
 final class BusinessApiClient
     implements
         BusinessSessionGateway,
@@ -1920,11 +1929,97 @@ final class BusinessApiClient
       );
   Future<Map<String, dynamic>> searchMoments(String query) =>
       getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
+  Future<MomentPublishSession> captureMomentPublishSession() async {
+    final epoch = _sessionEpoch;
+    final stored = await sessionStore.session();
+    if (epoch != _sessionEpoch || stored?.matrixUserId == null) throw _ended;
+    return MomentPublishSession._(this, epoch, stored!.matrixUserId!);
+  }
+
+  Future<bool> isMomentPublishSessionCurrent(
+      MomentPublishSession session) async {
+    if (!identical(session._client, this) || session._epoch != _sessionEpoch) {
+      return false;
+    }
+    final stored = await sessionStore.session();
+    return session._epoch == _sessionEpoch &&
+        stored?.matrixUserId == session.accountId;
+  }
+
+  Future<Map<String, dynamic>> postMomentTask(MomentPublishSession session,
+      String path, Map<String, dynamic> body, String idempotencyKey) async {
+    if (path != '/moments' &&
+        path != '/moments/draft/clear-if-unchanged' &&
+        path != '/moments/media/uploads' &&
+        path != '/moments/video-posters/uploads' &&
+        !RegExp(r'^/moments/media/uploads/[a-zA-Z0-9-]+/complete$')
+            .hasMatch(path)) {
+      throw ArgumentError('Unsupported Moments task operation');
+    }
+    final response = await _authorized(
+        (headers) => _client.post(_uri(path),
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json',
+              'Idempotency-Key': idempotencyKey
+            },
+            body: jsonEncode(body)),
+        expectedMomentSession: session);
+    return _decode(response);
+  }
+
+  Future<void> putMomentTask(MomentPublishSession session, String uploadId,
+      Uint8List bytes, String mimeType) async {
+    if (!RegExp(r'^[a-zA-Z0-9-]+$').hasMatch(uploadId)) {
+      throw ArgumentError('Invalid upload reference');
+    }
+    final response = await _authorized(
+        (headers) => _client.put(
+            _uri('/moments/media/uploads/$uploadId/content'),
+            headers: {...headers, 'Content-Type': mimeType},
+            body: bytes),
+        expectedMomentSession: session);
+    if (response.statusCode >= 400) _decode(response);
+  }
+
+  Future<bool> clearMomentTaskDraft(MomentPublishSession session,
+      Map<String, dynamic> expectedPayload, String key) async {
+    final response = await postMomentTask(
+        session,
+        '/moments/draft/clear-if-unchanged',
+        {'expected_payload': expectedPayload},
+        key);
+    return response['cleared'] == true;
+  }
+
+  Future<Map<String, dynamic>> getMomentTaskDraft(
+      MomentPublishSession session) async {
+    final response = await _authorized(
+        (headers) => _client.get(_uri('/moments/draft'), headers: headers),
+        expectedMomentSession: session);
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> putMomentTaskDraft(MomentPublishSession session,
+      Map<String, dynamic> payload, String key) async {
+    final response = await _authorized(
+        (headers) => _client.put(_uri('/moments/draft'),
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json',
+              'Idempotency-Key': key
+            },
+            body: jsonEncode({'payload': payload})),
+        expectedMomentSession: session);
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> publishMoment({
     required String text,
     required String visibility,
     List<String> imageUrls = const [],
     List<String> videoUrls = const [],
+    List<String?> videoPosterMediaIds = const [],
     List<String> includeUserIds = const [],
     List<String> excludeUserIds = const [],
     List<String> includeTagIds = const [],
@@ -1939,6 +2034,8 @@ final class BusinessApiClient
             'visibility': visibility,
             'image_urls': imageUrls,
             if (videoUrls.isNotEmpty) 'video_urls': videoUrls,
+            if (videoPosterMediaIds.isNotEmpty)
+              'video_poster_media_ids': videoPosterMediaIds,
             'include_user_ids': includeUserIds,
             'exclude_user_ids': excludeUserIds,
             'include_tag_ids': includeTagIds,
@@ -2742,6 +2839,7 @@ final class BusinessApiClient
     Duration timeout = _httpTimeout,
     String? expectedWalletScope,
     String? expectedPaymentScope,
+    MomentPublishSession? expectedMomentSession,
   }) async {
     final diagnostics = ChatDiagnostics.instance;
     final diagnosticGeneration = diagnostics.sessionGeneration;
@@ -2775,6 +2873,16 @@ final class BusinessApiClient
       Future<Duration> remaining() async => deadline.difference(DateTime.now());
       final initial = await sessionStore.session();
       if (epoch != _sessionEpoch) throw _ended;
+      void guardMoment(StoredBusinessSession? stored) {
+        if (expectedMomentSession != null &&
+            (!identical(expectedMomentSession._client, this) ||
+                expectedMomentSession._epoch != _sessionEpoch ||
+                stored?.matrixUserId != expectedMomentSession.accountId)) {
+          throw _ended;
+        }
+      }
+
+      guardMoment(initial);
       void guardPayment(StoredBusinessSession? session) {
         if (expectedPaymentScope != null &&
             _paymentSessionScope(session) != expectedPaymentScope) {
@@ -2803,6 +2911,9 @@ final class BusinessApiClient
         networkDiagnostic(ChatDiagnosticError.rejected, status: 401);
       }
       await _checkReplacement(response, epoch);
+      if (expectedMomentSession != null) {
+        guardMoment(await sessionStore.session());
+      }
       if (response.statusCode != 401 || initial == null) {
         if (expectedPaymentScope != null) {
           guardPayment(await sessionStore.session());
@@ -2817,6 +2928,7 @@ final class BusinessApiClient
       // be saved for other callers if this request's budget runs out.
       final replacement = await refreshSession().timeout(refreshBudget);
       if (epoch != _sessionEpoch) throw _ended;
+      guardMoment(replacement);
       guardPayment(replacement);
       if (expectedWalletScope != null &&
           _walletSessionScope(replacement) != expectedWalletScope) {

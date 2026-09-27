@@ -226,6 +226,12 @@ register("chat", "image-editor", [["ready", "图片编辑 / 六种工具"], ["co
 register("chat", "image-gallery", [["ready", "聊天图片 / 左右浏览"]]);
 register("moments", "detail", [["own-comment", "朋友圈 / 自己评论短按与长按"]]);
 
+register("chat", "history", [["calendar", "聊天记录 / 本机消息日期"], ["results", "聊天记录 / 自动续页"]]);
+register("chat", "multi-select", [["active", "聊天 / 多条消息选中"]]);
+register("chat", "announcement", [["unavailable-admin", "群公告 / 无法解密时管理"]]);
+register("moments", "timeline", [["background-upload", "朋友圈 / 后台发表"], ["background-failed", "朋友圈 / 后台发表失败"]]);
+register("moments", "media", [["video-poster", "朋友圈 / 视频封面"]]);
+
 const darkKeys = [
   ["foundation-tokens-overview", "foundation-tokens-overview-dark"],
   ["foundation-components-catalog", "foundation-components-catalog-dark"],

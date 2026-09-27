@@ -48,6 +48,7 @@ import 'features/ledger/ledger_page_snapshot_store.dart';
 import 'features/friendship/friend_request_snapshot_store.dart';
 import 'features/contacts/contact_tag_snapshot_store.dart';
 import 'features/moments/moment_draft_store.dart';
+import 'features/moments/moment_publish_coordinator.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -551,6 +552,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       return _resolveNewDirectSend(peer);
     };
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_resumeMomentUploads());
     _matrixResourceSetup = _initializeMatrixResources();
     unawaited(_matrixResourceSetup);
     unawaited(_identityCache());
@@ -1050,9 +1052,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   DateTime? _lastUpdateCheckAt;
 
+  Future<void> _resumeMomentUploads() async {
+    try {
+      final queue = await MomentPublishQueues.open(widget.api);
+      if (mounted && queue.active) queue.resume();
+    } catch (_) {
+      // Preserve the durable queue for a later foreground retry.
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _pushTapRouter?.setForeground(state == AppLifecycleState.resumed);
+    if (state == AppLifecycleState.resumed) unawaited(_resumeMomentUploads());
     if (!_matrixReady) return;
     if (state == AppLifecycleState.resumed) {
       _resumePerformance?.onForeground();
