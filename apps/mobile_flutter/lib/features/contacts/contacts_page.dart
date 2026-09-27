@@ -4,8 +4,10 @@ import 'scan_qr_page.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/performance_trace.dart';
 import '../../core/permissions/blocked_contacts.dart';
 import '../../core/support_identity_repository.dart';
 import '../matrix/matrix_e2ee_client.dart';
@@ -24,6 +26,7 @@ import 'friend_request_review_page.dart';
 import 'contact_profile_sections.dart';
 import '../moments/moment_profile_preview.dart';
 import '../search/global_search_page.dart';
+import '../auth/phone_number_format.dart';
 import '../friendship/friend_acceptance_coordinator.dart';
 import '../friendship/friend_request_snapshot_store.dart';
 import '../matrix/profile_repository.dart';
@@ -83,6 +86,7 @@ final class ContactsPage extends StatefulWidget {
     this.onGroupAddressList,
     this.identityCache,
     this.supportIdentities,
+    this.performanceTrace,
   });
 
   final ContactsGateway api;
@@ -107,17 +111,32 @@ final class ContactsPage extends StatefulWidget {
   final VoidCallback? onGroupAddressList;
   final ProfileRepository? identityCache;
   final SupportIdentityRepository? supportIdentities;
+  final PerformanceTrace? performanceTrace;
 
   @override
   State<ContactsPage> createState() => _ContactsPageState();
 }
 
 final class _ContactsPageState extends State<ContactsPage> {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.contactsLoad);
+  bool _initialFirstFrameRendered = false;
+  bool _initialContentSettled = false;
+  bool _initialLoadFailed = false;
+
+  void _finishInitialPerformanceTrace() {
+    if (!_initialFirstFrameRendered || !_initialContentSettled) return;
+    _performanceTrace.finish(
+      result: _initialLoadFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
   late Future<List<ContactSummary>> contacts;
   final scrollController = ScrollController();
   final sectionOffsets = <String, double>{};
   SupportIdentityRepository? _support;
-  Timer? _supportTimer;
   bool _ownsSupport = false;
   List<ContactSummary> _supportContacts = const [];
   int _contactsLoadGeneration = 0;
@@ -125,24 +144,40 @@ final class _ContactsPageState extends State<ContactsPage> {
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _initialFirstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialPerformanceTrace();
+    });
+    _performanceTrace.mark(PerformanceStage.cacheLoadStarted);
     final cached = widget.identityCache?.contacts ?? const <ContactSummary>[];
+    _performanceTrace.mark(PerformanceStage.cacheLoadDone);
+    if (cached.isNotEmpty) {
+      _performanceTrace.mark(PerformanceStage.contentReady);
+      _initialContentSettled = true;
+    } else {
+      _performanceTrace.mark(PerformanceStage.remoteRefreshStarted);
+    }
     contacts = cached.isEmpty
-        ? widget.api.listContacts()
+        ? _performanceTrace.runChildOperations(widget.api.listContacts)
         : Future.value(List.unmodifiable(cached));
     widget.identityCache?.addListener(_identityChanged);
     _configureSupport();
     _observeSupportContacts(contacts);
-    unawaited(
-        widget.identityCache?.refreshContactsQuietly() ?? Future<void>.value());
+    unawaited(_performanceTrace.runChildOperations(() =>
+        widget.identityCache?.refreshContactsQuietly() ??
+        Future<void>.value()));
   }
 
   Future<void> _warmSupport(Iterable<ContactSummary> values) =>
       _support?.warm([
-            for (final contact in values) ...[
-              contact.userId,
-              contact.matrixUserId,
-            ],
-          ]) ??
+        for (final contact in values) ...[
+          contact.userId,
+          contact.matrixUserId,
+        ],
+      ]) ??
       Future<void>.value();
 
   void _setSupportContacts(List<ContactSummary> values) {
@@ -154,25 +189,35 @@ final class _ContactsPageState extends State<ContactsPage> {
     final generation = ++_contactsLoadGeneration;
     future.then((values) {
       if (!mounted || generation != _contactsLoadGeneration) return;
+      if (!_initialContentSettled) {
+        _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
+        _performanceTrace.mark(PerformanceStage.contentReady);
+        _initialContentSettled = true;
+        _finishInitialPerformanceTrace();
+      }
       _setSupportContacts(values);
-    }, onError: (_, __) {});
+    }, onError: (Object _, StackTrace __) {
+      if (!mounted || generation != _contactsLoadGeneration) return;
+      if (!_initialContentSettled) {
+        _performanceTrace.mark(PerformanceStage.remoteRefreshDone);
+        _initialContentSettled = true;
+        _initialLoadFailed = true;
+        _finishInitialPerformanceTrace();
+      }
+    });
   }
 
   void _configureSupport() {
     _support = widget.supportIdentities ??
-        (widget.api is SupportIdentityGateway
-            ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
-            : null);
-    _ownsSupport = widget.supportIdentities == null && _support != null;
-    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_support?.warm([
-            for (final contact in _supportContacts) ...[
-              contact.userId,
-              contact.matrixUserId,
-            ],
-          ], force: true) ??
-          Future<void>.value());
-    });
+        (widget.api is BusinessApiClient
+            ? (widget.api as BusinessApiClient).supportIdentities
+            : widget.api is SupportIdentityGateway
+                ? SupportIdentityRepository(
+                    widget.api as SupportIdentityGateway)
+                : null);
+    _ownsSupport = widget.supportIdentities == null &&
+        widget.api is! BusinessApiClient &&
+        _support != null;
   }
 
   @override
@@ -180,7 +225,6 @@ final class _ContactsPageState extends State<ContactsPage> {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.api, widget.api) ||
         oldWidget.supportIdentities != widget.supportIdentities) {
-      _supportTimer?.cancel();
       if (_ownsSupport) _support?.dispose();
       _configureSupport();
       _contactsLoadGeneration++;
@@ -190,6 +234,10 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   void _identityChanged() {
     if (!mounted) return;
+    if (!_initialContentSettled &&
+        widget.identityCache?.contacts.isNotEmpty == true) {
+      _performanceTrace.mark(PerformanceStage.contentReady);
+    }
     setState(() {
       contacts = Future.value(
         List.unmodifiable(widget.identityCache?.contacts ?? const []),
@@ -199,7 +247,17 @@ final class _ContactsPageState extends State<ContactsPage> {
   }
 
   void reload() {
-    final next = widget.api.listContacts();
+    final trace = _performanceTrace
+        .startSiblingOperation(PerformanceOperationType.contactsLoad)
+      ..mark(PerformanceStage.remoteRefreshStarted);
+    final next = trace.runChildOperations(widget.api.listContacts);
+    unawaited(next.then<void>((_) {
+      trace.mark(PerformanceStage.remoteRefreshDone);
+      trace.finish();
+    }, onError: (Object _, StackTrace __) {
+      trace.mark(PerformanceStage.remoteRefreshDone);
+      trace.finish(result: PerformanceResult.failed);
+    }));
     _observeSupportContacts(next);
     setState(() {
       contacts = next;
@@ -208,7 +266,7 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   @override
   void dispose() {
-    _supportTimer?.cancel();
+    _performanceTrace.dispose();
     if (_ownsSupport) _support?.dispose();
     widget.identityCache?.removeListener(_identityChanged);
     scrollController.dispose();
@@ -466,9 +524,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                             label: label == '★' ? '星标好友' : label,
                           ),
                         ),
-                        for (var i = 0;
-                            i < (grouped[label]?.length ?? 0);
-                            i++)
+                        for (var i = 0; i < (grouped[label]?.length ?? 0); i++)
                           WeChatContactTile(
                             nickname: grouped[label]![i].displayName,
                             fallbackSeed: widget.identityCache
@@ -614,7 +670,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   ContactSelection? _contactSelection;
   var _presenceRequestGeneration = 0;
   SupportIdentityRepository? _support;
-  Timer? _supportTimer;
   bool _ownsSupport = false;
 
   @override
@@ -628,16 +683,17 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
 
   void _configureSupport() {
     _support = widget.supportIdentities ??
-        (widget.api is SupportIdentityGateway
-            ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
-            : null);
-    _ownsSupport = widget.supportIdentities == null && _support != null;
+        (widget.api is BusinessApiClient
+            ? (widget.api as BusinessApiClient).supportIdentities
+            : widget.api is SupportIdentityGateway
+                ? SupportIdentityRepository(
+                    widget.api as SupportIdentityGateway)
+                : null);
+    _ownsSupport = widget.supportIdentities == null &&
+        widget.api is! BusinessApiClient &&
+        _support != null;
     unawaited(_support?.warm([contact.userId, contact.matrixUserId]) ??
         Future<void>.value());
-    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_support?.warm([contact.userId, contact.matrixUserId], force: true) ??
-          Future<void>.value());
-    });
   }
 
   /// 任意入口（会话/朋友圈/搜索/通讯录）打开资料页即向服务端自取
@@ -789,8 +845,8 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
       _bindIdentity();
       _readIdentity();
       if (contactChanged) {
-        unawaited(_support?.warm([contact.userId, contact.matrixUserId],
-                force: true) ??
+        unawaited(_support
+                ?.warm([contact.userId, contact.matrixUserId], force: true) ??
             Future<void>.value());
       }
     }
@@ -799,7 +855,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     }
     if (!identical(oldWidget.api, widget.api) ||
         oldWidget.supportIdentities != widget.supportIdentities) {
-      _supportTimer?.cancel();
       if (_ownsSupport) _support?.dispose();
       _configureSupport();
     }
@@ -808,7 +863,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   void dispose() {
     _presenceRequestGeneration++;
-    _supportTimer?.cancel();
     if (_ownsSupport) _support?.dispose();
     _contactSelection?.removeListener(_identityChanged);
     _contactSelection?.dispose();
@@ -963,13 +1017,15 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       }
       blockedContacts.replaceAll(ids,
           fromServer: true, matrixIdByUser: matrixIdByUser);
-      if (mounted) setState(() => blocked = ids.contains(widget.contact.userId));
+      if (mounted) {
+        setState(() => blocked = ids.contains(widget.contact.userId));
+      }
     } catch (_) {
       // 失败时只有「确实读过服务端」的本地投影才可作为已知状态；
       // 从未读过就保持 null（未知），不用默认 false 冒充权威结果。
       if (mounted && blockedContacts.hasSnapshot) {
-        setState(() =>
-            blocked = blockedContacts.isBlocked(widget.contact.userId));
+        setState(
+            () => blocked = blockedContacts.isBlocked(widget.contact.userId));
       }
     }
   }
@@ -981,7 +1037,8 @@ final class _ContactMorePageState extends State<ContactMorePage> {
     super.dispose();
   }
 
-  Future<bool> _confirm(String title, String content, {String confirmLabel = '删除'}) async =>
+  Future<bool> _confirm(String title, String content,
+          {String confirmLabel = '删除'}) async =>
       await showCupertinoDialog<bool>(
         context: context,
         builder: (dialogContext) => CupertinoAlertDialog(
@@ -1148,8 +1205,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       await widget.onContactUpdated?.call(current);
     } catch (_) {
       if (mounted) {
-        setState(() => errorMessage =
-            value ? '加入黑名单失败，请重试' : '移出黑名单失败，请重试');
+        setState(() => errorMessage = value ? '加入黑名单失败，请重试' : '移出黑名单失败，请重试');
       }
     } finally {
       if (mounted) setState(() => blocking = false);
@@ -1343,9 +1399,9 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
             future: tags,
             builder: (_, snapshot) {
               final items = (snapshot.data?['items'] as List?) ?? const [];
-              final loading = snapshot.connectionState ==
-                      ConnectionState.waiting &&
-                  !snapshot.hasData;
+              final loading =
+                  snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData;
               return ListView(
                 children: [
                   WeChatListTile(
@@ -1366,7 +1422,8 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
                       child: Column(children: [
                         const Text('标签加载失败',
                             style: TextStyle(
-                                fontSize: 14, color: WeChatColors.textSecondary)),
+                                fontSize: 14,
+                                color: WeChatColors.textSecondary)),
                         const SizedBox(height: 8),
                         CupertinoButton(
                           key: const Key('tag-picker-tags-retry'),
@@ -1510,12 +1567,18 @@ final class AddFriendPage extends StatefulWidget {
 
 final class _AddFriendState extends State<AddFriendPage> {
   static const _minQueryLength = 2;
+  static const _searchHint = '输入至少 $_minQueryLength 个字符，可通过畅聊号、邮箱或手机号搜索';
 
   final q = TextEditingController();
+  final _queryLengthLimit = LengthLimitingTextInputFormatter(320);
+  TextEditingValue _lastInput = TextEditingValue.empty;
   Timer? _debounce;
   List items = [];
-  String? hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+  String? hint = _searchHint;
   bool searching = false;
+  String _query = '';
+  int _searchEpoch = 0;
+  int? _pendingSearchEpoch;
 
   @override
   void initState() {
@@ -1544,6 +1607,7 @@ final class _AddFriendState extends State<AddFriendPage> {
       oldWidget.identityCache?.removeListener(_identityChanged);
       widget.identityCache?.addListener(_identityChanged);
     }
+    if (oldWidget.api != widget.api) _invalidateQuery();
   }
 
   String _displayName(Map user) =>
@@ -1561,47 +1625,92 @@ final class _AddFriendState extends State<AddFriendPage> {
           .displayName;
 
   void _onChanged() {
+    // CupertinoSearchTextField has no inputFormatters parameter. Keep its
+    // standard appearance while applying the same IME-aware length policy.
+    final input = _queryLengthLimit.formatEditUpdate(_lastInput, q.value);
+    _lastInput = input;
+    if (input != q.value) {
+      q.value = input;
+      return;
+    }
+    final query = q.text.trim();
+    if (query == _query) return;
+    _query = query;
+    _invalidateQuery();
+  }
+
+  String? _queryHint(String query) {
+    if (query.length < _minQueryLength) return _searchHint;
+    if (query.length > 320) return '搜索内容最多 320 个字符';
+    final phoneLike = RegExp(r'^[+0-9 ()-]+$').hasMatch(query);
+    if (phoneLike && normalizeMainlandPhone(query) == null) {
+      return '请输入完整的 11 位手机号，可带 +86 区号';
+    }
+    return null;
+  }
+
+  void _invalidateQuery() {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), _search);
+    _searchEpoch++;
+    _pendingSearchEpoch = null;
+    final validation = _queryHint(_query);
+    setState(() {
+      items = [];
+      searching = false;
+      hint = validation;
+    });
+    if (validation == null) {
+      _debounce = Timer(const Duration(milliseconds: 300), _search);
+    }
   }
 
   Future<void> _search() async {
+    _debounce?.cancel();
     final query = q.text.trim();
-    if (query.length < _minQueryLength) {
+    final validation = _queryHint(query);
+    if (validation != null) {
       if (!mounted) return;
       setState(() {
         items = [];
         searching = false;
-        hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+        hint = validation;
       });
       return;
     }
+    final epoch = _searchEpoch;
+    if (_pendingSearchEpoch == epoch) return;
+    _pendingSearchEpoch = epoch;
+    final api = widget.api;
     setState(() => searching = true);
     try {
-      final result = await widget.api.searchUsers(query);
-      if (!mounted) return;
+      final result = await api.searchUsers(query);
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
       setState(() {
         items = result['items'] as List;
         searching = false;
         hint = items.isEmpty ? '未找到匹配的用户' : null;
       });
     } on BusinessApiException catch (error) {
-      if (!mounted) return;
-      // 失败不覆盖：保留上一次成功的结果，只更新提示（微信级加载模型）。
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
+      // A same-query refresh may keep its rows. New drafts have already
+      // removed the previous query's actionable results.
       setState(() {
         searching = false;
         hint = error.message;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
       setState(() {
         searching = false;
-        hint = '搜索失败，正在显示上次结果';
+        hint = items.isEmpty ? '搜索失败，请重试' : '搜索失败，正在显示上次结果';
       });
+    } finally {
+      if (_pendingSearchEpoch == epoch) _pendingSearchEpoch = null;
     }
   }
 
   void _openRequestPage(Map user) {
+    if (!mounted || !items.contains(user)) return;
     // BUG 2：先看资料再决定是否添加，禁止快捷直接发送请求。
     final nickname = user['nickname']?.toString();
     Navigator.push(
@@ -1635,7 +1744,7 @@ final class _AddFriendState extends State<AddFriendPage> {
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
               child: CupertinoSearchTextField(
                 controller: q,
-                placeholder: '畅聊号 / 邮箱',
+                placeholder: '畅聊号 / 邮箱 / 手机号',
                 onSubmitted: (_) => _search(),
               ),
             ),
@@ -1988,8 +2097,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
         child: SafeArea(
           child: Builder(builder: (context) {
             final items = ((_payload?['items'] as List?) ?? const [])
-                .where(
-                    (item) => item is Map && item['direction'] != 'OUTGOING')
+                .where((item) => item is Map && item['direction'] != 'OUTGOING')
                 .toList();
             return ListView(
               children: [

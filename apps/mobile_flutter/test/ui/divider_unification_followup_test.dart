@@ -500,7 +500,7 @@ final class _ProfileGateway implements ProfileGateway {
 
   @override
   Future<ProfileData> updateProfile(
-          {required String nickname,
+          {String? nickname,
           String? signature,
           String? nudgeSuffix}) async =>
       _profile.copyWith(nickname: nickname, signature: signature);

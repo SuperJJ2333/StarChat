@@ -3,6 +3,12 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/profile/invite_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_avatar_page.dart';
@@ -18,6 +24,16 @@ const profile = ProfileData(
     signature: 'hello',
     nudgeSuffix: '拍了拍我');
 
+final class _MemorySessionValues implements SecureKeyValueStore {
+  final values = <String, String>{};
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+}
+
 final class FakeProfileGateway implements ProfileGateway {
   ProfileData loadedProfile = profile;
   int puts = 0;
@@ -27,10 +43,8 @@ final class FakeProfileGateway implements ProfileGateway {
   Future<ProfileData> loadProfile() async => loadedProfile;
   @override
   Future<ProfileData> updateProfile(
-          {required String nickname,
-          String? signature,
-          String? nudgeSuffix}) async =>
-      profile.copyWith(
+          {String? nickname, String? signature, String? nudgeSuffix}) async =>
+      loadedProfile = loadedProfile.copyWith(
           nickname: nickname, signature: signature, nudgeSuffix: nudgeSuffix);
   @override
   Future<AvatarUploadSession> createAvatarUpload(
@@ -108,6 +122,45 @@ final class _HeldAvatarInvalidator {
 }
 
 void main() {
+  testWidgets('profile load request shares its page operation ID',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final pageTrace = recorder.start(PerformanceOperationType.profileLoad);
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: SecureSessionStore(_MemorySessionValues()),
+      performanceRecorder: recorder,
+      client: MockClient((_) async => http.Response(
+          '{"username":"alice","nickname":"Alice",'
+          '"masked_email":"a***@example.test","avatar_fallback_seed":"seed"}',
+          200)),
+    );
+    final controller =
+        ProfileController(gateway: api, avatarSource: FakeAvatarSource());
+
+    await tester.pumpWidget(CupertinoApp(
+      home: ProfileExperiencePage(
+        controller: controller,
+        performanceTrace: pageTrace,
+        onInvite: () {},
+        onMoments: () {},
+        onCaibi: () {},
+        onWallet: () {},
+        onSettings: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+        records.any((record) =>
+            record.operation == PerformanceOperationType.apiRequest &&
+            record.endpointCategory == PerformanceEndpointCategory.profile &&
+            record.operationId == pageTrace.operationId),
+        isTrue);
+  });
+
   testWidgets(
       'no cached profile keeps settings and moments available while loading',
       (tester) async {
@@ -192,6 +245,11 @@ void main() {
   testWidgets('cached identity is visible on the profile page before refresh',
       (tester) async {
     final gateway = _HeldProfileGateway();
+    final records = <PerformanceRecord>[];
+    final trace = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ).start(PerformanceOperationType.profileLoad);
     final controller = ProfileController(
       gateway: gateway,
       avatarSource: FakeAvatarSource(),
@@ -201,6 +259,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
       home: ProfileExperiencePage(
         controller: controller,
+        performanceTrace: trace,
         onInvite: () {},
         onMoments: () {},
         onCaibi: () {},
@@ -210,6 +269,18 @@ void main() {
     ));
 
     expect(find.text('Cached Alice'), findsWidgets);
+    await tester.pump();
+    expect(records, hasLength(1));
+    expect(
+        records.single.stagesUs.keys,
+        containsAll([
+          PerformanceStage.routeEnter,
+          PerformanceStage.firstFrameRendered,
+          PerformanceStage.contentReady,
+        ]));
+    expect(
+        records.single.stagesUs.containsKey(PerformanceStage.remoteRefreshDone),
+        isFalse);
     gateway.load.complete(profile);
   });
 
@@ -410,10 +481,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ProfileDetailsPage), findsOneWidget);
       final invitation = find.byKey(const Key('profile-invite-entry'));
-      final fields = find.byType(CupertinoTextField);
       expect(invitation, findsOneWidget);
-      expect(tester.getTopLeft(invitation).dy,
-          lessThan(tester.getTopLeft(fields.first).dy));
+      expect(
+          tester.getTopLeft(invitation).dy,
+          greaterThan(tester
+              .getTopLeft(find.byKey(const Key('profile-nudge-row')))
+              .dy));
+      await tester.ensureVisible(invitation);
       await tester.tap(invitation);
       await tester.pumpAndSettle();
       Navigator.of(tester.element(find.byType(ProfileDetailsPage))).pop();
@@ -422,12 +496,20 @@ void main() {
     expect(invites, 2);
     await tester.tap(find.byKey(const Key('profile-details-entry')));
     await tester.pumpAndSettle();
-    final fields = find.byType(CupertinoTextField);
-    await tester.enterText(fields.first, 'Alice Updated');
-    await tester.enterText(fields.last, 'Updated signature');
+    await tester.tap(find.text('昵称'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(CupertinoTextField), 'Alice Update');
+    await tester.pump();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
-    expect(controller.state.profile!.nickname, 'Alice Updated');
+    await tester.tap(find.text('个性签名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byType(CupertinoTextField), 'Updated signature');
+    await tester.pump();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(controller.state.profile!.nickname, 'Alice Update');
     expect(controller.state.profile!.signature, 'Updated signature');
   });
 
@@ -476,26 +558,31 @@ void main() {
     expect(clipboard, 'https://www.liuhetong888.com/download?platform=ios');
   });
 
-  testWidgets(
-      'profile fields align entered values right and empty placeholders left',
+  testWidgets('separate profile editors align empty and entered values right',
       (tester) async {
     final controller = ProfileController(
         gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
+    addTearDown(controller.dispose);
     await controller.load();
     await tester.pumpWidget(
         CupertinoApp(home: ProfileDetailsPage(controller: controller)));
-    final fields = find.byType(CupertinoTextField);
-    for (final field in [fields.first, fields.last]) {
+    for (final label in ['昵称', '个性签名']) {
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      final field = find.byType(CupertinoTextField);
+      expect(field, findsOneWidget);
       expect(
           tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
       await tester.enterText(field, '');
       await tester.pump();
       expect(
-          tester.widget<CupertinoTextField>(field).textAlign, TextAlign.left);
+          tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
       await tester.enterText(field, 'new');
       await tester.pump();
       expect(
           tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
     }
   });
 
@@ -548,6 +635,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('设置拍一拍'), findsOneWidget);
     final field = find.byKey(const Key('profile-nudge-field'));
+    expect(tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
+    expect(find.text('拍一拍'), findsOneWidget);
     await tester.enterText(field, '拍了拍我一下');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();

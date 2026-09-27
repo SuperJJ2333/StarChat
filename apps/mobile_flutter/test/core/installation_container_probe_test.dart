@@ -40,6 +40,19 @@ void main() {
     expect(await probe().hasPreviousMatrixStore(), isTrue);
   });
 
+  for (final name in [
+    'liuhetong_matrix.sqlite-wal',
+    'liuhetong_matrix.sqlite-shm',
+    'liuhetong_matrix_${'a' * 64}.sqlite-wal',
+    'liuhetong_matrix_${'b' * 64}.sqlite-shm',
+    'liuhetong_matrix.sqlite.encrypted-wal',
+  ]) {
+    test('孤立的 $name 仍证明有上次安装产物', () async {
+      await write(name);
+      expect(await probe().hasPreviousMatrixStore(), isTrue);
+    });
+  }
+
   test('目录不存在时不能证明安装容器为空', () async {
     final missing = FileSystemInstallationContainerProbe(
         supportDirectoryPath: () async =>

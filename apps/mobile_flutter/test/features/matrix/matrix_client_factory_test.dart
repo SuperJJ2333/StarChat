@@ -20,6 +20,31 @@ import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class LocalFirstInitClient extends Client {
+  LocalFirstInitClient() : super('local-first-init');
+
+  final localRead = Completer<void>();
+  final networkSync = Completer<void>();
+
+  @override
+  Future<void> init({
+    String? newToken,
+    DateTime? newTokenExpiresAt,
+    String? newRefreshToken,
+    Uri? newHomeserver,
+    String? newUserID,
+    String? newDeviceName,
+    String? newDeviceID,
+    String? newOlmAccount,
+    bool waitForFirstSync = true,
+    bool waitUntilLoadCompletedLoaded = true,
+    void Function()? onMigration,
+  }) async {
+    if (waitUntilLoadCompletedLoaded) await localRead.future;
+    if (waitForFirstSync) await networkSync.future;
+  }
+}
+
 class SnapshotClient extends LogoutTrackingClient {
   SnapshotClient() : super('snapshot', matrixUserId: '@me:test');
   final snapshotRooms = <Room>[];
@@ -248,6 +273,9 @@ Future<
 }
 
 final class MemoryStore implements SecureKeyValueStore {
+  MemoryStore({this.persistMatrixDatabaseKey = true});
+
+  final bool persistMatrixDatabaseKey;
   final values = <String, String>{};
   String? failDeleteOnceFor;
   @override
@@ -262,7 +290,14 @@ final class MemoryStore implements SecureKeyValueStore {
   @override
   Future<String?> read(String key) async => values[key];
   @override
-  Future<void> write(String key, String value) async => values[key] = value;
+  Future<void> write(String key, String value) async {
+    // The lock-only tests inject an opener which never creates SQLite. Avoid
+    // modelling an orphaned persistent key as if that fake opened a database.
+    if (!persistMatrixDatabaseKey && key.endsWith('matrix_database_key.v1')) {
+      return;
+    }
+    values[key] = value;
+  }
 }
 
 class LogoutTrackingClient extends Client {
@@ -581,7 +616,8 @@ void main() {
       }
 
       final factory = MatrixClientFactory(
-        sessionStore: SecureSessionStore(MemoryStore()),
+        sessionStore:
+            SecureSessionStore(MemoryStore(persistMatrixDatabaseKey: false)),
         homeserver: Uri.parse('https://matrix.test'),
         supportDirectoryPath: () async => _matrixTestDirectory.path,
         opener: slowOpener,
@@ -614,7 +650,8 @@ void main() {
       }
 
       final factory = MatrixClientFactory(
-        sessionStore: SecureSessionStore(MemoryStore()),
+        sessionStore:
+            SecureSessionStore(MemoryStore(persistMatrixDatabaseKey: false)),
         homeserver: Uri.parse('https://matrix.test'),
         supportDirectoryPath: () async => _matrixTestDirectory.path,
         opener: slowOpener,
@@ -633,7 +670,8 @@ void main() {
 
     test('串行 create 仍然各自成功（锁不破坏正常路径）', () async {
       final factory = MatrixClientFactory(
-        sessionStore: SecureSessionStore(MemoryStore()),
+        sessionStore:
+            SecureSessionStore(MemoryStore(persistMatrixDatabaseKey: false)),
         homeserver: Uri.parse('https://matrix.test'),
         supportDirectoryPath: () async => _matrixTestDirectory.path,
         opener: ({
@@ -978,6 +1016,27 @@ void main() {
     } finally {
       await errors.cancel();
       if (!client.disposed) await client.dispose();
+    }
+  });
+
+  test('startup waits for local data but never a stalled first network sync',
+      () async {
+    final client = LocalFirstInitClient();
+    var ready = false;
+    final startup = MatrixClientFactory.initializeClient(client).then((_) {
+      ready = true;
+    });
+    try {
+      await Future<void>.delayed(Duration.zero);
+      expect(ready, isFalse,
+          reason: 'local account and room reads must finish');
+      client.localRead.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(ready, isTrue, reason: 'network must not block cached startup');
+    } finally {
+      client.networkSync.complete();
+      await startup;
+      await client.dispose();
     }
   });
 
@@ -2770,6 +2829,7 @@ void main() {
       business: business,
       matrix: matrix,
       deviceKey: () => 'device-key',
+      retainedHomeserver: Uri.parse('https://matrix.test'),
     );
 
     await expectLater(

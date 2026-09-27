@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
 import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
 import 'package:liuhetong_mobile/features/matrix/gallery_media_payload.dart';
@@ -139,6 +141,37 @@ void main() {
   test('original rendition disposal preserves album file', () async {
     await VideoRendition(file: source, usedCompressed: false).dispose();
     expect(await source.exists(), isTrue);
+  });
+
+  test('local video preparation passes one trace through encode and poster',
+      () async {
+    sizes = [1024];
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    trace.mark(PerformanceStage.videoSelected);
+
+    final prepared = await prepareLocalChatVideo(source,
+        deleteSourceWhenDone: false, performanceTrace: trace);
+    trace.finish();
+
+    expect(prepared.bytes, hasLength(1024));
+    expect(records, hasLength(1));
+    expect(records.single.operationId, trace.operationId);
+    expect(
+        records.single.stagesUs.keys,
+        containsAll([
+          PerformanceStage.videoSelected,
+          PerformanceStage.queueEntered,
+          PerformanceStage.queueExited,
+          PerformanceStage.videoTranscodeStarted,
+          PerformanceStage.videoTranscodeDone,
+          PerformanceStage.videoThumbnailDone,
+        ]));
+    expect(recorder.activeCount, 0);
   });
 
   test(

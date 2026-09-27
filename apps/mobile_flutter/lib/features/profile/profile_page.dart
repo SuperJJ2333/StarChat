@@ -1,15 +1,23 @@
 import 'dart:async';
+import '../../core/support_identity_repository.dart';
+import '../../ui/components/wechat_official_name.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/services.dart';
 
+import '../../core/performance_trace.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../core/business_api_client.dart';
+import '../../ui/components/wechat_list_tile.dart';
+import '../auth/email_rebind_page.dart';
+import '../auth/phone_rebind_page.dart';
 import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/wechat_nav_title.dart';
+import '../../ui/chat/wechat_unread_badge.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
@@ -28,9 +36,19 @@ final class ProfileExperiencePage extends StatefulWidget {
     required this.onSettings,
     this.onQrCode,
     this.inviteGateway,
+    this.accountApi,
+    this.onUsername,
+    this.supportIdentities,
+    this.matrixUserId,
+    this.momentInteractionUnreadCount = 0,
+    this.performanceTrace,
   });
 
+  final SupportIdentityRepository? supportIdentities;
+  final String? matrixUserId;
+  final int momentInteractionUnreadCount;
   final ProfileController controller;
+  final PerformanceTrace? performanceTrace;
   final VoidCallback onMoments;
   final VoidCallback onCaibi;
   final VoidCallback onWallet;
@@ -41,6 +59,8 @@ final class ProfileExperiencePage extends StatefulWidget {
   /// 邀请码数据源（转发给个人信息页“一键复制/剩余次数/全称”区域）；
   /// 缺省时该区域整体隐藏（保持旧页面行为）。
   final PersonalInvitationGateway? inviteGateway;
+  final BusinessApiClient? accountApi;
+  final VoidCallback? onUsername;
 
   /// “我的二维码”入口（身份卡右上角）；缺省时隐藏角标。
   final VoidCallback? onQrCode;
@@ -51,30 +71,67 @@ final class ProfileExperiencePage extends StatefulWidget {
 }
 
 final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
+  late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
+      PerformanceTrace.start(operation: PerformanceOperationType.profileLoad);
+  bool _firstFrameRendered = false;
+  bool _contentReady = false;
+  bool _initialLoadFailed = false;
+
+  void _finishInitialLoad() {
+    if (!_firstFrameRendered || (!_contentReady && !_initialLoadFailed)) return;
+    _performanceTrace.finish(
+      result: _initialLoadFailed
+          ? PerformanceResult.failed
+          : PerformanceResult.success,
+    );
+  }
+
+  void _observeProfile() {
+    if (widget.controller.state.profile != null) {
+      _contentReady = true;
+      _performanceTrace.mark(PerformanceStage.contentReady);
+    } else if (widget.controller.state.status == ProfileStatus.failed) {
+      _initialLoadFailed = true;
+    }
+    _finishInitialLoad();
+  }
+
   @override
   void initState() {
     super.initState();
+    _performanceTrace.mark(PerformanceStage.routeEnter);
     widget.controller.addListener(_change);
-    widget.controller.load();
+    _observeProfile();
+    unawaited(_performanceTrace.runChildOperations(widget.controller.load));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _firstFrameRendered = true;
+      _performanceTrace.mark(PerformanceStage.firstFrameRendered);
+      _finishInitialLoad();
+    });
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_change);
+    _performanceTrace.dispose();
     super.dispose();
   }
 
   void _change() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    _observeProfile();
+    setState(() {});
   }
 
-  void _openDetails() => Navigator.push(
-        context,
+  void _openDetails() => Navigator.of(context, rootNavigator: true).push(
         MotionPageRoute(
           builder: (_) => ProfileDetailsPage(
             controller: widget.controller,
             onInvite: widget.onInvite,
             inviteGateway: widget.inviteGateway,
+            accountApi: widget.accountApi,
+            onUsername: widget.onUsername,
           ),
         ),
       );
@@ -103,6 +160,8 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
             else ...[
               _IdentityCard(
                 profile: profile,
+                supportIdentities: widget.supportIdentities,
+                matrixUserId: widget.matrixUserId,
                 avatarCacheKey: widget.controller.avatarCacheKey,
                 onTap: _openDetails,
                 onQrCode: widget.onQrCode,
@@ -119,6 +178,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
               icon: CupertinoIcons.photo_on_rectangle,
               label: '朋友圈',
               onTap: widget.onMoments,
+              badgeCount: widget.momentInteractionUnreadCount,
             ),
             _ProfileMenuTile(
               icon: CupertinoIcons.money_dollar_circle,
@@ -168,10 +228,14 @@ final class _IdentityCard extends StatelessWidget {
   const _IdentityCard({
     required this.profile,
     required this.avatarCacheKey,
+    this.supportIdentities,
+    this.matrixUserId,
     required this.onTap,
     this.onQrCode,
   });
 
+  final SupportIdentityRepository? supportIdentities;
+  final String? matrixUserId;
   final ProfileData profile;
   final String? avatarCacheKey;
   final VoidCallback onTap;
@@ -215,11 +279,11 @@ final class _IdentityCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        profile.nickname,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                      WeChatOfficialName(
+                        name: profile.nickname,
+                        supportIdentities: supportIdentities,
+                        matrixUserId: matrixUserId,
+                        nameStyle: TextStyle(
                           fontSize: 22,
                           height: 30 / 22,
                           fontWeight: FontWeight.w700,
@@ -279,11 +343,13 @@ final class _ProfileMenuTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -319,6 +385,10 @@ final class _ProfileMenuTile extends StatelessWidget {
                       style: TextStyle(fontSize: 16, color: foreground),
                     ),
                   ),
+                  if (badgeCount > 0)
+                    WeChatUnreadBadge(
+                        key: const Key('profile-moments-unread-badge'),
+                        count: badgeCount),
                   const SizedBox(width: 4),
                   const Icon(
                     CupertinoIcons.chevron_right,
@@ -347,6 +417,8 @@ final class ProfileDetailsPage extends StatefulWidget {
     required this.controller,
     this.onInvite,
     this.inviteGateway,
+    this.accountApi,
+    this.onUsername,
   });
 
   final ProfileController controller;
@@ -354,6 +426,8 @@ final class ProfileDetailsPage extends StatefulWidget {
 
   /// 邀请码数据源（个人信息页邀请码区域：全称/剩余次数/一键复制）。
   final PersonalInvitationGateway? inviteGateway;
+  final BusinessApiClient? accountApi;
+  final VoidCallback? onUsername;
 
   @override
   State<ProfileDetailsPage> createState() => _ProfileDetailsPageState();
@@ -362,22 +436,15 @@ final class ProfileDetailsPage extends StatefulWidget {
 final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   InviteCodeController? _inviteController;
   StreamSubscription<ProfileSaveEvent>? _saveEvents;
-
-  late final nickname = TextEditingController(
-    text: widget.controller.state.profile?.nickname ?? '',
-  );
-  late final signature = TextEditingController(
-    text: widget.controller.state.profile?.signature ?? '',
-  );
+  String? _bindingError;
+  bool _bindingBusy = false, _bindingsUnknown = false;
+  int _bindingOperation = 0;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_change);
-    // BUG-05：保存结果由 Controller 事件驱动，页面只负责一次性提示。
     _saveEvents = widget.controller.saveEvents.listen(_onSaveEvent);
-    nickname.addListener(_change);
-    signature.addListener(_change);
     final gateway = widget.inviteGateway;
     if (gateway != null) {
       final controller = InviteCodeController(gateway: gateway);
@@ -393,8 +460,6 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
     widget.controller.removeListener(_change);
     _inviteController?.removeListener(_change);
     _inviteController?.dispose();
-    nickname.dispose();
-    signature.dispose();
     super.dispose();
   }
 
@@ -414,117 +479,359 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
     }
   }
 
+  Future<void> _openBinding(bool phone) async {
+    final api = widget.accountApi;
+    if (api == null || _bindingBusy) return;
+    final operation = ++_bindingOperation;
+    final epoch = api.sessionEpoch;
+    bool current() =>
+        mounted && operation == _bindingOperation && epoch == api.sessionEpoch;
+    setState(() {
+      _bindingBusy = true;
+      _bindingError = null;
+    });
+    try {
+      final security =
+          await api.loadAccountSecurity().timeout(const Duration(seconds: 8));
+      if (!mounted || !current()) return;
+      if (!security.canUseEmail && !security.canUsePhone) {
+        setState(() => _bindingError = '当前账号没有可用的已验证联系方式，请联系客服。');
+        return;
+      }
+      await Navigator.push<bool>(
+          context,
+          MotionPageRoute(
+              builder: (_) => phone
+                  ? PhoneRebindPage(api: api)
+                  : EmailRebindPage(gateway: api)));
+      if (!current()) return;
+      api.invalidateAccountSecurityCache();
+      setState(() => _bindingsUnknown = true);
+      await api
+          .loadAccountSecurity(forceRefresh: true)
+          .timeout(const Duration(seconds: 8));
+      if (!current()) return;
+      await widget.controller.load();
+      if (current()) setState(() => _bindingsUnknown = false);
+    } catch (_) {
+      if (current()) {
+        final pending = api.hasPendingAccountBindingConfirmation;
+        setState(() {
+          if (pending) _bindingsUnknown = true;
+          _bindingError = pending ? '绑定结果待确认，请稍后重试' : '账号信息加载失败，请重试';
+        });
+        if (pending) unawaited(_reconcileBinding(api, current));
+      }
+    } finally {
+      if (current()) setState(() => _bindingBusy = false);
+    }
+  }
+
+  Future<void> _reconcileBinding(
+      BusinessApiClient api, bool Function() current) async {
+    await api.waitForAccountBindingConfirmation();
+    if (!current()) return;
+    setState(() => _bindingBusy = true);
+    try {
+      await api
+          .loadAccountSecurity(forceRefresh: true)
+          .timeout(const Duration(seconds: 8));
+      if (!current()) return;
+      await widget.controller.load();
+      if (current()) {
+        setState(() {
+          _bindingsUnknown = false;
+          _bindingError = null;
+        });
+      }
+    } catch (_) {
+      if (current()) setState(() => _bindingError = '账号信息加载失败，请重试');
+    } finally {
+      if (current()) setState(() => _bindingBusy = false);
+    }
+  }
+
+  Widget _row(BuildContext context, String label, String keyName,
+      {String? value, Widget? avatar, VoidCallback? onTap}) {
+    final valueWidth = MediaQuery.sizeOf(context).width * .52;
+    return WeChatListTile(
+      key: Key('profile-$keyName-row'),
+      title:
+          Text(label, style: const TextStyle(fontSize: WeChatTypography.body)),
+      trailing: SizedBox(
+          width: valueWidth,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+                vertical: avatar == null ? 0 : WeChatSpacing.sm),
+            child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              if (avatar != null)
+                avatar
+              else
+                Expanded(
+                    child: Text(value ?? '未设置',
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: WeChatTypography.body,
+                            color: CupertinoColors.secondaryLabel
+                                .resolveFrom(context)))),
+              const SizedBox(width: WeChatSpacing.sm),
+              const CupertinoListTileChevron(),
+            ]),
+          )),
+      showDivider: keyName != 'nudge',
+      onTap: onTap,
+    );
+  }
+
+  void _edit(bool signature) => Navigator.push<void>(
+      context,
+      MotionPageRoute(
+          builder: (_) => _ProfileTextFieldPage(
+              controller: widget.controller, signatureField: signature)));
+
   @override
   Widget build(BuildContext context) {
-    final state = widget.controller.state;
-    final profile = state.profile!;
-    return WeChatPageScaffold.navigation(
-      navigationBar: CupertinoNavigationBar(
-        automaticBackgroundVisibility: false,
-        enableBackgroundFilterBlur: false,
-        middle: const Text('个人信息'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: state.status == ProfileStatus.saving
-              ? null
-              : () => widget.controller.save(
-                    nickname.text.trim(),
-                    signature.text.trim(),
-                  ),
-          child: const Text('保存'),
-        ),
-      ),
-      child: SafeArea(
-        child: ListView(
+    final profile = widget.controller.state.profile!;
+    final api = widget.accountApi;
+    return WeChatPageScaffold(
+        title: '个人信息',
+        child: SafeArea(
+            child: ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
           children: [
-            CupertinoListSection.insetGrouped(
-              margin: EdgeInsets.zero,
-              children: [
-                CupertinoListTile(
-                  title: const Text('头像'),
-                  trailing: UserAvatar(
-                    nickname: profile.nickname,
-                    fallbackSeed: profile.fallbackSeed,
-                    avatarCacheKey: widget.controller.avatarCacheKey,
-                    avatarUrl: profile.avatarUrl,
-                    size: 48,
-                  ),
-                  onTap: () => Navigator.push(
-                    context,
-                    MotionPageRoute(
-                      builder: (_) => ProfileAvatarPage(
-                        controller: widget.controller,
-                      ),
-                    ),
-                  ),
-                ),
-                CupertinoListTile(
-                  title: const Text('畅聊号'),
-                  additionalInfo: Text(profile.username),
-                ),
-                CupertinoListTile(
-                  title: const Text('邮箱'),
-                  additionalInfo: Text(profile.maskedEmail),
-                ),
-                CupertinoListTile(
-                  key: const Key('profile-nudge-row'),
-                  title: const Text('拍一拍'),
-                  additionalInfo: Text(profile.nudgeSuffix ?? '未设置'),
-                  trailing: const CupertinoListTileChevron(),
-                  onTap: () async {
-                    await Navigator.push<void>(
-                      context,
-                      MotionPageRoute(
-                        builder: (_) => _ProfileNudgePage(
-                          controller: widget.controller,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
+            ClipRRect(
+                borderRadius: BorderRadius.circular(WeChatRadius.bubble),
+                child: Column(children: [
+                  _row(context, '头像', 'avatar',
+                      avatar: UserAvatar(
+                          nickname: profile.nickname,
+                          fallbackSeed: profile.fallbackSeed,
+                          avatarCacheKey: widget.controller.avatarCacheKey,
+                          avatarUrl: profile.avatarUrl,
+                          size: 48),
+                      onTap: () => Navigator.push(
+                          context,
+                          MotionPageRoute(
+                              builder: (_) => ProfileAvatarPage(
+                                  controller: widget.controller)))),
+                  _row(context, '畅聊号', 'username',
+                      value: profile.username, onTap: widget.onUsername),
+                  _row(context, '邮箱', 'email',
+                      value: _bindingsUnknown
+                          ? '暂不可用'
+                          : (profile.maskedEmail.isEmpty
+                              ? '未绑定'
+                              : profile.maskedEmail),
+                      onTap: api == null || _bindingBusy
+                          ? null
+                          : () => _openBinding(false)),
+                  _row(context, '手机号', 'phone',
+                      value: _bindingsUnknown
+                          ? '暂不可用'
+                          : (profile.maskedPhone?.isNotEmpty == true
+                              ? profile.maskedPhone
+                              : '未绑定'),
+                      onTap: api == null || _bindingBusy
+                          ? null
+                          : () => _openBinding(true)),
+                  _row(context, '昵称', 'nickname',
+                      value: profile.nickname, onTap: () => _edit(false)),
+                  _row(context, '个性签名', 'signature',
+                      value: profile.signature?.isNotEmpty == true
+                          ? profile.signature
+                          : '未设置',
+                      onTap: () => _edit(true)),
+                  _row(context, '拍一拍', 'nudge',
+                      value: profile.nudgeSuffix?.isNotEmpty == true
+                          ? profile.nudgeSuffix
+                          : '未设置',
+                      onTap: () => Navigator.push<void>(
+                          context,
+                          MotionPageRoute(
+                              builder: (_) => _ProfileNudgePage(
+                                  controller: widget.controller)))),
+                ])),
+            if (_bindingError != null)
+              Padding(
+                  padding: const EdgeInsets.all(WeChatSpacing.md),
+                  child: Text(_bindingError!,
+                      style:
+                          const TextStyle(color: CupertinoColors.systemRed))),
             if (widget.onInvite != null) ...[
+              const SizedBox(height: WeChatSpacing.md),
               _ProfileMenuTile(
-                key: const Key('profile-invite-entry'),
-                icon: CupertinoIcons.person_crop_circle_badge_plus,
-                label: '邀请码',
-                onTap: widget.onInvite!,
-              ),
+                  key: const Key('profile-invite-entry'),
+                  icon: CupertinoIcons.person_crop_circle_badge_plus,
+                  label: '邀请码',
+                  onTap: widget.onInvite!),
               if (_inviteController != null) ...[
                 const SizedBox(height: 12),
                 _InviteSummarySection(
                     key: const Key('profile-invite-summary'),
-                    controller: _inviteController!),
+                    controller: _inviteController!)
               ],
-              const SizedBox(height: 12),
             ],
-            CupertinoTextField(
-              controller: nickname,
-              textAlign:
-                  nickname.text.isEmpty ? TextAlign.left : TextAlign.right,
-              placeholder: '昵称',
-              padding: const EdgeInsets.all(16),
-            ),
-            const SizedBox(height: 12),
-            CupertinoTextField(
-              controller: signature,
-              textAlign:
-                  signature.text.isEmpty ? TextAlign.left : TextAlign.right,
-              placeholder: '个性签名',
-              padding: const EdgeInsets.all(16),
-            ),
-            if (state.message != null)
-              Text(
-                state.message!,
-                style: const TextStyle(color: CupertinoColors.systemRed),
-              ),
           ],
-        ),
-      ),
-    );
+        )));
+  }
+}
+
+final class _ProfileTextFieldPage extends StatefulWidget {
+  const _ProfileTextFieldPage(
+      {required this.controller, required this.signatureField});
+  final ProfileController controller;
+  final bool signatureField;
+  @override
+  State<_ProfileTextFieldPage> createState() => _ProfileTextFieldPageState();
+}
+
+final class _ProfileTextFieldPageState extends State<_ProfileTextFieldPage> {
+  bool _limitDialogOpen = false;
+  late final _formatter = _ProfileGraphemeFormatter(
+      maxLength: widget.signatureField ? 20 : 12,
+      onOverflow: () => _showValidationDialog(
+          widget.signatureField ? '个性签名最多支持20个字符' : '昵称最多支持12个字符'));
+  late final field = TextEditingController(
+      text: widget.signatureField
+          ? widget.controller.state.profile?.signature ?? ''
+          : widget.controller.state.profile?.nickname ?? '');
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_changed);
+    field.addListener(_changed);
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  void _showValidationDialog(String message) {
+    if (_limitDialogOpen || !mounted) return;
+    _limitDialogOpen = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) =>
+              CupertinoAlertDialog(title: Text(message), actions: [
+                CupertinoDialogAction(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('知道了'))
+              ]));
+      _limitDialogOpen = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_changed);
+    field.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final profile = widget.controller.state.profile!;
+    final validation = profileSaveValidationMessage(
+        widget.signatureField ? profile.nickname : field.text.trim(),
+        widget.signatureField ? field.text.trim() : profile.signature,
+        original: profile);
+    if (validation != null) {
+      _showValidationDialog(validation);
+      return;
+    }
+    await widget.controller.save(
+        widget.signatureField ? profile.nickname : field.text.trim(),
+        widget.signatureField ? field.text.trim() : profile.signature);
+    if (mounted && widget.controller.state.status == ProfileStatus.ready) {
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.signatureField ? '个性签名' : '昵称';
+    final saving = widget.controller.state.status == ProfileStatus.saving;
+    return WeChatPageScaffold.navigation(
+        navigationBar: CupertinoNavigationBar(
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('设置$label'),
+            trailing: CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: saving ||
+                        (!widget.signatureField && field.text.trim().isEmpty)
+                    ? null
+                    : _save,
+                child: const Text('保存'))),
+        child: SafeArea(
+            child: ListView(
+                padding: const EdgeInsets.all(WeChatSpacing.md),
+                children: [
+              Container(
+                  color: WeChatColors.elevatedSurface(context),
+                  padding: const EdgeInsets.all(WeChatSpacing.lg),
+                  child: Row(
+                    children: [
+                      Text(label,
+                          style:
+                              const TextStyle(fontSize: WeChatTypography.body)),
+                      const SizedBox(width: WeChatSpacing.lg),
+                      Expanded(
+                          child: CupertinoTextField(
+                              key: Key(widget.signatureField
+                                  ? 'profile-signature-field'
+                                  : 'profile-nickname-field'),
+                              controller: field,
+                              textAlign: TextAlign.right,
+                              inputFormatters: [_formatter],
+                              enabled: !saving,
+                              autofocus: true,
+                              padding: EdgeInsets.zero,
+                              decoration: null,
+                              placeholder: '输入$label',
+                              style: TextStyle(
+                                  fontSize: WeChatTypography.body,
+                                  color: WeChatColors.resolveTextPrimary(
+                                      context))))
+                    ],
+                  )),
+            ])));
+  }
+}
+
+final class _ProfileGraphemeFormatter extends TextInputFormatter {
+  _ProfileGraphemeFormatter(
+      {required this.maxLength, required this.onOverflow});
+
+  final int maxLength;
+  final VoidCallback onOverflow;
+  TextEditingValue? _beforeComposition;
+  bool _reportedOverflow = false;
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    if (newValue.composing.isValid && !newValue.composing.isCollapsed) {
+      _beforeComposition ??= oldValue;
+      return newValue;
+    }
+    final nextLength = newValue.text.characters.length;
+    final oldLength = oldValue.text.characters.length;
+    if (nextLength <= maxLength || nextLength < oldLength) {
+      _beforeComposition = null;
+      _reportedOverflow = false;
+      return newValue;
+    }
+    final accepted = _beforeComposition ?? oldValue;
+    _beforeComposition = null;
+    if (!_reportedOverflow) {
+      _reportedOverflow = true;
+      onOverflow();
+    }
+    return accepted;
   }
 }
 
@@ -542,7 +849,18 @@ final class _ProfileNudgePageState extends State<_ProfileNudgePage> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_change);
+  }
+
+  void _change() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    widget.controller.removeListener(_change);
     suffix.dispose();
     super.dispose();
   }
@@ -576,16 +894,31 @@ final class _ProfileNudgePageState extends State<_ProfileNudgePage> {
       ),
       child: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(WeChatSpacing.md),
           children: [
-            CupertinoTextField(
-              key: const Key('profile-nudge-field'),
-              controller: suffix,
-              maxLength: 10,
-              autofocus: true,
-              placeholder: '例如：拍了拍我',
-              padding: const EdgeInsets.all(16),
-            ),
+            Container(
+                color: WeChatColors.elevatedSurface(context),
+                padding: const EdgeInsets.all(WeChatSpacing.lg),
+                child: Row(children: [
+                  const Text('拍一拍',
+                      style: TextStyle(fontSize: WeChatTypography.body)),
+                  const SizedBox(width: WeChatSpacing.lg),
+                  Expanded(
+                      child: CupertinoTextField(
+                    key: const Key('profile-nudge-field'),
+                    controller: suffix,
+                    textAlign: TextAlign.right,
+                    enabled: !saving,
+                    maxLength: 10,
+                    autofocus: true,
+                    placeholder: '例如：拍了拍我',
+                    padding: EdgeInsets.zero,
+                    decoration: null,
+                    style: TextStyle(
+                        fontSize: WeChatTypography.body,
+                        color: WeChatColors.resolveTextPrimary(context)),
+                  )),
+                ])),
             const Padding(
               padding: EdgeInsets.only(top: 10, left: 4),
               child: Text('朋友拍一拍你时显示的后缀；拍自己也使用此后缀。'),

@@ -6,7 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
+import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_outgoing_work_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
@@ -693,6 +696,458 @@ void main() {
     expect(await file.exists(), isFalse);
   });
 
+  for (final failPreparation in [false, true]) {
+    test('video retry has real same-root attempts preparation=$failPreparation',
+        () async {
+      var nowUs = 0;
+      var preparationCount = 0;
+      var sendCount = 0;
+      final records = <PerformanceRecord>[];
+      final recorder = PerformanceTraceRecorder(
+          metrics: PerformanceMetrics(enabled: true),
+          clockUs: () => nowUs,
+          onRecord: records.add);
+      final trace = recorder.start(PerformanceOperationType.videoPrepare);
+      trace.mark(PerformanceStage.videoSelected);
+      final client = _OutgoingMediaClient('alice',
+          loggedIn: true,
+          matrixUserId: '@alice:matrix.test',
+          matrixDeviceId: 'ALICE');
+      final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+      client.roomsById[target.id] = target;
+      target.sendResult = (_) async {
+        nowUs += 500000;
+        if (!failPreparation && sendCount++ == 0) {
+          throw const SocketException('transport unavailable');
+        }
+        return r'$retry-event';
+      };
+      final matrix = _videoTraceMatrix(client);
+      final directory = await _videoTraceDirectory('retry-diagnostics-');
+      addTearDown(() => directory.delete(recursive: true));
+      final file = await File('${directory.path}/source.mp4').writeAsBytes([1]);
+      final job = await matrix.enqueueVideoFile(
+          jobId: 'diagnostic-retry',
+          video: MatrixOutgoingVideoFile.forTesting(
+              id: 'source',
+              source: file,
+              filename: 'source.mp4',
+              body: '[视频消息]',
+              deleteSourceWhenDone: false,
+              performanceTrace: trace,
+              prepareMedia: (_) async {
+                nowUs += 2000000;
+                if (failPreparation && preparationCount++ == 0) {
+                  throw const VideoCompressionException();
+                }
+                if (!failPreparation) preparationCount++;
+                return MatrixOutgoingPreparedMedia(
+                    id: 'source',
+                    bytes: [1, 2],
+                    mimeType: 'video/mp4',
+                    filename: 'source.mp4',
+                    body: '[视频消息]');
+              }),
+          targetRoomIds: [target.id]);
+      await matrix.outgoingWork.drain();
+      expect(job.items.single.state, MatrixOutgoingWorkState.failed);
+      nowUs += 3000000;
+      await matrix.outgoingWork.retryItem(job.id, job.items.single.id);
+      await matrix.outgoingWork.drain();
+      expect(job.items.single.state, MatrixOutgoingWorkState.sent);
+      expect(preparationCount, failPreparation ? 2 : 1);
+      expect(records.every((record) => record.operationId == trace.operationId),
+          isTrue);
+      final retries =
+          records.where((record) => record.attemptIndex == 1).toList();
+      expect(retries, isNotEmpty, reason: 'finished root cannot swallow retry');
+      if (failPreparation) {
+        final prepared = retries.firstWhere((record) =>
+            record.operation == PerformanceOperationType.videoPrepare);
+        expect(
+            prepared.betweenMs(PerformanceStage.videoPrepareStarted,
+                PerformanceStage.videoPrepareDone),
+            2000);
+      } else {
+        final sent = retries.firstWhere((record) =>
+            record.operation == PerformanceOperationType.messageSend);
+        expect(sent.result, PerformanceResult.success);
+        expect(sent.retryCount, 1);
+        expect(
+            sent.betweenMs(PerformanceStage.matrixSendStart,
+                PerformanceStage.matrixSendFinish),
+            500);
+        expect(sent.stagesUs,
+            isNot(contains(PerformanceStage.videoPrepareStarted)),
+            reason: 'cached preparation is not performed again');
+      }
+      expect(trace.correlationContext.isCurrent, isFalse,
+          reason: 'terminal source release closes the job-owned context');
+    });
+  }
+
+  test('video echo before HTTP failure records the authoritative sent result',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+    client.roomsById[target.id] = target;
+    final matrix = _videoTraceMatrix(client);
+    target.sendResult = (txid) async {
+      matrix.outgoingWork
+          .acknowledgeEcho(transactionId: txid, eventId: r'$echo-event');
+      throw const SocketException('late HTTP failure');
+    };
+    final directory = await _videoTraceDirectory('echo-diagnostics-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = await File('${directory.path}/source.mp4').writeAsBytes([1]);
+    final job = await matrix.enqueueVideoFile(
+        jobId: 'diagnostic-echo',
+        video: MatrixOutgoingVideoFile.forTesting(
+            id: 'source',
+            source: file,
+            filename: 'source.mp4',
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+            performanceTrace: trace,
+            prepareMedia: (_) async => MatrixOutgoingPreparedMedia(
+                id: 'source',
+                bytes: [1, 2],
+                mimeType: 'video/mp4',
+                filename: 'source.mp4',
+                body: '[视频消息]')),
+        targetRoomIds: [target.id]);
+    await matrix.outgoingWork.drain();
+    expect(job.items.single.state, MatrixOutgoingWorkState.sent);
+    expect(
+        records.every((record) => record.result == PerformanceResult.success),
+        isTrue,
+        reason: 'diagnostics must agree with the settled business result');
+    final send = records.firstWhere(
+        (record) => record.operation == PerformanceOperationType.messageSend);
+    expect(send.stagesUs, contains(PerformanceStage.timelinePublished));
+    expect(send.stagesUs, isNot(contains(PerformanceStage.timelineVisible)));
+  });
+
+  test('held preparation echo remains sent when local preparation later fails',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+    client.roomsById[target.id] = target;
+    final matrix = _videoTraceMatrix(client);
+    final held = Completer<MatrixOutgoingPreparedMedia>();
+    final entered = Completer<void>();
+    final directory = await _videoTraceDirectory('held-prepare-echo-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = await File('${directory.path}/source.mp4').writeAsBytes([1]);
+    final job = await matrix.enqueueVideoFile(
+        jobId: 'held-echo',
+        video: MatrixOutgoingVideoFile.forTesting(
+            id: 'source',
+            source: file,
+            filename: 'source.mp4',
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+            performanceTrace: trace,
+            prepareMedia: (_) {
+              entered.complete();
+              return held.future;
+            }),
+        targetRoomIds: [target.id]);
+    await entered.future;
+    matrix.outgoingWork.acknowledgeEcho(
+        transactionId: job.items.single.txid, eventId: r'$known-echo');
+    held.completeError(const VideoCompressionException());
+    await matrix.outgoingWork.drain();
+    expect(job.items.single.state, MatrixOutgoingWorkState.sent);
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.success);
+    expect(records.single.stagesUs,
+        isNot(contains(PerformanceStage.videoPrepareDone)));
+  });
+
+  test('one video trace survives preparation and both target SDK sends',
+      () async {
+    var clockUs = 0;
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      clockUs: () => clockUs += 100,
+      onRecord: records.add,
+    );
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    trace.mark(PerformanceStage.videoSelected);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final first = _OutgoingMediaRoom(id: '!private-first:test', client: client);
+    final second =
+        _OutgoingMediaRoom(id: '!private-second:test', client: client);
+    client.roomsById[first.id] = first;
+    client.roomsById[second.id] = second;
+    final matrix = _videoTraceMatrix(client);
+    final directory = await _videoTraceDirectory('success-');
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/private-video.mp4');
+    await file.writeAsBytes([1]);
+
+    final job = await matrix.enqueueVideoFile(
+      jobId: 'trace-success',
+      video: MatrixOutgoingVideoFile.forTesting(
+        id: 'private-video-id',
+        source: file,
+        filename: 'private-video.mp4',
+        body: '[视频消息]',
+        deleteSourceWhenDone: false,
+        performanceTrace: trace,
+        prepareMedia: (_) async => MatrixOutgoingPreparedMedia(
+          id: 'private-video-id',
+          bytes: [1, 2],
+          mimeType: 'video/mp4',
+          filename: 'private-video.mp4',
+          body: '[视频消息]',
+        ),
+      ),
+      targetRoomIds: [first.id, second.id],
+    );
+    await matrix.outgoingWork.drain();
+
+    expect(job.items.map((item) => item.state),
+        everyElement(MatrixOutgoingWorkState.sent));
+    expect(records, hasLength(3));
+    expect(records.map((r) => r.operationId), everyElement(trace.operationId));
+    final rootRecord = records.singleWhere(
+        (r) => r.operation == PerformanceOperationType.videoPrepare);
+    expect(
+        records
+            .where((r) => r.operation == PerformanceOperationType.messageSend),
+        hasLength(2));
+    expect(rootRecord.operationId, trace.operationId);
+    expect(rootRecord.result, PerformanceResult.success);
+    expect(
+        rootRecord.stagesUs.keys,
+        containsAll([
+          PerformanceStage.videoSelected,
+          PerformanceStage.videoValidated,
+          PerformanceStage.videoPrepareStarted,
+          PerformanceStage.videoPrepareDone,
+          PerformanceStage.videoEncrypted,
+          PerformanceStage.videoUploadStarted,
+          PerformanceStage.videoEventSent,
+        ]));
+    expect(
+        rootRecord.stagesUs, isNot(contains(PerformanceStage.videoUploadDone)),
+        reason: 'SDK sendFileEvent combines upload and event send');
+    expect(recorder.activeCount, 0);
+    final safe = jsonEncode(rootRecord.toJson());
+    expect(safe, isNot(contains('private-video-id')));
+    expect(safe, isNot(contains('private-first')));
+  });
+
+  test('failed video preparation closes its trace while source stays retryable',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+    client.roomsById[target.id] = target;
+    final matrix = _videoTraceMatrix(client);
+    final directory = await _videoTraceDirectory('failure-');
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/source.mp4');
+    await file.writeAsBytes([1]);
+    final job = await matrix.enqueueVideoFile(
+      jobId: 'trace-failure',
+      video: MatrixOutgoingVideoFile.forTesting(
+        id: 'source',
+        source: file,
+        filename: 'source.mp4',
+        body: '[视频消息]',
+        deleteSourceWhenDone: false,
+        performanceTrace: trace,
+        prepareMedia: (_) async => throw const VideoCompressionException(),
+      ),
+      targetRoomIds: [target.id],
+    );
+    await matrix.outgoingWork.drain();
+    expect(job.items.single.state, MatrixOutgoingWorkState.failed);
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.failed);
+    expect(recorder.activeCount, 0);
+    expect(await file.exists(), isTrue);
+  });
+
+  test('revoked video preparation closes one cancelled trace', () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+    client.roomsById[target.id] = target;
+    final matrix = _videoTraceMatrix(client);
+    final directory = await _videoTraceDirectory('cancel-');
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/source.mp4');
+    await file.writeAsBytes([1]);
+    final preparation = Completer<MatrixOutgoingPreparedMedia>();
+    final job = await matrix.enqueueVideoFile(
+      jobId: 'trace-cancel',
+      video: MatrixOutgoingVideoFile.forTesting(
+        id: 'source',
+        source: file,
+        filename: 'source.mp4',
+        body: '[视频消息]',
+        deleteSourceWhenDone: false,
+        performanceTrace: trace,
+        prepareMedia: (_) => preparation.future,
+      ),
+      targetRoomIds: [target.id],
+    );
+    await _pumpUntil(
+        () => job.items.single.state == MatrixOutgoingWorkState.preparing,
+        reason: 'video preparation must begin before revocation');
+    matrix.outgoingWork.revoke('test');
+    preparation.complete(MatrixOutgoingPreparedMedia(
+      id: 'source',
+      bytes: [1],
+      mimeType: 'video/mp4',
+      filename: 'source.mp4',
+      body: '[视频消息]',
+    ));
+    await matrix.outgoingWork.drain();
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.cancelled);
+    expect(recorder.activeCount, 0);
+  });
+
+  test('video trace closes when admission rejects invalid targets', () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final matrix = _videoTraceMatrix(client);
+    final directory = await _videoTraceDirectory('reject-');
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/source.mp4');
+    await file.writeAsBytes([1]);
+    final video = MatrixOutgoingVideoFile.forTesting(
+      id: 'source',
+      source: file,
+      filename: 'source.mp4',
+      body: '[视频消息]',
+      deleteSourceWhenDone: false,
+      performanceTrace: trace,
+      prepareMedia: (_) async => throw StateError('must not prepare'),
+    );
+
+    await expectLater(
+      matrix.enqueueVideoFile(
+        jobId: 'trace-reject',
+        video: video,
+        targetRoomIds: const [],
+      ),
+      throwsArgumentError,
+    );
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.rejected);
+    expect(recorder.activeCount, 0);
+    expect(await file.exists(), isTrue);
+  });
+
+  test('video trace fails when SDK returns an empty event id', () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final target = _OutgoingMediaRoom(id: '!target:test', client: client)
+      ..eventId = '';
+    client.roomsById[target.id] = target;
+    final matrix = _videoTraceMatrix(client);
+    final directory = await _videoTraceDirectory('empty-event-');
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/source.mp4');
+    await file.writeAsBytes([1]);
+    final job = await matrix.enqueueVideoFile(
+      jobId: 'trace-empty-event',
+      video: MatrixOutgoingVideoFile.forTesting(
+        id: 'source',
+        source: file,
+        filename: 'source.mp4',
+        body: '[视频消息]',
+        deleteSourceWhenDone: false,
+        performanceTrace: trace,
+        prepareMedia: (_) async => MatrixOutgoingPreparedMedia(
+          id: 'source',
+          bytes: [1],
+          mimeType: 'video/mp4',
+          filename: 'source.mp4',
+          body: '[视频消息]',
+        ),
+      ),
+      targetRoomIds: [target.id],
+    );
+    await matrix.outgoingWork.drain();
+    expect(job.items.single.state, MatrixOutgoingWorkState.failed);
+    expect(records, hasLength(2));
+    expect(records.map((r) => r.operationId), everyElement(trace.operationId));
+    expect(
+        records.map((r) => r.result), everyElement(PerformanceResult.failed));
+    expect(
+        records.every(
+            (r) => !r.stagesUs.containsKey(PerformanceStage.videoEventSent)),
+        isTrue);
+    expect(recorder.activeCount, 0);
+  });
+
   test('failed video preparation retains its owned capture for retry',
       () async {
     final client = _OutgoingMediaClient('alice',
@@ -1118,11 +1573,19 @@ void main() {
       () async {
     final store = SecureSessionStore(MemorySecureKeyValueStore());
     await store.saveMatrixBinding(binding('@a:test', 'device-A'));
+    await store.matrixDatabaseKey();
     final opened = <({String path, String cipher})>[];
     final factory = MatrixClientFactory(
         sessionStore: store,
         homeserver: Uri.parse('https://matrix.example'),
         supportDirectoryPath: () async => '/private/support',
+        // This path-only fixture does not write SQLCipher files. Model the
+        // retained A identity explicitly; physical read-only probing has its
+        // own tests.
+        localIdentityPreflight: MatrixLocalIdentityPreflight(
+          reader: _OriginalIdentityFixtureReader(),
+          fingerprintReader: (_, pickle) async => pickle,
+        ),
         clientMigrator: (_, __) async {},
         opener: (
             {required clientName,
@@ -1143,6 +1606,23 @@ void main() {
     expect(opened[1].cipher, isNot(opened[0].cipher));
     expect(opened[2], opened[0]);
   });
+}
+
+final class _OriginalIdentityFixtureReader
+    implements MatrixLocalIdentityReader {
+  @override
+  Future<bool> exists(String databasePath) async =>
+      databasePath.endsWith('liuhetong_matrix.sqlite');
+
+  @override
+  Future<MatrixLocalIdentityRecord> read(
+          String databasePath, String cipher) async =>
+      const MatrixLocalIdentityRecord(
+        hasRetainedData: true,
+        matrixUserId: '@a:test',
+        deviceId: 'device-A',
+        olmAccount: 'fingerprint-@a:test',
+      );
 }
 
 class _OutgoingTrackingClient extends LogoutTrackingClient {
@@ -1195,6 +1675,8 @@ final class _OutgoingMediaRoom extends _OutgoingTrackingRoom {
   _OutgoingMediaRoom({required super.id, required super.client});
 
   final List<Map<String, dynamic>> sentExtraContent = [];
+  String? eventId = r'$media-event';
+  Future<String?> Function(String? txid)? sendResult;
 
   @override
   Future<String?> sendFileEvent(
@@ -1210,8 +1692,29 @@ final class _OutgoingMediaRoom extends _OutgoingTrackingRoom {
   }) async {
     sentTxids.add(txid);
     sentExtraContent.add(Map<String, dynamic>.from(extraContent ?? {}));
-    return r'$media-event';
+    return sendResult == null ? eventId : await sendResult!(txid);
   }
+}
+
+MatrixSdkE2eeClient _videoTraceMatrix(_OutgoingMediaClient client) =>
+    MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.example'),
+      suspendClient: (_) async {},
+      readContinuityMetadata: (active) async => MatrixClientContinuityMetadata(
+        isLoggedIn: active.isLogged(),
+        userId: active.userID,
+        deviceId: active.deviceID,
+        ed25519Fingerprint: 'fingerprint-${active.userID}',
+        databaseGeneration: 'generation-${active.userID}',
+      ),
+    );
+
+Future<Directory> _videoTraceDirectory(String prefix) async {
+  final root =
+      Directory('../../docs/verification/artifacts/2026-09-25/video-trace');
+  await root.create(recursive: true);
+  return root.createTemp(prefix);
 }
 
 /// 有界轮询：每轮让出事件循环，直到 [condition] 成立或超时失败。

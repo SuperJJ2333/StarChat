@@ -51,32 +51,29 @@ void main() {
   });
 
   testWidgets('断网 + 本地快照：权限表单照常渲染、不显示整页错误', (tester) async {
-    final api =
-        await _client((request) async => throw StateError('offline'));
+    final api = await _client((request) async => throw StateError('offline'));
     await _seedSnapshot();
 
     await tester.pumpWidget(CupertinoApp(home: MomentsSettingsPage(api: api)));
     await tester.pumpAndSettle();
 
-    expect(find.text('权限加载失败，请重试'), findsNothing,
-        reason: '有本地快照时的刷新失败不显示整页错误');
+    expect(find.text('权限加载失败，请重试'), findsNothing, reason: '有本地快照时的刷新失败不显示整页错误');
     expect(find.byKey(const Key('moments-privacy-retry')), findsNothing);
-    expect(find.text('2人'), findsOneWidget,
-        reason: '「不给谁看」应显示快照里的 2 人，而不是未设置');
+    expect(find.text('2人'), findsOneWidget, reason: '「不给谁看」应显示快照里的 2 人，而不是未设置');
     expect(find.text('允许朋友查看朋友圈的范围'), findsOneWidget);
     expect(find.byType(CupertinoActivityIndicator), findsNothing);
   });
 
-  testWidgets('没有本地快照且加载失败：显示失败与重试（不假装已加载）',
-      (tester) async {
-    final api =
-        await _client((request) async => throw StateError('offline'));
+  testWidgets('没有本地快照且加载失败：显示失败与重试（不假装已加载）', (tester) async {
+    final api = await _client((request) async => throw StateError('offline'));
 
     await tester.pumpWidget(CupertinoApp(home: MomentsSettingsPage(api: api)));
     await tester.pumpAndSettle();
 
     expect(find.text('权限加载失败，请重试'), findsOneWidget);
     expect(find.byKey(const Key('moments-privacy-retry')), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.exclamationmark_triangle_fill),
+        findsOneWidget);
   });
 
   testWidgets('加载成功：把最新权限回写本地快照', (tester) async {

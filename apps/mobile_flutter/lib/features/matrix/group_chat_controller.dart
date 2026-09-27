@@ -129,7 +129,7 @@ final class GroupChatController extends ChangeNotifier {
     // participant-name fallback, otherwise it is incorrectly treated as a
     // custom group name in every navigation entry point.
     final rawName = requestedName.trim();
-    final name = rawName.characters.take(20).toString();
+    final name = rawName.characters.take(12).toString();
     _set(GroupChatState(
       status: GroupChatStatus.creating,
       contacts: state.contacts,

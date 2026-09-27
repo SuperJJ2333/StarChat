@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'conversation_optimistic_state_test.dart' show PendingPreferenceClient;
 import 'matrix_client_factory_test.dart' show SnapshotRoom;
 import 'package:flutter/cupertino.dart';
@@ -9,6 +10,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/scan_qr_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/ui/components/conversation_list_tile.dart';
@@ -19,23 +21,36 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 现在必须跳转 ScanQrPage(api: widget.api)（与发现页同款入口）。
 void main() {
   late BusinessApiClient api;
+  var privacyFails = false, privacyEnabled = false;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    privacyFails = false;
+    privacyEnabled = false;
     final store = SecureSessionStore(_MemoryStore());
     await store.saveSession(accessToken: 'access', refreshToken: 'refresh');
     api = BusinessApiClient(
       baseUri: Uri.parse('https://business.example'),
       sessionStore: store,
       // 心跳/资料加载等后台请求一律 500——页面侧均已捕获，不影响本测试。
-      client: MockClient((request) async =>
-          request.url.path.endsWith('/profile/privacy')
-              ? http.Response('{"auto_allow_group_join":false}', 200)
-              : http.Response('{}', 500)),
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/auto-allow-group-join')) {
+          privacyEnabled = (jsonDecode(request.body) as Map)['enabled'] == true;
+          return http.Response(
+              jsonEncode({'auto_allow_group_join': privacyEnabled}), 200);
+        }
+        if (request.url.path.endsWith('/profile/privacy')) {
+          return privacyFails
+              ? http.Response('{}', 503)
+              : http.Response(
+                  jsonEncode({'auto_allow_group_join': privacyEnabled}), 200);
+        }
+        return http.Response('{}', 500);
+      }),
     );
   });
 
-  Future<void> pumpHome(WidgetTester tester,
+  Future<MatrixSdkE2eeClient> pumpHome(WidgetTester tester,
       {Client? sdkOverride,
       bool dark = false,
       bool invite = false,
@@ -73,11 +88,16 @@ void main() {
       sdk,
       homeserver: Uri.parse('https://matrix.example'),
     );
+    // Scan/navigation and room projection start with caller-owned identities;
+    // cold_start_identity_test covers the independent disk hydration boundary.
+    final identities = ProfileRepository(api);
+    addTearDown(identities.dispose);
     await tester.pumpWidget(CupertinoApp(
       theme: CupertinoThemeData(
           brightness: dark ? Brightness.dark : Brightness.light),
       home: MatrixHomePage(
         api: api,
+        identityCache: identities,
         previewOnly: previewOnly,
         matrix: matrix,
         themeController: ThemeController(store: _MemoryThemeStore()),
@@ -85,6 +105,7 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    return matrix;
   }
 
   testWidgets(
@@ -94,6 +115,29 @@ void main() {
     expect(find.byKey(const ValueKey<String>('conversation-!locked:example')),
         findsOneWidget);
     expect(find.textContaining('fake-error-detail'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'unavailable group preference never auto-joins and keeps invitations visible',
+      (tester) async {
+    privacyFails = true;
+    final sdk = _NoNetworkClient();
+    await pumpHome(tester, sdkOverride: sdk, invite: true);
+    expect(sdk.joinCalls, 0);
+    expect(find.byKey(const Key('pending-group-invites')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets(
+      'confirmed chat preference mutation affects the next invitation sync',
+      (tester) async {
+    final sdk = _NoNetworkClient();
+    final matrix = await pumpHome(tester, sdkOverride: sdk, invite: true);
+    expect(sdk.joinCalls, 0);
+    await api.setAutoAllowGroupJoin(true);
+    await matrix.sync();
+    await tester.pumpAndSettle();
+    expect(sdk.joinCalls, greaterThan(0));
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -178,6 +222,19 @@ void main() {
 /// 页面 initState 的首次 sync() 立即完成且无网络副作用。
 final class _NoNetworkClient extends Client {
   _NoNetworkClient() : super('home-scan-entry-test');
+  int joinCalls = 0;
+  @override
+  Future<String> joinRoom(String id,
+      {List<String>? serverName,
+      List<String>? via,
+      String? reason,
+      ThirdPartySigned? thirdPartySigned}) async {
+    joinCalls++;
+    return id;
+  }
+
+  @override
+  Future<void> oneShotSync() async {}
 
   // Invite display names need the current member, just as a signed-in client does.
   @override

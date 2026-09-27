@@ -1,6 +1,7 @@
-import 'package:crypto/crypto.dart' show sha256;
+import 'package:crypto/crypto.dart' show sha256, Hmac;
 import 'dart:convert';
 import 'business_phone_contracts.dart' as phone_contracts;
+import 'account_credentials_gateway.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -8,7 +9,10 @@ import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 import 'business_api_error.dart';
+import 'business_api_performance_client.dart';
 import 'chat_diagnostics.dart';
+import 'network_diagnostics.dart';
+import 'performance_trace.dart';
 import 'business_auth_contracts.dart';
 import '../features/profile/profile_controller.dart';
 import '../features/profile/invite_controller.dart';
@@ -46,6 +50,40 @@ final class _BusinessSessionRevocation implements BusinessSessionRevocation {
   Future<void> revoke() => _revoke();
 }
 
+final class _GroupJoinPreferenceWrite {
+  _GroupJoinPreferenceWrite(this.epoch);
+  final int epoch;
+  final settled = Completer<void>();
+}
+
+final class _AccountBindingConfirmation {
+  _AccountBindingConfirmation(this.epoch);
+  final int epoch;
+  final settled = Completer<void>();
+}
+
+final class _CredentialsRequestSession {
+  _CredentialsRequestSession(this.epoch, this.acceptedAccessToken);
+  final int epoch;
+  String? acceptedAccessToken;
+}
+
+final class _AccountSettingsRead<T> {
+  int? epoch;
+  int revision = 0;
+  T? value;
+  DateTime? savedAt;
+  Future<T>? flight;
+
+  void invalidate(int nextEpoch, {bool keepValue = false}) {
+    epoch = nextEpoch;
+    revision++;
+    if (!keepValue) value = null;
+    savedAt = null;
+    flight = null;
+  }
+}
+
 final class BusinessApiClient
     implements
         BusinessSessionGateway,
@@ -64,23 +102,69 @@ final class BusinessApiClient
         InviteCacheScopeProvider,
         SupportIdentityGateway,
         phone_contracts.PhoneAuthGateway,
+        AccountCredentialsGateway,
+        phone_contracts.PhoneInvitationContinuationGateway,
         phone_contracts.RechargeGateway {
   BusinessApiClient({
     required this.baseUri,
     required this.sessionStore,
     http.Client? client,
-  }) : _client = client ?? http.Client();
+    DateTime Function()? clock,
+    PerformanceTraceRecorder? performanceRecorder,
+  })  : _performanceClient = BusinessApiPerformanceClient(
+          client ?? http.Client(),
+          recorder: performanceRecorder,
+        ),
+        _settingsClock = clock ?? DateTime.now {
+    _client = DiagnosticHttpClient(
+      _performanceClient,
+      () => ChatDiagnostics.instance.networks,
+    );
+  }
   final Uri baseUri;
   final SecureSessionStore sessionStore;
-  final http.Client _client;
+  final BusinessApiPerformanceClient _performanceClient;
+  late final http.Client _client;
+  final DateTime Function() _settingsClock;
   bool _diagnosticUploadActive = false;
+
+  /// Account-scoped shared presentation cache; widgets only remove listeners.
+  late final SupportIdentityRepository supportIdentities =
+      SupportIdentityRepository(
+    this,
+    scope: () async {
+      final session = await sessionStore.session();
+      final account = session?.matrixUserId;
+      if (account == null || account.isEmpty) return null;
+      return sha256.convert(utf8.encode('$baseUri|$account')).toString();
+    },
+    store: const PreferencesSupportIdentitySnapshotStore(),
+  );
+
+  /// Salted local-only namespace; never included in telemetry or HTTP headers.
+  Future<String?> diagnosticSpoolScope() async {
+    final epoch = _sessionEpoch;
+    final session = await sessionStore.session();
+    final account = session?.matrixUserId;
+    if (account == null || account.isEmpty || epoch != _sessionEpoch) {
+      return null;
+    }
+    final salt = await sessionStore.diagnosticSalt();
+    if (epoch != _sessionEpoch) return null;
+    return Hmac(
+      sha256,
+      utf8.encode(salt),
+    ).convert(utf8.encode('$baseUri|$account')).toString();
+  }
 
   /// Best-effort metadata transport, deliberately outside _authorized/_decode.
   /// 401/429 never refresh credentials, revoke a session or recurse into logs.
   /// A dedicated socket is force-closed on deadline/abort, including stalled
   /// response headers. No diagnostic body or credential is persisted here.
   Future<int> uploadChatDiagnostics(
-      ChatDiagnosticBatch batch, Future<void> abort) async {
+    ChatDiagnosticBatch batch,
+    Future<void> abort,
+  ) async {
     if (_diagnosticUploadActive) return 0;
     _diagnosticUploadActive = true;
     final epoch = _sessionEpoch;
@@ -95,20 +179,27 @@ final class BusinessApiClient
     }
 
     final timer = Timer(const Duration(seconds: 5), cancel);
-    unawaited(abort.then((_) => cancel(),
-        onError: (Object _, StackTrace __) => cancel()));
+    unawaited(
+      abort.then(
+        (_) => cancel(),
+        onError: (Object _, StackTrace __) => cancel(),
+      ),
+    );
     Future<int> send() async {
       final session = await sessionStore.session();
       if (ended || epoch != _sessionEpoch || session == null) return 0;
       final bytes = utf8.encode(jsonEncode(batch.toJson()));
       if (bytes.length > 16384) return 0;
-      final request =
-          await client.postUrl(baseUri.resolve('/api/v1/client-diagnostics'));
+      final request = await client.postUrl(
+        baseUri.resolve('/api/v1/client-diagnostics'),
+      );
       if (ended || epoch != _sessionEpoch) return 0;
       request.followRedirects = false;
       request.headers.contentType = ContentType.json;
       request.headers.set(
-          HttpHeaders.authorizationHeader, 'Bearer ${session.accessToken}');
+        HttpHeaders.authorizationHeader,
+        'Bearer ${session.accessToken}',
+      );
       request.contentLength = bytes.length;
       request.add(bytes);
       final response = await request.close();
@@ -141,8 +232,10 @@ final class BusinessApiClient
   Future<void> _sessionWrites = Future<void>.value();
   Future<T> _writeSession<T>(Future<T> Function() action) {
     final result = _sessionWrites.then((_) => action());
-    _sessionWrites =
-        result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _sessionWrites = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
     return result;
   }
 
@@ -166,31 +259,42 @@ final class BusinessApiClient
   }
 
   @override
-  Future<void> completeMatrixSession(
-      {required String matrixAccessToken,
-      required String matrixDeviceId}) async {
-    final response = await _authorized((headers) => _client.post(
+  Future<void> completeMatrixSession({
+    required String matrixAccessToken,
+    required String matrixDeviceId,
+  }) async {
+    final response = await _authorized(
+      (headers) => _client.post(
         _uri('/auth/matrix-session'),
         headers: {...headers, 'Content-Type': 'application/json'},
         body: jsonEncode({
           'matrix_access_token': matrixAccessToken,
-          'matrix_device_id': matrixDeviceId
-        })));
+          'matrix_device_id': matrixDeviceId,
+        }),
+      ),
+    );
     final body = _decode(response);
     if (body['status'] != 'ACTIVE') {
       throw const BusinessApiException(
-          statusCode: 503,
-          code: 'MATRIX_SESSION_REVOKE_PENDING',
-          message: '旧设备退出尚未完成，请重试');
+        statusCode: 503,
+        code: 'MATRIX_SESSION_REVOKE_PENDING',
+        message: '旧设备退出尚未完成，请重试',
+      );
     }
   }
 
   static const _ended = BusinessApiException(
-      statusCode: 401, code: 'AUTH_SESSION_ENDED', message: '会话已结束');
+    statusCode: 401,
+    code: 'AUTH_SESSION_ENDED',
+    message: '会话已结束',
+  );
 
   Future<void> _invalidateSession(int epoch, String code) async {
     if (epoch != _sessionEpoch) return;
     final invalidatedEpoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -200,8 +304,9 @@ final class BusinessApiClient
       }
     });
     if (invalidatedEpoch != _sessionEpoch) return;
-    _invalidations
-        .add(BusinessSessionInvalidation(epoch: invalidatedEpoch, code: code));
+    _invalidations.add(
+      BusinessSessionInvalidation(epoch: invalidatedEpoch, code: code),
+    );
   }
 
   Future<void> _checkReplacement(http.Response response, int epoch) async {
@@ -223,11 +328,7 @@ final class BusinessApiClient
   String _pendingIdempotencyKey(String operation) =>
       _pendingIdempotencyKeys.putIfAbsent(operation, newIdempotencyKey);
   Uri _uri(String path) {
-    final url = baseUri.resolve(
-      path.startsWith('/api/v1/') ? path : '/api/v1$path',
-    );
-    _lastRequestUrl = url; // 供 debug 日志记录（不含 query 密钥）
-    return url;
+    return baseUri.resolve(path.startsWith('/api/v1/') ? path : '/api/v1$path');
   }
 
   Future<Map<String, dynamic>> login({
@@ -237,6 +338,9 @@ final class BusinessApiClient
     required String deviceName,
   }) async {
     final loginEpoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -256,16 +360,17 @@ final class BusinessApiClient
     if (loginEpoch != _sessionEpoch) throw _ended;
     final returnedMatrixUserId = body['matrix_user_id']?.toString();
     await _writeCurrentSession(
-        loginEpoch,
-        () => sessionStore.saveSession(
-              accessToken: body['access_token'] as String,
-              refreshToken: body['refresh_token'] as String,
-              deviceKey: deviceKey,
-              matrixUserId:
-                  returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
-                      ? null
-                      : returnedMatrixUserId,
-            ));
+      loginEpoch,
+      () => sessionStore.saveSession(
+        accessToken: body['access_token'] as String,
+        refreshToken: body['refresh_token'] as String,
+        deviceKey: deviceKey,
+        matrixUserId:
+            returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
+                ? null
+                : returnedMatrixUserId,
+      ),
+    );
     return body;
   }
 
@@ -296,11 +401,14 @@ final class BusinessApiClient
       final seconds = (retryAt.difference(DateTime.now()).inMilliseconds / 1000)
           .ceil()
           .clamp(1, 86400);
-      return Future.error(BusinessApiException(
+      return Future.error(
+        BusinessApiException(
           statusCode: 429,
           code: 'MATRIX_LOGIN_RATE_LIMITED',
           message: '聊天登录请求较频繁，请等待 $seconds 秒后重试',
-          retryAfterSeconds: seconds));
+          retryAfterSeconds: seconds,
+        ),
+      );
     }
     late final Future<MatrixLoginGrant> flight;
     flight = _requestMatrixLoginToken().whenComplete(() {
@@ -312,18 +420,22 @@ final class BusinessApiClient
 
   Future<MatrixLoginGrant> _requestMatrixLoginToken() async {
     try {
-      final response = await _authorized((headers) =>
-          _client.post(_uri('/auth/matrix-login-token'), headers: headers));
+      final response = await _authorized(
+        (headers) =>
+            _client.post(_uri('/auth/matrix-login-token'), headers: headers),
+      );
       final body = _decode(response);
       return MatrixLoginGrant(
-          loginToken: body['login_token'] as String,
-          homeserver: body['homeserver'] as String,
-          expiresIn: body['expires_in'] as int,
-          matrixUserId: body['matrix_user_id'] as String);
+        loginToken: body['login_token'] as String,
+        homeserver: body['homeserver'] as String,
+        expiresIn: body['expires_in'] as int,
+        matrixUserId: body['matrix_user_id'] as String,
+      );
     } on BusinessApiException catch (error) {
       if (error.statusCode == 429) {
-        _matrixGrantRetryAt = DateTime.now()
-            .add(Duration(seconds: error.retryAfterSeconds ?? 60));
+        _matrixGrantRetryAt = DateTime.now().add(
+          Duration(seconds: error.retryAfterSeconds ?? 60),
+        );
       }
       rethrow;
     }
@@ -386,15 +498,21 @@ final class BusinessApiClient
   }
 
   @override
-  Future<InviteHistoryPage> fetchInviteHistory(
-      {int limit = 20, int offset = 0}) async {
-    final body =
-        await getJson('/invitations/history?limit=$limit&offset=$offset');
+  Future<InviteHistoryPage> fetchInviteHistory({
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final body = await getJson(
+      '/invitations/history?limit=$limit&offset=$offset',
+    );
     final next = (body['next_offset'] as num?)?.toInt();
     return InviteHistoryPage(
       items: (body['items'] as List? ?? const [])
-          .map((value) => InviteHistoryItem.fromJson(
-              (value as Map).cast<String, dynamic>()))
+          .map(
+            (value) => InviteHistoryItem.fromJson(
+              (value as Map).cast<String, dynamic>(),
+            ),
+          )
           .toList(growable: false),
       nextOffset: next,
     );
@@ -513,6 +631,7 @@ final class BusinessApiClient
         username: body['username'] as String,
         nickname: body['nickname'] as String,
         maskedEmail: body['masked_email'] as String,
+        maskedPhone: body['masked_phone'] as String?,
         fallbackSeed: body['avatar_fallback_seed'] as String,
         signature: body['signature']?.toString(),
         nudgeSuffix: body['nudge_suffix']?.toString(),
@@ -523,7 +642,7 @@ final class BusinessApiClient
       _profile(await getJson('/profile/me'));
   @override
   Future<ProfileData> updateProfile({
-    required String nickname,
+    String? nickname,
     String? signature,
     String? nudgeSuffix,
   }) async =>
@@ -531,9 +650,9 @@ final class BusinessApiClient
         await patchJson(
             '/profile/me',
             {
-              'nickname': nickname,
-              'signature': signature,
-              'nudge_suffix': nudgeSuffix,
+              if (nickname != null) 'nickname': nickname,
+              if (signature != null) 'signature': signature,
+              if (nudgeSuffix != null) 'nudge_suffix': nudgeSuffix,
             },
             idempotencyKey: newIdempotencyKey()),
       );
@@ -679,6 +798,9 @@ final class BusinessApiClient
   @override
   Future<BusinessSessionRevocation?> clearLocalSession() async {
     final epoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
+    supportIdentities.clear();
     _refreshFlight = null;
     _refreshRetryAt = null;
     _refreshFailures = 0;
@@ -733,7 +855,8 @@ final class BusinessApiClient
     if (q != null && q.isNotEmpty) parameters['q'] = q;
     if (cursor != null) parameters['cursor'] = cursor;
     return getJson(
-        '/ledger/transactions/me?${Uri(queryParameters: parameters).query}');
+      '/ledger/transactions/me?${Uri(queryParameters: parameters).query}',
+    );
   }
 
   Future<Map<String, dynamic>> ledgerTransactionDetail(String id) =>
@@ -749,11 +872,15 @@ final class BusinessApiClient
             'amount': amount,
           },
           idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> paymentPinStatus(
-          {String? expectedWalletScope, String? expectedPaymentScope}) =>
-      getJson('/payment-pin/status',
-          expectedWalletScope: expectedWalletScope,
-          expectedPaymentScope: expectedPaymentScope);
+  Future<Map<String, dynamic>> paymentPinStatus({
+    String? expectedWalletScope,
+    String? expectedPaymentScope,
+  }) =>
+      getJson(
+        '/payment-pin/status',
+        expectedWalletScope: expectedWalletScope,
+        expectedPaymentScope: expectedPaymentScope,
+      );
 
   Future<Map<String, dynamic>> setupPaymentPin({
     required String pin,
@@ -763,10 +890,12 @@ final class BusinessApiClient
     String? expectedPaymentScope,
   }) =>
       postJson(
-          '/payment-pin/setup', {'pin': pin, 'login_password': loginPassword},
-          idempotencyKey: idempotencyKey,
-          expectedWalletScope: expectedWalletScope,
-          expectedPaymentScope: expectedPaymentScope);
+        '/payment-pin/setup',
+        {'pin': pin, 'login_password': loginPassword},
+        idempotencyKey: idempotencyKey,
+        expectedWalletScope: expectedWalletScope,
+        expectedPaymentScope: expectedPaymentScope,
+      );
 
   Future<Map<String, dynamic>> authorizePaymentPin({
     required String pin,
@@ -777,16 +906,17 @@ final class BusinessApiClient
     String? expectedPaymentScope,
   }) =>
       postJson(
-          '/payment-pin/authorize',
-          {
-            'pin': pin,
-            'action': action,
-            'payload': payload,
-            'idempotency_key': idempotencyKey,
-          },
-          idempotencyKey: newIdempotencyKey(),
-          expectedWalletScope: expectedWalletScope,
-          expectedPaymentScope: expectedPaymentScope);
+        '/payment-pin/authorize',
+        {
+          'pin': pin,
+          'action': action,
+          'payload': payload,
+          'idempotency_key': idempotencyKey,
+        },
+        idempotencyKey: newIdempotencyKey(),
+        expectedWalletScope: expectedWalletScope,
+        expectedPaymentScope: expectedPaymentScope,
+      );
 
   Future<Map<String, dynamic>> createRedPacket({
     required String mode,
@@ -799,18 +929,19 @@ final class BusinessApiClient
     String? expectedWalletScope,
   }) =>
       postJson(
-          '/red-packets',
-          {
-            'mode': mode,
-            'total': total,
-            'share_count': shareCount,
-            if (roomId != null) 'room_id': roomId,
-            if (recipientId != null) 'recipient_id': recipientId,
-            if (paymentAuthorization != null)
-              'payment_authorization': paymentAuthorization,
-          },
-          idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
-          expectedWalletScope: expectedWalletScope);
+        '/red-packets',
+        {
+          'mode': mode,
+          'total': total,
+          'share_count': shareCount,
+          if (roomId != null) 'room_id': roomId,
+          if (recipientId != null) 'recipient_id': recipientId,
+          if (paymentAuthorization != null)
+            'payment_authorization': paymentAuthorization,
+        },
+        idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
+        expectedWalletScope: expectedWalletScope,
+      );
   @override
   Future<Map<String, dynamic>> claimRedPacket(String id) => postJson(
         '/red-packets/$id/claims',
@@ -848,17 +979,18 @@ final class BusinessApiClient
     String? expectedWalletScope,
   }) =>
       postJson(
-          '/chat-transfers',
-          {
-            'receiver_id': receiverId,
-            'amount': amount,
-            if (note != null && note.isNotEmpty) 'note': note,
-            if (roomId != null) 'room_id': roomId,
-            if (paymentAuthorization != null)
-              'payment_authorization': paymentAuthorization,
-          },
-          idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
-          expectedWalletScope: expectedWalletScope);
+        '/chat-transfers',
+        {
+          'receiver_id': receiverId,
+          'amount': amount,
+          if (note != null && note.isNotEmpty) 'note': note,
+          if (roomId != null) 'room_id': roomId,
+          if (paymentAuthorization != null)
+            'payment_authorization': paymentAuthorization,
+        },
+        idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
+        expectedWalletScope: expectedWalletScope,
+      );
   Future<Map<String, dynamic>> acceptChatTransfer(String id) => postJson(
         '/chat-transfers/$id/accept',
         {},
@@ -889,13 +1021,11 @@ final class BusinessApiClient
     String? expectedWalletScope,
   }) =>
       postJson(
-          '/wallet/conversions',
-          {
-            'direction': direction,
-            'amount': amount,
-          },
-          idempotencyKey: idempotencyKey,
-          expectedWalletScope: expectedWalletScope);
+        '/wallet/conversions',
+        {'direction': direction, 'amount': amount},
+        idempotencyKey: idempotencyKey,
+        expectedWalletScope: expectedWalletScope,
+      );
   Future<Map<String, dynamic>> walletConversionStatus(String id) =>
       getJson('/wallet/conversions/$id');
 
@@ -910,8 +1040,13 @@ final class BusinessApiClient
 
   String _paymentSessionScope(StoredBusinessSession? session) {
     final account = _walletSessionScope(session);
-    final claims = jsonDecode(utf8.decode(base64Url.decode(
-        base64Url.normalize(session!.accessToken.split('.')[1])))) as Map;
+    final claims = jsonDecode(
+      utf8.decode(
+        base64Url.decode(
+          base64Url.normalize(session!.accessToken.split('.')[1]),
+        ),
+      ),
+    ) as Map;
     return '$account:${claims['family_id'] ?? ''}:${claims['device_id'] ?? ''}';
   }
 
@@ -927,19 +1062,390 @@ final class BusinessApiClient
     return '${baseUri.origin}:$subject';
   }
 
-  Future<bool> autoAllowGroupJoin() async =>
-      (await getJson('/profile/privacy'))['auto_allow_group_join'] == true;
-  Future<bool> setAutoAllowGroupJoin(bool enabled) async =>
-      _setAutoAllowGroupJoin(enabled);
-  Future<bool> _setAutoAllowGroupJoin(bool enabled) async {
-    final response = await _authorized(
-      (headers) => _client.put(
-        _uri('/profile/privacy/auto-allow-group-join'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'enabled': enabled}),
-      ),
+  static const _accountSettingsTtl = Duration(minutes: 5);
+  final _accountSecurityRead = _AccountSettingsRead<AccountSecurityData>();
+  final _groupJoinRead = _AccountSettingsRead<bool>();
+
+  /// Display snapshots only: no passwords, codes, proofs or full contacts.
+  AccountSecurityData? get cachedAccountSecurityData =>
+      !hasPendingAccountBindingConfirmation &&
+              _accountSecurityRead.epoch == _sessionEpoch
+          ? _accountSecurityRead.value
+          : null;
+  bool? get cachedAutoAllowGroupJoin =>
+      _groupJoinRead.epoch == _sessionEpoch ? _groupJoinRead.value : null;
+  bool get accountSecurityCacheIsFresh =>
+      !hasPendingAccountBindingConfirmation &&
+      _settingsReadIsFresh(_accountSecurityRead);
+  bool get autoAllowGroupJoinCacheIsFresh =>
+      !hasPendingAutoAllowGroupJoinWrite &&
+      _settingsReadIsFresh(_groupJoinRead);
+
+  bool _settingsReadIsFresh<T>(_AccountSettingsRead<T> cache) {
+    final saved = cache.savedAt;
+    final now = _settingsClock();
+    return cache.epoch == _sessionEpoch &&
+        cache.value != null &&
+        saved != null &&
+        !now.isBefore(saved) &&
+        now.difference(saved) < _accountSettingsTtl;
+  }
+
+  void _clearAccountSettingsCaches() {
+    _accountSecurityRead.invalidate(_sessionEpoch);
+    _groupJoinRead.invalidate(_sessionEpoch);
+  }
+
+  /// A binding confirmation can succeed despite a lost response. Discard its
+  /// previous action eligibility before requesting an authoritative summary.
+  void invalidateAccountSecurityCache() =>
+      _accountSecurityRead.invalidate(_sessionEpoch);
+
+  _AccountBindingConfirmation? _accountBindingConfirmation;
+
+  bool get hasPendingAccountBindingConfirmation =>
+      _accountBindingConfirmation?.epoch == _sessionEpoch;
+
+  Future<void> waitForAccountBindingConfirmation() =>
+      hasPendingAccountBindingConfirmation
+          ? _accountBindingConfirmation!.settled.future
+          : Future<void>.value();
+
+  _AccountBindingConfirmation _beginAccountBindingConfirmation() {
+    if (hasPendingAccountBindingConfirmation) {
+      throw const BusinessApiException(
+        statusCode: 409,
+        code: 'ACCOUNT_BINDING_CONFIRM_PENDING',
+        message: '绑定结果待确认',
+      );
+    }
+    final confirmation = _AccountBindingConfirmation(_sessionEpoch);
+    _accountBindingConfirmation = confirmation;
+    invalidateAccountSecurityCache();
+    return confirmation;
+  }
+
+  void _settleAccountBindingConfirmation(
+    _AccountBindingConfirmation confirmation,
+  ) {
+    // Timeout only ends the caller's wait, never the actual HTTP request.
+    // A late settlement invalidates again before any authority read resumes.
+    if (confirmation.epoch == _sessionEpoch) {
+      invalidateAccountSecurityCache();
+    }
+    if (identical(_accountBindingConfirmation, confirmation)) {
+      _accountBindingConfirmation = null;
+    }
+    confirmation.settled.complete();
+  }
+
+  Future<T> _loadAccountSetting<T>(
+    _AccountSettingsRead<T> cache,
+    Future<T> Function() read, {
+    required bool forceRefresh,
+  }) {
+    final epoch = _sessionEpoch;
+    if (cache.epoch != epoch) cache.invalidate(epoch);
+    if (!forceRefresh && _settingsReadIsFresh(cache)) {
+      return Future<T>.value(cache.value!);
+    }
+    final existing = cache.flight;
+    if (existing != null) return existing;
+    final revision = cache.revision;
+    late final Future<T> flight;
+    flight = read().then((value) {
+      if (epoch != _sessionEpoch) throw _ended;
+      if (revision != cache.revision) {
+        throw StateError('设置读取已更新，请重试');
+      }
+      cache.value = value;
+      cache.savedAt = _settingsClock();
+      return value;
+    }).whenComplete(() {
+      if (identical(cache.flight, flight)) cache.flight = null;
+    });
+    cache.flight = flight;
+    return flight;
+  }
+
+  Future<bool> autoAllowGroupJoin({bool forceRefresh = false}) async {
+    final epoch = _sessionEpoch;
+    while (hasPendingAutoAllowGroupJoinWrite) {
+      await waitForAutoAllowGroupJoinWrite();
+      if (epoch != _sessionEpoch) throw _ended;
+      // Read the authority after an uncertain write, even if a previous
+      // confirmed snapshot or a successful PUT response is already cached.
+      forceRefresh = true;
+    }
+    return _loadAccountSetting(
+      _groupJoinRead,
+      () async =>
+          (await getJson('/profile/privacy'))['auto_allow_group_join'] == true,
+      forceRefresh: forceRefresh,
     );
-    return _decode(response)['auto_allow_group_join'] == true;
+  }
+
+  /// OTP mutations are single attempts with a fixed session identity. In
+  /// particular a failed authenticated attempt cannot fall back to recovery
+  /// anonymously, refresh credentials, or automatically send a second code.
+  final _credentialsRequestSessions = <_CredentialsRequestSession>{};
+
+  void _acceptCredentialsRefresh(
+    int epoch,
+    StoredBusinessSession expected,
+    StoredBusinessSession target,
+  ) {
+    if (epoch != _sessionEpoch) {
+      return;
+    }
+    for (final flight in _credentialsRequestSessions) {
+      if (flight.epoch == epoch &&
+          flight.acceptedAccessToken == expected.accessToken) {
+        flight.acceptedAccessToken = target.accessToken;
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> _credentialsRequest(
+    String path, {
+    Map<String, dynamic>? body,
+    required bool authenticated,
+    bool invalidateOnSuccess = false,
+    _AccountBindingConfirmation? bindingConfirmation,
+  }) {
+    final epoch = _sessionEpoch;
+    Future<Map<String, dynamic>> send() async {
+      _CredentialsRequestSession? flight;
+      try {
+        final capturedSession = await _writeCurrentSession(epoch, () async {
+          final captured = await sessionStore.session();
+          if (epoch != _sessionEpoch || (authenticated && captured == null)) {
+            throw _ended;
+          }
+          flight = _CredentialsRequestSession(epoch, captured?.accessToken);
+          _credentialsRequestSessions.add(flight!);
+          return captured;
+        });
+        final session = authenticated ? capturedSession : null;
+        if (epoch != _sessionEpoch || (authenticated && session == null)) {
+          throw _ended;
+        }
+        final headers = <String, String>{
+          'Content-Type': 'application/json',
+          if (session != null) 'Authorization': 'Bearer ${session.accessToken}',
+        };
+        final response = body == null
+            ? await _client.get(_uri(path), headers: headers)
+            : await _client.post(
+                _uri(path),
+                headers: headers,
+                body: jsonEncode(body),
+              );
+        if (epoch != _sessionEpoch) throw _ended;
+        // Serialize with trusted refresh persistence so its lineage is recorded
+        // before checking the stored token. A manual save never advances it.
+        await _writeCurrentSession(epoch, () async {
+          final current = await sessionStore.session();
+          if (epoch != _sessionEpoch ||
+              current?.accessToken != flight!.acceptedAccessToken) {
+            throw _ended;
+          }
+        });
+        await _checkReplacement(response, epoch);
+        final result = response.statusCode == 204
+            ? <String, dynamic>{}
+            : _decode(response);
+        if (invalidateOnSuccess && authenticated) {
+          await _invalidateSession(epoch, 'PASSWORD_CHANGED');
+        }
+        return result;
+      } finally {
+        _credentialsRequestSessions.remove(flight);
+        if (bindingConfirmation != null) {
+          _settleAccountBindingConfirmation(bindingConfirmation);
+        }
+      }
+    }
+
+    return send().timeout(const Duration(seconds: 8));
+  }
+
+  @override
+  Future<AccountSecurityData> loadAccountSecurity({
+    bool forceRefresh = false,
+  }) async {
+    final epoch = _sessionEpoch;
+    while (hasPendingAccountBindingConfirmation) {
+      await waitForAccountBindingConfirmation();
+      if (epoch != _sessionEpoch) throw _ended;
+      forceRefresh = true;
+    }
+    return _loadAccountSetting(_accountSecurityRead, () async {
+      final session = await sessionStore.session();
+      if (epoch != _sessionEpoch || session == null) throw _ended;
+      // Only this read-only GET can refresh and retry. OTP writes below keep
+      // their captured Bearer and single-attempt delivery semantics.
+      return AccountSecurityData.fromJson(
+        await getJson('/auth/account-security'),
+      );
+    }, forceRefresh: forceRefresh);
+  }
+
+  @override
+  Future<int> requestPasswordCode({
+    required String channel,
+    required String target,
+    required bool authenticated,
+  }) async {
+    final receipt = await _credentialsRequest(
+      '/auth/password/code/request',
+      body: {'channel': channel, 'target': target},
+      authenticated: authenticated,
+    );
+    return receipt['resend_after_seconds'] as int? ?? 60;
+  }
+
+  @override
+  Future<String> verifyPasswordCode({
+    required String channel,
+    required String target,
+    required String code,
+    required bool authenticated,
+  }) async {
+    final receipt = await _credentialsRequest(
+      '/auth/password/code/verify',
+      body: {'channel': channel, 'target': target, 'code': code},
+      authenticated: authenticated,
+    );
+    final token = receipt['reset_token'];
+    if (token is! String || token.isEmpty) {
+      throw const FormatException('Invalid recovery proof');
+    }
+    return token;
+  }
+
+  @override
+  Future<void> resetPassword({
+    required String token,
+    required String newPassword,
+    required bool authenticated,
+  }) async {
+    await _credentialsRequest(
+      '/auth/password/code/reset',
+      body: {'token': token, 'new_password': newPassword},
+      authenticated: authenticated,
+      invalidateOnSuccess: true,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> requestEmailRebindOldCode() =>
+      _credentialsRequest(
+        '/auth/email/rebind/old-request',
+        body: const {},
+        authenticated: true,
+      );
+  @override
+  Future<void> verifyEmailRebindOldCode(String code) async {
+    await _credentialsRequest(
+      '/auth/email/rebind/old-confirm',
+      body: {'code': code},
+      authenticated: true,
+    );
+  }
+
+  @override
+  Future<int> requestEmailRebindNewCode(String email) async {
+    final receipt = await _credentialsRequest(
+      '/auth/email/rebind/new-request',
+      body: {'email': email},
+      authenticated: true,
+    );
+    return receipt['resend_after_seconds'] as int? ?? 60;
+  }
+
+  @override
+  Future<void> confirmEmailRebind({
+    required String email,
+    required String code,
+  }) async {
+    final confirmation = _beginAccountBindingConfirmation();
+    await _credentialsRequest(
+      '/auth/email/rebind/confirm',
+      body: {'new_email': email, 'code': code},
+      authenticated: true,
+      bindingConfirmation: confirmation,
+    );
+  }
+
+  _GroupJoinPreferenceWrite? _groupJoinPreferenceWrite;
+
+  bool get hasPendingAutoAllowGroupJoinWrite =>
+      _groupJoinPreferenceWrite?.epoch == _sessionEpoch;
+
+  Future<void> waitForAutoAllowGroupJoinWrite() =>
+      hasPendingAutoAllowGroupJoinWrite
+          ? _groupJoinPreferenceWrite!.settled.future
+          : Future<void>.value();
+
+  Future<bool> setAutoAllowGroupJoin(bool enabled) {
+    if (hasPendingAutoAllowGroupJoinWrite) {
+      return Future<bool>.error(
+        const BusinessApiException(
+          statusCode: 409,
+          code: 'GROUP_JOIN_SAVE_PENDING',
+          message: '保存结果待确认',
+        ),
+      );
+    }
+    final flight = _GroupJoinPreferenceWrite(_sessionEpoch);
+    _groupJoinPreferenceWrite = flight;
+    _groupJoinRead.invalidate(_sessionEpoch, keepValue: true);
+    return _setAutoAllowGroupJoin(enabled, flight);
+  }
+
+  Future<bool> _setAutoAllowGroupJoin(
+    bool enabled,
+    _GroupJoinPreferenceWrite flight,
+  ) async {
+    final transports = <Future<http.Response>>[];
+    try {
+      final response = await _authorized((headers) {
+        if (flight.epoch != _sessionEpoch) {
+          throw _ended;
+        }
+        final transport = _client.put(
+          _uri('/profile/privacy/auto-allow-group-join'),
+          headers: {...headers, 'Content-Type': 'application/json'},
+          body: jsonEncode({'enabled': enabled}),
+        );
+        transports.add(transport);
+        return transport;
+      });
+      if (flight.epoch != _sessionEpoch) {
+        throw _ended;
+      }
+      final saved = _decode(response)['auto_allow_group_join'] == true;
+      _groupJoinRead.value = saved;
+      _groupJoinRead.savedAt = _settingsClock();
+      return saved;
+    } finally {
+      // _authorized bounds the caller, but Future.timeout does not cancel PUT.
+      // Keep the account's lock until every actual transport (including a
+      // retry after an explicit 401) settles; unknown outcomes never retry.
+      await Future.wait(
+        transports.map(
+          (transport) => transport.then<void>(
+            (_) {},
+            onError: (Object _, StackTrace __) {},
+          ),
+        ),
+      );
+      if (identical(_groupJoinPreferenceWrite, flight)) {
+        _groupJoinPreferenceWrite = null;
+      }
+      flight.settled.complete();
+    }
   }
 
   /// BUG2 群二维码：签发入群令牌（群主/管理员；返回 `changliao://g/<token>`）。
@@ -1098,7 +1604,11 @@ final class BusinessApiClient
   }
 
   Future<Map<String, dynamic>> blockUser(String id) async {
-    final result = await postJson('/blocks', {'user_id': id},
+    final result = await postJson(
+        '/blocks',
+        {
+          'user_id': id,
+        },
         idempotencyKey: newIdempotencyKey());
     // BUG-10：拉黑后立即生效（聊天的发送门与本投影读同一份状态），
     // 并在服务端持久化后刷新好友朋友圈权限投影。
@@ -1140,8 +1650,13 @@ final class BusinessApiClient
   }
 
   @override
-  Future<Map<String, dynamic>> searchUsers(String query) =>
-      getJson('/users/search?q=${Uri.encodeQueryComponent(query)}');
+  Future<Map<String, dynamic>> searchUsers(String query) async {
+    final response = await _authorized((headers) => _client.post(
+        _uri('/users/search'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'q': query})));
+    return _decode(response);
+  }
 
   /// BUG 2 群成员非好友：按 Matrix ID 反查公开资料与关系状态。
   /// 不存在/拉黑/自己时服务端返回 404（抛 BusinessApiException）。
@@ -1154,7 +1669,8 @@ final class BusinessApiClient
 
   @override
   Future<List<SupportIdentity>> lookupSupportIdentities(
-      List<String> userIds) async {
+    List<String> userIds,
+  ) async {
     if (userIds.isEmpty || userIds.length > 100) {
       throw ArgumentError.value(userIds, 'userIds', 'must contain 1..100 ids');
     }
@@ -1168,8 +1684,11 @@ final class BusinessApiClient
     final body = _decode(response);
     return (body['items'] as List? ?? const [])
         .whereType<Map>()
-        .map((item) => SupportIdentity.fromJson(
-            item.map((key, value) => MapEntry(key.toString(), value))))
+        .map(
+          (item) => SupportIdentity.fromJson(
+            item.map((key, value) => MapEntry(key.toString(), value)),
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -1224,8 +1743,11 @@ final class BusinessApiClient
   int? _directRevisionEpoch;
 
   /// One monotonic view shared by sending, directory sync, and recovery.
-  void acceptDirectConversationSnapshot(String peer, Map<String, dynamic> body,
-      {required int epoch}) {
+  void acceptDirectConversationSnapshot(
+    String peer,
+    Map<String, dynamic> body, {
+    required int epoch,
+  }) {
     if (epoch != sessionEpoch) {
       throw StateError('Direct conversation account changed');
     }
@@ -1269,15 +1791,29 @@ final class BusinessApiClient
           idempotencyKey: attemptId);
 
   Future<Map<String, dynamic>> claimRecoverableDirectConversation(
-          String peer, String attempt) =>
-      postJson('/direct-conversations/claim-v2',
-          {'peer_user_id': peer, 'attempt_id': attempt},
+    String peer,
+    String attempt,
+  ) =>
+      postJson(
+          '/direct-conversations/claim-v2',
+          {
+            'peer_user_id': peer,
+            'attempt_id': attempt,
+          },
           idempotencyKey: attempt);
 
   Future<String> recoverDirectConversation(
-      String peer, String attempt, String roomId) async {
-    final result = await postJson('/direct-conversations/recover',
-        {'peer_user_id': peer, 'attempt_id': attempt, 'matrix_room_id': roomId},
+    String peer,
+    String attempt,
+    String roomId,
+  ) async {
+    final result = await postJson(
+        '/direct-conversations/recover',
+        {
+          'peer_user_id': peer,
+          'attempt_id': attempt,
+          'matrix_room_id': roomId,
+        },
         idempotencyKey: attempt);
     final id = result['matrix_room_id'];
     if (id is! String || id.isEmpty) throw StateError('规范私聊登记响应不完整');
@@ -1285,20 +1821,28 @@ final class BusinessApiClient
   }
 
   Future<Map<String, dynamic>> directConversationAssociations(
-      String peer) async {
+    String peer,
+  ) async {
     final epoch = sessionEpoch;
     final body = await getJson(
-        '/direct-conversations/associations?${Uri(queryParameters: {
-          'peer_user_id': peer
-        }).query}');
+      '/direct-conversations/associations?${Uri(queryParameters: {
+            'peer_user_id': peer
+          }).query}',
+    );
     acceptDirectConversationSnapshot(peer, body, epoch: epoch);
     return body;
   }
 
   Future<void> registerDirectConversationHistory(
-      String peer, String roomId) async {
-    await postJson('/direct-conversations/associations',
-        {'peer_user_id': peer, 'matrix_room_id': roomId},
+    String peer,
+    String roomId,
+  ) async {
+    await postJson(
+        '/direct-conversations/associations',
+        {
+          'peer_user_id': peer,
+          'matrix_room_id': roomId,
+        },
         idempotencyKey: newIdempotencyKey());
   }
 
@@ -1403,10 +1947,13 @@ final class BusinessApiClient
           idempotencyKey: idempotencyKey ?? newIdempotencyKey());
   Future<Map<String, dynamic>> likeMoment(String id) =>
       postJson('/moments/$id/likes', {}, idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> commentMoment(String id, String text,
-          {String? parentId,
-          List<String> imageUploadIds = const [],
-          String? idempotencyKey}) =>
+  Future<Map<String, dynamic>> commentMoment(
+    String id,
+    String text, {
+    String? parentId,
+    List<String> imageUploadIds = const [],
+    String? idempotencyKey,
+  }) =>
       postJson(
           '/moments/$id/comments',
           {
@@ -1504,24 +2051,37 @@ final class BusinessApiClient
 
   /// 单条修改朋友圈可见范围（作者本人）。
   Future<Map<String, dynamic>> updateMomentVisibility(
-          String momentId, Map<String, dynamic> selection) =>
+    String momentId,
+    Map<String, dynamic> selection,
+  ) =>
       patchJson(
-          '/moments/${Uri.encodeComponent(momentId)}/visibility', selection,
-          idempotencyKey: newIdempotencyKey());
+        '/moments/${Uri.encodeComponent(momentId)}/visibility',
+        selection,
+        idempotencyKey: newIdempotencyKey(),
+      );
 
   Future<Map<String, dynamic>> momentProfilePreview(String userId) =>
       getJson('/moments/users/${Uri.encodeComponent(userId)}/preview');
-  Future<Map<String, dynamic>> momentNotifications() =>
-      getJson('/moments/notifications');
+  Future<Map<String, dynamic>> momentNotifications({
+    int limit = 30,
+    String? cursor,
+  }) =>
+      getJson(
+        '/moments/notifications?limit=$limit'
+        '${cursor == null ? '' : '&cursor=${Uri.encodeQueryComponent(cursor)}'}',
+      );
   Future<Map<String, dynamic>> momentUnreadCount() =>
       getJson('/moments/notifications/unread-count');
   Future<void> markMomentNotificationsRead(List<String> ids) async {
-    await postJson(
-        '/moments/notifications/read',
-        {
-          'ids': ids,
-        },
-        idempotencyKey: newIdempotencyKey());
+    if (ids.isEmpty) return;
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/moments/notifications/read'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode(ids),
+      ),
+    );
+    if (response.statusCode != 204) _decode(response);
   }
 
   Future<Map<String, dynamic>> momentsPreferences() =>
@@ -1670,12 +2230,7 @@ final class BusinessApiClient
     bool termsAccepted = false,
     bool Function()? shouldContinue,
   }) async {
-    final loginEpoch = ++_sessionEpoch;
-    _refreshFlight = null;
-    _refreshRetryAt = null;
-    _refreshFailures = 0;
-    _matrixGrantFlight = null;
-    _matrixGrantRetryAt = null;
+    final loginEpoch = _beginPhoneLogin();
     final response = await _client
         .post(
           _uri('/auth/phone/login'),
@@ -1683,6 +2238,7 @@ final class BusinessApiClient
           body: jsonEncode({
             'phone': phone,
             'code': code,
+            'allow_invitation_continuation': true,
             if (invitationCode.isNotEmpty) 'invitation_code': invitationCode,
             if (termsAccepted) 'terms_accepted': true,
             'device_key': deviceKey,
@@ -1691,6 +2247,190 @@ final class BusinessApiClient
         )
         .timeout(_httpTimeout);
     var body = _decode(response);
+    String? invitationTicket;
+    if (body['status'] == 'INVITATION_VERIFIED') {
+      if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+        throw _ended;
+      }
+      final ticket = _invitationTicket(body);
+      invitationTicket = ticket;
+      if (invitationCode.trim().isEmpty) {
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: ticket,
+          issue: phone_contracts.PhoneInvitationIssue.required,
+        );
+      }
+      try {
+        body = await _submitPhoneInvitation(
+          invitationTicket: ticket,
+          phone: phone,
+          invitationCode: invitationCode,
+          termsAccepted: termsAccepted,
+          deviceKey: deviceKey,
+          deviceName: deviceName,
+          shouldContinue: shouldContinue,
+          loginEpoch: loginEpoch,
+        );
+      } on phone_contracts.PhoneInvitationContinuationRequired {
+        rethrow;
+      } on BusinessApiException catch (error) {
+        if (error.code == 'INVITATION_TICKET_INVALID' ||
+            error.code == 'AUTH_SESSION_ENDED') {
+          rethrow;
+        }
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: ticket,
+          issue: phone_contracts.PhoneInvitationIssue.uncertain,
+        );
+      } on Exception {
+        throw phone_contracts.PhoneInvitationContinuationRequired(
+          ticket: ticket,
+          issue: phone_contracts.PhoneInvitationIssue.uncertain,
+        );
+      }
+    }
+    try {
+      return await _finishPhoneLogin(
+        body,
+        deviceKey: deviceKey,
+        deviceName: deviceName,
+        shouldContinue: shouldContinue,
+        loginEpoch: loginEpoch,
+      );
+    } on BusinessApiException catch (error) {
+      if (invitationTicket == null ||
+          error.code == 'AUTH_SESSION_ENDED' ||
+          error.code == 'LOGIN_TICKET_INVALID') {
+        rethrow;
+      }
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+        ticket: invitationTicket,
+        issue: error.code == 'PHONE_PROVISIONING_PENDING'
+            ? phone_contracts.PhoneInvitationIssue.provisioning
+            : phone_contracts.PhoneInvitationIssue.uncertain,
+      );
+    } on Exception {
+      if (invitationTicket == null) rethrow;
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+        ticket: invitationTicket,
+        issue: phone_contracts.PhoneInvitationIssue.uncertain,
+      );
+    }
+  }
+
+  int _beginPhoneLogin() {
+    final loginEpoch = ++_sessionEpoch;
+    _credentialsRequestSessions.clear();
+    _clearAccountSettingsCaches();
+    supportIdentities.clear();
+    _refreshFlight = null;
+    _refreshRetryAt = null;
+    _refreshFailures = 0;
+    _matrixGrantFlight = null;
+    _matrixGrantRetryAt = null;
+    return loginEpoch;
+  }
+
+  String _invitationTicket(Map<String, dynamic> body) {
+    final ticket = body['invitation_ticket'];
+    if (ticket is! String || ticket.length < 32 || ticket.length > 128) {
+      throw const FormatException('Invalid phone invitation response');
+    }
+    return ticket;
+  }
+
+  phone_contracts.PhoneInvitationIssue? _invitationIssue(Object? status) =>
+      switch (status) {
+        'INVITATION_REQUIRED' => phone_contracts.PhoneInvitationIssue.required,
+        'INVITATION_INVALID' => phone_contracts.PhoneInvitationIssue.invalid,
+        'INVITATION_EXPIRED' => phone_contracts.PhoneInvitationIssue.expired,
+        'INVITATION_EXHAUSTED' =>
+          phone_contracts.PhoneInvitationIssue.exhausted,
+        'TERMS_REQUIRED' => phone_contracts.PhoneInvitationIssue.terms,
+        _ => null,
+      };
+
+  Future<Map<String, dynamic>> _submitPhoneInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    required int loginEpoch,
+    bool Function()? shouldContinue,
+  }) async {
+    if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+      throw _ended;
+    }
+    final response = await _client
+        .post(
+          _uri('/auth/phone/login/invitation'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'phone': phone,
+            'invitation_ticket': invitationTicket,
+            'invitation_code': invitationCode,
+            'terms_accepted': termsAccepted,
+            'device_key': deviceKey,
+            'device_name': deviceName,
+          }),
+        )
+        .timeout(_httpTimeout);
+    final body = _decode(response);
+    if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
+      throw _ended;
+    }
+    final issue = _invitationIssue(body['status']);
+    if (issue != null) {
+      if (_invitationTicket(body) != invitationTicket) {
+        throw const FormatException('Mismatched phone invitation response');
+      }
+      throw phone_contracts.PhoneInvitationContinuationRequired(
+        ticket: invitationTicket,
+        issue: issue,
+      );
+    }
+    return body;
+  }
+
+  @override
+  Future<Map<String, dynamic>> completePhoneLoginInvitation({
+    required String invitationTicket,
+    required String phone,
+    required String invitationCode,
+    required bool termsAccepted,
+    required String deviceKey,
+    required String deviceName,
+    bool Function()? shouldContinue,
+  }) async {
+    final loginEpoch = _beginPhoneLogin();
+    final body = await _submitPhoneInvitation(
+      invitationTicket: invitationTicket,
+      phone: phone,
+      invitationCode: invitationCode,
+      termsAccepted: termsAccepted,
+      deviceKey: deviceKey,
+      deviceName: deviceName,
+      loginEpoch: loginEpoch,
+      shouldContinue: shouldContinue,
+    );
+    return _finishPhoneLogin(
+      body,
+      deviceKey: deviceKey,
+      deviceName: deviceName,
+      shouldContinue: shouldContinue,
+      loginEpoch: loginEpoch,
+    );
+  }
+
+  Future<Map<String, dynamic>> _finishPhoneLogin(
+    Map<String, dynamic> body, {
+    required String deviceKey,
+    required String deviceName,
+    required int loginEpoch,
+    bool Function()? shouldContinue,
+  }) async {
     final waiting = Stopwatch()..start();
     final ticket = body['login_ticket']?.toString();
     while (body['status'] == 'PENDING_MATRIX') {
@@ -1699,9 +2439,10 @@ final class BusinessApiClient
       }
       if (ticket == null || waiting.elapsed >= const Duration(seconds: 60)) {
         throw BusinessApiException(
-            code: 'PHONE_PROVISIONING_PENDING',
-            message: '账号仍在开通，请稍后重新登录；无需再次注册',
-            statusCode: 202);
+          code: 'PHONE_PROVISIONING_PENDING',
+          message: '账号仍在开通，请稍后重新登录；无需再次注册',
+          statusCode: 202,
+        );
       }
       await Future<void>.delayed(const Duration(seconds: 2));
       if (loginEpoch != _sessionEpoch || shouldContinue?.call() == false) {
@@ -1710,19 +2451,28 @@ final class BusinessApiClient
       final remaining = const Duration(seconds: 60) - waiting.elapsed;
       if (remaining <= Duration.zero) continue;
       final completion = await _client
-          .post(_uri('/auth/phone/login/complete'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'login_ticket': ticket,
-                'device_key': deviceKey,
-                'device_name': deviceName
-              }))
-          .timeout(remaining < _httpTimeout ? remaining : _httpTimeout,
-              onTimeout: () => throw BusinessApiException(
-                  code: 'PHONE_PROVISIONING_PENDING',
-                  message: '账号开通结果待确认，请稍后重新登录；无需再次注册',
-                  statusCode: 202));
+          .post(
+            _uri('/auth/phone/login/complete'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'login_ticket': ticket,
+              'device_key': deviceKey,
+              'device_name': deviceName,
+            }),
+          )
+          .timeout(
+            remaining < _httpTimeout ? remaining : _httpTimeout,
+            onTimeout: () => throw BusinessApiException(
+              code: 'PHONE_PROVISIONING_PENDING',
+              message: '账号开通结果待确认，请稍后重新登录；无需再次注册',
+              statusCode: 202,
+            ),
+          );
       body = _decode(completion);
+    }
+    if (!body.containsKey('access_token') ||
+        !body.containsKey('refresh_token')) {
+      throw const FormatException('Invalid phone login response');
     }
     if (shouldContinue?.call() == false) throw _ended;
     if (loginEpoch != _sessionEpoch) throw _ended;
@@ -1743,52 +2493,42 @@ final class BusinessApiClient
   }
 
   @override
-  Future<Map<String, dynamic>> rebindOldRequest() async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/old-request'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({}),
-      ),
-    );
-    return _decode(response);
-  }
+  Future<Map<String, dynamic>> rebindOldRequest() => _credentialsRequest(
+        '/auth/phone/rebind/old-request',
+        body: const {},
+        authenticated: true,
+      );
 
   @override
   Future<void> rebindOldConfirm({required String code}) async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/old-confirm'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'code': code}),
-      ),
+    await _credentialsRequest(
+      '/auth/phone/rebind/old-confirm',
+      body: {'code': code},
+      authenticated: true,
     );
-    _decode(response);
   }
 
   @override
   Future<void> rebindNewRequest({required String phone}) async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/new-request'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'phone': phone}),
-      ),
+    await _credentialsRequest(
+      '/auth/phone/rebind/new-request',
+      body: {'phone': phone},
+      authenticated: true,
     );
-    _decode(response);
   }
 
   @override
-  Future<void> rebindNewConfirm(
-      {required String phone, required String code}) async {
-    final response = await _authorized(
-      (headers) => _client.post(
-        _uri('/auth/phone/rebind/confirm'),
-        headers: {...headers, 'Content-Type': 'application/json'},
-        body: jsonEncode({'new_phone': phone, 'code': code}),
-      ),
+  Future<void> rebindNewConfirm({
+    required String phone,
+    required String code,
+  }) async {
+    final confirmation = _beginAccountBindingConfirmation();
+    await _credentialsRequest(
+      '/auth/phone/rebind/confirm',
+      body: {'new_phone': phone, 'code': code},
+      authenticated: true,
+      bindingConfirmation: confirmation,
     );
-    _decode(response);
   }
 
   @override
@@ -1832,14 +2572,13 @@ final class BusinessApiClient
     required String idempotencyKey,
   }) =>
       postJson(
-        '/recharge/requests',
-        {
-          'amount_usdt': amountUsdt,
-          if (evidenceTxid != null) 'evidence_txid': evidenceTxid,
-          if (note != null) 'note': note,
-        },
-        idempotencyKey: idempotencyKey,
-      );
+          '/recharge/requests',
+          {
+            'amount_usdt': amountUsdt,
+            if (evidenceTxid != null) 'evidence_txid': evidenceTxid,
+            if (note != null) 'note': note,
+          },
+          idempotencyKey: idempotencyKey);
 
   @override
   Future<List<Map<String, dynamic>>> myRecharges() async {
@@ -1848,9 +2587,11 @@ final class BusinessApiClient
   }
 
   @override
-  Future<void> cancelRecharge(String requestId) =>
-      postJson('/recharge/requests/$requestId/cancel', {},
-          idempotencyKey: 'recharge-cancel:$requestId');
+  Future<void> cancelRecharge(String requestId) => postJson(
+        '/recharge/requests/$requestId/cancel',
+        {},
+        idempotencyKey: 'recharge-cancel:$requestId',
+      );
 
   @override
   Future<Map<String, dynamic>> fxRate() => getJson('/fx/rate');
@@ -1858,14 +2599,17 @@ final class BusinessApiClient
   @override
   Future<List<Map<String, dynamic>>> transferIntents(String roomId) async {
     final body = await getJson(
-        '/groups/${Uri.encodeComponent(roomId)}/transfer-intents');
+      '/groups/${Uri.encodeComponent(roomId)}/transfer-intents',
+    );
     return (body['items'] as List).cast<Map<String, dynamic>>();
   }
 
   /// Same ownership tenure + target has one durable identity across app restarts.
   /// Unknown requests are replayed to the coordinator, never to Matrix directly.
   Future<Map<String, dynamic>> requestGroupOwnershipTransfer(
-      String roomId, String targetMatrixUserId) async {
+    String roomId,
+    String targetMatrixUserId,
+  ) async {
     final epoch = _sessionEpoch;
     final owner = await getJson('/groups/${Uri.encodeComponent(roomId)}/owner');
     final target = await lookupUserByMatrixId(targetMatrixUserId);
@@ -1874,21 +2618,35 @@ final class BusinessApiClient
         targetId.isEmpty ||
         owner['owner_user_id'] == null) {
       throw const BusinessApiException(
-          statusCode: 409,
-          code: 'GROUP_OWNER_UNRESOLVABLE',
-          message: '无法确认群主或成员身份，请刷新后重试');
+        statusCode: 409,
+        code: 'GROUP_OWNER_UNRESOLVABLE',
+        message: '无法确认群主或成员身份，请刷新后重试',
+      );
     }
     if (epoch != _sessionEpoch) {
       throw const BusinessApiException(
-          statusCode: 409, code: 'SESSION_CHANGED', message: '账号已切换，请重新打开群资料');
+        statusCode: 409,
+        code: 'SESSION_CHANGED',
+        message: '账号已切换，请重新打开群资料',
+      );
     }
     final key = sha256
-        .convert(utf8.encode(jsonEncode(
-            [roomId, owner['owner_user_id'], owner['owner_since'], targetId])))
+        .convert(
+          utf8.encode(
+            jsonEncode([
+              roomId,
+              owner['owner_user_id'],
+              owner['owner_since'],
+              targetId,
+            ]),
+          ),
+        )
         .toString();
-    return postJson('/groups/${Uri.encodeComponent(roomId)}/transfer-owner',
-        {'new_owner_user_id': targetId},
-        idempotencyKey: 'owner:$key');
+    return postJson(
+      '/groups/${Uri.encodeComponent(roomId)}/transfer-owner',
+      {'new_owner_user_id': targetId},
+      idempotencyKey: 'owner:$key',
+    );
   }
 
   Future<Map<String, dynamic>> postJson(
@@ -1971,11 +2729,11 @@ final class BusinessApiClient
   /// A03：会话代数——登出递增；在途刷新的迟到结果据此失效。
   int _sessionEpoch = 0;
 
-  /// debug 模式请求观测：只记录 method/URL/HTTP 状态/错误类型，
-  /// 绝不输出 header、body、token、密码或完整邀请码。
-  void _logRequest(String method, Uri? url, Object outcome) {
+  /// Debug output uses no request path: path segments can hold room, user or
+  /// upload identifiers even when the query string is omitted.
+  void _logRequest(Object outcome) {
     if (!kDebugMode) return;
-    debugPrint('[api] $method ${url?.path ?? ''} -> $outcome');
+    debugPrint('[chatflow/network] business_request -> $outcome');
   }
 
   Future<http.Response> _authorized(
@@ -1984,73 +2742,112 @@ final class BusinessApiClient
     String? expectedWalletScope,
     String? expectedPaymentScope,
   }) async {
-    final epoch = _sessionEpoch;
-    // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
-    // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
-    final deadline = DateTime.now().add(_authorizedTotalTimeout);
-    Future<Duration> remaining() async => deadline.difference(DateTime.now());
-    final initial = await sessionStore.session();
-    if (epoch != _sessionEpoch) throw _ended;
-    void guardPayment(StoredBusinessSession? session) {
-      if (expectedPaymentScope != null &&
-          _paymentSessionScope(session) != expectedPaymentScope) {
-        throw StateError('支付会话已变化，请重新打开支付页面');
+    final diagnostics = ChatDiagnostics.instance;
+    final diagnosticGeneration = diagnostics.sessionGeneration;
+    final requestEpoch = _sessionEpoch;
+    final watch = Stopwatch()..start();
+    void networkDiagnostic(ChatDiagnosticError error, {int? status}) {
+      if (!identical(ChatDiagnostics.instance, diagnostics) ||
+          requestEpoch != _sessionEpoch ||
+          diagnostics.sessionGeneration != diagnosticGeneration) {
+        return;
       }
+      diagnostics.record(
+        stage: ChatDiagnosticStage.networkRequest,
+        error: error,
+        elapsed: watch.elapsed,
+        status: status,
+      );
     }
 
-    guardPayment(initial);
-    if (expectedWalletScope != null &&
-        _walletSessionScope(initial) != expectedWalletScope) {
-      throw StateError('账户已切换，请重新打开钱包');
-    }
-    final requestUrl = _lastRequestUrl;
-    http.Response response;
+    final performanceScope = _performanceClient.beginLogicalRequest();
+    Object? failure;
+    Future<http.Response> attempt(Map<String, String> headers) =>
+        performanceScope == null
+            ? operation(headers)
+            : performanceScope.run(() => operation(headers));
     try {
-      response = await operation({
-        if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}',
-      }).timeout(timeout);
-    } catch (error) {
-      _logRequest('REQUEST', requestUrl, 'ERROR:${error.runtimeType}');
-      rethrow;
-    }
-    if (response.statusCode >= 400) {
-      _logRequest('REQUEST', requestUrl, 'HTTP ${response.statusCode}');
-    }
-    await _checkReplacement(response, epoch);
-    if (response.statusCode != 401 || initial == null) {
+      final epoch = _sessionEpoch;
+      // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
+      // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
+      final deadline = DateTime.now().add(_authorizedTotalTimeout);
+      Future<Duration> remaining() async => deadline.difference(DateTime.now());
+      final initial = await sessionStore.session();
+      if (epoch != _sessionEpoch) throw _ended;
+      void guardPayment(StoredBusinessSession? session) {
+        if (expectedPaymentScope != null &&
+            _paymentSessionScope(session) != expectedPaymentScope) {
+          throw StateError('支付会话已变化，请重新打开支付页面');
+        }
+      }
+
+      guardPayment(initial);
+      if (expectedWalletScope != null &&
+          _walletSessionScope(initial) != expectedWalletScope) {
+        throw StateError('账户已切换，请重新打开钱包');
+      }
+      http.Response response;
+      try {
+        response = await attempt({
+          if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}',
+        }).timeout(timeout);
+      } catch (error) {
+        _logRequest('ERROR:${error.runtimeType}');
+        rethrow;
+      }
+      if (response.statusCode >= 400) {
+        _logRequest('HTTP ${response.statusCode}');
+      }
+      if (response.statusCode == 401) {
+        networkDiagnostic(ChatDiagnosticError.rejected, status: 401);
+      }
+      await _checkReplacement(response, epoch);
+      if (response.statusCode != 401 || initial == null) {
+        if (expectedPaymentScope != null) {
+          guardPayment(await sessionStore.session());
+        }
+        return response;
+      }
+      final refreshBudget = await remaining();
+      if (refreshBudget <= Duration.zero) {
+        throw TimeoutException('authorized request budget exhausted');
+      }
+      // Bound this caller, not the shared refresh: its durable result must still
+      // be saved for other callers if this request's budget runs out.
+      final replacement = await refreshSession().timeout(refreshBudget);
+      if (epoch != _sessionEpoch) throw _ended;
+      guardPayment(replacement);
+      if (expectedWalletScope != null &&
+          _walletSessionScope(replacement) != expectedWalletScope) {
+        throw StateError('账户已切换，请重新打开钱包');
+      }
+      final budget = await remaining();
+      if (budget.isNegative) {
+        throw TimeoutException('authorized request budget exhausted');
+      }
+      performanceScope?.retryCount++;
+      final retried = await attempt({
+        'Authorization': 'Bearer ${replacement.accessToken}',
+      }).timeout(budget < timeout ? budget : timeout);
+      await _checkReplacement(retried, epoch);
       if (expectedPaymentScope != null) {
         guardPayment(await sessionStore.session());
       }
-      return response;
+      return retried;
+    } catch (error) {
+      failure = error;
+      if (error is TimeoutException) {
+        networkDiagnostic(ChatDiagnosticError.timeout);
+      } else if (error is SocketException ||
+          error is HandshakeException ||
+          error is http.ClientException) {
+        networkDiagnostic(ChatDiagnosticError.network);
+      }
+      rethrow;
+    } finally {
+      performanceScope?.finish(failure: failure);
     }
-    final refreshBudget = await remaining();
-    if (refreshBudget <= Duration.zero) {
-      throw TimeoutException('authorized request budget exhausted');
-    }
-    // Bound this caller, not the shared refresh: its durable result must still
-    // be saved for other callers if this request's budget runs out.
-    final replacement = await refreshSession().timeout(refreshBudget);
-    if (epoch != _sessionEpoch) throw _ended;
-    guardPayment(replacement);
-    if (expectedWalletScope != null &&
-        _walletSessionScope(replacement) != expectedWalletScope) {
-      throw StateError('账户已切换，请重新打开钱包');
-    }
-    final budget = await remaining();
-    if (budget.isNegative) {
-      throw TimeoutException('authorized request budget exhausted');
-    }
-    final retried = await operation({
-      'Authorization': 'Bearer ${replacement.accessToken}',
-    }).timeout(budget < timeout ? budget : timeout);
-    await _checkReplacement(retried, epoch);
-    if (expectedPaymentScope != null) {
-      guardPayment(await sessionStore.session());
-    }
-    return retried;
   }
-
-  Uri? _lastRequestUrl;
 
   Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic>? body;

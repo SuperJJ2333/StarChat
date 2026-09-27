@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 
 import '../foundation/wechat_tokens.dart';
+import '../../core/support_identity_repository.dart';
+import '../components/wechat_official_name.dart';
 
 enum MessageDirection { incoming, outgoing }
 
@@ -22,6 +24,8 @@ final class WeChatMessageBubble extends StatelessWidget {
     required this.content,
     this.avatar,
     this.senderName,
+    this.senderMatrixId,
+    this.supportIdentities,
     this.decorateContent = true,
     this.state = MessageDeliveryState.sent,
     this.onAvatarTap,
@@ -37,6 +41,8 @@ final class WeChatMessageBubble extends StatelessWidget {
   final Widget content;
   final Widget? avatar;
   final String? senderName;
+  final String? senderMatrixId;
+  final SupportIdentityRepository? supportIdentities;
   final bool decorateContent;
   final MessageDeliveryState state;
   final VoidCallback? onAvatarTap;
@@ -108,33 +114,37 @@ final class WeChatMessageBubble extends StatelessWidget {
               ),
             ),
           Flexible(
-            child: KeyedSubtree(key: bubbleKey, child: decorateContent
-                ? DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: outgoing
-                          ? WeChatColors.bubbleOutgoing
-                          : CupertinoTheme.brightnessOf(context) ==
-                                  Brightness.dark
-                              ? WeChatColors.darkElevated
-                              : CupertinoTheme.of(context).barBackgroundColor,
-                      borderRadius: BorderRadius.circular(WeChatRadius.bubble),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 9,
-                      ),
-                      child: DefaultTextStyle.merge(
-                        style: TextStyle(
+            child: KeyedSubtree(
+                key: bubbleKey,
+                child: decorateContent
+                    ? DecoratedBox(
+                        decoration: BoxDecoration(
                           color: outgoing
-                              ? CupertinoColors.black
-                              : foregroundOf(context),
+                              ? WeChatColors.bubbleOutgoing
+                              : CupertinoTheme.brightnessOf(context) ==
+                                      Brightness.dark
+                                  ? WeChatColors.darkElevated
+                                  : CupertinoTheme.of(context)
+                                      .barBackgroundColor,
+                          borderRadius:
+                              BorderRadius.circular(WeChatRadius.bubble),
                         ),
-                        child: content,
-                      ),
-                    ),
-                  )
-                : content),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 9,
+                          ),
+                          child: DefaultTextStyle.merge(
+                            style: TextStyle(
+                              color: outgoing
+                                  ? CupertinoColors.black
+                                  : foregroundOf(context),
+                            ),
+                            child: content,
+                          ),
+                        ),
+                      )
+                    : content),
           ),
         ],
       ),
@@ -164,11 +174,11 @@ final class WeChatMessageBubble extends StatelessWidget {
                       const SizedBox(width: 4),
                     ],
                     Flexible(
-                      child: Text(
-                        senderName!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                      child: WeChatOfficialName(
+                        name: senderName!,
+                        matrixUserId: senderMatrixId,
+                        supportIdentities: supportIdentities,
+                        nameStyle: const TextStyle(
                           fontSize: 12,
                           color: WeChatColors.messageSenderName,
                         ),

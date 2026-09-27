@@ -18,16 +18,30 @@ BusinessApiClient _api() => BusinessApiClient(
     baseUri: Uri.parse('https://example.test'),
     sessionStore: SecureSessionStore());
 
-BusinessApiClient _supportApi() => BusinessApiClient(
-    baseUri: Uri.parse('https://example.test'),
-    sessionStore: SecureSessionStore(_MemoryStore()),
-    client: MockClient((_) async => http.Response.bytes(utf8.encode('{"items":[{"query_id":"@friend:test","user_id":"friend","matrix_user_id":"@friend:test","badge":"官方客服","role":"SUPPORT_AGENT"}]}'), 200, headers: const {'content-type': 'application/json; charset=utf-8'})));
+Future<BusinessApiClient> _supportApi() async {
+  final sessionStore = SecureSessionStore(_MemoryStore());
+  await sessionStore.saveSession(
+      accessToken: 'test-access',
+      refreshToken: 'test-refresh',
+      matrixUserId: '@self:matrix.example');
+  return BusinessApiClient(
+      baseUri: Uri.parse('https://example.test'),
+      sessionStore: sessionStore,
+      client: MockClient((_) async => http.Response.bytes(
+          utf8.encode(
+              '{"items":[{"query_id":"@friend:test","user_id":"friend","matrix_user_id":"@friend:test","badge":"官方客服","role":"SUPPORT_AGENT"}]}'),
+          200,
+          headers: const {'content-type': 'application/json; charset=utf-8'})));
+}
 
 final class _MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
-  @override Future<void> delete(String key) async => values.remove(key);
-  @override Future<String?> read(String key) async => values[key];
-  @override Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
 }
 
 class _Room extends Room {
@@ -66,9 +80,13 @@ void main() {
   testWidgets('private room title shows only its verified support suffix',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(CupertinoApp(home: RoomPage(
-      api: _supportApi(), roomLease: await _lease(), roomName: 'Friend',
-      initialContact: _friend, onCreateGroup: () {},
+    await tester.pumpWidget(CupertinoApp(
+        home: RoomPage(
+      api: await _supportApi(),
+      roomLease: await _lease(),
+      roomName: 'Friend',
+      initialContact: _friend,
+      onCreateGroup: () {},
     )));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 100));
@@ -81,9 +99,13 @@ void main() {
 
   testWidgets('group room title never shows a support suffix', (tester) async {
     SharedPreferences.setMockInitialValues({});
-    await tester.pumpWidget(CupertinoApp(home: RoomPage(
-      api: _supportApi(), roomLease: await _lease(direct: false), roomName: 'Group',
-      initialContact: _friend, onCreateGroup: () {},
+    await tester.pumpWidget(CupertinoApp(
+        home: RoomPage(
+      api: await _supportApi(),
+      roomLease: await _lease(direct: false),
+      roomName: 'Group',
+      initialContact: _friend,
+      onCreateGroup: () {},
     )));
     await tester.pumpAndSettle();
     expect(find.text('@官方客服'), findsNothing);

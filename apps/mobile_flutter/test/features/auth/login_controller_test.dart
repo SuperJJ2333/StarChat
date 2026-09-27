@@ -68,7 +68,8 @@ void main() {
         throwsA(isA<LoginStageException>()
             .having((e) => e.message, 'message', contains('解锁'))));
     expect(business.loginPasswords, isEmpty);
-    expect(business.tokenRequests, 0);
+    expect(business.tokenRequests, 1,
+        reason: 'broker identity is checked before local storage selection');
     expect(business.logouts, 0);
     expect(matrix.suspends, 0);
     expect(matrix.clears, 0);

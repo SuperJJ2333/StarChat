@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../core/network_state_manager.dart';
+import '../../core/performance_trace.dart';
 import '../../core/outbox/outbox_message.dart';
 import '../../core/outbox/outbox_recovery_service.dart';
 import '../../core/outbox/outbox_store.dart';
@@ -53,6 +54,7 @@ final class PendingConversationPage extends StatefulWidget {
     this.onFailure,
     this.outbox,
     this.recovery,
+    this.performanceTrace,
   });
 
   /// 权威好友（业务 userId 已解析、matrixUserId 有效）。
@@ -73,6 +75,7 @@ final class PendingConversationPage extends StatefulWidget {
 
   /// 启动/恢复服务：房间建立后用它把行绑定房间号并立即尝试派发。
   final OutboxRecoveryService? recovery;
+  final PerformanceTrace? performanceTrace;
 
   @override
   State<PendingConversationPage> createState() =>
@@ -92,6 +95,7 @@ final class _PendingConversationPageState
   bool _settled = false;
   bool _recoveryRequested = false;
   bool _finishing = false;
+  int _openAttempts = 0;
   String? _resolvedRoomId;
   Object? _storageError;
   final _saving = <String, Future<void>>{};
@@ -103,6 +107,11 @@ final class _PendingConversationPageState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.performanceTrace?.mark(PerformanceStage.firstFrameRendered);
+      }
+    });
     final injected = widget.outbox ?? PersistentOutboxManager.shared;
     _ownsOutbox = injected == null;
     // 没有可用持久层时退化为页内内存队列：至少保持本页语义一致
@@ -117,11 +126,24 @@ final class _PendingConversationPageState
 
   @override
   void dispose() {
+    final trace = widget.performanceTrace;
+    if (!_settled && trace != null && trace.isRecording) {
+      trace.finish(result: _abandonedPerformanceResult);
+    }
     _outbox.removeListener(_onOutboxChanged);
     if (_ownsOutbox) _outbox.dispose();
     widget.networkState?.removeListener(_onNetworkChanged);
     _input.dispose();
     super.dispose();
+  }
+
+  PerformanceResult get _abandonedPerformanceResult {
+    if (_storageError != null) return PerformanceResult.failed;
+    if (_error == null) return PerformanceResult.cancelled;
+    final state = widget.networkState?.value;
+    return state == NetworkState.offline || state == NetworkState.weak
+        ? PerformanceResult.waitingNetwork
+        : PerformanceResult.failed;
   }
 
   void _onOutboxChanged() {
@@ -181,14 +203,20 @@ final class _PendingConversationPageState
   /// 后台建立会话。**绝不阻塞首帧**：本页已经可见，进度只体现在状态文案上。
   void _start() {
     if (_opening) return;
+    if (_openAttempts > 0 && widget.performanceTrace?.isRecording == true) {
+      widget.performanceTrace!.retryCount = _openAttempts;
+    }
+    _openAttempts++;
     _opening = true;
     _recoveryRequested = false;
     unawaited(widget.openRoom().then<void>((room) async {
       if (!mounted || _settled) return;
       if (room.roomId.trim().isEmpty) {
+        final failure = StateError('规范私聊成员或加密状态尚未就绪');
+        widget.onFailure?.call(failure);
         setState(() {
           _opening = false;
-          _error = StateError('规范私聊成员或加密状态尚未就绪');
+          _error = failure;
         });
         return;
       }

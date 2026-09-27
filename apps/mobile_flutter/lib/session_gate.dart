@@ -11,12 +11,14 @@ final class SessionGate extends StatefulWidget {
     required this.unauthenticatedBuilder,
     required this.authenticatedBuilder,
     this.cachedMessagesBuilder,
+    this.onConfirmNewDeviceRecovery,
   });
 
   final SessionBootstrapController controller;
   final WidgetBuilder unauthenticatedBuilder;
   final WidgetBuilder authenticatedBuilder;
   final WidgetBuilder? cachedMessagesBuilder;
+  final Future<void> Function()? onConfirmNewDeviceRecovery;
 
   @override
   State<SessionGate> createState() => _SessionGateState();
@@ -25,9 +27,42 @@ final class SessionGate extends StatefulWidget {
 final class _SessionGateState extends State<SessionGate>
     with WidgetsBindingObserver {
   String? _shownSessionMessage;
+  late bool _wasAuthenticated;
+  bool _rootResetPending = false;
+  bool _recoveryBusy = false;
+  bool _recoveryDeferred = false;
+  String? _recoveryError;
+
+  Future<void> _confirmNewDeviceRecovery() async {
+    final confirm = widget.onConfirmNewDeviceRecovery;
+    if (confirm == null || _recoveryBusy) return;
+    setState(() {
+      _recoveryBusy = true;
+      _recoveryError = null;
+    });
+    try {
+      await confirm();
+      await widget.controller.bootstrapAfterConfirmedNewDevice();
+    } catch (_) {
+      if (mounted) {
+        setState(() => _recoveryError = '建立新设备未完成，旧聊天数据已保留，请重试');
+      }
+    } finally {
+      if (mounted) setState(() => _recoveryBusy = false);
+    }
+  }
+
+  bool get _isAuthenticated => switch (widget.controller.state.status) {
+        SessionBootstrapStatus.authenticated ||
+        SessionBootstrapStatus.offlineAuthenticated =>
+          true,
+        _ => false,
+      };
+
   @override
   void initState() {
     super.initState();
+    _wasAuthenticated = _isAuthenticated;
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_changed);
     _showSessionMessage();
@@ -39,6 +74,8 @@ final class _SessionGateState extends State<SessionGate>
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_changed);
       widget.controller.addListener(_changed);
+      if (_wasAuthenticated && !_isAuthenticated) _clearOldAccountRoutes();
+      _wasAuthenticated = _isAuthenticated;
     }
   }
 
@@ -58,8 +95,27 @@ final class _SessionGateState extends State<SessionGate>
   }
 
   void _changed() {
+    if (widget.controller.state.status !=
+        SessionBootstrapStatus.recoveryRequired) {
+      _recoveryDeferred = false;
+      _recoveryError = null;
+    }
+    final authenticated = _isAuthenticated;
+    if (_wasAuthenticated && !authenticated) _clearOldAccountRoutes();
+    _wasAuthenticated = authenticated;
     setState(() {});
     _showSessionMessage();
+  }
+
+  void _clearOldAccountRoutes() {
+    if (_rootResetPending) return;
+    _rootResetPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _rootResetPending = false;
+      if (!mounted) return;
+      Navigator.maybeOf(context, rootNavigator: true)
+          ?.popUntil((route) => route.isFirst);
+    });
   }
 
   void _showSessionMessage() {
@@ -114,6 +170,61 @@ final class _SessionGateState extends State<SessionGate>
           ),
         SessionBootstrapStatus.unauthenticated =>
           widget.unauthenticatedBuilder(context),
+        SessionBootstrapStatus.recoveryRequired => CupertinoPageScaffold(
+            navigationBar: const CupertinoNavigationBar(middle: Text('恢复聊天身份')),
+            child: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(CupertinoIcons.lock_shield, size: 42),
+                      const SizedBox(height: 16),
+                      const Text('本机聊天身份无法验证', textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      const Text('旧聊天数据将保留', textAlign: TextAlign.center),
+                      const SizedBox(height: 8),
+                      const Text('建立新设备后，部分旧消息可能无法解密；其他设备可能因单设备登录规则退出。',
+                          textAlign: TextAlign.center),
+                      if (_recoveryError != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_recoveryError!, textAlign: TextAlign.center),
+                      ],
+                      const SizedBox(height: 20),
+                      if (_recoveryDeferred) ...[
+                        const Text('旧数据已保留，您可以稍后继续恢复。'),
+                        CupertinoButton(
+                          onPressed: () =>
+                              setState(() => _recoveryDeferred = false),
+                          child: const Text('继续恢复'),
+                        ),
+                      ] else ...[
+                        if (widget.onConfirmNewDeviceRecovery != null)
+                          CupertinoButton.filled(
+                            onPressed: _recoveryBusy
+                                ? null
+                                : _confirmNewDeviceRecovery,
+                            child: const Text('保留旧库并建立新设备'),
+                          ),
+                        CupertinoButton(
+                          onPressed: _recoveryBusy
+                              ? null
+                              : () => setState(() => _recoveryDeferred = true),
+                          child: const Text('暂不恢复'),
+                        ),
+                      ],
+                      CupertinoButton(
+                        onPressed:
+                            _recoveryBusy ? null : widget.controller.bootstrap,
+                        child: const Text('重试原身份'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         SessionBootstrapStatus.fatalError => CupertinoPageScaffold(
             child: SafeArea(
               child: Center(

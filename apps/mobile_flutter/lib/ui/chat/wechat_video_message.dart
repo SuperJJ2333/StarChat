@@ -9,7 +9,6 @@ import 'encrypted_media_view.dart';
 import '../../core/gallery_save_access.dart';
 
 import '../foundation/wechat_tokens.dart';
-import '../components/network_status_capsule.dart';
 import 'video_playback_lease_coordinator.dart';
 import 'video_playback_arbiter.dart';
 import 'shared_video_playback.dart';
@@ -666,12 +665,6 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
             ),
           ),
           Positioned(
-            top: 48,
-            left: 16,
-            right: 16,
-            child: Center(child: WeChatNetworkStatusCapsule()),
-          ),
-          Positioned(
               right: 16,
               bottom: 110,
               child: Column(children: [
@@ -721,8 +714,8 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
                   onSeekEnd: (value) async {
                     setState(() => _seekPreviewMs = value);
                     try {
-                      await controller.seekTo(
-                          Duration(milliseconds: value.round()));
+                      await controller
+                          .seekTo(Duration(milliseconds: value.round()));
                     } catch (_) {
                       if (mounted) {
                         setState(() => _hint = '跳转失败，请重试');
@@ -818,16 +811,14 @@ final class _VideoProgressBar extends StatelessWidget {
             (dx.clamp(0.0, trackWidth) / trackWidth) * durationMs;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapUp: (details) =>
-              onSeekEnd(fractionOf(details.localPosition.dx)),
+          onTapUp: (details) => onSeekEnd(fractionOf(details.localPosition.dx)),
           onHorizontalDragStart: (details) {
             onSeekStart();
             onSeekUpdate(fractionOf(details.localPosition.dx));
           },
           onHorizontalDragUpdate: (details) =>
               onSeekUpdate(fractionOf(details.localPosition.dx)),
-          onHorizontalDragEnd: (_) =>
-              onSeekEnd(previewMs ?? positionMs),
+          onHorizontalDragEnd: (_) => onSeekEnd(previewMs ?? positionMs),
           child: CustomPaint(
             painter: _ProgressBarPainter(value / durationMs, seeking),
             size: const Size(double.infinity, 28),
@@ -855,8 +846,7 @@ final class _ProgressBarPainter extends CustomPainter {
       ..color = const Color(0xFF07C160)
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(0, centerY),
-        Offset(size.width, centerY), track);
+    canvas.drawLine(Offset(0, centerY), Offset(size.width, centerY), track);
     final playedWidth = (size.width * fraction.clamp(0.0, 1.0));
     if (playedWidth > 0) {
       canvas.drawLine(Offset(0, centerY), Offset(playedWidth, centerY), played);

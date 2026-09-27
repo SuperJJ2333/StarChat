@@ -33,14 +33,17 @@ enum IOSSecureSessionError: Error {
 final class IOSSecureSessionStore {
   private let security: IOSSessionSecurityOperations
   private static let keys: Set<String> = ["liuhetong.matrix_database_key.v1", "liuhetong.business_session.v1", "liuhetong.active_matrix_scope.v1", "liuhetong.matrix_account_slots.v1"]
+  private static let inspectionOnlyKeys: Set<String> = ["liuhetong.matrix_local_binding.v1", "liuhetong.matrix_clear_tombstone.v1", "liuhetong.matrix_archives.v1", "liuhetong.matrix_archive_journal.v1"]
   private static let service = "flutter_secure_storage_service"
   private let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
 
   init(security: IOSSessionSecurityOperations) { self.security = security }
   convenience init() { self.init(security: IOSSystemSessionSecurity()) }
 
-  private func query(key: String) throws -> [String: Any] {
-    guard Self.keys.contains(key) || key.range(of: #"^liuhetong\.matrix_database_key\.v1\.[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw IOSSecureSessionError.invalidKey }
+  private func query(key: String, inspection: Bool = false) throws -> [String: Any] {
+    let scopedDatabaseKey = key.range(of: #"^liuhetong\.matrix_database_key\.v1\.[a-f0-9]{64}$"#, options: .regularExpression) != nil
+    let inspectionKey = Self.inspectionOnlyKeys.contains(key) || key.range(of: #"^liuhetong\.(matrix_local_binding|matrix_clear_tombstone)\.v1\.[a-f0-9]{64}$"#, options: .regularExpression) != nil
+    guard Self.keys.contains(key) || scopedDatabaseKey || (inspection && inspectionKey) else { throw IOSSecureSessionError.invalidKey }
     // Accessibility is deliberately NOT a search filter: an old WhenUnlocked
     // item must return its real locked error, not masquerade as absent.
     return [kSecClass as String: kSecClassGenericPassword,
@@ -49,8 +52,8 @@ final class IOSSecureSessionStore {
             kSecAttrSynchronizable as String: false]
   }
 
-  private func lookup(key: String) throws -> [String: Any]? {
-    var query = try query(key: key)
+  private func lookup(key: String, inspection: Bool = false) throws -> [String: Any]? {
+    var query = try query(key: key, inspection: inspection)
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     query[kSecReturnData as String] = true
     query[kSecReturnAttributes as String] = true
@@ -75,6 +78,15 @@ final class IOSSecureSessionStore {
       guard status == errSecSuccess else { throw IOSSecureSessionError.status(status) }
       try verify(key: key, expected: data, original: original)
     }
+    return value
+  }
+
+  // Pre-init identity inspection must not change Keychain accessibility or
+  // create missing entries. A locked/invalid item is an error, never absence.
+  func peek(key: String) throws -> String? {
+    guard let item = try lookup(key: key, inspection: true) else { return nil }
+    guard let data = item[kSecValueData as String] as? Data,
+          let value = String(data: data, encoding: .utf8) else { throw IOSSecureSessionError.invalidData }
     return value
   }
 

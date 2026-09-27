@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:matrix/matrix.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/group_announcement_service.dart';
 import 'package:liuhetong_mobile/features/matrix/group_announcement_page.dart';
 import 'package:liuhetong_mobile/features/matrix/group_room_authority.dart';
@@ -42,7 +43,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('编辑'));
     await tester.pump();
-    await tester.tap(find.text('添加图片'));
+    await tester.tap(find.byKey(const Key('group-announcement-add-image')));
     await tester.pumpAndSettle();
     expect(file.reads, 0);
     expect(find.textContaining('20MB'), findsOneWidget);
@@ -79,7 +80,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('编辑'));
     await tester.pump();
-    await tester.tap(find.text('添加图片'));
+    await tester.tap(find.byKey(const Key('group-announcement-add-image')));
     await tester.pumpAndSettle();
     expect(find.byType(Image), findsOneWidget);
     expect(tester.widget<Image>(find.byType(Image)).image, isA<ResizeImage>());
@@ -87,20 +88,58 @@ void main() {
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     expect(room.operations, isEmpty);
   });
-  test('announcement attachments use content addressed envelopes', () async {
+  test('announcement attachments enter the encrypted room media sender',
+      () async {
     final room = _Room();
     await MatrixGroupAnnouncementService(room).uploadImage(png, 'draft.png');
-    expect(room.uploadedFile!.preEncrypted, isNotNull);
-    expect(room.uploadedExtra!['chatflow_media']['v'], 1);
+    expect(room.uploadedFile?.preEncrypted, isNotNull);
+    expect(room.uploadedExtra?['chatflow_media'], isNotNull);
+    expect((room.client as _Client).uploadedBytes, isNull);
+    expect((room.client as _Client).imageContent, isNull);
   });
-  test('publishing uploads local draft images before the encrypted document',
+  test('missing room encryption stops document and attachment publication',
       () async {
+    final room = _Room();
+    (room.client as _Client).encryptionAvailable = false;
+    await expectLater(
+        MatrixGroupAnnouncementService(room).save(GroupAnnouncement([
+          AnnouncementBlock.text('私密正文'),
+          AnnouncementBlock.localImage(png, 'draft.png')
+        ])),
+        throwsStateError);
+    expect(room.operations, isEmpty);
+    expect(room.uploadedFile, isNull);
+    expect((room.client as _Client).uploadedBytes, isNull);
+    expect((room.client as _Client).published, isNull);
+  });
+  test('legacy topic uses its state event ID even when text is reissued',
+      () async {
+    final room = _Room();
+    void topic(String id) => room.setState(Event(
+          type: EventTypes.RoomTopic,
+          content: {'topic': '同样的公告'},
+          senderId: '@owner:test',
+          room: room,
+          eventId: id,
+          stateKey: '',
+          originServerTs: DateTime(2026, 9, 24),
+        ));
+    topic(r'$topic-one');
+    expect((await MatrixGroupAnnouncementService(room).load()).publicationId,
+        r'$topic-one');
+    topic(r'$topic-two');
+    expect((await MatrixGroupAnnouncementService(room).load()).publicationId,
+        r'$topic-two');
+  });
+  test('publishing encrypts local images before the room document', () async {
     final room = _Room();
     await MatrixGroupAnnouncementService(room).save(GroupAnnouncement([
       AnnouncementBlock.text('hello'),
       AnnouncementBlock.localImage(png, 'draft.png')
     ]));
     expect(room.operations, ['image', 'document']);
+    expect(room.uploadedFile?.preEncrypted, isNotNull);
+    expect((room.client as _Client).uploadedBytes, isNull);
     expect(room.sent!['blocks'], [
       {'type': 'text', 'value': 'hello'},
       {'type': 'image', 'value': r'$image'}
@@ -125,6 +164,7 @@ void main() {
           originServerTs: DateTime(2026)),
     ));
     final reopened = await MatrixGroupAnnouncementService(room).load();
+    expect(reopened.publicationId, r'$document');
     expect(reopened.blocks.map((block) => block.value), ['hello', r'$image']);
     expect(reopened.blocks.last.isImage, isTrue);
     expect(reopened.blocks.last.localBytes, isNull);
@@ -162,15 +202,71 @@ void main() {
     expect(find.text('old announcement'), findsNothing);
     expect(find.byIcon(CupertinoIcons.speaker_2), findsNothing);
   });
+
+  testWidgets(
+      'dismissal survives a new Matrix service and resets for a new event',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final room = _Room();
+    Event announcement(String id, String text) => Event(
+          type: EventTypes.Message,
+          content:
+              GroupAnnouncement([AnnouncementBlock.text(text)]).toContent(),
+          senderId: '@owner:test',
+          room: room,
+          eventId: id,
+          originServerTs: DateTime(2026, 9, 24),
+        );
+    room.reference({'event_id': r'$first'});
+    room.pending = Future.value(announcement(r'$first', '本次公告'));
+    await tester.pumpWidget(CupertinoApp(
+        home: GroupAnnouncementBanner(
+            service: MatrixGroupAnnouncementService(room))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('group-announcement-dismiss')));
+    await tester.pumpAndSettle();
+    expect(find.text('本次公告'), findsNothing);
+
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    await tester.pumpWidget(CupertinoApp(
+        home: GroupAnnouncementBanner(
+            service: MatrixGroupAnnouncementService(room))));
+    await tester.pumpAndSettle();
+    expect(find.text('本次公告'), findsNothing);
+    room.reference({'event_id': r'$second'});
+    room.pending = Future.value(announcement(r'$second', '本次公告'));
+    (room.client as _Client).onSync.add(SyncUpdate(
+        nextBatch: 'next',
+        rooms: RoomsUpdate(join: {room.id: JoinedRoomUpdate()})));
+    await tester.pumpAndSettle();
+    expect(find.text('本次公告'), findsOneWidget);
+  });
 }
 
 class _Client extends Client {
   _Client() : super('announcement-review');
+  late _Room room;
+  bool encryptionAvailable = true;
+  Uint8List? uploadedBytes;
+  Map<String, Object?>? imageContent;
+  @override
+  Future<Uri> uploadContent(Uint8List file,
+      {String? filename, String? contentType}) async {
+    uploadedBytes = file;
+    return Uri.parse('mxc://test/image');
+  }
+
+  @override
+  Future<String> sendMessage(String roomId, String eventType, String txnId,
+      Map<String, Object?> body) async {
+    fail('announcement must not use the raw plaintext sendMessage gateway');
+  }
+
   Map<String, Object?>? published;
   @override
   String? get userID => '@owner:test';
   @override
-  bool get encryptionEnabled => true;
+  bool get encryptionEnabled => encryptionAvailable;
   @override
   Future<String> setRoomStateWithKey(String roomId, String eventType,
       String stateKey, Map<String, Object?> body) async {
@@ -181,6 +277,7 @@ class _Client extends Client {
 
 class _Room extends Room {
   _Room() : super(id: '!room:test', client: _Client()) {
+    (client as _Client).room = this;
     setState(Event(
         type: EventTypes.RoomCreate,
         content: {},

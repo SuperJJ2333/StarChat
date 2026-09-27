@@ -27,8 +27,7 @@ final class LifecycleStormClient extends Client {
           PresenceType? setPresence,
           int? timeout}) =>
       (_held = Completer<SyncUpdate>()).future;
-  void completeSync() =>
-      _held?.complete(SyncUpdate.fromJson(const {}));
+  void completeSync() => _held?.complete(SyncUpdate.fromJson(const {}));
 }
 
 final class _MemoryThemeStore implements ThemePreferenceStore {
@@ -70,15 +69,12 @@ MatrixConversationRoomSnapshot _group(String id) =>
       isJoined: true,
     );
 
-/// 同一好友（@peer）两个房间的重复快照——重复会话缺陷的实际形态。
-final _duplicateSnapshot = MatrixConversationSnapshot(
+/// Production conversations.snapshot() already resolves physical duplicates.
+/// Supply logical snapshots here; raw duplicate resolution is tested at that boundary.
+final _initialSnapshot = MatrixConversationSnapshot(
   vaultRoomId: null,
   reminderRoomId: null,
-  rooms: [
-    _direct('!old:storm', '@peer:matrix.example'),
-    _direct('!new:storm', '@peer:matrix.example'),
-    _group('!group:storm'),
-  ],
+  rooms: [_direct('!new:storm', '@peer:matrix.example')],
 );
 
 /// 收敛后形态：只剩一个房间，列表必须保持唯一。
@@ -92,11 +88,9 @@ final _convergedSnapshot = MatrixConversationSnapshot(
 );
 
 void main() {
-  testWidgets('测试4：生命周期切换 + sync 风暴下重复会话列表保持唯一',
-      (tester) async {
-    var calls = 0;
-    Future<MatrixConversationSnapshot> load() async =>
-        calls++ % 2 == 0 ? _duplicateSnapshot : _convergedSnapshot;
+  testWidgets('测试4：生命周期切换 + sync 风暴下重复会话列表保持唯一', (tester) async {
+    var current = _initialSnapshot;
+    Future<MatrixConversationSnapshot> load() async => current;
     final client = LifecycleStormClient();
     final matrix = MatrixSdkE2eeClient(client,
         homeserver: Uri.parse('https://matrix.example'));
@@ -121,6 +115,7 @@ void main() {
     expect(find.byKey(const ValueKey<String>('conversation-!old:storm')),
         findsNothing);
 
+    current = _convergedSnapshot;
     // iOS/Android 生命周期模拟：退后台→恢复。生产中恢复触发的 sync 完成后
     // 经 syncEvents 驱动下面的刷新风暴。
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
@@ -128,7 +123,7 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
 
-    // sync 风暴：连续 3 次 sync 完成，各自触发一整轮快照刷新。
+    // 三次sync可合并，但最终必须呈现最新逻辑快照。
     for (var round = 0; round < 3; round++) {
       unawaited(matrix.syncIfActive().catchError((_) {}));
       await tester.pump();
@@ -138,7 +133,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey<String>('conversation-!new:storm')),
-        findsOneWidget, reason: '风暴过后该好友仍只有一行');
+        findsOneWidget,
+        reason: '风暴过后该好友仍只有一行');
     expect(find.byKey(const ValueKey<String>('conversation-!old:storm')),
         findsNothing);
     expect(find.byKey(const ValueKey<String>('conversation-!group:storm')),

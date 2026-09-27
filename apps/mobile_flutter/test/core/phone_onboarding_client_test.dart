@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/business_phone_contracts.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 
 void main() {
@@ -124,6 +125,181 @@ void main() {
         termsAccepted: true);
     expect(requests.length, 2);
     expect((await store.session())?.matrixUserId, '@new:test');
+  });
+  test('verified invitation proof continues without sending the SMS code again',
+      () async {
+    final requests = <http.Request>[];
+    final store = SecureSessionStore(MemoryStore());
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: store,
+        client: MockClient((request) async {
+          requests.add(request);
+          if (request.url.path.endsWith('/auth/phone/login')) {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            expect(body['code'], '123456');
+            expect(body['allow_invitation_continuation'], true);
+            return http.Response(
+                jsonEncode({
+                  'status': 'INVITATION_VERIFIED',
+                  'invitation_ticket':
+                      'opaque-verified-ticket-with-enough-length'
+                }),
+                202);
+          }
+          if (request.url.path.endsWith('/auth/phone/login/invitation')) {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            expect(body['invitation_ticket'],
+                'opaque-verified-ticket-with-enough-length');
+            expect(body['invitation_code'], 'INVITE');
+            expect(body.containsKey('code'), false);
+            return http.Response(
+                jsonEncode({
+                  'status': 'PENDING_MATRIX',
+                  'login_ticket': 'opaque-verified-ticket-with-enough-length'
+                }),
+                202);
+          }
+          expect(request.url.path, endsWith('/auth/phone/login/complete'));
+          return http.Response(
+              jsonEncode({
+                'access_token': 'at',
+                'refresh_token': 'rt',
+                'matrix_user_id': '@new:test'
+              }),
+              200);
+        }));
+    await expectLater(
+        api.phoneLogin(
+            phone: '13800000001',
+            code: '123456',
+            deviceKey: 'test-device',
+            deviceName: 'test',
+            termsAccepted: true),
+        throwsA(isA<PhoneInvitationContinuationRequired>()));
+    expect(requests.length, 1);
+    expect(await store.session(), isNull);
+    await api.completePhoneLoginInvitation(
+        invitationTicket: 'opaque-verified-ticket-with-enough-length',
+        phone: '13800000001',
+        invitationCode: 'INVITE',
+        termsAccepted: true,
+        deviceKey: 'test-device',
+        deviceName: 'test');
+    expect(requests.length, 3);
+    expect((await store.session())?.matrixUserId, '@new:test');
+  });
+  test('invitation correction preserves only the server-issued proof',
+      () async {
+    var calls = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: SecureSessionStore(MemoryStore()),
+        client: MockClient((request) async {
+          calls++;
+          expect(request.url.path, endsWith('/auth/phone/login/invitation'));
+          return http.Response(
+              jsonEncode({
+                'status': 'INVITATION_INVALID',
+                'invitation_ticket': 'opaque-verified-ticket-with-enough-length'
+              }),
+              202);
+        }));
+    await expectLater(
+        api.completePhoneLoginInvitation(
+            invitationTicket: 'opaque-verified-ticket-with-enough-length',
+            phone: '13800000001',
+            invitationCode: 'BAD',
+            termsAccepted: true,
+            deviceKey: 'test-device',
+            deviceName: 'test'),
+        throwsA(predicate((error) =>
+            error is PhoneInvitationContinuationRequired &&
+            error.issue == PhoneInvitationIssue.invalid &&
+            !error.toString().contains('opaque-verified-ticket'))));
+    expect(calls, 1);
+  });
+  test('lost prefilled invitation response retains verified proof for retry',
+      () async {
+    var calls = 0;
+    final store = SecureSessionStore(MemoryStore());
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: store,
+        client: MockClient((request) async {
+          calls++;
+          if (calls == 1) {
+            return http.Response(
+                jsonEncode({
+                  'status': 'INVITATION_VERIFIED',
+                  'invitation_ticket': 'opaque-verified-ticket-with-enough-length'
+                }),
+                202);
+          }
+          expect(request.url.path, endsWith('/auth/phone/login/invitation'));
+          throw TimeoutException('invitation response lost');
+        }));
+    await expectLater(
+        api.phoneLogin(
+            phone: '13800000001',
+            code: '123456',
+            invitationCode: 'INVITE',
+            termsAccepted: true,
+            deviceKey: 'test-device',
+            deviceName: 'test'),
+        throwsA(predicate((error) =>
+            error is PhoneInvitationContinuationRequired &&
+            error.ticket == 'opaque-verified-ticket-with-enough-length' &&
+            error.issue == PhoneInvitationIssue.uncertain)));
+    expect(calls, 2);
+    expect(await store.session(), isNull);
+  });
+  test('prefilled invitation keeps proof when Matrix provisioning is pending',
+      () async {
+    var calls = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: SecureSessionStore(MemoryStore()),
+        client: MockClient((request) async {
+          calls++;
+          if (calls == 1) {
+            return http.Response(
+                jsonEncode({
+                  'status': 'INVITATION_VERIFIED',
+                  'invitation_ticket': 'opaque-verified-ticket-with-enough-length'
+                }),
+                202);
+          }
+          if (calls == 2) {
+            return http.Response(
+                jsonEncode({
+                  'status': 'PENDING_MATRIX',
+                  'login_ticket': 'opaque-verified-ticket-with-enough-length'
+                }),
+                202);
+          }
+          return http.Response(
+              jsonEncode({
+                'error': {
+                  'code': 'PHONE_PROVISIONING_PENDING',
+                  'message': 'Pending'
+                }
+              }),
+              503);
+        }));
+    await expectLater(
+        api.phoneLogin(
+            phone: '13800000001',
+            code: '123456',
+            invitationCode: 'INVITE',
+            termsAccepted: true,
+            deviceKey: 'test-device',
+            deviceName: 'test'),
+        throwsA(predicate((error) =>
+            error is PhoneInvitationContinuationRequired &&
+            error.ticket == 'opaque-verified-ticket-with-enough-length' &&
+            error.issue == PhoneInvitationIssue.provisioning)));
+    expect(calls, 3);
   });
 }
 

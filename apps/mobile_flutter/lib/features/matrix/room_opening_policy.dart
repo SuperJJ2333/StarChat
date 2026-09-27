@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'room_navigation_coordinator.dart';
 import 'room_visibility_policy.dart';
+import '../../core/performance_trace.dart';
 
 /// 打开会话的失败分类（**唯一**失败模型）。
 ///
@@ -76,8 +77,7 @@ final class RoomOpenFailure implements Exception {
       };
 
   @override
-  String toString() =>
-      'RoomOpenFailure(${kind.name}, source=${source.wireName}, room=$roomId'
+  String toString() => 'RoomOpenFailure(${kind.name}, source=${source.wireName}'
       '${cause == null ? '' : ', cause=${cause.runtimeType}'})';
 }
 
@@ -150,7 +150,7 @@ final class RoomOpenVerdict {
 /// 诊断阶段（供日志/埋点使用；不含消息内容）。
 enum RoomOpenOutcome { openedLocal, openedAfterWait, denied, failed }
 
-/// 打开诊断事件。roomId 是 Matrix 不透明房间号（与既有通知诊断同源）。
+/// 打开诊断事件。roomId 仅供本地路由关联，绝不进入日志文本。
 final class RoomOpenDiagnostic {
   const RoomOpenDiagnostic({
     required this.source,
@@ -169,7 +169,7 @@ final class RoomOpenDiagnostic {
   final RoomOpenFailureKind? failureKind;
 
   String get line => 'room-open source=${source.wireName} mode=${mode.name} '
-      'outcome=${outcome.name} reason=$reason room=$roomId'
+      'outcome=${outcome.name}'
       '${failureKind == null ? '' : ' failure=${failureKind!.name}'}';
 }
 
@@ -198,6 +198,44 @@ final class RoomOpeningPolicy {
 
   /// 诊断出口（可选）。只写入口来源/网络姿态/结果原因，不写消息内容。
   final void Function(RoomOpenDiagnostic diagnostic)? diagnostics;
+
+  /// Start before association preparation, preserving the same trace through
+  /// normalization, policy waiting and coordinator coalescing. Preparation
+  /// failures are measured without inventing an identity/database boundary.
+  Future<void> openPrepared(
+    RoomOpenRequest request, {
+    required Future<void> Function() prepare,
+    required RoomOpenRequest Function(RoomOpenRequest request) normalize,
+    required Future<void> Function(RoomOpenRequest request) navigate,
+    Future<bool> Function(String roomId)? awaitLocalRoom,
+    PerformanceTraceRecorder? performanceRecorder,
+  }) async {
+    final trace = request.performanceTrace ??
+        (performanceRecorder ?? PerformanceTraceRecorder.instance)
+            .start(PerformanceOperationType.conversationOpen);
+    trace.mark(PerformanceStage.userAction);
+    final traced = request.performanceTrace == null
+        ? request.withPerformanceTrace(trace)
+        : request;
+    try {
+      await trace.runChildOperations(() async {
+        await prepare();
+        await open(normalize(traced),
+            navigate: navigate, awaitLocalRoom: awaitLocalRoom);
+      });
+    } catch (error) {
+      final cause = error is RoomOpenFailure ? error.cause : error;
+      trace.setNetwork(
+          error: switch (cause) {
+        TimeoutException() => PerformanceNetworkError.requestTimeout,
+        SocketException() => PerformanceNetworkError.socketFailure,
+        HandshakeException() => PerformanceNetworkError.tlsFailure,
+        _ => PerformanceNetworkError.unknown,
+      });
+      trace.finish(result: PerformanceResult.failed);
+      throw classify(error, traced);
+    }
+  }
 
   /// 当前可见性策略（每次判定都从本地 accountData 事实重建，避免缓存过期）。
   RoomVisibilityPolicy get visibility =>

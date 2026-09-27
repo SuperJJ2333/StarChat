@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import '../../core/support_identity_repository.dart';
+import '../../ui/components/wechat_official_name.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
 
@@ -25,8 +27,10 @@ final class DirectChatInfoPage extends StatefulWidget {
     required this.onPreferenceChanged,
     this.peerAvatarUrl,
     this.onEditNudge,
+    this.supportIdentities,
   });
 
+  final SupportIdentityRepository? supportIdentities;
   final String peerName;
   final String peerId;
   final AvatarMediaCapability avatarMedia;
@@ -171,8 +175,12 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
         ),
         const SizedBox(height: 5),
         SizedBox(
-          width: 54,
-          child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          width: 72,
+          child: WeChatOfficialName(
+              name: name,
+              matrixUserId: id,
+              supportIdentities: widget.supportIdentities,
+              badgeBelow: true),
         ),
       ]);
 

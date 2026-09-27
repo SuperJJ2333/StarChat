@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/performance_trace.dart';
 import 'global_search_index.dart';
 import 'global_search_models.dart';
 
@@ -330,8 +331,17 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
   }
 
   /// 账号维度的检索：完全走内存索引，有界且无 I/O。
-  List<GlobalSearchMessageHit> search(String query, {int limit = 200}) =>
-      index.search(query, limit: limit);
+  ///
+  /// The optional trace measures only this synchronous index scan. Local
+  /// SQLCipher reads happen during backfill and are not attributed to it.
+  List<GlobalSearchMessageHit> search(String query,
+      {int limit = 200, PerformanceTrace? trace}) {
+    trace?.mark(PerformanceStage.localSearchStarted);
+    final hits = index.search(query, limit: limit);
+    trace?.mark(PerformanceStage.localSearchDone);
+    trace?.setSearchResultCount(hits.length);
+    return hits;
+  }
 
   /// 登出/切号：清空并解绑。
   void clear() {

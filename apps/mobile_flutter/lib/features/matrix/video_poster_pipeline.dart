@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/performance_trace.dart';
 import 'media_load_scheduler.dart';
 import 'video_poster_diagnostics.dart';
 import 'video_poster_extractor.dart';
@@ -130,6 +131,7 @@ final class VideoPosterPipeline {
     required Future<File?> Function(String mediaId) findLocalVideoFile,
     VideoPosterExtractor? extract,
     this.diagnostics,
+    PerformanceTraceRecorder? performanceRecorder,
     this.retryCooldown = const Duration(seconds: 20),
     this.serverTimeout = const Duration(seconds: 6),
     DateTime Function()? now,
@@ -139,6 +141,8 @@ final class VideoPosterPipeline {
         _writeCachedPoster = writeCachedPoster,
         _findLocalVideoFile = findLocalVideoFile,
         _extract = extract ?? _defaultExtract,
+        _performanceRecorder =
+            performanceRecorder ?? PerformanceTraceRecorder.instance,
         _now = now ?? DateTime.now;
 
   final String accountId;
@@ -151,6 +155,7 @@ final class VideoPosterPipeline {
   final Future<File?> Function(String mediaId) _findLocalVideoFile;
   final VideoPosterExtractor _extract;
   final VideoPosterDiagnostics? diagnostics;
+  final PerformanceTraceRecorder _performanceRecorder;
 
   /// 抽帧失败后的冷却：冷却期内同一媒体不再探测/抽帧（走占位）。
   final Duration retryCooldown;
@@ -200,15 +205,48 @@ final class VideoPosterPipeline {
     String mediaId, {
     MediaLoadPriority priority = MediaLoadPriority.visible,
     bool forceGenerate = false,
+    PerformanceTrace? trace,
   }) async {
-    if (mediaId.isEmpty) {
-      return const VideoPosterOutcome.placeholder(reason: 'empty_media_id');
+    final ownedTrace = trace == null && _performanceRecorder.recordingEnabled
+        ? _performanceRecorder.start(PerformanceOperationType.videoPoster)
+        : null;
+    final activeTrace = trace ?? ownedTrace;
+    activeTrace?.setMedia(type: PerformanceMediaType.video);
+    var cancelled = false;
+    try {
+      if (mediaId.isEmpty) {
+        final outcome =
+            const VideoPosterOutcome.placeholder(reason: 'empty_media_id');
+        activeTrace?.setMedia(source: PerformanceCacheSource.miss);
+        ownedTrace?.finish();
+        return outcome;
+      }
+      final key = keyFor(mediaId);
+      if (forceGenerate) _attemptedAt.remove(mediaId);
+      final result = await _memory.load(
+          key,
+          () => _generate(key, mediaId, priority, forceGenerate, activeTrace,
+              () => cancelled = true));
+      final outcome = _outcomeFor(mediaId, key, result);
+      activeTrace?.setMedia(
+          source: switch (outcome.source) {
+        VideoPosterSource.memory => PerformanceCacheSource.memory,
+        VideoPosterSource.disk => PerformanceCacheSource.disk,
+        VideoPosterSource.server => PerformanceCacheSource.serverPoster,
+        VideoPosterSource.localFrame => PerformanceCacheSource.localFrame,
+        VideoPosterSource.placeholder => PerformanceCacheSource.miss,
+      });
+      ownedTrace?.finish(
+          result: cancelled || result.stale
+              ? PerformanceResult.cancelled
+              : PerformanceResult.success);
+      return outcome;
+    } catch (_) {
+      ownedTrace?.finish(result: PerformanceResult.failed);
+      rethrow;
+    } finally {
+      ownedTrace?.dispose();
     }
-    final key = keyFor(mediaId);
-    if (forceGenerate) _attemptedAt.remove(mediaId);
-    final result = await _memory.load(
-        key, () => _generate(key, mediaId, priority, forceGenerate));
-    return _outcomeFor(mediaId, key, result);
   }
 
   VideoPosterOutcome _outcomeFor(
@@ -262,8 +300,13 @@ final class VideoPosterPipeline {
     );
   }
 
-  Future<Uint8List?> _generate(String key, String mediaId,
-      MediaLoadPriority priority, bool forceGenerate) async {
+  Future<Uint8List?> _generate(
+      String key,
+      String mediaId,
+      MediaLoadPriority priority,
+      bool forceGenerate,
+      PerformanceTrace? trace,
+      void Function() onCancelled) async {
     final started = _now();
 
     // ① 服务端 poster：事件自带的加密缩略图附件（≤480px），**不是**视频。
@@ -276,7 +319,9 @@ final class VideoPosterPipeline {
     }
 
     // ② 本机持久封面缓存（含本地抽帧产物与账号命名空间）。
+    trace?.mark(PerformanceStage.cacheLoadStarted);
     final cached = await _attempt(() => _readCachedPoster(mediaId));
+    trace?.mark(PerformanceStage.cacheLoadDone);
     if (_hasBytes(cached)) {
       _remember(key, VideoPosterSource.disk, started, 0);
       return cached;
@@ -300,7 +345,8 @@ final class VideoPosterPipeline {
       return null;
     }
     final timing = VideoPosterTiming();
-    final bytes = await _extractBounded(key, file, priority, timing);
+    final bytes =
+        await _extractBounded(key, file, priority, timing, trace, onCancelled);
     if (!_hasBytes(bytes)) {
       extractionFailures++;
       _remember(key, VideoPosterSource.placeholder, started, timing.decodeMs);
@@ -319,8 +365,13 @@ final class VideoPosterPipeline {
 
   /// 抽帧走既有媒体调度器（`isVideo: true` → 全局视频并发上限），
   /// 避免首屏多行同时调用原生解码。
-  Future<Uint8List?> _extractBounded(String key, File file,
-      MediaLoadPriority priority, VideoPosterTiming timing) async {
+  Future<Uint8List?> _extractBounded(
+      String key,
+      File file,
+      MediaLoadPriority priority,
+      VideoPosterTiming timing,
+      PerformanceTrace? trace,
+      void Function() onCancelled) async {
     final lease = mediaLoadScheduler.request(
       'video-poster:$key',
       () async {
@@ -332,10 +383,12 @@ final class VideoPosterPipeline {
       },
       priority: priority,
       isVideo: true,
+      trace: trace,
     );
     try {
       return await lease.value;
     } on MediaLoadCanceled {
+      onCancelled();
       return null;
     } on StateError {
       // 抽帧拿不到可用帧（全黑/解码失败）：可重试的占位，不是编程错误。
@@ -352,7 +405,8 @@ final class VideoPosterPipeline {
     _sources.remove(key);
     _sources[key] = source;
     _generateMs.remove(key);
-    _generateMs[key] = _now().difference(started).inMilliseconds.clamp(0, 1 << 31);
+    _generateMs[key] =
+        _now().difference(started).inMilliseconds.clamp(0, 1 << 31);
     _decodeMs.remove(key);
     _decodeMs[key] = decodeMs;
     while (_sources.length > _maxRecords) {

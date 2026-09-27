@@ -11,7 +11,8 @@ import '../features/matrix/matrix_security_logger.dart';
 import 'business_api_client.dart';
 import 'business_auth_contracts.dart';
 import 'session_failure.dart';
-import '../features/auth/login_controller.dart' show LoginStageException;
+import '../features/auth/login_controller.dart'
+    show LoginStageException, MatrixNewDeviceRecoveryRequired;
 import 'cache/cache_repository.dart';
 import 'permissions/blocked_contacts.dart';
 
@@ -20,6 +21,7 @@ enum SessionBootstrapStatus {
   authenticated,
   offlineAuthenticated,
   unauthenticated,
+  recoveryRequired,
   fatalError,
 }
 
@@ -51,7 +53,7 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   final BusinessSessionGateway business;
   final MatrixSessionGateway matrix;
-  final Future<void> Function(String matrixUserId)? restoreLocalMatrixSession;
+  final Future<void> Function(String? matrixUserId)? restoreLocalMatrixSession;
   bool canShowCachedMessages = false;
   int _generation = 0;
   Future<void>? _bootstrapFlight;
@@ -75,6 +77,7 @@ final class SessionBootstrapController extends ChangeNotifier {
           (_) => unawaited(checkSessionValidity()));
     }
   }
+
   bool _matrixRestorePending = false;
 
   Future<void> checkSessionValidity() async {
@@ -152,17 +155,29 @@ final class SessionBootstrapController extends ChangeNotifier {
     await complete();
   }
 
-  Future<void> bootstrap() {
+  Future<void> bootstrap() =>
+      _startBootstrap(confirmedNewDeviceRecovery: false);
+
+  /// Only call after the explicit new-device flow has completed its Matrix
+  /// login, Business binding, broker completion, and sync successfully.
+  Future<void> bootstrapAfterConfirmedNewDevice() =>
+      _startBootstrap(confirmedNewDeviceRecovery: true);
+
+  Future<void> _startBootstrap({required bool confirmedNewDeviceRecovery}) {
     final existing = _bootstrapFlight;
     if (existing != null) return existing;
-    final flight = _bootstrap(++_generation);
+    final flight = _bootstrap(++_generation,
+        confirmedNewDeviceRecovery: confirmedNewDeviceRecovery);
     _bootstrapFlight = flight;
     return flight.whenComplete(() {
       if (identical(_bootstrapFlight, flight)) _bootstrapFlight = null;
     });
   }
 
-  Future<void> _bootstrap(int generation) async {
+  Future<void> _bootstrap(int generation,
+      {required bool confirmedNewDeviceRecovery}) async {
+    final resumingConfirmedRecovery =
+        state.status == SessionBootstrapStatus.recoveryRequired;
     if (state.status != SessionBootstrapStatus.authenticated &&
         state.status != SessionBootstrapStatus.offlineAuthenticated) {
       canShowCachedMessages = false;
@@ -171,7 +186,18 @@ final class SessionBootstrapController extends ChangeNotifier {
     try {
       final localIdentity = await business.currentMatrixUserId();
       if (generation != _generation) return;
-      canShowCachedMessages = !_matrixRestorePending &&
+      if (resumingConfirmedRecovery &&
+          confirmedNewDeviceRecovery &&
+          matrix.isLoggedIn &&
+          localIdentity != null &&
+          matrix.userId == localIdentity) {
+        // The explicit recovery action completed all login stages. A plain
+        // retry must redo restoration even if Matrix token login succeeded
+        // before Business binding or broker completion failed.
+        _matrixRestorePending = false;
+      }
+      canShowCachedMessages = !resumingConfirmedRecovery &&
+          !_matrixRestorePending &&
           matrix.isLoggedIn &&
           localIdentity != null &&
           localIdentity == matrix.userId;
@@ -201,28 +227,44 @@ final class SessionBootstrapController extends ChangeNotifier {
         }
         return;
       }
-      if ((!matrix.isLoggedIn || _matrixRestorePending) &&
+      if (resumingConfirmedRecovery &&
+          _matrixRestorePending &&
+          businessResult == BusinessSessionRestore.offline) {
+        // The pending local restore requires an online Business grant. Keep
+        // the recovery choice visible until authorization can be retried.
+        throw const MatrixNewDeviceRecoveryRequired();
+      }
+      if ((!matrix.isLoggedIn ||
+              _matrixRestorePending ||
+              localIdentity == null) &&
           businessResult == BusinessSessionRestore.authenticated &&
           restoreLocalMatrixSession != null) {
         final identity = await business.currentMatrixUserId();
         if (generation != _generation) return;
-        if (identity != null) {
-          _matrixRestorePending = true;
-          try {
-            await restoreLocalMatrixSession!(identity);
-          } catch (_) {
-            if (generation != _generation) {
-              await _bestEffortMatrixSuspend();
-              return;
-            }
-            rethrow;
-          }
+        if (identity == null && resumingConfirmedRecovery) {
+          // Matrix token login may already have succeeded while Business
+          // binding failed. Keep the explicit recovery choice available;
+          // neither an unauthenticated Matrix restore nor chat access is safe.
+          throw const MatrixNewDeviceRecoveryRequired();
+        }
+        _matrixRestorePending = true;
+        try {
+          // A legacy Business family can have no locally bound MXID yet. The
+          // authenticated restore callback must obtain the broker grant and
+          // derive the target before selecting any local Matrix scope.
+          await restoreLocalMatrixSession!(identity);
+        } catch (_) {
           if (generation != _generation) {
             await _bestEffortMatrixSuspend();
             return;
           }
-          _matrixRestorePending = false;
+          rethrow;
         }
+        if (generation != _generation) {
+          await _bestEffortMatrixSuspend();
+          return;
+        }
+        _matrixRestorePending = false;
       }
       if (!matrix.isLoggedIn || _matrixRestorePending) {
         // A local restore failure is not evidence that the business token was
@@ -314,6 +356,12 @@ final class SessionBootstrapController extends ChangeNotifier {
               : SessionBootstrapStatus.authenticated,
         ),
       );
+    } on MatrixNewDeviceRecoveryRequired {
+      if (generation != _generation) return;
+      _set(const SessionBootstrapState(
+        SessionBootstrapStatus.recoveryRequired,
+        message: '本机聊天身份无法验证。旧聊天数据会保留；建立新设备后，部分旧消息可能无法解密。',
+      ));
     } on SocketException {
       if (generation != _generation) return;
       _offlineIfPossible();
@@ -414,6 +462,7 @@ final class SessionBootstrapController extends ChangeNotifier {
   void _set(SessionBootstrapState next) {
     if (_disposed) return;
     if (next.status == SessionBootstrapStatus.unauthenticated ||
+        next.status == SessionBootstrapStatus.recoveryRequired ||
         next.status == SessionBootstrapStatus.fatalError) {
       canShowCachedMessages = false;
     }

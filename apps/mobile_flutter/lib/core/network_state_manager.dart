@@ -122,6 +122,7 @@ final class NetworkStateManager {
   final List<Completer<void>> _whenOnlineWaiters = <Completer<void>>[];
   int _failures = 0;
   bool? _transportAvailable;
+  bool? _serviceReachable;
   Duration? _lastRoundTrip;
   bool _recovering = false;
   bool _disposed = false;
@@ -132,11 +133,20 @@ final class NetworkStateManager {
   /// [state] 的当前值。
   NetworkState get current => _state.value;
 
+  /// Last explicitly observed transport fact. Null means no current evidence.
+  bool? get transportAvailable => _transportAvailable;
+
+  /// Last reachability signal for the service bound by the composition root
+  /// (currently Matrix). Null means it has not been observed, or a later
+  /// transport outage invalidated it. The Matrix connection phase is still a
+  /// separate signal; Business API traces use their own HTTP response facts.
+  bool? get serviceReachable => _serviceReachable;
+
   /// 上报一次观测事实。
   ///
   /// - [transportAvailable]：传输层是否可用（只在显式传入时更新，且优先于
   ///   同一次调用里的成功上报）；
-  /// - [serverReachable]：业务服务本次是否可达（true 等价于一次成功，并证明
+  /// - [serverReachable]：调用方目标服务本次是否可达（true 等价于一次成功，并证明
   ///   传输层可用）；
   /// - [recovering]：是否正在重试（true 覆盖离线/失败事实，直到下一次成功
   ///   或失败上报关闭它）；
@@ -149,9 +159,13 @@ final class NetworkStateManager {
   }) {
     if (_disposed) return;
     final transportReported = transportAvailable != null;
-    if (transportReported) _transportAvailable = transportAvailable;
+    if (transportReported) {
+      _transportAvailable = transportAvailable;
+      if (transportAvailable == false) _serviceReachable = null;
+    }
     if (recovering != null) _recovering = recovering;
     if (serverReachable != null) {
+      _serviceReachable = serverReachable;
       if (serverReachable) {
         // 一次完成的上报比在途标记更可信，同时证明传输层可用。
         _clearFailures(roundTrip: lastRoundTrip);
@@ -172,8 +186,12 @@ final class NetworkStateManager {
     if (_disposed) return;
     // A response proves the endpoint answered. Backoff belongs to the failed
     // operation; it must not pause unrelated rooms through a global offline flag.
-    if (networkFailureHttpStatus(error) != null) return;
+    if (networkFailureHttpStatus(error) != null) {
+      _serviceReachable = true;
+      return;
+    }
     if (!_classifyFailure(error)) return;
+    _serviceReachable = false;
     _failures++;
     _recovering = false;
     _refresh();
@@ -185,6 +203,7 @@ final class NetworkStateManager {
     if (_disposed) return;
     _clearFailures(roundTrip: roundTrip);
     _transportAvailable = true;
+    _serviceReachable = true;
     _refresh();
   }
 
@@ -208,6 +227,7 @@ final class NetworkStateManager {
     if (_disposed) return;
     _failures = 0;
     _transportAvailable = null;
+    _serviceReachable = null;
     _lastRoundTrip = null;
     _recovering = false;
     _set(NetworkState.online);

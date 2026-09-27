@@ -13,7 +13,91 @@ import 'package:liuhetong_mobile/features/matrix/group_announcement_page.dart';
 import 'package:liuhetong_mobile/features/matrix/group_room_authority.dart';
 
 void main() {
-  testWidgets('pending document key is retryable and restores announcement',
+  testWidgets('manager can explicitly clear unreadable current announcement',
+      (tester) async {
+    final service = _Service()
+      ..editable = true
+      ..loadFailure = const AnnouncementDecryptionUnavailable();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupAnnouncementPage(service: service)));
+    await tester.pumpAndSettle();
+    expect(find.text('公告无法解密，请联系群管理员重新发布'), findsOneWidget);
+    await tester.tap(find.text('重新编写'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('继续编写'));
+    await tester.pumpAndSettle();
+    expect(service.saved, isEmpty);
+    await tester.tap(find.text('发布'));
+    await tester.pumpAndSettle();
+    expect(service.saved.single.isEffective, isFalse);
+  });
+
+  testWidgets('manager losing authority during confirmation cannot replace',
+      (tester) async {
+    final service = _Service()
+      ..editable = true
+      ..loadFailure = const AnnouncementPendingDecryption();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupAnnouncementPage(service: service)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重新编写'));
+    await tester.pumpAndSettle();
+    service.editable = false;
+    await tester.tap(find.text('继续编写'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CupertinoTextField), findsNothing);
+    expect(service.saved, isEmpty);
+  });
+
+  testWidgets('access denied does not expose replacement even for stale role',
+      (tester) async {
+    final service = _Service()
+      ..editable = true
+      ..loadFailure =
+          MatrixException(http.Response('{"errcode":"M_FORBIDDEN"}', 403));
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupAnnouncementPage(service: service)));
+    await tester.pumpAndSettle();
+    expect(find.text('无权查看群公告'), findsOneWidget);
+    expect(find.text('重新编写'), findsNothing);
+  });
+
+  testWidgets('manager can explicitly replace unreadable announcement',
+      (tester) async {
+    final service = _Service()
+      ..editable = true
+      ..loadFailure = const AnnouncementPendingDecryption();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupAnnouncementPage(service: service)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重新编写'));
+    await tester.pumpAndSettle();
+    expect(service.saved, isEmpty);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CupertinoTextField), findsNothing);
+    await tester.tap(find.text('重新编写'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('继续编写'));
+    await tester.pumpAndSettle();
+    expect(service.saved, isEmpty);
+    await tester.enterText(find.byType(CupertinoTextField), '新的公告');
+    await tester.tap(find.text('发布'));
+    await tester.pumpAndSettle();
+    expect(service.saved.single.preview, '新的公告');
+  });
+
+  testWidgets('member cannot replace unreadable announcement', (tester) async {
+    final service = _Service()
+      ..loadFailure = const AnnouncementPendingDecryption();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupAnnouncementPage(service: service)));
+    await tester.pumpAndSettle();
+    expect(find.text('重新编写'), findsNothing);
+  });
+
+  testWidgets(
+      'old document requests republish but remains readable after key arrival',
       (tester) async {
     final room = _Room()..keyPending = true;
     await tester.pumpWidget(CupertinoApp(
@@ -21,7 +105,7 @@ void main() {
             service: MatrixGroupAnnouncementService(room))));
     await tester.pumpAndSettle();
     expect(find.text('公告格式异常，暂无法显示'), findsNothing);
-    expect(find.text('公告正在解密，点击重试'), findsOneWidget);
+    expect(find.text('公告无法解密，请联系群管理员重新发布'), findsOneWidget);
     room.keyPending = false;
     room.onSessionKeyReceived.add('recovered-session');
     await tester.pumpAndSettle();
@@ -159,7 +243,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('编辑'));
       await tester.pump();
-      await tester.tap(find.text('添加图片'));
+      await tester.tap(find.byKey(const Key('group-announcement-add-image')));
       await tester.pump();
       current.value = _Service();
       await tester.pumpAndSettle();
@@ -259,7 +343,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CupertinoTextField), findsNothing);
     expect(find.text('发布'), findsNothing);
-    expect(find.text('添加图片'), findsNothing);
+    expect(find.byKey(const Key('group-announcement-add-image')), findsNothing);
   });
   testWidgets('banner clears account content when service changes',
       (tester) async {
@@ -291,15 +375,16 @@ class _Client extends Client {
 class _Encryption extends Encryption {
   _Encryption(Client client) : super(client: client);
   @override
-  Future<Event> decryptRoomEvent(String roomId, Event event,
-      {bool store = false,
-      EventUpdateType updateType = EventUpdateType.timeline}) async {
+  Event decryptRoomEventSync(String roomId, Event event) {
     final room = event.room as _Room;
     room.decryptions++;
     if (room.keyPending) {
       return Event(
           type: EventTypes.Encrypted,
-          content: {'msgtype': MessageTypes.BadEncrypted},
+          content: {
+            'msgtype': MessageTypes.BadEncrypted,
+            'can_request_session': true,
+          },
           senderId: event.senderId,
           room: room,
           eventId: event.eventId,
@@ -334,7 +419,12 @@ class _Room extends Room {
   @override
   Future<Event?> getEventById(String eventID) async => Event(
       type: EventTypes.Encrypted,
-      content: {'ciphertext': 'cached'},
+      content: {
+        'ciphertext': 'cached',
+        'algorithm': AlgorithmTypes.megolmV1AesSha2,
+        'session_id': 'session',
+        'sender_key': 'sender'
+      },
       senderId: '@owner:test',
       room: this,
       eventId: eventID,
@@ -342,6 +432,7 @@ class _Room extends Room {
 }
 
 class _Service implements GroupAnnouncementService {
+  final saved = <GroupAnnouncement>[];
   final updates = StreamController<void>.broadcast();
   bool editable = false;
   bool failure = false;
@@ -362,6 +453,7 @@ class _Service implements GroupAnnouncementService {
 
   @override
   Future<void> save(GroupAnnouncement announcement) async {
+    saved.add(announcement);
     await pendingSave;
   }
 

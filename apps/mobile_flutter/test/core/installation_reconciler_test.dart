@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:liuhetong_mobile/core/installation_container_probe.dart';
 import 'package:liuhetong_mobile/core/installation_marker.dart';
 import 'package:liuhetong_mobile/core/installation_reconciler.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:path/path.dart' as p;
 import 'account_chat_store_test.dart' show binding;
 import 'session_store_test.dart' show MemorySecureKeyValueStore;
 
@@ -166,6 +169,28 @@ void main() {
             probe: _FakeProbe(hasPrevious: true),
             store: SecureSessionStore(memory))
         .reconcile();
+
+    expect(outcome, InstallationResetOutcome.adopted);
+    expect(memory.values, before);
+    expect(marker.registerCalls, 1);
+  });
+
+  test('孤立旧库 WAL 仍阻止安装世代清除 Keychain', () async {
+    final directory = await Directory.systemTemp.createTemp('chatflow-wal');
+    addTearDown(() async => directory.delete(recursive: true));
+    await File(
+            p.join(directory.path, 'liuhetong_matrix_${'a' * 64}.sqlite-wal'))
+        .writeAsBytes(const [1, 2, 3]);
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final marker = _FakeMarker();
+
+    final outcome = await InstallationReconciler(
+      marker: marker,
+      probe: FileSystemInstallationContainerProbe(
+          supportDirectoryPath: () async => directory.path),
+      store: SecureSessionStore(memory),
+    ).reconcile();
 
     expect(outcome, InstallationResetOutcome.adopted);
     expect(memory.values, before);

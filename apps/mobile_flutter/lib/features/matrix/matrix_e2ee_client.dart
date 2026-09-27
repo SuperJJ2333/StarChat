@@ -50,6 +50,7 @@ import '../../core/network_state_manager.dart'
         networkFailureHttpStatus,
         defaultNetworkFailureClassifier;
 import '../../core/chat_diagnostics.dart';
+import '../../core/performance_trace.dart';
 import 'decryption_state_controller.dart';
 import 'emoji_vault.dart';
 import 'group_chat_controller.dart';
@@ -70,6 +71,7 @@ import 'room_history_day_index.dart';
 import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
+import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
 import 'message_interaction_service.dart';
@@ -1288,7 +1290,9 @@ final class MatrixConversationCapability {
     final locallyDeleted = coversCutoff(localHistory?.clearedThrough(room.id));
     final historyCleared = locallyDeleted ||
         coversCutoff(localHistory?.historyClearedThrough(room.id));
-    final cachedEvent = originalEvent == null
+    // The SDK's recall tombstone is authoritative over an earlier decryption.
+    // Otherwise the warm preview exposes text that disappears on cold start.
+    final cachedEvent = originalEvent == null || originalEvent.redacted
         ? null
         : _owner._decryptedTimelineEvents[(
             room.client.userID,
@@ -1330,7 +1334,7 @@ final class MatrixConversationCapability {
               senderId: event.senderId,
               sender: member(event.senderFromMemoryOrFallback),
               redacted: event.redacted,
-              decryptionState: cachedEvent != null
+              decryptionState: event.redacted || cachedEvent != null
                   ? MessageDecryptionState.decrypted
                   : event.type == EventTypes.Encrypted
                       ? (event.content['can_request_session'] == true
@@ -1443,6 +1447,20 @@ final class MatrixRoomInfoSnapshot {
     required List<MatrixRoomMemberSnapshot> members,
   }) : members = List.unmodifiable(members);
 
+  const MatrixRoomInfoSnapshot._trusted({
+    required this.id,
+    required this.name,
+    required this.topic,
+    required this.isDirect,
+    required this.directPeerId,
+    required this.currentUserId,
+    required this.announcementVersion,
+    this.homeserver,
+    this.canMentionAll = false,
+    required this.preference,
+    required this.members,
+  });
+
   final String id;
   final String name;
   final String topic;
@@ -1483,6 +1501,7 @@ final class MatrixRoomLease
         MatrixOutgoingProgressView,
         MatrixOutgoingVideoWorkView,
         AvatarMediaCapability,
+        ImmediateAvatarMediaCapability,
         NudgeBackend,
         MessageInteractionBackend {
   MatrixRoomLease._(this.owner, this.roomId);
@@ -1520,11 +1539,14 @@ final class MatrixRoomLease
 
   /// A non-SDK snapshot valid only while this lease is active.
   MatrixRoomInfoSnapshot get roomInfo {
-    final value = _snapshotRoomInfo(_activeRoom);
+    final room = _activeRoom;
+    final value = _snapshotRoomInfo(room,
+        members: owner._memberProjectionCache
+            .roomMembersFor(room, preferenceForRoom(room)));
     final peer =
         owner._duplicateRooms?.peerIdForRoom(value.currentUserId ?? '', roomId);
     if (peer == null) return value;
-    return MatrixRoomInfoSnapshot(
+    return MatrixRoomInfoSnapshot._trusted(
         id: value.id,
         name: value.name,
         topic: value.topic,
@@ -1617,6 +1639,9 @@ final class MatrixRoomLease
 
   final Map<String, MatrixRoomLease> _historyLeases = {};
   StreamSubscription<void>? _logicalSync;
+  StreamSubscription<EventUpdate>? _logicalEvents;
+  StreamSubscription<({String roomId, StrippedStateEvent state})>?
+      _logicalRoomState;
   LogicalConversationTimelineCapability? _logicalTimeline;
   Future<void> Function()? _refreshLogicalSources;
 
@@ -1662,6 +1687,10 @@ final class MatrixRoomLease
         if (!identical(_logicalTimeline, merged)) return;
         _logicalTimeline = null;
         _refreshLogicalSources = null;
+        unawaited(_logicalEvents?.cancel());
+        _logicalEvents = null;
+        unawaited(_logicalRoomState?.cancel());
+        _logicalRoomState = null;
         unawaited(_logicalSync?.cancel());
         _logicalSync = null;
         for (final lease in _historyLeases.values.toList()) {
@@ -1673,8 +1702,11 @@ final class MatrixRoomLease
     _logicalTimeline = merged;
     Future<void>? attaching;
     bool attachAgain = false;
+    var firstPass = true;
     Future<void> attachPass() async {
       do {
+        var sourcesChanged = firstPass;
+        firstPass = false;
         attachAgain = false;
         if (canceled || !identical(_logicalTimeline, merged)) return;
         await owner.prepareConversationAssociations();
@@ -1692,6 +1724,7 @@ final class MatrixRoomLease
               return;
             }
             merged.addSource(sourceId, timeline);
+            sourcesChanged = true;
             _historyLeases[sourceId] = source;
           } catch (_) {
             await source.cancel();
@@ -1704,7 +1737,7 @@ final class MatrixRoomLease
                 _historyLeases.containsKey(anchorRoomId))) {
           merged.hintSource(anchorEventId, anchorRoomId);
         }
-        onUpdate();
+        if (sourcesChanged) onUpdate();
       } while (attachAgain);
     }
 
@@ -1723,6 +1756,34 @@ final class MatrixRoomLease
       if (canceled || !identical(_logicalTimeline, merged)) {
         throw StateError('Logical timeline unavailable');
       }
+      final client = _activeRoom.client;
+      _logicalEvents = client.onEvent.stream.listen((update) {
+        if (canceled || !identical(_logicalTimeline, merged)) return;
+        if (update.roomID == roomId &&
+            update.type == EventUpdateType.accountData &&
+            const {conversationPreferenceType, groupChatAccountDataType}
+                .contains(update.content['type'])) {
+          onUpdate();
+        }
+        if (update.type == EventUpdateType.decryptedTimelineQueue &&
+            (update.roomID == roomId ||
+                _historyLeases.containsKey(update.roomID))) {
+          onUpdate();
+        }
+      });
+      _logicalRoomState = client.onRoomState.stream.listen((update) {
+        if (canceled || !identical(_logicalTimeline, merged)) return;
+        if (update.roomId == roomId &&
+            const {
+              EventTypes.RoomMember,
+              EventTypes.RoomPowerLevels,
+              EventTypes.RoomName,
+              EventTypes.RoomTopic,
+              EventTypes.RoomAvatar,
+            }.contains(update.state.type)) {
+          onUpdate();
+        }
+      });
       _logicalSync = owner.syncEvents.listen((_) {
         unawaited(attachSources().catchError((Object _) {}));
       });
@@ -1735,7 +1796,7 @@ final class MatrixRoomLease
 
   Future<MatrixEmojiVaultBackend> openEmojiVaultBackend() async {
     _activeRoom;
-    return _SdkEmojiVaultBackend(this);
+    return owner._emojiBackendFor(_activeRoom.client);
   }
 
   GroupChatInfoGateway openGroupChatInfoGateway() =>
@@ -1825,21 +1886,35 @@ final class MatrixRoomLease
   }
 
   Future<MatrixOutgoingWorkJob> enqueueVideoFile(
-          {required String jobId,
-          required MatrixOutgoingVideoFile video,
-          required List<String> targetRoomIds}) =>
-      owner._enqueueVideoFile(
+      {required String jobId,
+      required MatrixOutgoingVideoFile video,
+      required List<String> targetRoomIds}) async {
+    try {
+      return await owner._enqueueVideoFile(
           jobId: jobId,
           video: video,
           targetRoomIds: targetRoomIds,
           session: _outgoingSessionFor(_activeRoom));
+    } catch (_) {
+      video._finishRejectedIfUnadmitted();
+      rethrow;
+    }
+  }
 
   /// Atomically accepts lightweight gallery-video handles for this lease. The
   /// owner resolves and prepares each handle later under its bounded budget.
   Future<List<MatrixOutgoingWorkJob>> enqueueVideoFiles(
-          {required List<MatrixOutgoingVideoFileRequest> requests}) =>
-      owner._enqueueVideoFiles(
+      {required List<MatrixOutgoingVideoFileRequest> requests}) async {
+    try {
+      return await owner._enqueueVideoFiles(
           requests: requests, session: _outgoingSessionFor(_activeRoom));
+    } catch (_) {
+      for (final request in requests) {
+        request.video._finishRejectedIfUnadmitted();
+      }
+      rethrow;
+    }
+  }
 
   Future<MatrixOutgoingWorkJob> enqueuePreparedMedia(
           {required String jobId,
@@ -1958,15 +2033,31 @@ final class MatrixRoomLease
   }
 
   @override
+  ResolvedAvatarUrl? resolveAvatarImmediately({
+    required Uri? avatarUri,
+    required double size,
+  }) {
+    owner._requireLifecycleAccess();
+    if (canceled || !identical(_activeRoom.client, owner._client)) {
+      throw StateError('Matrix room lease is not active');
+    }
+    return owner.resolveAvatarImmediately(avatarUri: avatarUri, size: size);
+  }
+
+  @override
   Future<ResolvedAvatarUrl?> resolveAvatar({
     required Uri? avatarUri,
     required double size,
   }) =>
-      _withLeaseOperation((room) => MatrixAvatarUrlResolver.resolveForClient(
-            avatarUri: avatarUri,
-            client: room.client,
-            size: size,
-          ));
+      _withLeaseOperation((room) async {
+        if (canceled) throw StateError('Matrix room lease is not active');
+        final value = await owner._resolveAvatarForClient(room.client,
+            avatarUri: avatarUri, size: size);
+        if (canceled || !identical(_room, room)) {
+          throw StateError('Matrix room lease is not active');
+        }
+        return value;
+      });
 
   @override
   Future<void> sendEncrypted(
@@ -2253,6 +2344,10 @@ final class MatrixRoomLease
       timeline.dispose();
     }
     _timelines.clear();
+    unawaited(_logicalEvents?.cancel());
+    _logicalEvents = null;
+    unawaited(_logicalRoomState?.cancel());
+    _logicalRoomState = null;
     unawaited(_logicalSync?.cancel());
     _logicalSync = null;
     for (final source in _historyLeases.values.toList()) {
@@ -2311,7 +2406,8 @@ final class MatrixRoomLease
   Future<void> cancel() => owner._cancelManagedResource(this);
 }
 
-MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room) {
+MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room,
+    {List<MatrixRoomMemberSnapshot>? members}) {
   MatrixRoomMemberSnapshot member(User user) => MatrixRoomMemberSnapshot(
         id: user.id,
         displayName: user.calcDisplayname(),
@@ -2321,7 +2417,7 @@ MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room) {
       );
   final settings = room.roomAccountData[groupChatAccountDataType]?.content;
   final announcementVersion = settings?['announcement_version'];
-  return MatrixRoomInfoSnapshot(
+  return MatrixRoomInfoSnapshot._trusted(
     id: room.id,
     name: room.name.trim(),
     topic: room.topic,
@@ -2333,12 +2429,13 @@ MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room) {
     announcementVersion:
         announcementVersion is num ? announcementVersion.toInt() : 0,
     preference: preferenceForRoom(room),
-    members: [
-      for (final id in reconcileMemberOrder(
-          preferenceForRoom(room).memberOrderIds,
-          room.getParticipants([Membership.join]).map((user) => user.id)))
-        member(room.unsafeGetUserFromMemoryOrFallback(id)),
-    ],
+    members: members ??
+        List<MatrixRoomMemberSnapshot>.unmodifiable([
+          for (final id in reconcileMemberOrder(
+              preferenceForRoom(room).memberOrderIds,
+              room.getParticipants([Membership.join]).map((user) => user.id)))
+            member(room.unsafeGetUserFromMemoryOrFallback(id)),
+        ]),
   );
 }
 
@@ -2365,6 +2462,7 @@ final class _SdkRoomTimelineCapability
     implements
         RoomVisibleReadCapability,
         RoomTimelineCapability,
+        RoomRetryDiagnostics,
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
@@ -3108,7 +3206,16 @@ final class _SdkRoomTimelineCapability
       });
 
   @override
-  Future<void> retry(String transactionId) => _withSendOperation(() async {
+  Future<void> retry(String transactionId) => _retry(transactionId);
+
+  @override
+  Future<void> retryWithDiagnostics(
+          String transactionId, PerformanceTrace Function() startSdkAttempt) =>
+      _retry(transactionId, startSdkAttempt: startSdkAttempt);
+
+  Future<void> _retry(String transactionId,
+          {PerformanceTrace Function()? startSdkAttempt}) =>
+      _withSendOperation(() async {
         if (await _outgoingWork.retryTransaction(transactionId)) return;
         if (!_retrying.add(transactionId)) return;
         try {
@@ -3146,19 +3253,41 @@ final class _SdkRoomTimelineCapability
             throw StateError('附件已不可用，请重新选择文件');
           }
           await event.cancelSend();
-          final result = media && !uploaded
-              ? await event.sendAgain(txid: txid)
-              : await _lease._activeRoom.sendEvent(
-                  Map<String, dynamic>.from(event.content),
-                  type: event.type,
-                  txid: txid);
+          PerformanceTrace? trace;
+          try {
+            trace = startSdkAttempt?.call();
+          } catch (_) {
+            // Diagnostics cannot reject a permitted encrypted send.
+          }
+          _observeRetryStage(trace, PerformanceStage.matrixSendStart);
+          String? result;
+          try {
+            result = media && !uploaded
+                ? await event.sendAgain(txid: txid)
+                : await _lease._activeRoom.sendEvent(
+                    Map<String, dynamic>.from(event.content),
+                    type: event.type,
+                    txid: txid);
+          } finally {
+            _observeRetryStage(trace, PerformanceStage.matrixSendFinish);
+          }
           if (result == null) {
             throw const MessageSendNetworkException('消息发送失败');
           }
+          _observeRetryStage(trace, PerformanceStage.ack);
         } finally {
           _retrying.remove(transactionId);
         }
       });
+
+  static void _observeRetryStage(
+      PerformanceTrace? trace, PerformanceStage stage) {
+    try {
+      trace?.mark(stage);
+    } catch (_) {
+      // An unavailable diagnostic clock must not stop or replace SDK work.
+    }
+  }
 
   @override
   Future<void> loadHistory() {
@@ -3754,14 +3883,38 @@ final class _SdkEmojiVaultBackend
         MatrixEmojiVaultBackend,
         MatrixEmojiVaultContentLoader,
         MatrixEmojiVaultMetadataBackend,
-        MatrixEmojiVaultCacheIdentity {
-  _SdkEmojiVaultBackend(this._lease);
+        MatrixEmojiVaultCacheIdentity,
+        MatrixEmojiVaultRevisionBackend {
+  _SdkEmojiVaultBackend(this._owner, this._sessionClient)
+      : _accountId = _sessionClient.userID,
+        _deviceId = _sessionClient.deviceID;
+  final MatrixSdkE2eeClient _owner;
+  final Client _sessionClient;
+  final String? _accountId, _deviceId;
+  int _revision = 0;
+  bool matches(Client client) =>
+      identical(client, _sessionClient) &&
+      client.userID == _accountId &&
+      client.deviceID == _deviceId;
+  @override
+  int get metadataRevision {
+    _client;
+    return _revision;
+  }
 
-  final MatrixRoomLease _lease;
+  void eventChanged(EventUpdate update) {
+    if (update.roomID == readStoredRoomId() &&
+        (update.type == EventUpdateType.timeline ||
+            update.type == EventUpdateType.decryptedTimelineQueue)) {
+      _revision++;
+    }
+  }
 
   late final _metadata = EncryptedEmojiPreviewStore(
       '${_client.homeserver}|${_client.userID}|vault-metadata-v1');
-  final _knownEvents = <String, EmojiVaultEvent>{};
+  final _knownByRoom = <String, Map<String, EmojiVaultEvent>>{};
+  Map<String, EmojiVaultEvent> _eventsFor(String roomId) =>
+      _knownByRoom.putIfAbsent(roomId, () => {});
   Future<void> _metadataWrites = Future.value();
 
   @override
@@ -3782,19 +3935,21 @@ final class _SdkEmojiVaultBackend
             .whereType<EmojiVaultEvent>()
             .toList();
         for (final event in events) {
-          _knownEvents[event.eventId] = event;
+          _eventsFor(roomId)[event.eventId] = event;
         }
         return events;
       });
 
   Future<void> _persistEvents(
       String roomId, Iterable<EmojiVaultEvent> events) async {
+    _client;
     for (final event in events) {
-      _knownEvents[event.eventId] = event;
+      _eventsFor(roomId)[event.eventId] = event;
     }
     final write = _metadataWrites.then((_) async {
+      _client;
       final bytes = Uint8List.fromList(utf8.encode(jsonEncode([
-        for (final event in _knownEvents.values)
+        for (final event in _eventsFor(roomId).values)
           {'type': event.matrixType, 'content': event.toJson()},
       ])));
       await _metadata.write(roomId, bytes);
@@ -3809,10 +3964,24 @@ final class _SdkEmojiVaultBackend
   @override
   String get cacheIdentity => '${_client.homeserver}|${_client.userID}';
 
-  Client get _client => _lease._activeRoom.client;
+  Client get _client {
+    if (_owner._accessRevoked ||
+        !identical(_owner._client, _sessionClient) ||
+        !matches(_sessionClient)) {
+      throw StateError('Emoji vault account session is no longer active');
+    }
+    return _sessionClient;
+  }
 
   Future<T> _withOperation<T>(Future<T> Function(Client client) operation) =>
-      _lease._withLeaseOperation((_) => operation(_client));
+      _owner._withClient((active) async {
+        if (!identical(active, _client)) {
+          throw StateError('Emoji vault session changed');
+        }
+        final result = await operation(active);
+        _client;
+        return result;
+      });
 
   @override
   String? readStoredRoomId() =>
@@ -3942,13 +4111,17 @@ final class _SdkEmojiVaultBackend
               events: () => timeline.events,
               canRequestHistory: () => timeline.canRequestHistory,
               cursor: () => room.prev_batch ?? '',
-              requestHistory: () => timeline.requestHistory(historyCount: 100));
+              requestHistory: () async {
+                _client;
+                await timeline.requestHistory(historyCount: 100);
+                _client;
+              });
           final events = all
               .map(_decodeEvent)
               .whereType<EmojiVaultEvent>()
               .toList(growable: false);
           await _persistEvents(roomId, events);
-          return _knownEvents.values.toList(growable: false);
+          return _eventsFor(roomId).values.toList(growable: false);
         } finally {
           timeline.cancelSubscriptions();
         }
@@ -4073,6 +4246,7 @@ final class _SdkEmojiVaultBackend
 final class _SdkGroupChatInfoGateway
     implements
         GroupChatInfoGateway,
+        GroupChatInfoLocalGateway,
         GroupOwnershipGateway,
         GroupAnnouncementGateway,
         GroupChatInfoReloadGateway {
@@ -4096,79 +4270,141 @@ final class _SdkGroupChatInfoGateway
             const <String, Object?>{},
       );
 
+  String _preview = '';
+  Future<void> _previewReads = Future.value();
+
+  @override
+  Stream<void> get announcementChanges => Stream<void>.multi((controller) {
+        final active = room;
+        Object? referenceState() => active.getState(groupAnnouncementStateType);
+        var reference = referenceState();
+        var topic = active.topic;
+        final sync = _lease.membershipChanges.listen((_) {
+          final next = referenceState();
+          final nextTopic = active.topic;
+          if (next == reference && nextTopic == topic) return;
+          reference = next;
+          topic = nextTopic;
+          controller.add(null);
+        });
+        final keys = active.onSessionKeyReceived.stream.listen(
+          (_) => controller.add(null),
+        );
+        controller.onCancel = () async {
+          await sync.cancel();
+          await keys.cancel();
+        };
+      });
+
+  @override
+  Future<GroupChatInfoSnapshot> refreshAnnouncement() async {
+    // Queue key recovery after an in-flight read, so the old failure cannot
+    // overwrite a recovered preview. This cache belongs only to this lease.
+    final read = _previewReads.then((_) async {
+      _preview = await _announcementPreview();
+    });
+    _previewReads = read.catchError((Object _) {});
+    await read;
+    return readLocalSnapshot();
+  }
+
   @override
   Future<GroupChatInfoSnapshot> load() => _withOperation(() async {
         await GroupRoomAuthority(room).refresh();
-        final localJoined = room.getParticipants([Membership.join]).length;
-        final users = await room.requestParticipants([Membership.join]);
-        final invited = await room.requestParticipants([Membership.invite]);
-        debugPrint(
-          '[GroupMembers] local_joined=$localJoined '
-          'server_joined=${users.length} server_invited=${invited.length}',
-        );
-        final settings = _settings;
-        final followed = settings['followed_member_ids'];
-        final storedOrder = settings['member_order_ids'];
-        // BUG1：人数与成员列表只认真正 join；invite 是待确认邀请，绝不合并
-        // 进 members（不再出现"人数增加了但对方没有真正进群"的假象）。
-        final order = reconcileMemberOrder(
-          storedOrder is List
-              ? storedOrder.map((value) => value.toString())
-              : const <String>[],
-          users.map((user) => user.id),
-        );
-        final userById = {for (final user in users) user.id: user};
-        final invitedOrder = reconcileMemberOrder(
-          const <String>[],
-          invited.map((user) => user.id),
-        );
-        final invitedById = {for (final user in invited) user.id: user};
-        final authority = GroupRoomAuthority(room);
-        final ownerId = authority.ownerId;
-        final adminIds = users
-            .where((user) =>
-                user.id != ownerId && room.getPowerLevelByUserId(user.id) >= 50)
-            .map((user) => user.id)
-            .toList();
-        final shared =
-            room.getState(groupSettingsStateType)?.content ?? const {};
-        final orderedUsers = [for (final id in order) userById[id]!];
-        final activeIds = orderedUsers.map((user) => user.id).toSet();
-        return GroupChatInfoSnapshot(
-          name: room.name.trim(),
-          announcement: await _announcementPreview(),
-          remark: settings['remark']?.toString() ?? '',
-          muted: settings['muted'] == true,
-          attention: settings['attention'] == true,
-          pinned: settings['pinned'] == true,
-          saved: settings['saved'] == true,
-          folded: settings['folded'] == true,
-          notifyMentionMe: settings['notify_mention_me'] != false,
-          notifyMentionAll: settings['notify_mention_all'] != false,
-          notifyAnnouncement: settings['notify_announcement'] != false,
-          followedMemberIds: followed is List
-              ? followed
-                  .map((value) => value.toString())
-                  .where(activeIds.contains)
-                  .take(4)
-                  .toList()
-              : const [],
-          ownerId: ownerId,
-          adminIds: adminIds,
-          qrJoinEnabled: shared['qr_join_enabled'] != false,
-          joinApprovalRequired: shared['join_approval_required'] == true,
-          onlyManagersCanRename: authority.onlyManagersCanRename,
-          currentUserId: room.client.userID,
-          roomId: room.id,
-          members: orderGroupMembers(members: [
-            for (final user in orderedUsers) await _member(user),
-          ], ownerId: ownerId, adminIds: adminIds.toSet()),
-          invitedMembers: [
-            for (final id in invitedOrder)
-              if (invitedById[id] != null) await _member(invitedById[id]!),
-          ],
-        );
+        // One SDK request hydrates joined and invited users together, reusing
+        // its complete participant cache instead of fetching twice.
+        await room.requestParticipants([Membership.join, Membership.invite]);
+        return refreshAnnouncement();
       });
+
+  @override
+  GroupChatInfoSnapshot readLocalSnapshot() {
+    if (_lease.canceled ||
+        _lease.owner._accessRevoked ||
+        !identical(room.client, _lease.owner._client)) {
+      throw StateError('Matrix room lease is not active');
+    }
+    final users = room.getParticipants([Membership.join]);
+    final invited = room.getParticipants([Membership.invite]);
+    final settings = _settings;
+    final followed = settings['followed_member_ids'];
+    final storedOrder = settings['member_order_ids'];
+    // BUG1：人数与成员列表只认真正 join；invite 是待确认邀请，绝不合并
+    // 进 members（不再出现"人数增加了但对方没有真正进群"的假象）。
+    final order = reconcileMemberOrder(
+      storedOrder is List
+          ? storedOrder.map((value) => value.toString())
+          : const <String>[],
+      users.map((user) => user.id),
+    );
+    final userById = {for (final user in users) user.id: user};
+    final invitedOrder = reconcileMemberOrder(
+      const <String>[],
+      invited.map((user) => user.id),
+    );
+    final invitedById = {for (final user in invited) user.id: user};
+    final authority = GroupRoomAuthority(room);
+    final ownerId = authority.ownerId;
+    final adminIds = users
+        .where(
+          (user) =>
+              user.id != ownerId && room.getPowerLevelByUserId(user.id) >= 50,
+        )
+        .map((user) => user.id)
+        .toList();
+    final shared = room.getState(groupSettingsStateType)?.content ?? const {};
+    final orderedUsers = [for (final id in order) userById[id]!];
+    final activeIds = orderedUsers.map((user) => user.id).toSet();
+    final announcementReference = room.getState(groupAnnouncementStateType);
+    final announcementEventId = announcementReference?.content['event_id'];
+    // Match the reader: an explicit empty reference wins over a legacy topic.
+    // A known reference has not necessarily been read/decrypted yet.
+    final announcementCleared =
+        announcementReference != null && announcementEventId == null;
+    final hasAnnouncementSource = announcementReference == null
+        ? room.topic.trim().isNotEmpty
+        : announcementEventId is String && announcementEventId.startsWith(r'$');
+    return GroupChatInfoSnapshot(
+      name: room.name.trim(),
+      announcement: announcementCleared
+          ? ''
+          : _preview.isEmpty && hasAnnouncementSource
+              ? '点击查看公告'
+              : _preview,
+      remark: settings['remark']?.toString() ?? '',
+      muted: settings['muted'] == true,
+      attention: settings['attention'] == true,
+      pinned: settings['pinned'] == true,
+      saved: settings['saved'] == true,
+      folded: settings['folded'] == true,
+      notifyMentionMe: settings['notify_mention_me'] != false,
+      notifyMentionAll: settings['notify_mention_all'] != false,
+      notifyAnnouncement: settings['notify_announcement'] != false,
+      followedMemberIds: followed is List
+          ? followed
+              .map((value) => value.toString())
+              .where(activeIds.contains)
+              .take(4)
+              .toList()
+          : const [],
+      ownerId: ownerId,
+      adminIds: adminIds,
+      qrJoinEnabled: shared['qr_join_enabled'] != false,
+      joinApprovalRequired: shared['join_approval_required'] == true,
+      onlyManagersCanRename: authority.onlyManagersCanRename,
+      currentUserId: room.client.userID,
+      roomId: room.id,
+      members: orderGroupMembers(
+        members: [for (final user in orderedUsers) _member(user)],
+        ownerId: ownerId,
+        adminIds: adminIds.toSet(),
+      ),
+      invitedMembers: [
+        for (final id in invitedOrder)
+          if (invitedById[id] != null) _member(invitedById[id]!),
+      ],
+    );
+  }
 
   Future<String> _announcementPreview() => _withOperation(() async {
         try {
@@ -4178,24 +4414,24 @@ final class _SdkGroupChatInfoGateway
         }
       });
 
-  Future<GroupChatMember> _member(User user) => _withOperation(() async {
-        final avatar = MatrixAvatarUrlResolver.resolveImmediately(
-          avatarUri: user.avatarUrl,
-          homeserver: room.client.homeserver,
-          accessToken: room.client.accessToken,
-          size: 48,
-        );
-        return GroupChatMember(
-          matrixUserId: user.id,
-          displayName: user.calcDisplayname(),
-          avatarUrl: avatar?.url,
-          avatarHeaders: avatar?.headers ?? const {},
-          matrixAvatarUri: user.avatarUrl,
-          membership: user.membership == Membership.join
-              ? GroupMemberMembership.joined
-              : GroupMemberMembership.invited,
-        );
-      });
+  GroupChatMember _member(User user) {
+    final avatar = MatrixAvatarUrlResolver.resolveImmediately(
+      avatarUri: user.avatarUrl,
+      homeserver: room.client.homeserver,
+      accessToken: room.client.accessToken,
+      size: 48,
+    );
+    return GroupChatMember(
+      matrixUserId: user.id,
+      displayName: user.calcDisplayname(),
+      avatarUrl: avatar?.url,
+      avatarHeaders: avatar?.headers ?? const {},
+      matrixAvatarUri: user.avatarUrl,
+      membership: user.membership == Membership.join
+          ? GroupMemberMembership.joined
+          : GroupMemberMembership.invited,
+    );
+  }
 
   @override
   @override
@@ -4240,7 +4476,8 @@ final class _SdkGroupChatInfoGateway
         }
         await authority.protectState(protectRoles: true);
         final current = Map<String, dynamic>.from(
-            room.getState(EventTypes.RoomPowerLevels)?.content ?? {});
+          room.getState(EventTypes.RoomPowerLevels)?.content ?? {},
+        );
         final users = Map<String, dynamic>.from(current['users'] as Map? ?? {});
         for (final member in members) {
           if (member.id == authority.ownerId) continue;
@@ -4250,8 +4487,12 @@ final class _SdkGroupChatInfoGateway
             users[member.id] = 0;
           }
         }
-        await room.client.setRoomStateWithKey(room.id,
-            EventTypes.RoomPowerLevels, '', {...current, 'users': users});
+        await room.client.setRoomStateWithKey(
+          room.id,
+          EventTypes.RoomPowerLevels,
+          '',
+          {...current, 'users': users},
+        );
       });
 
   @override
@@ -4266,12 +4507,17 @@ final class _SdkGroupChatInfoGateway
         }
         await authority.protectState(protectRoles: true);
         final current = Map<String, dynamic>.from(
-            room.getState(EventTypes.RoomPowerLevels)?.content ?? {});
+          room.getState(EventTypes.RoomPowerLevels)?.content ?? {},
+        );
         final users = Map<String, dynamic>.from(current['users'] as Map? ?? {});
         users[userId] = 100;
         users[authority.ownerId] = 0;
-        await room.client.setRoomStateWithKey(room.id,
-            EventTypes.RoomPowerLevels, '', {...current, 'users': users});
+        await room.client.setRoomStateWithKey(
+          room.id,
+          EventTypes.RoomPowerLevels,
+          '',
+          {...current, 'users': users},
+        );
       });
 
   @override
@@ -4280,8 +4526,10 @@ final class _SdkGroupChatInfoGateway
         await authority.refresh();
         authority.requireOwner();
         await setGroupSetting('qr_join_enabled', false);
-        final members = await room
-            .requestParticipants([Membership.join, Membership.invite]);
+        final members = await room.requestParticipants([
+          Membership.join,
+          Membership.invite,
+        ]);
         // Stop on failure: never report dissolution after a partial removal.
         for (final member in members) {
           if (member.id != authority.ownerId) await room.kick(member.id);
@@ -4298,7 +4546,7 @@ final class _SdkGroupChatInfoGateway
         if (!{
               'qr_join_enabled',
               'join_approval_required',
-              'only_managers_can_rename'
+              'only_managers_can_rename',
             }.contains(key) ||
             value is! bool) {
           throw ArgumentError('不支持的群设置');
@@ -4306,18 +4554,25 @@ final class _SdkGroupChatInfoGateway
         await authority.protectState();
         if (key == 'only_managers_can_rename') {
           final current = Map<String, dynamic>.from(
-              room.getState(EventTypes.RoomPowerLevels)?.content ?? {});
-          final events =
-              Map<String, dynamic>.from(current['events'] as Map? ?? {});
+            room.getState(EventTypes.RoomPowerLevels)?.content ?? {},
+          );
+          final events = Map<String, dynamic>.from(
+            current['events'] as Map? ?? {},
+          );
           events[EventTypes.RoomName] = value ? 50 : 0;
-          await room.client.setRoomStateWithKey(room.id,
-              EventTypes.RoomPowerLevels, '', {...current, 'events': events});
+          await room.client.setRoomStateWithKey(
+            room.id,
+            EventTypes.RoomPowerLevels,
+            '',
+            {...current, 'events': events},
+          );
         } else {
           await room.client.setRoomStateWithKey(
-              room.id,
-              groupSettingsStateType,
-              '',
-              {...?room.getState(groupSettingsStateType)?.content, key: value});
+            room.id,
+            groupSettingsStateType,
+            '',
+            {...?room.getState(groupSettingsStateType)?.content, key: value},
+          );
         }
       });
 
@@ -4497,14 +4752,26 @@ final class _MemberRefreshState {
 
 final class _ConversationMemberProjectionCache {
   final Map<String, _ConversationMemberProjection> _entries = {};
+  final Map<
+      String,
+      ({
+        Room room,
+        List<String> order,
+        List<MatrixRoomMemberSnapshot> members
+      })> _roomEntries = {};
   StreamSubscription<({String roomId, StrippedStateEvent state})>? _changes;
   String? _accountId;
 
   void attach(Client client) {
     _changes?.cancel();
     _entries.clear();
+    _roomEntries.clear();
     _accountId = client.userID;
     _changes = client.onRoomState.stream.listen((update) {
+      if (update.state.type == EventTypes.RoomMember ||
+          update.state.type == EventTypes.RoomPowerLevels) {
+        _roomEntries.remove(update.roomId);
+      }
       if (update.state.type == EventTypes.RoomMember) {
         _entries[update.roomId]?.dirty = true;
       }
@@ -4515,6 +4782,7 @@ final class _ConversationMemberProjectionCache {
     await _changes?.cancel();
     _changes = null;
     _entries.clear();
+    _roomEntries.clear();
     _accountId = null;
   }
 
@@ -4522,6 +4790,7 @@ final class _ConversationMemberProjectionCache {
       Room room, ConversationPreference preference) {
     if (_accountId != room.client.userID) {
       _entries.clear();
+      _roomEntries.clear();
       _accountId = room.client.userID;
     }
     final existing = _entries[room.id];
@@ -4549,8 +4818,44 @@ final class _ConversationMemberProjectionCache {
     return members;
   }
 
-  void prune(Set<String> joinedRoomIds) =>
-      _entries.removeWhere((roomId, _) => !joinedRoomIds.contains(roomId));
+  List<MatrixRoomMemberSnapshot> roomMembersFor(
+      Room room, ConversationPreference preference) {
+    if (_accountId != room.client.userID) {
+      _entries.clear();
+      _roomEntries.clear();
+      _accountId = room.client.userID;
+    }
+    final cached = _roomEntries[room.id];
+    if (cached != null &&
+        identical(cached.room, room) &&
+        listEquals(cached.order, preference.memberOrderIds)) {
+      return cached.members;
+    }
+    final order = reconcileMemberOrder(preference.memberOrderIds,
+        room.getParticipants([Membership.join]).map((user) => user.id));
+    final members = List<MatrixRoomMemberSnapshot>.unmodifiable([
+      for (final id in order)
+        MatrixRoomMemberSnapshot(
+            id: id,
+            displayName:
+                room.unsafeGetUserFromMemoryOrFallback(id).calcDisplayname(),
+            avatarUri: room.unsafeGetUserFromMemoryOrFallback(id).avatarUrl,
+            isJoined: room.unsafeGetUserFromMemoryOrFallback(id).membership ==
+                Membership.join,
+            powerLevel: room.getPowerLevelByUserId(id)),
+    ]);
+    _roomEntries[room.id] = (
+      room: room,
+      order: List.unmodifiable(preference.memberOrderIds),
+      members: members
+    );
+    return members;
+  }
+
+  void prune(Set<String> joinedRoomIds) {
+    _entries.removeWhere((roomId, _) => !joinedRoomIds.contains(roomId));
+    _roomEntries.removeWhere((roomId, _) => !joinedRoomIds.contains(roomId));
+  }
 }
 
 final class _ConversationMemberProjection {
@@ -4751,6 +5056,7 @@ final class MatrixOutgoingVideoFile {
     required this.filename,
     required this.body,
     required this.deleteSourceWhenDone,
+    this.performanceTrace,
   })  : _source = source,
         _resolveSource = resolveSource,
         _prepareMedia = null,
@@ -4764,6 +5070,7 @@ final class MatrixOutgoingVideoFile {
     required this.filename,
     required this.body,
     required this.deleteSourceWhenDone,
+    this.performanceTrace,
     required Future<MatrixOutgoingPreparedMedia> Function(File source)
         prepareMedia,
     Future<int> Function(File source)? sourceCost,
@@ -4779,6 +5086,10 @@ final class MatrixOutgoingVideoFile {
   final String filename;
   final String body;
   final bool deleteSourceWhenDone;
+
+  /// Ownership transfers to the outgoing job on admission. The trace contains
+  /// only typed stages, never [id], [filename], or the local source path.
+  final PerformanceTrace? performanceTrace;
   final Future<MatrixOutgoingPreparedMedia> Function(File source)?
       _prepareMedia;
   final Future<int> Function(File source)? _sourceCost;
@@ -4807,7 +5118,7 @@ final class MatrixOutgoingVideoFile {
     if (source != null) await _sourceCost?.call(source);
   }
 
-  Future<File> _sourceForPreparation() async {
+  Future<File> _sourceForPreparation({PerformanceTrace? trace}) async {
     final cached = _resolvedSource ?? _source;
     final source = cached ?? await _resolveSource?.call();
     if (source == null) {
@@ -4817,19 +5128,22 @@ final class MatrixOutgoingVideoFile {
     if (await source.length() <= 0) {
       throw ArgumentError.value(source, 'video.source', 'must be non-empty');
     }
+    (trace ?? performanceTrace)?.mark(PerformanceStage.videoValidated);
     return source;
   }
 
-  Future<MatrixOutgoingPreparedMedia> _prepare() async {
+  Future<MatrixOutgoingPreparedMedia> _prepare(
+      {PerformanceTrace? trace}) async {
     if (!_admitted) throw StateError('Outgoing video was not admitted');
-    final source = await _sourceForPreparation();
+    final source = await _sourceForPreparation(trace: trace);
     final testPreparation = _prepareMedia;
     if (testPreparation != null) return testPreparation(source);
     // Keep an app-owned capture through preparation failures so retry uses the
     // same original. Terminal source release owns deletion instead.
     final prepared = await prepareLocalChatVideo(source,
         deleteSourceWhenDone: false,
-        onProgress: (progress) => _progressSink?.call(progress));
+        onProgress: (progress) => _progressSink?.call(progress),
+        performanceTrace: trace ?? performanceTrace);
     final poster = prepared.poster?.lengthInBytes == null ||
             prepared.poster!.lengthInBytes > _maxOutgoingVideoPosterBytes
         ? null
@@ -4859,6 +5173,14 @@ final class MatrixOutgoingVideoFile {
     if (deleteSourceWhenDone && await source.exists()) {
       await source.delete();
     }
+  }
+
+  void _finishTrace(PerformanceResult result) {
+    performanceTrace?.finish(result: result);
+  }
+
+  void _finishRejectedIfUnadmitted() {
+    if (!_admitted) _finishTrace(PerformanceResult.rejected);
   }
 }
 
@@ -4925,16 +5247,44 @@ final class _DeferredOutgoingVideoSnapshot {
 
   final MatrixOutgoingVideoFile _video;
   _OwnedOutgoingMediaSnapshot? _owned;
+  MatrixOutgoingWorkJob? _job;
+  int _preparationAttempts = 0;
+
+  void attachJob(MatrixOutgoingWorkJob job) => _job = job;
+
+  void finishTrace(PerformanceResult result) => _video._finishTrace(result);
 
   Future<void> prepare(MatrixOutgoingWorkAttempt attempt) async {
-    attempt.ensureActive();
-    if (_owned == null) {
-      final media = await _video._prepare();
+    final index = _preparationAttempts++;
+    final root = _video.performanceTrace;
+    final trace = root == null
+        ? null
+        : root.isRecording
+            ? root
+            : root.correlationContext.startOperation(
+                PerformanceOperationType.videoPrepare,
+                attemptIndex: index);
+    if (trace != null) trace.retryCount = index;
+    trace?.mark(PerformanceStage.videoPrepareStarted);
+    try {
       attempt.ensureActive();
-      media._markAdmitted();
-      _owned = _OwnedOutgoingMediaSnapshot(media);
+      if (_owned == null) {
+        final media = await _video._prepare(trace: trace);
+        attempt.ensureActive();
+        media._markAdmitted();
+        _owned = _OwnedOutgoingMediaSnapshot(media);
+      }
+      attempt.ensureActive();
+      trace?.mark(PerformanceStage.videoPrepareDone);
+      if (!identical(trace, root)) trace?.finish();
+    } catch (_) {
+      // The root settles after the coordinator applies authoritative echoes.
+      // A retry preparation child reports the preparation failure itself.
+      if (!identical(trace, root)) {
+        trace?.finish(result: _videoTraceResultForAttempt(attempt));
+      }
+      rethrow;
     }
-    attempt.ensureActive();
   }
 
   Uint8List bytes() =>
@@ -4947,8 +5297,32 @@ final class _DeferredOutgoingVideoSnapshot {
   int? get thumbnailHeight => _owned?.thumbnailHeight;
 
   Future<void> release() async {
+    final trace = _video.performanceTrace;
+    if (trace != null && !trace.isFinished) {
+      final items = _job?.items;
+      final result = items != null &&
+              items.every((item) => item.state == MatrixOutgoingWorkState.sent)
+          ? PerformanceResult.success
+          : items != null &&
+                  items.any(
+                      (item) => item.state == MatrixOutgoingWorkState.failed)
+              ? PerformanceResult.failed
+              : PerformanceResult.cancelled;
+      trace.finish(result: result);
+    }
+    trace?.correlationContext.close();
     await _owned?.release();
     await _video._release();
+  }
+}
+
+PerformanceResult _videoTraceResultForAttempt(
+    MatrixOutgoingWorkAttempt attempt) {
+  try {
+    attempt.ensureActive();
+    return PerformanceResult.failed;
+  } catch (_) {
+    return PerformanceResult.cancelled;
   }
 }
 
@@ -5024,10 +5398,19 @@ final class MatrixSdkE2eeClient
         MatrixRecoveryBackend,
         MatrixTokenLoginGateway,
         MatrixAccountSelectionGateway,
-        AvatarMediaCapability {
+        MatrixNewDeviceRecoveryGateway,
+        MatrixExpectedIdentityTokenLoginGateway,
+        AvatarMediaCapability,
+        ImmediateAvatarMediaCapability {
   Future<void>? _memberRefresh;
   late final _MemberRefreshPolicy _memberRefreshPolicy;
   late final _ConversationMemberProjectionCache _memberProjectionCache;
+  _SdkEmojiVaultBackend? _emojiVaultBackend;
+  _SdkEmojiVaultBackend _emojiBackendFor(Client client) {
+    final existing = _emojiVaultBackend;
+    if (existing != null && existing.matches(client)) return existing;
+    return _emojiVaultBackend = _SdkEmojiVaultBackend(this, client);
+  }
 
   /// 历史孤儿房间登记簿（primary 规则数据源）。生产在组合根注入；测试
   /// 不注入时解析器自动退回消息数/活跃度规则（保持用例封闭）。
@@ -5053,6 +5436,8 @@ final class MatrixSdkE2eeClient
     Future<Client> Function()? resumeClient,
     Future<void> Function(String homeserver, String userId)?
         selectClientAccount,
+    Future<void> Function(String homeserver, String userId)?
+        prepareNewDeviceStorage,
     Future<void> Function(Client? client)? clearClientData,
     Future<MatrixClientContinuityMetadata> Function(Client client)?
         readContinuityMetadata,
@@ -5061,15 +5446,19 @@ final class MatrixSdkE2eeClient
     MatrixSecurityLogger? securityLogger,
     MatrixOutgoingWorkCoordinator Function(String accountId)?
         outgoingWorkFactory,
+    PerformanceTraceRecorder? performanceRecorder,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
     DateTime Function()? memberRefreshNow,
     Duration memberRefreshTtl = const Duration(minutes: 10),
     Duration memberRefreshRetryDelay = const Duration(seconds: 15),
     DuplicateRoomRegistry? duplicateRooms,
   })  : _client = client,
+        _performanceRecorder =
+            performanceRecorder ?? PerformanceTraceRecorder.instance,
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
         _selectClientAccount = selectClientAccount,
+        _prepareNewDeviceStorage = prepareNewDeviceStorage,
         _clearClientData = clearClientData ?? _defaultClear,
         _readContinuityMetadata =
             readContinuityMetadata ?? _unconfiguredContinuityMetadata,
@@ -5093,6 +5482,7 @@ final class MatrixSdkE2eeClient
     _attachMemberRefreshListener(client);
   }
   Client? _client;
+  final PerformanceTraceRecorder _performanceRecorder;
 
   Future<bool> Function(String accountId, String roomId, String? peerId)?
       authorizeRoomSend;
@@ -5238,6 +5628,8 @@ final class MatrixSdkE2eeClient
   final Future<Client> Function()? _resumeClient;
   final Future<void> Function(String homeserver, String userId)?
       _selectClientAccount;
+  final Future<void> Function(String homeserver, String userId)?
+      _prepareNewDeviceStorage;
   final Future<void> Function(Client? client) _clearClientData;
   final Future<MatrixClientContinuityMetadata> Function(Client client)
       _readContinuityMetadata;
@@ -5261,6 +5653,10 @@ final class MatrixSdkE2eeClient
   bool _freshLoginAfterClear = false;
   bool _activeContinuityValidated = false;
   bool _credentialsInvalid = false;
+  // Set only after confirmed recovery opens a new, blank local scope. This
+  // target must be checked against the raw server login response before the
+  // SDK can persist credentials or initialize/upload fresh Olm keys.
+  String? _confirmedNewDeviceUserId;
   Future<void> _accountSelectionQueue = Future<void>.value();
   final Uri homeserver;
   final StreamController<void> _syncEvents = StreamController.broadcast();
@@ -5457,85 +5853,102 @@ final class MatrixSdkE2eeClient
     }
     final ids = <String>{};
     final jobs = <MatrixOutgoingWorkJob>[];
-    for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
-      final message = messages[sourceIndex];
-      if (message.id.isEmpty || !ids.add(message.id)) {
-        throw ArgumentError(
-            'Forwarding message ids must be non-empty and unique');
-      }
-      if (message is MatrixOutgoingForwardMedia &&
-          (message.sourceAccountId != session.accountId ||
-              !identical(message.sourceClient, session.client))) {
-        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
-      }
-      if (message is MatrixOutgoingForwardMedia &&
-          message.downloadLimitBytes > _maxFileSendBytes) {
-        throw const MatrixOutgoingFileTooLargeException();
-      }
-      final createdAt = DateTime.now();
-      final text = message is MatrixOutgoingForwardText ? message : null;
-      final media = message is MatrixOutgoingForwardMedia ? message : null;
-      final body = switch (message) {
-        MatrixOutgoingForwardText(:final body) => body,
-        MatrixOutgoingForwardMedia(:final body) => body,
-      };
-      final content = text != null
-          ? Map<String, dynamic>.unmodifiable({
-              'msgtype': MessageTypes.Text,
-              'body': body,
-              if (text.format != null) 'format': text.format,
-              if (text.formattedBody != null)
-                'formatted_body': text.formattedBody,
-            })
-          : null;
-      final mediaSnapshot =
-          media == null ? null : _DeferredOutgoingForwardMediaSnapshot(media);
-      jobs.add(MatrixOutgoingWorkJob(
-        id: '$batchId-$sourceIndex',
-        createdAt: createdAt,
-        source: MatrixOutgoingWorkSource(
-          id: 'forward:$batchId:$sourceIndex',
-          retainedBytes: media?.reservationBytes ?? 0,
-          prepare: mediaSnapshot == null
-              ? null
-              : (attempt) => _prepareForwardMedia(
-                  session: session, snapshot: mediaSnapshot, attempt: attempt),
-          release: mediaSnapshot?.release,
-        ),
-        items: [
-          for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
-            MatrixOutgoingWorkItem(
-              id: '${message.id}:$targetIndex',
-              targetRoomId: targets[targetIndex],
-              txid: 'outgoing-$batchId-$sourceIndex-$targetIndex',
-              presentation: MatrixOutgoingWorkPresentation(
-                kind: media?.presentationKind ??
-                    MatrixOutgoingPresentationKind.text,
-                text: body,
-                mimeType: media?.mimeType,
-                filename: media?.filename,
-                voiceDuration: media?.voiceDuration,
-                createdAt: createdAt,
+    try {
+      for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
+        final message = messages[sourceIndex];
+        if (message.id.isEmpty || !ids.add(message.id)) {
+          throw ArgumentError(
+              'Forwarding message ids must be non-empty and unique');
+        }
+        if (message is MatrixOutgoingForwardMedia &&
+            (message.sourceAccountId != session.accountId ||
+                !identical(message.sourceClient, session.client))) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        if (message is MatrixOutgoingForwardMedia &&
+            message.downloadLimitBytes > _maxFileSendBytes) {
+          throw const MatrixOutgoingFileTooLargeException();
+        }
+        final createdAt = DateTime.now();
+        final text = message is MatrixOutgoingForwardText ? message : null;
+        final media = message is MatrixOutgoingForwardMedia ? message : null;
+        final body = switch (message) {
+          MatrixOutgoingForwardText(:final body) => body,
+          MatrixOutgoingForwardMedia(:final body) => body,
+        };
+        final content = text != null
+            ? Map<String, dynamic>.unmodifiable({
+                'msgtype': MessageTypes.Text,
+                'body': body,
+                if (text.format != null) 'format': text.format,
+                if (text.formattedBody != null)
+                  'formatted_body': text.formattedBody,
+              })
+            : null;
+        final mediaSnapshot =
+            media == null ? null : _DeferredOutgoingForwardMediaSnapshot(media);
+        final performanceContext =
+            _performanceRecorder.createCorrelationContext();
+        jobs.add(MatrixOutgoingWorkJob(
+          id: '$batchId-$sourceIndex',
+          createdAt: createdAt,
+          source: MatrixOutgoingWorkSource(
+            id: 'forward:$batchId:$sourceIndex',
+            retainedBytes: media?.reservationBytes ?? 0,
+            prepare: mediaSnapshot == null
+                ? null
+                : (attempt) => _prepareForwardMedia(
+                    session: session,
+                    snapshot: mediaSnapshot,
+                    attempt: attempt),
+            release: () {
+              performanceContext.close();
+              return mediaSnapshot?.release() ?? Future<void>.value();
+            },
+          ),
+          items: [
+            for (var targetIndex = 0;
+                targetIndex < targets.length;
+                targetIndex++)
+              MatrixOutgoingWorkItem(
+                id: '${message.id}:$targetIndex',
+                targetRoomId: targets[targetIndex],
+                txid: 'outgoing-$batchId-$sourceIndex-$targetIndex',
+                performanceContext: performanceContext,
+                presentation: MatrixOutgoingWorkPresentation(
+                  kind: media?.presentationKind ??
+                      MatrixOutgoingPresentationKind.text,
+                  text: body,
+                  mimeType: media?.mimeType,
+                  filename: media?.filename,
+                  voiceDuration: media?.voiceDuration,
+                  createdAt: createdAt,
+                ),
+                send: (attempt) => mediaSnapshot == null
+                    ? _sendOutgoingText(
+                        session: session,
+                        targetRoomId: targets[targetIndex],
+                        content: content!,
+                        attempt: attempt,
+                      )
+                    : _sendOutgoingForwardMedia(
+                        session: session,
+                        targetRoomId: targets[targetIndex],
+                        snapshot: mediaSnapshot,
+                        attempt: attempt,
+                      ),
               ),
-              send: (attempt) => mediaSnapshot == null
-                  ? _sendOutgoingText(
-                      session: session,
-                      targetRoomId: targets[targetIndex],
-                      content: content!,
-                      attempt: attempt,
-                    )
-                  : _sendOutgoingForwardMedia(
-                      session: session,
-                      targetRoomId: targets[targetIndex],
-                      snapshot: mediaSnapshot,
-                      attempt: attempt,
-                    ),
-            ),
-        ],
-      ));
+          ],
+        ));
+      }
+    } catch (_) {
+      _closeOutgoingDiagnosticContexts(jobs);
+      rethrow;
     }
-    _ensureOutgoingSessionCurrent(session);
-    return session.coordinator.enqueueBatch(jobs);
+    return _observeOutgoingAdmission(jobs, () {
+      _ensureOutgoingSessionCurrent(session);
+      return session.coordinator.enqueueBatch(jobs);
+    });
   }
 
   /// Admits one prepared camera/file media source for multiple targets. The
@@ -5570,6 +5983,7 @@ final class MatrixSdkE2eeClient
           'Media forwarding targets must be non-empty and unique');
     }
     final snapshot = _DeferredOutgoingMediaSnapshot(media);
+    final performanceContext = _performanceRecorder.createCorrelationContext();
     final createdAt = DateTime.now();
     final job = MatrixOutgoingWorkJob(
       id: jobId,
@@ -5578,7 +5992,10 @@ final class MatrixSdkE2eeClient
         id: 'media:$jobId:${media.id}',
         retainedBytes: media.retainedBytes,
         prepare: snapshot.prepare,
-        release: snapshot.release,
+        release: () {
+          performanceContext.close();
+          return snapshot.release();
+        },
       ),
       items: [
         for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
@@ -5586,6 +6003,7 @@ final class MatrixSdkE2eeClient
             id: '${media.id}:$targetIndex',
             targetRoomId: targets[targetIndex],
             txid: 'outgoing-$jobId-0-$targetIndex',
+            performanceContext: performanceContext,
             presentation: MatrixOutgoingWorkPresentation(
               kind: media.mimeType.startsWith('video/')
                   ? MatrixOutgoingPresentationKind.video
@@ -5604,8 +6022,34 @@ final class MatrixSdkE2eeClient
           ),
       ],
     );
-    _ensureOutgoingSessionCurrent(session);
-    return session.coordinator.enqueue(job, onAccepted: media._markAdmitted);
+    return _observeOutgoingAdmission([job], () {
+      _ensureOutgoingSessionCurrent(session);
+      return session.coordinator.enqueue(job, onAccepted: media._markAdmitted);
+    });
+  }
+
+  static void _closeOutgoingDiagnosticContexts(
+      Iterable<MatrixOutgoingWorkJob> jobs) {
+    for (final job in jobs) {
+      for (final item in job.items) {
+        item.performanceContext?.close();
+      }
+    }
+  }
+
+  /// Admission retains its original result and error. Rejection closes only
+  /// anonymous job leases; it neither releases nor changes caller media.
+  static Future<T> _observeOutgoingAdmission<T>(
+      Iterable<MatrixOutgoingWorkJob> jobs, Future<T> Function() admit) {
+    try {
+      return admit().onError((Object error, StackTrace stack) {
+        _closeOutgoingDiagnosticContexts(jobs);
+        Error.throwWithStackTrace(error, stack);
+      });
+    } catch (_) {
+      _closeOutgoingDiagnosticContexts(jobs);
+      rethrow;
+    }
   }
 
   /// Admits an uncompressed local video before compression begins. The account
@@ -5615,21 +6059,35 @@ final class MatrixSdkE2eeClient
     required String jobId,
     required MatrixOutgoingVideoFile video,
     required List<String> targetRoomIds,
-  }) =>
-      _enqueueVideoFile(
+  }) async {
+    try {
+      return await _enqueueVideoFile(
         jobId: jobId,
         video: video,
         targetRoomIds: targetRoomIds,
         session: _captureOutgoingSession(),
       );
+    } catch (_) {
+      video._finishRejectedIfUnadmitted();
+      rethrow;
+    }
+  }
 
   Future<List<MatrixOutgoingWorkJob>> enqueueVideoFiles({
     required List<MatrixOutgoingVideoFileRequest> requests,
-  }) =>
-      _enqueueVideoFiles(
+  }) async {
+    try {
+      return await _enqueueVideoFiles(
         requests: requests,
         session: _captureOutgoingSession(),
       );
+    } catch (_) {
+      for (final request in requests) {
+        request.video._finishRejectedIfUnadmitted();
+      }
+      rethrow;
+    }
+  }
 
   Future<MatrixOutgoingWorkJob> _enqueueVideoFile({
     required String jobId,
@@ -5644,7 +6102,10 @@ final class MatrixSdkE2eeClient
       throw ArgumentError('Video forwarding source was already admitted');
     }
     final existing = session.coordinator.job(jobId);
-    if (existing != null) return existing;
+    if (existing != null) {
+      video._finishRejectedIfUnadmitted();
+      return existing;
+    }
     final targets =
         _freezeVideoTargets(await _prepareNewTargets(targetRoomIds, session));
     await video._waitForSourceMetadata();
@@ -5725,7 +6186,7 @@ final class MatrixSdkE2eeClient
     final targets = _freezeVideoTargets(targetRoomIds);
     final snapshot = _DeferredOutgoingVideoSnapshot(video);
     final createdAt = DateTime.now();
-    return MatrixOutgoingWorkJob(
+    final job = MatrixOutgoingWorkJob(
       id: jobId,
       createdAt: createdAt,
       source: MatrixOutgoingWorkSource(
@@ -5748,6 +6209,17 @@ final class MatrixSdkE2eeClient
               filename: video.filename,
               createdAt: createdAt,
             ),
+            performanceContext: video.performanceTrace?.correlationContext,
+            onAttemptSettled: (state) {
+              if (state == MatrixOutgoingWorkState.failed ||
+                  state == MatrixOutgoingWorkState.canceled) {
+                snapshot.finishTrace(state == MatrixOutgoingWorkState.failed
+                    ? PerformanceResult.failed
+                    : PerformanceResult.cancelled);
+              }
+            },
+            onTimelinePublished: () => video.performanceTrace
+                ?.mark(PerformanceStage.timelinePublished),
             send: (attempt) => _sendOutgoingVideo(
               session: session,
               targetRoomId: targets[targetIndex],
@@ -5757,6 +6229,8 @@ final class MatrixSdkE2eeClient
           ),
       ],
     );
+    snapshot.attachJob(job);
+    return job;
   }
 
   _OutgoingSession _captureOutgoingSession() {
@@ -5815,10 +6289,16 @@ final class MatrixSdkE2eeClient
         }
         await _requireRoomSend(target);
         _ensureOutgoingSession(session, attempt);
-        final eventId = await target.sendEvent(
-          Map<String, dynamic>.from(content),
-          txid: attempt.txid,
-        );
+        attempt.performanceTrace?.mark(PerformanceStage.matrixSendStart);
+        String? eventId;
+        try {
+          eventId = await target.sendEvent(
+            Map<String, dynamic>.from(content),
+            txid: attempt.txid,
+          );
+        } finally {
+          attempt.performanceTrace?.mark(PerformanceStage.matrixSendFinish);
+        }
         _ensureOutgoingSession(session, attempt);
         return eventId ??
             (throw StateError('Matrix room event was not accepted'));
@@ -5848,6 +6328,7 @@ final class MatrixSdkE2eeClient
           thumbnailBytes: snapshot.thumbnailBytes,
           thumbnailWidth: snapshot.thumbnailWidth,
           thumbnailHeight: snapshot.thumbnailHeight,
+          performanceTrace: attempt.performanceTrace,
         );
         _ensureOutgoingSession(session, attempt);
         return eventId;
@@ -5858,29 +6339,32 @@ final class MatrixSdkE2eeClient
     required String targetRoomId,
     required _DeferredOutgoingVideoSnapshot snapshot,
     required MatrixOutgoingWorkAttempt attempt,
-  }) =>
-      _withClient((active) async {
-        _ensureOutgoingSession(session, attempt);
-        if (!identical(active, session.client)) {
-          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
-        }
-        final target = active.getRoomById(targetRoomId);
-        if (target == null) throw StateError('Matrix room is not joined');
-        _ensureOutgoingSession(session, attempt);
-        final eventId = await _sendMedia(
-          target,
-          snapshot.bytes(),
-          snapshot.mimeType,
-          extraContent: _mutableJsonMap(snapshot.extraContent),
-          txid: attempt.txid,
-          filename: snapshot.filename,
-          thumbnailBytes: snapshot.thumbnailBytes,
-          thumbnailWidth: snapshot.thumbnailWidth,
-          thumbnailHeight: snapshot.thumbnailHeight,
-        );
-        _ensureOutgoingSession(session, attempt);
-        return eventId;
-      });
+  }) async {
+    return await _withClient((active) async {
+      _ensureOutgoingSession(session, attempt);
+      if (!identical(active, session.client)) {
+        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+      }
+      final target = active.getRoomById(targetRoomId);
+      if (target == null) throw StateError('Matrix room is not joined');
+      _ensureOutgoingSession(session, attempt);
+      final eventId = await _sendMedia(
+        target,
+        snapshot.bytes(),
+        snapshot.mimeType,
+        extraContent: _mutableJsonMap(snapshot.extraContent),
+        txid: attempt.txid,
+        filename: snapshot.filename,
+        thumbnailBytes: snapshot.thumbnailBytes,
+        thumbnailWidth: snapshot.thumbnailWidth,
+        thumbnailHeight: snapshot.thumbnailHeight,
+        performanceTrace: attempt.performanceTrace,
+        parentPerformanceTrace: snapshot._video.performanceTrace,
+      );
+      _ensureOutgoingSession(session, attempt);
+      return eventId;
+    });
+  }
 
   Future<void> _prepareForwardMedia({
     required _OutgoingSession session,
@@ -5984,6 +6468,7 @@ final class MatrixSdkE2eeClient
           thumbnailBytes: snapshot.thumbnail,
           thumbnailWidth: media.thumbnailWidth,
           thumbnailHeight: media.thumbnailHeight,
+          performanceTrace: attempt.performanceTrace,
         );
         _ensureOutgoingSession(session, attempt);
         return eventId;
@@ -6041,7 +6526,39 @@ final class MatrixSdkE2eeClient
           {required String loginToken,
           required Uri homeserver,
           String? deviceId}) =>
-      _withClient((active) async {
+      _loginWithToken(
+          loginToken: loginToken,
+          homeserver: homeserver,
+          deviceId: deviceId,
+          authorizedUserId: _confirmedNewDeviceUserId);
+
+  @override
+  Future<void> loginWithTokenForExpectedIdentity({
+    required String expectedMatrixUserId,
+    required String loginToken,
+    required Uri homeserver,
+    String? deviceId,
+  }) =>
+      _loginWithToken(
+        loginToken: loginToken,
+        homeserver: homeserver,
+        deviceId: deviceId,
+        authorizedUserId: expectedMatrixUserId,
+      );
+
+  Future<void> _loginWithToken({
+    required String loginToken,
+    required Uri homeserver,
+    String? deviceId,
+    String? authorizedUserId,
+  }) async {
+    try {
+      await _withClient((active) async {
+        if (_confirmedNewDeviceUserId != null &&
+            authorizedUserId != null &&
+            _confirmedNewDeviceUserId != authorizedUserId) {
+          throw StateError('Confirmed Matrix recovery target changed');
+        }
         await active.checkHomeserver(homeserver);
         if (active.userID != null && active.deviceID != null) {
           _credentialsInvalid = true;
@@ -6049,6 +6566,9 @@ final class MatrixSdkE2eeClient
           final expectedDeviceId = active.deviceID;
           if (expectedUserId == null || expectedDeviceId == null) {
             throw StateError('Matrix continuity identity is unavailable');
+          }
+          if (authorizedUserId != null && authorizedUserId != expectedUserId) {
+            throw StateError('Matrix credential refresh identity mismatch');
           }
           // 调用方传进来的 device id 只是"保留身份"的提示。它来自挂起时的观察值，
           // 而本机库可能已经在上一次轮换里被服务端改写。真正能刷新的设备是本进程
@@ -6129,16 +6649,65 @@ final class MatrixSdkE2eeClient
             }
           }
         } else {
-          await active.login(
-            'm.login.token',
-            token: loginToken,
-            deviceId: deviceId,
-            initialDeviceDisplayName: '畅聊移动端',
-          );
+          final confirmedUserId = authorizedUserId;
+          if (confirmedUserId == null) {
+            await active.login(
+              'm.login.token',
+              token: loginToken,
+              deviceId: deviceId,
+              initialDeviceDisplayName: '畅聊移动端',
+            );
+          } else {
+            if (deviceId != null) {
+              throw StateError('New Matrix device must not reuse an old ID');
+            }
+            // Client.login() calls init() before returning LoginResponse.
+            // Inspect the raw response first so an unexpected MXID cannot
+            // reach local binding or publish fresh device keys.
+            final response = await MatrixApi(
+              homeserver: homeserver,
+              httpClient: active.httpClient,
+            ).login(
+              'm.login.token',
+              token: loginToken,
+              initialDeviceDisplayName: '畅聊移动端',
+            );
+            if (response.userId != confirmedUserId) {
+              throw StateError('Matrix new-device identity mismatch');
+            }
+            await active.init(
+              newToken: response.accessToken,
+              newTokenExpiresAt: response.expiresInMs == null
+                  ? null
+                  : DateTime.now().add(
+                      Duration(milliseconds: response.expiresInMs!),
+                    ),
+              newRefreshToken: response.refreshToken,
+              newHomeserver: homeserver,
+              newUserID: response.userId,
+              newDeviceID: response.deviceId,
+              newDeviceName: '畅聊移动端',
+            );
+          }
         }
         _credentialsInvalid = false;
         await _persistLoggedInContinuity(active);
+        _confirmedNewDeviceUserId = null;
       }, authorizeAccess: true, freshLogin: true);
+    } catch (error, stackTrace) {
+      if (authorizedUserId != null) {
+        // _withClient authorizes lifecycle access before network login. A
+        // failed identity check must close that access again even if the
+        // caller keeps its Business session for an explicit retry.
+        try {
+          await suspend();
+        } catch (_) {
+          // suspend() revokes access synchronously; preserve the first error.
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
 
   Future<void> _persistLoggedInContinuity(Client active) async {
     _activeContinuityValidated = false;
@@ -6164,12 +6733,35 @@ final class MatrixSdkE2eeClient
     _decryptionSubscription?.cancel();
     _decryptionSubscription = client.onEvent.stream.listen((update) {
       if (_accessRevoked || !identical(client, _client)) return;
+      final emoji = _emojiVaultBackend;
+      if (emoji != null && emoji.matches(client)) emoji.eventChanged(update);
       final eventId = update.content['event_id']?.toString();
       if (eventId == null || eventId.isEmpty) return;
       final type = update.content['type']?.toString();
+      final cacheKey = (client.userID, update.roomID, eventId);
+      if (type == EventTypes.Redaction) {
+        final content = update.content['content'];
+        final target = update.content['redacts'] ??
+            (content is Map ? content['redacts'] : null);
+        if (target is String) {
+          _decryptedTimelineEvents
+              .remove((client.userID, update.roomID, target));
+        }
+      }
+      final unsigned = update.content['unsigned'];
+      final isRedacted = unsigned is Map && unsigned['redacted_because'] is Map;
+      final lastEvent = client.getRoomById(update.roomID)?.lastEvent;
+      final isRecalledHead =
+          lastEvent?.eventId == eventId && lastEvent?.redacted == true;
+      if (isRedacted || isRecalledHead) {
+        _decryptedTimelineEvents.remove(cacheKey);
+      }
       if (update.type == EventUpdateType.decryptedTimelineQueue &&
-          type != EventTypes.Encrypted) {
-        _decryptedTimelineEvents[(client.userID, update.roomID, eventId)] =
+          type != EventTypes.Encrypted &&
+          type != EventTypes.Redaction &&
+          !isRedacted &&
+          !isRecalledHead) {
+        _decryptedTimelineEvents[cacheKey] =
             Map<String, dynamic>.from(update.content);
       }
       final state = type != EventTypes.Encrypted
@@ -6281,6 +6873,7 @@ final class MatrixSdkE2eeClient
     _memberRefreshListener = null;
     _memberRefreshPolicy.reset();
     await _memberProjectionCache.detach();
+    _emojiVaultBackend = null;
   }
 
   @override
@@ -6490,8 +7083,27 @@ final class MatrixSdkE2eeClient
 
   @override
   Future<void> selectAccount(String matrixUserId, Uri selectedHomeserver) {
-    final operation = _accountSelectionQueue
-        .then((_) => _selectAccount(matrixUserId, selectedHomeserver));
+    return _queueAccountSelection(matrixUserId, selectedHomeserver);
+  }
+
+  @override
+  Future<void> confirmNewDeviceRecovery(
+      String matrixUserId, Uri selectedHomeserver) {
+    final prepare = _prepareNewDeviceStorage;
+    if (prepare == null) {
+      throw StateError('New-device recovery storage is not configured');
+    }
+    return _queueAccountSelection(matrixUserId, selectedHomeserver,
+        beforeSelect: () =>
+            prepare(selectedHomeserver.toString(), matrixUserId));
+  }
+
+  Future<void> _queueAccountSelection(
+      String matrixUserId, Uri selectedHomeserver,
+      {Future<void> Function()? beforeSelect}) {
+    final operation = _accountSelectionQueue.then((_) => _selectAccount(
+        matrixUserId, selectedHomeserver,
+        beforeSelect: beforeSelect));
     _accountSelectionQueue =
         operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return operation;
@@ -6502,8 +7114,9 @@ final class MatrixSdkE2eeClient
   ///
   /// 若把 suspend 留在临界区之外，bootstrap/后台恢复的并发 suspend 就可能插进
   /// 「A 已关闭、B 尚未打开」之间，或让 scope 已经切到 B 而 client 仍属于 A。
-  Future<void> _selectAccount(
-      String matrixUserId, Uri selectedHomeserver) async {
+  Future<void> _selectAccount(String matrixUserId, Uri selectedHomeserver,
+      {Future<void> Function()? beforeSelect}) async {
+    _confirmedNewDeviceUserId = null;
     final select = _selectClientAccount;
     final resume = _resumeClient;
     if (select == null || resume == null || selectedHomeserver != homeserver) {
@@ -6533,6 +7146,7 @@ final class MatrixSdkE2eeClient
       _suspendedContinuity = MatrixSuspendedContinuity.none;
       _activeContinuityValidated = false;
       try {
+        await beforeSelect?.call();
         await select(selectedHomeserver.toString(), matrixUserId);
       } catch (error, stackTrace) {
         securityLogger.record(
@@ -6541,9 +7155,24 @@ final class MatrixSdkE2eeClient
           eventCode: MatrixSecurityCode.accountSelectResumeFailed,
           identity: _identity(matrixUserId: matrixUserId),
         );
+        if (beforeSelect == null &&
+            error is MatrixLocalIdentityPreflightException &&
+            error.canCreateNewDevice) {
+          Error.throwWithStackTrace(
+              const MatrixNewDeviceRecoveryRequired(), stackTrace);
+        }
         Error.throwWithStackTrace(error, stackTrace);
       }
-      final next = await resume();
+      late final Client next;
+      try {
+        next = await resume();
+      } on MatrixLocalIdentityPreflightException catch (error, stackTrace) {
+        if (beforeSelect == null && error.canCreateNewDevice) {
+          Error.throwWithStackTrace(
+              const MatrixNewDeviceRecoveryRequired(), stackTrace);
+        }
+        rethrow;
+      }
       try {
         if (next.userID != null && next.userID != matrixUserId) {
           throw StateError(
@@ -6554,6 +7183,7 @@ final class MatrixSdkE2eeClient
         _replaceOutgoingWork(next);
         _suspendedMetadata = metadata;
         _activeContinuityValidated = true;
+        _confirmedNewDeviceUserId = beforeSelect == null ? null : matrixUserId;
         // 语义：刚从库里恢复出来的 token 不可信，必须先经过 broker token 刷新
         // （保留身份刷新路径）。它不是"已登出"，刷新成功后会被复位为 false。
         _credentialsInvalid = next.isLogged();
@@ -6572,6 +7202,7 @@ final class MatrixSdkE2eeClient
         _suspendedMetadata = null;
         _suspendedIdentity = null;
         _activeContinuityValidated = false;
+        _confirmedNewDeviceUserId = null;
         securityLogger.record(
           stage: MatrixSecurityStage.accountSelection,
           outcome: MatrixSecurityOutcome.failure,
@@ -6852,17 +7483,51 @@ final class MatrixSdkE2eeClient
       });
 
   @override
+  ResolvedAvatarUrl? resolveAvatarImmediately({
+    required Uri? avatarUri,
+    required double size,
+  }) {
+    _requireLifecycleAccess();
+    final client = _client;
+    if (client == null) return null;
+    return MatrixAvatarUrlResolver.resolveImmediately(
+      avatarUri: avatarUri,
+      homeserver: client.homeserver,
+      accessToken: client.accessToken,
+      size: size,
+    );
+  }
+
+  @override
   Future<ResolvedAvatarUrl?> resolveAvatar({
     required Uri? avatarUri,
     required double size,
   }) =>
       _withClient(
-        (client) => MatrixAvatarUrlResolver.resolveForClient(
-          avatarUri: avatarUri,
-          client: client,
-          size: size,
-        ),
+        (client) =>
+            _resolveAvatarForClient(client, avatarUri: avatarUri, size: size),
       );
+
+  Future<ResolvedAvatarUrl?> _resolveAvatarForClient(
+    Client client, {
+    required Uri? avatarUri,
+    required double size,
+  }) async {
+    final token = client.accessToken;
+    final userId = client.userID;
+    final value = await MatrixAvatarUrlResolver.resolveForClient(
+      avatarUri: avatarUri,
+      client: client,
+      size: size,
+    );
+    _requireLifecycleAccess();
+    if (!identical(client, _client) ||
+        client.accessToken != token ||
+        client.userID != userId) {
+      throw StateError('Matrix avatar session changed');
+    }
+    return value;
+  }
 
   Future<MatrixRoomLease> openRoomLease(String roomId) =>
       _serializeLifecycle(() async {
@@ -7223,6 +7888,8 @@ final class MatrixSdkE2eeClient
     Uint8List? thumbnailBytes,
     int? thumbnailWidth,
     int? thumbnailHeight,
+    PerformanceTrace? performanceTrace,
+    PerformanceTrace? parentPerformanceTrace,
   }) async {
     void validateSendAccess() {
       if (_accessRevoked ||
@@ -7300,21 +7967,38 @@ final class MatrixSdkE2eeClient
       thumbnail: thumbnail,
       extraContent: media.extraContent,
     );
+    performanceTrace?.mark(PerformanceStage.videoEncrypted);
+    parentPerformanceTrace?.mark(PerformanceStage.videoEncrypted);
     // Preparation yields to worker isolates. Revoke/room replacement can happen
     // meanwhile; check both owner and originating lease before any SDK upload.
     await _requireRoomSend(room);
     validateSendAccess();
-    final eventId = await room.sendFileEvent(
-      prepared.file,
-      thumbnail: prepared.thumbnail,
-      extraContent: prepared.extraContent,
-      txid: txid,
-    );
+    // The Matrix SDK combines media upload and event send in this call.
+    // Mark only its real start and completion; videoUploadDone is unsupported.
+    performanceTrace?.mark(PerformanceStage.videoUploadStarted);
+    parentPerformanceTrace?.mark(PerformanceStage.videoUploadStarted);
+    performanceTrace?.mark(PerformanceStage.matrixSendStart);
+    String? eventId;
+    try {
+      eventId = await room.sendFileEvent(
+        prepared.file,
+        thumbnail: prepared.thumbnail,
+        extraContent: prepared.extraContent,
+        txid: txid,
+      );
+    } finally {
+      performanceTrace?.mark(PerformanceStage.matrixSendFinish);
+    }
     if (eventId == null) {
       // 上传/发送重试耗尽（网络类）→ waitingNetwork 自动重发；见
       // MessageSendNetworkException 的文档。
       throw const MessageSendNetworkException('媒体消息发送失败');
     }
+    if (eventId.isEmpty) {
+      throw StateError('Matrix media event was not accepted');
+    }
+    performanceTrace?.mark(PerformanceStage.videoEventSent);
+    parentPerformanceTrace?.mark(PerformanceStage.videoEventSent);
     return eventId;
   }
 

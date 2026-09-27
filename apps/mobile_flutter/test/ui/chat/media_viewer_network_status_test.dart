@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/app_connection_status.dart';
 import 'package:liuhetong_mobile/ui/chat/encrypted_media_view.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
+import 'package:liuhetong_mobile/ui/components/network_status_capsule.dart';
 
 Uint8List _onePixelPng() => Uint8List.fromList(const [
       0x89,
@@ -100,15 +102,39 @@ void main() {
     expect(image.image, isA<ResizeImage>());
   });
 
-  testWidgets('raw chat video viewer exposes offline status', (tester) async {
+  testWidgets('raw chat video keeps offline loading and retry inline',
+      (tester) async {
+    final pending = [Completer<File>(), Completer<File>()];
+    var loads = 0;
     await tester.pumpWidget(CupertinoApp(
-        home: VideoViewerPage(
-            loadFile: () =>
-                Future<File>.error(const SocketException('offline')))));
+        home: VideoViewerPage(loadFile: () => pending[loads++].future)));
     await tester.pump();
-    await tester.pump();
-    expect(find.text('网络不可用，联网后自动重试'), findsOneWidget);
     expect(find.byType(VideoViewerPage), findsOneWidget);
+    expect(find.byType(WeChatNetworkStatusCapsule), findsNothing);
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+    expect(find.text('正在加载视频…'), findsOneWidget);
+
+    pending.first.completeError(const SocketException('offline'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(WeChatNetworkStatusCapsule), findsNothing);
+    expect(find.text('视频加载失败，请检查网络后重试'), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    expect(find.byKey(const Key('video-viewer-retry')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('video-viewer-retry')));
+    await tester.pump();
+    expect(loads, 2);
+    expect(find.byType(WeChatNetworkStatusCapsule), findsNothing);
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+    expect(find.text('正在加载视频…'), findsOneWidget);
+
+    pending.last.completeError(const SocketException('still offline'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(WeChatNetworkStatusCapsule), findsNothing);
+    expect(find.text('视频加载失败，请检查网络后重试'), findsOneWidget);
+    expect(find.byKey(const Key('video-viewer-retry')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 }

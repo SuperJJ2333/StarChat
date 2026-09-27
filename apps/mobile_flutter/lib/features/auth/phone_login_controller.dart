@@ -28,11 +28,13 @@ final class PhoneLoginState {
     this.status, {
     this.message,
     this.resendAfterSeconds = 0,
+    this.loginRetryAfterSeconds,
   });
 
   final PhoneLoginStatus status;
   final String? message;
   final int resendAfterSeconds;
+  final int? loginRetryAfterSeconds;
 
   bool get canSubmitCode =>
       status == PhoneLoginStatus.otpSent || status == PhoneLoginStatus.failed;
@@ -52,6 +54,7 @@ final class PhoneLoginController extends ChangeNotifier {
   final DateTime Function() _now;
 
   PhoneLoginState state = const PhoneLoginState(PhoneLoginStatus.idle);
+  PhoneInvitationContinuationRequired? invitationContinuation;
   DateTime? _cooldownUntil;
   Timer? _cooldownTimer;
   bool _disposed = false;
@@ -75,6 +78,7 @@ final class PhoneLoginController extends ChangeNotifier {
   /// 请求验证码。超时/失败不改变"是否已发送"的事实——提示用户稍后重试，
   /// 由服务端限频兜底；本地不自动重发。
   Future<bool> requestOtp(String phone) async {
+    invitationContinuation = null;
     if (state.status == PhoneLoginStatus.otpSending ||
         state.status == PhoneLoginStatus.verifying) {
       return false;
@@ -114,6 +118,7 @@ final class PhoneLoginController extends ChangeNotifier {
       bool termsAccepted = false,
       bool Function()? shouldContinue}) async {
     if (state.status == PhoneLoginStatus.verifying) return false;
+    invitationContinuation = null;
     state = const PhoneLoginState(PhoneLoginStatus.verifying);
     notifyListeners();
     try {
@@ -126,6 +131,12 @@ final class PhoneLoginController extends ChangeNotifier {
         deviceKey: deviceKey,
         deviceName: deviceName,
       );
+    } on PhoneInvitationContinuationRequired catch (error) {
+      invitationContinuation = error;
+      state = const PhoneLoginState(PhoneLoginStatus.failed,
+          message: '验证码已通过，请补填邀请码后继续注册');
+      notifyListeners();
+      return false;
     } on Exception catch (error) {
       final code_ = _errorCode(error);
       if (code_ == 'SMS_VERIFY_UNAVAILABLE' ||
@@ -136,7 +147,13 @@ final class PhoneLoginController extends ChangeNotifier {
         return false;
       }
       state = PhoneLoginState(PhoneLoginStatus.failed,
-          message: _messageFor(error, fallback: '账号或验证码错误'));
+          message: error is BusinessApiException && error.statusCode == 429
+              ? '登录请求较频繁，请稍后重试'
+              : _messageFor(error, fallback: '账号或验证码错误'),
+          loginRetryAfterSeconds:
+              error is BusinessApiException && error.statusCode == 429
+                  ? (error.retryAfterSeconds ?? 60).clamp(1, 86400)
+                  : null);
       notifyListeners();
       return false;
     }
@@ -156,7 +173,9 @@ final class PhoneLoginController extends ChangeNotifier {
       final remain = _cooldownUntil!.difference(_now()).inSeconds.clamp(0, 60);
       if (state.status != PhoneLoginStatus.otpSending) {
         state = PhoneLoginState(state.status,
-            message: state.message, resendAfterSeconds: remain);
+            message: state.message,
+            resendAfterSeconds: remain,
+            loginRetryAfterSeconds: state.loginRetryAfterSeconds);
         notifyListeners();
       }
       if (remain == 0) timer.cancel();
@@ -167,6 +186,8 @@ final class PhoneLoginController extends ChangeNotifier {
     switch (_errorCode(error)) {
       case 'INVITATION_REQUIRED':
       case 'INVITATION_INVALID':
+      case 'INVITATION_EXPIRED':
+      case 'INVITATION_EXHAUSTED':
         return '新用户需要填写有效邀请码';
       case 'PHONE_PROVISIONING_PENDING':
         return '账号仍在开通，请稍后重新登录；无需再次注册';

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart';
 
+import '../../core/performance_metrics.dart';
+
 /// TURN 在本项目里的**准确**定位（诊断措辞依据，避免误导真机判断）：
 ///
 /// - TURN 是**连接可靠性 fallback**，不是天然的加速器。当双方能走
@@ -14,7 +16,7 @@ import 'package:matrix/matrix.dart';
 ///      TURN** → 可能完全无法建立连接；
 ///   ② 需要 TURN 且**中继区域非常远** → 媒体绕行导致 RTT 显著升高。
 ///
-/// 因此真机判断必须结合 `[chatflow/callquality]` 的 `path=direct|relay`、
+/// 因此真机判断必须结合 `[chatflow/call]` 的 `path=direct|relay`、
 /// `turn=used|not-used`、`rttAvg` 一起看，而不是只看这一行 discovery 结果。
 /// 客户端不做区域选择，多区域 TURN 属于服务端基础设施。
 ///
@@ -23,11 +25,14 @@ final class TurnCredentialsCache {
   TurnCredentialsCache({
     required this.fetch,
     DateTime Function()? now,
+    PerformanceMetrics? metrics,
     this.timeout = const Duration(seconds: 3),
-  }) : now = now ?? DateTime.now;
+  })  : now = now ?? DateTime.now,
+        metrics = metrics ?? PerformanceMetrics.instance;
 
   final Future<TurnServerCredentials> Function() fetch;
   final DateTime Function() now;
+  final PerformanceMetrics metrics;
   final Duration timeout;
   TurnServerCredentials? _credentials;
   DateTime? _refreshAt;
@@ -53,9 +58,11 @@ final class TurnCredentialsCache {
       if (credentials.uris.isEmpty || !now().isBefore(refreshAt)) return [];
       _credentials = credentials;
       _refreshAt = refreshAt;
-      debugPrint(
-          '[chatflow/turn] discovery=ready elapsed_ms=${now().difference(started).inMilliseconds} '
-          'servers=${credentials.uris.length}');
+      if (metrics.enabled) {
+        debugPrint(
+            '[chatflow/call] discovery=ready elapsed_ms=${now().difference(started).inMilliseconds} '
+            'servers=${credentials.uris.length}');
+      }
       return _servers(credentials);
     } catch (_) {
       // Match the SDK's direct-connect fallback without a long discovery stall.
@@ -64,9 +71,11 @@ final class TurnCredentialsCache {
       // 措辞刻意保守：这只表示「没有可用中继」，不表示「远距离一定卡」。
       // 直连成功时延迟通常更低；风险是严格 NAT/CGNAT 下可能完全连不通。
       // 刻意不打印 TURN 主机名/用户名/凭据。
-      debugPrint(
-          '[chatflow/turn] discovery=unavailable elapsed_ms=${now().difference(started).inMilliseconds} '
-          'note=direct-paths-only-oneway-risk=strict-nat-without-relay');
+      if (metrics.enabled) {
+        debugPrint(
+            '[chatflow/call] discovery=unavailable elapsed_ms=${now().difference(started).inMilliseconds} '
+            'note=direct-paths-only-oneway-risk=strict-nat-without-relay');
+      }
       return [];
     }
   }

@@ -8,6 +8,8 @@ import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_chat_controller.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/pending_conversation_page.dart';
 
 class _DelayedStore implements OutboxStore {
@@ -77,6 +79,7 @@ void main() {
     required Future<DirectChatRoom> Function() openRoom,
     void Function(PendingConversationResult?)? onResult,
     ValueNotifier<NetworkState>? networkState,
+    PerformanceTrace? performanceTrace,
   }) async {
     await tester.pumpWidget(CupertinoApp(
       home: Builder(
@@ -91,6 +94,7 @@ void main() {
                   openRoom: openRoom,
                   outbox: outbox,
                   networkState: networkState,
+                  performanceTrace: performanceTrace,
                 ),
               ),
             );
@@ -102,6 +106,66 @@ void main() {
     await tester.tap(find.text('enter'));
     await tester.pumpAndSettle();
   }
+
+  testWidgets('pending conversation marks its first frame without room wait',
+      (tester) async {
+    final outbox = PersistentOutboxManager(InMemoryOutboxStore());
+    final never = Completer<DirectChatRoom>();
+    var nowUs = 0;
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), clockUs: () => nowUs);
+    final trace = recorder.start(PerformanceOperationType.conversationOpen,
+        openingSource: PerformanceOpeningSource.pendingConversation);
+    trace.mark(PerformanceStage.userAction);
+    nowUs = 1000;
+    trace.mark(PerformanceStage.routePushStarted);
+    nowUs = 2000;
+    await pumpPage(tester,
+        outbox: outbox,
+        openRoom: () => never.future,
+        performanceTrace: trace);
+    final record = trace.finish();
+    expect(record.stagesUs.containsKey(PerformanceStage.firstFrameRendered),
+        isTrue);
+    expect(record.stagesUs.containsKey(PerformanceStage.remoteSyncReady), isFalse);
+    await tester.pumpWidget(const SizedBox.shrink());
+    outbox.dispose();
+  });
+
+  testWidgets('closing a failed pending open retains its diagnostic trace',
+      (tester) async {
+    final outbox = PersistentOutboxManager(InMemoryOutboxStore());
+    final network = ValueNotifier(NetworkState.offline);
+    final metrics = PerformanceMetrics(enabled: true);
+    var nowUs = 0;
+    final recorder = PerformanceTraceRecorder(
+        metrics: metrics, clockUs: () => nowUs);
+    final trace = recorder.start(PerformanceOperationType.conversationOpen,
+        openingSource: PerformanceOpeningSource.pendingConversation);
+    trace.mark(PerformanceStage.userAction);
+    nowUs = 1000;
+    trace.mark(PerformanceStage.routePushStarted);
+    await pumpPage(tester,
+        outbox: outbox,
+        networkState: network,
+        openRoom: () => Future.error(StateError('unavailable')),
+        performanceTrace: trace);
+    expect(trace.isRecording, isTrue, reason: 'the user may retry');
+
+    nowUs = 2300000;
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(trace.isFinished, isTrue);
+    expect(recorder.activeCount, 0);
+    final record =
+        (metrics.snapshot()['recentTraces'] as List).single as Map;
+    expect(record['result'], 'waiting_network');
+    expect(record['opening_source'], 'pending_conversation');
+    expect(record['total_ms'], 2300);
+    expect(record['stages'], isNotEmpty);
+    network.dispose();
+    outbox.dispose();
+  });
 
   testWidgets('输入即落盘：页面销毁后消息仍在（同一存储的新 manager 也能读到）', (tester) async {
     final store = InMemoryOutboxStore();

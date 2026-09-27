@@ -10,6 +10,7 @@ import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
@@ -63,8 +64,7 @@ void main() {
 
     await tester.tap(find.text('官方群'));
     await tester.pump();
-    expect(harness.requests.length, afterDrain + 1,
-        reason: '房间关闭后应能再次打开');
+    expect(harness.requests.length, afterDrain + 1, reason: '房间关闭后应能再次打开');
 
     harness.completeOpen();
     harness.completeOpen();
@@ -112,17 +112,24 @@ final class _DelegationHarness {
     completer.complete();
   }
 
-  Widget widget() => CupertinoApp(
-          home: MatrixHomePage(
-        api: _api(),
-        matrix: MatrixSdkE2eeClient(_NoNetworkClient(),
-            homeserver: Uri.parse('https://matrix.example')),
-        themeController: ThemeController(store: _MemoryThemeStore()),
-        onCreateGroup: () {},
-        previewOnly: previewOnly,
-        snapshotLoader: () async => _snapshot(),
-        onOpenRoom: onOpenRoom,
-      ));
+  Widget widget() {
+    final api = _api();
+    // This harness isolates room delegation from cold-start disk restoration.
+    final identities = ProfileRepository(api);
+    addTearDown(identities.dispose);
+    return CupertinoApp(
+        home: MatrixHomePage(
+      api: api,
+      identityCache: identities,
+      matrix: MatrixSdkE2eeClient(_NoNetworkClient(),
+          homeserver: Uri.parse('https://matrix.example')),
+      themeController: ThemeController(store: _MemoryThemeStore()),
+      onCreateGroup: () {},
+      previewOnly: previewOnly,
+      snapshotLoader: () async => _snapshot(),
+      onOpenRoom: onOpenRoom,
+    ));
+  }
 }
 
 MatrixConversationSnapshot _snapshot() => MatrixConversationSnapshot(

@@ -7,6 +7,7 @@ import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/moments/moment_warning_banner.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/contact_tag_models.dart';
@@ -131,7 +132,7 @@ final class _MomentVisibilityPeoplePageState
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('标签或朋友加载失败，请检查网络后重试'),
+                      const MomentWarningBanner(message: '标签或朋友加载失败，请检查网络后重试'),
                       const SizedBox(height: 12),
                       ModernActionButton(
                         icon: CupertinoIcons.refresh,

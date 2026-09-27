@@ -185,6 +185,10 @@ void main() {
 
   test('rebind two-step endpoints are called in contract order with codes',
       () async {
+    await api.phoneLogin(
+        phone: '+8613800000001', code: '123456',
+        deviceKey: 'device-key-1', deviceName: 'test');
+    captured.clear();
     await api.rebindOldRequest();
     await api.rebindOldConfirm(code: '111111');
     await api.rebindNewRequest(phone: '+8613900000002');

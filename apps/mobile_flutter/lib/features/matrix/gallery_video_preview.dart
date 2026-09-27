@@ -3,11 +3,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
-import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
-import '../../ui/components/network_status_capsule.dart';
+import '../../core/performance_trace.dart';
 import '../../ui/chat/shared_video_playback.dart';
 import '../../ui/chat/video_playback_arbiter.dart';
 import '../../ui/chat/video_playback_lease_coordinator.dart';
@@ -15,9 +14,8 @@ import '../../ui/foundation/wechat_tokens.dart';
 import 'device_gallery_source.dart';
 
 /// 相册视频预览页：点击图片页中的视频条目进入。
-/// - 播放按发送策略生成的独立压缩产物；退出或失败后释放该产物；
-///   压缩产物准备阶段显示**进度百分比**（转码进行中）；
-/// - 压缩版不可用时显示失败，可重试；
+/// - 优先借用相册原片播放；不可用或解码失败才生成独立压缩产物；
+///   退出或失败只释放派生产物，发送仍独立执行原有压缩策略；
 /// - 准备失败提供「重试」；
 /// - 播放/暂停、进度与时长展示；
 /// - 右下角“选择/已选择”胶囊与网格左上角圆圈等效；
@@ -31,12 +29,20 @@ final class GalleryVideoPreviewPage extends StatefulWidget {
     required this.duration,
     required this.selected,
     required this.onToggle,
+    this.loadOriginalFile,
+    this.loadTracedRendition,
+    this.traceFactory,
     this.controllerFactory,
     this.viewerOnly = false,
   });
 
   /// 解析并转移压缩产物所有权；页面负责释放。
   final Future<VideoRendition> Function() loadRendition;
+  final Future<File?> Function()? loadOriginalFile;
+  final Future<VideoRendition> Function(
+          PerformanceTrace? trace, void Function(double)? onProgress)?
+      loadTracedRendition;
+  final PerformanceTrace Function()? traceFactory;
   final Uint8List thumbnailBytes;
   final Duration? duration;
   final bool selected;
@@ -73,7 +79,6 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
 
   /// 压缩产物准备进度（0~1；无进度事件时为 null，展示活动指示器）。
   double? _prepareProgress;
-  Subscription? _progressSubscription;
 
   /// 回退原始视频的明确提示（展示数秒后自动消失）。
   String? _fallbackNotice;
@@ -82,6 +87,13 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
   /// 准备阶段文案（压缩中/解码中）。
   String _prepareLabel = '正在准备压缩版…';
   VideoRendition? _ownedRendition;
+  PerformanceTrace? _preparationTrace;
+
+  void _cancelPreparationTrace() {
+    final trace = _preparationTrace;
+    _preparationTrace = null;
+    trace?.finish(result: PerformanceResult.cancelled);
+  }
 
   @override
   void initState() {
@@ -118,49 +130,88 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
     final generation = _generation;
     VideoPlayerController? controller;
     VideoRendition? rendition;
+    final trace = widget.traceFactory?.call() ??
+        (!widget.viewerOnly &&
+                PerformanceTraceRecorder.instance.diagnosticsEnabled
+            ? PerformanceTrace.start(
+                operation: PerformanceOperationType.videoPrepare)
+            : null);
+    _preparationTrace = trace;
+    trace?.mark(PerformanceStage.videoSelected);
+    trace?.mark(PerformanceStage.videoPrepareStarted);
+    var result = PerformanceResult.failed;
     if (_isCurrentAttempt(generation)) {
       _prepareProgress = null;
-      _prepareLabel = widget.viewerOnly ? '正在加载视频…' : '正在准备压缩版…';
+      _prepareLabel = '正在加载视频…';
       _fallbackNotice = null;
     }
-    final previousSubscription = _progressSubscription;
-    _progressSubscription = null;
-    previousSubscription?.unsubscribe();
-    Subscription? progressSubscription;
     try {
-      // 先订阅进度流再触发转码，确保不丢事件。
-      progressSubscription = VideoCompress.compressProgress$.subscribe(
-        (value) {
-          final normalized = value > 1 ? value / 100 : value;
-          if (_isCurrentAttempt(generation) &&
-              normalized >= 0 &&
-              normalized <= 1 &&
-              _controller == null) {
-            setState(() => _prepareProgress = normalized);
-          }
-        },
-      );
-      _progressSubscription = progressSubscription;
-      final loadedRendition = await widget.loadRendition();
-      rendition = loadedRendition;
-      if (!_isCurrentAttempt(generation)) {
+      final originalLoader = widget.loadOriginalFile;
+      if (originalLoader != null) {
         try {
-          await loadedRendition.dispose();
-        } finally {
+          final original = await originalLoader();
+          if (!_isCurrentAttempt(generation)) return false;
+          if (original != null && await original.exists()) {
+            if (!_isCurrentAttempt(generation)) return false;
+            rendition = VideoRendition(file: original, usedCompressed: false);
+            controller = widget.controllerFactory?.call(original) ??
+                VideoPlayerController.file(original);
+            trace?.mark(PerformanceStage.decodeStarted);
+            await controller.initialize();
+          }
+        } catch (_) {
+          // The asset is borrowed. Failed original decode only retires its
+          // player; the independent fallback owns any file it creates.
+          await _releaseAttempt(controller, rendition);
+          controller = null;
           rendition = null;
         }
-        return false;
+        if (!_isCurrentAttempt(generation)) {
+          await _releaseAttempt(controller, rendition);
+          controller = null;
+          rendition = null;
+          return false;
+        }
       }
-      if (!loadedRendition.usedCompressed &&
-          loadedRendition.fallbackNotice != null) {
-        _showNotice(loadedRendition.fallbackNotice!);
+      if (controller == null) {
+        _prepareLabel = widget.viewerOnly ? '正在加载视频…' : '正在准备压缩版…';
+        // The serialized encoder owns the plugin's single-subscription
+        // progress stream; the page observes only its scoped callback.
+        void onProgress(double value) {
+          if (_isCurrentAttempt(generation) &&
+              value >= 0 &&
+              value <= 1 &&
+              _controller == null) {
+            setState(() => _prepareProgress = value);
+          }
+        }
+
+        final loadedRendition =
+            await (widget.loadTracedRendition?.call(trace, onProgress) ??
+                widget.loadRendition());
+        rendition = loadedRendition;
+        if (!_isCurrentAttempt(generation)) {
+          try {
+            await loadedRendition.dispose();
+          } finally {
+            rendition = null;
+          }
+          return false;
+        }
+        if (!loadedRendition.usedCompressed &&
+            loadedRendition.fallbackNotice != null) {
+          _showNotice(loadedRendition.fallbackNotice!);
+        }
+        _prepareLabel = '正在解码视频…';
+        final initializedController =
+            widget.controllerFactory?.call(loadedRendition.file) ??
+                VideoPlayerController.file(loadedRendition.file);
+        controller = initializedController;
+        trace?.mark(PerformanceStage.decodeStarted);
+        await initializedController.initialize();
       }
-      _prepareLabel = '正在解码视频…';
-      final initializedController =
-          widget.controllerFactory?.call(loadedRendition.file) ??
-              VideoPlayerController.file(loadedRendition.file);
-      controller = initializedController;
-      await initializedController.initialize();
+      final initializedController = controller;
+      final loadedRendition = rendition!;
       if (!_isCurrentAttempt(generation)) {
         try {
           await _releaseAttempt(initializedController, loadedRendition);
@@ -172,17 +223,21 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
       }
       _controller = initializedController;
       _ownedRendition = loadedRendition;
+      trace?.mark(PerformanceStage.decodeDone);
+      trace?.mark(PerformanceStage.videoPrepareDone);
       setState(() => _controller = initializedController);
       await _playIfAllowed(initializedController, generation);
+      result = PerformanceResult.success;
       return true;
     } catch (_) {
       await _releaseAttempt(controller, rendition);
       if (_isCurrentAttempt(generation)) setState(() {});
       return false; // 解码不支持：降级静态预览。
     } finally {
-      progressSubscription?.unsubscribe();
-      if (identical(_progressSubscription, progressSubscription)) {
-        _progressSubscription = null;
+      if (!_isCurrentAttempt(generation)) result = PerformanceResult.cancelled;
+      if (identical(_preparationTrace, trace)) {
+        _preparationTrace = null;
+        trace?.finish(result: result);
       }
     }
   }
@@ -198,6 +253,7 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
   /// 「重试」：重置状态后重新解析压缩产物并初始化播放器。
   Future<void> _retry() async {
     final retryGeneration = ++_generation;
+    _cancelPreparationTrace();
     await _releasePreview();
     if (!mounted || retryGeneration != _generation) return;
     setState(() {
@@ -483,9 +539,9 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
   @override
   void dispose() {
     _generation++;
+    _cancelPreparationTrace();
     WidgetsBinding.instance.removeObserver(this);
     _noticeTimer?.cancel();
-    _progressSubscription?.unsubscribe();
     unawaited(_releasePreview());
     super.dispose();
   }
@@ -499,7 +555,9 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
 
   @override
   Widget build(BuildContext context) {
-    return WeChatPageScaffold.bare(
+    return WeChatPageScaffold.navigation(
+      navigationBar: null,
+      showNetworkCapsule: false,
       backgroundColor: CupertinoColors.black,
       child: SafeArea(
         child: Stack(children: [
@@ -548,11 +606,6 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
                 ),
               ),
             ),
-          Positioned(
-              top: 12,
-              left: 0,
-              right: 0,
-              child: Center(child: WeChatNetworkStatusCapsule())),
           Positioned(
             top: 12,
             left: 12,

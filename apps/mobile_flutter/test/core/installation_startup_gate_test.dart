@@ -30,6 +30,32 @@ final class _FreshInstallProbe implements InstallationContainerProbe {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets('local startup has no intermediate checking page',
+      (tester) async {
+    final checked = Completer<InstallationResetOutcome>();
+    final loaded = Completer<Widget>();
+    var starts = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: InstallationStartupGate(
+        reconcile: () => checked.future,
+        start: () {
+          starts++;
+          return loaded.future;
+        },
+      ),
+    ));
+    expect(find.textContaining('正在检查启动状态'), findsNothing);
+    expect(find.byIcon(CupertinoIcons.shield), findsNothing);
+    expect(starts, 0);
+    checked.complete(InstallationResetOutcome.notNeeded);
+    await tester.pump();
+    expect(starts, 1);
+    expect(find.textContaining('正在检查启动状态'), findsNothing);
+    loaded.complete(const Text('cached-messages'));
+    await tester.pumpAndSettle();
+    expect(find.text('cached-messages'), findsOneWidget);
+  });
+
   testWidgets('initialization failure can retry after returning unlocked',
       (tester) async {
     var starts = 0;

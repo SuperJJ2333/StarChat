@@ -95,6 +95,84 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
 }
 
 void main() {
+  testWidgets('group name editor is one line with a 12 character limit',
+      (tester) async {
+    final controller = GroupChatInfoController(FakeGroupChatInfoGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('群聊名称'));
+    await tester.pumpAndSettle();
+    final nameField =
+        tester.widget<CupertinoTextField>(find.byType(CupertinoTextField));
+    expect(nameField.maxLines, 1);
+    expect(nameField.maxLength, 12);
+  });
+
+  testWidgets('legacy over-limit group name stays visible until shortened',
+      (tester) async {
+    final gateway = FakeGroupChatInfoGateway();
+    gateway.snapshot = gateway.snapshot.copyWith(name: '一二三四五六七八九十十一十二十三');
+    final controller = GroupChatInfoController(gateway);
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('群聊名称'));
+    await tester.pumpAndSettle();
+
+    final field =
+        tester.widget<CupertinoTextField>(find.byType(CupertinoTextField));
+    expect(field.controller!.text, '一二三四五六七八九十十一十二十三');
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(gateway.snapshot.name, '一二三四五六七八九十十一十二十三');
+    expect(find.byType(CupertinoTextField), findsOneWidget);
+    expect(find.text('群聊名称最多支持12个字符'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+        find.byType(CupertinoTextField), '👨‍👩‍👧‍👦一二三四五六七八九十一二');
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(gateway.snapshot.name, '👨‍👩‍👧‍👦一二三四五六七八九十一');
+  });
+
+  testWidgets(
+      'owner management keeps transfer and filled dissolve action without hint',
+      (tester) async {
+    final controller = GroupChatInfoController(_OwnerGroupInfoGateway(),
+        loadOwnershipTransfers: () async => throw const BusinessApiException(
+            statusCode: 404, code: 'HTTP_404', message: 'Not Found'));
+    await controller.load();
+    await controller.refreshOwnershipTransfer();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupManagementPage(controller: controller)));
+    expect(find.text('群主管理权转让'), findsOneWidget);
+    expect(find.textContaining('群权限按当前群聊显示'), findsNothing);
+    expect(find.textContaining('群名修改权限仅群主可设置'), findsNothing);
+    final dissolve = tester
+        .widget<Container>(find.byKey(const Key('group-dissolve-button')));
+    expect(dissolve.color, isNotNull);
+    await tester.tap(find.text('群主管理权转让'));
+    await tester.pumpAndSettle();
+    expect(find.text('转让群主'), findsOneWidget);
+  });
+
   test(
       'empty business timeline preserves received ownership without pending state',
       () async {
@@ -110,7 +188,7 @@ void main() {
   });
 
   testWidgets(
-      'legacy timeline uses neutral compatibility copy with existing group management',
+      'legacy timeline keeps owner transfer available without obsolete hint',
       (tester) async {
     final controller = GroupChatInfoController(_OwnerGroupInfoGateway(),
         loadOwnershipTransfers: () async => throw const BusinessApiException(
@@ -118,10 +196,10 @@ void main() {
     await controller.load();
     await tester.pumpWidget(
         CupertinoApp(home: GroupManagementPage(controller: controller)));
-    expect(find.textContaining('群权限按当前群聊显示'), findsOneWidget);
+    expect(find.textContaining('群权限按当前群聊显示'), findsNothing);
     await tester.tap(find.text('群主管理权转让'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('群权限按当前群聊显示'), findsOneWidget);
+    expect(find.textContaining('群权限按当前群聊显示'), findsNothing);
     expect(find.text('转让状态暂未获取，请重试'), findsNothing);
     expect(find.byKey(const Key('group-transfer-status')), findsNothing);
   });
@@ -143,9 +221,7 @@ void main() {
       () async {
     final controller = GroupChatInfoController(_OwnerGroupInfoGateway(),
         loadOwnershipTransfers: () async => throw const BusinessApiException(
-            statusCode: 404,
-            code: 'GROUP_NOT_REGISTERED',
-            message: '群未注册'));
+            statusCode: 404, code: 'GROUP_NOT_REGISTERED', message: '群未注册'));
     await controller.load();
     await controller.refreshOwnershipTransfer();
     expect(controller.ownershipTransferReadUnsupported, isFalse);

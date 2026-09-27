@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../features/emoji/fluent_emoji_catalog.dart';
 import 'wechat_message_bubble.dart';
+import '../../core/support_identity_repository.dart';
 
 /// 超级表情消息（纯动效emoji）：复用 [WeChatMessageBubble] 的消息行布局，
 /// 与普通消息一致地展示发送者头像与昵称/备注；表情本体保持微信式无气泡渲染。
@@ -16,6 +17,9 @@ final class SuperEmojiMessage extends StatelessWidget {
     this.state = MessageDeliveryState.sent,
     this.avatar,
     this.senderName,
+    this.senderMatrixId,
+    this.supportIdentities,
+    this.senderBadge,
     this.onLongPress,
     this.onAvatarTap,
     this.onAvatarDoubleTap,
@@ -35,6 +39,9 @@ final class SuperEmojiMessage extends StatelessWidget {
   final MessageDeliveryState state;
   final Widget? avatar;
   final String? senderName;
+  final String? senderMatrixId;
+  final SupportIdentityRepository? supportIdentities;
+  final Widget? senderBadge;
   final VoidCallback? onLongPress;
   final VoidCallback? onAvatarTap;
   final VoidCallback? onAvatarDoubleTap;
@@ -52,6 +59,9 @@ final class SuperEmojiMessage extends StatelessWidget {
       decorateContent: false,
       avatar: avatar,
       senderName: senderName,
+      senderMatrixId: senderMatrixId,
+      supportIdentities: supportIdentities,
+      senderBadge: senderBadge,
       onAvatarTap: onAvatarTap,
       onAvatarDoubleTap: onAvatarDoubleTap,
       onAvatarLongPress: onAvatarLongPress,

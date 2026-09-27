@@ -207,3 +207,29 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
   `test/features/matrix/offline_send_state_test.dart` (offline fast-fail and
   hung-dispatch guard) and `test/core/network_state_manager_test.dart`
   (typed exception classified as network failure).
+2026-09-24 bounded cold-start conversation preview reconciliation:
+
+- `MatrixSdkDatabase.getRoomList` now reconciles a persisted `last_event`
+  snapshot with canonical event records from the current timeline fragment.
+  This repairs legacy or independently persisted event/room-snapshot drift;
+  it does not assume a normal transactional sync commits partially.
+- Reads are batched across rooms. Per room, at most 32 timeline-head event
+  bodies, 8 pending event bodies, the current snapshot ID, and one current edit
+  root are requested (42 unique bodies maximum). The underlying fragment is a
+  serialized ID array, so that ID array is still read/decoded in full. No full
+  event-table scan or history pagination is performed.
+- Same-ID canonical recalls are authoritative; pending status, latest-message
+  edits and edit-root recalls are preserved. Older history cannot displace a
+  baseline present in the fragment. If the baseline is absent, only strictly
+  newer timestamps may advance it, conservatively protecting limited-sync gaps.
+- An existing same-ID decrypted snapshot is retained over a canonical encrypted
+  envelope while acknowledgement metadata is reconciled. This code neither
+  decrypts nor requests keys or network data. A newly selected event with no
+  locally available decrypted representation can still have a blank preview
+  until the existing decryption flow runs. No new plaintext is written here.
+- Regression: `test/features/matrix/cold_start_preview_persistence_test.dart`
+  uses real SQLite reopen and records query arguments to enforce bounded,
+  batched event-body reads, alongside redaction, history, sending and edit cases.
+- Optional event parsing does not invoke the Event constructor's stale-send
+  self-heal lifecycle. Malformed optional cached data (format/type errors) falls
+  back to a valid room snapshot; database I/O failures still propagate.

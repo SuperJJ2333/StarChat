@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 /// 视频封面加载诊断（脱敏、**白名单字段**）。
 ///
@@ -17,16 +18,17 @@ final class VideoPosterDiagnostics {
   VideoPosterDiagnostics({
     ValueChanged<String>? log,
     this.salt = '',
-    this.enabled = true,
-  }) : _log = log ?? _defaultLog;
-
-  /// 默认出口：`debugPrint`（真机 logcat 可见）。
-  static void _defaultLog(String line) => debugPrint(line);
+    bool? enabled,
+  })  : enabled = enabled ??
+            (log != null ||
+                const bool.fromEnvironment('CHATFLOW_PERFORMANCE_METRICS')),
+        _log = log;
 
   /// 盐：只影响哈希，不参与任何业务逻辑。
   final String salt;
   final bool enabled;
-  final ValueChanged<String> _log;
+  final ValueChanged<String>? _log;
+  final String _sessionSalt = const Uuid().v4();
 
   /// 最近一次记录的字段（测试/证据用）。
   Map<String, Object?>? lastRecord;
@@ -41,10 +43,11 @@ final class VideoPosterDiagnostics {
     'download_bytes',
   ];
 
-  /// 媒体标识 → 不可反查、不可跨账号关联的短指纹。
-  static String fingerprint(String value, {String salt = ''}) {
+  /// 媒体标识 → 此诊断实例内稳定、跨实例不可关联的短指纹。
+  String fingerprint(String value) {
     if (value.isEmpty) return 'none';
-    final digest = sha256.convert(utf8.encode('$salt|$value')).toString();
+    final digest =
+        sha256.convert(utf8.encode('$_sessionSalt|$salt|$value')).toString();
     return digest.substring(0, 12);
   }
 
@@ -56,20 +59,31 @@ final class VideoPosterDiagnostics {
     required int decodeMs,
     required int downloadBytes,
   }) {
+    if (!enabled) return;
+    final safeSource = switch (source) {
+      'memory' ||
+      'disk' ||
+      'server' ||
+      'local_frame' ||
+      'placeholder' =>
+        source,
+      _ => 'unknown',
+    };
     final values = <String, Object?>{
-      'id': fingerprint(videoId, salt: salt),
-      'source': source,
+      'id': fingerprint(videoId),
+      'source': safeSource,
       'cache_hit': cacheHit,
       'generate_ms': generateMs,
       'decode_ms': decodeMs,
       'download_bytes': downloadBytes,
     };
     lastRecord = values;
-    if (!enabled) return;
-    final line = '[chatflow/videoposter] '
+    final log = _log;
+    if (log == null) return;
+    final line = '[chatflow/media] '
         '${fieldOrder.map((key) => '$key=${values[key]}').join(' ')}';
     try {
-      _log(line);
+      log(line);
     } catch (_) {
       // 诊断失败必须静默：绝不让日志问题影响封面加载。
     }

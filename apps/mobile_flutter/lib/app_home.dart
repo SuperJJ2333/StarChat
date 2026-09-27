@@ -1,4 +1,7 @@
-import 'features/auth/phone_rebind_page.dart';
+import 'core/business_username_gateway.dart';
+import 'features/profile/username_change_page.dart';
+import 'features/profile/account_settings_pages.dart';
+import 'ui/components/wechat_scaffold.dart';
 import 'features/contacts/contact_actions.dart';
 import 'features/contacts/friend_acceptance_greeting_ledger.dart';
 import 'features/matrix/direct_chat_failure.dart';
@@ -14,6 +17,7 @@ import 'core/business_api_client.dart';
 import 'core/friend_acceptance_greeting_flow.dart';
 import 'core/app_connection_status.dart';
 import 'core/network_state_manager.dart';
+import 'core/performance_trace.dart';
 import 'core/outbox/message_send_scheduler.dart';
 import 'core/outbox/outbox_recovery_service.dart';
 import 'core/outbox/outbox_room_sender_registry.dart';
@@ -49,7 +53,7 @@ import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
 import 'features/contacts/user_display_name_resolver.dart';
 import 'features/discovery/discovery_page.dart';
-import 'features/moments/moments_page.dart';
+import 'features/moments/personal_moments_page.dart';
 import 'features/moments/moments_unread_controller.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_security_logger.dart';
@@ -69,6 +73,7 @@ import 'features/ledger/ledger_pages.dart';
 import 'features/ledger/ledger_business_gateway.dart';
 import 'features/matrix/direct_room_coordination_storage.dart';
 import 'features/matrix/matrix_sync_watchdog.dart';
+import 'features/matrix/app_resume_performance_observer.dart';
 import 'features/matrix/matrix_sync_recovery_controller.dart';
 import 'features/matrix/matrix_home_page.dart' show MatrixHomePage;
 import 'features/matrix/room_page.dart';
@@ -204,6 +209,7 @@ final class AppHome extends StatefulWidget {
 }
 
 final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
+  final ValueNotifier<int> _profileEntryRevision = ValueNotifier<int>(0);
   void _warmMomentPreviewCache() {
     final cache = _chatIdentityCache;
     if (cache == null) return;
@@ -249,7 +255,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// `waitForRoom`/`waitForJoinedRoom`；只有本地不存在才允许有界网络回退。
   late final RoomOpeningPolicy _roomOpening = RoomOpeningPolicy(
     probe: _MatrixRoomOpenProbe(widget.matrix),
-    diagnostics: (diagnostic) => debugPrint('[room-open] ${diagnostic.line}'),
+    diagnostics: (diagnostic) {
+      if (PerformanceTraceRecorder.instance.metrics.enabled) {
+        debugPrint('[chatflow/perf] ${diagnostic.line}');
+      }
+    },
   );
 
   /// 打开失败对话框的 single-flight 标志（防止叠层）。
@@ -1041,12 +1051,18 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!_matrixReady) return;
+    if (state == AppLifecycleState.resumed) {
+      _resumePerformance?.onForeground();
+    } else if (isPerformanceBackgroundTransition(state)) {
+      _resumePerformance?.onBackground();
+    }
     if (defaultTargetPlatform == TargetPlatform.iOS &&
         state == AppLifecycleState.resumed) {
       unawaited(_refreshIosCallTokens());
     }
     appResumed = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed) {
+      unawaited(widget.api.supportIdentities.refreshKnown());
       unawaited(_momentsUnread?.refresh());
       // 规格§四（后台恢复）：收到电话后回前台（点图标/切回）→ 立即
       // 进入通话页——不再"只响铃无页面"。
@@ -1349,6 +1365,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   void _bindConnectionStatus() {
+    _resumePerformance = AppResumePerformanceObserver(
+      recorder: PerformanceTraceRecorder.instance,
+      connectionStatus: syncWatchdog.connectionStatus,
+      syncStatus: syncWatchdog.target.syncStatus,
+      afterFirstFrame: (callback) =>
+          WidgetsBinding.instance.addPostFrameCallback((_) => callback()),
+      conversationOpen: () => _roomNavigation.hasActiveRoom,
+      softKicks: () => syncWatchdog.softKickCount,
+      hardRestarts: () => syncWatchdog.hardRestartCount,
+      syncErrors: () => syncWatchdog.syncErrorCount,
+      reconnects: () => syncWatchdog.reconnectCount,
+      lastHealthySyncAge: () => syncWatchdog.lastHealthySyncAge,
+    );
     final owner = Object();
     _connectionStatusOwner = owner;
     AppConnectionStatusHub.shared.bind<MatrixConnectionStatus>(
@@ -1367,13 +1396,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     _bindNetworkState();
   }
 
-  /// 统一网络状态（Offline First）：把 Matrix 同步看门狗的既有信号投影为
-  /// `online / weak / offline / recovering`，供会话进入与消息发送共用。
-  ///
-  /// 复用既有信号，不新增探针、不新增定时器：watchdog 已经合并了
-  /// connectivity_plus 的传输态、SDK 的 sync 状态与自身的重连序列。
+  /// Reuse the watchdog's actual connectivity observation for transport.
+  /// Matrix sync state remains a separate fact: a failed sync cannot assert
+  /// that the device transport itself went offline.
   void _bindNetworkState() {
     final manager = NetworkStateManager.shared ??= NetworkStateManager();
+    void transportListener() {
+      final available = syncWatchdog.transportAvailable.value;
+      if (available != null) manager.report(transportAvailable: available);
+    }
+
+    syncWatchdog.transportAvailable.addListener(transportListener);
+    _transportStateListener = transportListener;
+    transportListener();
     void listener() {
       // 2026-09-19 修正：`serviceUnavailable`（sync 明确报错/服务端不可达）
       // 不再把传输层事实翻成 `true`——那会让网络状态机在服务器失联时仍认为
@@ -1382,12 +1417,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // 发送侧据此快速失败并转红叹号等待恢复。
       final status = syncWatchdog.connectionStatus.value;
       manager.report(
-        transportAvailable: switch (status) {
-          MatrixConnectionStatus.offline => false,
-          MatrixConnectionStatus.unknown => null,
-          MatrixConnectionStatus.serviceUnavailable => null,
-          _ => true,
-        },
         serverReachable: status == MatrixConnectionStatus.connected
             ? true
             : status == MatrixConnectionStatus.serviceUnavailable
@@ -1404,6 +1433,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   VoidCallback? _networkStateListener;
+  VoidCallback? _transportStateListener;
+  AppResumePerformanceObserver? _resumePerformance;
 
   PersistentOutboxManager? _outbox;
   MessageSendScheduler? _outboxScheduler;
@@ -1551,6 +1582,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   void _disposeSyncWatchdog() {
     if (!_syncWatchdogStarted) return;
+    _resumePerformance?.dispose();
+    _resumePerformance = null;
     // The hub listener must be removed while the notifier is still valid.
     // Its owner check also prevents an old AppHome close from clearing a new
     // session that has already bound its own watchdog.
@@ -1561,6 +1594,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (listener != null) {
       syncWatchdog.connectionStatus.removeListener(listener);
       _networkStateListener = null;
+    }
+    final transportListener = _transportStateListener;
+    if (transportListener != null) {
+      syncWatchdog.transportAvailable.removeListener(transportListener);
+      _transportStateListener = null;
     }
     _disposeOutbox();
     syncWatchdog.dispose();
@@ -1980,23 +2018,54 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 3. 本地还没有房间 → 后台发起真实 Matrix 房间仲裁，**立即**进入
   ///    pending conversation；房间就绪后自动换成 RoomPage 并发送排队消息。
   Future<void> _openMessage(ContactDetails contact) async {
+    final trace = PerformanceTrace.start(
+      operation: PerformanceOperationType.conversationOpen,
+      transportAvailable: NetworkStateManager.shared?.transportAvailable,
+      serviceReachable: NetworkStateManager.shared?.serviceReachable,
+      appNetworkState: switch (NetworkStateManager.shared?.current) {
+        NetworkState.online => PerformanceAppNetworkState.online,
+        NetworkState.weak => PerformanceAppNetworkState.weak,
+        NetworkState.offline => PerformanceAppNetworkState.offline,
+        NetworkState.recovering => PerformanceAppNetworkState.recovering,
+        null => PerformanceAppNetworkState.unknown,
+      },
+      matrixState: !_syncWatchdogStarted
+          ? PerformanceMatrixState.unknown
+          : switch (syncWatchdog.connectionStatus.value) {
+              MatrixConnectionStatus.connected =>
+                PerformanceMatrixState.connected,
+              MatrixConnectionStatus.connecting =>
+                PerformanceMatrixState.connecting,
+              MatrixConnectionStatus.offline ||
+              MatrixConnectionStatus.serviceUnavailable =>
+                PerformanceMatrixState.disconnected,
+              MatrixConnectionStatus.unknown => PerformanceMatrixState.unknown,
+            },
+    )..mark(PerformanceStage.userAction);
     try {
       final target = await _directMessageGate.run(
         directMessageOpenKey(contact),
-        () => _resolveLocalDirectMessageTarget(contact),
+        () => _resolveLocalDirectMessageTarget(contact, trace: trace),
       );
-      if (!mounted) return;
+      if (!mounted) {
+        trace.dispose();
+        return;
+      }
       if (target != null) {
+        trace.setOpeningSource(PerformanceOpeningSource.localRoom);
         // 闸门已在此释放：下面 await 的是页面生命周期，不是闸门生命周期。
         // 已打开 → popUntil 回原房间；在打开 → 复用；未打开 → push。
         await _openManagedRoom(target.roomId,
             roomName: target.contact.displayName,
             initialContact: target.contact,
-            source: RoomOpenSource.contactProfile);
+            source: RoomOpenSource.contactProfile,
+            performanceTrace: trace);
         return;
       }
-      await _openPendingConversation(contact);
+      trace.setOpeningSource(PerformanceOpeningSource.pendingConversation);
+      await _openPendingConversation(contact, trace: trace);
     } catch (error) {
+      trace.finish(result: PerformanceResult.failed);
       // 失败时闸门已自动释放（见 DirectMessageOpenGate.run），弹窗「重试」
       // 可以重新进入本方法。
       if (!mounted) return;
@@ -2011,9 +2080,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 仍然保留身份权威解析：好友已不在目录、或拿不到有效 matrixUserId 时
   /// 照旧抛出（这是终态失败，不是网络问题）。
   Future<DirectMessageTarget?> _resolveLocalDirectMessageTarget(
-      ContactDetails contact) async {
+      ContactDetails contact,
+      {PerformanceTrace? trace}) async {
     final cache = await _identityCache();
     final authoritative = await resolveFriendContact(cache, contact);
+    trace?.mark(PerformanceStage.identityLookupDone);
     final matrixUserId = authoritative.matrixUserId.trim();
     if (matrixUserId.isEmpty) {
       throw StateError('The contact is no longer a current friend');
@@ -2021,12 +2092,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 1) SDK 本地库里已有安全快照 → 直接用它。
     final cached = await directChats.tryLocal(matrixUserId);
     if (cached != null && cached.roomId.trim().isNotEmpty) {
+      trace?.mark(PerformanceStage.localRoomLookupDone);
       return DirectMessageTarget(
           roomId: cached.roomId.trim(), contact: authoritative);
     }
     // 2) 协调 intent 里持久化的房间号 + 本地确实存在该房间 → 直接进入。
     //    成员/加密状态由 RoomPage 在后台刷新，不阻塞进入。
     final hint = await directChats.localRoomHint(matrixUserId);
+    trace?.mark(PerformanceStage.localRoomLookupDone);
     if (hint != null && widget.matrix.knowsRoomLocally(hint)) {
       return DirectMessageTarget(roomId: hint, contact: authoritative);
     }
@@ -2038,7 +2111,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   final _pendingConversationRoutes =
       <String, Route<PendingConversationResult>>{};
 
-  Future<void> _openPendingConversation(ContactDetails contact) async {
+  Future<void> _openPendingConversation(ContactDetails contact,
+      {PerformanceTrace? trace}) async {
     final cache = await _identityCache();
     final authoritative = await resolveFriendContact(cache, contact);
     final matrixUserId = authoritative.matrixUserId.trim();
@@ -2047,21 +2121,29 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
     Future<DirectChatRoom> openRoom() => directChats.open(matrixUserId);
 
-    if (!mounted) return;
+    if (!mounted) {
+      trace?.dispose();
+      return;
+    }
     final navigator = Navigator.of(context, rootNavigator: true);
     final existing = _pendingConversationRoutes[matrixUserId];
     if (existing != null && existing.isActive) {
+      trace?.dispose();
       navigator.popUntil((route) => identical(route, existing));
       return;
     }
+    var pendingOpenFailed = false;
     final route = MotionPageRoute<PendingConversationResult>(
         builder: (_) => PendingConversationPage(
+            performanceTrace: trace,
             contact: authoritative,
             openRoom: openRoom,
+            onFailure: (_) => pendingOpenFailed = true,
             networkState: NetworkStateManager.shared?.state,
             outbox: _outbox,
             recovery: _outboxRecovery));
     _pendingConversationRoutes[matrixUserId] = route;
+    trace?.mark(PerformanceStage.routePushStarted);
     PendingConversationResult? result;
     try {
       result = await navigator.push(route);
@@ -2070,15 +2152,27 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         _pendingConversationRoutes.remove(matrixUserId);
       }
     }
-    if (!mounted || result == null) return;
-    if (result.roomId.isEmpty) return;
+    if (!mounted || result == null || result.roomId.isEmpty) {
+      if (trace?.isRecording == true) {
+        trace!.finish(
+          result: pendingOpenFailed
+              ? (NetworkStateManager.shared?.current == NetworkState.offline ||
+                      NetworkStateManager.shared?.current == NetworkState.weak
+                  ? PerformanceResult.waitingNetwork
+                  : PerformanceResult.failed)
+              : PerformanceResult.cancelled,
+        );
+      }
+      return;
+    }
     // 房间就绪：按既有唯一入口进入 RoomPage；排队消息作为初始 outbox 发送
     // （弱网/无网时由消息状态机继续“等待发送”并在恢复后重试）。
     await _openManagedRoom(result.roomId,
         roomName: authoritative.displayName,
         initialContact: authoritative,
         source: RoomOpenSource.contactProfile,
-        outboxLocalIds: result.outboxLocalIds);
+        outboxLocalIds: result.outboxLocalIds,
+        performanceTrace: trace);
   }
 
   /// BUG4：通讯录 → 群聊 → 群聊通讯录列表（已 join + saved=true）。
@@ -2108,7 +2202,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           ContactDetails? initialContact,
           RoomOpenSource source = RoomOpenSource.unknown,
           List<String> outbox = const <String>[],
-          List<String> outboxLocalIds = const <String>[]}) =>
+          List<String> outboxLocalIds = const <String>[],
+          PerformanceTrace? performanceTrace}) =>
       _openManagedRoomRequest(RoomOpenRequest(
         roomId: roomId,
         roomName: roomName ?? '',
@@ -2116,6 +2211,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         source: source,
         outbox: outbox,
         outboxLocalIds: outboxLocalIds,
+        performanceTrace: performanceTrace,
       ));
 
   /// **所有入口进入房间的唯一策略路径**（唯一失败反馈点）。
@@ -2130,19 +2226,23 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 重跑（幂等，协调器与网关都保证不会重复建房）。`_roomOpenFailureVisible`
   /// 仍作 short-window single-flight：toast 显示期间连点不会叠出多条提示。
   Future<void> _openManagedRoomRequest(RoomOpenRequest request) async {
-    if (_roomOpenFailureVisible) return;
+    if (_roomOpenFailureVisible) {
+      request.performanceTrace?.dispose();
+      return;
+    }
     // 逻辑会话归一化（缺陷 0919 项 3）：搜索/通知命中历史孤儿房间时，
     // 只允许只读定位打开（保留 roomId+anchor），不作为独立可发送会话。
-    await widget.matrix.prepareConversationAssociations();
-    final normalized = normalizeDuplicateRoomOpen(request,
-        primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync);
     try {
-      await _roomOpening.open(
-        normalized,
+      await _roomOpening.openPrepared(
+        request,
+        prepare: widget.matrix.prepareConversationAssociations,
+        normalize: (traced) => normalizeDuplicateRoomOpen(traced,
+            primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync),
         navigate: _roomNavigation.open,
         awaitLocalRoom: _awaitLocalRoom,
       );
     } on RoomOpenFailure catch (failure) {
+      request.performanceTrace?.finish(result: PerformanceResult.failed);
       if (!mounted) return;
       _roomOpenFailureVisible = true;
       try {
@@ -2213,8 +2313,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _openManagedRoomRoute(
       RoomOpenRequest request, RoomRouteHandle handle) async {
     final roomId = request.roomId;
+    final trace = request.performanceTrace ??
+        (PerformanceTrace.start(
+            operation: PerformanceOperationType.conversationOpen)
+          ..mark(PerformanceStage.userAction));
     var stage = 'identity';
-    debugPrint('[room-open-flow] stage=$stage room=$roomId');
     MotionPageRoute<void>? route;
     ValueNotifier<RoomOpenRequest>? navigationRequests;
     var closed = false;
@@ -2226,12 +2329,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
     try {
       final identityCache = await _identityCache();
+      trace.mark(PerformanceStage.identityLookupDone);
       final name = request.roomName.trim().isEmpty
           ? await widget.matrix.conversations.roomDisplayName(roomId)
           : request.roomName.trim();
       stage = 'lease';
-      debugPrint('[room-open-flow] stage=lease room=$roomId');
+      trace.mark(PerformanceStage.roomAttachStarted);
       final lease = await widget.matrix.openRoomLease(roomId);
+      trace.mark(PerformanceStage.roomAttachDone);
 
       if (!mounted) {
         await lease.cancel();
@@ -2242,6 +2347,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       route = MotionPageRoute<void>(
           builder: (_) => RoomPage(
                 api: widget.api,
+                performanceTrace: trace,
+                onPerformanceContentReady:
+                    _resumePerformance?.onConversationReady,
+                remoteSyncStatus: _syncWatchdogStarted
+                    ? syncWatchdog.target.syncStatus
+                    : null,
+                remoteSyncAlreadyReady: _syncWatchdogStarted &&
+                    syncWatchdog.connectionStatus.value ==
+                        MatrixConnectionStatus.connected,
                 roomLease: lease,
                 roomName: name,
                 initialContact: request.initialContact,
@@ -2251,6 +2365,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 initialAnchorRoomId: request.anchorRoomId,
                 navigationRequests: navigationRequests,
                 requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
+                onOutboxCorrelation: (id, correlation) =>
+                    _outboxScheduler?.registerCorrelation(id, correlation),
+                outboxCorrelationFor: (id) =>
+                    _outboxScheduler?.correlationFor(id),
                 resolveDirectSendTarget: _resolveNewDirectSend,
                 onDirectTargetChanged: (target) => _replaceRecoveredPage(
                     roomId,
@@ -2269,7 +2387,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 initialIdentityCache: identityCache,
                 readOnly: request.readOnly,
               ));
-      handle.register(route, onReopen: (next) => navigationRequests!.value = next);
+      handle.register(route,
+          onReopen: (next) => navigationRequests!.value = next);
       // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
       // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程）。
       StatisticsRoomScope.enter(roomId);
@@ -2282,7 +2401,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         }
       });
       stage = 'ready';
-      debugPrint('[room-open-flow] stage=ready room=$roomId');
       request.onRoomReady?.call();
       // 已知竞态兜底（低端机）：同帧 modal→pop→push 会吞掉房间 push——路由
       // 从未进栈，`visible` 永不完成 → 列表侧 `_openingRooms` 守卫被永久占住，
@@ -2312,6 +2430,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
 
       stage = 'push';
+      trace.mark(PerformanceStage.routePushStarted);
       final visible = navigator.push(route);
       WidgetsBinding.instance.addPostFrameCallback((_) => verifyLanded());
       final previous = handle.replacedRoute;
@@ -2330,10 +2449,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // their final frame. Keep their timeline and lease alive until disposal.
       await visible;
       await route.completed;
-    } catch (error) {
-      debugPrint('[room-open-flow] FAILED stage=$stage room=$roomId error=$error');
+    } catch (_) {
+      trace.finish(result: PerformanceResult.failed);
+      debugPrint('[chatflow/perf] room_open_failed stage=$stage');
       rethrow;
     } finally {
+      if (!trace.isFinished) trace.dispose();
       StatisticsRoomScope.leave(roomId);
       final finalRoute = route;
       if (finalRoute != null) handle.release(finalRoute);
@@ -2431,6 +2552,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void dispose() {
     _disposed = true;
+    _profileEntryRevision.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _unreadSubscription?.cancel();
     _friendRequestPollTimer?.cancel();
@@ -2637,6 +2759,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               onTap: (index) {
                 if (index == 2) unawaited(_momentsUnread?.refresh());
                 if (index == 0) unawaited(_refreshUnreadCount());
+                if (index == 3) _profileEntryRevision.value++;
               },
               activeColor: const Color(0xff07c160),
               items: [
@@ -2753,6 +2876,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                     onLogout: widget.onLogout,
                     onClearLocalChatData: widget.matrix.clearLocalChatData,
                     identityCache: _chatIdentityCache,
+                    refreshSignal: _profileEntryRevision,
                   ),
               },
             ),
@@ -2889,11 +3013,13 @@ final class ProfileTabPage extends StatefulWidget {
     this.onClearLocalChatData,
     this.identityCache,
     this.contactActions,
+    this.refreshSignal,
   });
   final BusinessApiClient api;
   final ContactActions? contactActions;
   final Future<void> Function() onLogout;
   final ProfileRepository? identityCache;
+  final ValueListenable<int>? refreshSignal;
   final Future<void> Function()? onClearLocalChatData;
   @override
   State<ProfileTabPage> createState() => _ProfileTabPageState();
@@ -2903,21 +3029,78 @@ final class ProfileTabPage extends StatefulWidget {
 void _openLedgerAllBills(BuildContext context, BusinessApiClient? api,
     ProfileRepository? identityCache) {
   if (api == null) return;
-  Navigator.of(context).push(MotionPageRoute<void>(
+  Navigator.of(context, rootNavigator: true).push(MotionPageRoute<void>(
       builder: (_) => LedgerListPage(
           gateway: BusinessLedgerGateway(api), identityCache: identityCache)));
 }
 
-final class _ProfileTabPageState extends State<ProfileTabPage> {
+final class _ProfileTabPageState extends State<ProfileTabPage>
+    with WidgetsBindingObserver {
   late ProfileController controller;
   late BusinessApiClient _controllerApi;
   late int _controllerSessionEpoch;
   String? _controllerAccountKey;
+  int _momentUnreadCount = 0;
+  int _momentUnreadRequest = 0;
+  Timer? _momentUnreadRefreshTimer;
+
+  bool get _mePageVisible {
+    if (!mounted || !TickerMode.valuesOf(context).enabled) return false;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      return false;
+    }
+    // Me children use the root Navigator. Do not poll while a child covers it.
+    return !Navigator.of(context, rootNavigator: true).canPop();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _mePageVisible) {
+      unawaited(_refreshMomentUnread());
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     controller = _createController();
+    widget.refreshSignal?.addListener(_profileEntered);
+    _momentUnreadRefreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (_mePageVisible) unawaited(_refreshMomentUnread());
+    });
+    unawaited(_refreshMomentUnread());
+  }
+
+  void _profileEntered() => unawaited(_refreshMomentUnread());
+
+  Future<void> _refreshMomentUnread() async {
+    final api = widget.api;
+    final cache = widget.identityCache;
+    final accountKey = cache?.accountKey;
+    final epoch = api.sessionEpoch;
+    final request = ++_momentUnreadRequest;
+    if (accountKey == null) return;
+    try {
+      final userId = await api.currentUserId();
+      if (userId == null || userId.isEmpty) return;
+      final response = await api.momentUnreadCount();
+      if (!mounted ||
+          request != _momentUnreadRequest ||
+          !identical(widget.api, api) ||
+          api.sessionEpoch != epoch ||
+          !identical(widget.identityCache, cache) ||
+          cache?.accountKey != accountKey ||
+          await api.currentUserId() != userId) {
+        return;
+      }
+      final count = response['count'];
+      setState(
+          () => _momentUnreadCount = count is int && count > 0 ? count : 0);
+    } catch (_) {
+      // A transient inbox failure preserves the last account-scoped badge.
+    }
   }
 
   ProfileController _createController() {
@@ -2947,7 +3130,9 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
         if (!ownsCurrentSession() || cache == null) return;
         await cache.applyUpdatedProfile(profile);
       },
-      avatarCacheIdentity: (profile) => cache?.resolveIdentity(username: profile.username).cacheKey ?? profile.fallbackSeed,
+      avatarCacheIdentity: (profile) =>
+          cache?.resolveIdentity(username: profile.username).cacheKey ??
+          profile.fallbackSeed,
       onAvatarUpdated: _refreshAvatarDisplays,
       initialProfile: cache?.profile,
     );
@@ -2956,12 +3141,19 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   void didUpdateWidget(covariant ProfileTabPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshSignal != widget.refreshSignal) {
+      oldWidget.refreshSignal?.removeListener(_profileEntered);
+      widget.refreshSignal?.addListener(_profileEntered);
+    }
     if (!identical(_controllerApi, widget.api) ||
         _controllerSessionEpoch != widget.api.sessionEpoch ||
         !identical(oldWidget.identityCache, widget.identityCache) ||
         _controllerAccountKey != widget.identityCache?.accountKey) {
       controller.dispose();
       controller = _createController();
+      _momentUnreadRequest++;
+      _momentUnreadCount = 0;
+      unawaited(_refreshMomentUnread());
     }
   }
 
@@ -2972,6 +3164,10 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _momentUnreadRefreshTimer?.cancel();
+    widget.refreshSignal?.removeListener(_profileEntered);
+    _momentUnreadRequest++;
     controller.dispose();
     super.dispose();
   }
@@ -2980,46 +3176,74 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   Widget build(BuildContext context) => ProfileExperiencePage(
       key: ObjectKey(controller),
       controller: controller,
+      accountApi: widget.api,
+      onUsername: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+          builder: (_) => UsernameChangePage(
+              gateway: BusinessUsernameGateway(widget.api),
+              controller: controller))),
+      supportIdentities: widget.api.supportIdentities,
+      matrixUserId:
+          widget.identityCache?.accountKey?.replaceFirst('matrix:', ''),
+      momentInteractionUnreadCount: _momentUnreadCount,
       onMoments: () async {
+        final api = widget.api;
         final cache = widget.identityCache;
         if (cache == null) return;
-        final page = await MomentsPage.prepare(
-          api: widget.api,
+        final accountKey = cache.accountKey;
+        final epoch = api.sessionEpoch;
+        String? userId;
+        String? verifiedUserId;
+        try {
+          userId = await api.currentUserId();
+          verifiedUserId = await api.currentUserId();
+        } catch (_) {
+          return;
+        }
+        if (!mounted ||
+            userId == null ||
+            userId.isEmpty ||
+            !identical(widget.api, api) ||
+            api.sessionEpoch != epoch ||
+            !identical(widget.identityCache, cache) ||
+            cache.accountKey != accountKey ||
+            verifiedUserId != userId) {
+          return;
+        }
+        final page = PersonalMomentsPage(
+          api: api,
           identityCache: cache,
           contactActions: widget.contactActions,
+          userId: userId,
+          displayName: controller.state.profile?.nickname ??
+              cache.profile?.nickname ??
+              '',
+          publishedOnly: true,
+          onNotificationsChanged: _profileEntered,
         );
         if (!context.mounted) return;
-        Navigator.of(context, rootNavigator: true).push(
-            MotionPageRoute(fullscreenDialog: true, builder: (_) => page));
+        await Navigator.of(context, rootNavigator: true)
+            .push(MotionPageRoute<void>(builder: (_) => page));
+        if (mounted) unawaited(_refreshMomentUnread());
       },
-      onCaibi: () => Navigator.push(
-          context,
-          MotionPageRoute(
-              builder: (_) => CaibiPage(
-                  api: widget.api,
-                  onOpenAllBills: () => _openLedgerAllBills(
-                      context, widget.api, widget.identityCache)))),
-      onWallet: () => Navigator.push(context,
-          MotionPageRoute(builder: (_) => WalletPage(api: widget.api))),
+      onCaibi: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+          builder: (_) => CaibiPage(
+              api: widget.api,
+              onOpenAllBills: () => _openLedgerAllBills(
+                  context, widget.api, widget.identityCache)))),
+      onWallet: () => Navigator.of(context, rootNavigator: true)
+          .push(MotionPageRoute(builder: (_) => WalletPage(api: widget.api))),
       inviteGateway: widget.api,
-      onInvite: () => Navigator.push(
-          context,
-          MotionPageRoute(
-              builder: (_) => InviteCodePage(
-                  controller: InviteCodeController(gateway: widget.api)))),
+      onInvite: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+          builder: (_) => InviteCodePage(
+              controller: InviteCodeController(gateway: widget.api, historyGateway: widget.api)))),
       onQrCode: () {
         final profile = controller.state.profile;
         if (profile == null) return;
-        Navigator.push(context,
-            MotionPageRoute(builder: (_) => MyQrCodePage(profile: profile, avatarCacheKey: controller.avatarCacheKey)));
+        Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+            builder: (_) => MyQrCodePage(
+                profile: profile, avatarCacheKey: controller.avatarCacheKey)));
       },
-      onSettings: () => Navigator.push(
-          context,
-          MotionPageRoute(
-              builder: (_) => SettingsPage(
-                  api: widget.api,
-                  onLogout: widget.onLogout,
-                  onClearLocalChatData: widget.onClearLocalChatData))));
+      onSettings: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(builder: (_) => SettingsPage(api: widget.api, onLogout: widget.onLogout, onClearLocalChatData: widget.onClearLocalChatData, onProfileUpdated: controller.load))));
 }
 
 final class ProfilePage extends StatelessWidget {
@@ -3089,11 +3313,13 @@ final class SettingsPage extends StatefulWidget {
       {super.key,
       required this.api,
       required this.onLogout,
-      this.onClearLocalChatData});
+      this.onClearLocalChatData,
+      this.onProfileUpdated});
 
   final BusinessApiClient api;
   final Future<void> Function() onLogout;
   final Future<void> Function()? onClearLocalChatData;
+  final Future<void> Function()? onProfileUpdated;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -3193,25 +3419,58 @@ final class _SettingsPageState extends State<SettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: CupertinoNavigationBar(
-            automaticBackgroundVisibility: false,
-            enableBackgroundFilterBlur: false,
-            middle: Text('设置')),
+  Widget build(BuildContext context) => WeChatPageScaffold(
+        title: '设置',
         child: SafeArea(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
             children: [
+              const Padding(
+                  padding: EdgeInsets.all(WeChatSpacing.md),
+                  child: Text('账号',
+                      style: TextStyle(
+                          color: WeChatColors.textSecondary,
+                          fontSize: WeChatTypography.subhead))),
               _SettingsTile(
-                icon: CupertinoIcons.info_circle,
-                label: '账号与隐私',
-                onTap: () => Navigator.push(
-                  context,
-                  MotionPageRoute(
-                    builder: (_) => AccountPrivacyPage(api: widget.api),
-                  ),
-                ),
+                icon: CupertinoIcons.lock,
+                label: '账号安全',
+                onTap: () {
+                  final navigator = Navigator.of(context, rootNavigator: true);
+                  final credentialsApi = widget.api;
+                  final passwordSessionEpoch = credentialsApi.sessionEpoch;
+                  Navigator.push(
+                      context,
+                      MotionPageRoute(
+                          builder: (_) => AccountSecurityPage(
+                                api: widget.api,
+                                onBindingsChanged: widget.onProfileUpdated,
+                                onPasswordChanged: () async {
+                                  // PASSWORD_CHANGED already closed business authorization
+                                  // through the existing session invalidation lifecycle.
+                                  // Only dismiss this flow for the session that reset it.
+                                  if (credentialsApi.sessionEpoch ==
+                                          passwordSessionEpoch + 1 &&
+                                      navigator.mounted) {
+                                    navigator
+                                        .popUntil((route) => route.isFirst);
+                                  }
+                                },
+                              )));
+                },
               ),
+              const Padding(
+                  padding: EdgeInsets.all(WeChatSpacing.md),
+                  child: Text('通用',
+                      style: TextStyle(
+                          color: WeChatColors.textSecondary,
+                          fontSize: WeChatTypography.subhead))),
+              _SettingsTile(
+                  icon: CupertinoIcons.chat_bubble,
+                  label: '聊天',
+                  onTap: () => Navigator.push(
+                      context,
+                      MotionPageRoute(
+                          builder: (_) => ChatSettingsPage(api: widget.api)))),
               _SettingsTile(
                 icon: CupertinoIcons.bell,
                 label: '消息通知',
@@ -3290,60 +3549,23 @@ final class _SettingsTile extends StatelessWidget {
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) {
-    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
-    final foreground =
-        dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: onTap,
-      child: Container(
-        height: 57,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
-          border: Border(
-            bottom: BorderSide(
-              width: .5,
-              color: dark ? WeChatColors.darkDivider : WeChatColors.divider,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 40,
-              child: Icon(icon, size: 20, color: foreground),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(fontSize: 16, color: foreground),
-              ),
-            ),
-            if (detail != null)
-              Text(
-                detail!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: WeChatColors.textSecondary,
-                ),
-              ),
-            const SizedBox(width: 4),
-            if (trailing != null)
-              trailing!
-            else
-              const Icon(
-                CupertinoIcons.chevron_right,
-                size: 12,
-                color: WeChatColors.textSecondary,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => WeChatListTile(
+        leading: Icon(icon, color: WeChatColors.resolveTextPrimary(context)),
+        title: Text(label,
+            style: const TextStyle(fontSize: WeChatTypography.callout)),
+        trailing: trailing ??
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              if (detail != null)
+                Text(detail!,
+                    style: const TextStyle(
+                        fontSize: WeChatTypography.caption,
+                        color: WeChatColors.textSecondary)),
+              const SizedBox(width: WeChatSpacing.xs),
+              const CupertinoListTileChevron(),
+            ]),
+        showDivider: true,
+        onTap: onTap,
+      );
 }
 
 /// BUG-08：「减少动态效果」开关（此前是不可点击的占位行，
@@ -3374,66 +3596,12 @@ final class _MotionSettingsTile extends StatelessWidget {
       );
 }
 
-final class AccountPrivacyPage extends StatefulWidget {
+/// Compatibility entry for callers of the former privacy page.
+final class AccountPrivacyPage extends StatelessWidget {
   const AccountPrivacyPage({super.key, required this.api});
   final BusinessApiClient api;
   @override
-  State<AccountPrivacyPage> createState() => _AccountPrivacyPageState();
-}
-
-final class _AccountPrivacyPageState extends State<AccountPrivacyPage> {
-  bool enabled = true;
-  bool loading = true;
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      enabled = await widget.api.autoAllowGroupJoin();
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  Future<void> _update(bool value) async {
-    setState(() => enabled = value);
-    try {
-      await widget.api.setAutoAllowGroupJoin(value);
-    } catch (_) {
-      if (mounted) setState(() => enabled = !value);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(
-          automaticBackgroundVisibility: false,
-          enableBackgroundFilterBlur: false,
-          middle: Text('账号与隐私'),
-        ),
-        child: SafeArea(
-            child: loading
-                ? const Center(child: CupertinoActivityIndicator())
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                    children: [
-                      WeChatListTile(
-                        title: const Text('绑定或更换手机号'),
-                        onTap: () => Navigator.of(context).push(MotionPageRoute(
-                            builder: (_) => PhoneRebindPage(api: widget.api))),
-                      ),
-                      WeChatListTile(
-                        title: const Text('是否自动允许加入群聊'),
-                        subtitle: const Text('开启后，好友创建群聊时将自动加入'),
-                        trailing:
-                            CupertinoSwitch(value: enabled, onChanged: _update),
-                      )
-                    ],
-                  )),
-      );
+  Widget build(BuildContext context) => ChatSettingsPage(api: api);
 }
 
 /// 临时房间租约（只用于发送）：发送完成后由调度器释放。

@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fake_async/fake_async.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/search/global_search_controller.dart';
 import 'package:liuhetong_mobile/features/search/global_search_index.dart';
 import 'package:liuhetong_mobile/features/search/global_search_models.dart';
@@ -150,6 +152,27 @@ void main() {
   });
 
   group('GlobalSearchController', () {
+    test('first local index query marks actual search and coarse hit count',
+        () async {
+      final recorder = PerformanceTraceRecorder(enabled: () => true);
+      final trace = recorder.start(PerformanceOperationType.search);
+      final controller = GlobalSearchController(
+        loadContacts: () async => const [],
+        loadRooms: () async => const [],
+        index: _indexWith({
+          '!group:test': [_record(r'$one', 'needle payload')],
+        }),
+        searchTrace: () => trace,
+      );
+      controller.setQuery('needle');
+      await controller.refresh();
+      final record = trace.finish();
+      expect(record.stagesUs, contains(PerformanceStage.localSearchStarted));
+      expect(record.stagesUs, contains(PerformanceStage.localSearchDone));
+      expect(record.resultCountBucket, PerformanceRowCountBucket.oneToTwenty);
+      expect(record.toJson().toString(), isNot(contains('needle payload')));
+      controller.dispose();
+    });
     GlobalSearchController build(GlobalSearchIndex index,
             {Duration debounce = const Duration(milliseconds: 250),
             int sectionLimit = 3,
@@ -275,18 +298,24 @@ void main() {
       controller.dispose();
     });
 
-    test('debounce delays execution but eventually publishes', () async {
-      final controller = build(
-        _indexWith({
-          '!group:test': [_record(r'$hit', '项目文件')],
-        }),
-        debounce: const Duration(milliseconds: 80),
-      );
-      controller.setQuery('项目');
-      expect(controller.hasResults, isFalse, reason: '防抖期间不执行查询');
-      await Future<void>.delayed(const Duration(milliseconds: 140));
-      expect(controller.hasResults, isTrue);
-      controller.dispose();
+    test('debounce delays execution but eventually publishes', () {
+      fakeAsync((time) {
+        final controller = build(
+          _indexWith({
+            '!group:test': [_record(r'$hit', '项目文件')],
+          }),
+          debounce: const Duration(milliseconds: 80),
+        );
+        controller.setQuery('项目');
+        expect(controller.hasResults, isFalse, reason: '防抖期间不执行查询');
+        time.elapse(const Duration(milliseconds: 79));
+        time.flushMicrotasks();
+        expect(controller.hasResults, isFalse);
+        time.elapse(const Duration(milliseconds: 1));
+        time.flushMicrotasks();
+        expect(controller.hasResults, isTrue);
+        controller.dispose();
+      });
     });
 
     test('loader failure surfaces an error instead of crashing', () async {

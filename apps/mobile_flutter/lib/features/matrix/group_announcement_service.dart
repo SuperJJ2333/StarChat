@@ -1,5 +1,8 @@
 import 'dart:typed_data';
+import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:matrix/matrix.dart';
+import 'package:matrix/encryption.dart' show DecryptException;
 import 'group_room_authority.dart';
 import 'gif_image_policy.dart';
 import 'content_addressed_media.dart';
@@ -23,6 +26,13 @@ final class AnnouncementPendingDecryption implements Exception {
   const AnnouncementPendingDecryption();
 }
 
+// The SDK cannot request a session for this encrypted payload (for example an
+// unsupported algorithm or a rejected replay). Do not promise another retry
+// will decrypt it, and do not weaken the SDK's validation to display it.
+final class AnnouncementDecryptionUnavailable implements Exception {
+  const AnnouncementDecryptionUnavailable();
+}
+
 final class AnnouncementBlock {
   const AnnouncementBlock.text(this.value)
       : isImage = false,
@@ -43,10 +53,14 @@ final class AnnouncementBlock {
 }
 
 final class GroupAnnouncement {
-  const GroupAnnouncement(this.blocks, {this.publisherName, this.publishedAt});
+  const GroupAnnouncement(this.blocks,
+      {this.publisherName, this.publishedAt, this.publicationId});
   final List<AnnouncementBlock> blocks;
   final String? publisherName;
   final DateTime? publishedAt;
+
+  /// The selected Matrix document event, stable across room/page recreation.
+  final String? publicationId;
   bool get isEffective => blocks.any(
       (block) => block.localBytes != null || block.value.trim().isNotEmpty);
   String get preview =>
@@ -57,7 +71,7 @@ final class GroupAnnouncement {
       (isEffective ? '[图片公告]' : '');
   void validateForSave() {
     if (blocks.length > maxAnnouncementBlocks) {
-      throw const FormatException('群公告最多100段，请删除部分内容后重试');
+      throw const FormatException('群公告内容已达上限，请删除部分图片后重试');
     }
     var total = 0;
     for (final block in blocks) {
@@ -118,9 +132,48 @@ abstract interface class GroupAnnouncementService {
 final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   MatrixGroupAnnouncementService(this.room);
   final Room room;
-  // Page/banner instances share a room. Sync-driven reloads must not repeatedly
-  // broadcast the same missing-session request; a later retry remains possible.
-  static final _keyRequests = Expando<Map<String, DateTime>>();
+  // Stop retrying the same inaccessible historical payload on every sync.
+  // Cached ciphertext can still decrypt locally when a valid key arrives.
+  static final _unavailable = Expando<Map<String, Event>>();
+  static const _diagnosticsEnabled =
+      bool.fromEnvironment('ANNOUNCEMENT_DIAGNOSTICS');
+
+  // Temporary, opt-in device diagnostics. Never send these through telemetry:
+  // only fixed codes and presence booleans can reach the local log sink.
+  void _diagnose(String stage, [Event? event]) {
+    if (!_diagnosticsEnabled) return;
+    final badEncrypted = event?.messageType == MessageTypes.BadEncrypted;
+    final body = badEncrypted ? event?.content['body'] : null;
+    final code = !badEncrypted
+        ? 'none'
+        : switch (body) {
+            DecryptException.unknownSession => 'no_session',
+            'UNKNOWN_MESSAGE_INDEX' ||
+            'Exception: UNKNOWN_MESSAGE_INDEX' =>
+              'unknown_index',
+            DecryptException.unknownAlgorithm => 'unsupported',
+            DecryptException.channelCorrupted => 'corrupted',
+            _ => 'other',
+          };
+    final source = event?.originalSource ?? event;
+    debugPrint('ANNOUNCEMENT_DIAGNOSTIC ${jsonEncode({
+          'stage': stage,
+          'code': code,
+          'event_exists': event != null,
+          'encrypted': event?.type == EventTypes.Encrypted,
+          'bad_encrypted': badEncrypted,
+          'can_request': event?.content['can_request_session'] == true,
+          'has_original': event?.originalSource != null,
+          'has_ciphertext': source?.content['ciphertext'] is String,
+          'has_session': source?.content['session_id'] is String ||
+              event?.content['session_id'] is String,
+          'has_sender_key': source?.content['sender_key'] is String ||
+              event?.content['sender_key'] is String,
+          'crypto_enabled': room.client.encryptionEnabled,
+          'joined': room.membership == Membership.join,
+        })}');
+  }
+
   @override
   bool get canEdit => GroupRoomAuthority(room).canManage;
   @override
@@ -129,8 +182,10 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
             .where((update) => update.rooms?.join?.containsKey(room.id) == true)
             .listen((_) => controller.add(null));
         // Session recovery can arrive without a room timeline/state update.
-        final keys = room.onSessionKeyReceived.stream
-            .listen((_) => controller.add(null));
+        final keys = room.onSessionKeyReceived.stream.listen((_) {
+          _diagnose('key_received');
+          controller.add(null);
+        });
         controller.onCancel = () async {
           await sync.cancel();
           await keys.cancel();
@@ -144,8 +199,12 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
       // Read-only compatibility for announcements published by older clients.
       // An existing empty reference is an explicit clear and must win over it.
       final legacy = room.topic.trim();
+      final topicState = room.getState(EventTypes.RoomTopic);
       return GroupAnnouncement(
-          legacy.isEmpty ? [] : [AnnouncementBlock.text(legacy)]);
+          legacy.isEmpty ? [] : [AnnouncementBlock.text(legacy)],
+          publicationId: legacy.isNotEmpty && topicState is Event
+              ? topicState.eventId
+              : null);
     }
     if (reference.content['event_id'] == null) {
       return const GroupAnnouncement([]);
@@ -158,7 +217,7 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
         expectedSenderId: reference.senderId);
     if (event == null ||
         event.senderId != reference.senderId ||
-        event.originalSource?.type != EventTypes.Encrypted) {
+        event.type != EventTypes.Message) {
       throw StateError('公告暂不可用');
     }
     final document = GroupAnnouncement.fromContent(event.content);
@@ -169,7 +228,8 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     return GroupAnnouncement(document.blocks,
         publisherName:
             name == null || name.isEmpty || name.startsWith('@') ? '群成员' : name,
-        publishedAt: event.originServerTs);
+        publishedAt: event.originServerTs,
+        publicationId: eventId);
   }
 
   void _requireMember() {
@@ -181,7 +241,15 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   Future<Event?> _loadEncryptedEvent(String eventId,
       {String? expectedSenderId}) async {
     _requireMember();
-    var event = await room.getEventById(eventId);
+    final failed = _unavailable[room]?[eventId];
+    // Cached failures only retry local keys. No new network or key request is
+    // generated by rebuilds; a subsequently received key can still unlock it.
+    var event = failed == null
+        ? await room.getEventById(eventId)
+        : room.client.encryption?.decryptRoomEventSync(room.id,
+                Event.fromMatrixEvent(failed.originalSource ?? failed, room)) ??
+            failed;
+    _diagnose('loaded', event);
     if (event != null &&
         expectedSenderId != null &&
         event.senderId != expectedSenderId) {
@@ -194,48 +262,25 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
       event = Event.fromMatrixEvent(event!.originalSource!, room);
     }
     // SDK cache hits can still be ciphertext; its network path alone decrypts.
-    if (event?.type == EventTypes.Encrypted && room.client.encryptionEnabled) {
+    if (failed == null &&
+        event?.type == EventTypes.Encrypted &&
+        room.client.encryptionEnabled) {
       event = await room.client.encryption?.decryptRoomEvent(room.id, event!);
     }
+    _diagnose('decrypted', event);
     _requireMember();
-    if (event?.type == EventTypes.Encrypted &&
-        event?.messageType == MessageTypes.BadEncrypted &&
-        event?.content['can_request_session'] == true &&
-        event?.content['session_id'] is String &&
-        event?.content['sender_key'] is String) {
-      final requestId =
-          '${event!.content['session_id']}|${event.content['sender_key']}';
-      final requests = _keyRequests[room] ??= <String, DateTime>{};
-      final now = DateTime.now();
-      requests.removeWhere(
-          (_, at) => now.difference(at) >= const Duration(seconds: 30));
-      if (!requests.containsKey(requestId)) {
-        requests[requestId] = now;
-        try {
-          // SDK auto-decryption only tries online backup by default. The normal
-          // requestKey API also asks eligible devices, retaining SDK key-sharing
-          // authorization and historical message-index restrictions.
-          await event.requestKey();
-        } catch (_) {
-          requests.remove(requestId);
-          rethrow;
-        }
-        _requireMember();
-        // Backup recovery can finish synchronously with the request, before the
-        // caller has subscribed to key notifications.
-        event = await room.client.encryption?.decryptRoomEvent(room.id,
-            Event.fromMatrixEvent(event.originalSource ?? event, room));
-        _requireMember();
-      }
-    }
     if (event?.type == EventTypes.Encrypted ||
         event?.messageType == MessageTypes.BadEncrypted) {
-      throw const AnnouncementPendingDecryption();
+      if (event != null) {
+        (_unavailable[room] ??= <String, Event>{})[eventId] = event;
+      }
+      throw const AnnouncementDecryptionUnavailable();
     }
     return event;
   }
 
   void _requireEncryptedManager() {
+    _requireMember();
     GroupRoomAuthority(room).requireManager();
     if (!room.encrypted || !room.client.encryptionEnabled) {
       throw StateError('请完成端到端加密设置后发布公告');
@@ -247,6 +292,7 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     announcement.validateForSave();
     _requireEncryptedManager();
     await GroupRoomAuthority(room).protectState();
+    _requireEncryptedManager();
     if (!announcement.isEffective) {
       await room.client
           .setRoomStateWithKey(room.id, groupAnnouncementStateType, '', {});
@@ -254,17 +300,46 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     }
     final publishedBlocks = <AnnouncementBlock>[];
     for (final block in announcement.blocks) {
-      publishedBlocks.add(block.localBytes == null
-          ? block
-          : AnnouncementBlock.image(
-              await uploadImage(block.localBytes!, block.fileName!)));
+      if (!block.isImage) {
+        publishedBlocks.add(block);
+      } else if (block.localBytes != null) {
+        publishedBlocks.add(AnnouncementBlock.image(
+            await uploadImage(block.localBytes!, block.fileName!)));
+      } else {
+        publishedBlocks.add(AnnouncementBlock.image(
+            await _encryptedImageReference(block.value)));
+      }
     }
+    _requireEncryptedManager();
     final id =
         await room.sendEvent(GroupAnnouncement(publishedBlocks).toContent());
     if (id == null || !id.startsWith(r'$')) throw StateError('公告发送失败');
-    // Public state contains no body, attachment URL or encryption key.
+    // Public state contains only the encrypted document's event ID.
+    _requireEncryptedManager();
     await room.client.setRoomStateWithKey(
         room.id, groupAnnouncementStateType, '', {'event_id': id});
+  }
+
+  Future<String> _encryptedImageReference(String eventId) async {
+    try {
+      final event = await _loadEncryptedEvent(eventId);
+      if (event == null || event.messageType != MessageTypes.Image) {
+        throw const FormatException('旧公告图片无法读取，请删除或重新选择图片后发布');
+      }
+      if (event.originalSource?.type != EventTypes.Encrypted &&
+          !event.isAttachmentEncrypted &&
+          event.content['com.changliao.group.announcement.image'] != true) {
+        throw const FormatException('公告图片无效，请删除或重新选择图片后发布');
+      }
+      // A retained public image must be encrypted before it can enter a new
+      // announcement document. Only this administrator-selected image is copied.
+      final bytes = await loadImage(eventId);
+      return uploadImage(bytes, event.body);
+    } on AnnouncementDecryptionUnavailable {
+      throw const FormatException('旧公告图片缺少解密密钥，请删除或重新选择图片后发布');
+    } on AnnouncementPendingDecryption {
+      throw const FormatException('旧公告图片缺少解密密钥，请删除或重新选择图片后发布');
+    }
   }
 
   @override
@@ -278,11 +353,12 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
           nativeImplementations: room.client.nativeImplementations,
           customImageResizer: room.client.customImageResizer);
     } catch (_) {
-      /* Preserve the original when no thumbnail can be generated. */
+      // The original image can still be sent when no thumbnail is available.
     }
     if (thumbnail != null && thumbnail.size > file.size) thumbnail = null;
     final prepared =
         await prepareContentAddressedMedia(file: file, thumbnail: thumbnail);
+    _requireEncryptedManager();
     final id = await room.sendFileEvent(prepared.file,
         thumbnail: prepared.thumbnail, extraContent: prepared.extraContent);
     if (id == null || !id.startsWith(r'$')) throw StateError('图片上传失败');
@@ -294,7 +370,8 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     final event = await _loadEncryptedEvent(eventId);
     if (event == null ||
         event.messageType != MessageTypes.Image ||
-        event.originalSource?.type != EventTypes.Encrypted) {
+        (event.originalSource?.type != EventTypes.Encrypted &&
+            event.content['com.changliao.group.announcement.image'] != true)) {
       throw StateError('图片暂不可用');
     }
     final declaredSize = event.infoMap['size'];
@@ -309,11 +386,9 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
             eventId: eventId,
             sourceIdentity: matrixMediaSourceIdentity(event.content),
             contentSha256: hashes?.contentSha256), () async {
-      if (!event.isAttachmentEncrypted) {
-        throw StateError('图片暂不可用');
-      }
       return (await event.downloadAndDecryptAttachment()).bytes;
     });
+    _requireMember();
     validateAnnouncementImage(bytes);
     return bytes;
   }

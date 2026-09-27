@@ -6,8 +6,29 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'performance_trace_model.dart';
+
 // Closed enums deliberately prevent identifiers, URLs or content in telemetry.
 enum PerformanceOperation {
+  appStartup,
+  appResume,
+  conversationOpen,
+  messageSend,
+  matrixSync,
+  syncCycleTotal,
+  recentPicturesLoad,
+  videoPrepare,
+  videoPoster,
+  search,
+  searchPageOpen,
+  contactsLoad,
+  momentsLoad,
+  walletLoad,
+  apiRequest,
+  callSetup,
+  callActive,
+  profileLoad,
+  chatListLoad,
   frameBuild,
   frameRaster,
   frameTotal,
@@ -24,6 +45,11 @@ enum PerformanceOperation {
 }
 
 enum PerformanceCounter {
+  slowFrames,
+  syncErrors,
+  syncSoftKicks,
+  syncHardRestarts,
+  syncReconnects,
   frames,
   slowBuildFrames,
   slowRasterFrames,
@@ -35,6 +61,12 @@ enum PerformanceCounter {
   mediaFlightJoin,
   avatarRetry,
 }
+
+typedef PerformanceFrameTimingListener = void Function(
+  List<FrameTiming> timings,
+  int budgetUs,
+  bool clockValid,
+);
 
 /// Local, bounded diagnostics. No persistence, network upload, or user data.
 /// Release defaults to disabled; enable explicitly only for diagnostic builds.
@@ -54,10 +86,34 @@ final class PerformanceMetrics {
   final bool enabled;
   final int sampleCapacity;
   final _samples = <PerformanceOperation, ListQueue<int>>{};
+  final _stageSamples = <PerformanceStage, ListQueue<int>>{};
+  final _semanticSamples =
+      <(PerformanceOperationType, String, String), ListQueue<int>>{};
+  final _semanticCounts = <(PerformanceOperationType, String, String), int>{};
+  final _recentTraces = ListQueue<PerformanceRecord>();
+  final _traceObservations = ListQueue<PerformanceTraceObservation>();
+  List<PerformanceTraceObservation> Function()? _activeObservationSource;
   final _counts = <PerformanceOperation, int>{};
   final _counters = <PerformanceCounter, int>{};
+  int? _lastRasterFinishUs;
+  int? _lastBuildStartUs;
+  final _frameTimingListeners = <PerformanceFrameTimingListener>{};
   bool _observing = false;
   bool _extensionRegistered = false;
+
+  /// The existing recorder supplies closed in-progress metadata on demand.
+  void bindActiveObservationSource(
+      List<PerformanceTraceObservation> Function() source) {
+    if (enabled) _activeObservationSource = source;
+  }
+
+  void recordObservation(PerformanceTraceObservation observation) {
+    if (!enabled) return;
+    if (_traceObservations.length == sampleCapacity) {
+      _traceObservations.removeFirst();
+    }
+    _traceObservations.addLast(observation);
+  }
 
   void record(PerformanceOperation operation, int microseconds) {
     if (!enabled || microseconds < 0) return;
@@ -85,20 +141,104 @@ final class PerformanceMetrics {
     record(PerformanceOperation.frameTotal, totalUs);
     if (buildUs > budgetUs) increment(PerformanceCounter.slowBuildFrames);
     if (rasterUs > budgetUs) increment(PerformanceCounter.slowRasterFrames);
+    if (buildUs > budgetUs || rasterUs > budgetUs) {
+      increment(PerformanceCounter.slowFrames);
+    }
   }
 
-  Map<String, Object> snapshot() => {
-        'schema': 1,
-        'enabled': enabled,
-        'sampleCapacity': sampleCapacity,
-        'operations': {
-          for (final entry in _samples.entries)
-            entry.key.name: _summary(entry.value, _counts[entry.key]!),
-        },
-        'counters': {
-          for (final entry in _counters.entries) entry.key.name: entry.value,
-        },
-      };
+  PerformanceFrameCounts get frameCounts => PerformanceFrameCounts(
+        total: _counters[PerformanceCounter.frames] ?? 0,
+        slow: _counters[PerformanceCounter.slowFrames] ?? 0,
+        slowBuild: _counters[PerformanceCounter.slowBuildFrames] ?? 0,
+        slowRaster: _counters[PerformanceCounter.slowRasterFrames] ?? 0,
+      );
+
+  bool addFrameTimingListener(PerformanceFrameTimingListener listener) {
+    if (_frameTimingListeners.contains(listener)) return true;
+    if (_frameTimingListeners.length >= PerformanceThresholds.maxActiveTraces) {
+      return false;
+    }
+    _frameTimingListeners.add(listener);
+    return true;
+  }
+
+  void removeFrameTimingListener(PerformanceFrameTimingListener listener) {
+    _frameTimingListeners.remove(listener);
+  }
+
+  /// The trace closes on this path. Work is bounded by the fixed stage enum;
+  /// the hot-path mark/recordFrame methods never sort, encode or perform I/O.
+  void recordTrace(PerformanceRecord trace) {
+    if (!enabled) return;
+    if (_recentTraces.length == sampleCapacity) _recentTraces.removeFirst();
+    _recentTraces.addLast(trace);
+    record(PerformanceOperation.values.byName(trace.operation.name),
+        trace.totalUs);
+    final unit = trace.attemptIndex != null
+        ? 'attempt'
+        : trace.windowIndex != null
+            ? 'window'
+            : 'operation';
+    // Keys originate exclusively in the closed record model. Attempts and
+    // quality windows never enter whole-operation distributions.
+    for (final entry
+        in {'total_ms': trace.totalMs, ...trace.timingSummaryMs}.entries) {
+      final key = (trace.operation, unit, entry.key);
+      final samples = _semanticSamples.putIfAbsent(key, ListQueue<int>.new);
+      if (samples.length == sampleCapacity) samples.removeFirst();
+      samples.addLast(entry.value);
+      _semanticCounts.update(key, (n) => n + 1, ifAbsent: () => 1);
+    }
+    var previous = 0;
+    for (final entry in trace.stagesUs.entries) {
+      final elapsed = entry.value - previous;
+      if (elapsed < 0) continue;
+      final samples = _stageSamples.putIfAbsent(entry.key, ListQueue<int>.new);
+      if (samples.length == sampleCapacity) samples.removeFirst();
+      samples.addLast(elapsed);
+      previous = entry.value;
+    }
+  }
+
+  Map<String, Object> snapshot() {
+    // Materialize only during an explicit low-frequency snapshot. Expiration
+    // may add bounded observations; none are completed-operation samples.
+    final active = _activeObservationSource?.call() ?? const [];
+    return {
+      'schema': 1,
+      'enabled': enabled,
+      'sampleCapacity': sampleCapacity,
+      'sample_source': 'complete_local_window',
+      'legacy_operations_scope': 'all_completed_spans',
+      'operation_timings': _semanticSnapshot(),
+      'active_operations': [
+        for (final observation in active) observation.toLocalDiagnosticJson(),
+      ],
+      'trace_observations': [
+        for (final observation in _traceObservations)
+          observation.toLocalDiagnosticJson(),
+      ],
+      'operations': {
+        for (final entry in _samples.entries)
+          entry.key.name: _summary(entry.value, _counts[entry.key]!),
+      },
+      'stages': {
+        for (final entry in _stageSamples.entries)
+          entry.key.wireName: _summary(entry.value, entry.value.length),
+      },
+      'recentTraces': [
+        for (final trace in _recentTraces)
+          {
+            ...trace.toLocalDiagnosticJson(),
+            'bottleneck':
+                PerformanceBottleneckClassifier.classify(trace).wireName,
+          }
+      ],
+      'counters': {
+        for (final entry in _counters.entries) entry.key.name: entry.value,
+      },
+    };
+  }
 
   Map<String, int> _summary(ListQueue<int> samples, int count) {
     final sorted = samples.toList()..sort();
@@ -113,10 +253,42 @@ final class PerformanceMetrics {
     };
   }
 
+  Map<String, Object> _semanticSnapshot() {
+    final result = <String, Map<String, Map<String, Object>>>{};
+    for (final entry in _semanticSamples.entries) {
+      final (operation, unit, timing) = entry.key;
+      final sorted = entry.value.toList()..sort();
+      int percentile(double p) => sorted[(sorted.length * p).ceil() - 1];
+      result
+          .putIfAbsent(operation.wireName, () => {})
+          .putIfAbsent(unit, () => {})[timing] = {
+        'count': _semanticCounts[entry.key]!,
+        'retained_samples': sorted.length,
+        'p50_ms': percentile(.5),
+        'p95_ms': percentile(.95),
+        'p99_ms': percentile(.99),
+        'max_ms': sorted.last,
+      };
+    }
+    return result;
+  }
+
   void reset() {
+    // Flush pending records before clearing local samples so a VM extension
+    // reset cannot repopulate the just-cleared snapshot.
+    for (final listener in _frameTimingListeners.toList(growable: false)) {
+      listener(const [], 0, false);
+    }
     _samples.clear();
+    _stageSamples.clear();
+    _semanticSamples.clear();
+    _semanticCounts.clear();
+    _recentTraces.clear();
+    _traceObservations.clear();
     _counts.clear();
     _counters.clear();
+    _lastRasterFinishUs = null;
+    _lastBuildStartUs = null;
   }
 
   /// Attach once after WidgetsFlutterBinding.ensureInitialized(). Query locally
@@ -146,6 +318,16 @@ final class PerformanceMetrics {
     final hz =
         PlatformDispatcher.instance.implicitView?.display.refreshRate ?? 60;
     final budgetUs = (1000000 / (hz > 0 ? hz : 60)).round();
+    recordFrameTimingBatch(timings, budgetUs: budgetUs);
+  }
+
+  /// Consumes the existing Flutter timing callback. An optional report time
+  /// lets tests inject the same VM Timeline clock used at operation boundaries.
+  void recordFrameTimingBatch(List<FrameTiming> timings,
+      {required int budgetUs, int? reportedAtUs}) {
+    if (!enabled || budgetUs <= 0) return;
+    final reportUs = reportedAtUs ?? developer.Timeline.now;
+    var clockValid = true;
     for (final timing in timings) {
       // totalSpan contains pipeline latency and is NOT a dropped-frame count.
       recordFrame(
@@ -154,6 +336,32 @@ final class PerformanceMetrics {
         totalUs: timing.totalSpan.inMicroseconds,
         budgetUs: budgetUs,
       );
+      final buildStartUs =
+          timing.timestampInMicroseconds(FramePhase.buildStart);
+      final rasterFinishUs =
+          timing.timestampInMicroseconds(FramePhase.rasterFinish);
+      final reportLagUs = reportUs - rasterFinishUs;
+      if (buildStartUs < 0 ||
+          rasterFinishUs < buildStartUs ||
+          reportLagUs < 0 ||
+          reportLagUs >
+              PerformanceThresholds
+                      .frameTimingAttributionTimeout.inMicroseconds *
+                  2 ||
+          (_lastBuildStartUs != null && buildStartUs < _lastBuildStartUs!) ||
+          (_lastRasterFinishUs != null &&
+              rasterFinishUs < _lastRasterFinishUs!)) {
+        clockValid = false;
+      }
+      _lastBuildStartUs = buildStartUs;
+      _lastRasterFinishUs = rasterFinishUs;
+    }
+    if (!clockValid) {
+      _lastBuildStartUs = null;
+      _lastRasterFinishUs = null;
+    }
+    for (final listener in _frameTimingListeners.toList(growable: false)) {
+      listener(timings, budgetUs, clockValid);
     }
   }
 }

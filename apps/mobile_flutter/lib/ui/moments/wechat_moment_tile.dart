@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import '../../core/support_identity_repository.dart';
+import '../components/wechat_official_name.dart';
 
 import '../../features/moments/moment_models.dart';
 import '../../features/matrix/profile_repository.dart';
@@ -30,10 +32,12 @@ final class WeChatMomentTile extends StatelessWidget {
     this.mediaAccountKey,
     this.mediaOrigin,
     this.identityCache,
+    this.supportIdentities,
     this.detailMode = false,
     this.selectedCommentId,
     this.onPersonTap,
   });
+  final SupportIdentityRepository? supportIdentities;
   final MomentItem item;
   final String? mediaAccountKey, mediaOrigin;
   final bool detailMode;
@@ -142,10 +146,12 @@ final class WeChatMomentTile extends StatelessWidget {
                                 (onPersonTap == null
                                     ? null
                                     : () => onPersonTap!(item.author)),
-                        child: Text(
-                          _identity(item.author).displayName,
+                        child: WeChatOfficialName(
+                          name: _identity(item.author).displayName,
+                          userId: item.author.userId,
+                          supportIdentities: supportIdentities,
                           key: const Key('moment-author-name'),
-                          style: TextStyle(
+                          nameStyle: TextStyle(
                             color: WeChatColors.resolve(
                               context,
                               WeChatColors.socialLink,
@@ -242,6 +248,7 @@ final class WeChatMomentTile extends StatelessWidget {
                       ),
                       if (!isAd)
                         WeChatMomentReactions(
+                          supportIdentities: supportIdentities,
                           item: item,
                           resolveIdentity: _identity,
                           onPersonTap: onPersonTap,

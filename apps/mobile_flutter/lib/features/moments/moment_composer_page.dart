@@ -12,6 +12,10 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/image_picker_page.dart';
+import '../matrix/gif_image_policy.dart';
+import '../matrix/media_cache.dart';
+import '../../ui/moments/moment_media_cache.dart';
+import '../../ui/moments/moment_warning_banner.dart';
 import 'moment_comment_composer.dart'
     show MomentGallerySelection, MomentGalleryPicker;
 import 'moment_visibility_page.dart';
@@ -49,6 +53,9 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   final remoteImageUrls = <String>[];
   final remoteVideoUrls = <String>[];
   final _previews = <XFile, Uint8List>{};
+  final _fileNames = <XFile, String>{};
+  final _uploadedVideoPreviews = <String, Uint8List>{};
+  final _videoCacheKeys = <String, String>{};
   int get _mediaCount =>
       images.length + remoteImageUrls.length + remoteVideoUrls.length;
   MomentVisibilitySelection visibility =
@@ -77,8 +84,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     super.initState();
     images.addAll(widget.initialImages.take(9));
     // 本地优先：先用本地草稿渲染，再与服务端对齐。
-    unawaited(_hydrateLocalDraft());
-    _loadDraft();
+    final localHydration = _hydrateLocalDraft();
+    unawaited(_loadDraft(localHydration));
   }
 
   /// 本地草稿（账号作用域）：断网也能接着上次写；跨账号一律丢弃。
@@ -129,6 +136,17 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           .map((v) => v.toString())
           .where((v) => v.isNotEmpty)
           .take(9 - images.length - remoteImageUrls.length));
+    _videoCacheKeys.clear();
+    final keys = draft['video_cache_keys'] as List? ?? const [];
+    for (var i = 0; i < remoteVideoUrls.length && i < keys.length; i++) {
+      final key = keys[i]?.toString();
+      if (key != null && RegExp(r'^[a-f0-9]{64}$').hasMatch(key)) {
+        _videoCacheKeys[remoteVideoUrls[i]] = key;
+      }
+    }
+    _uploadedVideoPreviews
+        .removeWhere((url, _) => !remoteVideoUrls.contains(url));
+    unawaited(_restoreVideoPosters());
     visibility = MomentVisibilitySelection(
       visibility: mode,
       userIds: users,
@@ -136,12 +154,107 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     );
   }
 
-  Future<void> _loadDraft() async {
+  Future<void> _restoreVideoPosters() async {
+    final account = await widget.api.currentMatrixUserId();
+    if (account == null || account.isEmpty || !mounted) return;
+    final generation = MediaCache.accountGeneration(account);
+    for (final entry in _videoCacheKeys.entries.toList()) {
+      try {
+        final bytes = await MomentMediaCache.cachedVideoPoster(entry.key,
+            cacheKey: entry.value,
+            accountKey: 'matrix:$account',
+            trustedOrigin: widget.api.baseUri.origin);
+        if (!mounted || generation != MediaCache.accountGeneration(account)) {
+          return;
+        }
+        if (bytes != null &&
+            _videoCacheKeys[entry.key] == entry.value &&
+            remoteVideoUrls.contains(entry.key)) {
+          setState(() => _uploadedVideoPreviews[entry.key] = bytes);
+        }
+      } catch (_) {
+        // A missing/evicted local poster retains the explicit play placeholder.
+      }
+    }
+  }
+
+  Future<void> _removeVideoPoster(String url) async {
+    final key = _videoCacheKeys.remove(url);
+    _uploadedVideoPreviews.remove(url);
+    if (key == null) return;
+    try {
+      final account = await widget.api.currentMatrixUserId();
+      if (account == null || account.isEmpty) return;
+      await MomentMediaCache.removeVideoPoster(url,
+          cacheKey: key,
+          accountKey: 'matrix:$account',
+          trustedOrigin: widget.api.baseUri.origin);
+    } catch (_) {
+      // Existing account quota/clear lifecycle also owns failed local eviction.
+    }
+  }
+
+  Future<Map<String, dynamic>?> _mergeDraftVideoCacheKeys(
+      Map<String, dynamic> draft) async {
+    final account = await widget.api.currentMatrixUserId();
+    final accountKey = account == null || account.isEmpty
+        ? null
+        : 'matrix:$account';
+    final local = MomentDraftStores.shared?.read();
+    final localKeys = <String, String>{};
+    if (accountKey != null && local?.scope == accountKey) {
+      final urls = local!.payload['video_urls'] as List? ?? const [];
+      final keys = local.payload['video_cache_keys'] as List? ?? const [];
+      for (var i = 0; i < urls.length && i < keys.length; i++) {
+        final key = keys[i]?.toString();
+        if (key != null && RegExp(r'^[a-f0-9]{64}$').hasMatch(key)) {
+          localKeys[urls[i].toString()] = key;
+        }
+      }
+    }
+    final urls = draft['video_urls'] as List? ?? const [];
+    final serverKeys = draft['video_cache_keys'] as List? ?? const [];
+    final mergedKeys = <String?>[];
+    for (var i = 0; i < urls.length; i++) {
+      final url = urls[i].toString();
+      final localKey = localKeys[url];
+      if (localKey != null) {
+        mergedKeys.add(localKey);
+        continue;
+      }
+      final serverKey = i < serverKeys.length ? serverKeys[i]?.toString() : null;
+      if (accountKey == null ||
+          serverKey == null ||
+          !RegExp(r'^[a-f0-9]{64}$').hasMatch(serverKey)) {
+        mergedKeys.add(null);
+        continue;
+      }
+      try {
+        final poster = await MomentMediaCache.cachedVideoPoster(url,
+            cacheKey: serverKey,
+            accountKey: accountKey,
+            trustedOrigin: widget.api.baseUri.origin);
+        mergedKeys.add(poster == null ? null : serverKey);
+      } catch (_) {
+        // A server hint cannot authorize a new cache entry or another origin.
+        mergedKeys.add(null);
+      }
+    }
+    if (await widget.api.currentMatrixUserId() != account) {
+      return null;
+    }
+    return {...draft, 'video_cache_keys': mergedKeys};
+  }
+
+  Future<void> _loadDraft(Future<void> localHydration) async {
     try {
       final draft = await widget.api.momentDraft();
+      await localHydration;
+      final merged = await _mergeDraftVideoCacheKeys(draft);
+      if (merged == null) return;
       if (!mounted) return;
       // 服务端草稿优先（本地草稿只是离线兜底）。
-      setState(() => _applyDraft(draft));
+      setState(() => _applyDraft(merged));
       unawaited(_persistLocalDraft());
     } on BusinessApiException catch (error) {
       if (!mounted || error.code == 'MOMENT_DRAFT_NOT_FOUND') return;
@@ -160,7 +273,13 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       if (userId == null || userId.isEmpty) return;
       await store.write(MomentDraftSnapshot(
         scope: 'matrix:$userId',
-        payload: _payload(),
+        payload: {
+          ..._payload(),
+          if (_videoCacheKeys.isNotEmpty)
+            'video_cache_keys': [
+              for (final url in remoteVideoUrls) _videoCacheKeys[url]
+            ]
+        },
         savedAt: DateTime.now(),
       ));
     } catch (_) {
@@ -212,6 +331,9 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     final preprocessor = widget.imagePreprocessor ?? MomentImagePreprocessor();
     while (images.isNotEmpty) {
       final image = images.first;
+      final account = await widget.api.currentMatrixUserId();
+      final generation =
+          account == null ? null : MediaCache.accountGeneration(account);
       final videoMime = momentVideoMime(image);
       final Uint8List bytes;
       try {
@@ -228,11 +350,33 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           (bytes.isEmpty || bytes.length > 20 * 1024 * 1024)) {
         throw const MomentImageException('视频大小不能超过20MB');
       }
+      final gif = videoMime == null && isGifBytes(bytes);
+      if (gif) {
+        try {
+          validateGifStructureForSend(bytes);
+        } on FormatException catch (error) {
+          throw MomentImageException(error.message);
+        }
+      }
       final processed =
-          videoMime == null ? await preprocessor.process(bytes) : bytes;
-      final mimeType = videoMime ?? 'image/jpeg';
+          videoMime == null && !gif ? await preprocessor.process(bytes) : bytes;
+      final mimeType = videoMime ?? (gif ? 'image/gif' : 'image/jpeg');
+      // XFile.fromData ignores name on native platforms. Keep upload metadata
+      // separately; never send its empty native name to BeginUpload.
+      final suffix = videoMime == 'video/quicktime'
+          ? 'mov'
+          : videoMime != null
+              ? 'mp4'
+              : gif
+                  ? 'gif'
+                  : 'jpg';
+      final fileName = _fileNames[image] ?? 'moment.$suffix';
       final begun = await widget.api.beginMomentUpload(
-        fileName: videoMime == null ? _jpegFileName(image.name) : image.name,
+        fileName: gif
+            ? 'moment.gif'
+            : videoMime == null
+                ? _jpegFileName(fileName)
+                : fileName,
         mimeType: mimeType,
         byteSize: processed.lengthInBytes,
       );
@@ -246,10 +390,45 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       if (mediaUrl == null || mediaUrl.isEmpty) {
         throw StateError('Moment upload completion is missing a media URL');
       }
+      final key = completed['media_cache_key']?.toString();
+      final poster = _previews[image];
+      if (videoMime != null &&
+          key != null &&
+          account != null &&
+          account.isNotEmpty &&
+          generation != null) {
+        try {
+          await MomentMediaCache.storeUploadedVideo(mediaUrl, bytes,
+              cacheKey: key,
+              accountKey: 'matrix:$account',
+              trustedOrigin: widget.api.baseUri.origin,
+              expectedAccountGeneration: generation,
+              mimeType: videoMime);
+          if (poster != null && poster.isNotEmpty) {
+            await MomentMediaCache.storeVideoPoster(mediaUrl, poster,
+                cacheKey: key,
+                accountKey: 'matrix:$account',
+                trustedOrigin: widget.api.baseUri.origin,
+                expectedAccountGeneration: generation);
+          }
+        } catch (_) {
+          // A completed upload stays publishable if the local cache is full or
+          // unavailable; playback can still download through the signed URL.
+        }
+      }
       if (!mounted) return remoteImageUrls.toList(growable: false);
+      if (account != null &&
+          generation != MediaCache.accountGeneration(account)) {
+        throw const MomentImageException('账号已切换，请重新打开发表页面');
+      }
       setState(() {
+        if (videoMime != null && key != null) _videoCacheKeys[mediaUrl] = key;
         images.removeAt(0);
-        _previews.remove(image);
+        final preview = _previews.remove(image);
+        _fileNames.remove(image);
+        if (videoMime != null && preview != null && preview.isNotEmpty) {
+          _uploadedVideoPreviews[mediaUrl] = preview;
+        }
         (videoMime == null ? remoteImageUrls : remoteVideoUrls).add(mediaUrl);
       });
     }
@@ -282,6 +461,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       ),
     );
     if (result == 'save') {
+      if (!mounted) return false;
+      setState(() => saving = true);
       try {
         await _saveDraft();
         _draftSaved = true;
@@ -296,10 +477,15 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                   : '草稿保存失败，请检查网络后重试');
         }
         return false;
+      } finally {
+        if (mounted) setState(() => saving = false);
       }
     }
     if (result == 'discard') {
       _allowPop = true;
+      for (final url in remoteVideoUrls.toList()) {
+        unawaited(_removeVideoPoster(url));
+      }
       unawaited(MomentDraftStores.shared?.clear());
       try {
         await widget.api.deleteMomentDraft();
@@ -349,15 +535,31 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         final suffix = photo.isVideo
             ? (photo.mimeType == 'video/quicktime' ? 'mov' : 'mp4')
             : 'jpg';
-        final file = XFile.fromData(bytes,
-            name: 'moment-${photo.id}.$suffix', mimeType: photo.mimeType);
+        var preview = photo.thumbnail;
+        if (photo.isVideo && preview.isEmpty) {
+          try {
+            preview = await photo.firstFrame?.call() ??
+                await photo.posterBytes?.call() ??
+                Uint8List(0);
+          } catch (_) {
+            // A missing poster must not discard a readable video.
+          }
+        }
+        if (!mounted) return;
+        final fileName = 'moment-${images.length}.$suffix';
+        final file =
+            XFile.fromData(bytes, name: fileName, mimeType: photo.mimeType);
         if (photo.isVideo && momentVideoMime(file) == null) {
           throw const MomentImageException('仅支持MP4/MOV视频');
         }
         setState(() {
           images.add(file);
-          _previews[file] =
-              photo.thumbnail.isNotEmpty ? photo.thumbnail : bytes;
+          _fileNames[file] = fileName;
+          _previews[file] = preview.isNotEmpty
+              ? preview
+              : photo.isVideo
+                  ? Uint8List(0)
+                  : bytes;
           errorMessage = null;
         });
       }
@@ -530,11 +732,9 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                 if (errorMessage != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: Text(
-                      errorMessage!,
-                      key: const Key('moment-compose-error'),
-                      style: const TextStyle(color: WeChatColors.danger),
-                    ),
+                    child: MomentWarningBanner(
+                        message: errorMessage!,
+                        messageKey: const Key('moment-compose-error')),
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
@@ -593,6 +793,13 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                             width: 84,
                             height: 84,
                             child: Stack(children: [
+                              if (_uploadedVideoPreviews[videoUrl]
+                                  case final preview?)
+                                Image.memory(preview,
+                                    width: 84,
+                                    height: 84,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 256),
                               const Center(
                                   child: Icon(CupertinoIcons.play_circle,
                                       size: 36)),
@@ -602,8 +809,12 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                                       padding: EdgeInsets.zero,
                                       onPressed: busy
                                           ? null
-                                          : () => setState(() =>
-                                              remoteVideoUrls.remove(videoUrl)),
+                                          : () => setState(() {
+                                                remoteVideoUrls
+                                                    .remove(videoUrl);
+                                                unawaited(_removeVideoPoster(
+                                                    videoUrl));
+                                              }),
                                       child: const Icon(
                                           CupertinoIcons.clear_circled_solid))),
                             ])),
@@ -611,11 +822,17 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                         Stack(
                           children: [
                             if (momentVideoMime(image) != null)
-                              const SizedBox(
+                              SizedBox(
                                   width: 84,
                                   height: 84,
-                                  child: Icon(CupertinoIcons.play_circle,
-                                      size: 36))
+                                  child: Stack(fit: StackFit.expand, children: [
+                                    if (_previews[image]?.isNotEmpty == true)
+                                      Image.memory(_previews[image]!,
+                                          cacheWidth: 256, fit: BoxFit.cover),
+                                    const Center(
+                                        child: Icon(CupertinoIcons.play_circle,
+                                            size: 36)),
+                                  ]))
                             else if (_previews[image]?.isNotEmpty == true)
                               Image.memory(_previews[image]!,
                                   cacheWidth: 256,

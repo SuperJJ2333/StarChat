@@ -972,7 +972,7 @@ packages:
     source: hosted
     version: "2.1.0"
   olm:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: olm
       sha256: "3306bf534ceb914fd148b3b4a3d603fb5e067b2e6da8304025b47c24cfdf6b46"

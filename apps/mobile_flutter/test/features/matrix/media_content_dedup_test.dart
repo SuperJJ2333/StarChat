@@ -16,8 +16,8 @@ class _Paths extends PathProviderPlatform {
 void main() {
   setUp(() async {
     clearMediaMemoryCaches();
-    final root = await Directory(
-            '../../docs/verification/artifacts/2026-09-09/redmi-polish')
+    final root = await Directory.fromUri(Directory.current.uri.resolve(
+            '../../docs/verification/artifacts/2026-09-26/cache-fixtures/'))
         .create(recursive: true);
     final dir = await root.createTemp('media-test-');
     PathProviderPlatform.instance = _Paths(dir.path);

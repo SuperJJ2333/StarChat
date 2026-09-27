@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/performance_metrics.dart';
 import 'call_controller.dart';
 
 /// 音频路由唯一所有者（Task I）。
@@ -17,10 +18,12 @@ import 'call_controller.dart';
 ///   （接通回调、媒体流重建、ICE restart）一律不得覆盖；
 /// - 外部设备（蓝牙/有线耳机）在场时不下发强制扬声器，尊重系统路由。
 final class CallAudioRouteCoordinator {
-  CallAudioRouteCoordinator({required this.apply});
+  CallAudioRouteCoordinator({required this.apply, PerformanceMetrics? metrics})
+      : _metrics = metrics ?? PerformanceMetrics.instance;
 
   /// 下游平台路由应用器（生产：`CallBackend.setSpeaker` → `Helper`）。
   final Future<void> Function(bool speaker) apply;
+  final PerformanceMetrics _metrics;
 
   bool _speaker = false;
   bool? _appliedSpeaker;
@@ -142,15 +145,13 @@ final class CallAudioRouteCoordinator {
     if (_appliedSpeaker == policy) return;
     await apply(policy);
     _appliedSpeaker = policy;
-    assert(() {
-      debugPrint(
-          '[chatflow/audio-route] platform=${defaultTargetPlatform.name} '
+    if (_metrics.enabled) {
+      debugPrint('[chatflow/call] platform=${defaultTargetPlatform.name} '
           'requestedRoute=${policy ? 'speaker' : 'earpiece-or-external'} '
           'appliedRoute=${policy ? 'speaker' : 'non-speaker'} '
           'externalDevicePresent=$_externalRouteActive '
           'userPreference=$_userPreference '
           'reason=${_userPreference ? 'user-override' : 'auto-policy'}');
-      return true;
-    }());
+    }
   }
 }

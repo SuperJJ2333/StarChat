@@ -59,11 +59,15 @@ extension _RecoverableBusinessRefresh on BusinessApiClient {
       _refreshDiagnostic(failureStage);
       if (epoch != _sessionEpoch) throw BusinessApiClient._ended;
       final after = await sessionStore.session();
-      if (after == target) return target;
+      if (after == target) {
+        _acceptCredentialsRefresh(epoch, expected, target);
+        return target;
+      }
       if (after != expected) throw BusinessApiClient._ended;
       throw _storageUnavailable;
     }
     if (epoch != _sessionEpoch) throw BusinessApiClient._ended;
+    _acceptCredentialsRefresh(epoch, expected, target);
     return target;
   }
 

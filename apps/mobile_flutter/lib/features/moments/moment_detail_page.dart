@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../contacts/contact_actions.dart';
 import 'moment_visibility_page.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -9,6 +11,7 @@ import '../../core/business_api_client.dart';
 import '../matrix/profile_repository.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
+import '../../ui/moments/moment_warning_banner.dart';
 import 'moment_models.dart';
 import 'moment_comment_interaction.dart';
 import '../../ui/motion/motion_page_route.dart';
@@ -30,6 +33,7 @@ class MomentDetailPage extends StatefulWidget {
     this.mediaOrigin,
     this.onReactionChanged,
     this.initialComment,
+    this.highlightCommentId,
     this.cacheNamespace = '',
   });
   final BusinessApiClient api;
@@ -43,6 +47,7 @@ class MomentDetailPage extends StatefulWidget {
   final ValueChanged<MomentItem>? onChanged;
   final ValueChanged<MomentItem>? onReactionChanged;
   final MomentCommentView? initialComment;
+  final String? highlightCommentId;
   final String cacheNamespace;
   @override
   State<MomentDetailPage> createState() => _MomentDetailState();
@@ -93,6 +98,31 @@ class _MomentDetailState extends State<MomentDetailPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) tapComment(widget.initialComment!);
       });
+    }
+    if (widget.highlightCommentId != null) {
+      selectedCommentId = widget.highlightCommentId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToHighlightedComment();
+      });
+    }
+  }
+
+  void _scrollToHighlightedComment() {
+    final id = widget.highlightCommentId;
+    if (id == null || !mounted) return;
+    Element? target;
+    void visit(Element element) {
+      if (element.widget.key == ValueKey('moment-comment-$id')) {
+        target = element;
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    (context as Element).visitChildren(visit);
+    if (target != null) {
+      unawaited(Scrollable.ensureVisible(target!,
+          duration: const Duration(milliseconds: 250), alignment: 0.15));
     }
   }
 
@@ -267,14 +297,18 @@ class _MomentDetailState extends State<MomentDetailPage> {
         item.id,
         {
           'visibility': selection.visibility,
-          'include_user_ids':
-              selection.visibility == 'INCLUDE' ? selection.userIds.toList() : const [],
-          'exclude_user_ids':
-              selection.visibility == 'EXCLUDE' ? selection.userIds.toList() : const [],
-          'include_tag_ids':
-              selection.visibility == 'INCLUDE' ? selection.tagIds.toList() : const [],
-          'exclude_tag_ids':
-              selection.visibility == 'EXCLUDE' ? selection.tagIds.toList() : const [],
+          'include_user_ids': selection.visibility == 'INCLUDE'
+              ? selection.userIds.toList()
+              : const [],
+          'exclude_user_ids': selection.visibility == 'EXCLUDE'
+              ? selection.userIds.toList()
+              : const [],
+          'include_tag_ids': selection.visibility == 'INCLUDE'
+              ? selection.tagIds.toList()
+              : const [],
+          'exclude_tag_ids': selection.visibility == 'EXCLUDE'
+              ? selection.tagIds.toList()
+              : const [],
         },
       );
       if (!mounted) return;
@@ -301,6 +335,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
+        key: const Key('moment-detail-page'),
         navigationBar: CupertinoNavigationBar(
           middle: const Text('详情'),
           trailing: item.visibilitySelection != null &&
@@ -320,6 +355,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
             children: [
               if (!unavailable)
                 WeChatMomentTile(
+                  supportIdentities: widget.api.supportIdentities,
                   identityCache: widget.identityCache,
                   item: visibleMomentReactions(
                     item,
@@ -341,10 +377,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
               if (error != null)
                 Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Text(
-                    error!,
-                    style: const TextStyle(color: CupertinoColors.systemRed),
-                  ),
+                  child: MomentWarningBanner(message: error!),
                 ),
               if (unavailable)
                 CupertinoButton(onPressed: refresh, child: const Text('重试')),

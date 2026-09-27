@@ -281,17 +281,22 @@ Widget _home({
   bool previewOnly = true,
   ProfileRepository? identityCache,
   BusinessApiClient? api,
-}) =>
-    CupertinoApp(
-        home: MatrixHomePage(
-      api: api ?? _api(),
-      matrix: matrix,
-      themeController: ThemeController(store: _MemoryThemeStore()),
-      onCreateGroup: () {},
-      previewOnly: previewOnly,
-      identityCache: identityCache,
-      snapshotLoader: snapshotLoader,
-    ));
+}) {
+  // Directory recovery tests start with an already hydrated caller-owned cache.
+  // Actual cold disk hydration is covered by cold_start_identity_test.
+  final identities = identityCache ?? ProfileRepository(api ?? _api());
+  if (identityCache == null) addTearDown(identities.dispose);
+  return CupertinoApp(
+      home: MatrixHomePage(
+    api: api ?? _api(),
+    matrix: matrix,
+    themeController: ThemeController(store: _MemoryThemeStore()),
+    onCreateGroup: () {},
+    previewOnly: previewOnly,
+    identityCache: identities,
+    snapshotLoader: snapshotLoader,
+  ));
+}
 
 BusinessApiClient _api() => BusinessApiClient(
     baseUri: Uri.parse('https://business.example'),

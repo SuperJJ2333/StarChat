@@ -4,8 +4,29 @@ import 'package:matrix/matrix.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
+import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import '../../core/account_chat_store_test.dart' show binding;
 import '../../core/session_store_test.dart' show MemorySecureKeyValueStore;
+
+// This fixture intentionally writes plaintext SQLite to exercise history
+// isolation. Identity/SQLCipher behavior is tested by the preflight suite.
+final class _HistoryFixtureIdentityReader implements MatrixLocalIdentityReader {
+  @override
+  Future<bool> exists(String databasePath) async => true;
+
+  @override
+  Future<MatrixLocalIdentityRecord> read(
+      String databasePath, String cipher) async {
+    final user = databasePath.endsWith('liuhetong_matrix.sqlite')
+        ? '@a:test'
+        : '@b:test';
+    return MatrixLocalIdentityRecord(
+      hasRetainedData: true,
+      matrixUserId: user,
+      olmAccount: 'fingerprint-$user',
+    );
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -19,12 +40,20 @@ void main() {
     final root = await evidence.createTemp('histories-');
     final store = SecureSessionStore(MemorySecureKeyValueStore());
     await store.saveMatrixBinding(binding('@a:test', 'device-A'));
+    await store.matrixDatabaseKey();
+    await store.selectMatrixAccount('https://matrix.example', '@b:test');
+    await store.matrixDatabaseKey();
+    await store.selectMatrixAccount('https://matrix.example', '@a:test');
     late MatrixSdkDatabase db;
     final paths = <String>[];
     final factory = MatrixClientFactory(
         sessionStore: store,
         homeserver: Uri.parse('https://matrix.example'),
         supportDirectoryPath: () async => root.absolute.path,
+        localIdentityPreflight: MatrixLocalIdentityPreflight(
+          reader: _HistoryFixtureIdentityReader(),
+          fingerprintReader: (_, pickle) async => pickle,
+        ),
         clientMigrator: (_, __) async {},
         opener: (
             {required clientName,

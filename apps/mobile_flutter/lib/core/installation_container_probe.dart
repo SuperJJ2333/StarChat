@@ -24,8 +24,11 @@ final class FileSystemInstallationContainerProbe
   /// 与 `MatrixClientFactory.databaseFileName` 及其按槽后缀的拼法保持一致。
   /// 改名时必须同时更新这里，否则探测会永远看不到产物，覆盖升级会被误判为
   /// 全新安装。
+  // A surviving WAL/SHM sidecar is still evidence of an old encrypted store.
+  // Treat it conservatively: installation cleanup may remove the only key that
+  // can read remaining ciphertext, so a false negative is destructive.
   static final _storeFileName =
-      RegExp(r'^liuhetong_matrix.*\.sqlite(\.encrypted)?$');
+      RegExp(r'^liuhetong_matrix.*\.sqlite(\.encrypted)?(-wal|-shm)?$');
 
   static Future<String> _defaultSupportPath() async =>
       (await getApplicationSupportDirectory()).path;

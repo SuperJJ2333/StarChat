@@ -297,8 +297,8 @@ void main() {
       expect(b, isNull, reason: '账号 B 绝不能读到账号 A 的封面缓存');
 
       // 内容寻址：同账号内同字节只占一个物理对象（跨房间去重）。
-      await MediaCache.store('room-2', videoPosterCacheRefId('event-2'),
-          posterBytes,
+      await MediaCache.store(
+          'room-2', videoPosterCacheRefId('event-2'), posterBytes,
           accountId: 'alice');
       final a2 = await MediaCache.probeCachedObject(
           'room-2', videoPosterCacheRefId('event-2'),
@@ -337,19 +337,55 @@ void main() {
 
       expect(lines, hasLength(1));
       final line = lines.single;
-      expect(line, contains('[chatflow/videoposter]'));
+      expect(line, contains('[chatflow/media]'));
       expect(line, contains('source=server'));
       expect(line, contains('cache_hit=false'));
       expect(line, contains('download_bytes=0'));
       expect(line, contains('generate_ms='));
       expect(line, contains('decode_ms='));
       expect(line.contains(secretId), isFalse, reason: '禁止记录媒体原始 ID');
-      expect(line.contains('account-salt'), isFalse,
-          reason: '盐本身也不得出现在日志里');
-      expect(diagnostics.lastRecord!['id'],
-          VideoPosterDiagnostics.fingerprint(secretId, salt: 'account-salt'));
+      expect(line.contains('account-salt'), isFalse, reason: '盐本身也不得出现在日志里');
+      expect(diagnostics.lastRecord!['id'], diagnostics.fingerprint(secretId));
       expect(diagnostics.lastRecord!.keys.toList(),
           VideoPosterDiagnostics.fieldOrder);
+    });
+
+    test('poster fingerprints expire with diagnostics instance', () {
+      final first = VideoPosterDiagnostics(salt: 'account-salt');
+      final second = VideoPosterDiagnostics(salt: 'account-salt');
+      expect(first.fingerprint(secretId), first.fingerprint(secretId));
+      expect(second.fingerprint(secretId), isNot(first.fingerprint(secretId)));
+    });
+
+    test('poster diagnostics stay off without an explicit diagnostic sink', () {
+      final diagnostics = VideoPosterDiagnostics();
+      diagnostics.record(
+        videoId: secretId,
+        source: 'server',
+        cacheHit: false,
+        generateMs: 1,
+        decodeMs: 2,
+        downloadBytes: 3,
+      );
+      const diagnosticBuild =
+          bool.fromEnvironment('CHATFLOW_PERFORMANCE_METRICS');
+      expect(diagnostics.enabled, diagnosticBuild);
+      expect(diagnostics.lastRecord, diagnosticBuild ? isNotNull : isNull);
+    });
+
+    test('unrecognized poster source cannot enter diagnostic log', () {
+      final lines = <String>[];
+      final diagnostics = VideoPosterDiagnostics(log: lines.add);
+      diagnostics.record(
+        videoId: secretId,
+        source: 'private-user-id',
+        cacheHit: false,
+        generateMs: 1,
+        decodeMs: 2,
+        downloadBytes: 3,
+      );
+      expect(lines.single, isNot(contains('private-user-id')));
+      expect(diagnostics.lastRecord!['source'], 'unknown');
     });
 
     test('日志回调抛异常不影响封面加载（诊断失败安全）', () async {
@@ -408,8 +444,8 @@ void main() {
   group('MediaCache 廉价探测（避开大文件重哈希）', () {
     test('probeCachedObject 命中已落盘对象且不做哈希校验', () async {
       final payload = _bytes(3, 2048);
-      final stored = await MediaCache.store('room', 'event', payload,
-          accountId: 'alice');
+      final stored =
+          await MediaCache.store('room', 'event', payload, accountId: 'alice');
       final probed = await MediaCache.probeCachedObject('room', 'event',
           accountId: 'alice');
       expect(probed, isNotNull);

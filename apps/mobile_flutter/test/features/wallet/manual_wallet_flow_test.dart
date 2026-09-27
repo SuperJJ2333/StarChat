@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_operation_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
@@ -19,13 +20,15 @@ http.Response json(Object body) => http.Response(jsonEncode(body), 200,
 Future<BusinessApiClient> client(
     Future<http.Response> Function(http.Request) handler,
     {Map<String, dynamic>? capabilities,
-    Map<String, dynamic>? balance}) async {
+    Map<String, dynamic>? balance,
+    PerformanceTraceRecorder? performanceRecorder}) async {
   final session = SecureSessionStore(fixtures.MemoryStore());
   await session.saveSession(
       accessToken: 'e30.eyJzdWIiOiJhbGljZSJ9.test', refreshToken: 'refresh');
   return BusinessApiClient(
       baseUri: Uri.parse('https://business.example'),
       sessionStore: session,
+      performanceRecorder: performanceRecorder,
       client:
           MockClient((request) => request.url.path.endsWith('/wallet/config')
               ? Future.value(json(capabilities ??

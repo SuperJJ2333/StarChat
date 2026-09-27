@@ -7,10 +7,12 @@ import 'package:matrix/matrix.dart' hide CallBackend;
 import 'package:webrtc_interface/webrtc_interface.dart' as rtc_interface;
 import 'package:webrtc_interface/webrtc_interface.dart' show MediaStream;
 
+import '../../core/performance_metrics.dart';
 import 'call_connected_fallback.dart';
 import 'call_controller.dart';
 import 'call_diagnostics.dart';
 import 'call_quality_monitor.dart';
+import '../../core/performance_trace.dart';
 import 'call_wakeup_client.dart';
 import 'incoming_call_gate.dart';
 import 'turn_credentials_cache.dart';
@@ -60,15 +62,10 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
     Map<String, dynamic> configuration, [
     Map<String, dynamic> constraints = const {},
   ]) {
-    assert(() {
+    if (PerformanceMetrics.instance.enabled) {
       final servers = configuration['iceServers'] as List<dynamic>? ?? const [];
-      final urls = servers
-          .whereType<Map<dynamic, dynamic>>()
-          .map((server) => server['urls'])
-          .toList(growable: false);
-      debugPrint('[Call] ICE server URLs configured: $urls');
-      return true;
-    }());
+      debugPrint('[chatflow/call] ice_server_count=${servers.length}');
+    }
     return webrtc.createPeerConnection(configuration, constraints);
   }
 
@@ -95,7 +92,8 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
   Future<void> handleGroupCallEnded(GroupCallSession groupCall) async {}
 }
 
-final class MatrixCallBackend implements CallBackend {
+final class MatrixCallBackend
+    implements CallBackend, CallPerformanceCorrelationBackend {
   MatrixCallBackend._(this._client, this._voip, this._delegate,
       this.diagnostics, this._ensureActive);
 
@@ -133,8 +131,7 @@ final class MatrixCallBackend implements CallBackend {
   /// > Matrix avatar > username > Matrix ID）。回调可返回 null 表示无法解析，
   /// 此时 UI 回退到同步名称。
   Future<CallIdentity?> Function(String matrixUserId,
-          {String? matrixDisplayName})?
-      identityResolver;
+      {String? matrixDisplayName})? identityResolver;
   String? get activeCallId => _call?.callId;
   String? get activeRoomId => _call?.room.id;
   bool get isIncomingCall => _call != null && !_call!.isOutgoing;
@@ -166,7 +163,16 @@ final class MatrixCallBackend implements CallBackend {
   );
   CallSession? _call;
   CallQualityMonitor? _quality;
+  PerformanceCorrelationContext? _performanceCorrelation;
+
+  @override
+  void setPerformanceCorrelationContext(
+      PerformanceCorrelationContext? context) {
+    _performanceCorrelation = context;
+  }
+
   bool _connectedEmitted = false;
+  bool _signalingEmitted = false;
   var _disposed = false;
   int _operations = 0;
   Completer<void>? _operationsDrained;
@@ -320,18 +326,23 @@ final class MatrixCallBackend implements CallBackend {
     if (_disposed || identical(_call, call)) return;
     _call = call;
     _connectedEmitted = false;
+    _signalingEmitted = false;
     unawaited(_fallback.stop());
     _teardownStreamWatch();
     diagnostics.reset();
     diagnostics.mark(CallDiagStage.inviteReceived);
-    debugPrint('[matrix-call] inviteReceived room=${call.room.id} '
-        'outgoing=${call.isOutgoing} type=${call.type.name}');
+    if (diagnostics.detailedLoggingEnabled) {
+      debugPrint('[chatflow/call] invite_received '
+          'outgoing=${call.isOutgoing} type=${call.type.name}');
+    }
     _delegate.markActive(true);
     await _callStates?.cancel();
     if (_disposed || !identical(_call, call)) return;
     _callStates = call.onCallStateChanged.stream.listen((state) {
       if (_disposed || !identical(_call, call)) return;
-      debugPrint('[matrix-call] state=${state.name}'); // 全状态关键路径日志（规格§五）
+      if (diagnostics.detailedLoggingEnabled) {
+        debugPrint('[chatflow/call] state=${state.name}');
+      }
       if (state == CallState.kConnected) {
         _emitConnected(call);
       } else if (state == CallState.kEnded) {
@@ -340,6 +351,7 @@ final class MatrixCallBackend implements CallBackend {
         // Task N：主叫收到远端 answer 后进入 connecting——「对方接听」时刻，
         // 与「接通（ICE）」是两个不同的延迟问题。
         diagnostics.mark(CallDiagStage.remoteAnswerReceived);
+        _emitSignalingReady(call);
       }
     });
     if (call.callHasEnded) {
@@ -364,6 +376,9 @@ final class MatrixCallBackend implements CallBackend {
       _watchWrappedStream(wrapped);
     }
     // Fast remote answers can connect before outgoing setup finishes attaching.
+    if (call.state == CallState.kConnecting && call.isOutgoing) {
+      _emitSignalingReady(call);
+    }
     if (call.state == CallState.kConnected) _emitConnected(call);
     if (!call.isOutgoing) {
       // The _delegate is awaited by the SDK's sync event handler. Complete that
@@ -438,8 +453,9 @@ final class MatrixCallBackend implements CallBackend {
     try {
       identity = await identityResolver?.call(
         remoteUserId,
-        matrixDisplayName:
-            call.room.unsafeGetUserFromMemoryOrFallback(remoteUserId).displayName,
+        matrixDisplayName: call.room
+            .unsafeGetUserFromMemoryOrFallback(remoteUserId)
+            .displayName,
       );
     } catch (_) {
       identity = null; // 身份解析失败不得阻断来电呈现/接听。
@@ -461,6 +477,7 @@ final class MatrixCallBackend implements CallBackend {
     if (pc == null) return;
     _quality = CallQualityMonitor(
       getStats: () => pc.getStats(),
+      correlationContext: _performanceCorrelation,
     )..start();
   }
 
@@ -470,6 +487,12 @@ final class MatrixCallBackend implements CallBackend {
     _fallback.markConnected();
     _startQualityMonitor();
     _events.add(const CallBackendEvent.connected());
+  }
+
+  void _emitSignalingReady(CallSession call) {
+    if (_disposed || !identical(_call, call) || _signalingEmitted) return;
+    _signalingEmitted = true;
+    _events.add(const CallBackendEvent.signalingReady());
   }
 
   Future<void> _ended(CallSession call) async {
@@ -483,13 +506,19 @@ final class MatrixCallBackend implements CallBackend {
     final quality = _quality;
     _quality = null;
     final fallback = _fallback;
-    debugPrint('[matrix-call] ended reason=${call.hangupReason}');
+    if (diagnostics.detailedLoggingEnabled) {
+      debugPrint('[chatflow/call] ended reason=${call.hangupReason}');
+    }
     _teardownStreamWatch();
     _delegate.markActive(false);
-    final qualitySummary = quality?.summary();
-    if (qualitySummary != null) debugPrint(qualitySummary);
+    if (diagnostics.detailedLoggingEnabled) {
+      final qualitySummary = quality?.summary();
+      if (qualitySummary != null) debugPrint(qualitySummary);
+    }
     diagnostics.mark(CallDiagStage.ended);
-    debugPrint(diagnostics.summary());
+    if (diagnostics.detailedLoggingEnabled) {
+      debugPrint(diagnostics.summary());
+    }
     final interrupted = call.hangupReason == CallErrorCode.iceFailed;
     _events.add(interrupted
         ? const CallBackendEvent.networkInterrupted()
@@ -532,8 +561,13 @@ final class MatrixCallBackend implements CallBackend {
           await call.answer();
         }
         if (generation != _answerGeneration) return;
-        debugPrint('[matrix-call] answer_started');
+        if (diagnostics.detailedLoggingEnabled) {
+          debugPrint('[chatflow/call] answer_started');
+        }
         if (_disposed || !identical(_call, call) || call.callHasEnded) return;
+        // The local answer Future has completed; this is the observed
+        // signaling boundary for an accepted incoming call.
+        if (!call.isOutgoing) _emitSignalingReady(call);
         // kConnected 丢失兜底（规格§五）：10 秒内 peerConnection 已连而
         // SDK 状态事件未到 → 主动补发 connected（事件先到则 watcher 静默）。
         await _fallback.stop();
@@ -572,6 +606,7 @@ final class MatrixCallBackend implements CallBackend {
   @override
   Future<void> hangup() =>
       _execute(() => _active.hangup(reason: CallErrorCode.userHangup));
+
   /// Task M：本地 audio track 先行；远端元数据推送是**旁路**，不阻塞 UI。
   ///
   /// `CallSession.setMicrophoneMuted` 会先翻转真实 track 的 `enabled`，再

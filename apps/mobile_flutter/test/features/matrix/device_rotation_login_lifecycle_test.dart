@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
@@ -79,7 +80,8 @@ final class FakeMatrixSandbox {
     openedPaths.add(databasePath);
     opens.add((path: databasePath, cipher: cipher));
     ciphers.putIfAbsent(databasePath, () => cipher);
-    final database = databases.putIfAbsent(databasePath, FakeMatrixDatabase.new);
+    final database =
+        databases.putIfAbsent(databasePath, FakeMatrixDatabase.new);
     return FakeMatrixClient(database, httpClient: server);
   }
 
@@ -88,6 +90,38 @@ final class FakeMatrixSandbox {
   Future<void> delete(String path) async {
     deletedPaths.add(path);
     databases.remove(path);
+  }
+}
+
+/// Mirrors the in-memory SDK fixture without weakening production's disk
+/// preflight. A populated fake DB carries its fixture fingerprint as pickle.
+final class _SandboxIdentityReader implements MatrixLocalIdentityReader {
+  const _SandboxIdentityReader(this.sandbox);
+
+  final FakeMatrixSandbox sandbox;
+
+  @override
+  Future<bool> exists(String databasePath) async =>
+      sandbox.databases.containsKey(databasePath);
+
+  @override
+  Future<MatrixLocalIdentityRecord> read(
+      String databasePath, String cipher) async {
+    final db = sandbox.databases[databasePath];
+    if (db == null) throw StateError('Fake Matrix database is missing');
+    final savedCipher = sandbox.ciphers[databasePath];
+    if (savedCipher != null && savedCipher != cipher) {
+      throw StateError('Fake Matrix cipher mismatch');
+    }
+    return MatrixLocalIdentityRecord(
+      hasRetainedData: db.loggedIn ||
+          db.userId != null ||
+          db.deviceId != null ||
+          db.fingerprint != null,
+      matrixUserId: db.userId,
+      deviceId: db.deviceId,
+      olmAccount: db.fingerprint,
+    );
   }
 }
 
@@ -141,6 +175,9 @@ final class FakeMatrixClient extends LogoutTrackingClient {
     matrixUserId = newUserID ?? matrixUserId;
     matrixDeviceId = newDeviceID ?? matrixDeviceId;
     loggedIn = true;
+    if (newUserID != null) {
+      db.fingerprint ??= 'fingerprint:$newUserID';
+    }
     _persistObservedIdentity();
   }
 
@@ -236,27 +273,35 @@ final class TokenLoginServer {
 }
 
 /// 与 `main.dart` 相同的装配方式。
-MatrixClientFactory buildFactory({
+Future<MatrixClientFactory> buildFactory({
   required SecureSessionStore store,
   required FakeMatrixSandbox sandbox,
   String Function()? databaseGenerationFactory,
   MatrixSecurityLogger? securityLogger,
   MatrixDiagnosticHasher? diagnosticHasher,
-}) =>
-    MatrixClientFactory(
-      sessionStore: store,
-      homeserver: _homeserver,
-      supportDirectoryPath: () async => _supportDirectory,
-      opener: sandbox.open,
-      disposer: sandbox.dispose,
-      databaseDeleter: sandbox.delete,
-      clientMigrator: (_, __) async {},
-      fingerprintReader: (client) => (client as FakeMatrixClient).db.fingerprint,
-      databaseGenerationFactory:
-          databaseGenerationFactory ?? () => 'generation-a',
-      securityLogger: securityLogger,
-      diagnosticHasher: diagnosticHasher,
-    );
+}) async {
+  // This suite models an existing encrypted database in memory. Production
+  // preflight rightly refuses retained bytes without their Keychain cipher.
+  await store.matrixDatabaseKey();
+  return MatrixClientFactory(
+    sessionStore: store,
+    homeserver: _homeserver,
+    supportDirectoryPath: () async => _supportDirectory,
+    opener: sandbox.open,
+    disposer: sandbox.dispose,
+    databaseDeleter: sandbox.delete,
+    clientMigrator: (_, __) async {},
+    fingerprintReader: (client) => (client as FakeMatrixClient).db.fingerprint,
+    localIdentityPreflight: MatrixLocalIdentityPreflight(
+      reader: _SandboxIdentityReader(sandbox),
+      fingerprintReader: (_, pickle) async => pickle,
+    ),
+    databaseGenerationFactory:
+        databaseGenerationFactory ?? () => 'generation-a',
+    securityLogger: securityLogger,
+    diagnosticHasher: diagnosticHasher,
+  );
+}
 
 MatrixSdkE2eeClient buildMatrix({
   required Client client,
@@ -386,8 +431,9 @@ void main() {
       ..loggedIn = true
       ..fingerprint = 'fingerprint-a';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
 
     await matrix.loginWithToken(
       loginToken: 'one-time-token',
@@ -402,18 +448,17 @@ void main() {
     expect(matrix.credentialsInvalid, isFalse);
     expect(matrix.isLoggedIn, isTrue);
     expect(matrix.debugHasActiveClient, isTrue);
-    expect(sandbox.deletedPaths, isEmpty,
-        reason: 'device 轮换不得删除聊天记录或本地库');
+    expect(sandbox.deletedPaths, isEmpty, reason: 'device 轮换不得删除聊天记录或本地库');
     final binding = await store.matrixBinding();
     expect(binding?.deviceId, 'device-NEW');
-    expect(binding?.matrixUserId, '@a:test',
-        reason: '迁移只允许改写 device id');
+    expect(binding?.matrixUserId, '@a:test', reason: '迁移只允许改写 device id');
     expect(binding?.homeserver, _homeserverText);
     expect(binding?.databaseGeneration, 'generation-a');
     expect(binding?.ed25519Fingerprint, 'fingerprint-a');
   });
 
-  test('a rotation whose Olm identity changed is rejected without touching the binding',
+  test(
+      'a rotation whose Olm identity changed is rejected without touching the binding',
       () async {
     // binding 记录 fingerprint-a，而本机库里的 Olm(Ed25519) 身份已经是
     // fingerprint-b：这是真正的密码学身份错配，绝不是可恢复的服务端轮换。
@@ -425,16 +470,13 @@ void main() {
       ..loggedIn = true
       ..fingerprint = 'fingerprint-b';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
-
+    final factory = await buildFactory(store: store, sandbox: sandbox);
     await expectLater(
-      matrix.loginWithToken(
-        loginToken: 'one-time-token',
-        homeserver: _homeserver,
-        deviceId: 'device-OLD',
-      ),
-      throwsStateError,
+      factory.create(),
+      throwsA(isA<MatrixLocalIdentityPreflightException>().having(
+          (error) => error.cause,
+          'cause',
+          MatrixLocalIdentityCause.fingerprintMismatch)),
     );
 
     final binding = await store.matrixBinding();
@@ -453,8 +495,9 @@ void main() {
       ..loggedIn = true
       ..fingerprint = 'fingerprint-a';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
 
     await expectLater(
       matrix.loginWithToken(
@@ -481,7 +524,7 @@ void main() {
       ..loggedIn = true
       ..fingerprint = 'fingerprint-a';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
     final client = await factory.create() as FakeMatrixClient;
 
     // (1) 调用方声称的"轮换前 device"与 binding 不符：无法证明这是同一次轮换。
@@ -532,7 +575,8 @@ void main() {
         reason: '四次拒绝都不得改写 binding');
   });
 
-  test('a store already rotated by an older build is repaired on resume', () async {
+  test('a store already rotated by an older build is repaired on resume',
+      () async {
     // build 2121 的遗留态：SDK 已经把权威 device id 写进本地库，但 binding 还是
     // 旧的。没有这条修复路径，这类用户升级后每次登录都会失败（L04/L07 死锁）。
     final store = SecureSessionStore(MemorySecureKeyValueStore());
@@ -543,12 +587,14 @@ void main() {
       ..loggedIn = true
       ..fingerprint = 'fingerprint-a';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
 
     await matrix.suspend();
 
-    expect(matrix.debugSuspendedContinuity, MatrixSuspendedContinuity.validated);
+    expect(
+        matrix.debugSuspendedContinuity, MatrixSuspendedContinuity.validated);
     final binding = await store.matrixBinding();
     expect(binding?.deviceId, 'device-NEW');
     expect(binding?.matrixUserId, '@a:test');
@@ -566,14 +612,16 @@ void main() {
     // 允许安全关闭，绝不允许被当成已验证的连续性。
     final store = SecureSessionStore(MemorySecureKeyValueStore());
     final sandbox = FakeMatrixSandbox();
-    sandbox.forScope('')
+    final database = sandbox.forScope('')
       ..userId = '@a:test'
       ..deviceId = 'device-NEW'
       ..loggedIn = true
       ..fingerprint = 'fingerprint-b';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
+    // Model an SDK client already open before this version's pre-init gate.
+    final matrix =
+        buildMatrix(client: FakeMatrixClient(database), factory: factory);
 
     await matrix.suspend();
 
@@ -581,11 +629,13 @@ void main() {
     expect(matrix.debugSuspendedContinuity, MatrixSuspendedContinuity.unknown);
     expect((await store.matrixBinding())?.deviceId, 'device-OLD',
         reason: '无法验证时不得自动改写 binding');
-    await expectLater(matrix.sync(), throwsStateError);
+    await expectLater(
+        matrix.sync(), throwsA(isA<MatrixLocalIdentityPreflightException>()));
     expect(matrix.debugHasActiveClient, isFalse);
   });
 
-  test('switching accounts opens each account database, key and binding', () async {
+  test('switching accounts opens each account database, key and binding',
+      () async {
     final store = SecureSessionStore(MemorySecureKeyValueStore());
     final sandbox = FakeMatrixSandbox();
     // 两个账号在本机都有历史：各自的库、各自的 SQLCipher key、各自的 binding。
@@ -617,8 +667,9 @@ void main() {
 
     expect(scopeA, isNot(scopeB));
     expect(cipherA, isNot(cipherB));
-    final factory = buildFactory(store: store, sandbox: sandbox);
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
     expect(matrix.deviceId, 'device-A');
 
     await matrix.selectAccount('@b:test', _homeserver);
@@ -645,8 +696,7 @@ void main() {
     expect(sandbox.forScope(scopeB).disposals, greaterThanOrEqualTo(1));
     final reopened = sandbox.opens[opensBeforeReturn];
     expect(reopened.path, FakeMatrixSandbox.pathForScope(scopeA));
-    expect(reopened.cipher, cipherA,
-        reason: '每个账号必须使用自己的 SQLCipher key');
+    expect(reopened.cipher, cipherA, reason: '每个账号必须使用自己的 SQLCipher key');
     expect((await store.matrixBinding())?.deviceId, 'device-A');
     expect((await store.matrixBinding())?.matrixUserId, '@a:test');
     expect(sandbox.deletedPaths, isEmpty);
@@ -660,7 +710,7 @@ void main() {
       ..userId = '@a:test'
       ..deviceId = 'device-OLD'
       ..loggedIn = true;
-    final factory = buildFactory(store: store, sandbox: sandbox);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
     final matrix = MatrixSdkE2eeClient(
       FakeMatrixClient(database),
       homeserver: _homeserver,
@@ -676,13 +726,15 @@ void main() {
     expect(matrix.debugHasActiveClient, isFalse);
   });
 
-  test('suspend closes the client on drain timeout combined with a metadata error',
+  test(
+      'suspend closes the client on drain timeout combined with a metadata error',
       () async {
     final database = FakeMatrixDatabase(
         userId: '@a:test', deviceId: 'device-OLD', loggedIn: true);
     final client = FakeMatrixClient(database);
     final store = SecureSessionStore(MemorySecureKeyValueStore());
-    final factory = buildFactory(store: store, sandbox: FakeMatrixSandbox());
+    final factory =
+        await buildFactory(store: store, sandbox: FakeMatrixSandbox());
     var continuityReads = 0;
     final matrix = MatrixSdkE2eeClient(
       client,
@@ -740,9 +792,10 @@ void main() {
       ..fingerprint = 'fingerprint-a'
       ..failSync = true;
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
     final business = FakeLoginBusiness();
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
     final service = DualDomainLoginService(
       business: business,
       matrix: matrix,
@@ -766,7 +819,8 @@ void main() {
     expect(sandbox.deletedPaths, isEmpty);
   });
 
-  test('same account remote login rotates the device and reaches the chat session',
+  test(
+      'same account remote login rotates the device and reaches the chat session',
       () async {
     // 验收场景：账号 A 已在设备 1 登录 → 本机（设备 2）重登 A。
     final store = SecureSessionStore(MemorySecureKeyValueStore());
@@ -778,10 +832,11 @@ void main() {
       ..loggedIn = true
       ..fingerprint = 'fingerprint-a';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
     final business = FakeLoginBusiness();
     var completedSessions = 0;
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
     final cipherBefore = sandbox.ciphers.values.single;
     // 模拟启动时的会话失效挂起（服务端已把本机顶下线）。
     await matrix.suspend();
@@ -808,11 +863,11 @@ void main() {
     expect(matrix.isLoggedIn, isTrue);
     expect(sandbox.ciphers.values.single, cipherBefore,
         reason: '轮换不得更换 SQLCipher key 或重建本地库');
-    expect(sandbox.deletedPaths, isEmpty,
-        reason: '不删除聊天记录、不删除库、不重建 E2EE 身份');
+    expect(sandbox.deletedPaths, isEmpty, reason: '不删除聊天记录、不删除库、不重建 E2EE 身份');
   });
 
-  test('account selection onto an older build-rotated store never wedges at L07',
+  test(
+      'account selection onto an older build-rotated store never wedges at L07',
       () async {
     // 2121 的 L07：目标账号的本地库已经被服务端轮换写新，binding 还是旧的。
     // 此前 selectAccount 会在 resume 的 continuity 校验上抛错，account_storage
@@ -841,9 +896,11 @@ void main() {
       fingerprint: 'fingerprint-b',
       generation: 'generation-b',
     ));
+    await store.matrixDatabaseKey();
     await store.selectMatrixAccount(_homeserverText, '@a:test');
-    final factory = buildFactory(store: store, sandbox: sandbox);
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
 
     await matrix.selectAccount('@b:test', _homeserver);
 
@@ -871,10 +928,11 @@ void main() {
     await store.selectMatrixAccount(_homeserverText, '@a:test');
     final scope = await store.matrixStorageScope();
     sandbox.forScope(scope).nextLoginDeviceId = 'device-1';
-    final factory = buildFactory(store: store, sandbox: sandbox);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
     final business = FakeLoginBusiness();
     var completedSessions = 0;
-    final matrix = buildMatrix(client: await factory.create(), factory: factory);
+    final matrix =
+        buildMatrix(client: await factory.create(), factory: factory);
     final service = DualDomainLoginService(
       business: business,
       matrix: matrix,
@@ -891,8 +949,8 @@ void main() {
 
     expect(completedSessions, 1);
     expect(business.boundMatrixUserId, '@a:test');
-    expect(server.requests, 0,
-        reason: '库里没有可刷新身份时走 SDK 首次登录，不发保留身份刷新请求');
+    expect(server.requests, 1,
+        reason: '首次登录先验 broker token 的 raw MXID，再允许 SDK 建立身份');
     expect(matrix.userId, '@a:test');
     expect(matrix.deviceId, 'device-1');
     expect(matrix.isLoggedIn, isTrue);
@@ -922,7 +980,7 @@ void main() {
       sink: lines.add,
     );
     final hasher = MatrixDiagnosticHasher(await store.diagnosticSalt());
-    final factory = buildFactory(
+    final factory = await buildFactory(
       store: store,
       sandbox: sandbox,
       securityLogger: logger,
@@ -968,7 +1026,8 @@ void main() {
     );
   });
 
-  test('serialized lifecycle: a concurrent suspend never leaves half-open state',
+  test(
+      'serialized lifecycle: a concurrent suspend never leaves half-open state',
       () async {
     final store = SecureSessionStore(MemorySecureKeyValueStore());
     final server = TokenLoginServer(userId: '@a:test', deviceId: 'device-NEW');
@@ -981,7 +1040,7 @@ void main() {
       ..loggedIn = true
       ..fingerprint = 'fingerprint-a';
     await store.saveMatrixBinding(bindingFor(deviceId: 'device-OLD'));
-    final factory = buildFactory(store: store, sandbox: sandbox);
+    final factory = await buildFactory(store: store, sandbox: sandbox);
     final matrix = buildMatrix(
       client: await factory.create(),
       factory: factory,

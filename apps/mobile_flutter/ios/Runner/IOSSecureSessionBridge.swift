@@ -19,6 +19,7 @@ final class IOSSecureSessionBridge {
       do {
         switch call.method {
         case "read": result(try self.store.read(key: key))
+        case "peek": result(try self.store.peek(key: key))
         case "write":
           guard let value = arguments["value"] as? String else { throw IOSSecureSessionError.invalidData }
           try self.store.write(key: key, value: value); result(nil)

@@ -11,30 +11,48 @@ import 'package:liuhetong_mobile/features/matrix/group_announcement_service.dart
 import 'package:liuhetong_mobile/features/matrix/group_room_authority.dart';
 
 void main() {
-  test('historical announcement requests a missing session through SDK',
+  test(
+      'historical key index failure requires republish until a valid key arrives',
+      () async {
+    final client = _Client();
+    final room = _Room(client);
+    client.crypto.keyManager.recover(room, failOldIndex: true);
+    final service = MatrixGroupAnnouncementService(room);
+    await expectLater(
+        service.load(), throwsA(isA<AnnouncementDecryptionUnavailable>()));
+    expect(client.requests, isEmpty);
+    final changed = service.changes.first;
+    client.crypto.keyManager.recover(room);
+    await changed;
+    expect((await service.load()).preview, 'recovered historical announcement');
+  });
+
+  test('unsupported encrypted announcement is not waiting for a key', () async {
+    final client = _Client()..algorithm = 'unsupported.algorithm';
+    final room = _Room(client);
+    await expectLater(MatrixGroupAnnouncementService(room).load(),
+        throwsA(isA<AnnouncementDecryptionUnavailable>()));
+    expect(client.requests, isEmpty);
+  });
+
+  test('historical announcement never explicitly requests missing keys',
       () async {
     final client = _Client();
     final room = _Room(client);
     client.rooms.add(room);
     final service = MatrixGroupAnnouncementService(room);
     await expectLater(
-        service.load(), throwsA(isA<AnnouncementPendingDecryption>()));
-    expect(client.requests, hasLength(1));
-    expect(client.requests.single['body'], {
-      'algorithm': AlgorithmTypes.megolmV1AesSha2,
-      'room_id': room.id,
-      'session_id': 'historical-session',
-      'sender_key': 'sender-key',
-    });
+        service.load(), throwsA(isA<AnnouncementDecryptionUnavailable>()));
+    expect(client.requests, isEmpty);
     // Rebuilds and room syncs must not create a key-request storm.
     await expectLater(MatrixGroupAnnouncementService(room).load(),
-        throwsA(isA<AnnouncementPendingDecryption>()));
-    expect(client.requests, hasLength(1));
+        throwsA(isA<AnnouncementDecryptionUnavailable>()));
+    expect(client.requests, isEmpty);
     final changed = service.changes.first;
     client.crypto.keyManager.recover(room);
     await changed;
     expect((await service.load()).preview, 'recovered historical announcement');
-    expect(client.requests, hasLength(1));
+    expect(client.requests, isEmpty);
   });
 
   test('member leaving before recovery cannot request or read keys', () async {
@@ -81,28 +99,6 @@ void main() {
         MatrixGroupAnnouncementService(room).load(), throwsStateError);
     expect(client.requests, isEmpty);
   });
-
-  test('synchronous request recovery is visible without another sync',
-      () async {
-    final client = _Client();
-    final room = _Room(client);
-    client.onRequest = () => client.crypto.keyManager.recover(room);
-    expect((await MatrixGroupAnnouncementService(room).load()).preview,
-        'recovered historical announcement');
-    expect(client.requests, hasLength(1));
-  });
-
-  test('membership loss during key request denies recovered document',
-      () async {
-    final client = _Client();
-    final room = _Room(client);
-    client.onRequest = () {
-      client.crypto.keyManager.recover(room);
-      room.membership = Membership.leave;
-    };
-    await expectLater(
-        MatrixGroupAnnouncementService(room).load(), throwsStateError);
-  });
 }
 
 class _Client extends Client {
@@ -117,6 +113,7 @@ class _Client extends Client {
   @override
   Encryption get encryption => crypto;
   final requests = <Map<String, dynamic>>[];
+  String algorithm = AlgorithmTypes.megolmV1AesSha2;
   void Function()? onRequest;
   @override
   Future<void> sendToDevicesOfUserIds(
@@ -136,7 +133,7 @@ class _Client extends Client {
         'origin_server_ts': 1,
         'type': EventTypes.Encrypted,
         'content': {
-          'algorithm': AlgorithmTypes.megolmV1AesSha2,
+          'algorithm': algorithm,
           'session_id': 'historical-session',
           'sender_key': 'sender-key',
           'ciphertext': 'native-ciphertext-fixture',
@@ -191,10 +188,10 @@ class _Keys extends KeyManager {
   @override
   SessionKey? getInboundGroupSession(String roomId, String sessionId) =>
       recovered;
-  void recover(Room room) {
+  void recover(Room room, {bool failOldIndex = false}) {
     recovered = SessionKey(
         content: {},
-        inboundGroupSession: _NativeSession(),
+        inboundGroupSession: _NativeSession(failOldIndex: failOldIndex),
         key: '@member:test',
         roomId: room.id,
         sessionId: 'historical-session',
@@ -205,9 +202,12 @@ class _Keys extends KeyManager {
 }
 
 class _NativeSession implements olm.InboundGroupSession {
+  _NativeSession({this.failOldIndex = false});
+  final bool failOldIndex;
   @override
   olm.DecryptResult decrypt(String message) {
     expect(message, 'native-ciphertext-fixture');
+    if (failOldIndex) throw Exception('UNKNOWN_MESSAGE_INDEX');
     return _Result();
   }
 

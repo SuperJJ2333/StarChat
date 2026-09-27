@@ -85,6 +85,45 @@ List<MomentCommentView> mergeMomentComments(
       incoming.id: incoming,
     }.values.toList(growable: false);
 
+final class MomentNotificationItem {
+  const MomentNotificationItem({
+    required this.id,
+    required this.momentId,
+    required this.kind,
+    required this.createdAt,
+    required this.targetAvailable,
+    this.commentId,
+    this.actor,
+    this.contentExcerpt,
+    this.sourceExcerpt,
+    this.readAt,
+  });
+
+  factory MomentNotificationItem.fromJson(Map<String, dynamic> json) =>
+      MomentNotificationItem(
+        id: json['id'].toString(),
+        momentId: json['moment_id'].toString(),
+        commentId: json['comment_id']?.toString(),
+        kind: json['kind']?.toString() ?? '',
+        actor: json['actor'] is Map
+            ? MomentAuthor.fromJson(
+                Map<String, dynamic>.from(json['actor'] as Map))
+            : null,
+        contentExcerpt: json['content_excerpt']?.toString(),
+        sourceExcerpt: json['source_excerpt']?.toString(),
+        targetAvailable: json['target_available'] == true,
+        createdAt: DateTime.parse(json['created_at'].toString()),
+        readAt: DateTime.tryParse(json['read_at']?.toString() ?? ''),
+      );
+
+  final String id, momentId, kind;
+  final String? commentId, contentExcerpt, sourceExcerpt;
+  final MomentAuthor? actor;
+  final bool targetAvailable;
+  final DateTime createdAt;
+  final DateTime? readAt;
+}
+
 final class MomentItem {
   const MomentItem({
     required this.id,
@@ -100,6 +139,7 @@ final class MomentItem {
     this.likeUsers = const [],
     this.comments = const [],
     this.kind = 'MOMENT',
+    this.status = 'PUBLISHED',
     this.adLink,
     this.visibility,
     this.includeUserIds = const [],
@@ -163,6 +203,7 @@ final class MomentItem {
                 MomentCommentView.fromJson(Map<String, dynamic>.from(v as Map)),
           )
           .toList(),
+      status: json['status']?.toString() ?? 'PUBLISHED',
       visibility: json['visibility']?.toString(),
       includeUserIds: (json['include_user_ids'] as List? ?? const [])
           .map((v) => v.toString())
@@ -178,7 +219,7 @@ final class MomentItem {
           .toList(growable: false),
     );
   }
-  final String id, text, kind;
+  final String id, text, kind, status;
   final MomentAuthor author;
   MomentVisibilitySelection? get visibilitySelection {
     final value = visibility;
@@ -259,6 +300,7 @@ final class MomentItem {
         likeUsers: likeUsers ?? this.likeUsers,
         comments: comments ?? this.comments,
         kind: kind,
+        status: status,
         adLink: adLink,
         visibility: visibility ?? this.visibility,
         includeUserIds: includeUserIds ?? this.includeUserIds,

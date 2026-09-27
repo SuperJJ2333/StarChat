@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 
@@ -51,9 +52,14 @@ void main() {
     final projected = <String>[];
     final matrix = MatrixSdkE2eeClient(_SnapshotClient(),
         homeserver: Uri.parse('https://matrix.example'));
+    // This projection test starts with caller-owned identities; cold-start
+    // persistence is exercised independently by cold_start_identity_test.
+    final identities = ProfileRepository(_api());
+    addTearDown(identities.dispose);
     await tester.pumpWidget(CupertinoApp(
         home: MatrixHomePage(
             api: _api(),
+            identityCache: identities,
             matrix: matrix,
             themeController: ThemeController(store: _ThemeStore()),
             onCreateGroup: () {},
@@ -104,9 +110,12 @@ void main() {
     final projected = <String>[];
     final matrix = MatrixSdkE2eeClient(_SnapshotClient(),
         homeserver: Uri.parse('https://matrix.example'));
+    final identityCache = ProfileRepository(_api());
+    addTearDown(identityCache.dispose);
     await tester.pumpWidget(CupertinoApp(
         home: MatrixHomePage(
             api: _api(),
+            identityCache: identityCache,
             matrix: matrix,
             themeController: ThemeController(store: _ThemeStore()),
             onCreateGroup: () {},
@@ -151,9 +160,12 @@ void main() {
     final projected = <String>[];
     final identities = <String>[];
     final rowBuilds = <String>[];
+    final identityCache = ProfileRepository(_api());
+    addTearDown(identityCache.dispose);
     await tester.pumpWidget(CupertinoApp(
         home: MatrixHomePage(
             api: _api(),
+            identityCache: identityCache,
             matrix: matrix,
             themeController: ThemeController(store: _ThemeStore()),
             onCreateGroup: () {},

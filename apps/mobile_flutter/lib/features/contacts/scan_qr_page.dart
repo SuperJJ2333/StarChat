@@ -167,8 +167,10 @@ final class _ScanQrPageState extends State<ScanQrPage>
           .toList();
       if (!mounted) return;
       final match = items.firstWhere(
-        (item) => item['username']?.toString() == username,
-        orElse: () => items.isEmpty ? <String, dynamic>{} : items.first,
+        (item) =>
+            item['username']?.toString().toLowerCase() ==
+            username.toLowerCase(),
+        orElse: () => <String, dynamic>{},
       );
       if (match.isEmpty || match['user_id'] == null) {
         setState(() {
@@ -240,7 +242,8 @@ final class _ScanQrPageState extends State<ScanQrPage>
         builder: (_) => MyQrCodePage(
           profile: profile,
           avatarCacheKey: widget.identityCache
-              ?.resolveIdentity(username: profile.username).cacheKey,
+              ?.resolveIdentity(username: profile.username)
+              .cacheKey,
         ),
       ));
     } catch (_) {
