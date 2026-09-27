@@ -1,0 +1,65 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadInstallerBucketConfigurationAndMaintainPolicy",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketOwnershipControls",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketVersioning",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetBucketTagging"
+      ],
+      "Resource": "arn:aws:s3:::starchat-installers-218022113852-sg"
+    },
+    {
+      "Sid": "ListOnlyInstallerDownloads",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::starchat-installers-218022113852-sg",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "downloads/*"
+        }
+      }
+    },
+    {
+      "Sid": "ReadWriteOnlyInstallerDownloads",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::starchat-installers-218022113852-sg/downloads/*"
+    },
+    {
+      "Sid": "ReadDistributionInventory",
+      "Effect": "Allow",
+      "Action": "cloudfront:ListDistributions",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadActualInstallerOriginAccessControl",
+      "Effect": "Allow",
+      "Action": ["cloudfront:GetOriginAccessControl", "cloudfront:GetOriginAccessControlConfig"],
+      "Resource": "arn:aws:cloudfront::218022113852:origin-access-control/E6P1PEF2BA7OK"
+    },
+    {
+      "Sid": "MaintainActualTaggedInstallerDistribution",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:ListTagsForResource",
+        "cloudfront:UpdateDistribution"
+      ],
+      "Resource": "arn:aws:cloudfront::218022113852:distribution/E30IR8IHK6PMXZ",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "StarChatInstallerDelivery"
+        }
+      }
+    }
+  ]
+}

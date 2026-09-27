@@ -1,5 +1,10 @@
 # 移动交付恢复索引
 
+## 2026-09-28 Android2188私有S3/CDN与网络择优下载已上线
+
+用户批准S3/CDN及实际网络测速，完成管理员资源创建与同名维护策略替换确认。新私有桶/OAC E6P1PEF2BA7OK、分发E30IR8IHK6PMXZ/d12fjr06o6tga5 Deployed，精确2188对象与单SourceArn、匿名S3 403、SG Range206/CORS/Miss→Hit通过。00:16+08仅app_apk_url切www测速页，一条审计，版本0.4.19/2188、iOS0.4.7/2173/min/notes/ABI/alias、45容器镜像/重启计数与schema0090保持。设备下载前CDN/香港各两轮，失败淘汰/保守吞吐择优，有限预算5秒/1MiB、备用入口；不用地区。Windows真实Chrome一次CDN约2秒超时，香港两轮成功被选，不能称该浏览器CDN CORS通过或代表K80/真实用户网络。HK+SG10小门禁、前端339、mobile171/1skip、PG事务发布器62/0skip、云161及维护112通过，原verify未新跑(.env前置不足)和验证脚本错误均保留真实口径。未新APK/业务镜像/媒体/DNS变更。源静态已回填现网2173，防未来部署复活2144。见[任务](tasks/2026-09-27-installer-s3-cdn.md)、[报告](../verification/2026-09-28-installer-s3-cdn.md)。
+
+
 ## 2026-09-27 Android0.4.19/2188正式版本与更新弹窗已发布
 
 用户明确授权新版部署/更新弹窗。2026-09-27T22:14:48.550551+08:00 ARM64固定75b31c签名包上线，81,505,310bytes/SHAaa402236…5e220、源码f433381a/1779冻结输入。包含验证码拒绝释放、锁屏门槛、消息/历史索引性能修复及请求失败细类/阶段/UUID；实际新libapp与本地2185不同，新诊断标记存在。仅Android三键+ARM64别名变更，三成功审计，双侧严格TLS/HEAD及8探针通过、0APK GET；iOS0.4.7/2173/min3/notes、其他ABI/static、schema0090/17生产容器保持，API仍e304。所有正式重建/固定签名/代码资产/锁屏边界及独立spec→security PASS；版本31/21、包装器20，既有完整门禁按不变输入复用并保留原exit1及影响闭环。初次开发插件注册及MIME探针假设失败均已闭环，未改生产MIME或重复发布；自有隧道关闭、0700备份及读回通过。真机弹窗/安装/K80效果待反馈，不假称旧2184根因已明。见[任务](tasks/2026-09-27-android-public-diagnostics-update.md)、[报告](../verification/2026-09-27-android-public-diagnostics-update.md)。源码版本补丁保留主目录其他修改，无Git远端/iOS/服务部署。

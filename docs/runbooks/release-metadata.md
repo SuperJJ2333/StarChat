@@ -24,11 +24,21 @@
 
 1. 本地生成：`python scripts/release_metadata.py prepare release.json --root frontend --output docs/verification/artifacts/<日期>/<任务>/staged`。从一份记录生成首页文案、下载页、电脑IPA链接、使用plistlib序列化的manifest及该平台settings.json；不联网、不改生产。
 2. 检查线上：`python scripts/release_metadata.py check release.json`。只做APK/IPA HEAD和≤256KiB元数据GET；校验大小、XML解析、清单身份/URL/版本、MIME/no-store、官网文案及安装入口。
-3. 发布：通过既有jumper上传脚本和record到本次服务器release目录，然后在服务器运行 `python3 release_metadata.py publish release.json --root /opt/starchat/frontend --output /opt/starchat/docs/verification/artifacts/<日期>/<唯一发布目录>`。必须用全新备份目录；脚本在宿主执行，Settings通过docker exec和公开SettingService更新。
+3. 发布：通过既有jumper将 `scripts/release_metadata.py`、`scripts/release_settings.py` 和record上传到本次服务器release目录（两个脚本保持同目录），然后在服务器运行 `python3 release_metadata.py publish release.json --root /opt/starchat/frontend --output /opt/starchat/docs/verification/artifacts/<日期>/<唯一发布目录>`。必须用全新备份目录；脚本在宿主执行，Settings通过docker exec和公开SettingService更新。辅助脚本经stdin执行，不需要换API镜像。
 
 发布前包已上传到不可变URL。publish先HEAD；保存静态/双平台设置0700备份；拒绝build回退；生成并原子替换静态；公网元数据验证通过后再写唯一平台的版本/build/下载URL及审计。更新说明和最低支持版本原样保留，需另行变更时使用有审计的后台。iOS弹窗URL固定HTTPS安装页，不能填IPA直链或itms-services。Android直链APK，另一端设置逐键校验不变。
 
 页面门禁失败自动回退本次已写且未再变动的文件，不发布弹窗。数据库写入结果不确定时保留已验证页面及before.json，不盲目回滚/重放；先检查审计和现值，再用新备份目录重试。同值不重复写审计。源码静态页面也须随本次生成结果提交，避免后续站点部署复活旧文案。
+
+## Android既有版本的网络择优入口
+
+2026-09-27用户批准下载前比较CDN与香港直连的有限测速。此模式不是发新版本：record增加严格布尔 `network_selection: true`，已部署的确切 `cdn_url`（AWS分配的CloudFront HTTPS主机，路径与当前版本ARM64包一致）、`artifact_sha256` 和 `network_assets` 三项JS文件SHA256。真实分发建立并验证后才填写record，不使用示例ID或域名部署。
+
+`artifact_url` 仍是香港不可变包。发布前必须核对现网版本/build与record完全相同，此模式settings仅返回 `app_apk_url=https://www.liuhetong888.com/download?platform=android&install=1`。最低版本、更新说明、iOS及其他ABI不变。动态registry为 `/downloads/android-release.json`，必须application/json与no-store；版本APK使用immutable长期缓存。
+
+先保存既有JS备份，部署 `download-redirect.js`、`download-network.js`、`download-network-selector.js`，再从现网下载页/首页增量render，保留现网iOS文案。线上门禁核对registry、页面固定CDN主机、三个JS实际SHA/MIME以及两条APK HEAD，不整包GET。页面/首页/registry逐文件原子替换，不是整组事务；中途不兼容会保留香港备用路径。设置在同一PostgreSQL事务内获取已有bulk advisory锁和所有更新设置行锁，比较完整前态、经SettingService写URL及审计、完整读回后提交；任何网络模式缺行、版本变化、前态漂移均拒绝写入。
+
+设备开始下载时每条线路按顺序做两轮256KiB Range，两条线路并行，名义预算5秒/最多请求1MiB；失败线路退出，以较慢一轮吞吐择优，保留手动香港备用。缺浏览器能力或预算已耗尽直接回退；结果30秒内存复用、网络改变取消并失效，不采集位置/账号。小样本只能说明此时测试结果；外部下载管理器后续失败不可自动观测，不保证全程最快。
 
 ## CI / 旧入口
 

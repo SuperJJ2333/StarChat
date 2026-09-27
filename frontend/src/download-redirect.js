@@ -1,3 +1,5 @@
+import {installAndroidNetworkDownload} from './download-network.js';
+
 const iosInstall = 'itms-services://?action=download-manifest&url=https://www.liuhetong888.com/downloads/ios/manifest.plist';
 
 export function downloadDestination(search, device) {
@@ -21,5 +23,9 @@ export function startDownload(location, device, status) {
 }
 
 if (typeof window !== 'undefined') {
-  startDownload(window.location, window.navigator, document.getElementById('download-status'));
+  const network=installAndroidNetworkDownload({document,location:window.location,device:window.navigator,
+    autoStart:downloadDestination(window.location.search,window.navigator)==='/downloads/latest-arm64.apk'});
+  if (!network) startDownload(window.location, window.navigator, document.getElementById('download-status'));
+  else if (downloadDestination(window.location.search,window.navigator)?.startsWith('itms-services:'))
+    startDownload(window.location, window.navigator, document.getElementById('download-status'));
 }
