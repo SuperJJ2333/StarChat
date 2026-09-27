@@ -1,0 +1,56 @@
+[
+  {
+    "schema": "BeginUpload",
+    "body": {
+      "file_name": "moment-0.mp4",
+      "mime_type": "video/mp4",
+      "byte_size": 3
+    }
+  },
+  {
+    "schema": "BeginUpload",
+    "body": {
+      "file_name": "moment-1.jpg",
+      "mime_type": "image/jpeg",
+      "byte_size": 68
+    }
+  },
+  {
+    "schema": "DraftPayload",
+    "body": {
+      "payload": {
+        "text": "",
+        "visibility": "PUBLIC",
+        "image_urls": [
+          "media://moments/u/2"
+        ],
+        "video_urls": [
+          "media://moments/u/1"
+        ],
+        "link_url": null,
+        "include_user_ids": [],
+        "include_tag_ids": [],
+        "exclude_user_ids": [],
+        "exclude_tag_ids": []
+      }
+    }
+  },
+  {
+    "schema": "CreateMoment",
+    "body": {
+      "text": "",
+      "visibility": "PUBLIC",
+      "image_urls": [
+        "media://moments/u/2"
+      ],
+      "video_urls": [
+        "media://moments/u/1"
+      ],
+      "include_user_ids": [],
+      "exclude_user_ids": [],
+      "include_tag_ids": [],
+      "exclude_tag_ids": [],
+      "link_url": null
+    }
+  }
+]

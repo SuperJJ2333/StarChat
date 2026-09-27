@@ -13,6 +13,10 @@ def test_app_config_build_matches_pubspec_version():
     config = (ROOT / "apps" / "mobile_flutter" / "lib" / "core" / "app_config.dart").read_text(encoding="utf-8")
     name = re.search(r"appVersionName\s*=\s*'([^']+)'", config)
     build = re.search(r"appBuildNumber\s*=\s*(\d+)", config)
+    if build is None:
+        build = re.search(r"static const int compiledBuildNumber\s*=\s*(\d+)", config)
+        assert re.search(r"appBuildNumber\s*=\s*compiledBuildNumber\s*;", config), \
+            "runtime build must initialize from the pinned compiled build"
     assert name and build, "app_config.dart must pin appVersionName/appBuildNumber"
 
     expected_name = f"{match.group(1)}.{match.group(2)}.{match.group(3)}"

@@ -1,5 +1,11 @@
 # 移动交付恢复索引
 
+## 2026-09-27 请求失败细类API e304已发布；Debug2187已安装
+
+按用户“补充不含用户信息的错误细分类及请求阶段，再关联服务器时间线定位”实现：随机请求UUID、固定错误/请求阶段、有界兼容队列和非阻塞服务端时间线、服务器闭合过滤采集及精确ID关联。Debug0.4.18/2187固定签名x86_64已保留数据覆盖emulator-5556，SHA3cb9be75…、源码1939c62b；发布后已重启。用户单独批准API e3043e9a…1ec8f，21:44:21→21:44:36+08从fresh1aa6切换，仅三文件，无迁移；0090/PHONE/S3/28其他容器/运行配置保持。双侧严格TLS健康200/未授权401、新错误0、restart0、watch active；公网随机ID健康探针唯一关联到1ms服务端阶段。69条server记录/0条client失败记录，保留覆盖缺口，不能当失败数或用户数；历史2184的58超时/15网络错误仍无确切根因。
+
+Linux187、客户端170检查点/最终91、collector16及独立审查通过；原fullFlutter4852/9skip/4环境失败、verify2813/75skip/1旧契约失败的影响闭环已记录，不冒称原exit0；主集成339、当前契约/移动131/1skip与同项冻结源码安全检查通过。初次生产Env顺序断言失败，已证明键值和multiset一致并复验。未发布正式Android/iOS包，匿名startup route未在此次API中；Windows未做iOS原生/真机。见[任务](tasks/2026-09-27-network-failure-diagnostics.md)、[运行手册](../runbooks/network-request-diagnostics.md)、[发布证据](../verification/artifacts/2026-09-27/network-failure-diagnostics/server-publish/release.json)。下一步出现新失败时按ID采集定位，保留SG/S3及其他任务状态。
+
 ## 2026-09-23 Android0.4.6/2165已发布：头像缓存/统一相册/公告恢复/朋友圈视频
 
 本人头像缓存身份统一；相册头像仅静态图片、隐藏视频/GIF，复用Flutter方形编辑器；公告补标准SDK缺密钥请求；朋友圈复用相册/播放器/账户媒体缓存，MP4/QuickTime≤20MiB。Android正式重建固定签名，最终SHA60826c92，官网APK和Android更新弹窗发布成功；iOS设置未动。APIe15807b2/worker90696ffa、schema0087，22其他容器不变。Flutter3971+更新delta18、frontend299；后端2727/74条件跳过、最终草稿delta21；原verify因备用版本号旧值exit1，修正后mobile108/1及后续门禁exit0。代码提交12ded275已推送main，本地/远程仅保留main，分支归档保留。见[报告](../verification/2026-09-23-avatar-album-android-release.md)、[任务](tasks/2026-09-23-avatar-album-release.md)。本轮未真机验收/未发布iOS。
