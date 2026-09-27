@@ -50,7 +50,7 @@ final class PushNotificationPayload {
 /// 推送点击路由：
 /// 1. 点击时先把 eventId 写入持久去重——系统推送已展示过的事件，
 ///    App 启动后 Matrix 同步到达时不得再提醒一次；
-/// 2. 通知系统/主页面未就绪（冷启动）时挂起，就绪后进入对应会话
+/// 2. 主页面未就绪或应用未恢复前台时挂起，两者均就绪后进入对应会话
 ///    （与本地通知点击复用同一入口，进会话后本地解密渲染）。
 final class PushTapRouter {
   PushTapRouter({
@@ -65,6 +65,7 @@ final class PushTapRouter {
   final NotificationDiagnostics diagnostics;
 
   bool _ready = false;
+  bool _foreground = false;
   bool _opening = false;
   String? _pendingRoomId;
 
@@ -82,10 +83,10 @@ final class PushTapRouter {
           NotificationDiagStage.push, 'tap without room; dropped');
       return;
     }
-    if (!_ready) {
+    if (!_ready || !_foreground) {
       _pendingRoomId = roomId;
-      diagnostics.record(
-          NotificationDiagStage.push, 'tap queued until session ready',
+      diagnostics.record(NotificationDiagStage.push,
+          'tap queued until session and foreground ready',
           eventId: eventId, roomId: roomId);
       return;
     }
@@ -96,6 +97,18 @@ final class PushTapRouter {
   void markReady() {
     if (_ready) return;
     _ready = true;
+    _drainPending();
+  }
+
+  /// Lifecycle permission is independent of session readiness. A notification
+  /// must not navigate the chat while the system has the app inactive/locked.
+  void setForeground(bool foreground) {
+    _foreground = foreground;
+    if (foreground) _drainPending();
+  }
+
+  void _drainPending() {
+    if (!_ready || !_foreground || _opening) return;
     final pending = _pendingRoomId;
     _pendingRoomId = null;
     if (pending != null) {
@@ -118,6 +131,7 @@ final class PushTapRouter {
       await _openConversation(roomId);
     } finally {
       _opening = false;
+      _drainPending();
     }
   }
 }

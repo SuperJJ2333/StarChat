@@ -821,6 +821,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           : Future.value(),
       deduplicator: deduplicator,
     );
+    router.setForeground(
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed);
     // 冷启动由通知点击拉起（含常规消息通知与推送兜底通知）。
     unawaited(routeNotificationLaunch(tapRouter: router));
 
@@ -1050,6 +1052,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _pushTapRouter?.setForeground(state == AppLifecycleState.resumed);
     if (!_matrixReady) return;
     if (state == AppLifecycleState.resumed) {
       _resumePerformance?.onForeground();

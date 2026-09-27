@@ -2,6 +2,19 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../core/business_api_error.dart';
 
+/// A rejected request cannot have delivered a code. Unknown results retain the
+/// send cooldown because retrying could send twice.
+bool isRejectedCodeRequest(BusinessApiException error) =>
+    (error.statusCode >= 400 &&
+        error.statusCode < 500 &&
+        error.statusCode != 408) ||
+    const {
+      'PHONE_AUTH_DISABLED',
+      'SMS_NOT_CONFIGURED',
+      'SMS_SEND_REJECTED',
+      'SMS_SEND_FAILED'
+    }.contains(error.code);
+
 /// Shared bounded-operation feedback; cooldown begins before the send attempt.
 final class AccountCredentialsController extends ChangeNotifier {
   bool busy = false;
@@ -40,7 +53,8 @@ final class AccountCredentialsController extends ChangeNotifier {
     _notify();
   }
 
-  Future<bool> perform(Future<void> Function() action) async {
+  Future<bool> perform(Future<void> Function() action,
+      {bool sendingCode = false}) async {
     if (busy || _disposed) return false;
     ++_generation;
     busy = true;
@@ -51,6 +65,9 @@ final class AccountCredentialsController extends ChangeNotifier {
       await action().timeout(const Duration(seconds: 8));
       return !_disposed;
     } on BusinessApiException catch (error) {
+      if (!_disposed && sendingCode && isRejectedCodeRequest(error)) {
+        clearCooldown();
+      }
       if (!_disposed) errorCode = error.code;
       if (!_disposed) {
         message = error.statusCode >= 500

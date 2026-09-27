@@ -207,6 +207,7 @@ final class ChatSearchQueryController {
         items: dedupeByEventId(page),
         nextCursor: slice == null ? _cursorOf(page) : slice.nextCursor,
         epoch: epoch,
+        coverageIncomplete: slice?.coverageIncomplete ?? false,
       );
       onStateChange?.call(ChatSearchStateChange.loaded(result));
       return result;
@@ -249,6 +250,8 @@ final class ChatSearchQueryController {
       items: merged,
       nextCursor: slice == null ? _cursorOf(more) : slice.nextCursor,
       epoch: epoch,
+      coverageIncomplete:
+          current.coverageIncomplete || (slice?.coverageIncomplete ?? false),
     );
   }
 
@@ -283,6 +286,7 @@ final class ChatSearchMessage {
     this.hasMedia = false,
     this.isVideo = false,
     this.isFlashPhoto = false,
+    this.isUndecrypted = false,
     this.duration,
   });
 
@@ -307,6 +311,7 @@ final class ChatSearchMessage {
 
   /// 闪照（阅后即焚）：不属于普通媒体资产，见 [MediaMessageAccessPolicy]。
   final bool isFlashPhoto;
+  final bool isUndecrypted;
   final Duration? duration;
 }
 
@@ -371,9 +376,13 @@ final class ChatSearchCursor {
 /// Explicit continuation prevents a sparse bounded scan from claiming that
 /// all history has been searched just because this batch has no matches.
 final class ChatSearchSlice {
-  const ChatSearchSlice({required this.items, required this.nextCursor});
+  const ChatSearchSlice(
+      {required this.items,
+      required this.nextCursor,
+      this.coverageIncomplete = false});
   final List<ChatSearchMessage> items;
   final ChatSearchCursor? nextCursor;
+  final bool coverageIncomplete;
 }
 
 final class ChatSearchResultPage {
@@ -382,6 +391,7 @@ final class ChatSearchResultPage {
     required this.nextCursor,
     required this.epoch,
     this.stale = false,
+    this.coverageIncomplete = false,
   });
   final List<ChatSearchMessage> items;
   final ChatSearchCursor? nextCursor;
@@ -389,6 +399,7 @@ final class ChatSearchResultPage {
 
   /// 迟到的旧查询结果（调用方应丢弃，不覆盖新结果）。
   final bool stale;
+  final bool coverageIncomplete;
 }
 
 /// UI 状态变化（加载中/已加载/失败/默认空态）。

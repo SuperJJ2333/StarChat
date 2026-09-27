@@ -412,6 +412,7 @@ final class RoomTimelineController extends ChangeNotifier {
       NetworkStateManager? networkStateManager,
       OutboxJournal? outboxJournal,
       PerformanceTraceRecorder? performanceRecorder,
+      this.onSourceRefreshed,
       this.onOutboxCorrelation,
       this.outboxCorrelationFor,
       this.sendDispatchTimeout = const Duration(seconds: 20)})
@@ -433,6 +434,7 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   final RoomTimelineAdapter adapter;
+  final void Function()? onSourceRefreshed;
   final PerformanceTraceRecorder _performanceRecorder;
   final void Function(String localId, PerformanceCorrelationContext context)?
       onOutboxCorrelation;
@@ -1112,6 +1114,7 @@ final class RoomTimelineController extends ChangeNotifier {
       PerformanceMetrics.instance.record(
           PerformanceOperation.timelineRefresh, watch.elapsedMicroseconds);
     }
+    onSourceRefreshed?.call();
   }
 
   /// 重建失败消息的本地发送条目；传输事务 ID 由适配器保留以防重复投递。

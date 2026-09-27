@@ -502,7 +502,7 @@ final class ChatDiagnostics {
 
   void stopSession() {
     _spoolTimer?.cancel();
-    _queueSpoolWrite();
+    _queueSpoolWrite(finalNetworkWindow: true);
     _spool = null;
     _spoolScope = null;
     _restoring = false;
@@ -1203,12 +1203,14 @@ final class ChatDiagnostics {
     _spoolTimer = Timer(const Duration(seconds: 1), _queueSpoolWrite);
   }
 
-  void _queueSpoolWrite() {
+  void _queueSpoolWrite({bool finalNetworkWindow = false}) {
     _spoolTimer?.cancel();
     final store = _spool;
     final scope = _spoolScope;
     if (store == null || scope == null) return;
-    final networkSamples = networks.persisted;
+    final networkSamples = networks.forPersistence(
+      finalWindow: finalNetworkWindow,
+    );
     _reportNetworkLoss();
     _spoolWrite = (
       store: store,

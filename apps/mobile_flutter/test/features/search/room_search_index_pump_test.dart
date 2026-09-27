@@ -20,6 +20,36 @@ RoomMessageViewModel row(String id,
     );
 
 void main() {
+  testWidgets('steady updates do not replay already indexed history',
+      (tester) async {
+    var reads = 0;
+    final source = List.generate(10000, (i) => row('history-$i'));
+    Iterable<RoomMessageViewModel> history() sync* {
+      for (final value in source) {
+        reads++;
+        yield value;
+      }
+    }
+
+    final pump = RoomSearchIndexPump(
+        source: history, isActive: () => true, upsert: (_) {}, remove: (_) {});
+    pump.request([]);
+    for (var i = 0; i < 180; i++) {
+      await tester.pump(const Duration(milliseconds: 4));
+    }
+    final before = reads;
+    for (var update = 0; update < 20; update++) {
+      final next = row('live-$update');
+      source.add(next);
+      pump.request([next]);
+      for (var i = 0; i < 180; i++) {
+        await tester.pump(const Duration(milliseconds: 4));
+      }
+    }
+    expect(reads - before, lessThanOrEqualTo(20),
+        reason: 'steady traffic must not replay 10000 older projections');
+    pump.dispose();
+  });
   testWidgets('off-window recall supersedes failed old write on source replay',
       (tester) async {
     var source = [row('x')];

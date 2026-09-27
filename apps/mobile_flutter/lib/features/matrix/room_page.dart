@@ -5,6 +5,7 @@ import '../settings/voice_auto_play_preferences.dart';
 import 'coordinated_direct_chat.dart';
 import 'timeline_scroll_anchor.dart';
 import 'bounded_history_search.dart';
+import 'local_room_history_search.dart';
 import '../../core/chat_diagnostics.dart';
 import '../../core/chat_diagnostic_operation.dart';
 import 'nudge_rate_limiter.dart';
@@ -1255,6 +1256,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       _logicalTimeline = timeline;
       controller = RoomTimelineController(
+        onSourceRefreshed: _recordGlobalSearchIndex,
         windowed: true,
         // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
         // 发送必失败，消息进入本地 failed 状态）。拉黑状态取自业务 API
@@ -1745,7 +1747,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (_disposing || !mounted) return;
     unawaited(_ingestMentions());
     _applyInitialAnchorIfNeeded();
-    _recordGlobalSearchIndex();
     final timeline = controller;
     // Sending switches to the latest window and publishes a local bubble before
     // SDK acknowledgment. Scroll to that bubble even while transport is pending.
@@ -3171,11 +3172,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     var searchOpen = true;
     var dateLookupGeneration = 0;
     RoomHistoryDayLocation? resolvedDateLocation;
-    Iterable<RoomMessageViewModel> currentSearchSource(
-            [String? beforeEventId]) =>
-        controller?.historyNewestFirst(beforeEventId: beforeEventId) ??
-        const <RoomMessageViewModel>[];
-
     RoomMessageViewModel? currentSearchMessage(String id) {
       // A retained iterator may outlive a recall or source refresh. Resolve the
       // current indexed row before exposing its text, never a stale snapshot.
@@ -3245,13 +3241,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
     }
 
-    final historySearch = BoundedHistorySearch<RoomMessageViewModel>(
-      snapshot: currentSearchSource,
-      snapshotBefore: currentSearchSource,
-      eventId: (message) => message.id,
-      project: projectSearchMessage,
-      exhausted: () => controller?.historyExhausted ?? true,
-      loadEarlier: _loadEarlier,
+    final historySearch = LocalRoomHistorySearch(
+      roomIds: () => widget.roomLease.localHistorySearchRoomIds,
+      readPage: widget.roomLease.readLocalSearchPage,
+      sourceRevision: () => widget.roomLease.localHistorySearchRevision,
+      project: (sourceRoomId, item) {
+        final current = controller?.findMessage(item.eventId);
+        if (current != null) return projectSearchMessage(current);
+        if (item.isFlashPhoto ||
+            (item.visibleText.isEmpty && item.mediaCategory == null) ||
+            (hiddenEvents?.isEventHidden(sourceRoomId, item.eventId,
+                    eventTimestamp: item.timestamp) ??
+                false)) {
+          return null;
+        }
+        return item;
+      },
     );
     Future<ChatSearchSlice> searchBatch(ChatSearchFilters filters,
         {ChatSearchCursor? cursor, int limit = 50}) async {
@@ -4880,7 +4885,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
     // This list is the bounded viewport, never all loaded history. The pump
     // lazily catches up older records between frames without cancelling batches.
-    _searchIndexPump!.request(timeline.messages);
+    final delta = widget.roomLease.takeSearchEventDelta();
+    final changed = <RoomMessageViewModel>[];
+    final missing = <String>[];
+    for (final id in delta.ids) {
+      final row = timeline.findMessage(id);
+      if (row == null) {
+        missing.add(id);
+      } else {
+        changed.add(row);
+      }
+    }
+    if (missing.isNotEmpty) repository.removeMessages(missing);
+    _searchIndexPump!.request([...timeline.messages, ...changed],
+        rescanHistory: delta.rescan);
   }
 
   /// E1：元素停用（弹出/快速进出）即刻取消 100ms 可见性轮询——

@@ -102,6 +102,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   ChatSearchResultPage? _lastPage;
   Timer? _debounce;
   bool _loadingMore = false;
+  bool _loadMoreFailed = false;
   int _queryGeneration = 0;
 
   @override
@@ -148,7 +149,10 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     widget.onSearchInvalidated?.call();
     _debounce?.cancel();
     _queryGeneration++;
-    setState(() => _loadingMore = false);
+    setState(() {
+      _loadingMore = false;
+      _loadMoreFailed = false;
+    });
     try {
       await _controller!.executeNow(
         onStateChange: (change) {
@@ -358,6 +362,10 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     final page = _lastPage;
     if (page != null && page.items.isEmpty == false) {
       return Column(children: [
+        if (page.coverageIncomplete)
+          _inlineStatus(const Text('部分本地消息尚未解密，无法完整检索',
+              style:
+                  TextStyle(fontSize: 13, color: WeChatColors.textSecondary))),
         if (_state is ChatSearchLoadingState)
           _inlineStatus(const Text('正在查询…',
               style:
@@ -403,8 +411,14 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           CupertinoButton(
               key: const Key('chat-search-continue'),
               onPressed: () => _loadMore(page),
-              child: const Text('继续查找更早记录')),
+              child: Text(_loadMoreFailed ? '加载失败，点击重试' : '继续查找更早记录')),
       ]));
+    }
+    if (page?.coverageIncomplete ?? false) {
+      return const Center(
+          child: Text('部分本地消息尚未解密，无法完整检索',
+              style:
+                  TextStyle(fontSize: 14, color: WeChatColors.textSecondary)));
     }
     return const Center(
       key: Key('chat-search-no-results'),
@@ -451,7 +465,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
                       : CupertinoButton(
                           key: const Key('chat-search-load-more'),
                           onPressed: () => _loadMore(page),
-                          child: const Text('加载更多')),
+                          child: Text(_loadMoreFailed ? '加载失败，点击重试' : '加载更多')),
                 ),
         ),
       );
@@ -488,8 +502,8 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 onPressed: () => _loadMore(page),
-                child: const Text('加载更多',
-                    style: TextStyle(
+                child: Text(_loadMoreFailed ? '加载失败，点击重试' : '加载更多',
+                    style: const TextStyle(
                         fontSize: 13, color: WeChatColors.brandPrimary)),
               ),
             );
@@ -519,14 +533,19 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   Future<void> _loadMore(ChatSearchResultPage current) async {
     if (_loadingMore || current.nextCursor == null) return;
     final generation = _queryGeneration;
-    setState(() => _loadingMore = true);
+    setState(() {
+      _loadingMore = true;
+      _loadMoreFailed = false;
+    });
     try {
       final next = await _controller!.loadMore(current);
       if (mounted && generation == _queryGeneration && !next.stale) {
         setState(() => _lastPage = next);
       }
     } catch (_) {
-      // 翻页失败保持当前页；下次滚动重试。
+      if (mounted && generation == _queryGeneration) {
+        setState(() => _loadMoreFailed = true);
+      }
     } finally {
       if (mounted && generation == _queryGeneration) {
         setState(() => _loadingMore = false);

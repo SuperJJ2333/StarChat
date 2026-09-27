@@ -5,6 +5,56 @@ import 'package:liuhetong_mobile/features/matrix/logical_conversation_timeline.d
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/room_history_date_capability.dart';
+import 'package:liuhetong_mobile/features/matrix/room_timeline_viewport.dart';
+
+class WindowSource extends Source
+    implements RoomWindowedTimelineSource, RoomNewestFirstTimelineSource {
+  WindowSource() : super([]) {
+    window = RoomTimelineViewport<int>(
+        idOf: (i) => 'e$i',
+        project: (i) {
+          projections++;
+          return message('e$i', i);
+        });
+  }
+  late final RoomTimelineViewport<int> window;
+  int projections = 0;
+  @override
+  void enableWindow() => window.update(List.generate(10000, (i) => i));
+  @override
+  List<RoomMessageViewModel> snapshot() => window.snapshot();
+  @override
+  void setHiddenFilter(bool Function(String, DateTime?)? hidden) {}
+  @override
+  bool get hasEarlierWindow => window.hasEarlier;
+  @override
+  bool get hasLaterWindow => window.hasLater;
+  @override
+  int get totalMessages => window.total;
+  @override
+  Iterable<RoomMessageViewModel> get allMessages => window.all;
+  @override
+  RoomMessageViewModel? findMessage(String id) => window.find(id);
+  @override
+  RoomMessageViewModel? get newestMessage => window.newest;
+  @override
+  DateTime? previousTimestamp(String id) => window.previousTimestamp(id);
+  @override
+  bool selectAnchor(String id) => window.anchor(id);
+  @override
+  void selectEarlier() => window.earlier();
+  @override
+  void selectLater() => window.later();
+  @override
+  void selectLatest() => window.latest();
+  @override
+  void pinWindow() => window.pin();
+  @override
+  Iterable<RoomMessageViewModel> get newestFirstMessages => window.newestFirst;
+  @override
+  Iterable<RoomMessageViewModel> historyNewestFirst({String? beforeEventId}) =>
+      window.historyNewestFirst(beforeEventId: beforeEventId);
+}
 
 RoomMessageViewModel message(String id, int second, {String? transaction}) =>
     RoomMessageViewModel(
@@ -162,6 +212,27 @@ class DeferredDateSource extends DateSource {
 }
 
 void main() {
+  test('single source logical room projects bounded viewport of 10000 events',
+      () {
+    final primary = WindowSource();
+    final logical = LogicalConversationTimelineCapability(
+        primaryRoomId: 'primary', primary: primary, sources: {});
+    final adapter = MatrixRoomTimelineAdapter(logical);
+    adapter.enableWindow();
+    final visible = adapter.snapshot();
+    expect(visible.length, 40);
+    expect(primary.projections, 40);
+    expect(adapter.totalMessages, 10000);
+    expect(adapter.findMessage('e1')?.id, 'e1');
+    expect(logical.sourceRoomId('e1'), 'primary');
+    logical.addSource('retained', Source([message('retained-event', 0)]));
+    adapter.snapshot();
+    expect(adapter.totalMessages, 10001);
+    expect(logical.sourceRoomId('retained-event'), 'retained');
+    expect(adapter.selectAnchor('retained-event'), true);
+    expect(adapter.snapshot().map((m) => m.id), contains('retained-event'));
+    adapter.dispose();
+  });
   late Source primary, old;
   late LogicalConversationTimelineCapability timeline;
   setUp(() {

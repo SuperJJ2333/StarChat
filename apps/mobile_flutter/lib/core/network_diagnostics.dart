@@ -66,21 +66,21 @@ DateTime? parseDiagnosticUtc(Object? value) {
 /// the summary. Persisted summaries retain their original release and window.
 final class NetworkDiagnosticSnapshot {
   NetworkDiagnosticSnapshot._(Map<String, Object> json)
-    : _json = Map.unmodifiable({
-        ...json,
-        'success_latency_buckets': List<int>.unmodifiable(
-          json['success_latency_buckets'] as List<int>,
-        ),
-      });
+      : _json = Map.unmodifiable({
+          ...json,
+          'success_latency_buckets': List<int>.unmodifiable(
+            json['success_latency_buckets'] as List<int>,
+          ),
+        });
   final Map<String, Object> _json;
   String get sampleId => _json['sample_id'] as String;
   int get attempts => _json['attempts'] as int;
   Map<String, Object> toJson() => {
-    ..._json,
-    'success_latency_buckets': List<int>.of(
-      _json['success_latency_buckets'] as List<int>,
-    ),
-  };
+        ..._json,
+        'success_latency_buckets': List<int>.of(
+          _json['success_latency_buckets'] as List<int>,
+        ),
+      };
 
   static NetworkDiagnosticSnapshot? tryParse(Object? value) {
     if (value is! Map<String, dynamic>) return null;
@@ -153,11 +153,13 @@ final class NetworkDiagnostics {
   NetworkDiagnostics({DateTime Function()? now}) : _now = now ?? DateTime.now;
   final DateTime Function() _now;
   static const maximumSnapshots = 32;
+  static const persistenceWindow = Duration(seconds: 30);
   final _active = <DiagnosticNetwork, _Counts>{};
   final _queue = <NetworkDiagnosticSnapshot>[];
   int _generation = 0;
   String? _version, _platform;
   bool _supported = true;
+  DateTime? _lastFreezeAt;
   DiagnosticNetwork network = DiagnosticNetwork.unknown;
   int droppedAttempts = 0;
   bool get hasPending => _queue.isNotEmpty || _active.isNotEmpty;
@@ -179,6 +181,7 @@ final class NetworkDiagnostics {
     _active.clear();
     _queue.clear();
     _supported = true;
+    _lastFreezeAt = null;
     network = DiagnosticNetwork.unknown;
     droppedAttempts = 0;
   }
@@ -224,6 +227,8 @@ final class NetworkDiagnostics {
   }
 
   void freeze() {
+    if (_active.isEmpty) return;
+    _lastFreezeAt = _now();
     for (final entry in _active.entries) {
       final c = entry.value;
       final snapshot = NetworkDiagnosticSnapshot._({
@@ -263,6 +268,19 @@ final class NetworkDiagnostics {
     return List.unmodifiable(_queue);
   }
 
+  /// One-second event persistence must not fragment a minute's network
+  /// counters into more immutable samples than the bounded upload can drain.
+  /// Upload/stop still force the final window; already frozen IDs never change.
+  List<NetworkDiagnosticSnapshot> forPersistence({bool finalWindow = false}) {
+    final previous = _lastFreezeAt;
+    if (finalWindow ||
+        previous == null ||
+        _now().difference(previous) >= persistenceWindow) {
+      freeze();
+    }
+    return List.unmodifiable(_queue);
+  }
+
   void acknowledge(Iterable<NetworkDiagnosticSnapshot> sent) {
     final ids = sent.map((s) => s.sampleId).toSet();
     _queue.removeWhere((s) => ids.contains(s.sampleId));
@@ -285,12 +303,12 @@ final class NetworkAttempt {
   }
 
   void error(Object error) => complete(
-    error is TimeoutException
-        ? NetworkOutcome.timeout
-        : error is http.RequestAbortedException
-        ? NetworkOutcome.cancelled
-        : NetworkOutcome.networkError,
-  );
+        error is TimeoutException
+            ? NetworkOutcome.timeout
+            : error is http.RequestAbortedException
+                ? NetworkOutcome.cancelled
+                : NetworkOutcome.networkError,
+      );
 }
 
 /// Decorates transport, never changes requests, retry, authentication or timeout.
@@ -319,36 +337,42 @@ final class DiagnosticHttpClient extends http.BaseClient {
     Map<String, String>? headers,
     Object? body,
     Encoding? encoding,
-  }) => _track(
-    () => super.post(url, headers: headers, body: body, encoding: encoding),
-  );
+  }) =>
+      _track(
+        () => super.post(url, headers: headers, body: body, encoding: encoding),
+      );
   @override
   Future<http.Response> put(
     Uri url, {
     Map<String, String>? headers,
     Object? body,
     Encoding? encoding,
-  }) => _track(
-    () => super.put(url, headers: headers, body: body, encoding: encoding),
-  );
+  }) =>
+      _track(
+        () => super.put(url, headers: headers, body: body, encoding: encoding),
+      );
   @override
   Future<http.Response> patch(
     Uri url, {
     Map<String, String>? headers,
     Object? body,
     Encoding? encoding,
-  }) => _track(
-    () => super.patch(url, headers: headers, body: body, encoding: encoding),
-  );
+  }) =>
+      _track(
+        () =>
+            super.patch(url, headers: headers, body: body, encoding: encoding),
+      );
   @override
   Future<http.Response> delete(
     Uri url, {
     Map<String, String>? headers,
     Object? body,
     Encoding? encoding,
-  }) => _track(
-    () => super.delete(url, headers: headers, body: body, encoding: encoding),
-  );
+  }) =>
+      _track(
+        () =>
+            super.delete(url, headers: headers, body: body, encoding: encoding),
+      );
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) =>
       _track(() => _send(request));
@@ -456,16 +480,16 @@ final class _RequestFuture<T> implements Future<T> {
 
 class _Response extends http.StreamedResponse {
   _Response(Stream<List<int>> stream, http.StreamedResponse original)
-    : super(
-        stream,
-        original.statusCode,
-        contentLength: original.contentLength,
-        request: original.request,
-        headers: original.headers,
-        isRedirect: original.isRedirect,
-        persistentConnection: original.persistentConnection,
-        reasonPhrase: original.reasonPhrase,
-      );
+      : super(
+          stream,
+          original.statusCode,
+          contentLength: original.contentLength,
+          request: original.request,
+          headers: original.headers,
+          isRedirect: original.isRedirect,
+          persistentConnection: original.persistentConnection,
+          reasonPhrase: original.reasonPhrase,
+        );
 }
 
 final class _ResponseWithUrl extends _Response
@@ -477,16 +501,16 @@ final class _ResponseWithUrl extends _Response
 
 class _IoResponse extends IOStreamedResponse {
   _IoResponse(Stream<List<int>> stream, this.original)
-    : super(
-        stream,
-        original.statusCode,
-        contentLength: original.contentLength,
-        request: original.request,
-        headers: original.headers,
-        isRedirect: original.isRedirect,
-        persistentConnection: original.persistentConnection,
-        reasonPhrase: original.reasonPhrase,
-      );
+      : super(
+          stream,
+          original.statusCode,
+          contentLength: original.contentLength,
+          request: original.request,
+          headers: original.headers,
+          isRedirect: original.isRedirect,
+          persistentConnection: original.persistentConnection,
+          reasonPhrase: original.reasonPhrase,
+        );
   final IOStreamedResponse original;
   @override
   Future<Socket> detachSocket() => original.detachSocket();

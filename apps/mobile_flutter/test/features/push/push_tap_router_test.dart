@@ -21,7 +21,95 @@ void main() {
         openConversation: (roomId) async => opened.add(roomId),
         deduplicator: deduplicator,
         diagnostics: diagnostics,
-      );
+      )..setForeground(true);
+
+  test('session ready alone cannot navigate while foreground is unknown',
+      () async {
+    final opened = <String>[];
+    final tapRouter = PushTapRouter(
+      openConversation: (roomId) async => opened.add(roomId),
+      deduplicator: deduplicator,
+      diagnostics: diagnostics,
+    );
+    tapRouter.markReady();
+    tapRouter.handleTap(
+        const PushNotificationPayload(roomId: '!locked:matrix.example'));
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, isEmpty);
+    expect(tapRouter.hasPending, isTrue);
+  });
+
+  test('inactive notification waits for resumed and opens only once', () async {
+    final opened = <String>[];
+    final tapRouter = router(opened)..markReady();
+    tapRouter.setForeground(false);
+    tapRouter.handleTap(const PushNotificationPayload(
+      eventId: '\$inactive-event',
+      roomId: '!inactive:matrix.example',
+    ));
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, isEmpty);
+    expect(deduplicator.hasProcessed('\$inactive-event'), isTrue);
+    tapRouter.markReady();
+    expect(opened, isEmpty);
+    tapRouter.setForeground(true);
+    tapRouter.setForeground(true);
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, ['!inactive:matrix.example']);
+    expect(tapRouter.hasPending, isFalse);
+  });
+
+  test('resumed before session ready leaves notification pending', () async {
+    final opened = <String>[];
+    final tapRouter = router(opened)..setForeground(false);
+    tapRouter.handleTap(
+        const PushNotificationPayload(roomId: '!cold:matrix.example'));
+    tapRouter.setForeground(true);
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, isEmpty);
+    tapRouter.markReady();
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, ['!cold:matrix.example']);
+  });
+
+  test('logout while inactive discards old account notification', () async {
+    final opened = <String>[];
+    final tapRouter = router(opened)..markReady();
+    tapRouter.setForeground(false);
+    tapRouter.handleTap(
+        const PushNotificationPayload(roomId: '!old-account:matrix.example'));
+    tapRouter.reset();
+    tapRouter.setForeground(true);
+    tapRouter.markReady();
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, isEmpty);
+  });
+
+  test('resumed pending tap waits for an existing navigation to finish',
+      () async {
+    final opened = <String>[];
+    final firstOpen = Completer<void>();
+    final tapRouter = PushTapRouter(
+      openConversation: (roomId) async {
+        opened.add(roomId);
+        if (opened.length == 1) await firstOpen.future;
+      },
+      deduplicator: deduplicator,
+      diagnostics: diagnostics,
+    )..setForeground(true);
+    tapRouter.markReady();
+    tapRouter.handleTap(
+        const PushNotificationPayload(roomId: '!first:matrix.example'));
+    tapRouter.setForeground(false);
+    tapRouter.handleTap(
+        const PushNotificationPayload(roomId: '!second:matrix.example'));
+    tapRouter.setForeground(true);
+    expect(tapRouter.hasPending, isTrue);
+    firstOpen.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(opened, ['!first:matrix.example', '!second:matrix.example']);
+    expect(tapRouter.hasPending, isFalse);
+  });
 
   test('冷启动：就绪前点击挂起，就绪后进入对应会话', () async {
     final opened = <String>[];
@@ -84,7 +172,7 @@ void main() {
       },
       deduplicator: deduplicator,
       diagnostics: diagnostics,
-    );
+    )..setForeground(true);
     tapRouter.markReady();
     tapRouter.handleTap(
         const PushNotificationPayload(roomId: '!room-4:matrix.example'));

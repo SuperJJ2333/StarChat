@@ -14,6 +14,7 @@ import '../../core/matrix_local_binding.dart';
 import '../../core/session_store.dart';
 import '../../core/startup_failure_metadata.dart';
 import 'matrix_e2ee_client.dart';
+import 'cooperative_matrix_database.dart';
 import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 
@@ -877,7 +878,7 @@ final class MatrixClientFactory {
           databasePath,
           options: OpenDatabaseOptions(onConfigure: encryption.applyPragmaKey),
         );
-        final matrixDatabase = MatrixSdkDatabase(
+        final matrixDatabase = CooperativeMatrixDatabase(
           clientName,
           database: database,
           sqfliteFactory: databaseFactory,

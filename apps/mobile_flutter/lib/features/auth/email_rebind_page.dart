@@ -64,7 +64,7 @@ final class _EmailRebindPageState extends State<EmailRebindPage> {
         _operation
             .setMessage('验证码请求已受理，请查看${_oldVerified ? '新邮箱' : _destination}');
       }
-    });
+    }, sendingCode: true);
     _recoverExpiredProof();
   }
 
@@ -97,7 +97,8 @@ final class _EmailRebindPageState extends State<EmailRebindPage> {
   }
 
   void _recoverExpiredProof() {
-    if (!mounted || _operation.errorCode != 'REBIND_OLD_VERIFICATION_REQUIRED') {
+    if (!mounted ||
+        _operation.errorCode != 'REBIND_OLD_VERIFICATION_REQUIRED') {
       return;
     }
     setState(() => _oldVerified = false);

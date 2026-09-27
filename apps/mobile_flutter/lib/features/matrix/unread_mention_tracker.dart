@@ -53,8 +53,8 @@ final class UnreadMentionTracker {
           .key;
 
   /// Stable relative ranks from Matrix's event order, independent of clocks.
-  void registerTimeline(List<String> newestFirst) {
-    if (newestFirst.isEmpty) return;
+  bool registerTimeline(List<String> newestFirst) {
+    if (newestFirst.isEmpty) return false;
     int? newestRank;
     for (var i = 0; i < newestFirst.length; i++) {
       final known = _timelineOrders[newestFirst[i]];
@@ -66,12 +66,19 @@ final class UnreadMentionTracker {
     newestRank ??=
         (_timelineOrders.values.fold<int>(0, (a, b) => a > b ? a : b)) +
             newestFirst.length;
+    var changed = false;
     for (var i = 0; i < newestFirst.length; i++) {
-      _timelineOrders[newestFirst[i]] = newestRank - i;
+      final rank = newestRank - i;
+      if (_timelineOrders[newestFirst[i]] != rank) {
+        _timelineOrders[newestFirst[i]] = rank;
+        changed = true;
+      }
     }
+    return changed;
   }
 
   int orderFor(String eventId) => _timelineOrders[eventId]!;
+  bool hasEventOrder(String eventId) => _timelineOrders.containsKey(eventId);
   bool get hasKnownBoundary =>
       boundaryEventId == '' || _timelineOrders.containsKey(boundaryEventId);
 
@@ -119,9 +126,9 @@ final class UnreadMentionTracker {
   }
 
   /// 撤回/删除：从待查看集合移除。
-  void onRedacted(String eventId) {
-    _pendingEventIds.remove(eventId);
-    _viewedEventIds.add(eventId);
+  bool onRedacted(String eventId) {
+    final removed = _pendingEventIds.remove(eventId);
+    return _viewedEventIds.add(eventId) || removed;
   }
 
   /// 待查看列表：按时间线从新到旧（order 降序）。

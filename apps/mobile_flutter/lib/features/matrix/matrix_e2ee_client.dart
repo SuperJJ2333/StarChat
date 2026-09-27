@@ -79,6 +79,8 @@ import 'message_timeline_cache.dart';
 import 'nudge_service.dart';
 import 'room_timeline_controller.dart';
 import '../search/local_message_search_repository.dart';
+import '../search/room_search_event_delta.dart';
+import 'chat_search_query_controller.dart';
 import '../../ui/chat/flash_photo.dart' show FlashPhotoViewedStore;
 
 const _maxFileSendBytes = 100 * 1024 * 1024;
@@ -1509,6 +1511,75 @@ final class MatrixRoomLease
   final String roomId;
   Room? _room;
   final List<_SdkRoomTimelineCapability> _timelines = [];
+  final _searchEventDelta = RoomSearchEventDelta();
+  final _mentionEventDelta = RoomSearchEventDelta();
+  int _localHistorySearchRevision = 0;
+  int get localHistorySearchRevision => _localHistorySearchRevision;
+  ({List<String> ids, bool rescan}) takeSearchEventDelta() =>
+      _searchEventDelta.drain();
+
+  List<String> get localHistorySearchRoomIds =>
+      [roomId, ..._historyLeases.keys];
+
+  /// Direct SQLCipher read: never SDK timeline/requestHistory or remote fallback.
+  Future<List<ChatSearchMessage>> readLocalSearchPage(
+          String sourceRoomId, int offset, int limit) =>
+      _withLeaseOperation((room) async {
+        if (sourceRoomId != roomId &&
+            !_historyLeases.containsKey(sourceRoomId)) {
+          throw StateError('Unknown conversation history source');
+        }
+        final source = sourceRoomId == roomId
+            ? room
+            : _historyLeases[sourceRoomId]!._activeRoom;
+        final database = source.client.database;
+        if (database == null) {
+          throw StateError('Local history database unavailable');
+        }
+        final trace = PerformanceTraceRecorder.instance.start(
+            PerformanceOperationType.search,
+            parentOperation: PerformanceTrace.currentOperation);
+        trace.mark(PerformanceStage.databaseSearchStarted);
+        late final List<Event> events;
+        try {
+          events =
+              await database.getEventList(source, start: offset, limit: limit);
+          trace.mark(PerformanceStage.databaseSearchDone);
+          trace.setDatabase(
+              operation: PerformanceDatabaseOperation.messageSearch,
+              rowCount: events.length);
+          trace.finish();
+        } catch (_) {
+          trace.finish(result: PerformanceResult.failed);
+          rethrow;
+        }
+        void checkActiveSearch() {
+          if (canceled ||
+              owner._accessRevoked ||
+              !identical(owner._client, source.client)) {
+            throw StateError('Local history search lease no longer active');
+          }
+        }
+
+        checkActiveSearch();
+        final hidden = owner._localHistoryStore?.readFilter(sourceRoomId);
+        final projected = <ChatSearchMessage>[];
+        for (var i = 0; i < events.length; i++) {
+          final event = events[i];
+          // getEventList prepends SENDING rows at offset zero. Exclude that
+          // separate queue, while retaining all rows in the sent timeline so
+          // the next SQL offset and exhaustion test stay correct.
+          if (event.status.isSent) {
+            projected.add(projectDeviceLocalSearchEvent(event, hidden: hidden));
+          }
+          if ((i + 1) % 64 == 0) {
+            await Future<void>.delayed(Duration.zero);
+            checkActiveSearch();
+          }
+        }
+        checkActiveSearch();
+        return projected;
+      });
   FutureOr<void> Function()? _onRevoked;
   Future<void> Function()? _drainOwner;
   @override
@@ -1560,7 +1631,32 @@ final class MatrixRoomLease
         members: value.members);
   }
 
-  bool get _mentionsActive => !canceled && !owner._accessRevoked;
+  bool get _mentionsActive =>
+      !canceled && !owner._accessRevoked && _room != null;
+  bool _mentionForceRescan = false;
+  late final _mentionIngest = MentionIngestCoalescer(
+      isActive: () => _mentionsActive,
+      ingest: (shouldContinue) => _withLeaseOperation((room) async {
+            final delta = _mentionEventDelta.drain();
+            final changedIds =
+                _mentionForceRescan || delta.rescan ? null : delta.ids.toSet();
+            _mentionForceRescan = false;
+            try {
+              for (final timeline in _timelines.toList(growable: false)) {
+                if (!shouldContinue() || !identical(_room, room)) return;
+                if (!timeline._disposed) {
+                  await RoomMentionStore.shared.ingest(
+                      room, timeline._liveTimeline.events,
+                      changedEventIds: changedIds,
+                      shouldContinue: () =>
+                          shouldContinue() && identical(_room, room));
+                }
+              }
+            } catch (_) {
+              _mentionForceRescan = true;
+              rethrow;
+            }
+          }));
   Future<UnreadMentionTracker> openMentions() =>
       _withLeaseOperation((room) => RoomMentionStore.shared
           .open(room, shouldContinue: () => _mentionsActive));
@@ -1570,15 +1666,7 @@ final class MatrixRoomLease
   Future<void> scanMentions() =>
       _withLeaseOperation((room) => RoomMentionStore.shared
           .scan(room, shouldContinue: () => _mentionsActive));
-  Future<void> ingestMentions() => _withLeaseOperation((room) async {
-        for (final timeline in _timelines.toList()) {
-          if (!timeline._disposed) {
-            await RoomMentionStore.shared.ingest(
-                room, timeline._liveTimeline.events,
-                shouldContinue: () => _mentionsActive);
-          }
-        }
-      });
+  Future<void> ingestMentions() => _mentionIngest.request();
   String? get historyToken =>
       _timelines.lastOrNull?.historyToken ?? _activeRoom.prev_batch;
   String? get oldestTimelineEventId =>
@@ -1759,6 +1847,12 @@ final class MatrixRoomLease
       final client = _activeRoom.client;
       _logicalEvents = client.onEvent.stream.listen((update) {
         if (canceled || !identical(_logicalTimeline, merged)) return;
+        if (update.roomID == roomId ||
+            _historyLeases.containsKey(update.roomID)) {
+          _searchEventDelta.add(update.content);
+          _mentionEventDelta.add(update.content);
+          _localHistorySearchRevision++;
+        }
         if (update.roomID == roomId &&
             update.type == EventUpdateType.accountData &&
             const {conversationPreferenceType, groupChatAccountDataType}
@@ -2338,7 +2432,10 @@ final class MatrixRoomLease
   }
 
   void revokeNow() {
+    _mentionIngest.cancel();
+    _mentionEventDelta.drain();
     if (_room == null) return;
+    RoomMentionStore.shared.invalidateObservation(_room!);
     _logicalTimeline?.dispose();
     for (final timeline in _timelines.toList(growable: false)) {
       timeline.dispose();
@@ -2518,6 +2615,11 @@ final class _SdkRoomTimelineCapability
     final message = _message(event);
     _messageCache[event.eventId] =
         (event, event.status, redaction, transaction, message);
+    if (_viewport != null) {
+      while (_messageCache.length > 200) {
+        _messageCache.remove(_messageCache.keys.first);
+      }
+    }
     return message;
   }
 
@@ -2538,7 +2640,7 @@ final class _SdkRoomTimelineCapability
         idOf: (entry) =>
             entry is Event ? entry.eventId : (entry as GroupJoinNotice).eventId,
         project: (entry) => entry is Event
-            ? _message(entry)
+            ? _cachedMessage(entry)
             : RoomMessageViewModel(
                 id: (entry as GroupJoinNotice).eventId,
                 senderId: '',
@@ -8196,6 +8298,49 @@ final class MatrixSdkE2eeClient
 /// - 只索引**已解密且用户可见的文本**事件（`m.message` / `m.text`）；
 /// - 闪照、图片/视频/音频/文件等媒体事件与未解密事件永不进入索引；
 /// - 明文只停留在内存索引中，落盘内容仍是 SQLCipher 加密库本身。
+@visibleForTesting
+ChatSearchMessage projectDeviceLocalSearchEvent(Event event,
+    {bool Function(String, DateTime?)? hidden}) {
+  final visible = event.type == EventTypes.Message &&
+      !event.redacted &&
+      !(hidden?.call(event.eventId, event.originServerTs) ?? false);
+  final type = event.messageType;
+  final flash =
+      type == MessageTypes.Image && event.content['flash']?.toString() == '1';
+  final text = visible && !flash ? event.text : '';
+  final category = !visible || flash
+      ? null
+      : switch (type) {
+          MessageTypes.Image ||
+          MessageTypes.Video =>
+            ChatSearchMediaCategory.imageVideo,
+          MessageTypes.File => ChatSearchMediaCategory.file,
+          _
+              when RegExp(r'https?://[^\s<>]+', caseSensitive: false)
+                  .hasMatch(text) =>
+            ChatSearchMediaCategory.link,
+          _ => null,
+        };
+  return ChatSearchMessage(
+      eventId: event.eventId,
+      senderId: event.senderId,
+      // The SDK unsafe fallback starts a remote member/profile request. Search
+      // must use only already resident state, including when a sender is missing.
+      senderDisplayName: event.room
+              .getState(EventTypes.RoomMember, event.senderId)
+              ?.content['displayname']
+              ?.toString() ??
+          event.senderId,
+      timestamp: event.originServerTs.toLocal(),
+      timelineOrder: event.originServerTs.millisecondsSinceEpoch,
+      visibleText: text,
+      mediaCategory: category,
+      hasMedia: category == ChatSearchMediaCategory.imageVideo,
+      isUndecrypted: event.type == EventTypes.Encrypted && !event.redacted,
+      isVideo: type == MessageTypes.Video,
+      isFlashPhoto: flash);
+}
+
 final class MatrixLocalHistorySearchSource implements LocalHistorySearchSource {
   MatrixLocalHistorySearchSource({required this.owner});
 
@@ -8249,7 +8394,10 @@ LocalSearchMessage? projectLocalSearchEvent(Event event,
   final senderId = event.senderId;
   final resolvedName = senderId == localUserId
       ? '我'
-      : room.unsafeGetUserFromMemoryOrFallback(senderId).displayName;
+      : room
+          .getState(EventTypes.RoomMember, senderId)
+          ?.content['displayname']
+          ?.toString();
   final senderName = (resolvedName ?? '').trim();
   return LocalSearchMessage(
     eventId: event.eventId,
@@ -8258,7 +8406,8 @@ LocalSearchMessage? projectLocalSearchEvent(Event event,
     timestamp: event.originServerTs,
     body: body,
     roomId: room.id,
-    roomName: room.getLocalizedDisplayname(),
+    roomName: room.getState(EventTypes.RoomName)?.content['name']?.toString() ??
+        room.id,
     isGroup: !room.isDirectChat,
     senderIsSelf: senderId == localUserId,
     roomAvatarSeed: room.id,

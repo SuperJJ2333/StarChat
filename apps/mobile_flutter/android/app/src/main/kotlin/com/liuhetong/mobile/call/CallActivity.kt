@@ -1,6 +1,5 @@
 package com.liuhetong.mobile.call
 
-import android.app.KeyguardManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -14,7 +13,7 @@ import android.widget.TextView
  * 规格§二3：Native 全屏来电页（系统电话架构；不依赖 Flutter Activity）。
  *
  * - 后台启动（Telecom/CallManager 触发，FLAG_ACTIVITY_NEW_TASK）；
- * - 锁屏/息屏：setShowWhenLocked + setTurnScreenOn + 请求解除键盘锁；
+ * - 锁屏/息屏：仅来电控制可显示、点亮屏幕，不自动解除系统锁；
  * - 监听 CallManager 呈现状态实时刷新：ringing=接听/拒绝；
  *   answering=正在接通（仅挂断）；active=回到通话；结束事件自动关闭
  *   （远端取消/超时/挂断不再留下悬挂页面）；
@@ -40,14 +39,8 @@ class CallActivity : android.app.Activity() {
         // 锁屏之上显示 + 点亮屏幕（Android 8+ API）。
         setShowWhenLocked(true)
         setTurnScreenOn(true)
-        if (Build.VERSION.SDK_INT >= 27) {
-            (getSystemService(KEYGUARD_SERVICE) as KeyguardManager).requestDismissKeyguard(
-                this, null,
-            )
-        }
         window.addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
         )
         CallManager.addUiListener(uiListener)
