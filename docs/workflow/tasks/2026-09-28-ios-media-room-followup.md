@@ -40,3 +40,7 @@
 ## 证据与交接
 
 证据仅放 docs/verification/artifacts/2026-09-28/ios-media-room-followup。敏感会话、用户消息、密钥与原始媒体不入日志。保留此前全链路性能诊断；attempts 不等于用户数。iOS 预检不能代表 Xcode 或真机通过；拿到最终签名包前不切分发。
+
+## 基线预检
+
+Flutter3.44.9/Dart3.12.2可用，C盘约143GB可用；无.env。隔离工作树依赖首次pub get继承系统镜像域导致lock中三个包补丁版漂移（image_picker_ios、octo_image、permission_handler_apple），首次45项绿色只代表该漂移输入，不复用为固定候选证据。保留漂移lock及真实差异，恢复本任务原lock，显式PUB_HOSTED_URL=https://pub.dev并pub get --enforce-lockfile exit0，固定输入四文件基线45项通过、exit0（baseline-focused-locked.log/json），仅证明基线可运行，不能称新修复已通过。未升级/提交依赖，后续Flutter命令应保持该host及lock约束。iOS只读预检记录位于ios-preflight/report.md，未触发CI或取签名资料。
