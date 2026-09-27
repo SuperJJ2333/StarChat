@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/core/startup_failure_metadata.dart';
+import 'package:liuhetong_mobile/core/session_failure.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:matrix/matrix.dart';
@@ -34,6 +36,7 @@ final class _IdentityReader
   final records = <String, MatrixLocalIdentityRecord>{};
   final unreadable = <String>{};
   final plaintext = <String>{};
+  Object? unreadableError;
   var reads = 0;
 
   @override
@@ -50,7 +53,9 @@ final class _IdentityReader
       String databasePath, String cipher) async {
     reads++;
     final path = databasePath.replaceAll('\\', '/');
-    if (unreadable.contains(path)) throw StateError('synthetic read');
+    if (unreadable.contains(path)) {
+      throw unreadableError ?? StateError('synthetic read');
+    }
     return records[path]!;
   }
 }
@@ -944,7 +949,9 @@ void main() {
   });
 
   test('unreadable candidate never enables new-device choice', () async {
-    final reader = _IdentityReader();
+    final reader = _IdentityReader()
+      ..unreadableError =
+          PlatformException(code: '-34018', message: 'PRIVATE-PATH');
     final storage = _RecordingSecureStore();
     final store = SecureSessionStore(storage);
     await store.selectMatrixAccount('https://matrix.test', '@old:matrix.test');
@@ -979,6 +986,10 @@ void main() {
       throwsA(isA<MatrixLocalIdentityPreflightException>()
           .having((error) => error.cause, 'cause',
               MatrixLocalIdentityCause.unreadable)
+          .having((error) => error.startupFailure.category,
+              'safe root category', SessionFailureCategory.keychainPermission)
+          .having((error) => error.startupFailure.nativeStatus,
+              'safe native status', StartupNativeStatus.missingEntitlement)
           .having((error) => error.canCreateNewDevice, 'canCreateNewDevice',
               false)),
     );

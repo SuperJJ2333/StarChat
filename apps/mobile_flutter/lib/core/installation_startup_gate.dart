@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import '../ui/foundation/wechat_tokens.dart';
 import 'installation_reconciler.dart';
 import 'session_failure.dart';
+import 'startup_failure_metadata.dart';
 
 /// Delays application composition until the installation check has settled.
 final class InstallationStartupGate extends StatefulWidget {
@@ -12,10 +13,12 @@ final class InstallationStartupGate extends StatefulWidget {
     super.key,
     required this.reconcile,
     required this.start,
+    this.onFailure,
   });
 
   final Future<InstallationResetOutcome> Function() reconcile;
   final Future<Widget> Function() start;
+  final StartupFailureObserver? onFailure;
 
   @override
   State<InstallationStartupGate> createState() =>
@@ -71,7 +74,11 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
     InstallationResetOutcome outcome;
     try {
       outcome = await widget.reconcile();
-    } catch (_) {
+    } catch (error) {
+      notifyStartupFailure(
+          widget.onFailure,
+          safeStartupFailure(error,
+              boundary: StartupFailureBoundary.reconcile));
       outcome = InstallationResetOutcome.failed;
     } finally {
       _checking = false;
@@ -95,9 +102,13 @@ final class _InstallationStartupGateState extends State<InstallationStartupGate>
       _releaseFirstFrame();
     } catch (error) {
       _started = false;
+      final failure = safeStartupFailure(error,
+          boundary: StartupFailureBoundary.applicationStart);
+      notifyStartupFailure(widget.onFailure, failure);
       if (!mounted) return;
       setState(() {
-        _startFailure = sessionFailureMessage(error, stage: 'startup');
+        _startFailure =
+            sessionFailureCategoryMessage(failure.category, stage: 'startup');
         _phase = _GatePhase.startFailed;
       });
       _releaseFirstFrame();

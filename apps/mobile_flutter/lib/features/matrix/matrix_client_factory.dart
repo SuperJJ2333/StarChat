@@ -12,6 +12,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../core/matrix_local_binding.dart';
 import '../../core/session_store.dart';
+import '../../core/startup_failure_metadata.dart';
 import 'matrix_e2ee_client.dart';
 import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
@@ -186,6 +187,7 @@ final class MatrixClientFactory {
     var matches = 0;
     String? matchingScope;
     var unreadable = false;
+    StartupFailureMetadata? unreadableFailure;
     final scopes = await _candidateScopes(directory);
     if (scopes.length > 256) {
       throw const MatrixLocalIdentityPreflightException(
@@ -222,12 +224,14 @@ final class MatrixClientFactory {
         if (error.cause == MatrixLocalIdentityCause.unreadable ||
             error.cause == MatrixLocalIdentityCause.missingKey) {
           unreadable = true;
+          unreadableFailure ??= error.startupFailure;
         }
       }
     }
     if (unreadable) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.unreadable);
+      throw MatrixLocalIdentityPreflightException(
+          MatrixLocalIdentityCause.unreadable,
+          failureMetadata: unreadableFailure);
     }
     if (matches > 1) {
       throw const MatrixLocalIdentityPreflightException(
@@ -258,11 +262,11 @@ final class MatrixClientFactory {
         // may take that first SDK initialization step.
         if (_validStoredCipher(snapshot.databaseKey) &&
             ((expectedUserId != null &&
-                await sessionStore.confirmedFreshDeviceScope(
-                        homeserver.toString(), expectedUserId) ==
-                    snapshot.scope) ||
-            (expectedUserId == null &&
-                _authorizedFreshScope == snapshot.scope))) {
+                    await sessionStore.confirmedFreshDeviceScope(
+                            homeserver.toString(), expectedUserId) ==
+                        snapshot.scope) ||
+                (expectedUserId == null &&
+                    _authorizedFreshScope == snapshot.scope))) {
           return const MatrixLocalIdentityInspection(
               MatrixLocalIdentityStatus.pristine);
         }
@@ -297,15 +301,17 @@ final class MatrixClientFactory {
         }
       } on MatrixLocalIdentityPreflightException {
         rethrow;
-      } catch (_) {
-        throw const MatrixLocalIdentityPreflightException(
-            MatrixLocalIdentityCause.unreadable);
+      } catch (failure) {
+        throw MatrixLocalIdentityPreflightException.fromError(
+            MatrixLocalIdentityCause.unreadable, failure,
+            boundary: StartupFailureBoundary.originalIdentitySearch);
       }
       throw MatrixLocalIdentityPreflightException(error.cause,
-          canCreateNewDevice: true);
-    } catch (_) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.unreadable);
+          canCreateNewDevice: true, failureMetadata: error.startupFailure);
+    } catch (error) {
+      throw MatrixLocalIdentityPreflightException.fromError(
+          MatrixLocalIdentityCause.unreadable, error,
+          boundary: StartupFailureBoundary.databaseIdentityRead);
     }
   }
 
@@ -324,9 +330,10 @@ final class MatrixClientFactory {
     try {
       snapshot = await sessionStore.peekAccountMatrixIdentity(
           selectedHomeserver, userId);
-    } catch (_) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.unreadable);
+    } catch (error) {
+      throw MatrixLocalIdentityPreflightException.fromError(
+          MatrixLocalIdentityCause.unreadable, error,
+          boundary: StartupFailureBoundary.identitySnapshot);
     }
     final databasePath = _databasePathForScope(directory, snapshot.scope);
     await _DatabaseInitLocks.run(databasePath, () async {
@@ -380,7 +387,7 @@ final class MatrixClientFactory {
     });
   }
 
-  Future<Client> create() async {
+  Future<Client> create({StartupFailureObserver? onFailure}) async {
     final directory = await supportDirectoryPath();
     MatrixStoredIdentitySnapshot snapshot;
     try {
@@ -388,9 +395,10 @@ final class MatrixClientFactory {
     } on MatrixArchiveRecoveryPending {
       throw const MatrixLocalIdentityPreflightException(
           MatrixLocalIdentityCause.recoveryPending);
-    } catch (_) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.unreadable);
+    } catch (error) {
+      throw MatrixLocalIdentityPreflightException.fromError(
+          MatrixLocalIdentityCause.unreadable, error,
+          boundary: StartupFailureBoundary.identitySnapshot);
     }
     if (await sessionStore.peekUnboundFreshDeviceAwaitingAuth() &&
         _authorizedFreshScope != snapshot.scope) {
@@ -438,12 +446,29 @@ final class MatrixClientFactory {
           throw const MatrixLocalIdentityPreflightException(
               MatrixLocalIdentityCause.legacyPlaintextMigrationDeferred);
         }
-        final cipher = await sessionStore.matrixDatabaseKey();
-        client = await opener(
-          clientName: clientName,
-          databasePath: databasePath,
-          cipher: cipher,
-        );
+        late final String cipher;
+        try {
+          cipher = await sessionStore.matrixDatabaseKey();
+        } catch (error) {
+          notifyStartupFailure(
+              onFailure,
+              safeStartupFailure(error,
+                  boundary: StartupFailureBoundary.databaseKey));
+          rethrow;
+        }
+        try {
+          client = await opener(
+            clientName: clientName,
+            databasePath: databasePath,
+            cipher: cipher,
+          );
+        } catch (error) {
+          notifyStartupFailure(
+              onFailure,
+              safeStartupFailure(error,
+                  boundary: StartupFailureBoundary.databaseOpen));
+          rethrow;
+        }
       } finally {
         _authorizedFreshScope = null;
         _authorizedPlaintextScope = null;
@@ -451,7 +476,11 @@ final class MatrixClientFactory {
       try {
         await clientMigrator(client, homeserver);
         return client;
-      } catch (_) {
+      } catch (error) {
+        notifyStartupFailure(
+            onFailure,
+            safeStartupFailure(error,
+                boundary: StartupFailureBoundary.clientMigration));
         await disposer(client);
         rethrow;
       }

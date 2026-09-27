@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -23,6 +24,10 @@ import 'core/installation_reconciler.dart';
 import 'core/installation_startup_gate.dart';
 import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
+import 'core/startup_failure_metadata.dart';
+import 'core/startup_diagnostics.dart';
+import 'core/startup_diagnostics_spool.dart';
+import 'core/startup_diagnostics_transport.dart';
 import 'features/auth/login_controller.dart';
 import 'features/auth/login_stage_diagnostics.dart';
 import 'features/auth/authentication_flow.dart';
@@ -42,11 +47,50 @@ import 'ui/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final startupDiagnostics = StartupDiagnostics(
+    spool: FileStartupDiagnosticsSpool(),
+    transport: HttpStartupDiagnosticsTransport(
+        Uri.parse(AppConfig.businessApiBaseUrl)
+            .resolve('/api/v1/startup-diagnostics')),
+    appVersion: AppConfig.appVersionName.split('-').first,
+    buildNumber: AppConfig.appBuildNumber,
+    osVersion: !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
+        ? (RegExp(r'^Version ([0-9]{1,3}(?:\.[0-9]{1,3}){0,2})(?: |$)')
+                .firstMatch(Platform.operatingSystemVersion)
+                ?.group(1) ??
+            'unknown')
+        : 'unknown',
+    enabled: !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS,
+  );
+  // Memory recording exists before the first platform/storage await. Queue and
+  // transport failures never participate in local session startup decisions.
+  unawaited(
+      startupDiagnostics.initialize().then((_) => startupDiagnostics.flush()));
+  void recordStartupFailure(StartupFailureMetadata failure) {
+    startupDiagnostics.record(startupStageForFailure(failure), failure);
+    unawaited(startupDiagnostics.flush());
+  }
+
+  WidgetsBinding.instance
+      .addObserver(_StartupDiagnosticsLifecycle(startupDiagnostics));
+  try {
+    await _startApplicationShell(startupDiagnostics, recordStartupFailure);
+  } catch (error) {
+    recordStartupFailure(safeStartupFailure(error,
+        boundary: StartupFailureBoundary.preferencesLoad));
+    rethrow;
+  }
+}
+
+Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
+    StartupFailureObserver recordStartupFailure) async {
   scheduleAppStartupFirstFrame();
   installChatErrorReporter();
   MediaResourcePolicy(clearEncoded: clearMediaMemoryCaches).install();
   PerformanceMetrics.instance.startFrameObservation();
   await AppConfig.loadRuntimeVersion();
+  startupDiagnostics.updateVersion(
+      AppConfig.appVersionName.split('-').first, AppConfig.appBuildNumber);
   final themeController = ThemeController(
     store: SharedPreferencesThemePreferenceStore(
       await SharedPreferences.getInstance(),
@@ -73,6 +117,7 @@ Future<void> main() async {
     ),
     probe: FileSystemInstallationContainerProbe(),
     store: store,
+    onFailure: recordStartupFailure,
   );
 
   Future<Widget> startApplication() async {
@@ -82,7 +127,9 @@ Future<void> main() async {
     );
     // 本地生命周期诊断只记录加盐哈希后的标识，原始 Matrix user/device id 与
     // token 永远不出现在日志里。
-    final diagnosticSalt = await loadStartupDiagnosticSalt(store);
+    final diagnosticSalt = await observeStartupOperation(
+        () => loadStartupDiagnosticSalt(store),
+        boundary: StartupFailureBoundary.diagnosticSalt);
     final diagnosticHasher =
         diagnosticSalt == null ? null : MatrixDiagnosticHasher(diagnosticSalt);
     final matrixFactory = MatrixClientFactory(
@@ -92,11 +139,26 @@ Future<void> main() async {
     );
     // Read/create the installation identifier before opening a DB handle so a
     // locked keychain cannot leave an initialized client behind on startup retry.
-    final installationDeviceKey = await store.registrationDeviceKey();
-    final startupClient = await openStartupMatrixClient(
-      openRetained: matrixFactory.create,
-      createSafeShell: () => Client(MatrixClientFactory.clientName),
-    );
+    final installationDeviceKey = await observeStartupOperation(
+        store.registrationDeviceKey,
+        boundary: StartupFailureBoundary.installationIdentity);
+    final startupClient = await observeStartupOperation(() async {
+      StartupFailureMetadata? databaseFailure;
+      try {
+        return await openStartupMatrixClient(
+          openRetained: () => matrixFactory.create(
+              onFailure: (failure) => databaseFailure = failure),
+          createSafeShell: () => Client(MatrixClientFactory.clientName),
+        );
+      } catch (_) {
+        // Passive factory breadcrumbs preserve the original error type for
+        // recovery decisions. Only terminal app composition gets wrapped.
+        if (databaseFailure != null) {
+          throw StartupFailureException(databaseFailure!);
+        }
+        rethrow;
+      }
+    }, boundary: StartupFailureBoundary.databaseOpen);
     final sdkClient = startupClient.client;
     final matrix = MatrixSdkE2eeClient(
       sdkClient,
@@ -122,8 +184,16 @@ Future<void> main() async {
       business: api,
       matrix: matrix,
       securityLogger: matrix.securityLogger,
+      onFailure: (failure) {
+        startupDiagnostics.record(
+            StartupFailureStage.sessionBootstrap, failure);
+        unawaited(startupDiagnostics.flush());
+      },
       restoreLocalMatrixSession: (identity) async {
-        await validateLocalLoginStorageForAuthentication(store);
+        await observeStartupOperation(
+            () => validateLocalLoginStorageForAuthentication(store),
+            boundary: StartupFailureBoundary.accountStorage,
+            loginStage: StartupLoginStage.accountStorage);
         await login.restoreAuthenticatedSession(identity);
       },
     );
@@ -239,7 +309,12 @@ Future<void> main() async {
           prepare: () => recovery.restoreFromLocalSecureStorage(store),
           complete: matrix.syncIfActive,
         );
-      } catch (_) {
+      } catch (error) {
+        startupDiagnostics.record(
+            StartupFailureStage.localRestore,
+            safeStartupFailure(error,
+                boundary: StartupFailureBoundary.localRestore));
+        unawaited(startupDiagnostics.flush());
         // The encrypted database and secure-store records remain intact. The
         // recovery UI can present a retry/import flow without exposing secrets.
       }
@@ -257,9 +332,19 @@ Future<void> main() async {
         return outcome;
       },
       start: startApplication,
+      onFailure: recordStartupFailure,
     ),
     themeController: themeController,
   ));
+}
+
+final class _StartupDiagnosticsLifecycle extends WidgetsBindingObserver {
+  _StartupDiagnosticsLifecycle(this.diagnostics);
+  final StartupDiagnostics diagnostics;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(diagnostics.flush());
+  }
 }
 
 /// Starts at the first app-controlled boundary after Flutter binding setup.
