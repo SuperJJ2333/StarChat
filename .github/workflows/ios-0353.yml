@@ -49,15 +49,24 @@ jobs:
           flutter test --no-pub integration_test/sqlcipher_readonly_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
           flutter test --no-pub integration_test/ios_keychain_archive_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
           flutter test --no-pub integration_test/ios_conversation_notification_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
-          # flutter test removes its temporary listener target; restore the app
-          # configuration before invoking Xcode's native test target directly.
-          flutter build ios --config-only --simulator --debug --no-codesign --no-pub --target=lib/main.dart
+          # Keep the XCTest host entrypoint alive after flutter test removes its
+          # listener. The simulator harness excludes the scanner-only MLKit pod;
+          # the independent production compile and IPA retain the full app.
           python3 - <<'PY'
+          import os
           from pathlib import Path
+          host = Path(os.environ['RUNNER_TEMP']) / 'native-navigation-host.dart'
+          host.write_text("import 'package:flutter/widgets.dart';\nvoid main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const SizedBox.shrink()); }\n")
+          PY
+          flutter build ios --config-only --simulator --debug --no-codesign --no-pub --target="$RUNNER_TEMP/native-navigation-host.dart"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          target = str(Path(os.environ['RUNNER_TEMP']) / 'native-navigation-host.dart')
           for relative in ['ios/Flutter/Generated.xcconfig', 'ios/Flutter/flutter_export_environment.sh']:
               text = Path(relative).read_text()
               assert 'flutter_test_listener' not in text, relative
-              assert 'FLUTTER_TARGET=lib/main.dart' in text, relative
+              assert f'FLUTTER_TARGET={target}' in text, relative
           PY
           set -o pipefail
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
