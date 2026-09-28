@@ -541,6 +541,15 @@ final class PerformanceTrace {
   int softKickCount = 0;
   int hardRestartCount = 0;
   int? syncErrorCount;
+  int? timelineEventCount;
+  PerformanceSearchRestartReason? searchRestartReason;
+  PerformanceSearchCancelReason? searchCancelReason;
+  PerformanceKeyboardDirection? keyboardDirection;
+  PerformanceRoomRoutePhase? roomRoutePhase;
+  int? scanPageCount;
+  int? scanRowCount;
+  int? firstHitMs;
+  int? fullCoverageMs;
   int? reconnectCount;
   int? lastHealthySyncAgeMs;
   double? _rttMs;
@@ -739,6 +748,15 @@ final class PerformanceTrace {
       softKickCount: softKickCount,
       hardRestartCount: hardRestartCount,
       syncErrorCount: syncErrorCount,
+      timelineEventCount: timelineEventCount,
+      searchRestartReason: searchRestartReason,
+      searchCancelReason: searchCancelReason,
+      keyboardDirection: keyboardDirection,
+      roomRoutePhase: roomRoutePhase,
+      scanPageCount: scanPageCount,
+      scanRowCount: scanRowCount,
+      firstHitMs: firstHitMs,
+      fullCoverageMs: fullCoverageMs,
       reconnectCount: reconnectCount,
       lastHealthySyncAgeMs: lastHealthySyncAgeMs,
       cacheSource: cacheSource,

@@ -60,6 +60,112 @@ PerformanceRecord sameRootRecord(int millis,
         frameAttributionComplete: false);
 
 void main() {
+  test('spool preserves bounded sync and closed UI operation fields', () {
+    final sync = PerformanceRecord(
+      operationId: '00000000-0000-4000-8000-000000000001',
+      operation: PerformanceOperationType.matrixSync,
+      totalUs: 100000,
+      stagesUs: const {},
+      result: PerformanceResult.success,
+      lifecycle: PerformanceLifecycle.foreground,
+      frames: const PerformanceFrameCounts(),
+      timelineEventCount: 14,
+    );
+    final restoredSync = restoreDiagnosticOperation({
+      ...sync.toJson(),
+      'frames_total': 0,
+    });
+    expect(restoredSync?.toJson()['timeline_event_count'], 14);
+    expect(
+      restoreDiagnosticOperation({
+        ...sync.toJson(),
+        'frames_total': 0,
+        'timeline_event_count': 100001,
+      }),
+      isNull,
+    );
+
+    final keyboard = PerformanceRecord(
+      operationId: '00000000-0000-4000-8000-000000000002',
+      operation: PerformanceOperationType.keyboardTransition,
+      totalUs: 20000,
+      stagesUs: const {},
+      result: PerformanceResult.success,
+      lifecycle: PerformanceLifecycle.foreground,
+      frames: const PerformanceFrameCounts(),
+      keyboardDirection: PerformanceKeyboardDirection.hide,
+    );
+    expect(
+      restoreDiagnosticOperation({...keyboard.toJson(), 'frames_total': 0})
+          ?.toJson()['keyboard_direction'],
+      'hide',
+    );
+  });
+
+  test('older receiver retries legacy operation and drops new-only UI kind',
+      () {
+    fakeAsync((time) {
+      final attempts = <Map<String, Object?>>[];
+      final diagnostics = ChatDiagnostics(
+        now: () => DateTime.utc(2026).add(time.elapsed),
+      );
+      diagnostics.startSession(
+        version: '1.2.4',
+        platform: ChatDiagnosticPlatform.android,
+        upload: (batch, _) async {
+          final json = batch.toJson();
+          attempts.add(json);
+          final ops = json['operations'] as List? ?? const [];
+          return ops.any((op) =>
+                  op['operation'] == 'history_search' ||
+                  op.containsKey('timeline_event_count'))
+              ? 422
+              : 202;
+        },
+      );
+      diagnostics.recordPerformance(PerformanceRecord(
+        operationId: '00000000-0000-4000-8000-000000000001',
+        operation: PerformanceOperationType.historySearch,
+        totalUs: 20000,
+        stagesUs: const {},
+        result: PerformanceResult.failed,
+        lifecycle: PerformanceLifecycle.foreground,
+        frames: const PerformanceFrameCounts(),
+      ));
+      diagnostics.recordPerformance(PerformanceRecord(
+        operationId: '00000000-0000-4000-8000-000000000002',
+        operation: PerformanceOperationType.matrixSync,
+        totalUs: 30000,
+        stagesUs: const {},
+        result: PerformanceResult.failed,
+        lifecycle: PerformanceLifecycle.foreground,
+        frames: const PerformanceFrameCounts(),
+        timelineEventCount: 8,
+      ));
+      diagnostics.recordPerformance(PerformanceRecord(
+        operationId: '00000000-0000-4000-8000-000000000003',
+        operation: PerformanceOperationType.apiRequest,
+        totalUs: 40000,
+        stagesUs: const {},
+        result: PerformanceResult.failed,
+        lifecycle: PerformanceLifecycle.foreground,
+        frames: const PerformanceFrameCounts(),
+      ));
+      time.elapse(const Duration(minutes: 1));
+      time.flushMicrotasks();
+      time.elapse(const Duration(minutes: 1));
+      time.flushMicrotasks();
+      expect(attempts, hasLength(2));
+      final retry = attempts.last['operations'] as List;
+      expect(
+          retry.map((op) => op['operation']), ['matrix_sync', 'api_request']);
+      expect(retry.first.containsKey('timeline_event_count'), isFalse);
+      expect(
+          retry.last['operation_id'], '00000000-0000-4000-8000-000000000003');
+      diagnostics.stopSession();
+    });
+  });
+
   test('oversized durable spool reports omitted operations after restart', () {
     fakeAsync((time) {
       final store = DelayedStore();

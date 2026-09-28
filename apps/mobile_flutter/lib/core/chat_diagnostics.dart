@@ -137,7 +137,9 @@ final class ChatDiagnosticBatch {
         if (_operations.isNotEmpty)
           'operations': [
             for (final entry in _operations)
-              _operationWireJson(entry.record, _operationExtensionsSupported),
+              if (_operationExtensionsSupported ||
+                  !_isNewOnlyOperation(entry.record))
+                _operationWireJson(entry.record, _operationExtensionsSupported),
           ],
       };
 
@@ -245,10 +247,39 @@ final class _PerformanceOperationQueue
   }
 }
 
+bool _isNewOnlyOperation(PerformanceDiagnosticOperation record) =>
+    record.operation == PerformanceOperationType.historySearch ||
+    record.operation == PerformanceOperationType.keyboardTransition ||
+    record.operation == PerformanceOperationType.roomLocalFrame;
+
+const _newPerformanceStages = {
+  PerformanceStage.searchScanStarted,
+  PerformanceStage.searchFirstHit,
+  PerformanceStage.searchCoverageComplete,
+  PerformanceStage.keyboardRequested,
+  PerformanceStage.keyboardStableFrame,
+  PerformanceStage.roomLocalFirstFrame,
+  PerformanceStage.routeExitRequested,
+  PerformanceStage.routeExitFrame,
+  PerformanceStage.fragmentWriteStarted,
+  PerformanceStage.fragmentWriteDone,
+};
+
 bool _hasOperationExtension(_QueuedPerformanceOperation entry) {
   final record = entry.record;
   return record is PerformanceRecord &&
-      (record.attemptIndex != null ||
+      (_isNewOnlyOperation(record) ||
+          record.stagesUs.keys.any(_newPerformanceStages.contains) ||
+          record.timelineEventCount != null ||
+          record.searchRestartReason != null ||
+          record.searchCancelReason != null ||
+          record.scanPageCount != null ||
+          record.scanRowCount != null ||
+          record.firstHitMs != null ||
+          record.fullCoverageMs != null ||
+          record.keyboardDirection != null ||
+          record.roomRoutePhase != null ||
+          record.attemptIndex != null ||
           record.windowIndex != null ||
           record.networkError == PerformanceNetworkError.requestTimeout);
 }
@@ -261,6 +292,25 @@ Map<String, Object?> _operationWireJson(
   if (!extensionsSupported && operation is PerformanceRecord) {
     json.remove('attempt_index');
     json.remove('window_index');
+    for (final key in const [
+      'timeline_event_count',
+      'restart_reason',
+      'cancel_reason',
+      'scan_page_count',
+      'scan_row_count',
+      'first_hit_ms',
+      'full_coverage_ms',
+      'keyboard_direction',
+      'room_route_phase',
+    ]) {
+      json.remove(key);
+    }
+    json['stages'] = [
+      for (final item in json['stages'] as List<Map<String, Object?>>)
+        if (!_newPerformanceStages
+            .any((stage) => stage.wireName == item['stage']))
+          item,
+    ];
     if (operation.networkError == PerformanceNetworkError.requestTimeout) {
       // An older schema cannot express the measured generic deadline. Do not
       // relabel it as DNS/connect/read timeout or infer a network phase.
@@ -943,6 +993,10 @@ final class ChatDiagnostics {
     if (_upload == null || !_operationsSupported) {
       return;
     }
+    if (!_operationExtensionsSupported && _isNewOnlyOperation(record)) {
+      _recordLoss(operations: 1);
+      return;
+    }
     _admitPerformance(record, mustKeep: _mustKeepPerformance(record));
   }
 
@@ -1386,6 +1440,15 @@ final class ChatDiagnostics {
           );
         }
         if (hasNewFields) _operationExtensionsSupported = false;
+        if (hasNewFields) {
+          var dropped = 0;
+          _pendingOperations.removeWhere((entry) {
+            final remove = _isNewOnlyOperation(entry.record);
+            if (remove) dropped++;
+            return remove;
+          });
+          if (dropped > 0) _recordLoss(operations: dropped);
+        }
       } else {
         // An older receiver may know events/frames but no baseline operations.
         _operationsSupported = false;
@@ -1839,14 +1902,24 @@ final class ChatDiagnostics {
           operations.any(_hasOperationExtension);
       if (hasObservation) _observationsSupported = false;
       if (hasNewFields) _operationExtensionsSupported = false;
+      if (hasNewFields) {
+        var dropped = 0;
+        _pendingOperations.removeWhere((entry) {
+          final remove = _isNewOnlyOperation(entry.record);
+          if (remove) dropped++;
+          return remove;
+        });
+        if (dropped > 0) _recordLoss(operations: dropped);
+      }
       if (!hasObservation && !hasNewFields) _operationsSupported = false;
       for (var i = 0; i < _regionalBackfill.length; i++) {
         final b = _regionalBackfill[i];
         final retained = hasObservation || hasNewFields
             ? b._operations
                 .where((entry) =>
-                    !hasObservation ||
-                    entry.record is! PerformanceTraceObservation)
+                    (!hasObservation ||
+                        entry.record is! PerformanceTraceObservation) &&
+                    (!hasNewFields || !_isNewOnlyOperation(entry.record)))
                 .toList()
             : <_QueuedPerformanceOperation>[];
         _regionalBackfill[i] = ChatDiagnosticBatch._(

@@ -123,6 +123,9 @@ enum PerformanceOperationType {
   callActive,
   profileLoad,
   chatListLoad,
+  historySearch,
+  keyboardTransition,
+  roomLocalFrame,
 }
 
 enum PerformanceStage {
@@ -193,6 +196,16 @@ enum PerformanceStage {
   remoteSearchDone,
   renderResults,
   requestFinished,
+  searchScanStarted,
+  searchFirstHit,
+  searchCoverageComplete,
+  keyboardRequested,
+  keyboardStableFrame,
+  roomLocalFirstFrame,
+  routeExitRequested,
+  routeExitFrame,
+  fragmentWriteStarted,
+  fragmentWriteDone,
 }
 
 enum PerformanceResult {
@@ -277,6 +290,23 @@ enum PerformanceRowCountBucket {
 }
 
 enum PerformanceRelayProtocol { udp, tcp, tls, unknown }
+
+enum PerformanceSearchRestartReason {
+  queryChanged,
+  manualRefresh,
+  safetyInvalidation,
+}
+
+enum PerformanceSearchCancelReason {
+  newQuery,
+  routeClosed,
+  accountChanged,
+  visibilityRevoked,
+}
+
+enum PerformanceKeyboardDirection { show, hide }
+
+enum PerformanceRoomRoutePhase { enter, leave }
 
 /// A fixed, identity-free summary of one actual encoder pass. These fields are
 /// local diagnostics only until the server's strict upload schema supports them.
@@ -378,6 +408,15 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
     this.softKickCount = 0,
     this.hardRestartCount = 0,
     this.syncErrorCount,
+    this.timelineEventCount,
+    this.searchRestartReason,
+    this.searchCancelReason,
+    this.keyboardDirection,
+    this.roomRoutePhase,
+    this.scanPageCount,
+    this.scanRowCount,
+    this.firstHitMs,
+    this.fullCoverageMs,
     this.reconnectCount,
     this.lastHealthySyncAgeMs,
     this.cacheSource,
@@ -442,6 +481,17 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
   final int softKickCount;
   final int hardRestartCount;
   final int? syncErrorCount;
+
+  /// Number of timeline events applied during one Matrix sync window.
+  final int? timelineEventCount;
+  final PerformanceSearchRestartReason? searchRestartReason;
+  final PerformanceSearchCancelReason? searchCancelReason;
+  final PerformanceKeyboardDirection? keyboardDirection;
+  final PerformanceRoomRoutePhase? roomRoutePhase;
+  final int? scanPageCount;
+  final int? scanRowCount;
+  final int? firstHitMs;
+  final int? fullCoverageMs;
   final int? reconnectCount;
   final int? lastHealthySyncAgeMs;
   final PerformanceCacheSource? cacheSource;
@@ -491,6 +541,15 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
         softKickCount: softKickCount,
         hardRestartCount: hardRestartCount,
         syncErrorCount: syncErrorCount,
+        timelineEventCount: timelineEventCount,
+        searchRestartReason: searchRestartReason,
+        searchCancelReason: searchCancelReason,
+        keyboardDirection: keyboardDirection,
+        roomRoutePhase: roomRoutePhase,
+        scanPageCount: scanPageCount,
+        scanRowCount: scanRowCount,
+        firstHitMs: firstHitMs,
+        fullCoverageMs: fullCoverageMs,
         reconnectCount: reconnectCount,
         lastHealthySyncAgeMs: lastHealthySyncAgeMs,
         cacheSource: cacheSource,
@@ -759,6 +818,28 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
           'hard_restart_count': hardRestartCount.clamp(0, 1000),
         if (syncErrorCount != null)
           'sync_error_count': syncErrorCount!.clamp(0, 1000),
+        if (operation == PerformanceOperationType.matrixSync &&
+            timelineEventCount != null)
+          'timeline_event_count': timelineEventCount!.clamp(0, 100000),
+        if (operation == PerformanceOperationType.historySearch) ...{
+          if (searchRestartReason != null)
+            'restart_reason': searchRestartReason!.wireName,
+          if (searchCancelReason != null)
+            'cancel_reason': searchCancelReason!.wireName,
+          if (scanPageCount != null)
+            'scan_page_count': scanPageCount!.clamp(0, 100000),
+          if (scanRowCount != null)
+            'scan_row_count': scanRowCount!.clamp(0, 10000000),
+          if (firstHitMs != null) 'first_hit_ms': firstHitMs!.clamp(0, 3600000),
+          if (fullCoverageMs != null)
+            'full_coverage_ms': fullCoverageMs!.clamp(0, 3600000),
+        },
+        if (operation == PerformanceOperationType.keyboardTransition &&
+            keyboardDirection != null)
+          'keyboard_direction': keyboardDirection!.wireName,
+        if (operation == PerformanceOperationType.roomLocalFrame &&
+            roomRoutePhase != null)
+          'room_route_phase': roomRoutePhase!.wireName,
         if (reconnectCount != null)
           'reconnect_count': reconnectCount!.clamp(0, 1000),
         if (lastHealthySyncAgeMs != null)

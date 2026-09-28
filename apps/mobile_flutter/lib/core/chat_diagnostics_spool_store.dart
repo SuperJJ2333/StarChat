@@ -163,13 +163,17 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
             'app_network_state',
             'attempt_index',
             'cache_source',
+            'cancel_reason',
             'candidate_protocol',
             'database_operation',
             'endpoint_category',
+            'first_hit_ms',
             'frame_attribution_complete',
             'frames_total',
             'hard_restart_count',
+            'full_coverage_ms',
             'jitter_ms',
+            'keyboard_direction',
             'last_healthy_sync_age_ms',
             'lifecycle',
             'matrix_state',
@@ -185,6 +189,7 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
             'packets_received',
             'reconnect_count',
             'relay_protocol',
+            'restart_reason',
             'result',
             'result_count_bucket',
             'retry_count',
@@ -193,6 +198,8 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
             'scheduler_active',
             'scheduler_queue',
             'scheduler_video_active',
+            'scan_page_count',
+            'scan_row_count',
             'service_reachable',
             'size_bucket',
             'slow_build_count',
@@ -202,9 +209,11 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
             'stages',
             'status_code',
             'sync_error_count',
+            'timeline_event_count',
             'total_ms',
             'transport_available',
             'uses_turn',
+            'room_route_phase',
             'window_index'
           }.contains(key))) {
     return null;
@@ -258,6 +267,40 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
               operation != PerformanceOperationType.callActive) ||
       raw.containsKey('attempt_index') && raw.containsKey('window_index')) {
     return null;
+  }
+  final keyboardDirection =
+      enumValue(PerformanceKeyboardDirection.values, raw['keyboard_direction']);
+  final roomRoutePhase =
+      enumValue(PerformanceRoomRoutePhase.values, raw['room_route_phase']);
+  final restartReason =
+      enumValue(PerformanceSearchRestartReason.values, raw['restart_reason']);
+  final cancelReason =
+      enumValue(PerformanceSearchCancelReason.values, raw['cancel_reason']);
+  if ((operation == PerformanceOperationType.keyboardTransition) !=
+          (keyboardDirection != null) ||
+      (operation == PerformanceOperationType.roomLocalFrame) !=
+          (roomRoutePhase != null) ||
+      (operation != PerformanceOperationType.historySearch &&
+          (raw.containsKey('restart_reason') ||
+              raw.containsKey('cancel_reason') ||
+              raw.containsKey('scan_page_count') ||
+              raw.containsKey('scan_row_count') ||
+              raw.containsKey('first_hit_ms') ||
+              raw.containsKey('full_coverage_ms'))) ||
+      (operation != PerformanceOperationType.matrixSync &&
+          raw.containsKey('timeline_event_count')) ||
+      (raw.containsKey('restart_reason') && restartReason == null) ||
+      (raw.containsKey('cancel_reason') && cancelReason == null)) {
+    return null;
+  }
+  for (final (key, maximum) in [
+    ('timeline_event_count', 100000),
+    ('scan_page_count', 100000),
+    ('scan_row_count', 10000000),
+    ('first_hit_ms', 3600000),
+    ('full_coverage_ms', 3600000),
+  ]) {
+    if (raw.containsKey(key) && integer(key, maximum) == null) return null;
   }
   final offsets = <PerformanceStage, int>{};
   var previous = 0;
@@ -353,6 +396,15 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
       softKickCount: integer('soft_kick_count', 1000) ?? 0,
       hardRestartCount: integer('hard_restart_count', 1000) ?? 0,
       syncErrorCount: integer('sync_error_count', 1000),
+      timelineEventCount: integer('timeline_event_count', 100000),
+      searchRestartReason: restartReason,
+      searchCancelReason: cancelReason,
+      keyboardDirection: keyboardDirection,
+      roomRoutePhase: roomRoutePhase,
+      scanPageCount: integer('scan_page_count', 100000),
+      scanRowCount: integer('scan_row_count', 10000000),
+      firstHitMs: integer('first_hit_ms', 3600000),
+      fullCoverageMs: integer('full_coverage_ms', 3600000),
       reconnectCount: integer('reconnect_count', 1000),
       lastHealthySyncAgeMs: integer('last_healthy_sync_age_ms', 3600000),
       schedulerQueue: integer('scheduler_queue', 1000),
