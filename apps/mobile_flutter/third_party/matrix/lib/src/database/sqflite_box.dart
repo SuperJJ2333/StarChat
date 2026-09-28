@@ -40,10 +40,14 @@ class BoxCollection with ZoneTransactionMixin {
     if (!boxNames.contains(name)) {
       throw ('Box with name $name is not in the known box names of this collection.');
     }
-    return Box<V>(name, this);
+    final box = Box<V>(name, this);
+    _cacheInvalidators.add(box._invalidateCache);
+    return box;
   }
 
   Batch? _activeBatch;
+  bool _batchPoisoned = false;
+  final _cacheInvalidators = <void Function()>[];
 
   Future<void> transaction(
     Future<void> Function() action, {
@@ -51,11 +55,32 @@ class BoxCollection with ZoneTransactionMixin {
     bool readOnly = false,
   }) =>
       zoneTransaction(() async {
+        if (_activeBatch != null) {
+          try {
+            await action();
+          } catch (_) {
+            _batchPoisoned = true;
+            rethrow;
+          }
+          return;
+        }
         final batch = _db.batch();
         _activeBatch = batch;
-        await action();
-        _activeBatch = null;
-        await batch.commit(noResult: true);
+        try {
+          await action();
+          if (_batchPoisoned) {
+            throw StateError('Nested database action failed');
+          }
+          await batch.commit(noResult: true);
+        } catch (_) {
+          for (final invalidate in _cacheInvalidators) {
+            invalidate();
+          }
+          rethrow;
+        } finally {
+          _activeBatch = null;
+          _batchPoisoned = false;
+        }
       });
 
   Future<void> clear() => transaction(
@@ -106,6 +131,11 @@ class Box<V> {
         'Illegal value type for Box: "${V.toString()}". Must be one of $allowedValueTypes',
       );
     }
+  }
+
+  void _invalidateCache() {
+    _cache.clear();
+    _cachedKeys = null;
   }
 
   String? _toString(V? value) {

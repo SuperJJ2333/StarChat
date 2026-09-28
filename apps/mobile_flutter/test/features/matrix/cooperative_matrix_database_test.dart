@@ -126,7 +126,7 @@ void main() {
     }
   });
 
-  test('inherited nested transaction behavior and action errors stay unchanged',
+  test('nested transaction stays atomic and action errors release the lock',
       () async {
     final fixture = await _Fixture.open();
     try {
@@ -134,9 +134,7 @@ void main() {
         await fixture.database.transaction(() async {
           await fixture.store(_message(r'$nested'));
         });
-        // The existing SDK commits its nested batch before the outer action
-        // returns. The scheduling adapter deliberately does not change this.
-        expect((await fixture.raw.query('box_events')).length, 1);
+        expect(await fixture.raw.query('box_events'), isEmpty);
       });
       expect((await fixture.raw.query('box_events')).length, 1);
       final failure = StateError('synthetic action failure');
@@ -147,6 +145,106 @@ void main() {
         await fixture.store(_message(r'$after-error'));
       });
       expect((await fixture.database.getEventList(fixture.room)).length, 2);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test('failed native batch restores cached event and fragment', () async {
+    final fixture = await _Fixture.open();
+    try {
+      final failure = StateError('synthetic rollback');
+      await expectLater(
+        fixture.database.transaction(() async {
+          await fixture.store(_message(r'$rolled-back'));
+          expect(
+              (await fixture.database.getEventList(fixture.room))
+                  .map((event) => event.eventId),
+              [r'$rolled-back']);
+          throw failure;
+        }),
+        throwsA(same(failure)),
+      );
+      expect(await fixture.database.getEventById(r'$rolled-back', fixture.room),
+          isNull);
+      expect(await fixture.database.getEventList(fixture.room), isEmpty);
+      await fixture.reopen();
+      expect(await fixture.database.getEventList(fixture.room), isEmpty);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test('commit failure clears cache before a later standalone write', () async {
+    final fixture = await _Fixture.open();
+    try {
+      await fixture.raw.execute('PRAGMA query_only = ON');
+      await expectLater(
+        fixture.database.transaction(() async {
+          await fixture.store(_message(r'$uncommitted'));
+        }),
+        throwsA(isA<DatabaseException>()),
+      );
+      expect(await fixture.database.getEventById(r'$uncommitted', fixture.room),
+          isNull);
+      await fixture.raw.execute('PRAGMA query_only = OFF');
+      await fixture.store(_message(r'$standalone'));
+      await fixture.reopen();
+      expect(
+          (await fixture.database.getEventList(fixture.room))
+              .map((event) => event.eventId),
+          [r'$standalone']);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test('nested action joins the outer native batch', () async {
+    final fixture = await _Fixture.open();
+    try {
+      await fixture.database.transaction(() async {
+        await fixture.store(_message(r'$outer'));
+        await fixture.database.transaction(() async {
+          await fixture.store(_message(r'$nested'));
+        });
+        expect(await fixture.raw.query('box_events'), isEmpty);
+      });
+      expect(
+          (await fixture.database.getEventList(fixture.room))
+              .map((event) => event.eventId),
+          [r'$nested', r'$outer']);
+      await fixture.reopen();
+      expect(
+          (await fixture.database.getEventList(fixture.room))
+              .map((event) => event.eventId),
+          [r'$nested', r'$outer']);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test('caught nested failure still aborts the outer native batch', () async {
+    final fixture = await _Fixture.open();
+    try {
+      await expectLater(
+        fixture.database.transaction(() async {
+          await fixture.store(_message(r'$outer'));
+          try {
+            await fixture.database.transaction(() async {
+              await fixture.store(_message(r'$inner'));
+              throw StateError('nested failure');
+            });
+          } on StateError catch (error) {
+            expect(error.message, 'nested failure');
+          }
+          await fixture.store(_message(r'$after'));
+        }),
+        throwsStateError,
+      );
+      expect(await fixture.raw.query('box_events'), isEmpty);
+      expect(await fixture.database.getEventList(fixture.room), isEmpty);
+      await fixture.reopen();
+      expect(await fixture.database.getEventList(fixture.room), isEmpty);
     } finally {
       await fixture.close();
     }
