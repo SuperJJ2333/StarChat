@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:photo_manager/photo_manager.dart';
+import '../../core/performance_trace.dart';
 
 import 'media_cache.dart';
 import 'media_index.dart' show MediaVariantKind;
@@ -33,6 +34,7 @@ final class GalleryPhoto {
     this.duration,
     this.originalSizeBytes,
     this.compressedPreviewFile,
+    this.tracedCompressedPreviewFile,
     this.firstFrame,
     this.posterBytes,
     this.localVideoFile,
@@ -60,9 +62,12 @@ final class GalleryPhoto {
   /// 原始文件大小（惰性读取），只用于媒体信息，不作为视频发送大小。
   final Future<int> Function()? originalSizeBytes;
 
-  /// 视频预览与发送使用同一压缩策略；调用方独立拥有并释放产物。
+  /// 原片无法预览时的压缩回退；调用方独立拥有并释放产物。
   /// 仅视频条目提供。
   final Future<VideoRendition> Function()? compressedPreviewFile;
+  final Future<VideoRendition> Function(
+          PerformanceTrace? trace, void Function(double)? onProgress)?
+      tracedCompressedPreviewFile;
 
   /// 规格#4：视频首帧懒加载（磁盘缓存命中即回，未命中经全局
   /// [videoFirstFrameStore] 有界并发抽帧并落盘；成功结果内存缓存，
@@ -593,6 +598,10 @@ class DeviceGalleryPager {
               : null,
           compressedPreviewFile:
               isVideo ? () async => _resolveVideoRendition(asset) : null,
+          tracedCompressedPreviewFile: isVideo
+              ? (trace, onProgress) => _resolveVideoRendition(asset,
+                  performanceTrace: trace, onProgress: onProgress)
+              : null,
           posterBytes: isVideo ? () async => _videoPosterBytes(asset) : null,
           localVideoFile: isVideo ? () => asset.originFile : null,
           firstFrame: isVideo ? () => videoFirstFrameStore.load(asset) : null,
@@ -702,10 +711,13 @@ class DeviceGalleryPager {
   }
 
   /// Each consumer owns its rendition. A preview cannot delete a send's file.
-  Future<VideoRendition> _resolveVideoRendition(AssetEntity asset) async {
+  Future<VideoRendition> _resolveVideoRendition(AssetEntity asset,
+      {PerformanceTrace? performanceTrace,
+      void Function(double)? onProgress}) async {
     final origin = await asset.originFile;
     if (origin == null) throw StateError('video unavailable');
-    return transcodeForChat(origin);
+    return transcodeForChat(origin,
+        performanceTrace: performanceTrace, onProgress: onProgress);
   }
 
   Future<Uint8List> _readCompressedVideo(AssetEntity asset) async {

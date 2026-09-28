@@ -1,4 +1,7 @@
-import 'features/auth/phone_rebind_page.dart';
+import 'core/business_username_gateway.dart';
+import 'features/profile/username_change_page.dart';
+import 'features/profile/account_settings_pages.dart';
+import 'ui/components/wechat_scaffold.dart';
 import 'features/contacts/contact_actions.dart';
 import 'features/contacts/friend_acceptance_greeting_ledger.dart';
 import 'features/matrix/direct_chat_failure.dart';
@@ -11,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/business_api_client.dart';
+import 'core/chat_diagnostics.dart';
 import 'core/friend_acceptance_greeting_flow.dart';
 import 'core/app_connection_status.dart';
 import 'core/network_state_manager.dart';
@@ -45,6 +49,7 @@ import 'features/ledger/ledger_page_snapshot_store.dart';
 import 'features/friendship/friend_request_snapshot_store.dart';
 import 'features/contacts/contact_tag_snapshot_store.dart';
 import 'features/moments/moment_draft_store.dart';
+import 'features/moments/moment_publish_coordinator.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -542,12 +547,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    ChatDiagnostics.instance.setFrameTab(ChatDiagnosticTab.messages);
     widget.matrix.authorizeRoomSend = _authorizeRoomSend;
     widget.matrix.prepareRoomSend = (account, room, peer) async {
       if (account != widget.matrix.userId) throw StateError('Account changed');
       return _resolveNewDirectSend(peer);
     };
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_resumeMomentUploads());
     _matrixResourceSetup = _initializeMatrixResources();
     unawaited(_matrixResourceSetup);
     unawaited(_identityCache());
@@ -818,6 +825,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           : Future.value(),
       deduplicator: deduplicator,
     );
+    router.setForeground(
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed);
     // 冷启动由通知点击拉起（含常规消息通知与推送兜底通知）。
     unawaited(routeNotificationLaunch(tapRouter: router));
 
@@ -1045,8 +1054,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   DateTime? _lastUpdateCheckAt;
 
+  Future<void> _resumeMomentUploads() async {
+    try {
+      final queue = await MomentPublishQueues.open(widget.api);
+      if (mounted && queue.active) queue.resume();
+    } catch (_) {
+      // Preserve the durable queue for a later foreground retry.
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _pushTapRouter?.setForeground(state == AppLifecycleState.resumed);
+    if (state == AppLifecycleState.resumed) unawaited(_resumeMomentUploads());
     if (!_matrixReady) return;
     if (state == AppLifecycleState.resumed) {
       _resumePerformance?.onForeground();
@@ -1636,6 +1656,32 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             MatrixSyncWatchdog(
               target: watchdogTarget,
               transport: ConnectivityPlusTransportMonitor(),
+              onRecoveryDiagnostic: (action, signal, elapsed) {
+                if (_disposed) return;
+                ChatDiagnostics.instance.record(
+                  stage: switch (action) {
+                    MatrixSyncRecoveryAction.softKick =>
+                      ChatDiagnosticStage.matrixSyncSoftKick,
+                    MatrixSyncRecoveryAction.hardRestart =>
+                      ChatDiagnosticStage.matrixSyncHardRestart,
+                  },
+                  error: switch (signal) {
+                    MatrixSyncRecoverySignal.stalled =>
+                      ChatDiagnosticError.slow,
+                    MatrixSyncRecoverySignal.timeout =>
+                      ChatDiagnosticError.timeout,
+                    MatrixSyncRecoverySignal.failed =>
+                      ChatDiagnosticError.unknown,
+                  },
+                  elapsed: elapsed,
+                  lifecycle: switch (WidgetsBinding.instance.lifecycleState) {
+                    AppLifecycleState.resumed =>
+                      ChatDiagnosticLifecycle.foreground,
+                    null => ChatDiagnosticLifecycle.unknown,
+                    _ => ChatDiagnosticLifecycle.background,
+                  },
+                );
+              },
             );
         syncWatchdog.start();
         _syncWatchdogStarted = true;
@@ -2229,12 +2275,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
     // 逻辑会话归一化（缺陷 0919 项 3）：搜索/通知命中历史孤儿房间时，
     // 只允许只读定位打开（保留 roomId+anchor），不作为独立可发送会话。
-    await widget.matrix.prepareConversationAssociations();
-    final normalized = normalizeDuplicateRoomOpen(request,
-        primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync);
     try {
-      await _roomOpening.open(
-        normalized,
+      await _roomOpening.openPrepared(
+        request,
+        prepare: widget.matrix.prepareConversationAssociations,
+        normalize: (traced) => normalizeDuplicateRoomOpen(traced,
+            primaryRoomIdOf: widget.matrix.logicalPrimaryRoomIdSync),
         navigate: _roomNavigation.open,
         awaitLocalRoom: _awaitLocalRoom,
       );
@@ -2362,6 +2408,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 initialAnchorRoomId: request.anchorRoomId,
                 navigationRequests: navigationRequests,
                 requestOutboxDrain: () => unawaited(_outboxScheduler?.drain()),
+                onOutboxCorrelation: (id, correlation) =>
+                    _outboxScheduler?.registerCorrelation(id, correlation),
+                outboxCorrelationFor: (id) =>
+                    _outboxScheduler?.correlationFor(id),
                 resolveDirectSendTarget: _resolveNewDirectSend,
                 onDirectTargetChanged: (target) => _replaceRecoveredPage(
                     roomId,
@@ -2545,6 +2595,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void dispose() {
     _disposed = true;
+    ChatDiagnostics.instance.setFrameTab(ChatDiagnosticTab.unknown);
     _profileEntryRevision.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _unreadSubscription?.cancel();
@@ -2750,6 +2801,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           CupertinoTabScaffold(
             tabBar: CupertinoTabBar(
               onTap: (index) {
+                ChatDiagnostics.instance.setFrameTab(switch (index) {
+                  0 => ChatDiagnosticTab.messages,
+                  1 => ChatDiagnosticTab.contacts,
+                  2 => ChatDiagnosticTab.discover,
+                  3 => ChatDiagnosticTab.me,
+                  _ => ChatDiagnosticTab.unknown,
+                });
                 if (index == 2) unawaited(_momentsUnread?.refresh());
                 if (index == 0) unawaited(_refreshUnreadCount());
                 if (index == 3) _profileEntryRevision.value++;
@@ -3169,6 +3227,11 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
   Widget build(BuildContext context) => ProfileExperiencePage(
       key: ObjectKey(controller),
       controller: controller,
+      accountApi: widget.api,
+      onUsername: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+          builder: (_) => UsernameChangePage(
+              gateway: BusinessUsernameGateway(widget.api),
+              controller: controller))),
       supportIdentities: widget.api.supportIdentities,
       matrixUserId:
           widget.identityCache?.accountKey?.replaceFirst('matrix:', ''),
@@ -3213,20 +3276,17 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
             .push(MotionPageRoute<void>(builder: (_) => page));
         if (mounted) unawaited(_refreshMomentUnread());
       },
-      onCaibi: () => Navigator.of(context, rootNavigator: true).push(
-          MotionPageRoute(
-              builder: (_) => CaibiPage(
-                  api: widget.api,
-                  onOpenAllBills: () => _openLedgerAllBills(
-                      context, widget.api, widget.identityCache)))),
+      onCaibi: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+          builder: (_) => CaibiPage(
+              api: widget.api,
+              onOpenAllBills: () => _openLedgerAllBills(
+                  context, widget.api, widget.identityCache)))),
       onWallet: () => Navigator.of(context, rootNavigator: true)
           .push(MotionPageRoute(builder: (_) => WalletPage(api: widget.api))),
       inviteGateway: widget.api,
-      onInvite: () => Navigator.of(context, rootNavigator: true).push(
-          MotionPageRoute(
-              builder: (_) => InviteCodePage(
-                  controller: InviteCodeController(
-                      gateway: widget.api, historyGateway: widget.api)))),
+      onInvite: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
+          builder: (_) => InviteCodePage(
+              controller: InviteCodeController(gateway: widget.api, historyGateway: widget.api)))),
       onQrCode: () {
         final profile = controller.state.profile;
         if (profile == null) return;
@@ -3234,8 +3294,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
             builder: (_) => MyQrCodePage(
                 profile: profile, avatarCacheKey: controller.avatarCacheKey)));
       },
-      onSettings: () => Navigator.of(context, rootNavigator: true).push(
-          MotionPageRoute(builder: (_) => SettingsPage(api: widget.api, onLogout: widget.onLogout, onClearLocalChatData: widget.onClearLocalChatData))));
+      onSettings: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(builder: (_) => SettingsPage(api: widget.api, onLogout: widget.onLogout, onClearLocalChatData: widget.onClearLocalChatData, onProfileUpdated: controller.load))));
 }
 
 final class ProfilePage extends StatelessWidget {
@@ -3305,11 +3364,13 @@ final class SettingsPage extends StatefulWidget {
       {super.key,
       required this.api,
       required this.onLogout,
-      this.onClearLocalChatData});
+      this.onClearLocalChatData,
+      this.onProfileUpdated});
 
   final BusinessApiClient api;
   final Future<void> Function() onLogout;
   final Future<void> Function()? onClearLocalChatData;
+  final Future<void> Function()? onProfileUpdated;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -3409,25 +3470,58 @@ final class _SettingsPageState extends State<SettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: CupertinoNavigationBar(
-            automaticBackgroundVisibility: false,
-            enableBackgroundFilterBlur: false,
-            middle: Text('设置')),
+  Widget build(BuildContext context) => WeChatPageScaffold(
+        title: '设置',
         child: SafeArea(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
             children: [
+              const Padding(
+                  padding: EdgeInsets.all(WeChatSpacing.md),
+                  child: Text('账号',
+                      style: TextStyle(
+                          color: WeChatColors.textSecondary,
+                          fontSize: WeChatTypography.subhead))),
               _SettingsTile(
-                icon: CupertinoIcons.info_circle,
-                label: '账号与隐私',
-                onTap: () => Navigator.push(
-                  context,
-                  MotionPageRoute(
-                    builder: (_) => AccountPrivacyPage(api: widget.api),
-                  ),
-                ),
+                icon: CupertinoIcons.lock,
+                label: '账号安全',
+                onTap: () {
+                  final navigator = Navigator.of(context, rootNavigator: true);
+                  final credentialsApi = widget.api;
+                  final passwordSessionEpoch = credentialsApi.sessionEpoch;
+                  Navigator.push(
+                      context,
+                      MotionPageRoute(
+                          builder: (_) => AccountSecurityPage(
+                                api: widget.api,
+                                onBindingsChanged: widget.onProfileUpdated,
+                                onPasswordChanged: () async {
+                                  // PASSWORD_CHANGED already closed business authorization
+                                  // through the existing session invalidation lifecycle.
+                                  // Only dismiss this flow for the session that reset it.
+                                  if (credentialsApi.sessionEpoch ==
+                                          passwordSessionEpoch + 1 &&
+                                      navigator.mounted) {
+                                    navigator
+                                        .popUntil((route) => route.isFirst);
+                                  }
+                                },
+                              )));
+                },
               ),
+              const Padding(
+                  padding: EdgeInsets.all(WeChatSpacing.md),
+                  child: Text('通用',
+                      style: TextStyle(
+                          color: WeChatColors.textSecondary,
+                          fontSize: WeChatTypography.subhead))),
+              _SettingsTile(
+                  icon: CupertinoIcons.chat_bubble,
+                  label: '聊天',
+                  onTap: () => Navigator.push(
+                      context,
+                      MotionPageRoute(
+                          builder: (_) => ChatSettingsPage(api: widget.api)))),
               _SettingsTile(
                 icon: CupertinoIcons.bell,
                 label: '消息通知',
@@ -3506,60 +3600,23 @@ final class _SettingsTile extends StatelessWidget {
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) {
-    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
-    final foreground =
-        dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: onTap,
-      child: Container(
-        height: 57,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
-          border: Border(
-            bottom: BorderSide(
-              width: .5,
-              color: dark ? WeChatColors.darkDivider : WeChatColors.divider,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 40,
-              child: Icon(icon, size: 20, color: foreground),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(fontSize: 16, color: foreground),
-              ),
-            ),
-            if (detail != null)
-              Text(
-                detail!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: WeChatColors.textSecondary,
-                ),
-              ),
-            const SizedBox(width: 4),
-            if (trailing != null)
-              trailing!
-            else
-              const Icon(
-                CupertinoIcons.chevron_right,
-                size: 12,
-                color: WeChatColors.textSecondary,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => WeChatListTile(
+        leading: Icon(icon, color: WeChatColors.resolveTextPrimary(context)),
+        title: Text(label,
+            style: const TextStyle(fontSize: WeChatTypography.callout)),
+        trailing: trailing ??
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              if (detail != null)
+                Text(detail!,
+                    style: const TextStyle(
+                        fontSize: WeChatTypography.caption,
+                        color: WeChatColors.textSecondary)),
+              const SizedBox(width: WeChatSpacing.xs),
+              const CupertinoListTileChevron(),
+            ]),
+        showDivider: true,
+        onTap: onTap,
+      );
 }
 
 /// BUG-08：「减少动态效果」开关（此前是不可点击的占位行，
@@ -3590,66 +3647,12 @@ final class _MotionSettingsTile extends StatelessWidget {
       );
 }
 
-final class AccountPrivacyPage extends StatefulWidget {
+/// Compatibility entry for callers of the former privacy page.
+final class AccountPrivacyPage extends StatelessWidget {
   const AccountPrivacyPage({super.key, required this.api});
   final BusinessApiClient api;
   @override
-  State<AccountPrivacyPage> createState() => _AccountPrivacyPageState();
-}
-
-final class _AccountPrivacyPageState extends State<AccountPrivacyPage> {
-  bool enabled = true;
-  bool loading = true;
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      enabled = await widget.api.autoAllowGroupJoin();
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  Future<void> _update(bool value) async {
-    setState(() => enabled = value);
-    try {
-      await widget.api.setAutoAllowGroupJoin(value);
-    } catch (_) {
-      if (mounted) setState(() => enabled = !value);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(
-          automaticBackgroundVisibility: false,
-          enableBackgroundFilterBlur: false,
-          middle: Text('账号与隐私'),
-        ),
-        child: SafeArea(
-            child: loading
-                ? const Center(child: CupertinoActivityIndicator())
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                    children: [
-                      WeChatListTile(
-                        title: const Text('绑定或更换手机号'),
-                        onTap: () => Navigator.of(context).push(MotionPageRoute(
-                            builder: (_) => PhoneRebindPage(api: widget.api))),
-                      ),
-                      WeChatListTile(
-                        title: const Text('是否自动允许加入群聊'),
-                        subtitle: const Text('开启后，好友创建群聊时将自动加入'),
-                        trailing:
-                            CupertinoSwitch(value: enabled, onChanged: _update),
-                      )
-                    ],
-                  )),
-      );
+  Widget build(BuildContext context) => ChatSettingsPage(api: api);
 }
 
 /// 临时房间租约（只用于发送）：发送完成后由调度器释放。

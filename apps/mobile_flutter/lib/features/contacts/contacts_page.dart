@@ -4,6 +4,7 @@ import 'scan_qr_page.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/business_api_client.dart';
 import '../../core/performance_trace.dart';
@@ -25,6 +26,7 @@ import 'friend_request_review_page.dart';
 import 'contact_profile_sections.dart';
 import '../moments/moment_profile_preview.dart';
 import '../search/global_search_page.dart';
+import '../auth/phone_number_format.dart';
 import '../friendship/friend_acceptance_coordinator.dart';
 import '../friendship/friend_request_snapshot_store.dart';
 import '../matrix/profile_repository.dart';
@@ -210,9 +212,12 @@ final class _ContactsPageState extends State<ContactsPage> {
         (widget.api is BusinessApiClient
             ? (widget.api as BusinessApiClient).supportIdentities
             : widget.api is SupportIdentityGateway
-                ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+                ? SupportIdentityRepository(
+                    widget.api as SupportIdentityGateway)
                 : null);
-    _ownsSupport = widget.supportIdentities == null && widget.api is! BusinessApiClient && _support != null;
+    _ownsSupport = widget.supportIdentities == null &&
+        widget.api is! BusinessApiClient &&
+        _support != null;
   }
 
   @override
@@ -681,9 +686,12 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
         (widget.api is BusinessApiClient
             ? (widget.api as BusinessApiClient).supportIdentities
             : widget.api is SupportIdentityGateway
-                ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+                ? SupportIdentityRepository(
+                    widget.api as SupportIdentityGateway)
                 : null);
-    _ownsSupport = widget.supportIdentities == null && widget.api is! BusinessApiClient && _support != null;
+    _ownsSupport = widget.supportIdentities == null &&
+        widget.api is! BusinessApiClient &&
+        _support != null;
     unawaited(_support?.warm([contact.userId, contact.matrixUserId]) ??
         Future<void>.value());
   }
@@ -1559,12 +1567,18 @@ final class AddFriendPage extends StatefulWidget {
 
 final class _AddFriendState extends State<AddFriendPage> {
   static const _minQueryLength = 2;
+  static const _searchHint = '输入至少 $_minQueryLength 个字符，可通过畅聊号、邮箱或手机号搜索';
 
   final q = TextEditingController();
+  final _queryLengthLimit = LengthLimitingTextInputFormatter(320);
+  TextEditingValue _lastInput = TextEditingValue.empty;
   Timer? _debounce;
   List items = [];
-  String? hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+  String? hint = _searchHint;
   bool searching = false;
+  String _query = '';
+  int _searchEpoch = 0;
+  int? _pendingSearchEpoch;
 
   @override
   void initState() {
@@ -1593,6 +1607,7 @@ final class _AddFriendState extends State<AddFriendPage> {
       oldWidget.identityCache?.removeListener(_identityChanged);
       widget.identityCache?.addListener(_identityChanged);
     }
+    if (oldWidget.api != widget.api) _invalidateQuery();
   }
 
   String _displayName(Map user) =>
@@ -1610,47 +1625,92 @@ final class _AddFriendState extends State<AddFriendPage> {
           .displayName;
 
   void _onChanged() {
+    // CupertinoSearchTextField has no inputFormatters parameter. Keep its
+    // standard appearance while applying the same IME-aware length policy.
+    final input = _queryLengthLimit.formatEditUpdate(_lastInput, q.value);
+    _lastInput = input;
+    if (input != q.value) {
+      q.value = input;
+      return;
+    }
+    final query = q.text.trim();
+    if (query == _query) return;
+    _query = query;
+    _invalidateQuery();
+  }
+
+  String? _queryHint(String query) {
+    if (query.length < _minQueryLength) return _searchHint;
+    if (query.length > 320) return '搜索内容最多 320 个字符';
+    final phoneLike = RegExp(r'^[+0-9 ()-]+$').hasMatch(query);
+    if (phoneLike && normalizeMainlandPhone(query) == null) {
+      return '请输入完整的 11 位手机号，可带 +86 区号';
+    }
+    return null;
+  }
+
+  void _invalidateQuery() {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), _search);
+    _searchEpoch++;
+    _pendingSearchEpoch = null;
+    final validation = _queryHint(_query);
+    setState(() {
+      items = [];
+      searching = false;
+      hint = validation;
+    });
+    if (validation == null) {
+      _debounce = Timer(const Duration(milliseconds: 300), _search);
+    }
   }
 
   Future<void> _search() async {
+    _debounce?.cancel();
     final query = q.text.trim();
-    if (query.length < _minQueryLength) {
+    final validation = _queryHint(query);
+    if (validation != null) {
       if (!mounted) return;
       setState(() {
         items = [];
         searching = false;
-        hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+        hint = validation;
       });
       return;
     }
+    final epoch = _searchEpoch;
+    if (_pendingSearchEpoch == epoch) return;
+    _pendingSearchEpoch = epoch;
+    final api = widget.api;
     setState(() => searching = true);
     try {
-      final result = await widget.api.searchUsers(query);
-      if (!mounted) return;
+      final result = await api.searchUsers(query);
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
       setState(() {
         items = result['items'] as List;
         searching = false;
         hint = items.isEmpty ? '未找到匹配的用户' : null;
       });
     } on BusinessApiException catch (error) {
-      if (!mounted) return;
-      // 失败不覆盖：保留上一次成功的结果，只更新提示（微信级加载模型）。
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
+      // A same-query refresh may keep its rows. New drafts have already
+      // removed the previous query's actionable results.
       setState(() {
         searching = false;
         hint = error.message;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
       setState(() {
         searching = false;
-        hint = '搜索失败，正在显示上次结果';
+        hint = items.isEmpty ? '搜索失败，请重试' : '搜索失败，正在显示上次结果';
       });
+    } finally {
+      if (_pendingSearchEpoch == epoch) _pendingSearchEpoch = null;
     }
   }
 
   void _openRequestPage(Map user) {
+    if (!mounted || !items.contains(user)) return;
     // BUG 2：先看资料再决定是否添加，禁止快捷直接发送请求。
     final nickname = user['nickname']?.toString();
     Navigator.push(
@@ -1684,7 +1744,7 @@ final class _AddFriendState extends State<AddFriendPage> {
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
               child: CupertinoSearchTextField(
                 controller: q,
-                placeholder: '畅聊号 / 邮箱',
+                placeholder: '畅聊号 / 邮箱 / 手机号',
                 onSubmitted: (_) => _search(),
               ),
             ),

@@ -696,6 +696,189 @@ void main() {
     expect(await file.exists(), isFalse);
   });
 
+  for (final failPreparation in [false, true]) {
+    test('video retry has real same-root attempts preparation=$failPreparation',
+        () async {
+      var nowUs = 0;
+      var preparationCount = 0;
+      var sendCount = 0;
+      final records = <PerformanceRecord>[];
+      final recorder = PerformanceTraceRecorder(
+          metrics: PerformanceMetrics(enabled: true),
+          clockUs: () => nowUs,
+          onRecord: records.add);
+      final trace = recorder.start(PerformanceOperationType.videoPrepare);
+      trace.mark(PerformanceStage.videoSelected);
+      final client = _OutgoingMediaClient('alice',
+          loggedIn: true,
+          matrixUserId: '@alice:matrix.test',
+          matrixDeviceId: 'ALICE');
+      final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+      client.roomsById[target.id] = target;
+      target.sendResult = (_) async {
+        nowUs += 500000;
+        if (!failPreparation && sendCount++ == 0) {
+          throw const SocketException('transport unavailable');
+        }
+        return r'$retry-event';
+      };
+      final matrix = _videoTraceMatrix(client);
+      final directory = await _videoTraceDirectory('retry-diagnostics-');
+      addTearDown(() => directory.delete(recursive: true));
+      final file = await File('${directory.path}/source.mp4').writeAsBytes([1]);
+      final job = await matrix.enqueueVideoFile(
+          jobId: 'diagnostic-retry',
+          video: MatrixOutgoingVideoFile.forTesting(
+              id: 'source',
+              source: file,
+              filename: 'source.mp4',
+              body: '[视频消息]',
+              deleteSourceWhenDone: false,
+              performanceTrace: trace,
+              prepareMedia: (_) async {
+                nowUs += 2000000;
+                if (failPreparation && preparationCount++ == 0) {
+                  throw const VideoCompressionException();
+                }
+                if (!failPreparation) preparationCount++;
+                return MatrixOutgoingPreparedMedia(
+                    id: 'source',
+                    bytes: [1, 2],
+                    mimeType: 'video/mp4',
+                    filename: 'source.mp4',
+                    body: '[视频消息]');
+              }),
+          targetRoomIds: [target.id]);
+      await matrix.outgoingWork.drain();
+      expect(job.items.single.state, MatrixOutgoingWorkState.failed);
+      nowUs += 3000000;
+      await matrix.outgoingWork.retryItem(job.id, job.items.single.id);
+      await matrix.outgoingWork.drain();
+      expect(job.items.single.state, MatrixOutgoingWorkState.sent);
+      expect(preparationCount, failPreparation ? 2 : 1);
+      expect(records.every((record) => record.operationId == trace.operationId),
+          isTrue);
+      final retries =
+          records.where((record) => record.attemptIndex == 1).toList();
+      expect(retries, isNotEmpty, reason: 'finished root cannot swallow retry');
+      if (failPreparation) {
+        final prepared = retries.firstWhere((record) =>
+            record.operation == PerformanceOperationType.videoPrepare);
+        expect(
+            prepared.betweenMs(PerformanceStage.videoPrepareStarted,
+                PerformanceStage.videoPrepareDone),
+            2000);
+      } else {
+        final sent = retries.firstWhere((record) =>
+            record.operation == PerformanceOperationType.messageSend);
+        expect(sent.result, PerformanceResult.success);
+        expect(sent.retryCount, 1);
+        expect(
+            sent.betweenMs(PerformanceStage.matrixSendStart,
+                PerformanceStage.matrixSendFinish),
+            500);
+        expect(sent.stagesUs,
+            isNot(contains(PerformanceStage.videoPrepareStarted)),
+            reason: 'cached preparation is not performed again');
+      }
+      expect(trace.correlationContext.isCurrent, isFalse,
+          reason: 'terminal source release closes the job-owned context');
+    });
+  }
+
+  test('video echo before HTTP failure records the authoritative sent result',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+    client.roomsById[target.id] = target;
+    final matrix = _videoTraceMatrix(client);
+    target.sendResult = (txid) async {
+      matrix.outgoingWork
+          .acknowledgeEcho(transactionId: txid, eventId: r'$echo-event');
+      throw const SocketException('late HTTP failure');
+    };
+    final directory = await _videoTraceDirectory('echo-diagnostics-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = await File('${directory.path}/source.mp4').writeAsBytes([1]);
+    final job = await matrix.enqueueVideoFile(
+        jobId: 'diagnostic-echo',
+        video: MatrixOutgoingVideoFile.forTesting(
+            id: 'source',
+            source: file,
+            filename: 'source.mp4',
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+            performanceTrace: trace,
+            prepareMedia: (_) async => MatrixOutgoingPreparedMedia(
+                id: 'source',
+                bytes: [1, 2],
+                mimeType: 'video/mp4',
+                filename: 'source.mp4',
+                body: '[视频消息]')),
+        targetRoomIds: [target.id]);
+    await matrix.outgoingWork.drain();
+    expect(job.items.single.state, MatrixOutgoingWorkState.sent);
+    expect(
+        records.every((record) => record.result == PerformanceResult.success),
+        isTrue,
+        reason: 'diagnostics must agree with the settled business result');
+    final send = records.firstWhere(
+        (record) => record.operation == PerformanceOperationType.messageSend);
+    expect(send.stagesUs, contains(PerformanceStage.timelinePublished));
+    expect(send.stagesUs, isNot(contains(PerformanceStage.timelineVisible)));
+  });
+
+  test('held preparation echo remains sent when local preparation later fails',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final trace = recorder.start(PerformanceOperationType.videoPrepare);
+    final client = _OutgoingMediaClient('alice',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'ALICE');
+    final target = _OutgoingMediaRoom(id: '!target:test', client: client);
+    client.roomsById[target.id] = target;
+    final matrix = _videoTraceMatrix(client);
+    final held = Completer<MatrixOutgoingPreparedMedia>();
+    final entered = Completer<void>();
+    final directory = await _videoTraceDirectory('held-prepare-echo-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = await File('${directory.path}/source.mp4').writeAsBytes([1]);
+    final job = await matrix.enqueueVideoFile(
+        jobId: 'held-echo',
+        video: MatrixOutgoingVideoFile.forTesting(
+            id: 'source',
+            source: file,
+            filename: 'source.mp4',
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+            performanceTrace: trace,
+            prepareMedia: (_) {
+              entered.complete();
+              return held.future;
+            }),
+        targetRoomIds: [target.id]);
+    await entered.future;
+    matrix.outgoingWork.acknowledgeEcho(
+        transactionId: job.items.single.txid, eventId: r'$known-echo');
+    held.completeError(const VideoCompressionException());
+    await matrix.outgoingWork.drain();
+    expect(job.items.single.state, MatrixOutgoingWorkState.sent);
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.success);
+    expect(records.single.stagesUs,
+        isNot(contains(PerformanceStage.videoPrepareDone)));
+  });
+
   test('one video trace survives preparation and both target SDK sends',
       () async {
     var clockUs = 0;
@@ -747,25 +930,32 @@ void main() {
 
     expect(job.items.map((item) => item.state),
         everyElement(MatrixOutgoingWorkState.sent));
-    expect(records, hasLength(1));
-    expect(records.single.operationId, trace.operationId);
-    expect(records.single.result, PerformanceResult.success);
+    expect(records, hasLength(3));
+    expect(records.map((r) => r.operationId), everyElement(trace.operationId));
+    final rootRecord = records.singleWhere(
+        (r) => r.operation == PerformanceOperationType.videoPrepare);
     expect(
-        records.single.stagesUs.keys,
+        records
+            .where((r) => r.operation == PerformanceOperationType.messageSend),
+        hasLength(2));
+    expect(rootRecord.operationId, trace.operationId);
+    expect(rootRecord.result, PerformanceResult.success);
+    expect(
+        rootRecord.stagesUs.keys,
         containsAll([
-      PerformanceStage.videoSelected,
-      PerformanceStage.videoValidated,
-      PerformanceStage.videoPrepareStarted,
+          PerformanceStage.videoSelected,
+          PerformanceStage.videoValidated,
+          PerformanceStage.videoPrepareStarted,
           PerformanceStage.videoPrepareDone,
           PerformanceStage.videoEncrypted,
           PerformanceStage.videoUploadStarted,
           PerformanceStage.videoEventSent,
         ]));
-    expect(records.single.stagesUs,
-        isNot(contains(PerformanceStage.videoUploadDone)),
+    expect(
+        rootRecord.stagesUs, isNot(contains(PerformanceStage.videoUploadDone)),
         reason: 'SDK sendFileEvent combines upload and event send');
     expect(recorder.activeCount, 0);
-    final safe = jsonEncode(records.single.toJson());
+    final safe = jsonEncode(rootRecord.toJson());
     expect(safe, isNot(contains('private-video-id')));
     expect(safe, isNot(contains('private-first')));
   });
@@ -947,10 +1137,14 @@ void main() {
     );
     await matrix.outgoingWork.drain();
     expect(job.items.single.state, MatrixOutgoingWorkState.failed);
-    expect(records, hasLength(1));
-    expect(records.single.result, PerformanceResult.failed);
-    expect(records.single.stagesUs.keys,
-        isNot(contains(PerformanceStage.videoEventSent)));
+    expect(records, hasLength(2));
+    expect(records.map((r) => r.operationId), everyElement(trace.operationId));
+    expect(
+        records.map((r) => r.result), everyElement(PerformanceResult.failed));
+    expect(
+        records.every(
+            (r) => !r.stagesUs.containsKey(PerformanceStage.videoEventSent)),
+        isTrue);
     expect(recorder.activeCount, 0);
   });
 
@@ -1482,6 +1676,7 @@ final class _OutgoingMediaRoom extends _OutgoingTrackingRoom {
 
   final List<Map<String, dynamic>> sentExtraContent = [];
   String? eventId = r'$media-event';
+  Future<String?> Function(String? txid)? sendResult;
 
   @override
   Future<String?> sendFileEvent(
@@ -1497,7 +1692,7 @@ final class _OutgoingMediaRoom extends _OutgoingTrackingRoom {
   }) async {
     sentTxids.add(txid);
     sentExtraContent.add(Map<String, dynamic>.from(extraContent ?? {}));
-    return eventId;
+    return sendResult == null ? eventId : await sendResult!(txid);
   }
 }
 

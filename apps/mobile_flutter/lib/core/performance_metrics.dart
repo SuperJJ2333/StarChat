@@ -87,7 +87,12 @@ final class PerformanceMetrics {
   final int sampleCapacity;
   final _samples = <PerformanceOperation, ListQueue<int>>{};
   final _stageSamples = <PerformanceStage, ListQueue<int>>{};
+  final _semanticSamples =
+      <(PerformanceOperationType, String, String), ListQueue<int>>{};
+  final _semanticCounts = <(PerformanceOperationType, String, String), int>{};
   final _recentTraces = ListQueue<PerformanceRecord>();
+  final _traceObservations = ListQueue<PerformanceTraceObservation>();
+  List<PerformanceTraceObservation> Function()? _activeObservationSource;
   final _counts = <PerformanceOperation, int>{};
   final _counters = <PerformanceCounter, int>{};
   int? _lastRasterFinishUs;
@@ -95,6 +100,20 @@ final class PerformanceMetrics {
   final _frameTimingListeners = <PerformanceFrameTimingListener>{};
   bool _observing = false;
   bool _extensionRegistered = false;
+
+  /// The existing recorder supplies closed in-progress metadata on demand.
+  void bindActiveObservationSource(
+      List<PerformanceTraceObservation> Function() source) {
+    if (enabled) _activeObservationSource = source;
+  }
+
+  void recordObservation(PerformanceTraceObservation observation) {
+    if (!enabled) return;
+    if (_traceObservations.length == sampleCapacity) {
+      _traceObservations.removeFirst();
+    }
+    _traceObservations.addLast(observation);
+  }
 
   void record(PerformanceOperation operation, int microseconds) {
     if (!enabled || microseconds < 0) return;
@@ -155,6 +174,21 @@ final class PerformanceMetrics {
     _recentTraces.addLast(trace);
     record(PerformanceOperation.values.byName(trace.operation.name),
         trace.totalUs);
+    final unit = trace.attemptIndex != null
+        ? 'attempt'
+        : trace.windowIndex != null
+            ? 'window'
+            : 'operation';
+    // Keys originate exclusively in the closed record model. Attempts and
+    // quality windows never enter whole-operation distributions.
+    for (final entry
+        in {'total_ms': trace.totalMs, ...trace.timingSummaryMs}.entries) {
+      final key = (trace.operation, unit, entry.key);
+      final samples = _semanticSamples.putIfAbsent(key, ListQueue<int>.new);
+      if (samples.length == sampleCapacity) samples.removeFirst();
+      samples.addLast(entry.value);
+      _semanticCounts.update(key, (n) => n + 1, ifAbsent: () => 1);
+    }
     var previous = 0;
     for (final entry in trace.stagesUs.entries) {
       final elapsed = entry.value - previous;
@@ -166,30 +200,45 @@ final class PerformanceMetrics {
     }
   }
 
-  Map<String, Object> snapshot() => {
-        'schema': 1,
-        'enabled': enabled,
-        'sampleCapacity': sampleCapacity,
-        'operations': {
-          for (final entry in _samples.entries)
-            entry.key.name: _summary(entry.value, _counts[entry.key]!),
-        },
-        'stages': {
-          for (final entry in _stageSamples.entries)
-            entry.key.wireName: _summary(entry.value, entry.value.length),
-        },
-        'recentTraces': [
-          for (final trace in _recentTraces)
-            {
-              ...trace.toLocalDiagnosticJson(),
-              'bottleneck':
-                  PerformanceBottleneckClassifier.classify(trace).wireName,
-            }
-        ],
-        'counters': {
-          for (final entry in _counters.entries) entry.key.name: entry.value,
-        },
-      };
+  Map<String, Object> snapshot() {
+    // Materialize only during an explicit low-frequency snapshot. Expiration
+    // may add bounded observations; none are completed-operation samples.
+    final active = _activeObservationSource?.call() ?? const [];
+    return {
+      'schema': 1,
+      'enabled': enabled,
+      'sampleCapacity': sampleCapacity,
+      'sample_source': 'complete_local_window',
+      'legacy_operations_scope': 'all_completed_spans',
+      'operation_timings': _semanticSnapshot(),
+      'active_operations': [
+        for (final observation in active) observation.toLocalDiagnosticJson(),
+      ],
+      'trace_observations': [
+        for (final observation in _traceObservations)
+          observation.toLocalDiagnosticJson(),
+      ],
+      'operations': {
+        for (final entry in _samples.entries)
+          entry.key.name: _summary(entry.value, _counts[entry.key]!),
+      },
+      'stages': {
+        for (final entry in _stageSamples.entries)
+          entry.key.wireName: _summary(entry.value, entry.value.length),
+      },
+      'recentTraces': [
+        for (final trace in _recentTraces)
+          {
+            ...trace.toLocalDiagnosticJson(),
+            'bottleneck':
+                PerformanceBottleneckClassifier.classify(trace).wireName,
+          }
+      ],
+      'counters': {
+        for (final entry in _counters.entries) entry.key.name: entry.value,
+      },
+    };
+  }
 
   Map<String, int> _summary(ListQueue<int> samples, int count) {
     final sorted = samples.toList()..sort();
@@ -204,6 +253,26 @@ final class PerformanceMetrics {
     };
   }
 
+  Map<String, Object> _semanticSnapshot() {
+    final result = <String, Map<String, Map<String, Object>>>{};
+    for (final entry in _semanticSamples.entries) {
+      final (operation, unit, timing) = entry.key;
+      final sorted = entry.value.toList()..sort();
+      int percentile(double p) => sorted[(sorted.length * p).ceil() - 1];
+      result
+          .putIfAbsent(operation.wireName, () => {})
+          .putIfAbsent(unit, () => {})[timing] = {
+        'count': _semanticCounts[entry.key]!,
+        'retained_samples': sorted.length,
+        'p50_ms': percentile(.5),
+        'p95_ms': percentile(.95),
+        'p99_ms': percentile(.99),
+        'max_ms': sorted.last,
+      };
+    }
+    return result;
+  }
+
   void reset() {
     // Flush pending records before clearing local samples so a VM extension
     // reset cannot repopulate the just-cleared snapshot.
@@ -212,7 +281,10 @@ final class PerformanceMetrics {
     }
     _samples.clear();
     _stageSamples.clear();
+    _semanticSamples.clear();
+    _semanticCounts.clear();
     _recentTraces.clear();
+    _traceObservations.clear();
     _counts.clear();
     _counters.clear();
     _lastRasterFinishUs = null;

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io' as io;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,6 +11,9 @@ import '../../features/matrix/media_cache.dart';
 import '../../features/matrix/media_index.dart';
 import '../../features/matrix/video_poster_pipeline.dart'
     show videoPosterCacheRefId;
+import '../../features/matrix/video_poster_extractor.dart';
+import '../../features/matrix/media_load_scheduler.dart';
+import '../../core/performance_trace.dart';
 import '../foundation/retained_image_cache_manager.dart';
 
 /// Shared by feed thumbnails and the full-screen viewer. Flutter retains decoded
@@ -29,6 +33,145 @@ class _MomentImageProvider extends CachedNetworkImageProvider {
 
 abstract final class MomentMediaCache {
   static final _videoLoads = <String, Future<io.File>>{};
+  static final _posterLoads = <String, Future<Uint8List?>>{};
+  static final _posterAttempted = <String, DateTime>{};
+
+  /// A thumbnail request never invokes videoFile or fetches a video. Old posts
+  /// can only generate a poster when their video is already in the local store.
+  static Future<Uint8List?> resolveVideoPoster(String url,
+      {required String? cacheKey,
+      required String? accountKey,
+      required String? trustedOrigin,
+      String? posterUrl,
+      String? posterCacheKey,
+      http.Client? client,
+      Future<Uint8List?> Function(io.File)? extract}) async {
+    final source = _videoSource(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    final flightKey = '${source.cacheKey}:${source.generation}:$posterCacheKey';
+    final pending = _posterLoads[flightKey];
+    if (pending != null) return pending;
+    final load = _resolvePoster(url, source, cacheKey, accountKey,
+        trustedOrigin, posterUrl, posterCacheKey, client, extract);
+    _posterLoads[flightKey] = load;
+    try {
+      return await load;
+    } finally {
+      if (identical(_posterLoads[flightKey], load)) {
+        _posterLoads.remove(flightKey);
+      }
+    }
+  }
+
+  static Future<Uint8List?> _resolvePoster(
+      String url,
+      _MomentMediaSource source,
+      String? cacheKey,
+      String? accountKey,
+      String? trustedOrigin,
+      String? posterUrl,
+      String? posterCacheKey,
+      http.Client? suppliedClient,
+      Future<Uint8List?> Function(io.File)? extract) async {
+    final cached = await cachedVideoPoster(url,
+        cacheKey: cacheKey,
+        accountKey: accountKey,
+        trustedOrigin: trustedOrigin);
+    if (cached != null && cached.isNotEmpty) return cached;
+    final key = '${source.cacheKey}:${source.generation}:$posterCacheKey';
+    final attempted = _posterAttempted[key];
+    if (attempted != null &&
+        DateTime.now().difference(attempted) < const Duration(seconds: 20)) {
+      return null;
+    }
+    _posterAttempted[key] = DateTime.now();
+    while (_posterAttempted.length > 128) {
+      _posterAttempted.remove(_posterAttempted.keys.first);
+    }
+    final trace = PerformanceTraceRecorder.instance
+        .start(PerformanceOperationType.videoPoster);
+    final lease = mediaLoadScheduler.request('moment-poster:$key', () async {
+      Uint8List? bytes;
+      if (posterUrl != null && posterCacheKey != null) {
+        // Validate the poster independently; a digest alone is not authority.
+        _videoSource(posterUrl,
+            cacheKey: posterCacheKey,
+            accountKey: accountKey,
+            trustedOrigin: trustedOrigin);
+        final client = suppliedClient ?? http.Client();
+        try {
+          final response = await client
+              .send(http.Request('GET', Uri.parse(posterUrl))
+                ..followRedirects = false)
+              .timeout(const Duration(seconds: 6));
+          if (response.statusCode == 200 &&
+              const ['image/jpeg', 'image/png', 'image/webp'].contains(
+                  response.headers['content-type']?.split(';').first.trim())) {
+            if ((response.contentLength ?? 0) > 512 * 1024) {
+              throw StateError('Poster exceeds size limit');
+            }
+            final builder = BytesBuilder(copy: false);
+            await for (final chunk
+                in response.stream.timeout(const Duration(seconds: 6))) {
+              source.ensureCurrent();
+              if (builder.length + chunk.length > 512 * 1024) {
+                throw StateError('Poster exceeds size limit');
+              }
+              builder.add(chunk);
+            }
+            bytes = builder.takeBytes();
+            final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+            try {
+              final descriptor = await ui.ImageDescriptor.encoded(buffer);
+              try {
+                if (descriptor.width > 480 || descriptor.height > 480) {
+                  throw StateError('Poster exceeds dimensions');
+                }
+              } finally {
+                descriptor.dispose();
+              }
+            } finally {
+              buffer.dispose();
+            }
+          }
+        } finally {
+          if (suppliedClient == null) client.close();
+        }
+      }
+      if (bytes == null || bytes.isEmpty) {
+        final local = await MediaCache.cached('moments', source.cacheKey,
+            accountId: source.accountKey);
+        source.ensureCurrent();
+        if (local != null) {
+          bytes = await (extract?.call(local) ??
+              extractVideoPoster(local.path,
+                  positionsMs: const [200, 500, 1000, 2000]));
+        }
+      }
+      source.ensureCurrent();
+      if (bytes == null || bytes.isEmpty || bytes.length > 512 * 1024) {
+        return Uint8List(0);
+      }
+      await storeVideoPoster(url, bytes,
+          cacheKey: cacheKey,
+          accountKey: accountKey,
+          trustedOrigin: trustedOrigin,
+          expectedAccountGeneration: source.generation);
+      return bytes;
+    }, isVideo: true, priority: MediaLoadPriority.visible, trace: trace);
+    try {
+      final bytes = await lease.value;
+      trace.finish();
+      return bytes.isEmpty ? null : bytes;
+    } catch (_) {
+      trace.finish(result: PerformanceResult.failed);
+      return null;
+    } finally {
+      trace.dispose();
+    }
+  }
 
   static _MomentMediaSource _videoSource(String url,
       {required String? cacheKey,

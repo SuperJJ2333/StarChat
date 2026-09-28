@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/network_state_manager.dart';
 import 'package:liuhetong_mobile/core/outbox/message_send_scheduler.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_message.dart';
@@ -201,6 +203,140 @@ void main() {
                 : null,
         leaseFactory: leaseFactory,
       );
+
+  test('lease acquisition failure is a measured same-root waiting attempt',
+      () async {
+    var now = 0;
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true),
+        clockUs: () => now,
+        onRecord: records.add);
+    final row = (await outbox.save(
+        receiverId: 'peer', content: 'text', roomId: 'room'))!;
+    final root = recorder.start(PerformanceOperationType.messageSend);
+    root.finish(result: PerformanceResult.waitingNetwork);
+    final scheduler = schedulerFor(null, leaseFactory: (_) async {
+      expect(recorder.activeCount, 1);
+      now += 750000;
+      throw TimeoutException('held lease');
+    });
+    scheduler.registerCorrelation(row.localId, root.correlationContext);
+    try {
+      await scheduler.drain();
+      expect(records, hasLength(2));
+      final attempt = records.last;
+      expect(attempt.operationId, root.operationId);
+      expect(attempt.result, PerformanceResult.waitingNetwork);
+      expect(attempt.networkError, PerformanceNetworkError.requestTimeout);
+      expect(attempt.stagesUs[PerformanceStage.roomAttachStarted], 0);
+      expect(attempt.totalUs, 750000);
+      expect(attempt.stagesUs.containsKey(PerformanceStage.matrixSendStart),
+          isFalse);
+    } finally {
+      scheduler.dispose();
+    }
+  });
+
+  test('background 5xx is classified as server failure rather than socket',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final root = recorder.start(PerformanceOperationType.messageSend);
+    root.finish(result: PerformanceResult.waitingNetwork);
+    final row = (await outbox.save(
+        receiverId: 'peer', content: 'text', roomId: 'room'))!;
+    final leases = _LeaseFactory(scripted: [
+      _FakeLease()..responses.add(() async => throw const _Http5xx('gateway'))
+    ]);
+    final scheduler = schedulerFor(null, leaseFactory: leases.open);
+    scheduler.registerCorrelation(row.localId, root.correlationContext);
+    try {
+      await scheduler.drain();
+      expect(records.last.networkError, PerformanceNetworkError.server5xx);
+      expect(records.last.result, PerformanceResult.waitingNetwork);
+    } finally {
+      scheduler.dispose();
+    }
+  });
+
+  test(
+      'background lease attempts reuse registered root after page trace closes',
+      () async {
+    var now = 0;
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true),
+        clockUs: () => now,
+        onRecord: records.add);
+    final root = recorder.start(PerformanceOperationType.messageSend)
+      ..mark(PerformanceStage.composerSubmit);
+    final row = (await outbox.save(
+        receiverId: 'peer', content: 'text', roomId: 'room'))!;
+    root.mark(PerformanceStage.outboxPersist);
+    root.finish(result: PerformanceResult.waitingNetwork);
+    final leases = _LeaseFactory(scripted: [
+      _FakeLease()
+        ..responses.add(() async {
+          now += 400000;
+          throw const SocketException('offline');
+        }),
+      _FakeLease()
+        ..responses.add(() async {
+          now += 500000;
+          return 'event';
+        })
+    ]);
+    final scheduler = MessageSendScheduler(
+        outbox: outbox, senderFor: (_) => null, leaseFactory: leases.open);
+    (scheduler as dynamic)
+        .registerCorrelation(row.localId, root.correlationContext);
+    await scheduler.drain();
+    expect((await outbox.byLocalId(row.localId))!.status,
+        OutboxStatus.waitingNetwork);
+    await scheduler.drain();
+    expect(records, hasLength(3));
+    expect(records.map((r) => r.operationId), everyElement(root.operationId));
+    expect(records[1].result, PerformanceResult.waitingNetwork);
+    expect(records[1].networkError, PerformanceNetworkError.socketFailure);
+    expect(records[2].result, PerformanceResult.success);
+    expect(records[2].retryCount, 1);
+    expect(
+        records[2].betweenMs(PerformanceStage.matrixSendStart,
+            PerformanceStage.matrixSendFinish),
+        500);
+    expect(
+        records[2].stagesUs, isNot(contains(PerformanceStage.composerSubmit)),
+        reason: 'background attempt cannot fake an old composer timestamp');
+    expect(
+        records[2].stagesUs, isNot(contains(PerformanceStage.outboxPersist)));
+    expect(root.correlationContext.isCurrent, isFalse);
+    scheduler.dispose();
+  });
+
+  test('correlation bridge is bounded and drops old account contexts', () {
+    var generation = 1;
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true),
+        sessionGeneration: () => generation);
+    final scheduler =
+        MessageSendScheduler(outbox: outbox, senderFor: (_) => null);
+    final contexts = <PerformanceCorrelationContext>[];
+    for (var i = 0; i < 101; i++) {
+      final trace = recorder.start(PerformanceOperationType.messageSend);
+      trace.finish(result: PerformanceResult.waitingNetwork);
+      contexts.add(trace.correlationContext);
+      (scheduler as dynamic)
+          .registerCorrelation('row$i', trace.correlationContext);
+    }
+    expect((scheduler as dynamic).correlationCount, 100);
+    expect(contexts.first.isCurrent, isFalse);
+    generation++;
+    expect((scheduler as dynamic).correlationFor('row100'), isNull);
+    scheduler.dispose();
+    expect((scheduler as dynamic).correlationCount, 0);
+  });
 
   testWidgets('restarted scheduler restores stored deadline before dispatch',
       (tester) async {

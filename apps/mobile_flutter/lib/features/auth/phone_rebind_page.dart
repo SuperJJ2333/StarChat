@@ -7,6 +7,7 @@ import '../../ui/components/auth_surface_card.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../wallet/manual_wallet_page.dart' show walletStepIndicator;
+import 'account_credentials_controller.dart' show isRejectedCodeRequest;
 
 /// Two server-authorized stages. Opening the page never sends a message.
 final class PhoneRebindPage extends StatefulWidget {
@@ -34,7 +35,8 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
     super.dispose();
   }
 
-  Future<void> _perform(Future<void> Function() action) async {
+  Future<void> _perform(Future<void> Function() action,
+      {bool sendingCode = false}) async {
     if (_busy) return;
     setState(() {
       _busy = true;
@@ -43,6 +45,10 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
     try {
       await action();
     } on BusinessApiException catch (error) {
+      if (mounted && sendingCode && isRejectedCodeRequest(error)) {
+        _timer?.cancel();
+        setState(() => _cooldown = 0);
+      }
       if (mounted) setState(() => _message = _failureMessage(error));
     } catch (_) {
       if (mounted) setState(() => _message = '请求结果待确认，请稍后重试或联系客服');
@@ -118,7 +124,7 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
               .timeout(const Duration(seconds: 8));
         }
         if (mounted) setState(() => _message = '验证码请求已受理，请查看$_channel');
-      });
+      }, sendingCode: true);
 
   Future<void> _confirm() => _perform(() async {
         if (!RegExp(r'^\d{6}$').hasMatch(_code.text.trim())) {

@@ -127,9 +127,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   void _queryChanged(String value) {
-    if (!_firstQueryObserved) {
+    if (value.trim() != controller.query.trim()) {
       _searchTrace?.dispose();
       _searchTrace = null;
+      _firstQueryObserved = false;
       _queryContactsDone = false;
       _queryRenderScheduled = false;
       _queryGeneration++;
@@ -314,7 +315,8 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
         _searchTrace = injected;
         _injectedSearchTraceUsed = true;
       } else {
-        _searchTrace =
+        _searchTrace = injected
+                ?.startSiblingOperation(PerformanceOperationType.search) ??
             PerformanceTrace.start(operation: PerformanceOperationType.search);
       }
     }

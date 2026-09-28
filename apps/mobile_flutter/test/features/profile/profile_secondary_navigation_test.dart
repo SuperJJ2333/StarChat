@@ -15,6 +15,7 @@ import 'package:liuhetong_mobile/features/profile/invite_code_page.dart';
 import 'package:liuhetong_mobile/features/profile/my_qr_code_page.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_page.dart';
+import 'package:liuhetong_mobile/features/profile/account_settings_pages.dart';
 import 'package:liuhetong_mobile/features/wallet/wallet_page.dart';
 
 const _profile = ProfileData(
@@ -158,6 +159,16 @@ void main() {
     await tester.tap(find.byKey(const Key('profile-details-entry')));
     await _finishRoute(tester);
     _expectCoveredChild(find.byType(ProfileDetailsPage));
+    for (final label in ['昵称', '个性签名']) {
+      await tester.tap(find.text(label));
+      await _finishRoute(tester);
+      expect(find.text('设置$label'), findsOneWidget);
+      expect(find.byType(CupertinoTextField), findsOneWidget);
+      expect(find.byType(CupertinoTabBar), findsNothing);
+      await tester.binding.handlePopRoute();
+      await _finishRoute(tester);
+      _expectCoveredChild(find.byType(ProfileDetailsPage));
+    }
     await tester.binding.handlePopRoute();
     await _finishRoute(tester);
     expect(find.byType(CupertinoTabBar), findsOneWidget);
@@ -188,9 +199,14 @@ void main() {
     await tester.tap(find.text('设置'));
     await _finishRoute(tester);
     _expectCoveredChild(find.byType(SettingsPage));
-    await tester.tap(find.text('账号与隐私'));
+    await tester.tap(find.text('账号安全'));
     await _finishRoute(tester);
-    _expectCoveredChild(find.byType(AccountPrivacyPage));
+    _expectCoveredChild(find.byType(AccountSecurityPage));
+    await tester.binding.handlePopRoute();
+    await _finishRoute(tester);
+    await tester.tap(find.text('聊天'));
+    await _finishRoute(tester);
+    _expectCoveredChild(find.byType(ChatSettingsPage));
     await tester.binding.handlePopRoute();
     await _finishRoute(tester);
     await tester.binding.handlePopRoute();

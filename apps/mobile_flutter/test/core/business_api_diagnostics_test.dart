@@ -262,4 +262,73 @@ void main() {
     await disconnected.timeout(const Duration(seconds: 2));
     socket.destroy();
   });
+
+  test('authorized transport failure records network_request diagnostics',
+      () async {
+    // Closed port: connect() fails fast with SocketException.
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final port = server.port;
+    await server.close(force: true);
+    var fakeNow = DateTime(2026);
+    final original = ChatDiagnostics.instance;
+    ChatDiagnostics.instance = ChatDiagnostics(now: () => fakeNow);
+    addTearDown(() => ChatDiagnostics.instance = original);
+    final batches = <ChatDiagnosticBatch>[];
+    ChatDiagnostics.instance.startSession(
+        version: '1.2.3',
+        platform: ChatDiagnosticPlatform.android,
+        upload: (value, _) async {
+          batches.add(value);
+          return 202;
+        });
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('http://127.0.0.1:$port'),
+        sessionStore: SecureSessionStore(_MemoryStore()));
+    await expectLater(
+        api.getJson('/api/v1/wallet/config'), throwsA(isA<SocketException>()));
+    fakeNow = fakeNow.add(const Duration(minutes: 2));
+    await ChatDiagnostics.instance.flush();
+    final event = (batches.single.toJson()['events'] as List).single as Map;
+    expect(event['stage'], 'network_request');
+    expect(event['error'], 'network');
+    ChatDiagnostics.instance.stopSession();
+  });
+
+  test('401 responses are recorded with their status for backoff evidence',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      request.response.statusCode = 401;
+      await request.response.close();
+    });
+    var fakeNow = DateTime(2026);
+    final original = ChatDiagnostics.instance;
+    ChatDiagnostics.instance = ChatDiagnostics(now: () => fakeNow);
+    addTearDown(() => ChatDiagnostics.instance = original);
+    final batches = <ChatDiagnosticBatch>[];
+    ChatDiagnostics.instance.startSession(
+        version: '1.2.3',
+        platform: ChatDiagnosticPlatform.android,
+        upload: (value, _) async {
+          batches.add(value);
+          return 202;
+        });
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+        sessionStore: SecureSessionStore(_MemoryStore()));
+    await expectLater(
+        api.getJson('/api/v1/wallet/config'), throwsA(isA<Exception>()));
+    fakeNow = fakeNow.add(const Duration(minutes: 2));
+    await ChatDiagnostics.instance.flush();
+    final events =
+        (batches.single.toJson()['events'] as List).cast<Map<String, dynamic>>();
+    expect(
+        events,
+        contains(predicate<Map<String, dynamic>>((event) =>
+            event['stage'] == 'network_request' &&
+            event['error'] == 'rejected' &&
+            event['status'] == 401)));
+    ChatDiagnostics.instance.stopSession();
+  });
 }

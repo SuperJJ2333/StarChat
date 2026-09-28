@@ -1,3 +1,6 @@
+import 'package:liuhetong_mobile/core/network_diagnostics.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,14 +10,76 @@ import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 
 void main() {
-  testWidgets('profile scope reuses metrics frame collector exactly once',
-      (tester) async {
+  testWidgets(
+    'scope caches connectivity; a late initial check cannot replace a change',
+    (tester) async {
+      const method = MethodChannel('dev.fluttercommunity.plus/connectivity');
+      const events = MethodChannel(
+        'dev.fluttercommunity.plus/connectivity_status',
+      );
+      final initial = Completer<List<String>>();
+      var checks = 0;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(method, (
+        call,
+      ) {
+        expect(call.method, 'check');
+        checks++;
+        return initial.future;
+      });
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        events,
+        (_) async => null,
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          method,
+          null,
+        );
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          events,
+          null,
+        );
+      });
+      final diagnostics = ChatDiagnostics();
+      await tester.pumpWidget(
+        ChatDiagnosticsScope(
+          sessionEpoch: 1,
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          diagnostics: diagnostics,
+          upload: (_, __) async => 202,
+          child: const SizedBox(),
+        ),
+      );
+      tester.binding.channelBuffers.push(
+        'dev.fluttercommunity.plus/connectivity_status',
+        const StandardMethodCodec().encodeSuccessEnvelope(['vpn', 'wifi']),
+        (_) {},
+      );
+      await tester.pump();
+      expect(diagnostics.networks.network, DiagnosticNetwork.vpn);
+      initial.complete(['wifi']);
+      await tester.pump();
+      expect(diagnostics.networks.network, DiagnosticNetwork.vpn);
+      for (var i = 0; i < 100; i++) {
+        diagnostics.networks.begin()!.complete(NetworkOutcome.http2xx);
+      }
+      expect(checks, 1);
+      await tester.pumpWidget(const SizedBox());
+      expect(diagnostics.networks.begin(), isNull);
+    },
+  );
+
+  testWidgets('profile scope reuses metrics frame collector exactly once', (
+    tester,
+  ) async {
     var now = DateTime(2026);
     final diagnostics = ChatDiagnostics(now: () => now);
     final metrics = PerformanceMetrics(enabled: true);
     final batches = <ChatDiagnosticBatch>[];
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpWidget(ChatDiagnosticsScope(
+    await tester.pumpWidget(
+      ChatDiagnosticsScope(
         sessionEpoch: 1,
         version: '1.2.3',
         platform: ChatDiagnosticPlatform.android,
@@ -24,16 +89,23 @@ void main() {
           batches.add(b);
           return 202;
         },
-        child: const SizedBox()));
-    metrics.recordFrameTimingBatch([
-      FrameTiming(
+        child: const SizedBox(),
+      ),
+    );
+    metrics.recordFrameTimingBatch(
+      [
+        FrameTiming(
           vsyncStart: 0,
           buildStart: 1000,
           buildFinish: 21000,
           rasterStart: 21000,
           rasterFinish: 22000,
-          rasterFinishWallTime: 22000)
-    ], budgetUs: 16667, reportedAtUs: 22000);
+          rasterFinishWallTime: 22000,
+        ),
+      ],
+      budgetUs: 16667,
+      reportedAtUs: 22000,
+    );
     now = now.add(const Duration(minutes: 1));
     await diagnostics.flush();
     expect(batches, hasLength(1));
@@ -41,14 +113,86 @@ void main() {
     expect(metrics.frameCounts.total, 1);
     await tester.pumpWidget(const SizedBox());
   });
-  testWidgets(
-      'release policy uploads metadata when local frame metrics are disabled',
+  testWidgets('background timing callback is not a foreground slow event',
       (tester) async {
     var now = DateTime(2026);
-    final d = ChatDiagnostics(now: () => now);
+    final diagnostics = ChatDiagnostics(now: () => now);
+    final metrics = PerformanceMetrics(enabled: true);
     final batches = <ChatDiagnosticBatch>[];
-    final metrics = PerformanceMetrics(enabled: false);
-    final scope = ChatDiagnosticsScope(
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(ChatDiagnosticsScope(
+      sessionEpoch: 1,
+      version: '1.2.3',
+      platform: ChatDiagnosticPlatform.android,
+      diagnostics: diagnostics,
+      performanceMetrics: metrics,
+      upload: (batch, _) async {
+        batches.add(batch);
+        return 202;
+      },
+      child: const SizedBox(),
+    ));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    expect(WidgetsBinding.instance.lifecycleState, AppLifecycleState.paused);
+    metrics.recordFrameTimingBatch([
+      FrameTiming(
+        vsyncStart: 0,
+        buildStart: 1000,
+        buildFinish: 21000,
+        rasterStart: 21000,
+        rasterFinish: 300000,
+        rasterFinishWallTime: 300000,
+      ),
+    ], budgetUs: 16667, reportedAtUs: 300000);
+    now = now.add(const Duration(minutes: 1));
+    await diagnostics.flush();
+    expect(batches, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('invalid timing clock cannot create framework slow event',
+      (tester) async {
+    var now = DateTime(2026);
+    final diagnostics = ChatDiagnostics(now: () => now);
+    final metrics = PerformanceMetrics(enabled: true);
+    final batches = <ChatDiagnosticBatch>[];
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpWidget(ChatDiagnosticsScope(
+      sessionEpoch: 1,
+      version: '1.2.3',
+      platform: ChatDiagnosticPlatform.android,
+      diagnostics: diagnostics,
+      performanceMetrics: metrics,
+      upload: (batch, _) async {
+        batches.add(batch);
+        return 202;
+      },
+      child: const SizedBox(),
+    ));
+    metrics.recordFrameTimingBatch([
+      FrameTiming(
+        vsyncStart: 0,
+        buildStart: 1000,
+        buildFinish: 21000,
+        rasterStart: 21000,
+        rasterFinish: 300000,
+        rasterFinishWallTime: 300000,
+      ),
+    ], budgetUs: 16667, reportedAtUs: 0);
+    now = now.add(const Duration(minutes: 1));
+    await diagnostics.flush();
+    expect(batches, hasLength(1));
+    expect(batches.single.toJson()['events'], isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+  testWidgets(
+    'release policy uploads metadata when local frame metrics are disabled',
+    (tester) async {
+      var now = DateTime(2026);
+      final d = ChatDiagnostics(now: () => now);
+      final batches = <ChatDiagnosticBatch>[];
+      final metrics = PerformanceMetrics(enabled: false);
+      final scope = ChatDiagnosticsScope(
         sessionEpoch: 1,
         version: '1.2.3',
         platform: ChatDiagnosticPlatform.android,
@@ -58,36 +202,42 @@ void main() {
           batches.add(b);
           return 202;
         },
-        child: const SizedBox());
-    await tester.pumpWidget(scope);
-    expect(d.isActive, true);
-    expect(scope.collectsFrames, false);
-    d.record(
+        child: const SizedBox(),
+      );
+      await tester.pumpWidget(scope);
+      expect(d.isActive, true);
+      expect(scope.collectsFrames, false);
+      d.record(
         stage: ChatDiagnosticStage.networkRequest,
-        error: ChatDiagnosticError.timeout);
-    now = now.add(const Duration(minutes: 1));
-    await d.flush();
-    expect(batches, hasLength(1));
-    expect(batches.single.toJson().containsKey('frames'), false);
-    expect((metrics.snapshot()['operations'] as Map), isEmpty);
-    await tester.pumpWidget(const SizedBox());
-  });
-  testWidgets('scope tracks foreground, background and resume lifecycle',
-      (tester) async {
+        error: ChatDiagnosticError.timeout,
+      );
+      now = now.add(const Duration(minutes: 1));
+      await d.flush();
+      expect(batches, hasLength(1));
+      expect(batches.single.toJson().containsKey('frames'), false);
+      expect((metrics.snapshot()['operations'] as Map), isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets('scope tracks foreground, background and resume lifecycle', (
+    tester,
+  ) async {
     final recorder = PerformanceTraceRecorder.instance;
     addTearDown(() {
       recorder.clear();
       recorder.lifecycle = PerformanceLifecycle.unknown;
     });
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpWidget(ChatDiagnosticsScope(
-      sessionEpoch: 90,
-      version: 'test',
-      platform: ChatDiagnosticPlatform.android,
-      diagnostics: ChatDiagnostics(),
-      upload: (batch, abort) async => 202,
-      child: const SizedBox(),
-    ));
+    await tester.pumpWidget(
+      ChatDiagnosticsScope(
+        sessionEpoch: 90,
+        version: 'test',
+        platform: ChatDiagnosticPlatform.android,
+        diagnostics: ChatDiagnostics(),
+        upload: (batch, abort) async => 202,
+        child: const SizedBox(),
+      ),
+    );
     expect(recorder.lifecycle, PerformanceLifecycle.foreground);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     expect(recorder.lifecycle, PerformanceLifecycle.background);
@@ -99,56 +249,60 @@ void main() {
     expect(recorder.lifecycle, PerformanceLifecycle.unknown);
   });
   testWidgets(
-      'foreground display budget counts build and raster, not total span',
-      (tester) async {
-    var now = DateTime(2026);
-    final diagnostics = ChatDiagnostics(now: () => now);
-    final batches = <ChatDiagnosticBatch>[];
-    final metrics = PerformanceMetrics(enabled: true);
-    tester.view.display.refreshRate = 120;
-    addTearDown(tester.view.display.resetRefreshRate);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpWidget(ChatDiagnosticsScope(
-      sessionEpoch: 1,
-      version: '1.2.3',
-      platform: ChatDiagnosticPlatform.android,
-      performanceMetrics: metrics,
-      diagnostics: diagnostics,
-      upload: (batch, _) async {
-        batches.add(batch);
-        return 202;
-      },
-      child: const SizedBox(),
-    ));
-    FrameTiming frame(int build, int raster) => FrameTiming(
-          vsyncStart: 0,
-          buildStart: 1000,
-          buildFinish: 1000 + build,
-          rasterStart: 100000,
-          rasterFinish: 100000 + raster,
-          rasterFinishWallTime: 100000 + raster,
-        );
-    metrics.recordFrameTimingBatch([
-      frame(9000, 1000),
-      frame(1000, 9000),
-      frame(1000, 1000),
-    ], budgetUs: 8333);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    metrics.recordFrameTimingBatch([frame(20000, 20000)], budgetUs: 8333);
-    now = now.add(const Duration(minutes: 1));
-    await diagnostics.flush();
-    expect(batches.single.toJson()['frames'], {
-      'frame_count': 3,
-      'slow_frame_count': 2,
-      'slow_build_count': 1,
-      'slow_raster_count': 1,
-    });
-    await tester.pumpWidget(const SizedBox());
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-  });
+    'foreground display budget counts build and raster, not total span',
+    (tester) async {
+      var now = DateTime(2026);
+      final diagnostics = ChatDiagnostics(now: () => now);
+      final batches = <ChatDiagnosticBatch>[];
+      final metrics = PerformanceMetrics(enabled: true);
+      tester.view.display.refreshRate = 120;
+      addTearDown(tester.view.display.resetRefreshRate);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpWidget(
+        ChatDiagnosticsScope(
+          sessionEpoch: 1,
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          performanceMetrics: metrics,
+          diagnostics: diagnostics,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return 202;
+          },
+          child: const SizedBox(),
+        ),
+      );
+      FrameTiming frame(int build, int raster) => FrameTiming(
+            vsyncStart: 0,
+            buildStart: 1000,
+            buildFinish: 1000 + build,
+            rasterStart: 100000,
+            rasterFinish: 100000 + raster,
+            rasterFinishWallTime: 100000 + raster,
+          );
+      metrics.recordFrameTimingBatch([
+        frame(9000, 1000),
+        frame(1000, 9000),
+        frame(1000, 1000),
+      ], budgetUs: 8333);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      metrics.recordFrameTimingBatch([frame(20000, 20000)], budgetUs: 8333);
+      now = now.add(const Duration(minutes: 1));
+      await diagnostics.flush();
+      expect(batches.single.toJson()['frames'], {
+        'frame_count': 3,
+        'slow_frame_count': 2,
+        'slow_build_count': 1,
+        'slow_raster_count': 1,
+      });
+      await tester.pumpWidget(const SizedBox());
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    },
+  );
 
-  testWidgets('scope clears diagnostics across account switch and disposal',
-      (tester) async {
+  testWidgets('scope clears diagnostics across account switch and disposal', (
+    tester,
+  ) async {
     final diagnostics = ChatDiagnostics();
     final metrics = PerformanceMetrics(enabled: true);
     Widget scope(int epoch) => ChatDiagnosticsScope(
@@ -162,8 +316,9 @@ void main() {
         );
     await tester.pumpWidget(scope(1));
     diagnostics.record(
-        stage: ChatDiagnosticStage.matrixSend,
-        error: ChatDiagnosticError.timeout);
+      stage: ChatDiagnosticStage.matrixSend,
+      error: ChatDiagnosticError.timeout,
+    );
     expect(diagnostics.pendingCount, 1);
     metrics.record(PerformanceOperation.conversationOpen, 120000);
     expect((metrics.snapshot()['operations'] as Map), isNotEmpty);
@@ -172,14 +327,16 @@ void main() {
     expect((metrics.snapshot()['operations'] as Map), isEmpty);
     metrics.record(PerformanceOperation.mediaLoad, 90000);
     diagnostics.record(
-        stage: ChatDiagnosticStage.framework,
-        error: ChatDiagnosticError.unknown);
+      stage: ChatDiagnosticStage.framework,
+      error: ChatDiagnosticError.unknown,
+    );
     await tester.pumpWidget(const SizedBox());
     expect(diagnostics.pendingCount, 0);
     expect((metrics.snapshot()['operations'] as Map), isEmpty);
     diagnostics.record(
-        stage: ChatDiagnosticStage.framework,
-        error: ChatDiagnosticError.unknown);
+      stage: ChatDiagnosticStage.framework,
+      error: ChatDiagnosticError.unknown,
+    );
     expect(diagnostics.pendingCount, 0);
   });
 }

@@ -5,12 +5,14 @@ import '../settings/voice_auto_play_preferences.dart';
 import 'coordinated_direct_chat.dart';
 import 'timeline_scroll_anchor.dart';
 import 'bounded_history_search.dart';
+import 'local_room_history_search.dart';
 import '../../core/chat_diagnostics.dart';
 import '../../core/chat_diagnostic_operation.dart';
 import 'nudge_rate_limiter.dart';
 // 会话聊天页（RoomPage）：私聊与群聊共用的消息时间线与交互。
 // 自 matrix_home_page.dart 拆分（巨石文件治理）。
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
 
@@ -194,12 +196,18 @@ class RoomPage extends StatefulWidget {
     this.initialAnchorRoomId,
     this.navigationRequests,
     this.requestOutboxDrain,
+    this.onOutboxCorrelation,
+    this.outboxCorrelationFor,
     this.resolveDirectSendTarget,
     this.onDirectTargetChanged,
     this.initialOutboxLocalIds = const <String>[],
   });
 
   final BusinessApiClient api;
+  final void Function(String localId, PerformanceCorrelationContext context)?
+      onOutboxCorrelation;
+  final PerformanceCorrelationContext? Function(String localId)?
+      outboxCorrelationFor;
   final PerformanceTrace? performanceTrace;
   final VoidCallback? onPerformanceContentReady;
   final Stream<SyncStatusUpdate>? remoteSyncStatus;
@@ -746,6 +754,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   RoomTimelineController? controller;
 
   LocalHiddenEvents? hiddenEvents;
+  final Set<String> _openNotificationRooms = {};
+  String? _notificationAccount;
   final mentionDraft = MentionDraft();
 
   /// 规格#3：统一提及模型（范围式 token 替换，修复双 @）。
@@ -943,7 +953,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 上滑接近顶部时自动加载更早的历史消息（顶部有加载/结束提示）。
     messageScrollController.addListener(_onMessageScroll);
     // 未读状态机（BUG 5）：本房间进入"查看中"，收到新消息不计未读。
-    ConversationReadState.shared().setRoomOpen(roomInfo.id, open: true);
+    _notificationAccount = roomInfo.currentUserId;
+    _syncOpenNotificationRooms();
     unawaited(_identityCache.preload().catchError((_) {}));
     final supportPeerId = roomInfo.directPeerId ?? peer?.matrixUserId;
     if (!isGroup && supportPeerId != null) {
@@ -1249,6 +1260,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       _logicalTimeline = timeline;
       controller = RoomTimelineController(
+        onSourceRefreshed: _recordGlobalSearchIndex,
         windowed: true,
         // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
         // 发送必失败，消息进入本地 failed 状态）。拉黑状态取自业务 API
@@ -1262,6 +1274,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         // Offline First：发送前先落盘；重试/重启复用同一 txid。
         outboxJournal: _outboxJournal,
         outboxRoomId: roomInfo.id,
+        onOutboxCorrelation: widget.onOutboxCorrelation,
+        outboxCorrelationFor: widget.outboxCorrelationFor,
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
       _observedOutbox = _outbox;
@@ -1733,11 +1747,28 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
   }
 
+  void _syncOpenNotificationRooms() {
+    final reads = ConversationReadState.shared();
+    if (widget.roomLease.canceled || reads.accountId != _notificationAccount) {
+      return;
+    }
+    final next = widget.roomLease.notificationRoomIds.toSet();
+    for (final id in _openNotificationRooms.difference(next)) {
+      reads.setRoomOpen(id, open: false);
+    }
+    for (final id in next.difference(_openNotificationRooms)) {
+      reads.setRoomOpen(id, open: true);
+    }
+    _openNotificationRooms
+      ..clear()
+      ..addAll(next);
+  }
+
   void _changed() {
     if (_disposing || !mounted) return;
+    _syncOpenNotificationRooms();
     unawaited(_ingestMentions());
     _applyInitialAnchorIfNeeded();
-    _recordGlobalSearchIndex();
     final timeline = controller;
     // Sending switches to the latest window and publishes a local bubble before
     // SDK acknowledgment. Scroll to that bubble even while transport is pending.
@@ -1900,7 +1931,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ? mimeFromFileName(file.name)
               : file.mimeType!;
       if (mime.startsWith('video/') &&
-          PerformanceTraceRecorder.instance.recordingEnabled) {
+          PerformanceTraceRecorder.instance.diagnosticsEnabled) {
         videoTrace = PerformanceTrace.start(
             operation: PerformanceOperationType.videoPrepare)
           ..mark(PerformanceStage.videoSelected);
@@ -2312,7 +2343,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     for (final photo in result.photos) {
       final videoSource = photo.localVideoFile;
       if (photo.isVideo && videoSource != null) {
-        final videoTrace = PerformanceTraceRecorder.instance.recordingEnabled
+        final videoTrace = PerformanceTraceRecorder.instance.diagnosticsEnabled
             ? (PerformanceTrace.start(
                 operation: PerformanceOperationType.videoPrepare)
               ..mark(PerformanceStage.videoSelected))
@@ -2500,7 +2531,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       _dismissComposerExtensions();
       final capture = File(capturePath);
-      if (PerformanceTraceRecorder.instance.recordingEnabled) {
+      if (PerformanceTraceRecorder.instance.diagnosticsEnabled) {
         videoTrace = PerformanceTrace.start(
             operation: PerformanceOperationType.videoPrepare)
           ..mark(PerformanceStage.videoSelected);
@@ -3161,13 +3192,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // R5 修复：改用新 ChatSearchPage（默认空态+组合筛选+拼音成员+
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     var searchOpen = true;
-    var dateLookupGeneration = 0;
     RoomHistoryDayLocation? resolvedDateLocation;
-    Iterable<RoomMessageViewModel> currentSearchSource(
-            [String? beforeEventId]) =>
-        controller?.historyNewestFirst(beforeEventId: beforeEventId) ??
-        const <RoomMessageViewModel>[];
-
     RoomMessageViewModel? currentSearchMessage(String id) {
       // A retained iterator may outlive a recall or source refresh. Resolve the
       // current indexed row before exposing its text, never a stale snapshot.
@@ -3237,13 +3262,23 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
     }
 
-    final historySearch = BoundedHistorySearch<RoomMessageViewModel>(
-      snapshot: currentSearchSource,
-      snapshotBefore: currentSearchSource,
-      eventId: (message) => message.id,
-      project: projectSearchMessage,
-      exhausted: () => controller?.historyExhausted ?? true,
-      loadEarlier: _loadEarlier,
+    final historySearch = LocalRoomHistorySearch(
+      roomIds: () => widget.roomLease.localHistorySearchRoomIds,
+      readPage: widget.roomLease.readLocalSearchPage,
+      snapshot: widget.roomLease.localHistorySnapshot,
+      sourceRevision: () => widget.roomLease.localHistorySearchRevision,
+      project: (sourceRoomId, item) {
+        final current = controller?.findMessage(item.eventId);
+        if (current != null) return projectSearchMessage(current);
+        if (item.isFlashPhoto ||
+            (item.visibleText.isEmpty && item.mediaCategory == null) ||
+            (hiddenEvents?.isEventHidden(sourceRoomId, item.eventId,
+                    eventTimestamp: item.timestamp) ??
+                false)) {
+          return null;
+        }
+        return item;
+      },
     );
     Future<ChatSearchSlice> searchBatch(ChatSearchFilters filters,
         {ChatSearchCursor? cursor, int limit = 50}) async {
@@ -3269,7 +3304,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ];
     // Task A：月历日期 metadata 来自 RoomHistoryDayIndex（只读日期状态），
     // 不再从时间线正文投影；最早月份缺失时保持 null，绝不伪造 1970。
-    final earliestMonth = controller?.earliestMonth;
+    // The complete local snapshot determines days; a partial live timeline
+    // cannot clamp older retained-device history out of calendar navigation.
+    const CalendarMonth? earliestMonth = null;
     final latestMonth = CalendarMonth.of(DateTime.now());
 
     Navigator.push<void>(
@@ -3278,6 +3315,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         builder: (_) => ChatSearchPage(
           isGroup: isGroup,
           identityChanges: _identityCache,
+          historyChanges: widget.roomLease.localHistoryChanges,
           senderDisplayName: (id) => _identityCache
               .resolveIdentity(
                 matrixUserId: id,
@@ -3291,11 +3329,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           earliestMonth: earliestMonth,
           latestMonth: latestMonth,
           loadCalendarMonth: (month) async {
-            final load = controller;
-            if (load == null || !searchOpen) {
-              return RoomHistoryMonthDays(month: month);
+            if (!mounted || !searchOpen) {
+              throw const HistorySearchCancelled();
             }
-            return load.loadMonthDays(month);
+            return widget.roomLease.loadLocalHistoryMonthDays(month);
           },
           onCancelCalendarMonthLookup: () => controller?.cancelMonthLookup(),
           onCalendarClosed: () => controller?.cancelPendingDateLookup(),
@@ -3374,52 +3411,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             unawaited(_scrollToMessage(location.eventId));
           },
           onDateLookup: (date) async {
-            final lookup = controller;
-            final generation = ++dateLookupGeneration;
-            if (lookup == null || !searchOpen) {
+            if (!mounted || !searchOpen) {
+              throw const RoomHistoryLookupCancelled();
+            }
+            final anchor = widget.roomLease.localAnchorForDay(date);
+            if (anchor == null) {
               return CalendarDateLookupResult.incomplete;
             }
-            // Task A：月索引已经给出该日 anchor 时直接采用，不再重复访问
-            // timestamp_to_event（anchor 来自本机已解密的可见事件）。
-            final anchor = lookup.anchorForDay(date);
-            if (anchor != null) {
-              resolvedDateLocation =
-                  RoomHistoryDayLocation(eventId: anchor, day: date);
-              return CalendarDateLookupResult.located;
-            }
-            try {
-              final location = await lookup.locateDay(date);
-              if (!mounted ||
-                  !searchOpen ||
-                  generation != dateLookupGeneration ||
-                  !identical(lookup, controller)) {
-                throw const RoomHistoryLookupCancelled();
-              }
-              if (location == null) {
-                return CalendarDateLookupResult.confirmedEmpty;
-              }
-              resolvedDateLocation = location;
-              return CalendarDateLookupResult.located;
-            } on RoomHistoryLookupIncomplete {
-              if (mounted && searchOpen && generation == dateLookupGeneration) {
-                return CalendarDateLookupResult.incomplete;
-              }
-              throw const RoomHistoryLookupCancelled();
-            } on RoomHistoryLookupCancelled {
-              // A newer day, calendar close, lease change, or dispose won.
-              // The controller has already discarded its partial context.
-              rethrow;
-            }
+            resolvedDateLocation =
+                RoomHistoryDayLocation(eventId: anchor, day: date);
+            return CalendarDateLookupResult.located;
           },
           onCancelDateLookup: () {
-            dateLookupGeneration++;
             controller?.cancelPendingDateLookup();
           },
         ),
       ),
     ).whenComplete(() {
       searchOpen = false;
-      dateLookupGeneration++;
       controller?.cancelPendingDateLookup();
       historySearch.cancel();
     });
@@ -4556,6 +4565,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       case MessageAction.deleteLocal:
         if (hiddenEvents == null) return;
         await hiddenEvents!.hide(roomInfo.id, message.id);
+        widget.roomLease.invalidateLocalHistorySearch();
         unreadMentions?.onRedacted(message.id);
         await widget.roomLease.saveMentions();
         controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
@@ -4636,6 +4646,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await store.hide(roomInfo.id, eventId);
       unreadMentions?.onRedacted(eventId);
     }
+    widget.roomLease.invalidateLocalHistorySearch();
     await widget.roomLease.saveMentions();
     if (!mounted) return;
     controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
@@ -4872,7 +4883,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
     // This list is the bounded viewport, never all loaded history. The pump
     // lazily catches up older records between frames without cancelling batches.
-    _searchIndexPump!.request(timeline.messages);
+    final delta = widget.roomLease.takeSearchEventDelta();
+    final changed = <RoomMessageViewModel>[];
+    final missing = <String>[];
+    for (final id in delta.ids) {
+      final row = timeline.findMessage(id);
+      if (row == null) {
+        missing.add(id);
+      } else {
+        changed.add(row);
+      }
+    }
+    if (missing.isNotEmpty) repository.removeMessages(missing);
+    _searchIndexPump!.request([...timeline.messages, ...changed],
+        rescanHistory: delta.rescan);
   }
 
   /// E1：元素停用（弹出/快速进出）即刻取消 100ms 可见性轮询——
@@ -4946,7 +4970,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     input.dispose();
     messageScrollController.removeListener(_onMessageScroll);
     _searchIndexPump?.dispose();
-    ConversationReadState.shared().setRoomOpen(roomInfo.id, open: false);
+    final reads = ConversationReadState.shared();
+    if (reads.accountId == _notificationAccount) {
+      for (final roomId in _openNotificationRooms) {
+        reads.setRoomOpen(roomId, open: false);
+      }
+    }
+    _openNotificationRooms.clear();
     messageScrollController.dispose();
     super.dispose();
     _disposed.complete();
@@ -5434,6 +5464,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             key: messageKeys[message.id] =
                 _stableMessageKeys.putIfAbsent(message.stableId, GlobalKey.new),
             child: Stack(clipBehavior: Clip.none, children: [
+              if (selection.active &&
+                  selection.selectedIds.contains(message.id))
+                Positioned(
+                  left: -WeChatSpacing.md,
+                  right: -WeChatSpacing.md,
+                  top: -4,
+                  bottom: -4,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      key:
+                          ValueKey('message-selection-highlight-${message.id}'),
+                      decoration: BoxDecoration(
+                        color:
+                            WeChatColors.resolve(context, WeChatColors.divider),
+                      ),
+                    ),
+                  ),
+                ),
               // 规格 #3：高亮背景从屏幕左缘覆盖到右缘（负偏移抵消列表
               // 水平内边距），上下各外扩 4pt——正好到相邻气泡 8pt 间隙的
               // 中线，不会覆盖相邻消息；闪烁后归零，不残留。
@@ -5568,7 +5616,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             Column(
               children: [
                 if (isGroup)
-                  GroupAnnouncementBanner(service: announcementService),
+                  GroupAnnouncementBanner(
+                    service: announcementService,
+                    dismissalScope: roomInfo.currentUserId == null
+                        ? null
+                        : jsonEncode([roomInfo.currentUserId, roomInfo.id]),
+                  ),
                 Expanded(
                   child: ValueListenableBuilder<int>(
                     valueListenable: _timelineRevision,

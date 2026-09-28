@@ -2,6 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/unread_mention_tracker.dart';
 
 void main() {
+  test('stable timeline registration reports no persisted change', () {
+    final state = UnreadMentionTracker(accountId: 'me', roomId: 'room');
+    final ids = List.generate(10000, (i) => 'e$i');
+    expect(Function.apply(state.registerTimeline, [ids]), isTrue);
+    expect(Function.apply(state.registerTimeline, [ids]), isFalse);
+  });
   test(
       'boundary identity, backfill and later sync preserve Matrix order across restore',
       () {

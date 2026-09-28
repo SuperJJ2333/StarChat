@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:crypto/crypto.dart';
@@ -9,6 +10,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
+import 'package:liuhetong_mobile/features/moments/moment_publish_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/voice_playback_controller.dart';
 import 'package:matrix/matrix.dart';
 import 'package:path/path.dart' as p;
@@ -232,6 +234,32 @@ void main() {
     }
   }
   for (final name in ['video-h264.mp4', 'video-hevc.mp4']) {
+    testWidgets('native moment poster is a bounded static rendition of $name',
+        (_) async {
+      final folder =
+          await (await getTemporaryDirectory()).createTemp('moment-poster-');
+      try {
+        final source = File(p.join(folder.path, name));
+        await source.writeAsBytes(await _fixture(name), flush: true);
+        final poster = await prepareMomentVideoPoster(source).timeout(_wait);
+        expect(poster, isNotNull);
+        expect(poster!.length, inInclusiveRange(1, 512 * 1024));
+        final buffer = await ui.ImmutableBuffer.fromUint8List(poster);
+        try {
+          final descriptor = await ui.ImageDescriptor.encoded(buffer);
+          try {
+            expect(descriptor.width, inInclusiveRange(1, 480));
+            expect(descriptor.height, inInclusiveRange(1, 480));
+          } finally {
+            descriptor.dispose();
+          }
+        } finally {
+          buffer.dispose();
+        }
+      } finally {
+        await folder.delete(recursive: true);
+      }
+    });
     for (final profile in [
       ChatVideoProfile.normal,
       ChatVideoProfile.aggressive(4000)

@@ -1,4 +1,7 @@
 import 'dart:ui';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'network_diagnostics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'chat_diagnostics.dart';
@@ -8,17 +11,18 @@ import 'performance_trace.dart';
 /// Diagnostics live exactly as long as the authenticated application. No
 /// account identifier is persisted or sent by this scope.
 final class ChatDiagnosticsScope extends StatefulWidget {
-  const ChatDiagnosticsScope(
-      {super.key,
-      required this.sessionEpoch,
-      required this.version,
-      required this.platform,
-      required this.upload,
-      required this.child,
-      this.diagnostics,
-      this.performanceMetrics,
-      this.spool,
-      this.spoolScope});
+  const ChatDiagnosticsScope({
+    super.key,
+    required this.sessionEpoch,
+    required this.version,
+    required this.platform,
+    required this.upload,
+    required this.child,
+    this.diagnostics,
+    this.performanceMetrics,
+    this.spool,
+    this.spoolScope,
+  });
   final int sessionEpoch;
   final String version;
   final ChatDiagnosticPlatform platform;
@@ -39,15 +43,52 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
   late ChatDiagnostics _diagnostics;
   int _generation = -1;
   late PerformanceMetrics _metrics;
+  StreamSubscription<List<ConnectivityResult>>? _connectivity;
   void _start() {
     _diagnostics = widget.diagnostics ?? ChatDiagnostics.instance;
     _diagnostics.startSession(
-        version: widget.version,
-        platform: widget.platform,
-        upload: widget.upload,
-        store: widget.spool,
-        spoolScope: widget.spoolScope);
+      version: widget.version,
+      platform: widget.platform,
+      upload: widget.upload,
+      store: widget.spool,
+      spoolScope: widget.spoolScope,
+    );
     _generation = _diagnostics.sessionGeneration;
+    final generation = _generation;
+    final diagnostics = _diagnostics;
+    var sawChange = false;
+    final connectivity = Connectivity();
+    void update(List<ConnectivityResult> values) {
+      if (!identical(_diagnostics, diagnostics) ||
+          _diagnostics.sessionGeneration != generation) {
+        return;
+      }
+      _diagnostics.networks.network = values.contains(ConnectivityResult.vpn)
+          ? DiagnosticNetwork.vpn
+          : values.contains(ConnectivityResult.wifi)
+              ? DiagnosticNetwork.wifi
+              : values.contains(ConnectivityResult.ethernet)
+                  ? DiagnosticNetwork.ethernet
+                  : values.contains(ConnectivityResult.mobile)
+                      ? DiagnosticNetwork.mobile
+                      : values.contains(ConnectivityResult.other)
+                          ? DiagnosticNetwork.other
+                          : values.contains(ConnectivityResult.none)
+                              ? DiagnosticNetwork.none
+                              : DiagnosticNetwork.unknown;
+    }
+
+    // Cache once per authenticated scope and on connectivity changes. Requests
+    // read only this enum; no per-request platform call or interface metadata.
+    _connectivity = connectivity.onConnectivityChanged.listen((values) {
+      sawChange = true;
+      update(values);
+    }, onError: (Object _) {});
+    unawaited(
+      connectivity.checkConnectivity().then((values) {
+        if (!sawChange) update(values);
+      }, onError: (Object _) {}),
+    );
     PerformanceTraceRecorder.instance.lifecycle =
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed
             ? PerformanceLifecycle.foreground
@@ -55,6 +96,10 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
   }
 
   void _stop() {
+    final connectivity = _connectivity;
+    _connectivity = null;
+    if (connectivity != null) unawaited(connectivity.cancel());
+
     if (_diagnostics.sessionGeneration == _generation) {
       _diagnostics.stopSession();
       PerformanceTraceRecorder.instance.clear();
@@ -113,20 +158,24 @@ final class _ChatDiagnosticsScopeState extends State<ChatDiagnosticsScope>
     for (final frame in timings) {
       if (foreground) {
         _diagnostics.recordFrame(
-            buildUs: frame.buildDuration.inMicroseconds,
-            rasterUs: frame.rasterDuration.inMicroseconds,
-            budgetUs: budgetUs);
+          buildUs: frame.buildDuration.inMicroseconds,
+          rasterUs: frame.rasterDuration.inMicroseconds,
+          budgetUs: budgetUs,
+        );
       }
-      if (frame.totalSpan.inMilliseconds < 250) continue;
+      if (!foreground || !clockValid || frame.totalSpan.inMilliseconds < 250) {
+        continue;
+      }
       count++;
       if (frame.totalSpan > maximum) maximum = frame.totalSpan;
     }
     if (count > 0) {
       _diagnostics.record(
-          stage: ChatDiagnosticStage.framework,
-          error: ChatDiagnosticError.slow,
-          elapsed: maximum,
-          count: count);
+        stage: ChatDiagnosticStage.framework,
+        error: ChatDiagnosticError.slow,
+        elapsed: maximum,
+        count: count,
+      );
     }
   }
 
@@ -149,15 +198,17 @@ void installChatErrorReporter() {
   final previousFlutter = FlutterError.onError;
   FlutterError.onError = (details) {
     ChatDiagnostics.instance.record(
-        stage: ChatDiagnosticStage.framework,
-        error: ChatDiagnosticError.unknown);
+      stage: ChatDiagnosticStage.framework,
+      error: ChatDiagnosticError.unknown,
+    );
     (previousFlutter ?? FlutterError.presentError)(details);
   };
   final previousPlatform = PlatformDispatcher.instance.onError;
   PlatformDispatcher.instance.onError = (error, stack) {
     ChatDiagnostics.instance.record(
-        stage: ChatDiagnosticStage.framework,
-        error: ChatDiagnosticError.unknown);
+      stage: ChatDiagnosticStage.framework,
+      error: ChatDiagnosticError.unknown,
+    );
     return previousPlatform?.call(error, stack) ?? false;
   };
 }

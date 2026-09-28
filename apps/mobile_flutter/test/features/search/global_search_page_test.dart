@@ -139,6 +139,29 @@ Future<void> _search(WidgetTester tester, String query) async {
 }
 
 void main() {
+  testWidgets('every submitted search has separate content-free diagnostics',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+    final api = await _api(performanceRecorder: recorder);
+    await tester.pumpWidget(_page(
+      api: api,
+      index: _index([_record(r'$1', 'sample local result')]),
+      searchPerformanceTrace: recorder.start(PerformanceOperationType.search),
+    ));
+    await _search(tester, 'sample');
+    await _search(tester, 'result');
+    final searches = records
+        .where((record) => record.operation == PerformanceOperationType.search)
+        .toList();
+    expect(searches, hasLength(2));
+    expect(searches.first.operationId, isNot(searches.last.operationId));
+    expect(
+        searches.map((r) => r.toJson()).toString(), isNot(contains('sample')));
+    await tester.pumpWidget(const SizedBox());
+    recorder.clear();
+  });
   testWidgets('search page initial contacts request shares page operation ID',
       (tester) async {
     final records = <PerformanceRecord>[];

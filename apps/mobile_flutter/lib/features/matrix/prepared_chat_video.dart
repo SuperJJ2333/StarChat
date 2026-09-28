@@ -40,6 +40,7 @@ Future<PreparedChatVideo> prepareLocalChatVideo(File source,
         onProgress: onProgress, performanceTrace: performanceTrace);
     final bytes = await rendition.file.readAsBytes();
     validateGroupVideoSize(bytes.length);
+    performanceTrace?.mark(PerformanceStage.videoThumbnailStarted);
     final poster = await extractVideoPoster(rendition.file.path);
     performanceTrace?.mark(PerformanceStage.videoThumbnailDone);
     return PreparedChatVideo(bytes, poster, rendition.durationMs);

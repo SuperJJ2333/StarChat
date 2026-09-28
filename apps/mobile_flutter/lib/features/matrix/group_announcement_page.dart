@@ -37,6 +37,8 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
   bool _canReplaceUnreadable = false;
   int _loadEpoch = 0;
   int _editorEpoch = 0;
+  String? _loadedReferenceIdentity;
+  String? _editingReferenceIdentity;
   StreamSubscription<void>? _subscription;
   @override
   void initState() {
@@ -47,10 +49,15 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
 
   void _listen() {
     _subscription = widget.service.changes.listen((_) {
-      if (editing && widget.service.canEdit) return;
+      if (editing &&
+          widget.service.canEdit &&
+          _referenceIdentity(widget.service) == _editingReferenceIdentity) {
+        return;
+      }
       if (editing) {
         setState(() {
           _editorEpoch++;
+          _editingReferenceIdentity = null;
           editing = false;
           busy = false;
           blocks = null;
@@ -74,6 +81,8 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
     _clearInputs();
     blocks = null;
     _document = null;
+    _loadedReferenceIdentity = null;
+    _editingReferenceIdentity = null;
     editing = false;
     busy = false;
     error = null;
@@ -92,10 +101,13 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
 
   Future<void> _load() async {
     final epoch = ++_loadEpoch;
+    final service = widget.service;
+    final reference = _referenceIdentity(service);
     try {
-      final value = await widget.service.load();
+      final value = await service.load();
       if (mounted && epoch == _loadEpoch) {
         setState(() {
+          _loadedReferenceIdentity = reference;
           blocks = value.blocks.toList();
           _document = value;
           error = null;
@@ -105,8 +117,10 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
     } catch (failure) {
       if (mounted && epoch == _loadEpoch) {
         setState(() {
+          _loadedReferenceIdentity = reference;
           _canReplaceUnreadable = failure is AnnouncementPendingDecryption ||
               failure is AnnouncementDecryptionUnavailable ||
+              failure is AnnouncementReferencedEventUnavailable ||
               failure is FormatException;
           final status =
               failure is MatrixException ? failure.response?.statusCode : null;
@@ -140,6 +154,7 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
   Future<void> _replaceUnreadable() async {
     final epoch = _loadEpoch;
     final service = widget.service;
+    final reference = _loadedReferenceIdentity;
     final confirmed = await showCupertinoDialog<bool>(
         context: context,
         builder: (context) => CupertinoAlertDialog(
@@ -157,13 +172,11 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
             ));
     if (confirmed != true ||
         !mounted ||
-        epoch != _loadEpoch ||
-        !identical(service, widget.service) ||
-        !service.canEdit ||
-        !_canReplaceUnreadable) {
+        !_managementCurrent(service, reference, epoch)) {
       return;
     }
     setState(() {
+      _loadEpoch++;
       blocks = [];
       _document = null;
       error = null;
@@ -172,7 +185,79 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
     _edit();
   }
 
+  String? _referenceIdentity(GroupAnnouncementService service) {
+    try {
+      return service is GroupAnnouncementReferenceSource
+          ? (service as GroupAnnouncementReferenceSource)
+              .announcementReferenceIdentity
+          : null;
+    } catch (_) {
+      // A revoked lease cannot provide a revision or authorize an operation.
+      return null;
+    }
+  }
+
+  bool _managementCurrent(
+      GroupAnnouncementService service, String? reference, int epoch) {
+    try {
+      return identical(service, widget.service) &&
+          service.canEdit &&
+          (service is GroupAnnouncementReferenceSource
+              ? (service as GroupAnnouncementReferenceSource)
+                      .announcementReferenceIdentity ==
+                  reference
+              : epoch == _loadEpoch);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _deleteAnnouncement() async {
+    final epoch = _loadEpoch;
+    final service = widget.service;
+    final reference = _loadedReferenceIdentity;
+    final confirmed = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+              title: const Text('删除群公告'),
+              content: const Text('删除后将清空当前公告，历史消息仍会保留。'),
+              actions: [
+                CupertinoDialogAction(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('取消')),
+                CupertinoDialogAction(
+                    isDestructiveAction: true,
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('删除')),
+              ],
+            ));
+    if (confirmed != true ||
+        !mounted ||
+        !_managementCurrent(service, reference, epoch)) {
+      return;
+    }
+    final editorEpoch = _editorEpoch;
+    bool current() =>
+        mounted &&
+        editorEpoch == _editorEpoch &&
+        identical(service, widget.service);
+    setState(() {
+      busy = true;
+      error = null;
+      _loadEpoch++;
+    });
+    try {
+      await service.save(const GroupAnnouncement([]));
+      if (mounted && current()) Navigator.pop(context, true);
+    } catch (_) {
+      if (current()) setState(() => error = '删除失败，请检查权限和网络后重试');
+    } finally {
+      if (current()) setState(() => busy = false);
+    }
+  }
+
   void _edit() {
+    _editingReferenceIdentity = _loadedReferenceIdentity;
     input.text = blocks!
         .where((block) => !block.isImage)
         .map((block) => block.value)
@@ -189,6 +274,10 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
     final service = widget.service;
     bool current() =>
         mounted && epoch == _editorEpoch && identical(service, widget.service);
+    if (!_managementCurrent(service, _editingReferenceIdentity, _loadEpoch)) {
+      setState(() => error = '公告或权限已变更，请重新打开后编辑');
+      return;
+    }
     setState(() {
       busy = true;
       error = null;
@@ -315,6 +404,15 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
             CupertinoButton(
                 onPressed: busy ? null : _replaceUnreadable,
                 child: const Text('重新编写')),
+          if (!editing &&
+              widget.service.canEdit &&
+              (_canReplaceUnreadable ||
+                  (error == null && _document?.isEffective == true)))
+            CupertinoButton(
+                key: const Key('group-announcement-delete'),
+                onPressed: busy ? null : _deleteAnnouncement,
+                child: const Text('删除公告',
+                    style: TextStyle(color: WeChatColors.danger))),
           if (!editing && blocks?.isEmpty == true) const Text('暂无群公告'),
           if (!editing && _document?.publisherName != null)
             Padding(

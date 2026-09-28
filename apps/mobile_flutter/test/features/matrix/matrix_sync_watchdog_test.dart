@@ -502,6 +502,104 @@ void main() {
         reason: 'an offline abort must not schedule the replacement sync');
     watchdog.dispose();
   });
+
+  test('stall and failed soft kick emit only closed recovery facts', () async {
+    final target = _FakeWatchdogTarget()..failOneShot = true;
+    final facts =
+        <(MatrixSyncRecoveryAction, MatrixSyncRecoverySignal, Duration)>[];
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          facts.add((action, signal, elapsed)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(facts, [
+      (
+        MatrixSyncRecoveryAction.softKick,
+        MatrixSyncRecoverySignal.stalled,
+        const Duration(minutes: 3)
+      ),
+      (
+        MatrixSyncRecoveryAction.softKick,
+        MatrixSyncRecoverySignal.failed,
+        Duration.zero
+      ),
+    ]);
+    watchdog.dispose();
+  });
+
+  test('failed hard abort reports failure without pretending recovery',
+      () async {
+    final target = _FakeWatchdogTarget()..failAbort = true;
+    final facts =
+        <(MatrixSyncRecoveryAction, MatrixSyncRecoverySignal, Duration)>[];
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          facts.add((action, signal, elapsed)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 6));
+    await watchdog.tick();
+    await _settle();
+    expect(facts, [
+      (
+        MatrixSyncRecoveryAction.hardRestart,
+        MatrixSyncRecoverySignal.stalled,
+        const Duration(minutes: 6)
+      ),
+      (
+        MatrixSyncRecoveryAction.hardRestart,
+        MatrixSyncRecoverySignal.failed,
+        Duration.zero
+      ),
+    ]);
+    expect(target.oneShots, 0);
+    watchdog.dispose();
+  });
+
+  test('timed out one-shot emits timeout and never a recovery claim', () async {
+    final target = _FakeWatchdogTarget()..holdOneShot = true;
+    final facts = <(MatrixSyncRecoveryAction, MatrixSyncRecoverySignal)>[];
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      oneShotTimeout: const Duration(milliseconds: 5),
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          facts.add((action, signal)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(facts, [
+      (MatrixSyncRecoveryAction.softKick, MatrixSyncRecoverySignal.stalled),
+      (MatrixSyncRecoveryAction.softKick, MatrixSyncRecoverySignal.timeout),
+    ]);
+    watchdog.dispose();
+    target.releaseOneShot();
+  });
+
+  test('recovery diagnostic callback cannot break sync recovery', () async {
+    final target = _FakeWatchdogTarget();
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          throw StateError('diagnostic sink failed'),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(target.oneShots, 1);
+    watchdog.dispose();
+  });
 }
 
 Future<void> _settle() => Future<void>.delayed(Duration.zero);
@@ -522,6 +620,7 @@ final class _FakeWatchdogTarget implements SyncWatchdogTarget {
   bool hangAbort = false;
   bool holdAbort = false;
   bool holdOneShot = false;
+  bool failOneShot = false;
   bool failAbort = false;
   Completer<void>? _abortGate;
   Completer<void>? _oneShotGate;
@@ -537,6 +636,7 @@ final class _FakeWatchdogTarget implements SyncWatchdogTarget {
     oneShots++;
     operations.add('oneShot');
     if (holdOneShot) await (_oneShotGate ??= Completer<void>()).future;
+    if (failOneShot) throw StateError('one shot failed');
   }
 
   @override

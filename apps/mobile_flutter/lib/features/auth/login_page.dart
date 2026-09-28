@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'phone_login_controller.dart';
+import 'password_change_page.dart';
 import 'phone_number_format.dart';
 import '../../core/privacy_consent.dart';
 import 'package:flutter/cupertino.dart';
@@ -723,6 +724,29 @@ final class _LoginPageState extends State<LoginPage>
                   fontSize: WeChatTypography.caption,
                   height: 17 / 12,
                 ),
+              ),
+              CupertinoButton(
+                key: const Key('auth-forgot-password'),
+                padding: EdgeInsets.zero,
+                onPressed: _loading
+                    ? null
+                    : () {
+                        final navigator = Navigator.of(context);
+                        navigator.push(MotionPageRoute(
+                            builder: (_) => PasswordChangePage(
+                                  gateway: widget.api,
+                                  onCompleted: () async {
+                                    if (navigator.mounted) navigator.pop();
+                                    if (mounted) {
+                                      setState(() {
+                                        _password.clear();
+                                        _error = '密码已更换，请使用新密码登录';
+                                      });
+                                    }
+                                  },
+                                )));
+                      },
+                child: const Text('忘记密码'),
               ),
               const SizedBox(height: WeChatSpacing.xs),
               AuthAgreementRow(

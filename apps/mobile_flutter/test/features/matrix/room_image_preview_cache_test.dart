@@ -131,8 +131,11 @@ void main() {
 
   test('encrypted local preview survives reopen without plaintext disk data',
       () async {
-    final root = Directory(
-        '${Directory.current.path}/../../docs/verification/artifacts/2026-09-11/performance/encrypted-preview-store');
+    final fixtures = Directory.fromUri(Directory.current.uri.resolve(
+        '../../docs/verification/artifacts/2026-09-26/cache-fixtures/'));
+    await fixtures.create(recursive: true);
+    final root = await fixtures.createTemp('room-preview-');
+    addTearDown(() => root.delete(recursive: true));
     final keys = _Keys();
     final store = EncryptedEmojiPreviewStore('test-room-image-account',
         keys: keys, directory: () async => root);

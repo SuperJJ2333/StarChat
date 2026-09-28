@@ -4,6 +4,15 @@ import UserNotifications
 import AVFoundation
 import CallKit
 
+enum IOSMessageNavigationGate {
+  static func allows(applicationState: UIApplication.State,
+                     sceneStates: [UIScene.ActivationState]) -> Bool {
+    applicationState == .active && sceneStates.contains(where: {
+      $0 == .foregroundActive
+    })
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   let iosCalls = IOSCallsBridge()
@@ -85,6 +94,21 @@ import CallKit
       case "clear":
         UIApplication.shared.applicationIconBadgeNumber = 0
         result(true)
+      case "clearConversation":
+        guard let arguments = call.arguments as? [String: Any],
+              let roomId = arguments["roomId"] as? String, !roomId.isEmpty else {
+          result(FlutterError(code: "INVALID_ROOM", message: "Invalid room", details: nil))
+          return
+        }
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { notifications in
+          let identifiers = notifications.filter {
+            IOSConversationNotificationState.matches(
+              roomId: roomId, userInfo: $0.request.content.userInfo)
+          }.map { $0.request.identifier }
+          center.removeDeliveredNotifications(withIdentifiers: identifiers)
+          DispatchQueue.main.async { result(true) }
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -195,11 +219,21 @@ import CallKit
   }
 
   private func deliverPendingTap() {
+    // CallKit may keep the engine running while the phone is locked. Message
+    // navigation belongs to the active UI, not to that background engine.
+    guard IOSMessageNavigationGate.allows(
+      applicationState: UIApplication.shared.applicationState,
+      sceneStates: UIApplication.shared.connectedScenes.map { $0.activationState }
+    ) else { return }
     guard apnsListening, let tap = pendingTap, let channel = apnsChannel else { return }
     channel.invokeMethod("notificationTap", arguments: tap) { [weak self] result in
       guard let self = self else { return }
       if result as? Bool == true, self.pendingTap == tap { self.pendingTap = nil }
     }
+  }
+
+  func resumeMessageNotificationRouting() {
+    deliverPendingTap()
   }
 
   // MARK: - 闪照屏幕捕获（Task E）

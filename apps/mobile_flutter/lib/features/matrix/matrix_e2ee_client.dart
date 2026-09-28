@@ -68,6 +68,8 @@ import 'matrix_message_reminder_backend.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
 import 'room_history_day_index.dart';
+import 'local_room_history_snapshot.dart';
+import 'bounded_history_search.dart';
 import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
@@ -79,6 +81,8 @@ import 'message_timeline_cache.dart';
 import 'nudge_service.dart';
 import 'room_timeline_controller.dart';
 import '../search/local_message_search_repository.dart';
+import '../search/room_search_event_delta.dart';
+import 'chat_search_query_controller.dart';
 import '../../ui/chat/flash_photo.dart' show FlashPhotoViewedStore;
 
 const _maxFileSendBytes = 100 * 1024 * 1024;
@@ -1494,6 +1498,11 @@ final class MatrixForwardDestinationSnapshot {
   final List<MatrixRoomMemberSnapshot> members;
 }
 
+final class _RoomHistoryChangeSignal extends ChangeNotifier {
+  bool get isObserved => hasListeners;
+  void publish() => notifyListeners();
+}
+
 final class MatrixRoomLease
     implements
         _ManagedClientResourceBase,
@@ -1509,6 +1518,153 @@ final class MatrixRoomLease
   final String roomId;
   Room? _room;
   final List<_SdkRoomTimelineCapability> _timelines = [];
+  final _searchEventDelta = RoomSearchEventDelta();
+  final _mentionEventDelta = RoomSearchEventDelta();
+  int _localHistorySearchRevision = 0;
+  final _RoomHistoryChangeSignal _localHistoryChanges =
+      _RoomHistoryChangeSignal();
+  Listenable get localHistoryChanges => _localHistoryChanges;
+  bool _historyChangeQueued = false;
+  final _localSearchEventIds = <String, List<String>>{};
+  final _localSearchCutoffs = <String, DateTime?>{};
+  int _localSearchIdsRevision = -1;
+  LocalRoomHistorySnapshot? _localHistorySnapshot;
+  int get localHistorySearchRevision {
+    var changed = false;
+    for (final id in localHistorySearchRoomIds) {
+      final cutoff = owner._localHistoryStore?.lastHistoryCutoff(id);
+      if (_localSearchCutoffs[id] != cutoff) changed = true;
+      _localSearchCutoffs[id] = cutoff;
+    }
+    if (changed) invalidateLocalHistorySearch();
+    return _localHistorySearchRevision;
+  }
+
+  void invalidateLocalHistorySearch() {
+    _localHistorySearchRevision++;
+    _localSearchEventIds.clear();
+    _localHistorySnapshot?.clear();
+    if (!_historyChangeQueued && _localHistoryChanges.isObserved) {
+      _historyChangeQueued = true;
+      scheduleMicrotask(() {
+        _historyChangeQueued = false;
+        if (!canceled) _localHistoryChanges.publish();
+      });
+    }
+  }
+
+  LocalRoomHistorySnapshot get localHistorySnapshot =>
+      _localHistorySnapshot ??= LocalRoomHistorySnapshot(
+        roomIds: () => localHistorySearchRoomIds,
+        readPage: readLocalSearchPage,
+        sourceRevision: () => localHistorySearchRevision,
+      );
+  Future<RoomHistoryMonthDays> loadLocalHistoryMonthDays(CalendarMonth month) {
+    final filters = {
+      for (final id in localHistorySearchRoomIds)
+        id: owner._localHistoryStore?.readFilter(id)
+    };
+    return localHistorySnapshot.monthDays(month,
+        isVisible: (id, row) =>
+            !(filters[id]?.call(row.eventId, row.timestamp) ?? false));
+  }
+
+  String? localAnchorForDay(DateTime day) {
+    final snapshot = localHistorySnapshot;
+    final anchor = snapshot.anchorForDay(day);
+    final source = snapshot.anchorSourceForDay(day);
+    if (anchor != null &&
+        source != null &&
+        (source == roomId || _historyLeases.containsKey(source))) {
+      _logicalTimeline?.hintSource(anchor, source);
+    }
+    return anchor;
+  }
+
+  String? localAnchorSourceForDay(DateTime day) =>
+      localHistorySnapshot.anchorSourceForDay(day);
+
+  ({List<String> ids, bool rescan}) takeSearchEventDelta() =>
+      _searchEventDelta.drain();
+
+  List<String> get localHistorySearchRoomIds =>
+      [roomId, ..._historyLeases.keys];
+  List<String> get notificationRoomIds => List<String>.unmodifiable(
+      {roomId, ...owner.logicalRoomSourcesSync(roomId)});
+
+  /// Direct SQLCipher read: never SDK timeline/requestHistory or remote fallback.
+  Future<List<ChatSearchMessage>> readLocalSearchPage(
+          String sourceRoomId, int offset, int limit) =>
+      _withLeaseOperation((room) async {
+        if (sourceRoomId != roomId &&
+            !_historyLeases.containsKey(sourceRoomId)) {
+          throw StateError('Unknown conversation history source');
+        }
+        final source = sourceRoomId == roomId
+            ? room
+            : _historyLeases[sourceRoomId]!._activeRoom;
+        final database = source.client.database;
+        if (database == null) {
+          throw StateError('Local history database unavailable');
+        }
+        final trace = PerformanceTraceRecorder.instance.start(
+            PerformanceOperationType.search,
+            parentOperation: PerformanceTrace.currentOperation);
+        trace.mark(PerformanceStage.databaseSearchStarted);
+        late final List<Event> events;
+        late final List<String> pageIds;
+        try {
+          final revision = localHistorySearchRevision;
+          if (_localSearchIdsRevision != revision) {
+            _localSearchEventIds.clear();
+            _localSearchIdsRevision = revision;
+          }
+          final cachedIds = _localSearchEventIds[sourceRoomId];
+          final ids = cachedIds ?? await database.getEventIdList(source);
+          if (revision != localHistorySearchRevision) {
+            throw const HistorySearchCancelled();
+          }
+          _localSearchEventIds[sourceRoomId] = ids;
+          pageIds = ids.skip(offset).take(limit).toList(growable: false);
+          events = pageIds.isEmpty
+              ? const <Event>[]
+              : await database.getEventList(source,
+                  start: offset, limit: limit);
+          trace.mark(PerformanceStage.databaseSearchDone);
+          trace.setDatabase(
+              operation: PerformanceDatabaseOperation.messageSearch,
+              rowCount: events.length);
+          trace.finish();
+        } catch (_) {
+          trace.finish(result: PerformanceResult.failed);
+          rethrow;
+        }
+        void checkActiveSearch() {
+          if (canceled ||
+              owner._accessRevoked ||
+              !identical(owner._client, source.client)) {
+            throw StateError('Local history search lease no longer active');
+          }
+        }
+
+        checkActiveSearch();
+        final projected = <ChatSearchMessage>[];
+        for (var i = 0; i < events.length; i++) {
+          final event = events[i];
+          // getEventList prepends SENDING rows at offset zero. Exclude that
+          // separate queue, while retaining all rows in the sent timeline so
+          // the next SQL offset and exhaustion test stay correct.
+          if (event.status.isSent) {
+            projected.add(projectDeviceLocalSearchEvent(event));
+          }
+          if ((i + 1) % 64 == 0) {
+            await Future<void>.delayed(Duration.zero);
+            checkActiveSearch();
+          }
+        }
+        checkActiveSearch();
+        return completeLocalHistoryPage(pageIds, projected);
+      });
   FutureOr<void> Function()? _onRevoked;
   Future<void> Function()? _drainOwner;
   @override
@@ -1560,7 +1716,32 @@ final class MatrixRoomLease
         members: value.members);
   }
 
-  bool get _mentionsActive => !canceled && !owner._accessRevoked;
+  bool get _mentionsActive =>
+      !canceled && !owner._accessRevoked && _room != null;
+  bool _mentionForceRescan = false;
+  late final _mentionIngest = MentionIngestCoalescer(
+      isActive: () => _mentionsActive,
+      ingest: (shouldContinue) => _withLeaseOperation((room) async {
+            final delta = _mentionEventDelta.drain();
+            final changedIds =
+                _mentionForceRescan || delta.rescan ? null : delta.ids.toSet();
+            _mentionForceRescan = false;
+            try {
+              for (final timeline in _timelines.toList(growable: false)) {
+                if (!shouldContinue() || !identical(_room, room)) return;
+                if (!timeline._disposed) {
+                  await RoomMentionStore.shared.ingest(
+                      room, timeline._liveTimeline.events,
+                      changedEventIds: changedIds,
+                      shouldContinue: () =>
+                          shouldContinue() && identical(_room, room));
+                }
+              }
+            } catch (_) {
+              _mentionForceRescan = true;
+              rethrow;
+            }
+          }));
   Future<UnreadMentionTracker> openMentions() =>
       _withLeaseOperation((room) => RoomMentionStore.shared
           .open(room, shouldContinue: () => _mentionsActive));
@@ -1570,15 +1751,7 @@ final class MatrixRoomLease
   Future<void> scanMentions() =>
       _withLeaseOperation((room) => RoomMentionStore.shared
           .scan(room, shouldContinue: () => _mentionsActive));
-  Future<void> ingestMentions() => _withLeaseOperation((room) async {
-        for (final timeline in _timelines.toList()) {
-          if (!timeline._disposed) {
-            await RoomMentionStore.shared.ingest(
-                room, timeline._liveTimeline.events,
-                shouldContinue: () => _mentionsActive);
-          }
-        }
-      });
+  Future<void> ingestMentions() => _mentionIngest.request();
   String? get historyToken =>
       _timelines.lastOrNull?.historyToken ?? _activeRoom.prev_batch;
   String? get oldestTimelineEventId =>
@@ -1726,6 +1899,7 @@ final class MatrixRoomLease
             merged.addSource(sourceId, timeline);
             sourcesChanged = true;
             _historyLeases[sourceId] = source;
+            invalidateLocalHistorySearch();
           } catch (_) {
             await source.cancel();
             rethrow;
@@ -1759,6 +1933,12 @@ final class MatrixRoomLease
       final client = _activeRoom.client;
       _logicalEvents = client.onEvent.stream.listen((update) {
         if (canceled || !identical(_logicalTimeline, merged)) return;
+        if (update.roomID == roomId ||
+            _historyLeases.containsKey(update.roomID)) {
+          _searchEventDelta.add(update.content);
+          _mentionEventDelta.add(update.content);
+          invalidateLocalHistorySearch();
+        }
         if (update.roomID == roomId &&
             update.type == EventUpdateType.accountData &&
             const {conversationPreferenceType, groupChatAccountDataType}
@@ -1816,7 +1996,8 @@ final class MatrixRoomLease
     required DateTime cutoff,
   }) =>
       owner.conversations
-          .clearLocalHistory(roomId, messageIds: messageIds, cutoff: cutoff);
+          .clearLocalHistory(roomId, messageIds: messageIds, cutoff: cutoff)
+          .then((_) => invalidateLocalHistorySearch());
 
   Future<DateTime?> serverNow() => _withLeaseOperation((room) async {
         final homeserver = room.client.homeserver;
@@ -1939,18 +2120,42 @@ final class MatrixRoomLease
   GroupAnnouncementService openAnnouncementService() =>
       _LeaseAnnouncementService(this);
 
-  bool get canEditAnnouncement =>
-      MatrixGroupAnnouncementService(_activeRoom).canEdit;
-  Future<GroupAnnouncement> loadAnnouncement() => _withLeaseOperation(
-      (room) => MatrixGroupAnnouncementService(room).load());
-  Future<void> saveAnnouncement(GroupAnnouncement value) => _withLeaseOperation(
-      (room) => MatrixGroupAnnouncementService(room).save(value));
+  void _ensureAnnouncementRoomCurrent(Room room) {
+    owner._requireLifecycleAccess();
+    if (canceled ||
+        !identical(_room, room) ||
+        !identical(owner._client, room.client)) {
+      throw StateError('Matrix announcement room lease is not active');
+    }
+  }
+
+  bool get canEditAnnouncement {
+    try {
+      final room = _activeRoom;
+      _ensureAnnouncementRoomCurrent(room);
+      return MatrixGroupAnnouncementService(room).canEdit;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String get announcementReferenceIdentity =>
+      MatrixGroupAnnouncementService(_activeRoom).announcementReferenceIdentity;
+  Future<GroupAnnouncement> loadAnnouncement() =>
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+          ensureCurrent: () => _ensureAnnouncementRoomCurrent(room)).load());
+  Future<void> saveAnnouncement(GroupAnnouncement value) =>
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+              ensureCurrent: () => _ensureAnnouncementRoomCurrent(room))
+          .save(value));
   Future<Uint8List> loadAnnouncementImage(String eventId) =>
-      _withLeaseOperation(
-          (room) => MatrixGroupAnnouncementService(room).loadImage(eventId));
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+              ensureCurrent: () => _ensureAnnouncementRoomCurrent(room))
+          .loadImage(eventId));
   Future<String> uploadAnnouncementImage(Uint8List bytes, String name) =>
-      _withLeaseOperation((room) =>
-          MatrixGroupAnnouncementService(room).uploadImage(bytes, name));
+      _withLeaseOperation((room) => MatrixGroupAnnouncementService(room,
+              ensureCurrent: () => _ensureAnnouncementRoomCurrent(room))
+          .uploadImage(bytes, name));
   Future<String> sendMessageContent(Map<String, Object?> content,
           {required String txid}) =>
       _withLeaseSend((room) async =>
@@ -2338,7 +2543,12 @@ final class MatrixRoomLease
   }
 
   void revokeNow() {
+    invalidateLocalHistorySearch();
+    _localHistorySnapshot = null;
+    _mentionIngest.cancel();
+    _mentionEventDelta.drain();
     if (_room == null) return;
+    RoomMentionStore.shared.invalidateObservation(_room!);
     _logicalTimeline?.dispose();
     for (final timeline in _timelines.toList(growable: false)) {
       timeline.dispose();
@@ -2439,11 +2649,15 @@ MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room,
   );
 }
 
-final class _LeaseAnnouncementService implements GroupAnnouncementService {
+final class _LeaseAnnouncementService
+    implements GroupAnnouncementService, GroupAnnouncementReferenceSource {
   _LeaseAnnouncementService(this._lease);
   final MatrixRoomLease _lease;
   @override
   bool get canEdit => _lease.canEditAnnouncement;
+  @override
+  String get announcementReferenceIdentity =>
+      _lease.announcementReferenceIdentity;
   @override
   Stream<void> get changes => _lease.membershipChanges;
   @override
@@ -2462,6 +2676,7 @@ final class _SdkRoomTimelineCapability
     implements
         RoomVisibleReadCapability,
         RoomTimelineCapability,
+        RoomRetryDiagnostics,
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
@@ -2517,6 +2732,11 @@ final class _SdkRoomTimelineCapability
     final message = _message(event);
     _messageCache[event.eventId] =
         (event, event.status, redaction, transaction, message);
+    if (_viewport != null) {
+      while (_messageCache.length > 200) {
+        _messageCache.remove(_messageCache.keys.first);
+      }
+    }
     return message;
   }
 
@@ -2537,7 +2757,7 @@ final class _SdkRoomTimelineCapability
         idOf: (entry) =>
             entry is Event ? entry.eventId : (entry as GroupJoinNotice).eventId,
         project: (entry) => entry is Event
-            ? _message(entry)
+            ? _cachedMessage(entry)
             : RoomMessageViewModel(
                 id: (entry as GroupJoinNotice).eventId,
                 senderId: '',
@@ -3205,7 +3425,16 @@ final class _SdkRoomTimelineCapability
       });
 
   @override
-  Future<void> retry(String transactionId) => _withSendOperation(() async {
+  Future<void> retry(String transactionId) => _retry(transactionId);
+
+  @override
+  Future<void> retryWithDiagnostics(
+          String transactionId, PerformanceTrace Function() startSdkAttempt) =>
+      _retry(transactionId, startSdkAttempt: startSdkAttempt);
+
+  Future<void> _retry(String transactionId,
+          {PerformanceTrace Function()? startSdkAttempt}) =>
+      _withSendOperation(() async {
         if (await _outgoingWork.retryTransaction(transactionId)) return;
         if (!_retrying.add(transactionId)) return;
         try {
@@ -3243,19 +3472,41 @@ final class _SdkRoomTimelineCapability
             throw StateError('附件已不可用，请重新选择文件');
           }
           await event.cancelSend();
-          final result = media && !uploaded
-              ? await event.sendAgain(txid: txid)
-              : await _lease._activeRoom.sendEvent(
-                  Map<String, dynamic>.from(event.content),
-                  type: event.type,
-                  txid: txid);
+          PerformanceTrace? trace;
+          try {
+            trace = startSdkAttempt?.call();
+          } catch (_) {
+            // Diagnostics cannot reject a permitted encrypted send.
+          }
+          _observeRetryStage(trace, PerformanceStage.matrixSendStart);
+          String? result;
+          try {
+            result = media && !uploaded
+                ? await event.sendAgain(txid: txid)
+                : await _lease._activeRoom.sendEvent(
+                    Map<String, dynamic>.from(event.content),
+                    type: event.type,
+                    txid: txid);
+          } finally {
+            _observeRetryStage(trace, PerformanceStage.matrixSendFinish);
+          }
           if (result == null) {
             throw const MessageSendNetworkException('消息发送失败');
           }
+          _observeRetryStage(trace, PerformanceStage.ack);
         } finally {
           _retrying.remove(transactionId);
         }
       });
+
+  static void _observeRetryStage(
+      PerformanceTrace? trace, PerformanceStage stage) {
+    try {
+      trace?.mark(stage);
+    } catch (_) {
+      // An unavailable diagnostic clock must not stop or replace SDK work.
+    }
+  }
 
   @override
   Future<void> loadHistory() {
@@ -3597,17 +3848,9 @@ final class _SdkRoomTimelineCapability
   void _recordLoadedDaysIntoIndex(RoomHistoryDayIndex index) {
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
     final events = <({String eventId, DateTime timestamp})>[];
-    DateTime? oldest;
-    DateTime? newest;
     for (final event in _loadedEvents) {
       if (!_visibleDateEvent(event, hidden)) continue;
       events.add((eventId: event.eventId, timestamp: event.originServerTs));
-      if (oldest == null || event.originServerTs.isBefore(oldest)) {
-        oldest = event.originServerTs;
-      }
-      if (newest == null || event.originServerTs.isAfter(newest)) {
-        newest = event.originServerTs;
-      }
     }
     index.recordVisibleEvents(_lease.roomId, events);
     final createdAt = _lease.creationDate;
@@ -3618,9 +3861,8 @@ final class _SdkRoomTimelineCapability
     // 每次加载只**追加**一段区间（相邻/重叠自动合并），区间之间的空档保持
     // unknown —— 旧的单跨度 coveredFrom/coveredTo 会把两次加载之间的空档
     // 谎报成“无消息”。
-    if (oldest != null && newest != null) {
-      index.recordCoverage(_lease.roomId, from: oldest, to: newest);
-    }
+    // Loaded live/context fragments may have a gap. Presence is evidence;
+    // their combined extrema do not prove any empty date in between.
   }
 
   @override
@@ -4935,6 +5177,26 @@ final class MatrixOutgoingForwardMedia extends MatrixOutgoingForwardMessage {
       (thumbnailSha256 == null && !hasEncryptedThumbnail
           ? 0
           : _maxOutgoingVideoPosterBytes);
+
+  /// A queued forward retains descriptors, not downloaded attachment bytes.
+  /// Conservatively budget JSON strings and object overhead; preparation adds
+  /// the bounded payload reservation only when this source starts work.
+  int get descriptorReservationBytes =>
+      utf8.encode(jsonEncode(_content)).length * 4 +
+      utf8
+              .encode([
+                id,
+                sourceRoomId,
+                sourceEventId,
+                sourceAccountId,
+                body,
+                mimeType,
+                filename,
+                senderId
+              ].join())
+              .length *
+          2 +
+      2048;
   MatrixOutgoingPresentationKind get presentationKind =>
       mimeType.startsWith('video/')
           ? MatrixOutgoingPresentationKind.video
@@ -5086,7 +5348,7 @@ final class MatrixOutgoingVideoFile {
     if (source != null) await _sourceCost?.call(source);
   }
 
-  Future<File> _sourceForPreparation() async {
+  Future<File> _sourceForPreparation({PerformanceTrace? trace}) async {
     final cached = _resolvedSource ?? _source;
     final source = cached ?? await _resolveSource?.call();
     if (source == null) {
@@ -5096,13 +5358,14 @@ final class MatrixOutgoingVideoFile {
     if (await source.length() <= 0) {
       throw ArgumentError.value(source, 'video.source', 'must be non-empty');
     }
-    performanceTrace?.mark(PerformanceStage.videoValidated);
+    (trace ?? performanceTrace)?.mark(PerformanceStage.videoValidated);
     return source;
   }
 
-  Future<MatrixOutgoingPreparedMedia> _prepare() async {
+  Future<MatrixOutgoingPreparedMedia> _prepare(
+      {PerformanceTrace? trace}) async {
     if (!_admitted) throw StateError('Outgoing video was not admitted');
-    final source = await _sourceForPreparation();
+    final source = await _sourceForPreparation(trace: trace);
     final testPreparation = _prepareMedia;
     if (testPreparation != null) return testPreparation(source);
     // Keep an app-owned capture through preparation failures so retry uses the
@@ -5110,7 +5373,7 @@ final class MatrixOutgoingVideoFile {
     final prepared = await prepareLocalChatVideo(source,
         deleteSourceWhenDone: false,
         onProgress: (progress) => _progressSink?.call(progress),
-        performanceTrace: performanceTrace);
+        performanceTrace: trace ?? performanceTrace);
     final poster = prepared.poster?.lengthInBytes == null ||
             prepared.poster!.lengthInBytes > _maxOutgoingVideoPosterBytes
         ? null
@@ -5215,25 +5478,41 @@ final class _DeferredOutgoingVideoSnapshot {
   final MatrixOutgoingVideoFile _video;
   _OwnedOutgoingMediaSnapshot? _owned;
   MatrixOutgoingWorkJob? _job;
+  int _preparationAttempts = 0;
 
   void attachJob(MatrixOutgoingWorkJob job) => _job = job;
 
   void finishTrace(PerformanceResult result) => _video._finishTrace(result);
 
   Future<void> prepare(MatrixOutgoingWorkAttempt attempt) async {
-    _video.performanceTrace?.mark(PerformanceStage.videoPrepareStarted);
+    final index = _preparationAttempts++;
+    final root = _video.performanceTrace;
+    final trace = root == null
+        ? null
+        : root.isRecording
+            ? root
+            : root.correlationContext.startOperation(
+                PerformanceOperationType.videoPrepare,
+                attemptIndex: index);
+    if (trace != null) trace.retryCount = index;
+    trace?.mark(PerformanceStage.videoPrepareStarted);
     try {
       attempt.ensureActive();
       if (_owned == null) {
-        final media = await _video._prepare();
+        final media = await _video._prepare(trace: trace);
         attempt.ensureActive();
         media._markAdmitted();
         _owned = _OwnedOutgoingMediaSnapshot(media);
       }
       attempt.ensureActive();
-      _video.performanceTrace?.mark(PerformanceStage.videoPrepareDone);
+      trace?.mark(PerformanceStage.videoPrepareDone);
+      if (!identical(trace, root)) trace?.finish();
     } catch (_) {
-      finishTrace(_videoTraceResultForAttempt(attempt));
+      // The root settles after the coordinator applies authoritative echoes.
+      // A retry preparation child reports the preparation failure itself.
+      if (!identical(trace, root)) {
+        trace?.finish(result: _videoTraceResultForAttempt(attempt));
+      }
       rethrow;
     }
   }
@@ -5261,6 +5540,7 @@ final class _DeferredOutgoingVideoSnapshot {
               : PerformanceResult.cancelled;
       trace.finish(result: result);
     }
+    trace?.correlationContext.close();
     await _owned?.release();
     await _video._release();
   }
@@ -5396,12 +5676,15 @@ final class MatrixSdkE2eeClient
     MatrixSecurityLogger? securityLogger,
     MatrixOutgoingWorkCoordinator Function(String accountId)?
         outgoingWorkFactory,
+    PerformanceTraceRecorder? performanceRecorder,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
     DateTime Function()? memberRefreshNow,
     Duration memberRefreshTtl = const Duration(minutes: 10),
     Duration memberRefreshRetryDelay = const Duration(seconds: 15),
     DuplicateRoomRegistry? duplicateRooms,
   })  : _client = client,
+        _performanceRecorder =
+            performanceRecorder ?? PerformanceTraceRecorder.instance,
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
         _selectClientAccount = selectClientAccount,
@@ -5429,6 +5712,7 @@ final class MatrixSdkE2eeClient
     _attachMemberRefreshListener(client);
   }
   Client? _client;
+  final PerformanceTraceRecorder _performanceRecorder;
 
   Future<bool> Function(String accountId, String roomId, String? peerId)?
       authorizeRoomSend;
@@ -5771,6 +6055,10 @@ final class MatrixSdkE2eeClient
     if (batchId.isEmpty || messages.isEmpty || targetRoomIds.isEmpty) {
       throw ArgumentError('Forwarding requires a batch, messages, and targets');
     }
+    if (messages.length * targetRoomIds.length >
+        MatrixOutgoingWorkCoordinator.maxFrozenForwardItems) {
+      throw const MatrixOutgoingWorkCapacityException();
+    }
     final existing = [
       for (var i = 0; i < messages.length; i++)
         session.coordinator.job('$batchId-$i')
@@ -5799,85 +6087,105 @@ final class MatrixSdkE2eeClient
     }
     final ids = <String>{};
     final jobs = <MatrixOutgoingWorkJob>[];
-    for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
-      final message = messages[sourceIndex];
-      if (message.id.isEmpty || !ids.add(message.id)) {
-        throw ArgumentError(
-            'Forwarding message ids must be non-empty and unique');
-      }
-      if (message is MatrixOutgoingForwardMedia &&
-          (message.sourceAccountId != session.accountId ||
-              !identical(message.sourceClient, session.client))) {
-        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
-      }
-      if (message is MatrixOutgoingForwardMedia &&
-          message.downloadLimitBytes > _maxFileSendBytes) {
-        throw const MatrixOutgoingFileTooLargeException();
-      }
-      final createdAt = DateTime.now();
-      final text = message is MatrixOutgoingForwardText ? message : null;
-      final media = message is MatrixOutgoingForwardMedia ? message : null;
-      final body = switch (message) {
-        MatrixOutgoingForwardText(:final body) => body,
-        MatrixOutgoingForwardMedia(:final body) => body,
-      };
-      final content = text != null
-          ? Map<String, dynamic>.unmodifiable({
-              'msgtype': MessageTypes.Text,
-              'body': body,
-              if (text.format != null) 'format': text.format,
-              if (text.formattedBody != null)
-                'formatted_body': text.formattedBody,
-            })
-          : null;
-      final mediaSnapshot =
-          media == null ? null : _DeferredOutgoingForwardMediaSnapshot(media);
-      jobs.add(MatrixOutgoingWorkJob(
-        id: '$batchId-$sourceIndex',
-        createdAt: createdAt,
-        source: MatrixOutgoingWorkSource(
-          id: 'forward:$batchId:$sourceIndex',
-          retainedBytes: media?.reservationBytes ?? 0,
-          prepare: mediaSnapshot == null
-              ? null
-              : (attempt) => _prepareForwardMedia(
-                  session: session, snapshot: mediaSnapshot, attempt: attempt),
-          release: mediaSnapshot?.release,
-        ),
-        items: [
-          for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
-            MatrixOutgoingWorkItem(
-              id: '${message.id}:$targetIndex',
-              targetRoomId: targets[targetIndex],
-              txid: 'outgoing-$batchId-$sourceIndex-$targetIndex',
-              presentation: MatrixOutgoingWorkPresentation(
-                kind: media?.presentationKind ??
-                    MatrixOutgoingPresentationKind.text,
-                text: body,
-                mimeType: media?.mimeType,
-                filename: media?.filename,
-                voiceDuration: media?.voiceDuration,
-                createdAt: createdAt,
+    try {
+      for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
+        final message = messages[sourceIndex];
+        if (message.id.isEmpty || !ids.add(message.id)) {
+          throw ArgumentError(
+              'Forwarding message ids must be non-empty and unique');
+        }
+        if (message is MatrixOutgoingForwardMedia &&
+            (message.sourceAccountId != session.accountId ||
+                !identical(message.sourceClient, session.client))) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        if (message is MatrixOutgoingForwardMedia &&
+            message.downloadLimitBytes > _maxFileSendBytes) {
+          throw const MatrixOutgoingFileTooLargeException();
+        }
+        final createdAt = DateTime.now();
+        final text = message is MatrixOutgoingForwardText ? message : null;
+        final media = message is MatrixOutgoingForwardMedia ? message : null;
+        final body = switch (message) {
+          MatrixOutgoingForwardText(:final body) => body,
+          MatrixOutgoingForwardMedia(:final body) => body,
+        };
+        final content = text != null
+            ? Map<String, dynamic>.unmodifiable({
+                'msgtype': MessageTypes.Text,
+                'body': body,
+                if (text.format != null) 'format': text.format,
+                if (text.formattedBody != null)
+                  'formatted_body': text.formattedBody,
+              })
+            : null;
+        final mediaSnapshot =
+            media == null ? null : _DeferredOutgoingForwardMediaSnapshot(media);
+        final performanceContext =
+            _performanceRecorder.createCorrelationContext();
+        jobs.add(MatrixOutgoingWorkJob(
+          id: '$batchId-$sourceIndex',
+          createdAt: createdAt,
+          source: MatrixOutgoingWorkSource(
+            id: 'forward:$batchId:$sourceIndex',
+            retainedBytes: (media?.descriptorReservationBytes ??
+                    utf8.encode(jsonEncode(content)).length * 4 + 1024) +
+                targets.length * 1024,
+            preparationBytes: media?.reservationBytes ?? 0,
+            prepare: mediaSnapshot == null
+                ? null
+                : (attempt) => _prepareForwardMedia(
+                    session: session,
+                    snapshot: mediaSnapshot,
+                    attempt: attempt),
+            release: () {
+              performanceContext.close();
+              return mediaSnapshot?.release() ?? Future<void>.value();
+            },
+          ),
+          items: [
+            for (var targetIndex = 0;
+                targetIndex < targets.length;
+                targetIndex++)
+              MatrixOutgoingWorkItem(
+                id: '${message.id}:$targetIndex',
+                targetRoomId: targets[targetIndex],
+                txid: 'outgoing-$batchId-$sourceIndex-$targetIndex',
+                performanceContext: performanceContext,
+                presentation: MatrixOutgoingWorkPresentation(
+                  kind: media?.presentationKind ??
+                      MatrixOutgoingPresentationKind.text,
+                  text: body,
+                  mimeType: media?.mimeType,
+                  filename: media?.filename,
+                  voiceDuration: media?.voiceDuration,
+                  createdAt: createdAt,
+                ),
+                send: (attempt) => mediaSnapshot == null
+                    ? _sendOutgoingText(
+                        session: session,
+                        targetRoomId: targets[targetIndex],
+                        content: content!,
+                        attempt: attempt,
+                      )
+                    : _sendOutgoingForwardMedia(
+                        session: session,
+                        targetRoomId: targets[targetIndex],
+                        snapshot: mediaSnapshot,
+                        attempt: attempt,
+                      ),
               ),
-              send: (attempt) => mediaSnapshot == null
-                  ? _sendOutgoingText(
-                      session: session,
-                      targetRoomId: targets[targetIndex],
-                      content: content!,
-                      attempt: attempt,
-                    )
-                  : _sendOutgoingForwardMedia(
-                      session: session,
-                      targetRoomId: targets[targetIndex],
-                      snapshot: mediaSnapshot,
-                      attempt: attempt,
-                    ),
-            ),
-        ],
-      ));
+          ],
+        ));
+      }
+    } catch (_) {
+      _closeOutgoingDiagnosticContexts(jobs);
+      rethrow;
     }
-    _ensureOutgoingSessionCurrent(session);
-    return session.coordinator.enqueueBatch(jobs);
+    return _observeOutgoingAdmission(jobs, () {
+      _ensureOutgoingSessionCurrent(session);
+      return session.coordinator.enqueueBatch(jobs, windowed: true);
+    });
   }
 
   /// Admits one prepared camera/file media source for multiple targets. The
@@ -5912,6 +6220,7 @@ final class MatrixSdkE2eeClient
           'Media forwarding targets must be non-empty and unique');
     }
     final snapshot = _DeferredOutgoingMediaSnapshot(media);
+    final performanceContext = _performanceRecorder.createCorrelationContext();
     final createdAt = DateTime.now();
     final job = MatrixOutgoingWorkJob(
       id: jobId,
@@ -5920,7 +6229,10 @@ final class MatrixSdkE2eeClient
         id: 'media:$jobId:${media.id}',
         retainedBytes: media.retainedBytes,
         prepare: snapshot.prepare,
-        release: snapshot.release,
+        release: () {
+          performanceContext.close();
+          return snapshot.release();
+        },
       ),
       items: [
         for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
@@ -5928,6 +6240,7 @@ final class MatrixSdkE2eeClient
             id: '${media.id}:$targetIndex',
             targetRoomId: targets[targetIndex],
             txid: 'outgoing-$jobId-0-$targetIndex',
+            performanceContext: performanceContext,
             presentation: MatrixOutgoingWorkPresentation(
               kind: media.mimeType.startsWith('video/')
                   ? MatrixOutgoingPresentationKind.video
@@ -5946,8 +6259,34 @@ final class MatrixSdkE2eeClient
           ),
       ],
     );
-    _ensureOutgoingSessionCurrent(session);
-    return session.coordinator.enqueue(job, onAccepted: media._markAdmitted);
+    return _observeOutgoingAdmission([job], () {
+      _ensureOutgoingSessionCurrent(session);
+      return session.coordinator.enqueue(job, onAccepted: media._markAdmitted);
+    });
+  }
+
+  static void _closeOutgoingDiagnosticContexts(
+      Iterable<MatrixOutgoingWorkJob> jobs) {
+    for (final job in jobs) {
+      for (final item in job.items) {
+        item.performanceContext?.close();
+      }
+    }
+  }
+
+  /// Admission retains its original result and error. Rejection closes only
+  /// anonymous job leases; it neither releases nor changes caller media.
+  static Future<T> _observeOutgoingAdmission<T>(
+      Iterable<MatrixOutgoingWorkJob> jobs, Future<T> Function() admit) {
+    try {
+      return admit().onError((Object error, StackTrace stack) {
+        _closeOutgoingDiagnosticContexts(jobs);
+        Error.throwWithStackTrace(error, stack);
+      });
+    } catch (_) {
+      _closeOutgoingDiagnosticContexts(jobs);
+      rethrow;
+    }
   }
 
   /// Admits an uncompressed local video before compression begins. The account
@@ -6107,6 +6446,17 @@ final class MatrixSdkE2eeClient
               filename: video.filename,
               createdAt: createdAt,
             ),
+            performanceContext: video.performanceTrace?.correlationContext,
+            onAttemptSettled: (state) {
+              if (state == MatrixOutgoingWorkState.failed ||
+                  state == MatrixOutgoingWorkState.canceled) {
+                snapshot.finishTrace(state == MatrixOutgoingWorkState.failed
+                    ? PerformanceResult.failed
+                    : PerformanceResult.cancelled);
+              }
+            },
+            onTimelinePublished: () => video.performanceTrace
+                ?.mark(PerformanceStage.timelinePublished),
             send: (attempt) => _sendOutgoingVideo(
               session: session,
               targetRoomId: targets[targetIndex],
@@ -6176,10 +6526,16 @@ final class MatrixSdkE2eeClient
         }
         await _requireRoomSend(target);
         _ensureOutgoingSession(session, attempt);
-        final eventId = await target.sendEvent(
-          Map<String, dynamic>.from(content),
-          txid: attempt.txid,
-        );
+        attempt.performanceTrace?.mark(PerformanceStage.matrixSendStart);
+        String? eventId;
+        try {
+          eventId = await target.sendEvent(
+            Map<String, dynamic>.from(content),
+            txid: attempt.txid,
+          );
+        } finally {
+          attempt.performanceTrace?.mark(PerformanceStage.matrixSendFinish);
+        }
         _ensureOutgoingSession(session, attempt);
         return eventId ??
             (throw StateError('Matrix room event was not accepted'));
@@ -6209,6 +6565,7 @@ final class MatrixSdkE2eeClient
           thumbnailBytes: snapshot.thumbnailBytes,
           thumbnailWidth: snapshot.thumbnailWidth,
           thumbnailHeight: snapshot.thumbnailHeight,
+          performanceTrace: attempt.performanceTrace,
         );
         _ensureOutgoingSession(session, attempt);
         return eventId;
@@ -6220,34 +6577,30 @@ final class MatrixSdkE2eeClient
     required _DeferredOutgoingVideoSnapshot snapshot,
     required MatrixOutgoingWorkAttempt attempt,
   }) async {
-    try {
-      return await _withClient((active) async {
-        _ensureOutgoingSession(session, attempt);
-        if (!identical(active, session.client)) {
-          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
-        }
-        final target = active.getRoomById(targetRoomId);
-        if (target == null) throw StateError('Matrix room is not joined');
-        _ensureOutgoingSession(session, attempt);
-        final eventId = await _sendMedia(
-          target,
-          snapshot.bytes(),
-          snapshot.mimeType,
-          extraContent: _mutableJsonMap(snapshot.extraContent),
-          txid: attempt.txid,
-          filename: snapshot.filename,
-          thumbnailBytes: snapshot.thumbnailBytes,
-          thumbnailWidth: snapshot.thumbnailWidth,
-          thumbnailHeight: snapshot.thumbnailHeight,
-          performanceTrace: snapshot._video.performanceTrace,
-        );
-        _ensureOutgoingSession(session, attempt);
-        return eventId;
-      });
-    } catch (_) {
-      snapshot.finishTrace(_videoTraceResultForAttempt(attempt));
-      rethrow;
-    }
+    return await _withClient((active) async {
+      _ensureOutgoingSession(session, attempt);
+      if (!identical(active, session.client)) {
+        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+      }
+      final target = active.getRoomById(targetRoomId);
+      if (target == null) throw StateError('Matrix room is not joined');
+      _ensureOutgoingSession(session, attempt);
+      final eventId = await _sendMedia(
+        target,
+        snapshot.bytes(),
+        snapshot.mimeType,
+        extraContent: _mutableJsonMap(snapshot.extraContent),
+        txid: attempt.txid,
+        filename: snapshot.filename,
+        thumbnailBytes: snapshot.thumbnailBytes,
+        thumbnailWidth: snapshot.thumbnailWidth,
+        thumbnailHeight: snapshot.thumbnailHeight,
+        performanceTrace: attempt.performanceTrace,
+        parentPerformanceTrace: snapshot._video.performanceTrace,
+      );
+      _ensureOutgoingSession(session, attempt);
+      return eventId;
+    });
   }
 
   Future<void> _prepareForwardMedia({
@@ -6352,6 +6705,7 @@ final class MatrixSdkE2eeClient
           thumbnailBytes: snapshot.thumbnail,
           thumbnailWidth: media.thumbnailWidth,
           thumbnailHeight: media.thumbnailHeight,
+          performanceTrace: attempt.performanceTrace,
         );
         _ensureOutgoingSession(session, attempt);
         return eventId;
@@ -7772,6 +8126,7 @@ final class MatrixSdkE2eeClient
     int? thumbnailWidth,
     int? thumbnailHeight,
     PerformanceTrace? performanceTrace,
+    PerformanceTrace? parentPerformanceTrace,
   }) async {
     void validateSendAccess() {
       if (_accessRevoked ||
@@ -7850,6 +8205,7 @@ final class MatrixSdkE2eeClient
       extraContent: media.extraContent,
     );
     performanceTrace?.mark(PerformanceStage.videoEncrypted);
+    parentPerformanceTrace?.mark(PerformanceStage.videoEncrypted);
     // Preparation yields to worker isolates. Revoke/room replacement can happen
     // meanwhile; check both owner and originating lease before any SDK upload.
     await _requireRoomSend(room);
@@ -7857,12 +8213,19 @@ final class MatrixSdkE2eeClient
     // The Matrix SDK combines media upload and event send in this call.
     // Mark only its real start and completion; videoUploadDone is unsupported.
     performanceTrace?.mark(PerformanceStage.videoUploadStarted);
-    final eventId = await room.sendFileEvent(
-      prepared.file,
-      thumbnail: prepared.thumbnail,
-      extraContent: prepared.extraContent,
-      txid: txid,
-    );
+    parentPerformanceTrace?.mark(PerformanceStage.videoUploadStarted);
+    performanceTrace?.mark(PerformanceStage.matrixSendStart);
+    String? eventId;
+    try {
+      eventId = await room.sendFileEvent(
+        prepared.file,
+        thumbnail: prepared.thumbnail,
+        extraContent: prepared.extraContent,
+        txid: txid,
+      );
+    } finally {
+      performanceTrace?.mark(PerformanceStage.matrixSendFinish);
+    }
     if (eventId == null) {
       // 上传/发送重试耗尽（网络类）→ waitingNetwork 自动重发；见
       // MessageSendNetworkException 的文档。
@@ -7872,6 +8235,7 @@ final class MatrixSdkE2eeClient
       throw StateError('Matrix media event was not accepted');
     }
     performanceTrace?.mark(PerformanceStage.videoEventSent);
+    parentPerformanceTrace?.mark(PerformanceStage.videoEventSent);
     return eventId;
   }
 
@@ -8069,6 +8433,51 @@ final class MatrixSdkE2eeClient
 /// - 只索引**已解密且用户可见的文本**事件（`m.message` / `m.text`）；
 /// - 闪照、图片/视频/音频/文件等媒体事件与未解密事件永不进入索引；
 /// - 明文只停留在内存索引中，落盘内容仍是 SQLCipher 加密库本身。
+@visibleForTesting
+ChatSearchMessage projectDeviceLocalSearchEvent(Event event,
+    {bool Function(String, DateTime?)? hidden}) {
+  final visible = event.type == EventTypes.Message &&
+      !event.redacted &&
+      !(hidden?.call(event.eventId, event.originServerTs) ?? false);
+  final type = event.messageType;
+  final flash =
+      type == MessageTypes.Image && event.content['flash']?.toString() == '1';
+  final displayable = visible && type != groupAnnouncementMessageType;
+  final text = displayable && !flash ? event.text : '';
+  final category = !displayable || flash
+      ? null
+      : switch (type) {
+          MessageTypes.Image ||
+          MessageTypes.Video =>
+            ChatSearchMediaCategory.imageVideo,
+          MessageTypes.File => ChatSearchMediaCategory.file,
+          _
+              when RegExp(r'https?://[^\s<>]+', caseSensitive: false)
+                  .hasMatch(text) =>
+            ChatSearchMediaCategory.link,
+          _ => null,
+        };
+  return ChatSearchMessage(
+      eventId: event.eventId,
+      senderId: event.senderId,
+      // The SDK unsafe fallback starts a remote member/profile request. Search
+      // must use only already resident state, including when a sender is missing.
+      senderDisplayName: event.room
+              .getState(EventTypes.RoomMember, event.senderId)
+              ?.content['displayname']
+              ?.toString() ??
+          event.senderId,
+      timestamp: event.originServerTs.toLocal(),
+      timelineOrder: event.originServerTs.millisecondsSinceEpoch,
+      visibleText: text,
+      mediaCategory: category,
+      hasMedia: category == ChatSearchMediaCategory.imageVideo,
+      isDisplayable: displayable,
+      isUndecrypted: event.type == EventTypes.Encrypted && !event.redacted,
+      isVideo: type == MessageTypes.Video,
+      isFlashPhoto: flash);
+}
+
 final class MatrixLocalHistorySearchSource implements LocalHistorySearchSource {
   MatrixLocalHistorySearchSource({required this.owner});
 
@@ -8122,7 +8531,10 @@ LocalSearchMessage? projectLocalSearchEvent(Event event,
   final senderId = event.senderId;
   final resolvedName = senderId == localUserId
       ? '我'
-      : room.unsafeGetUserFromMemoryOrFallback(senderId).displayName;
+      : room
+          .getState(EventTypes.RoomMember, senderId)
+          ?.content['displayname']
+          ?.toString();
   final senderName = (resolvedName ?? '').trim();
   return LocalSearchMessage(
     eventId: event.eventId,
@@ -8131,7 +8543,8 @@ LocalSearchMessage? projectLocalSearchEvent(Event event,
     timestamp: event.originServerTs,
     body: body,
     roomId: room.id,
-    roomName: room.getLocalizedDisplayname(),
+    roomName: room.getState(EventTypes.RoomName)?.content['name']?.toString() ??
+        room.id,
     isGroup: !room.isDirectChat,
     senderIsSelf: senderId == localUserId,
     roomAvatarSeed: room.id,

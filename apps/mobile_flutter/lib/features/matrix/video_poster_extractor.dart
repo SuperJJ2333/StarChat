@@ -1,11 +1,12 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:video_compress/video_compress.dart';
 
 /// 视频帧获取器（path + 毫秒位置 → JPEG 字节；测试注入用）。
-typedef VideoFrameFetcher =
-    Future<Uint8List?> Function(String path, int positionMs);
+typedef VideoFrameFetcher = Future<Uint8List?> Function(
+    String path, int positionMs);
 
 /// 多时间点视频封面抽取 + 近黑帧检测（BUG 修复：视频消息无封面/黑卡）。
 ///
@@ -29,8 +30,8 @@ Future<Uint8List?> extractVideoPoster(
   void Function(int micros)? onFrameDecoded,
 }) async {
   final getFrame = fetch ??
-      (path, positionMs) =>
-          VideoCompress.getByteThumbnail(path, quality: 85, position: positionMs);
+      (path, positionMs) => VideoCompress.getByteThumbnail(path,
+          quality: 85, position: positionMs);
   for (final positionMs in positionsMs) {
     try {
       final bytes = await getFrame(videoPath, positionMs);
@@ -46,7 +47,14 @@ Future<Uint8List?> extractVideoPoster(
       if (luma >= blackLumaThreshold) return bytes;
     } catch (error) {
       // 单点失败（解码器不支持/文件忙）继续下一时间点。
-      debugPrint('[video-poster] frame at ${positionMs}ms failed: $error');
+      if (kDebugMode) {
+        final category = switch (error) {
+          PlatformException() => 'native_failure',
+          FormatException() => 'decode_failure',
+          _ => 'unknown',
+        };
+        debugPrint('[chatflow/media] poster_frame_failed error=$category');
+      }
     }
   }
   return null;
@@ -68,8 +76,9 @@ Future<double> frameAverageLuma(Uint8List encoded) async {
     for (var i = 0; i < pixels; i++) {
       final o = i * 4;
       // BT.601 亮度。
-      total +=
-          0.299 * data.getUint8(o) + 0.587 * data.getUint8(o + 1) + 0.114 * data.getUint8(o + 2);
+      total += 0.299 * data.getUint8(o) +
+          0.587 * data.getUint8(o + 1) +
+          0.114 * data.getUint8(o + 2);
     }
     frame.image.dispose();
     return total / pixels;

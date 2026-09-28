@@ -117,6 +117,8 @@ void main() {
       home: LoginPage(api: api, onLogin: (_, __) async {}),
     ));
 
+    await tester.ensureVisible(find.byKey(const Key('auth-user-agreement-link')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('auth-user-agreement-link')));
     await tester.pumpAndSettle();
     expect(find.byType(LegalDocumentPage), findsOneWidget);
@@ -126,6 +128,8 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(find.byKey(const Key('auth-privacy-policy-link')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('auth-privacy-policy-link')));
     await tester.pumpAndSettle();
     expect(find.byType(LegalDocumentPage), findsOneWidget);

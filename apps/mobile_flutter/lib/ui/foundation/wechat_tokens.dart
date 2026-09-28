@@ -52,6 +52,7 @@ abstract final class WeChatColors {
   static const socialLink = Color(0xFF576B95);
   static const networkCapsuleSurface = Color(0xD9FFFFFF);
   static const networkCapsuleBorder = Color(0x22000000);
+  static const mediaViewerBackground = Color(0xFF000000);
   static const avatarFallbackBlue = Color(0xFFD8E8FF);
   static const avatarFallbackGreen = Color(0xFFDFF2E4);
   static const avatarFallbackOrange = Color(0xFFFFE5D5);
@@ -203,6 +204,7 @@ abstract final class WeChatTypography {
   static const body = 17.0;
   static const callout = 16.0;
   static const subhead = 14.0;
+  static const subheadLineHeight = 20.0 / subhead;
   static const caption = 12.0;
   static const badge = 11.0;
   static const actionButtonIcon = 20.0;

@@ -65,6 +65,8 @@ final class PerformanceTraceRecorder {
     this.frameAttributionSupported = true,
     this.activeCapacity = PerformanceThresholds.maxActiveTraces,
     this.onRecord,
+    this.onObservation,
+    this.automaticObservations = false,
   })  : metrics = metrics ?? PerformanceMetrics.instance,
         _clockUs = clockUs ?? _defaultClockUs,
         _frameClockUs = frameClockUs ?? _defaultFrameClockUs,
@@ -81,6 +83,7 @@ final class PerformanceTraceRecorder {
         throw ArgumentError('Timestamped frames require enabled metrics');
       }
     }
+    this.metrics.bindActiveObservationSource(activeObservations);
   }
 
   static final Stopwatch _clock = Stopwatch()..start();
@@ -97,6 +100,8 @@ final class PerformanceTraceRecorder {
         PerformanceMetrics.instance.enabled ||
         ChatDiagnostics.instance.isActive,
     onRecord: ChatDiagnostics.instance.recordPerformance,
+    onObservation: ChatDiagnostics.instance.recordObservation,
+    automaticObservations: true,
   );
 
   final PerformanceMetrics metrics;
@@ -109,17 +114,39 @@ final class PerformanceTraceRecorder {
   final bool timestampedFrameAttribution;
   final bool frameAttributionSupported;
   final void Function(PerformanceRecord record)? onRecord;
+  final void Function(PerformanceTraceObservation observation)? onObservation;
+  final bool automaticObservations;
+  Timer? _observationTimer;
   final Set<PerformanceTrace> _active = <PerformanceTrace>{};
   final _pendingFrames = ListQueue<_PendingFrameRecord>();
   bool _frameListenerRegistered = false;
   PerformanceLifecycle lifecycle = PerformanceLifecycle.unknown;
   int get activeCount => _active.length;
   int get pendingFrameAttributionCount => _pendingFrames.length;
-  bool get recordingEnabled => _enabled() && _active.length < activeCapacity;
+  bool get diagnosticsEnabled => _enabled();
+  bool get recordingEnabled =>
+      diagnosticsEnabled && _active.length < activeCapacity;
+
+  /// A job owns this lease; the recorder stores no additional pending entry.
+  /// Capacity controls measured spans, not the anonymous identity of later
+  /// attempts. Disabled diagnostics allocate no random identity.
+  PerformanceCorrelationContext createCorrelationContext() {
+    final enabled = diagnosticsEnabled;
+    return PerformanceCorrelationContext._(
+      recorder: this,
+      operationId:
+          enabled ? const Uuid().v4() : '00000000-0000-4000-8000-000000000000',
+      sessionGeneration: _sessionGeneration?.call(),
+      admitted: enabled,
+    );
+  }
 
   PerformanceTrace start(
     PerformanceOperationType operation, {
     PerformanceTrace? parentOperation,
+    PerformanceCorrelationContext? correlationContext,
+    int? attemptIndex,
+    int? windowIndex,
     PerformanceOpeningSource? openingSource,
     PerformanceAppNetworkState appNetworkState =
         PerformanceAppNetworkState.unknown,
@@ -129,25 +156,38 @@ final class PerformanceTraceRecorder {
     PerformanceEndpointCategory? endpointCategory,
     PerformanceHttpMethod? httpMethod,
   }) {
-    final canRecord = recordingEnabled;
+    final enabled = diagnosticsEnabled &&
+        (correlationContext == null ||
+            (identical(correlationContext._recorder, this) &&
+                correlationContext.isCurrent));
+    final canRecord = enabled && _active.length < activeCapacity;
     if (canRecord && timestampedFrameAttribution && !_frameListenerRegistered) {
       _frameListenerRegistered =
           metrics.addFrameTimingListener(_onFrameTimings);
     }
     final generation = _sessionGeneration?.call();
-    final inheritId = canRecord &&
+    final inheritId = enabled &&
         parentOperation != null &&
         identical(parentOperation._recorder, this) &&
-        parentOperation.isRecording &&
+        parentOperation.correlationContext.isCurrent &&
         (parentOperation._sessionGeneration == null ||
             parentOperation._sessionGeneration == generation);
+    final context = correlationContext ??
+        (inheritId
+            ? parentOperation.correlationContext
+            : PerformanceCorrelationContext._(
+                recorder: this,
+                operationId: enabled
+                    ? const Uuid().v4()
+                    : '00000000-0000-4000-8000-000000000000',
+                sessionGeneration: generation,
+                admitted: enabled,
+              ));
     final trace = PerformanceTrace._(
       recorder: this,
       operation: operation,
-      operationId: canRecord
-          ? inheritId
-              ? parentOperation.operationId
-              : const Uuid().v4()
+      operationId: enabled
+          ? context.operationId
           : '00000000-0000-4000-8000-000000000000',
       startedUs: _clockUs(),
       frameStartedUs:
@@ -157,6 +197,14 @@ final class PerformanceTraceRecorder {
       frameStart: _frameCounts(),
       sessionGeneration: generation,
       recording: canRecord,
+      correlationContext: context,
+      attemptIndex: operation == PerformanceOperationType.videoPrepare ||
+              operation == PerformanceOperationType.messageSend
+          ? attemptIndex?.clamp(0, 20)
+          : null,
+      windowIndex: operation == PerformanceOperationType.callActive
+          ? windowIndex?.clamp(0, 1000000)
+          : null,
       lifecycle: lifecycle,
       openingSource: openingSource,
       appNetworkState: appNetworkState,
@@ -166,11 +214,68 @@ final class PerformanceTraceRecorder {
       endpointCategory: endpointCategory,
       httpMethod: httpMethod,
     );
-    if (canRecord) _active.add(trace);
+    if (canRecord) {
+      _active.add(trace);
+      if (automaticObservations && _observationTimer == null) {
+        _observationTimer = Timer.periodic(
+            PerformanceThresholds.traceObservationSweep,
+            (_) => sweepObservations());
+      }
+    }
     return trace;
   }
 
+  List<PerformanceTraceObservation> activeObservations() {
+    sweepObservations();
+    final now = _clockUs();
+    return [
+      for (final trace in _active)
+        trace._observation(now, PerformanceObservationKind.checkpoint),
+    ];
+  }
+
+  /// Diagnostics-only expiry. The owner may still complete the original work;
+  /// no business Future, retry, cancellation or network state is changed.
+  void sweepObservations() {
+    final now = _clockUs();
+    for (final trace in _active.toList(growable: false)) {
+      if (trace._sessionGeneration != null &&
+          trace._sessionGeneration != _sessionGeneration?.call()) {
+        trace.dispose();
+        continue;
+      }
+      final elapsed = now - trace._startedUs;
+      final checkpointMs = PerformanceThresholds.checkpointMs(trace.operation);
+      if (!trace._checkpointEmitted &&
+          checkpointMs != null &&
+          elapsed >= checkpointMs * 1000 &&
+          elapsed <
+              (trace.operation == PerformanceOperationType.conversationOpen
+                      ? PerformanceThresholds.remoteSyncObservationWindow
+                      : PerformanceThresholds.messageTraceObservationWindow)
+                  .inMicroseconds) {
+        trace._checkpointEmitted = true;
+        final observation =
+            trace._observation(now, PerformanceObservationKind.checkpoint);
+        _emitObservation(observation);
+      }
+      final limit = trace.operation == PerformanceOperationType.conversationOpen
+          ? PerformanceThresholds.remoteSyncObservationWindow
+          : PerformanceThresholds.messageTraceObservationWindow;
+      if (elapsed < limit.inMicroseconds) continue;
+      final observation =
+          trace._observation(now, PerformanceObservationKind.expired);
+      _active.remove(trace);
+      trace._observationExpired = true;
+      trace._frameClockValid = false;
+      _emitObservation(observation);
+    }
+    _releaseFrameListenerIfIdle();
+  }
+
   void clear() {
+    _observationTimer?.cancel();
+    _observationTimer = null;
     for (final trace in _active.toList(growable: false)) {
       trace.dispose();
     }
@@ -183,6 +288,10 @@ final class PerformanceTraceRecorder {
   }
 
   void _releaseFrameListenerIfIdle() {
+    if (_active.isEmpty) {
+      _observationTimer?.cancel();
+      _observationTimer = null;
+    }
     if (_frameListenerRegistered && _active.isEmpty && _pendingFrames.isEmpty) {
       metrics.removeFrameTimingListener(_onFrameTimings);
       _frameListenerRegistered = false;
@@ -191,8 +300,29 @@ final class PerformanceTraceRecorder {
 
   void _emit(PerformanceRecord record, int? generation) {
     if (generation != null && generation != _sessionGeneration?.call()) return;
-    metrics.recordTrace(record);
-    onRecord?.call(record);
+    try {
+      metrics.recordTrace(record);
+    } catch (_) {
+      // A diagnostic sink cannot change completion of the observed operation.
+    }
+    try {
+      onRecord?.call(record);
+    } catch (_) {
+      // No arbitrary observer exception text enters logs or business results.
+    }
+  }
+
+  void _emitObservation(PerformanceTraceObservation observation) {
+    try {
+      metrics.recordObservation(observation);
+    } catch (_) {
+      // Keep expiry bounded even when a diagnostic sink fails.
+    }
+    try {
+      onObservation?.call(observation);
+    } catch (_) {
+      // Continue expiring other traces and releasing the observation timer.
+    }
   }
 
   void _finalizeFrameRecord(
@@ -264,6 +394,40 @@ final class PerformanceTraceRecorder {
   }
 }
 
+/// A job-owned correlation lease survives finished attempt spans. It carries
+/// no business identifier or payload and becomes invalid on account change.
+final class PerformanceCorrelationContext {
+  PerformanceCorrelationContext._({
+    required PerformanceTraceRecorder recorder,
+    required this.operationId,
+    required int? sessionGeneration,
+    required bool admitted,
+  })  : _recorder = recorder,
+        _sessionGeneration = sessionGeneration,
+        _admitted = admitted;
+
+  final PerformanceTraceRecorder _recorder;
+  final String operationId;
+  final int? _sessionGeneration;
+  final bool _admitted;
+  bool _closed = false;
+
+  bool get isCurrent =>
+      _admitted &&
+      !_closed &&
+      (_sessionGeneration == null ||
+          _sessionGeneration == _recorder._sessionGeneration?.call());
+
+  PerformanceTrace startOperation(PerformanceOperationType operation,
+          {int? attemptIndex, int? windowIndex}) =>
+      _recorder.start(operation,
+          correlationContext: this,
+          attemptIndex: attemptIndex,
+          windowIndex: windowIndex);
+
+  void close() => _closed = true;
+}
+
 /// One operation ID is created at the user action and passed across existing
 /// navigation, outbox and Matrix callbacks. Marks only read a monotonic clock.
 final class PerformanceTrace {
@@ -292,6 +456,9 @@ final class PerformanceTrace {
     required PerformanceFrameCounts frameStart,
     int? sessionGeneration,
     required bool recording,
+    PerformanceCorrelationContext? correlationContext,
+    this.attemptIndex,
+    this.windowIndex,
     required this.lifecycle,
     this.openingSource,
     this.appNetworkState = PerformanceAppNetworkState.unknown,
@@ -306,7 +473,14 @@ final class PerformanceTrace {
         _timedFrames = frameStartedUs == null ? null : _MutableFrameCounts(),
         _frameStart = frameStart,
         _sessionGeneration = sessionGeneration,
-        _recording = recording;
+        _recording = recording,
+        _correlationContext = correlationContext ??
+            PerformanceCorrelationContext._(
+              recorder: recorder,
+              operationId: operationId,
+              sessionGeneration: sessionGeneration,
+              admitted: recording,
+            );
 
   static PerformanceTrace start({
     required PerformanceOperationType operation,
@@ -333,6 +507,10 @@ final class PerformanceTrace {
   final PerformanceTraceRecorder _recorder;
   final PerformanceOperationType operation;
   final String operationId;
+  final PerformanceCorrelationContext _correlationContext;
+  PerformanceCorrelationContext get correlationContext => _correlationContext;
+  final int? attemptIndex;
+  final int? windowIndex;
   final int _startedUs;
   final int? _frameStartedUs;
   final PerformanceFrameCounts _frameStart;
@@ -376,11 +554,30 @@ final class PerformanceTrace {
   final _stagesUs = <PerformanceStage, int>{};
   final _videoTranscodeAttempts = <PerformanceVideoTranscodeAttempt>[];
   bool _recording;
+  bool _observationExpired = false;
+  bool _checkpointEmitted = false;
   bool _disposed = false;
   PerformanceRecord? _finished;
 
   bool get isRecording => _recording && !_disposed && _finished == null;
   bool get isFinished => _disposed || _finished != null;
+
+  PerformanceTraceObservation _observation(
+      int now, PerformanceObservationKind kind) {
+    final elapsed = (now - _startedUs).clamp(0, 3600000000);
+    final last = _stagesUs.isEmpty ? 0 : _stagesUs.values.last;
+    return PerformanceTraceObservation(
+      operationId: operationId,
+      operation: operation,
+      kind: kind,
+      observedUs: elapsed,
+      idleUs: (elapsed - last).clamp(0, 3600000000),
+      lifecycle: lifecycle,
+      stagesUs: _stagesUs,
+      attemptIndex: attemptIndex,
+      windowIndex: windowIndex,
+    );
+  }
 
   void mark(PerformanceStage stage) {
     if (!isRecording ||
@@ -519,11 +716,13 @@ final class PerformanceTrace {
       stagesUs: _stagesUs,
       result: result,
       lifecycle: lifecycle,
-      frames: _recorder.frameAttributionSupported &&
+      frames: !_observationExpired &&
+              _recorder.frameAttributionSupported &&
               !_recorder.timestampedFrameAttribution
           ? _recorder._frameCounts().difference(_frameStart)
           : const PerformanceFrameCounts(),
-      frameAttributionComplete: _recorder.frameAttributionSupported &&
+      frameAttributionComplete: !_observationExpired &&
+          _recorder.frameAttributionSupported &&
           !_recorder.timestampedFrameAttribution,
       openingSource: openingSource,
       appNetworkState: appNetworkState,
@@ -535,6 +734,8 @@ final class PerformanceTrace {
       httpMethod: httpMethod,
       statusCode: statusCode ?? this.statusCode,
       retryCount: retryCount > 0 ? retryCount : this.retryCount,
+      attemptIndex: attemptIndex,
+      windowIndex: windowIndex,
       softKickCount: softKickCount,
       hardRestartCount: hardRestartCount,
       syncErrorCount: syncErrorCount,

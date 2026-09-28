@@ -27,6 +27,7 @@ final class ChatSearchPage extends StatefulWidget {
     required this.onJumpToMessage,
     this.senderDisplayName,
     this.identityChanges,
+    this.historyChanges,
     this.liveMemberEntries,
     this.memberAvatarBuilder,
     this.mediaThumbnailBuilder,
@@ -65,6 +66,7 @@ final class ChatSearchPage extends StatefulWidget {
   /// 发送者显示名解析（结果行顶部：备注>昵称>用户名）。
   final String Function(String senderId)? senderDisplayName;
   final Listenable? identityChanges;
+  final Listenable? historyChanges;
 
   /// 可访问历史最早/最新月份（导航钳制）。
   ///
@@ -102,12 +104,14 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   ChatSearchResultPage? _lastPage;
   Timer? _debounce;
   bool _loadingMore = false;
+  bool _loadMoreFailed = false;
   int _queryGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     widget.identityChanges?.addListener(_identityChanged);
+    widget.historyChanges?.addListener(_historyChanged);
     _controller = ChatSearchQueryController(
       search: widget.search,
       searchBatch: widget.searchBatch,
@@ -122,16 +126,44 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
       oldWidget.identityChanges?.removeListener(_identityChanged);
       widget.identityChanges?.addListener(_identityChanged);
     }
+    if (oldWidget.historyChanges != widget.historyChanges) {
+      oldWidget.historyChanges?.removeListener(_historyChanged);
+      widget.historyChanges?.addListener(_historyChanged);
+      _historyChanged();
+    }
   }
 
   void _identityChanged() {
     if (mounted) setState(() {});
   }
 
+  void _historyChanged() {
+    if (!mounted) return;
+    _debounce?.cancel();
+    _controller!.invalidate();
+    widget.onSearchInvalidated?.call();
+    ++_queryGeneration;
+    // A history revision may revoke visibility. Never keep the old plaintext
+    // while the replacement query is waiting or fails.
+    setState(() {
+      _lastPage = null;
+      _state = const ChatSearchStateChange.empty();
+      _loadingMore = false;
+      _loadMoreFailed = false;
+    });
+    if (!_controller!.isDefaultEmptyState) {
+      _debounce = Timer(const Duration(milliseconds: 150), _execute);
+    }
+  }
+
   @override
   void dispose() {
     widget.identityChanges?.removeListener(_identityChanged);
+    widget.historyChanges?.removeListener(_historyChanged);
     _debounce?.cancel();
+    _controller?.invalidate();
+    widget.onSearchInvalidated?.call();
+    _queryGeneration++;
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -148,7 +180,10 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     widget.onSearchInvalidated?.call();
     _debounce?.cancel();
     _queryGeneration++;
-    setState(() => _loadingMore = false);
+    setState(() {
+      _loadingMore = false;
+      _loadMoreFailed = false;
+    });
     try {
       await _controller!.executeNow(
         onStateChange: (change) {
@@ -313,6 +348,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           earliest: widget.earliestMonth,
           latest: widget.latestMonth ?? now,
           loadMonth: widget.loadCalendarMonth,
+          historyChanges: widget.historyChanges,
           onCancelMonthLookup: widget.onCancelCalendarMonthLookup,
           onDateLookup: widget.onDateLookup,
           onCancelDateLookup: widget.onCancelDateLookup,
@@ -356,8 +392,13 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     // 本地优先 / 失败不覆盖（微信级加载模型）：已经拿到的结果永远优先渲染，
     // 加载与失败降级为内联状态条，绝不用整页 spinner/错误页把结果顶掉。
     final page = _lastPage;
+    _scheduleAutomaticPage(page);
     if (page != null && page.items.isEmpty == false) {
       return Column(children: [
+        if (page.coverageIncomplete)
+          _inlineStatus(const Text('部分本地消息尚未解密，无法完整检索',
+              style:
+                  TextStyle(fontSize: 13, color: WeChatColors.textSecondary))),
         if (_state is ChatSearchLoadingState)
           _inlineStatus(const Text('正在查询…',
               style:
@@ -399,12 +440,18 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
             style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
         if (_loadingMore)
           const CupertinoActivityIndicator()
-        else
+        else if (_loadMoreFailed)
           CupertinoButton(
-              key: const Key('chat-search-continue'),
+              key: const Key('chat-search-page-retry'),
               onPressed: () => _loadMore(page),
-              child: const Text('继续查找更早记录')),
+              child: const Text('加载失败，点击重试')),
       ]));
+    }
+    if (page?.coverageIncomplete ?? false) {
+      return const Center(
+          child: Text('部分本地消息尚未解密，无法完整检索',
+              style:
+                  TextStyle(fontSize: 14, color: WeChatColors.textSecondary)));
     }
     return const Center(
       key: Key('chat-search-no-results'),
@@ -431,6 +478,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           if (notification is ScrollUpdateNotification &&
               notification.metrics.extentAfter < 200 &&
               !_loadingMore &&
+              !_loadMoreFailed &&
               page.nextCursor != null) {
             _loadMore(page);
           }
@@ -448,10 +496,12 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
                   padding: const EdgeInsets.all(12),
                   child: _loadingMore
                       ? const Center(child: CupertinoActivityIndicator())
-                      : CupertinoButton(
-                          key: const Key('chat-search-load-more'),
-                          onPressed: () => _loadMore(page),
-                          child: const Text('加载更多')),
+                      : _loadMoreFailed
+                          ? CupertinoButton(
+                              key: const Key('chat-search-page-retry'),
+                              onPressed: () => _loadMore(page),
+                              child: const Text('加载失败，点击重试'))
+                          : const SizedBox(height: 1),
                 ),
         ),
       );
@@ -461,6 +511,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         // 滚动接近底部（80%+）且有下一页 → loadMore。
         if (notification is ScrollUpdateNotification &&
             !_loadingMore &&
+            !_loadMoreFailed &&
             page.nextCursor != null &&
             _scroll.position.extentAfter < 200) {
           _loadMore(page);
@@ -480,17 +531,13 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
                 child: Center(child: CupertinoActivityIndicator(radius: 10)),
               );
             }
+            if (!_loadMoreFailed) return const SizedBox(height: 1);
             return Padding(
               padding: const EdgeInsets.all(12),
               child: CupertinoButton(
-                key: const Key('chat-search-load-more'),
-                minimumSize: Size.zero,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                key: const Key('chat-search-page-retry'),
                 onPressed: () => _loadMore(page),
-                child: const Text('加载更多',
-                    style: TextStyle(
-                        fontSize: 13, color: WeChatColors.brandPrimary)),
+                child: const Text('加载失败，点击重试'),
               ),
             );
           }
@@ -515,18 +562,56 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     );
   }
 
+  bool _automaticPageScheduled = false;
+  void _scheduleAutomaticPage(ChatSearchResultPage? page) {
+    if (_automaticPageScheduled ||
+        page == null ||
+        page.nextCursor == null ||
+        _loadingMore ||
+        _loadMoreFailed ||
+        _state is! ChatSearchLoadedState) {
+      return;
+    }
+    _automaticPageScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _automaticPageScheduled = false;
+      if (!mounted ||
+          _loadingMore ||
+          _loadMoreFailed ||
+          !identical(page, _lastPage) ||
+          _state is! ChatSearchLoadedState) {
+        return;
+      }
+      // One page per frame; short viewports and zero-hit continuations must
+      // progress without requiring a scroll gesture that cannot be performed.
+      if (page.items.isEmpty ||
+          (_scroll.hasClients && _scroll.position.extentAfter < 200)) {
+        unawaited(_loadMore(page));
+      }
+    });
+  }
+
   /// 翻页加载（R6 修复：实际调用 loadMore + 追加到状态）。
   Future<void> _loadMore(ChatSearchResultPage current) async {
-    if (_loadingMore || current.nextCursor == null) return;
+    if (_loadingMore ||
+        current.nextCursor == null ||
+        !identical(current, _lastPage)) {
+      return;
+    }
     final generation = _queryGeneration;
-    setState(() => _loadingMore = true);
+    setState(() {
+      _loadingMore = true;
+      _loadMoreFailed = false;
+    });
     try {
       final next = await _controller!.loadMore(current);
       if (mounted && generation == _queryGeneration && !next.stale) {
         setState(() => _lastPage = next);
       }
     } catch (_) {
-      // 翻页失败保持当前页；下次滚动重试。
+      if (mounted && generation == _queryGeneration) {
+        setState(() => _loadMoreFailed = true);
+      }
     } finally {
       if (mounted && generation == _queryGeneration) {
         setState(() => _loadingMore = false);
@@ -791,8 +876,8 @@ final class _MemberPickerPageState extends State<MemberPickerPage> {
 ///
 /// 数据来源是 [logic.RoomHistoryMonthDays]（**只有日期 metadata**，与聊天正文
 /// 解耦）：knownPresent 高亮可点；knownEmpty 弱化且不可点（有证据的确认空）；
-/// unknown 是普通可点文字（点击触发该日的**有界**定位查询，绝不显示成
-/// "无消息"）；未来日期一律不可点；月 metadata 加载中/失败是独立状态，绝不
+/// unknown/loading/error 日期不可点；存在性仅依据本机可显示消息快照。
+/// 未来日期一律不可点；月 metadata 加载中/失败是独立状态，绝不
 /// 冒充"本月没有聊天记录"。
 ///
 /// 切月与关闭都会取消在途月查询（generation guard + [onCancelMonthLookup]），
@@ -808,6 +893,7 @@ final class CalendarPickerPage extends StatefulWidget {
     this.onDateTap,
     this.onDateLookup,
     this.onCancelDateLookup,
+    this.historyChanges,
   });
 
   /// 最新可访问月份（导航上界，通常是当前月）。
@@ -827,6 +913,7 @@ final class CalendarPickerPage extends StatefulWidget {
   final void Function(DateTime date)? onDateTap;
   final Future<CalendarDateLookupResult> Function(DateTime date)? onDateLookup;
   final VoidCallback? onCancelDateLookup;
+  final Listenable? historyChanges;
 
   @override
   State<CalendarPickerPage> createState() => _CalendarPickerPageState();
@@ -841,9 +928,9 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   bool _picked = false;
   DateTime? _lookupDate;
   DateTime? _retryDate;
-  CalendarDateLookupResult? _lookupResult;
   bool _lookupFailed = false;
   int _lookupGeneration = 0;
+  Timer? _historyRefresh;
 
   logic.RoomHistoryMonthDays? get _days => _months[_current.key];
 
@@ -857,7 +944,6 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   void _cancelDateLookup() {
     _discardDateLookup();
     setState(() {
-      _lookupResult = null;
       _lookupFailed = false;
     });
   }
@@ -869,7 +955,6 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
     setState(() {
       _lookupDate = date;
       _retryDate = date;
-      _lookupResult = null;
       _lookupFailed = false;
     });
     try {
@@ -882,8 +967,8 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
       }
       setState(() {
         _lookupDate = null;
-        _lookupResult = result;
       });
+      _historyChanged();
     } catch (_) {
       if (!mounted || generation != _lookupGeneration) return;
       setState(() {
@@ -927,7 +1012,10 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
       setState(() {
         _months[month.key] = days;
         _monthLoading = false;
-        _monthError = days.error;
+        _monthError = days.error ??
+            (days.hasUnknown
+                ? StateError('Local calendar snapshot incomplete')
+                : null);
       });
     } catch (error) {
       if (!mounted || generation != _monthGeneration) return;
@@ -946,7 +1034,6 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
       _current = month;
       _monthError = null;
       _retryDate = null;
-      _lookupResult = null;
       _lookupFailed = false;
     });
     unawaited(_loadMonth());
@@ -955,13 +1042,44 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   @override
   void initState() {
     super.initState();
+    widget.historyChanges?.addListener(_historyChanged);
     _current = widget.initialMonth ?? widget.latest;
     _monthLoading = widget.loadMonth != null;
     unawaited(_loadMonth(announceLoading: false));
   }
 
+  void _historyChanged() {
+    if (!mounted || _picked) return;
+    _monthGeneration++;
+    _discardDateLookup();
+    widget.onCancelMonthLookup?.call();
+    _historyRefresh?.cancel();
+    setState(() {
+      _months.clear();
+      _monthLoading = widget.loadMonth != null;
+      _monthError = null;
+      _lookupFailed = false;
+      _retryDate = null;
+    });
+    _historyRefresh = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) unawaited(_loadMonth());
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant CalendarPickerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.historyChanges != widget.historyChanges) {
+      oldWidget.historyChanges?.removeListener(_historyChanged);
+      widget.historyChanges?.addListener(_historyChanged);
+      _historyChanged();
+    }
+  }
+
   @override
   void dispose() {
+    widget.historyChanges?.removeListener(_historyChanged);
+    _historyRefresh?.cancel();
     // 关闭即放弃在途月查询与日期定位：过期结果不得回到已关闭的页面。
     _monthGeneration++;
     widget.onCancelMonthLookup?.call();
@@ -1086,18 +1204,6 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                 onPressed: _retryDateLookup,
                 child: const Text('日期定位失败，点击重试'),
               ),
-            if (_lookupResult == CalendarDateLookupResult.confirmedEmpty)
-              CupertinoButton(
-                key: const Key('calendar-date-lookup-empty'),
-                onPressed: _retryDateLookup,
-                child: const Text('本日暂无聊天记录'),
-              ),
-            if (_lookupResult == CalendarDateLookupResult.incomplete)
-              CupertinoButton(
-                key: const Key('calendar-date-lookup-incomplete'),
-                onPressed: _retryDateLookup,
-                child: const Text('该日期暂时无法确认，点击重试'),
-              ),
             // 日期网格。
             Expanded(
               child: GridView.builder(
@@ -1120,9 +1226,12 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                       !future && state == logic.RoomHistoryDayState.knownEmpty;
                   final scanning =
                       !future && !knownPresent && !knownEmpty && _monthLoading;
-                  // unknown（含加载中未定论的日期）保持可点：点击会走该日的
-                  // 有界定位查询；knownEmpty 与未来日期不可点。
-                  final enabled = !future && !knownEmpty && _lookupDate == null;
+                  // Only confirmed device-local presence is actionable.
+                  // Unknown/loading/error never means an empty day.
+                  final enabled = knownPresent &&
+                      !_monthLoading &&
+                      _monthError == null &&
+                      _lookupDate == null;
                   return GestureDetector(
                     key: Key('calendar-day-$day'),
                     onTap: enabled ? () => _lookupDateAndPick(date) : null,
@@ -1139,7 +1248,9 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                         '$day',
                         style: TextStyle(
                           fontSize: 15,
-                          color: future || knownEmpty
+                          color: !knownPresent && !scanning ||
+                                  future ||
+                                  knownEmpty
                               ? const Color(0xFFCCCCCC)
                               : scanning
                                   ? WeChatColors.textTertiary

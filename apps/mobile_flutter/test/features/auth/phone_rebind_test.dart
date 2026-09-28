@@ -79,7 +79,12 @@ void main() {
       expect(find.textContaining('验证码已发送'), findsNothing);
       expect(find.byKey(const Key('phone-rebind-phone')), findsNothing);
       expect(api.calls, ['old-request']);
-      expect(find.text('60s'), findsOneWidget);
+      final knownRejection = entry.$1 is BusinessApiException &&
+          (entry.$1 as BusinessApiException).code != 'BUSINESS_REQUEST_FAILED';
+      final rejectedRoute = entry.$1 is BusinessApiException &&
+          (entry.$1 as BusinessApiException).statusCode < 500;
+      expect(find.textContaining(RegExp(r'^\d+s$')),
+          knownRejection || rejectedRoute ? findsNothing : findsOneWidget);
       await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     });
   }

@@ -15,7 +15,10 @@ import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 
 /// 记录每次派发使用的 txid 的假传输层（应答脚本由测试注入）。
 final class _FakeTransport
-    implements RoomTimelineAdapter, RoomOptimisticTextAdapter {
+    implements
+        RoomTimelineAdapter,
+        RoomOptimisticTextAdapter,
+        RoomRetryDiagnostics {
   final events = <RoomMessageViewModel>[];
   final txids = <String>[];
   final responses = <Future<String> Function()>[];
@@ -37,6 +40,19 @@ final class _FakeTransport
     txids.add(transactionId);
     if (responses.isNotEmpty) await responses.removeAt(0)();
     onRetrySuccess?.call();
+  }
+
+  @override
+  Future<void> retryWithDiagnostics(
+      String transactionId, PerformanceTrace Function() startSdkAttempt) async {
+    final trace = startSdkAttempt();
+    trace.mark(PerformanceStage.matrixSendStart);
+    try {
+      await retry(transactionId);
+      trace.mark(PerformanceStage.ack);
+    } finally {
+      trace.mark(PerformanceStage.matrixSendFinish);
+    }
   }
 
   @override
@@ -154,7 +170,48 @@ void main() {
           outboxJournal: outbox.journalFor(
               roomId: '!room:test', receiverId: '@peer:test'));
 
-  test('message send trace spans persistence, admission, ACK and visible row',
+  test('failed page send retries with its existing root correlation', () async {
+    var now = 0;
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+        enabled: () => true, clockUs: () => now, onRecord: records.add);
+    final scheduler =
+        MessageSendScheduler(outbox: outbox, senderFor: (_) => null);
+    final transport = _FakeTransport()
+      ..responses.add(() async {
+        now += 300000;
+        throw StateError('rejected');
+      })
+      ..responses.add(() async {
+        now += 400000;
+        return 'event-retry';
+      });
+    final controller = RoomTimelineController(transport,
+        performanceRecorder: recorder,
+        outboxJournal:
+            outbox.journalFor(roomId: '!room:test', receiverId: '@peer:test'),
+        onOutboxCorrelation: scheduler.registerCorrelation,
+        outboxCorrelationFor: scheduler.correlationFor);
+    addTearDown(() {
+      controller.dispose();
+      scheduler.dispose();
+    });
+    expect(await controller.sendText('private text'), isNull);
+    expect(records, hasLength(1));
+    await controller.retry(transport.txids.single);
+    expect(records, hasLength(2));
+    expect(records.last.operationId, records.first.operationId);
+    expect(records.last.result, PerformanceResult.success);
+    expect(records.last.attemptIndex, 1);
+    expect(records.last.stagesUs,
+        isNot(contains(PerformanceStage.composerSubmit)));
+    expect(
+        records.last.betweenMs(PerformanceStage.matrixSendStart,
+            PerformanceStage.matrixSendFinish),
+        400);
+  });
+
+  test('message send trace spans persistence, admission, ACK and published row',
       () async {
     final records = <PerformanceRecord>[];
     var clockUs = 0;
@@ -184,7 +241,7 @@ void main() {
           PerformanceStage.matrixSendStart,
           PerformanceStage.matrixSendFinish,
           PerformanceStage.ack,
-          PerformanceStage.timelineVisible,
+          PerformanceStage.timelinePublished,
         ]));
     expect(
         record.betweenMs(
@@ -276,9 +333,11 @@ void main() {
     expect(records, hasLength(1));
     expect(records.single.result, PerformanceResult.success);
     expect(records.single.retryCount, 1);
-    expect(records.single.stagesUs.keys,
-        containsAll([PerformanceStage.ack, PerformanceStage.timelineVisible]));
-    expect(records.single.stagesUs[PerformanceStage.timelineVisible],
+    expect(
+        records.single.stagesUs.keys,
+        containsAll(
+            [PerformanceStage.ack, PerformanceStage.timelinePublished]));
+    expect(records.single.stagesUs[PerformanceStage.timelinePublished],
         greaterThanOrEqualTo(records.single.stagesUs[PerformanceStage.ack]!));
     expect(recorder.activeCount, 0);
   });
@@ -378,8 +437,10 @@ void main() {
     expect(records, hasLength(1));
     expect(records.single.result, PerformanceResult.success);
     expect(records.single.retryCount, 1);
-    expect(records.single.stagesUs.keys,
-        containsAll([PerformanceStage.ack, PerformanceStage.timelineVisible]));
+    expect(
+        records.single.stagesUs.keys,
+        containsAll(
+            [PerformanceStage.ack, PerformanceStage.timelinePublished]));
     expect(recorder.activeCount, 0);
   });
 

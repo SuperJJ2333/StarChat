@@ -24,6 +24,159 @@ MatrixOutgoingWorkItem _item({
     );
 
 void main() {
+  test(
+      'successful forwarding without sync echoes still consumes the frozen metadata cap',
+      () async {
+    final coordinator = MatrixOutgoingWorkCoordinator(accountId: '@me:test');
+    final job = MatrixOutgoingWorkJob(id: 'no-echo-window', items: [
+      for (var i = 0;
+          i < MatrixOutgoingWorkCoordinator.maxFrozenForwardItems;
+          i++)
+        _item(
+            id: 'item-$i',
+            targetRoomId: '!room:test',
+            txid: 'no-echo-$i',
+            send: (_) async {})
+    ]);
+    await coordinator.enqueueBatch([job], windowed: true);
+    await coordinator.drain();
+    expect(
+        job.items.every((item) => item.state == MatrixOutgoingWorkState.sent),
+        isTrue);
+    await expectLater(
+        coordinator.enqueueBatch([
+          MatrixOutgoingWorkJob(id: 'another-window', items: [
+            _item(
+                id: 'another',
+                targetRoomId: '!room:test',
+                txid: 'another-tx',
+                send: (_) async {})
+          ])
+        ], windowed: true),
+        throwsA(isA<MatrixOutgoingWorkCapacityException>()));
+    for (var i = 0; i < job.items.length; i++) {
+      coordinator.acknowledgeEcho(
+          transactionId: 'no-echo-$i', eventId: 'event-no-echo-$i');
+    }
+    final afterEcho = await coordinator.enqueueBatch([
+      MatrixOutgoingWorkJob(id: 'after-echo-window', items: [
+        _item(
+            id: 'after',
+            targetRoomId: '!room:test',
+            txid: 'after-tx',
+            send: (_) async {})
+      ])
+    ], windowed: true);
+    await coordinator.drain();
+    expect(afterEcho.single.items.single.state, MatrixOutgoingWorkState.sent);
+  });
+
+  test('revocation cancels forward descriptors outside the execution window',
+      () async {
+    final held = Completer<void>();
+    var networkSends = 0;
+    var releases = 0;
+    final coordinator = MatrixOutgoingWorkCoordinator(
+        accountId: '@me:test',
+        maxConcurrentTransfers: 2,
+        maxOutstandingItems: 2);
+    final job = MatrixOutgoingWorkJob(
+        id: 'window-revoke',
+        source: MatrixOutgoingWorkSource(
+            id: 'frozen',
+            retainedBytes: 128,
+            release: () async {
+              releases++;
+            }),
+        items: [
+          for (var i = 0; i < 5; i++)
+            _item(
+                id: 'item-$i',
+                targetRoomId: '!room-$i:test',
+                txid: 'stable-$i',
+                send: (attempt) async {
+                  await held.future;
+                  attempt.ensureActive();
+                  networkSends++;
+                })
+        ]);
+    await coordinator.enqueueBatch([job], windowed: true);
+    expect(coordinator.activeWindowItemCount, 2);
+    coordinator.revoke('account changed');
+    held.complete();
+    await coordinator.drain();
+    expect(networkSends, 0);
+    expect(job.items.map((item) => item.state),
+        everyElement(MatrixOutgoingWorkState.canceled));
+    expect(releases, 1);
+    expect(coordinator.retainedSourceBytes, 0);
+  });
+
+  test(
+      'failed target retries its original transaction after other windows drain',
+      () async {
+    final attempts = <String>[];
+    var failed = false;
+    final coordinator = MatrixOutgoingWorkCoordinator(
+        accountId: '@me:test',
+        maxConcurrentTransfers: 1,
+        maxOutstandingItems: 2);
+    final job = MatrixOutgoingWorkJob(
+        id: 'window-retry',
+        source: MatrixOutgoingWorkSource(id: 'frozen', retainedBytes: 128),
+        items: [
+          for (var i = 0; i < 5; i++)
+            _item(
+                id: 'item-$i',
+                targetRoomId: '!room-$i:test',
+                txid: 'stable-$i',
+                send: (attempt) async {
+                  attempts.add(attempt.txid);
+                  if (i == 0 && !failed) {
+                    failed = true;
+                    throw StateError('offline');
+                  }
+                })
+        ]);
+    await coordinator.enqueueBatch([job], windowed: true);
+    await coordinator.drain();
+    expect(job.items.first.state, MatrixOutgoingWorkState.failed);
+    expect(job.items.skip(1).map((item) => item.state),
+        everyElement(MatrixOutgoingWorkState.sent));
+    await coordinator.retryItem(job.id, 'item-0');
+    await coordinator.drain();
+    expect(attempts.where((id) => id == 'stable-0'), hasLength(2));
+    expect(attempts.where((id) => id != 'stable-0'), hasLength(4));
+    expect(coordinator.retainedSourceBytes, 0);
+  });
+
+  test(
+      'diagnostic callback failures cannot change send result or strand transfer',
+      () async {
+    final coordinator = MatrixOutgoingWorkCoordinator(accountId: '@me:test');
+    final first = MatrixOutgoingWorkItem(
+        id: 'first',
+        targetRoomId: '!room:test',
+        txid: 'tx-first',
+        send: (_) async {
+          coordinator.acknowledgeEcho(
+              transactionId: 'tx-first', eventId: 'event-first');
+          return 'event-first';
+        },
+        onTimelinePublished: () => throw StateError('diagnostic callback'),
+        onAttemptSettled: (_) => throw StateError('diagnostic settled'));
+    final second = _item(
+        id: 'second',
+        targetRoomId: '!room:test',
+        txid: 'tx-second',
+        send: (_) async {});
+    await coordinator.enqueue(
+        MatrixOutgoingWorkJob(id: 'diagnostic-safe', items: [first, second]));
+    await coordinator.drain();
+    expect(first.state, MatrixOutgoingWorkState.sent);
+    expect(second.state, MatrixOutgoingWorkState.sent);
+  });
+
   test('returns after registration while preparation remains held', () async {
     final preparation = Completer<void>();
     final sent = Completer<void>();

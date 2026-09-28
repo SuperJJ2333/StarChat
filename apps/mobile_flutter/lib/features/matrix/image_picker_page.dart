@@ -1079,6 +1079,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
             fullscreenDialog: true,
             builder: (_) => GalleryVideoPreviewPage(
               loadRendition: previewFile,
+              loadOriginalFile: photo.localVideoFile,
+              loadTracedRendition: photo.tracedCompressedPreviewFile,
               thumbnailBytes: photo.thumbnail,
               duration: photo.duration,
               selected: selection.isSelected(photo.id),

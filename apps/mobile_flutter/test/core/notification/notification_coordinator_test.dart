@@ -14,6 +14,7 @@ import 'package:liuhetong_mobile/core/notification/sound_cooldown_gate.dart';
 import 'package:liuhetong_mobile/core/notification/sound_type.dart';
 import 'package:liuhetong_mobile/core/notification/system_notification_presenter.dart';
 import 'package:liuhetong_mobile/features/matrix/mute_exception_policy.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 
 IncomingNotification _incoming({
   String eventId = r'$ev1',
@@ -54,9 +55,14 @@ final class _FakePreferenceStore implements NotificationPreferenceStore {
   }
 }
 
-final class _FakeSystemPresenter implements SystemNotificationPresenter {
+final class _FakeSystemPresenter
+    implements
+        SystemNotificationPresenter,
+        DeliveredConversationNotificationPresenter {
   final cancellations = <int>[];
+  final deliveredCancellations = <String>[];
   Future<void> Function()? beforeShow;
+  Future<void> Function()? beforeCancel;
   final shows = <({
     int id,
     String title,
@@ -95,7 +101,13 @@ final class _FakeSystemPresenter implements SystemNotificationPresenter {
 
   @override
   Future<void> cancelConversation(int notificationId) async {
+    await beforeCancel?.call();
     cancellations.add(notificationId);
+  }
+
+  @override
+  Future<void> cancelDeliveredConversation(String roomId) async {
+    deliveredCancellations.add(roomId);
   }
 }
 
@@ -145,9 +157,11 @@ final class _FakeUnreadSource implements UnreadSnapshotSource {
   _FakeUnreadSource([this.snapshots = const []]);
 
   List<ConversationUnreadSnapshot> snapshots;
+  Future<List<ConversationUnreadSnapshot>> Function()? onLoad;
 
   @override
-  Future<List<ConversationUnreadSnapshot>> load() async => snapshots;
+  Future<List<ConversationUnreadSnapshot>> load() async =>
+      onLoad == null ? snapshots : await onLoad!();
 }
 
 final class _StreamEventSource implements NotificationEventSource {
@@ -189,7 +203,192 @@ NotificationCoordinator _buildCoordinator({
 /// 等待广播流事件与未 await 的 handleEvent 微任务完成。
 Future<void> _drain() => Future<void>.delayed(const Duration(milliseconds: 20));
 
+// Stream cancellation returns Dart's completed root-zone future, while queued
+// writes belong to Flutter's fake zone. Drain both queues with a bounded loop
+// before awaiting real cleanup; neither runAsync nor pump alone drains both.
+Future<void> _disposeWidgetCoordinator(
+  WidgetTester tester,
+  NotificationCoordinator coordinator,
+  _StreamEventSource source,
+) async {
+  var disposed = false;
+  final disposing = coordinator.dispose().then((_) => disposed = true);
+  for (var i = 0; i < 4 && !disposed; i++) {
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  }
+  expect(disposed, isTrue, reason: 'fake notification disposal must drain');
+  await disposing;
+  var closed = false;
+  final closing = source.close().then((_) => closed = true);
+  for (var i = 0; i < 4 && !closed; i++) {
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  }
+  expect(closed, isTrue, reason: 'fake notification stream must close');
+  await closing;
+}
+
 void main() {
+  test('account switch stops a delayed native notification cancellation',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@A');
+    final cancelling = Completer<void>();
+    final entered = Completer<void>();
+    final presenter = _FakeSystemPresenter()
+      ..beforeCancel = () {
+        entered.complete();
+        return cancelling.future;
+      };
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager(),
+    );
+    await coordinator.start();
+    reads.setRoomOpen('A', open: true);
+    await entered.future;
+    reads.bindAccount('@B');
+    cancelling.complete();
+    await _drain();
+    expect(presenter.deliveredCancellations, isEmpty);
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
+  test('opening a room from the app clears only its alert and badge', () async {
+    final readState = ConversationReadState.shared()..resetForTest();
+    readState.bindAccount('@notification-test');
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final badge = _RecordingBadgeGateway();
+    final unread = _FakeUnreadSource(const [
+      ConversationUnreadSnapshot(roomId: 'A', unread: 7, isMuted: false),
+      ConversationUnreadSnapshot(roomId: 'B', unread: 2, isMuted: false),
+    ]);
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: badge,
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: unread,
+      appState: AppStateManager(),
+    );
+    await coordinator.start();
+    await coordinator.refreshLauncherBadge();
+    expect(badge.lastCount, 9);
+    // MatrixUnreadSnapshotSource applies the local read suppression immediately.
+    unread.snapshots = const [
+      ConversationUnreadSnapshot(roomId: 'A', unread: 0, isMuted: false),
+      ConversationUnreadSnapshot(roomId: 'B', unread: 2, isMuted: false),
+    ];
+    readState.setRoomOpen('A', open: true);
+    await _drain();
+    await _drain();
+    expect(
+        presenter.cancellations, contains(notificationIdForConversation('A')));
+    expect(presenter.cancellations,
+        isNot(contains(notificationIdForConversation('B'))));
+    expect(badge.lastCount, 2);
+    expect(presenter.deliveredCancellations, ['A']);
+    await coordinator.dispose();
+    await source.close();
+    readState.resetForTest();
+  });
+
+  test('an in-flight notification cannot reappear after opening its room',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@test');
+    final showing = Completer<void>();
+    final startedShowing = Completer<void>();
+    final presenter = _FakeSystemPresenter()
+      ..beforeShow = () {
+        startedShowing.complete();
+        return showing.future;
+      };
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager()..updateLifecycle(AppRunState.background),
+    );
+    await coordinator.start();
+    final pending = coordinator.handleEvent(_incoming(roomId: 'A'));
+    await startedShowing.future;
+    reads.setRoomOpen('A', open: true);
+    showing.complete();
+    await pending;
+    await _drain();
+    expect(presenter.shows, hasLength(1));
+    expect(presenter.cancellations.last, notificationIdForConversation('A'));
+    expect(presenter.deliveredCancellations, everyElement('A'));
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
+
+  test('old badge snapshots cannot overwrite newer reads or another account',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@first');
+    final unread = _FakeUnreadSource();
+    final stale = Completer<List<ConversationUnreadSnapshot>>();
+    unread.onLoad = () => stale.future;
+    final source = _StreamEventSource();
+    final badge = _RecordingBadgeGateway();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: badge,
+      presenter: _FakeSystemPresenter(),
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: unread,
+      appState: AppStateManager(),
+    );
+    await coordinator.start();
+    final old = coordinator.refreshLauncherBadge();
+    unread.onLoad = null;
+    unread.snapshots = const [
+      ConversationUnreadSnapshot(roomId: 'B', unread: 2, isMuted: false)
+    ];
+    reads.setRoomOpen('A', open: true);
+    await _drain();
+    expect(badge.lastCount, 2);
+    stale.complete(const [
+      ConversationUnreadSnapshot(roomId: 'A', unread: 9, isMuted: false)
+    ]);
+    await old;
+    expect(badge.lastCount, 2);
+    final other = Completer<List<ConversationUnreadSnapshot>>();
+    unread.onLoad = () => other.future;
+    final oldAccount = coordinator.refreshLauncherBadge();
+    reads.bindAccount('@second');
+    other.complete(const [
+      ConversationUnreadSnapshot(roomId: 'A', unread: 99, isMuted: false)
+    ]);
+    await oldAccount;
+    expect(badge.lastCount, 2);
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
+
   testWidgets('disposing cancels a pending push fallback', (tester) async {
     final presenter = _FakeSystemPresenter();
     final source = _StreamEventSource();
@@ -205,10 +404,7 @@ void main() {
     );
     await coordinator.start();
     await coordinator.showPushWakeNotification();
-    await tester.runAsync(() async {
-      await coordinator.dispose();
-      await source.close();
-    });
+    await _disposeWidgetCoordinator(tester, coordinator, source);
     await tester.pump(const Duration(seconds: 6));
     expect(presenter.shows, isEmpty);
     expect(presenter.cancellations, contains(pushWakeNotificationId));
@@ -240,10 +436,7 @@ void main() {
     expect(presenter.shows, hasLength(1));
     expect(presenter.cancellations.length, cancelledBeforeShow + 1);
     expect(presenter.cancellations.last, pushWakeNotificationId);
-    await tester.runAsync(() async {
-      await coordinator.dispose();
-      await source.close();
-    });
+    await _disposeWidgetCoordinator(tester, coordinator, source);
   });
 
   testWidgets(
@@ -272,10 +465,7 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
     expect(presenter.shows, isEmpty,
         reason: 'late wake must not duplicate call');
-    await tester.runAsync(() async {
-      await coordinator.dispose();
-      await source.close();
-    });
+    await _disposeWidgetCoordinator(tester, coordinator, source);
   });
 
   testWidgets('unresolved push retains bounded generic fallback',
@@ -297,10 +487,7 @@ void main() {
     expect(presenter.shows, isEmpty);
     await tester.pump(const Duration(seconds: 6));
     expect(presenter.shows.single.id, pushWakeNotificationId);
-    await tester.runAsync(() async {
-      await coordinator.dispose();
-      await source.close();
-    });
+    await _disposeWidgetCoordinator(tester, coordinator, source);
   });
 
   testWidgets('resolved real message replaces pending generic wake',
@@ -323,10 +510,7 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
     expect(presenter.shows, hasLength(1));
     expect(presenter.shows.single.id, notificationIdForConversation('!room1'));
-    await tester.runAsync(() async {
-      await coordinator.dispose();
-      await source.close();
-    });
+    await _disposeWidgetCoordinator(tester, coordinator, source);
   });
 
   test('前台普通消息：横幅 + 声音 + 轻震 + 角标，不出系统通知（PRD §18）', () async {

@@ -91,6 +91,8 @@ void main() {
       home: ProfileDetailsPage(controller: controller),
     ));
 
+    await tester.tap(find.text('昵称'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -108,6 +110,8 @@ void main() {
       home: ProfileDetailsPage(controller: controller),
     ));
 
+    await tester.tap(find.text('昵称'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(CupertinoTextField).first, 'Alice New');
     await tester.tap(find.text('保存'));
     await tester.pump();

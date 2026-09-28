@@ -62,7 +62,8 @@ final class SharedPreferencesMomentDraftStore implements MomentDraftStore {
   MomentDraftSnapshot? _snapshot;
 
   static Future<SharedPreferencesMomentDraftStore> open() async =>
-      SharedPreferencesMomentDraftStore._(await SharedPreferences.getInstance());
+      SharedPreferencesMomentDraftStore._(
+          await SharedPreferences.getInstance());
 
   void _hydrate() {
     final raw = _preferences.getString(key);
@@ -113,6 +114,9 @@ final class MomentDraftStores {
   MomentDraftStores._();
 
   static MomentDraftStore? _shared;
+  static int _editingRevision = 0;
+  static int get editingRevision => _editingRevision;
+  static void noteEditing() => ++_editingRevision;
 
   static MomentDraftStore? get shared => _shared;
 
