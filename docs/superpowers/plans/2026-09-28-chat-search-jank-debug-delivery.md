@@ -4,6 +4,8 @@
 
 **Goal:** 从真实 Android 2190 冻结源码实施本任务补丁，完成受影响验证，并把固定签名 Debug 候选保留数据安装到 emulator-5556。
 
+**执行状态（2026-09-29）：** 2190 基线整合及 2191 固定签名构建、保留数据安装和启动已完成；聚焦测试通过，整库 `verify.ps1` 仍在运行。下方复选框是原实施清单，已完成事项及未验收边界以[任务台账](../../workflow/tasks/2026-09-28-chat-search-jank-diagnostics.md)为准。有界 crash/ANR 缓冲区中本包匹配数为 0；模拟器尚未完成账号内的搜索及输入法操作，10 万条完整搜索与 Redmi K80 性能也未实测。
+
 **Architecture:** 先按正式包冻结清单将准确源文件叠加到独立分支并提交基线，再执行三个互不覆盖的实施计划。所有代码通过后冻结新的 Debug 输入、源码构建、Apktool 常规重建、固定签名与独立验包，最后覆盖安装模拟器。
 
 **Tech Stack:** PowerShell 7、Python 3 UTF-8、Flutter/Dart、Android SDK 36、Apktool 2.12.1、Git、ADB。
@@ -142,17 +144,18 @@ adb -s emulator-5556 shell dumpsys package com.liuhetong.mobile.debug
 version: 0.4.22+2191
 ```
 
-- [ ] **Step 2: 创建当次构建脚本并做 PreflightOnly。** 以 docs/verification/artifacts/2026-09-27/network-failure-diagnostics/android-debug/build-android-2187-x64.ps1 的已验流程为基础，更新工作树、冻结 manifest、版本断言、独立验证路径和 APK 名称；保留原版的 Apktool 2.12.1、build-tools 36、固定签名证书 75b31c66…1fff、HTTPS Business/Matrix/Getui dart-define、x64 Debug ABI、DEX/资源/清单比较和签名校验。复制后逐行复核差异；签名前确认 p12 与 DPAPI 文件均存在，绝不生成新密钥。脚本 --PreflightOnly 只能检查，不能构建/安装。
+- [ ] **Step 2: 创建当次构建脚本并做 PreflightOnly。** 以 docs/verification/artifacts/2026-09-27/network-failure-diagnostics/android-debug/build-android-2187-x64.ps1 的已验流程为基础，更新工作树、冻结 manifest、版本断言、独立验证路径和 APK 名称；保留原版的 Apktool 2.12.1、build-tools 36、固定签名证书 75b31c66…1fff、HTTPS Business/Matrix/Getui dart-define、x64 Debug ABI、DEX/资源/清单比较和签名校验。历史构建使用 E 盘 junction；本任务的 Flutter 测试已在工作树创建 `build/`，为避免更动在用目录，保留该普通目录，改由 `R:` 临时映射缩短源码路径，并在 E 盘任务验证目录保存最终产物。脚本断言 `build/` 为当前工作树目录，且 `R:` 映射只指向本工作树。复制后逐行复核差异；签名前确认 p12 与 DPAPI 文件均存在，绝不生成新密钥。脚本 -PreflightOnly 只能检查，不能构建/安装。
 
 - [ ] **Step 3: 按当前源冻结输入并构建一次。** 先运行相关测试及 flutter analyze；从实际源码生成新冻结 manifest 和 SHA，再运行脚本构建。脚本执行 Flutter source APK → Apktool d/b → zipalign -P 16 -f 4 → 固定身份签名 → apksigner、zipalign、aapt、重解包代码、资产、ABI 与版本逐项验证。每步失败即停，保留原始日志；最终 APK SHA、证书、版本及实际源 commit 进入 artifact.json。一次构建内复用同一个 RunId，不能在装机时另选“最新”目录。
 
 ```powershell
 $RunId = 'run-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
-$ArtifactRoot = 'C:\Users\Administrator\.codex\worktrees\chat-search-jank\StarChat\docs\verification\artifacts\2026-09-28\chat-search-jank\android-debug'
-$RunDir = Join-Path $ArtifactRoot $RunId
-$Manifest = Join-Path $ArtifactRoot 'frozen-mobile-input.json'
+$ScriptRoot = 'C:\Users\Administrator\.codex\worktrees\chat-search-jank\StarChat\docs\verification\artifacts\2026-09-28\chat-search-jank\android-debug'
+$RunRoot = 'E:\StarChatVerification\docs\verification\artifacts\2026-09-28\chat-search-jank\android-debug'
+$RunDir = Join-Path $RunRoot $RunId
+$Manifest = Join-Path $ScriptRoot 'frozen-mobile-input.json'
 $ManifestSha = (Get-FileHash -LiteralPath $Manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-pwsh -NoProfile -File (Join-Path $ArtifactRoot 'build-android-debug.ps1') -RunId $RunId -ExpectedMobileManifestSha256 $ManifestSha
+pwsh -NoProfile -File (Join-Path $ScriptRoot 'build-android-debug.ps1') -RunId $RunId -ShortDrive R -ExpectedMobileManifestSha256 $ManifestSha
 if ($LASTEXITCODE -ne 0) { throw 'Android Debug build failed' }
 ```
 
