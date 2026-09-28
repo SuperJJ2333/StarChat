@@ -3265,6 +3265,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final historySearch = LocalRoomHistorySearch(
       roomIds: () => widget.roomLease.localHistorySearchRoomIds,
       readPage: widget.roomLease.readLocalSearchPage,
+      openIds: widget.roomLease.openLocalSearchIds,
+      readByIds: widget.roomLease.readLocalSearchByIds,
       snapshot: widget.roomLease.localHistorySnapshot,
       sourceRevision: () => widget.roomLease.localHistorySearchRevision,
       project: (sourceRoomId, item) {
@@ -3316,6 +3318,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           isGroup: isGroup,
           identityChanges: _identityCache,
           historyChanges: widget.roomLease.localHistoryChanges,
+          ordinaryAppends: widget.roomLease.localHistoryAppends,
+          calendarChanges: widget.roomLease.localHistoryCalendarChanges,
           senderDisplayName: (id) => _identityCache
               .resolveIdentity(
                 matrixUserId: id,

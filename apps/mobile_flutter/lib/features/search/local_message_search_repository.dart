@@ -348,11 +348,13 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
   /// E1：按 eventId 删除（消息撤回联动）。命中删除时通知监听者。
   void removeMessages(Iterable<String> eventIds) {
     final removedIds = Set<String>.of(eventIds);
-    if (index.removeMessages(removedIds) > 0) {
-      lastChange = LocalSearchRepositoryChange(
-          LocalSearchChangeKind.remove, Set.unmodifiable(removedIds));
-      notifyListeners();
-    }
+    if (removedIds.isEmpty) return;
+    index.removeMessages(removedIds);
+    // A hit may still be visible after its index row was evicted. Notify even
+    // when the index reports zero removals, so rendered plaintext is revoked.
+    lastChange = LocalSearchRepositoryChange(
+        LocalSearchChangeKind.remove, Set.unmodifiable(removedIds));
+    notifyListeners();
   }
 
   /// 账号维度的检索：完全走内存索引，有界且无 I/O。

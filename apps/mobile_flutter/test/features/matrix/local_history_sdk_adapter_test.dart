@@ -58,6 +58,19 @@ void main() {
         expect(rows.map((e) => e?.eventId), ['e3', null]);
         expect(await ids.page(2, 2), ['e1', 'e0'],
             reason: 'event-row holes must not shift frozen timeline IDs');
+        final fragments = await raw.query('box_timeline_fragments');
+        final fragment = fragments.singleWhere(
+            (row) => (jsonDecode(row['v'] as String) as List).contains('e2'));
+        final changedIds = (jsonDecode(fragment['v'] as String) as List)
+            .where((id) => id != 'e2')
+            .toList();
+        await raw.update(
+            'box_timeline_fragments', {'v': jsonEncode(changedIds)},
+            where: 'k = ?', whereArgs: [fragment['k']]);
+        await db.open();
+        await expectLater(
+            ids.page(2, 2), throwsA(isA<MatrixSearchSnapshotInvalidated>()),
+            reason: 'a vanished checkpoint must invalidate low-memory paging');
       } finally {
         ids.dispose();
       }
@@ -113,6 +126,16 @@ void main() {
       // SDK's storeEventUpdate in-memory cache masking the disk hole.
       await db.open();
       lease = await owner.openRoomLease(room.id);
+      final frozen = await lease.openLocalSearchIds(room.id);
+      try {
+        expect(await frozen.page(0, 2), ids.take(2).toList());
+        final keyed =
+            await lease.readLocalSearchByIds(room.id, ids.take(2).toList());
+        expect(keyed.map((e) => e.eventId), ids.take(2));
+        expect(keyed.first.isDisplayable, isFalse);
+      } finally {
+        frozen.dispose();
+      }
       final page = await lease.readLocalSearchPage(room.id, 0, 2);
       expect(page, hasLength(2));
       expect(page.first.eventId, first);

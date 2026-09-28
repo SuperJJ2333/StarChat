@@ -28,6 +28,8 @@ final class ChatSearchPage extends StatefulWidget {
     this.senderDisplayName,
     this.identityChanges,
     this.historyChanges,
+    this.ordinaryAppends,
+    this.calendarChanges,
     this.liveMemberEntries,
     this.memberAvatarBuilder,
     this.mediaThumbnailBuilder,
@@ -67,6 +69,8 @@ final class ChatSearchPage extends StatefulWidget {
   final String Function(String senderId)? senderDisplayName;
   final Listenable? identityChanges;
   final Listenable? historyChanges;
+  final Listenable? ordinaryAppends;
+  final Listenable? calendarChanges;
 
   /// 可访问历史最早/最新月份（导航钳制）。
   ///
@@ -105,6 +109,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   Timer? _debounce;
   bool _loadingMore = false;
   bool _loadMoreFailed = false;
+  bool _newMessagesAvailable = false;
   int _queryGeneration = 0;
 
   @override
@@ -112,6 +117,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     super.initState();
     widget.identityChanges?.addListener(_identityChanged);
     widget.historyChanges?.addListener(_historyChanged);
+    widget.ordinaryAppends?.addListener(_ordinaryAppendChanged);
     _controller = ChatSearchQueryController(
       search: widget.search,
       searchBatch: widget.searchBatch,
@@ -131,10 +137,21 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
       widget.historyChanges?.addListener(_historyChanged);
       _historyChanged();
     }
+    if (oldWidget.ordinaryAppends != widget.ordinaryAppends) {
+      oldWidget.ordinaryAppends?.removeListener(_ordinaryAppendChanged);
+      widget.ordinaryAppends?.addListener(_ordinaryAppendChanged);
+    }
   }
 
   void _identityChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _ordinaryAppendChanged() {
+    if (!mounted || _controller!.isDefaultEmptyState || _newMessagesAvailable) {
+      return;
+    }
+    setState(() => _newMessagesAvailable = true);
   }
 
   void _historyChanged() {
@@ -150,6 +167,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
       _state = const ChatSearchStateChange.empty();
       _loadingMore = false;
       _loadMoreFailed = false;
+      _newMessagesAvailable = false;
     });
     if (!_controller!.isDefaultEmptyState) {
       _debounce = Timer(const Duration(milliseconds: 150), _execute);
@@ -160,6 +178,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   void dispose() {
     widget.identityChanges?.removeListener(_identityChanged);
     widget.historyChanges?.removeListener(_historyChanged);
+    widget.ordinaryAppends?.removeListener(_ordinaryAppendChanged);
     _debounce?.cancel();
     _controller?.invalidate();
     widget.onSearchInvalidated?.call();
@@ -171,7 +190,10 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
 
   void _onChanged(String value) {
     widget.onSearchInvalidated?.call();
-    setState(() => _controller!.setKeyword(value));
+    setState(() {
+      _newMessagesAvailable = false;
+      _controller!.setKeyword(value);
+    });
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), _execute);
   }
@@ -183,6 +205,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     setState(() {
       _loadingMore = false;
       _loadMoreFailed = false;
+      _newMessagesAvailable = false;
     });
     try {
       await _controller!.executeNow(
@@ -220,6 +243,13 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         child: Column(children: [
           _searchBar(dark),
           _filterChips(controller),
+          if (_newMessagesAvailable)
+            CupertinoButton(
+              key: const Key('chat-search-refresh-new'),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              onPressed: _execute,
+              child: const Text('有新消息，点击更新'),
+            ),
           Expanded(child: _body(controller)),
         ]),
       ),
@@ -348,7 +378,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           earliest: widget.earliestMonth,
           latest: widget.latestMonth ?? now,
           loadMonth: widget.loadCalendarMonth,
-          historyChanges: widget.historyChanges,
+          historyChanges: widget.calendarChanges ?? widget.historyChanges,
           onCancelMonthLookup: widget.onCancelCalendarMonthLookup,
           onDateLookup: widget.onDateLookup,
           onCancelDateLookup: widget.onCancelDateLookup,

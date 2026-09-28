@@ -467,6 +467,9 @@ void main() {
       await controller.refresh();
       final before = roomLoads;
       expect(controller.hasResults, isTrue);
+      // An LRU eviction can remove the index row while the old result remains
+      // on screen. A later withdrawal still has to revoke that visible text.
+      repository.index.clear();
       repository.removeMessages([r'$old']);
       expect(controller.results.conversations, isEmpty);
       expect(roomLoads, before);

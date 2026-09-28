@@ -50,6 +50,48 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     history.dispose();
   });
+  testWidgets('incoming burst keeps visible search until one explicit refresh',
+      (tester) async {
+    final appends = ValueNotifier<int>(0);
+    var queries = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+      isGroup: false,
+      memberEntries: const [],
+      ordinaryAppends: appends,
+      search: (_, {cursor, limit = 50}) async {
+        queries++;
+        return [
+          ChatSearchMessage(
+            eventId: 'old',
+            senderId: '@a:x',
+            senderDisplayName: 'A',
+            timestamp: DateTime(2026, 9, 6),
+            timelineOrder: 1,
+            visibleText: 'hello old',
+          ),
+        ];
+      },
+      onJumpToMessage: (_) {},
+    )));
+    await tester.enterText(find.byKey(const Key('chat-search-input')), 'hello');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    final before = queries;
+    for (var i = 0; i < 50; i++) {
+      appends.value++;
+    }
+    await tester.pump();
+    expect(queries, before);
+    expect(find.byKey(const Key('chat-search-result-old')), findsOneWidget);
+    expect(find.byKey(const Key('chat-search-refresh-new')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('chat-search-refresh-new')));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(queries, before + 1);
+    expect(find.byKey(const Key('chat-search-refresh-new')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    appends.dispose();
+  });
   ChatSearchMessage msg(String id, String text,
           {String sender = '@a:x', int order = 1, String? category}) =>
       ChatSearchMessage(

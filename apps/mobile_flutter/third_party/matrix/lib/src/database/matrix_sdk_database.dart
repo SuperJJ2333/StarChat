@@ -37,6 +37,10 @@ import 'package:matrix/src/database/indexeddb_box.dart'
 import 'package:matrix/src/database/database_file_storage_stub.dart'
     if (dart.library.io) 'package:matrix/src/database/database_file_storage_io.dart';
 
+final class MatrixSearchSnapshotInvalidated implements Exception {
+  const MatrixSearchSnapshotInvalidated();
+}
+
 /// One search query's ordered local event IDs. The low-memory form retains
 /// page anchors instead of another copy of a large timeline fragment.
 final class MatrixSearchEventIds {
@@ -71,24 +75,24 @@ final class MatrixSearchEventIds {
     final firstIndex = current.indexOf(first);
     final lastIndex = current.lastIndexOf(last);
     if (firstIndex < 0 || lastIndex < firstIndex) {
-      throw StateError('Search ID snapshot anchors changed');
+      throw const MatrixSearchSnapshotInvalidated();
     }
     final start = offset == 0
         ? firstIndex
         : () {
             final previous = _checkpoints[offset - 1];
             if (previous == null) {
-              throw StateError('Search ID snapshot page is not sequential');
+              throw const MatrixSearchSnapshotInvalidated();
             }
             final position = current.indexOf(previous, firstIndex);
             if (position < firstIndex || position >= lastIndex) {
-              throw StateError('Search ID snapshot checkpoint changed');
+              throw const MatrixSearchSnapshotInvalidated();
             }
             return position + 1;
           }();
     final end = min(lastIndex + 1, start + limit);
     if (start > lastIndex || end - start < min(limit, _length - offset)) {
-      throw StateError('Search ID snapshot source changed');
+      throw const MatrixSearchSnapshotInvalidated();
     }
     final result = current.sublist(start, end);
     _checkpoints[offset + result.length - 1] = result.last;

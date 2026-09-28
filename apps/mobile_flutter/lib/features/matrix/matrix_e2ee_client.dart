@@ -69,6 +69,8 @@ import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
 import 'room_history_day_index.dart';
 import 'local_room_history_snapshot.dart';
+import 'local_search_event_policy.dart';
+import 'local_search_id_snapshot.dart';
 import 'bounded_history_search.dart';
 import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
@@ -1503,6 +1505,23 @@ final class _RoomHistoryChangeSignal extends ChangeNotifier {
   void publish() => notifyListeners();
 }
 
+final class _MatrixLocalSearchIds implements LocalSearchIdSnapshot {
+  _MatrixLocalSearchIds(this.source);
+  final MatrixSearchEventIds source;
+
+  @override
+  Future<List<String>> page(int offset, int limit) async {
+    try {
+      return await source.page(offset, limit);
+    } on MatrixSearchSnapshotInvalidated {
+      throw const HistorySearchCancelled();
+    }
+  }
+
+  @override
+  void dispose() => source.dispose();
+}
+
 final class MatrixRoomLease
     implements
         _ManagedClientResourceBase,
@@ -1524,11 +1543,19 @@ final class MatrixRoomLease
   final List<_SdkRoomTimelineCapability> _timelines = [];
   final _searchEventDelta = RoomSearchEventDelta();
   final _mentionEventDelta = RoomSearchEventDelta();
+  final _localSearchEventPolicy = LocalSearchEventPolicy();
   int _localHistorySearchRevision = 0;
   final _RoomHistoryChangeSignal _localHistoryChanges =
       _RoomHistoryChangeSignal();
   Listenable get localHistoryChanges => _localHistoryChanges;
+  final _RoomHistoryChangeSignal _localHistoryAppends =
+      _RoomHistoryChangeSignal();
+  Listenable get localHistoryAppends => _localHistoryAppends;
+  final _RoomHistoryChangeSignal _localHistoryCalendarChanges =
+      _RoomHistoryChangeSignal();
+  Listenable get localHistoryCalendarChanges => _localHistoryCalendarChanges;
   bool _historyChangeQueued = false;
+  bool _appendChangeQueued = false, _calendarChangeQueued = false;
   final _localSearchEventIds = <String, List<String>>{};
   final _localSearchCutoffs = <String, DateTime?>{};
   int _localSearchIdsRevision = -1;
@@ -1546,8 +1573,10 @@ final class MatrixRoomLease
 
   void invalidateLocalHistorySearch() {
     _localHistorySearchRevision++;
+    _localSearchEventPolicy.clear();
     _localSearchEventIds.clear();
     _localHistorySnapshot?.clear();
+    _notifyCalendarChange();
     if (!_historyChangeQueued && _localHistoryChanges.isObserved) {
       _historyChangeQueued = true;
       scheduleMicrotask(() {
@@ -1555,6 +1584,29 @@ final class MatrixRoomLease
         if (!canceled) _localHistoryChanges.publish();
       });
     }
+  }
+
+  void _notifyCalendarChange() {
+    if (_calendarChangeQueued || !_localHistoryCalendarChanges.isObserved) {
+      return;
+    }
+    _calendarChangeQueued = true;
+    scheduleMicrotask(() {
+      _calendarChangeQueued = false;
+      if (!canceled) _localHistoryCalendarChanges.publish();
+    });
+  }
+
+  void _recordLocalHistoryAppend() {
+    _localSearchEventIds.clear();
+    _localHistorySnapshot?.invalidateMutablePages();
+    _notifyCalendarChange();
+    if (_appendChangeQueued || !_localHistoryAppends.isObserved) return;
+    _appendChangeQueued = true;
+    scheduleMicrotask(() {
+      _appendChangeQueued = false;
+      if (!canceled) _localHistoryAppends.publish();
+    });
   }
 
   LocalRoomHistorySnapshot get localHistorySnapshot =>
@@ -1596,6 +1648,87 @@ final class MatrixRoomLease
   List<String> get notificationRoomIds => List<String>.unmodifiable(
       {roomId, ...owner.logicalRoomSourcesSync(roomId)});
 
+  Future<LocalSearchIdSnapshot> openLocalSearchIds(String sourceRoomId) =>
+      _withLeaseOperation((room) async {
+        if (sourceRoomId != roomId &&
+            !_historyLeases.containsKey(sourceRoomId)) {
+          throw StateError('Unknown conversation history source');
+        }
+        final source = sourceRoomId == roomId
+            ? room
+            : _historyLeases[sourceRoomId]!._activeRoom;
+        final database = source.client.database;
+        if (database is! MatrixSdkDatabase) {
+          throw StateError('Local history database unavailable');
+        }
+        final revision = localHistorySearchRevision;
+        final ids = await database.openSearchEventIds(source);
+        if (canceled ||
+            owner._accessRevoked ||
+            !identical(owner._client, source.client) ||
+            revision != localHistorySearchRevision) {
+          ids.dispose();
+          throw const HistorySearchCancelled();
+        }
+        return _MatrixLocalSearchIds(ids);
+      });
+
+  Future<List<ChatSearchMessage>> readLocalSearchByIds(
+          String sourceRoomId, List<String> eventIds) =>
+      _withLeaseOperation((room) async {
+        if (sourceRoomId != roomId &&
+            !_historyLeases.containsKey(sourceRoomId)) {
+          throw StateError('Unknown conversation history source');
+        }
+        final source = sourceRoomId == roomId
+            ? room
+            : _historyLeases[sourceRoomId]!._activeRoom;
+        final database = source.client.database;
+        if (database is! MatrixSdkDatabase) {
+          throw StateError('Local history database unavailable');
+        }
+        final revision = localHistorySearchRevision;
+        final trace = PerformanceTraceRecorder.instance.start(
+            PerformanceOperationType.search,
+            parentOperation: PerformanceTrace.currentOperation);
+        trace.mark(PerformanceStage.databaseSearchStarted);
+        late final List<Event?> events;
+        try {
+          events = await database.getSearchEventsByIds(source, eventIds);
+          trace.mark(PerformanceStage.databaseSearchDone);
+          trace.setDatabase(
+              operation: PerformanceDatabaseOperation.messageSearch,
+              rowCount: events.length);
+          trace.finish();
+        } catch (_) {
+          trace.finish(result: PerformanceResult.failed);
+          rethrow;
+        }
+        if (canceled ||
+            owner._accessRevoked ||
+            !identical(owner._client, source.client) ||
+            revision != localHistorySearchRevision) {
+          throw const HistorySearchCancelled();
+        }
+        final projected = <ChatSearchMessage>[];
+        for (var i = 0; i < events.length; i++) {
+          final event = events[i];
+          if (event != null && event.status.isSent) {
+            projected.add(projectDeviceLocalSearchEvent(event));
+          }
+          if ((i + 1) % 64 == 0) {
+            await Future<void>.delayed(Duration.zero);
+            if (canceled ||
+                owner._accessRevoked ||
+                !identical(owner._client, source.client) ||
+                revision != localHistorySearchRevision) {
+              throw const HistorySearchCancelled();
+            }
+          }
+        }
+        return completeLocalHistoryPage(eventIds, projected);
+      });
+
   /// Direct SQLCipher read: never SDK timeline/requestHistory or remote fallback.
   Future<List<ChatSearchMessage>> readLocalSearchPage(
           String sourceRoomId, int offset, int limit) =>
@@ -1608,14 +1741,14 @@ final class MatrixRoomLease
             ? room
             : _historyLeases[sourceRoomId]!._activeRoom;
         final database = source.client.database;
-        if (database == null) {
+        if (database is! MatrixSdkDatabase) {
           throw StateError('Local history database unavailable');
         }
         final trace = PerformanceTraceRecorder.instance.start(
             PerformanceOperationType.search,
             parentOperation: PerformanceTrace.currentOperation);
         trace.mark(PerformanceStage.databaseSearchStarted);
-        late final List<Event> events;
+        late final List<Event?> events;
         late final List<String> pageIds;
         try {
           final revision = localHistorySearchRevision;
@@ -1631,9 +1764,8 @@ final class MatrixRoomLease
           _localSearchEventIds[sourceRoomId] = ids;
           pageIds = ids.skip(offset).take(limit).toList(growable: false);
           events = pageIds.isEmpty
-              ? const <Event>[]
-              : await database.getEventList(source,
-                  start: offset, limit: limit);
+              ? const <Event?>[]
+              : await database.getSearchEventsByIds(source, pageIds);
           trace.mark(PerformanceStage.databaseSearchDone);
           trace.setDatabase(
               operation: PerformanceDatabaseOperation.messageSearch,
@@ -1655,10 +1787,9 @@ final class MatrixRoomLease
         final projected = <ChatSearchMessage>[];
         for (var i = 0; i < events.length; i++) {
           final event = events[i];
-          // getEventList prepends SENDING rows at offset zero. Exclude that
-          // separate queue, while retaining all rows in the sent timeline so
-          // the next SQL offset and exhaustion test stay correct.
-          if (event.status.isSent) {
+          // Missing/unsent IDs keep their positions in the page while only
+          // sent events are projected into searchable content.
+          if (event != null && event.status.isSent) {
             projected.add(projectDeviceLocalSearchEvent(event));
           }
           if ((i + 1) % 64 == 0) {
@@ -1939,9 +2070,16 @@ final class MatrixRoomLease
         if (canceled || !identical(_logicalTimeline, merged)) return;
         if (update.roomID == roomId ||
             _historyLeases.containsKey(update.roomID)) {
-          _searchEventDelta.add(update.content);
-          _mentionEventDelta.add(update.content);
-          invalidateLocalHistorySearch();
+          final effect = _localSearchEventPolicy.classify(update);
+          if (effect != LocalSearchEventEffect.none) {
+            _searchEventDelta.add(update.content);
+            _mentionEventDelta.add(update.content);
+            if (effect == LocalSearchEventEffect.append) {
+              _recordLocalHistoryAppend();
+            } else {
+              invalidateLocalHistorySearch();
+            }
+          }
         }
         if (update.roomID == roomId &&
             update.type == EventUpdateType.accountData &&
