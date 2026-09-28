@@ -228,6 +228,106 @@ def test_private_timeline_direct_request_precedes_coincidence_and_hides_ids():
     assert len(bounded['device_timeline']) == 2
 
 
+def test_private_timeline_does_not_correlate_other_devices_network_window():
+    module = tool()
+    subject_ref, device_a, device_b = 'a' * 64, 'b' * 64, 'c' * 64
+    keyboard_id = '12345678-1234-4234-9234-123456789ab1'
+    api_id = '12345678-1234-4234-9234-123456789ab2'
+    request_id = '12345678-1234-4234-9234-123456789ab3'
+
+    def docker(row, at):
+        return json.dumps({'log': json.dumps(row), 'stream': 'stdout', 'time': at})
+
+    batch_a = {
+        'event': 'client_diagnostics', 'version': '0.4.21+2190',
+        'platform': 'android', 'subject_ref': subject_ref, 'device_ref': device_a,
+        'operations': [{
+            'operation_id': keyboard_id, 'operation': 'keyboard_transition',
+            'result': 'slow', 'total_ms': 200, 'stages': [],
+            'lifecycle': 'foreground', 'frame_attribution_complete': False,
+            'keyboard_direction': 'show',
+            'started_at_utc': '2026-09-28T08:00:00.120Z',
+            'ended_at_utc': '2026-09-28T08:00:00.320Z',
+            'clock_uncertainty_ms': 1000, 'time_anchor_age_ms': 1000,
+        }],
+    }
+    batch_b = {
+        'event': 'client_diagnostics', 'version': '0.4.21+2190',
+        'platform': 'android', 'subject_ref': subject_ref, 'device_ref': device_b,
+        'operations': [{
+            'operation_id': api_id, 'operation': 'api_request',
+            'result': 'slow', 'total_ms': 1000, 'stages': [],
+            'lifecycle': 'foreground', 'frame_attribution_complete': False,
+            'started_at_utc': '2026-09-28T08:00:00Z',
+            'ended_at_utc': '2026-09-28T08:00:01Z',
+            'clock_uncertainty_ms': 1000, 'time_anchor_age_ms': 1000,
+        }],
+        'network_requests': [{
+            'request_id': request_id, 'operation_id': api_id,
+            'version': '0.4.21+2190', 'platform': 'android',
+            'target': 'primary_api', 'network': 'wifi', 'method': 'GET',
+            'endpoint_category': 'profile',
+            'started_at': '2026-09-27T08:00:00Z',
+            'elapsed_ms': 8000, 'phase': 'awaiting_headers',
+            'reason': 'timeout', 'timeout_budget_ms': 8000,
+            'timeout_lateness_ms': 0,
+        }],
+    }
+    server = {
+        'event': 'server_request_timeline', 'request_id': request_id,
+        'server_started_at': '2026-09-28T08:00:00.100Z',
+        'elapsed_ms': 100, 'method': 'GET', 'endpoint_category': 'profile',
+        'route_template': '/api/v1/profile/me', 'termination': 'complete',
+        'http_status': 200, 'headers_prepared_ms': 80,
+        'body_prepared_ms': 90, 'send_finished_ms': 100,
+    }
+    result = module.summarize_account_logs([
+        docker(server, '2026-09-28T08:00:00.200Z'),
+        docker(batch_a, '2026-09-28T08:01:00Z'),
+        docker(batch_b, '2026-09-28T08:01:01Z'),
+    ], refs=(subject_ref,), since_hours=1,
+        now=datetime(2026, 9, 28, 8, 2, tzinfo=timezone.utc))
+    operations = {row['operation']: row for row in result['device_timeline']
+                  if row['kind'] == 'operation'}
+    assert operations['keyboard_transition']['device'] == 'device_1'
+    assert operations['keyboard_transition']['correlation'] == 'none'
+    assert operations['api_request']['device'] == 'device_2'
+    assert operations['api_request']['correlation'] == 'request_uuid_match'
+    assert result['coincident_operations'] == 0
+    assert result['request_uuid_matches'] == 1
+    serialized = json.dumps(result)
+    for private in (subject_ref, device_a, device_b, keyboard_id, api_id, request_id):
+        assert private not in serialized
+
+
+def test_private_query_accepts_strict_docker_logs_timestamps():
+    module = tool()
+    subject_ref = 'a' * 64
+    row = {
+        'event': 'client_diagnostics', 'version': '0.4.21+2190',
+        'platform': 'android', 'subject_ref': subject_ref,
+        'diagnostic_loss': {
+            'sample_id': '12345678-1234-4234-9234-123456789abc',
+            'dropped_events': 1, 'dropped_operations': 0,
+            'dropped_frames': 0,
+        },
+    }
+    rendered = json.dumps(row)
+    valid = f'2026-09-28T08:01:00.123456789Z {rendered}\n'
+    at, parsed = module._docker_batch(valid)
+    assert at == datetime.fromisoformat('2026-09-28T08:01:00.123456+00:00')
+    assert parsed == row
+    now = datetime(2026, 9, 28, 8, 2, tzinfo=timezone.utc)
+    result = module.summarize_account_logs([valid], refs=(subject_ref,),
+                                           since_hours=1, now=now)
+    assert result['matched_batches'] == 1
+    assert result['retained_first_utc'] == '2026-09-28T08:01:00Z'
+    for invalid in (rendered, f'2026-09-28T08:01:00+08:00 {rendered}',
+                    f'2026-09-28T08:01:00Z not-json'):
+        with pytest.raises(ValueError):
+            module._docker_batch(invalid)
+
+
 @pytest.mark.parametrize('hours', [0, 169, True])
 def test_private_query_rejects_unbounded_windows(hours):
     with pytest.raises(ValueError):

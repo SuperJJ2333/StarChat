@@ -51,17 +51,23 @@ def _docker_batch(line: str | bytes):
         line = line.decode('utf-8')
     if not isinstance(line, str) or len(line.encode('utf-8')) > triage.MAX_LINE_BYTES:
         raise ValueError('Invalid diagnostic line')
-    outer = json.loads(line)
-    if not isinstance(outer, dict) or set(outer) != {'log', 'stream', 'time'}:
-        raise ValueError('Invalid Docker log envelope')
-    when = outer['time']
-    if (outer['stream'] != 'stdout' or not isinstance(when, str)
-            or triage._DOCKER_TIME.fullmatch(when) is None
-            or not isinstance(outer['log'], str)
-            or len(outer['log'].encode('utf-8')) > triage.MAX_LINE_BYTES):
-        raise ValueError('Invalid Docker log envelope')
+    if line.startswith('{'):
+        outer = json.loads(line)
+        if not isinstance(outer, dict) or set(outer) != {'log', 'stream', 'time'}:
+            raise ValueError('Invalid Docker log envelope')
+        when = outer['time']
+        if (outer['stream'] != 'stdout' or not isinstance(when, str)
+                or triage._DOCKER_TIME.fullmatch(when) is None
+                or not isinstance(outer['log'], str)
+                or len(outer['log'].encode('utf-8')) > triage.MAX_LINE_BYTES):
+            raise ValueError('Invalid Docker log envelope')
+        log = outer['log']
+    else:
+        when, separator, log = line.partition(' ')
+        if not separator or triage._DOCKER_TIME.fullmatch(when) is None:
+            raise ValueError('Invalid Docker logs timestamp')
     at = datetime.fromisoformat(when.replace('Z', '+00:00'))
-    raw = json.loads(outer['log'])
+    raw = json.loads(log)
     if not isinstance(raw, dict):
         raise ValueError('Invalid diagnostic batch')
     return at, raw
@@ -205,20 +211,30 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
             incomplete = True
 
     operation_requests = {}
-    for _, item, _, _, _ in request_rows:
+    intervals_by_device = {}
+    for label, item, _, _, _ in request_rows:
         if item.operation_id:
-            operation_requests.setdefault(item.operation_id, set()).add(item.request_id)
+            operation_requests.setdefault((label, item.operation_id), set()).add(item.request_id)
+        server = matched_servers.get(item.request_id)
+        if server is not None and label != 'device_unknown':
+            start = datetime.fromisoformat(server.server_started_at.replace('Z', '+00:00'))
+            intervals_by_device.setdefault(label, []).append(
+                (start, start + timedelta(milliseconds=server.elapsed_ms)))
 
-    intervals = sorted((datetime.fromisoformat(row.server_started_at.replace('Z', '+00:00')),
-                        datetime.fromisoformat(row.server_started_at.replace('Z', '+00:00'))
-                        + timedelta(milliseconds=row.elapsed_ms))
-                       for row in matched_servers.values())
-    starts = [start for start, _ in intervals]
-    latest_end = []
-    for _, end in intervals:
-        latest_end.append(max(end, latest_end[-1]) if latest_end else end)
+    interval_indexes = {}
+    for label, intervals in intervals_by_device.items():
+        intervals.sort()
+        starts = [start for start, _ in intervals]
+        latest_end = []
+        for _, end in intervals:
+            latest_end.append(max(end, latest_end[-1]) if latest_end else end)
+        interval_indexes[label] = (starts, latest_end)
 
-    def overlaps(start_text, end_text, uncertainty_ms):
+    def overlaps(label, start_text, end_text, uncertainty_ms):
+        index_data = interval_indexes.get(label)
+        if index_data is None:
+            return False
+        starts, latest_end = index_data
         start = datetime.fromisoformat(start_text.replace('Z', '+00:00'))
         end = datetime.fromisoformat(end_text.replace('Z', '+00:00'))
         left = start - timedelta(milliseconds=uncertainty_ms)
@@ -235,12 +251,12 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
         started = getattr(item, 'started_at_utc', None)
         ended = getattr(item, 'ended_at_utc', None)
         direct = any(request_id in matched_servers for request_id in
-                     operation_requests.get(item.operation_id, ()))
+                     operation_requests.get((label, item.operation_id), ()))
         if direct:
             correlation = 'request_uuid_match'
         elif started is None or ended is None:
             correlation = 'time_uncertain'
-        elif overlaps(started, ended, item.clock_uncertainty_ms):
+        elif overlaps(label, started, ended, item.clock_uncertainty_ms):
             correlation = 'coincident'
             coincident += 1
         else:
@@ -336,7 +352,8 @@ def main() -> int:
     finally:
         handle = ''
         engine.dispose()
-    summary = summarize_account_logs(sys.stdin, refs=refs, since_hours=args.since_hours)
+    summary = summarize_account_logs(triage._stdin_lines(), refs=refs,
+                                     since_hours=args.since_hours)
     print(json.dumps(summary, ensure_ascii=True, separators=(',', ':')))
     return 0
 
