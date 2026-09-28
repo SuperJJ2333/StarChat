@@ -1,0 +1,137 @@
+{
+  "release_id": "admin-entry-merge-20260929-v8",
+  "recorded_utc": "2026-09-28T17:59:20Z",
+  "scope": "redacted production migration, guarded API/static deployment, and anonymous verification",
+  "remote_release_dir": "/opt/starchat/releases/admin-entry-merge-20260929-v8",
+  "frozen_manifest_sha256": "dc168f6aea06991e3c203109d7a577f51f7f20bb281a0cb86309d98a899fb63b",
+  "frozen_archive_sha256": "815bb4cba3a8ae03b083548559b95559b930376fc533f429da222e67468b7245",
+  "pre_migration": {
+    "remote_archive_and_manifest_sha256_match": true,
+    "live_preflight_exit": 0,
+    "schema": "0091_moment_video_posters",
+    "check_prepared_exit": 0,
+    "dump_sha256": "a211d90151edc3112126f23a874695727a90a2853e9edd4be296e05a4bb915de",
+    "restore_proof_sha256": "203a1ee8507d12fbb151945cf19f6c34fd3e70ded58f73817ac4663c515e3a85",
+    "isolated_clone_removed": true,
+    "isolated_pg_races_exit": 0,
+    "compatible_rollback_readiness": true,
+    "private_directory_mode": "0700",
+    "private_regular_file_modes": "0600",
+    "private_symlinks": 0,
+    "running_containers_equal_prepare_baseline": true,
+    "legacy_admin_session_count": 2
+  },
+  "migration": {
+    "command": "python3 server_release.py migrate-production",
+    "exit": 0,
+    "attempt_started_utc": "2026-09-28T17:40:21.600159+00:00",
+    "migrated_utc": "2026-09-28T17:40:24.517586+00:00",
+    "schema": "0092_admin_session_entry_mode",
+    "entry_mode_column": "YES:character varying:16",
+    "staff_admin_check_constraint_verified": true,
+    "admin_session_count_after": 2,
+    "legacy_null_entry_mode_count_after": 2,
+    "migration_proof_sha256": "2ec66711372dec474ca41d30329ef79cdf51dc6b3aa48c2b558221bf0a73c7b9",
+    "database_downgrade": false
+  },
+  "deploy": {
+    "command": "python3 server_release.py deploy",
+    "exit": 0,
+    "switch_attempt_started_utc": "2026-09-28T17:41:14.538561+00:00",
+    "deployed_utc": "2026-09-28T17:41:37.916209+00:00",
+    "candidate_api_image": "sha256:0bdf751c05015454781c24b66a0c5066ca08ce23436c232ff8aecd1ba5042993",
+    "unchanged_worker_image": "sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf",
+    "compatible_rollback_api_image": "sha256:c5e1fe4151987799a469060a66fe6d605761d1ae9037374812b3ade29d760c16",
+    "static_files_published": 18,
+    "download_html_excluded": true,
+    "guard_snapshot": "/opt/starchat/releases/guarded-6k8lnu0q/compose.json",
+    "preswitch_protocol_proof_sha256": "c06b67bb00f4e99b5d46ad0767512d28dfc5c4f425bec18aecdca9e1f02bf73e",
+    "preswitch_role_checks": {
+      "candidate_api": "9/9",
+      "compatible_rollback_api": "9/9",
+      "unchanged_worker": "8/8"
+    },
+    "deploy_protocol_proof_sha256": "4d7dce74b963a823ddf355a34bae64957c42baa019d4a28f4d823c58baf3f7cc",
+    "deploy_role_checks": {
+      "candidate_api": "9/9",
+      "unchanged_worker": "8/8"
+    },
+    "deployed_proof_sha256": "17f1a0cdef0b3bee3b01bca1fa0cb6cb96b761f17b57da10975fa8edbba8539b"
+  },
+  "verification": {
+    "server_release_verify_exit": 0,
+    "verified_utc": "2026-09-28T17:41:54.285174+00:00",
+    "verified_proof_sha256": "139a6d5146d5e3f7dabe006fac80e4cf0e7c3f1977ad2aedac910e18056cec62",
+    "schema": "0092_admin_session_entry_mode",
+    "server_strict_tls_public_verify_exits": [0, 0],
+    "workstation_jumper_socks_strict_tls_public_verify_exits": [0, 0],
+    "both_public_checks": "JSON ready=true and database=ready; unauthenticated admin context HTTP 401; 18 static response SHA256 matched",
+    "temporary_workstation_socks_closed": true,
+    "host_static_sha256_verified": 18,
+    "production_postgresql_id_unchanged": "0d07d05048911539fb51fff24ff91c5787ca5b4f5f188ebc1121caafd1a153bf",
+    "other_container_count": 27,
+    "other_name_id_sha256": "036bafe9d2c9ffa179e2d9698b35812980d5bbfabe17f6fbc713948e79b5a1fd",
+    "other_full_name_id_image_started_sha256": "71d6b08ed26edccfe77746d81e0dee3a123141a07dc0683306568b01cc160326",
+    "stable_readonly_checks": [
+      {
+        "checked_utc": "2026-09-28T17:48:08.823929+00:00",
+        "exit": 0,
+        "running_container_count": 29,
+        "other_container_count": 27,
+        "other_name_id_image_started_equal_prepare": true,
+        "static_sha256_verified": 18,
+        "api_log_lines_since_switch": 593,
+        "worker_log_lines_since_switch": 14,
+        "traceback_lines": 0,
+        "json_error_critical_levels": 0,
+        "unclassified_error_word_lines": 0
+      },
+      {
+        "checked_utc": "2026-09-28T17:48:58.680631+00:00",
+        "exit": 0,
+        "running_container_count": 29,
+        "other_container_count": 27,
+        "other_name_id_image_started_equal_prepare": true,
+        "static_sha256_verified": 18,
+        "api_log_lines_since_switch": 622,
+        "worker_log_lines_since_switch": 16,
+        "traceback_lines": 0,
+        "json_error_critical_levels": 0,
+        "unclassified_error_word_lines": 0
+      }
+    ],
+    "api_container": {
+      "id": "58bb2351b6eb76eef0e304ecd78053db52e8557dba4d1fc7719e4fc53d0ef146",
+      "image": "sha256:0bdf751c05015454781c24b66a0c5066ca08ce23436c232ff8aecd1ba5042993",
+      "started_at": "2026-09-28T17:41:25.036269252Z",
+      "health": "healthy",
+      "restart_count": 0
+    },
+    "worker_container": {
+      "id": "df804e929904c212b65755876ecbcd5e916cf12abecca57ec16966a387c53614",
+      "image": "sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf",
+      "started_at": "2026-09-28T06:14:06.988209756Z",
+      "health": "healthy",
+      "restart_count": 0
+    }
+  },
+  "post_deploy_private_permission_recheck": {
+    "checked_utc": "2026-09-28T17:59:20.628730+00:00",
+    "read_only_check_exit": 0,
+    "private_root_mode": "0700",
+    "regular_file_count": 74,
+    "non_0600_regular_files": 0,
+    "symlink_count": 0
+  },
+  "observation_limit": {
+    "transient_other_running_container_set_check_exit": 1,
+    "failure_window": "after internal verify and initial dual-end HTTPS checks, before 2026-09-28T17:46:06Z",
+    "exact_error": "other running container set changed",
+    "cause": "unconfirmed; immediate diagnostic found no added, missing, or changed name/ID and docker events query returned no event",
+    "persistent_drift_seen": false,
+    "rollback_executed": false,
+    "review_classification": "P3 evidence/observation limit pending independent final review",
+    "anonymous_probe_limit": "ready, unauthenticated rejection, and static hashes do not prove a real administrator session or a real business operation",
+    "real_financial_write_email_sms_performed": false
+  }
+}

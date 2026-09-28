@@ -1,0 +1,1186 @@
+{
+  "snapshotUtc": "2026-09-28T16:44:58Z",
+  "baseRef": "origin/main",
+  "baseCommit": "971fb50d193ab1a34610bd7908c2dbf6272db431",
+  "restoreHead": "971fb50d193ab1a34610bd7908c2dbf6272db431",
+  "adminHead": "ae3a26dedfa32a9f84dde6bca6da31885cec733f",
+  "restoreRuntime": [
+    {
+      "path": "packages/api-contracts/openapi/liuhetong-v1.yaml",
+      "sha256": "25d283d0136856ed4a724ca1cd144d24eaa323601b7f9de4d237981b792cb186"
+    },
+    {
+      "path": "services/business-api/app/api/client_diagnostics.py",
+      "sha256": "b5b9eaf646975531ab5b986cfe64fc8ee244cb0cdcaa421a99ce54d08df38204"
+    },
+    {
+      "path": "services/business-api/app/api/friendship.py",
+      "sha256": "6b941f9772db91e32a2453fb4ad80b35c59da4b83f4a566c63c8408f01a7391c"
+    },
+    {
+      "path": "services/business-api/app/api/identity.py",
+      "sha256": "0be954f83d6310ce8863cd49d48609e60fcc46e25ca135ce332a14807a002311"
+    },
+    {
+      "path": "services/business-api/app/api/media_platform.py",
+      "sha256": "32cb48d0ef95873e2ecaa27cbe119b9f3f39d7b1529b55f043beb819276d680e"
+    },
+    {
+      "path": "services/business-api/app/api/moments.py",
+      "sha256": "2dbc27c5f143ad8bef476f1300028729fe147ed434e669deebeba05546874fb5"
+    },
+    {
+      "path": "services/business-api/app/api/performance_diagnostics.py",
+      "sha256": "98ec7c03c2306404ec38006c77ac760f5ab562122a202f639c2360e456257f80"
+    },
+    {
+      "path": "services/business-api/app/api/profile.py",
+      "sha256": "905c8bc1959a21a5aa64311fb7eb3fd09004e15818c0871ed8a34afdcfa57cea"
+    },
+    {
+      "path": "services/business-api/app/api/wallet_operations.py",
+      "sha256": "ede90ef3017e60a3a04abaa1f6151ae9047c56ec1dfadea11c5df7f555e3b40b"
+    },
+    {
+      "path": "services/business-api/app/core/config.py",
+      "sha256": "47cf9c380a1755d752ca02da5abeaf865805e4c89cfb2113bf66ee1ca2c3ec3b"
+    },
+    {
+      "path": "services/business-api/app/core/database.py",
+      "sha256": "9636ecb41ac27ccd914400d4649d45a3d916faf396288dd45fb7bed19cfecca5"
+    },
+    {
+      "path": "services/business-api/app/core/idempotency.py",
+      "sha256": "2c10c3501c4b4fe78052dba69344ee22e65353ba45c71dc0d5c8c6ba912d3970"
+    },
+    {
+      "path": "services/business-api/app/core/network_request_timeline.py",
+      "sha256": "b0a689e23fd04daca2567f621452f986475722a56ee09bb647ea5eafaf96c634"
+    },
+    {
+      "path": "services/business-api/app/core/tracing.py",
+      "sha256": "a1eec6a6457229dbaeb39d4b8a5241e1a3a137b8aa5ff7fed4a0392f352d5786"
+    },
+    {
+      "path": "services/business-api/app/integrations/media_blob_storage.py",
+      "sha256": "bcc07fbb962022769caa701bddada05f3119e4c4fefcc4603b1218760285ea1b"
+    },
+    {
+      "path": "services/business-api/app/integrations/media_storage_capacity.py",
+      "sha256": "1ce192264a88de00804d0f7203d31e9f3f7e1fdd50a4d7a4ef3d5ed9122eca90"
+    },
+    {
+      "path": "services/business-api/app/integrations/media_storage_metrics.py",
+      "sha256": "56840b129672d66eec4b0f4a7dd6351cd9f249d8239b36b328c2688b36aceca7"
+    },
+    {
+      "path": "services/business-api/app/integrations/media_storage_migration.py",
+      "sha256": "4e7f0ac873b5411c861258f6370d1b30f915d0ea4335a48ccbeb62f7734c85b3"
+    },
+    {
+      "path": "services/business-api/app/integrations/private_storage.py",
+      "sha256": "980c992cb554404050f8cb0aff8cf671926b9b65880313bfe21daf6aaae6d61c"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/funding_source.py",
+      "sha256": "51db06751095c34af2cff795eedc0faf8392ef364d0188ea93c5f9afba6a3e86"
+    },
+    {
+      "path": "services/business-api/app/main.py",
+      "sha256": "4170323c047e628af842e26b897930f3c4287e5ccc601b738b3d9807cdc5b6dd"
+    },
+    {
+      "path": "services/business-api/app/modules/friendship/service.py",
+      "sha256": "b8f03d3b43fc6f381caf99b60e88b5d043409b9837abec420ac04e6bb9594d51"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/account_credentials.py",
+      "sha256": "309506bd2337c41da1a8fc3e772c57be4dde2ff490287ab2dba3108655292fa1"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/models.py",
+      "sha256": "7795e58a520e9fc85cb15c97353ce244f4712ac6f9c02fb66619001711d93ee2"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/phone.py",
+      "sha256": "3ce3b0696e5a346a9d7fd2a304fbe1b43fae924e36a813e03ffee4c1fae5e674"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/profile.py",
+      "sha256": "449ee7e0b4ac34fac216eeb427701ec0e796100b42b0db7362f4012ef275c415"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/recovery.py",
+      "sha256": "dd95c7a9d101152936e57a4ce181e42c00d173f62fc870799957b460dd4b72e0"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/registration.py",
+      "sha256": "5d37a636bb0f56a57882d57d5647ae36edafb624bfa2090df2263e87c655b176"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/username.py",
+      "sha256": "d8c2dbfbaeed8b5165381ee1a895c42e637589c706857dd4116f3965132f1420"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/manual_reserve.py",
+      "sha256": "e45711c5c4984bce44c9add7fcbbbf722ad6838b5f8ea9ba97f62e9b2798cff8"
+    },
+    {
+      "path": "services/business-api/app/modules/media/metrics.py",
+      "sha256": "5537c65591da01777cfd90e987ecacf2bea41772713d2eeb13feb03c37c4df4f"
+    },
+    {
+      "path": "services/business-api/app/modules/media/reconcile.py",
+      "sha256": "219f08889dd05fdf18975ebee7b8fcca8887502ef70baaaf0c111538af8b4858"
+    },
+    {
+      "path": "services/business-api/app/modules/media/storage.py",
+      "sha256": "a51c0e7c73904f62fde804266b03f49d6ad6ec800f097f74a2a5dbdde34a7a19"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/media_access.py",
+      "sha256": "e98d710beede6b49fd233288e950ea8c1780c04dc7fa318a984736d2d8e3c7bb"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/media.py",
+      "sha256": "fd3bd1f16a4c12664a1d0441200570aaa27a6e4c9584a0b517db20bafafd2be5"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/models.py",
+      "sha256": "734729527e9896339a2c46b5ebf1aa7868a3cc64cf78242b1d39a8a3a7cdc1e7"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/service.py",
+      "sha256": "738da96ace3041a7d04670a33a24b599c400cbf6c807415b658f6d9bd797c669"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/alert_delivery.py",
+      "sha256": "17ee3baec1d59e1880bdd415cf9872e68672b18a6ec4a70caf226fe8c99fe916"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/incident_reports.py",
+      "sha256": "06064f228e5d205a9c4a0a0dac443138a2158580c68e9f076963bcdfaf86ed44"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/incidents.py",
+      "sha256": "1a4a770f76354370dc9b705a6d089778abfbf7394fcadc697496191b39d1d165"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_control.py",
+      "sha256": "64bb63670e8a210314b8b592e8c39085551ebe8bf15b35413f7d3d43685b397a"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_reserve_monitor.py",
+      "sha256": "865b9a46f356f098d31c91edbd8661a668e42f0b9c4cfcc63f3a02f0d1f2fdec"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_source_resample.py",
+      "sha256": "b4e85fa32df71b7d7832ebd45593b7eecdc914011a382e55207f934398b4aeeb"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0089_username_claims.py",
+      "sha256": "ba70251b5199927d1a4739ae3082008b8434478d34b82abb6b2908db6cb4ef70"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0090_friend_discovery_index.py",
+      "sha256": "37662bbe143f7e5521a27a7dd19dde9e9b95349ae3c1c4ba3f179879c0d1035f"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0091_moment_video_posters.py",
+      "sha256": "2cfa7670849d534d51e5ee3787fb231e19b9edfe95fc7eb3f0f5d2be555603e0"
+    },
+    {
+      "path": "services/business-api/pyproject.toml",
+      "sha256": "ad430fe077fa8443b511e9980739d106353ef6175d7615d60549e89cacdb28e0"
+    },
+    {
+      "path": "services/business-api/requirements.lock",
+      "sha256": "f64b119c66265cb59b3272d074afe32b4560da1715f30499580c3a046346bf8f"
+    },
+    {
+      "path": "services/business-worker/app/integrations/avatar_reader.py",
+      "sha256": "c83c3f5b69d4af4c82edb10772d6dd6deb92cfa0c759fdbcb92324fc1d2a6943"
+    },
+    {
+      "path": "services/business-worker/app/integrations/email_sender.py",
+      "sha256": "ec1f3ad4f2161ce8183153a0dcff8b707b44a7a4cabb5b2990fc2c9c4729df53"
+    },
+    {
+      "path": "services/business-worker/app/main.py",
+      "sha256": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1"
+    },
+    {
+      "path": "services/business-worker/app/tasks/avatar_cleanup.py",
+      "sha256": "0437d77c6462353c96236aa95a932dc11b3ff8b73eb0d93b5521bf1c9ef93359"
+    },
+    {
+      "path": "services/business-worker/app/tasks/identity.py",
+      "sha256": "7d974ab7afc0c321ebbd031d1303da7ce54fd0e58beac8376924b6b3c4c3d847"
+    },
+    {
+      "path": "services/business-worker/app/tasks/internal_publication.py",
+      "sha256": "1e50d4b0bc09c9b7dd1a33c208dbc30c8795e870faf5cd8111189a1341325b2d"
+    }
+  ],
+  "restoreTests": [
+    {
+      "path": "tests/business_api/identity/test_profile_api.py",
+      "sha256": "067e4a313ca85a5c1248f7ca098b8a6f825a17a285924c0bf1254e5cc1d75024"
+    },
+    {
+      "path": "tests/business_api/identity/test_registration.py",
+      "sha256": "59993ccc371d0f95c1568da475337ddfae0a68cf6f0466fd686d37f026c453a3"
+    },
+    {
+      "path": "tests/business_api/identity/test_username_change.py",
+      "sha256": "eb38ae26985adbfcf1432b61ed677c1670d5e0867ad30d3621aa7e7c839d655a"
+    },
+    {
+      "path": "tests/business_api/moments/test_moment_video_posters.py",
+      "sha256": "69e580f3f307b78594e003248374c06d85bf9d787d7bbd9054cac1018e2f656e"
+    },
+    {
+      "path": "tests/business_api/test_client_diagnostics.py",
+      "sha256": "414155e3ada3f8344d1db322f6a6ae0b5fced89583b725a979f07ca9f2ab1f1a"
+    },
+    {
+      "path": "tests/business_api/test_migrations.py",
+      "sha256": "6e441086d8bad59990dee3226b06b14cb82cff8bf8b63ecdc81c1721f6f71851"
+    },
+    {
+      "path": "tests/business_api/test_user_search.py",
+      "sha256": "33df48b07ebf9d96ef6729e8e21068e1bd2034030ac281bdcc00828a6a179ef3"
+    },
+    {
+      "path": "tests/business_api/test_wallet_release_baseline.py",
+      "sha256": "0653f9e601cd54936c477ea7b051c88cc65e508c24606d91333c2a8ce3f1bf28"
+    },
+    {
+      "path": "tests/business_worker/test_wallet_operations_wiring.py",
+      "sha256": "fe1d8318900220e6f19367e1ff7e778dd4dba456bb7630559e5d6f03bfb01a03"
+    },
+    {
+      "path": "tests/business_worker/test_worker.py",
+      "sha256": "7ff9506653d6ffbb006aa817aafa591fb3d2e6311617a88aaa5c519c1127266a"
+    }
+  ],
+  "restoreDocs": [
+    {
+      "path": "docs/runbooks/refresh-release-guards.md",
+      "sha256": "ed616af5f93465b0dab9cb7bdcf2ee26f967c30462fa4221ffeedb706926373f"
+    },
+    {
+      "path": "docs/workflow/current-state.md",
+      "sha256": "435dc3570185ac823a4589e021c8a028e595653fc042a1b31edb7eaac7854e0c"
+    },
+    {
+      "path": "docs/adr/2026-09-28-role-aware-refresh-image-gate.md",
+      "sha256": "2d30ee41e6cb77c530bfa2900845783387817b4d6c2b154ab29f34c29337faf9"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-28-role-aware-refresh-image-gate.md",
+      "sha256": "f749553c75e3e055790cb1a73b1eed6ba296bb744b16b606edcb1f16ce868c81"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-28-restore-published-identity-moments.md",
+      "sha256": "2866875d6b4aa120448d0f307cce1a3d5c193b7eb4fac025ec0d65f2e7a0a497"
+    },
+    {
+      "path": "docs/verification/2026-09-28-restore-identity-moments.md",
+      "sha256": "0f4858c90575a00b968cae46600944165e6236f5a111d021ef4622afc17ff97b"
+    },
+    {
+      "path": "docs/workflow/tasks/2026-09-28-restore-published-identity-moments.md",
+      "sha256": "5ea79e9bcaf2449e5bd10613cd84c7c5645aa172432c91246686d227189315fa"
+    }
+  ],
+  "restoreR2Payload": [
+    {
+      "path": "services/business-api/app/modules/identity/registration.py",
+      "sha256": "5d37a636bb0f56a57882d57d5647ae36edafb624bfa2090df2263e87c655b176",
+      "sourceHash": "5d37a636bb0f56a57882d57d5647ae36edafb624bfa2090df2263e87c655b176"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/profile.py",
+      "sha256": "449ee7e0b4ac34fac216eeb427701ec0e796100b42b0db7362f4012ef275c415",
+      "sourceHash": "449ee7e0b4ac34fac216eeb427701ec0e796100b42b0db7362f4012ef275c415"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/profile_text.py",
+      "sha256": "6474c3b8edeea41ee72a381e681ca67b52f87a66f3872d2739c53fd6bbf6ecb5",
+      "sourceHash": "6474c3b8edeea41ee72a381e681ca67b52f87a66f3872d2739c53fd6bbf6ecb5"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/models.py",
+      "sha256": "7795e58a520e9fc85cb15c97353ce244f4712ac6f9c02fb66619001711d93ee2",
+      "sourceHash": "7795e58a520e9fc85cb15c97353ce244f4712ac6f9c02fb66619001711d93ee2"
+    },
+    {
+      "path": "services/business-api/app/api/identity.py",
+      "sha256": "0be954f83d6310ce8863cd49d48609e60fcc46e25ca135ce332a14807a002311",
+      "sourceHash": "0be954f83d6310ce8863cd49d48609e60fcc46e25ca135ce332a14807a002311"
+    },
+    {
+      "path": "services/business-api/app/api/profile.py",
+      "sha256": "905c8bc1959a21a5aa64311fb7eb3fd09004e15818c0871ed8a34afdcfa57cea",
+      "sourceHash": "905c8bc1959a21a5aa64311fb7eb3fd09004e15818c0871ed8a34afdcfa57cea"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/service.py",
+      "sha256": "738da96ace3041a7d04670a33a24b599c400cbf6c807415b658f6d9bd797c669",
+      "sourceHash": "738da96ace3041a7d04670a33a24b599c400cbf6c807415b658f6d9bd797c669"
+    },
+    {
+      "path": "services/business-api/app/api/moments.py",
+      "sha256": "2dbc27c5f143ad8bef476f1300028729fe147ed434e669deebeba05546874fb5",
+      "sourceHash": "2dbc27c5f143ad8bef476f1300028729fe147ed434e669deebeba05546874fb5"
+    }
+  ],
+  "adminDraftManifestSha256": "eb590021aa724392334db6c4d3d03021f98f9cf008a7d5b7ad96a560249bf895",
+  "adminDraftFrozen": false,
+  "publishedT2": {
+    "frozenManifestSha256": "9505c5460df860b03c5c2cf43f1d6301b399a15dea0479c75c6ac34864b8f8fe",
+    "localCommit": "2fdbd1cebc040bab0cac1749b76893476b0a0ad6",
+    "staticFiles": [
+      {
+        "path": "frontend/src/admin-home.js",
+        "frozenSource": "docs/verification/artifacts/2026-09-28/wallet-monitor-t2/frontend-merged/src/admin-home.js",
+        "sha256": "98438108d3113c89e730175c49c81bd14c182cea4054823f6197a8700670bb7c",
+        "liveProductionSha256": "98438108d3113c89e730175c49c81bd14c182cea4054823f6197a8700670bb7c"
+      },
+      {
+        "path": "frontend/src/admin-manual-wallet-panel.js",
+        "frozenSource": "docs/verification/artifacts/2026-09-28/wallet-monitor-t2/frontend-merged/src/admin-manual-wallet-panel.js",
+        "sha256": "45a9f02ae3662a0f89ed7dc1ac00ffb811f82b65761c244a2303d42f4860d5f8",
+        "liveProductionSha256": "45a9f02ae3662a0f89ed7dc1ac00ffb811f82b65761c244a2303d42f4860d5f8"
+      },
+      {
+        "path": "frontend/src/wallet-incident-workflow.js",
+        "frozenSource": "docs/verification/artifacts/2026-09-28/wallet-monitor-t2/frontend-merged/src/wallet-incident-workflow.js",
+        "sha256": "e03f1fe9fd245a10bff6ec5d7095d71e1424d5b15cffe2ae9a82ccf3dbe11575",
+        "liveProductionSha256": "e03f1fe9fd245a10bff6ec5d7095d71e1424d5b15cffe2ae9a82ccf3dbe11575"
+      }
+    ],
+    "validationTests": [
+      {
+        "path": "frontend/tests/manual-wallet-panel.test.mjs",
+        "sha256": "1c400c2b514e5a2093f3020894a647ac5b9625e81e69aa45144408e1ac990465"
+      },
+      {
+        "path": "frontend/tests/wallet-incident-workflow.test.mjs",
+        "sha256": "7807bfd6d6d42c5aa03c7375d39ad2550102f806422c83cedca38086858960ef"
+      }
+    ],
+    "backendTestsLocalCommit": "967f3c511260994bb61e51a4e0465d4407787328",
+    "backendTestsRawIndexCleanCheckoutMatches": 14
+  },
+  "adminReleasePayload": [
+    {
+      "path": "services/business-api/app/api/admin.py",
+      "effectiveSource": "services/business-api/app/api/admin.py",
+      "expectedSha256": "59bdc133c941f7b80085f6215406c9d4a6aec5809cd3729687041b860c8e569e",
+      "sourceHash": "59bdc133c941f7b80085f6215406c9d4a6aec5809cd3729687041b860c8e569e"
+    },
+    {
+      "path": "services/business-api/app/api/admin_report_contracts.py",
+      "effectiveSource": "services/business-api/app/api/admin_report_contracts.py",
+      "expectedSha256": "ecde8467205846364cecf04a70a15a2a81c94b18edc68d9fcf9c034397988354",
+      "sourceHash": "ecde8467205846364cecf04a70a15a2a81c94b18edc68d9fcf9c034397988354"
+    },
+    {
+      "path": "services/business-api/app/api/admin_session_boundary.py",
+      "effectiveSource": "services/business-api/app/api/admin_session_boundary.py",
+      "expectedSha256": "151f48c906a37389118b9e833ec22f88c8a9341c5f23d2cebeaad0c5c0bbf433",
+      "sourceHash": "151f48c906a37389118b9e833ec22f88c8a9341c5f23d2cebeaad0c5c0bbf433"
+    },
+    {
+      "path": "services/business-api/app/api/admin_wallet_owner_transfers.py",
+      "effectiveSource": "services/business-api/app/api/admin_wallet_owner_transfers.py",
+      "expectedSha256": "a3de9a28fccd3cc65815191ffd3a61f038a03d89c8fa72832612e7385eb6771d",
+      "sourceHash": "a3de9a28fccd3cc65815191ffd3a61f038a03d89c8fa72832612e7385eb6771d"
+    },
+    {
+      "path": "services/business-api/app/api/admin_wallet_repairs.py",
+      "effectiveSource": "services/business-api/app/api/admin_wallet_repairs.py",
+      "expectedSha256": "b3d88202e561b0e350b41bb128bac034edda7f2744fa278fbc9eaaa4f353a775",
+      "sourceHash": "b3d88202e561b0e350b41bb128bac034edda7f2744fa278fbc9eaaa4f353a775"
+    },
+    {
+      "path": "services/business-api/app/api/identity.py",
+      "effectiveSource": "services/business-api/app/api/identity.py",
+      "expectedSha256": "a11669d6ebb71829e66e85bd3b5e73ef53063c376bd0cc0d896b57529524e9a3",
+      "sourceHash": "a11669d6ebb71829e66e85bd3b5e73ef53063c376bd0cc0d896b57529524e9a3"
+    },
+    {
+      "path": "services/business-api/app/api/manual_wallet_handover.py",
+      "effectiveSource": "services/business-api/app/api/manual_wallet_handover.py",
+      "expectedSha256": "0c55a7cd0f0c0b99d5baf586e5d73a56947bffcb59ea5bc5d40733e95b799b7f",
+      "sourceHash": "0c55a7cd0f0c0b99d5baf586e5d73a56947bffcb59ea5bc5d40733e95b799b7f"
+    },
+    {
+      "path": "services/business-api/app/api/manual_wallet_operations.py",
+      "effectiveSource": "services/business-api/app/api/manual_wallet_operations.py",
+      "expectedSha256": "9e8963246e2d37b21c3d3f5589e58f8ce1a676091587b90bb51ac1c93ad5cb19",
+      "sourceHash": "9e8963246e2d37b21c3d3f5589e58f8ce1a676091587b90bb51ac1c93ad5cb19"
+    },
+    {
+      "path": "services/business-api/app/main.py",
+      "effectiveSource": "services/business-api/app/main.py",
+      "expectedSha256": "0052192197e08241e931da480e908dbce043eb5d5064f395c81cadbd4c72f528",
+      "sourceHash": "0052192197e08241e931da480e908dbce043eb5d5064f395c81cadbd4c72f528"
+    },
+    {
+      "path": "services/business-api/app/modules/admin/service.py",
+      "effectiveSource": "services/business-api/app/modules/admin/service.py",
+      "expectedSha256": "1f46c6a7687f18ea9c174167b39c1052ace492f8756d0ddf708204944c0cf9a8",
+      "sourceHash": "1f46c6a7687f18ea9c174167b39c1052ace492f8756d0ddf708204944c0cf9a8"
+    },
+    {
+      "path": "services/business-api/app/modules/admin/user_directory.py",
+      "effectiveSource": "services/business-api/app/modules/admin/user_directory.py",
+      "expectedSha256": "aa049221f79a0b8da97b2cf59856d5867addce8d7ef9f7e19e1aa8eadb9bd3ef",
+      "sourceHash": "aa049221f79a0b8da97b2cf59856d5867addce8d7ef9f7e19e1aa8eadb9bd3ef"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/models.py",
+      "effectiveSource": "services/business-api/app/modules/identity/models.py",
+      "expectedSha256": "5d5080683267f254eadf666c71eefb65e655923179cfd4e7e1cd359bb696156e",
+      "sourceHash": "5d5080683267f254eadf666c71eefb65e655923179cfd4e7e1cd359bb696156e"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/recovery.py",
+      "effectiveSource": "services/business-api/app/modules/identity/recovery.py",
+      "expectedSha256": "4452d0bf6568de893ac2e7c6b26932d2954d72750f66b4e059c1381380dd4281",
+      "sourceHash": "4452d0bf6568de893ac2e7c6b26932d2954d72750f66b4e059c1381380dd4281"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/staff_activation.py",
+      "effectiveSource": "services/business-api/app/modules/identity/staff_activation.py",
+      "expectedSha256": "4b5ebc44ee252d7bba721301c4065f7d44aba57ece52aa1d3b8fb028b2630703",
+      "sourceHash": "4b5ebc44ee252d7bba721301c4065f7d44aba57ece52aa1d3b8fb028b2630703"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/staff_password.py",
+      "effectiveSource": "services/business-api/app/modules/identity/staff_password.py",
+      "expectedSha256": "16cce9132745820841400aba3206e21d1a6ce1d6d2f4b279ae1c5921bf9235e0",
+      "sourceHash": "16cce9132745820841400aba3206e21d1a6ce1d6d2f4b279ae1c5921bf9235e0"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/tokens.py",
+      "effectiveSource": "services/business-api/app/modules/identity/tokens.py",
+      "expectedSha256": "7ee736fa02820781fbf66650bc33baf9058bb1ddd3c99a16bcb55949def454d0",
+      "sourceHash": "7ee736fa02820781fbf66650bc33baf9058bb1ddd3c99a16bcb55949def454d0"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/wallet_access.py",
+      "effectiveSource": "services/business-api/app/modules/identity/wallet_access.py",
+      "expectedSha256": "bef4bc65841f58f7dc73624691f016fb3d70941f2318512e5329bb99888e1e62",
+      "sourceHash": "bef4bc65841f58f7dc73624691f016fb3d70941f2318512e5329bb99888e1e62"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/wallet_grant.py",
+      "effectiveSource": "services/business-api/app/modules/identity/wallet_grant.py",
+      "expectedSha256": "b5fa06ffa38c937e785bbc3004cd4f4fca8f80af3fce314b83e029c1fcba09cf",
+      "sourceHash": "b5fa06ffa38c937e785bbc3004cd4f4fca8f80af3fce314b83e029c1fcba09cf"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/service.py",
+      "effectiveSource": "services/business-api/app/modules/ledger/service.py",
+      "expectedSha256": "9ddeb53be3f36599b770453fc0b5f3b3bb679ecbe818fc99a7efd8a2c72faf6b",
+      "sourceHash": "9ddeb53be3f36599b770453fc0b5f3b3bb679ecbe818fc99a7efd8a2c72faf6b"
+    },
+    {
+      "path": "services/business-api/app/modules/support/service.py",
+      "effectiveSource": "services/business-api/app/modules/support/service.py",
+      "expectedSha256": "3bc02eb89800516a6b91acaa886772adc314ea97de710fa0b49150331c4cb83f",
+      "sourceHash": "3bc02eb89800516a6b91acaa886772adc314ea97de710fa0b49150331c4cb83f"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0092_admin_session_entry_mode.py",
+      "effectiveSource": "services/business-api/migrations/versions/0092_admin_session_entry_mode.py",
+      "expectedSha256": "06e1b7fecea22900b065d0b8b0ba8e4c7e5168222ac284ff0560769adc568ad7",
+      "sourceHash": "06e1b7fecea22900b065d0b8b0ba8e4c7e5168222ac284ff0560769adc568ad7"
+    },
+    {
+      "path": "frontend/src/admin-login.js",
+      "effectiveSource": "frontend/src/admin-login.js",
+      "expectedSha256": "61beb45d7d2de485a787ed9ad5dc83e846b674dece7bb561efc108b1793a2aa9",
+      "sourceHash": "61beb45d7d2de485a787ed9ad5dc83e846b674dece7bb561efc108b1793a2aa9"
+    },
+    {
+      "path": "frontend/src/styles/admin-login.css",
+      "effectiveSource": "frontend/src/styles/admin-login.css",
+      "expectedSha256": "630d29ef8f0e2a8841819488f009cd071d480dc595b9ce84544eb550674ce551",
+      "sourceHash": "630d29ef8f0e2a8841819488f009cd071d480dc595b9ce84544eb550674ce551"
+    },
+    {
+      "path": "frontend/src/admin-staff-activation-dialog.js",
+      "effectiveSource": "frontend/src/admin-staff-activation-dialog.js",
+      "expectedSha256": "a375fd6f3837a62c8e55fe84dc4a4a94eabbb01311f95fc01ed1921284584134",
+      "sourceHash": "a375fd6f3837a62c8e55fe84dc4a4a94eabbb01311f95fc01ed1921284584134"
+    },
+    {
+      "path": "frontend/src/admin-staff-password-dialog.js",
+      "effectiveSource": "frontend/src/admin-staff-password-dialog.js",
+      "expectedSha256": "0f256b56389100d3daebd02a430e5ce3bf761f579898c621bdfeb7204e811677",
+      "sourceHash": "0f256b56389100d3daebd02a430e5ce3bf761f579898c621bdfeb7204e811677"
+    },
+    {
+      "path": "frontend/src/admin-session.js",
+      "effectiveSource": "frontend/src/admin-session.js",
+      "expectedSha256": "dc72ce58c48eb9427986ee4e41fb7aabb62a72bcebe8577992cd2292b7553355",
+      "sourceHash": "dc72ce58c48eb9427986ee4e41fb7aabb62a72bcebe8577992cd2292b7553355"
+    },
+    {
+      "path": "frontend/src/admin-dashboard.js",
+      "effectiveSource": "frontend/src/admin-dashboard.js",
+      "expectedSha256": "7ff031e6d63783fb634bb6084eb755a30ff8389145dca7adf63b92a0ded44033",
+      "sourceHash": "7ff031e6d63783fb634bb6084eb755a30ff8389145dca7adf63b92a0ded44033"
+    },
+    {
+      "path": "frontend/src/admin-home.js",
+      "effectiveSource": "frontend/src/admin-home.js",
+      "expectedSha256": "fd4e76b5f905bda79c531acd905cf867b64666c4355f73815ac392ad0963b0d9",
+      "sourceHash": "fd4e76b5f905bda79c531acd905cf867b64666c4355f73815ac392ad0963b0d9"
+    },
+    {
+      "path": "frontend/src/admin-user-directory.js",
+      "effectiveSource": "frontend/src/admin-user-directory.js",
+      "expectedSha256": "3bfc032cdebcdfb4605ea9563f8a44a61a298c286aa8adfe5e100d3331731119",
+      "sourceHash": "3bfc032cdebcdfb4605ea9563f8a44a61a298c286aa8adfe5e100d3331731119"
+    },
+    {
+      "path": "frontend/src/admin-api.js",
+      "effectiveSource": "frontend/src/admin-api.js",
+      "expectedSha256": "a9aad494f08689b41089b6f7d8a5b1018341a4f1117bb9e939a47e7eced4cd20",
+      "sourceHash": "a9aad494f08689b41089b6f7d8a5b1018341a4f1117bb9e939a47e7eced4cd20"
+    },
+    {
+      "path": "frontend/src/admin-wallet-access.js",
+      "effectiveSource": "frontend/src/admin-wallet-access.js",
+      "expectedSha256": "ab7b0f7f17aa857a00af22528a53a70cd94ec0422714b5137d22b474f4abd32c",
+      "sourceHash": "ab7b0f7f17aa857a00af22528a53a70cd94ec0422714b5137d22b474f4abd32c"
+    },
+    {
+      "path": "frontend/src/admin-manual-wallet-panel.js",
+      "effectiveSource": "frontend/src/admin-manual-wallet-panel.js",
+      "expectedSha256": "1b083e57934ca0e5c815480bad230e2fbc090ebe7f3c648274e8a79ba693a764",
+      "sourceHash": "1b083e57934ca0e5c815480bad230e2fbc090ebe7f3c648274e8a79ba693a764"
+    },
+    {
+      "path": "frontend/src/admin-chain-panel.js",
+      "effectiveSource": "frontend/src/admin-chain-panel.js",
+      "expectedSha256": "380a66b950042db9a7d92fbfc4831a81c86cc8c0a7c26fe380a57cee9becd6fd",
+      "sourceHash": "380a66b950042db9a7d92fbfc4831a81c86cc8c0a7c26fe380a57cee9becd6fd"
+    },
+    {
+      "path": "frontend/src/admin-wallet-repair-dialog.js",
+      "effectiveSource": "frontend/src/admin-wallet-repair-dialog.js",
+      "expectedSha256": "b929bb82d37ce475f425154e46bba47f9f7b9df9eadf24b0e33fd5cb40a1bdd6",
+      "sourceHash": "b929bb82d37ce475f425154e46bba47f9f7b9df9eadf24b0e33fd5cb40a1bdd6"
+    },
+    {
+      "path": "frontend/src/admin-manual-deposit-case.js",
+      "effectiveSource": "frontend/src/admin-manual-deposit-case.js",
+      "expectedSha256": "e2edf141edbe73463f93fbc843ce0ed8e9311aaa58b90076c4f8aec4754563da",
+      "sourceHash": "e2edf141edbe73463f93fbc843ce0ed8e9311aaa58b90076c4f8aec4754563da"
+    },
+    {
+      "path": "frontend/src/admin-login-scene.js",
+      "effectiveSource": "frontend/src/admin-login-scene.js",
+      "expectedSha256": "cc14b2f3e63924706ebcdb25c1e048a96ec0670eef589bf6ab237df6fc4c532b",
+      "sourceHash": "cc14b2f3e63924706ebcdb25c1e048a96ec0670eef589bf6ab237df6fc4c532b"
+    },
+    {
+      "path": "frontend/src/admin-loading.js",
+      "effectiveSource": "frontend/src/admin-loading.js",
+      "expectedSha256": "c36af0d39c4ccccea727d878afcb8f6d7c3de3d9939f4b13dc95c349a5b6a570",
+      "sourceHash": "c36af0d39c4ccccea727d878afcb8f6d7c3de3d9939f4b13dc95c349a5b6a570"
+    },
+    {
+      "path": "frontend/src/styles/tokens.css",
+      "effectiveSource": "docs/verification/artifacts/2026-09-28/admin-entry-release/static-overlay/src/styles/tokens.css",
+      "expectedSha256": "39bebda4b6b18452f79da5fc758bedc20a8b8bb453ff02ad489dfc88046e1853",
+      "sourceHash": "39bebda4b6b18452f79da5fc758bedc20a8b8bb453ff02ad489dfc88046e1853"
+    },
+    {
+      "path": "frontend/admin.html",
+      "effectiveSource": "frontend/admin.html",
+      "expectedSha256": "cd82dbf9813e9fe3b7805bbf5deed72fcd42c712629cdba143a3c5ef8c87923f",
+      "sourceHash": "cd82dbf9813e9fe3b7805bbf5deed72fcd42c712629cdba143a3c5ef8c87923f"
+    }
+  ],
+  "adminChangedTests": [
+    {
+      "path": "frontend/tests/admin-api.test.mjs",
+      "sha256": "80b3292766a37e81732abebdc7a42da97581e90c989a60a358f217e4bb8c01ae",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-chain-panel.test.mjs",
+      "sha256": "6b86237447dabde3e1a15308e350b226d3ddb7df5af458e4b708d722dd78beb1",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-dashboard.test.mjs",
+      "sha256": "5d745555108e4c51a741d9f7ab32b9f727860d90f6cb534fa11123f788bae6b4",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-loading.test.mjs",
+      "sha256": "83467d3d018611e25c255ac1032263a8805b4b7bb9f154cf4c3d8f5001d1fb9a",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-login.test.mjs",
+      "sha256": "2428ddc93c4899e7ac6be84bb884d0edfaac75805d6b759f4c1237fbe1ed5836",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-repair-entry.test.mjs",
+      "sha256": "a4d8498278a19ff261b7e0ffbbefb2ddfb022cea6e6ce51f2824fed1d53a267c",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-session.test.mjs",
+      "sha256": "25178a9684f76d7e6451f774a36230bd28380d75e27cee1e5813862a1a26bc64",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-staff-password.test.mjs",
+      "sha256": "366ef1237a3ebb67ea500801cfd66e159115678e94bb423706be861ffe80c8c9",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-user-directory.test.mjs",
+      "sha256": "904d1d03d73aa9afc4fbd02b905b0e9990552223d7ba5a8b01872133cef77c9f",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/admin-wallet-access.test.mjs",
+      "sha256": "25a1d18fe78c2d61043244b01e7b60be3aa23e6069a530e00ecd68aabe495cf3",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/home-ios-download.test.mjs",
+      "sha256": "436c687cfde94d98e9fe3d8e648a10b90d9e2e97a32c578315b50246ac7a1492",
+      "decision": "published-ios"
+    },
+    {
+      "path": "frontend/tests/manual-wallet-panel.test.mjs",
+      "sha256": "5de8f02d5f13802f05df84608f8e269e75899d183608112e7cd0a8280e604bd2",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "frontend/tests/wallet-incident-workflow.test.mjs",
+      "sha256": "7807bfd6d6d42c5aa03c7375d39ad2550102f806422c83cedca38086858960ef",
+      "decision": "published-t2"
+    },
+    {
+      "path": "tests/business_api/admin/test_support_role_concurrency.py",
+      "sha256": "59831c3835f4f6277587f297293e4ce367f8dd5ffffd708ed64a98316c9b2a55",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/admin/test_user_directory.py",
+      "sha256": "12749b6669e2c10ef57a7b440fd3f76432821edd3e0e6f73059edd1ba890de03",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/admin/test_wallet_owner_context.py",
+      "sha256": "348f64e4398a6283bd289ad431ef683added25c22b6bea4a10e3748428a8b34a",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/identity/test_profile_api.py",
+      "sha256": "067e4a313ca85a5c1248f7ca098b8a6f825a17a285924c0bf1254e5cc1d75024",
+      "decision": "baseline-identical"
+    },
+    {
+      "path": "tests/business_api/identity/test_registration.py",
+      "sha256": "59993ccc371d0f95c1568da475337ddfae0a68cf6f0466fd686d37f026c453a3",
+      "decision": "baseline-identical"
+    },
+    {
+      "path": "tests/business_api/identity/test_staff_activation.py",
+      "sha256": "04530aa2cac066e00462d35170b4f0c11815bf22ace71f0555bead75a0eb9ec8",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/identity/test_staff_login.py",
+      "sha256": "d656aff2595a0ddc36a107ad5979aa520ff3726792b759020e287af0e1eac8ce",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/identity/test_staff_password_app.py",
+      "sha256": "fb4e123949aabe5a93d40efa86b3a2f657ad83aed742a41aedf6ce4e8f04d0da",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/identity/test_staff_password.py",
+      "sha256": "6fb15ba44a54016589bc8f4938cb3fbdfe84fb840a2dec30476e52d6401cf428",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/identity/test_username_change.py",
+      "sha256": "eb38ae26985adbfcf1432b61ed677c1670d5e0867ad30d3621aa7e7c839d655a",
+      "decision": "baseline-identical"
+    },
+    {
+      "path": "tests/business_api/identity/test_wallet_access_app.py",
+      "sha256": "9e67a8952fd5ba0462416b69c843e7170680d06d16a4e0aa7fad056379aa6d42",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/identity/test_wallet_access_boundary.py",
+      "sha256": "1b79dc8bdc2a81c7091bce286b5e4daa79c6f275edf5c3677a6d86927a3f8921",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/identity/test_wallet_access_grant.py",
+      "sha256": "12eae85d856b2f1229e0e6f6af59b2ee2749fecba440cd91b656c0cb7f803d14",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/ledger/test_ledger.py",
+      "sha256": "87e8ebf1cf0b69f514203a58cd109e45efe11c78eed531eba8faeaa807c20108",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/media_storage/test_s3_avatar_cleanup.py",
+      "sha256": "0acb243c3b34e715c38df01f7d5047d968c8f276afc18480e402a1b2ba20986a",
+      "decision": "review-hold"
+    },
+    {
+      "path": "tests/business_api/media_storage/test_s3_integration.py",
+      "sha256": "3edb1220b8b3858dc772df85e8c546f3c7c74a93c0f139873be220c3a145e2a2",
+      "decision": "review-hold"
+    },
+    {
+      "path": "tests/business_api/media_storage/test_s3_storage.py",
+      "sha256": "ddebf72d0b1c9db279553335c5b41caf8b9d3da668ffe710386cae4f474100f5",
+      "decision": "review-hold"
+    },
+    {
+      "path": "tests/business_api/moments/test_moment_video_posters.py",
+      "sha256": "69e580f3f307b78594e003248374c06d85bf9d787d7bbd9054cac1018e2f656e",
+      "decision": "baseline-identical"
+    },
+    {
+      "path": "tests/business_api/test_admin_entry_live_baseline.py",
+      "sha256": "28ae37b6540566f1a364b039c4acad8f5d901dfc0819c4ab88196706d396b8e3",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/test_admin_repairs_full_app.py",
+      "sha256": "2b4b6945aaea09dfac204f41e0f8a0a3fd7f9c84de13182141653a514726bc37",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/test_client_diagnostics.py",
+      "sha256": "cbe570d75d80d42d977fe68a54891d832f8d23180d5a1cd0ce4066bef26b1fc9",
+      "decision": "restore-layer"
+    },
+    {
+      "path": "tests/business_api/test_manual_deposit_cases_full_app.py",
+      "sha256": "340f213af05d8857a477673532b997f70b807140301cd51a7196736cf5f73abc",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/test_migrations.py",
+      "sha256": "727c535e02cbe06cf529a4e1d4f76de06e85fdbd90fb5c9b0fb66f7017adddbd",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/test_user_search.py",
+      "sha256": "8515ac1d204446564bf3ced25fc6b98cb68b77f0e8b298eec9e5dba57d9446d9",
+      "decision": "unrelated-current-test-pass"
+    },
+    {
+      "path": "tests/business_api/test_wallet_release_baseline.py",
+      "sha256": "cb81ae45e379a1838b23f7adefe56c02114cb6284c9177069849c74e9db9e18c",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/wallet/test_admin_incident_reports.py",
+      "sha256": "ab56b31ac58343e16e76fd8ed78eb3257452f284f89476c76fb55b0985ee7217",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_deposit_receipts.py",
+      "sha256": "5a6cdfce1243986e7bd5f6e4430473ef8fcc665f8b987a99ca93ad7ad1b4cafa",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_independent_policy_controls.py",
+      "sha256": "eb34257ce681dc1ef37c01b1ab20596a7c943b527f7210687e7860245a480989",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_expired_resample.py",
+      "sha256": "2d1a240c5e9cf25a5db817a131801043e2f518944b38bd9d6ae97c5b007f7f6b",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_monitor_recovery.py",
+      "sha256": "3dd2499bcca4a46c16dd708081d52d3b3022933dbe621e43c3ce181ea7a9ed99",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_operations_api.py",
+      "sha256": "c888ccc55254331f9692a140b00b11b9a9f9065c91b89cc188764c314d12ef32",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_payouts.py",
+      "sha256": "6b9fba8eb70d84484bd3b7dacd314b6c65d5dfc27c9cadd6e9382cab4f74b3c8",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_reserve_monitor.py",
+      "sha256": "7ba52969f26cf8071b2973ec7c3bbabe10db73ea90c712f455ef6501f3a0c044",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_reserve_publish.py",
+      "sha256": "464014d43a97a2b1da467b67a5f4466bc391131a175973088791ddb0288411dc",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_reserve_cut_sample.py",
+      "sha256": "a2a1b36a787783ce7f6a07c865311ee97f7171642f099f94f0f0a2e206d756e1",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_support_payout.py",
+      "sha256": "e9dd99082a6c69f7b0f52b004e07043d1a1c10d652eb8e65952b91c0a69d6294",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_alert_t2.py",
+      "sha256": "8612c77ce82ffa4b24a6025f1ad5cfbe534def18912342e2f35356da88abace5",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_incident_transaction.py",
+      "sha256": "5c275819bd5c35f81347da62d0e383ca80abcbf830e2a0bf94d96575038fabe7",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_incidents.py",
+      "sha256": "48e0e16ac21c244ed538f2f0adc25d83647eda08ce5d7357cbd1eaa20be360ae",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_worker/test_admin_entry_avatar_baseline.py",
+      "sha256": "cceb1a84f332879931aea2e5334972529bb5f77999b0fe9c07ee49e0f762f105",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_worker/test_internal_publication.py",
+      "sha256": "bc9dad7e97a95d997136506d0da17b7e3f13430e44b97cb1ea5a48d355ab8ac8",
+      "decision": "published-worker-baseline"
+    },
+    {
+      "path": "tests/business_worker/test_staff_password_event.py",
+      "sha256": "928cc2f1ae85de5926560b3c03a0b485716f50a7a48f66fb433d4800f121f8b4",
+      "decision": "admin-candidate"
+    },
+    {
+      "path": "tests/business_worker/test_wallet_alert_email.py",
+      "sha256": "b33644a550d562fea787a18717a6d87c1f2eedcf8f2fb2a1fd099957df4dfe8f",
+      "decision": "published-t2-test"
+    },
+    {
+      "path": "tests/business_worker/test_wallet_operations_wiring.py",
+      "sha256": "224451fc5f1c5a321929c9aca997eb78d8c47522f2529bd687bb6f038c0c0061",
+      "decision": "unrelated-current-test-pass"
+    },
+    {
+      "path": "tests/business_worker/test_worker.py",
+      "sha256": "eb0a22d664903ce66e4ea87ca83826823e1bd7623fcb6bfeb04be5f6304b3ef3",
+      "decision": "unrelated-current-test-pass"
+    },
+    {
+      "path": "tests/infra/test_refresh_release_guards.py",
+      "sha256": "503d0e5643ede9846eb7c20dec858e19cec306e500ef05a100a2cd07220e48f1",
+      "decision": "baseline-identical"
+    }
+  ],
+  "excludedPaths": [
+    "tests/business_api/test_user_search.py",
+    "tests/business_worker/test_wallet_operations_wiring.py",
+    "tests/business_worker/test_worker.py"
+  ],
+  "reviewHoldPaths": [
+    "tests/business_api/media_storage/test_s3_avatar_cleanup.py",
+    "tests/business_api/media_storage/test_s3_integration.py",
+    "tests/business_api/media_storage/test_s3_storage.py"
+  ],
+  "auditUpdatedUtc": "2026-09-28T18:25:30Z",
+  "releaseDocumentation": {
+    "restoreAndGateLocalCommit": "b8b943b25e154e5aa065bce6cea73be7cfd6db8e",
+    "committedDocumentCount": 6,
+    "adminFinalRecordsPendingIntegration": false,
+    "finalDocumentationPaths": [
+      "docs/workflow/current-state.md",
+      "docs/workflow/tasks/2026-09-28-admin-entry-merge.md",
+      "docs/verification/2026-09-28-admin-entry-merge.md",
+      "docs/adr/2026-09-28-admin-entry-merge.md",
+      "docs/superpowers/plans/2026-09-28-admin-entry-merge.md",
+      "docs/superpowers/specs/2026-09-28-admin-entry-merge-design.md",
+      "docs/verification/2026-09-29-admin-git-integration-audit.md",
+      "docs/verification/2026-09-29-admin-git-integration-inventory.json"
+    ],
+    "finalEvidenceArtifactCount": 12,
+    "sourceQualityReview": "independent-recheck-passed-12-artifacts",
+    "relativeLinksInNewScope": "PASS; 16 older missing links remain in pre-existing current-state history",
+    "artifactRawIndexCleanCheckoutMatches": 12,
+    "artifactExactByteAttributes": [
+      "docs/verification/artifacts/2026-09-28/admin-entry-design/login-directions.html",
+      "docs/verification/artifacts/2026-09-28/admin-entry-release-v4/manifest.draft.json",
+      "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/frontend-full-final.log",
+      "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/business-worker-full-pass-2.log",
+      "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/business-api-full-pass-final.log",
+      "docs/verification/artifacts/2026-09-29/admin-entry-release-v8/production-result-evidence.json",
+      "docs/verification/artifacts/2026-09-29/admin-entry-release-v8/server-stage-evidence.json"
+    ]
+  },
+  "gitIntegrationAudit": {
+    "remoteMainObservedSha256": "971fb50d193ab1a34610bd7908c2dbf6272db431",
+    "remoteBranchExists": false,
+    "changedPathsFromBase": 179,
+    "allowlistedChangedPaths": 179,
+    "unexpectedChangedPaths": 0,
+    "repositoryPolicy": "PASS",
+    "deploymentPolicy": "PASS",
+    "frontendFullInGithubWorkflow": false,
+    "draftPullRequestStatus": "not-created",
+    "remoteMainLastObservedUtc": "2026-09-28T18:25:00Z"
+  },
+  "publishedI0": {
+    "localCommit": "f7e13a5338585d5a88241d8e65ada44694d23b9f",
+    "liveDownloadSha256": "4488a024ae32c4ca1b475b4d1baf104ac276966a64fe8df66e5c12756543d984",
+    "downloadPath": "frontend/download.html",
+    "validationTestPath": "frontend/tests/home-ios-download.test.mjs",
+    "validationTestSha256": "436c687cfde94d98e9fe3d8e648a10b90d9e2e97a32c578315b50246ac7a1492"
+  },
+  "bytePreservation": {
+    "localCommit": "512f4ad4226612f0d695a5babc55bc70e4a5ddcb",
+    "baselineVerifiedPaths": 72,
+    "baselineRawIndexCleanCheckoutMatches": 72,
+    "a1V6PayloadVerifiedPaths": 39,
+    "a1V6RawIndexCleanCheckoutMatches": 39
+  },
+  "adminV6Candidate": {
+    "releaseId": "admin-entry-merge-20260929-v6",
+    "manifestSha256": "bcc26e76029c17c1fa4d24ba5aa222b225126dffd80c93c3e6740fcf6abf5aa1",
+    "frozen": true,
+    "apiPayloadCount": 21,
+    "staticPayloadCount": 18,
+    "rawIndexCleanCheckoutMatches": 39,
+    "openApiContractSha256": "a6e95fb56393345b7b81cb879306078e40c2efa9779a1ebc219ca2cfdda84681",
+    "sourceCommitStatus": "working-tree-only"
+  },
+  "adminV8Comparison": {
+    "releaseId": "admin-entry-merge-20260929-v8",
+    "manifestSha256": "dc168f6aea06991e3c203109d7a577f51f7f20bb281a0cb86309d98a899fb63b",
+    "frozen": true,
+    "sameAfterSha256AsV6": 39,
+    "apiPayloadCount": 21,
+    "staticPayloadCount": 18,
+    "rawIndexCleanCheckoutMatchesWithGuardAndT2Workflow": 42,
+    "localCommit": "ad37b91411e8d0ddb6f1880235c80f598cab7231"
+  },
+  "integrationFocusedTests": {
+    "a1ApiPassed": 211,
+    "a1ApiSkipped": 4,
+    "a1ApiExitCode": 0,
+    "a1ApiLog": "docs/verification/artifacts/2026-09-29/admin-git-integration/a1-api-focused.log",
+    "t2ApiPassed": 366,
+    "t2ApiSkipped": 1,
+    "workerFullPassed": 200,
+    "frontendA1T2IosPassed": 153,
+    "legacyTestFocusedPassed": 22,
+    "integrationApiFull": "intentionally-interrupted-at-23-percent-not-a-pass",
+    "originalAdminApiFullPassed": 3032,
+    "originalAdminApiFullSkipped": 83,
+    "integrationInfraFullPassed": 210,
+    "frontendCssConflictFocusedPassed": 10,
+    "frontendCssConflictFocusedFailed": 5,
+    "frontendCssConflictFocusedExitCode": 1,
+    "frontendCssConflictFocusedLog": "docs/verification/artifacts/2026-09-29/admin-git-integration/frontend-css-conflict-focused.log",
+    "publishedWorkerEntrypointPassed": 1,
+    "publishedWorkerInternalPublicationPassed": 77,
+    "apiAuditAfterWorkerWriterPassed": 24
+  },
+  "a1TestPaths": [
+    "frontend/tests/admin-api.test.mjs",
+    "frontend/tests/admin-chain-panel.test.mjs",
+    "frontend/tests/admin-dashboard.test.mjs",
+    "frontend/tests/admin-loading.test.mjs",
+    "frontend/tests/admin-login.test.mjs",
+    "frontend/tests/admin-repair-entry.test.mjs",
+    "frontend/tests/admin-session.test.mjs",
+    "frontend/tests/admin-staff-password.test.mjs",
+    "frontend/tests/admin-user-directory.test.mjs",
+    "frontend/tests/admin-wallet-access.test.mjs",
+    "frontend/tests/manual-wallet-panel.test.mjs",
+    "tests/business_api/admin/test_support_role_concurrency.py",
+    "tests/business_api/admin/test_user_directory.py",
+    "tests/business_api/admin/test_wallet_owner_context.py",
+    "tests/business_api/identity/test_staff_activation.py",
+    "tests/business_api/identity/test_staff_login.py",
+    "tests/business_api/identity/test_staff_password_app.py",
+    "tests/business_api/identity/test_staff_password.py",
+    "tests/business_api/identity/test_wallet_access_app.py",
+    "tests/business_api/identity/test_wallet_access_boundary.py",
+    "tests/business_api/identity/test_wallet_access_grant.py",
+    "tests/business_api/ledger/test_ledger.py",
+    "tests/business_api/test_admin_entry_live_baseline.py",
+    "tests/business_api/test_admin_repairs_full_app.py",
+    "tests/business_api/test_manual_deposit_cases_full_app.py",
+    "tests/business_api/test_migrations.py",
+    "tests/business_api/test_wallet_release_baseline.py",
+    "tests/business_api/wallet/test_support_payout.py",
+    "tests/business_worker/test_admin_entry_avatar_baseline.py",
+    "tests/business_worker/test_staff_password_event.py"
+  ],
+  "t2BackendTestPaths": [
+    "tests/business_api/wallet/test_admin_incident_reports.py",
+    "tests/business_api/wallet/test_deposit_receipts.py",
+    "tests/business_api/wallet/test_independent_policy_controls.py",
+    "tests/business_api/wallet/test_manual_expired_resample.py",
+    "tests/business_api/wallet/test_manual_monitor_recovery.py",
+    "tests/business_api/wallet/test_manual_operations_api.py",
+    "tests/business_api/wallet/test_manual_payouts.py",
+    "tests/business_api/wallet/test_manual_reserve_monitor.py",
+    "tests/business_api/wallet/test_manual_reserve_publish.py",
+    "tests/business_api/wallet/test_reserve_cut_sample.py",
+    "tests/business_api/wallet/test_wallet_alert_t2.py",
+    "tests/business_api/wallet/test_wallet_incident_transaction.py",
+    "tests/business_api/wallet/test_wallet_incidents.py",
+    "tests/business_worker/test_wallet_alert_email.py"
+  ],
+  "publishedWorkerDependency": {
+    "localCommit": "b23d1a56e8a0e3541cc4a9696409f192e319dfb7",
+    "workerImageSha256": "3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf",
+    "productionWorkerMainSha256": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1",
+    "productionWorkerInternalPublicationSha256": "1e50d4b0bc09c9b7dd1a33c208dbc30c8795e870faf5cd8111189a1341325b2d",
+    "productionWorkerWriterSha256": "c3a109258bccdfe982953913c45c4f8e267a57ac1c43ead4ecd965784b8c940a",
+    "currentV8ApiImageWriterSha256": "afd549de3ff75076fad022ed651a5bd830cc90ed64d6ee84cb01db61a6c7b795",
+    "frozenV8PayloadContainsWriter": false,
+    "writerRawIndexCleanCheckoutMatchesProduction": true,
+    "handlerCount": 11,
+    "entrypointRedFailure": "ImportError: cannot import name INTERNAL_PUBLICATION_TOPICS",
+    "entrypointGreenPassed": 1,
+    "internalPublicationTestsPassed": 77,
+    "workerFullPassed": 200,
+    "apiAuditFocusedPassed": 24,
+    "paths": [
+      "services/business-api/app/modules/audit/writer.py",
+      "tests/business_worker/test_internal_publication.py",
+      "tests/business_worker/test_published_worker_entrypoint.py",
+      ".gitattributes"
+    ],
+    "futureApiImageRebuildNeedsSeparateGate": true
+  },
+  "documentationArtifacts": [
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-design/login-directions.html",
+      "bytes": 6999,
+      "sha256": "c073bab93c23f33788eb801cbccc0d6bce8f1f0a0573e73e351d2ea4d4458ed0",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-release-v4/manifest.draft.json",
+      "bytes": 13531,
+      "sha256": "eb590021aa724392334db6c4d3d03021f98f9cf008a7d5b7ad96a560249bf895",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/entry-mode-red-green.md",
+      "bytes": 3301,
+      "sha256": "c80d406ce7e0fbfd90437724059d4bfb9b44c866ace7c8b047cbcc7fd7a03230",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/domain-review-fixes.md",
+      "bytes": 1642,
+      "sha256": "12024c564958aa36383628b2d63c736cb9c45c3961fe3efe4bb1f71b436c922f",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/frontend-full-final.log",
+      "bytes": 31211,
+      "sha256": "13e44b514cb2efa087f8ecdbc4209670851e9bb43a531a4fcc90f204a732fd01",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/baseline-and-worker-gates.md",
+      "bytes": 4507,
+      "sha256": "2062e7c5986426e593498b1cbc5aafff002c57e0829db4e2b96edfbedaced892",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/business-worker-full-pass-2.log",
+      "bytes": 264,
+      "sha256": "33ee7d427cf069b3bd1f811de0b2fec70ab44373dd23edac9c56e44b2247b6e3",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/business-api-full-pass-final.log",
+      "bytes": 4134,
+      "sha256": "a203656d5a26579801ad70942277668e55327d661ac91219cf8d541c0a9a9e76",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-29/admin-entry-release-v8/production-result-evidence.json",
+      "bytes": 6526,
+      "sha256": "7822efd8075e82b8f6bbca89403ae16763a666bfb6cb9c91d2020ffb592803c3",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-29/admin-entry-release-v8/production-execution-handoff.md",
+      "bytes": 3669,
+      "sha256": "c5f623c3691eec1f907d8709f4f9645a92def99333a55f36938549d47ab19406",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-29/admin-entry-release-v8/README.md",
+      "bytes": 10001,
+      "sha256": "e878eb57af4bb941678f8de4096562f8661af5591d93dbf1a7ef4fac0079dab6",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    },
+    {
+      "path": "docs/verification/artifacts/2026-09-29/admin-entry-release-v8/server-stage-evidence.json",
+      "bytes": 3012,
+      "sha256": "e663f5d94887099541c5ce288ae585b1c7073bfba4b9eb4bdb10b98d1e60e566",
+      "sourceRawShaVerified": true,
+      "sensitiveValueScan": "PASS",
+      "rawIndexCleanCheckoutMatchesSource": true
+    }
+  ]
+}

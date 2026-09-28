@@ -1,5 +1,11 @@
 # 移动交付恢复索引
 
+## 2026-09-29 管理台 A1–A5：v8 已生产技术发布，真实账号验收待办
+
+用户先按获批的[独立恢复计划](../superpowers/plans/2026-09-28-restore-published-identity-moments.md)恢复资料审计和朋友圈现网回归，再按[管理台 ADR](../adr/2026-09-28-admin-entry-merge.md)及[双角色镜像门禁 ADR](../adr/2026-09-28-role-aware-refresh-image-gate.md)发布 A1–A5。独立 r2 于 2026-09-28 23:14:50 +08:00 发布 API `8015e963…`/schema 0091，已成为 v8 的冻结基线；v3 注册/朋友圈旧失败仅属 r2 前历史。v8 于 2026-09-29 01:40:24 +08:00 完成生产非破坏 0092 迁移，01:41:37 切换候选 API 并发布 18 静态，01:41:54 内部 verify exit 0。**当前生产** API `sha256:0bdf751c05015454781c24b66a0c5066ca08ce23436c232ff8aecd1ba5042993`、Worker 原 `sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf`、schema `0092_admin_session_entry_mode`；`download.html` 和其他 iOS 发布未纳入。
+
+管理台[任务台账](tasks/2026-09-28-admin-entry-merge.md)与[验证记录](../verification/2026-09-28-admin-entry-merge.md)截至 **2026-09-29 01:50 +08:00**：Business API 全量 **3032 passed/83 skipped**、Worker **199/199**、前端 **345/345**，v8 禁网 PG 克隆完成 0091→0092、兼容回退 readiness 与四组竞态，候选/兼容回退 API 各 9/9、Worker 8/8 门禁；迁移前管理会话 2 行，迁移后旧 NULL 2 行须重新登录。服务器与工作站严格 TLS JSON ready/未授权 401/18 静态 SHA 各两次 exit 0；其他 27 容器在相隔约 50 秒的两次检查中名称、ID、镜像与 StartedAt 均与备份基线相同，API/Worker healthy、重启 0、无新 Traceback/未归类 ERROR。独立技术发布复核 PASS，无未关闭 P0–P2；一次瞬时容器集合检查 exit 1 原因未证实，留作 P3 观测限制。[v8 去敏生产结果](../verification/artifacts/2026-09-29/admin-entry-release-v8/production-result-evidence.json)及[回退执行单](../verification/artifacts/2026-09-29/admin-entry-release-v8/production-execution-handoff.md)可复核 SHA、时间与 0092 兼容回退路径。**真实管理员/客服登录、双渠道重验、目录与钱包只读待授权产品会话验收；未做真实资金写入、邮件或短信。**
+
 ## 2026-09-26 TCP443 每分钟观测已安装，Release 网络失败暂存门禁通过
 
 本轮功能源码提交 `31efd61f`；Git发布/远端回读和本轮临时分支清理证据见任务工件，源码、探针/API部署与客户端安装状态分别记录。

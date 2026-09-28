@@ -56,3 +56,12 @@ frontend/admin.html text eol=lf
 
 # Reproduce the already-published Worker audit writer byte-for-byte.
 services/business-api/app/modules/audit/writer.py -text whitespace=cr-at-eol
+
+# Keep these reviewed release-evidence SHA values stable on every checkout.
+docs/verification/artifacts/2026-09-28/admin-entry-design/login-directions.html -text whitespace=cr-at-eol
+docs/verification/artifacts/2026-09-28/admin-entry-release-v4/manifest.draft.json -text whitespace=cr-at-eol
+docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/frontend-full-final.log -text whitespace=cr-at-eol
+docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/business-worker-full-pass-2.log -text whitespace=cr-at-eol
+docs/verification/artifacts/2026-09-28/admin-entry-rebase-r2/business-api-full-pass-final.log -text whitespace=cr-at-eol
+docs/verification/artifacts/2026-09-29/admin-entry-release-v8/production-result-evidence.json -text whitespace=cr-at-eol
+docs/verification/artifacts/2026-09-29/admin-entry-release-v8/server-stage-evidence.json -text whitespace=cr-at-eol
