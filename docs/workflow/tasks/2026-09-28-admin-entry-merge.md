@@ -7,7 +7,7 @@
 - 设计：`../../superpowers/specs/2026-09-28-admin-entry-merge-design.md`；ADR `../../adr/2026-09-28-admin-entry-merge.md`；计划 `../../superpowers/plans/2026-09-28-admin-entry-merge.md`。
 - 负责人及文件所有权：本任务使用 `C:\Users\Administrator\.codex\worktrees\admin-entry-merge\StarChat`；只拥有本任务设计、ADR、计划和后续清单内代码/测试/验证文件。主工作区和钱包 T2 工作树的未提交改动不纳入本任务。
 - Git 基线：`971fb50d193ab1a34610bd7908c2dbf6272db431`，创建时工作树清洁。
-- 最后更新：2026-09-28 17:02 +08:00。
+- 最后更新：2026-09-28 17:05 +08:00。
 - 下一条具体操作：完成 ADR 与计划的最终一致性检查并提交；请用户批准受保护变更，再按红绿测试实施。
 
 ## 验收台账
@@ -27,6 +27,8 @@
 | 后台/API 候选 | 尚未构建 | `971fb50d` 基线 | 无 | 设计文件与视觉草图见上 | 未发布 |
 
 基线测试：Node `admin-login`、`admin-user-panel`、`admin-wallet-access` 三文件，26 passed、exit 0。Python 首次以 `PYTHONPATH=services/business-api;services/business-worker` 运行 3 文件，54 passed/6 failed、exit 1，6 项均因 Worker `tasks`/`integrations` 导入路径错误；验证 Python 实际 `sys.path` 后改为 `services/business-api;services/business-worker/app`，同三文件 60 passed、exit 0、81.47 秒。两次执行均未修改功能源码，后一次为有效基线。
+
+17:05 +08 只读跳板 Probe 通过。`docker ps` 显示 API/Worker 均 healthy；`docker inspect --format '{{.Image}} {{.Created}}'` 读出当前 API `sha256:2b847ef70e0257f4ba52e663812112d7664016ff427d454c32630da1b0c89a63`（容器 08:05:17 UTC 创建）、Worker `sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf`（06:14:06 UTC 创建）。API 已不同于本日钱包 T2 发布记录的 `c1191a...`，实施时须重定精确当前生产基线；目前未写入或改动服务器。
 
 ## 阶段计时
 
