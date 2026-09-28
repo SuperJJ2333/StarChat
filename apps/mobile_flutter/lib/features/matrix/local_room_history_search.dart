@@ -95,6 +95,7 @@ final class LocalRoomHistorySearch {
     }
 
     var visited = 0;
+    var scannedPages = 0;
     final sliceClock = Stopwatch()..start();
     bool sliceFull() =>
         visited >= 1024 ||
@@ -130,6 +131,7 @@ final class LocalRoomHistorySearch {
             page = await snapshot.pageByIds(roomId, pageIds, readByIds!);
           }
           check();
+          scannedPages++;
           state.offset += page.length;
           state.buffer = page;
           state.index = 0;
@@ -194,6 +196,8 @@ final class LocalRoomHistorySearch {
       return ChatSearchSlice(
           items: found,
           coverageIncomplete: _coverageIncomplete,
+          scannedPages: scannedPages,
+          scannedRows: visited,
           nextCursor: _sources.values.every((s) => s.done && s.head == null)
               ? null
               : ChatSearchCursor(order: _page, eventId: 'local:$_generation'));

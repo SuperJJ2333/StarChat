@@ -48,6 +48,43 @@ void main() {
         expect(await ids.page(0, 2), ['e3', 'e2']);
         await store(4);
         expect(await ids.page(2, 2), ['e1', 'e0']);
+        final originalFragment = (await raw.query('box_timeline_fragments'))
+            .singleWhere((row) =>
+                (jsonDecode(row['v'] as String) as List).contains('e2'));
+        final originalIds =
+            (jsonDecode(originalFragment['v'] as String) as List)
+                .cast<String>();
+        Future<void> replaceFragment(List<String> values) async {
+          await raw.update('box_timeline_fragments', {'v': jsonEncode(values)},
+              where: 'k = ?', whereArgs: [originalFragment['k']]);
+          await db.open();
+        }
+
+        final inserted = await db.openSearchEventIds(room, maxBytes: 8);
+        try {
+          expect(await inserted.page(0, 2), ['e4', 'e3']);
+          await replaceFragment([
+            ...originalIds.take(3),
+            'interior-insert',
+            ...originalIds.skip(3)
+          ]);
+          await expectLater(inserted.page(2, 2),
+              throwsA(isA<MatrixSearchSnapshotInvalidated>()));
+        } finally {
+          inserted.dispose();
+          await replaceFragment(originalIds);
+        }
+
+        final deleted = await db.openSearchEventIds(room, maxBytes: 8);
+        try {
+          expect(await deleted.page(0, 2), ['e4', 'e3']);
+          await replaceFragment(originalIds.where((id) => id != 'e1').toList());
+          await expectLater(deleted.page(2, 2),
+              throwsA(isA<MatrixSearchSnapshotInvalidated>()));
+        } finally {
+          deleted.dispose();
+          await replaceFragment(originalIds);
+        }
         final stored = await raw.query('box_events');
         final missing = stored.singleWhere(
             (r) => (jsonDecode(r['v'] as String) as Map)['event_id'] == 'e2');

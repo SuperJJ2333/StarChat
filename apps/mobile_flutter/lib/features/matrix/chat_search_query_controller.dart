@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../core/performance_trace.dart';
+
 /// 聊天记录搜索查询控制器（规格 #4/#5）：默认空态、AND 组合筛选、
 /// 300ms 防抖、稳定游标分页、事件去重、安全高亮、匹配范围规则。
 ///
@@ -14,8 +16,10 @@ final class ChatSearchQueryController {
     required this.search,
     this.searchBatch,
     ChatSearchClock? clock,
+    PerformanceTraceRecorder? traceRecorder,
     this.debounce = const Duration(milliseconds: 300),
-  }) : _clock = clock ?? RealChatSearchClock();
+  })  : _clock = clock ?? RealChatSearchClock(),
+        _traceRecorder = traceRecorder ?? PerformanceTraceRecorder.instance;
 
   /// 数据源检索回调（已解密、可访问、未撤回的消息流；按时间新→旧）。
   final Future<List<ChatSearchMessage>> Function(ChatSearchFilters filters,
@@ -27,10 +31,60 @@ final class ChatSearchQueryController {
   void invalidate() {
     _epoch++;
     cancelDebounce();
+    _cancelHistoryTrace();
   }
 
   final ChatSearchClock _clock;
+  final PerformanceTraceRecorder _traceRecorder;
+  PerformanceTrace? _historyTrace;
+  int _historyStartedMs = 0;
   final Duration debounce;
+
+  void _cancelHistoryTrace([PerformanceSearchCancelReason? reason]) {
+    final trace = _historyTrace;
+    if (trace == null) return;
+    _historyTrace = null;
+    trace.searchCancelReason = reason;
+    trace.finish(result: PerformanceResult.cancelled);
+  }
+
+  PerformanceTrace _startHistoryTrace() {
+    final trace = _traceRecorder.start(PerformanceOperationType.historySearch)
+      ..mark(PerformanceStage.searchScanStarted);
+    _historyTrace = trace;
+    _historyStartedMs = _traceRecorder.monotonicMs;
+    return trace;
+  }
+
+  int _historyElapsedMs() => (_traceRecorder.monotonicMs - _historyStartedMs)
+      .clamp(0, 3600000)
+      .toInt();
+
+  void _recordHistoryPage(PerformanceTrace trace, ChatSearchSlice? slice,
+      List<ChatSearchMessage> page, ChatSearchCursor? nextCursor) {
+    if (!identical(_historyTrace, trace)) return;
+    trace.scanPageCount =
+        ((trace.scanPageCount ?? 0) + (slice?.scannedPages ?? 1))
+            .clamp(0, 100000)
+            .toInt();
+    if (slice != null) {
+      trace.scanRowCount = ((trace.scanRowCount ?? 0) + slice.scannedRows)
+          .clamp(0, 10000000)
+          .toInt();
+    }
+    if (page.isNotEmpty && trace.firstHitMs == null) {
+      trace.firstHitMs = _historyElapsedMs();
+      trace.mark(PerformanceStage.searchFirstHit);
+    }
+    if (nextCursor == null) {
+      if (!(slice?.coverageIncomplete ?? false)) {
+        trace.fullCoverageMs = _historyElapsedMs();
+        trace.mark(PerformanceStage.searchCoverageComplete);
+      }
+      _historyTrace = null;
+      trace.finish();
+    }
+  }
 
   /// 注入时钟（测试用；生产为真实时钟）。
   ChatSearchClock get clock => _clock;
@@ -73,18 +127,21 @@ final class ChatSearchQueryController {
 
   void setKeyword(String keyword) {
     if (_keyword == keyword) return;
+    _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
     _keyword = keyword;
     _epoch++; // 条件变更 → 旧请求失效。
   }
 
   void setSender(String? userId) {
     if (_senderUserId == userId) return;
+    _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
     _senderUserId = userId;
     _epoch++;
   }
 
   void setMediaCategory(ChatSearchMediaCategory? category) {
     if (_mediaCategory == category) return;
+    _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
     _mediaCategory = category;
     _epoch++;
   }
@@ -92,18 +149,21 @@ final class ChatSearchQueryController {
   bool removeFilter(ChatSearchFilterKind kind) => switch (kind) {
         ChatSearchFilterKind.keyword => () {
             if (_keyword.trim().isEmpty) return false;
+            _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
             _keyword = '';
             _epoch++;
             return true;
           }(),
         ChatSearchFilterKind.sender => () {
             if (_senderUserId == null) return false;
+            _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
             _senderUserId = null;
             _epoch++;
             return true;
           }(),
         ChatSearchFilterKind.media => () {
             if (_mediaCategory == null) return false;
+            _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
             _mediaCategory = null;
             _epoch++;
             return true;
@@ -112,6 +172,7 @@ final class ChatSearchQueryController {
 
   void clearAll() {
     if (isDefaultEmptyState) return;
+    _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
     _keyword = '';
     _senderUserId = null;
     _mediaCategory = null;
@@ -179,6 +240,7 @@ final class ChatSearchQueryController {
       _completePendingDebounce();
     }
     // 不可变条件快照 + 本次查询的 epoch。
+    _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
     final epoch = ++_epoch;
     executedQueries = epoch;
     final filters = ChatSearchFilters(
@@ -192,6 +254,7 @@ final class ChatSearchQueryController {
           items: const [], nextCursor: null, epoch: epoch);
     }
     onStateChange?.call(ChatSearchStateChange.loading(epoch));
+    final trace = _startHistoryTrace();
     try {
       final slice = searchBatch == null
           ? null
@@ -211,9 +274,14 @@ final class ChatSearchQueryController {
         epoch: epoch,
         coverageIncomplete: slice?.coverageIncomplete ?? false,
       );
+      _recordHistoryPage(trace, slice, result.items, result.nextCursor);
       onStateChange?.call(ChatSearchStateChange.loaded(result));
       return result;
     } catch (_) {
+      if (identical(_historyTrace, trace)) {
+        _historyTrace = null;
+        trace.finish(result: PerformanceResult.failed);
+      }
       if (epoch == _epoch) {
         onStateChange?.call(ChatSearchStateChange.failed(epoch));
       }
@@ -231,17 +299,32 @@ final class ChatSearchQueryController {
     final cursor = current.nextCursor;
     if (cursor == null) return current;
     final epoch = current.epoch;
+    if (epoch != _epoch) {
+      return ChatSearchResultPage(
+          items: current.items, nextCursor: cursor, epoch: epoch, stale: true);
+    }
+    final trace = _historyTrace ?? _startHistoryTrace();
     // 快照当前条件（loadMore 期间条件可能被修改）。
     final filters = ChatSearchFilters(
       keyword: hasKeywordInput ? _keyword.trim() : null,
       senderUserId: _senderUserId,
       mediaCategory: _mediaCategory,
     );
-    final slice = searchBatch == null
-        ? null
-        : await searchBatch!(filters, cursor: cursor, limit: limit);
-    final more =
-        slice?.items ?? await search(filters, cursor: cursor, limit: limit);
+    ChatSearchSlice? slice;
+    late final List<ChatSearchMessage> more;
+    try {
+      slice = searchBatch == null
+          ? null
+          : await searchBatch!(filters, cursor: cursor, limit: limit);
+      more =
+          slice?.items ?? await search(filters, cursor: cursor, limit: limit);
+    } catch (_) {
+      if (identical(_historyTrace, trace)) {
+        _historyTrace = null;
+        trace.finish(result: PerformanceResult.failed);
+      }
+      rethrow;
+    }
     // R10：翻页期间条件变更（epoch 推进）→ stale，不合并到有效结果。
     if (epoch != _epoch) {
       return ChatSearchResultPage(
@@ -253,9 +336,14 @@ final class ChatSearchQueryController {
     if (nextCursor != null &&
         nextCursor.order == cursor.order &&
         nextCursor.eventId == cursor.eventId) {
+      if (identical(_historyTrace, trace)) {
+        _historyTrace = null;
+        trace.finish(result: PerformanceResult.failed);
+      }
       throw StateError('Local search continuation did not advance');
     }
     final merged = dedupeByEventId([...current.items, ...more]);
+    _recordHistoryPage(trace, slice, more, nextCursor);
     return ChatSearchResultPage(
       items: merged,
       nextCursor: nextCursor,
@@ -391,10 +479,16 @@ final class ChatSearchSlice {
   const ChatSearchSlice(
       {required this.items,
       required this.nextCursor,
-      this.coverageIncomplete = false});
+      this.coverageIncomplete = false,
+      this.scannedPages = 0,
+      this.scannedRows = 0});
   final List<ChatSearchMessage> items;
   final ChatSearchCursor? nextCursor;
   final bool coverageIncomplete;
+
+  /// Logical local history pages and rows examined in this bounded slice.
+  final int scannedPages;
+  final int scannedRows;
 }
 
 final class ChatSearchResultPage {

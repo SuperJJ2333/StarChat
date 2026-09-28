@@ -74,7 +74,11 @@ final class MatrixSearchEventIds {
     final first = _first!, last = _last!;
     final firstIndex = current.indexOf(first);
     final lastIndex = current.lastIndexOf(last);
-    if (firstIndex < 0 || lastIndex < firstIndex) {
+    // New heads may precede the captured first ID, but a changed span means
+    // that this bounded snapshot can no longer preserve its original rows.
+    if (firstIndex < 0 ||
+        lastIndex < firstIndex ||
+        lastIndex - firstIndex + 1 != _length) {
       throw const MatrixSearchSnapshotInvalidated();
     }
     final start = offset == 0
