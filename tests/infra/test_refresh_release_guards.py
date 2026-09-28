@@ -1,5 +1,7 @@
 import importlib.util
+import os
 from pathlib import Path
+import subprocess
 import sys
 import json
 import hashlib
@@ -142,7 +144,7 @@ def test_compose_image_mismatch_rejected_before_freeze(tmp_path, monkeypatch):
     (tmp_path/'images.json').write_text(json.dumps({'api':image,'worker':image}))
     monkeypatch.setattr(guard.subprocess,'run',lambda *a,**k: SimpleNamespace(stdout=json.dumps(
         {'services':{'business-api':{'image':'sha256:'+'b'*64}}})))
-    monkeypatch.setattr(guard,'verify_image',lambda _: pytest.fail('No image test after mismatch'))
+    monkeypatch.setattr(guard,'verify_image',lambda *_: pytest.fail('No image test after mismatch'))
     with pytest.raises(ValueError,match='mismatch'):
         guard.freeze_release(tmp_path,'candidate')
     assert not list(tmp_path.glob('guarded-*'))
@@ -157,7 +159,7 @@ def test_freeze_keeps_the_checked_config_when_original_changes(tmp_path, monkeyp
         role='worker' if 'worker' in args[5] else 'api'
         return SimpleNamespace(stdout=json.dumps({'services':{'business-'+role:config['services']['business-api']}}))
     monkeypatch.setattr(guard.subprocess,'run',render)
-    def check(_):
+    def check(_, role):
         config['services']['business-api']['image']='sha256:'+'b'*64
         return {'passed':True}
     monkeypatch.setattr(guard,'verify_image',check)
@@ -173,7 +175,8 @@ def test_install_restore_is_repeatable_and_rejects_later_drift(tmp_path, monkeyp
     backup=tmp_path/'backup'
     backup.mkdir()
     (backup/'0').write_bytes(b'old')
-    sha=lambda b:hashlib.sha256(b).hexdigest()
+    def sha(value):
+        return hashlib.sha256(value).hexdigest()
     manifest={'files':{str(target):{'existed':True,'backup':'0','old_sha256':sha(b'old'),
         'new_sha256':sha(b'new'),'old_mode':0o600}},'timer':{'is-enabled':'enabled','is-active':'active'}}
     (backup/'manifest.json').write_text(json.dumps(manifest))
@@ -206,3 +209,162 @@ def test_release_requires_both_roles_before_docker(tmp_path, monkeypatch, roles)
     monkeypatch.setattr(guard.subprocess,'run',lambda *a,**k: pytest.fail('No Docker with incomplete roles'))
     with pytest.raises(ValueError,match='roles'):
         guard.freeze_release(tmp_path,'rollback')
+
+
+def test_check_cli_requires_explicit_image_roles(monkeypatch, capsys):
+    guard = load('business_release_guard')
+    api = 'sha256:' + 'a' * 64
+    worker = 'sha256:' + 'b' * 64
+    observed = []
+    monkeypatch.setattr(guard, 'verify_image', lambda image, role: observed.append((role, image)) or
+                        {'role': role, 'image': image, 'passed': True})
+    monkeypatch.setattr(sys, 'argv', ['guard', 'check', '--api-image', api, '--worker-image', worker])
+    guard.main()
+    assert observed == [('api', api), ('worker', worker)]
+    assert all(item['passed'] for item in json.loads(capsys.readouterr().out))
+
+
+def test_check_cli_rejects_missing_worker_before_docker(monkeypatch, capsys):
+    guard = load('business_release_guard')
+    image = 'sha256:' + 'a' * 64
+    monkeypatch.setattr(guard, 'verify_image', lambda *_: pytest.fail('No partial image gate'))
+    monkeypatch.setattr(sys, 'argv', ['guard', 'check', '--api-image', image])
+    with pytest.raises(SystemExit) as exit_status:
+        guard.main()
+    assert exit_status.value.code == 1
+    assert json.loads(capsys.readouterr().out)['passed'] is False
+
+
+def test_image_probe_uses_role_and_exact_evidence(monkeypatch):
+    guard = load('business_release_guard')
+    image = 'sha256:' + 'a' * 64
+    probe = load('business_refresh_image_probe')
+    events = []
+
+    def run(command, **_kwargs):
+        if command[:3] == ['docker', 'rm', '-f']:
+            return SimpleNamespace(returncode=0, stdout='')
+        events.append(command)
+        role = next(value.split('=', 1)[1] for value in command if value.startswith('STARCHAT_PROTOCOL_ROLE='))
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            'protocol': probe.PROTOCOLS[role], 'role': role, 'passed': True,
+            'checks': list(probe.EXPECTED_CHECKS[role])}) + '\n')
+
+    monkeypatch.setattr(guard.subprocess, 'run', run)
+    assert guard.verify_image(image, 'api')['role'] == 'api'
+    assert guard.verify_image(image, 'worker')['role'] == 'worker'
+    assert len(events) == 2
+    assert all('--network' in command and 'none' in command and '--read-only' in command
+               and '--cap-drop' in command and 'ALL' in command for command in events)
+
+
+def test_image_probe_rejects_missing_worker_assertion(monkeypatch):
+    guard = load('business_release_guard')
+    probe = load('business_refresh_image_probe')
+    image = 'sha256:' + 'a' * 64
+
+    def run(command, **_kwargs):
+        if command[:3] == ['docker', 'rm', '-f']:
+            return SimpleNamespace(returncode=0, stdout='')
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            'protocol': probe.PROTOCOLS['worker'], 'role': 'worker', 'passed': True,
+            'checks': list(probe.EXPECTED_CHECKS['worker'])[:-1]}) + '\n')
+
+    monkeypatch.setattr(guard.subprocess, 'run', run)
+    with pytest.raises(ValueError, match='Incomplete'):
+        guard.verify_image(image, 'worker')
+
+
+def test_freeze_checks_api_and_worker_even_with_same_digest(tmp_path, monkeypatch):
+    guard = load('business_release_guard')
+    image = 'sha256:' + 'a' * 64
+    (tmp_path / 'images.json').write_text(json.dumps({'api': image, 'worker': image}))
+    observed = []
+
+    def run(command, **_kwargs):
+        if command[-3:] == ['config', '--format', 'json']:
+            role = 'worker' if 'worker' in command[command.index('-f') + 1] else 'api'
+            return SimpleNamespace(stdout=json.dumps({'services': {'business-' + role: {'image': image}}}))
+        pytest.fail('Unexpected Docker command')
+
+    monkeypatch.setattr(guard.subprocess, 'run', run)
+    monkeypatch.setattr(guard, 'verify_image', lambda checked_image, role:
+                        observed.append((role, checked_image)) or {'passed': True, 'role': role})
+    result = guard.freeze_release(tmp_path, 'candidate')
+    assert observed == [('api', image), ('worker', image)]
+    assert [proof['role'] for proof in result['proofs']] == ['api', 'worker']
+
+
+def test_switch_proves_both_compose_roles_before_selected_up(tmp_path, monkeypatch):
+    guard = load('business_release_guard')
+    image = 'sha256:' + 'a' * 64
+    events = []
+
+    def run(command, **_kwargs):
+        if command[-3:] == ['config', '--format', 'json']:
+            return SimpleNamespace(stdout=json.dumps({'services': {
+                'business-api': {'image': image}, 'business-worker': {'image': image}}}))
+        if 'up' in command:
+            events.append(('up', command))
+            return SimpleNamespace(returncode=0)
+        pytest.fail('Unexpected Docker command')
+
+    monkeypatch.setattr(guard.subprocess, 'run', run)
+    monkeypatch.setattr(guard.tempfile, 'mkdtemp', lambda **_kw: str(tmp_path))
+    monkeypatch.setattr(guard, 'verify_image', lambda checked_image, role:
+                        events.append(('check', role, checked_image)) or
+                        {'passed': True, 'role': role, 'image': checked_image})
+    result = guard.switch(['candidate-api.json', 'candidate-worker.json'], ['business-api'], 'deploy')
+    assert events[:2] == [('check', 'api', image), ('check', 'worker', image)]
+    assert events[2][0] == 'up'
+    assert result['switched'] == ['business-api']
+    assert set(json.loads((tmp_path / 'compose.json').read_text())['services']) == {
+        'business-api', 'business-worker'}
+
+
+def test_switch_rejects_missing_worker_compose_before_up(monkeypatch):
+    guard = load('business_release_guard')
+    image = 'sha256:' + 'a' * 64
+    monkeypatch.setattr(guard.subprocess, 'run', lambda *_args, **_kw: SimpleNamespace(
+        stdout=json.dumps({'services': {'business-api': {'image': image}}})))
+    monkeypatch.setattr(guard, 'verify_image', lambda *_: pytest.fail('No partial image gate'))
+    with pytest.raises(ValueError, match='Both business'):
+        guard.switch(['candidate-api.json'], ['business-api'], 'deploy')
+
+
+def test_worker_probe_runs_runtime_event_and_refresh_checks_locally():
+    probe = ROOT / 'scripts' / 'business_refresh_image_probe.py'
+    worker = ROOT / 'services' / 'business-worker' / 'app'
+    package = ROOT / 'services' / 'business-api' / 'app'
+    code = ('import json, runpy, sys; '
+            'probe=runpy.run_path(sys.argv[1]); '
+            'print(json.dumps(probe["verify_worker"](sys.argv[2],sys.argv[3])))')
+    environment = dict(os.environ, PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
+    result = subprocess.run([sys.executable, '-c', code, str(probe), str(worker), str(package)],
+                            capture_output=True, text=True, timeout=60, env=environment)
+    assert result.returncode == 0, result.stderr[-2000:]
+    proof = json.loads(result.stdout.splitlines()[-1])
+    assert proof['passed'] is True and proof['role'] == 'worker'
+    assert proof['checks'] == [
+        'worker_runtime_imports', 'worker_event_wiring', 'worker_credential_event_boundary',
+        'worker_t2_manual_source_advisory',
+        'worker_refresh_same_result_no_expiry_extension', 'worker_refresh_superseded_result',
+        'worker_refresh_mismatched_replay_revokes', 'worker_refresh_legacy_rotation']
+
+
+def test_api_probe_preserves_nine_asgi_checks_locally():
+    probe = ROOT / 'scripts' / 'business_refresh_image_probe.py'
+    api = ROOT / 'services' / 'business-api'
+    code = ('import asyncio, json, runpy, sys; '
+            'probe=runpy.run_path(sys.argv[1]); '
+            'print(json.dumps(asyncio.run(probe["verify_api"]())))')
+    environment = dict(os.environ, PYTHONPATH=str(api), PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
+    result = subprocess.run([sys.executable, '-c', code, str(probe)],
+                            capture_output=True, text=True, timeout=60, env=environment)
+    assert result.returncode == 0, result.stderr[-2000:]
+    proof = json.loads(result.stdout.splitlines()[-1])
+    assert proof['passed'] is True and proof['role'] == 'api'
+    assert proof['checks'] == [
+        'expired_access_then_refresh', 'safe_validation', 'same_result_no_expiry_extension',
+        'business_access', 'superseded_result', 'logout_isolation_and_revocation',
+        'mismatched_replay_revokes', 'legacy_rotation', 'admin_domain_and_cookie_boundary']

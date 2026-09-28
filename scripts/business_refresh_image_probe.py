@@ -3,12 +3,25 @@ import asyncio
 import base64
 from datetime import datetime, timedelta, timezone
 import json
+import os
+from pathlib import Path
 import sys
 
-sys.path.insert(0, '/opt/business-api')
+
+PROTOCOLS = {'api': 'mobile-refresh-recovery-v1', 'worker': 'worker-runtime-refresh-v1'}
+EXPECTED_CHECKS = {
+    'api': ['expired_access_then_refresh', 'safe_validation', 'same_result_no_expiry_extension',
+        'business_access', 'superseded_result', 'logout_isolation_and_revocation',
+        'mismatched_replay_revokes', 'legacy_rotation', 'admin_domain_and_cookie_boundary'],
+    'worker': ['worker_runtime_imports', 'worker_event_wiring', 'worker_credential_event_boundary',
+        'worker_t2_manual_source_advisory',
+        'worker_refresh_same_result_no_expiry_extension', 'worker_refresh_superseded_result',
+        'worker_refresh_mismatched_replay_revokes', 'worker_refresh_legacy_rotation'],
+}
 
 
-async def verify():
+async def verify_api():
+    sys.path.insert(0, '/opt/business-api')
     from httpx import ASGITransport, AsyncClient
     import jwt
     from sqlalchemy import create_engine, select
@@ -106,13 +119,186 @@ async def verify():
         assert standard.status_code == 200, 'admin_cookie_flow_changed'
         checks.append('admin_domain_and_cookie_boundary')
     engine.dispose()
-    return {'protocol':'mobile-refresh-recovery-v1', 'passed':True, 'checks':checks}
+    if checks != EXPECTED_CHECKS['api']:
+        raise AssertionError('api proof incomplete')
+    return {'protocol':PROTOCOLS['api'], 'role':'api', 'passed':True, 'checks':checks}
+
+
+def verify_worker(worker_root='/opt/business-worker/app',
+                  package_root='/usr/local/lib/python3.12/site-packages/app'):
+    """Probe the imports used by the Worker entrypoint, not its stale API tree."""
+    worker_root = Path(worker_root).resolve(strict=True)
+    package_root = Path(package_root).resolve(strict=True)
+    sys.path.insert(0, str(package_root.parent))
+    sys.path.insert(0, str(worker_root))
+
+    import app
+    import main
+    from app.core.database import Base, create_session_factory
+    from app.core.errors import AppError
+    from app.core.outbox import OutboxMessage
+    from app.modules.identity.enums import AccountStatus
+    from app.modules.identity.models import RefreshToken, RefreshTokenFamily, User
+    from app.modules.identity.tokens import TokenService
+    from app.integrations.tron.funding_source import FundingSourceError
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.pool import StaticPool
+    from tasks import identity
+    from tasks import wallet_alert_email
+    import app.modules.wallet.manual_reserve_monitor as reserve_module
+
+    def origin(module, expected):
+        if Path(module.__file__).resolve() != expected:
+            raise AssertionError('worker import origin')
+
+    origin(app, package_root / '__init__.py')
+    origin(main, worker_root / 'main.py')
+    origin(identity, worker_root / 'tasks' / 'identity.py')
+    import app.modules.identity.tokens as token_module
+    origin(token_module, package_root / 'modules' / 'identity' / 'tokens.py')
+    origin(reserve_module, package_root / 'modules' / 'wallet' / 'manual_reserve_monitor.py')
+    origin(wallet_alert_email, worker_root / 'tasks' / 'wallet_alert_email.py')
+    checks = ['worker_runtime_imports']
+
+    handlers = main.build_identity_handlers(session_factory=None,
+        verification_secret='isolated-verification-secret',
+        public_base_url='https://example.invalid', email_sender=object())
+    handler = handlers.get('identity.account_credentials')
+    if not isinstance(handler, identity.AccountCredentialsObservationTask):
+        raise AssertionError('worker event wiring')
+    checks.append('worker_event_wiring')
+    safe = OutboxMessage('isolated-event', 'identity.account_credentials',
+        'identity.password.reset', 'user', 'isolated-user',
+        {'user_id':'isolated-user', 'reason_code':'PASSWORD_RESET'}, {}, 1)
+    handler(safe)
+    for payload in (
+        {'user_id':'isolated-user', 'reason_code':'PASSWORD_RESET', 'password':'isolated'},
+        {'user_id':'isolated-user', 'reason_code':'PASSWORD_RESET', 'email':'isolated@example.invalid'},
+        {'user_id':'other', 'reason_code':'PASSWORD_RESET'},
+        {'user_id':'isolated-user', 'reason_code':'EMAIL_BINDING'},
+    ):
+        unsafe = OutboxMessage('isolated-event', 'identity.account_credentials',
+            'identity.password.reset', 'user', 'isolated-user', payload, {}, 1)
+        try:
+            handler(unsafe)
+        except ValueError as error:
+            if str(error) != 'ACCOUNT_CREDENTIALS_EVENT_INVALID':
+                raise AssertionError('worker event rejection') from None
+        else:
+            raise AssertionError('worker accepted unsafe event')
+    checks.append('worker_credential_event_boundary')
+
+    observed = []
+    class IsolatedIncidentSink:
+        def observe_in_session(self, _session, incidents, *, actor_id, complete):
+            observed.append((incidents, actor_id, complete))
+
+    monitor = object.__new__(reserve_module.ManualReserveMonitor)
+    monitor.incidents = IsolatedIncidentSink()
+    monitor._heartbeat = lambda _session, _now, code: observed.append(('heartbeat', code))
+    original_pause = reserve_module.apply_manual_pause
+    def reject_pause(*_args, **_kwargs):
+        raise AssertionError('T2 must not pause wallet')
+    reserve_module.apply_manual_pause = reject_pause
+    try:
+        if (not reserve_module.ManualReserveMonitor._is_source_read_budget_expired(
+                FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')) or
+                reserve_module.ManualReserveMonitor._is_source_read_budget_expired(
+                    FundingSourceError('OTHER_SOURCE_FAILURE')) or
+                reserve_module.ManualReserveMonitor._is_source_read_budget_expired(
+                    ValueError('SOURCE_READ_BUDGET_EXPIRED'))):
+            raise AssertionError('T2 source classification')
+        blocked = monitor._block(object(), 'MANUAL_SOURCE_UNAVAILABLE',
+                                 datetime.now(timezone.utc), source_read_timeout=True)
+    finally:
+        reserve_module.apply_manual_pause = original_pause
+    if (blocked != {'complete':False, 'status':'BLOCKED',
+                    'codes':['MANUAL_SOURCE_UNAVAILABLE']} or len(observed) != 2 or
+            observed[0][0][0].get('severity') != 'T2' or
+            observed[0][0][0].get('code') != 'MANUAL_SOURCE_UNAVAILABLE' or
+            observed[0][2] is not False or observed[1] != ('heartbeat', 'MANUAL_SOURCE_UNAVAILABLE')):
+        raise AssertionError('T2 advisory incident semantics')
+    checks.append('worker_t2_manual_source_advisory')
+
+    engine = create_engine('sqlite+pysqlite:///:memory:',
+        connect_args={'check_same_thread':False}, poolclass=StaticPool)
+    try:
+        Base.metadata.create_all(engine)
+        factory = create_session_factory(engine)
+        now = datetime.now(timezone.utc)
+        with factory.begin() as session:
+            session.add(User(id='isolated-user', username='isolated',
+                username_normalized='isolated', email='isolated@example.invalid',
+                email_normalized='isolated@example.invalid', password_hash='isolated-only',
+                status=AccountStatus.ACTIVE, email_verified_at=now,
+                created_at=now, updated_at=now))
+        tokens = TokenService(factory, jwt_secret='isolated-worker-gate-secret-over-thirty-two-bytes',
+            jwt_issuer='isolated-worker-gate', now_factory=lambda: now)
+        operation = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip('=')
+        other = base64.urlsafe_b64encode(bytes(range(1, 33))).decode().rstrip('=')
+
+        def issue():
+            return tokens.issue_pair(user_id='isolated-user', device_key='isolated-device',
+                display_name='Isolated device')
+
+        def expect_code(call, code):
+            try:
+                call()
+            except AppError as error:
+                if error.code != code:
+                    raise AssertionError('worker refresh error code') from None
+            else:
+                raise AssertionError('worker refresh accepted replay')
+
+        parent = issue()
+        child = tokens.rotate(parent.refresh_token, operation_id=operation)
+        with factory() as session:
+            before = [(record.id, record.expires_at) for record in session.scalars(select(RefreshToken))]
+        retry = tokens.rotate(parent.refresh_token, operation_id=operation)
+        if retry.refresh_token != child.refresh_token:
+            raise AssertionError('worker refresh result changed')
+        with factory() as session:
+            after = [(record.id, record.expires_at) for record in session.scalars(select(RefreshToken))]
+        if after != before:
+            raise AssertionError('worker refresh expiry extended')
+        checks.append('worker_refresh_same_result_no_expiry_extension')
+
+        current = tokens.rotate(child.refresh_token, operation_id=other)
+        expect_code(lambda: tokens.rotate(parent.refresh_token, operation_id=operation),
+                    'REFRESH_RESULT_SUPERSEDED')
+        with factory() as session:
+            if session.get(RefreshTokenFamily, current.family_id).revoked_at is not None:
+                raise AssertionError('worker refresh superseded family revoked')
+        checks.append('worker_refresh_superseded_result')
+
+        parent = issue()
+        tokens.rotate(parent.refresh_token, operation_id=operation)
+        expect_code(lambda: tokens.rotate(parent.refresh_token, operation_id=other),
+                    'REFRESH_TOKEN_REUSED')
+        with factory() as session:
+            if session.get(RefreshTokenFamily, parent.family_id).revoke_reason != 'TOKEN_REUSE':
+                raise AssertionError('worker refresh replay family not revoked')
+        checks.append('worker_refresh_mismatched_replay_revokes')
+
+        parent = issue()
+        tokens.rotate(parent.refresh_token)
+        expect_code(lambda: tokens.rotate(parent.refresh_token), 'REFRESH_TOKEN_REUSED')
+        checks.append('worker_refresh_legacy_rotation')
+    finally:
+        engine.dispose()
+    if checks != EXPECTED_CHECKS['worker']:
+        raise AssertionError('worker proof incomplete')
+    return {'protocol':PROTOCOLS['worker'], 'role':'worker', 'passed':True, 'checks':checks}
 
 
 if __name__ == '__main__':
     try:
-        print(json.dumps(asyncio.run(verify())))
+        role = os.environ['STARCHAT_PROTOCOL_ROLE']
+        proof = asyncio.run(verify_api()) if role == 'api' else verify_worker() if role == 'worker' else None
+        if proof is None:
+            raise ValueError('unknown image role')
+        print(json.dumps(proof))
     except Exception:
         # No traceback, response, token, credential hash or environment output.
-        print(json.dumps({'protocol':'mobile-refresh-recovery-v1', 'passed':False}))
+        print(json.dumps({'passed':False}))
         sys.exit(1)
