@@ -299,8 +299,17 @@ void main() {
           'content': {'redacts': r'$encrypted'},
         });
         await fixture.store(encrypted(), type: EventUpdateType.history);
+        await fixture.store(_message(r'$older'), type: EventUpdateType.history);
       });
+      expect(
+          (await fixture.database.getEventList(fixture.room))
+              .map((event) => event.eventId),
+          [r'$recall', r'$encrypted', r'$older']);
       await fixture.reopen();
+      expect(
+          (await fixture.database.getEventList(fixture.room))
+              .map((event) => event.eventId),
+          [r'$recall', r'$encrypted', r'$older']);
       final event =
           await fixture.database.getEventById(r'$encrypted', fixture.room);
       expect(event!.redacted, isTrue);

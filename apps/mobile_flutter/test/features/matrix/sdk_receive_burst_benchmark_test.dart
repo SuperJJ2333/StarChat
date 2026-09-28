@@ -63,8 +63,8 @@ void main() {
         expect(events.map((event) => event.eventId), expectedIds);
         expect(events.map((event) => event.eventId).toSet().length,
             expectedIds.length);
-        expect(counter.timelineFragmentWrites, burstIds.length);
-        expect(counter.serializedBytes, greaterThan(finalListBytes));
+        expect(counter.timelineFragmentWrites, 1);
+        expect(counter.serializedBytes, finalListBytes);
 
         final writesBeforeReplay = counter.timelineFragmentWrites;
         await database.transaction(() async {
@@ -96,6 +96,46 @@ void main() {
         };
         debugPrint(jsonEncode(measurement));
 
+        // A single native batch may touch several rooms. Coalescing must be
+        // scoped to each fragment key, rather than retaining only the final
+        // room's fragment.
+        const otherRoomId = '!receive-burst-other:synthetic';
+        final otherRoom = Room(id: otherRoomId, client: client);
+        final nextPrimaryIds = List.generate(3, (index) => '\$next-$index');
+        final otherIds = List.generate(3, (index) => '\$other-$index');
+        counter.reset();
+        await database.transaction(() async {
+          for (var index = 0; index < nextPrimaryIds.length; index++) {
+            for (final (roomId, eventId) in [
+              (_roomId, nextPrimaryIds[index]),
+              (otherRoomId, otherIds[index]),
+            ]) {
+              await database.storeEventUpdate(
+                  EventUpdate(
+                      roomID: roomId,
+                      type: EventUpdateType.timeline,
+                      content: _eventSource(eventId, '@sender:synthetic',
+                          historySize + 100 + index)),
+                  client);
+            }
+          }
+        });
+        expect(counter.writesByKey, {
+          '$_roomId|': 1,
+          '$otherRoomId|': 1,
+        });
+        final finalPrimaryIds = <String>[
+          ...nextPrimaryIds.reversed,
+          ...expectedIds,
+        ];
+        expect(
+            (await database.getEventList(room)).map((event) => event.eventId),
+            finalPrimaryIds);
+        expect(
+            (await database.getEventList(otherRoom))
+                .map((event) => event.eventId),
+            otherIds.reversed);
+
         await database.close();
         databaseClosed = true;
         final reopened = MatrixSdkDatabase(path,
@@ -105,7 +145,11 @@ void main() {
         try {
           expect(
               (await reopened.getEventList(room)).map((event) => event.eventId),
-              expectedIds);
+              finalPrimaryIds);
+          expect(
+              (await reopened.getEventList(otherRoom))
+                  .map((event) => event.eventId),
+              otherIds.reversed);
         } finally {
           await reopened.close();
         }
@@ -156,6 +200,7 @@ Future<void> _bulkSeed(Database raw, List<String> eventIds) async {
 class _TimelineFragmentWriteCounter {
   int timelineFragmentWrites = 0;
   int serializedBytes = 0;
+  final writesByKey = <String, int>{};
 
   void record(String table, Map<String, Object?> values) {
     if (table != _timelineTable) return;
@@ -163,11 +208,14 @@ class _TimelineFragmentWriteCounter {
     if (value is! String) return;
     timelineFragmentWrites++;
     serializedBytes += utf8.encode(value).length;
+    final key = values['k'] as String;
+    writesByKey.update(key, (count) => count + 1, ifAbsent: () => 1);
   }
 
   void reset() {
     timelineFragmentWrites = 0;
     serializedBytes = 0;
+    writesByKey.clear();
   }
 }
 

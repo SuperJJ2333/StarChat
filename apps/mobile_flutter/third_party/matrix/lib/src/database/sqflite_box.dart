@@ -8,6 +8,8 @@ import 'package:matrix/src/database/zone_transaction_mixin.dart';
 /// Key-Value store abstraction over Sqflite so that the sdk database can use
 /// a single interface for all platforms. API is inspired by Hive.
 class BoxCollection with ZoneTransactionMixin {
+  static const _timelineFragmentsBoxName = 'box_timeline_fragments';
+
   final Database _db;
   final Set<String> boxNames;
   final String name;
@@ -48,6 +50,7 @@ class BoxCollection with ZoneTransactionMixin {
   Batch? _activeBatch;
   bool _batchPoisoned = false;
   final _cacheInvalidators = <void Function()>[];
+  final _pendingTimelinePuts = <String, void Function()>{};
 
   Future<void> transaction(
     Future<void> Function() action, {
@@ -71,6 +74,9 @@ class BoxCollection with ZoneTransactionMixin {
           if (_batchPoisoned) {
             throw StateError('Nested database action failed');
           }
+          for (final put in _pendingTimelinePuts.values) {
+            put();
+          }
           await batch.commit(noResult: true);
         } catch (_) {
           for (final invalidate in _cacheInvalidators) {
@@ -80,6 +86,7 @@ class BoxCollection with ZoneTransactionMixin {
         } finally {
           _activeBatch = null;
           _batchPoisoned = false;
+          _pendingTimelinePuts.clear();
         }
       });
 
@@ -183,6 +190,12 @@ class Box<V> {
 
     final result = await executor.query(name, columns: ['k']);
     final keys = result.map((row) => row['k'] as String).toList();
+    if (name == BoxCollection._timelineFragmentsBoxName) {
+      final knownKeys = keys.toSet();
+      for (final key in boxCollection._pendingTimelinePuts.keys) {
+        if (knownKeys.add(key)) keys.add(key);
+      }
+    }
 
     _cachedKeys = keys.toSet();
     return keys;
@@ -247,6 +260,13 @@ class Box<V> {
     final resultMap = Map<String, V?>.fromEntries(
       result.map((row) => MapEntry(row['k'] as String, _fromString(row['v']))),
     );
+    if (name == BoxCollection._timelineFragmentsBoxName) {
+      for (final key in keys) {
+        if (boxCollection._pendingTimelinePuts.containsKey(key)) {
+          resultMap[key] = _cache[key];
+        }
+      }
+    }
 
     // We want to make sure that they values are returnd in the exact same
     // order than the given keys. That's why we do this instead of just return
@@ -260,6 +280,19 @@ class Box<V> {
 
   Future<void> put(String key, V val) async {
     final txn = boxCollection._activeBatch;
+
+    if (txn != null && name == BoxCollection._timelineFragmentsBoxName) {
+      // Keep the final list in memory during the transaction. Encoding and
+      // SQLite replacement happen once per fragment just before commit.
+      boxCollection._pendingTimelinePuts[key] = () => txn.insert(
+            name,
+            {'k': key, 'v': _toString(val)},
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+      _cache[key] = val;
+      _cachedKeys?.add(key);
+      return;
+    }
 
     final params = {
       'k': key,
@@ -286,6 +319,9 @@ class Box<V> {
 
   Future<void> delete(String key, [Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
+    if (txn != null && name == BoxCollection._timelineFragmentsBoxName) {
+      boxCollection._pendingTimelinePuts.remove(key);
+    }
 
     if (txn == null) {
       await boxCollection._db.delete(name, where: 'k = ?', whereArgs: [key]);
@@ -302,6 +338,11 @@ class Box<V> {
 
   Future<void> deleteAll(List<String> keys, [Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
+    if (txn != null && name == BoxCollection._timelineFragmentsBoxName) {
+      for (final key in keys) {
+        boxCollection._pendingTimelinePuts.remove(key);
+      }
+    }
 
     final placeholder = keys.map((_) => '?').join(',');
     if (txn == null) {
@@ -327,6 +368,9 @@ class Box<V> {
 
   Future<void> clear([Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
+    if (txn != null && name == BoxCollection._timelineFragmentsBoxName) {
+      boxCollection._pendingTimelinePuts.clear();
+    }
 
     if (txn == null) {
       await boxCollection._db.delete(name);
