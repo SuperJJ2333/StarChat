@@ -136,7 +136,7 @@ if all(present):
         raise ValueError('Inconsistent calibrated duration')
 ```
 
-- [ ] **Step 4: Regenerate and verify.** Run `python scripts/export_openapi.py`; then `python scripts/export_openapi.py --check` and `python -m pytest tests/business_api/test_client_diagnostics.py tests/business_api/test_openapi_contract.py -q`. Both checks must pass; never manually edit generated YAML. Commit the receiver, tests, and YAML as `feat(diagnostics): accept bounded UI phases and calibrated time`.
+- [ ] **Step 4: Generate and verify against the actual service baseline.** If the shared service source exactly matches the current production image, run `python scripts/export_openapi.py`, `python scripts/export_openapi.py --check`, and the receiver/OpenAPI tests; never manually edit generated YAML. For this implementation, production moved to API image `8015…` with poster routes and 0091 while the shared source still predates it. Use the isolated `candidate-8015-tree`, `make_snapshot_openapi.py --check`, and `check_candidate.py` described in the candidate report; prove 326 paths/351 route pairs and only the diagnostics request-body change. Keep the tracked shared OpenAPI unchanged until a separate production-source baseline sync, since regenerating it now would delete published routes. Run receiver tests with `PYTHONPATH=candidate-8015-tree` and commit only the diagnostic source/test changes.
 
 ### Task 3: Five-minute in-memory Date anchor and bounded Flutter wire
 
@@ -259,13 +259,17 @@ batch = model_type.model_validate({key: value for key, value in raw.items() if k
 
 - [ ] **Step 1: Add runbook rules.** Document: exact current handle to immutable user ID; dedicated HMAC current/previous secret stored only in private production configuration; previous key retained read-only for the surviving log window, then retired; interactive restricted server lookup; no public query/bulk export; generic output excludes refs; Docker 20 MiB × 10 rotation and 168-hour maximum query; direct UUID versus estimated UTC correlation, 5-minute anchor expiry and uncertainty; account/device pseudonyms are still sensitive operational metadata and need the same restricted access as diagnostic logs. Document that changing a handle does not change historical subject ref, that old handle lookup is unavailable without separately authorized account audit, and that anonymous startup diagnostics cannot be attributed to an account.
 
-- [ ] **Step 2: Record staged deployment order.** First stage and verify private triage/collectors capable of old and new envelopes, without exporting raw logs. Provision the new diagnostic HMAC key in private production configuration and verify the rollback image can retain that key; never echo or store it in Git. Build and verify the server candidate, then request the separate service deployment approval required by `docs/runbooks/app-release-deployment.md` before replacing production. After receiver health/auth/rate-limit/anonymous checks, ship the Android client candidate. A new client against an older server must use the Task 3 one-time 422 fallback. No database migration is needed. iOS distribution is outside this Android-specific diagnostic task.
+- [ ] **Step 2: Record staged deployment order.** First stage and verify private triage/collectors capable of old and new envelopes, without exporting raw logs. Provision the new diagnostic HMAC key only in the root-only candidate production configuration; preserve the exact old API image and its existing configuration as the rollback pair, and never echo or store the key in Git. Build and verify the API candidate from the current production image, including final-image refresh protocol, 326-route/poster contract, diagnostic auth, and an isolated production `Settings()` key preflight. Freeze candidate and rollback API/worker image+Compose pairs through the current refresh guard, then request the separate service deployment approval required by `docs/runbooks/app-release-deployment.md` before replacing production. After receiver health/auth/rate-limit/anonymous checks, ship the Android client candidate. A new client against an older server must use the Task 3 one-time 422 fallback. No database migration is needed. iOS distribution is outside this Android-specific diagnostic task.
 
 - [ ] **Step 3: Run final focused and required gates.** From the restored 2190-based worktree, run:
 
 ```powershell
-python -m pytest tests/business_api/test_diagnostic_identity.py tests/business_api/test_client_diagnostics.py tests/business_api/test_openapi_contract.py tests/infra/test_diagnostic_account_query.py tests/infra/test_client_diagnostics_triage.py tests/infra/test_network_collection.py tests/infra/test_network_request_collection.py -q
-python scripts/export_openapi.py --check
+$artifact = Join-Path (Get-Location) 'docs/verification/artifacts/2026-09-28/chat-search-jank'
+$env:PYTHONPATH = Join-Path $artifact 'candidate-8015-tree'
+python -m pytest tests/business_api/test_diagnostic_identity.py tests/business_api/test_client_diagnostics.py tests/business_api/test_diagnostic_time_wire.py tests/business_api/test_network_diagnostics.py tests/business_api/test_network_request_diagnostics.py tests/infra/test_diagnostic_account_query.py tests/infra/test_client_diagnostics_triage.py tests/infra/test_network_collection.py tests/infra/test_network_request_collection.py -q
+python (Join-Path $artifact 'make_snapshot_openapi.py') --check
+python (Join-Path $artifact 'check_candidate.py')
+python (Join-Path $artifact 'check_restricted_ops_bundle.py')
 Push-Location apps/mobile_flutter
 flutter test --no-pub test/core/diagnostic_time_anchor_test.dart test/performance/performance_trace_upload_test.dart test/performance/performance_trace_test.dart test/core/chat_diagnostics_spool_test.dart test/core/business_api_diagnostics_test.dart
 flutter analyze --no-pub
@@ -273,7 +277,7 @@ Pop-Location
 git diff --check
 ```
 
-The expected outcome is zero failures, a clean OpenAPI check, and no whitespace errors. Preflight the environment for `pwsh -NoProfile -File scripts/verify.ps1`; run it once if inputs changed and required dependencies are available. Reuse an equivalent completed gate only when its source/dependency/tool hashes match under the mobile delivery runbook. Record any environment block or platform gap explicitly; do not call it a pass.
+The expected outcome is zero failures, an isolated 8015 candidate contract check, and no whitespace errors. The tracked shared OpenAPI is not an input for this service candidate. Preflight the environment for `pwsh -NoProfile -File scripts/verify.ps1`; run it once if inputs changed and required dependencies are available. Reuse an equivalent completed gate only when its source/dependency/tool hashes match under the mobile delivery runbook. Record any environment block or platform gap explicitly; do not call it a pass.
 
 - [ ] **Step 4: Complete acceptance evidence and reviews.** Record red/green commands, source hashes, payload size and loss behavior, exact-handle/no-enumeration proof, rotation lookup, invalid/expired token denial, device/session binding, generic export redaction, offline delayed upload classification, log coverage, old server compatibility, and version/platform/sample counts. Conduct specification-compliance review before quality/security review. Verify on an Android simulator using synthetic account/operation data, then request Redmi K80 evidence to make a real-device latency claim; do not infer that concurrent network errors caused keyboard jank merely because windows overlap. Commit the docs/evidence separately as `docs(diagnostics): document private correlation and limits`.
 
@@ -283,4 +287,5 @@ The expected outcome is zero failures, a clean OpenAPI check, and no whitespace 
 - [ ] The server derives refs only after authentication; current handle lookup is exact and private; production requires a dedicated secret.
 - [ ] The anonymous startup endpoint stays anonymous; old clients and old log lines still work; new clients fall back once on older receiver 422.
 - [ ] Generic triage/network exports strip refs; private output reports actual log coverage and uncertainty, not a claimed seven-day completeness or causal diagnosis.
+- [ ] Time overlap is confined to a validated same-device ref; direct request UUID wins; `docker logs --timestamps` and the root-only maintenance TTY/stdin workflow are tested with the matching candidate DTO source.
 - [ ] The companion search/room plan owns hot-path instrumentation; this plan supplies its tested wire and time-anchor contract without concurrent edits to shared files.
