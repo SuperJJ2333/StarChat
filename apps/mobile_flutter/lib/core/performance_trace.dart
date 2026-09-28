@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:uuid/uuid.dart';
 
 import 'chat_diagnostics.dart';
+import 'diagnostic_time_anchor.dart';
 import 'performance_metrics.dart';
 import 'performance_trace_model.dart';
 
@@ -57,6 +58,7 @@ final class PerformanceTraceRecorder {
   PerformanceTraceRecorder({
     PerformanceMetrics? metrics,
     int Function()? clockUs,
+    DiagnosticTimeAnchor? timeAnchor,
     int Function()? frameClockUs,
     PerformanceFrameCounts Function()? frameCounts,
     int Function()? sessionGeneration,
@@ -69,6 +71,7 @@ final class PerformanceTraceRecorder {
     this.automaticObservations = false,
   })  : metrics = metrics ?? PerformanceMetrics.instance,
         _clockUs = clockUs ?? _defaultClockUs,
+        _timeAnchor = timeAnchor ?? DiagnosticTimeAnchor(),
         _frameClockUs = frameClockUs ?? _defaultFrameClockUs,
         _frameCounts = frameCounts ??
             (() => (metrics ?? PerformanceMetrics.instance).frameCounts),
@@ -106,6 +109,8 @@ final class PerformanceTraceRecorder {
 
   final PerformanceMetrics metrics;
   final int Function() _clockUs;
+  final DiagnosticTimeAnchor _timeAnchor;
+  int? _anchorSessionGeneration;
   final int Function() _frameClockUs;
   final PerformanceFrameCounts Function() _frameCounts;
   final int Function()? _sessionGeneration;
@@ -123,6 +128,29 @@ final class PerformanceTraceRecorder {
   PerformanceLifecycle lifecycle = PerformanceLifecycle.unknown;
   int get activeCount => _active.length;
   int get pendingFrameAttributionCount => _pendingFrames.length;
+  int get monotonicMs => _clockUs() ~/ 1000;
+
+  void _syncAnchorSession() {
+    final generation = _sessionGeneration?.call();
+    if (generation != _anchorSessionGeneration) {
+      _timeAnchor.reset();
+      _anchorSessionGeneration = generation;
+    }
+  }
+
+  bool observeAuthenticatedResponseDate(
+    String? dateHeader, {
+    required int sentAtMs,
+    required int receivedAtMs,
+  }) {
+    _syncAnchorSession();
+    return _timeAnchor.observe(
+      dateHeader: dateHeader,
+      sentAtMs: sentAtMs,
+      receivedAtMs: receivedAtMs,
+    );
+  }
+
   bool get diagnosticsEnabled => _enabled();
   bool get recordingEnabled =>
       diagnosticsEnabled && _active.length < activeCapacity;
@@ -156,6 +184,7 @@ final class PerformanceTraceRecorder {
     PerformanceEndpointCategory? endpointCategory,
     PerformanceHttpMethod? httpMethod,
   }) {
+    _syncAnchorSession();
     final enabled = diagnosticsEnabled &&
         (correlationContext == null ||
             (identical(correlationContext._recorder, this) &&
@@ -711,7 +740,9 @@ final class PerformanceTrace {
   }) {
     final completed = _finished;
     if (completed != null) return completed;
-    final elapsed = _recorder._clockUs() - _startedUs;
+    final completedUs = _recorder._clockUs();
+    final elapsed = completedUs - _startedUs;
+    _recorder._syncAnchorSession();
     final frameEndedUs =
         _frameStartedUs == null ? null : _recorder._frameClockUs();
     final canEmit = _recording &&
@@ -749,6 +780,10 @@ final class PerformanceTrace {
       hardRestartCount: hardRestartCount,
       syncErrorCount: syncErrorCount,
       timelineEventCount: timelineEventCount,
+      utcWindow: _recorder._timeAnchor.window(
+        _startedUs ~/ 1000,
+        completedUs ~/ 1000,
+      ),
       searchRestartReason: searchRestartReason,
       searchCancelReason: searchCancelReason,
       keyboardDirection: keyboardDirection,

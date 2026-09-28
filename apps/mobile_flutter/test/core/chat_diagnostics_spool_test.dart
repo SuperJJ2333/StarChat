@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics_spool_store.dart'
     show restoreDiagnosticOperation;
+import 'package:liuhetong_mobile/core/diagnostic_time_anchor.dart';
 import 'package:liuhetong_mobile/core/performance_trace_model.dart';
 
 class DelayedStore implements ChatDiagnosticSpoolStore {
@@ -70,12 +71,26 @@ void main() {
       lifecycle: PerformanceLifecycle.foreground,
       frames: const PerformanceFrameCounts(),
       timelineEventCount: 14,
+      utcWindow: const DiagnosticUtcWindow(
+        startedAtUtc: '2026-09-28T08:00:00Z',
+        endedAtUtc: '2026-09-28T08:00:00.100Z',
+        clockUncertaintyMs: 1000,
+        timeAnchorAgeMs: 1000,
+      ),
     );
     final restoredSync = restoreDiagnosticOperation({
       ...sync.toJson(),
       'frames_total': 0,
     });
     expect(restoredSync?.toJson()['timeline_event_count'], 14);
+    expect(restoredSync?.toJson()['started_at_utc'], '2026-09-28T08:00:00Z');
+    expect(
+        restoreDiagnosticOperation({
+          ...sync.toJson(),
+          'frames_total': 0,
+          'started_at_utc': '2026-09-28T16:00:00+08:00',
+        }),
+        isNull);
     expect(
       restoreDiagnosticOperation({
         ...sync.toJson(),
@@ -150,6 +165,12 @@ void main() {
         result: PerformanceResult.failed,
         lifecycle: PerformanceLifecycle.foreground,
         frames: const PerformanceFrameCounts(),
+        utcWindow: const DiagnosticUtcWindow(
+          startedAtUtc: '2026-09-28T08:00:00Z',
+          endedAtUtc: '2026-09-28T08:00:00.040Z',
+          clockUncertaintyMs: 1000,
+          timeAnchorAgeMs: 1000,
+        ),
       ));
       time.elapse(const Duration(minutes: 1));
       time.flushMicrotasks();
@@ -162,6 +183,7 @@ void main() {
       expect(retry.first.containsKey('timeline_event_count'), isFalse);
       expect(
           retry.last['operation_id'], '00000000-0000-4000-8000-000000000003');
+      expect(retry.last.containsKey('started_at_utc'), isFalse);
       diagnostics.stopSession();
     });
   });

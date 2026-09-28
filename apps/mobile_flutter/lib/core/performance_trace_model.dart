@@ -1,3 +1,5 @@
+import 'diagnostic_time_anchor.dart';
+
 /// Closed performance metadata. No model accepts arbitrary labels or content.
 /// Thresholds affect diagnostics only; never business results or retries.
 abstract final class PerformanceThresholds {
@@ -409,6 +411,7 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
     this.hardRestartCount = 0,
     this.syncErrorCount,
     this.timelineEventCount,
+    this.utcWindow,
     this.searchRestartReason,
     this.searchCancelReason,
     this.keyboardDirection,
@@ -484,6 +487,7 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
 
   /// Number of timeline events applied during one Matrix sync window.
   final int? timelineEventCount;
+  final DiagnosticUtcWindow? utcWindow;
   final PerformanceSearchRestartReason? searchRestartReason;
   final PerformanceSearchCancelReason? searchCancelReason;
   final PerformanceKeyboardDirection? keyboardDirection;
@@ -542,6 +546,7 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
         hardRestartCount: hardRestartCount,
         syncErrorCount: syncErrorCount,
         timelineEventCount: timelineEventCount,
+        utcWindow: utcWindow,
         searchRestartReason: searchRestartReason,
         searchCancelReason: searchCancelReason,
         keyboardDirection: keyboardDirection,
@@ -821,6 +826,7 @@ final class PerformanceRecord extends PerformanceDiagnosticOperation {
         if (operation == PerformanceOperationType.matrixSync &&
             timelineEventCount != null)
           'timeline_event_count': timelineEventCount!.clamp(0, 100000),
+        if (utcWindow != null) ...utcWindow!.toJson(),
         if (operation == PerformanceOperationType.historySearch) ...{
           if (searchRestartReason != null)
             'restart_reason': searchRestartReason!.wireName,

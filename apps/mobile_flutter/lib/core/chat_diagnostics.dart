@@ -271,6 +271,7 @@ bool _hasOperationExtension(_QueuedPerformanceOperation entry) {
       (_isNewOnlyOperation(record) ||
           record.stagesUs.keys.any(_newPerformanceStages.contains) ||
           record.timelineEventCount != null ||
+          record.utcWindow != null ||
           record.searchRestartReason != null ||
           record.searchCancelReason != null ||
           record.scanPageCount != null ||
@@ -302,6 +303,10 @@ Map<String, Object?> _operationWireJson(
       'full_coverage_ms',
       'keyboard_direction',
       'room_route_phase',
+      'started_at_utc',
+      'ended_at_utc',
+      'clock_uncertainty_ms',
+      'time_anchor_age_ms',
     ]) {
       json.remove(key);
     }

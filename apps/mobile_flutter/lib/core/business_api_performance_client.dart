@@ -9,12 +9,14 @@ import 'performance_trace.dart';
 /// request body or response body are copied into a performance record.
 final class BusinessApiPerformanceClient extends http.BaseClient {
   BusinessApiPerformanceClient(http.Client delegate,
-      {PerformanceTraceRecorder? recorder})
+      {PerformanceTraceRecorder? recorder, Uri? trustedBaseUri})
       : _delegate = delegate,
-        _recorder = recorder ?? PerformanceTraceRecorder.instance;
+        _recorder = recorder ?? PerformanceTraceRecorder.instance,
+        _trustedBaseUri = trustedBaseUri;
 
   final http.Client _delegate;
   final PerformanceTraceRecorder _recorder;
+  final Uri? _trustedBaseUri;
   final Object _scopeKey = Object();
 
   bool get enabled => _recorder.recordingEnabled;
@@ -40,7 +42,16 @@ final class BusinessApiPerformanceClient extends http.BaseClient {
 
     late final http.StreamedResponse response;
     try {
+      final sentAtMs = _recorder.monotonicMs;
       response = await _delegate.send(request);
+      final receivedAtMs = _recorder.monotonicMs;
+      if (_isAuthenticatedBusinessRequest(request)) {
+        _recorder.observeAuthenticatedResponseDate(
+          response.headers['date'],
+          sentAtMs: sentAtMs,
+          receivedAtMs: receivedAtMs,
+        );
+      }
       // Receiving HTTP headers proves this Business API request reached a
       // service over a working transport, independent of Matrix sync state.
       trace.setNetwork(transport: true, service: true);
@@ -110,6 +121,21 @@ final class BusinessApiPerformanceClient extends http.BaseClient {
         endpointCategory: _category(request.url),
         httpMethod: _method(request.method),
       );
+
+  bool _isAuthenticatedBusinessRequest(http.BaseRequest request) {
+    final base = _trustedBaseUri;
+    if (base == null ||
+        base.scheme != 'https' ||
+        request.url.origin != base.origin ||
+        request.url.pathSegments.length < 2 ||
+        request.url.pathSegments[0] != 'api' ||
+        request.url.pathSegments[1] != 'v1') {
+      return false;
+    }
+    return request.headers.entries.any((entry) =>
+        entry.key.toLowerCase() == 'authorization' &&
+        entry.value.startsWith('Bearer '));
+  }
 
   @override
   void close() => _delegate.close();

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/diagnostic_time_anchor.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 
@@ -178,6 +179,38 @@ void main() {
     expect(json['scan_row_count'], 140);
     expect(json['first_hit_ms'], 9);
     expect(json['full_coverage_ms'], 42);
+  });
+
+  test('fresh Date anchor attaches UTC to final trace and delayed frame copy',
+      () {
+    final anchor = DiagnosticTimeAnchor();
+    anchor.observe(
+      dateHeader: 'Mon, 28 Sep 2026 08:00:00 GMT',
+      sentAtMs: 1000,
+      receivedAtMs: 1200,
+    );
+    nowUs = 1200000;
+    final timed = PerformanceTraceRecorder(
+      metrics: metrics,
+      clockUs: () => nowUs,
+      timeAnchor: anchor,
+    );
+    final trace = timed.start(PerformanceOperationType.apiRequest);
+    nowUs = 2200000;
+    final record = trace.finish();
+    expect(record.toJson()['started_at_utc'], '2026-09-28T08:00:00.100Z');
+    expect(record.toJson()['time_anchor_age_ms'], 1000);
+    expect(
+        record
+            .withFrameAttribution(
+              const PerformanceFrameCounts(),
+              complete: true,
+            )
+            .toJson()['started_at_utc'],
+        '2026-09-28T08:00:00.100Z');
+    expect(
+        recorder.start(PerformanceOperationType.apiRequest).finish().toJson(),
+        isNot(contains('started_at_utc')));
   });
 
   test('media scheduler counters and priority use bounded typed fields', () {

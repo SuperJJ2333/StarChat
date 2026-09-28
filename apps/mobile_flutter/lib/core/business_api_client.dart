@@ -123,6 +123,7 @@ final class BusinessApiClient
   })  : _performanceClient = BusinessApiPerformanceClient(
           client ?? http.Client(),
           recorder: performanceRecorder,
+          trustedBaseUri: baseUri,
         ),
         _settingsClock = clock ?? DateTime.now {
     _client = DiagnosticHttpClient(

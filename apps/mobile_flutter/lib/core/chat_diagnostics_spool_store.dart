@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'performance_trace_model.dart';
+import 'diagnostic_time_anchor.dart';
 
 /// Local adapter; callers pass only closed metadata serialized by diagnostics.
 abstract interface class ChatDiagnosticSpoolStore {
@@ -163,10 +164,12 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
             'app_network_state',
             'attempt_index',
             'cache_source',
+            'clock_uncertainty_ms',
             'cancel_reason',
             'candidate_protocol',
             'database_operation',
             'endpoint_category',
+            'ended_at_utc',
             'first_hit_ms',
             'frame_attribution_complete',
             'frames_total',
@@ -208,8 +211,10 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
             'soft_kick_count',
             'stages',
             'status_code',
+            'started_at_utc',
             'sync_error_count',
             'timeline_event_count',
+            'time_anchor_age_ms',
             'total_ms',
             'transport_available',
             'uses_turn',
@@ -344,6 +349,17 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
       slow > build + raster) {
     return null;
   }
+  const utcKeys = {
+    'started_at_utc',
+    'ended_at_utc',
+    'clock_uncertainty_ms',
+    'time_anchor_age_ms',
+  };
+  final utcPresent = utcKeys.where(raw.containsKey).length;
+  if (utcPresent != 0 && utcPresent != utcKeys.length) return null;
+  final utcWindow =
+      utcPresent == 0 ? null : DiagnosticUtcWindow.restore(raw, total);
+  if (utcPresent > 0 && utcWindow == null) return null;
   try {
     return PerformanceRecord(
       operationId: id,
@@ -397,6 +413,7 @@ PerformanceRecord? restoreDiagnosticOperation(Object? raw) {
       hardRestartCount: integer('hard_restart_count', 1000) ?? 0,
       syncErrorCount: integer('sync_error_count', 1000),
       timelineEventCount: integer('timeline_event_count', 100000),
+      utcWindow: utcWindow,
       searchRestartReason: restartReason,
       searchCancelReason: cancelReason,
       keyboardDirection: keyboardDirection,
