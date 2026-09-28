@@ -60,6 +60,7 @@ def runtime(monkeypatch):
                  'SYNAPSE_ADMIN_ACCESS_TOKEN', 'MATRIX_PROVISION_SECRET',
                  'AVATAR_URL_SIGNING_SECRET', 'REFERRAL_CODE_SECRET'):
         values[name] = 'sensitive-fixture-value-never-output'
+    values['DIAGNOSTIC_IDENTITY_SECRET'] = 'distinct-diagnostic-fixture-key-0000000000000000'
     for name, value in values.items():
         monkeypatch.setenv('BUSINESS_' + name, value)
     monkeypatch.setattr(helper, 'create_engine', lambda *args, **kwargs: engine)
@@ -72,6 +73,7 @@ def result(helper, capsys):
     output = capsys.readouterr()
     assert output.err == ''
     assert 'sensitive-fixture' not in output.out
+    assert 'distinct-diagnostic-fixture-key' not in output.out
     return code, json.loads(output.out)
 
 

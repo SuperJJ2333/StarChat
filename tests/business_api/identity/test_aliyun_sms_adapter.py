@@ -246,6 +246,7 @@ def test_settings_production_phone_auth_requires_aliyun_and_secret():
 
     base = dict(_env_file=None, environment="production", phone_auth_enabled=True,
         jwt_secret="x" * 32, email_verification_secret="x" * 32,
+        diagnostic_identity_secret="sms-test-diagnostic-hmac-key-" + "d" * 32,
         password_reset_secret="x" * 32, totp_issuer="t", synapse_admin_access_token="x",
         matrix_provision_secret="x", avatar_url_signing_secret="x",
         referral_code_secret="x", matrix_public_homeserver_url="https://m",
