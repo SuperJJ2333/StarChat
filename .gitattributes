@@ -15,3 +15,23 @@ docs/verification/artifacts/2026-08-26/e2ee-session-capability-boundary/DIFF_FIL
 
 # Unified diff context lines intentionally retain their leading space.
 third_party/synapse/patches/*.patch -whitespace
+
+# Preserve published recovery and wallet T2 bytes across Windows/Linux checkouts.
+# These exact paths contain mixed line endings or otherwise need release SHA stability.
+packages/api-contracts/openapi/liuhetong-v1.yaml text eol=lf
+services/business-api/requirements.lock text eol=lf
+services/business-api/app/api/client_diagnostics.py -text whitespace=cr-at-eol
+services/business-api/app/core/config.py -text whitespace=cr-at-eol
+services/business-api/app/integrations/private_storage.py -text whitespace=cr-at-eol
+services/business-api/app/modules/identity/profile.py -text whitespace=cr-at-eol
+services/business-api/app/modules/moments/models.py -text whitespace=cr-at-eol
+services/business-api/app/modules/moments/service.py -text whitespace=cr-at-eol
+services/business-api/pyproject.toml -text whitespace=cr-at-eol
+services/business-worker/app/integrations/avatar_reader.py -text whitespace=cr-at-eol
+tests/business_api/moments/test_moment_video_posters.py -text whitespace=cr-at-eol
+tests/business_api/test_migrations.py -text whitespace=cr-at-eol
+frontend/src/admin-home.js -text whitespace=cr-at-eol
+frontend/src/admin-manual-wallet-panel.js -text whitespace=cr-at-eol
+frontend/src/wallet-incident-workflow.js -text whitespace=cr-at-eol
+frontend/tests/manual-wallet-panel.test.mjs -text whitespace=cr-at-eol
+frontend/tests/wallet-incident-workflow.test.mjs -text whitespace=cr-at-eol
