@@ -2362,6 +2362,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           ..mark(PerformanceStage.userAction));
     var stage = 'identity';
     MotionPageRoute<void>? route;
+    MatrixRoomLease? routeLease;
     ValueNotifier<RoomOpenRequest>? navigationRequests;
     var closed = false;
     void notifyClosed() {
@@ -2379,10 +2380,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       stage = 'lease';
       trace.mark(PerformanceStage.roomAttachStarted);
       final lease = await widget.matrix.openRoomLease(roomId);
+      routeLease = lease;
       trace.mark(PerformanceStage.roomAttachDone);
 
       if (!mounted) {
-        await lease.cancel();
         return;
       }
       final navigator = Navigator.of(context, rootNavigator: true);
@@ -2498,11 +2499,22 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       rethrow;
     } finally {
       if (!trace.isFinished) trace.dispose();
-      StatisticsRoomScope.leave(roomId);
-      final finalRoute = route;
-      if (finalRoute != null) handle.release(finalRoute);
-      navigationRequests?.dispose();
-      notifyClosed();
+      try {
+        StatisticsRoomScope.leave(roomId);
+        final finalRoute = route;
+        if (finalRoute != null) handle.release(finalRoute);
+        navigationRequests?.dispose();
+        notifyClosed();
+      } finally {
+        final owned = routeLease;
+        if (owned != null) {
+          try {
+            await owned.cancel();
+          } catch (_) {
+            debugPrint('[chatflow/perf] room_lease_cancel_failed');
+          }
+        }
+      }
     }
   }
 

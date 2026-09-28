@@ -51,6 +51,7 @@ void main() {
       (tester) async {
     final harness = await _Harness.start(tester);
     addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
     await harness.tapFriendProfileSend(tester);
     await tester.pumpAndSettle();
     final next = _DirectRoom(harness.client, id: '!dm-b:test');
@@ -78,6 +79,8 @@ void main() {
     Navigator.of(tester.element(find.byType(RoomPage))).pop();
     await tester.pumpAndSettle();
     expect(find.byType(RoomPage, skipOffstage: false), findsNothing);
+    expect(harness.managedResources, initialCount,
+        reason: 'replacement and final pop release both route-owned leases');
   });
 
   testWidgets('Test 1: 好友资料首次「发消息」只解析一次身份/房间，只开一个 RoomPage+租约', (tester) async {
@@ -96,6 +99,29 @@ void main() {
     expect(harness.managedResources - leasesBefore, 1,
         reason: '只取一份 RoomLease');
     expect(harness.roomLeaseOf(tester).roomId, _roomId);
+  });
+
+  testWidgets('closed RoomPage releases its lease before the next open',
+      (tester) async {
+    final harness = await _Harness.start(tester);
+    addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
+
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    expect(harness.managedResources, initialCount + 1);
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsNothing);
+    expect(harness.managedResources, initialCount);
+
+    await tester.tap(find.byKey(const Key('friend-action-message')));
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsOneWidget);
+    expect(harness.managedResources, initialCount + 1);
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(harness.managedResources, initialCount);
   });
 
   testWidgets('Test 2: Room A 内再次「发消息」不再被闸门吞掉，popUntil 回到原 Room A',

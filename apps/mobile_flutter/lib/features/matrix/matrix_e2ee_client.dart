@@ -1517,6 +1517,10 @@ final class MatrixRoomLease
   final MatrixSdkE2eeClient owner;
   final String roomId;
   Room? _room;
+  Future<void>? _detaching;
+  Future<void>? _canceling;
+  bool _drained = false;
+  bool _released = false;
   final List<_SdkRoomTimelineCapability> _timelines = [];
   final _searchEventDelta = RoomSearchEventDelta();
   final _mentionEventDelta = RoomSearchEventDelta();
@@ -2540,6 +2544,7 @@ final class MatrixRoomLease
     if (canceled) return;
     _room = client.getRoomById(roomId) ??
         (throw StateError('Matrix room is unavailable'));
+    _drained = false;
   }
 
   void revokeNow() {
@@ -2588,13 +2593,17 @@ final class MatrixRoomLease
     }
   }
 
-  @override
-  Future<void> detach() async {
+  Future<void> _detachOnce() async {
     revokeNow();
+    if (_drained) return;
     final drain = _drainOwner;
-    if (drain == null) return;
+    if (drain == null) {
+      _drained = true;
+      return;
+    }
     try {
       await Future<void>.sync(drain).timeout(owner.lifecycleDrainTimeout);
+      _drained = true;
     } on TimeoutException {
       owner.securityLogger.record(
         stage: MatrixSecurityStage.roomLeaseDrain,
@@ -2613,7 +2622,27 @@ final class MatrixRoomLease
   }
 
   @override
-  Future<void> cancel() => owner._cancelManagedResource(this);
+  Future<void> detach() {
+    final current = _detaching;
+    if (current != null) return current;
+    late final Future<void> pending;
+    pending = _detachOnce().whenComplete(() {
+      if (identical(_detaching, pending)) _detaching = null;
+    });
+    return _detaching = pending;
+  }
+
+  @override
+  Future<void> cancel() {
+    if (_released) return Future<void>.value();
+    final current = _canceling;
+    if (current != null) return current;
+    late final Future<void> pending;
+    pending = owner._cancelRoomLease(this).whenComplete(() {
+      if (identical(_canceling, pending)) _canceling = null;
+    });
+    return _canceling = pending;
+  }
 }
 
 MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room,
@@ -7783,6 +7812,16 @@ final class MatrixSdkE2eeClient
         resource.canceled = true;
         _managedResources.remove(resource);
       });
+
+  Future<void> _cancelRoomLease(MatrixRoomLease lease) async {
+    lease.canceled = true;
+    lease.revokeNow();
+    await lease.detach();
+    await _serializeLifecycle(() async {
+      _managedResources.remove(lease);
+      lease._released = true;
+    });
+  }
 
   Future<void> _detachManagedResources() async {
     for (final resource in _managedResources.reversed) {
