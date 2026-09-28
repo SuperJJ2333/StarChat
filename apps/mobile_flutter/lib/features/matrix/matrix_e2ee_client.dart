@@ -503,7 +503,8 @@ final class _ManagedPusherGateway implements MatrixPusherGateway {
   }
 }
 
-final class _ManagedSyncWatchdogTarget implements SyncWatchdogTarget {
+final class _ManagedSyncWatchdogTarget
+    implements SyncWatchdogTarget, SyncTimelineCountSource {
   _ManagedSyncWatchdogTarget(this._capability);
   final _SdkAppHomeCapability _capability;
   @override
@@ -511,6 +512,14 @@ final class _ManagedSyncWatchdogTarget implements SyncWatchdogTarget {
     _capability._ensureActive();
     return _capability._client.onSyncStatus.stream
         .where((_) => !_capability._revoked);
+  }
+
+  @override
+  Stream<int> get timelineEventCounts {
+    _capability._ensureActive();
+    return _capability._client.onSync.stream
+        .where((_) => !_capability._revoked)
+        .map(ClientSyncWatchdogTarget.countTimelineEnvelopes);
   }
 
   @override
