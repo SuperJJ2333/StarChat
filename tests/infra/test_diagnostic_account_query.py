@@ -2,15 +2,16 @@
 
 import importlib.util
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'services/business-api'))
 
 import pytest
 
 from app.core.diagnostic_identity import diagnostic_ref
-
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 def tool():
