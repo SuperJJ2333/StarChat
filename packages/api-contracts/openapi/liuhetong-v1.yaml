@@ -19925,6 +19925,50 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "diagnostic_loss": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "description": "Immutable evidence of bounded local diagnostic eviction, not failures.",
+                        "properties": {
+                          "dropped_events": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Dropped Events",
+                            "type": "integer"
+                          },
+                          "dropped_frames": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Dropped Frames",
+                            "type": "integer"
+                          },
+                          "dropped_operations": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Dropped Operations",
+                            "type": "integer"
+                          },
+                          "sample_id": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "title": "Sample Id",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "sample_id",
+                          "dropped_events",
+                          "dropped_operations",
+                          "dropped_frames"
+                        ],
+                        "title": "DiagnosticLoss",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "events": {
                     "items": {
                       "additionalProperties": false,
@@ -20005,7 +20049,9 @@
                             "result_write_failed",
                             "retry_recovered",
                             "terminal_invalidated",
-                            "result_superseded"
+                            "result_superseded",
+                            "matrix_sync_soft_kick",
+                            "matrix_sync_hard_restart"
                           ],
                           "title": "Stage",
                           "type": "string"
@@ -20037,6 +20083,110 @@
                     "maxItems": 20,
                     "title": "Events",
                     "type": "array"
+                  },
+                  "frame_windows": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "description": "One foreground main-tab interval; never a route or room identity.",
+                          "properties": {
+                            "active_tab": {
+                              "enum": [
+                                "unknown",
+                                "messages",
+                                "contacts",
+                                "discover",
+                                "me"
+                              ],
+                              "title": "Active Tab",
+                              "type": "string"
+                            },
+                            "budget_us": {
+                              "maximum": 1000000,
+                              "minimum": 1,
+                              "title": "Budget Us",
+                              "type": "integer"
+                            },
+                            "frame_count": {
+                              "maximum": 1000000,
+                              "minimum": 1,
+                              "title": "Frame Count",
+                              "type": "integer"
+                            },
+                            "max_build_us": {
+                              "maximum": 3600000000,
+                              "minimum": 0,
+                              "title": "Max Build Us",
+                              "type": "integer"
+                            },
+                            "max_raster_us": {
+                              "maximum": 3600000000,
+                              "minimum": 0,
+                              "title": "Max Raster Us",
+                              "type": "integer"
+                            },
+                            "slow_build_count": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Slow Build Count",
+                              "type": "integer"
+                            },
+                            "slow_frame_count": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Slow Frame Count",
+                              "type": "integer"
+                            },
+                            "slow_raster_count": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Slow Raster Count",
+                              "type": "integer"
+                            },
+                            "window_end": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window End",
+                              "type": "string"
+                            },
+                            "window_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Window Id",
+                              "type": "string"
+                            },
+                            "window_start": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window Start",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "window_id",
+                            "window_start",
+                            "window_end",
+                            "active_tab",
+                            "budget_us",
+                            "frame_count",
+                            "slow_frame_count",
+                            "slow_build_count",
+                            "slow_raster_count",
+                            "max_build_us",
+                            "max_raster_us"
+                          ],
+                          "title": "DiagnosticFrameWindow",
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Frame Windows"
                   },
                   "frames": {
                     "anyOf": [
@@ -20083,763 +20233,2258 @@
                       }
                     ]
                   },
-                  "operations": {
-                    "items": {
-                      "additionalProperties": false,
-                      "oneOf": [
-                        {
+                  "network_requests": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
                           "properties": {
-                            "frame_attribution_complete": {
-                              "enum": [
-                                true,
-                                null
-                              ]
-                            },
-                            "slow_build_count": {
+                            "elapsed_ms": {
+                              "maximum": 3600000,
+                              "minimum": 0,
+                              "title": "Elapsed Ms",
                               "type": "integer"
                             },
-                            "slow_frame_count": {
-                              "type": "integer"
-                            },
-                            "slow_raster_count": {
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "slow_frame_count",
-                            "slow_build_count",
-                            "slow_raster_count"
-                          ]
-                        },
-                        {
-                          "not": {
-                            "anyOf": [
-                              {
-                                "required": [
-                                  "slow_frame_count"
-                                ]
-                              },
-                              {
-                                "required": [
-                                  "slow_build_count"
-                                ]
-                              },
-                              {
-                                "required": [
-                                  "slow_raster_count"
-                                ]
-                              }
-                            ]
-                          },
-                          "properties": {
-                            "frame_attribution_complete": {
-                              "const": false
-                            }
-                          },
-                          "required": [
-                            "frame_attribution_complete"
-                          ]
-                        }
-                      ],
-                      "properties": {
-                        "app_network_state": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "online",
-                                "weak",
-                                "offline",
-                                "recovering",
-                                "unknown"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "App Network State"
-                        },
-                        "cache_source": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "memory",
-                                "disk",
-                                "network",
-                                "miss",
-                                "server_poster",
-                                "local_frame",
-                                "unknown"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Cache Source"
-                        },
-                        "candidate_protocol": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "udp",
-                                "tcp",
-                                "tls",
-                                "unknown"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Candidate Protocol"
-                        },
-                        "database_operation": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "timeline_local_load",
-                                "conversation_snapshot_load",
-                                "outbox_query",
-                                "media_index_lookup",
-                                "message_search"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Database Operation"
-                        },
-                        "endpoint_category": {
-                          "anyOf": [
-                            {
+                            "endpoint_category": {
                               "enum": [
                                 "auth",
                                 "profile",
                                 "contacts",
-                                "friendship",
-                                "moments",
-                                "finance",
-                                "support",
-                                "push",
                                 "media",
-                                "diagnostics",
+                                "finance",
+                                "settings",
+                                "support",
                                 "other"
                               ],
+                              "title": "Endpoint Category",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Endpoint Category"
-                        },
-                        "frame_attribution_complete": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "description": "Omit slow-frame counts when false; legacy records omit this field and include all counts.",
-                          "title": "Frame Attribution Complete"
-                        },
-                        "hard_restart_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Hard Restart Count"
-                        },
-                        "jitter_ms": {
-                          "anyOf": [
-                            {
-                              "maximum": 60000,
-                              "minimum": 0,
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Jitter Ms"
-                        },
-                        "last_healthy_sync_age_ms": {
-                          "anyOf": [
-                            {
-                              "maximum": 3600000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Last Healthy Sync Age Ms"
-                        },
-                        "lifecycle": {
-                          "enum": [
-                            "foreground",
-                            "background",
-                            "resuming",
-                            "unknown"
-                          ],
-                          "title": "Lifecycle",
-                          "type": "string"
-                        },
-                        "matrix_state": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "connected",
-                                "connecting",
-                                "disconnected",
-                                "unknown"
+                            "headers_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ],
-                              "type": "string"
+                              "title": "Headers Ms"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Matrix State"
-                        },
-                        "media_priority": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "interactive",
-                                "visible",
-                                "prefetch",
-                                "background"
+                            "http_status": {
+                              "anyOf": [
+                                {
+                                  "maximum": 599,
+                                  "minimum": 100,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ],
-                              "type": "string"
+                              "title": "Http Status"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Media Priority"
-                        },
-                        "media_type": {
-                          "anyOf": [
-                            {
+                            "method": {
                               "enum": [
-                                "image",
-                                "video",
-                                "audio",
-                                "file",
-                                "avatar",
-                                "unknown"
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "PATCH",
+                                "DELETE",
+                                "HEAD",
+                                "OPTIONS",
+                                "OTHER"
                               ],
+                              "title": "Method",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Media Type"
-                        },
-                        "method": {
-                          "anyOf": [
-                            {
+                            "network": {
                               "enum": [
-                                "get",
-                                "post",
-                                "put",
-                                "patch",
-                                "delete",
-                                "head",
+                                "unknown",
+                                "wifi",
+                                "mobile",
+                                "ethernet",
+                                "vpn",
+                                "none",
                                 "other"
                               ],
+                              "title": "Network",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Method"
-                        },
-                        "network_error": {
-                          "anyOf": [
-                            {
+                            "operation_id": {
+                              "anyOf": [
+                                {
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Operation Id"
+                            },
+                            "phase": {
                               "enum": [
-                                "dns_failure",
-                                "connect_timeout",
-                                "read_timeout",
-                                "socket_failure",
-                                "tls_failure",
-                                "offline",
-                                "server5xx",
-                                "rate_limit",
-                                "auth_failure",
-                                "business_rejection",
-                                "cancelled",
+                                "awaiting_headers",
+                                "reading_body",
+                                "response_complete",
                                 "unknown"
                               ],
+                              "title": "Phase",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Network Error"
-                        },
-                        "opening_source": {
-                          "anyOf": [
-                            {
+                            "platform": {
                               "enum": [
-                                "local_room",
-                                "pending_conversation"
+                                "android",
+                                "ios",
+                                "other"
                               ],
+                              "title": "Platform",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Opening Source"
-                        },
-                        "operation": {
-                          "enum": [
-                            "app_startup",
-                            "app_resume",
-                            "conversation_open",
-                            "message_send",
-                            "matrix_sync",
-                            "media_load",
-                            "recent_pictures_load",
-                            "video_prepare",
-                            "video_poster",
-                            "search",
-                            "search_page_open",
-                            "contacts_load",
-                            "moments_load",
-                            "wallet_load",
-                            "api_request",
-                            "call_setup",
-                            "call_active",
-                            "profile_load",
-                            "chat_list_load"
-                          ],
-                          "title": "Operation",
-                          "type": "string"
-                        },
-                        "operation_id": {
-                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-                          "title": "Operation Id",
-                          "type": "string"
-                        },
-                        "packet_loss_percent": {
-                          "anyOf": [
-                            {
-                              "maximum": 100,
-                              "minimum": 0,
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Packet Loss Percent"
-                        },
-                        "reconnect_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Reconnect Count"
-                        },
-                        "relay_protocol": {
-                          "anyOf": [
-                            {
+                            "reason": {
                               "enum": [
-                                "udp",
-                                "tcp",
+                                "timeout",
+                                "socket",
                                 "tls",
-                                "unknown"
+                                "http_transport",
+                                "aborted",
+                                "unexpected",
+                                "http_5xx"
                               ],
+                              "title": "Reason",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Relay Protocol"
-                        },
-                        "result": {
-                          "enum": [
-                            "success",
-                            "slow",
-                            "waiting_network",
-                            "rejected",
-                            "failed",
-                            "cancelled"
-                          ],
-                          "title": "Result",
-                          "type": "string"
-                        },
-                        "result_count_bucket": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "zero",
-                                "one_to_twenty",
-                                "twenty_one_to_hundred",
-                                "hundred_one_to_five_hundred",
-                                "over_five_hundred"
-                              ],
+                            "request_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Request Id",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Result Count Bucket"
-                        },
-                        "retry_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 20,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Retry Count"
-                        },
-                        "row_count_bucket": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "zero",
-                                "one_to_twenty",
-                                "twenty_one_to_hundred",
-                                "hundred_one_to_five_hundred",
-                                "over_five_hundred"
-                              ],
+                            "started_at": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Started At",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Row Count Bucket"
-                        },
-                        "rtt_ms": {
-                          "anyOf": [
-                            {
-                              "maximum": 60000,
-                              "minimum": 0,
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Rtt Ms"
-                        },
-                        "scheduler_active": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Scheduler Active"
-                        },
-                        "scheduler_queue": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Scheduler Queue"
-                        },
-                        "scheduler_video_active": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Scheduler Video Active"
-                        },
-                        "service_reachable": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Service Reachable"
-                        },
-                        "size_bucket": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "zero",
-                                "tiny",
-                                "small",
-                                "medium",
-                                "large",
-                                "huge",
-                                "unknown"
-                              ],
+                            "target": {
+                              "const": "primary_api",
+                              "title": "Target",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
+                            "timeout_budget_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeout Budget Ms"
+                            },
+                            "timeout_lateness_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeout Lateness Ms"
+                            },
+                            "version": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}(\\+\\d{1,8})?$",
+                              "title": "Version",
+                              "type": "string"
                             }
+                          },
+                          "required": [
+                            "request_id",
+                            "version",
+                            "platform",
+                            "target",
+                            "network",
+                            "method",
+                            "endpoint_category",
+                            "started_at",
+                            "elapsed_ms",
+                            "phase",
+                            "reason"
                           ],
-                          "title": "Size Bucket"
+                          "title": "NetworkRequestDiagnostic",
+                          "type": "object"
                         },
-                        "slow_build_count": {
-                          "anyOf": [
-                            {
+                        "maxItems": 8,
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Network Requests"
+                  },
+                  "networks": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "description": "Immutable, closed HTTP summary; no endpoint, user or location labels.",
+                          "properties": {
+                            "attempts": {
+                              "maximum": 1000000,
+                              "minimum": 1,
+                              "title": "Attempts",
+                              "type": "integer"
+                            },
+                            "cancelled": {
                               "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Cancelled",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Slow Build Count"
-                        },
-                        "slow_frame_count": {
-                          "anyOf": [
-                            {
+                            "http_2xx": {
                               "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Http 2Xx",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Slow Frame Count"
-                        },
-                        "slow_raster_count": {
-                          "anyOf": [
-                            {
+                            "http_3xx": {
                               "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Http 3Xx",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Slow Raster Count"
-                        },
-                        "soft_kick_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
+                            "http_4xx": {
+                              "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Http 4Xx",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Soft Kick Count"
-                        },
-                        "stages": {
-                          "items": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "elapsed_ms": {
-                                "maximum": 3600000,
+                            "http_5xx": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Http 5Xx",
+                              "type": "integer"
+                            },
+                            "network": {
+                              "enum": [
+                                "unknown",
+                                "wifi",
+                                "mobile",
+                                "ethernet",
+                                "vpn",
+                                "none",
+                                "other"
+                              ],
+                              "title": "Network",
+                              "type": "string"
+                            },
+                            "network_errors": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Network Errors",
+                              "type": "integer"
+                            },
+                            "platform": {
+                              "enum": [
+                                "android",
+                                "ios",
+                                "other"
+                              ],
+                              "title": "Platform",
+                              "type": "string"
+                            },
+                            "sample_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Sample Id",
+                              "type": "string"
+                            },
+                            "success_latency_buckets": {
+                              "items": {
+                                "maximum": 1000000,
                                 "minimum": 0,
-                                "title": "Elapsed Ms",
                                 "type": "integer"
                               },
-                              "stage": {
-                                "enum": [
-                                  "user_action",
-                                  "identity_lookup_done",
-                                  "local_room_lookup_done",
-                                  "route_enter",
-                                  "route_push_started",
-                                  "first_frame_rendered",
-                                  "room_attach_started",
-                                  "room_attach_done",
-                                  "timeline_local_started",
-                                  "local_timeline_ready",
-                                  "remote_sync_ready",
-                                  "content_ready",
-                                  "cache_load_started",
-                                  "cache_load_done",
-                                  "remote_refresh_started",
-                                  "remote_refresh_done",
-                                  "composer_submit",
-                                  "outbox_persist",
-                                  "send_admission",
-                                  "matrix_send_start",
-                                  "matrix_send_finish",
-                                  "ack",
-                                  "timeline_visible",
-                                  "sync_response_wait_started",
-                                  "sync_response_received",
-                                  "sync_processing_done",
-                                  "sync_cleanup_done",
-                                  "queue_entered",
-                                  "queue_exited",
-                                  "shared_flight_joined",
-                                  "shared_flight_done",
-                                  "download_started",
-                                  "download_done",
-                                  "decrypt_started",
-                                  "decrypt_done",
-                                  "decode_started",
-                                  "decode_done",
-                                  "video_selected",
-                                  "video_validated",
-                                  "video_prepare_started",
-                                  "video_prepare_done",
-                                  "video_transcode_started",
-                                  "video_transcode_done",
-                                  "video_thumbnail_done",
-                                  "video_encrypted",
-                                  "video_upload_started",
-                                  "video_upload_done",
-                                  "video_event_sent",
-                                  "call_start",
-                                  "signaling_ready",
-                                  "ice_gathering",
-                                  "ice_connected",
-                                  "media_first_packet",
-                                  "call_connected",
-                                  "matrix_connected",
-                                  "sync_finished",
-                                  "conversation_ready",
-                                  "local_search_started",
-                                  "local_search_done",
-                                  "database_search_started",
-                                  "database_search_done",
-                                  "remote_search_started",
-                                  "remote_search_done",
-                                  "render_results",
-                                  "request_finished"
-                                ],
-                                "title": "Stage",
-                                "type": "string"
+                              "maxItems": 9,
+                              "minItems": 9,
+                              "title": "Success Latency Buckets",
+                              "type": "array"
+                            },
+                            "target": {
+                              "const": "primary_api",
+                              "title": "Target",
+                              "type": "string"
+                            },
+                            "timeouts": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Timeouts",
+                              "type": "integer"
+                            },
+                            "version": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}(\\+\\d{1,8})?$",
+                              "title": "Version",
+                              "type": "string"
+                            },
+                            "window_end": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window End",
+                              "type": "string"
+                            },
+                            "window_start": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window Start",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sample_id",
+                            "version",
+                            "platform",
+                            "window_start",
+                            "window_end",
+                            "target",
+                            "network",
+                            "attempts",
+                            "http_2xx",
+                            "http_3xx",
+                            "http_4xx",
+                            "http_5xx",
+                            "network_errors",
+                            "timeouts",
+                            "cancelled",
+                            "success_latency_buckets"
+                          ],
+                          "title": "DiagnosticNetwork",
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Networks"
+                  },
+                  "operations": {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "allOf": [
+                            {
+                              "if": {
+                                "required": [
+                                  "attempt_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "attempt_index": {
+                                    "type": "integer"
+                                  },
+                                  "operation": {
+                                    "enum": [
+                                      "video_prepare",
+                                      "message_send"
+                                    ]
+                                  }
+                                }
                               }
                             },
-                            "required": [
-                              "stage",
-                              "elapsed_ms"
-                            ],
-                            "title": "PerformanceOperationStage",
-                            "type": "object"
-                          },
-                          "maxItems": 64,
-                          "title": "Stages",
-                          "type": "array"
-                        },
-                        "status_code": {
-                          "anyOf": [
                             {
-                              "maximum": 599,
-                              "minimum": 100,
-                              "type": "integer"
+                              "if": {
+                                "required": [
+                                  "window_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "operation": {
+                                    "const": "call_active"
+                                  },
+                                  "window_index": {
+                                    "type": "integer"
+                                  }
+                                }
+                              }
                             },
                             {
-                              "type": "null"
+                              "not": {
+                                "required": [
+                                  "attempt_index",
+                                  "window_index"
+                                ]
+                              }
                             }
                           ],
-                          "title": "Status Code"
-                        },
-                        "sync_error_count": {
-                          "anyOf": [
+                          "description": "Completed span. Missing kind preserves the original final protocol.",
+                          "oneOf": [
                             {
-                              "maximum": 1000,
+                              "properties": {
+                                "frame_attribution_complete": {
+                                  "enum": [
+                                    true,
+                                    null
+                                  ]
+                                },
+                                "slow_build_count": {
+                                  "type": "integer"
+                                },
+                                "slow_frame_count": {
+                                  "type": "integer"
+                                },
+                                "slow_raster_count": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "slow_frame_count",
+                                "slow_build_count",
+                                "slow_raster_count"
+                              ]
+                            },
+                            {
+                              "not": {
+                                "anyOf": [
+                                  {
+                                    "required": [
+                                      "slow_frame_count"
+                                    ]
+                                  },
+                                  {
+                                    "required": [
+                                      "slow_build_count"
+                                    ]
+                                  },
+                                  {
+                                    "required": [
+                                      "slow_raster_count"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "properties": {
+                                "frame_attribution_complete": {
+                                  "const": false
+                                }
+                              },
+                              "required": [
+                                "frame_attribution_complete"
+                              ]
+                            }
+                          ],
+                          "properties": {
+                            "app_network_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "online",
+                                    "weak",
+                                    "offline",
+                                    "recovering",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "App Network State"
+                            },
+                            "attempt_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Attempt Index"
+                            },
+                            "cache_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "memory",
+                                    "disk",
+                                    "network",
+                                    "miss",
+                                    "server_poster",
+                                    "local_frame",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cache Source"
+                            },
+                            "cancel_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "new_query",
+                                    "route_closed",
+                                    "account_changed",
+                                    "visibility_revoked"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cancel Reason"
+                            },
+                            "candidate_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Candidate Protocol"
+                            },
+                            "clock_uncertainty_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 2000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Clock Uncertainty Ms"
+                            },
+                            "database_operation": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "timeline_local_load",
+                                    "conversation_snapshot_load",
+                                    "outbox_query",
+                                    "media_index_lookup",
+                                    "message_search"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Database Operation"
+                            },
+                            "ended_at_utc": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 32,
+                                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Ended At Utc"
+                            },
+                            "endpoint_category": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "auth",
+                                    "profile",
+                                    "contacts",
+                                    "friendship",
+                                    "moments",
+                                    "finance",
+                                    "support",
+                                    "push",
+                                    "media",
+                                    "diagnostics",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Endpoint Category"
+                            },
+                            "first_hit_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "First Hit Ms"
+                            },
+                            "frame_attribution_complete": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Omit slow-frame counts when false; legacy records omit this field and include all counts.",
+                              "title": "Frame Attribution Complete"
+                            },
+                            "full_coverage_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Full Coverage Ms"
+                            },
+                            "hard_restart_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Hard Restart Count"
+                            },
+                            "jitter_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Jitter Ms"
+                            },
+                            "keyboard_direction": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "show",
+                                    "hide"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Keyboard Direction"
+                            },
+                            "last_healthy_sync_age_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Last Healthy Sync Age Ms"
+                            },
+                            "lifecycle": {
+                              "enum": [
+                                "foreground",
+                                "background",
+                                "resuming",
+                                "unknown"
+                              ],
+                              "title": "Lifecycle",
+                              "type": "string"
+                            },
+                            "matrix_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "connected",
+                                    "connecting",
+                                    "disconnected",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Matrix State"
+                            },
+                            "media_priority": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "interactive",
+                                    "visible",
+                                    "prefetch",
+                                    "background"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Priority"
+                            },
+                            "media_type": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "image",
+                                    "video",
+                                    "audio",
+                                    "file",
+                                    "avatar",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Type"
+                            },
+                            "method": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "get",
+                                    "post",
+                                    "put",
+                                    "patch",
+                                    "delete",
+                                    "head",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Method"
+                            },
+                            "network_error": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "dns_failure",
+                                    "connect_timeout",
+                                    "read_timeout",
+                                    "request_timeout",
+                                    "socket_failure",
+                                    "tls_failure",
+                                    "offline",
+                                    "server5xx",
+                                    "rate_limit",
+                                    "auth_failure",
+                                    "business_rejection",
+                                    "cancelled",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Network Error"
+                            },
+                            "observation_kind": {
+                              "const": "final",
+                              "default": "final",
+                              "title": "Observation Kind",
+                              "type": "string"
+                            },
+                            "opening_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "local_room",
+                                    "pending_conversation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Opening Source"
+                            },
+                            "operation": {
+                              "enum": [
+                                "app_startup",
+                                "app_resume",
+                                "conversation_open",
+                                "message_send",
+                                "matrix_sync",
+                                "media_load",
+                                "recent_pictures_load",
+                                "video_prepare",
+                                "video_poster",
+                                "search",
+                                "search_page_open",
+                                "contacts_load",
+                                "moments_load",
+                                "wallet_load",
+                                "api_request",
+                                "call_setup",
+                                "call_active",
+                                "profile_load",
+                                "chat_list_load",
+                                "history_search",
+                                "keyboard_transition",
+                                "room_local_frame"
+                              ],
+                              "title": "Operation",
+                              "type": "string"
+                            },
+                            "operation_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Operation Id",
+                              "type": "string"
+                            },
+                            "packet_loss_percent": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Packet Loss Percent"
+                            },
+                            "reconnect_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Reconnect Count"
+                            },
+                            "relay_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Relay Protocol"
+                            },
+                            "restart_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "query_changed",
+                                    "manual_refresh",
+                                    "safety_invalidation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Restart Reason"
+                            },
+                            "result": {
+                              "enum": [
+                                "success",
+                                "slow",
+                                "waiting_network",
+                                "rejected",
+                                "failed",
+                                "cancelled"
+                              ],
+                              "title": "Result",
+                              "type": "string"
+                            },
+                            "result_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Result Count Bucket"
+                            },
+                            "retry_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Retry Count"
+                            },
+                            "room_route_phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "enter",
+                                    "leave"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Room Route Phase"
+                            },
+                            "row_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Row Count Bucket"
+                            },
+                            "rtt_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Rtt Ms"
+                            },
+                            "scan_page_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Page Count"
+                            },
+                            "scan_row_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 10000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Row Count"
+                            },
+                            "scheduler_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Active"
+                            },
+                            "scheduler_queue": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Queue"
+                            },
+                            "scheduler_video_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Video Active"
+                            },
+                            "service_reachable": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Service Reachable"
+                            },
+                            "size_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "tiny",
+                                    "small",
+                                    "medium",
+                                    "large",
+                                    "huge",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Size Bucket"
+                            },
+                            "slow_build_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Slow Build Count"
+                            },
+                            "slow_frame_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Slow Frame Count"
+                            },
+                            "slow_raster_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Slow Raster Count"
+                            },
+                            "soft_kick_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Soft Kick Count"
+                            },
+                            "stages": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "elapsed_ms": {
+                                    "maximum": 3600000,
+                                    "minimum": 0,
+                                    "title": "Elapsed Ms",
+                                    "type": "integer"
+                                  },
+                                  "stage": {
+                                    "enum": [
+                                      "user_action",
+                                      "identity_lookup_done",
+                                      "local_room_lookup_done",
+                                      "route_enter",
+                                      "route_push_started",
+                                      "first_frame_rendered",
+                                      "room_attach_started",
+                                      "room_attach_done",
+                                      "timeline_local_started",
+                                      "local_timeline_ready",
+                                      "remote_sync_ready",
+                                      "content_ready",
+                                      "cache_load_started",
+                                      "cache_load_done",
+                                      "remote_refresh_started",
+                                      "remote_refresh_done",
+                                      "composer_submit",
+                                      "outbox_persist",
+                                      "send_admission",
+                                      "matrix_send_start",
+                                      "matrix_send_finish",
+                                      "ack",
+                                      "timeline_visible",
+                                      "timeline_published",
+                                      "sync_response_wait_started",
+                                      "sync_response_received",
+                                      "sync_processing_done",
+                                      "sync_cleanup_done",
+                                      "queue_entered",
+                                      "queue_exited",
+                                      "shared_flight_joined",
+                                      "shared_flight_done",
+                                      "download_started",
+                                      "download_done",
+                                      "decrypt_started",
+                                      "decrypt_done",
+                                      "decode_started",
+                                      "decode_done",
+                                      "video_selected",
+                                      "video_validated",
+                                      "video_prepare_started",
+                                      "video_prepare_done",
+                                      "video_transcode_started",
+                                      "video_transcode_done",
+                                      "video_thumbnail_started",
+                                      "video_thumbnail_done",
+                                      "video_encrypted",
+                                      "video_upload_started",
+                                      "video_upload_done",
+                                      "video_event_sent",
+                                      "call_start",
+                                      "signaling_ready",
+                                      "ice_gathering",
+                                      "ice_connected",
+                                      "media_first_packet",
+                                      "call_connected",
+                                      "matrix_connected",
+                                      "sync_finished",
+                                      "conversation_ready",
+                                      "local_search_started",
+                                      "local_search_done",
+                                      "database_search_started",
+                                      "database_search_done",
+                                      "remote_search_started",
+                                      "remote_search_done",
+                                      "render_results",
+                                      "request_finished",
+                                      "search_scan_started",
+                                      "search_first_hit",
+                                      "search_coverage_complete",
+                                      "keyboard_requested",
+                                      "keyboard_stable_frame",
+                                      "room_local_first_frame",
+                                      "route_exit_requested",
+                                      "route_exit_frame",
+                                      "fragment_write_started",
+                                      "fragment_write_done"
+                                    ],
+                                    "title": "Stage",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "stage",
+                                  "elapsed_ms"
+                                ],
+                                "title": "PerformanceOperationStage",
+                                "type": "object"
+                              },
+                              "maxItems": 64,
+                              "title": "Stages",
+                              "type": "array"
+                            },
+                            "started_at_utc": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 32,
+                                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Started At Utc"
+                            },
+                            "status_code": {
+                              "anyOf": [
+                                {
+                                  "maximum": 599,
+                                  "minimum": 100,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Status Code"
+                            },
+                            "sync_error_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Sync Error Count"
+                            },
+                            "time_anchor_age_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 300000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Time Anchor Age Ms"
+                            },
+                            "timeline_event_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeline Event Count"
+                            },
+                            "total_ms": {
+                              "maximum": 3600000,
                               "minimum": 0,
+                              "title": "Total Ms",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
+                            "transport_available": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Transport Available"
+                            },
+                            "uses_turn": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Uses Turn"
+                            },
+                            "window_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Window Index"
                             }
+                          },
+                          "required": [
+                            "operation_id",
+                            "operation",
+                            "stages",
+                            "lifecycle",
+                            "result",
+                            "total_ms"
                           ],
-                          "title": "Sync Error Count"
+                          "title": "PerformanceOperation",
+                          "type": "object"
                         },
-                        "total_ms": {
-                          "maximum": 3600000,
-                          "minimum": 0,
-                          "title": "Total Ms",
-                          "type": "integer"
-                        },
-                        "transport_available": {
-                          "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "allOf": [
                             {
-                              "type": "boolean"
+                              "if": {
+                                "required": [
+                                  "attempt_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "attempt_index": {
+                                    "type": "integer"
+                                  },
+                                  "operation": {
+                                    "enum": [
+                                      "video_prepare",
+                                      "message_send"
+                                    ]
+                                  }
+                                }
+                              }
                             },
                             {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Transport Available"
-                        },
-                        "uses_turn": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
+                              "if": {
+                                "required": [
+                                  "window_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "operation": {
+                                    "const": "call_active"
+                                  },
+                                  "window_index": {
+                                    "type": "integer"
+                                  }
+                                }
+                              }
                             },
                             {
-                              "type": "null"
+                              "not": {
+                                "required": [
+                                  "attempt_index",
+                                  "window_index"
+                                ]
+                              }
                             }
                           ],
-                          "title": "Uses Turn"
+                          "description": "Incomplete measurement; neither a duration sample nor a business result.",
+                          "properties": {
+                            "app_network_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "online",
+                                    "weak",
+                                    "offline",
+                                    "recovering",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "App Network State"
+                            },
+                            "attempt_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Attempt Index"
+                            },
+                            "cache_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "memory",
+                                    "disk",
+                                    "network",
+                                    "miss",
+                                    "server_poster",
+                                    "local_frame",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cache Source"
+                            },
+                            "cancel_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "new_query",
+                                    "route_closed",
+                                    "account_changed",
+                                    "visibility_revoked"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cancel Reason"
+                            },
+                            "candidate_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Candidate Protocol"
+                            },
+                            "database_operation": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "timeline_local_load",
+                                    "conversation_snapshot_load",
+                                    "outbox_query",
+                                    "media_index_lookup",
+                                    "message_search"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Database Operation"
+                            },
+                            "endpoint_category": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "auth",
+                                    "profile",
+                                    "contacts",
+                                    "friendship",
+                                    "moments",
+                                    "finance",
+                                    "support",
+                                    "push",
+                                    "media",
+                                    "diagnostics",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Endpoint Category"
+                            },
+                            "first_hit_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "First Hit Ms"
+                            },
+                            "frame_attribution_complete": {
+                              "const": false,
+                              "title": "Frame Attribution Complete",
+                              "type": "boolean"
+                            },
+                            "full_coverage_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Full Coverage Ms"
+                            },
+                            "hard_restart_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Hard Restart Count"
+                            },
+                            "jitter_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Jitter Ms"
+                            },
+                            "keyboard_direction": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "show",
+                                    "hide"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Keyboard Direction"
+                            },
+                            "last_healthy_sync_age_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Last Healthy Sync Age Ms"
+                            },
+                            "lifecycle": {
+                              "enum": [
+                                "foreground",
+                                "background",
+                                "resuming",
+                                "unknown"
+                              ],
+                              "title": "Lifecycle",
+                              "type": "string"
+                            },
+                            "matrix_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "connected",
+                                    "connecting",
+                                    "disconnected",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Matrix State"
+                            },
+                            "media_priority": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "interactive",
+                                    "visible",
+                                    "prefetch",
+                                    "background"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Priority"
+                            },
+                            "media_type": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "image",
+                                    "video",
+                                    "audio",
+                                    "file",
+                                    "avatar",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Type"
+                            },
+                            "method": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "get",
+                                    "post",
+                                    "put",
+                                    "patch",
+                                    "delete",
+                                    "head",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Method"
+                            },
+                            "network_error": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "dns_failure",
+                                    "connect_timeout",
+                                    "read_timeout",
+                                    "request_timeout",
+                                    "socket_failure",
+                                    "tls_failure",
+                                    "offline",
+                                    "server5xx",
+                                    "rate_limit",
+                                    "auth_failure",
+                                    "business_rejection",
+                                    "cancelled",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Network Error"
+                            },
+                            "observation_kind": {
+                              "enum": [
+                                "checkpoint",
+                                "expired"
+                              ],
+                              "title": "Observation Kind",
+                              "type": "string"
+                            },
+                            "observed_elapsed_ms": {
+                              "maximum": 3600000,
+                              "minimum": 0,
+                              "title": "Observed Elapsed Ms",
+                              "type": "integer"
+                            },
+                            "opening_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "local_room",
+                                    "pending_conversation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Opening Source"
+                            },
+                            "operation": {
+                              "enum": [
+                                "app_startup",
+                                "app_resume",
+                                "conversation_open",
+                                "message_send",
+                                "matrix_sync",
+                                "media_load",
+                                "recent_pictures_load",
+                                "video_prepare",
+                                "video_poster",
+                                "search",
+                                "search_page_open",
+                                "contacts_load",
+                                "moments_load",
+                                "wallet_load",
+                                "api_request",
+                                "call_setup",
+                                "call_active",
+                                "profile_load",
+                                "chat_list_load",
+                                "history_search",
+                                "keyboard_transition",
+                                "room_local_frame"
+                              ],
+                              "title": "Operation",
+                              "type": "string"
+                            },
+                            "operation_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Operation Id",
+                              "type": "string"
+                            },
+                            "packet_loss_percent": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Packet Loss Percent"
+                            },
+                            "reconnect_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Reconnect Count"
+                            },
+                            "relay_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Relay Protocol"
+                            },
+                            "restart_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "query_changed",
+                                    "manual_refresh",
+                                    "safety_invalidation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Restart Reason"
+                            },
+                            "result_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Result Count Bucket"
+                            },
+                            "retry_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Retry Count"
+                            },
+                            "room_route_phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "enter",
+                                    "leave"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Room Route Phase"
+                            },
+                            "row_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Row Count Bucket"
+                            },
+                            "rtt_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Rtt Ms"
+                            },
+                            "scan_page_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Page Count"
+                            },
+                            "scan_row_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 10000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Row Count"
+                            },
+                            "scheduler_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Active"
+                            },
+                            "scheduler_queue": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Queue"
+                            },
+                            "scheduler_video_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Video Active"
+                            },
+                            "service_reachable": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Service Reachable"
+                            },
+                            "size_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "tiny",
+                                    "small",
+                                    "medium",
+                                    "large",
+                                    "huge",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Size Bucket"
+                            },
+                            "soft_kick_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Soft Kick Count"
+                            },
+                            "stages": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "elapsed_ms": {
+                                    "maximum": 3600000,
+                                    "minimum": 0,
+                                    "title": "Elapsed Ms",
+                                    "type": "integer"
+                                  },
+                                  "stage": {
+                                    "enum": [
+                                      "user_action",
+                                      "identity_lookup_done",
+                                      "local_room_lookup_done",
+                                      "route_enter",
+                                      "route_push_started",
+                                      "first_frame_rendered",
+                                      "room_attach_started",
+                                      "room_attach_done",
+                                      "timeline_local_started",
+                                      "local_timeline_ready",
+                                      "remote_sync_ready",
+                                      "content_ready",
+                                      "cache_load_started",
+                                      "cache_load_done",
+                                      "remote_refresh_started",
+                                      "remote_refresh_done",
+                                      "composer_submit",
+                                      "outbox_persist",
+                                      "send_admission",
+                                      "matrix_send_start",
+                                      "matrix_send_finish",
+                                      "ack",
+                                      "timeline_visible",
+                                      "timeline_published",
+                                      "sync_response_wait_started",
+                                      "sync_response_received",
+                                      "sync_processing_done",
+                                      "sync_cleanup_done",
+                                      "queue_entered",
+                                      "queue_exited",
+                                      "shared_flight_joined",
+                                      "shared_flight_done",
+                                      "download_started",
+                                      "download_done",
+                                      "decrypt_started",
+                                      "decrypt_done",
+                                      "decode_started",
+                                      "decode_done",
+                                      "video_selected",
+                                      "video_validated",
+                                      "video_prepare_started",
+                                      "video_prepare_done",
+                                      "video_transcode_started",
+                                      "video_transcode_done",
+                                      "video_thumbnail_started",
+                                      "video_thumbnail_done",
+                                      "video_encrypted",
+                                      "video_upload_started",
+                                      "video_upload_done",
+                                      "video_event_sent",
+                                      "call_start",
+                                      "signaling_ready",
+                                      "ice_gathering",
+                                      "ice_connected",
+                                      "media_first_packet",
+                                      "call_connected",
+                                      "matrix_connected",
+                                      "sync_finished",
+                                      "conversation_ready",
+                                      "local_search_started",
+                                      "local_search_done",
+                                      "database_search_started",
+                                      "database_search_done",
+                                      "remote_search_started",
+                                      "remote_search_done",
+                                      "render_results",
+                                      "request_finished",
+                                      "search_scan_started",
+                                      "search_first_hit",
+                                      "search_coverage_complete",
+                                      "keyboard_requested",
+                                      "keyboard_stable_frame",
+                                      "room_local_first_frame",
+                                      "route_exit_requested",
+                                      "route_exit_frame",
+                                      "fragment_write_started",
+                                      "fragment_write_done"
+                                    ],
+                                    "title": "Stage",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "stage",
+                                  "elapsed_ms"
+                                ],
+                                "title": "PerformanceOperationStage",
+                                "type": "object"
+                              },
+                              "maxItems": 64,
+                              "title": "Stages",
+                              "type": "array"
+                            },
+                            "status_code": {
+                              "anyOf": [
+                                {
+                                  "maximum": 599,
+                                  "minimum": 100,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Status Code"
+                            },
+                            "sync_error_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Sync Error Count"
+                            },
+                            "timeline_event_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeline Event Count"
+                            },
+                            "transport_available": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Transport Available"
+                            },
+                            "uses_turn": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Uses Turn"
+                            },
+                            "window_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Window Index"
+                            }
+                          },
+                          "required": [
+                            "operation_id",
+                            "operation",
+                            "stages",
+                            "lifecycle",
+                            "observation_kind",
+                            "observed_elapsed_ms",
+                            "frame_attribution_complete"
+                          ],
+                          "title": "PerformanceObservation",
+                          "type": "object"
                         }
-                      },
-                      "required": [
-                        "operation_id",
-                        "operation",
-                        "result",
-                        "total_ms",
-                        "stages",
-                        "lifecycle"
-                      ],
-                      "title": "PerformanceOperation",
-                      "type": "object"
+                      ]
                     },
                     "maxItems": 20,
                     "title": "Operations",
