@@ -298,6 +298,18 @@ def test_private_timeline_does_not_correlate_other_devices_network_window():
     serialized = json.dumps(result)
     for private in (subject_ref, device_a, device_b, keyboard_id, api_id, request_id):
         assert private not in serialized
+    unknown_device = {key: value for key, value in batch_a.items() if key != 'device_ref'}
+    unknown = module.summarize_account_logs([
+        docker(server, '2026-09-28T08:00:00.200Z'),
+        docker(unknown_device, '2026-09-28T08:01:00Z'),
+        docker(batch_b, '2026-09-28T08:01:01Z'),
+    ], refs=(subject_ref,), since_hours=1,
+        now=datetime(2026, 9, 28, 8, 2, tzinfo=timezone.utc))
+    keyboard = next(row for row in unknown['device_timeline']
+                    if row.get('operation') == 'keyboard_transition')
+    assert keyboard['device'] == 'device_unknown'
+    assert keyboard['correlation'] == 'none'
+    assert unknown['coincident_operations'] == 0
 
 
 def test_private_query_accepts_strict_docker_logs_timestamps():
