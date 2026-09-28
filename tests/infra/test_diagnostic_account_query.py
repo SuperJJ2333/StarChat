@@ -78,6 +78,10 @@ def test_private_summary_bounds_coverage_and_never_prints_raw_refs():
     assert result['time_uncertain_count'] == 0
     assert result['operations'][0]['device'] == 'device_1'
     assert result['operations'][0]['operation'] == 'matrix_sync'
+    assert result['release_batches'] == [
+        {'version': '0.4.20+2190', 'platform': 'android', 'count': 1}]
+    assert result['device_timeline'][0]['version'] == '0.4.20+2190'
+    assert result['device_timeline'][0]['platform'] == 'android'
     serialized = json.dumps(result)
     assert subject_ref not in serialized and device_ref not in serialized
     assert '12345678-1234-4234-9234-123456789abc' not in serialized
@@ -193,6 +197,8 @@ def test_private_timeline_direct_request_precedes_coincidence_and_hides_ids():
     assert len(rows) == 4
     assert rows[0]['kind'] == 'operation' and rows[0]['operation'] == 'api_request'
     assert all(row['device'] == 'device_1' for row in rows)
+    assert all(row['version'] == '0.4.21+2190' and row['platform'] == 'android'
+               for row in rows)
     by_operation = {row['operation']: row for row in rows if row['kind'] == 'operation'}
     assert by_operation['api_request']['correlation'] == 'request_uuid_match'
     assert by_operation['keyboard_transition']['correlation'] == 'coincident'

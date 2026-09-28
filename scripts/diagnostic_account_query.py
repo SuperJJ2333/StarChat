@@ -87,10 +87,11 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
     duplicate_operations = duplicate_requests = 0
     incomplete = False
     devices: dict[str, str] = {}
-    operations: Counter[tuple[str, str, str, str, str]] = Counter()
-    requests: Counter[tuple[str, str, str]] = Counter()
-    seen_operations: dict[str, tuple[str, str, str, str, str]] = {}
-    seen_requests: dict[str, tuple[str, str, str]] = {}
+    operations: Counter[tuple[str, ...]] = Counter()
+    requests: Counter[tuple[str, ...]] = Counter()
+    release_batches: Counter[tuple[str, str]] = Counter()
+    seen_operations: dict[str, tuple[str, ...]] = {}
+    seen_requests: dict[str, tuple[str, ...]] = {}
     operation_rows = []
     request_rows = []
     server_rows = deque(maxlen=max_records)
@@ -147,6 +148,7 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
         earliest = at if earliest is None or at < earliest else earliest
         latest = at if latest is None or at > latest else latest
         matched += 1
+        release_batches[(batch.version, batch.platform)] += 1
         label = devices.setdefault(device, f'device_{len(devices) + 1}') if device else 'device_unknown'
         for item in batch.operations or ():
             if considered >= max_records:
@@ -156,7 +158,8 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
             if not hasattr(item, 'result'):
                 continue
             stage = item.stages[-1].stage if item.stages else 'none'
-            signature = (label, item.operation, item.result, stage,
+            signature = (label, batch.version, batch.platform,
+                         item.operation, item.result, stage,
                          item.network_error or 'none')
             previous = seen_operations.get(item.operation_id)
             if previous is not None:
@@ -171,13 +174,14 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
                     and getattr(item, 'time_anchor_age_ms', None) is not None):
                 uncertain += 1
             operations[signature] += 1
-            operation_rows.append((label, item, at, stage))
+            operation_rows.append((label, item, at, stage, batch.version, batch.platform))
         for item in batch.network_requests or ():
             if considered >= max_records:
                 incomplete = True
                 break
             considered += 1
-            signature = (label, item.phase, item.reason)
+            signature = (label, batch.version, batch.platform,
+                         item.phase, item.reason)
             previous = seen_requests.get(item.request_id)
             if previous is not None:
                 if previous != signature:
@@ -187,9 +191,9 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
                 continue
             seen_requests[item.request_id] = signature
             requests[signature] += 1
-            request_rows.append((label, item, at))
+            request_rows.append((label, item, at, batch.version, batch.platform))
 
-    request_items = {item.request_id: item for _, item, _ in request_rows}
+    request_items = {item.request_id: item for _, item, _, _, _ in request_rows}
     matched_servers = {}
     for server in server_rows:
         client = request_items.get(server.request_id)
@@ -201,7 +205,7 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
             incomplete = True
 
     operation_requests = {}
-    for _, item, _ in request_rows:
+    for _, item, _, _, _ in request_rows:
         if item.operation_id:
             operation_requests.setdefault(item.operation_id, set()).add(item.request_id)
 
@@ -227,7 +231,7 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
 
     timeline = []
     coincident = 0
-    for label, item, observed, stage in operation_rows:
+    for label, item, observed, stage, version, platform in operation_rows:
         started = getattr(item, 'started_at_utc', None)
         ended = getattr(item, 'ended_at_utc', None)
         direct = any(request_id in matched_servers for request_id in
@@ -242,18 +246,20 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
         else:
             correlation = 'none'
         timeline.append({
-            'kind': 'operation', 'device': label, 'operation': item.operation,
+            'kind': 'operation', 'device': label, 'version': version,
+            'platform': platform, 'operation': item.operation,
             'result': item.result, 'last_stage': stage,
             'started_at_utc': started, 'ended_at_utc': ended,
             'observed_at_utc': utc(observed), 'correlation': correlation,
             'time_basis': 'calibrated_device' if started else 'upload_receipt',
         })
-    for label, item, observed in request_rows:
+    for label, item, observed, version, platform in request_rows:
         server = matched_servers.get(item.request_id)
         server_start = (datetime.fromisoformat(server.server_started_at.replace('Z', '+00:00'))
                         if server else None)
         timeline.append({
             'kind': 'network_request', 'device': label,
+            'version': version, 'platform': platform,
             'phase': item.phase, 'reason': item.reason,
             'endpoint_category': item.endpoint_category,
             'started_at_utc': server.server_started_at if server else None,
@@ -270,6 +276,12 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
         'scanned_lines': scanned,
         'rejected_lines': rejected,
         'matched_batches': matched,
+        'release_batches': [
+            {'version': version, 'platform': platform, 'count': count}
+            for (version, platform), count in sorted(
+                release_batches.items(), key=lambda item: (-item[1], item[0]))[:20]
+        ],
+        'release_truncated': len(release_batches) > 20,
         'coverage_first_utc': utc(earliest),
         'coverage_last_utc': utc(latest),
         'retained_first_utc': utc(retained_first),
@@ -284,13 +296,16 @@ def summarize_account_logs(lines, *, refs: tuple[str, ...], since_hours: int,
         'duplicate_operations': duplicate_operations,
         'duplicate_network_requests': duplicate_requests,
         'operations': [
-            {'device': device, 'operation': operation, 'result': result,
+            {'device': device, 'version': version, 'platform': platform,
+             'operation': operation, 'result': result,
              'last_stage': stage, 'network_error': error, 'count': count}
-            for (device, operation, result, stage, error), count in sorted(operations.items())
+            for (device, version, platform, operation, result, stage, error), count
+            in sorted(operations.items())
         ],
         'network_requests': [
-            {'device': device, 'phase': phase, 'reason': reason, 'count': count}
-            for (device, phase, reason), count in sorted(requests.items())
+            {'device': device, 'version': version, 'platform': platform,
+             'phase': phase, 'reason': reason, 'count': count}
+            for (device, version, platform, phase, reason), count in sorted(requests.items())
         ],
         'correlation': 'request_uuid_match_is_direct; time_overlap_is_coincident',
     }
