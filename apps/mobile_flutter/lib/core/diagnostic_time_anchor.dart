@@ -89,7 +89,10 @@ final class DiagnosticTimeAnchor {
       serverDate = HttpDate.parse(dateHeader).toUtc();
     } on FormatException {
       return false;
+    } on HttpException {
+      return false;
     }
+    if (HttpDate.format(serverDate) != dateHeader) return false;
     _serverDateUtc = serverDate;
     _midpointMs = sentAtMs + rttMs ~/ 2;
     _observedMs = receivedAtMs;
@@ -109,6 +112,7 @@ final class DiagnosticTimeAnchor {
         startMs < 0 ||
         endMs < startMs ||
         endMs < observed ||
+        observed - startMs > 300000 ||
         endMs - observed > 300000) {
       return null;
     }

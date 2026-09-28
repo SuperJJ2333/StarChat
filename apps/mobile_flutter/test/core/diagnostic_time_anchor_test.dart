@@ -43,4 +43,30 @@ void main() {
         isFalse);
     expect(anchor.window(0, 1), isNull);
   });
+
+  test('plausible but impossible HTTP dates cannot escape diagnostics', () {
+    final anchor = DiagnosticTimeAnchor();
+    for (final date in [
+      'Mon, 28 Foo 2026 08:00:00 GMT',
+      'Mon, 32 Sep 2026 08:00:00 GMT',
+    ]) {
+      expect(
+          anchor.observe(dateHeader: date, sentAtMs: 1000, receivedAtMs: 1200),
+          isFalse);
+    }
+    expect(anchor.window(1200, 1300), isNull);
+  });
+
+  test('a long operation start before the fresh anchor is uncertain', () {
+    final anchor = DiagnosticTimeAnchor();
+    expect(
+        anchor.observe(
+          dateHeader: 'Mon, 28 Sep 2026 08:00:00 GMT',
+          sentAtMs: 600000,
+          receivedAtMs: 600100,
+        ),
+        isTrue);
+    expect(anchor.window(0, 600200), isNull);
+    expect(anchor.window(300100, 600200), isNotNull);
+  });
 }

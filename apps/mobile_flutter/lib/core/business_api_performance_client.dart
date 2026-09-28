@@ -45,7 +45,16 @@ final class BusinessApiPerformanceClient extends http.BaseClient {
       final sentAtMs = _recorder.monotonicMs;
       response = await _delegate.send(request);
       final receivedAtMs = _recorder.monotonicMs;
-      if (_isAuthenticatedBusinessRequest(request)) {
+      // IOClient exposes the final URL after redirects. Other clients must
+      // at least identify the response request before its Date is trusted.
+      final responseUri = response is http.BaseResponseWithUrl
+          ? (response as http.BaseResponseWithUrl).url
+          : response.request?.url;
+      if (_isAuthenticatedBusinessRequest(request) &&
+          response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          !response.isRedirect &&
+          responseUri?.origin == request.url.origin) {
         _recorder.observeAuthenticatedResponseDate(
           response.headers['date'],
           sentAtMs: sentAtMs,
