@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
+import 'package:matrix/src/database/sqflite_box.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:liuhetong_mobile/features/matrix/cooperative_matrix_database.dart';
@@ -12,6 +13,51 @@ import 'package:liuhetong_mobile/features/matrix/cooperative_matrix_database.dar
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(sqfliteFfiInit);
+
+  test('native timeline read-all reflects pending put/delete and reopen',
+      () async {
+    final fixture = await _Fixture.open();
+    try {
+      const table = 'box_timeline_fragments';
+      final collection = await BoxCollection.open('timeline-review', {table},
+          sqfliteDatabase: fixture.raw);
+      final fragments = collection.openBox<List>(table);
+      final mirror = collection.openBox<List>(table);
+      await fragments.put('room|old', ['old']);
+
+      await collection.transaction(() async {
+        await fragments.put('room|new', ['first']);
+        await fragments.put('room|new', ['final']);
+        await fragments.delete('room|old');
+        expect(await fragments.getAllValues(), {
+          'room|new': ['final'],
+        });
+        expect(await mirror.getAllValues(), {
+          'room|new': ['final'],
+        });
+        expect(await fragments.getAllKeys(), ['room|new']);
+      });
+      expect(await fragments.getAllValues(), {
+        'room|new': ['final'],
+      });
+
+      await collection.transaction(() async {
+        await fragments.clear();
+        await fragments.put('room|after-clear', ['kept']);
+        expect(await fragments.getAllValues(), {
+          'room|after-clear': ['kept'],
+        });
+      });
+      await fixture.reopen();
+      final reopened = await BoxCollection.open('timeline-review', {table},
+          sqfliteDatabase: fixture.raw);
+      expect(await reopened.openBox<List>(table).getAllValues(), {
+        'room|after-clear': ['kept'],
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
 
   test('cached receive burst lets event-loop heartbeat run before commit',
       () async {

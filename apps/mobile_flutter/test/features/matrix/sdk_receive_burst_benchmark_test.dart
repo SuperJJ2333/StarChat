@@ -136,6 +136,62 @@ void main() {
                 .map((event) => event.eventId),
             otherIds.reversed);
 
+        // Exercise ordering-sensitive SDK paths together in one native batch:
+        // local-send ACK, old history, redaction, and duplicate live replay.
+        Future<void> store(
+                EventUpdateType type, Map<String, dynamic> content) =>
+            database.storeEventUpdate(
+                EventUpdate(roomID: _roomId, type: type, content: content),
+                client);
+        final local = {
+          ..._eventSource(r'$local', '@sender:synthetic', historySize + 200),
+          'status': EventStatus.sending.intValue,
+          'unsigned': <String, dynamic>{'transaction_id': r'$local'},
+        };
+        final synced = {
+          ..._eventSource(r'$synced', '@sender:synthetic', historySize + 201),
+          'unsigned': <String, dynamic>{'transaction_id': r'$local'},
+        };
+        final encrypted = {
+          ..._eventSource(
+              r'$encrypted', '@sender:synthetic', historySize + 202),
+          'type': EventTypes.Encrypted,
+          'content': {
+            'algorithm': 'm.megolm.v1.aes-sha2',
+            'ciphertext': 'synthetic-fixture',
+          },
+        };
+        counter.reset();
+        await database.transaction(() async {
+          await store(EventUpdateType.timeline, local);
+          await store(EventUpdateType.timeline, synced);
+          await store(EventUpdateType.history,
+              _eventSource(r'$older', '@sender:synthetic', 1));
+          await store(EventUpdateType.timeline, encrypted);
+          await store(EventUpdateType.timeline, {
+            ..._eventSource(r'$recall', '@sender:synthetic', historySize + 203),
+            'type': EventTypes.Redaction,
+            'content': {'redacts': r'$encrypted'},
+          });
+          await store(EventUpdateType.history, encrypted);
+          await store(EventUpdateType.timeline, synced);
+        });
+        expect(counter.writesByKey['$_roomId|'], 1);
+        expect(counter.writesByKey['$_roomId|SENDING'], 1);
+        expect(await database.getEventById(r'$local', room), isNull);
+        final mixedExpected = <String>[
+          r'$recall',
+          r'$encrypted',
+          r'$synced',
+          ...finalPrimaryIds,
+          r'$older',
+        ];
+        expect(
+            (await database.getEventList(room)).map((event) => event.eventId),
+            mixedExpected);
+        expect((await database.getEventById(r'$encrypted', room))!.redacted,
+            isTrue);
+
         await database.close();
         databaseClosed = true;
         final reopened = MatrixSdkDatabase(path,
@@ -145,7 +201,10 @@ void main() {
         try {
           expect(
               (await reopened.getEventList(room)).map((event) => event.eventId),
-              finalPrimaryIds);
+              mixedExpected);
+          expect(await reopened.getEventById(r'$local', room), isNull);
+          expect((await reopened.getEventById(r'$encrypted', room))!.redacted,
+              isTrue);
           expect(
               (await reopened.getEventList(otherRoom))
                   .map((event) => event.eventId),

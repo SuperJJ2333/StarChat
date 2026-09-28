@@ -124,6 +124,56 @@ void main() {
     expect(harness.managedResources, initialCount);
   });
 
+  testWidgets('failed route drain retries without a caller-held lease',
+      (tester) async {
+    final harness = await _Harness.start(tester);
+    addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    var attempts = 0;
+    harness.roomLeaseOf(tester).bindOwnerDrain(() async {
+      if (++attempts == 1) throw StateError('synthetic drain failure');
+    });
+
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsNothing);
+    expect(attempts, 2);
+    expect(harness.managedResources, initialCount);
+  });
+
+  testWidgets('persistent route drain failure has bounded retries',
+      (tester) async {
+    final harness = await _Harness.start(tester);
+    addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    var attempts = 0;
+    harness.roomLeaseOf(tester).bindOwnerDrain(() async {
+      attempts++;
+      throw StateError('synthetic persistent drain failure');
+    });
+
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(attempts, 2,
+        reason: 'one immediate retry is allowed, with no unbounded loop');
+    expect(harness.managedResources, initialCount + 1,
+        reason: 'failed drain remains managed and revoked for later retry');
+
+    await tester.tap(find.byKey(const Key('friend-action-message')));
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsOneWidget);
+    expect(attempts, 3,
+        reason: 'next room open retries the old lease without blocking entry');
+    expect(harness.managedResources, initialCount + 2);
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(harness.managedResources, initialCount + 1);
+  });
+
   testWidgets('Test 2: Room A 内再次「发消息」不再被闸门吞掉，popUntil 回到原 Room A',
       (tester) async {
     final harness = await _Harness.start(tester);

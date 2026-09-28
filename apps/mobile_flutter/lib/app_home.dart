@@ -248,6 +248,34 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     navigatorOf: _rootNavigatorOrNull,
     conversationKeyOf: widget.matrix.logicalConversationKeySync,
   );
+  final _failedRoomLeaseCancels = <MatrixRoomLease>{};
+  Future<void>? _failedRoomLeaseRetry;
+
+  // A failed drain stays owned by Matrix. Retry once in the background and
+  // again on a later route/foreground transition; never spin on a hard error.
+  void _retryFailedRoomLeaseCancels() {
+    if (_failedRoomLeaseCancels.isEmpty || _failedRoomLeaseRetry != null) {
+      return;
+    }
+    Future<void> retry() async {
+      for (final lease in _failedRoomLeaseCancels.toList()) {
+        try {
+          await lease.cancel();
+          _failedRoomLeaseCancels.remove(lease);
+        } catch (_) {
+          debugPrint('[chatflow/perf] room_lease_cancel_failed');
+        }
+      }
+    }
+
+    late final Future<void> flight;
+    flight = retry().whenComplete(() {
+      if (identical(_failedRoomLeaseRetry, flight)) {
+        _failedRoomLeaseRetry = null;
+      }
+    });
+    _failedRoomLeaseRetry = flight;
+  }
 
   /// **Room Opening Policy Engine**：所有入口进入 [_roomNavigation] 之前的
   /// 唯一策略层。职责只有"打开前判断 + 失败分类"，不创建页面、不管理租约
@@ -1066,7 +1094,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _pushTapRouter?.setForeground(state == AppLifecycleState.resumed);
-    if (state == AppLifecycleState.resumed) unawaited(_resumeMomentUploads());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_resumeMomentUploads());
+      _retryFailedRoomLeaseCancels();
+    }
     if (!_matrixReady) return;
     if (state == AppLifecycleState.resumed) {
       _resumePerformance?.onForeground();
@@ -2379,6 +2410,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           : request.roomName.trim();
       stage = 'lease';
       trace.mark(PerformanceStage.roomAttachStarted);
+      _retryFailedRoomLeaseCancels();
       final lease = await widget.matrix.openRoomLease(roomId);
       routeLease = lease;
       trace.mark(PerformanceStage.roomAttachDone);
@@ -2512,6 +2544,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             await owned.cancel();
           } catch (_) {
             debugPrint('[chatflow/perf] room_lease_cancel_failed');
+            _failedRoomLeaseCancels.add(owned);
+            _retryFailedRoomLeaseCancels();
           }
         }
       }
