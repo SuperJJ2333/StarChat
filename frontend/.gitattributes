@@ -1,0 +1,3 @@
+# Preserve the deployed iOS download page and its version assertion byte for byte.
+download.html -text whitespace=cr-at-eol
+tests/home-ios-download.test.mjs -text whitespace=cr-at-eol
