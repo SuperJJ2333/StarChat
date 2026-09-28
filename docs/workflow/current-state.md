@@ -2,7 +2,7 @@
 
 ## 2026-09-29 聊天搜索与房间卡顿：Debug 2191 已安装，诊断 API 待单独发布
 
-Android 0.4.22+2191 已按固定签名的源码重建流程保留数据安装到 emulator-5556 并启动。房内及全局搜索采用稳定快照和有界本地读取；房间退出释放租约，消息批量写入减轻重复工作。94 项联合 Flutter 聚焦测试通过；整库 `verify.ps1` 仍在运行。认证诊断关联畅聊号的 API 候选已通过独立审查，**尚未发布**，当前服务仍为 8015 镜像。模拟器并非实体 Redmi K80，10 万条完整搜索耗时、GC 和输入法 P95 仍待真机测量。Web IndexedDB 的事务混读风险另列 P2，尚未修复。见[任务记录](tasks/2026-09-28-chat-search-jank-diagnostics.md)及[Debug 交付计划](../superpowers/plans/2026-09-28-chat-search-jank-debug-delivery.md)。
+Android 0.4.22+2191 已修正编译版本常量，按固定签名的源码重建流程保留数据安装到 emulator-5556 并启动；最终 APK SHA256 `aa70b8d3…`，首次安装时间未变。房内及全局搜索采用稳定快照和有界本地读取；房间退出释放租约，消息批量写入减轻重复工作。94 项联合 Flutter 聚焦测试通过；整库 `verify.ps1` 最后一次 exit 1 的 13 个失败均已按变更影响聚焦修复，移动端边界 238 项通过、1 项跳过，其余后段门禁通过，**不称整库脚本 exit 0**。认证诊断关联畅聊号的 API 候选已通过独立审查，**尚未发布**，当前服务仍为 8015 镜像。模拟器并非实体 Redmi K80，10 万条完整搜索耗时、GC 和输入法 P95 仍待真机测量。Web IndexedDB 的事务混读风险另列 P2；共享仓契约缺少线上已有的 13 条路径，待独立基线同步。见[任务记录](tasks/2026-09-28-chat-search-jank-diagnostics.md)及[Debug 交付计划](../superpowers/plans/2026-09-28-chat-search-jank-debug-delivery.md)。
 
 ## 2026-09-26 TCP443 每分钟观测已安装，Release 网络失败暂存门禁通过
 

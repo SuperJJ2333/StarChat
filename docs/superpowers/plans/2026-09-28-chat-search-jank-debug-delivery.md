@@ -4,7 +4,7 @@
 
 **Goal:** 从真实 Android 2190 冻结源码实施本任务补丁，完成受影响验证，并把固定签名 Debug 候选保留数据安装到 emulator-5556。
 
-**执行状态（2026-09-29）：** 2190 基线整合及 2191 固定签名构建、保留数据安装和启动已完成；聚焦测试通过，整库 `verify.ps1` 仍在运行。下方复选框是原实施清单，已完成事项及未验收边界以[任务台账](../../workflow/tasks/2026-09-28-chat-search-jank-diagnostics.md)为准。有界 crash/ANR 缓冲区中本包匹配数为 0；模拟器尚未完成账号内的搜索及输入法操作，10 万条完整搜索与 Redmi K80 性能也未实测。
+**执行状态（2026-09-29）：** 2190 基线整合及修正后的 2191 固定签名构建、保留数据安装和启动已完成，最终 APK SHA `aa70b8d3…`。聚焦测试通过；整库 `verify.ps1` 最后一次 exit 1 的 13 项失败已按变更影响修复并聚焦转绿，其余后段门禁独立通过，不能声称脚本 exit 0。下方复选框是原实施清单，已完成事项及未验收边界以[任务台账](../../workflow/tasks/2026-09-28-chat-search-jank-diagnostics.md)为准。有界 crash/ANR 记录中本包匹配数为 0；模拟器尚未完成账号内的搜索及输入法操作，10 万条完整搜索与 Redmi K80 性能也未实测。
 
 **Architecture:** 先按正式包冻结清单将准确源文件叠加到独立分支并提交基线，再执行三个互不覆盖的实施计划。所有代码通过后冻结新的 Debug 输入、源码构建、Apktool 常规重建、固定签名与独立验包，最后覆盖安装模拟器。
 
@@ -153,9 +153,9 @@ $RunId = 'run-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
 $ScriptRoot = 'C:\Users\Administrator\.codex\worktrees\chat-search-jank\StarChat\docs\verification\artifacts\2026-09-28\chat-search-jank\android-debug'
 $RunRoot = 'E:\StarChatVerification\docs\verification\artifacts\2026-09-28\chat-search-jank\android-debug'
 $RunDir = Join-Path $RunRoot $RunId
-$Manifest = Join-Path $ScriptRoot 'frozen-mobile-input.json'
+$Manifest = Join-Path $ScriptRoot 'frozen-mobile-input-e81c809b.json'
 $ManifestSha = (Get-FileHash -LiteralPath $Manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-pwsh -NoProfile -File (Join-Path $ScriptRoot 'build-android-debug.ps1') -RunId $RunId -ShortDrive R -ExpectedMobileManifestSha256 $ManifestSha
+pwsh -NoProfile -File (Join-Path $ScriptRoot 'build-android-debug.ps1') -RunId $RunId -ShortDrive R -MobileManifest $Manifest -ExpectedMobileManifestSha256 $ManifestSha
 if ($LASTEXITCODE -ne 0) { throw 'Android Debug build failed' }
 ```
 
