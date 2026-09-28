@@ -154,6 +154,24 @@ class Box<V> {
     return list;
   }
 
+  /// Search-page lookup that leaves the long-lived Box cache unchanged.
+  Future<List<V?>> getAllTransient(List<String> keys) async {
+    if (keys.isEmpty) return const [];
+    late List<V?> values;
+    await boxCollection.zoneTransaction(() async {
+      if (boxCollection._txnCache != null) {
+        // Pending IndexedDB writes live in the Box cache until commit.
+        values = await getAll(keys);
+        return;
+      }
+      final txn = boxCollection._db.transaction(name, 'readonly');
+      final store = txn.objectStore(name);
+      values = await Future.wait(
+          keys.map((key) => store.getObject(key).then(_fromValue)));
+    });
+    return values;
+  }
+
   Future<void> put(String key, V val, [Transaction? txn]) async {
     if (boxCollection._txnCache != null) {
       boxCollection._txnCache!.add((txn) => put(key, val, txn));

@@ -50,6 +50,8 @@ class BoxCollection with ZoneTransactionMixin {
   Batch? _activeBatch;
   bool _batchPoisoned = false;
   final _cacheInvalidators = <void Function()>[];
+  final _pendingBoxValues = <String, Map<String, Object?>>{};
+  final _pendingClearedBoxes = <String>{};
   final _pendingTimelinePuts = <String, void Function()>{};
   final _pendingTimelineValues = <String, Object?>{};
   final _pendingTimelineDeletes = <String>{};
@@ -89,6 +91,8 @@ class BoxCollection with ZoneTransactionMixin {
         } finally {
           _activeBatch = null;
           _batchPoisoned = false;
+          _pendingBoxValues.clear();
+          _pendingClearedBoxes.clear();
           _pendingTimelinePuts.clear();
           _pendingTimelineValues.clear();
           _pendingTimelineDeletes.clear();
@@ -311,6 +315,36 @@ class Box<V> {
     return list;
   }
 
+  /// Read one search page without adding its event rows to the persistent Box
+  /// cache. The collection gate keeps SQL and staged batch values consistent.
+  Future<List<V?>> getAllTransient(List<String> keys) async {
+    if (keys.isEmpty) return const [];
+    late List<V?> aligned;
+    await boxCollection.zoneTransaction(() async {
+      final values = <String, V?>{};
+      if (!boxCollection._pendingClearedBoxes.contains(name)) {
+        const batchSize = 800;
+        for (var offset = 0; offset < keys.length; offset += batchSize) {
+          final slice = keys.skip(offset).take(batchSize).toList();
+          final result = await boxCollection._db.query(name,
+              where: 'k IN (${slice.map((_) => '?').join(',')})',
+              whereArgs: slice);
+          for (final row in result) {
+            values[row['k'] as String] = _fromString(row['v']);
+          }
+        }
+      }
+      final pending = boxCollection._pendingBoxValues[name];
+      for (final key in keys) {
+        if (pending?.containsKey(key) ?? false) {
+          values[key] = pending![key] as V?;
+        }
+      }
+      aligned = keys.map((key) => values[key]).toList();
+    });
+    return aligned;
+  }
+
   Future<void> put(String key, V val) async {
     final txn = boxCollection._activeBatch;
 
@@ -325,6 +359,7 @@ class Box<V> {
       boxCollection._pendingTimelineValues[key] = val;
       boxCollection._pendingTimelineDeletes.remove(key);
       _cache[key] = val;
+      boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = val;
       _cachedKeys?.add(key);
       return;
     }
@@ -348,6 +383,9 @@ class Box<V> {
     }
 
     _cache[key] = val;
+    if (txn != null) {
+      boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = val;
+    }
     _cachedKeys?.add(key);
     return;
   }
@@ -370,6 +408,9 @@ class Box<V> {
     // Set to null instead remove() so that inside of transactions null is
     // returned.
     _cache[key] = null;
+    if (identical(txn, boxCollection._activeBatch)) {
+      boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = null;
+    }
     _cachedKeys?.remove(key);
     return;
   }
@@ -402,6 +443,9 @@ class Box<V> {
 
     for (final key in keys) {
       _cache[key] = null;
+      if (identical(txn, boxCollection._activeBatch)) {
+        boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = null;
+      }
       _cachedKeys?.removeAll(keys);
     }
     return;
@@ -424,6 +468,10 @@ class Box<V> {
     }
 
     _cache.clear();
+    if (identical(txn, boxCollection._activeBatch)) {
+      boxCollection._pendingClearedBoxes.add(name);
+      boxCollection._pendingBoxValues.remove(name);
+    }
     _cachedKeys = null;
     return;
   }

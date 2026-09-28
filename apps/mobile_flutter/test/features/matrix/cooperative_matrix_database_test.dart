@@ -14,6 +14,65 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(sqfliteFfiInit);
 
+  test('transient reads keep holes and pending writes without caching rows',
+      () async {
+    final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    const table = 'box_transient_test';
+    final collection = await BoxCollection.open('transient-review', {table},
+        sqfliteDatabase: raw);
+    final box = collection.openBox<Map>(table);
+    final mirror = collection.openBox<Map>(table);
+    try {
+      await raw.insert(table, {
+        'k': 'first',
+        'v': jsonEncode({'v': 'old'})
+      });
+      expect(await box.getAllTransient(['first', 'missing']), [
+        {'v': 'old'},
+        null,
+      ]);
+      await raw.update(
+          table,
+          {
+            'v': jsonEncode({'v': 'new'})
+          },
+          where: 'k = ?',
+          whereArgs: ['first']);
+      expect(await box.get('first'), {'v': 'new'},
+          reason: 'transient search reads must not populate the Box cache');
+
+      await collection.transaction(() async {
+        await box.put('pending', {'v': 'inserted'});
+        await box.delete('first');
+        expect(await box.getAllTransient(['first', 'pending', 'missing']), [
+          null,
+          {'v': 'inserted'},
+          null,
+        ]);
+        expect(await mirror.getAllTransient(['first', 'pending']), [
+          null,
+          {'v': 'inserted'},
+        ]);
+        await box.clear();
+        await box.put('after-clear', {'v': 'retained'});
+        expect(await box.getAllTransient(['first', 'after-clear']), [
+          null,
+          {'v': 'retained'},
+        ]);
+        expect(await mirror.getAllTransient(['first', 'after-clear']), [
+          null,
+          {'v': 'retained'},
+        ]);
+      });
+      expect(await box.getAllTransient(['first', 'after-clear']), [
+        null,
+        {'v': 'retained'},
+      ]);
+    } finally {
+      await collection.close();
+    }
+  });
+
   test('native timeline read-all reflects pending put/delete and reopen',
       () async {
     final fixture = await _Fixture.open();
