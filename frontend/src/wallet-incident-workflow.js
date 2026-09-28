@@ -2,6 +2,8 @@
 const REASONS={ack:'OWNER_INCIDENT_ACCEPTED',review:'OWNER_INCIDENT_CHECKED',resolve:'OWNER_INCIDENT_RESOLVED'};
 const STEPS=['ack','review','resolve'];
 const STEP_LABEL={ack:'确认接手事故',review:'实时核验当前证据',resolve:'结案并保留资金暂停'};
+const isReadBudgetT2=item=>item?.fingerprint==='manual-reserve:MANUAL_SOURCE_UNAVAILABLE'
+  &&item.code==='MANUAL_SOURCE_UNAVAILABLE'&&item.subject_id==='global'&&item.severity==='T2';
 const reasonText={
   ALERT_DELIVERY_UNHEALTHY:'告警送达异常；请检查告警通道并确认通知能够送达',
   LEDGER_INTEGRITY:'账本完整性检查未通过；请联系财务或技术人员核对账本',
@@ -68,6 +70,7 @@ export function fundControlError(error) {
 export function incidentSummary(item, policy) {
   const advisory=policy==='manual_liquidity'&&item.code==='MANUAL_BACKING_DEFICIT'&&item.severity==='P1'
     &&item.subject_id==='global'&&item.fingerprint==='manual-liquidity:backing-deficit';
+  const temporarySource=isReadBudgetT2(item);
   const titles={MANUAL_SOURCE_UNHEALTHY:'链上数据源曾出现异常',MANUAL_RESERVE_STALE:'储备证据曾过期',MANUAL_BACKING_DEFICIT:'储备覆盖提醒',MANUAL_COVERAGE_PENDING:'业务流水同步未完成'};
   const explanations={
     MANUAL_SOURCE_UNHEALTHY:'当时链上数据未满足健康要求，可能是结果过期或对账未完成，系统因此保护性暂停；具体历史触发条件以记录为准。',
@@ -81,11 +84,13 @@ export function incidentSummary(item, policy) {
     LEDGER_INTEGRITY:'当时账本完整性检查未通过，需要核查账务记录与平衡关系，不能直接跳过这项检查。',
     ALERT_DELIVERY_UNHEALTHY:'当时外部告警未满足送达要求，重要异常可能无法及时通知处理人员，需要核查告警通道。',
   };
-  const explanation=explanations[item.code]??(typeof reasonText[item.code]==='string'?`这起记录表示相关检查曾未通过。${reasonText[item.code]}。具体历史触发条件以记录为准。`:'这是一条钱包安全检查未通过的历史记录。详细原因未记录时，不能推断具体故障；请结合当前诊断进行检查。');
-  return {advisory,title:titles[item.code]??'钱包监控异常记录',
+  const explanation=temporarySource
+    ?'当时链上数据暂不可用，已识别的源读取预算耗尽使本轮检查未完成。此记录不提供可用于入账或出款结算的新鲜证据；具体上游原因以调查记录为准。'
+    :explanations[item.code]??(typeof reasonText[item.code]==='string'?`这起记录表示相关检查曾未通过。${reasonText[item.code]}。具体历史触发条件以记录为准。`:'这是一条钱包安全检查未通过的历史记录。详细原因未记录时，不能推断具体故障；请结合当前诊断进行检查。');
+  return {advisory,temporarySource,title:temporarySource?'链上数据暂不可用':titles[item.code]??'钱包监控异常记录',
     explanation,
     status:{OPEN:'待处理',ACKNOWLEDGED:'已接手 · 待检查或结案',RESOLVED:'已结案'}[item.status]??'状态待核实',
-    impact:advisory?'提示记录，不阻止恢复资金':item.status==='RESOLVED'?'事故已结案，资金恢复仍需单独核验':'阻止恢复资金，需要检查并处理',
+    impact:temporarySource?`${item.status==='RESOLVED'?'已结案；':''}记录保留、不会因这条记录自动暂停；需要新鲜链上证据的入账和出款结算仍须核验；已有暂停须单独处理`:advisory?'提示记录，不阻止恢复资金':item.status==='RESOLVED'?'事故已结案，资金恢复仍需单独核验':'阻止恢复资金，需要检查并处理',
     condition:item.condition_active===false?'最近记录显示异常已消失；仍需实时核验':item.condition_active===true?'这起事故尚未通过异常消除复核；请检查并处理事故':'当前异常状态尚未核实',
   };
 }
@@ -123,7 +128,7 @@ export async function processIncident({id,api,journal,credentials,authMode,onPro
       const operation=journal.pending(slot(kind))?slot(kind):journal.pending(legacySlot(kind))?legacySlot(kind):slot(kind), saved=journal.pending(operation);
       const metadata=saved?.metadata??{expected_version:current.version,reason_code:REASONS[kind],...(kind==='resolve'?{clearance_digest:current.clearance_digest}:{})};
       const entry=journal.begin(operation,metadata);
-      onProgress(`${STEP_LABEL[kind]}…${saved?'正在核实上次请求。':''}`);
+      onProgress(`${kind==='resolve'&&isReadBudgetT2(current)?'结案，不改变资金控制状态':STEP_LABEL[kind]}…${saved?'正在核实上次请求。':''}`);
       let result;
       try {
         result=valid(await api.manualWalletIncidentAction(id,kind,{...metadata,...credentials},{idempotencyKey:entry.key}),id);

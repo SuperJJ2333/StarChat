@@ -8,7 +8,7 @@ import { userPanel } from "./admin-user-panel.js";
 import { ledgerPanel } from './admin-ledger-panel.js';
 import { statusLabel } from "./admin-formatters.js";
 import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-completion";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260928-wallet-monitor-t2";
 import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';
@@ -116,6 +116,7 @@ const abiChoices = [
   ["x86_64", "x86_64（模拟器）"],
 ];
 function androidApkPath(abi) {
+  if (abi === "arm64") return "/download?platform=android&install=1";
   return "/downloads/latest-" + abi + ".apk";
 }
 function platformButtons() {
@@ -123,7 +124,6 @@ function platformButtons() {
   const row = element("div", "land-download-row");
   const android = element("a", "land-btn land-btn-primary", "下载 Android 版");
   android.href = androidApkPath("arm64");
-  android.setAttribute("download", "");
   android.setAttribute("aria-label", "下载 Android 安装包");
   const abiSelect = element("select", "land-abi-select");
   abiSelect.setAttribute("aria-label", "选择安装包 CPU 架构");
@@ -137,16 +137,17 @@ function platformButtons() {
   abiSelect.addEventListener("change", () => {
     const path = androidApkPath(abiSelect.value);
     android.href = path;
-    android.setAttribute("download", "");
+    if (abiSelect.value === "arm64") android.removeAttribute("download");
+    else android.setAttribute("download", "");
     abiHint.textContent = path;
   });
   row.append(android, abiSelect, abiHint);
   actions.append(row);
   const ios = element("a", "land-btn land-btn-primary");
   ios.href = "/download";
-  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.7（2173）");
+  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.20（2189）");
   const iosLabel = element("span", "land-platform-chip", "iOS 版下载");
-  iosLabel.append(element("span", "land-platform-status", "0.4.7（2173）· 企业正式版"));
+  iosLabel.append(element("span", "land-platform-status", "0.4.20（2189）· 企业正式版"));
   ios.append(iosLabel);
   actions.append(ios);
   return actions;
@@ -231,7 +232,7 @@ function homeView() {
   const downloadCopy = element("div");
   const downloadHead = element("div", "land-section-head");
   downloadHead.append(element("p", "land-kicker", "立即开始"), element("h2", null, "下载畅聊 ChatFlow"));
-  downloadCopy.append(downloadHead, element("p", "land-download-note", "Android 安装包由官方渠道分发；iOS 正式版 0.4.7（2173）请前往安装页，使用 Safari 安装或扫码下载。"));
+  downloadCopy.append(downloadHead, element("p", "land-download-note", "Android 安装包由官方渠道分发；iOS 正式版 0.4.20（2189）请前往安装页，使用 Safari 安装或扫码下载。"));
   downloadCard.append(downloadCopy, platformButtons());
   download.append(downloadCard);
   page.append(download);
