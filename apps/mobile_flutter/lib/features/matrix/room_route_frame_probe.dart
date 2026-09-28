@@ -12,13 +12,14 @@ final class RoomRouteFrameProbe {
   Timer? _timeout;
   int _generation = 0;
   bool _disposed = false;
+  bool _invalidated = false;
 
   void beginEnter() => _begin(PerformanceRoomRoutePhase.enter);
 
   void beginLeave() => _begin(PerformanceRoomRoutePhase.leave);
 
   void _begin(PerformanceRoomRoutePhase phase) {
-    if (_disposed) return;
+    if (_disposed || _invalidated) return;
     if (_trace != null && _phase == phase) return;
     cancel();
     _phase = phase;
@@ -46,6 +47,13 @@ final class RoomRouteFrameProbe {
   }
 
   void cancel() => _finish(PerformanceResult.cancelled);
+
+  /// Revoked or replaced routes can never produce another visible frame.
+  void invalidate() {
+    if (_disposed || _invalidated) return;
+    _invalidated = true;
+    cancel();
+  }
 
   void _finish(PerformanceResult result) {
     final trace = _trace;

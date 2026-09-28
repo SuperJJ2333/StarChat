@@ -61,8 +61,10 @@ final class RoomKeyboardTransitionProbe {
     }
     final previous = _lastInset;
     _lastInset = inset;
-    if (_trace == null && previous != null &&
-        previous > 1 && inset < previous - 1) {
+    if (_trace == null &&
+        previous != null &&
+        previous > 1 &&
+        inset < previous - 1) {
       // System back can hide the keyboard without changing input focus.
       _begin(PerformanceKeyboardDirection.hide);
     }
@@ -110,12 +112,13 @@ final class RoomKeyboardTransitionProbe {
             _finish(PerformanceResult.success);
             return;
           }
+          // Request one confirmation frame after the target inset is reached.
+          _scheduleFrame();
         } else {
           _stableFrames = 0;
         }
-        // One more frame confirms stability. A missing inset transition still
-        // terminates at the bounded timeout.
-        _scheduleFrame();
+        // Outside the target, wait for another metrics change. A stalled IME
+        // must not drive a frame loop for the whole timeout window.
       });
     } catch (_) {
       _framePending = false;
@@ -135,6 +138,12 @@ final class RoomKeyboardTransitionProbe {
     _timeout = null;
     _generation++;
     trace.finish(result: result);
+  }
+
+  /// App backgrounding cancels the current sample while retaining the probe.
+  void cancel() {
+    if (_disposed) return;
+    _finish(PerformanceResult.cancelled);
   }
 
   void dispose() {

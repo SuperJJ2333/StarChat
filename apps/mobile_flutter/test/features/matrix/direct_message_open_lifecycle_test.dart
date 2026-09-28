@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/app_home.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
@@ -122,6 +123,42 @@ void main() {
     harness.closeRoomA(tester);
     await tester.pumpAndSettle();
     expect(harness.managedResources, initialCount);
+  });
+
+  testWidgets('managed room entry and exit emit independent visible frames',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      enabled: () => true,
+      onRecord: records.add,
+    );
+    final harness = await _Harness.start(tester, localFrameRecorder: recorder);
+    addTearDown(harness.dispose);
+
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    final local = records
+        .where((record) =>
+            record.operation == PerformanceOperationType.roomLocalFrame)
+        .toList();
+    expect(local, hasLength(1));
+    expect(local.single.roomRoutePhase, PerformanceRoomRoutePhase.enter);
+    expect(local.single.result, PerformanceResult.success);
+    expect(
+        local.single.stagesUs, contains(PerformanceStage.roomLocalFirstFrame));
+
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    await tester.pump();
+    final completed = records
+        .where((record) =>
+            record.operation == PerformanceOperationType.roomLocalFrame)
+        .toList();
+    expect(completed, hasLength(2));
+    expect(completed.last.roomRoutePhase, PerformanceRoomRoutePhase.leave);
+    expect(completed.last.result, PerformanceResult.success);
+    expect(completed.last.stagesUs, contains(PerformanceStage.routeExitFrame));
+    expect(recorder.activeCount, 0);
   });
 
   testWidgets('failed route drain retries without a caller-held lease',
@@ -496,6 +533,7 @@ final class _Harness {
     WidgetTester tester, {
     bool peerInCache = true,
     bool directChatMetadata = true,
+    PerformanceTraceRecorder? localFrameRecorder,
   }) async {
     final counters = _Counters();
     final client = _CountingClient(
@@ -563,6 +601,7 @@ final class _Harness {
         onLogout: () async {},
         themeController: ThemeController(store: _ThemeStore()),
         profileRepositoryFactory: (_, __) async => cache,
+        localFrameRecorder: localFrameRecorder,
       ),
     ));
     await tester.pump();

@@ -5,6 +5,8 @@ import '../settings/voice_auto_play_preferences.dart';
 import 'coordinated_direct_chat.dart';
 import 'timeline_scroll_anchor.dart';
 import 'bounded_history_search.dart';
+import 'room_route_frame_probe.dart';
+import 'room_keyboard_transition_probe.dart';
 import 'local_room_history_search.dart';
 import '../../core/chat_diagnostics.dart';
 import '../../core/chat_diagnostic_operation.dart';
@@ -14,6 +16,7 @@ import 'nudge_rate_limiter.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
 
 import 'room_draft_store.dart';
@@ -175,6 +178,8 @@ class RoomPage extends StatefulWidget {
     this.voiceTranscriber,
     required this.api,
     this.performanceTrace,
+    this.roomRouteProbe,
+    this.interactionRecorder,
     this.onPerformanceContentReady,
     this.remoteSyncStatus,
     this.remoteSyncAlreadyReady = false,
@@ -209,6 +214,8 @@ class RoomPage extends StatefulWidget {
   final PerformanceCorrelationContext? Function(String localId)?
       outboxCorrelationFor;
   final PerformanceTrace? performanceTrace;
+  final RoomRouteFrameProbe? roomRouteProbe;
+  final PerformanceTraceRecorder? interactionRecorder;
   final VoidCallback? onPerformanceContentReady;
   final Stream<SyncStatusUpdate>? remoteSyncStatus;
   final bool remoteSyncAlreadyReady;
@@ -324,6 +331,40 @@ Future<void> openGroupMemberProfile(
 enum _ConversationSyncPhase { unseen, waiting, processing, cleaning, invalid }
 
 class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
+  RoomKeyboardTransitionProbe? _keyboardProbe;
+  ui.FlutterView? _roomFlutterView;
+
+  void _onComposerFocusChanged() {
+    _keyboardProbe?.request(inputFocusNode.hasFocus
+        ? PerformanceKeyboardDirection.show
+        : PerformanceKeyboardDirection.hide);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _roomFlutterView = View.of(context);
+    if (_keyboardProbe == null) {
+      _keyboardProbe = RoomKeyboardTransitionProbe(
+        recorder:
+            widget.interactionRecorder ?? PerformanceTraceRecorder.instance,
+        bottomInset: () {
+          final view = _roomFlutterView;
+          if (view == null) return double.nan;
+          return view.viewInsets.bottom / view.devicePixelRatio;
+        },
+        afterFrame: (callback) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => callback());
+          WidgetsBinding.instance.scheduleFrame();
+        },
+      );
+      inputFocusNode.addListener(_onComposerFocusChanged);
+    }
+  }
+
+  @override
+  void didChangeMetrics() => _keyboardProbe?.onMetricsChanged();
+
   StreamSubscription<SyncStatusUpdate>? _performanceSyncSubscription;
   Timer? _performanceSyncDeadline;
   bool _performanceLocalReady = false;
@@ -522,6 +563,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
+      _keyboardProbe?.cancel();
       _readReceiptDebounce?.cancel();
       unawaited(RoomDraftStore.shared.flush(_draftKey));
     } else {
@@ -933,6 +975,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (mounted) {
         _performanceFirstFrameSeen = true;
         widget.performanceTrace?.mark(PerformanceStage.firstFrameRendered);
+        widget.roomRouteProbe?.onRoomFirstFrame();
         _completeConversationOpenIfReady();
       }
     });
@@ -2600,6 +2643,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _dismissComposerExtensions() {
+    if (inputFocusNode.hasFocus) {
+      _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     if (composerPanel != ComposerPanel.none) {
       setState(() => composerPanel = ComposerPanel.none);
@@ -2607,6 +2653,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _togglePanel(ComposerPanel panel) {
+    if (inputFocusNode.hasFocus) {
+      _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       composerPanel = composerPanel == panel ? ComposerPanel.none : panel;
@@ -2617,12 +2666,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 面板收回与键盘弹出同一帧处理，避免相互遮挡与二次跳动；
   /// 点击输入框以外的区域不经过本回调，面板保持原逻辑。
   void _dismissEmojiPanelForInput() {
+    _keyboardProbe?.request(PerformanceKeyboardDirection.show);
     if (composerPanel != ComposerPanel.emoji) return;
     setState(() => composerPanel = ComposerPanel.none);
     inputFocusNode.requestFocus();
   }
 
   void _toggleVoice() {
+    if (inputFocusNode.hasFocus) {
+      _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       composerPanel = composerPanel == ComposerPanel.voice
@@ -4915,6 +4968,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    inputFocusNode.removeListener(_onComposerFocusChanged);
+    _keyboardProbe?.dispose();
+    _roomFlutterView = null;
     _performanceSyncDeadline?.cancel();
     unawaited(_performanceSyncSubscription?.cancel());
     final openTrace = widget.performanceTrace;

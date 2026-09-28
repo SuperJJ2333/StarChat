@@ -79,6 +79,7 @@ import 'features/matrix/app_resume_performance_observer.dart';
 import 'features/matrix/matrix_sync_recovery_controller.dart';
 import 'features/matrix/matrix_home_page.dart' show MatrixHomePage;
 import 'features/matrix/room_page.dart';
+import 'features/matrix/room_route_frame_probe.dart';
 import 'features/matrix/pending_conversation_page.dart';
 import 'features/matrix/profile_repository.dart';
 import 'features/matrix/group_chat_controller.dart';
@@ -192,6 +193,7 @@ final class AppHome extends StatefulWidget {
     required this.themeController,
     this.profileRepositoryFactory,
     this.syncWatchdogFactory,
+    this.localFrameRecorder,
   });
 
   final BusinessApiClient api;
@@ -205,6 +207,7 @@ final class AppHome extends StatefulWidget {
       BusinessApiClient api, String? accountKey)? profileRepositoryFactory;
   final MatrixSyncWatchdog Function(SyncWatchdogTarget target)?
       syncWatchdogFactory;
+  final PerformanceTraceRecorder? localFrameRecorder;
 
   @override
   State<AppHome> createState() => _AppHomeState();
@@ -249,6 +252,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     conversationKeyOf: widget.matrix.logicalConversationKeySync,
   );
   final _failedRoomLeaseCancels = <MatrixRoomLease>{};
+  final _roomFrameProbes = <Route<void>, RoomRouteFrameProbe>{};
   Future<void>? _failedRoomLeaseRetry;
 
   // A failed drain stays owned by Matrix. Retry once in the background and
@@ -2394,6 +2398,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     var stage = 'identity';
     MotionPageRoute<void>? route;
     MatrixRoomLease? routeLease;
+    RoomRouteFrameProbe? localFrameProbe;
+    var routeExitFrameScheduled = false;
     ValueNotifier<RoomOpenRequest>? navigationRequests;
     var closed = false;
     void notifyClosed() {
@@ -2420,10 +2426,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
       final navigator = Navigator.of(context, rootNavigator: true);
       navigationRequests = ValueNotifier<RoomOpenRequest>(request);
+      localFrameProbe = RoomRouteFrameProbe(
+          widget.localFrameRecorder ?? PerformanceTraceRecorder.instance);
       route = MotionPageRoute<void>(
           builder: (_) => RoomPage(
                 api: widget.api,
                 performanceTrace: trace,
+                roomRouteProbe: localFrameProbe,
                 onPerformanceContentReady:
                     _resumePerformance?.onConversationReady,
                 remoteSyncStatus: _syncWatchdogStarted
@@ -2465,10 +2474,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               ));
       handle.register(route,
           onReopen: (next) => navigationRequests!.value = next);
+      _roomFrameProbes[route] = localFrameProbe;
       // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
       // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程）。
       StatisticsRoomScope.enter(roomId);
       lease.setOnRevoked(() async {
+        if (!routeExitFrameScheduled) localFrameProbe?.invalidate();
         final r = route;
         if (r == null) return;
         if (r.isActive) {
@@ -2507,10 +2518,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
       stage = 'push';
       trace.mark(PerformanceStage.routePushStarted);
+      localFrameProbe.beginEnter();
       final visible = navigator.push(route);
       WidgetsBinding.instance.addPostFrameCallback((_) => verifyLanded());
       final previous = handle.replacedRoute;
       if (previous != null && previous.isActive) {
+        _roomFrameProbes[previous]?.invalidate();
         navigator.removeRoute(previous);
       }
       final contact = request.initialContact ??
@@ -2524,17 +2537,34 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // A removed/replaced route completes its pop before its widgets finish
       // their final frame. Keep their timeline and lease alive until disposal.
       await visible;
+      localFrameProbe.beginLeave();
       await route.completed;
+      if (mounted) {
+        routeExitFrameScheduled = true;
+        final completedProbe = localFrameProbe;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          completedProbe.onRouteExitFrame();
+          completedProbe.dispose();
+        });
+        WidgetsBinding.instance.scheduleFrame();
+      } else {
+        localFrameProbe.invalidate();
+      }
     } catch (_) {
+      localFrameProbe?.cancel();
       trace.finish(result: PerformanceResult.failed);
       debugPrint('[chatflow/perf] room_open_failed stage=$stage');
       rethrow;
     } finally {
+      if (!routeExitFrameScheduled) localFrameProbe?.dispose();
       if (!trace.isFinished) trace.dispose();
       try {
         StatisticsRoomScope.leave(roomId);
         final finalRoute = route;
-        if (finalRoute != null) handle.release(finalRoute);
+        if (finalRoute != null) {
+          _roomFrameProbes.remove(finalRoute);
+          handle.release(finalRoute);
+        }
         navigationRequests?.dispose();
         notifyClosed();
       } finally {
@@ -2652,6 +2682,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     _disposeSyncWatchdog();
     directChats.dispose();
     // 账号切换/退出登录：房间导航登记不得泄漏到下一个账号。
+    for (final probe in _roomFrameProbes.values) {
+      probe.invalidate();
+    }
+    _roomFrameProbes.clear();
     _roomNavigation.dispose();
     pendingFriendRequests.dispose();
     unawaited(_disposeMatrixResources());

@@ -32,7 +32,8 @@ void main() {
     nowUs = 16000;
     frames.removeAt(0)();
     expect(records, hasLength(1));
-    expect(records.single.operation, PerformanceOperationType.keyboardTransition);
+    expect(
+        records.single.operation, PerformanceOperationType.keyboardTransition);
     expect(records.single.keyboardDirection, PerformanceKeyboardDirection.show);
     expect(records.single.result, PerformanceResult.success);
     expect(records.single.stagesUs.keys.toList(), [
@@ -94,6 +95,56 @@ void main() {
       expect(records, hasLength(1));
       probe.dispose();
     });
+  });
+
+  test('background cancellation drops pending frame and can measure resume',
+      () {
+    var inset = 0.0;
+    final frames = <VoidCallback>[];
+    final records = <PerformanceRecord>[];
+    final probe = RoomKeyboardTransitionProbe(
+      recorder: PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true),
+        onRecord: records.add,
+      ),
+      bottomInset: () => inset,
+      afterFrame: frames.add,
+    );
+    probe.request(PerformanceKeyboardDirection.show);
+    inset = 200;
+    probe.onMetricsChanged();
+    probe.cancel();
+    frames.removeAt(0)();
+    expect(records.single.result, PerformanceResult.cancelled);
+    inset = 0;
+    probe.request(PerformanceKeyboardDirection.show);
+    inset = 220;
+    probe.onMetricsChanged();
+    frames.removeAt(0)();
+    frames.removeAt(0)();
+    expect(records, hasLength(2));
+    expect(records.last.result, PerformanceResult.success);
+    probe.dispose();
+  });
+
+  test('non-target inset waits for metrics instead of requesting frame loop',
+      () {
+    var inset = 0.0;
+    final frames = <VoidCallback>[];
+    final probe = RoomKeyboardTransitionProbe(
+      recorder: PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true),
+      ),
+      bottomInset: () => inset,
+      afterFrame: frames.add,
+    );
+    probe.request(PerformanceKeyboardDirection.show);
+    inset = 0.5;
+    probe.onMetricsChanged();
+    frames.removeAt(0)();
+    expect(frames, isEmpty,
+        reason: 'a stalled keyboard must not generate frames for 1.2 seconds');
+    probe.dispose();
   });
 
   test('opposite request cancels the old generation without losing new frames',

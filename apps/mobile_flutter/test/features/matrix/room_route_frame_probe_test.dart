@@ -59,6 +59,21 @@ void main() {
     probe.dispose();
   });
 
+  test('revoked route cannot begin a successful exit after entry cancel', () {
+    final records = <PerformanceRecord>[];
+    final probe = RoomRouteFrameProbe(PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    ));
+    probe.beginEnter();
+    probe.invalidate();
+    probe.beginLeave();
+    probe.onRouteExitFrame();
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.cancelled);
+    probe.dispose();
+  });
+
   test('missing route frame times out as cancelled, not slow', () {
     fakeAsync((time) {
       final records = <PerformanceRecord>[];
