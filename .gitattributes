@@ -53,3 +53,6 @@ frontend/src/admin-user-directory.js text eol=lf
 frontend/src/admin-login-scene.js text eol=lf
 frontend/src/admin-loading.js text eol=lf
 frontend/admin.html text eol=lf
+
+# Reproduce the already-published Worker audit writer byte-for-byte.
+services/business-api/app/modules/audit/writer.py -text whitespace=cr-at-eol
