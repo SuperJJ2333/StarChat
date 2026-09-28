@@ -48,9 +48,17 @@ final class MatrixSyncPhaseMetrics {
   int? _cleaningAt;
   PerformanceTrace? _trace;
   MatrixSyncCounterSnapshot? _counterBaseline;
+  int? _timelineEventCount;
   bool _disposed = false;
 
   static int _defaultClockUs() => _clock.elapsedMicroseconds;
+
+  /// Counts raw timeline envelopes only during this cycle's processing phase.
+  /// No event identifiers or content are retained by this measurement.
+  void recordTimelineEventCount(int count) {
+    if (_disposed || _processingAt == null || _cleaningAt != null) return;
+    _timelineEventCount = count.clamp(0, 100000);
+  }
 
   void record(SyncStatus status,
       {SdkError? error, MatrixSyncCounterSnapshot? counters}) {
@@ -96,6 +104,7 @@ final class MatrixSyncPhaseMetrics {
         _trace = null;
         if (trace != null) {
           _applyCounters(trace, counters, actualError: true);
+          trace.timelineEventCount = _timelineEventCount;
           if (error != null) {
             final measuredError = _networkError(error);
             trace.setNetwork(error: measuredError.$1);
@@ -130,7 +139,10 @@ final class MatrixSyncPhaseMetrics {
     }
     final trace = _trace;
     _trace = null;
-    if (trace != null) _applyCounters(trace, counters);
+    if (trace != null) {
+      _applyCounters(trace, counters);
+      trace.timelineEventCount = _timelineEventCount;
+    }
     trace?.mark(PerformanceStage.syncCleanupDone);
     trace?.finish();
     _clear();
@@ -185,6 +197,7 @@ final class MatrixSyncPhaseMetrics {
     _processingAt = null;
     _cleaningAt = null;
     _counterBaseline = null;
+    _timelineEventCount = null;
   }
 
   void dispose() {

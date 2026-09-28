@@ -450,6 +450,51 @@ void main() {
     expect(phases.metrics.snapshot()['operations'], isEmpty);
   });
 
+  test('sync trace counts only raw timeline envelopes in its processing cycle',
+      () {
+    final records = <PerformanceRecord>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder =
+        PerformanceTraceRecorder(metrics: metrics, onRecord: records.add);
+    final phases =
+        MatrixSyncPhaseMetrics(metrics: metrics, traceRecorder: recorder);
+
+    phases.recordTimelineEventCount(90); // No active cycle.
+    phases.record(SyncStatus.waitingForResponse);
+    phases.recordTimelineEventCount(80); // Still waiting for response.
+    phases.record(SyncStatus.processing);
+    phases.recordTimelineEventCount(50);
+    phases.recordTimelineEventCount(200000); // Bounded even for malformed input.
+    phases.record(SyncStatus.cleaningUp);
+    phases.record(SyncStatus.finished);
+    expect(records.single.toJson()['timeline_event_count'], 100000);
+
+    phases.record(SyncStatus.waitingForResponse);
+    phases.record(SyncStatus.processing);
+    phases.record(SyncStatus.cleaningUp);
+    phases.record(SyncStatus.finished);
+    expect(records, hasLength(2));
+    expect(records.last.toJson()['timeline_event_count'], isNull);
+    phases.dispose();
+  });
+
+  test('failed sync retains only the count observed in that cycle', () {
+    final records = <PerformanceRecord>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder =
+        PerformanceTraceRecorder(metrics: metrics, onRecord: records.add);
+    final phases =
+        MatrixSyncPhaseMetrics(metrics: metrics, traceRecorder: recorder);
+    phases.record(SyncStatus.waitingForResponse);
+    phases.record(SyncStatus.processing);
+    phases.recordTimelineEventCount(7);
+    phases.record(SyncStatus.error,
+        error: SdkError(exception: TimeoutException('PRIVATE')));
+    expect(records.single.toJson()['timeline_event_count'], 7);
+    expect(jsonEncode(records.single.toJson()), isNot(contains('PRIVATE')));
+    phases.dispose();
+  });
+
   test('watchdog records status updates and disposes its account-scoped helper',
       () async {
     final target = _Target();

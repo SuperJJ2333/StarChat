@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:matrix/matrix.dart' show Client, SyncStatus, SyncStatusUpdate;
+import 'package:matrix/matrix.dart'
+    show Client, SyncStatus, SyncStatusUpdate, SyncUpdate;
 
 import '../../core/performance_metrics.dart';
 import 'matrix_sync_recovery_controller.dart';
@@ -22,12 +23,42 @@ abstract interface class SyncWatchdogTarget {
   set backgroundSync(bool enabled);
 }
 
-final class ClientSyncWatchdogTarget implements SyncWatchdogTarget {
+/// Optional bounded sync-volume stream. Existing watchdog targets may omit it.
+abstract interface class SyncTimelineCountSource {
+  Stream<int> get timelineEventCounts;
+}
+
+final class ClientSyncWatchdogTarget
+    implements SyncWatchdogTarget, SyncTimelineCountSource {
   const ClientSyncWatchdogTarget(this._client);
   final Client _client;
 
   @override
   Stream<SyncStatusUpdate> get syncStatus => _client.onSyncStatus.stream;
+
+  @override
+  Stream<int> get timelineEventCounts =>
+      _client.onSync.stream.map(countTimelineEnvelopes);
+
+  /// Counts raw joined/left timeline envelopes, without reading event fields.
+  static int countTimelineEnvelopes(SyncUpdate update) {
+    var count = 0;
+    final joined = update.rooms?.join;
+    if (joined != null) {
+      for (final room in joined.values) {
+        count += room.timeline?.events?.length ?? 0;
+        if (count >= 100000) return 100000;
+      }
+    }
+    final left = update.rooms?.leave;
+    if (left != null) {
+      for (final room in left.values) {
+        count += room.timeline?.events?.length ?? 0;
+        if (count >= 100000) return 100000;
+      }
+    }
+    return count;
+  }
 
   @override
   Future<void> oneShotSync() => _client.oneShotSync();
@@ -109,6 +140,7 @@ final class MatrixSyncWatchdog {
   ValueListenable<bool?> get transportAvailable => _transportAvailable;
 
   StreamSubscription<SyncStatusUpdate>? _subscription;
+  StreamSubscription<int>? _countSubscription;
   Timer? _timer;
   Future<void>? _restarting;
   Future<void>? _softKicking;
@@ -157,6 +189,18 @@ final class MatrixSyncWatchdog {
   void start() {
     if (_disposed || _timer != null) return;
     _lastProgress = _clock();
+    final SyncTimelineCountSource? countSource =
+        target is SyncTimelineCountSource
+            ? target as SyncTimelineCountSource
+            : null;
+    if (countSource != null) {
+      _countSubscription = countSource.timelineEventCounts.listen(
+        (count) {
+          if (!_disposed) _syncPhaseMetrics.recordTimelineEventCount(count);
+        },
+        onError: (Object _, StackTrace __) {},
+      );
+    }
     _subscription = target.syncStatus.listen((update) {
       if (_disposed) return;
       // waitingForResponse 每轮长轮询必发，是最可靠的心跳；
@@ -362,5 +406,7 @@ final class MatrixSyncWatchdog {
     connectionStatus.dispose();
     unawaited(_subscription?.cancel());
     _subscription = null;
+    unawaited(_countSubscription?.cancel());
+    _countSubscription = null;
   }
 }
