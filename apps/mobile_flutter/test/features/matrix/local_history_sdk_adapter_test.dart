@@ -20,6 +20,52 @@ class LocalClient extends Client {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(sqfliteFfiInit);
+  test('frozen ID pages ignore new heads and batch reads retain holes',
+      () async {
+    final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final db = MatrixSdkDatabase(inMemoryDatabasePath,
+        database: raw, sqfliteFactory: databaseFactoryFfi);
+    await db.open();
+    final client = LocalClient(db);
+    final room =
+        client.room = Room(id: '!search-snapshot:local', client: client);
+    Future<void> store(int i) => db.storeEventUpdate(
+        EventUpdate(roomID: room.id, type: EventUpdateType.timeline, content: {
+          'event_id': 'e$i',
+          'sender': '@synthetic:local',
+          'type': EventTypes.Message,
+          'origin_server_ts':
+              DateTime.utc(2026, 9, i + 1).millisecondsSinceEpoch,
+          'content': {'msgtype': MessageTypes.Text, 'body': 'needle $i'}
+        }),
+        client);
+    try {
+      for (var i = 0; i < 4; i++) {
+        await store(i);
+      }
+      final ids = await db.openSearchEventIds(room, maxBytes: 8);
+      try {
+        expect(await ids.page(0, 2), ['e3', 'e2']);
+        await store(4);
+        expect(await ids.page(2, 2), ['e1', 'e0']);
+        final stored = await raw.query('box_events');
+        final missing = stored.singleWhere(
+            (r) => (jsonDecode(r['v'] as String) as Map)['event_id'] == 'e2');
+        await raw
+            .delete('box_events', where: 'k = ?', whereArgs: [missing['k']]);
+        await db.open();
+        final rows = await db.getSearchEventsByIds(room, ['e3', 'e2']);
+        expect(rows.map((e) => e?.eventId), ['e3', null]);
+        expect(await ids.page(2, 2), ['e1', 'e0'],
+            reason: 'event-row holes must not shift frozen timeline IDs');
+      } finally {
+        ids.dispose();
+      }
+    } finally {
+      await db.close();
+      await client.dispose();
+    }
+  });
   test(
       'actual SDK database holes retain raw offsets and date/search remain local',
       () async {

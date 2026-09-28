@@ -37,6 +37,71 @@ import 'package:matrix/src/database/indexeddb_box.dart'
 import 'package:matrix/src/database/database_file_storage_stub.dart'
     if (dart.library.io) 'package:matrix/src/database/database_file_storage_io.dart';
 
+/// One search query's ordered local event IDs. The low-memory form retains
+/// page anchors instead of another copy of a large timeline fragment.
+final class MatrixSearchEventIds {
+  MatrixSearchEventIds._fixed(List<String> ids)
+      : _ids = List<String>.unmodifiable(ids),
+        _readCurrent = null,
+        _first = null,
+        _last = null,
+        _length = ids.length;
+
+  MatrixSearchEventIds._anchored(
+      this._readCurrent, this._first, this._last, this._length);
+
+  List<String>? _ids;
+  final Future<List<String>> Function()? _readCurrent;
+  final String? _first, _last;
+  final int _length;
+  final Map<int, String> _checkpoints = {};
+  bool _disposed = false;
+
+  Future<List<String>> page(int offset, int limit) async {
+    if (_disposed) throw StateError('Search ID snapshot was disposed');
+    if (offset < 0) throw RangeError.value(offset, 'offset');
+    if (limit <= 0 || offset >= _length) return const [];
+    final fixed = _ids;
+    if (fixed != null) {
+      return fixed.sublist(offset, min(fixed.length, offset + limit));
+    }
+    final current = await _readCurrent!();
+    if (_disposed) throw StateError('Search ID snapshot was disposed');
+    final first = _first!, last = _last!;
+    final firstIndex = current.indexOf(first);
+    final lastIndex = current.lastIndexOf(last);
+    if (firstIndex < 0 || lastIndex < firstIndex) {
+      throw StateError('Search ID snapshot anchors changed');
+    }
+    final start = offset == 0
+        ? firstIndex
+        : () {
+            final previous = _checkpoints[offset - 1];
+            if (previous == null) {
+              throw StateError('Search ID snapshot page is not sequential');
+            }
+            final position = current.indexOf(previous, firstIndex);
+            if (position < firstIndex || position >= lastIndex) {
+              throw StateError('Search ID snapshot checkpoint changed');
+            }
+            return position + 1;
+          }();
+    final end = min(lastIndex + 1, start + limit);
+    if (start > lastIndex || end - start < min(limit, _length - offset)) {
+      throw StateError('Search ID snapshot source changed');
+    }
+    final result = current.sublist(start, end);
+    _checkpoints[offset + result.length - 1] = result.last;
+    return result;
+  }
+
+  void dispose() {
+    _disposed = true;
+    _ids = null;
+    _checkpoints.clear();
+  }
+}
+
 /// Database based on SQlite3 on native and IndexedDB on web. For native you
 /// have to pass a `Database` object, which can be created with the sqflite
 /// package like this:
@@ -436,6 +501,21 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     final raw = await _eventsBox.get(TupleKey(room.id, eventId).toString());
     if (raw == null) return null;
     return Event.fromJson(copyMap(raw), room);
+  }
+
+  /// Aligned batch lookup. A missing row remains a null slot at its ID's
+  /// original position, so local-search coverage is never silently completed.
+  Future<List<Event?>> getSearchEventsByIds(
+      Room room, List<String> eventIds) async {
+    if (eventIds.isEmpty) return const [];
+    final keys = [
+      for (final id in eventIds) TupleKey(room.id, id).toString(),
+    ];
+    final raws = await _eventsBox.getAll(keys);
+    return [
+      for (final raw in raws)
+        raw == null ? null : Event.fromJson(copyMap(raw), room),
+    ];
   }
 
   /// Loads a whole list of events at once from the store for a specific room
@@ -1758,6 +1838,25 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
         return eventIds;
       });
+
+  /// Capture the current synced timeline once. Ordinary head appends do not
+  /// shift subsequent search pages; a removed anchor invalidates the query.
+  Future<MatrixSearchEventIds> openSearchEventIds(Room room,
+      {int maxBytes = 32 * 1024 * 1024}) async {
+    final key = TupleKey(room.id, '').toString();
+    Future<List<String>> readCurrent() async =>
+        List<String>.from(await _timelineFragmentsBox.get(key) ?? const []);
+    final ids = await readCurrent();
+    if (ids.isEmpty) return MatrixSearchEventIds._fixed(ids);
+    var estimatedBytes = 0;
+    for (final id in ids) {
+      estimatedBytes += 8 + id.length * 2;
+      if (estimatedBytes > maxBytes) break;
+    }
+    if (estimatedBytes <= maxBytes) return MatrixSearchEventIds._fixed(ids);
+    return MatrixSearchEventIds._anchored(
+        readCurrent, ids.first, ids.last, ids.length);
+  }
 
   @override
   Future<void> storePresence(String userId, CachedPresence presence) =>
