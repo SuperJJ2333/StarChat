@@ -26,6 +26,45 @@
         "title": "AbortBody",
         "type": "object"
       },
+      "AccountSecurityResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "email_bound": {
+            "title": "Email Bound",
+            "type": "boolean"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "masked_email": {
+            "title": "Masked Email",
+            "type": "string"
+          },
+          "masked_phone": {
+            "title": "Masked Phone",
+            "type": "string"
+          },
+          "phone_bound": {
+            "title": "Phone Bound",
+            "type": "boolean"
+          },
+          "phone_verified": {
+            "title": "Phone Verified",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "masked_email",
+          "masked_phone",
+          "email_bound",
+          "phone_bound",
+          "email_verified",
+          "phone_verified"
+        ],
+        "title": "AccountSecurityResponse",
+        "type": "object"
+      },
       "ActivationConfirm": {
         "additionalProperties": false,
         "properties": {
@@ -1794,6 +1833,36 @@
         "title": "ClaimView",
         "type": "object"
       },
+      "ClearUnchangedDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_payload": {
+            "additionalProperties": true,
+            "description": "Entire payload returned by get_draft or save_draft. Changed image/video references are owner-validated and compared by durable media identity; server-derived video_cache_keys are read hints and ignored; every other JSON value and media order must match the current owner's stored snapshot exactly.",
+            "title": "Expected Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "expected_payload"
+        ],
+        "title": "ClearUnchangedDraft",
+        "type": "object"
+      },
+      "ClearUnchangedDraftResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cleared": {
+            "title": "Cleared",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cleared"
+        ],
+        "title": "ClearUnchangedDraftResponse",
+        "type": "object"
+      },
       "CloseBody": {
         "additionalProperties": false,
         "properties": {
@@ -1931,7 +2000,7 @@
         "title": "ComplaintBody",
         "type": "object"
       },
-      "CompletedMomentMediaUpload": {
+      "CompletedMomentUploadResponse": {
         "additionalProperties": false,
         "properties": {
           "id": {
@@ -1947,10 +2016,9 @@
                 "type": "null"
               }
             ],
-            "description": "Stable cache identity for this completed media reference; clients namespace it by account.",
             "title": "Media Cache Key"
           },
-          "media_url": {
+          "media_ref": {
             "anyOf": [
               {
                 "type": "string"
@@ -1959,7 +2027,12 @@
                 "type": "null"
               }
             ],
-            "title": "Media Url"
+            "description": "Durable owner-validated media:// reference after completion, for queued publication; not a public read capability.",
+            "title": "Media Ref"
+          },
+          "media_url": {
+            "title": "Media Url",
+            "type": "string"
           },
           "status": {
             "title": "Status",
@@ -1970,9 +2043,10 @@
           "id",
           "status",
           "media_url",
+          "media_ref",
           "media_cache_key"
         ],
-        "title": "CompletedMomentMediaUpload",
+        "title": "CompletedMomentUploadResponse",
         "type": "object"
       },
       "ContactBody": {
@@ -2168,6 +2242,23 @@
             "maxLength": 5000,
             "title": "Text",
             "type": "string"
+          },
+          "video_poster_media_ids": {
+            "description": "Optional owner-completed static video-poster upload IDs, aligned with video_urls; null means no poster. Empty preserves legacy videos.",
+            "items": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxItems": 9,
+            "title": "Video Poster Media Ids",
+            "type": "array"
           },
           "video_urls": {
             "description": "Owner-completed MP4/MOV upload references; at most nine images and videos combined, each <=20MiB.",
@@ -2921,6 +3012,59 @@
           }
         },
         "title": "DraftPayload",
+        "type": "object"
+      },
+      "EmailBindingCodeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "EmailBindingCodeRequest",
+        "type": "object"
+      },
+      "EmailBindingConfirmRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "new_email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "New Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "new_email"
+        ],
+        "title": "EmailBindingConfirmRequest",
+        "type": "object"
+      },
+      "EmailBindingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "EmailBindingRequest",
         "type": "object"
       },
       "EmailVerificationLinkRequest": {
@@ -5564,6 +5708,55 @@
         "title": "MomentNotificationsPage",
         "type": "object"
       },
+      "MomentResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "video_poster_cache_keys": {
+            "description": "Stable poster cache identities aligned with video_urls; clients must namespace by current account.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Video Poster Cache Keys",
+            "type": "array"
+          },
+          "video_poster_urls": {
+            "description": "Small viewer-bound video posters, aligned with video_urls; null for old/no-poster videos. Live Moment visibility is rechecked on access.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Video Poster Urls",
+            "type": "array"
+          },
+          "video_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Video Urls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "video_urls",
+          "video_poster_urls",
+          "video_poster_cache_keys"
+        ],
+        "title": "MomentResponse",
+        "type": "object"
+      },
       "MomentsPreferencesResponse": {
         "additionalProperties": false,
         "properties": {
@@ -5835,6 +6028,104 @@
           "ownership_attested"
         ],
         "title": "OwnerTransferBody",
+        "type": "object"
+      },
+      "PasswordCodeProofResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "reset_token": {
+            "title": "Reset Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reset_token",
+          "expires_in"
+        ],
+        "title": "PasswordCodeProofResponse",
+        "type": "object"
+      },
+      "PasswordCodeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "phone"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "target"
+        ],
+        "title": "PasswordCodeRequest",
+        "type": "object"
+      },
+      "PasswordCodeResetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "new_password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "PasswordCodeResetRequest",
+        "type": "object"
+      },
+      "PasswordCodeVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "phone"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "target",
+          "code"
+        ],
+        "title": "PasswordCodeVerifyRequest",
         "type": "object"
       },
       "PasswordLoginResponse": {
@@ -7367,6 +7658,11 @@
             "title": "Masked Email",
             "type": "string"
           },
+          "masked_phone": {
+            "default": "",
+            "title": "Masked Phone",
+            "type": "string"
+          },
           "nickname": {
             "title": "Nickname",
             "type": "string"
@@ -7690,6 +7986,16 @@
       "RecentOperationRequest": {
         "additionalProperties": false,
         "properties": {
+          "database": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestDatabaseWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "duration_ms": {
             "title": "Duration Ms",
             "type": "number"
@@ -8573,6 +8879,57 @@
         "title": "RequestBody",
         "type": "object"
       },
+      "RequestDatabaseWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "attribution_complete": {
+            "title": "Attribution Complete",
+            "type": "boolean"
+          },
+          "connection_wait_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Wait Ms"
+          },
+          "query_count": {
+            "title": "Query Count",
+            "type": "integer"
+          },
+          "query_error_count": {
+            "title": "Query Error Count",
+            "type": "integer"
+          },
+          "query_max_ms": {
+            "title": "Query Max Ms",
+            "type": "number"
+          },
+          "query_total_ms": {
+            "title": "Query Total Ms",
+            "type": "number"
+          },
+          "slow_query_count": {
+            "title": "Slow Query Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query_count",
+          "query_error_count",
+          "query_total_ms",
+          "query_max_ms",
+          "slow_query_count",
+          "attribution_complete",
+          "connection_wait_ms"
+        ],
+        "title": "RequestDatabaseWindow",
+        "type": "object"
+      },
       "RequestLatencyWindow": {
         "additionalProperties": false,
         "properties": {
@@ -9244,6 +9601,23 @@
         "title": "UpdateVisibility",
         "type": "object"
       },
+      "UserSearchBody": {
+        "additionalProperties": false,
+        "properties": {
+          "q": {
+            "description": "完整邮箱或手机号；畅聊号仅末两位允许不同或省略，完整号优先",
+            "maxLength": 320,
+            "minLength": 2,
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "UserSearchBody",
+        "type": "object"
+      },
       "UserSearchProjection": {
         "properties": {
           "avatar_url": {
@@ -9321,6 +9695,112 @@
           "items"
         ],
         "title": "UserSearchResponse",
+        "type": "object"
+      },
+      "UsernameAvailabilityResponse": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "available"
+        ],
+        "title": "UsernameAvailabilityResponse",
+        "type": "object"
+      },
+      "UsernameChangePolicy": {
+        "properties": {
+          "can_change": {
+            "title": "Can Change",
+            "type": "boolean"
+          },
+          "max_length": {
+            "title": "Max Length",
+            "type": "integer"
+          },
+          "min_length": {
+            "title": "Min Length",
+            "type": "integer"
+          },
+          "next_change_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Change At"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "can_change",
+          "next_change_at",
+          "min_length",
+          "max_length"
+        ],
+        "title": "UsernameChangePolicy",
+        "type": "object"
+      },
+      "UsernameChangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ],
+        "title": "UsernameChangeRequest",
+        "type": "object"
+      },
+      "UsernameChangeResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "next_change_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Change At"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "changed",
+          "next_change_at"
+        ],
+        "title": "UsernameChangeResponse",
         "type": "object"
       },
       "WalletAccessView": {
@@ -9663,7 +10143,8 @@
           "severity": {
             "enum": [
               "P0",
-              "P1"
+              "P1",
+              "T2"
             ],
             "title": "Severity",
             "type": "string"
@@ -14025,7 +14506,8 @@
                   "items": {
                     "enum": [
                       "P0",
-                      "P1"
+                      "P1",
+                      "T2"
                     ],
                     "type": "string"
                   },
@@ -17174,6 +17656,63 @@
         ]
       }
     },
+    "/api/v1/auth/account-security": {
+      "get": {
+        "operationId": "account_security_api_v1_auth_account_security_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountSecurityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Account Security",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/auth/admin-captcha": {
       "get": {
         "operationId": "admin_captcha_api_v1_auth_admin_captcha_get",
@@ -17740,6 +18279,256 @@
         ]
       }
     },
+    "/api/v1/auth/email/rebind/confirm": {
+      "post": {
+        "operationId": "email_binding_confirm_api_v1_auth_email_rebind_confirm_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailBindingConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Email Binding Confirm",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/email/rebind/new-request": {
+      "post": {
+        "operationId": "email_binding_new_request_api_v1_auth_email_rebind_new_request_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailBindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Email Binding New Request",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/email/rebind/old-confirm": {
+      "post": {
+        "operationId": "email_binding_old_confirm_api_v1_auth_email_rebind_old_confirm_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailBindingCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Email Binding Old Confirm",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/email/rebind/old-request": {
+      "post": {
+        "operationId": "email_binding_old_request_api_v1_auth_email_rebind_old_request_post",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Email Binding Old Request",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",
@@ -18070,6 +18859,201 @@
           }
         ],
         "summary": "Matrix Session",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/password/code/request": {
+      "post": {
+        "description": "无Authorization时匿名；提供无效认证头返回401。已登录请求仅限当前账号已验证联系方式。",
+        "operationId": "password_code_request_api_v1_auth_password_code_request_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Password Code Request",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/password/code/reset": {
+      "post": {
+        "description": "无Authorization时匿名；提供无效认证头返回401。已登录重置仅限当前账号，恢复证明单次消费。",
+        "operationId": "password_code_reset_api_v1_auth_password_code_reset_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordCodeResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Password Code Reset",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/password/code/verify": {
+      "post": {
+        "description": "无Authorization时匿名；提供无效认证头返回401。已登录验证仅限当前账号。验证码单次消费后返回短期恢复证明。",
+        "operationId": "password_code_verify_api_v1_auth_password_code_verify_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordCodeVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordCodeProofResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Password Code Verify",
         "tags": [
           "identity"
         ]
@@ -19925,6 +20909,50 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "diagnostic_loss": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "description": "Immutable evidence of bounded local diagnostic eviction, not failures.",
+                        "properties": {
+                          "dropped_events": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Dropped Events",
+                            "type": "integer"
+                          },
+                          "dropped_frames": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Dropped Frames",
+                            "type": "integer"
+                          },
+                          "dropped_operations": {
+                            "maximum": 1000000,
+                            "minimum": 0,
+                            "title": "Dropped Operations",
+                            "type": "integer"
+                          },
+                          "sample_id": {
+                            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                            "title": "Sample Id",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "sample_id",
+                          "dropped_events",
+                          "dropped_operations",
+                          "dropped_frames"
+                        ],
+                        "title": "DiagnosticLoss",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "events": {
                     "items": {
                       "additionalProperties": false,
@@ -20005,7 +21033,9 @@
                             "result_write_failed",
                             "retry_recovered",
                             "terminal_invalidated",
-                            "result_superseded"
+                            "result_superseded",
+                            "matrix_sync_soft_kick",
+                            "matrix_sync_hard_restart"
                           ],
                           "title": "Stage",
                           "type": "string"
@@ -20037,6 +21067,110 @@
                     "maxItems": 20,
                     "title": "Events",
                     "type": "array"
+                  },
+                  "frame_windows": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "description": "One foreground main-tab interval; never a route or room identity.",
+                          "properties": {
+                            "active_tab": {
+                              "enum": [
+                                "unknown",
+                                "messages",
+                                "contacts",
+                                "discover",
+                                "me"
+                              ],
+                              "title": "Active Tab",
+                              "type": "string"
+                            },
+                            "budget_us": {
+                              "maximum": 1000000,
+                              "minimum": 1,
+                              "title": "Budget Us",
+                              "type": "integer"
+                            },
+                            "frame_count": {
+                              "maximum": 1000000,
+                              "minimum": 1,
+                              "title": "Frame Count",
+                              "type": "integer"
+                            },
+                            "max_build_us": {
+                              "maximum": 3600000000,
+                              "minimum": 0,
+                              "title": "Max Build Us",
+                              "type": "integer"
+                            },
+                            "max_raster_us": {
+                              "maximum": 3600000000,
+                              "minimum": 0,
+                              "title": "Max Raster Us",
+                              "type": "integer"
+                            },
+                            "slow_build_count": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Slow Build Count",
+                              "type": "integer"
+                            },
+                            "slow_frame_count": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Slow Frame Count",
+                              "type": "integer"
+                            },
+                            "slow_raster_count": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Slow Raster Count",
+                              "type": "integer"
+                            },
+                            "window_end": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window End",
+                              "type": "string"
+                            },
+                            "window_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Window Id",
+                              "type": "string"
+                            },
+                            "window_start": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window Start",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "window_id",
+                            "window_start",
+                            "window_end",
+                            "active_tab",
+                            "budget_us",
+                            "frame_count",
+                            "slow_frame_count",
+                            "slow_build_count",
+                            "slow_raster_count",
+                            "max_build_us",
+                            "max_raster_us"
+                          ],
+                          "title": "DiagnosticFrameWindow",
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Frame Windows"
                   },
                   "frames": {
                     "anyOf": [
@@ -20083,763 +21217,1924 @@
                       }
                     ]
                   },
-                  "operations": {
-                    "items": {
-                      "additionalProperties": false,
-                      "oneOf": [
-                        {
+                  "network_requests": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
                           "properties": {
-                            "frame_attribution_complete": {
-                              "enum": [
-                                true,
-                                null
-                              ]
-                            },
-                            "slow_build_count": {
+                            "elapsed_ms": {
+                              "maximum": 3600000,
+                              "minimum": 0,
+                              "title": "Elapsed Ms",
                               "type": "integer"
                             },
-                            "slow_frame_count": {
-                              "type": "integer"
-                            },
-                            "slow_raster_count": {
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "slow_frame_count",
-                            "slow_build_count",
-                            "slow_raster_count"
-                          ]
-                        },
-                        {
-                          "not": {
-                            "anyOf": [
-                              {
-                                "required": [
-                                  "slow_frame_count"
-                                ]
-                              },
-                              {
-                                "required": [
-                                  "slow_build_count"
-                                ]
-                              },
-                              {
-                                "required": [
-                                  "slow_raster_count"
-                                ]
-                              }
-                            ]
-                          },
-                          "properties": {
-                            "frame_attribution_complete": {
-                              "const": false
-                            }
-                          },
-                          "required": [
-                            "frame_attribution_complete"
-                          ]
-                        }
-                      ],
-                      "properties": {
-                        "app_network_state": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "online",
-                                "weak",
-                                "offline",
-                                "recovering",
-                                "unknown"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "App Network State"
-                        },
-                        "cache_source": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "memory",
-                                "disk",
-                                "network",
-                                "miss",
-                                "server_poster",
-                                "local_frame",
-                                "unknown"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Cache Source"
-                        },
-                        "candidate_protocol": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "udp",
-                                "tcp",
-                                "tls",
-                                "unknown"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Candidate Protocol"
-                        },
-                        "database_operation": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "timeline_local_load",
-                                "conversation_snapshot_load",
-                                "outbox_query",
-                                "media_index_lookup",
-                                "message_search"
-                              ],
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Database Operation"
-                        },
-                        "endpoint_category": {
-                          "anyOf": [
-                            {
+                            "endpoint_category": {
                               "enum": [
                                 "auth",
                                 "profile",
                                 "contacts",
-                                "friendship",
-                                "moments",
-                                "finance",
-                                "support",
-                                "push",
                                 "media",
-                                "diagnostics",
+                                "finance",
+                                "settings",
+                                "support",
                                 "other"
                               ],
+                              "title": "Endpoint Category",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Endpoint Category"
-                        },
-                        "frame_attribution_complete": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "description": "Omit slow-frame counts when false; legacy records omit this field and include all counts.",
-                          "title": "Frame Attribution Complete"
-                        },
-                        "hard_restart_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Hard Restart Count"
-                        },
-                        "jitter_ms": {
-                          "anyOf": [
-                            {
-                              "maximum": 60000,
-                              "minimum": 0,
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Jitter Ms"
-                        },
-                        "last_healthy_sync_age_ms": {
-                          "anyOf": [
-                            {
-                              "maximum": 3600000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Last Healthy Sync Age Ms"
-                        },
-                        "lifecycle": {
-                          "enum": [
-                            "foreground",
-                            "background",
-                            "resuming",
-                            "unknown"
-                          ],
-                          "title": "Lifecycle",
-                          "type": "string"
-                        },
-                        "matrix_state": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "connected",
-                                "connecting",
-                                "disconnected",
-                                "unknown"
+                            "headers_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ],
-                              "type": "string"
+                              "title": "Headers Ms"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Matrix State"
-                        },
-                        "media_priority": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "interactive",
-                                "visible",
-                                "prefetch",
-                                "background"
+                            "http_status": {
+                              "anyOf": [
+                                {
+                                  "maximum": 599,
+                                  "minimum": 100,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ],
-                              "type": "string"
+                              "title": "Http Status"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Media Priority"
-                        },
-                        "media_type": {
-                          "anyOf": [
-                            {
+                            "method": {
                               "enum": [
-                                "image",
-                                "video",
-                                "audio",
-                                "file",
-                                "avatar",
-                                "unknown"
+                                "GET",
+                                "POST",
+                                "PUT",
+                                "PATCH",
+                                "DELETE",
+                                "HEAD",
+                                "OPTIONS",
+                                "OTHER"
                               ],
+                              "title": "Method",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Media Type"
-                        },
-                        "method": {
-                          "anyOf": [
-                            {
+                            "network": {
                               "enum": [
-                                "get",
-                                "post",
-                                "put",
-                                "patch",
-                                "delete",
-                                "head",
+                                "unknown",
+                                "wifi",
+                                "mobile",
+                                "ethernet",
+                                "vpn",
+                                "none",
                                 "other"
                               ],
+                              "title": "Network",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Method"
-                        },
-                        "network_error": {
-                          "anyOf": [
-                            {
+                            "operation_id": {
+                              "anyOf": [
+                                {
+                                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Operation Id"
+                            },
+                            "phase": {
                               "enum": [
-                                "dns_failure",
-                                "connect_timeout",
-                                "read_timeout",
-                                "socket_failure",
-                                "tls_failure",
-                                "offline",
-                                "server5xx",
-                                "rate_limit",
-                                "auth_failure",
-                                "business_rejection",
-                                "cancelled",
+                                "awaiting_headers",
+                                "reading_body",
+                                "response_complete",
                                 "unknown"
                               ],
+                              "title": "Phase",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Network Error"
-                        },
-                        "opening_source": {
-                          "anyOf": [
-                            {
+                            "platform": {
                               "enum": [
-                                "local_room",
-                                "pending_conversation"
+                                "android",
+                                "ios",
+                                "other"
                               ],
+                              "title": "Platform",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Opening Source"
-                        },
-                        "operation": {
-                          "enum": [
-                            "app_startup",
-                            "app_resume",
-                            "conversation_open",
-                            "message_send",
-                            "matrix_sync",
-                            "media_load",
-                            "recent_pictures_load",
-                            "video_prepare",
-                            "video_poster",
-                            "search",
-                            "search_page_open",
-                            "contacts_load",
-                            "moments_load",
-                            "wallet_load",
-                            "api_request",
-                            "call_setup",
-                            "call_active",
-                            "profile_load",
-                            "chat_list_load"
-                          ],
-                          "title": "Operation",
-                          "type": "string"
-                        },
-                        "operation_id": {
-                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-                          "title": "Operation Id",
-                          "type": "string"
-                        },
-                        "packet_loss_percent": {
-                          "anyOf": [
-                            {
-                              "maximum": 100,
-                              "minimum": 0,
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Packet Loss Percent"
-                        },
-                        "reconnect_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Reconnect Count"
-                        },
-                        "relay_protocol": {
-                          "anyOf": [
-                            {
+                            "reason": {
                               "enum": [
-                                "udp",
-                                "tcp",
+                                "timeout",
+                                "socket",
                                 "tls",
-                                "unknown"
+                                "http_transport",
+                                "aborted",
+                                "unexpected",
+                                "http_5xx"
                               ],
+                              "title": "Reason",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Relay Protocol"
-                        },
-                        "result": {
-                          "enum": [
-                            "success",
-                            "slow",
-                            "waiting_network",
-                            "rejected",
-                            "failed",
-                            "cancelled"
-                          ],
-                          "title": "Result",
-                          "type": "string"
-                        },
-                        "result_count_bucket": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "zero",
-                                "one_to_twenty",
-                                "twenty_one_to_hundred",
-                                "hundred_one_to_five_hundred",
-                                "over_five_hundred"
-                              ],
+                            "request_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Request Id",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Result Count Bucket"
-                        },
-                        "retry_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 20,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Retry Count"
-                        },
-                        "row_count_bucket": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "zero",
-                                "one_to_twenty",
-                                "twenty_one_to_hundred",
-                                "hundred_one_to_five_hundred",
-                                "over_five_hundred"
-                              ],
+                            "started_at": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Started At",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Row Count Bucket"
-                        },
-                        "rtt_ms": {
-                          "anyOf": [
-                            {
-                              "maximum": 60000,
-                              "minimum": 0,
-                              "type": "number"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Rtt Ms"
-                        },
-                        "scheduler_active": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Scheduler Active"
-                        },
-                        "scheduler_queue": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Scheduler Queue"
-                        },
-                        "scheduler_video_active": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Scheduler Video Active"
-                        },
-                        "service_reachable": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Service Reachable"
-                        },
-                        "size_bucket": {
-                          "anyOf": [
-                            {
-                              "enum": [
-                                "zero",
-                                "tiny",
-                                "small",
-                                "medium",
-                                "large",
-                                "huge",
-                                "unknown"
-                              ],
+                            "target": {
+                              "const": "primary_api",
+                              "title": "Target",
                               "type": "string"
                             },
-                            {
-                              "type": "null"
+                            "timeout_budget_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeout Budget Ms"
+                            },
+                            "timeout_lateness_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeout Lateness Ms"
+                            },
+                            "version": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}(\\+\\d{1,8})?$",
+                              "title": "Version",
+                              "type": "string"
                             }
+                          },
+                          "required": [
+                            "request_id",
+                            "version",
+                            "platform",
+                            "target",
+                            "network",
+                            "method",
+                            "endpoint_category",
+                            "started_at",
+                            "elapsed_ms",
+                            "phase",
+                            "reason"
                           ],
-                          "title": "Size Bucket"
+                          "title": "NetworkRequestDiagnostic",
+                          "type": "object"
                         },
-                        "slow_build_count": {
-                          "anyOf": [
-                            {
+                        "maxItems": 8,
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Network Requests"
+                  },
+                  "networks": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "description": "Immutable, closed HTTP summary; no endpoint, user or location labels.",
+                          "properties": {
+                            "attempts": {
+                              "maximum": 1000000,
+                              "minimum": 1,
+                              "title": "Attempts",
+                              "type": "integer"
+                            },
+                            "cancelled": {
                               "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Cancelled",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Slow Build Count"
-                        },
-                        "slow_frame_count": {
-                          "anyOf": [
-                            {
+                            "http_2xx": {
                               "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Http 2Xx",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Slow Frame Count"
-                        },
-                        "slow_raster_count": {
-                          "anyOf": [
-                            {
+                            "http_3xx": {
                               "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Http 3Xx",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Slow Raster Count"
-                        },
-                        "soft_kick_count": {
-                          "anyOf": [
-                            {
-                              "maximum": 1000,
+                            "http_4xx": {
+                              "maximum": 1000000,
                               "minimum": 0,
+                              "title": "Http 4Xx",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Soft Kick Count"
-                        },
-                        "stages": {
-                          "items": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "elapsed_ms": {
-                                "maximum": 3600000,
+                            "http_5xx": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Http 5Xx",
+                              "type": "integer"
+                            },
+                            "network": {
+                              "enum": [
+                                "unknown",
+                                "wifi",
+                                "mobile",
+                                "ethernet",
+                                "vpn",
+                                "none",
+                                "other"
+                              ],
+                              "title": "Network",
+                              "type": "string"
+                            },
+                            "network_errors": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Network Errors",
+                              "type": "integer"
+                            },
+                            "platform": {
+                              "enum": [
+                                "android",
+                                "ios",
+                                "other"
+                              ],
+                              "title": "Platform",
+                              "type": "string"
+                            },
+                            "sample_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Sample Id",
+                              "type": "string"
+                            },
+                            "success_latency_buckets": {
+                              "items": {
+                                "maximum": 1000000,
                                 "minimum": 0,
-                                "title": "Elapsed Ms",
                                 "type": "integer"
                               },
-                              "stage": {
-                                "enum": [
-                                  "user_action",
-                                  "identity_lookup_done",
-                                  "local_room_lookup_done",
-                                  "route_enter",
-                                  "route_push_started",
-                                  "first_frame_rendered",
-                                  "room_attach_started",
-                                  "room_attach_done",
-                                  "timeline_local_started",
-                                  "local_timeline_ready",
-                                  "remote_sync_ready",
-                                  "content_ready",
-                                  "cache_load_started",
-                                  "cache_load_done",
-                                  "remote_refresh_started",
-                                  "remote_refresh_done",
-                                  "composer_submit",
-                                  "outbox_persist",
-                                  "send_admission",
-                                  "matrix_send_start",
-                                  "matrix_send_finish",
-                                  "ack",
-                                  "timeline_visible",
-                                  "sync_response_wait_started",
-                                  "sync_response_received",
-                                  "sync_processing_done",
-                                  "sync_cleanup_done",
-                                  "queue_entered",
-                                  "queue_exited",
-                                  "shared_flight_joined",
-                                  "shared_flight_done",
-                                  "download_started",
-                                  "download_done",
-                                  "decrypt_started",
-                                  "decrypt_done",
-                                  "decode_started",
-                                  "decode_done",
-                                  "video_selected",
-                                  "video_validated",
-                                  "video_prepare_started",
-                                  "video_prepare_done",
-                                  "video_transcode_started",
-                                  "video_transcode_done",
-                                  "video_thumbnail_done",
-                                  "video_encrypted",
-                                  "video_upload_started",
-                                  "video_upload_done",
-                                  "video_event_sent",
-                                  "call_start",
-                                  "signaling_ready",
-                                  "ice_gathering",
-                                  "ice_connected",
-                                  "media_first_packet",
-                                  "call_connected",
-                                  "matrix_connected",
-                                  "sync_finished",
-                                  "conversation_ready",
-                                  "local_search_started",
-                                  "local_search_done",
-                                  "database_search_started",
-                                  "database_search_done",
-                                  "remote_search_started",
-                                  "remote_search_done",
-                                  "render_results",
-                                  "request_finished"
-                                ],
-                                "title": "Stage",
-                                "type": "string"
+                              "maxItems": 9,
+                              "minItems": 9,
+                              "title": "Success Latency Buckets",
+                              "type": "array"
+                            },
+                            "target": {
+                              "const": "primary_api",
+                              "title": "Target",
+                              "type": "string"
+                            },
+                            "timeouts": {
+                              "maximum": 1000000,
+                              "minimum": 0,
+                              "title": "Timeouts",
+                              "type": "integer"
+                            },
+                            "version": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{1,4}\\.\\d{1,4}\\.\\d{1,4}(\\+\\d{1,8})?$",
+                              "title": "Version",
+                              "type": "string"
+                            },
+                            "window_end": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window End",
+                              "type": "string"
+                            },
+                            "window_start": {
+                              "maxLength": 32,
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                              "title": "Window Start",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sample_id",
+                            "version",
+                            "platform",
+                            "window_start",
+                            "window_end",
+                            "target",
+                            "network",
+                            "attempts",
+                            "http_2xx",
+                            "http_3xx",
+                            "http_4xx",
+                            "http_5xx",
+                            "network_errors",
+                            "timeouts",
+                            "cancelled",
+                            "success_latency_buckets"
+                          ],
+                          "title": "DiagnosticNetwork",
+                          "type": "object"
+                        },
+                        "maxItems": 8,
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Networks"
+                  },
+                  "operations": {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "allOf": [
+                            {
+                              "if": {
+                                "required": [
+                                  "attempt_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "attempt_index": {
+                                    "type": "integer"
+                                  },
+                                  "operation": {
+                                    "enum": [
+                                      "video_prepare",
+                                      "message_send"
+                                    ]
+                                  }
+                                }
                               }
                             },
-                            "required": [
-                              "stage",
-                              "elapsed_ms"
-                            ],
-                            "title": "PerformanceOperationStage",
-                            "type": "object"
-                          },
-                          "maxItems": 64,
-                          "title": "Stages",
-                          "type": "array"
-                        },
-                        "status_code": {
-                          "anyOf": [
                             {
-                              "maximum": 599,
-                              "minimum": 100,
-                              "type": "integer"
+                              "if": {
+                                "required": [
+                                  "window_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "operation": {
+                                    "const": "call_active"
+                                  },
+                                  "window_index": {
+                                    "type": "integer"
+                                  }
+                                }
+                              }
                             },
                             {
-                              "type": "null"
+                              "not": {
+                                "required": [
+                                  "attempt_index",
+                                  "window_index"
+                                ]
+                              }
                             }
                           ],
-                          "title": "Status Code"
-                        },
-                        "sync_error_count": {
-                          "anyOf": [
+                          "description": "Completed span. Missing kind preserves the original final protocol.",
+                          "oneOf": [
                             {
-                              "maximum": 1000,
+                              "properties": {
+                                "frame_attribution_complete": {
+                                  "enum": [
+                                    true,
+                                    null
+                                  ]
+                                },
+                                "slow_build_count": {
+                                  "type": "integer"
+                                },
+                                "slow_frame_count": {
+                                  "type": "integer"
+                                },
+                                "slow_raster_count": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "slow_frame_count",
+                                "slow_build_count",
+                                "slow_raster_count"
+                              ]
+                            },
+                            {
+                              "not": {
+                                "anyOf": [
+                                  {
+                                    "required": [
+                                      "slow_frame_count"
+                                    ]
+                                  },
+                                  {
+                                    "required": [
+                                      "slow_build_count"
+                                    ]
+                                  },
+                                  {
+                                    "required": [
+                                      "slow_raster_count"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "properties": {
+                                "frame_attribution_complete": {
+                                  "const": false
+                                }
+                              },
+                              "required": [
+                                "frame_attribution_complete"
+                              ]
+                            }
+                          ],
+                          "properties": {
+                            "app_network_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "online",
+                                    "weak",
+                                    "offline",
+                                    "recovering",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "App Network State"
+                            },
+                            "attempt_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Attempt Index"
+                            },
+                            "cache_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "memory",
+                                    "disk",
+                                    "network",
+                                    "miss",
+                                    "server_poster",
+                                    "local_frame",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cache Source"
+                            },
+                            "candidate_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Candidate Protocol"
+                            },
+                            "database_operation": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "timeline_local_load",
+                                    "conversation_snapshot_load",
+                                    "outbox_query",
+                                    "media_index_lookup",
+                                    "message_search"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Database Operation"
+                            },
+                            "endpoint_category": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "auth",
+                                    "profile",
+                                    "contacts",
+                                    "friendship",
+                                    "moments",
+                                    "finance",
+                                    "support",
+                                    "push",
+                                    "media",
+                                    "diagnostics",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Endpoint Category"
+                            },
+                            "frame_attribution_complete": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Omit slow-frame counts when false; legacy records omit this field and include all counts.",
+                              "title": "Frame Attribution Complete"
+                            },
+                            "hard_restart_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Hard Restart Count"
+                            },
+                            "jitter_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Jitter Ms"
+                            },
+                            "last_healthy_sync_age_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Last Healthy Sync Age Ms"
+                            },
+                            "lifecycle": {
+                              "enum": [
+                                "foreground",
+                                "background",
+                                "resuming",
+                                "unknown"
+                              ],
+                              "title": "Lifecycle",
+                              "type": "string"
+                            },
+                            "matrix_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "connected",
+                                    "connecting",
+                                    "disconnected",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Matrix State"
+                            },
+                            "media_priority": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "interactive",
+                                    "visible",
+                                    "prefetch",
+                                    "background"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Priority"
+                            },
+                            "media_type": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "image",
+                                    "video",
+                                    "audio",
+                                    "file",
+                                    "avatar",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Type"
+                            },
+                            "method": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "get",
+                                    "post",
+                                    "put",
+                                    "patch",
+                                    "delete",
+                                    "head",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Method"
+                            },
+                            "network_error": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "dns_failure",
+                                    "connect_timeout",
+                                    "read_timeout",
+                                    "request_timeout",
+                                    "socket_failure",
+                                    "tls_failure",
+                                    "offline",
+                                    "server5xx",
+                                    "rate_limit",
+                                    "auth_failure",
+                                    "business_rejection",
+                                    "cancelled",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Network Error"
+                            },
+                            "observation_kind": {
+                              "const": "final",
+                              "default": "final",
+                              "title": "Observation Kind",
+                              "type": "string"
+                            },
+                            "opening_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "local_room",
+                                    "pending_conversation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Opening Source"
+                            },
+                            "operation": {
+                              "enum": [
+                                "app_startup",
+                                "app_resume",
+                                "conversation_open",
+                                "message_send",
+                                "matrix_sync",
+                                "media_load",
+                                "recent_pictures_load",
+                                "video_prepare",
+                                "video_poster",
+                                "search",
+                                "search_page_open",
+                                "contacts_load",
+                                "moments_load",
+                                "wallet_load",
+                                "api_request",
+                                "call_setup",
+                                "call_active",
+                                "profile_load",
+                                "chat_list_load"
+                              ],
+                              "title": "Operation",
+                              "type": "string"
+                            },
+                            "operation_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Operation Id",
+                              "type": "string"
+                            },
+                            "packet_loss_percent": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Packet Loss Percent"
+                            },
+                            "reconnect_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Reconnect Count"
+                            },
+                            "relay_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Relay Protocol"
+                            },
+                            "result": {
+                              "enum": [
+                                "success",
+                                "slow",
+                                "waiting_network",
+                                "rejected",
+                                "failed",
+                                "cancelled"
+                              ],
+                              "title": "Result",
+                              "type": "string"
+                            },
+                            "result_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Result Count Bucket"
+                            },
+                            "retry_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Retry Count"
+                            },
+                            "row_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Row Count Bucket"
+                            },
+                            "rtt_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Rtt Ms"
+                            },
+                            "scheduler_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Active"
+                            },
+                            "scheduler_queue": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Queue"
+                            },
+                            "scheduler_video_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Video Active"
+                            },
+                            "service_reachable": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Service Reachable"
+                            },
+                            "size_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "tiny",
+                                    "small",
+                                    "medium",
+                                    "large",
+                                    "huge",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Size Bucket"
+                            },
+                            "slow_build_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Slow Build Count"
+                            },
+                            "slow_frame_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Slow Frame Count"
+                            },
+                            "slow_raster_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Slow Raster Count"
+                            },
+                            "soft_kick_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Soft Kick Count"
+                            },
+                            "stages": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "elapsed_ms": {
+                                    "maximum": 3600000,
+                                    "minimum": 0,
+                                    "title": "Elapsed Ms",
+                                    "type": "integer"
+                                  },
+                                  "stage": {
+                                    "enum": [
+                                      "user_action",
+                                      "identity_lookup_done",
+                                      "local_room_lookup_done",
+                                      "route_enter",
+                                      "route_push_started",
+                                      "first_frame_rendered",
+                                      "room_attach_started",
+                                      "room_attach_done",
+                                      "timeline_local_started",
+                                      "local_timeline_ready",
+                                      "remote_sync_ready",
+                                      "content_ready",
+                                      "cache_load_started",
+                                      "cache_load_done",
+                                      "remote_refresh_started",
+                                      "remote_refresh_done",
+                                      "composer_submit",
+                                      "outbox_persist",
+                                      "send_admission",
+                                      "matrix_send_start",
+                                      "matrix_send_finish",
+                                      "ack",
+                                      "timeline_visible",
+                                      "timeline_published",
+                                      "sync_response_wait_started",
+                                      "sync_response_received",
+                                      "sync_processing_done",
+                                      "sync_cleanup_done",
+                                      "queue_entered",
+                                      "queue_exited",
+                                      "shared_flight_joined",
+                                      "shared_flight_done",
+                                      "download_started",
+                                      "download_done",
+                                      "decrypt_started",
+                                      "decrypt_done",
+                                      "decode_started",
+                                      "decode_done",
+                                      "video_selected",
+                                      "video_validated",
+                                      "video_prepare_started",
+                                      "video_prepare_done",
+                                      "video_transcode_started",
+                                      "video_transcode_done",
+                                      "video_thumbnail_started",
+                                      "video_thumbnail_done",
+                                      "video_encrypted",
+                                      "video_upload_started",
+                                      "video_upload_done",
+                                      "video_event_sent",
+                                      "call_start",
+                                      "signaling_ready",
+                                      "ice_gathering",
+                                      "ice_connected",
+                                      "media_first_packet",
+                                      "call_connected",
+                                      "matrix_connected",
+                                      "sync_finished",
+                                      "conversation_ready",
+                                      "local_search_started",
+                                      "local_search_done",
+                                      "database_search_started",
+                                      "database_search_done",
+                                      "remote_search_started",
+                                      "remote_search_done",
+                                      "render_results",
+                                      "request_finished"
+                                    ],
+                                    "title": "Stage",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "stage",
+                                  "elapsed_ms"
+                                ],
+                                "title": "PerformanceOperationStage",
+                                "type": "object"
+                              },
+                              "maxItems": 64,
+                              "title": "Stages",
+                              "type": "array"
+                            },
+                            "status_code": {
+                              "anyOf": [
+                                {
+                                  "maximum": 599,
+                                  "minimum": 100,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Status Code"
+                            },
+                            "sync_error_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Sync Error Count"
+                            },
+                            "total_ms": {
+                              "maximum": 3600000,
                               "minimum": 0,
+                              "title": "Total Ms",
                               "type": "integer"
                             },
-                            {
-                              "type": "null"
+                            "transport_available": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Transport Available"
+                            },
+                            "uses_turn": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Uses Turn"
+                            },
+                            "window_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Window Index"
                             }
+                          },
+                          "required": [
+                            "operation_id",
+                            "operation",
+                            "stages",
+                            "lifecycle",
+                            "result",
+                            "total_ms"
                           ],
-                          "title": "Sync Error Count"
+                          "title": "PerformanceOperation",
+                          "type": "object"
                         },
-                        "total_ms": {
-                          "maximum": 3600000,
-                          "minimum": 0,
-                          "title": "Total Ms",
-                          "type": "integer"
-                        },
-                        "transport_available": {
-                          "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "allOf": [
                             {
-                              "type": "boolean"
+                              "if": {
+                                "required": [
+                                  "attempt_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "attempt_index": {
+                                    "type": "integer"
+                                  },
+                                  "operation": {
+                                    "enum": [
+                                      "video_prepare",
+                                      "message_send"
+                                    ]
+                                  }
+                                }
+                              }
                             },
                             {
-                              "type": "null"
-                            }
-                          ],
-                          "title": "Transport Available"
-                        },
-                        "uses_turn": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
+                              "if": {
+                                "required": [
+                                  "window_index"
+                                ]
+                              },
+                              "then": {
+                                "properties": {
+                                  "operation": {
+                                    "const": "call_active"
+                                  },
+                                  "window_index": {
+                                    "type": "integer"
+                                  }
+                                }
+                              }
                             },
                             {
-                              "type": "null"
+                              "not": {
+                                "required": [
+                                  "attempt_index",
+                                  "window_index"
+                                ]
+                              }
                             }
                           ],
-                          "title": "Uses Turn"
+                          "description": "Incomplete measurement; neither a duration sample nor a business result.",
+                          "properties": {
+                            "app_network_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "online",
+                                    "weak",
+                                    "offline",
+                                    "recovering",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "App Network State"
+                            },
+                            "attempt_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Attempt Index"
+                            },
+                            "cache_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "memory",
+                                    "disk",
+                                    "network",
+                                    "miss",
+                                    "server_poster",
+                                    "local_frame",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cache Source"
+                            },
+                            "candidate_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Candidate Protocol"
+                            },
+                            "database_operation": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "timeline_local_load",
+                                    "conversation_snapshot_load",
+                                    "outbox_query",
+                                    "media_index_lookup",
+                                    "message_search"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Database Operation"
+                            },
+                            "endpoint_category": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "auth",
+                                    "profile",
+                                    "contacts",
+                                    "friendship",
+                                    "moments",
+                                    "finance",
+                                    "support",
+                                    "push",
+                                    "media",
+                                    "diagnostics",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Endpoint Category"
+                            },
+                            "frame_attribution_complete": {
+                              "const": false,
+                              "title": "Frame Attribution Complete",
+                              "type": "boolean"
+                            },
+                            "hard_restart_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Hard Restart Count"
+                            },
+                            "jitter_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Jitter Ms"
+                            },
+                            "last_healthy_sync_age_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Last Healthy Sync Age Ms"
+                            },
+                            "lifecycle": {
+                              "enum": [
+                                "foreground",
+                                "background",
+                                "resuming",
+                                "unknown"
+                              ],
+                              "title": "Lifecycle",
+                              "type": "string"
+                            },
+                            "matrix_state": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "connected",
+                                    "connecting",
+                                    "disconnected",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Matrix State"
+                            },
+                            "media_priority": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "interactive",
+                                    "visible",
+                                    "prefetch",
+                                    "background"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Priority"
+                            },
+                            "media_type": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "image",
+                                    "video",
+                                    "audio",
+                                    "file",
+                                    "avatar",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Media Type"
+                            },
+                            "method": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "get",
+                                    "post",
+                                    "put",
+                                    "patch",
+                                    "delete",
+                                    "head",
+                                    "other"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Method"
+                            },
+                            "network_error": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "dns_failure",
+                                    "connect_timeout",
+                                    "read_timeout",
+                                    "request_timeout",
+                                    "socket_failure",
+                                    "tls_failure",
+                                    "offline",
+                                    "server5xx",
+                                    "rate_limit",
+                                    "auth_failure",
+                                    "business_rejection",
+                                    "cancelled",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Network Error"
+                            },
+                            "observation_kind": {
+                              "enum": [
+                                "checkpoint",
+                                "expired"
+                              ],
+                              "title": "Observation Kind",
+                              "type": "string"
+                            },
+                            "observed_elapsed_ms": {
+                              "maximum": 3600000,
+                              "minimum": 0,
+                              "title": "Observed Elapsed Ms",
+                              "type": "integer"
+                            },
+                            "opening_source": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "local_room",
+                                    "pending_conversation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Opening Source"
+                            },
+                            "operation": {
+                              "enum": [
+                                "app_startup",
+                                "app_resume",
+                                "conversation_open",
+                                "message_send",
+                                "matrix_sync",
+                                "media_load",
+                                "recent_pictures_load",
+                                "video_prepare",
+                                "video_poster",
+                                "search",
+                                "search_page_open",
+                                "contacts_load",
+                                "moments_load",
+                                "wallet_load",
+                                "api_request",
+                                "call_setup",
+                                "call_active",
+                                "profile_load",
+                                "chat_list_load"
+                              ],
+                              "title": "Operation",
+                              "type": "string"
+                            },
+                            "operation_id": {
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                              "title": "Operation Id",
+                              "type": "string"
+                            },
+                            "packet_loss_percent": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Packet Loss Percent"
+                            },
+                            "reconnect_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Reconnect Count"
+                            },
+                            "relay_protocol": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "udp",
+                                    "tcp",
+                                    "tls",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Relay Protocol"
+                            },
+                            "result_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Result Count Bucket"
+                            },
+                            "retry_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 20,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Retry Count"
+                            },
+                            "row_count_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "one_to_twenty",
+                                    "twenty_one_to_hundred",
+                                    "hundred_one_to_five_hundred",
+                                    "over_five_hundred"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Row Count Bucket"
+                            },
+                            "rtt_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 60000,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Rtt Ms"
+                            },
+                            "scheduler_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Active"
+                            },
+                            "scheduler_queue": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Queue"
+                            },
+                            "scheduler_video_active": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scheduler Video Active"
+                            },
+                            "service_reachable": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Service Reachable"
+                            },
+                            "size_bucket": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "zero",
+                                    "tiny",
+                                    "small",
+                                    "medium",
+                                    "large",
+                                    "huge",
+                                    "unknown"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Size Bucket"
+                            },
+                            "soft_kick_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Soft Kick Count"
+                            },
+                            "stages": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "elapsed_ms": {
+                                    "maximum": 3600000,
+                                    "minimum": 0,
+                                    "title": "Elapsed Ms",
+                                    "type": "integer"
+                                  },
+                                  "stage": {
+                                    "enum": [
+                                      "user_action",
+                                      "identity_lookup_done",
+                                      "local_room_lookup_done",
+                                      "route_enter",
+                                      "route_push_started",
+                                      "first_frame_rendered",
+                                      "room_attach_started",
+                                      "room_attach_done",
+                                      "timeline_local_started",
+                                      "local_timeline_ready",
+                                      "remote_sync_ready",
+                                      "content_ready",
+                                      "cache_load_started",
+                                      "cache_load_done",
+                                      "remote_refresh_started",
+                                      "remote_refresh_done",
+                                      "composer_submit",
+                                      "outbox_persist",
+                                      "send_admission",
+                                      "matrix_send_start",
+                                      "matrix_send_finish",
+                                      "ack",
+                                      "timeline_visible",
+                                      "timeline_published",
+                                      "sync_response_wait_started",
+                                      "sync_response_received",
+                                      "sync_processing_done",
+                                      "sync_cleanup_done",
+                                      "queue_entered",
+                                      "queue_exited",
+                                      "shared_flight_joined",
+                                      "shared_flight_done",
+                                      "download_started",
+                                      "download_done",
+                                      "decrypt_started",
+                                      "decrypt_done",
+                                      "decode_started",
+                                      "decode_done",
+                                      "video_selected",
+                                      "video_validated",
+                                      "video_prepare_started",
+                                      "video_prepare_done",
+                                      "video_transcode_started",
+                                      "video_transcode_done",
+                                      "video_thumbnail_started",
+                                      "video_thumbnail_done",
+                                      "video_encrypted",
+                                      "video_upload_started",
+                                      "video_upload_done",
+                                      "video_event_sent",
+                                      "call_start",
+                                      "signaling_ready",
+                                      "ice_gathering",
+                                      "ice_connected",
+                                      "media_first_packet",
+                                      "call_connected",
+                                      "matrix_connected",
+                                      "sync_finished",
+                                      "conversation_ready",
+                                      "local_search_started",
+                                      "local_search_done",
+                                      "database_search_started",
+                                      "database_search_done",
+                                      "remote_search_started",
+                                      "remote_search_done",
+                                      "render_results",
+                                      "request_finished"
+                                    ],
+                                    "title": "Stage",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "stage",
+                                  "elapsed_ms"
+                                ],
+                                "title": "PerformanceOperationStage",
+                                "type": "object"
+                              },
+                              "maxItems": 64,
+                              "title": "Stages",
+                              "type": "array"
+                            },
+                            "status_code": {
+                              "anyOf": [
+                                {
+                                  "maximum": 599,
+                                  "minimum": 100,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Status Code"
+                            },
+                            "sync_error_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Sync Error Count"
+                            },
+                            "transport_available": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Transport Available"
+                            },
+                            "uses_turn": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Uses Turn"
+                            },
+                            "window_index": {
+                              "anyOf": [
+                                {
+                                  "maximum": 1000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Window Index"
+                            }
+                          },
+                          "required": [
+                            "operation_id",
+                            "operation",
+                            "stages",
+                            "lifecycle",
+                            "observation_kind",
+                            "observed_elapsed_ms",
+                            "frame_attribution_complete"
+                          ],
+                          "title": "PerformanceObservation",
+                          "type": "object"
                         }
-                      },
-                      "required": [
-                        "operation_id",
-                        "operation",
-                        "result",
-                        "total_ms",
-                        "stages",
-                        "lifecycle"
-                      ],
-                      "title": "PerformanceOperation",
-                      "type": "object"
+                      ]
                     },
                     "maxItems": 20,
                     "title": "Operations",
@@ -27015,7 +29310,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MomentResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -27583,6 +29880,73 @@
         ]
       }
     },
+    "/api/v1/moments/draft/clear-if-unchanged": {
+      "post": {
+        "operationId": "clear_unchanged_draft_api_v1_moments_draft_clear_if_unchanged_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearUnchangedDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearUnchangedDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Clear Unchanged Draft",
+        "tags": [
+          "moments"
+        ]
+      }
+    },
     "/api/v1/moments/feed": {
       "get": {
         "operationId": "feed_api_v1_moments_feed_get",
@@ -27878,7 +30242,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CompletedMomentMediaUpload"
+                  "$ref": "#/components/schemas/CompletedMomentUploadResponse"
                 }
               }
             },
@@ -28645,6 +31009,82 @@
         ]
       }
     },
+    "/api/v1/moments/video-posters/uploads": {
+      "post": {
+        "description": "Begin an owner-scoped video poster upload: static JPEG/PNG/WebP, at most 512 KiB and 480 pixels per edge. PUT and complete use the standard media upload endpoints.",
+        "operationId": "begin_video_poster_upload_api_v1_moments_video_posters_uploads_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Begin Video Poster Upload",
+        "tags": [
+          "moments"
+        ]
+      }
+    },
     "/api/v1/moments/{moment_id}": {
       "delete": {
         "operationId": "delete_api_v1_moments__moment_id__delete",
@@ -28730,7 +31170,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MomentResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -30119,6 +32561,211 @@
         "summary": "Set Privacy",
         "tags": [
           "groups"
+        ]
+      }
+    },
+    "/api/v1/profile/username": {
+      "patch": {
+        "operationId": "username_change_api_v1_profile_username_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsernameChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsernameChangeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Username Change",
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/api/v1/profile/username-availability": {
+      "get": {
+        "operationId": "username_availability_api_v1_profile_username_availability_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsernameAvailabilityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Username Availability",
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/api/v1/profile/username-change": {
+      "get": {
+        "operationId": "username_policy_api_v1_profile_username_change_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsernameChangePolicy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Username Policy",
+        "tags": [
+          "profile"
         ]
       }
     },
@@ -33319,11 +35966,13 @@
         "operationId": "search_api_v1_users_search_get",
         "parameters": [
           {
+            "description": "兼容完整邮箱和畅聊号检索；手机号仅接受 POST 请求体",
             "in": "query",
             "name": "q",
             "required": true,
             "schema": {
-              "maxLength": 64,
+              "description": "兼容完整邮箱和畅聊号检索；手机号仅接受 POST 请求体",
+              "maxLength": 320,
               "minLength": 2,
               "title": "Q",
               "type": "string"
@@ -33378,6 +36027,71 @@
           }
         ],
         "summary": "Search",
+        "tags": [
+          "friends"
+        ]
+      },
+      "post": {
+        "operationId": "search_body_api_v1_users_search_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserSearchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Search Body",
         "tags": [
           "friends"
         ]

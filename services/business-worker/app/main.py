@@ -7,6 +7,7 @@ from signal import SIGINT, SIGTERM, signal
 from threading import Event
 
 from app.core.config import Settings
+from app.integrations.media_blob_storage import build_blob_backend
 from app.core.database import create_engine, create_session_factory
 from app.core.outbox import OutboxConsumer
 from app.modules.ledger.service import LedgerService
@@ -24,7 +25,8 @@ from app.integrations.matrix_admin import (
 )
 from integrations.email_sender import email_sender_from_environment
 from integrations.avatar_reader import LocalPrivateAvatarReader
-from tasks.identity import IdentityEmailVerificationTask, MatrixProfileSyncTask
+from tasks.identity import IdentityEmailVerificationTask, MatrixProfileSyncTask, AccountCredentialsObservationTask, PasswordPhoneOtpTask
+from tasks.avatar_cleanup import AvatarCleanupTask
 from tasks.admin_operation_observation import AdminOperationObservationTask
 from tasks.redpacket_expiry import RedPacketExpiryTask
 from tasks.redpacket_commission import RedPacketCommissionSweepTask
@@ -34,6 +36,14 @@ from tasks.chat_transfer_expiry import ChatTransferExpiryTask
 from tasks.wallet import WalletMaintenanceTask
 from tasks.moments import MomentsModerationTask
 from worker import Worker
+
+
+def build_internal_publication_handlers(session_factory) -> dict:
+    from app.modules.audit.writer import AuditWriter, INTERNAL_PUBLICATION_TOPICS
+    from tasks.internal_publication import InternalPublicationTask
+
+    task = InternalPublicationTask(AuditWriter(session_factory))
+    return {topic: task for topic in sorted(INTERNAL_PUBLICATION_TOPICS)}
 
 
 def build_identity_handlers(
@@ -46,6 +56,7 @@ def build_identity_handlers(
     matrix_gateway=None,
     matrix_provision_secret: str | None = None,
     avatar_reader=None,
+    settings=None,
 ) -> dict:
     task = IdentityEmailVerificationTask(
         session_factory,
@@ -54,7 +65,18 @@ def build_identity_handlers(
         public_base_url=public_base_url,
         email_sender=email_sender,
     )
-    handlers = {"identity.email": task, "identity.admin_operation": AdminOperationObservationTask()}
+    handlers = {"identity.email": task, "identity.admin_operation": AdminOperationObservationTask(),
+        "identity.account_credentials": AccountCredentialsObservationTask()}
+    if avatar_reader is not None and hasattr(avatar_reader, "delete"):
+        handlers["identity.avatar.cleanup"] = AvatarCleanupTask(session_factory, storage=avatar_reader)
+    if settings is not None:
+        from app.modules.identity.phone import PhoneOtpService, build_sms_transport
+        sender, verifier = build_sms_transport(settings)
+        otp = PhoneOtpService(session_factory, sender=sender, code_verifier=verifier,
+            secret=settings.otp_hash_secret or settings.jwt_secret or 'development-otp-secret',
+            phone_enabled=settings.phone_auth_enabled)
+        handlers['identity.password_phone'] = PasswordPhoneOtpTask(otp=otp,
+            code_deriver=VerificationTokenCodec(verification_secret.encode()).verification_code)
     if matrix_gateway is not None:
         handlers['identity.matrix_session'] = MatrixSessionService(
             session_factory, gateway=matrix_gateway).revoke_from_outbox
@@ -216,6 +238,7 @@ def main() -> None:
         if settings.environment == "production" and not public_base_url.casefold().startswith("https://"):
             raise ValueError("production email public base URL must use HTTPS")
         identity_handlers = build_identity_handlers(
+            settings=settings,
             session_factory=session_factory,
             verification_secret=(
                 settings.email_verification_secret
@@ -229,7 +252,8 @@ def main() -> None:
                 settings.matrix_provision_secret
                 or "development-matrix-provision-secret"
             ),
-            avatar_reader=LocalPrivateAvatarReader(settings.avatar_storage_root),
+            avatar_reader=LocalPrivateAvatarReader(settings.avatar_storage_root,
+                backend=build_blob_backend(settings)),
         )
         stop_event = Event()
 
@@ -241,7 +265,8 @@ def main() -> None:
 
         worker = Worker(
             consumer=consumer,
-            handlers={**identity_handlers, **alert_handlers},
+            handlers={**identity_handlers, **alert_handlers,
+                      **build_internal_publication_handlers(session_factory)},
             worker_id=os.getenv("WORKER_ID", "business-worker-1"),
             heartbeat_path=os.getenv("WORKER_HEARTBEAT_PATH", "/tmp/liuhetong-worker-heartbeat"),
             maintenance_tasks=[lambda: redpacket_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), lambda: chat_transfer_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), lambda: commission_sweep.run_batch(), lambda: recharge_registration.run_batch(),

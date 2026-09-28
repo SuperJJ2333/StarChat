@@ -1,5 +1,6 @@
 from typing import Annotated, Literal
 from datetime import datetime, timezone
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,11 +12,11 @@ from app.modules.moments.service import MomentsService
 from app.modules.moments.media import MAX_IMAGE_BYTES, MomentMediaService
 
 
-async def read_moment_upload_content(request: Request):
+async def read_moment_upload_content(request: Request, max_bytes=MAX_IMAGE_BYTES):
     content = bytearray()
     async for chunk in request.stream():
-        if len(chunk) > MAX_IMAGE_BYTES - len(content):
-            raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体不能超过20MiB", status_code=422)
+        if len(chunk) > max_bytes - len(content):
+            raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体内容超过上传大小限制", status_code=422)
         content.extend(chunk)
     return bytes(content)
 
@@ -37,6 +38,7 @@ class CreateMoment(Strict):
     visibility: Literal["PUBLIC", "FRIENDS", "INCLUDE", "EXCLUDE", "SELF"]
     image_urls: list[str] = Field(default_factory=list, max_length=9)
     video_urls: list[str] = Field(default_factory=list, max_length=9, description="Owner-completed MP4/MOV upload references; at most nine images and videos combined, each <=20MiB.")
+    video_poster_media_ids: list[UUID | None] = Field(default_factory=list, max_length=9, description="Optional owner-completed static video-poster upload IDs, aligned with video_urls; null means no poster. Empty preserves legacy videos.")
     include_user_ids: list[str] = Field(default_factory=list)
     exclude_user_ids: list[str] = Field(default_factory=list, max_length=30)
     include_tag_ids: list[str] = Field(default_factory=list, max_length=30)
@@ -47,6 +49,27 @@ class CreateMoment(Strict):
 
 class DraftPayload(Strict):
     payload: dict = Field(default_factory=dict)
+
+class ClearUnchangedDraft(Strict):
+    expected_payload: dict = Field(description="Entire payload returned by get_draft or save_draft. Changed image/video references are owner-validated and compared by durable media identity; server-derived video_cache_keys are read hints and ignored; every other JSON value and media order must match the current owner's stored snapshot exactly.")
+
+class ClearUnchangedDraftResponse(Strict):
+    cleared: bool
+
+
+class MomentResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    video_urls: list[str]
+    video_poster_urls: list[str | None] = Field(description="Small viewer-bound video posters, aligned with video_urls; null for old/no-poster videos. Live Moment visibility is rechecked on access.")
+    video_poster_cache_keys: list[str | None] = Field(description="Stable poster cache identities aligned with video_urls; clients must namespace by current account.")
+
+
+class CompletedMomentUploadResponse(Strict):
+    id: str
+    status: str
+    media_url: str
+    media_ref: str | None = Field(description="Durable owner-validated media:// reference after completion, for queued publication; not a public read capability.")
+    media_cache_key: str | None
 
 class Comment(Strict):
     text: str = Field(default="", max_length=1000)
@@ -109,13 +132,6 @@ class BeginUpload(Strict):
     byte_size: int = Field(gt=0)
 
 
-class CompletedMomentMediaUpload(Strict):
-    id: str
-    status: str
-    media_url: str | None
-    media_cache_key: str | None = Field(description="Stable cache identity for this completed media reference; clients namespace it by account.")
-
-
 class SetCover(Strict):
     upload_id: str = Field(min_length=1, max_length=36)
 
@@ -135,7 +151,7 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     def update_visibility(moment_id: str, body: UpdateVisibility, user=Depends(actor)):
         return service.update_visibility(user, moment_id, body.model_dump())
 
-    @router.post("", status_code=201)
+    @router.post("", status_code=201, response_model=MomentResponse)
     def create(body: CreateMoment, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
         # 直接返回新建动态的 DTO：detail() 仅对 PUBLISHED 可见，会令
         # 带图动态（PENDING_REVIEW 待审状态）发布时误报"动态不存在"。
@@ -170,7 +186,12 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
 
     @router.delete('/draft', status_code=204)
     def delete_draft(user=Depends(actor)):
-        service.delete_draft(user); return Response(status_code=204)
+        service.delete_draft(user)
+        return Response(status_code=204)
+
+    @router.post('/draft/clear-if-unchanged', response_model=ClearUnchangedDraftResponse)
+    def clear_unchanged_draft(body: ClearUnchangedDraft, user=Depends(actor)):
+        return {"cleared": service.clear_draft_if_unchanged(user, body.expected_payload)}
 
     @router.get('/ads')
     def ads(user=Depends(actor)):
@@ -220,17 +241,23 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
         row = media.begin(user, body.file_name, body.mime_type, body.byte_size, idempotency_key)
         return {"id": row.id, "upload_url": f"/api/v1/moments/media/uploads/{row.id}/content", "expires_at": row.expires_at}
 
-    @router.post("/media/uploads/{upload_id}/complete", response_model=CompletedMomentMediaUpload)
+    @router.post("/video-posters/uploads", status_code=201, description="Begin an owner-scoped video poster upload: static JPEG/PNG/WebP, at most 512 KiB and 480 pixels per edge. PUT and complete use the standard media upload endpoints.")
+    def begin_video_poster_upload(body: BeginUpload, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
+        row = media.begin(user, body.file_name, body.mime_type, body.byte_size, idempotency_key, purpose="MOMENT_VIDEO_POSTER")
+        return {"id": row.id, "upload_url": f"/api/v1/moments/media/uploads/{row.id}/content", "expires_at": row.expires_at}
+
+    @router.post("/media/uploads/{upload_id}/complete", response_model=CompletedMomentUploadResponse)
     def complete_upload(upload_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
         row = media.complete(user, upload_id)
         from app.modules.moments.media_access import upload_url
         media_url = upload_url(avatar_storage, row) if row.status == "COMPLETED" else f"media://{row.object_key}"
-        return {"id": row.id, "status": row.status, "media_url": media_url,
-                "media_cache_key": service._media_cache_key(f"media://{row.object_key}") if row.status == "COMPLETED" else None}
+        media_ref = f"media://{row.object_key}" if row.status == "COMPLETED" else None
+        cache_reference = row.object_key if media_ref and row.purpose == "MOMENT_VIDEO_POSTER" else media_ref
+        return {"id": row.id, "status": row.status, "media_url": media_url, "media_ref": media_ref, "media_cache_key": service._media_cache_key(cache_reference)}
 
     @router.put("/media/uploads/{upload_id}/content", status_code=204)
     async def put_upload_content(upload_id: str, request: Request, content_type: Annotated[str | None, Header(alias="Content-Type")] = None, user=Depends(actor)):
-        content = await read_moment_upload_content(request)
+        content = await read_moment_upload_content(request, media.content_limit(user, upload_id))
         media.put_content(user, upload_id, content, (content_type or "").partition(";")[0].strip().casefold())
         return Response(status_code=204)
 
@@ -255,7 +282,7 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     def set_cover(body: SetCover, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
         return service.set_cover(user, body.upload_id, idempotency_key)
 
-    @router.get("/{moment_id}")
+    @router.get("/{moment_id}", response_model=MomentResponse)
     def detail(moment_id: str, user=Depends(actor)):
         return service.detail(user, moment_id)
 

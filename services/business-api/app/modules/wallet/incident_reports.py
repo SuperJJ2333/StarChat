@@ -55,7 +55,7 @@ class WalletIncidentReports:
             return sorted(set([value] if isinstance(value, str) else value or []))
         status, severity, code = values(status), values(severity), values(code)
         if (type(limit) is not int or not 1 <= limit <= 100 or sort not in {'opened_desc', 'opened_asc', 'updated_desc'}
-                or set(status)-{'OPEN', 'ACKNOWLEDGED', 'RESOLVED'} or set(severity)-{'P0', 'P1'}
+                or set(status)-{'OPEN', 'ACKNOWLEDGED', 'RESOLVED'} or set(severity)-{'P0', 'P1', 'T2'}
                 or len(code)>50 or any(not isinstance(c, str) or re.fullmatch('[A-Z][A-Z0-9_]{0,99}', c) is None for c in code)
                 or condition_active is not None and type(condition_active) is not bool
                 or cursor is not None and (not isinstance(cursor, str) or len(cursor)>2048)):

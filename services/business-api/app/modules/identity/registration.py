@@ -16,6 +16,7 @@ from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.invitations import InvitationService, hash_opaque_token
+from app.modules.identity.username import UsernameClaims
 from app.modules.identity.models import (
     EmailVerificationChallenge,
     ReferralBinding,
@@ -125,14 +126,16 @@ class RegistrationService:
     def create_verified_phone_in_session(self, session, *, phone: str,
                                          invitation_code: str, now: datetime) -> User:
         """Called only inside the successful OTP consumption transaction."""
-        invitation = self._invitation_service.consume_in_session(
-            session, code=invitation_code, now=now)
         handle = 'p' + self._token_codec.digest(
             purpose='phone-public-handle', value=phone)[:24]
         # A user may have manually claimed the deterministic handle. Keep the
         # public identifier opaque without exposing the phone on collisions.
-        if session.scalar(select(User.id).where(User.username_normalized == handle)):
+        if UsernameClaims.owner_in_session(session, handle) is not None:
             handle += secrets.token_hex(6)
+        UsernameClaims.lock_in_session(session, handle)
+        UsernameClaims.require_available_in_session(session, handle)
+        invitation = self._invitation_service.consume_in_session(
+            session, code=invitation_code, now=now)
         user = User(id=str(uuid4()), username=handle, username_normalized=handle,
             nickname='畅聊用户' + phone[-4:], email=None, email_normalized=None,
             phone=phone, phone_normalized=phone, phone_verified_at=now,
@@ -140,6 +143,7 @@ class RegistrationService:
             status=AccountStatus.PENDING_MATRIX, created_at=now, updated_at=now)
         session.add(user)
         session.flush()
+        UsernameClaims.claim_in_session(session, normalized=handle, owner_user_id=user.id, now=now)
         self._bind_invitation_owner_in_session(session, invitation=invitation,
             invited_user_id=user.id, now=now)
         from app.modules.audit.writer import AuditWriter
@@ -227,9 +231,7 @@ class RegistrationService:
             )
 
         now = self._now_factory()
-        referral_code_clean = (
-            referral_code.strip().upper() if referral_code else None
-        )
+        referral_code_clean = (referral_code or "").strip().upper() or None
         hash_fields = dict(
             email_normalized=email_normalized,
             phone_normalized=phone_normalized,
@@ -299,6 +301,8 @@ class RegistrationService:
                     existing_phone = session.scalar(select(User.id).where(User.phone_normalized == phone_normalized))
                     if existing_phone is not None:
                         raise AppError(code="PHONE_TAKEN", message="手机号已被使用", status_code=409)
+                UsernameClaims.lock_in_session(session, username_normalized)
+                UsernameClaims.require_available_in_session(session, username_normalized)
                 session.add(
                     User(
                         id=user_id,
@@ -316,6 +320,8 @@ class RegistrationService:
                     )
                 )
                 session.flush()
+                UsernameClaims.claim_in_session(session, normalized=username_normalized,
+                    owner_user_id=user_id, now=now)
                 if not email_clean:
                     # 手机通道：不发邮件挑战；验证经 OTP purpose=registration
                     # （绑定 registration_session），由 PhoneOtpService 完成。
@@ -509,9 +515,7 @@ class RegistrationService:
             existing_email = session.scalar(
                 select(User.id).where(User.email_normalized == email_clean.casefold())
             )
-            existing_username = session.scalar(
-                select(User.id).where(User.username_normalized == username_normalized)
-            )
+            existing_username = UsernameClaims.owner_in_session(session, username_normalized)
             previous = session.scalar(
                 select(IdempotencyRecord).where(
                     IdempotencyRecord.scope == "identity.registration",

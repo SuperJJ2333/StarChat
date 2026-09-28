@@ -24,6 +24,9 @@ It never moves, rewrites or deletes a *valid* file, and it defaults to ``dry_run
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import base64
+import json
+import math
 from datetime import datetime
 from pathlib import Path
 
@@ -42,7 +45,7 @@ from app.core.errors import AppError
 from app.modules.media.metrics import media_platform_metrics
 from app.modules.media.models import MediaBlob
 from app.modules.media.repository import utcnow
-from app.modules.media.storage import BlobBackend
+from app.modules.media.storage import BlobBackend, ObjectPage
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +58,8 @@ class ReconcileReport:
     invalidated: int = 0
     rebuilt: int = 0
     errors: tuple[str, ...] = ()
+    # Internal maintenance cursor; HTTP/OpenAPI report shape stays unchanged.
+    next_storage_cursor: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -116,15 +121,19 @@ class MediaReconciler:
         root: str | None = None,
         now_factory=utcnow,
     ) -> None:
+        backend = getattr(backend, 'byte_backend', None) or backend
         self._session_factory = session_factory
         self._backend = backend
         self._now = now_factory
-        self._root = _resolve_root(backend, root)
+        self._root = None if callable(getattr(backend, 'list_page', None)) else _resolve_root(backend, root)
 
     # ------------------------------------------------------------------ #
     # Entry point
     # ------------------------------------------------------------------ #
-    def run(self, *, dry_run: bool = True, limit: int = 10_000) -> ReconcileReport:
+    def run(self, *, dry_run: bool = True, limit: int = 10_000,
+            storage_cursor: str | None = None) -> ReconcileReport:
+        if not 1 <= limit <= 10_000:
+            raise ValueError('reconcile limit must be 1-10000')
         stats = _Stats()
         now = self._now()
         with self._session_factory() as session:
@@ -146,7 +155,8 @@ class MediaReconciler:
                     self._invalidate(blob.blob_id, now=now)
                     stats.invalidated += 1
 
-        for key in self._platform_files(limit=limit):
+        storage_page = self._platform_page(limit=limit, cursor=storage_cursor)
+        for key in storage_page.keys:
             stats.scanned_files += 1
             if key in known_keys or self._row_exists_for(key):
                 continue
@@ -171,6 +181,7 @@ class MediaReconciler:
             invalidated=stats.invalidated,
             rebuilt=stats.rebuilt,
             errors=tuple(stats.errors),
+            next_storage_cursor=storage_page.next_cursor,
         )
 
     # ------------------------------------------------------------------ #
@@ -185,6 +196,8 @@ class MediaReconciler:
         return self._path(key).is_file()
 
     def _path(self, key: str) -> Path:
+        if self._root is None:
+            raise AppError(code='MEDIA_RECONCILE_ROOT_UNKNOWN', message='媒体存储根目录未配置', status_code=500)
         if not key or key.startswith("/") or ".." in Path(key).parts:
             raise AppError(
                 code="MEDIA_STORAGE_KEY_INVALID",
@@ -199,6 +212,44 @@ class MediaReconciler:
                 status_code=500,
             )
         return candidate
+
+    def _platform_page(self, *, limit: int, cursor: str | None) -> ObjectPage:
+        listing = getattr(self._backend, 'list_page', None)
+        if not callable(listing):
+            if cursor is not None:
+                raise ValueError('legacy backend does not support cursors')
+            return ObjectPage(tuple(self._platform_files(limit=limit)))
+        prefix_index, position = 0, None
+        if cursor is not None:
+            try:
+                if len(cursor) > 32768:
+                    raise ValueError()
+                state = json.loads(base64.urlsafe_b64decode(cursor.encode('ascii')))
+                if set(state) != {'prefix_index', 'position'}:
+                    raise ValueError()
+                prefix_index, position = state['prefix_index'], state['position']
+                if (type(prefix_index) is not int or not 0 <= prefix_index < len(PLATFORM_KEY_PREFIXES)
+                        or position is not None and not isinstance(position, str)):
+                    raise ValueError()
+            except (ValueError, TypeError, KeyError, UnicodeError) as error:
+                raise ValueError('reconcile storage cursor invalid') from error
+        keys = []
+        # Limit work even when a remote page contains only ignored staging objects.
+        max_calls = math.ceil(limit / 1000) + len(PLATFORM_KEY_PREFIXES)
+        for _ in range(max_calls):
+            page = listing(prefix=PLATFORM_KEY_PREFIXES[prefix_index],
+                limit=min(1000, limit - len(keys)), cursor=position)
+            keys.extend(page.keys)
+            position = page.next_cursor
+            if position is None:
+                prefix_index += 1
+                if prefix_index == len(PLATFORM_KEY_PREFIXES):
+                    return ObjectPage(tuple(keys))
+            if len(keys) >= limit:
+                break
+        state = {'prefix_index': prefix_index, 'position': position}
+        token = base64.urlsafe_b64encode(json.dumps(state, separators=(',', ':')).encode()).decode('ascii')
+        return ObjectPage(tuple(keys), token)
 
     def _platform_files(self, *, limit: int) -> list[str]:
         found: list[str] = []
@@ -235,10 +286,13 @@ class MediaReconciler:
 
     def _rebuild(self, key: str, *, now: datetime) -> bool:
         try:
-            path = self._path(key)
-            content = path.read_bytes()
+            content = self._backend.get(key)
         except OSError:
             return False
+        except AppError as error:
+            if error.code in ('MEDIA_BLOB_MISSING', 'AVATAR_NOT_FOUND'):
+                return False
+            raise
 
         digest_kind = self._digest_kind_for(key)
         if digest_kind is None:
@@ -266,7 +320,7 @@ class MediaReconciler:
             if domain is IsolationDomain.USER
             else owner_scope_key(domain, "")
         )
-        mime = _mime_for_suffix(path.suffix)
+        mime = _mime_for_suffix(Path(key).suffix)
 
         with self._session_factory.begin() as session:
             existing = session.scalars(

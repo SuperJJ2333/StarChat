@@ -94,7 +94,7 @@ def test_worker_registers_identity_email_verification_handler() -> None:
         email_sender=object(),
     )
 
-    assert set(handlers) == {"identity.email", "identity.admin_operation"}
+    assert set(handlers) == {"identity.email", "identity.admin_operation", "identity.account_credentials"}
 
 
 def test_worker_registers_matrix_provisioning_handler() -> None:
@@ -113,7 +113,8 @@ def test_worker_registers_matrix_provisioning_handler() -> None:
         matrix_provision_secret="test-matrix-provision-secret",
     )
 
-    assert set(handlers) == {"identity.email", "identity.matrix", "identity.admin_operation", "identity.matrix_session"}
+    assert set(handlers) == {"identity.email", "identity.matrix", "identity.admin_operation",
+                             "identity.account_credentials", "identity.matrix_session"}
 
 
 def test_worker_registers_matrix_profile_sync_handler_with_private_avatar_reader() -> None:
@@ -135,6 +136,7 @@ def test_worker_registers_matrix_profile_sync_handler_with_private_avatar_reader
 
     assert set(handlers) == {
         "identity.admin_operation",
+        "identity.account_credentials",
         "identity.email",
         "identity.matrix",
         "identity.matrix_session",

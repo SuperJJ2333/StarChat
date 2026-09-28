@@ -10,7 +10,6 @@ from app.core.config import Settings
 from app.core.database import Base, create_session_factory
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
-from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxEvent, OutboxPublisher
 from app.main import create_app
 from app.modules.audit.models import AuditEvent
@@ -597,6 +596,39 @@ def test_registration_idempotency_replays_public_session_without_duplicate_write
         assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 1
         assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 1
         assert session.get(Invitation, invitation.id).use_count == 1
+
+
+def test_blank_referral_code_precheck_and_registration_replay_share_one_hash(
+    registration_components,
+) -> None:
+    factory, invitations, service, _, now = registration_components
+    invitation = invitations.issue(
+        code="BLANK-REFERRAL-REPLAY",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    request = {
+        "username": "blank_referral_user",
+        "nickname": None,
+        "email": "blank-referral@example.test",
+        "password": "correct horse battery staple",
+        "invitation_code": "BLANK-REFERRAL-REPLAY",
+        "idempotency_key": "blank-referral-replay",
+        "referral_code": "   ",
+    }
+
+    service.validate_email_eligible(**request)
+    first = service.register(**request)
+    service.validate_email_eligible(**request)
+    replay = service.register(**request)
+
+    assert replay.replayed is True
+    assert replay.registration_session == first.registration_session
+    with factory() as session:
+        assert session.get(Invitation, invitation.id).use_count == 1
+        assert session.scalar(select(func.count()).select_from(User)) == 1
+        assert session.scalar(select(func.count()).select_from(IdempotencyRecord)) == 1
 
 
 def test_registration_rejects_idempotency_key_reuse_with_different_payload(

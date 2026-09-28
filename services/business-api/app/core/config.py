@@ -208,6 +208,30 @@ class Settings(BaseSettings):
     media_ttl_public_seconds: int = 86400
     media_orphan_grace_seconds: int = 7 * 24 * 3600
     media_e2ee_retention_floor_seconds: int = 30 * 24 * 3600
+    media_blob_backend: Literal['local', 's3', 'local_s3_read'] = 'local'
+    media_s3_region: str | None = None
+    media_s3_bucket: str | None = None
+    media_s3_prefix: str = 'business/'
+    media_s3_endpoint: str | None = None
+    media_s3_max_object_bytes: int = 64 * 1024 * 1024
+
+    @model_validator(mode='after')
+    def validate_media_storage(self) -> 'Settings':
+        if self.media_blob_backend == 'local':
+            return self
+        if not self.media_s3_region or not self.media_s3_bucket:
+            raise ValueError('S3 media requires explicit region and bucket')
+        if not max(self.media_max_upload_bytes, 20 * 1024 * 1024) <= self.media_s3_max_object_bytes <= 512 * 1024 * 1024:
+            raise ValueError('S3 object bound must cover existing uploads and be at most 512MiB')
+        if self.media_s3_endpoint:
+            from urllib.parse import urlparse
+            endpoint = urlparse(self.media_s3_endpoint)
+            if (self.environment != 'test' or endpoint.scheme != 'https'
+                    or endpoint.hostname not in ('localhost', '127.0.0.1', '::1')
+                    or endpoint.username or endpoint.password or endpoint.query or endpoint.fragment
+                    or endpoint.path not in ('', '/')):
+                raise ValueError('custom S3 endpoint is permitted only for verified HTTPS loopback tests')
+        return self
 
     @field_validator("matrix_login_token_expires_in", mode="before")
     @classmethod

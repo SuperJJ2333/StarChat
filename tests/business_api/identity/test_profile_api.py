@@ -617,13 +617,18 @@ def test_local_avatar_storage_uses_tamper_resistant_five_minute_urls(tmp_path) -
 @pytest.mark.asyncio
 async def test_avatar_content_response_prevents_cache_and_referrer_leaks(tmp_path) -> None:
     engine, factory, _, _ = _components()
+    _add_user(factory, "user-1", "Alice", "alice@example.test")
     storage = LocalPrivateObjectStorage(
         root=str(tmp_path / "private"),
         signing_secret="test-avatar-signing-secret",
         public_base_url="http://test",
     )
     storage.put("avatars/user-1/avatar.png", (FIXTURES / "avatar.png").read_bytes())
+    storage.put("avatars/user-1/retired.png", (FIXTURES / "avatar.png").read_bytes())
+    with factory.begin() as session:
+        session.get(User, "user-1").avatar_object_key = "avatars/user-1/avatar.png"
     url = storage.signed_read_url("avatars/user-1/avatar.png", 300)
+    retired_url = storage.signed_read_url("avatars/user-1/retired.png", 300)
     app = create_app(
         Settings(_env_file=None, environment="test", jwt_secret=JWT_SECRET),
         session_factory=factory,
@@ -633,8 +638,10 @@ async def test_avatar_content_response_prevents_cache_and_referrer_leaks(tmp_pat
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.get(url)
+        retired = await client.get(retired_url)
 
     assert response.status_code == 200
+    assert retired.status_code == 404
     assert response.headers["cache-control"] == "private, no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
     engine.dispose()

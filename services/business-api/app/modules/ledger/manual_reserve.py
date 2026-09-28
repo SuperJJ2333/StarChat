@@ -125,7 +125,7 @@ def publish_manual_reserve(session, *, expected_version, eligible_usdt, usdt_lia
         if previous.payload_digest != digest:
             raise ValueError('reserve idempotency conflict')
         return previous
-    if not timedelta(0) <= clock - observed <= timedelta(seconds=120):
+    if not timedelta(0) <= clock - observed <= timedelta(milliseconds=max_age_ms):
         raise ValueError('reserve evidence stale or future')
     if (None if reserve is None else reserve.version) != expected_version:
         raise ValueError('reserve version changed')

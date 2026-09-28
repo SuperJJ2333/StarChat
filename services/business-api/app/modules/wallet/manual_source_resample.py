@@ -14,7 +14,7 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
     polls = 0
     sample = monitor.source.read_reserve_sample(timeout_seconds=1.0)
 
-    def reject(code):
+    def reject(code, *, source_read_timeout=False):
         if "deadline" in state:
             diag.emit(
                 "WARNING",
@@ -25,7 +25,8 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
                 waited_ms=int((clock() - started) * 1000),
                 poll_count=polls,
             )
-        return {"result": monitor._failed_source(code)}
+        return {"result": monitor._failed_source(code,
+            source_read_timeout=source_read_timeout)}
 
     def valid(sample):
         return (
@@ -82,9 +83,9 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
             )
         except FundingSourcePending:
             return reject("MANUAL_SOURCE_UNHEALTHY")
-        except FundingSourceError:
-            if clock() >= deadline:
-                break
+        except FundingSourceError as exc:
+            if monitor._is_source_read_budget_expired(exc):
+                return reject("MANUAL_SOURCE_UNAVAILABLE", source_read_timeout=True)
             return reject("MANUAL_SOURCE_UNAVAILABLE")
         polls += 1
         if clock() >= deadline:
@@ -111,9 +112,9 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
                 )
             except FundingSourcePending:
                 return reject("MANUAL_SOURCE_UNHEALTHY")
-            except FundingSourceError:
-                if clock() >= deadline:
-                    break
+            except FundingSourceError as exc:
+                if monitor._is_source_read_budget_expired(exc):
+                    return reject("MANUAL_SOURCE_UNAVAILABLE", source_read_timeout=True)
                 return reject("MANUAL_SOURCE_UNAVAILABLE")
             if clock() >= deadline:
                 break

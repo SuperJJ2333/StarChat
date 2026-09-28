@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import Settings
@@ -10,6 +10,7 @@ from app.integrations.private_storage import LocalPrivateObjectStorage, PrivateO
 from app.modules.identity.profile import MAX_AVATAR_BYTES, ProfileResult, ProfileService
 from app.modules.identity.profile_text import MAX_PROFILE_RAW_CODEPOINTS
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.username import UsernameService
 
 
 class StrictModel(BaseModel):
@@ -48,6 +49,30 @@ class ProfileResponse(BaseModel):
     avatar_url: str | None
     avatar_fallback_seed: str
     profile_updated_at: datetime
+    masked_phone: str = ''
+
+
+class UsernameChangePolicy(BaseModel):
+    username: str
+    can_change: bool
+    next_change_at: datetime | None
+    min_length: int
+    max_length: int
+
+
+class UsernameChangeRequest(StrictModel):
+    username: str = Field(min_length=1, max_length=64)
+
+
+class UsernameAvailabilityResponse(BaseModel):
+    username: str
+    available: bool
+
+
+class UsernameChangeResponse(BaseModel):
+    username: str
+    changed: bool
+    next_change_at: datetime | None
 
 
 class AvatarUploadRequest(StrictModel):
@@ -66,6 +91,7 @@ def create_profile_router(
     session_factory,
     *,
     storage: PrivateObjectStorage,
+    rate_limiter=None,
 ) -> APIRouter:
     router = APIRouter(tags=["profile"])
     tokens = TokenService(
@@ -75,6 +101,7 @@ def create_profile_router(
         require_session_claims=settings.environment != "test",
     )
     profiles = ProfileService(session_factory, storage=storage)
+    usernames = UsernameService(session_factory)
 
     def current_claims(
         authorization: Annotated[str | None, Header()] = None,
@@ -88,6 +115,34 @@ def create_profile_router(
             getattr(request.state, "trace_id", "unknown"),
             request.client.host if request.client else None,
         )
+
+    def username_rate_limit(user_id, action, *, limit, window_seconds):
+        if rate_limiter is not None:
+            rate_limiter.hit(f'identity:username:{action}:{user_id}',
+                limit=limit, window_seconds=window_seconds)
+
+    @router.get('/profile/username-change', response_model=UsernameChangePolicy)
+    def username_policy(response: Response, claims: dict = Depends(current_claims)):
+        response.headers['Cache-Control'] = 'no-store'
+        return usernames.policy(claims['sub'])
+
+    @router.get('/profile/username-availability', response_model=UsernameAvailabilityResponse)
+    def username_availability(response: Response,
+        username: Annotated[str, Query(min_length=1, max_length=64)],
+        claims: dict = Depends(current_claims)):
+        response.headers['Cache-Control'] = 'no-store'
+        username_rate_limit(claims['sub'], 'availability', limit=60, window_seconds=60)
+        return usernames.availability(claims['sub'], username)
+
+    @router.patch('/profile/username', response_model=UsernameChangeResponse)
+    def username_change(body: UsernameChangeRequest, request: Request, response: Response,
+        idempotency_key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=128)],
+        claims: dict = Depends(current_claims)):
+        response.headers['Cache-Control'] = 'no-store'
+        username_rate_limit(claims['sub'], 'change', limit=10, window_seconds=600)
+        trace_id, source_ip = request_context(request)
+        return usernames.change(claims['sub'], body.username, idempotency_key=idempotency_key,
+            trace_id=trace_id, source_ip=source_ip)
 
     @router.get("/profile/me", response_model=ProfileResponse)
     async def get_profile(claims: dict = Depends(current_claims)) -> ProfileResult:
@@ -221,7 +276,8 @@ def create_profile_router(
                 message="头像链接无效或已过期",
                 status_code=404,
             )
-        content, mime_type = storage.read_signed(token, expires_in)
+        content, mime_type = storage.read_signed(token, expires_in, authorize=lambda key:
+            not key.startswith("avatars/") or profiles.avatar_key_is_current(key))
         return Response(
             content=content,
             media_type=mime_type,

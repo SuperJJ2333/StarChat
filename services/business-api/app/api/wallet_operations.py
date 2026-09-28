@@ -68,7 +68,7 @@ class WalletIncidentView(BaseModel):
     id: str
     fingerprint: str
     code: str
-    severity: Literal['P0', 'P1']
+    severity: Literal['P0', 'P1', 'T2']
     subject_id: str
     status: Literal['OPEN', 'ACKNOWLEDGED', 'RESOLVED']
     generation: int
@@ -158,7 +158,7 @@ def create_wallet_operations_router(settings, factory, wallet_service):
     def listing(request: Request, user: str = Depends(finance), limit: int = Query(50, ge=1, le=100),
                 cursor: str | None = Query(None, max_length=2048),
                 status: list[Literal['OPEN','ACKNOWLEDGED','RESOLVED']] | None = Query(None),
-                severity: list[Literal['P0','P1']] | None = Query(None), code: list[str] | None = Query(None),
+                severity: list[Literal['P0','P1','T2']] | None = Query(None), code: list[str] | None = Query(None),
                 sort: Literal['opened_desc','opened_asc','updated_desc'] = Query('opened_desc'),
                 condition_active: bool | None = Query(None)):
         return read(incident_reports.list(limit=limit, cursor=cursor, status=status, severity=severity,

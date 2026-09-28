@@ -1,4 +1,4 @@
-"""添加朋友搜索：畅聊号/邮箱前缀匹配、阈值、排序与脱敏。"""
+"""添加朋友搜索：畅聊号与完整邮箱精确匹配、阈值、排序与脱敏。"""
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -77,35 +77,40 @@ async def test_single_character_query_is_rejected(context):
 
 
 @pytest.mark.asyncio
-async def test_prefix_matches_chat_id_and_email_but_not_infix(context):
+async def test_chat_id_query_excludes_email_prefix_and_infix(context):
     app, _factory, settings = context
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/users/search", params={"q": "alice"}, headers=bearer(settings, "me-1"))
     assert response.status_code == 200
     ids = search_ids(response.json())
-    # alice 前缀命中；xalice 是中缀不算；alice.fan@… 是邮箱前缀命中。
+    # 当前畅聊号发现规则命中 alice/alina；不把邮箱前缀或中缀当作结果。
     assert "u-al" in ids
-    assert "u-em" in ids
+    assert "u-al2" in ids
+    assert "u-em" not in ids
     assert "u-x" not in ids
 
 
 @pytest.mark.asyncio
-async def test_email_prefix_search_is_case_insensitive(context):
+async def test_full_email_search_is_case_insensitive_and_prefix_is_rejected(context):
     app, _factory, settings = context
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/users/search", params={"q": "ALICE.FAN"}, headers=bearer(settings, "me-1"))
+        response = await client.get("/api/v1/users/search", params={"q": "ALICE.FAN@EXAMPLE.COM"}, headers=bearer(settings, "me-1"))
+        prefix = await client.get("/api/v1/users/search", params={"q": "ALICE.FAN@EXAMPLE"}, headers=bearer(settings, "me-1"))
+    assert response.status_code == 200
     assert search_ids(response.json()) == ["u-em"]
+    assert prefix.status_code == 200
+    assert search_ids(prefix.json()) == []
 
 
 @pytest.mark.asyncio
-async def test_username_hits_rank_before_email_hits_then_recent_activity(context):
+async def test_chat_id_hits_rank_by_recent_activity_without_email_fallback(context):
     app, _factory, settings = context
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/users/search", params={"q": "ali"}, headers=bearer(settings, "me-1"))
     ids = search_ids(response.json())
-    # 畅聊号命中（alice/alina，按最近活跃倒序：alina 1 分钟前 > alice 5 分钟前）
-    # 优先于邮箱命中（alice.fan）。
-    assert ids.index("u-al2") < ids.index("u-al") < ids.index("u-em")
+    # 畅聊号命中按最近活跃倒序：alina 1 分钟前 > alice 5 分钟前；
+    # 没有 @ 的检索不能回退到 alice.fan 的邮箱前缀。
+    assert ids == ["u-al2", "u-al"]
 
 
 @pytest.mark.asyncio

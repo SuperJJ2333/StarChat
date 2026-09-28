@@ -2,6 +2,9 @@ from hashlib import sha256
 from typing import Annotated, Literal
 from datetime import datetime, timezone
 from urllib.parse import quote
+import asyncio
+from functools import partial
+import time
 
 import anyio.to_thread
 
@@ -34,6 +37,10 @@ from app.modules.identity.registration import (
 )
 from app.modules.identity.tokens import TokenService
 from app.modules.audit.writer import AuditWriter
+from app.modules.identity.account_credentials import AccountCredentialsService
+
+PASSWORD_VERIFY_WINDOW_SECONDS = 5.0
+PASSWORD_VERIFY_WORK_SECONDS = 4.5
 
 
 def public_rate_limit_key(operation: str, source_ip: str, subject: str = "") -> str:
@@ -146,6 +153,46 @@ class ResetRequest(StrictModel):
     new_password: str = Field(min_length=12, max_length=256)
 
 
+class PasswordCodeRequest(StrictModel):
+    channel: Literal['email', 'phone']
+    target: str = Field(min_length=3, max_length=320, repr=False)
+
+
+class PasswordCodeVerifyRequest(PasswordCodeRequest):
+    code: str = Field(pattern=r'^[0-9]{6}$', repr=False)
+
+
+class PasswordCodeResetRequest(StrictModel):
+    token: str = Field(min_length=32, max_length=256, repr=False)
+    new_password: str = Field(min_length=12, max_length=256, repr=False)
+
+
+class PasswordCodeProofResponse(StrictModel):
+    reset_token: str
+    expires_in: int
+
+
+class EmailBindingCodeRequest(StrictModel):
+    code: str = Field(pattern=r'^[0-9]{6}$', repr=False)
+
+
+class EmailBindingRequest(StrictModel):
+    email: str = Field(min_length=3, max_length=320, repr=False)
+
+
+class EmailBindingConfirmRequest(EmailBindingCodeRequest):
+    new_email: str = Field(min_length=3, max_length=320, repr=False)
+
+
+class AccountSecurityResponse(StrictModel):
+    masked_email: str
+    masked_phone: str
+    email_bound: bool
+    phone_bound: bool
+    email_verified: bool
+    phone_verified: bool
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -223,29 +270,14 @@ def create_identity_router(
         NullSmsSender,
         PhoneAuthService,
         PhoneOtpService,
+        build_sms_transport,
     )
 
     def _build_phone_auth():
         # ADR-0075 实施补充：生产装配按 settings.sms_provider 构建真实
         # 供应商适配器（阿里云验证码短信）；未配置一律 fail-closed。
         # sms_sender 参数仅供测试注入替身（RecordingSmsSender 等）。
-        sender = sms_sender
-        code_verifier = None
-        if sender is None:
-            if settings.sms_provider == "aliyun_dypns":
-                from app.modules.identity.sms_aliyun import AliyunDypnsSmsSender
-
-                adapter = AliyunDypnsSmsSender(
-                    access_key_id=settings.sms_aliyun_access_key_id.get_secret_value(),
-                    access_key_secret=settings.sms_aliyun_access_key_secret.get_secret_value(),
-                    sign_name=settings.sms_aliyun_sign_name,
-                    template_code=settings.sms_aliyun_template_code,
-                    region=settings.sms_aliyun_region,
-                    code_valid_minutes=settings.sms_aliyun_code_valid_minutes,
-                )
-                sender, code_verifier = adapter, adapter.verify
-            else:
-                sender = NullSmsSender()
+        sender, code_verifier = build_sms_transport(settings, sender=sms_sender)
         otp = PhoneOtpService(session_factory, sender=sender,
             secret=settings.otp_hash_secret or settings.jwt_secret or "development-otp-secret",
             phone_enabled=settings.phone_auth_enabled, code_verifier=code_verifier)
@@ -258,6 +290,8 @@ def create_identity_router(
         password_hasher=password_hasher,
         token_codec=reset_codec,
     )
+    credentials = AccountCredentialsService(session_factory, otp=phone_auth.otp, recovery=recovery,
+        email_code_deriver=verification_codec.verification_code)
     audit = AuditWriter(session_factory)
     matrix_login = MatrixLoginTokenService(
         session_factory,
@@ -299,6 +333,13 @@ def create_identity_router(
         if not authorization or not authorization.startswith("Bearer "):
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
         return str(tokens.decode_access_token(authorization[7:])["sub"])
+
+    def optional_user_id(authorization: Annotated[str | None, Header()] = None) -> str | None:
+        if authorization is None:
+            return None
+        if not authorization.startswith('Bearer ') or not authorization[7:]:
+            raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+        return str(tokens.decode_access_token(authorization[7:])['sub'])
 
     @router.post("/invitations/validate")
     async def validate_invitation(body: InvitationRequest, request: Request) -> dict:
@@ -918,15 +959,83 @@ def create_identity_router(
     @router.post("/auth/password/reset", status_code=204)
     async def reset(body: ResetRequest, request: Request) -> Response:
         rate_limiter.hit(public_rate_limit_key("auth:password-reset", request.client.host if request.client else "unknown", body.token), limit=10, window_seconds=3600)
-        user_id = recovery.reset(body.token, body.new_password)
-        record_audit(
-            request,
-            actor_id=user_id,
-            subject_id=user_id,
-            action="identity.password.reset",
-            reason_code="PASSWORD_RESET",
-        )
+        recovery.reset(body.token, body.new_password, trace_id=getattr(request.state, 'trace_id', 'unknown'),
+            source_ip=request.client.host if request.client else None)
         return Response(status_code=204)
+
+    @router.get('/auth/account-security', response_model=AccountSecurityResponse)
+    def account_security(user_id: Annotated[str, Depends(current_user_id)]):
+        return credentials.summary(user_id)
+
+    @router.post('/auth/password/code/request', status_code=202,
+        openapi_extra={'security': [{}, {'bearerAuth': []}]},
+        description='无Authorization时匿名；提供无效认证头返回401。已登录请求仅限当前账号已验证联系方式。')
+    def password_code_request(body: PasswordCodeRequest, request: Request,
+                              user_id: Annotated[str | None, Depends(optional_user_id)]):
+        rate_limiter.hit(public_rate_limit_key('auth:password-code-request', request.client.host if request.client else 'unknown'), limit=3, window_seconds=600)
+        return credentials.request_password_code(**body.model_dump(), user_id=user_id)
+
+    @router.post('/auth/password/code/verify', response_model=PasswordCodeProofResponse,
+        openapi_extra={'security': [{}, {'bearerAuth': []}]},
+        description='无Authorization时匿名；提供无效认证头返回401。已登录验证仅限当前账号。验证码单次消费后返回短期恢复证明。')
+    async def password_code_verify(body: PasswordCodeVerifyRequest, request: Request, response: Response,
+                             user_id: Annotated[str | None, Depends(optional_user_id)]):
+        await anyio.to_thread.run_sync(partial(rate_limiter.hit,
+            public_rate_limit_key('auth:password-code-verify', request.client.host if request.client else 'unknown'),
+            limit=30, window_seconds=600))
+        response.headers['Cache-Control'] = 'no-store'
+        started = time.monotonic()
+        work = asyncio.create_task(anyio.to_thread.run_sync(partial(credentials.verify_password_code,
+            **body.model_dump(), user_id=user_id, deadline=started + PASSWORD_VERIFY_WORK_SECONDS)))
+        # Retrieve late errors without cancelling a thread or allowing a late
+        # provider result to create a proof. The application deadline rolls back.
+        work.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+        done, _ = await asyncio.wait({work}, timeout=PASSWORD_VERIFY_WORK_SECONDS)
+        # Some event-loop timers wake before the requested instant (notably the
+        # Windows coarse clock); check the monotonic boundary after each wake.
+        while (remaining := started + PASSWORD_VERIFY_WINDOW_SECONDS - time.monotonic()) > 0:
+            await asyncio.sleep(remaining)
+        if not done:
+            credentials._invalid()
+        try:
+            return work.result()
+        except AppError:
+            if user_id is None:
+                credentials._invalid()
+            raise
+        except Exception:
+            credentials._invalid()
+
+    @router.post('/auth/password/code/reset', status_code=204,
+        openapi_extra={'security': [{}, {'bearerAuth': []}]},
+        description='无Authorization时匿名；提供无效认证头返回401。已登录重置仅限当前账号，恢复证明单次消费。')
+    def password_code_reset(body: PasswordCodeResetRequest, request: Request,
+                            user_id: Annotated[str | None, Depends(optional_user_id)]):
+        rate_limiter.hit(public_rate_limit_key('auth:password-code-reset', request.client.host if request.client else 'unknown'), limit=10, window_seconds=3600)
+        credentials.reset_password(**body.model_dump(), user_id=user_id,
+            trace_id=getattr(request.state, 'trace_id', 'unknown'), source_ip=request.client.host if request.client else None)
+        return Response(status_code=204)
+
+    @router.post('/auth/email/rebind/old-request', status_code=202)
+    def email_binding_old_request(user_id: Annotated[str, Depends(current_user_id)]):
+        rate_limiter.hit(f'auth:email-old-request:{user_id}', limit=3, window_seconds=600)
+        return credentials.request_old_email_channel(user_id=user_id)
+
+    @router.post('/auth/email/rebind/old-confirm')
+    def email_binding_old_confirm(body: EmailBindingCodeRequest, user_id: Annotated[str, Depends(current_user_id)]):
+        rate_limiter.hit(f'auth:email-old-confirm:{user_id}', limit=30, window_seconds=600)
+        return credentials.confirm_old_email_channel(user_id=user_id, code=body.code)
+
+    @router.post('/auth/email/rebind/new-request', status_code=202)
+    def email_binding_new_request(body: EmailBindingRequest, user_id: Annotated[str, Depends(current_user_id)]):
+        rate_limiter.hit(f'auth:email-new-request:{user_id}', limit=3, window_seconds=600)
+        return credentials.request_new_email(user_id=user_id, email=body.email)
+
+    @router.post('/auth/email/rebind/confirm')
+    def email_binding_confirm(body: EmailBindingConfirmRequest, request: Request, user_id: Annotated[str, Depends(current_user_id)]):
+        rate_limiter.hit(f'auth:email-new-confirm:{user_id}', limit=30, window_seconds=600)
+        return credentials.confirm_new_email(user_id=user_id, **body.model_dump(),
+            trace_id=getattr(request.state, 'trace_id', 'unknown'), source_ip=request.client.host if request.client else None)
 
     @router.get("/devices")
     async def devices(claims: Annotated[dict, Depends(current_claims)]) -> list[dict]:
@@ -1092,13 +1201,19 @@ def create_identity_router(
         return phone_auth.request_new_phone_verification(user_id=user_id, new_phone=body.phone)
 
     @router.post("/auth/phone/rebind/confirm")
-    def phone_rebind_confirm(body: PhoneRebindConfirmBody, user_id: Annotated[str, Depends(current_user_id)]):
-        return phone_auth.confirm_new_phone(user_id=user_id, new_phone=body.new_phone, code=body.code)
+    def phone_rebind_confirm(body: PhoneRebindConfirmBody, request: Request, user_id: Annotated[str, Depends(current_user_id)]):
+        return phone_auth.confirm_new_phone(user_id=user_id, new_phone=body.new_phone, code=body.code,
+            trace_id=getattr(request.state, 'trace_id', 'unknown'), source_ip=request.client.host if request.client else None)
 
     @router.post("/contacts/search-phone")
     def search_phone(body: PhoneSearchBody, request: Request, user_id: Annotated[str, Depends(current_user_id)]):
         rate_limiter.hit(f"contacts:phone-search:{user_id}", limit=10, window_seconds=3600)
-        return phone_auth.search_by_phone(phone=body.phone)
+        result = phone_auth.search_by_phone(phone=body.phone)
+        if result.get('found'):
+            from app.modules.friendship.service import FriendshipService
+            if result['user']['user_id'] in FriendshipService.discovery_excluded_user_ids(session_factory, user_id):
+                return {'found': False}
+        return result
 
     @router.patch("/auth/phone/privacy")
     def phone_privacy(body: PhonePrivacyBody, user_id: Annotated[str, Depends(current_user_id)]):

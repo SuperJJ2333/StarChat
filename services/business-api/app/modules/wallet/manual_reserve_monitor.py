@@ -21,7 +21,7 @@ from app.core.outbox import OutboxEvent
 from app.core.outbox_handover import OutboxHandover
 
 from app.integrations.tron.finality import NETWORK, POLICY, SOURCE_ID, USDT_CONTRACT
-from app.integrations.tron.funding_source import ReserveCut, FundingSourcePending
+from app.integrations.tron.funding_source import ReserveCut, FundingSourceError, FundingSourcePending
 from app.integrations.tron.message_signature import canonical_address
 from app.modules.ledger.manual_reserve import publish_manual_reserve
 from app.modules.ledger.manual_reserve_models import ManualReserveEvaluation
@@ -119,17 +119,22 @@ class ManualReserveMonitor:
         if code is None:
             row.last_success_at = now
 
-    # Owner decision 2026-09-24 (T3): a stale chain observation is advisory.
-    # It opens a P1 incident — which never escalates and never pages — and must
-    # NOT pause the wallet; the last published reserve stays in effect. Every
-    # other block code keeps the fail-closed pause.
+    # Stale observations remain P1 advisory. Only a proven source read-budget
+    # expiry is T2; malformed, regressed and unknown source faults stay P0.
     _advisory_block_codes = frozenset({'MANUAL_SOURCE_UNHEALTHY'})
 
-    def _block(self, session, code, now):
-        if code in self._advisory_block_codes:
+    @staticmethod
+    def _is_source_read_budget_expired(exc):
+        return isinstance(exc, FundingSourceError) and str(exc) == 'SOURCE_READ_BUDGET_EXPIRED'
+
+    def _block(self, session, code, now, *, source_read_timeout=False):
+        if source_read_timeout and code != 'MANUAL_SOURCE_UNAVAILABLE':
+            raise ValueError('source read timeout requires source-unavailable incident')
+        if code in self._advisory_block_codes or source_read_timeout:
+            severity = 'T2' if source_read_timeout else 'P1'
             diag.emit('WARNING', 'monitor_block_requested', component='manual_monitor', reason_code=code)
             self.incidents.observe_in_session(session, [dict(fingerprint='manual-reserve:'+code,
-                code=code, severity='P1', subject_id='global')], actor_id=ACTOR, complete=False)
+                code=code, severity=severity, subject_id='global')], actor_id=ACTOR, complete=False)
             self._heartbeat(session, now, code)
             return dict(complete=False, status='BLOCKED', codes=[code])
         diag.emit('ERROR', 'monitor_block_requested', component='manual_monitor', reason_code=code)
@@ -140,9 +145,10 @@ class ManualReserveMonitor:
         self._heartbeat(session, now, code)
         return dict(complete=False, status='BLOCKED', codes=[code])
 
-    def _failed_source(self, code):
+    def _failed_source(self, code, *, source_read_timeout=False):
         with self.factory.begin() as session:
-            return self._block(session, code, _aware(self.clock()))
+            return self._block(session, code, _aware(self.clock()),
+                               source_read_timeout=source_read_timeout)
 
     def _window_ms(self):
         """Observer freshness window in milliseconds; matches the source config."""
@@ -362,7 +368,8 @@ class ManualReserveMonitor:
         except Exception as exc:
             diag.emit('ERROR', 'source_read_failed', component='manual_monitor',
                       reason_code='MANUAL_SOURCE_UNAVAILABLE', **diag.exception_info(exc))
-            return self._failed_source('MANUAL_SOURCE_UNAVAILABLE')
+            return self._failed_source('MANUAL_SOURCE_UNAVAILABLE',
+                source_read_timeout=self._is_source_read_budget_expired(exc))
         with self.factory.begin() as session:
             reserve = lock_budget(session)
             control = session.get(WalletControl, 'global', with_for_update=True)
@@ -649,7 +656,7 @@ class _HandoverReserveReview(ManualReserveMonitor):
             raise _HandoverProofRejected(code)
         return super()._heartbeat(session, now, code)
 
-    def _failed_source(self, code):
+    def _failed_source(self, code, *, source_read_timeout=False):
         return dict(complete=False, status='BLOCKED', codes=[code])
 
     def _pending_source(self, pending):

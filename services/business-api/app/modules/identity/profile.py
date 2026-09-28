@@ -3,18 +3,18 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from io import BytesIO
 import json
+import re
 from uuid import uuid4
 
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
-from app.core.outbox import OutboxPublisher
+from app.core.outbox import OutboxEvent, OutboxPublisher
 from app.integrations.private_storage import PrivateObjectStorage
 from app.modules.audit.writer import AuditWriter
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from app.modules.identity.models import AvatarUpload, User, Device
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.profile_text import valid_nickname, valid_signature
@@ -38,6 +38,7 @@ class ProfileResult:
     avatar_url: str | None
     avatar_fallback_seed: str
     profile_updated_at: datetime
+    masked_phone: str = ''
 
 
 @dataclass(frozen=True)
@@ -115,27 +116,37 @@ class ProfileService:
         exclude_user_ids: set[str],
         limit: int = 20,
     ) -> list[PublicProfileResult]:
-        """畅聊号/邮箱前缀搜索（添加朋友候选）。
+        """Complete contacts, or current handles allowing the final two characters.
 
-        - 匹配：输入与畅聊号或邮箱（大小写不敏感）的**开头**一致即命中；
-        - 排序：畅聊号命中优先于邮箱命中，同级按最近活跃时间倒序
-          （设备 last_seen_at 最大值），再按畅聊号字典序稳定排序；
-        - 排除自己、被拉黑用户（exclude_user_ids 由调用方传入）。
+        A candidate may be zero to two characters longer than the query. Its
+        entire stem (all but its last two characters) must equal the same query
+        prefix. Equality keeps '%' and '_' literal without SQL LIKE wildcards.
         """
         normalized = query.strip().casefold()
         if len(normalized) < 2:
             return []
-        backslash = chr(92)
-        escaped = (
-            normalized.replace(backslash, backslash * 2)
-            .replace("%", backslash + "%")
-            .replace("_", backslash + "_")
-        )
-        prefix = escaped + "%"
-        username_hit = User.username_normalized.like(prefix, escape=backslash)
-        email_hit = User.email_normalized.like(prefix, escape=backslash)
+        phone = self.phone_search_value(query)
+        if '@' in normalized:
+            predicate = User.email_normalized == normalized
+        elif phone is not None:
+            predicate = and_(User.phone_normalized == phone, User.phone_findable.is_(True))
+        elif re.fullmatch(r'[a-z][a-z0-9_-]{1,63}', normalized):
+            size = len(normalized)
+            handle_size = func.length(User.username_normalized)
+            stem = func.substr(User.username_normalized, 1, handle_size - 2)
+            predicate = or_(*(
+                and_(handle_size == candidate_size, stem == normalized[:candidate_size - 2])
+                for candidate_size in range(size, size + 3)
+            ))
+        else:
+            return []
+        candidate_query = select(User.id).where(User.status == AccountStatus.ACTIVE, predicate)
+        if exclude_user_ids:
+            candidate_query = candidate_query.where(User.id.not_in(exclude_user_ids))
+        candidates = candidate_query.cte('discovery_candidates')
         seen = (
             select(Device.user_id, func.max(Device.last_seen_at).label("last_seen"))
+            .join(candidates, candidates.c.id == Device.user_id)
             .where(Device.revoked_at.is_(None))
             .group_by(Device.user_id)
             .subquery()
@@ -143,23 +154,29 @@ class ProfileService:
         with self._session_factory() as session:
             statement = (
                 select(User)
+                .join(candidates, candidates.c.id == User.id)
                 .outerjoin(seen, seen.c.user_id == User.id)
-                .where(
-                    User.status == AccountStatus.ACTIVE,
-                    or_(username_hit, email_hit),
-                )
                 .order_by(
-                    case((username_hit, 0), else_=1),
+                    case((User.username_normalized == normalized, 0), else_=1),
                     seen.c.last_seen.desc().nullslast(),
                     User.username_normalized,
                     User.id,
                 )
                 .limit(limit)
             )
-            if exclude_user_ids:
-                statement = statement.where(User.id.not_in(exclude_user_ids))
             users = list(session.scalars(statement))
             return [self._public_profile(user) for user in users]
+
+    @staticmethod
+    def phone_search_value(query: str) -> str | None:
+        """Only complete canonical phone queries consume the shared phone quota."""
+        from app.modules.identity.phone import normalize_phone
+        try:
+            return normalize_phone(query)
+        except AppError as error:
+            if error.code != 'PHONE_INVALID':
+                raise
+            return None
 
     def update(
         self,
@@ -342,7 +359,6 @@ class ProfileService:
         source_ip: str | None,
     ) -> ProfileResult:
         now = self._now_factory()
-        old_object_key = None
         with self._session_factory.begin() as session:
             record = self._claim_idempotency(
                 session,
@@ -361,39 +377,48 @@ class ProfileService:
             user = session.scalar(select(User).where(User.id == user_id).with_for_update())
             if record.status == "COMPLETED" or upload.status == "COMPLETED":
                 self._complete_idempotency(record, now)
-                return self._profile(user)
-            self._ensure_upload_available(upload)
-            if upload.status != "UPLOADED" or not upload.content_hash:
-                raise AppError(
-                    code="AVATAR_CONTENT_REQUIRED",
-                    message="请先上传头像内容",
-                    status_code=409,
-                )
-            content = self._storage.get(upload.object_key)
-            self._validate_image(content, upload.mime_type)
-            old_object_key = user.avatar_object_key
-            user.avatar_object_key = upload.object_key
-            user.profile_updated_at = now
-            user.updated_at = now
-            upload.status = "COMPLETED"
-            upload.completed_at = now
-            self._enqueue_profile_changed(session, user_id, now)
-            self._audit.record_in_session(
-                session,
-                actor_id=user_id,
-                subject_type="user",
-                subject_id=user_id,
-                action="identity.profile.avatar.updated",
-                result="SUCCESS",
-                reason_code="SELF_AVATAR_UPDATE",
-                trace_id=trace_id,
-                source_ip=source_ip,
-            )
-            self._complete_idempotency(record, now)
-            result = self._profile(user)
-        if old_object_key and old_object_key != upload.object_key:
-            self._storage.delete(old_object_key)
+                result = self._profile(user)
+                receipt_id = record.id
+            else:
+                result, receipt_id = self._commit_avatar_upload(
+                    session, user, upload, record, user_id=user_id, now=now,
+                    trace_id=trace_id, source_ip=source_ip)
+        self._retry_avatar_cleanup(receipt_id)
         return result
+
+    def _commit_avatar_upload(self, session, user, upload, record, *, user_id,
+                              now, trace_id, source_ip):
+        self._ensure_upload_available(upload)
+        if upload.status != "UPLOADED" or not upload.content_hash:
+            raise AppError(
+                code="AVATAR_CONTENT_REQUIRED",
+                message="请先上传头像内容",
+                status_code=409,
+            )
+        content = self._storage.get(upload.object_key)
+        self._validate_image(content, upload.mime_type)
+        old_object_key = user.avatar_object_key
+        if old_object_key and old_object_key != upload.object_key:
+            self._enqueue_avatar_cleanup(session, record.id, user_id, old_object_key, now)
+        user.avatar_object_key = upload.object_key
+        user.profile_updated_at = now
+        user.updated_at = now
+        upload.status = "COMPLETED"
+        upload.completed_at = now
+        self._enqueue_profile_changed(session, user_id, now)
+        self._audit.record_in_session(
+            session,
+            actor_id=user_id,
+            subject_type="user",
+            subject_id=user_id,
+            action="identity.profile.avatar.updated",
+            result="SUCCESS",
+            reason_code="SELF_AVATAR_UPDATE",
+            trace_id=trace_id,
+            source_ip=source_ip,
+        )
+        self._complete_idempotency(record, now)
+        return self._profile(user), record.id
 
     def cancel_avatar_upload(self, user_id: str, upload_id: str) -> None:
         object_key = None
@@ -433,10 +458,10 @@ class ProfileService:
             user = session.scalar(select(User).where(User.id == user_id).with_for_update())
             if user is None:
                 self._not_found()
-            if record.status == "COMPLETED":
-                return
-            old_object_key = user.avatar_object_key
-            if old_object_key:
+            if record.status != "COMPLETED":
+                old_object_key = user.avatar_object_key
+            if record.status != "COMPLETED" and old_object_key:
+                self._enqueue_avatar_cleanup(session, record.id, user_id, old_object_key, now)
                 user.avatar_object_key = None
                 user.profile_updated_at = now
                 user.updated_at = now
@@ -453,10 +478,44 @@ class ProfileService:
                     source_ip=source_ip,
                 )
             self._complete_idempotency(record, now)
-        if old_object_key:
-            self._storage.delete(old_object_key)
+            receipt_id = record.id
+        self._retry_avatar_cleanup(receipt_id)
+
+    @staticmethod
+    def _enqueue_avatar_cleanup(session, receipt_id, user_id, object_key, now):
+        OutboxPublisher.enqueue(session, topic="identity.avatar.cleanup",
+            event_type="identity.avatar.retired", aggregate_type="avatar_cleanup",
+            aggregate_id=receipt_id, payload={"user_id": user_id, "object_key": object_key}, now=now)
+
+    def _retry_avatar_cleanup(self, receipt_id):
+        with self._session_factory() as session:
+            row = session.scalar(select(OutboxEvent).where(
+                OutboxEvent.topic == "identity.avatar.cleanup",
+                OutboxEvent.aggregate_id == receipt_id))
+            payload = dict(row.payload) if row is not None else None
+        if payload is not None:
+            self.cleanup_retired_avatar(payload["user_id"], payload["object_key"])
+
+    def cleanup_retired_avatar(self, user_id: str, object_key: str) -> None:
+        # Old completed upload IDs cannot be selected again by completion retries.
+        # Read authority before I/O; never hold a User lock across remote storage.
+        pieces = object_key.split("/")
+        if (len(pieces) != 3 or pieces[:2] != ["avatars", user_id]
+                or not pieces[2] or pieces[2] in (".", "..") or "\\" in object_key
+                or any(ord(char) < 32 for char in object_key)):
+            raise AppError(code="AVATAR_CLEANUP_INVALID", message="头像清理任务无效", status_code=400)
+        with self._session_factory() as session:
+            user = session.get(User, user_id)
+            if user is not None and user.avatar_object_key == object_key:
+                return
+        self._storage.delete(object_key)
+
+    def avatar_key_is_current(self, object_key: str) -> bool:
+        with self._session_factory() as session:
+            return session.scalar(select(User.id).where(User.avatar_object_key == object_key)) is not None
 
     def _profile(self, user: User) -> ProfileResult:
+        from app.modules.identity.phone import mask_phone
         avatar_url = None
         if user.avatar_object_key:
             avatar_url = self._storage.signed_read_url(
@@ -477,6 +536,7 @@ class ProfileService:
                 user.username_normalized.encode("utf-8")
             ).hexdigest()[:16],
             profile_updated_at=profile_updated_at,
+            masked_phone=mask_phone(user.phone_normalized) if user.phone_normalized else '',
         )
 
     def _public_profile(self, user: User) -> PublicProfileResult:

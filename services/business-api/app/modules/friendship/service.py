@@ -217,6 +217,12 @@ class FriendshipService(DirectConversationLifecycle, DirectRoomRecovery):
             row=s.scalar(select(Friendship).where(Friendship.user_low_id==low,Friendship.user_high_id==high))
             if not row:raise AppError(code='FRIEND_NOT_FOUND',message='好友不存在',status_code=404)
             subject=row.id;self._audit(s,actor,subject,'friend.deleted','FRIEND_DELETE',key);s.delete(row);s.execute(delete(ContactProfile).where(or_(ContactProfile.owner_id==actor,ContactProfile.contact_id==actor),or_(ContactProfile.owner_id==target,ContactProfile.contact_id==target)))
+    @staticmethod
+    def discovery_excluded_user_ids(session_factory, actor):
+        """Public discovery privacy shared by textual and exact phone entry points."""
+        with session_factory() as s:
+            return {actor} | set(s.scalars(select(UserBlock.blocked_id).where(UserBlock.blocker_id==actor))) | set(s.scalars(select(UserBlock.blocker_id).where(UserBlock.blocked_id==actor)))
+
     def search(self,actor,q):
         with self.factory() as s:
             blocked=set(s.scalars(select(UserBlock.blocked_id).where(UserBlock.blocker_id==actor)).all())|set(s.scalars(select(UserBlock.blocker_id).where(UserBlock.blocked_id==actor)).all())

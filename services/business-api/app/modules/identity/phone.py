@@ -15,9 +15,12 @@ import hmac
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import secrets
+import time
 from uuid import uuid4
 
 from sqlalchemy import select, update, text
+from sqlalchemy.exc import IntegrityError
+from sqlite3 import IntegrityError as SqliteIntegrityError
 
 from app.core.errors import AppError
 
@@ -30,6 +33,19 @@ SEND_WINDOW_10M = 600
 SEND_LIMIT_10M = 3
 SEND_WINDOW_1H = 3600
 SEND_LIMIT_1H = 5
+
+
+def check_verification_deadline(deadline=None, session=None):
+    """New recovery flow only: bound SQL waits and roll back any late mutation."""
+    if deadline is None:
+        return
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise AppError(code='PASSWORD_RESET_INVALID', message='验证信息无效或已过期', status_code=400)
+    if session is not None and session.get_bind().dialect.name == 'postgresql':
+        budget = str(max(1, int(remaining * 1000))) + 'ms'
+        session.execute(text("SELECT set_config('statement_timeout', :budget, true), set_config('lock_timeout', :budget, true)"), {'budget': budget})
+        check_verification_deadline(deadline)
 
 
 class SmsSender:
@@ -63,6 +79,21 @@ class RecordingSmsSender(SmsSender):
         self.messages.append((phone, code, purpose))
 
 
+def build_sms_transport(settings, *, sender=None):
+    """Shared API/Worker production assembly; construction never sends a code."""
+    if sender is not None:
+        return sender, None
+    if settings.sms_provider == 'aliyun_dypns':
+        from app.modules.identity.sms_aliyun import AliyunDypnsSmsSender
+        adapter = AliyunDypnsSmsSender(
+            access_key_id=settings.sms_aliyun_access_key_id.get_secret_value(),
+            access_key_secret=settings.sms_aliyun_access_key_secret.get_secret_value(),
+            sign_name=settings.sms_aliyun_sign_name, template_code=settings.sms_aliyun_template_code,
+            region=settings.sms_aliyun_region, code_valid_minutes=settings.sms_aliyun_code_valid_minutes)
+        return adapter, adapter.verify
+    return NullSmsSender(), None
+
+
 def normalize_phone(value: str) -> str:
     """归一化为中国大陆 +86 格式；不合法即 422。"""
     digits = re.sub(r"[ \-\(\)]", "", str(value or ""))
@@ -86,7 +117,10 @@ def _hash_code(code: str, salt: str) -> str:
 class PhoneOtpService:
     """用途绑定的短信 OTP（签发/校验/消费一体）。"""
 
-    PURPOSES = {"registration", "login", "phone_rebind_old", "phone_rebind_new", "email_rebind_old", "staff_activation_phone", "staff_activation_email"}
+    SMS_PURPOSES = {"registration", "login", "phone_rebind_old", "phone_rebind_new", "staff_activation_phone", "password_reset_phone", "email_bind_old_phone"}
+    EMAIL_PURPOSES = {"email_rebind_old", "staff_activation_email", "password_reset_email", "email_bind_old_email", "email_bind_new"}
+    QUEUED_EMAIL_PURPOSES = {"password_reset_email", "email_bind_old_email", "email_bind_new"}
+    PURPOSES = SMS_PURPOSES | EMAIL_PURPOSES
 
     def __init__(self, session_factory, *, sender: SmsSender, secret: str, now=None, phone_enabled: bool = True,
                  code_verifier=None, code_deriver=None):
@@ -108,8 +142,98 @@ class PhoneOtpService:
         value = self._now()
         return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
+    def hash_code(self, code: str) -> str:
+        return _hash_code(code, self._secret)
+
+    def issue_email(self, *, purpose: str, target: str, user_id: str, code_deriver,
+                    registration_session: str | None = None, on_issue=None) -> None:
+        """Queue an email OTP with the same durable quota and atomic ownership checks."""
+        if purpose not in self.EMAIL_PURPOSES:
+            raise AppError(code="OTP_PURPOSE_INVALID", message="验证码用途无效", status_code=422)
+        self._issue_queued(purpose=purpose, target=target, user_id=user_id, code_deriver=code_deriver,
+            registration_session=registration_session, on_issue=on_issue, topic="identity.email")
+
+    def issue_password_phone(self, *, target: str, user_id: str, code_deriver,
+                             registration_session: str, on_issue=None) -> None:
+        """Public recovery requests never wait on or expose supplier round trips."""
+        if not self.phone_enabled or isinstance(self.sender, NullSmsSender):
+            raise AppError(code="SMS_NOT_CONFIGURED", message="短信服务未配置", status_code=503)
+        self._issue_queued(purpose="password_reset_phone", target=target, user_id=user_id,
+            code_deriver=code_deriver, registration_session=registration_session,
+            on_issue=on_issue, topic="identity.password_phone")
+
+    def _issue_queued(self, *, purpose, target, user_id, code_deriver, registration_session, on_issue, topic):
+        from app.core.outbox import OutboxPublisher
+        now, challenge_id = self._utcnow(), str(uuid4())
+        with self._factory.begin() as session:
+            self._reserve_send(session, target, now)
+            if on_issue is not None:
+                on_issue(session)
+            OtpChallenge = self._models.OtpChallenge
+            session.execute(update(OtpChallenge).where(OtpChallenge.purpose == purpose,
+                OtpChallenge.target == target, OtpChallenge.user_id == user_id,
+                OtpChallenge.consumed_at.is_(None)).values(invalidated_at=now))
+            session.add(OtpChallenge(id=challenge_id, purpose=purpose, target=target,
+                user_id=user_id, registration_session=registration_session,
+                code_hash=self.hash_code(code_deriver(challenge_id)),
+                expires_at=now + timedelta(seconds=OTP_TTL_SECONDS),
+                attempts_left=0 if topic == "identity.password_phone" or purpose in self.QUEUED_EMAIL_PURPOSES else OTP_MAX_ATTEMPTS, created_at=now))
+            OutboxPublisher.enqueue(session, topic=topic, event_type="identity.phone.otp.requested" if topic == "identity.password_phone" else "identity.email.otp.requested",
+                aggregate_type="otp_challenge", aggregate_id=challenge_id, payload={"otp_id": challenge_id}, now=now)
+
+    def deliver_password_phone(self, challenge_id: str, *, code_deriver) -> None:
+        """Worker-only delivery; stale, failed and superseded pending sends never activate."""
+        from app.modules.identity.account_credentials import contact_snapshot
+        if not self.phone_enabled or isinstance(self.sender, NullSmsSender):
+            raise AppError(code='SMS_NOT_CONFIGURED', message='短信服务未配置', status_code=503)
+        OtpChallenge, User = self._models.OtpChallenge, self._models.User
+        def current(user, challenge):
+            return bool(user and user.status.value == "ACTIVE" and user.phone_verified_at is not None
+                and user.phone_normalized == challenge.target
+                and contact_snapshot(user, "phone") == challenge.registration_session)
+        with self._factory.begin() as session:
+            owner = session.scalar(select(OtpChallenge.user_id).where(OtpChallenge.id == challenge_id))
+            user = session.scalar(select(User).where(User.id == owner).with_for_update())
+            challenge = session.get(OtpChallenge, challenge_id, with_for_update=True)
+            if (challenge is None or challenge.purpose != "password_reset_phone" or challenge.attempts_left != 0
+                    or challenge.invalidated_at is not None or challenge.consumed_at is not None
+                    or (challenge.expires_at.replace(tzinfo=timezone.utc) if challenge.expires_at.tzinfo is None else challenge.expires_at) <= self._utcnow()
+                    or not current(user, challenge)):
+                return
+            target, owner = challenge.target, challenge.user_id
+            # Commit a one-time send intent. A retry after an unknown remote result
+            # must never issue another code or reactivate an exhausted challenge.
+            challenge.attempts_left = -1
+        try:
+            self.sender.send_challenge(target, code_deriver(challenge_id), "password_reset_phone", challenge_id)
+        except Exception:
+            with self._factory.begin() as session:
+                session.execute(update(OtpChallenge).where(OtpChallenge.id == challenge_id,
+                    OtpChallenge.consumed_at.is_(None)).values(invalidated_at=self._utcnow(), attempts_left=0))
+            raise AppError(code="OTP_DELIVERY_UNAVAILABLE", message="验证请求暂不可用", status_code=503) from None
+        with self._factory.begin() as session:
+            user = session.scalar(select(User).where(User.id == owner).with_for_update())
+            challenge = session.get(OtpChallenge, challenge_id, with_for_update=True)
+            if (challenge.attempts_left == -1 and challenge.invalidated_at is None and challenge.consumed_at is None and current(user, challenge)
+                    and (challenge.expires_at.replace(tzinfo=timezone.utc) if challenge.expires_at.tzinfo is None else challenge.expires_at) > self._utcnow()):
+                challenge.attempts_left = OTP_MAX_ATTEMPTS
+            else:
+                challenge.invalidated_at = self._utcnow()
+
+    def _reserve_send(self, session, target, now):
+        OtpChallenge = self._models.OtpChallenge
+        if session.get_bind().dialect.name == "postgresql":
+            session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                {"key": "identity:otp:" + sha256(target.encode()).hexdigest()})
+        rows = session.scalars(select(OtpChallenge).where(OtpChallenge.target == target,
+            OtpChallenge.purpose.in_(self.PURPOSES),
+            OtpChallenge.created_at >= now - timedelta(seconds=SEND_WINDOW_1H))).all()
+        recent = [(row.created_at.replace(tzinfo=timezone.utc) if row.created_at.tzinfo is None else row.created_at) for row in rows]
+        if sum(value >= now - timedelta(seconds=SEND_WINDOW_10M) for value in recent) >= SEND_LIMIT_10M or len(recent) >= SEND_LIMIT_1H:
+            raise AppError(code="OTP_SEND_RATE_LIMITED", message="验证码发送过于频繁，请稍后再试", status_code=429)
+
     def issue(self, *, purpose: str, phone: str, user_id: str | None = None,
-              registration_session: str | None = None) -> None:
+              registration_session: str | None = None, on_issue=None) -> None:
         """签发并“发送”OTP。目标不存在/已注销与存在返回同一 202 语义由
         调用方保证；本方法对真实目标执行全部限频与落库。"""
         if purpose not in self.PURPOSES:
@@ -122,23 +246,9 @@ class PhoneOtpService:
         code_hash = _hash_code(code, self._secret)
         with self._factory.begin() as session:
             OtpChallenge = self._models.OtpChallenge
-            if session.get_bind().dialect.name == "postgresql":
-                # Serialize quota reservation across API workers, even when
-                # there is no challenge row yet. Never put the phone in SQL.
-                session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
-                    {"key": "identity:otp:" + sha256(phone.encode()).hexdigest()})
-            # 取数后按 UTC 归一比较（SQLite naive / PG aware 通用）。
-            recent = session.scalars(select(OtpChallenge).where(
-                OtpChallenge.target == phone,
-                OtpChallenge.created_at >= now - timedelta(seconds=SEND_WINDOW_1H))).all()
-            recent = [row for row in recent
-                if (row.created_at.replace(tzinfo=timezone.utc) if row.created_at.tzinfo is None else row.created_at)
-                >= now - timedelta(seconds=SEND_WINDOW_1H)]
-            within_10m = sum(1 for row in recent
-                if (row.created_at.replace(tzinfo=timezone.utc) if row.created_at.tzinfo is None else row.created_at)
-                >= now - timedelta(seconds=SEND_WINDOW_10M))
-            if within_10m >= SEND_LIMIT_10M or len(recent) >= SEND_LIMIT_1H:
-                raise AppError(code="OTP_SEND_RATE_LIMITED", message="验证码发送过于频繁，请稍后再试", status_code=429)
+            self._reserve_send(session, phone, now)
+            if on_issue is not None:
+                on_issue(session)
             session.execute(update(OtpChallenge).where(OtpChallenge.purpose == purpose,
                 OtpChallenge.target == phone, OtpChallenge.consumed_at.is_(None)).values(invalidated_at=now))
             session.add(OtpChallenge(id=challenge_id, purpose=purpose, target=phone,
@@ -160,7 +270,7 @@ class PhoneOtpService:
                 .values(attempts_left=OTP_MAX_ATTEMPTS))
 
     def verify_code(self, *, purpose: str, target: str, code: str | None, user_id: str | None = None,
-                    registration_session: str | None = None, consume: bool = True, on_verified=None) -> bool:
+                    registration_session: str | None = None, consume: bool = True, on_verified=None, deadline=None) -> bool:
         """与 issue 对应的校验入口：code 为用户提交的验证码。
 
         绑定校验：user_id/registration_session 必须与签发时一致（提供即校验）。
@@ -169,38 +279,68 @@ class PhoneOtpService:
         now = self._utcnow()
         invalid = False
         with self._factory.begin() as session:
+            check_verification_deadline(deadline, session)
             OtpChallenge = self._models.OtpChallenge
-            row = session.scalar(select(OtpChallenge).where(
+            if user_id is not None:
+                session.scalar(select(self._models.User).where(self._models.User.id == user_id).with_for_update())
+            statement = select(OtpChallenge).where(
                 OtpChallenge.purpose == purpose, OtpChallenge.target == target,
                 OtpChallenge.consumed_at.is_(None), OtpChallenge.invalidated_at.is_(None),
-                OtpChallenge.expires_at > now).order_by(OtpChallenge.created_at.desc()).with_for_update())
-            if row is None:
+                OtpChallenge.expires_at > now)
+            if user_id is not None:
+                statement = statement.where(OtpChallenge.user_id == user_id)
+            row = session.scalar(statement.order_by(OtpChallenge.created_at.desc()).with_for_update())
+            check_verification_deadline(deadline, session)
+            now = self._utcnow()
+            if row is None or (row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at.tzinfo is None else row.expires_at) <= now:
                 raise AppError(code="OTP_INVALID", message="验证码无效或已过期", status_code=400)
             if user_id is not None and row.user_id != user_id:
                 raise AppError(code="OTP_INVALID", message="验证码无效或已过期", status_code=400)
             if registration_session is not None and row.registration_session != registration_session:
                 raise AppError(code="OTP_INVALID", message="验证码无效或已过期", status_code=400)
             matched = False
-            if row.attempts_left <= 0 or code is None:
+            if row.attempts_left <= 0:
+                invalid = True
+            elif code is None:
                 row.attempts_left = max(0, row.attempts_left - 1)
+                if row.attempts_left == 0:
+                    row.invalidated_at = now
                 invalid = True
             else:
-                if self.code_verifier is not None and purpose != "email_rebind_old":
+                if self.code_verifier is not None and purpose in self.SMS_PURPOSES:
                     # 供应商校验：False=不匹配（计一次尝试）；异常=供应商不可达，
                     # 事务回滚 → 不计尝试、不消费（fail-safe）。
+                    check_verification_deadline(deadline)
                     matched = bool(self.code_verifier(target, purpose, code, row.id))
                 else:
                     matched = _hash_code(code, self._secret) == row.code_hash
+                check_verification_deadline(deadline, session)
+                now = self._utcnow()
+                if (row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at.tzinfo is None else row.expires_at) <= now:
+                    raise AppError(code='OTP_INVALID', message='验证码无效或已过期', status_code=400)
                 if not matched:
                     row.attempts_left = max(0, row.attempts_left - 1)
+                    if row.attempts_left == 0:
+                        row.invalidated_at = now
                     invalid = True
             if matched and consume:
+                check_verification_deadline(deadline, session)
+                now = self._utcnow()
                 result = session.execute(update(OtpChallenge).where(
-                    OtpChallenge.id == row.id, OtpChallenge.consumed_at.is_(None)).values(consumed_at=now))
+                    OtpChallenge.id == row.id, OtpChallenge.consumed_at.is_(None), OtpChallenge.expires_at > now)
+                    .values(consumed_at=now).execution_options(synchronize_session=False))
                 if result.rowcount != 1:
                     raise AppError(code="OTP_INVALID", message="验证码无效或已过期", status_code=400)
+                row.consumed_at = now
                 if on_verified is not None:
+                    check_verification_deadline(deadline)
                     on_verified(session, row)
+            check_verification_deadline(deadline, session)
+            if (row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at.tzinfo is None else row.expires_at) <= self._utcnow():
+                raise AppError(code='OTP_INVALID', message='验证码无效或已过期', status_code=400)
+            session.flush()
+            check_verification_deadline(deadline, session)
+            session.commit()
         if invalid:
             raise AppError(code="OTP_INVALID", message="验证码无效或已过期", status_code=400)
         return True
@@ -586,43 +726,66 @@ class PhoneAuthService:
 
     def request_new_phone_verification(self, *, user_id: str, new_phone: str) -> dict:
         """换绑第二步前提：旧凭证验证码已消费（5 分钟窗口内）。"""
-        from app.modules.identity.models import User
-
         normalized = normalize_phone(new_phone)
         with self._factory.begin() as session:
-            if not self._has_recent_old_verification(session, user_id):
-                raise AppError(code="REBIND_OLD_VERIFICATION_REQUIRED", message="请先完成当前手机号/邮箱验证",
-                    status_code=409)
-            occupant = self._user_by_phone(session, normalized)
-            if occupant is not None and occupant.id != user_id:
-                raise AppError(code="PHONE_TAKEN", message="手机号已被使用", status_code=409)
-        self.otp.issue(purpose="phone_rebind_new", phone=normalized, user_id=user_id)
+            self._require_new_phone(session, user_id, normalized)
+        # Recheck inside the issuance transaction, before any challenge or send.
+        self.otp.issue(purpose="phone_rebind_new", phone=normalized, user_id=user_id,
+            on_issue=lambda session: self._require_new_phone(session, user_id, normalized))
         return {"status": "accepted"}
 
-    def confirm_new_phone(self, *, user_id: str, new_phone: str, code: str) -> dict:
-        """换绑完成：消费新号 OTP（单次）并原子换绑；两步顺序不可颠倒。"""
+    def _require_new_phone(self, session, user_id, normalized):
         from app.modules.identity.models import User
+        user = session.scalar(select(User).where(User.id == user_id).with_for_update())
+        if user is None:
+            raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
+        if not self._has_recent_old_verification(session, user_id):
+            raise AppError(code="REBIND_OLD_VERIFICATION_REQUIRED", message="请先完成当前手机号/邮箱验证",
+                status_code=409)
+        if user.phone_normalized == normalized:
+            raise AppError(code="PHONE_UNCHANGED", message="请输入新的手机号", status_code=409)
+        occupant = self._user_by_phone(session, normalized)
+        if occupant is not None:
+            raise AppError(code="PHONE_TAKEN", message="手机号已被使用", status_code=409)
+        return user
 
+    @staticmethod
+    def _is_phone_unique_conflict(error):
+        original = error.orig
+        if isinstance(original, SqliteIntegrityError):
+            return str(original) == "UNIQUE constraint failed: users.phone_normalized"
+        return (getattr(original, 'sqlstate', getattr(original, 'pgcode', None)) == '23505'
+            and getattr(getattr(original, 'diag', None), 'constraint_name', None)
+            in {'users_phone_normalized_key', 'uq_users_phone_normalized'})
+
+    def confirm_new_phone(self, *, user_id: str, new_phone: str, code: str, trace_id='unknown', source_ip=None) -> dict:
+        """换绑完成：消费新号 OTP（单次）并原子换绑；两步顺序不可颠倒。"""
         normalized = normalize_phone(new_phone)
         now = self._utcnow()
         def complete(session, challenge):
-            user = session.get(User, user_id, with_for_update=True)
-            if user is None:
-                raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
-            if not self._has_recent_old_verification(session, user_id):
-                raise AppError(code="REBIND_OLD_VERIFICATION_REQUIRED", message="请先完成当前手机号/邮箱验证",
-                    status_code=409)
-            occupant = self._user_by_phone(session, normalized)
-            if occupant is not None and occupant.id != user_id:
-                raise AppError(code="PHONE_TAKEN", message="手机号已被使用", status_code=409)
+            user = self._require_new_phone(session, user_id, normalized)
             from app.modules.identity.models import OtpChallenge
             session.execute(update(OtpChallenge).where(OtpChallenge.user_id == user_id,
                 OtpChallenge.purpose.in_(("phone_rebind_old", "email_rebind_old"))).values(invalidated_at=now))
             user.phone, user.phone_normalized = normalized, normalized
             user.phone_verified_at = now
             user.updated_at = now
-        self.otp.verify_code(purpose="phone_rebind_new", target=normalized, code=code, user_id=user_id,
-            on_verified=complete)
+            from app.modules.identity.recovery import invalidate_recovery_in_session
+            invalidate_recovery_in_session(session, user_id, now)
+            from app.modules.audit.writer import AuditWriter
+            from app.core.outbox import OutboxPublisher
+            AuditWriter(self._factory, now_factory=self._now).record_in_session(session,
+                actor_id=user_id, subject_type='user', subject_id=user_id, action='identity.phone.bound',
+                result='SUCCESS', reason_code='PHONE_BINDING', trace_id=trace_id, source_ip=source_ip)
+            OutboxPublisher.enqueue(session, topic='identity.account_credentials', event_type='identity.phone.bound',
+                aggregate_type='user', aggregate_id=user_id, payload={'user_id': user_id, 'reason_code': 'PHONE_BINDING'}, now=now)
+        try:
+            self.otp.verify_code(purpose="phone_rebind_new", target=normalized, code=code, user_id=user_id,
+                on_verified=complete)
+        except IntegrityError as error:
+            if not self._is_phone_unique_conflict(error):
+                raise
+            raise AppError(code="PHONE_TAKEN", message="手机号已被使用", status_code=409) from None
         return {"phone": mask_phone(normalized), "verified": True}
 
     # -------------------------------------------------------- 隐私搜索

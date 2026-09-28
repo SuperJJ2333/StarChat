@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from sqlalchemy import select
@@ -12,6 +12,31 @@ from app.modules.identity.invitations import hash_opaque_token
 from app.modules.identity.registration import VerificationTokenCodec
 from app.modules.identity.enums import AccountStatus
 from integrations.email_sender import EmailSender
+
+
+class AccountCredentialsObservationTask:
+    """Acknowledge already committed credential audit events, with no network effects."""
+    def __call__(self, message):
+        reasons = {'identity.password.reset': 'PASSWORD_RESET', 'identity.email.bound': 'EMAIL_BINDING',
+            'identity.phone.bound': 'PHONE_BINDING'}
+        if (message.topic != 'identity.account_credentials' or message.event_type not in reasons
+                or message.aggregate_type != 'user' or not isinstance(message.payload, dict)
+                or set(message.payload) != {'user_id', 'reason_code'}
+                or message.payload['user_id'] != message.aggregate_id
+                or message.payload['reason_code'] != reasons[message.event_type] or message.headers != {}):
+            raise ValueError('ACCOUNT_CREDENTIALS_EVENT_INVALID')
+
+
+class PasswordPhoneOtpTask:
+    def __init__(self, *, otp, code_deriver):
+        self.otp, self.code_deriver = otp, code_deriver
+
+    def __call__(self, message):
+        if (message.topic != 'identity.password_phone' or message.event_type != 'identity.phone.otp.requested'
+                or message.aggregate_type != 'otp_challenge' or set(message.payload) != {'otp_id'}
+                or message.payload['otp_id'] != message.aggregate_id):
+            raise ValueError('PHONE_OTP_EVENT_INVALID')
+        self.otp.deliver_password_phone(message.aggregate_id, code_deriver=self.code_deriver)
 
 
 class IdentityEmailVerificationTask:
@@ -101,6 +126,7 @@ class IdentityEmailVerificationTask:
         一致；payload 只携带 otp_id，明文码不落库、不进日志。
         """
         from app.modules.identity.models import OtpChallenge, User as WorkerUser
+        from app.modules.identity.account_credentials import contact_snapshot
 
         otp_id = message.payload.get("otp_id")
         if not otp_id or otp_id != message.aggregate_id:
@@ -108,7 +134,7 @@ class IdentityEmailVerificationTask:
         with self._session_factory() as session:
             challenge = session.get(OtpChallenge, otp_id)
             if (challenge is None or challenge.consumed_at is not None or challenge.invalidated_at is not None
-                    or challenge.purpose not in ("email_rebind_old", "staff_activation_email")):
+                    or challenge.purpose not in ("email_rebind_old", "staff_activation_email", "password_reset_email", "email_bind_old_email", "email_bind_new")):
                 return
             expires = challenge.expires_at
             if expires.tzinfo is None:
@@ -116,11 +142,26 @@ class IdentityEmailVerificationTask:
             if expires <= self._now_factory():
                 return
             user = session.get(WorkerUser, challenge.user_id)
-            if (user is None or not user.email_normalized
-                    or (challenge.purpose == 'email_rebind_old' and user.phone_normalized)
-                    or user.email_normalized != challenge.target or user.status != AccountStatus.ACTIVE):
+            if user is None or user.status != AccountStatus.ACTIVE:
                 return
-            recipient = user.email_normalized
+            if challenge.purpose == 'email_bind_new':
+                proof = session.get(OtpChallenge, challenge.registration_session)
+                channel = 'email' if user.email_normalized else 'phone'
+                expected_purpose = 'email_bind_old_' + channel
+                if (proof is None or proof.user_id != user.id or proof.purpose != expected_purpose
+                        or proof.target != getattr(user, channel + '_normalized')
+                        or proof.registration_session != contact_snapshot(user, channel)
+                        or proof.consumed_at is None or proof.invalidated_at is not None
+                        or self._as_utc(proof.expires_at) <= self._as_utc(self._now_factory())
+                        or self._as_utc(proof.consumed_at) <= self._as_utc(self._now_factory()) - timedelta(minutes=5)):
+                    return
+            elif (not user.email_normalized or user.email_normalized != challenge.target
+                    or (challenge.purpose == 'email_rebind_old' and user.phone_normalized)):
+                return
+            if challenge.purpose in ('password_reset_email', 'email_bind_old_email') and (
+                    user.email_verified_at is None or challenge.registration_session != contact_snapshot(user, 'email')):
+                return
+            recipient = challenge.target
             purpose = challenge.purpose
             if challenge.purpose == 'staff_activation_email':
                 from app.modules.identity.staff_activation import require_pending_delivery
@@ -129,6 +170,23 @@ class IdentityEmailVerificationTask:
                 except AppError:
                     return
         code = self._token_codec.verification_code(otp_id)
+        if purpose in ('password_reset_email', 'email_bind_old_email', 'email_bind_new'):
+            from app.modules.identity.account_credentials import AccountCredentialsService
+            credentials = AccountCredentialsService(self._session_factory, otp=None, recovery=None,
+                email_code_deriver=self._token_codec.verification_code, now_factory=self._now_factory)
+            try:
+                recipient = credentials.claim_email_delivery(otp_id)
+                if recipient is None:
+                    return
+                self._email_sender.send_email_otp(recipient=recipient, code=code, purpose=purpose)
+                credentials.finish_email_delivery(otp_id, delivered=True)
+            except Exception:
+                try:
+                    credentials.finish_email_delivery(otp_id, delivered=False)
+                except Exception:
+                    pass  # Preserve the sanitized primary failure even if cleanup fails.
+                raise AppError(code='EMAIL_DELIVERY_UNAVAILABLE', message='验证邮件暂不可用', status_code=503) from None
+            return
         self._email_sender.send_email_otp(recipient=recipient, code=code, purpose=purpose)
 
     def _send_password_reset(self, message) -> None:

@@ -38,7 +38,7 @@ class WalletAlertDelivery:
         payload=persisted.payload
         if (not isinstance(payload,dict) or set(payload)!={'incident_id','subject_id','code','severity'}
                 or not isinstance(payload['code'],str) or re.fullmatch('[A-Z][A-Z0-9_]{0,99}',payload['code']) is None
-                or payload['severity'] not in ('P0','P1') or payload['incident_id']!=persisted.aggregate_id):
+                or payload['severity'] not in ('P0','P1','T2') or payload['incident_id']!=persisted.aggregate_id):
             raise WalletAlertDeliveryError('WALLET_ALERT_EVENT_INVALID')
         existing=session.get(WalletAlertReceipt,event.id)
         if existing:
@@ -50,7 +50,7 @@ class WalletAlertDelivery:
         incident=session.get(WalletIncident,persisted.aggregate_id,with_for_update=lock)
         # Severity is a historical fact in the immutable Outbox payload; the
         # incident may legitimately change severity while delivery is pending.
-        if (incident is None or incident.severity not in ('P0','P1')
+        if (incident is None or incident.severity not in ('P0','P1','T2')
                 or any(payload[key]!=getattr(incident,key) for key in ('subject_id','code'))):
             raise WalletAlertDeliveryError('WALLET_ALERT_INCIDENT_CONFLICT')
         return persisted,existing

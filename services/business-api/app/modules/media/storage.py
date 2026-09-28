@@ -18,6 +18,8 @@ path never reveals content or a digest.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
+import heapq
 from pathlib import Path
 from typing import Protocol
 
@@ -41,6 +43,12 @@ class BlobBackend(Protocol):
     def exists(self, key: str) -> bool: ...
 
     def delete(self, key: str) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectPage:
+    keys: tuple[str, ...]
+    next_cursor: str | None = None
 
 
 class LocalBlobBackend:
@@ -70,11 +78,36 @@ class LocalBlobBackend:
                 status_code=503,
             ) from None
 
+    def get_bounded(self, key: str, *, max_bytes: int) -> bytes:
+        if type(max_bytes) is not int or max_bytes < 1:
+            raise ValueError('object read bound invalid')
+        try:
+            with self._path(key).open('rb') as handle:
+                content = handle.read(max_bytes + 1)
+        except FileNotFoundError:
+            raise AppError(code='MEDIA_BLOB_MISSING', message='媒体文件不存在', status_code=503) from None
+        if len(content) > max_bytes:
+            raise AppError(code='MEDIA_STORAGE_UNAVAILABLE', message='媒体存储暂时不可用', status_code=503)
+        return content
+
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
 
     def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
+
+    def list_page(self, *, prefix: str, limit: int = 1000, cursor: str | None = None) -> ObjectPage:
+        if not prefix.endswith('/') or not 1 <= limit <= 1000:
+            raise ValueError('prefix or object page size invalid')
+        base = self._path(prefix)
+        if cursor is not None and not cursor.startswith(prefix):
+            raise ValueError('object cursor outside prefix')
+        if not base.is_dir():
+            return ObjectPage(())
+        keys = (path.relative_to(self._root).as_posix() for path in base.rglob('*')
+                if path.is_file() and not path.name.endswith('.tmp'))
+        selected = heapq.nsmallest(limit + 1, (key for key in keys if cursor is None or key > cursor))
+        return ObjectPage(tuple(selected[:limit]), selected[limit - 1] if len(selected) > limit else None)
 
     def _path(self, key: str) -> Path:
         if not key or key.startswith("/") or ".." in Path(key).parts:

@@ -26,6 +26,7 @@ dependencies = [
   "coincurve==21.0.0",
   "pycryptodome==3.23.0",
   "Pillow>=11,<13",
+  "boto3==1.40.40",
 ]
 
 [tool.pytest.ini_options]

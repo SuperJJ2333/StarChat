@@ -65,8 +65,10 @@ def test_main_passes_bare_wallet_callables_and_merges_alert_handler(worker_main,
     monkeypatch.setattr(worker_main, 'Settings', lambda: settings)
     for name in ('create_engine', 'create_session_factory', 'OutboxConsumer', 'RedPacketService', 'LedgerService',
                  'ChatTransferService', 'RedPacketExpiryTask', 'ChatTransferExpiryTask', 'MomentsModerationTask',
-                 'email_sender_from_environment', 'SynapseMatrixAdminGateway', 'LocalPrivateAvatarReader', 'signal'):
+                 'email_sender_from_environment', 'SynapseMatrixAdminGateway', 'LocalPrivateAvatarReader',
+                 'build_blob_backend', 'signal'):
         monkeypatch.setattr(worker_main, name, MagicMock())
+    monkeypatch.setattr(worker_main, 'build_internal_publication_handlers', lambda *_: {})
     def maintenance():
         return None
     def monitor():

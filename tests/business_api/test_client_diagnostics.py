@@ -728,12 +728,20 @@ def test_dart_performance_enum_wire_names_match_server_allowlists():
         'PerformanceRowCountBucket': 'RowCountBucketWire',
         'PerformanceRelayProtocol': 'RelayProtocolWire',
     }
+    approved_server_only = {
+        'PerformanceStageWire': {'timeline_published', 'video_thumbnail_started'},
+        'NetworkErrorWire': {'request_timeout'},
+    }
     for dart_name, server_alias in pairs.items():
         expected = {
             re.sub(r'[A-Z]', lambda match: '_' + match.group().lower(), name.strip())
             for name in enum_bodies[dart_name].split(',') if name.strip()
         }
-        assert set(get_args(getattr(schema, server_alias))) == expected
+        # The server retains these released values beyond this Dart client's
+        # vocabulary, while every other wire name must match exactly.
+        assert set(get_args(getattr(schema, server_alias))) == (
+            expected | approved_server_only.get(server_alias, set())
+        )
 
 
 def test_performance_accepts_zero_numeric_boundaries(endpoint, capsys):

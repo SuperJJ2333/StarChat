@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.api.maintenance import media_maintenance_dependency
 from app.core.config import Settings
+from app.core.tracing import registered_route_templates
 from app.modules.media.metrics import media_platform_metrics
 
 
@@ -26,11 +27,22 @@ class RequestLatencyWindow(LatencyWindow):
     status_code: int
 
 
+class RequestDatabaseWindow(_SnapshotModel):
+    query_count: int
+    query_error_count: int
+    query_total_ms: float
+    query_max_ms: float
+    slow_query_count: int
+    attribution_complete: bool
+    connection_wait_ms: float | None
+
+
 class RecentOperationRequest(_SnapshotModel):
     operation_id: str
     route_template: str
     status_code: int
     duration_ms: float
+    database: RequestDatabaseWindow | None = None
 
 
 class PoolUsage(_SnapshotModel):
@@ -79,10 +91,7 @@ def create_performance_diagnostics_router(settings: Settings) -> APIRouter:
         response.headers["Cache-Control"] = "no-store"
         # Only registered route templates may leave the process. A raw request
         # path, query string, or accidentally injected series is never exposed.
-        registered = {
-            route.path for route in request.app.routes
-            if isinstance(getattr(route, "path", None), str)
-        }
+        registered = registered_route_templates(request.app)
         request_metrics = request.app.state.request_latency_metrics.snapshot()
         request_series = [
             item for item in request_metrics["requests"]

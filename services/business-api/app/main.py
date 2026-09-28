@@ -37,6 +37,7 @@ from app.core.tracing import install_trace_middleware
 from app.core.rate_limits import NoopRateLimiter, RedisRateLimiter
 from app.integrations.matrix_admin import SynapseMatrixAdminGateway
 from app.integrations.private_storage import LocalPrivateObjectStorage
+from app.integrations.media_blob_storage import build_blob_backend
 
 
 def create_app(
@@ -85,6 +86,7 @@ def create_app(
     if avatar_storage is None:
         avatar_storage = LocalPrivateObjectStorage(
             root=settings.avatar_storage_root,
+            backend=build_blob_backend(settings),
             signing_secret=(
                 settings.avatar_url_signing_secret
                 or "development-avatar-signing-secret"
@@ -99,7 +101,7 @@ def create_app(
         prefix="/api/v1",
     )
     app.include_router(
-        create_profile_router(settings, session_factory, storage=avatar_storage),
+        create_profile_router(settings, session_factory, storage=avatar_storage, rate_limiter=rate_limiter),
         prefix="/api/v1",
     )
     app.include_router(
@@ -215,7 +217,6 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
     from app.modules.media.repository import MediaRepository
     from app.modules.media.service import MediaPlatformService
     from app.modules.media.signed_urls import MediaSignedUrlCodec
-    from app.modules.media.storage import LocalBlobBackend
     from app.modules.media.upload_engine import MediaUploadEngine
     from app.modules.media.variants import VariantResolver
 
@@ -228,7 +229,7 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         orphan_grace_seconds=settings.media_orphan_grace_seconds,
         e2ee_retention_floor_seconds=settings.media_e2ee_retention_floor_seconds,
     )
-    backend = LocalBlobBackend(root=settings.avatar_storage_root)
+    backend = getattr(storage, 'byte_backend', None) or build_blob_backend(settings)
     repository = MediaRepository(
         session_factory, backend=backend, dedup_policy=policy.dedup
     )
@@ -265,9 +266,6 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         reconciler=MediaReconciler(
             session_factory,
             backend=backend,
-            # Reconcile scans the private object directory itself, so it is told where that
-            # directory is instead of introspecting the backend it was handed.
-            root=settings.avatar_storage_root,
         ),
         codec=MediaSignedUrlCodec(
             # Prefer a dedicated media secret; fall back to the avatar signing secret so an

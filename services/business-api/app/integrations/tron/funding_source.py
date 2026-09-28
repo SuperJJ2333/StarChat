@@ -134,10 +134,17 @@ class SQLiteFundingSource:
         if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
             raise ValueError('aware server clock required')
         now_ms = int(now.astimezone(timezone.utc).timestamp()*1000)
+        budget_interrupted = False
+
+        def interrupt_if_budget_expired():
+            nonlocal budget_interrupted
+            budget_interrupted = time.monotonic() >= deadline
+            return int(budget_interrupted)
+
         try:
             with closing(sqlite3.connect(self.path.resolve().as_uri()+'?mode=ro', uri=True, timeout=remaining())) as conn:
                 conn.row_factory = sqlite3.Row
-                conn.set_progress_handler(lambda: int(time.monotonic() >= deadline), 100)
+                conn.set_progress_handler(interrupt_if_budget_expired, 100)
 
                 def execute(sql, parameters=()):
                     conn.execute(f'PRAGMA busy_timeout={int(remaining()*1000)}')
@@ -237,6 +244,11 @@ class SQLiteFundingSource:
                     _integer(observation['id']),int(balance),pending_since,age_expired_only)
         except FundingSourceError:
             raise
+        except sqlite3.OperationalError as exc:
+            if budget_interrupted and str(exc) == 'interrupted':
+                raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED') from None
+            raise FundingSourceError('SOURCE_UNAVAILABLE_OR_MALFORMED') from None
         except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, IndexError):
-            remaining()
+            # A real storage or malformed-data error must not be hidden by an
+            # expired clock budget and treated as the known transient timeout.
             raise FundingSourceError('SOURCE_UNAVAILABLE_OR_MALFORMED') from None

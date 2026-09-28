@@ -55,6 +55,8 @@ class FriendRequestListResponse(BaseModel):items:list[FriendRequestProjection];n
 class UserSearchProjection(BaseModel):
     user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;relationship_state:str
 class UserSearchResponse(BaseModel):items:list[UserSearchProjection];next_cursor:str|None=None
+class UserSearchBody(Strict):
+    q:str=Field(min_length=2,max_length=320,description='完整邮箱或手机号；畅聊号仅末两位允许不同或省略，完整号优先')
 def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_limiter=None,matrix_gateway=None):
     router=APIRouter(tags=['friends']);service=FriendshipService(factory,ProfileService(factory,storage=avatar_storage),matrix_gateway=matrix_gateway,matrix_server_name=settings.matrix_server_name);tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     from app.core.rate_limits import NoopRateLimiter
@@ -115,10 +117,19 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
     @router.patch('/contact-tags/{tag_id}')
     def rename_tag(tag_id:str,body:TagPatchBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         row=service.rename_tag(user,tag_id,body.name,idempotency_key);return {'id':row.id,'name':row.name}
-    @router.get('/users/search',response_model=UserSearchResponse)
-    def search(q:Annotated[str,Query(min_length=2,max_length=64)],user=Depends(actor)):
+    def search_result(user,q,*,allow_phone):
         rate_limiter.hit(f'user-search:{user}', limit=30, window_seconds=60)
+        if ProfileService.phone_search_value(q) is not None:
+            if not allow_phone:
+                return {'items':[],'next_cursor':None}
+            rate_limiter.hit(f'contacts:phone-search:{user}', limit=10, window_seconds=3600)
         return {'items':service.search(user,q),'next_cursor':None}
+    @router.get('/users/search',response_model=UserSearchResponse)
+    def search(q:Annotated[str,Query(min_length=2,max_length=320,description='兼容完整邮箱和畅聊号检索；手机号仅接受 POST 请求体')],user=Depends(actor)):
+        return search_result(user,q,allow_phone=False)
+    @router.post('/users/search',response_model=UserSearchResponse)
+    def search_body(body:UserSearchBody,user=Depends(actor)):
+        return search_result(user,body.q,allow_phone=True)
     @router.get('/users/lookup',response_model=UserSearchProjection)
     def lookup(matrix_user_id:Annotated[str,Query(min_length=3,max_length=255)],user=Depends(actor)):
         # BUG 2 群成员非好友：按 Matrix ID 反查资料与关系状态，

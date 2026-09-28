@@ -6,6 +6,7 @@ import json
 from uuid import uuid4
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.modules.identity.models import User
 
@@ -26,7 +27,7 @@ from app.modules.moments.models import (
 from app.modules.moments.visibility import VisibilityPolicy, moment_comment_audience, reaction_audience
 from app.modules.moments.recommendation import recommendation_score
 from app.modules.moments.media import MomentMediaUpload
-from app.modules.moments.media_access import owned_key, signed_url, upload_url
+from app.modules.moments.media_access import owned_key, owned_video_poster_keys, signed_url, upload_url
 
 
 class MomentsService:
@@ -77,8 +78,21 @@ class MomentsService:
         if len(data.get("image_urls", [])) + len(data.get("video_urls", [])) > 9:
             raise AppError(code="MOMENT_IMAGE_LIMIT", message="最多上传9个图片或视频", status_code=422)
         with self.factory.begin() as session:
+            # Serialize publication keys per author, including concurrent retry.
+            session.scalar(select(User.id).where(User.id == actor).with_for_update())
+            images = ["media://" + owned_key(session, self.avatar_storage, url, actor, purpose="MOMENT_IMAGE") for url in data.get("image_urls", [])]
+            videos = ["media://" + owned_key(session, self.avatar_storage, url, actor, purpose="MOMENT_VIDEO") for url in data.get("video_urls", [])]
+            posters = owned_video_poster_keys(session, data.get("video_poster_media_ids", []), actor, len(videos))
+            payload = {"text": data.get("text", ""), "visibility": data["visibility"],
+                "image_urls": images, "video_urls": videos,
+                "video_poster_keys": posters or [None] * len(videos),
+                "location": data.get("location"), "link_url": data.get("link_url"),
+                **{name: sorted(set(data.get(name, []))) for name in ("include_user_ids", "exclude_user_ids", "include_tag_ids", "exclude_tag_ids")}}
+            fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
             old = session.scalar(select(Moment).where(Moment.author_id == actor, Moment.idempotency_key == key))
             if old:
+                if (old.request_fingerprint and old.request_fingerprint != fingerprint) or (not old.request_fingerprint and any(posters)):
+                    raise AppError(code="IDEMPOTENCY_CONFLICT", message="幂等请求内容不一致", status_code=409)
                 return old
             include_ids, include_tags = self._resolve_audience(
                 session, actor, data.get('include_user_ids', []), data.get('include_tag_ids', []),
@@ -86,12 +100,12 @@ class MomentsService:
             exclude_ids, exclude_tags = self._resolve_audience(
                 session, actor, data.get('exclude_user_ids', []), data.get('exclude_tag_ids', []),
             )
-            image_urls = ["media://" + owned_key(session, self.avatar_storage, url, actor, purpose="MOMENT_IMAGE") for url in data.get("image_urls", [])]
-            image_urls += ["media://" + owned_key(session, self.avatar_storage, url, actor, purpose="MOMENT_VIDEO") for url in data.get("video_urls", [])]
+            image_urls = images + videos
             now = datetime.now(timezone.utc)
             row = Moment(
                 id=str(uuid4()), author_id=actor, text=data.get("text", ""), visibility=data["visibility"],
                 image_urls=image_urls, include_user_ids=include_ids,
+                video_poster_keys=posters or None, request_fingerprint=fingerprint,
                 exclude_user_ids=exclude_ids, include_tag_ids=include_tags, exclude_tag_ids=exclude_tags, location=data.get("location"),
                 # 带图与纯文字一致直接发布：原 PENDING_REVIEW 队列没有任何
                 # 审核放行流程，导致带图动态永远不出现在 feed（产品缺陷）。
@@ -417,8 +431,7 @@ class MomentsService:
             if row is None:
                 raise AppError(code='MOMENT_DRAFT_NOT_FOUND', message='草稿不存在', status_code=404)
             payload = dict(row.payload)
-            # A draft may have been saved by an older or untrusted client.
-            # Derive cache identities from owned media, never submitted hints.
+            # Cache identities are derived from owned media, never caller hints.
             payload.pop('video_cache_keys', None)
             if payload.get('video_urls'):
                 urls = []
@@ -434,8 +447,6 @@ class MomentsService:
 
     def save_draft(self, actor, payload):
         with self.factory.begin() as session:
-            # Upload/media cache keys are server-derived read hints, not draft
-            # input. Never persist or echo a caller-supplied cache identity.
             payload = {key: value for key, value in payload.items() if key != 'video_cache_keys'}
             videos = payload.get('video_urls', [])
             images = payload.get('image_urls', [])
@@ -443,22 +454,69 @@ class MomentsService:
                 raise AppError(code='MOMENT_MEDIA_INVALID', message='媒体列表格式不正确', status_code=422)
             if len(videos) + len(images) > 9:
                 raise AppError(code='MOMENT_MEDIA_INVALID', message='最多保存9个图片或视频', status_code=422)
+            poster_ids = payload.get('video_poster_media_ids', [])
+            owned_video_poster_keys(session, poster_ids, actor, len(videos))
+            if poster_ids:
+                payload = {**payload, 'video_poster_media_ids': [str(value) if value is not None else None for value in poster_ids]}
             if videos:
                 payload = {**payload, 'video_urls': [
                     'media://' + owned_key(session, self.avatar_storage, url, actor, purpose='MOMENT_VIDEO') for url in videos
                 ]}
-            row = session.get(MomentDraft, actor)
+            row = session.scalar(select(MomentDraft).where(MomentDraft.owner_id == actor).with_for_update())
             if row is None:
-                row = MomentDraft(owner_id=actor, payload=payload, updated_at=datetime.now(timezone.utc)); session.add(row)
+                row = MomentDraft(owner_id=actor, payload=payload, updated_at=datetime.now(timezone.utc))
+                session.add(row)
             else:
-                row.payload = payload; row.updated_at = datetime.now(timezone.utc)
+                row.payload = payload
+                # JSON comparison must retain type changes such as True -> 1.
+                flag_modified(row, 'payload')
+                row.updated_at = datetime.now(timezone.utc)
             self._audit(session, actor, actor, 'moment.draft_saved', 'MOMENT_DRAFT_SAVE', 'draft')
             return row.payload
 
     def delete_draft(self, actor):
         with self.factory.begin() as session:
             row = session.get(MomentDraft, actor)
-            if row: session.delete(row)
+            if row:
+                session.delete(row)
+
+    def clear_draft_if_unchanged(self, actor, expected_payload):
+        with self.factory.begin() as session:
+            row = session.scalar(select(MomentDraft).where(MomentDraft.owner_id == actor).with_for_update())
+            if row is None:
+                return False
+            # GET renews owner-bound read capabilities. When media references
+            # differ, compare verified durable identities; every other value and
+            # media order remains exact. Identical legacy references stay valid.
+            # Python's dict equality equates True and 1; canonical JSON does not.
+            changed_media = [
+                (name, purpose) for name, purpose in (
+                    ('image_urls', 'MOMENT_IMAGE'), ('video_urls', 'MOMENT_VIDEO'),
+                ) if row.payload.get(name) != expected_payload.get(name)
+            ]
+            def canonical(payload):
+                value = dict(payload)
+                # GET adds owner-derived read hints that are not stored content.
+                value.pop('video_cache_keys', None)
+                for name, purpose in changed_media:
+                    references = value.get(name, [])
+                    if references:
+                        if not isinstance(references, list) or any(not isinstance(url, str) for url in references):
+                            raise ValueError('Invalid draft media snapshot')
+                        value[name] = [
+                            'media://' + owned_key(session, self.avatar_storage, url, actor, purpose=purpose)
+                            for url in references
+                        ]
+                return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
+            try:
+                unchanged = canonical(row.payload) == canonical(expected_payload)
+            except (AppError, TypeError, ValueError):
+                # Invalid/foreign snapshots never clear a draft or leak ownership.
+                return False
+            if not unchanged:
+                return False
+            session.delete(row)
+            return True
 
     def native_ads(self):
         with self.factory() as session:
@@ -649,6 +707,8 @@ class MomentsService:
         _users = session.scalars(select(User).where(User.id.in_(
             {moment.author_id} | {row.user_id for row in like_rows} | {row.user_id for row in comment_rows}
         ))).all()
+        videos = [url for url in moment.image_urls if url.endswith(('.mp4', '.mov'))]
+        posters = [(moment.video_poster_keys or [])[i] if i < len(moment.video_poster_keys or []) else None for i in range(len(videos))]
         return {
             'id': moment.id,
             'author_id': moment.author_id,
@@ -659,6 +719,8 @@ class MomentsService:
             'image_cache_keys': [self._media_cache_key(url) for url in moment.image_urls if not url.endswith(('.mp4', '.mov'))],
             'video_urls': [self._moment_media_url(session, moment, url, viewer_id) for url in moment.image_urls if url.endswith(('.mp4', '.mov'))],
             'video_cache_keys': [self._media_cache_key(url) for url in moment.image_urls if url.endswith(('.mp4', '.mov'))],
+            'video_poster_urls': [signed_url(self.avatar_storage, key, moment.id, viewer_id) if key else None for key in posters],
+            'video_poster_cache_keys': [self._media_cache_key(key) for key in posters],
             'include_user_ids': moment.include_user_ids if viewer_id == moment.author_id else [],
             'exclude_user_ids': moment.exclude_user_ids if viewer_id == moment.author_id else [],
             'include_tag_ids': moment.include_tag_ids if viewer_id == moment.author_id else [],

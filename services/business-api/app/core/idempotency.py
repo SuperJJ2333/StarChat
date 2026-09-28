@@ -39,6 +39,39 @@ class IdempotencyService:
     def __init__(self, session_factory) -> None:
         self._session_factory = session_factory
 
+    @classmethod
+    def begin_in_session(cls, session: Session, *, scope: str, key: str,
+                         request_hash: str, now: datetime) -> IdempotencyRecord:
+        """Claim inside the caller's transaction, without committing domain writes."""
+        record = IdempotencyRecord(id=str(uuid4()), scope=scope,
+            idempotency_key=key, request_hash=request_hash, status='IN_PROGRESS',
+            created_at=now)
+        try:
+            with session.begin_nested():
+                session.add(record)
+                session.flush()
+            return record
+        except IntegrityError:
+            existing = session.scalar(select(IdempotencyRecord).where(
+                IdempotencyRecord.scope == scope,
+                IdempotencyRecord.idempotency_key == key).with_for_update())
+            if existing is None:
+                raise
+            cls._ensure_same_hash(existing, request_hash)
+            if existing.status != 'COMPLETED':
+                raise AppError(code='IDEMPOTENCY_IN_PROGRESS',
+                    message='幂等请求正在处理中', status_code=409)
+            return existing
+
+    @staticmethod
+    def complete_in_session(record: IdempotencyRecord, *, response_status: int,
+                            response_body: dict[str, Any], now: datetime) -> None:
+        """Store the immutable receipt in the same transaction as its mutation."""
+        record.status = 'COMPLETED'
+        record.response_status = response_status
+        record.response_body = response_body
+        record.completed_at = now
+
     def begin(self, scope: str, key: str, request_hash: str) -> IdempotencyResult:
         with self._session_factory() as session:
             record = self._find(session, scope, key)

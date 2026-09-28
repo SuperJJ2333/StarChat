@@ -125,9 +125,12 @@ class MediaPlatformMetrics:
         }
 
     def snapshot(self) -> dict[str, Any]:
+        from app.integrations.media_storage_metrics import storage_backend_metrics
+        storage = storage_backend_metrics.snapshot()
         return {
-            "counters": dict(self._counters),
-            "timings": {name: self.timing(name) for name in self._samples},
+            "counters": {**self._counters, **storage['counters']},
+            "timings": {**{name: self.timing(name) for name in self._samples},
+                        **storage['timings']},
         }
 
     def debug_line(self) -> str:
