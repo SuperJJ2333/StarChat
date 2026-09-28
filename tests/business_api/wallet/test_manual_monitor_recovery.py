@@ -5,6 +5,7 @@ from app.modules.ledger.manual_reserve_models import ManualReserveEvaluation
 from app.modules.wallet.incident_models import WalletIncident
 from app.modules.wallet.models import WalletControl, WalletSafetyState
 from app.core.errors import AppError
+from app.integrations.tron.funding_source import FundingSourceError
 import pytest
 from test_manual_reserve_monitor import core, coverage, monitor  # noqa: F401
 
@@ -45,6 +46,24 @@ def test_failed_manual_review_does_not_clear_existing_condition(core, monitor):
     with core[1]() as session:
         row = session.scalar(select(WalletIncident).where(WalletIncident.fingerprint == 'manual-reserve:MANUAL_SOURCE_UNAVAILABLE'))
         assert row.condition_active and row.clearance_digest is None
+
+
+def test_review_source_budget_expiry_is_t2_without_releasing_existing_pause(core, monitor):
+    service, source, _ = monitor
+    with core[1].begin() as session:
+        control = session.get(WalletControl, 'global')
+        control.withdrawals_paused = True
+        control.pause_reason = 'INDEPENDENT_P0'
+
+    def timed_out():
+        raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')
+
+    source.read_reserve_cut = timed_out
+    assert service.review_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
+    with core[1]() as session:
+        control = session.get(WalletControl, 'global')
+        assert control.withdrawals_paused and control.pause_reason == 'INDEPENDENT_P0'
+        assert session.scalar(select(WalletIncident)).severity == 'T2'
 
 
 def test_owner_manual_resolution_is_scoped_and_keeps_pause(core, monitor):

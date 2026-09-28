@@ -114,6 +114,25 @@ def test_read_budget_covers_sql_execution_and_remains_readonly(scan, monkeypatch
     assert 0 < observed[0][1] <= 0.03
 
 
+def test_sqlite_error_after_deadline_is_not_misclassified_as_known_timeout(scan, monkeypatch):
+    original = sqlite3.connect
+
+    class BrokenConnection(sqlite3.Connection):
+        def execute(self, sql, parameters=()):
+            if sql.startswith('PRAGMA busy_timeout'):
+                time.sleep(0.05)
+                raise sqlite3.DatabaseError('malformed observer database')
+            return super().execute(sql, parameters)
+
+    def connect(database, **kwargs):
+        return original(database, **kwargs, factory=BrokenConnection)
+
+    monkeypatch.setattr(funding_source.sqlite3, 'connect', connect)
+    with pytest.raises(funding_source.FundingSourceError) as failure:
+        scan[1].read_batch(after_rowid=0, timeout_seconds=0.03)
+    assert str(failure.value) == 'SOURCE_UNAVAILABLE_OR_MALFORMED'
+
+
 def test_missing_budgeted_source_is_not_created(scan):
     source = funding_source.SQLiteFundingSource(
         scan[4].with_name("missing.sqlite"),

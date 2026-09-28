@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import func, select
 
+from app.integrations.tron.funding_source import FundingSourceError
 from app.modules.ledger.reserve import RedeemabilityReserve
 from app.modules.wallet.incident_models import WalletIncident
 from app.modules.wallet.manual_reserve_monitor import ManualReserveMonitor
@@ -55,6 +56,52 @@ def expire(source, clock):
     )
     return fresh
 
+
+def test_read_budget_expiry_during_resample_is_t2_and_does_not_pause(core, monitor):
+    service, source, clock, elapsed, sleeps = setup_wait(monitor, budget=3)
+    expire(source, clock)
+    original_read = source.read_reserve_sample
+    reads = []
+
+    def budget_expired(**kwargs):
+        reads.append(1)
+        if len(reads) > 1:
+            raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')
+        return original_read(**kwargs)
+
+    source.read_reserve_sample = budget_expired
+    result = service.run_once()
+    assert result['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
+    with core[1]() as session:
+        incident = session.scalar(select(WalletIncident).where(
+            WalletIncident.fingerprint == 'manual-reserve:MANUAL_SOURCE_UNAVAILABLE'))
+        assert incident.severity == 'T2'
+        assert not session.get(WalletControl, 'global').withdrawals_paused
+        assert session.get(RedeemabilityReserve, 'global').observed_at.year == 1970
+
+
+@pytest.mark.parametrize('diagnostic', [
+    'SOURCE_UNAVAILABLE_OR_MALFORMED', 'SOURCE_MALFORMED',
+    'SOURCE_IDENTITY_MISMATCH', 'SOURCE_REGRESSION',
+])
+def test_non_budget_source_error_at_resample_deadline_remains_p0(core, monitor, diagnostic):
+    service, source, clock, elapsed, _ = setup_wait(monitor, budget=3)
+    expire(source, clock)
+    original_read = source.read_reserve_sample
+    reads = []
+
+    def failed(**kwargs):
+        reads.append(1)
+        if len(reads) > 1:
+            elapsed[0] = 3
+            raise FundingSourceError(diagnostic)
+        return original_read(**kwargs)
+
+    source.read_reserve_sample = failed
+    assert service.run_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
+    with core[1]() as session:
+        assert session.get(WalletControl, 'global').withdrawals_paused
+        assert session.scalar(select(WalletIncident)).severity == 'P0'
 
 def test_wait_recovers_with_new_observation_without_incident(core, monitor):
     service, source, clock, elapsed, sleeps = setup_wait(monitor)

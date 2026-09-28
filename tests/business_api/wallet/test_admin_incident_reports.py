@@ -7,7 +7,7 @@ from datetime import timedelta
 import pytest
 from app.core.errors import AppError
 from app.modules.wallet.incident_reports import WalletIncidentReports
-from test_wallet_incidents import factory, service, SIGNAL, NOW  # noqa: F401
+from test_wallet_incidents import factory, service, SIGNAL, SOURCE_TIMEOUT, NOW  # noqa: F401
 
 
 def populate(factory):
@@ -87,3 +87,25 @@ def test_timeline_never_transmits_arbitrary_audit_metadata(factory):
     event=detail['timeline'][-1]
     assert all(event[key] is None for key in ('status','generation','version','condition_active'))
     assert 'DO_NOT_EXPOSE' not in str(detail)
+
+
+def test_t2_filter_detail_response_and_reclassification_invalidates_cursor(factory):
+    from app.api.wallet_operations import WalletIncidentView
+    rows = populate(factory)
+    timeout = service(factory).observe([dict(SOURCE_TIMEOUT, severity='P0')], complete=False)[0]
+    reports = WalletIncidentReports(factory, cursor_secret='fixture', clock=lambda: NOW)
+    page = reports.list(limit=1)
+    assert page['next_cursor']
+    corrected = service(factory).reclassify_source_timeout(timeout['id'], actor_id='operator',
+        idempotency_key='report-correction', generation=timeout['generation'],
+        expected_version=timeout['version'], diagnostic_code='SOURCE_READ_BUDGET_EXPIRED',
+        evidence_digest='d'*64)
+    with pytest.raises(AppError) as exc:
+        reports.list(limit=1, cursor=page['next_cursor'])
+    assert exc.value.code == 'WALLET_INCIDENT_SNAPSHOT_CHANGED'
+    listing = reports.list(severity=['T2'])
+    assert listing['total'] == 1 and listing['items'][0]['id'] == corrected['id']
+    detail = reports.detail(timeout['id'])
+    assert detail['severity'] == 'T2'
+    assert WalletIncidentView.model_validate(detail).severity == 'T2'
+    assert reports.list(severity=['P0'])['total'] == 2

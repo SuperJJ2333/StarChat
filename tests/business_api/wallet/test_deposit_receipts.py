@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, select, func
 
 from app.core.database import Base, create_session_factory
 from app.integrations.tron.finality import SolidHead, TransferEvidence, TransactionEvidence
+from app.integrations.tron.finality import TronEvidenceUnavailable
 from app.integrations.tron.message_signature import address_from_public_key
 from app.modules.wallet.binding_models import WalletAddressOwner, WalletBinding, WalletBindingState
 from app.modules.wallet.funding import DepositIntentService, OfficialFundingConfig
@@ -82,6 +83,30 @@ def test_verified_receipt_credits_once_under_explicit_manual_liquidity_policy(co
     with core[1]() as s:
         assert usdt_liability(s) == Decimal('10')
         assert s.get(RedeemabilityReserve, 'global').eligible_usdt == Decimal('1')
+
+
+def test_t2_without_pause_cannot_credit_when_finality_source_is_unavailable(core, monkeypatch):
+    from app.modules.wallet.incidents import WalletIncidentService
+    from app.modules.wallet.incident_models import WalletIncident
+    with core[1].begin() as session:
+        session.get(WalletControl, 'global').withdrawals_paused = False
+    intent(core)
+    incident = WalletIncidentService(core[1]).observe([dict(
+        fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
+        code='MANUAL_SOURCE_UNAVAILABLE', severity='T2', subject_id='global')],
+        complete=False)[0]
+
+    def unavailable(_txid):
+        raise TronEvidenceUnavailable('finality source unavailable')
+
+    monkeypatch.setattr(core[2], 'transaction_evidence', unavailable)
+    with pytest.raises(TronEvidenceUnavailable):
+        ingest(core)
+    with core[1]() as session:
+        assert not session.get(WalletControl, 'global').withdrawals_paused
+        assert session.get(WalletIncident, incident['id']).severity == 'T2'
+        assert session.scalar(select(func.count()).select_from(core[4])) == 0
+        assert session.scalar(select(func.count()).select_from(WalletLedgerTransaction)) == 0
 
 
 @pytest.mark.parametrize('amount,status', [('9.999999','REVIEW'), ('10.000000','CREDITED'), ('10.000001','CREDITED')])

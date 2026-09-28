@@ -83,6 +83,31 @@ def test_other_owner_and_unrelated_scope_cannot_use_manual_commands(core, monito
     assert client.post(path, json=body, headers=headers).status_code == 403
 
 
+def test_wallet_incident_read_api_round_trips_literal_t2_and_filters(core, monitor, operations):
+    from app.api.wallet_operations import create_wallet_operations_router
+    _, headers, settings, _ = operations
+    settings.environment = 'test'
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(create_wallet_operations_router(settings, core[1],
+        SimpleNamespace(provider=None)), prefix='/api/v1/admin')
+    client = TestClient(app)
+    row = monitor[0].incidents.observe([dict(
+        fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
+        code='MANUAL_SOURCE_UNAVAILABLE', severity='T2', subject_id='global')], complete=False)[0]
+    base = '/api/v1/admin/wallet/incidents'
+    assert client.get(base, params={'severity': 'T2'}).status_code == 401
+    listing = client.get(base, params={'severity': 'T2'}, headers=headers)
+    assert listing.status_code == 200, listing.text
+    assert listing.json()['total'] == 1
+    assert listing.json()['items'][0]['id'] == row['id']
+    assert listing.json()['items'][0]['severity'] == 'T2'
+    detail = client.get(base + '/' + row['id'], headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()['severity'] == 'T2'
+    assert client.get(base, params={'severity': 'BAD'}, headers=headers).status_code == 422
+
+
 def pending_incident(monitor):
     service, source, _ = monitor
     original = source.read_reserve_cut

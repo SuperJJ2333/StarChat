@@ -106,6 +106,30 @@ def test_exact_six_decimal_maximum_and_freshness_boundary(factory, monkeypatch):
             assert result.evidence['eligible_usdt'] == str(maximum)
 
 
+def test_configured_360_second_window_accepts_healthy_120_second_old_cut(factory):
+    observed_ms = int(NOW.timestamp() * 1000)
+    evidence = args()['evidence'] | {'fresh_until_ms': observed_ms + 360000}
+    with factory.begin() as session:
+        result = publish_manual_reserve(session, **args(
+            evidence=evidence, max_age_ms=360000,
+            now=NOW + timedelta(milliseconds=120219)))
+        assert result.evidence['observed_at'] == NOW.isoformat()
+        assert session.get(RedeemabilityReserve, 'global').observed_at.replace(tzinfo=timezone.utc) == NOW
+
+
+def test_configured_window_expiry_rolls_back_publication(factory):
+    observed_ms = int(NOW.timestamp() * 1000)
+    evidence = args()['evidence'] | {'fresh_until_ms': observed_ms + 360000}
+    with pytest.raises(ValueError, match='stale or future'), factory.begin() as session:
+        publish_manual_reserve(session, **args(
+            evidence=evidence, max_age_ms=360000,
+            now=NOW + timedelta(milliseconds=360001)))
+    with factory() as session:
+        assert session.get(RedeemabilityReserve, 'global') is None
+        assert session.scalar(select(ManualReserveEvaluation)) is None
+        assert session.scalar(select(AuditEvent)) is None
+        assert session.scalar(select(OutboxEvent)) is None
+
 def test_caibi_is_in_coverage(factory, monkeypatch):
     import app.modules.ledger.manual_reserve as gateway
     monkeypatch.setattr(gateway, 'caibi_liability', lambda s: Decimal('0.01'))

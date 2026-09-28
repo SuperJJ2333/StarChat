@@ -37,6 +37,8 @@ def factory(request):
 
 
 SIGNAL = dict(fingerprint='withdrawal:abc:unknown', code='WITHDRAWAL_UNKNOWN', severity='P0', subject_id='abc')
+SOURCE_TIMEOUT = dict(fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
+    code='MANUAL_SOURCE_UNAVAILABLE', severity='T2', subject_id='global')
 NOW = datetime(2026, 9, 6, tzinfo=timezone.utc)
 
 
@@ -107,6 +109,125 @@ def test_p0_escalation_boundaries_restart_and_ack_stop(factory):
     assert service(factory, NOW + timedelta(hours=1)).escalate() == []
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.topic == 'wallet.alert')) == 3
+
+
+def test_t2_round_trip_deduplicates_and_does_not_escalate(factory):
+    svc = service(factory)
+    opened = svc.observe([SOURCE_TIMEOUT])[0]
+    assert opened['severity'] == 'T2'
+    assert svc.get(opened['id'])['severity'] == 'T2'
+    assert svc.observe([SOURCE_TIMEOUT])[0]['version'] == opened['version']
+    assert service(factory, NOW + timedelta(hours=1)).escalate() == []
+    with factory() as session:
+        alerts = session.scalars(select(OutboxEvent).where(OutboxEvent.topic == 'wallet.alert')).all()
+        assert [event.payload['severity'] for event in alerts] == ['T2']
+    changed = svc.observe([dict(SOURCE_TIMEOUT, severity='P0')])[0]
+    assert changed['version'] == opened['version'] + 1
+    assert svc.observe([dict(SOURCE_TIMEOUT, severity='P0')])[0]['version'] == changed['version']
+    with factory() as session:
+        alerts = session.scalars(select(OutboxEvent).where(OutboxEvent.topic == 'wallet.alert')).all()
+        assert [event.payload['severity'] for event in alerts] == ['T2', 'P0']
+    svc.observe([])
+    reopened = svc.observe([SOURCE_TIMEOUT])[0]
+    assert reopened['generation'] == opened['generation'] + 1
+    with factory() as session:
+        alerts = session.scalars(select(OutboxEvent).where(OutboxEvent.topic == 'wallet.alert')).all()
+        assert [event.payload['severity'] for event in alerts] == ['T2', 'P0', 'T2']
+
+
+@pytest.mark.parametrize('field,value', [
+    ('fingerprint', 'withdrawal:abc:unknown'),
+    ('code', 'WITHDRAWAL_UNKNOWN'),
+    ('subject_id', 'other'),
+])
+def test_t2_signal_requires_exact_source_timeout_identity(factory, field, value):
+    signal = dict(SOURCE_TIMEOUT, **{field: value})
+    with pytest.raises(AppError) as failure:
+        service(factory).observe([signal])
+    assert failure.value.code == 'WALLET_INCIDENT_SIGNAL_INVALID'
+    with factory() as session:
+        from app.modules.wallet.incident_models import WalletIncident
+        assert session.scalar(select(func.count()).select_from(WalletIncident)) == 0
+
+
+def test_resolved_source_timeout_historical_reclassification_is_idempotent_and_immutable(factory):
+    from app.modules.wallet.incident_models import WalletIncidentCommand
+    svc = service(factory)
+    opened = svc.observe([dict(SOURCE_TIMEOUT, severity='P0')])[0]
+    svc.observe([])
+    cleared = svc.get(opened['id'])
+    ack = svc.ack(opened['id'], 'owner', 'INVESTIGATE', 'history-ack', cleared['version'])
+    resolved = svc.resolve(opened['id'], 'reviewer', 'REVIEWED', 'history-resolve',
+        ack['version'], ack['clearance_digest'])
+    with factory() as session:
+        old_alerts = [(e.id, dict(e.payload)) for e in session.scalars(
+            select(OutboxEvent).where(OutboxEvent.topic == 'wallet.alert')).all()]
+        old_audit = [(e.id, e.action) for e in session.scalars(select(AuditEvent)).all()]
+    args = dict(actor_id='operator', idempotency_key='source-timeout-correction',
+        generation=resolved['generation'], expected_version=resolved['version'],
+        diagnostic_code='SOURCE_READ_BUDGET_EXPIRED', evidence_digest='a'*64)
+    corrected = svc.reclassify_source_timeout(opened['id'], **args)
+    assert corrected['severity'] == 'T2' and corrected['status'] == 'RESOLVED'
+    assert corrected['generation'] == resolved['generation']
+    assert corrected['version'] == resolved['version'] + 1
+    assert svc.reclassify_source_timeout(opened['id'], **args) == corrected
+    assert service(factory, NOW + timedelta(hours=1)).escalate() == []
+    with factory() as session:
+        assert [(e.id, dict(e.payload)) for e in session.scalars(
+            select(OutboxEvent).where(OutboxEvent.topic == 'wallet.alert')).all()] == old_alerts
+        assert set(old_audit).issubset({(e.id, e.action) for e in session.scalars(select(AuditEvent)).all()})
+        assert session.get(WalletIncidentCommand, args['idempotency_key']).result == corrected
+        correction_audit = session.scalar(select(AuditEvent).where(
+            AuditEvent.action == 'wallet.incident.source_timeout_reclassified'))
+        assert correction_audit.actor_id == args['actor_id']
+        assert correction_audit.reason_code == 'SOURCE_READ_BUDGET_T2_POLICY'
+        assert correction_audit.after_data['diagnostic_code'] == args['diagnostic_code']
+        assert correction_audit.after_data['evidence_digest'] == args['evidence_digest']
+        events = session.scalars(select(OutboxEvent).where(
+            OutboxEvent.event_type == 'wallet.incident.source_timeout_reclassified')).all()
+        assert len(events) == 1 and events[0].payload['severity'] == 'T2'
+
+
+def test_historical_reclassification_rejects_wrong_identity_evidence_and_replay_payload(factory):
+    svc = service(factory)
+    target = svc.observe([dict(SOURCE_TIMEOUT, severity='P0')])[0]
+    other = svc.observe([SIGNAL], complete=False)[0]
+    args = dict(actor_id='operator', idempotency_key='correction', generation=1,
+        expected_version=target['version'], diagnostic_code='SOURCE_READ_BUDGET_EXPIRED', evidence_digest='b'*64)
+    for incident_id, change in ((other['id'], {}), (target['id'], {'generation': 2}),
+            (target['id'], {'expected_version': 2}),
+            (target['id'], {'diagnostic_code': 'SOURCE_UNAVAILABLE_OR_MALFORMED'}),
+            (target['id'], {'evidence_digest': 'invalid'}),
+            (target['id'], {'actor_id': ''}),
+            (target['id'], {'idempotency_key': ''})):
+        with pytest.raises(AppError):
+            svc.reclassify_source_timeout(incident_id, **(args | change))
+    assert svc.get(target['id'])['severity'] == 'P0'
+    corrected = svc.reclassify_source_timeout(target['id'], **args)
+    with pytest.raises(AppError, match='IDEMPOTENCY_CONFLICT'):
+        svc.reclassify_source_timeout(target['id'], **(args | {'actor_id': 'another'}))
+    with pytest.raises(AppError):
+        svc.reclassify_source_timeout(target['id'], **(args | {'idempotency_key': 'second'}))
+    assert svc.get(target['id']) == corrected
+
+
+def test_historical_reclassification_rolls_back_command_audit_and_outbox(factory):
+    from app.modules.wallet.incident_models import WalletIncidentCommand
+    svc = service(factory)
+    target = svc.observe([dict(SOURCE_TIMEOUT, severity='P0')])[0]
+    args = dict(actor_id='operator', idempotency_key='rollback-correction', generation=1,
+        expected_version=1, diagnostic_code='SOURCE_READ_BUDGET_EXPIRED', evidence_digest='c'*64)
+    with factory() as session:
+        before_audit = session.scalar(select(func.count()).select_from(AuditEvent))
+        before_outbox = session.scalar(select(func.count()).select_from(OutboxEvent))
+    with patch('app.modules.wallet.incidents.OutboxPublisher.enqueue', side_effect=RuntimeError('unavailable')):
+        with pytest.raises(RuntimeError):
+            svc.reclassify_source_timeout(target['id'], **args)
+    assert svc.get(target['id']) == target
+    with factory() as session:
+        assert session.get(WalletIncidentCommand, args['idempotency_key']) is None
+        assert session.scalar(select(func.count()).select_from(AuditEvent)) == before_audit
+        assert session.scalar(select(func.count()).select_from(OutboxEvent)) == before_outbox
 
 
 def test_sandbox_receipts_are_durable_and_deduplicate(factory):

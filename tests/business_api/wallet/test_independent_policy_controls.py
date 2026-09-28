@@ -78,6 +78,39 @@ def test_other_p1_still_blocks_resume_with_approved_deficit(core, monitor):
         assert session.scalar(select(func.count()).select_from(ManualReserveEvaluation)) == 0
 
 
+@pytest.mark.parametrize('mutation', ['fingerprint', 'code', 'severity', 'subject_id'])
+def test_only_exact_t2_source_timeout_is_nonblocking(core, monitor, mutation):
+    service = control(core, monitor)
+    assert monitor[0].run_once()['complete']
+    signal = dict(fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
+        code='MANUAL_SOURCE_UNAVAILABLE', severity='T2', subject_id='global')
+    service.incidents.observe([signal], complete=False)
+    with core[1].begin() as session:
+        row = session.scalar(select(WalletIncident).where(
+            WalletIncident.fingerprint == signal['fingerprint']))
+        setattr(row, mutation, dict(fingerprint='other:timeout', code='OTHER_TIMEOUT',
+            severity='P1', subject_id='another-user')[mutation])
+    snapshot = service.status()
+    assert snapshot['unresolved_incidents'] == 1
+    assert snapshot['status'] == 'PAUSED'
+    with core[1]() as session:
+        with pytest.raises(AppError, match='UNRESOLVED_INCIDENTS'):
+            service.incidents.require_resolved_in_session(session)
+
+
+def test_exact_t2_source_timeout_does_not_clear_existing_pause(core, monitor):
+    service = control(core, monitor)
+    assert monitor[0].run_once()['complete']
+    service.incidents.observe([dict(fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
+        code='MANUAL_SOURCE_UNAVAILABLE', severity='T2', subject_id='global')], complete=False)
+    assert service.status()['unresolved_incidents'] == 0
+    with core[1]() as session:
+        service.incidents.require_resolved_in_session(session)
+    paused = service.pause(**args(service, 'pause'))
+    assert paused['status'] == 'PAUSED'
+    assert service.status()['withdrawals_paused']
+
+
 def test_legacy_handover_accepts_real_deficit_without_creating_fourth_incident(handover):
     service, factory, _, _, source, _ = handover
     service.monitor.reserve_policy = 'manual_liquidity'

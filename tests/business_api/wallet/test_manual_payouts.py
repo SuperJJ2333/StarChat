@@ -242,13 +242,15 @@ def test_claim_requires_admin_and_preserves_freeze(core):
         assert s.get(RedeemabilityReserve, 'global').pending_payouts == 1
 
 
-@pytest.mark.parametrize('gate', ['missing', 'stale', 'paused', 'held'])
+@pytest.mark.parametrize('gate', ['missing', 'stale', 'outside_120', 'paused', 'held'])
 def test_fail_closed_gates(core, gate):
     with core[1].begin() as s:
         if gate == 'missing':
             s.delete(s.get(RedeemabilityReserve, 'global'))
         if gate == 'stale':
             s.get(RedeemabilityReserve, 'global').observed_at -= timedelta(minutes=3)
+        if gate == 'outside_120':
+            s.get(RedeemabilityReserve, 'global').observed_at -= timedelta(milliseconds=120219)
         if gate == 'paused':
             s.get(WalletControl, 'global').withdrawals_paused = True
         if gate == 'held':
@@ -288,6 +290,22 @@ def test_missing_evidence_never_releases(core):
     core[0].submit_txid(admin_id='owner', order_id=o['id'], txid='a'*64, idempotency_key='tx')
     assert core[0].reconcile(order_id=o['id'])['status'] == 'UNKNOWN'
     assert core[5].balance('HOLD:alice') == Decimal('10')
+
+
+def test_t2_without_pause_does_not_settle_when_finality_evidence_is_unavailable(core):
+    from app.modules.wallet.incidents import WalletIncidentService
+    from app.modules.wallet.incident_models import WalletIncident
+    o = claim(core)
+    core[0].submit_txid(admin_id='owner', order_id=o['id'], txid='a'*64, idempotency_key='tx')
+    incident = WalletIncidentService(core[1]).observe([dict(
+        fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
+        code='MANUAL_SOURCE_UNAVAILABLE', severity='T2', subject_id='global')],
+        complete=False)[0]
+    assert core[0].reconcile(order_id=o['id'])['status'] == 'UNKNOWN'
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+    with core[1]() as session:
+        assert not session.get(WalletControl, 'global').withdrawals_paused
+        assert session.get(WalletIncident, incident['id']).severity == 'T2'
 
 
 def test_other_actual_admin_cannot_claim(core):

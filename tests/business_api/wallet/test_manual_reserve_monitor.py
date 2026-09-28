@@ -8,10 +8,10 @@ import json
 import pytest
 from sqlalchemy import select, func
 
-from app.integrations.tron.funding_source import ReserveCut
+from app.integrations.tron.funding_source import FundingSourceError, ReserveCut
 from app.modules.ledger.reserve import RedeemabilityReserve
 from app.modules.wallet.funding_scan_models import WalletFundingScanItem, WalletFundingScanState
-from app.modules.wallet.models import WalletControl, WalletLedgerTransaction
+from app.modules.wallet.models import WalletControl, WalletLedgerTransaction, WalletSafetyState
 from app.modules.wallet.incident_models import WalletIncident
 from test_deposit_receipts import core, intent  # noqa: F401
 from test_funding_coverage import coverage, register, verify  # noqa: F401
@@ -56,6 +56,69 @@ def monitor(core, coverage):
     return service, source, now
 
 
+def test_source_read_budget_expiry_records_t2_without_global_pause(core, monitor):
+    service, source, clock = monitor
+
+    def timed_out():
+        raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')
+
+    source.read_reserve_cut = timed_out
+    result = service.run_once()
+    assert result == dict(complete=False, status='BLOCKED',
+                          codes=['MANUAL_SOURCE_UNAVAILABLE'])
+    with core[1]() as session:
+        control = session.get(WalletControl, 'global')
+        safety = session.get(WalletSafetyState, 'global')
+        reserve = session.get(RedeemabilityReserve, 'global')
+        incident = session.scalar(select(WalletIncident).where(
+            WalletIncident.fingerprint == 'manual-reserve:MANUAL_SOURCE_UNAVAILABLE'))
+        assert control.withdrawals_paused is False
+        assert safety is None or safety.restricted is False
+        assert reserve.outgoing_restricted is False
+        assert reserve.observed_at.year == 1970
+        assert incident.code == 'MANUAL_SOURCE_UNAVAILABLE'
+        assert incident.severity == 'T2' and incident.condition_active
+        assert session.scalar(select(func.count()).select_from(WalletLedgerTransaction)) == 0
+
+
+@pytest.mark.parametrize('error', [
+    FundingSourceError('SOURCE_UNAVAILABLE_OR_MALFORMED'),
+    FundingSourceError('SOURCE_MALFORMED'),
+    FundingSourceError('SOURCE_IDENTITY_MISMATCH'),
+    FundingSourceError('SOURCE_REGRESSION'),
+    ValueError('unknown source failure'),
+])
+def test_non_budget_source_error_remains_p0_and_pauses(core, monitor, error):
+    service, source, _ = monitor
+
+    def malformed():
+        raise error
+
+    source.read_reserve_cut = malformed
+    assert service.run_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
+    with core[1]() as session:
+        assert session.get(WalletControl, 'global').withdrawals_paused
+        assert session.scalar(select(WalletIncident)).severity == 'P0'
+
+
+def test_source_read_budget_expiry_preserves_independent_pause(core, monitor):
+    service, source, _ = monitor
+    with core[1].begin() as session:
+        control = session.get(WalletControl, 'global')
+        control.withdrawals_paused = True
+        control.pause_reason = 'INDEPENDENT_P0'
+
+    def timed_out():
+        raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')
+
+    source.read_reserve_cut = timed_out
+    assert service.run_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
+    with core[1]() as session:
+        control = session.get(WalletControl, 'global')
+        assert control.withdrawals_paused
+        assert control.pause_reason == 'INDEPENDENT_P0'
+        assert session.scalar(select(WalletIncident)).severity == 'T2'
+
 def test_unacknowledged_incident_escalates_even_when_source_fails(core, monitor):
     service, source, clock = monitor
     service.incidents.observe([dict(fingerprint='fixture:escalation',
@@ -90,6 +153,20 @@ def test_boundary_stale_snapshot_is_resampled_before_opening_incident(core, moni
     with core[1]() as session:
         assert session.scalar(select(func.count()).select_from(WalletIncident).where(WalletIncident.code=='MANUAL_SOURCE_UNHEALTHY')) == 0
 
+
+def test_healthy_360_second_cut_can_publish_after_120_seconds(core, monitor):
+    service, source, clock = monitor
+    source.max_age_seconds = 360
+    observed_ms = int(clock[0].timestamp() * 1000) - 120219
+    source.value = digest_cut(source.value,
+        heartbeat_ms=observed_ms, fresh_until_ms=observed_ms + 360000)
+    result = service.run_once()
+    assert result['complete'] and result['status'] == 'PUBLISHED'
+    with core[1]() as session:
+        assert not session.get(WalletControl, 'global').withdrawals_paused
+        assert session.scalar(select(func.count()).select_from(WalletIncident)) == 0
+        assert int(session.get(RedeemabilityReserve, 'global').observed_at.replace(
+            tzinfo=clock[0].tzinfo).timestamp() * 1000) == observed_ms
 
 def test_discovery_retry_is_bounded_and_never_completes_on_pending_coverage(core, monitor, monkeypatch):
     service, source, clock = monitor
