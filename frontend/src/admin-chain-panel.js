@@ -1,6 +1,6 @@
 import { formatBeijingTime, parseBeijingInput } from './admin-formatters.js';
 import {detailDialog} from './admin-detail-dialog.js';
-import {walletRepairDialog} from './admin-wallet-repair-dialog.js';
+import {walletRepairDialog} from './admin-wallet-repair-dialog.js?v=20260928-admin-entry';
 
 function node(tag, text, className) {
   const result = document.createElement(tag);
@@ -28,7 +28,7 @@ function directionLabel(record) {
     ? "提现转出" : "未匹配转出";
 }
 
-export function chainPanel(api, {actorId}={}) {
+export function chainPanel(api, {actorId,accessController}={}) {
   const panel = node("section", undefined, "admin-card admin-chain-panel");
   panel.append(node("h3", "官方钱包链上流水"), node("p",
     "TronGrid 单源监控。平台入账与提现结算以关联账本为准；待处理或证据冲突的流水需核查。", "admin-audit-note"));
@@ -115,7 +115,13 @@ export function chainPanel(api, {actorId}={}) {
         for (const value of [time(item.timestamp_ms), directionLabel(item), item.amount, `${item.txid} / ${item.log_index}`, accounting(item)]) tr.append(node("td", value));
         const cell = node("td"), action = node("button", "详情", "admin-secondary"); action.type = "button";
         action.addEventListener("click", () => showDetail(item)); cell.append(action); tr.append(cell); body.append(tr);
-        if(actorId){const repair=node('button',item.direction==='INFLOW'?'充值补入账':'提现核对','admin-secondary');repair.type='button';repair.addEventListener('click',()=>{repairModal?.close();repairModal=walletRepairDialog(api,item,{actorId,onClose:()=>{repairModal=null;},onCompleted:()=>panel.refresh()});});cell.append(repair);}
+        if(actorId){const repair=node('button',item.direction==='INFLOW'?'充值补入账':'提现核对','admin-secondary');repair.type='button';repair.addEventListener('click',async()=>{
+          if(accessController&&!accessController.canWrite()){
+            state.textContent='请先验证以操作。验证后请再次选择这笔流水；系统不会自动打开或提交修复。';
+            await accessController.requestWriteGrant();return;
+          }
+          repairModal?.close();repairModal=walletRepairDialog(api,item,{actorId,accessController,onClose:()=>{repairModal=null;},onCompleted:()=>panel.refresh()});
+        });cell.append(repair);}
       }
       table.append(head, body); rows.replaceChildren(table);
       previous.disabled = offset === 0; next.disabled = offset + page.items.length >= page.total;

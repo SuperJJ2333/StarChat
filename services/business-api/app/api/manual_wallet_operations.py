@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from app.api.wallet_operations import WalletIncidentView
 from app.api.admin_wallet_auth import AdminWalletProofBody, selected_password_authorization, wallet_grant_service
+from app.api.admin_session_boundary import wallet_read_allowlist
 from app.core.errors import AppError, FieldError
 from app.integrations.tron import diagnostics as diag
 from app.modules.wallet.manual_diagnostics import current_diagnostics, safe_review_result
@@ -69,7 +70,7 @@ def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, 
     def fail(code, message, status=409):
         raise AppError(code=code, message=message, status_code=status)
 
-    def actor(authorization: Annotated[str | None, Header()] = None):
+    def actor(request: Request, authorization: Annotated[str | None, Header()] = None):
         if not authorization or not authorization.startswith('Bearer '):
             fail('AUTH_REQUIRED', '需要登录', 401)
         claims = tokens.decode_access_token(authorization[7:])
@@ -81,7 +82,11 @@ def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, 
         with factory.begin() as session:
             require_wallet_actor(session, user_id=user, clock=clock, administrator=True)
         if getattr(settings, 'wallet_access_grant_enabled', False):
-            wallet_grant_service(settings, factory, clock).require(claims=claims)
+            grants = wallet_grant_service(settings, factory, clock)
+            if request.method in {'GET', 'HEAD'} and wallet_read_allowlist(request):
+                grants.require_read(claims=claims)
+            else:
+                grants.require(claims=claims)
         else:
             tokens.require_recent_login(authorization[7:])
         return claims

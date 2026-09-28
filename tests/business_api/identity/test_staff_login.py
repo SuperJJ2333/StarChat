@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.modules.identity.enums import AccountStatus, RoleCode
-from app.modules.identity.models import User, UserRole, OtpChallenge
+from app.modules.identity.models import AdminSession, User, UserRole, OtpChallenge
 from test_staff_activation import env
 
 
@@ -71,6 +71,141 @@ async def test_staff_password_login_session_cookie_and_live_revocation(env, monk
 
 
 @pytest.mark.asyncio
+async def test_staff_entry_session_cannot_gain_administrator_access_after_promotion(env, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+    from app.core.config import Settings
+    from app.main import create_app
+
+    factory, clock, sender, service = env
+    activation = service.request(username='staff', password='correct password 123')
+    service.confirm(activation_id=activation['activation_id'], code=sender.messages[-1][1])
+    monkeypatch.setattr('app.modules.identity.login_captcha.LoginCaptcha.verify', lambda *args: None)
+    app = create_app(Settings(_env_file=None, environment='test',
+        jwt_secret='test-jwt-secret-at-least-thirty-two-bytes'), session_factory=factory)
+    csrf = {'Origin': 'https://test', 'X-Admin-CSRF': '1'}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test') as client:
+        logged = await client.post('/api/v1/auth/staff-login', headers=csrf,
+            json={'username': 'staff', 'password': 'correct password 123'})
+        assert logged.status_code == 200, logged.text
+        staff_bearer = {'Authorization': 'Bearer ' + logged.json()['access_token']}
+        with factory.begin() as session:
+            session.add(UserRole(id='promoted-admin', user_id='staff', role_code=RoleCode.SUPER_ADMIN,
+                assigned_by='external-admin', assigned_at=clock[0]))
+
+        context = await client.get('/api/v1/admin/context', headers=staff_bearer)
+        directory = await client.post('/api/v1/admin/users/search', headers={**csrf, **staff_bearer}, json={})
+        refreshed = await client.post('/api/v1/auth/admin-session/refresh', headers=csrf)
+        stepped_up = await client.post('/api/v1/auth/admin-session/step-up',
+            headers={**csrf, **staff_bearer}, json={'password': 'correct password 123'})
+        assert [r.status_code for r in (context, directory, refreshed, stepped_up)] == [401] * 4
+        assert all(r.json()['error']['code'] == 'ADMIN_SESSION_REPLACED'
+            for r in (context, directory, refreshed, stepped_up))
+
+        admin = await client.post('/api/v1/auth/admin-login', headers=csrf,
+            json={'username': 'staff', 'password': 'correct password 123',
+                'device_key': 'browser', 'device_name': 'Browser',
+                'challenge_id': 'x' * 32, 'captcha_answer': 'ABCDEF'})
+        assert admin.status_code == 200, admin.text
+        administrator_bearer = {'Authorization': 'Bearer ' + admin.json()['access_token']}
+        assert (await client.get('/api/v1/admin/context', headers=administrator_bearer)).status_code == 200
+        assert (await client.post('/api/v1/admin/users/search',
+            headers={**csrf, **administrator_bearer}, json={})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_staff_entry_session_can_refresh_while_role_is_unchanged(env):
+    from httpx import ASGITransport, AsyncClient
+    from app.core.config import Settings
+    from app.main import create_app
+
+    factory, _, sender, service = env
+    activation = service.request(username='staff', password='correct password 123')
+    service.confirm(activation_id=activation['activation_id'], code=sender.messages[-1][1])
+    app = create_app(Settings(_env_file=None, environment='test',
+        jwt_secret='test-jwt-secret-at-least-thirty-two-bytes'), session_factory=factory)
+    csrf = {'Origin': 'https://test', 'X-Admin-CSRF': '1'}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test') as client:
+        logged = await client.post('/api/v1/auth/staff-login', headers=csrf,
+            json={'username': 'staff', 'password': 'correct password 123'})
+        assert logged.status_code == 200, logged.text
+        renewed = await client.post('/api/v1/auth/admin-session/refresh', headers=csrf)
+        assert renewed.status_code == 200, renewed.text
+        assert (await client.get('/api/v1/auth/admin-session', headers={
+            'Authorization': 'Bearer ' + renewed.json()['access_token']})).status_code == 200
+
+
+def test_existing_unmarked_management_session_requires_login_again(env):
+    from app.modules.identity.tokens import TokenService
+
+    factory, _, sender, service = env
+    activation = service.request(username='staff', password='correct password 123')
+    service.confirm(activation_id=activation['activation_id'], code=sender.messages[-1][1])
+    tokens = TokenService(factory, jwt_secret='test-jwt-secret-at-least-thirty-two-bytes',
+        jwt_issuer='test')
+    pair = tokens.issue_admin_pair(user_id='staff', display_name='Staff browser', staff_only=True)
+    with factory.begin() as session:
+        session.get(AdminSession, 'staff').entry_mode = None
+    with pytest.raises(AppError) as access:
+        tokens.decode_access_token(pair.access_token)
+    assert access.value.code == 'ADMIN_SESSION_REPLACED'
+    with pytest.raises(AppError) as refresh:
+        tokens.rotate_admin(pair.refresh_token)
+    assert refresh.value.code == 'ADMIN_SESSION_REPLACED'
+
+
+@pytest.mark.asyncio
+async def test_administrator_entry_session_expires_when_superadmin_role_is_removed(env, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+    from app.core.config import Settings
+    from app.main import create_app
+
+    factory, clock, sender, service = env
+    activation = service.request(username='staff', password='correct password 123')
+    service.confirm(activation_id=activation['activation_id'], code=sender.messages[-1][1])
+    with factory.begin() as session:
+        session.add(UserRole(id='temporary-admin', user_id='staff', role_code=RoleCode.SUPER_ADMIN,
+            assigned_by='external-admin', assigned_at=clock[0]))
+    monkeypatch.setattr('app.modules.identity.login_captcha.LoginCaptcha.verify', lambda *args: None)
+    app = create_app(Settings(_env_file=None, environment='test',
+        jwt_secret='test-jwt-secret-at-least-thirty-two-bytes'), session_factory=factory)
+    csrf = {'Origin': 'https://test', 'X-Admin-CSRF': '1'}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test') as client:
+        logged = await client.post('/api/v1/auth/admin-login', headers=csrf,
+            json={'username': 'staff', 'password': 'correct password 123',
+                'device_key': 'browser', 'device_name': 'Browser',
+                'challenge_id': 'x' * 32, 'captcha_answer': 'ABCDEF'})
+        assert logged.status_code == 200, logged.text
+        with factory.begin() as session:
+            session.delete(session.get(UserRole, 'temporary-admin'))
+        bearer = {'Authorization': 'Bearer ' + logged.json()['access_token']}
+        access = await client.get('/api/v1/auth/admin-session', headers=bearer)
+        refresh = await client.post('/api/v1/auth/admin-session/refresh', headers=csrf)
+        assert access.status_code == refresh.status_code == 401
+        assert access.json()['error']['code'] == refresh.json()['error']['code'] == 'ADMIN_SESSION_REPLACED'
+
+
+@pytest.mark.asyncio
+async def test_activated_staff_cannot_use_administrator_login_with_valid_captcha(env, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+    from app.core.config import Settings
+    from app.main import create_app
+    factory, _, sender, service = env
+    activation = service.request(username='staff', password='correct password 123')
+    service.confirm(activation_id=activation['activation_id'], code=sender.messages[-1][1])
+    monkeypatch.setattr('app.modules.identity.login_captcha.LoginCaptcha.verify', lambda *args: None)
+    app = create_app(Settings(_env_file=None, environment='test',
+        jwt_secret='test-jwt-secret-at-least-thirty-two-bytes'), session_factory=factory)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test') as client:
+        response = await client.post('/api/v1/auth/admin-login',
+            headers={'Origin': 'https://test', 'X-Admin-CSRF': '1'},
+            json={'username': 'staff', 'password': 'correct password 123',
+                'device_key': 'browser', 'device_name': 'Browser',
+                'challenge_id': 'x' * 32, 'captcha_answer': 'ABCDEF'})
+    assert response.status_code == 403, response.text
+    assert 'PERMISSION_DENIED' in response.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('state', ['unactivated', 'superadmin', 'mixed_superadmin', 'supervisor', 'disabled', 'finance'])
 async def test_staff_login_eligibility(env, state):
     from httpx import ASGITransport, AsyncClient
@@ -96,6 +231,27 @@ async def test_staff_login_eligibility(env, state):
             json={'username': 'staff', 'password': 'correct password 123'},
             headers={'Origin': 'https://test', 'X-Admin-CSRF': '1'})
         assert response.status_code == (200 if state == 'finance' else 401 if state == 'disabled' else 403), response.text
+
+
+@pytest.mark.asyncio
+async def test_supervisor_only_first_login_requires_activation(env):
+    from httpx import ASGITransport, AsyncClient
+    from app.core.config import Settings
+    from app.main import create_app
+    factory, _, sender, service = env
+    with factory.begin() as session:
+        session.get(UserRole, 'role').role_code = RoleCode.SUPPORT_SUPERVISOR
+    app = create_app(Settings(_env_file=None, environment='test',
+        jwt_secret='test-jwt-secret-at-least-thirty-two-bytes'), session_factory=factory)
+    csrf = {'Origin': 'https://test', 'X-Admin-CSRF': '1'}
+    body = {'username': 'staff', 'password': 'correct password 123'}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test') as client:
+        first = await client.post('/api/v1/auth/staff-login', headers=csrf, json=body)
+        assert first.status_code == 403 and 'STAFF_ACTIVATION_REQUIRED' in first.text
+        challenge = service.request(username='staff', password=body['password'])
+        service.confirm(activation_id=challenge['activation_id'], code=sender.messages[-1][1])
+        second = await client.post('/api/v1/auth/staff-login', headers=csrf, json=body)
+        assert second.status_code == 200, second.text
 
 
 @pytest.mark.parametrize('change', ['contact', 'verification', 'role'])

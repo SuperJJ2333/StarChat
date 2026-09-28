@@ -1,18 +1,62 @@
 :root {
-  --image-editor-landscape-0-sky: #b8d5dd;
-  --image-editor-landscape-0-ridge: #537d83;
-  --image-editor-landscape-0-foreground: #d5c7af;
-  --image-editor-landscape-1-sky: #e3cbb5;
-  --image-editor-landscape-1-ridge: #8a8990;
-  --image-editor-landscape-1-foreground: #d7b492;
-  --image-editor-landscape-2-sky: #b9c9bd;
-  --image-editor-landscape-2-ridge: #527b6d;
-  --image-editor-landscape-2-foreground: #dfd7b9;
-  --image-editor-sky-haze: #f0eee6;
-  --image-editor-sun: #fff5db;
-  --image-editor-brush: #ffffff;
-  --color-support-identity: #f6c343;
-  --color-ledger-transfer: #fa9d3b;
+  --admin-login-scene-star: rgb(198, 244, 250);
+  --admin-login-color-050b12: #050b12;
+  --admin-login-color-071019: #071019;
+  --admin-login-color-08202c: #08202c;
+  --admin-login-color-091824: #091824;
+  --admin-login-color-0b202d: #0b202d;
+  --admin-login-color-0f2539: #0f2539;
+  --admin-login-color-112d3b: #112d3b;
+  --admin-login-color-173746: #173746;
+  --admin-login-color-18354a: #18354a;
+  --admin-login-color-21435a: #21435a;
+  --admin-login-color-51717d: #51717d;
+  --admin-login-color-648793: #648793;
+  --admin-login-color-8daab7: #8daab7;
+  --admin-login-color-9de7ef: #9de7ef;
+  --admin-login-color-a6bdc7: #a6bdc7;
+  --admin-login-color-a6c2cf: #a6c2cf;
+  --admin-login-color-aec6d0: #aec6d0;
+  --admin-login-color-afc8d1: #afc8d1;
+  --admin-login-color-b1c6d0: #b1c6d0;
+  --admin-login-color-b4cbd4: #b4cbd4;
+  --admin-login-color-b5f7ff: #b5f7ff;
+  --admin-login-color-b7e4ed: #b7e4ed;
+  --admin-login-color-bad4de: #bad4de;
+  --admin-login-color-baf4f9: #baf4f9;
+  --admin-login-color-d5ebf0: #d5ebf0;
+  --admin-login-color-d5edf3: #d5edf3;
+  --admin-login-color-d7fbff: #d7fbff;
+  --admin-login-color-d8e9ef: #d8e9ef;
+  --admin-login-color-edf8fb: #edf8fb;
+  --admin-login-color-f1fbfd: #f1fbfd;
+  --admin-login-color-f3fcff: #f3fcff;
+  --admin-login-color-f5fbfd: #f5fbfd;
+  --admin-login-color-rgba-0-0-0-36: rgba(0,0,0,.36);
+  --admin-login-color-rgba-0-0-0-42: rgba(0,0,0,.42);
+  --admin-login-color-rgba-0-0-0-55: rgba(0,0,0,.55);
+  --admin-login-color-rgba-0-0-0-68: rgba(0,0,0,.68);
+  --admin-login-color-rgba-134-225-242-16: rgba(134,225,242,.16);
+  --admin-login-color-rgba-139-232-248-38: rgba(139,232,248,.38);
+  --admin-login-color-rgba-142-222-237-35: rgba(142,222,237,.35);
+  --admin-login-color-rgba-157-231-239-15: rgba(157,231,239,.15);
+  --admin-login-color-rgba-157-231-239-17: rgba(157,231,239,.17);
+  --admin-login-color-rgba-157-231-239-3: rgba(157,231,239,.3);
+  --admin-login-color-rgba-161-230-244-025: rgba(161,230,244,.025);
+  --admin-login-color-rgba-161-230-244-045: rgba(161,230,244,.045);
+  --admin-login-color-rgba-196-242-250-2: rgba(196,242,250,.2);
+  --admin-login-color-rgba-196-242-250-22: rgba(196,242,250,.22);
+  --admin-login-color-rgba-196-242-250-24: rgba(196,242,250,.24);
+  --admin-login-color-rgba-196-242-250-3: rgba(196,242,250,.3);
+  --admin-login-color-rgba-196-242-250-35: rgba(196,242,250,.35);
+  --admin-login-color-rgba-208-246-253-28: rgba(208,246,253,.28);
+  --admin-login-color-rgba-255-255-255-04: rgba(255,255,255,.04);
+  --admin-login-color-rgba-255-255-255-07: rgba(255,255,255,.07);
+  --admin-login-color-rgba-255-255-255-075: rgba(255,255,255,.075);
+  --admin-login-color-rgba-4-17-27-78: rgba(4,17,27,.78);
+  --admin-login-color-rgba-5-20-31-78: rgba(5,20,31,.78);
+  --admin-login-color-rgba-7-29-42-45: rgba(7,29,42,.45);
+  --admin-login-color-rgba-94-209-225-19: rgba(94,209,225,.19);
   --admin-modal-scrim: #14203266;
   --moment-reaction-shadow: rgba(0, 0, 0, 0.07);
   --moment-reaction-radius: 8px;
@@ -130,17 +174,6 @@
   --motion-message: 160ms;
   --motion-reduced: 100ms;
   --shadow-overlay: 0 4px 16px rgb(0 0 0 / 12%);
-  /* 共享渐隐分割线（app-divider / .c-gradient-divider）：
-     几何与朋友圈分割线一致（1px、整行宽、divider token 取色），
-     但中部不透明度更低且两端渐隐到透明。与 Flutter
-     WeChatDividerTokens 的 alpha/stops 逐项对应。 */
-  --divider-fade-alpha: 0.5;
-  --divider-fade-edge-alpha: 0;
-  --divider-fade-core-start: 18%;
-  --divider-fade-core-end: 82%;
-  /* 品牌色淡底（≈12% alpha）：已完成/已添加状态徽标填充。
-     与 Flutter `WeChatColors.brandTint`（0x1F07C160）一致。 */
-  --color-brand-tint: rgb(7 193 96 / 12%);
   --z-content: 1;
   --z-navigation: 10;
   --z-overlay: 100;
@@ -159,8 +192,6 @@
   --color-on-accent: #ffffff;
   --color-danger: #fa5151;
   --color-warning: #fa9d3b;
-  --color-announcement-surface: #fff8e5;
-  --color-support-identity: #f6c343;
   --color-red-packet-muted: #f2b7a8;
   --color-bubble-outgoing: #d7e7f0;
   --color-bubble-incoming: #ffffff;
@@ -181,8 +212,6 @@
   --color-on-accent: #ffffff;
   --color-danger: #fa5151;
   --color-warning: #fa9d3b;
-  --color-announcement-surface: #fff8e5;
-  --color-support-identity: #f6c343;
   --color-red-packet-muted: #f2b7a8;
   --color-bubble-outgoing: #2e4556;
   --color-bubble-incoming: #2c2c2c;
@@ -250,26 +279,8 @@
   --moment-reaction-name: var(--color-social-link);
   --moment-reaction-muted: #666666;
   --moment-reaction-divider: var(--color-divider);
-  /* 列表单元底部渐隐分割线（浅色 #d9d9d9，两端 alpha 0）。 */
-  --divider-fade: linear-gradient(
-    90deg,
-    rgb(217 217 217 / var(--divider-fade-edge-alpha)) 0%,
-    rgb(217 217 217 / var(--divider-fade-alpha)) var(--divider-fade-core-start),
-    rgb(217 217 217 / var(--divider-fade-alpha)) var(--divider-fade-core-end),
-    rgb(217 217 217 / var(--divider-fade-edge-alpha)) 100%
-  );
  }
- .ui-screen[data-theme="dark"] {
-  --moment-reaction-muted: #999999;
-  /* 深色列表单元底部渐隐分割线（#2c2c2c，同样的 alpha 与 stops）。 */
-  --divider-fade: linear-gradient(
-    90deg,
-    rgb(44 44 44 / var(--divider-fade-edge-alpha)) 0%,
-    rgb(44 44 44 / var(--divider-fade-alpha)) var(--divider-fade-core-start),
-    rgb(44 44 44 / var(--divider-fade-alpha)) var(--divider-fade-core-end),
-    rgb(44 44 44 / var(--divider-fade-edge-alpha)) 100%
-  );
- }
+ .ui-screen[data-theme="dark"] { --moment-reaction-muted: #999999; }
 
 :root{--wallet-accent:#0066cc;--wallet-canvas:#f5f5f7;--wallet-paper:#fff;--wallet-ink:#1d1d1f;--wallet-secondary:#63636a;--wallet-line:#e5e5ea;--wallet-on-accent:#fff;--wallet-shadow:0 2px 8px #00000003;--wallet-alert-border:#d5b46a;--wallet-alert-surface:#fff8e8;--wallet-alert-ink:#5d451d;--wallet-unknown-ink:#865900;--wallet-unknown-surface:#fff5dc} html[data-theme=dark]{--wallet-canvas:#161618;--wallet-paper:#222225;--wallet-ink:#f5f5f7;--wallet-secondary:#acacb5;--wallet-line:#39393f;--wallet-accent:#0a84ff}
 

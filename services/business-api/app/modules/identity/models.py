@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -229,11 +230,16 @@ class AdminSession(Base):
     """One current management family per user; ordinary sessions are independent."""
 
     __tablename__ = "identity_admin_sessions"
+    __table_args__ = (CheckConstraint("entry_mode IN ('STAFF', 'ADMIN')",
+        name="ck_identity_admin_sessions_entry_mode"),)
+    ENTRY_ADMIN = 'ADMIN'
+    ENTRY_STAFF = 'STAFF'
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     family_id: Mapped[str] = mapped_column(
         ForeignKey("refresh_token_families.id"), nullable=False, unique=True
     )
+    entry_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     authenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

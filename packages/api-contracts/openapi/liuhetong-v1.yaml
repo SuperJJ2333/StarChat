@@ -232,6 +232,185 @@
         "title": "AdjustmentRequestBody",
         "type": "object"
       },
+      "AdminContextCapabilities": {
+        "properties": {
+          "wallet_owner_read": {
+            "title": "Wallet Owner Read",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "wallet_owner_read"
+        ],
+        "title": "AdminContextCapabilities",
+        "type": "object"
+      },
+      "AdminContextResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "actor": {
+            "additionalProperties": true,
+            "title": "Actor",
+            "type": "object"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/AdminContextCapabilities"
+          },
+          "modules": {
+            "additionalProperties": true,
+            "title": "Modules",
+            "type": "object"
+          },
+          "overview": {
+            "additionalProperties": true,
+            "title": "Overview",
+            "type": "object"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "actor",
+          "permissions",
+          "capabilities",
+          "overview",
+          "modules"
+        ],
+        "title": "AdminContextResponse",
+        "type": "object"
+      },
+      "AdminDirectoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminDirectoryUser"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "next_cursor"
+        ],
+        "title": "AdminDirectoryPage",
+        "type": "object"
+      },
+      "AdminDirectoryUser": {
+        "properties": {
+          "caibi_balance": {
+            "pattern": "^-?\\d+\\.\\d{2}$",
+            "title": "Caibi Balance",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "nickname": {
+            "title": "Nickname",
+            "type": "string"
+          },
+          "official_support_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Official Support Title"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "phone_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Verified At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "nickname",
+          "status",
+          "email",
+          "email_verified_at",
+          "phone",
+          "phone_verified_at",
+          "caibi_balance",
+          "official_support_title"
+        ],
+        "title": "AdminDirectoryUser",
+        "type": "object"
+      },
       "AdminLoginRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9078,6 +9257,45 @@
         "title": "RoleCode",
         "type": "string"
       },
+      "SearchUsersBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "limit": {
+            "default": 50,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q"
+          }
+        },
+        "title": "SearchUsersBody",
+        "type": "object"
+      },
       "SetCover": {
         "additionalProperties": false,
         "properties": {
@@ -9220,6 +9438,29 @@
           "password"
         ],
         "title": "StaffLoginRequest",
+        "type": "object"
+      },
+      "StaffPasswordRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 256,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "StaffPasswordRequest",
         "type": "object"
       },
       "StatementItem": {
@@ -10933,7 +11174,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AdminContextResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -14122,6 +14365,74 @@
           }
         ],
         "summary": "Revoke Support Role",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/users/search": {
+      "post": {
+        "description": "仅 SUPER_ADMIN 管理会话可查。浏览器请求须携带同源 Origin 与 X-Admin-CSRF: 1；响应不可缓存。",
+        "operationId": "search_users_api_v1_admin_users_search_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchUsersBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDirectoryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Search Users",
         "tags": [
           "admin"
         ]
@@ -17976,6 +18287,67 @@
           }
         },
         "summary": "Admin Refresh",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/admin-session/staff-password": {
+      "post": {
+        "description": "仅已开通的客服可修改与 App 共用的密码。须携带管理 Bearer、当前会话的 HttpOnly 管理 Cookie、同源 Origin 与 X-Admin-CSRF: 1；成功后全部旧会话失效。",
+        "operationId": "change_staff_password_api_v1_auth_admin_session_staff_password_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Change Staff Password",
         "tags": [
           "identity"
         ]

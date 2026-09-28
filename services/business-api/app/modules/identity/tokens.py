@@ -13,10 +13,11 @@ from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.modules.identity.invitations import hash_opaque_token
-from app.modules.identity.models import AdminSession, Device, RefreshToken, RefreshTokenFamily, User
+from app.modules.identity.models import AdminSession, Device, RefreshToken, RefreshTokenFamily, User, UserRole
+from app.modules.identity.enums import RoleCode
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.rbac import RbacService
-from app.modules.identity.staff_activation import require_staff_admin_access
+from app.modules.identity.staff_activation import STAFF_ROLES, require_staff_admin_access
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,9 @@ class TokenService:
             return self._pair(user_id, device.id, family.id, refresh_value, now)
 
     def issue_admin_pair(self, *, user_id: str, display_name: str, password: str | None = None,
-                         staff_only: bool = False) -> TokenPair:
+                         staff_only: bool = False, admin_only: bool = False) -> TokenPair:
+        if staff_only and admin_only:
+            raise ValueError('admin and staff session modes are exclusive')
         now = self._now_factory()
         with self._session_factory.begin() as session:
             # Stable existing user row serializes competing successful logins across workers.
@@ -112,7 +115,14 @@ class TokenService:
                 self._invalid('CREDENTIALS_INVALID', '账号或密码错误', 401)
             if not RbacService(self._session_factory).permissions_for(user_id):
                 self._invalid('PERMISSION_DENIED', '无权访问管理后台', 403)
-            require_staff_admin_access(session, user, staff_only=staff_only)
+            roles = set(session.scalars(select(UserRole.role_code).where(UserRole.user_id == user_id)))
+            if staff_only and (RoleCode.SUPER_ADMIN in roles or not roles.intersection(STAFF_ROLES)):
+                self._invalid('PERMISSION_DENIED', '无权访问客服后台', 403)
+            if admin_only and RoleCode.SUPER_ADMIN not in roles:
+                self._invalid('PERMISSION_DENIED', '无权访问管理员后台', 403)
+            entry_mode = (AdminSession.ENTRY_ADMIN if admin_only or
+                (not staff_only and RoleCode.SUPER_ADMIN in roles) else AdminSession.ENTRY_STAFF)
+            require_staff_admin_access(session, user)
             current = session.get(AdminSession, user_id)
             if current is not None:
                 old_family = session.get(RefreshTokenFamily, current.family_id)
@@ -130,11 +140,12 @@ class TokenService:
             session.flush()
             deadline = now + timedelta(hours=48)
             if current is None:
-                current = AdminSession(user_id=user_id, family_id=family.id,
+                current = AdminSession(user_id=user_id, family_id=family.id, entry_mode=entry_mode,
                     expires_at=deadline, authenticated_at=now, created_at=now)
                 session.add(current)
             else:
                 current.family_id = family.id
+                current.entry_mode = entry_mode
                 current.expires_at = deadline
                 current.authenticated_at = now
                 current.created_at = now
@@ -207,7 +218,7 @@ class TokenService:
             if user is None or user.status.value != 'ACTIVE':
                 self._invalid('ACCOUNT_NOT_ACTIVE', '账号不可用', 403)
             if is_admin:
-                require_staff_admin_access(session, user)
+                self._require_admin_entry(session, user, admin)
             if is_admin and self._utc(admin.expires_at) <= now:
                 family.revoked_at = now
                 family.revoke_reason = 'ADMIN_SESSION_EXPIRED'
@@ -333,16 +344,18 @@ class TokenService:
                     return claims
                 raise jwt.InvalidTokenError("access token is missing session claims")
             with self._session_factory() as session:
-                user = session.get(User, claims["sub"])
+                user = (session.get(User, claims["sub"], with_for_update=True)
+                    if claims.get('session_scope') == 'admin'
+                    else session.get(User, claims["sub"]))
                 device = session.get(Device, claims["device_id"])
                 family = session.get(RefreshTokenFamily, claims["family_id"])
                 admin = session.get(AdminSession, claims['sub'])
                 is_admin = admin is not None and admin.family_id == claims['family_id']
                 if claims.get('session_scope') == 'admin':
-                    if user is not None:
-                        require_staff_admin_access(session, user)
                     if not is_admin:
                         self._invalid('ADMIN_SESSION_REPLACED', '账号已在其他设备登录', 401)
+                    if user is not None:
+                        self._require_admin_entry(session, user, admin)
                     if self._utc(admin.expires_at) <= self._now_factory():
                         self._invalid('ADMIN_SESSION_EXPIRED', '管理会话已到期，请重新登录', 401)
                 elif is_admin:
@@ -459,10 +472,22 @@ class TokenService:
             if (admin is None or admin.family_id != claims['family_id'] or
                 family.revoked_at is not None or self._utc(admin.expires_at) <= self._now_factory()):
                 self._invalid('ADMIN_SESSION_REQUIRED', '请登录管理后台', 401)
+            self._require_admin_entry(session, user, admin)
             if user.status.value != 'ACTIVE' or not PasswordHasher().verify(user.password_hash, password):
                 self._invalid('CREDENTIALS_INVALID', '账号或密码错误', 401)
             admin.authenticated_at = self._now_factory()
         return self.admin_session(token)
+
+    def _require_admin_entry(self, session, user: User, admin: AdminSession) -> None:
+        """Check the persisted entry and current role before using its family."""
+        mode = admin.entry_mode
+        if mode not in (AdminSession.ENTRY_STAFF, AdminSession.ENTRY_ADMIN):
+            self._invalid('ADMIN_SESSION_REPLACED', '管理会话需要重新登录', 401)
+        roles = set(session.scalars(select(UserRole.role_code).where(UserRole.user_id == user.id)))
+        if (mode == AdminSession.ENTRY_STAFF and RoleCode.SUPER_ADMIN in roles or
+                mode == AdminSession.ENTRY_ADMIN and RoleCode.SUPER_ADMIN not in roles):
+            self._invalid('ADMIN_SESSION_REPLACED', '管理入口已不适用，请重新登录', 401)
+        require_staff_admin_access(session, user)
 
     @staticmethod
     def _utc(value: datetime) -> datetime:

@@ -1,6 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminApi, can, normalizeAdminContext } from "../src/admin-api.js";
+
+test('administrator user search keeps contact terms in JSON body with bound session headers',async()=>{
+  let call;
+  const api=createAdminApi({token:'admin-token',fetchImpl:async(url,options)=>{
+    call={url,options};return new Response(JSON.stringify({items:[],total:0,next_cursor:null}),{status:200,headers:{'content-type':'application/json'}});
+  }});
+  const result=await api.searchUsers({q:'a@example.test',limit:50,cursor:null});
+  assert.equal(call.url,'/api/v1/admin/users/search');
+  assert.equal(call.options.method,'POST');
+  assert.equal(call.options.cache,'no-store');
+  assert.equal(call.options.credentials,'same-origin');
+  assert.equal(call.options.headers.Authorization,'Bearer admin-token');
+  assert.equal(call.options.headers['X-Admin-CSRF'],'1');
+  assert.deepEqual(JSON.parse(call.options.body),{q:'a@example.test',limit:50,cursor:null});
+  assert.deepEqual(result.items,[]);
+});
 import { readFile } from "node:fs/promises";
 
 test('admin module reads encode literal user search and opaque cursor without replacing bearer',async()=>{
@@ -53,6 +69,8 @@ test("admin API context defaults to empty collections without fixtures", ()=>{
   const value=normalizeAdminContext({permissions:[]});
   assert.deepEqual(value.permissions,[]);
   assert.deepEqual(value.modules,{});
+  assert.deepEqual(value.capabilities,{});
+  assert.equal(normalizeAdminContext({capabilities:{wallet_owner_read:true}}).capabilities.wallet_owner_read,true);
 });
 
 test("admin API performs official login and module reads", async () => {

@@ -97,6 +97,25 @@ class AdminUserPage(BaseModel):
     next_cursor: str | None
 
 
+class AdminDirectoryUser(BaseModel):
+    id: str
+    username: str
+    nickname: str
+    status: str
+    email: str | None
+    email_verified_at: str | None
+    phone: str | None
+    phone_verified_at: str | None
+    caibi_balance: Amount
+    official_support_title: str | None
+
+
+class AdminDirectoryPage(BaseModel):
+    items: list[AdminDirectoryUser]
+    total: int
+    next_cursor: str | None
+
+
 class AdminModulePage(BaseModel):
     module: str
     items: list[dict]

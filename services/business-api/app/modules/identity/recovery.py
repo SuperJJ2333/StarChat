@@ -21,12 +21,16 @@ from app.modules.audit.writer import AuditWriter
 
 
 def invalidate_recovery_in_session(session, user_id: str, now: datetime) -> None:
-    """Public identity operation: contact/password changes revoke older recovery proofs."""
-    session.execute(update(OtpChallenge).where(OtpChallenge.user_id == user_id,
+    """Revoke prior recovery proofs after the caller has locked the user."""
+    session.execute(update(OtpChallenge).where(
+        OtpChallenge.user_id == user_id,
         OtpChallenge.purpose.in_(("password_reset_email", "password_reset_phone", "password_reset_grant")),
-        OtpChallenge.consumed_at.is_(None)).values(invalidated_at=now))
-    session.execute(update(PasswordResetChallenge).where(PasswordResetChallenge.user_id == user_id,
-        PasswordResetChallenge.consumed_at.is_(None)).values(consumed_at=now))
+        OtpChallenge.consumed_at.is_(None),
+    ).values(invalidated_at=now))
+    session.execute(update(PasswordResetChallenge).where(
+        PasswordResetChallenge.user_id == user_id,
+        PasswordResetChallenge.consumed_at.is_(None),
+    ).values(consumed_at=now))
 
 
 class PasswordResetTokenCodec:
@@ -98,7 +102,10 @@ class PasswordRecoveryService:
             self._invalid()
         now = self._now_factory()
         with self._session_factory.begin() as session:
-            owner = session.scalar(select(PasswordResetChallenge.user_id).where(PasswordResetChallenge.id == challenge_id))
+            owner = session.scalar(select(PasswordResetChallenge.user_id).where(
+                PasswordResetChallenge.id == challenge_id))
+            if owner is None:
+                self._invalid()
             user = session.scalar(select(User).where(User.id == owner).with_for_update())
             challenge = session.scalar(
                 select(PasswordResetChallenge)
@@ -114,7 +121,7 @@ class PasswordRecoveryService:
             expires = challenge.expires_at if challenge is not None else None
             if expires is not None and expires.tzinfo is None:
                 expires = expires.replace(tzinfo=timezone.utc)
-            if challenge is None or expires <= now:
+            if challenge is None or expires <= now or challenge.user_id != owner:
                 self._invalid()
             if user is None:
                 self._invalid()
@@ -122,23 +129,29 @@ class PasswordRecoveryService:
             self.reset_in_session(session, user, new_password, trace_id=trace_id, source_ip=source_ip)
             return user.id
 
-    def reset_in_session(self, session, user: User, new_password: str, *, trace_id="unknown", source_ip=None) -> None:
-        """Apply the common business password operation without touching Matrix credentials."""
+    def reset_in_session(self, session, user: User, new_password: str, *,
+                         trace_id: str = "unknown", source_ip=None) -> None:
+        """Apply the shared business password reset inside a user-locked transaction."""
         if not isinstance(new_password, str) or not 12 <= len(new_password) <= 256:
             raise AppError(code="PASSWORD_INVALID", message="密码须为12至256位", status_code=422)
         now = self._now_factory()
         user.password_hash = self._password_hasher.hash(new_password)
         user.updated_at = now
-        session.execute(update(RefreshTokenFamily).where(RefreshTokenFamily.user_id == user.id,
-            RefreshTokenFamily.revoked_at.is_(None)).values(revoked_at=now, revoke_reason="PASSWORD_RESET"))
-        session.add(SecurityHold(id=str(uuid4()), user_id=user.id, hold_type=HoldType.WITHDRAWAL,
-            reason_code="PASSWORD_RESET", starts_at=now, ends_at=now + timedelta(hours=24), created_at=now))
+        session.execute(update(RefreshTokenFamily).where(
+            RefreshTokenFamily.user_id == user.id,
+            RefreshTokenFamily.revoked_at.is_(None),
+        ).values(revoked_at=now, revoke_reason="PASSWORD_RESET"))
+        session.add(SecurityHold(id=str(uuid4()), user_id=user.id,
+            hold_type=HoldType.WITHDRAWAL, reason_code="PASSWORD_RESET",
+            starts_at=now, ends_at=now + timedelta(hours=24), created_at=now))
         invalidate_recovery_in_session(session, user.id, now)
-        AuditWriter(self._session_factory, now_factory=self._now_factory).record_in_session(session,
-            actor_id=user.id, subject_type="user", subject_id=user.id, action="identity.password.reset",
-            result="SUCCESS", reason_code="PASSWORD_RESET", trace_id=trace_id, source_ip=source_ip)
-        OutboxPublisher.enqueue(session, topic="identity.account_credentials", event_type="identity.password.reset",
-            aggregate_type="user", aggregate_id=user.id, payload={"user_id": user.id, "reason_code": "PASSWORD_RESET"}, now=now)
+        AuditWriter(self._session_factory, now_factory=self._now_factory).record_in_session(
+            session, actor_id=user.id, subject_type="user", subject_id=user.id,
+            action="identity.password.reset", result="SUCCESS", reason_code="PASSWORD_RESET",
+            trace_id=trace_id, source_ip=source_ip)
+        OutboxPublisher.enqueue(session, topic="identity.account_credentials",
+            event_type="identity.password.reset", aggregate_type="user", aggregate_id=user.id,
+            payload={"user_id": user.id, "reason_code": "PASSWORD_RESET"}, now=now)
 
     @staticmethod
     def _invalid() -> None:

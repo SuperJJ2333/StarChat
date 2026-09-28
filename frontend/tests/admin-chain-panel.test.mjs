@@ -20,6 +20,17 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 const record = { txid: "b".repeat(64), log_index: 0, timestamp_ms: 1000, direction: "INFLOW", amount: "10.000001" };
 const summary = { balance: "10.000001", last_success_ms: 1000, checkpoint_ms: 1000, coverage_start_ms: 0, observer_status: "OK", reconciliation: "SOURCE_MATCHED" };
 
+test('chain repair entry asks for grant and opens only after a second click',async()=>{
+  installDocument();let granted=false,prompts=0,candidates=0;
+  const panel=chainPanel({getChainSummary:async()=>summary,getChainTransactions:async()=>({items:[record],total:1,snapshot:1}),
+    getDepositRepairCandidates:async()=>{candidates++;return {receipt_id:'r',items:[]};}},
+    {actorId:'owner',accessController:{canWrite:()=>granted,requestWriteGrant:async()=>{prompts++;return false;}}});
+  await settle();const repair=panel.find('button').find(button=>button.textContent==='充值补入账');
+  await repair.handlers.click();assert.equal(prompts,1);assert.equal(candidates,0);assert.equal(document.body.find('dialog').length,0);
+  granted=true;await settle();assert.equal(candidates,0);
+  await repair.handlers.click();await settle();assert.equal(candidates,1);assert.equal(document.body.find('dialog').length,1);
+});
+
 test('chain absolute times and filter serialization use Beijing time in every browser timezone', async () => {
   const originalTimezone = process.env.TZ;
   try {

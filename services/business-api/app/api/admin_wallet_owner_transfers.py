@@ -1,10 +1,11 @@
 """Owner-transfer declaration endpoints for the official wallet holder (ADR-0071)."""
 from datetime import datetime, timezone
 from typing import Annotated
-from fastapi import APIRouter, Depends, Header, Path
+from fastapi import APIRouter, Depends, Header, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from app.api.admin_wallet_auth import wallet_grant_service
+from app.api.admin_session_boundary import wallet_read_allowlist
 from app.modules.identity.tokens import TokenService
 from app.modules.wallet.owner_transfers import OwnerTransferService
 from app.modules.wallet.repairs import fail
@@ -34,7 +35,7 @@ def create_admin_owner_transfer_router(settings, factory, *, runtime, clock_trus
     def response(payload):
         return JSONResponse(payload, headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
 
-    def actor(authorization: Annotated[str | None, Header()] = None):
+    def actor(request: Request, authorization: Annotated[str | None, Header()] = None):
         if not authorization or not authorization.startswith('Bearer '):
             fail('AUTH_REQUIRED', 401)
         claims = tokens.decode_access_token(authorization[7:])
@@ -43,8 +44,14 @@ def create_admin_owner_transfer_router(settings, factory, *, runtime, clock_trus
             fail('PERMISSION_DENIED', 403)
         if not getattr(settings, 'wallet_access_grant_enabled', False):
             fail('WALLET_VERIFICATION_REQUIRED', 403)
-        grants.require(claims=claims)
+        if request.method in {'GET', 'HEAD'} and wallet_read_allowlist(request):
+            grants.require_read(claims=claims)
+        else:
+            grants.require(claims=claims)
         return claims
+
+    def read_context(claims):
+        return dict(actor_id=claims['sub'], authorize=grants.read_authorization(claims=claims))
 
     def write_gate():
         if not getattr(settings, 'wallet_owner_transfers_enabled', False):
@@ -74,6 +81,6 @@ def create_admin_owner_transfer_router(settings, factory, *, runtime, clock_trus
 
     @router.get('/{txid}')
     def status(txid: str = Path(pattern=r'^[a-f0-9]{64}$'), claims=Depends(actor)):
-        return response(service.status(**write_context(claims), txid=txid))
+        return response(service.status(**read_context(claims), txid=txid))
 
     return router

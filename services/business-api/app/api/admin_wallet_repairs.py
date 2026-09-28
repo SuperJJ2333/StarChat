@@ -1,10 +1,11 @@
 """Wallet-grant protected manual review commands, mounted within /admin."""
 from datetime import datetime, timezone
 from typing import Annotated, Literal
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.api.admin_wallet_auth import wallet_grant_service
+from app.api.admin_session_boundary import wallet_read_allowlist
 from app.modules.identity.tokens import TokenService
 from app.modules.wallet.repairs import DepositRepairService, fail
 from app.modules.wallet.repair_payouts import PayoutReconciliationService
@@ -84,7 +85,7 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
     cases = (ManualDepositCaseService(factory, receipts=runtime.receipts,
         owner_admin_id=settings.wallet_manual_owner_admin_id, clock_trusted=clock_trusted) if runtime else None)
 
-    def actor(authorization: Annotated[str | None, Header()] = None):
+    def actor(request: Request, authorization: Annotated[str | None, Header()] = None):
         if not authorization or not authorization.startswith('Bearer '):
             fail('AUTH_REQUIRED', 401)
         claims = tokens.decode_access_token(authorization[7:])
@@ -93,13 +94,19 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
             fail('PERMISSION_DENIED', 403)
         if not getattr(settings, 'wallet_access_grant_enabled', False):
             fail('WALLET_VERIFICATION_REQUIRED', 403)
-        grants.require(claims=claims)
+        if request.method in {'GET', 'HEAD'} and wallet_read_allowlist(request):
+            grants.require_read(claims=claims)
+        else:
+            grants.require(claims=claims)
         return claims
 
     def response(payload):
         return JSONResponse(payload, headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
 
-    def context(claims):
+    def read_context(claims):
+        return dict(actor_id=claims['sub'], authorize=grants.read_authorization(claims=claims))
+
+    def preview_context(claims):
         return dict(actor_id=claims['sub'], authorize=grants.authorization(claims=claims))
 
     def write_gate():
@@ -118,11 +125,11 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
     @router.get('/deposit-repairs/candidates')
     def candidates(claims=Depends(actor), txid: str = Query(pattern='^[a-f0-9]{64}$'),
                    log_index: int = Query(ge=0), query: str | None = Query(None, max_length=128)):
-        return response(deposits.candidates(**context(claims), txid=txid, log_index=log_index, query=query))
+        return response(deposits.candidates(**read_context(claims), txid=txid, log_index=log_index, query=query))
 
     @router.post('/deposit-repairs/preview')
     def deposit_preview(body: DepositRepairPreviewBody, claims=Depends(actor)):
-        return response(deposits.preview(**context(claims), **body.model_dump()))
+        return response(deposits.preview(**preview_context(claims), **body.model_dump()))
 
     @router.post('/deposit-repairs')
     def deposit_execute(body: RepairExecuteBody, claims=Depends(actor),
@@ -132,11 +139,11 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
 
     @router.get('/deposit-repairs/{operation_id}')
     def deposit_status(operation_id: str, claims=Depends(actor)):
-        return response(deposits.status(**context(claims), operation_id=operation_id))
+        return response(deposits.status(**read_context(claims), operation_id=operation_id))
 
     @router.get('/manual-deposit-cases/context')
     def manual_case_context(claims=Depends(actor), txid: str = Query(pattern='^[a-f0-9]{64}$'), log_index: int = Query(ge=0)):
-        return response(cases.context(**context(claims), txid=txid, log_index=log_index))
+        return response(cases.context(**read_context(claims), txid=txid, log_index=log_index))
 
     @router.post('/manual-deposit-cases')
     def manual_case_create(body: ManualDepositCaseBody, claims=Depends(actor), idempotency_key: str = Header(min_length=1, max_length=128)):
@@ -144,7 +151,7 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
 
     @router.get('/manual-deposit-cases/operations/{operation_id}')
     def manual_case_operation(operation_id: str, claims=Depends(actor)):
-        return response(cases.status(**context(claims), operation_id=operation_id))
+        return response(cases.status(**read_context(claims), operation_id=operation_id))
 
     @router.post('/manual-deposit-cases/{case_id}/decision')
     def manual_case_decision(case_id: str, body: ManualDepositDecisionBody, claims=Depends(actor), idempotency_key: str = Header(min_length=1, max_length=128)):
@@ -152,7 +159,7 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
 
     @router.post('/manual-deposit-cases/{case_id}/preview')
     def manual_case_preview(case_id: str, claims=Depends(actor)):
-        return response(cases.preview(**context(claims), case_id=case_id))
+        return response(cases.preview(**preview_context(claims), case_id=case_id))
 
     @router.post('/manual-deposit-cases/{case_id}/execute')
     def manual_case_execute(case_id: str, body: RepairExecuteBody, claims=Depends(actor), idempotency_key: str = Header(min_length=1, max_length=128)):
@@ -160,11 +167,11 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
 
     @router.get('/manual-deposit-cases/{case_id}')
     def manual_case_get(case_id: str, claims=Depends(actor)):
-        return response(cases.get(**context(claims), case_id=case_id))
+        return response(cases.get(**read_context(claims), case_id=case_id))
 
     @router.post('/payout-reconciliations/preview')
     def payout_preview(body: PayoutReconciliationPreviewBody, claims=Depends(actor)):
-        return response(payouts.preview(**context(claims), **body.model_dump()))
+        return response(payouts.preview(**preview_context(claims), **body.model_dump()))
 
     @router.post('/payout-reconciliations')
     def payout_execute(body: RepairExecuteBody, claims=Depends(actor),
@@ -174,6 +181,6 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
 
     @router.get('/payout-reconciliations/{operation_id}')
     def payout_status(operation_id: str, claims=Depends(actor)):
-        return response(payouts.status(**context(claims), operation_id=operation_id))
+        return response(payouts.status(**read_context(claims), operation_id=operation_id))
 
     return router

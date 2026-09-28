@@ -51,6 +51,20 @@ class SupportQueueService:
     def __init__(self, session_factory):
         self.session_factory = session_factory
 
+    def official_titles_for(self, user_ids: list[str]) -> dict[str, str]:
+        """Return current official titles for one page, never profile suffixes alone."""
+        ids = list(dict.fromkeys(user_ids))
+        if len(ids) > 100:
+            raise ValueError("support title page exceeds 100 users")
+        if not ids:
+            return {}
+        with self.session_factory() as session:
+            rows = session.execute(select(UserRole.user_id, SupportProfile.badge)
+                .outerjoin(SupportProfile, SupportProfile.user_id == UserRole.user_id)
+                .where(UserRole.user_id.in_(ids), UserRole.role_code.in_((
+                    RoleCode.SUPPORT_AGENT, RoleCode.FINANCE_SUPPORT, RoleCode.SUPPORT_SUPERVISOR)))).all()
+        return {user_id: badge or "官方客服" for user_id, badge in rows}
+
     def get_identity(self, user_id: str) -> SupportIdentityView:
         with self.session_factory() as session:
             role = session.scalar(select(UserRole.role_code).where(

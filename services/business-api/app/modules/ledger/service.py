@@ -29,6 +29,20 @@ class LedgerService:
             value = session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(LedgerEntry.account_id == account_id, LedgerEntry.asset == "CAIBI"))
             return money(Decimal(value))
 
+    def balances_for(self, account_ids: list[str]) -> dict[str, Decimal]:
+        """Read at most one directory page of authoritative CAIBI balances."""
+        ids = list(dict.fromkeys(account_ids))
+        if len(ids) > 100:
+            raise ValueError("balance page exceeds 100 accounts")
+        if not ids:
+            return {}
+        with self.session_factory() as session:
+            rows = session.execute(select(LedgerEntry.account_id, func.sum(LedgerEntry.amount))
+                .where(LedgerEntry.asset == "CAIBI", LedgerEntry.account_id.in_(ids))
+                .group_by(LedgerEntry.account_id)).all()
+        found = {account_id: money(Decimal(amount)) for account_id, amount in rows}
+        return {account_id: found.get(account_id, Decimal("0.00")) for account_id in ids}
+
     @staticmethod
     def lock_transaction(*, session, transaction_id):
         """Serialize proof consumption with reversals in the caller transaction."""

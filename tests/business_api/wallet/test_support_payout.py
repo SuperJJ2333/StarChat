@@ -43,7 +43,7 @@ def scoped(core):
             session.flush()
             session.add(RefreshTokenFamily(id=uid+'-family',user_id=uid,device_id=uid+'-device',created_at=clock[0]))
             session.flush()
-            session.add(AdminSession(user_id=uid,family_id=uid+'-family',created_at=clock[0],authenticated_at=clock[0],expires_at=clock[0]+timedelta(hours=48)))
+            session.add(AdminSession(user_id=uid,family_id=uid+'-family',entry_mode='ADMIN' if uid=='owner' else 'STAFF',created_at=clock[0],authenticated_at=clock[0],expires_at=clock[0]+timedelta(hours=48)))
         claims[uid]=dict(sub=uid,device_id=uid+'-device',family_id=uid+'-family',session_scope='admin',
             iat=int(clock[0].timestamp()),exp=int((clock[0]+timedelta(hours=48)).timestamp()))
     return core,SupportPayoutService(svc,settings),claims

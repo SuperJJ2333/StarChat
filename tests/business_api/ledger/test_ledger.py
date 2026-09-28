@@ -1,11 +1,13 @@
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.pool import StaticPool
+from datetime import datetime, timezone
 
 from app.core.database import Base, create_session_factory
 from app.modules.ledger.service import LedgerService, PointTransferService
+from app.modules.ledger.models import LedgerEntry, LedgerTransaction
 
 @pytest.fixture()
 def factory():
@@ -49,3 +51,41 @@ def test_idempotency_key_rejects_different_transfer_payload(factory):
     transfers.transfer(sender_id="alice", receiver_id="bob", amount=Decimal("1.00"), actor_id="alice", reason_code="USER_TRANSFER", idempotency_key="transfer-idem")
     with pytest.raises(ValueError, match="different payload"):
         transfers.transfer(sender_id="alice", receiver_id="bob", amount=Decimal("2.00"), actor_id="alice", reason_code="USER_TRANSFER", idempotency_key="transfer-idem")
+
+
+def test_balances_for_aggregates_one_caibi_query_and_keeps_decimal_precision(factory):
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add_all([
+            LedgerTransaction(id="batch-caibi", asset="CAIBI", scope="test", idempotency_key="batch-caibi",
+                actor_id="admin", reason_code="TEST", created_at=now),
+            LedgerTransaction(id="batch-usdt", asset="USDT", scope="test", idempotency_key="batch-usdt",
+                actor_id="admin", reason_code="TEST", created_at=now),
+        ])
+        session.flush()
+        session.add_all([
+            LedgerEntry(id="batch-a", transaction_id="batch-caibi", asset="CAIBI", account_id="alice",
+                amount=Decimal("1234567890123.45"), created_at=now),
+            LedgerEntry(id="batch-b", transaction_id="batch-caibi", asset="CAIBI", account_id="alice",
+                amount=Decimal("0.01"), created_at=now),
+            LedgerEntry(id="batch-usdt-entry", transaction_id="batch-usdt", asset="USDT", account_id="bob",
+                amount=Decimal("9.99"), created_at=now),
+        ])
+    queries = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT") and "FROM ledger_entries" in statement:
+            queries.append(statement)
+
+    engine = factory.kw["bind"]
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        result = LedgerService(factory).balances_for(["alice", "bob", "missing", "alice"])
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert result == {"alice": Decimal("1234567890123.46"),
+        "bob": Decimal("0.00"), "missing": Decimal("0.00")}
+    assert len(queries) == 1
+    assert "GROUP BY ledger_entries.account_id" in queries[0]
+    with pytest.raises(ValueError, match="100"):
+        LedgerService(factory).balances_for([f"id-{index}" for index in range(101)])

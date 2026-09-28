@@ -44,7 +44,7 @@ def test_mounted_manual_case_enforces_grant_owner_confirmation_and_write_gate(gr
         session.add(Device(id="other-device", user_id="other", device_key="other-fixture", display_name="other fixture",
             created_at=now, last_seen_at=now))
         session.add(RefreshTokenFamily(id="other-family", user_id="other", device_id="other-device", created_at=now))
-        session.add(AdminSession(user_id="other", family_id="other-family", authenticated_at=now, created_at=now,
+        session.add(AdminSession(user_id="other", family_id="other-family", entry_mode="ADMIN", authenticated_at=now, created_at=now,
             expires_at=now + timedelta(hours=24)))
         session.add(WalletControl(id="global", withdrawals_paused=False))
         session.add(RedeemabilityReserve(id="global", eligible_usdt=Decimal("1000"), usdt_liability=0,
@@ -129,8 +129,13 @@ def test_mounted_manual_case_enforces_grant_owner_confirmation_and_write_gate(gr
             assert status.headers["cache-control"] == "no-store"
             revoked = await client.post("/api/v1/wallet/manual/access/revoke", headers=headers())
             assert revoked.status_code == 200
-            denied = await client.get(base + "/operations/" + operation, headers=headers())
-            assert denied.status_code == 403 and denied.json()["error"]["code"] == "WALLET_ACCESS_REQUIRED"
+            read_after_revoke = await client.get(base + "/operations/" + operation, headers=headers())
+            assert read_after_revoke.status_code == 200
+            assert read_after_revoke.json() == executed.json()
+            settings.wallet_manual_repairs_enabled = True
+            denied_write = await client.post(base, headers=headers(key="write-revoked"), json=create_payload)
+            assert denied_write.status_code == 403
+            assert denied_write.json()["error"]["code"] == "WALLET_ACCESS_REQUIRED"
 
     asyncio.run(run())
     assert receipts.wallet_ledger.balance("alice") == Decimal("10")

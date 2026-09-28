@@ -37,9 +37,13 @@ function chartView(data) {
 }
 export function visibleAdminModules(context, modules) {
   const permissions=context.permissions??[],administrator=permissions.includes('*');
-  return modules.filter(([, ,key,permission])=>(administrator||permissions.includes(permission))&&(key!=='wallet'||administrator));
+  return modules.filter(([, ,key,permission])=>(administrator||permissions.includes(permission))&&(key!=='wallet'||administrator&&context.capabilities?.wallet_owner_read===true));
 }
-export function createAdminShell({context,api,modules,renderModule,onLogout}) {
+export function canChangeStaffPassword(context) {
+  const roles = context.actor?.roles ?? [];
+  return !roles.includes('SUPER_ADMIN') && roles.some(role => ['SUPPORT_AGENT','FINANCE_SUPPORT','SUPPORT_SUPERVISOR'].includes(role));
+}
+export function createAdminShell({context,api,modules,renderModule,onLogout,onChangePassword}) {
   const page=el('div','admin-page admin-modern'),shell=el('div','admin-shell'),side=el('aside','admin-sidebar');side.id='admin-sidebar';
   const can=p=>context.permissions.includes('*')||context.permissions.includes(p);
   const logo=el('div','admin-logo'),mark=el('img','admin-brand-image');mark.src='/assets/branding/admin-logo.png';mark.alt='畅聊';logo.append(mark,el('span',null,'畅聊管理台'));side.append(logo);
@@ -48,7 +52,9 @@ export function createAdminShell({context,api,modules,renderModule,onLogout}) {
   const setHidden=value=>sidebar.setHidden(value);
   const routeTitle=el('h1',null,'运营概览'),tools=el('div','admin-topbar-actions'),status=el('span','admin-refresh-status');status.setAttribute('role','status');
   const refresh=refreshIcon(async()=>{if(refresh.disabled)return;refresh.disabled=true;refresh.setAttribute('aria-busy','true');status.textContent='刷新中…';const results=await coordinate([()=>loadCurrent(true)]);const failed=results.some(r=>r.status==='rejected'||r.value===false);status.textContent=failed?'部分数据刷新失败，请重试':`更新于 ${formatBeijingTime(new Date())}`;refresh.disabled=false;refresh.setAttribute('aria-busy','false');});
-  tools.append(status,el('span','admin-actor',context.actor.display_name??'管理员'),refresh,btn('退出',()=>onLogout?.()));top.append(routeTitle,tools);
+  tools.append(status,el('span','admin-actor',context.actor.display_name??'管理员'));
+  if(canChangeStaffPassword(context))tools.append(btn('修改密码',()=>onChangePassword?.()));
+  tools.append(refresh,btn('退出',()=>onLogout?.()));top.append(routeTitle,tools);
   const content=el('main','admin-content');content.id='admin-content';const backdrop=btn('',()=>setHidden(true),'admin-sidebar-backdrop');backdrop.setAttribute('aria-label','关闭侧边栏');
   main.append(top,content);shell.append(side,main);page.append(shell,backdrop);
   const sidebar=installSidebarResize({page,side,main});let closeProof=null;
@@ -57,7 +63,7 @@ export function createAdminShell({context,api,modules,renderModule,onLogout}) {
   const links=new Map();
   function addNavigation(key,label){const item=btn(label,()=>{if(key==='recharge')notifications?.markRead?.();if(current===key)return;current=key;for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;nav.append(item);links.set(key,item);}
   addNavigation('overview','运营概览');links.get('overview').classList.add('active');links.get('overview').setAttribute('aria-current','page');
-  const groups=[['用户与安全',['security','support-role','analytics','online']],['运营',['ads','notice']],['财务',['recharge','finance','ledger','wallet']]];
+  const groups=[['用户与安全',['users','security','support-role','analytics','online']],['运营',['ads','notice']],['财务',['recharge','finance','ledger','wallet']]];
   for(const [label,keys] of groups){const entries=visibleAdminModules(context,modules).filter(([, ,key])=>keys.includes(key));if(!entries.length)continue;nav.append(el('p','admin-nav-group',label));for(const [name,,key] of entries)addNavigation(key,name);}
   const esc=event=>{if(event.key==='Escape'&&!side.hidden&&matchMedia('(max-width:760px)').matches)setHidden(true);};page.addEventListener('keydown',esc);
   const notifications=can('admin.finance.read') && typeof api.getOrderEvents==='function' ? orderNotifications(api,{actorId:context.actor.id,onOpen:()=>links.get('recharge')?.click(),onChange:async()=>{await currentPanel?.refreshOrders?.();}}):null;
@@ -77,7 +83,7 @@ export function createAdminShell({context,api,modules,renderModule,onLogout}) {
       if(currentPanel?.refresh&&isRefresh)return await currentPanel.refresh();
       if(currentPanel&&isRefresh){const wallet=currentPanel.querySelector('.admin-manual-wallet-panel');if(wallet?.refresh){const result=await wallet.refresh();return result!==false&&(!Array.isArray(result)||result.every(r=>r.status!=='rejected'));}}
       // Wallet owns its privacy gate; no sensitive module request before verification.
-      const payload=['wallet','recharge'].includes(current)?{}:await api.getModule(current);if(revision!==generation)return;
+      const payload=['wallet','recharge','users'].includes(current)?{}:await api.getModule(current);if(revision!==generation)return;
       // Module tables refresh independently of command forms to retain user drafts.
       const rendered=renderModule(current,routeTitle.textContent,{...context,onWalletExit:()=>links.get('overview').click(),onOpenPayout:can('admin.withdrawals.read')?()=>links.get('wallet')?.click():null,modules:{...context.modules,[current]:payload}});
       if(isRefresh&&currentPanel){const oldTable=currentPanel.querySelector('.admin-table'),newTable=rendered.querySelector('.admin-table');if(oldTable&&newTable)oldTable.replaceWith(newTable);}

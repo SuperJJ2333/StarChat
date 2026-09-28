@@ -71,8 +71,32 @@ def test_mounted_repair_requires_grant_then_credits_exactly_once(grant_context, 
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
             unauthorized=await client.get(base+'/candidates',params={'txid':'b'*64,'log_index':0})
             assert unauthorized.status_code==401
+            readable=await client.get(base+'/candidates',headers=headers,params={'txid':'b'*64,'log_index':0})
+            assert readable.status_code==200,readable.text
+            assert readable.headers['cache-control']=='no-store'
             blocked=await client.post(base+'/preview',headers=headers,json=payload)
             assert blocked.status_code==403 and blocked.json()['error']['code']=='WALLET_ACCESS_REQUIRED'
+            for path, body in [
+                ('/api/v1/admin/wallet/manual/manual-deposit-cases/case/preview', None),
+                ('/api/v1/admin/wallet/manual/payout-reconciliations/preview', dict(
+                    order_id='order', txid='b'*64, log_index=0, reason_detail='review')),
+                ('/api/v1/admin/wallet/manual/owner-transfers/preview', dict(
+                    txid='b'*64, log_index=0, reason_code='OWNERSHIP_REVIEW',
+                    reason_detail='review', ownership_attested=True)),
+            ]:
+                preview_denied=await client.post(path,headers=headers,json=body)
+                assert preview_denied.status_code==403,preview_denied.text
+                assert preview_denied.json()['error']['code']=='WALLET_ACCESS_REQUIRED'
+            for path in [
+                '/api/v1/wallet/manual/payouts/order/claim',
+                '/api/v1/wallet/manual/payouts/order/adjust-rate',
+                '/api/v1/wallet/manual/payouts/order/txid',
+                '/api/v1/wallet/manual/payouts/order/correct-candidate',
+                '/api/v1/admin/wallet/incidents/incident/ack',
+            ]:
+                command_denied=await client.post(path,headers=headers,json={})
+                assert command_denied.status_code==403,command_denied.text
+                assert command_denied.json()['error']['code']=='WALLET_ACCESS_REQUIRED'
             verified=await client.post('/api/v1/wallet/manual/access/verify',headers=headers,
                 json={'operation_password':'operation-password-123'})
             assert verified.status_code==200,verified.text
@@ -97,7 +121,9 @@ def test_mounted_repair_requires_grant_then_credits_exactly_once(grant_context, 
             revoked=await client.post('/api/v1/wallet/manual/access/revoke',headers=headers)
             assert revoked.status_code==200
             denied=await client.get(base+'/http-operation',headers=headers)
-            assert denied.status_code==403 and denied.json()['error']['code']=='WALLET_ACCESS_REQUIRED'
+            assert denied.status_code==200 and denied.json()==result.json()
+            denied_write=await client.post(base+'/preview',headers=headers,json=payload)
+            assert denied_write.status_code==403 and denied_write.json()['error']['code']=='WALLET_ACCESS_REQUIRED'
     asyncio.run(run())
     assert receipts.wallet_ledger.balance('alice')==Decimal('10')
     with factory() as session:

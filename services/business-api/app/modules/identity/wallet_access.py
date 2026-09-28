@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.core.errors import AppError
-from app.modules.identity.enums import AccountStatus, HoldType
+from app.modules.identity.enums import AccountStatus, HoldType, RoleCode
 from app.modules.identity.models import AdminSession, Device, RefreshTokenFamily, SecurityHold, User, UserRole
 from app.modules.identity.rbac import Permission, ROLE_PERMISSIONS
 
@@ -58,7 +58,7 @@ def require_wallet_session(session, *, claims, clock, verified_at, require_recen
         # The caller already holds the user lock, which also serializes login
         # and step-up. Read scalar columns to avoid stale ORM identity maps.
         admin = session.execute(select(AdminSession.family_id, AdminSession.authenticated_at,
-            AdminSession.expires_at).where(AdminSession.user_id == claims['sub'])
+            AdminSession.expires_at, AdminSession.entry_mode).where(AdminSession.user_id == claims['sub'])
             .with_for_update()).first()
         if admin is None or admin.family_id != claims['family_id']:
             raise AppError(code='ACCESS_TOKEN_INVALID', message='访问令牌无效', status_code=401)
@@ -75,6 +75,15 @@ def require_wallet_session(session, *, claims, clock, verified_at, require_recen
         if (not int(claims['iat']) <= now.timestamp() < int(claims['exp'])
                 or admin_deadline is not None and now >= admin_deadline):
             raise AppError(code='ACCESS_TOKEN_INVALID', message='访问令牌无效', status_code=401)
+        if admin_deadline is not None:
+            # Caller already holds the User lock. Re-read role scalars after
+            # downstream waits; a former STAFF entry never becomes ADMIN.
+            roles = set(session.scalars(select(UserRole.role_code).where(
+                UserRole.user_id == claims['sub'])))
+            if not (admin.entry_mode == AdminSession.ENTRY_ADMIN and RoleCode.SUPER_ADMIN in roles
+                    or admin.entry_mode == AdminSession.ENTRY_STAFF and RoleCode.SUPER_ADMIN not in roles):
+                raise AppError(code='ADMIN_SESSION_REPLACED',
+                    message='管理入口已不适用，请重新登录', status_code=401)
         if require_recent and not timedelta(0) <= now-created_at <= timedelta(minutes=5):
             raise AppError(code='RECENT_LOGIN_REQUIRED', message='请重新登录后再执行此操作', status_code=403)
         if require_proof and (verified_at is None or not timedelta(0) <= now-verified_at <= timedelta(seconds=30)):

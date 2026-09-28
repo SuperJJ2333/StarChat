@@ -54,7 +54,7 @@ function describe(parent, pairs) {
 }
 const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消'}[status] ?? '状态未知');
 
-export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, securityOnly = false, onSecurityChanged} = {}) {
+export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, accessController, securityOnly = false, onSecurityChanged} = {}) {
   const root = node('section'); root.className = 'admin-card admin-manual-wallet-panel';
   const heading=node('header');heading.className='wallet-heading';
   const intro=node('div');intro.append(node('p','TRON · 人工签名'),node('h3','USDT 钱包'),node('p','核对每笔出款，让每一步都有据可查。'));
@@ -134,6 +134,11 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     }), submit, state); parent.append(form);
     form.addEventListener('submit', async event => {
       event.preventDefault(); if (disposed || refreshing || writing || reading || reauthenticating || submit.disabled || blocked()) return;
+      if(accessController&&!accessController.canWrite()&&name!=='operation-password'&&!name.startsWith('mfa-')){
+        state.textContent='请先验证以操作。验证后请核对当前状态并重新提交；系统不会自动执行原操作。';
+        await accessController.requestWriteGrant();
+        return;
+      }
       writing = true; submit.disabled = true; state.textContent = '正在处理，请稍候…';
       root.setAttribute('aria-busy','true');
       refreshStatus.textContent='操作正在处理；点击刷新会在完成后自动刷新。';

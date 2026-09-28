@@ -1,6 +1,7 @@
 from decimal import Decimal
 from fastapi import Depends, FastAPI
-from app.api.admin_session_boundary import create_admin_session_boundary
+from app.api.admin_session_boundary import (create_admin_session_boundary,
+    install_admin_directory_response_guard, install_wallet_read_response_guard)
 from app.integrations.tron import diagnostics as wallet_diagnostics
 
 from app.api.health import create_health_router
@@ -93,8 +94,12 @@ def create_app(
             ),
             public_base_url=settings.avatar_public_base_url,
         )
-    install_trace_middleware(app)
     install_error_handlers(app)
+    install_wallet_read_response_guard(app, settings, session_factory)
+    install_admin_directory_response_guard(app, settings, session_factory)
+    # Last registered HTTP middleware wraps the response guards, so tracing
+    # records the status and header of the response actually sent to clients.
+    install_trace_middleware(app)
     app.include_router(create_performance_diagnostics_router(settings), prefix="/api/v1")
     app.include_router(
         create_health_router(settings, session_factory=session_factory),

@@ -93,7 +93,7 @@ class AdminControlService:
         badge = self._validate_badge(badge)
         target_user_id = self.resolve_support_target(target)
         def mutate(session):
-            if session.get(User, target_user_id) is None:
+            if session.scalar(select(User).where(User.id == target_user_id).with_for_update()) is None:
                 raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
             row = session.scalar(select(UserRole).where(UserRole.user_id == target_user_id, UserRole.role_code == role_code))
             if row is None: session.add(UserRole(id=str(uuid4()), user_id=target_user_id, role_code=role_code, assigned_by=actor_id, assigned_at=self._now()))
@@ -194,6 +194,7 @@ class AdminControlService:
         if role_code not in self._SUPPORT_ROLES:
             raise AppError(code="ADMIN_ROLE_INVALID", message="仅可撤销客服角色", status_code=422)
         def mutate(session):
+            session.scalar(select(User).where(User.id == user_id).with_for_update())
             row=session.scalar(select(UserRole).where(UserRole.user_id==user_id,UserRole.role_code==role_code))
             if row is not None: session.delete(row)
             result={"user_id":user_id,"role_code":role_code.value,"status":"REVOKED"}
@@ -204,7 +205,7 @@ class AdminControlService:
 
     def revoke_all_support_roles(self, *, actor_id: str, user_id: str, idempotency_key: str, trace_id: str) -> dict:
         def mutate(session):
-            if session.get(User, user_id) is None:
+            if session.scalar(select(User).where(User.id == user_id).with_for_update()) is None:
                 raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
             rows = list(session.scalars(select(UserRole).where(UserRole.user_id == user_id, UserRole.role_code.in_(self._SUPPORT_ROLES))))
             roles = sorted(row.role_code.value for row in rows)

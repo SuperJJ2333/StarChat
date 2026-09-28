@@ -7,9 +7,65 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, create_session_factory
 from app.core.errors import AppError
-from app.modules.identity.enums import AccountStatus
-from app.modules.identity.models import User, UserRole, Device, RefreshTokenFamily, AdminSession
+from app.modules.identity.enums import AccountStatus, HoldType, RoleCode
+from app.modules.identity.models import User, UserRole, Device, RefreshTokenFamily, AdminSession, SecurityHold
 from app.modules.identity.passwords import PasswordHasher
+
+
+def promoted_staff_wallet_claims(grant_context):
+    """Pass the route token check as staff, then promote before wallet locking."""
+    from app.modules.identity.staff_activation import StaffActivation, staff_identity
+    from app.modules.identity.tokens import TokenService
+
+    _, factory, now, _, settings = grant_context
+    StaffActivation.__table__.create(factory.kw['bind'], checkfirst=True)
+    with factory.begin() as session:
+        user = session.get(User, 'owner')
+        user.email_verified_at = now[0]
+        session.get(UserRole, 'role').role_code = RoleCode.FINANCE_SUPPORT
+        session.flush()
+        session.add(StaffActivation(user_id='owner', identity_digest=staff_identity(session, user)[2],
+            activated_at=now[0]))
+    tokens = TokenService(factory, jwt_secret='test-wallet-entry-secret-at-least-32-bytes',
+        jwt_issuer='wallet-entry-test', now_factory=lambda: now[0])
+    pair = tokens.issue_admin_pair(user_id='owner', display_name='Staff browser', staff_only=True)
+    claims = tokens.decode_access_token(pair.access_token)
+    with factory() as session:
+        assert session.get(AdminSession, 'owner').entry_mode == 'STAFF'
+    with factory.begin() as session:
+        session.get(UserRole, 'role').role_code = RoleCode.SUPER_ADMIN
+    return claims
+
+
+def test_promoted_staff_session_cannot_create_owner_wallet_grant(grant_context):
+    from app.modules.identity.wallet_grant_models import WalletAccessGrant
+
+    service, factory, _, _, _ = grant_context
+    claims = promoted_staff_wallet_claims(grant_context)
+    with pytest.raises(AppError) as error:
+        service.verify(claims=claims, operation_password='operation-password-123')
+    assert error.value.code == 'ADMIN_SESSION_REPLACED'
+    with factory() as session:
+        assert session.get(WalletAccessGrant, claims['family_id']) is None
+
+
+def test_promoted_staff_session_cannot_authorize_owner_wallet_write(grant_context):
+    from app.modules.identity.operation_password import (
+        AdminWalletOperationPasswordService, OperationPasswordProof)
+    from app.modules.identity.operation_password_models import AdminOperationCredential
+
+    _, factory, now, _, settings = grant_context
+    claims = promoted_staff_wallet_claims(grant_context)
+    with factory() as session:
+        version = session.get(AdminOperationCredential, 'owner').version
+    proof = OperationPasswordProof('owner', claims['family_id'], claims['device_id'],
+        version, now[0])
+    authorizer = AdminWalletOperationPasswordService(factory,
+        owner_id=lambda: settings.wallet_manual_owner_admin_id,
+        auth_mode=lambda: settings.wallet_admin_auth_mode, clock=lambda: now[0])
+    with factory.begin() as session, pytest.raises(AppError) as error:
+        authorizer.authorization(claims=claims, proof=proof)(session)()
+    assert error.value.code == 'ADMIN_SESSION_REPLACED'
 
 
 @pytest.fixture
@@ -29,7 +85,7 @@ def grant_context():
         session.add(UserRole(id='role', user_id='owner', role_code='SUPER_ADMIN', assigned_by='fixture', assigned_at=now[0]))
         session.add(Device(id='device', user_id='owner', device_key='fixture', display_name='fixture', created_at=now[0], last_seen_at=now[0]))
         session.add(RefreshTokenFamily(id='family', user_id='owner', device_id='device', created_at=now[0]))
-        session.add(AdminSession(user_id='owner', family_id='family', authenticated_at=now[0],
+        session.add(AdminSession(user_id='owner', family_id='family', entry_mode='ADMIN', authenticated_at=now[0],
             created_at=now[0], expires_at=now[0]+timedelta(hours=48)))
     claims = dict(sub='owner', device_id='device', family_id='family', session_scope='admin',
         iat=int(now[0].timestamp()), exp=int(now[0].timestamp())+172800)
@@ -41,6 +97,51 @@ def grant_context():
 
 def issue(context):
     return context[0].verify(claims=context[3], operation_password='operation-password-123')
+
+
+def test_owner_read_needs_current_identity_but_no_grant(grant_context):
+    service, factory, now, claims, settings = grant_context
+    service.require_read(claims=claims)
+    with pytest.raises(AppError, match='WALLET_ACCESS_REQUIRED'):
+        service.require(claims=claims)
+    with factory.begin() as session:
+        final = service.read_authorization(claims=claims)(session)
+        final()
+    settings.wallet_manual_owner_admin_id = 'replacement'
+    with pytest.raises(AppError, match='PERMISSION_DENIED'):
+        service.require_read(claims=claims)
+
+
+def test_owner_read_is_unavailable_when_grant_feature_is_off(grant_context):
+    service, _, _, claims, settings = grant_context
+    settings.wallet_access_grant_enabled = False
+    with pytest.raises(AppError, match='WALLET_ACCESS_REQUIRED'):
+        service.require_read(claims=claims)
+
+
+@pytest.mark.parametrize('change', ['status', 'role', 'family', 'device', 'session', 'hold', 'deadline'])
+def test_owner_read_rechecks_identity_after_transaction_work(grant_context, change):
+    service, factory, now, claims, _ = grant_context
+    with factory.begin() as session:
+        final = service.read_authorization(claims=claims)(session)
+        if change == 'status':
+            session.get(User, 'owner').status = AccountStatus.DISABLED
+        elif change == 'role':
+            session.delete(session.get(UserRole, 'role'))
+        elif change == 'family':
+            session.get(RefreshTokenFamily, 'family').revoked_at = now[0]
+        elif change == 'device':
+            session.get(Device, 'device').revoked_at = now[0]
+        elif change == 'session':
+            session.get(AdminSession, 'owner').family_id = 'replacement'
+        elif change == 'hold':
+            session.add(SecurityHold(id='hold', user_id='owner', hold_type=HoldType.WITHDRAWAL,
+                reason_code='PASSWORD_RESET', starts_at=now[0], ends_at=now[0]+timedelta(hours=1), created_at=now[0]))
+        else:
+            now[0] += timedelta(hours=49)
+        session.flush()
+        with pytest.raises(AppError):
+            final()
 
 
 def test_new_grant_is_complete_before_autoflush(grant_context):

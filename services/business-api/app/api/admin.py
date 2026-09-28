@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -7,11 +7,13 @@ from sqlalchemy import func, select
 from datetime import date, datetime, timedelta, timezone
 from app.modules.wallet.reporting import ReportDataError, WalletReportService, to_csv
 from app.api.wallet_report_contracts import DailyWalletReport
-from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail, AdminUserPage, AdminModulePage
+from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail, AdminUserPage, AdminModulePage, AdminDirectoryPage
 from app.modules.admin.user_reports import user_page
+from app.modules.admin.user_directory import UserDirectoryService
 from app.modules.admin.ledger_entries import ledger_page
 from app.api.admin_wallet_repairs import create_admin_wallet_repairs_router
 from app.api.admin_wallet_owner_transfers import create_admin_owner_transfer_router
+from app.api.admin_wallet_auth import wallet_grant_service
 from app.modules.wallet.clock_health import ClockHealth
 from app.modules.admin.dashboard_reports import registration_trend
 from app.modules.ledger.supply_reports import point_supply, issuance_page, issuance_detail
@@ -96,6 +98,24 @@ class AppUpdateSettingsBody(BaseModel):
 class RedPacketSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     max_total: Decimal = Field(gt=0, decimal_places=2)
+
+class SearchUsersBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    q: str | None = Field(default=None, max_length=128)
+    limit: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = Field(default=None, min_length=1, max_length=1024)
+
+class AdminContextCapabilities(BaseModel):
+    wallet_owner_read: bool
+
+class AdminContextResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    actor: dict[str, Any]
+    permissions: list[str]
+    capabilities: AdminContextCapabilities
+    overview: dict[str, Any]
+    modules: dict[str, Any]
+
 # 点钻派发账本 ValueError → 对外错误码/文案。储备类失败是系统状态问题，
 # 不得笼统报"请求无效"；键为 ledger/reserve 模块的 ValueError 消息原文。
 CAIBI_GRANT_ERROR_DETAILS = {
@@ -172,6 +192,13 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
 
     def trace(request: Request) -> str:
         return getattr(request.state, "trace_id", "admin-command")
+
+    def require_directory_origin(request: Request) -> None:
+        expected = str(request.base_url).rstrip('/')
+        if settings.environment == 'production':
+            expected = 'https://' + request.url.netloc
+        if request.headers.get('origin') != expected or request.headers.get('x-admin-csrf') != '1':
+            raise AppError(code='ADMIN_CSRF_REJECTED', message='管理请求来源无效', status_code=403)
 
     @router.get("/wallet/reports/daily", response_model=DailyWalletReport,
                 responses={200: {"content": {"text/csv": {"schema": {"type": "string"}}}}})
@@ -364,11 +391,23 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
             roles = [r.value for r in session.scalars(select(UserRole.role_code).where(UserRole.user_id == user_id))]
         return {"user_id": user_id, "username": user.username, "roles": roles, "permissions": sorted(p.value for p in rbac.permissions_for(user_id)), "brand": "ChatFlow", "display_name": "畅聊"}
 
-    @router.get("/context")
+    @router.get("/context", response_model=AdminContextResponse)
     def context(request: Request, user_id: str = Depends(actor)):
         info = session_info(user_id)
         actual = set(info["permissions"])
         is_admin = "system.admin" in actual
+        wallet_owner_read = is_admin and not getattr(settings, 'wallet_access_grant_enabled', False)
+        if is_admin and getattr(settings, 'wallet_access_grant_enabled', False):
+            authorization = request.headers.get('authorization', '')
+            claims = tokens.decode_access_token(authorization[7:])
+            try:
+                wallet_grant_service(settings, session_factory,
+                    lambda: datetime.now(timezone.utc)).require_read(claims=claims)
+            except AppError as exc:
+                if exc.status_code not in (401, 403):
+                    raise
+            else:
+                wallet_owner_read = True
         frontend_map = {
             "admin.finance.read": "finance.review",
             "admin.finance.review": "finance.review",
@@ -393,8 +432,38 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
             if name == 'wallet' and (not is_admin or getattr(settings, 'wallet_access_grant_enabled', False)):
                 continue
             if is_admin or required in actual:
-                modules[name] = module_data(name, user_id).get("items", [])
-        return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员" if is_admin else "畅聊客服", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}
+                modules[name] = module_data(name, Response(), user_id).get("items", [])
+        return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员" if is_admin else "畅聊客服", "roles": info["roles"]}, "permissions": permissions, "capabilities": {"wallet_owner_read": wallet_owner_read}, "overview": overview_data, "modules": modules}
+
+    @router.post("/users/search", response_model=AdminDirectoryPage,
+        description="仅 SUPER_ADMIN 管理会话可查。浏览器请求须携带同源 Origin 与 X-Admin-CSRF: 1；响应不可缓存。")
+    def search_users(body: SearchUsersBody, request: Request, response: Response,
+                     user_id: str = Depends(actor)):
+        authorization = request.headers.get('authorization', '')
+        access_token = authorization[7:]
+        tokens.admin_session(access_token)
+        require(user_id, Permission.SYSTEM_ADMIN)
+        require_directory_origin(request)
+        request.state.admin_directory_token = access_token
+        try:
+            result = UserDirectoryService(session_factory,
+                cursor_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes").search(
+                q=body.q, limit=body.limit, cursor=body.cursor)
+        except ValueError as exc:
+            raise AppError(code='ADMIN_USER_FILTER_INVALID', message='用户筛选或分页参数无效',
+                status_code=422) from exc
+        # A slow directory query may outlive the administrator's role or session.
+        tokens.admin_session(access_token)
+        require(user_id, Permission.SYSTEM_ADMIN)
+        audit.record(actor_id=user_id, subject_type='admin_user_directory', subject_id=user_id,
+            action='admin.users.searched', result='SUCCESS', reason_code='ADMIN_USER_DIRECTORY_READ',
+            trace_id=trace(request), after={
+                'query_present': bool((body.q or '').strip()),
+                'result_count': len(result['items']), 'total': result['total'],
+            })
+        response.headers['Cache-Control'] = 'no-store'
+        return result
+
     @router.get("/overview", response_model=AdminOverview)
     def overview(request: Request, user_id: str = Depends(actor), days: int = Query(default=30, enum=[7, 30, 90])):
         require_overview(request, user_id)
@@ -462,7 +531,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         return result
 
     @router.get("/modules/{module}", response_model=AdminUserPage | AdminModulePage)
-    def module_data(module: str, user_id: str = Depends(actor),
+    def module_data(module: str, response: Response, user_id: str = Depends(actor),
                     q: Annotated[str | None, Query(max_length=128)] = None,
                     limit: Annotated[int, Query(ge=1, le=100)] = 100,
                     cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None):
@@ -510,6 +579,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
                     if not entry.account_id.startswith("PLATFORM_")
                 ]}
             if module == "wallet":
+                response.headers['Cache-Control'] = 'no-store'
                 rows = session.scalars(select(Withdrawal).order_by(Withdrawal.created_at.desc()).limit(100)).all()
                 return {"module": module, "items": [
                     {
@@ -544,6 +614,3 @@ def _mask_wallet_address(address: str) -> str:
     if len(address) <= 8:
         return "***"
     return f"{address[:1]}***{address[-4:]}"
-
-
-

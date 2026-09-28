@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+import json
 
 import pytest
 from sqlalchemy import create_engine, delete, select
@@ -86,6 +88,129 @@ def test_changed_identity_invalidates_pending_challenge(env, change):
     if change == 'expired': clock[0] += timedelta(seconds=300)
     with pytest.raises(AppError):
         service.confirm(activation_id=result['activation_id'], code=sender.messages[-1][1])
+
+
+@pytest.mark.parametrize(('channel', 'other'), [('email', 'phone'), ('phone', 'email')])
+def test_changing_other_verified_contact_requires_new_activation(env, channel, other):
+    from app.modules.identity.staff_activation import require_staff_admin_access
+    from app.modules.identity.tokens import TokenService
+    factory, clock, sender, service = env
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        user.email_normalized = 'staff@example.invalid'
+        user.email_verified_at = clock[0]
+    challenge = service.request(username='staff', password='correct password 123', channel=channel)
+    service.confirm(activation_id=challenge['activation_id'],
+        code='846291' if channel == 'email' else sender.messages[-1][1])
+    tokens = TokenService(factory, jwt_secret='test-jwt-secret-at-least-thirty-two-bytes',
+        jwt_issuer='test', now_factory=lambda: clock[0])
+    pair = tokens.issue_admin_pair(user_id='staff', display_name='Staff browser', staff_only=True)
+    with factory() as session:
+        require_staff_admin_access(session, session.get(User, 'staff'))
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        setattr(user, other + '_verified_at', clock[0] + timedelta(seconds=1))
+        user.updated_at = clock[0] + timedelta(seconds=1)
+    with factory() as session, pytest.raises(AppError) as error:
+        require_staff_admin_access(session, session.get(User, 'staff'))
+    assert error.value.code == 'STAFF_ACTIVATION_REQUIRED'
+    with pytest.raises(AppError) as token_error:
+        tokens.decode_access_token(pair.access_token)
+    assert token_error.value.code == 'STAFF_ACTIVATION_REQUIRED'
+
+
+def test_changing_other_verified_contact_invalidates_pending_activation(env):
+    factory, clock, _, service = env
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        user.email_normalized = 'staff@example.invalid'
+        user.email_verified_at = clock[0]
+    challenge = service.request(username='staff', password='correct password 123', channel='email')
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        user.phone_verified_at = clock[0] + timedelta(seconds=1)
+        user.updated_at = clock[0] + timedelta(seconds=1)
+    with pytest.raises(AppError):
+        service.confirm(activation_id=challenge['activation_id'], code='846291')
+
+
+def test_single_contact_legacy_activation_migrates_after_user_lock(env):
+    from app.modules.identity.staff_activation import StaffActivation, require_staff_admin_access
+    factory, clock, sender, service = env
+    challenge = issue(env)
+    service.confirm(activation_id=challenge['activation_id'], code=sender.messages[-1][1])
+    with factory.begin() as session:
+        role = session.get(UserRole, 'role')
+        legacy_snapshot = ['staff', 'phone', '+8613800000000', clock[0].isoformat(),
+            [[role.id, role.role_code.value, role.assigned_at.replace(tzinfo=timezone.utc).isoformat()]]]
+        legacy_digest = sha256(json.dumps(legacy_snapshot, separators=(',', ':')).encode()).hexdigest()
+        session.get(StaffActivation, 'staff').identity_digest = legacy_digest
+    with factory.begin() as session:
+        require_staff_admin_access(session, session.get(User, 'staff', with_for_update=True))
+    with factory() as session:
+        assert session.get(StaffActivation, 'staff').identity_digest != legacy_digest
+        require_staff_admin_access(session, session.get(User, 'staff'))
+
+
+@pytest.mark.parametrize('changed_after_activation', [False, True])
+def test_dual_contact_legacy_activation_uses_user_change_epoch(env, changed_after_activation):
+    from app.modules.identity.staff_activation import StaffActivation, require_staff_admin_access
+    from app.modules.identity.tokens import TokenService
+    factory, clock, _, service = env
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        user.email_normalized = 'staff@example.invalid'
+        user.email_verified_at = clock[0]
+    challenge = service.request(username='staff', password='correct password 123', channel='email')
+    service.confirm(activation_id=challenge['activation_id'], code='846291')
+    with factory.begin() as session:
+        role = session.get(UserRole, 'role')
+        legacy_snapshot = ['staff', 'email', 'staff@example.invalid', clock[0].isoformat(),
+            [[role.id, role.role_code.value, role.assigned_at.replace(tzinfo=timezone.utc).isoformat()]]]
+        legacy_digest = sha256(json.dumps(legacy_snapshot, separators=(',', ':')).encode()).hexdigest()
+        session.get(StaffActivation, 'staff').identity_digest = legacy_digest
+    if changed_after_activation:
+        with factory.begin() as session:
+            user = session.get(User, 'staff')
+            user.phone_verified_at = clock[0] + timedelta(seconds=1)
+            user.updated_at = clock[0] + timedelta(seconds=1)
+        with factory() as session, pytest.raises(AppError) as error:
+            require_staff_admin_access(session, session.get(User, 'staff'))
+        assert error.value.code == 'STAFF_ACTIVATION_REQUIRED'
+        replacement = service.request(username='staff', password='correct password 123', channel='email')
+        service.confirm(activation_id=replacement['activation_id'], code='846291')
+    else:
+        tokens = TokenService(factory, jwt_secret='test-jwt-secret-at-least-thirty-two-bytes',
+            jwt_issuer='test', now_factory=lambda: clock[0])
+        pair = tokens.issue_admin_pair(user_id='staff', display_name='Staff browser', staff_only=True)
+        assert tokens.decode_access_token(pair.access_token)['sub'] == 'staff'
+    with factory() as session:
+        require_staff_admin_access(session, session.get(User, 'staff'))
+        assert session.get(StaffActivation, 'staff').identity_digest != legacy_digest
+
+
+def test_legacy_activation_after_profile_edit_requires_one_time_reverification(env):
+    """Old digests cannot prove an untouched second contact after any user update."""
+    from app.modules.identity.staff_activation import StaffActivation, require_staff_admin_access
+    factory, clock, sender, service = env
+    challenge = issue(env)
+    service.confirm(activation_id=challenge['activation_id'], code=sender.messages[-1][1])
+    with factory.begin() as session:
+        role = session.get(UserRole, 'role')
+        old_snapshot = ['staff', 'phone', '+8613800000000', clock[0].isoformat(),
+            [[role.id, role.role_code.value, role.assigned_at.replace(tzinfo=timezone.utc).isoformat()]]]
+        session.get(StaffActivation, 'staff').identity_digest = sha256(
+            json.dumps(old_snapshot, separators=(',', ':')).encode()).hexdigest()
+        user = session.get(User, 'staff')
+        user.nickname = '客服新昵称'
+        user.profile_updated_at = user.updated_at = clock[0] + timedelta(seconds=1)
+    with factory() as session, pytest.raises(AppError) as error:
+        require_staff_admin_access(session, session.get(User, 'staff'))
+    assert error.value.code == 'STAFF_ACTIVATION_REQUIRED'
+    renewed = service.request(username='staff', password='correct password 123')
+    service.confirm(activation_id=renewed['activation_id'], code=sender.messages[-1][1])
+    with factory() as session:
+        require_staff_admin_access(session, session.get(User, 'staff'))
 
 
 def test_wrong_attempts_persist_and_exhaust(env):
@@ -207,8 +332,9 @@ async def test_activation_http_requires_credentials_csrf_and_server_bound_destin
         result = await client.post('/api/v1/auth/staff-activation/confirm', headers=csrf,
             json={'activation_id': activation_id, 'code':sender.messages[-1][1]})
         assert result.status_code == 200, result.text
-        logged = await client.post('/api/v1/auth/admin-login', headers=csrf,
-            json={**body, 'device_key':'browser', 'device_name':'Browser'})
+        logged = await client.post('/api/v1/auth/staff-login', headers=csrf,
+            json={'username':body['username'], 'password':body['password'],
+                'device_key':'browser', 'device_name':'Browser'})
         assert logged.status_code == 200, logged.text
         assert 'HttpOnly' in logged.headers['set-cookie']
 

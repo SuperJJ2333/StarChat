@@ -29,6 +29,7 @@ from app.modules.identity.models import User, Device
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.profile_text import MAX_PROFILE_RAW_CODEPOINTS
 from app.modules.identity.recovery import PasswordRecoveryService, PasswordResetTokenCodec
+from app.modules.identity.staff_password import StaffPasswordService
 from app.modules.identity.referral import ReferralCodec, ReferralService
 from app.modules.identity.registration import (
     EmailVerificationService,
@@ -213,6 +214,11 @@ class AdminStepUpRequest(StrictModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class StaffPasswordRequest(StrictModel):
+    current_password: str = Field(min_length=1, max_length=256, repr=False)
+    new_password: str = Field(min_length=12, max_length=256, repr=False)
+
+
 class PasswordLoginResponse(TokenResponse):
     matrix_user_id: str | None = None
 
@@ -292,6 +298,7 @@ def create_identity_router(
     )
     credentials = AccountCredentialsService(session_factory, otp=phone_auth.otp, recovery=recovery,
         email_code_deriver=verification_codec.verification_code)
+    staff_password_service = StaffPasswordService(session_factory, tokens=tokens, recovery=recovery)
     audit = AuditWriter(session_factory)
     matrix_login = MatrixLoginTokenService(
         session_factory,
@@ -712,7 +719,7 @@ def create_identity_router(
                 if user is None or user.status != AccountStatus.ACTIVE or not password_hasher.verify(user.password_hash, body.password):
                     raise AppError(code='CREDENTIALS_INVALID', message='账号或密码错误', status_code=401)
                 return user.id, tokens.issue_admin_pair(user_id=user.id, display_name=body.device_name,
-                    password=body.password)
+                    password=body.password, admin_only=True)
         actor_id, pair = await anyio.to_thread.run_sync(verify)
         record_audit(request, actor_id=actor_id, subject_id=actor_id,
             action='identity.admin_session.created', reason_code='ADMIN_PASSWORD_LOGIN')
@@ -765,6 +772,32 @@ def create_identity_router(
         response.delete_cookie(admin_cookie, path=admin_cookie_path, secure=True,
             httponly=True, samesite='strict')
         response.headers['Cache-Control'] = 'no-store'
+
+    @router.post('/auth/admin-session/staff-password', status_code=204,
+        description='仅已开通的客服可修改与 App 共用的密码。须携带管理 Bearer、当前会话的 HttpOnly 管理 Cookie、同源 Origin 与 X-Admin-CSRF: 1；成功后全部旧会话失效。')
+    async def change_staff_password(body: StaffPasswordRequest, request: Request, response: Response,
+        authorization: Annotated[str | None, Header()] = None) -> Response:
+        admin_origin(request)
+        if not authorization or not authorization.startswith('Bearer '):
+            raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+        access_token = authorization[7:]
+        cookie = request.cookies.get(admin_cookie, '')
+        def change() -> None:
+            source = request.client.host if request.client else 'unknown'
+            rate_limiter.hit(public_rate_limit_key('auth:staff-password-ip', source),
+                limit=20, window_seconds=900)
+            claims = tokens.decode_access_token(access_token)
+            tokens.require_admin_cookie(access_token, cookie)
+            rate_limiter.hit(public_rate_limit_key('auth:staff-password-user', 'account', claims['sub']),
+                limit=5, window_seconds=900)
+            staff_password_service.change(access_token=access_token, refresh_cookie=cookie,
+                current_password=body.current_password, new_password=body.new_password,
+                trace_id=getattr(request.state, 'trace_id', 'unknown'), source_ip=source)
+        await anyio.to_thread.run_sync(change)
+        completed = Response(status_code=204, headers={'Cache-Control': 'no-store'})
+        completed.delete_cookie(admin_cookie, path=admin_cookie_path, secure=True,
+            httponly=True, samesite='strict')
+        return completed
 
     @router.post('/auth/admin-session/step-up', response_model=AdminTokenResponse)
     async def admin_step_up(body: AdminStepUpRequest, request: Request, response: Response,

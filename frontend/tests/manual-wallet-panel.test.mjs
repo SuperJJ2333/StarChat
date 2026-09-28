@@ -104,6 +104,28 @@ test('simple incident form accepts one password and confirmation, explains histo
  assert.ok(!JSON.stringify([...store.data]).includes('synthetic-password'));
 });
 
+test('wallet command intent verifies first and never replays the command after grant arrives',async()=>{
+ let authorized=false,prompts=0,writes=0;
+ const accessController={canWrite:()=>authorized,requestWriteGrant:async()=>{prompts++;return false;}};
+ const panel=setup({getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:true,version:1}),
+  getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'RUNNING',restriction_scopes:[],unresolved_incidents:0}),
+  manualWalletControlAction:async()=>{writes++;throw {code:'NETWORK_ERROR'};}},{walletAccess:true,accessController});
+ await settle();const form=panel.find('form').find(x=>x.name==='control-pause');
+ form.find('input')[0].checked=true;await form.handlers.submit({preventDefault(){}});
+ assert.equal(prompts,1);assert.equal(writes,0);
+ authorized=true;await settle();assert.equal(writes,0);
+ await form.handlers.submit({preventDefault(){}});assert.equal(writes,1);
+});
+
+test('owner can set operation password with independent credentials before a wallet grant',async()=>{
+ let writes=0;
+ const panel=setup({getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:false,version:0}),
+  setWalletOperationPassword:async()=>{writes++;return {version:1};}},{walletAccess:true,accessController:{canWrite:()=>false,requestWriteGrant:async()=>assert.fail('credential setup must not ask for a grant')}});
+ await settle();const form=panel.find('form').find(x=>x.name==='operation-password');
+ for(const input of form.find('input'))input.value=input.name==='login_password'?'synthetic-login-password':'synthetic-new-operation-password';
+ await form.handlers.submit({preventDefault(){}});assert.equal(writes,1);
+});
+
 test('T2 is a literal incident filter and detail level while an independent pause remains visible',async()=>{
   const item={id:'temporary-source',code:'MANUAL_SOURCE_UNAVAILABLE',fingerprint:'manual-reserve:MANUAL_SOURCE_UNAVAILABLE',subject_id:'global',severity:'T2',status:'OPEN',version:1,condition_active:true};
   const requests=[];

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from app.core.errors import AppError
 from app.api.admin_wallet_auth import AdminWalletProofBody, selected_password_authorization, wallet_grant_service
+from app.api.admin_session_boundary import wallet_read_allowlist
 from app.modules.identity.tokens import TokenService
 from app.modules.identity.wallet_access import require_wallet_actor, require_wallet_session
 from app.modules.ledger.reserve import lock_budget
@@ -52,12 +53,16 @@ def create_manual_wallet_handover_router(settings, factory, *, monitor_factory=N
     def fail(code, status):
         raise AppError(code=code, message=code, status_code=status)
 
-    def actor(authorization: Annotated[str | None, Header()] = None):
+    def actor(request: Request, authorization: Annotated[str | None, Header()] = None):
         if not authorization or not authorization.startswith('Bearer '):
             fail('AUTH_REQUIRED', 401)
         if getattr(settings, 'wallet_access_grant_enabled', False):
             claims = tokens.decode_access_token(authorization[7:])
-            wallet_grant_service(settings, factory, clock).require(claims=claims)
+            grants = wallet_grant_service(settings, factory, clock)
+            if request.method in {'GET', 'HEAD'} and wallet_read_allowlist(request):
+                grants.require_read(claims=claims)
+            else:
+                grants.require(claims=claims)
         else:
             claims = tokens.require_recent_login(authorization[7:])
         if settings.wallet_real_mode != 'manual_tron' or claims['sub'] != settings.wallet_manual_owner_admin_id:

@@ -35,3 +35,21 @@ frontend/src/admin-manual-wallet-panel.js -text whitespace=cr-at-eol
 frontend/src/wallet-incident-workflow.js -text whitespace=cr-at-eol
 frontend/tests/manual-wallet-panel.test.mjs -text whitespace=cr-at-eol
 frontend/tests/wallet-incident-workflow.test.mjs -text whitespace=cr-at-eol
+
+# Reproduce the frozen A1-A5 static payload exactly when Git checks out files.
+frontend/src/admin-login.js -text whitespace=cr-at-eol
+frontend/src/styles/admin-login.css -text whitespace=cr-at-eol
+frontend/src/admin-session.js -text whitespace=cr-at-eol
+frontend/src/admin-dashboard.js -text whitespace=cr-at-eol
+frontend/src/admin-api.js -text whitespace=cr-at-eol
+frontend/src/admin-wallet-access.js -text whitespace=cr-at-eol
+frontend/src/admin-chain-panel.js -text whitespace=cr-at-eol
+frontend/src/admin-wallet-repair-dialog.js -text whitespace=cr-at-eol
+frontend/src/admin-manual-deposit-case.js -text whitespace=cr-at-eol
+frontend/src/styles/tokens.css -text whitespace=cr-at-eol
+frontend/src/admin-staff-activation-dialog.js text eol=lf
+frontend/src/admin-staff-password-dialog.js text eol=lf
+frontend/src/admin-user-directory.js text eol=lf
+frontend/src/admin-login-scene.js text eol=lf
+frontend/src/admin-loading.js text eol=lf
+frontend/admin.html text eol=lf

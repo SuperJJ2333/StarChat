@@ -1,21 +1,26 @@
 import {detailDialog} from './admin-detail-dialog.js';
 import {formatBeijingTime} from './admin-formatters.js';
-import {manualDepositCaseDialog} from './admin-manual-deposit-case.js';
-export {manualDepositCaseDialog} from './admin-manual-deposit-case.js';
+import {manualDepositCaseDialog} from './admin-manual-deposit-case.js?v=20260928-admin-entry';
+export {manualDepositCaseDialog} from './admin-manual-deposit-case.js?v=20260928-admin-entry';
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);if(cls)e.className=cls;return e;};
 const reasons={EXPIRED_INTENT_REVIEW:'充值订单过期复核',PAYMENT_BEFORE_ORDER:'先付款后建单（人工证明）',ATTRIBUTION_CORRECTION:'用户归属复核',CLOCK_ORDERING_REVIEW:'时间顺序复核',OTHER:'其他（必须说明）'};
 const blockers={CLOCK_UNTRUSTED:'服务器时间未通过独立校验',TEMPORAL_EVIDENCE_REQUIRED:'付款早于建单，缺少合格的人工证明或超出允许范围',ADDRESS_NETWORK_MISMATCH:'地址或链类型不匹配',AMOUNT_MISMATCH:'链上金额与订单金额不一致',DIRECTION_MISMATCH:'链上资金方向或官方地址不匹配',FUNDS_CONTROL_BLOCKED:'资金操作已暂停或账户受限',RESERVE_UNAVAILABLE:'当前资金核验证据不可用',USER_UNAVAILABLE:'用户状态不可用',ORDER_CLOSED_BY_REBIND:'订单因地址重绑关闭',ORDER_ALREADY_CONSUMED:'订单已被使用，不能重复处理',RECEIPT_ALREADY_CREDITED:'该链上收款已入账，不能重复补入账',EVIDENCE_CONFLICT:'链上证据与已记录事实冲突',EVIDENCE_EXPIRED:'链上证据已过期，请重新核对',BINDING_NOT_EFFECTIVE:'付款地址绑定在该区块未生效',PRE_ACTIVATION_BASELINE:'交易早于业务基线',REPAIR_TARGET_NOT_FOUND:'修复对象不存在',ATTRIBUTION_AMBIGUOUS:'归属存在歧义',EVENT_ALREADY_ALLOCATED:'该链上事件已分配',FUTURE_ORDER_RECORD:'订单时间晚于当前可信时间'};
 export const repairBlocker=code=>blockers[code]??`校验未通过（${code}），请核对后重试`;
-export function walletRepairDialog(api,item,{actorId,storage=globalThis.localStorage,onClose=()=>{},onCompleted=()=>{}}={}){
+export function walletRepairDialog(api,item,{actorId,storage=globalThis.localStorage,onClose=()=>{},onCompleted=()=>{},accessController}={}){
   const inflow=item.direction==='INFLOW',kind=inflow?'deposit-repairs':'payout-reconciliations',title=inflow?'充值补入账':'提现核对';
   const content=node('section',undefined,'admin-repair-case'),status=node('p','读取当前状态…','admin-audit-note'),body=node('div',undefined,'admin-repair-actions');content.append(status,body);
-  let disposed=false,revision=0,receiptId,selected,preview,submitted=false,retryOperation,manualButton;
-  const modal=detailDialog(title,content,{onClose:()=>{disposed=true;++revision;onClose();}});
+  let disposed=false,revision=0,receiptId,selected,preview,submitted=false,retryOperation,manualButton,manualCaseModal=null;
+  const modal=detailDialog(title,content,{onClose:()=>{disposed=true;++revision;const nested=manualCaseModal;manualCaseModal=null;nested?.close();onClose();}});
   const journalKey=`chatflow.manual.repair:${encodeURIComponent(actorId??'')}:${kind}:${item.txid}:${item.log_index}`;
   const button=(label,fn)=>{const b=node('button',label,'admin-secondary');b.type='button';b.addEventListener('click',fn);return b;};
+  const requireWriteIntent=()=>{
+    if(!accessController||accessController.canWrite())return true;
+    status.textContent='请先验证以操作。验证后重新核对并提交；系统不会自动执行原操作。';
+    void accessController.requestWriteGrant();return false;
+  };
   const steps=()=>node('p',inflow?'步骤：核对 → 预检（不入账） → 确认补入账':'步骤：核对 → 预检 → 确认提交','admin-audit-note');
   const evidence=value=>{const detail=node('details'),summary=node('summary','展开查看完整核对详情');detail.append(summary);fields(detail,value);body.append(detail);};
-  const manualEntry=()=>{if(!inflow)return;manualButton=button('超时/无匹配订单：人工补录',()=>{if(submitted||disposed)return;manualDepositCaseDialog(api,item,{actorId,storage,onCompleted});});body.append(manualButton);};
+  const manualEntry=()=>{if(!inflow)return;manualButton=button('超时/无匹配订单：人工补录',async()=>{if(submitted||disposed||!requireWriteIntent())return;manualCaseModal?.close();manualCaseModal=manualDepositCaseDialog(api,item,{actorId,storage,onCompleted,accessController,onClose:()=>{manualCaseModal=null;}});});body.append(manualButton);};
   const disabledConfirm=reason=>{if(!inflow)return;const confirm=button('确认补入账',()=>{});confirm.disabled=true;confirm.title=reason;body.append(confirm,node('p',reason,'admin-audit-note'));};
   const actionSummary=value=>body.append(node('p',[value?.username&&`畅聊号：${value.username}`,value?.nickname&&`用户：${value.nickname}`,value?.user_id&&`用户编号：${value.user_id}`,value?.amount&&`链上金额：${value.amount} ${value.asset??''}`,value?.expected_amount&&`订单金额：${value.expected_amount} ${value.asset??''}`,value?.intent_id&&`充值订单：${value.intent_id}`].filter(Boolean).join('；'),'admin-audit-note'));
   function fields(target,value){
@@ -42,6 +47,7 @@ export function walletRepairDialog(api,item,{actorId,storage=globalThis.localSto
     const label=node('label'),check=node('input');check.type='checkbox';label.append(check,node('span',inflow?'我已核对用户、订单、地址与金额，确认补入账':'我已核对提现订单和链上交易，确认提交核对（最终结算以系统对账为准）'));
     const execute=button(inflow?'确认补入账':'确认提交（提现核对）',async()=>{
       if(!check.checked||submitted||disposed)return;
+      if(!requireWriteIntent())return;
       let operation;
       try{if(!actorId||!storage)throw Error('无法按账号保存请求状态');operation=retryOperation??crypto.randomUUID();storage.setItem(journalKey,JSON.stringify({operation_id:operation}));}catch(error){status.textContent=`无法保存请求恢复记录：${error.message}，未提交。`;return;}
       submitted=true;execute.disabled=true;if(manualButton)manualButton.disabled=true;status.textContent='正在提交，请勿重复操作…';
@@ -57,7 +63,7 @@ export function walletRepairDialog(api,item,{actorId,storage=globalThis.localSto
     const detail=node('textarea',undefined,'admin-filter');detail.required=true;detail.maxLength=500;detail.placeholder='说明人工核对依据、异常原因及处理目的';detail.setAttribute('aria-label','操作原因与核对依据');
     const attestation=node('input');attestation.type='checkbox';const attestLabel=node('label');attestLabel.append(attestation,node('span','我已取得付款属于该充值订单的明确证明（先付款后建单时必须确认）'));
     const submit=node('button',inflow?'预检（不入账）':'预检提现核对','admin-primary');submit.type='submit';form.append(order);if(inflow)form.append(reason,attestLabel);form.append(detail,submit);body.append(steps());if(selected)actionSummary(selected);body.append(form);disabledConfirm('请先完成预检；预检不会入账。');manualEntry();
-    form.addEventListener('submit',async event=>{event.preventDefault();if(submit.disabled)return;submit.disabled=true;const version=++revision;status.textContent='正在核对实时证据…';try{const value=await api.previewWalletRepair(kind,inflow?{receipt_id:receiptId,intent_id:order.value.trim(),reason_code:reason.value,reason_detail:detail.value.trim(),payment_attestation:attestation.checked}:{order_id:order.value.trim(),txid:item.txid,log_index:item.log_index,reason_detail:detail.value.trim()});if(!disposed&&version===revision)confirm(value);}catch(error){if(!disposed&&version===revision)status.textContent=`预检未通过：${error.message}`;}finally{submit.disabled=false;}});
+    form.addEventListener('submit',async event=>{event.preventDefault();if(submit.disabled||!requireWriteIntent())return;submit.disabled=true;const version=++revision;status.textContent='正在核对实时证据…';try{const value=await api.previewWalletRepair(kind,inflow?{receipt_id:receiptId,intent_id:order.value.trim(),reason_code:reason.value,reason_detail:detail.value.trim(),payment_attestation:attestation.checked}:{order_id:order.value.trim(),txid:item.txid,log_index:item.log_index,reason_detail:detail.value.trim()});if(!disposed&&version===revision)confirm(value);}catch(error){if(!disposed&&version===revision)status.textContent=`预检未通过：${error.message}`;}finally{submit.disabled=false;}});
   }
   async function start(query=''){
     if(disposed)return;preview=null;submitted=false;body.replaceChildren();status.textContent='读取当前链上证据与候选订单…';

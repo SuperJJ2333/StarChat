@@ -68,6 +68,124 @@ function installPanelDocument() {
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const panelStatus=(overrides={})=>({enabled:true,verified:true,configured:true,auth_mode:'operation_password',server_time:new Date(start).toISOString(),expires_at:new Date(start+3600000).toISOString(),...overrides});
 
+test('confirmed owner can read without grant while write intent verifies and requires a new submit',async()=>{
+ const dom=installPanelDocument();let root,viewApi,access,reads=0,writes=0,verifies=0;
+ try{
+  root=module.walletAccessPanel({
+   getWalletAccess:async()=>panelStatus({verified:false}),
+   verifyWalletAccess:async()=>{verifies++;return panelStatus();},
+   getManualPayouts:async()=>{reads++;return {items:[]};},
+   claimManualPayout:async()=>{writes++;return {status:'CLAIMED'};}
+  },{actor:{id:'a'},renderContent:(api,controller)=>{viewApi=api;access=controller;return new PanelElement('article');}});
+  dom.app.append(root);await settle();await settle();
+  assert.equal(root.find('article').length,1);
+  assert.equal(access.canWrite(),false);assert.equal(access.usesGrant(),true);
+  await viewApi.getManualPayouts();assert.equal(reads,1);
+  await assert.rejects(viewApi.claimManualPayout('id',{},{}),{code:'WALLET_ACCESS_REQUIRED'});
+  assert.equal(writes,0);
+  assert.equal(await access.requestWriteGrant(),false);
+  assert.equal(dom.body.find('dialog').length,1);
+  const form=dom.body.find('dialog')[0].find('form')[0];
+  form.find('input')[0].value='synthetic-proof';await form.handlers.submit({preventDefault(){}});await settle();
+  assert.equal(verifies,1);assert.equal(access.canWrite(),true);assert.equal(writes,0);
+  await viewApi.claimManualPayout('id',{},{});assert.equal(writes,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('wallet module rows are readable without grant but other modules are not allowlisted',async()=>{
+ const dom=installPanelDocument();let root,viewApi,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getModule:async name=>{reads++;return {module:name,items:[]};}},
+   {actor:{id:'a'},renderContent:api=>{viewApi=api;return new PanelElement('article');}});
+  dom.app.append(root);await settle();await settle();
+  assert.equal((await viewApi.getModule('wallet')).module,'wallet');assert.equal(reads,1);
+  await assert.rejects(viewApi.getModule('users'),{code:'WALLET_ACCESS_REQUIRED'});assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('grant expiry discards write state but keeps confirmed owner read access',async()=>{
+ const dom=installPanelDocument();let root,expired=false,viewApi,access,rendered=0,disposed=0,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>expired?panelStatus({verified:false}):panelStatus(),getManualPayouts:async()=>{reads++;return {items:[]};}},
+   {actor:{id:'a'},renderContent:(api,controller)=>{viewApi=api;access=controller;rendered++;const article=new PanelElement('article');article.dispose=()=>{disposed++;};return article;}});
+  dom.app.append(root);await settle();await settle();assert.equal(access.canWrite(),true);
+  expired=true;await root.refresh();assert.equal(access.canWrite(),false);
+  assert.equal(rendered,2);assert.equal(disposed,1);assert.equal(root.find('article').length,1);
+  assert.equal(dom.body.find('dialog').length,0);
+  await viewApi.getManualPayouts();assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('server grant mode change rebuilds credential fields for legacy policy',async()=>{
+ const dom=installPanelDocument();let root,legacy=false,rendered=0,disposed=0,usesGrant;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>legacy?{enabled:false}:panelStatus()},
+   {actor:{id:'a'},renderContent:(_,controller)=>{usesGrant=controller.usesGrant();rendered++;const article=new PanelElement('article');article.dispose=()=>{disposed++;};return article;}});
+  dom.app.append(root);await settle();await settle();assert.equal(usesGrant,true);
+  legacy=true;await root.refresh();assert.equal(usesGrant,false);assert.equal(rendered,2);assert.equal(disposed,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('owner change removes prior wallet data and blocks later reads',async()=>{
+ const dom=installPanelDocument();let root,viewApi;
+ const actor={id:'a'};
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus(),getManualPayouts:async()=>({items:[]})},
+   {actor,renderContent:api=>{viewApi=api;return new PanelElement('article');}});
+  dom.app.append(root);await settle();await settle();assert.equal(root.find('article').length,1);
+  actor.id='b';await root.refresh();assert.equal(root.find('article').length,0);
+  await assert.rejects(viewApi.getManualPayouts(),{code:'WALLET_ACCESS_REQUIRED'});
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('failed wallet read clears stale owner data instead of showing cached balances',async()=>{
+ const dom=installPanelDocument();let root,viewApi;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getManualPayouts:async()=>{throw {code:'NETWORK_ERROR',message:'offline'};}},
+   {actor:{id:'a'},renderContent:api=>{viewApi=api;const article=new PanelElement('article');article.textContent='SENSITIVE-BALANCE';return article;}});
+  dom.app.append(root);await settle();await settle();assert.equal(root.find('article').length,1);
+  await assert.rejects(viewApi.getManualPayouts());
+  assert.equal(root.find('article').length,0);
+  assert.ok(dom.body.find('dialog')[0]?.open);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('raw read failure clears wallet data and detached content',async()=>{
+ const dom=installPanelDocument();let root,viewApi,disposed=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getManualPayouts:async()=>{throw new TypeError('raw socket failure');}},
+   {actor:{id:'a'},renderContent:api=>{viewApi=api;const article=new PanelElement('article');article.textContent='SENSITIVE-BALANCE';article.dispose=()=>{disposed++;};return article;}});
+  dom.app.append(root);await settle();await settle();assert.equal(root.find('article').length,1);
+  await assert.rejects(viewApi.getManualPayouts(),TypeError);
+  assert.equal(root.find('article').length,0);assert.equal(disposed,1);
+  assert.ok(dom.body.find('dialog')[0]?.open);
+  assert.ok(dom.body.find('p').some(node=>node.textContent?.includes('敏感内容已隐藏')));
+  assert.equal(dom.body.find('p').some(node=>node.textContent?.includes('raw socket failure')),false);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('unexpected wallet read authorization denial clears prior owner data',async()=>{
+ const dom=installPanelDocument();let root,viewApi;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getManualPayouts:async()=>{throw {status:403,code:'WALLET_ACCESS_REQUIRED'};}},
+   {actor:{id:'a'},renderContent:api=>{viewApi=api;return new PanelElement('article');}});
+  dom.app.append(root);await settle();await settle();
+  await assert.rejects(viewApi.getManualPayouts());assert.equal(root.find('article').length,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('unconfigured owner view still polls for role revocation',async()=>{
+ const dom=installPanelDocument();const previousInterval=globalThis.setInterval,previousClear=globalThis.clearInterval;
+ let root,poll,revoked=false;
+ globalThis.setInterval=fn=>{poll=fn;return 1;};globalThis.clearInterval=()=>{};
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>{if(revoked)throw {status:403,code:'PERMISSION_DENIED'};return panelStatus({configured:false,verified:false});}},
+   {actor:{id:'a'},renderContent:()=>new PanelElement('article')});
+  dom.app.append(root);await settle();await settle();assert.equal(root.find('article').length,1);
+  revoked=true;poll();await settle();await settle();assert.equal(root.find('article').length,0);
+ }finally{root?.dispose();globalThis.setInterval=previousInterval;globalThis.clearInterval=previousClear;dom.restore();}
+});
+
 test('delayed verified access and focus rechecks never create a modal or obscure the page',async()=>{
  const dom=installPanelDocument();let release,checks=0,contentCalls=0,root;
  try {
@@ -83,11 +201,14 @@ test('delayed verified access and focus rechecks never create a modal or obscure
  } finally { root?.dispose();dom.restore(); }
 });
 
-test('unverified or expired responses show the existing access dialog only after server confirmation',async()=>{
+test('unverified or expired owner can read and opens the access dialog only for write intent',async()=>{
  for(const response of [panelStatus({verified:false}),panelStatus({expires_at:new Date(start).toISOString()})]) {
-  const dom=installPanelDocument();let root;
+  const dom=installPanelDocument();let root,access;
   try {
-   root=module.walletAccessPanel({getWalletAccess:async()=>response},{actor:{id:'a'},renderContent:()=>assert.fail('locked access must not render content')});dom.app.append(root);await settle();await settle();
+   root=module.walletAccessPanel({getWalletAccess:async()=>response},{actor:{id:'a'},renderContent:(_,controller)=>{access=controller;return new PanelElement('article');}});dom.app.append(root);await settle();await settle();
+   assert.equal(root.find('article').length,1);assert.equal(access.canWrite(),false);
+   assert.equal(dom.body.find('dialog').length,0);assert.equal(dom.app.inert,false);
+   assert.equal(await access.requestWriteGrant(),false);
    const dialog=dom.body.find('dialog')[0];assert.ok(dialog?.open);assert.equal(dom.app.inert,true);
   } finally { root?.dispose();dom.restore(); }
  }

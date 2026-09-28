@@ -38,7 +38,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
     # Bounded discovery adds a read index after stable username ownership.
-    assert _alembic("heads").strip() == "0091_moment_video_posters (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0092_admin_session_entry_mode (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history
@@ -53,6 +53,16 @@ def test_wallet_and_moments_merge_is_the_only_head() -> None:
     assert "0087_support_payout_workflow -> 0088_profile_grapheme_limits" in history
     assert "0088_profile_grapheme_limits -> 0089_username_claims" in history
     assert "0089_username_claims -> 0090_friend_discovery_index" in history
+
+
+def test_admin_entry_mode_expands_session_without_trusting_existing_rows() -> None:
+    sql = _normalized_sql(_alembic(
+        "upgrade", "0091_moment_video_posters:0092_admin_session_entry_mode", "--sql"
+    ))
+    assert "alter table identity_admin_sessions add column entry_mode varchar(16)" in sql
+    assert "entry_mode in ('staff', 'admin')" in sql
+    assert "update identity_admin_sessions" not in sql
+    assert "drop " not in sql
 
 
 def test_direct_room_history_is_expand_only():

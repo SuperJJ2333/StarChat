@@ -4,11 +4,21 @@ import {formatPoints, trendGeometry, refreshCoordinator} from '../src/admin-dash
 
 test('staff navigation excludes administrator USDT wallet without broadening permissions',async()=>{
   const {visibleAdminModules}=await import('../src/admin-dashboard.js');
-  const modules=[['客服订单','','recharge','admin.finance.read'],['USDT提现与支付','','wallet','admin.withdrawals.read'],['用户管理','','analytics','admin.analytics.read']];
+  const modules=[['客服订单','','recharge','admin.finance.read'],['USDT提现与支付','','wallet','admin.withdrawals.read'],['用户管理','','users','*'],['用户统计','','analytics','admin.analytics.read']];
   const context={permissions:['admin.finance.read','admin.withdrawals.read','admin.overview.read'],actor:{roles:['FINANCE_SUPPORT']}};
   assert.equal(typeof visibleAdminModules,'function');
   assert.deepEqual(visibleAdminModules(context,modules).map(x=>x[2]),['recharge']);
-  assert.equal(visibleAdminModules({permissions:['*']},modules).length,3);
+  assert.deepEqual(visibleAdminModules({permissions:['*']},modules).map(x=>x[2]),['recharge','users','analytics']);
+  assert.deepEqual(visibleAdminModules({permissions:['*'],capabilities:{wallet_owner_read:true}},modules).map(x=>x[2]),['recharge','wallet','users','analytics']);
+  assert.deepEqual(visibleAdminModules({...context,capabilities:{wallet_owner_read:true}},modules).map(x=>x[2]),['recharge']);
+});
+test('shared password entry is only shown for a pure staff management identity',async()=>{
+ const dashboard=await import('../src/admin-dashboard.js');
+ assert.equal(dashboard.canChangeStaffPassword({actor:{roles:['SUPPORT_AGENT']}}),true);
+ assert.equal(dashboard.canChangeStaffPassword({actor:{roles:['SUPPORT_SUPERVISOR']}}),true);
+ assert.equal(dashboard.canChangeStaffPassword({actor:{roles:['SUPER_ADMIN','SUPPORT_AGENT']}}),false);
+ assert.equal(dashboard.canChangeStaffPassword({actor:{roles:['SUPER_ADMIN']}}),false);
+ assert.equal(dashboard.canChangeStaffPassword({actor:{roles:[]}}),false);
 });
 
 test('point totals preserve cents beyond JavaScript safe integer',()=>{

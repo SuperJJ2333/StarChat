@@ -1,21 +1,25 @@
-import {adminSession} from "./admin-session.js?v=20260908-modern";
-import {createAdminShell} from "./admin-dashboard.js?v=20260923-direct";
-import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260910-readability";
+import {adminSession} from "./admin-session.js?v=20260928-admin-entry";
+import {createAdminShell} from "./admin-dashboard.js?v=20260928-admin-entry";
+import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260928-admin-entry";
 import { element, button } from "./components/base.js";
-import { browserAdminApi, can } from "./admin-api.js?v=20260910-completion";
+import { browserAdminApi, can } from "./admin-api.js?v=20260928-admin-entry";
 import { presentModuleRows } from "./admin-presenters.js";
 import { userPanel } from "./admin-user-panel.js";
+import {userDirectory} from './admin-user-directory.js';
 import { ledgerPanel } from './admin-ledger-panel.js';
 import { statusLabel } from "./admin-formatters.js";
-import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260928-wallet-monitor-t2";
-import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
+import { chainPanel } from "./admin-chain-panel.js?v=20260928-admin-entry";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260928-admin-entry";
+import { walletAccessPanel } from './admin-wallet-access.js?v=20260928-admin-entry';
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';
 import {supportOrderAccessPanel} from './admin-support-order-access.js';
 import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260923-direct';
+import {staffPasswordDialog} from './admin-staff-password-dialog.js';
+import {adminLoadingView} from './admin-loading.js';
 
 const modules = [
+  ["用户管理", "全部用户资料与点钻余额", "users", "*"],
   ["客服点钻派发", "批次与审计记录", "finance", "admin.adjustments.read"],
   ["封禁 IP 和用户", "封禁与解封操作", "security", "admin.bans.read"],
   ["客服管理", "角色和权限范围", "support-role", "admin.support_roles.read"],
@@ -60,6 +64,7 @@ function tableFor(key, dataset = {}) {
   return table;
 }
 function modulePanel(key, title, context) {
+  if(key==='users')return userDirectory(browserAdminApi());
   if(key==='support-role')return supportPanel(browserAdminApi(),{mode:'manage'});
   if(key==='recharge')return supportOrderAccessPanel(browserAdminApi(),{actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,onReauthenticate:reauthenticateManualWallet,renderContent:api=>supportOrderContent(api,context)});
   if(key==='finance')return supportPanel(browserAdminApi(),{mode:'grant'});
@@ -67,7 +72,7 @@ function modulePanel(key, title, context) {
   if(key==='wallet') return walletAccessPanel(browserAdminApi(),{
     actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,
     renderSetup:(api,onSecurityChanged)=>manualWalletPanel(api,{actor:context.actor,securityOnly:true,onSecurityChanged,onReauthenticate:reauthenticateManualWallet}),
-    renderContent:(api,walletAccess)=>walletContent(api,context,walletAccess)
+    renderContent:(api,accessController)=>walletContent(api,context,accessController)
   });
   if (key === 'security' || key === 'analytics') return userPanel(browserAdminApi(), {module:key,context,initialData:context.modules[key],onReauthenticate:reauthenticateManualWallet});
   const panel = element("section", "admin-card admin-module-panel"); const head = element("div", "admin-panel-heading"); const titleBlock = element("div"); titleBlock.append(element("h2", null, title)); head.append(titleBlock, element("span", "admin-chip", "服务端权限已验证")); panel.append(head);
@@ -86,10 +91,10 @@ function supportOrderContent(api,context){
   container.refresh=()=>child?.refresh?.();container.refreshOrders=()=>child?.refreshOrders?.();container.dispose=()=>child?.dispose?.();
   showRecharge();return container;
 }
-function walletContent(api,context,walletAccess){
+function walletContent(api,context,accessController){
   const panel=element('section','admin-card admin-module-panel');
   panel.append(element('h2',null,'USDT提现与支付'));
-  const table=element('div'),wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess}),chain=chainPanel(api,{actorId:context.actor?.id});
+  const table=element('div'),wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess:accessController.usesGrant(),accessController}),chain=chainPanel(api,{actorId:context.actor?.id,accessController});
   panel.append(chain,wallet,table);let disposed=false,revision=0;
   const loadTable=async()=>{const version=++revision;try{const payload=await api.getModule('wallet');if(!disposed&&version===revision)table.replaceChildren(tableFor('wallet',{headers:headerFallbacks.wallet,rows:presentModuleRows('wallet',payload.items??[])}));return true;}catch(error){if(!disposed)table.replaceChildren(element('p','admin-load-error',error.message??'钱包记录加载失败，请重试。'));return false;}};
   panel.dispose=()=>{disposed=true;++revision;wallet.dispose?.();chain.dispose?.();table.replaceChildren();};
@@ -106,7 +111,10 @@ function commandForm(key, context) {
 }
 function errorView(error, retry) { const root = element("main", "admin-content"); root.append(element("h1", null, error.code === "UNAUTHORIZED" ? "登录已失效" : error.code === "FORBIDDEN" ? "没有访问权限" : "暂时无法加载管理台"), element("p", null, error.message || "请检查网络连接后重试。")); const action = button("admin-primary", "重新加载"); action.textContent = "重新加载"; action.addEventListener("click", retry); root.append(action); return root; }
 function adminView(context) {
-  return createAdminShell({context,api:browserAdminApi(),modules,renderModule:modulePanel,onLogout:signOut});
+  return createAdminShell({context,api:browserAdminApi(),modules,renderModule:modulePanel,onLogout:signOut,
+    onChangePassword:()=>staffPasswordDialog({session:adminSession,onSuccess:()=>{
+      disposeCurrent();app.replaceChildren(showLogin());document.body.dataset.appReady='login-required';
+    }})});
 }
 // 下载链接使用版本无关的稳定别名：/downloads/latest-<abi>.apk
 // （服务器侧以符号链接指向当前版本的 APK），发版不再需要改动本页面。
@@ -280,7 +288,7 @@ async function render() {
   if(mode==='home'){app.replaceChildren(homeView());document.body.dataset.appReady='true';return;}
   // Remove legacy persistent credentials after upgrading to Cookie-based sessions.
   sessionStorage.removeItem('chatflow_access_token');
-  app.replaceChildren(element('main','admin-content','正在加载管理台…'));
+  app.replaceChildren(adminLoadingView());
   try{await adminSession.getToken();const context=await browserAdminApi().getContext();if(generation!==renderGeneration)return;app.replaceChildren(adminView(context));document.body.dataset.appReady='true';}
   catch(error){if(generation!==renderGeneration)return;if(error.status===401){adminSession.clear();app.replaceChildren(showLogin());document.body.dataset.appReady='login-required';}else{app.replaceChildren(errorView(error,render));document.body.dataset.appReady='error';}}
 }

@@ -106,6 +106,26 @@ class WalletAccessGrantService:
         with self.factory.begin() as session:
             self.authorization(claims=claims)(session)()
 
+    def require_read(self, *, claims):
+        with self.factory.begin() as session:
+            self.read_authorization(claims=claims)(session)()
+
+    def read_authorization(self, *, claims):
+        """Authorize an owner read in the caller's transaction without a wallet grant."""
+        def authorize(session):
+            if self.scope != 'wallet-admin' or not getattr(self.settings, 'wallet_access_grant_enabled', False):
+                raise error('WALLET_ACCESS_REQUIRED')
+            self._identity(session, claims)()
+            def final():
+                if not getattr(self.settings, 'wallet_access_grant_enabled', False):
+                    raise error('WALLET_ACCESS_REQUIRED')
+                # Re-read owner, role, hold, session, device and family after
+                # downstream work may have waited for another transaction.
+                self._identity(session, claims)()
+            final()
+            return final
+        return authorize
+
     def authorization(self, *, claims):
         def authorize(session):
             fresh = self._identity(session, claims)
