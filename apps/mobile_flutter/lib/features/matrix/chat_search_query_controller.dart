@@ -28,16 +28,22 @@ final class ChatSearchQueryController {
       {ChatSearchCursor? cursor, int limit})? searchBatch;
 
   /// Invalidate in-flight work without changing the visible query filters.
-  void invalidate() {
+  void invalidate({
+    PerformanceSearchRestartReason? restartReason,
+    PerformanceSearchCancelReason? cancelReason,
+  }) {
     _epoch++;
     cancelDebounce();
-    _cancelHistoryTrace();
+    _cancelHistoryTrace(cancelReason);
+    if (restartReason != null) _nextHistoryRestartReason = restartReason;
   }
 
   final ChatSearchClock _clock;
   final PerformanceTraceRecorder _traceRecorder;
   PerformanceTrace? _historyTrace;
   int _historyStartedMs = 0;
+  PerformanceSearchRestartReason? _nextHistoryRestartReason;
+  bool _executedHistoryQuery = false;
   final Duration debounce;
 
   void _cancelHistoryTrace([PerformanceSearchCancelReason? reason]) {
@@ -51,6 +57,12 @@ final class ChatSearchQueryController {
   PerformanceTrace _startHistoryTrace() {
     final trace = _traceRecorder.start(PerformanceOperationType.historySearch)
       ..mark(PerformanceStage.searchScanStarted);
+    trace.searchRestartReason = _nextHistoryRestartReason ??
+        (_executedHistoryQuery
+            ? PerformanceSearchRestartReason.manualRefresh
+            : null);
+    _nextHistoryRestartReason = null;
+    _executedHistoryQuery = true;
     _historyTrace = trace;
     _historyStartedMs = _traceRecorder.monotonicMs;
     return trace;
@@ -128,6 +140,7 @@ final class ChatSearchQueryController {
   void setKeyword(String keyword) {
     if (_keyword == keyword) return;
     _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
+    _nextHistoryRestartReason = PerformanceSearchRestartReason.queryChanged;
     _keyword = keyword;
     _epoch++; // 条件变更 → 旧请求失效。
   }
@@ -135,6 +148,7 @@ final class ChatSearchQueryController {
   void setSender(String? userId) {
     if (_senderUserId == userId) return;
     _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
+    _nextHistoryRestartReason = PerformanceSearchRestartReason.queryChanged;
     _senderUserId = userId;
     _epoch++;
   }
@@ -142,6 +156,7 @@ final class ChatSearchQueryController {
   void setMediaCategory(ChatSearchMediaCategory? category) {
     if (_mediaCategory == category) return;
     _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
+    _nextHistoryRestartReason = PerformanceSearchRestartReason.queryChanged;
     _mediaCategory = category;
     _epoch++;
   }
@@ -150,6 +165,8 @@ final class ChatSearchQueryController {
         ChatSearchFilterKind.keyword => () {
             if (_keyword.trim().isEmpty) return false;
             _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
+            _nextHistoryRestartReason =
+                PerformanceSearchRestartReason.queryChanged;
             _keyword = '';
             _epoch++;
             return true;
@@ -157,6 +174,8 @@ final class ChatSearchQueryController {
         ChatSearchFilterKind.sender => () {
             if (_senderUserId == null) return false;
             _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
+            _nextHistoryRestartReason =
+                PerformanceSearchRestartReason.queryChanged;
             _senderUserId = null;
             _epoch++;
             return true;
@@ -164,6 +183,8 @@ final class ChatSearchQueryController {
         ChatSearchFilterKind.media => () {
             if (_mediaCategory == null) return false;
             _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
+            _nextHistoryRestartReason =
+                PerformanceSearchRestartReason.queryChanged;
             _mediaCategory = null;
             _epoch++;
             return true;
@@ -173,6 +194,7 @@ final class ChatSearchQueryController {
   void clearAll() {
     if (isDefaultEmptyState) return;
     _cancelHistoryTrace(PerformanceSearchCancelReason.newQuery);
+    _nextHistoryRestartReason = PerformanceSearchRestartReason.queryChanged;
     _keyword = '';
     _senderUserId = null;
     _mediaCategory = null;

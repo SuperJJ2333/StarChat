@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 
+import '../../core/performance_trace.dart';
 import '../../features/contacts/member_directory_service.dart';
 import '../../features/matrix/chat_media_shared_logic.dart' as logic;
 import '../../features/matrix/chat_search_query_controller.dart';
@@ -23,6 +24,7 @@ final class ChatSearchPage extends StatefulWidget {
     required this.isGroup,
     required this.search,
     this.searchBatch,
+    this.traceRecorder,
     required this.memberEntries,
     required this.onJumpToMessage,
     this.senderDisplayName,
@@ -57,6 +59,7 @@ final class ChatSearchPage extends StatefulWidget {
       {ChatSearchCursor? cursor, int limit}) search;
   final Future<ChatSearchSlice> Function(ChatSearchFilters filters,
       {ChatSearchCursor? cursor, int limit})? searchBatch;
+  final PerformanceTraceRecorder? traceRecorder;
 
   /// 群成员目录（成员筛选入口的数据；私聊传空）。
   final List<MemberDirectoryEntry> memberEntries;
@@ -121,6 +124,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     _controller = ChatSearchQueryController(
       search: widget.search,
       searchBatch: widget.searchBatch,
+      traceRecorder: widget.traceRecorder,
       debounce: const Duration(milliseconds: 300),
     );
   }
@@ -157,7 +161,10 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   void _historyChanged() {
     if (!mounted) return;
     _debounce?.cancel();
-    _controller!.invalidate();
+    _controller!.invalidate(
+      restartReason: PerformanceSearchRestartReason.safetyInvalidation,
+      cancelReason: PerformanceSearchCancelReason.visibilityRevoked,
+    );
     widget.onSearchInvalidated?.call();
     ++_queryGeneration;
     // A history revision may revoke visibility. Never keep the old plaintext
@@ -180,7 +187,8 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     widget.historyChanges?.removeListener(_historyChanged);
     widget.ordinaryAppends?.removeListener(_ordinaryAppendChanged);
     _debounce?.cancel();
-    _controller?.invalidate();
+    _controller?.invalidate(
+        cancelReason: PerformanceSearchCancelReason.routeClosed);
     widget.onSearchInvalidated?.call();
     _queryGeneration++;
     _input.dispose();
@@ -358,7 +366,8 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
 
   Future<void> _openCalendar() async {
     _debounce?.cancel();
-    _controller?.invalidate();
+    _controller?.invalidate(
+        cancelReason: PerformanceSearchCancelReason.newQuery);
     widget.onSearchInvalidated?.call();
     _queryGeneration++;
     setState(() {

@@ -135,6 +135,56 @@ void main() {
     expect(records.single.result, PerformanceResult.failed);
   });
 
+  test('history search emits only closed restart and cancellation reasons',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final controller = ChatSearchQueryController(
+      traceRecorder: recorder,
+      search: (filters, {cursor, limit = 50}) async => const [],
+      searchBatch: (filters, {cursor, limit = 50}) async =>
+          const ChatSearchSlice(
+        items: [],
+        nextCursor: ChatSearchCursor(order: 1, eventId: 'next'),
+      ),
+    )..setKeyword('private-one');
+
+    await controller.executeNow();
+    controller.setKeyword('private-two');
+    expect(records.last.searchCancelReason,
+        PerformanceSearchCancelReason.newQuery);
+    await controller.executeNow();
+    controller.invalidate(
+      restartReason: PerformanceSearchRestartReason.safetyInvalidation,
+      cancelReason: PerformanceSearchCancelReason.visibilityRevoked,
+    );
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.queryChanged);
+    expect(records.last.searchCancelReason,
+        PerformanceSearchCancelReason.visibilityRevoked);
+
+    await controller.executeNow();
+    controller.invalidate(
+        cancelReason: PerformanceSearchCancelReason.routeClosed);
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.safetyInvalidation);
+    expect(records.last.searchCancelReason,
+        PerformanceSearchCancelReason.routeClosed);
+
+    await controller.executeNow();
+    await controller.executeNow();
+    controller.invalidate(
+        cancelReason: PerformanceSearchCancelReason.routeClosed);
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.manualRefresh);
+    final wire = jsonEncode(records.map((record) => record.toJson()).toList());
+    expect(wire, isNot(contains('private-one')));
+    expect(wire, isNot(contains('private-two')));
+  });
+
   group('#4 默认空态与组合筛选', () {
     test('首次进入（无条件）为空态：不查询', () async {
       var queries = 0;

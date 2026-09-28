@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/contacts/member_directory_service.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_media_shared_logic.dart'
     as logic;
@@ -11,12 +13,18 @@ void main() {
   testWidgets('history change removes withdrawn results without a user gesture',
       (tester) async {
     final history = ValueNotifier<int>(0);
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
     var queries = 0;
     await tester.pumpWidget(CupertinoApp(
         home: ChatSearchPage(
       isGroup: false,
       memberEntries: const [],
       historyChanges: history,
+      traceRecorder: recorder,
       search: (f, {cursor, limit = 50}) async {
         queries++;
         return history.value == 0
@@ -47,6 +55,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(queries, before + 1);
     expect(find.byKey(const Key('chat-search-no-results')), findsOneWidget);
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.safetyInvalidation);
     await tester.pumpWidget(const SizedBox());
     history.dispose();
   });
