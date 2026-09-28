@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-28 iOS 换签恢复规格待审
+
+用户确认旧 Team 已不可用，旧签名 iPhone 尚可读历史、未安装新包、没有外存恢复码或其他持钥设备，并批准“保留旧 App，面向未来增加用户持有恢复码的 Matrix 加密备份与并存测试包”方向。[书面规格](../superpowers/specs/2026-09-28-ios-team-independent-e2ee-recovery-design.md)和[ADR-0087 草案](../adr/0087-ios-cross-team-e2ee-recovery.md)已起草，仍待用户审阅及受保护评审。Business/Synapse 单设备登录会撤销并删除旧 Matrix 设备；新 Bundle 可并装，不能用真实旧账号同时登录测试传钥。唯一可读旧历史的 iPhone 保持原状。本项未改客户端/服务端、未打 IPA 或发布。见[任务记录](tasks/2026-09-28-ios-team-keychain-investigation.md)。下方旧 iOS 发布条目是更早阶段快照，当前 (13) 包的官方入口另见对应分发任务记录。
+
 ## 2026-09-28 朋友圈视频封面 API261f 与0091已发布
 
 用户独立批准固定 API261f0425…1c07a 与可空扩展迁移0091。冻结脚本8966c7ba…4954经服务器SHA守卫执行，2026-09-28 13:45:13+08 私有checkpoint为active；root/0600 PostgreSQL备份29,265,946字节留服务器，单0091 head及两可空列完成。新API healthy/restart0、六源SHA逐项匹配；其余45容器ID/镜像不变且无重启。双侧严格TLS健康200、OpenAPI旧324路径保留/新326、抽查旧新受保护入口匿名401；最近300条API日志无标准severity错误或可识别HTTP访问5xx，另有1条未归类数字5xx，未判定为HTTP状态。旧兼容回退镜像30391保留、迁移不降库；生产真实已鉴权上传/跨账号可见性及iOS2189真机跨设备封面仍待设备验收。见[任务](tasks/2026-09-28-moments-poster-api-publish.md)、[发布核验](../verification/2026-09-28-moments-poster-api-publish.md)；下方“API待批准”是本次发布之前的阶段快照。
