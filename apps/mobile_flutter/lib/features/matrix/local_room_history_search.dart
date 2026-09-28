@@ -14,6 +14,7 @@ final class LocalRoomHistorySearch {
       required this.readPage,
       this.openIds,
       this.readByIds,
+      this.onResult,
       required this.project,
       this.sourceRevision,
       LocalRoomHistorySnapshot? snapshot,
@@ -32,6 +33,7 @@ final class LocalRoomHistorySearch {
   final Future<LocalSearchIdSnapshot> Function(String roomId)? openIds;
   final Future<List<ChatSearchMessage>> Function(
       String roomId, List<String> eventIds)? readByIds;
+  final void Function(String sourceRoomId, ChatSearchMessage row)? onResult;
   final ChatSearchMessage? Function(String roomId, ChatSearchMessage message)
       project;
   final int pageSize;
@@ -96,6 +98,7 @@ final class LocalRoomHistorySearch {
 
     var visited = 0;
     var scannedPages = 0;
+    final found = <ChatSearchMessage>[];
     final sliceClock = Stopwatch()..start();
     bool sliceFull() =>
         visited >= 1024 ||
@@ -111,6 +114,10 @@ final class LocalRoomHistorySearch {
             state.buffer = const [];
             break;
           }
+          // A verified hit can be shown without waiting for another disk page.
+          // Continue through the current page for dense results, then resume
+          // the frozen scan on the next UI request.
+          if (found.isNotEmpty) return;
           List<ChatSearchMessage> page;
           if (openIds == null) {
             page = await snapshot.page(roomId, state.offset, pageSize);
@@ -128,7 +135,11 @@ final class LocalRoomHistorySearch {
             }
             final pageIds = await ids.page(state.offset, pageSize);
             check();
-            page = await snapshot.pageByIds(roomId, pageIds, readByIds!);
+            // Search already owns one active page per source. Do not also fill
+            // the shared 64 MiB calendar/history projection cache while
+            // scanning many old or nonmatching messages.
+            page = completeLocalHistoryPage(
+                pageIds, await readByIds!(roomId, pageIds));
           }
           check();
           scannedPages++;
@@ -158,7 +169,6 @@ final class LocalRoomHistorySearch {
       }
     }
 
-    final found = <ChatSearchMessage>[];
     try {
       while (found.length < limit) {
         for (final entry in _sources.entries.toList(growable: false)) {
@@ -168,14 +178,17 @@ final class LocalRoomHistorySearch {
         // A source without a matching head may still contain a newer hit.
         // Defer the merge until every source has a head or is exhausted.
         if (_sources.values.any((s) => !s.done && s.head == null)) {
-          if (sliceFull()) break;
+          if (found.isNotEmpty || sliceFull()) break;
           continue;
         }
         _LocalSourceCursor? best;
-        for (final source in _sources.values) {
+        String? bestRoomId;
+        for (final entry in _sources.entries) {
+          final source = entry.value;
           if (source.head == null) continue;
           if (best == null || _compare(source.head!, best.head!) < 0) {
             best = source;
+            bestRoomId = entry.key;
           }
         }
         if (best == null) break;
@@ -184,6 +197,7 @@ final class LocalRoomHistorySearch {
         if (_seen.add(item.eventId)) {
           found.add(item);
           added.add(item.eventId);
+          onResult?.call(bestRoomId!, item);
         }
         while (_seen.length > 60000) {
           final id = _seen.first;

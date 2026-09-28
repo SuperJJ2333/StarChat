@@ -8,6 +8,7 @@ import 'bounded_history_search.dart';
 import 'room_route_frame_probe.dart';
 import 'room_keyboard_transition_probe.dart';
 import 'local_room_history_search.dart';
+import 'room_search_visibility.dart';
 import '../../core/chat_diagnostics.dart';
 import '../../core/chat_diagnostic_operation.dart';
 import 'nudge_rate_limiter.dart';
@@ -17,7 +18,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
-import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
+import 'package:matrix/matrix.dart'
+    show MatrixSearchSnapshotBudget, SyncStatus, SyncStatusUpdate;
 
 import 'room_draft_store.dart';
 import 'media_load_scheduler.dart';
@@ -126,8 +128,6 @@ import 'video_poster_diagnostics.dart';
 import 'video_poster_pipeline.dart';
 import 'chat_search_query_controller.dart'
     show
-        ChatSearchMessage,
-        ChatSearchMediaCategory,
         ChatSearchFilters,
         ChatSearchCursor,
         ChatSearchSlice;
@@ -3247,93 +3247,47 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     var searchOpen = true;
     RoomHistoryDayLocation? resolvedDateLocation;
+    final searchResultVisibility = LocalSearchResultVisibility();
+    bool searchResultHidden(String sourceRoomId, String eventId,
+            DateTime timestamp) =>
+        hiddenEvents?.isEventHidden(sourceRoomId, eventId,
+            eventTimestamp: timestamp) ??
+        false;
     RoomMessageViewModel? currentSearchMessage(String id) {
       // A retained iterator may outlive a recall or source refresh. Resolve the
       // current indexed row before exposing its text, never a stale snapshot.
+      if (!searchResultVisibility.isVisible(id,
+          isHidden: searchResultHidden)) {
+        return null;
+      }
       final message = controller?.findMessage(id);
-      if (message == null ||
-          message.isRecalled ||
-          (hiddenEvents?.isEventHidden(roomInfo.id, message.id,
-                  eventTimestamp: message.timestamp) ??
-              false)) {
+      if (message == null || message.isRecalled) {
         return null;
       }
       return message;
     }
 
-    ChatSearchMessage? projectSearchMessage(RoomMessageViewModel scanned) {
-      final message = currentSearchMessage(scanned.id);
-      if (message == null) return null;
-      return ChatSearchMessage(
-        eventId: message.id,
-        senderId: message.senderId,
-        senderDisplayName: MemberDirectoryEntry(
-          userId: message.senderId,
-          remark: contactsByMatrixId[message.senderId]?.remark,
-          nickname: contactsByMatrixId[message.senderId]?.nickname ??
-              _member(message.senderId).displayName,
-          username: contactsByMatrixId[message.senderId]?.username,
-        ).displayName,
-        timestamp: message.timestamp.toLocal(),
-        timelineOrder: message.timestamp.millisecondsSinceEpoch,
-        visibleText: message.text,
-        isFlashPhoto: message.isFlashPhoto,
-        displayText: switch (message.kind) {
-          RoomMessageKind.image =>
-            message.mimeType?.startsWith('video/') == true
-                ? '[视频消息]'
-                : '[图片消息]',
-          RoomMessageKind.video => '[视频消息]',
-          RoomMessageKind.voice => '[语音消息]',
-          RoomMessageKind.file => '[文件消息]',
-          RoomMessageKind.call => '[通话消息]',
-          RoomMessageKind.redPacket => '[红包消息]',
-          RoomMessageKind.transfer => '[转账消息]',
-          _ => message.text,
-        },
-        mediaCategory: _ordinarySearchMediaAllowed(message)
-            ? switch (message.kind) {
-                RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
-                RoomMessageKind.image
-                    when message.mimeType?.startsWith('video/') == true =>
-                  ChatSearchMediaCategory.imageVideo,
-                RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
-                RoomMessageKind.file => ChatSearchMediaCategory.file,
-                RoomMessageKind.text
-                    when RegExp(
-                      'https?://[^\\\\s<>"]+',
-                      caseSensitive: false,
-                    ).hasMatch(message.text) =>
-                  ChatSearchMediaCategory.link,
-                _ => null,
-              }
-            : null,
-        hasMedia: _ordinarySearchMediaAllowed(message) &&
-            message.kind != RoomMessageKind.text,
-        isVideo: message.kind == RoomMessageKind.video ||
-            message.mimeType?.startsWith('video/') == true,
-        duration: message.videoDuration,
-      );
-    }
-
+    final searchBudget = MatrixSearchSnapshotBudget();
     final historySearch = LocalRoomHistorySearch(
       roomIds: () => widget.roomLease.localHistorySearchRoomIds,
       readPage: widget.roomLease.readLocalSearchPage,
-      openIds: widget.roomLease.openLocalSearchIds,
+      openIds: (sourceRoomId) => widget.roomLease
+          .openLocalSearchIds(sourceRoomId, budget: searchBudget),
       readByIds: widget.roomLease.readLocalSearchByIds,
       snapshot: widget.roomLease.localHistorySnapshot,
       sourceRevision: () => widget.roomLease.localHistorySearchRevision,
+      onResult: searchResultVisibility.remember,
       project: (sourceRoomId, item) {
-        final current = controller?.findMessage(item.eventId);
-        if (current != null) return projectSearchMessage(current);
-        if (item.isFlashPhoto ||
-            (item.visibleText.isEmpty && item.mediaCategory == null) ||
-            (hiddenEvents?.isEventHidden(sourceRoomId, item.eventId,
-                    eventTimestamp: item.timestamp) ??
-                false)) {
+        final visible = visibleLocalSearchRow(
+          sourceRoomId: sourceRoomId,
+          row: item,
+          isHidden: searchResultHidden,
+        );
+        if (visible == null ||
+            (controller?.findMessage(item.eventId)?.isRecalled ?? false)) {
           return null;
         }
-        return item;
+        return visible;
       },
     );
     Future<ChatSearchSlice> searchBatch(ChatSearchFilters filters,
@@ -3394,7 +3348,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           },
           onCancelCalendarMonthLookup: () => controller?.cancelMonthLookup(),
           onCalendarClosed: () => controller?.cancelPendingDateLookup(),
-          onSearchInvalidated: historySearch.cancel,
+          onSearchInvalidated: () {
+            searchResultVisibility.clear();
+            historySearch.cancel();
+          },
           memberEntries: memberEntries(),
           liveMemberEntries: memberEntries,
           memberAvatarBuilder: (context, entry) {
@@ -3459,12 +3416,28 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             }
           },
           onJumpToMessage: (eventId) {
+            if (!searchResultVisibility.isVisible(eventId,
+                    isHidden: searchResultHidden) ||
+                (controller?.findMessage(eventId)?.isRecalled ?? false)) {
+              return;
+            }
             returnToRoom();
             unawaited(_scrollToMessage(eventId));
           },
           onJumpToDate: (date) {
             final location = resolvedDateLocation;
             if (location == null || location.day != date) return;
+            if (widget.roomLease.localAnchorForDay(date) != location.eventId) {
+              return;
+            }
+            final sourceRoomId = widget.roomLease.localAnchorSourceForDay(date);
+            if (sourceRoomId == null ||
+                (hiddenEvents?.isHidden(sourceRoomId, location.eventId) ??
+                    false) ||
+                (controller?.findMessage(location.eventId)?.isRecalled ??
+                    false)) {
+              return;
+            }
             returnToRoom();
             unawaited(_scrollToMessage(location.eventId));
           },
@@ -3489,6 +3462,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       searchOpen = false;
       controller?.cancelPendingDateLookup();
       historySearch.cancel();
+      searchResultVisibility.clear();
     });
   }
 
@@ -3724,10 +3698,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// [MediaMessageAccessPolicy]，禁止在各处散落 isFlashPhoto 判断）。
   MediaMessageAccessPolicy _mediaPolicyFor(RoomMessageViewModel message) =>
       MediaMessageAccessPolicy.forMessage(isFlashPhoto: message.isFlashPhoto);
-
-  /// 普通「图片与视频」历史搜索是否允许收录该消息。
-  bool _ordinarySearchMediaAllowed(RoomMessageViewModel message) =>
-      _mediaPolicyFor(message).includeInSearchMedia;
 
   List<RoomGalleryImage> _galleryImages() {
     final all = controller?.allMessages ?? const <RoomMessageViewModel>[];

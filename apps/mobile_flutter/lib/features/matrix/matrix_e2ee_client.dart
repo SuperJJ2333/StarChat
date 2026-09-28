@@ -1657,7 +1657,8 @@ final class MatrixRoomLease
   List<String> get notificationRoomIds => List<String>.unmodifiable(
       {roomId, ...owner.logicalRoomSourcesSync(roomId)});
 
-  Future<LocalSearchIdSnapshot> openLocalSearchIds(String sourceRoomId) =>
+  Future<LocalSearchIdSnapshot> openLocalSearchIds(String sourceRoomId,
+          {MatrixSearchSnapshotBudget? budget}) =>
       _withLeaseOperation((room) async {
         if (sourceRoomId != roomId &&
             !_historyLeases.containsKey(sourceRoomId)) {
@@ -1671,7 +1672,7 @@ final class MatrixRoomLease
           throw StateError('Local history database unavailable');
         }
         final revision = localHistorySearchRevision;
-        final ids = await database.openSearchEventIds(source);
+        final ids = await database.openSearchEventIds(source, budget: budget);
         if (canceled ||
             owner._accessRevoked ||
             !identical(owner._client, source.client) ||

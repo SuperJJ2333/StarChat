@@ -4,6 +4,7 @@ import 'package:liuhetong_mobile/features/matrix/local_room_history_search.dart'
 import 'package:liuhetong_mobile/features/matrix/bounded_history_search.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/local_search_id_snapshot.dart';
+import 'package:liuhetong_mobile/features/matrix/local_room_history_snapshot.dart';
 
 final class _FrozenIds implements LocalSearchIdSnapshot {
   _FrozenIds(Iterable<String> ids) : _ids = List.unmodifiable(ids);
@@ -130,6 +131,55 @@ void main() {
         }.length,
         100);
   });
+  test('first sparse hit returns after its page without opening another',
+      () async {
+    final rows = List.generate(
+        3000, (i) => message(i, body: i == 500 ? 'needle' : 'synthetic'));
+    var reads = 0;
+    final search = LocalRoomHistorySearch(
+        roomIds: () => ['room'],
+        readPage: (_, start, limit) async {
+          reads++;
+          return rows.skip(start).take(limit).toList();
+        },
+        project: (_, row) => row);
+    final first =
+        await search.search(const ChatSearchFilters(keyword: 'needle'));
+    expect(first.items.map((item) => item.eventId), ['e500']);
+    expect(first.scannedPages, 1);
+    expect(reads, 1);
+    expect(first.nextCursor, isNotNull);
+  });
+  test('ID scan does not retain decrypted search pages in shared cache',
+      () async {
+    final rows = List.generate(
+        1200, (i) => message(i, body: i == 0 ? 'needle' : 'synthetic'));
+    final byId = {for (final row in rows) row.eventId: row};
+    final snapshot = LocalRoomHistorySnapshot(
+        roomIds: () => ['room'], readPage: (_, __, ___) async => const []);
+    var batchReads = 0;
+    Future<List<ChatSearchMessage>> readByIds(
+        String _, List<String> ids) async {
+      batchReads++;
+      return [for (final id in ids) byId[id]!];
+    }
+
+    final search = LocalRoomHistorySearch(
+        roomIds: () => ['room'],
+        readPage: (_, __, ___) async => const [],
+        openIds: (_) async => _FrozenIds(rows.map((row) => row.eventId)),
+        readByIds: readByIds,
+        snapshot: snapshot,
+        project: (_, row) => row);
+    final first =
+        await search.search(const ChatSearchFilters(keyword: 'needle'));
+    expect(first.items.map((item) => item.eventId), ['e0']);
+    expect(batchReads, 1);
+    await snapshot.pageByIds(
+        'room', rows.take(512).map((row) => row.eventId).toList(), readByIds);
+    expect(batchReads, 2,
+        reason: 'search should keep only its active page, not a 64 MiB cache');
+  });
   test('missing decrypted cache marks incomplete coverage', () async {
     final search = LocalRoomHistorySearch(
         roomIds: () => ['room'],
@@ -249,6 +299,7 @@ void main() {
   test('retained rooms merge, dedupe and paginate without rereading DB',
       () async {
     var reads = 0;
+    final resultSources = <String, String>{};
     final search = LocalRoomHistorySearch(
         roomIds: () => ['primary', 'retained'],
         readPage: (room, _, __) async {
@@ -257,6 +308,8 @@ void main() {
               ? [message(1, body: 'hit'), message(3, body: 'hit')]
               : [message(2, body: 'hit'), message(3, body: 'hit')];
         },
+        onResult: (sourceRoomId, row) =>
+            resultSources[row.eventId] = sourceRoomId,
         project: (_, row) => row);
     final first =
         await search.search(const ChatSearchFilters(keyword: 'hit'), limit: 2);
@@ -266,6 +319,8 @@ void main() {
     expect(next.items.map((m) => m.eventId), ['e3']);
     expect(next.nextCursor, isNull);
     expect(reads, 2);
+    expect(resultSources['e1'], 'primary');
+    expect(resultSources['e2'], 'retained');
   });
   test('projection rejects hidden/recalled rows and failures remain retryable',
       () async {
