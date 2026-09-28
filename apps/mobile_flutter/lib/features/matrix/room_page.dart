@@ -563,10 +563,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
-      _keyboardProbe?.cancel();
+      _keyboardProbe?.pause();
       _readReceiptDebounce?.cancel();
       unawaited(RoomDraftStore.shared.flush(_draftKey));
     } else {
+      _keyboardProbe?.resume();
       _syncReadReceiptWhileViewing();
       if (_readReceiptDirty) _scheduleReadReceipt(Duration.zero);
       if (_performanceLocalReady) {

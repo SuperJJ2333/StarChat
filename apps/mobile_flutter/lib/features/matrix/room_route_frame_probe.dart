@@ -22,8 +22,11 @@ final class RoomRouteFrameProbe {
     if (_disposed || _invalidated) return;
     if (_trace != null && _phase == phase) return;
     cancel();
+    if (!_recorder.recordingEnabled) return;
+    final trace = _recorder.start(PerformanceOperationType.roomLocalFrame);
+    if (!trace.isRecording) return;
     _phase = phase;
-    _trace = _recorder.start(PerformanceOperationType.roomLocalFrame);
+    _trace = trace;
     _trace?.roomRoutePhase = phase;
     if (phase == PerformanceRoomRoutePhase.leave) {
       _trace?.mark(PerformanceStage.routeExitRequested);

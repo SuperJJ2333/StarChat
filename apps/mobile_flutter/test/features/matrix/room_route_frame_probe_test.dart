@@ -5,6 +5,18 @@ import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/room_route_frame_probe.dart';
 
 void main() {
+  test('disabled diagnostics do not leave route probe timer active', () {
+    fakeAsync((time) {
+      final probe =
+          RoomRouteFrameProbe(PerformanceTraceRecorder(enabled: () => false));
+      probe.beginEnter();
+      expect(time.pendingTimers, isEmpty);
+      probe.beginLeave();
+      expect(time.pendingTimers, isEmpty);
+      probe.dispose();
+    });
+  });
+
   test('local entry frame closes independently of remote sync', () {
     final records = <PerformanceRecord>[];
     final recorder = PerformanceTraceRecorder(

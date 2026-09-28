@@ -27,6 +27,7 @@ final class RoomKeyboardTransitionProbe {
   int _stableFrames = 0;
   bool _framePending = false;
   bool _disposed = false;
+  bool _paused = false;
 
   static double? _readInset(double Function() read) {
     try {
@@ -41,7 +42,7 @@ final class RoomKeyboardTransitionProbe {
       direction == PerformanceKeyboardDirection.show ? inset > 1 : inset <= 1;
 
   void request(PerformanceKeyboardDirection direction) {
-    if (_disposed) return;
+    if (_disposed || _paused) return;
     final inset = _readInset(_bottomInset);
     if (inset == null) return;
     _lastInset = inset;
@@ -53,7 +54,7 @@ final class RoomKeyboardTransitionProbe {
 
   /// Called from the room's metrics observer; it schedules at most one frame.
   void onMetricsChanged() {
-    if (_disposed) return;
+    if (_disposed || _paused) return;
     final inset = _readInset(_bottomInset);
     if (inset == null) {
       _finish(PerformanceResult.cancelled);
@@ -72,11 +73,14 @@ final class RoomKeyboardTransitionProbe {
   }
 
   void _begin(PerformanceKeyboardDirection direction) {
+    if (_paused || !_recorder.recordingEnabled) return;
+    final trace = _recorder.start(PerformanceOperationType.keyboardTransition);
+    if (!trace.isRecording) return;
     _generation++;
     _direction = direction;
     _stableFrames = 0;
     _lastFrameInset = null;
-    _trace = _recorder.start(PerformanceOperationType.keyboardTransition);
+    _trace = trace;
     _trace?.keyboardDirection = direction;
     _trace?.mark(PerformanceStage.keyboardRequested);
     final generation = _generation;
@@ -144,6 +148,20 @@ final class RoomKeyboardTransitionProbe {
   void cancel() {
     if (_disposed) return;
     _finish(PerformanceResult.cancelled);
+  }
+
+  /// Ignore system inset changes while hidden and rebase after foregrounding.
+  void pause() {
+    if (_disposed) return;
+    cancel();
+    _paused = true;
+    _lastInset = null;
+  }
+
+  void resume() {
+    if (_disposed || !_paused) return;
+    _lastInset = _readInset(_bottomInset);
+    _paused = false;
   }
 
   void dispose() {

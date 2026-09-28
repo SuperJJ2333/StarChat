@@ -6,6 +6,55 @@ import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/room_keyboard_transition_probe.dart';
 
 void main() {
+  test('disabled diagnostics schedule no keyboard frames or timeout', () {
+    fakeAsync((time) {
+      var inset = 0.0;
+      final frames = <VoidCallback>[];
+      final probe = RoomKeyboardTransitionProbe(
+        recorder: PerformanceTraceRecorder(enabled: () => false),
+        bottomInset: () => inset,
+        afterFrame: frames.add,
+      );
+      probe.request(PerformanceKeyboardDirection.show);
+      inset = 200;
+      probe.onMetricsChanged();
+      expect(frames, isEmpty);
+      expect(time.pendingTimers, isEmpty);
+      probe.dispose();
+    });
+  });
+
+  test('background metrics are ignored and resume resets inset baseline', () {
+    var inset = 300.0;
+    final frames = <VoidCallback>[];
+    final records = <PerformanceRecord>[];
+    final probe = RoomKeyboardTransitionProbe(
+      recorder: PerformanceTraceRecorder(
+        metrics: PerformanceMetrics(enabled: true),
+        onRecord: records.add,
+      ),
+      bottomInset: () => inset,
+      afterFrame: frames.add,
+    );
+    probe.pause();
+    inset = 0;
+    probe.onMetricsChanged();
+    expect(frames, isEmpty);
+    expect(records, isEmpty);
+    probe.resume();
+    probe.onMetricsChanged();
+    expect(frames, isEmpty,
+        reason: 'insets changed while hidden are the new baseline');
+    probe.request(PerformanceKeyboardDirection.show);
+    inset = 300;
+    probe.onMetricsChanged();
+    frames.removeAt(0)();
+    frames.removeAt(0)();
+    expect(records.single.result, PerformanceResult.success);
+    expect(records.single.keyboardDirection, PerformanceKeyboardDirection.show);
+    probe.dispose();
+  });
+
   test('show waits for two stable post-layout frames', () {
     var inset = 0.0;
     var nowUs = 0;
