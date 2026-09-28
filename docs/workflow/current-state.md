@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-28 朋友圈视频封面 API261f 与0091已发布
+
+用户独立批准固定 API261f0425…1c07a 与可空扩展迁移0091。冻结脚本8966c7ba…4954经服务器SHA守卫执行，2026-09-28 13:45:13+08 私有checkpoint为active；root/0600 PostgreSQL备份29,265,946字节留服务器，单0091 head及两可空列完成。新API healthy/restart0、六源SHA逐项匹配；其余45容器ID/镜像不变且无重启。双侧严格TLS健康200、OpenAPI旧324路径保留/新326、抽查旧新受保护入口匿名401；最近300条API日志无标准severity错误或可识别HTTP访问5xx，另有1条未归类数字5xx，未判定为HTTP状态。旧兼容回退镜像30391保留、迁移不降库；生产真实已鉴权上传/跨账号可见性及iOS2189真机跨设备封面仍待设备验收。见[任务](tasks/2026-09-28-moments-poster-api-publish.md)、[发布核验](../verification/2026-09-28-moments-poster-api-publish.md)；下方“API待批准”是本次发布之前的阶段快照。
+
 ## 2026-09-28 iOS0.4.20/2189 企业包及更新设置已发布
 
 用户回传企业重签 IPA 并在知悉既有签名渠道注入结构后要求直接发布。完整包 SHA256 `6afd6827…b51f`、61,871,956 字节，本地/服务器一致；20/20 Mach-O 静态签名、原候选资源和历史渠道差异已核对。13:18:26+08 发布器 PASS，iOS 版本/构建设置切至 `0.4.20/2189`，安装清单、下载页及首页引用不可变新 IPA；旧 2173 包保留。双侧严格 TLS、服务器设置/审计及 Android2188 不变验收通过，源码静态回填的 iOS2、Android44 项定向测试通过。真机安装、更新弹窗、APNs 和旧会话连续性未验；签名渠道原有 application-identifier/Bundle ID 差异继续记录。API261f/0091仍需单独发布授权，跨设备新视频封面尚未由此上线。见[任务](tasks/2026-09-28-ios-enterprise-distribution.md)、[报告](../verification/2026-09-28-ios-enterprise-distribution.md)。
