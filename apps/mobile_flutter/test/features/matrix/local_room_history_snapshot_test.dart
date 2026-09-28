@@ -138,4 +138,29 @@ void main() {
         (await snapshot.monthDays(const CalendarMonth(2026, 9))).anchors.length,
         2);
   });
+  test('ID pages retain holes and survive ordinary head invalidation',
+      () async {
+    var offsetReads = 0, idReads = 0;
+    final snapshot = LocalRoomHistorySnapshot(
+        roomIds: () => ['room'],
+        readPage: (_, __, ___) async {
+          offsetReads++;
+          return [row('e1', 1)];
+        });
+    Future<List<ChatSearchMessage>> readIds(String _, List<String> __) async {
+      idReads++;
+      return [row('e1', 1)];
+    }
+
+    await snapshot.page('room', 0, 512);
+    final first = await snapshot.pageByIds('room', ['e1', 'gone'], readIds);
+    expect(first.map((e) => e.eventId), ['e1', 'gone']);
+    expect(first.last.isUndecrypted, isTrue);
+    snapshot.invalidateMutablePages();
+    final reused = await snapshot.pageByIds('room', ['e1', 'gone'], readIds);
+    expect(reused.map((e) => e.eventId), ['e1', 'gone']);
+    expect(idReads, 1);
+    await snapshot.page('room', 0, 512);
+    expect(offsetReads, 2);
+  });
 }

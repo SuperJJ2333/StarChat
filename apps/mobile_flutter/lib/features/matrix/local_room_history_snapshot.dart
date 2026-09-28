@@ -37,11 +37,11 @@ final class LocalRoomHistorySnapshot {
   final Future<List<ChatSearchMessage>> Function(String, int, int) readPage;
   final int Function()? sourceRevision;
   final int pageSize, maxCachedRows, maxCachedBytes;
-  int _generation = 0, _rows = 0, _bytes = 0;
+  int _generation = 0, _mutableGeneration = 0, _rows = 0, _bytes = 0;
   int? _revision;
   List<String> _rooms = const [];
-  final _pages = <(String, int), List<ChatSearchMessage>>{};
-  final _pending = <(String, int), Future<List<ChatSearchMessage>>>{};
+  final _pages = <Object, List<ChatSearchMessage>>{};
+  final _pending = <Object, Future<List<ChatSearchMessage>>>{};
   Map<String, ChatSearchMessage>? _dates;
   Map<String, String> _dateSources = {};
   Future<void>? _dateLoad;
@@ -58,12 +58,28 @@ final class LocalRoomHistorySnapshot {
 
   void clear() {
     _generation++;
+    _mutableGeneration++;
     _pages.clear();
     _pending.clear();
     _dates = null;
     _dateSources = {};
     _dateLoad = null;
     _rows = _bytes = 0;
+  }
+
+  /// A new head changes offset pages and calendar coverage, but ID-keyed
+  /// search pages remain valid for a query's frozen event list.
+  void invalidateMutablePages() {
+    _mutableGeneration++;
+    for (final key in _pages.keys.whereType<(String, int)>().toList()) {
+      final removed = _pages.remove(key)!;
+      _rows -= removed.length;
+      _bytes -= _weight(key, removed);
+    }
+    _pending.removeWhere((key, _) => key is (String, int));
+    _dates = null;
+    _dateSources = {};
+    _dateLoad = null;
   }
 
   void synchronize() {
@@ -92,6 +108,7 @@ final class LocalRoomHistorySnapshot {
       String roomId, int offset, int limit) async {
     synchronize();
     final generation = _generation;
+    final mutableGeneration = _mutableGeneration;
     if (!_rooms.contains(roomId)) throw const HistorySearchCancelled();
     // The configured fixed page size is also the cache key's paging contract.
     if (limit != pageSize) return readPage(roomId, offset, limit);
@@ -103,7 +120,33 @@ final class LocalRoomHistorySnapshot {
     }
     final pending = _pending[key];
     if (pending != null) return pending;
-    final operation = _read(key, generation);
+    final operation = _read(key, generation, mutableGeneration);
+    _pending[key] = operation;
+    try {
+      return await operation;
+    } finally {
+      if (identical(_pending[key], operation)) _pending.remove(key);
+    }
+  }
+
+  Future<List<ChatSearchMessage>> pageByIds(
+      String roomId,
+      List<String> eventIds,
+      Future<List<ChatSearchMessage>> Function(String, List<String>)
+          readByIds) async {
+    synchronize();
+    final generation = _generation;
+    if (!_rooms.contains(roomId)) throw const HistorySearchCancelled();
+    if (eventIds.isEmpty) return const [];
+    final key = _IdPageKey(roomId, eventIds);
+    final cached = _pages.remove(key);
+    if (cached != null) {
+      _pages[key] = cached;
+      return cached;
+    }
+    final pending = _pending[key];
+    if (pending != null) return pending;
+    final operation = _readIds(key, generation, readByIds);
     _pending[key] = operation;
     try {
       return await operation;
@@ -122,22 +165,44 @@ final class LocalRoomHistorySnapshot {
                   r.eventId.length +
                   r.senderId.length +
                   r.senderDisplayName.length));
+  int _weight(Object key, List<ChatSearchMessage> rows) =>
+      _size(rows) + (key is _IdPageKey ? key.bytes : 0);
+
+  void _cache(Object key, List<ChatSearchMessage> rows) {
+    final weight = _weight(key, rows);
+    if (rows.length > maxCachedRows || weight > maxCachedBytes) return;
+    _pages[key] = rows;
+    _rows += rows.length;
+    _bytes += weight;
+    while (_rows > maxCachedRows || _bytes > maxCachedBytes) {
+      final oldest = _pages.keys.first;
+      final removed = _pages.remove(oldest)!;
+      _rows -= removed.length;
+      _bytes -= _weight(oldest, removed);
+    }
+  }
+
   Future<List<ChatSearchMessage>> _read(
-      (String, int) key, int generation) async {
+      (String, int) key, int generation, int mutableGeneration) async {
     final rows = List<ChatSearchMessage>.unmodifiable(
         await readPage(key.$1, key.$2, pageSize));
     _check(generation);
-    final size = _size(rows);
-    if (rows.length <= maxCachedRows && size <= maxCachedBytes) {
-      _pages[key] = rows;
-      _rows += rows.length;
-      _bytes += size;
-      while (_rows > maxCachedRows || _bytes > maxCachedBytes) {
-        final removed = _pages.remove(_pages.keys.first)!;
-        _rows -= removed.length;
-        _bytes -= _size(removed);
-      }
+    if (mutableGeneration != _mutableGeneration) {
+      throw const HistorySearchCancelled();
     }
+    _cache(key, rows);
+    return rows;
+  }
+
+  Future<List<ChatSearchMessage>> _readIds(
+      _IdPageKey key,
+      int generation,
+      Future<List<ChatSearchMessage>> Function(String, List<String>)
+          readByIds) async {
+    final rows = List<ChatSearchMessage>.unmodifiable(completeLocalHistoryPage(
+        key.eventIds, await readByIds(key.roomId, key.eventIds)));
+    _check(generation);
+    _cache(key, rows);
     return rows;
   }
 
@@ -149,8 +214,10 @@ final class LocalRoomHistorySnapshot {
   }) async {
     synchronize();
     final generation = _generation;
+    final mutableGeneration = _mutableGeneration;
     if (_dates == null) {
-      final load = _dateLoad ??= _buildDates(generation, isVisible);
+      final load =
+          _dateLoad ??= _buildDates(generation, mutableGeneration, isVisible);
       try {
         await load;
       } finally {
@@ -158,6 +225,9 @@ final class LocalRoomHistorySnapshot {
       }
     }
     _check(generation);
+    if (mutableGeneration != _mutableGeneration) {
+      throw const HistorySearchCancelled();
+    }
     final dates = _dates!;
     final states = <int, RoomHistoryDayState>{};
     final anchors = <int, String>{};
@@ -193,7 +263,7 @@ final class LocalRoomHistorySnapshot {
     return _dateSources[RoomHistoryDayIndex.dayKey(day)];
   }
 
-  Future<void> _buildDates(int generation,
+  Future<void> _buildDates(int generation, int mutableGeneration,
       bool Function(String, ChatSearchMessage)? isVisible) async {
     final dates = <String, ChatSearchMessage>{};
     final sources = <String, String>{};
@@ -201,8 +271,14 @@ final class LocalRoomHistorySnapshot {
       var offset = 0;
       while (true) {
         _check(generation);
+        if (mutableGeneration != _mutableGeneration) {
+          throw const HistorySearchCancelled();
+        }
         final rows = await page(room, offset, pageSize);
         _check(generation);
+        if (mutableGeneration != _mutableGeneration) {
+          throw const HistorySearchCancelled();
+        }
         for (var i = 0; i < rows.length; i++) {
           final row = rows[i];
           if (row.isDisplayable && (isVisible?.call(room, row) ?? true)) {
@@ -224,7 +300,39 @@ final class LocalRoomHistorySnapshot {
       }
     }
     _check(generation);
+    if (mutableGeneration != _mutableGeneration) {
+      throw const HistorySearchCancelled();
+    }
     _dates = dates;
     _dateSources = sources;
+  }
+}
+
+final class _IdPageKey {
+  _IdPageKey(this.roomId, List<String> ids)
+      : eventIds = List<String>.unmodifiable(ids),
+        bytes = ids.fold<int>(0, (n, id) => n + 8 + id.length * 2),
+        _hash = Object.hash(roomId, Object.hashAll(ids));
+  final String roomId;
+  final List<String> eventIds;
+  final int bytes;
+  final int _hash;
+
+  @override
+  int get hashCode => _hash;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! _IdPageKey ||
+        roomId != other.roomId ||
+        eventIds.length != other.eventIds.length) {
+      return false;
+    }
+    for (var i = 0; i < eventIds.length; i++) {
+      if (eventIds[i] != other.eventIds[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 }

@@ -2,6 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/local_room_history_search.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
 
+Future<List<ChatSearchMessage>> collectLocalHits(
+    LocalRoomHistorySearch search, String keyword) async {
+  final hits = <ChatSearchMessage>[];
+  var page = await search.search(ChatSearchFilters(keyword: keyword));
+  while (true) {
+    hits.addAll(page.items);
+    if (page.nextCursor == null) return hits;
+    page = await search.search(ChatSearchFilters(keyword: keyword),
+        cursor: page.nextCursor);
+  }
+}
+
 void main() {
   test('changing keyword reuses stable device-local DB projections', () async {
     var reads = 0;
@@ -22,20 +34,10 @@ void main() {
           return rows.skip(start).take(limit).toList();
         },
         project: (_, row) => row);
-    expect(
-        (await search.search(const ChatSearchFilters(keyword: 'needle')))
-            .items
-            .single
-            .eventId,
-        'e9000');
+    expect((await collectLocalHits(search, 'needle')).single.eventId, 'e9000');
     final firstReads = reads;
     search.cancel();
-    expect(
-        (await search.search(const ChatSearchFilters(keyword: 'alpha')))
-            .items
-            .single
-            .eventId,
-        'e9000');
+    expect((await collectLocalHits(search, 'alpha')).single.eventId, 'e9000');
     expect(reads, firstReads,
         reason: 'unchanged local projections survive query cancellation');
   });

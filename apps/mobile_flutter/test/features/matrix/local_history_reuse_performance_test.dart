@@ -3,6 +3,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/local_room_history_search.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
 
+Future<List<ChatSearchMessage>> collectLocalHits(
+    LocalRoomHistorySearch search, String keyword) async {
+  final hits = <ChatSearchMessage>[];
+  var page = await search.search(ChatSearchFilters(keyword: keyword));
+  while (true) {
+    hits.addAll(page.items);
+    if (page.nextCursor == null) return hits;
+    page = await search.search(ChatSearchFilters(keyword: keyword),
+        cursor: page.nextCursor);
+  }
+}
+
 void main() {
   for (final count in [10000, 100000]) {
     test('synthetic $count sparse old matches reuse DB projections', () async {
@@ -28,22 +40,14 @@ void main() {
           project: (_, row) => row);
       Timer.run(() => heartbeat = true);
       final first = Stopwatch()..start();
-      expect(
-          (await search.search(const ChatSearchFilters(keyword: 'rare')))
-              .items
-              .single
-              .eventId,
+      expect((await collectLocalHits(search, 'rare')).single.eventId,
           'e${count - 100}');
       first.stop();
       final initialReads = reads, initialProjected = dbProjectedRows;
       expect(heartbeat, isTrue);
       search.cancel();
       final repeat = Stopwatch()..start();
-      expect(
-          (await search.search(const ChatSearchFilters(keyword: 'target')))
-              .items
-              .single
-              .eventId,
+      expect((await collectLocalHits(search, 'target')).single.eventId,
           'e${count - 100}');
       repeat.stop();
       expect(reads, initialReads);

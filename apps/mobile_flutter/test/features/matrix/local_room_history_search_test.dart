@@ -3,6 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/local_room_history_search.dart';
 import 'package:liuhetong_mobile/features/matrix/bounded_history_search.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/local_search_id_snapshot.dart';
+
+final class _FrozenIds implements LocalSearchIdSnapshot {
+  _FrozenIds(Iterable<String> ids) : _ids = List.unmodifiable(ids);
+  final List<String> _ids;
+  @override
+  Future<List<String>> page(int offset, int limit) async =>
+      _ids.skip(offset).take(limit).toList();
+  @override
+  void dispose() {}
+}
 
 ChatSearchMessage message(int i, {String body = 'synthetic'}) =>
     ChatSearchMessage(
@@ -150,12 +161,79 @@ void main() {
           return rows.skip(start).take(limit).toList();
         },
         project: (_, row) => row);
-    final result =
+    var result =
         await search.search(const ChatSearchFilters(keyword: 'needle'));
-    expect(result.items.single.eventId, 'e9000');
-    expect(result.nextCursor, isNull);
+    expect(result.items, isEmpty);
+    expect(result.nextCursor, isNotNull);
+    expect(reads.length, lessThanOrEqualTo(2));
+    final found = <ChatSearchMessage>[];
+    while (true) {
+      found.addAll(result.items);
+      if (result.nextCursor == null) break;
+      result = await search.search(const ChatSearchFilters(keyword: 'needle'),
+          cursor: result.nextCursor);
+    }
+    expect(found.single.eventId, 'e9000');
     expect(reads, everyElement(512));
     expect(reads.length, 20);
+  });
+  test('frozen IDs exclude incoming heads while sparse search advances',
+      () async {
+    final live = List.generate(
+        10000, (i) => message(i, body: i == 9000 ? 'needle' : 'synthetic'));
+    final byId = {for (final row in live) row.eventId: row};
+    var scanned = 0;
+    final search = LocalRoomHistorySearch(
+        roomIds: () => ['room'],
+        readPage: (_, start, limit) async =>
+            live.skip(start).take(limit).toList(),
+        openIds: (_) async => _FrozenIds(live.map((e) => e.eventId)),
+        readByIds: (_, ids) async {
+          scanned += ids.length;
+          return [for (final id in ids) byId[id]!];
+        },
+        project: (_, row) => row);
+    var page = await search.search(const ChatSearchFilters(keyword: 'needle'));
+    expect(page.items, isEmpty);
+    expect(page.nextCursor, isNotNull);
+    expect(scanned, lessThanOrEqualTo(1024));
+    for (var i = 0; i < 50; i++) {
+      final incoming = message(10000 + i, body: 'needle');
+      live.insert(0, incoming);
+      byId[incoming.eventId] = incoming;
+    }
+    final found = <String>{};
+    while (true) {
+      for (final item in page.items) {
+        expect(found.add(item.eventId), isTrue);
+      }
+      if (page.nextCursor == null) break;
+      page = await search.search(const ChatSearchFilters(keyword: 'needle'),
+          cursor: page.nextCursor);
+    }
+    expect(found, {'e9000'});
+  });
+  test('an unresolved retained source cannot publish a later hit out of order',
+      () async {
+    final primary = List.generate(
+        1100, (i) => message(i, body: i == 1050 ? 'needle' : 'synthetic'));
+    final retained = [message(1200, body: 'needle')];
+    final search = LocalRoomHistorySearch(
+        roomIds: () => ['primary', 'retained'],
+        readPage: (room, start, limit) async =>
+            (room == 'primary' ? primary : retained)
+                .skip(start)
+                .take(limit)
+                .toList(),
+        project: (_, row) => row);
+    final first =
+        await search.search(const ChatSearchFilters(keyword: 'needle'));
+    expect(first.items, isEmpty);
+    expect(first.nextCursor, isNotNull);
+    final second = await search.search(
+        const ChatSearchFilters(keyword: 'needle'),
+        cursor: first.nextCursor);
+    expect(second.items.map((e) => e.eventId), ['e1050', 'e1200']);
   });
   test('query cancellation discards delayed account-local reads', () async {
     final gate = Completer<List<ChatSearchMessage>>();

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'bounded_history_search.dart';
 import 'chat_search_query_controller.dart';
 import 'local_room_history_snapshot.dart';
+import 'local_search_id_snapshot.dart';
 
 /// Bounded device-local scan. SQLCipher pages never enter the rendered timeline
 /// and never trigger SDK remote pagination. Each source retains one 512-row
@@ -11,11 +12,14 @@ final class LocalRoomHistorySearch {
   LocalRoomHistorySearch(
       {required this.roomIds,
       required this.readPage,
+      this.openIds,
+      this.readByIds,
       required this.project,
       this.sourceRevision,
       LocalRoomHistorySnapshot? snapshot,
       this.pageSize = 512})
-      : snapshot = snapshot ??
+      : assert((openIds == null) == (readByIds == null)),
+        snapshot = snapshot ??
             LocalRoomHistorySnapshot(
                 roomIds: roomIds,
                 readPage: readPage,
@@ -25,6 +29,9 @@ final class LocalRoomHistorySearch {
   final List<String> Function() roomIds;
   final Future<List<ChatSearchMessage>> Function(
       String roomId, int offset, int limit) readPage;
+  final Future<LocalSearchIdSnapshot> Function(String roomId)? openIds;
+  final Future<List<ChatSearchMessage>> Function(
+      String roomId, List<String> eventIds)? readByIds;
   final ChatSearchMessage? Function(String roomId, ChatSearchMessage message)
       project;
   final int pageSize;
@@ -38,6 +45,9 @@ final class LocalRoomHistorySearch {
   void cancel() {
     _generation++;
     _page = 0;
+    for (final source in _sources.values) {
+      source.ids?.dispose();
+    }
     _sources.clear();
     _seen.clear();
     _coverageIncomplete = false;
@@ -60,6 +70,9 @@ final class LocalRoomHistorySearch {
     if (cursor != null &&
         sourceRevision != null &&
         _sourceRevision != sourceRevision!()) {
+      for (final source in _sources.values) {
+        source.ids?.dispose();
+      }
       _sources.clear();
       for (final roomId in roomIds().toSet()) {
         _sources[roomId] = _LocalSourceCursor();
@@ -82,16 +95,40 @@ final class LocalRoomHistorySearch {
     }
 
     var visited = 0;
+    final sliceClock = Stopwatch()..start();
+    bool sliceFull() =>
+        visited >= 1024 ||
+        (visited > 0 &&
+            sliceClock.elapsed >= const Duration(milliseconds: 100));
     Future<void> prepareHead(String roomId, _LocalSourceCursor state) async {
       while (state.head == null && !state.done) {
         check();
+        if (sliceFull()) return;
         if (state.index >= state.buffer.length) {
           if (state.lastPage) {
             state.done = true;
             state.buffer = const [];
             break;
           }
-          final page = await snapshot.page(roomId, state.offset, pageSize);
+          List<ChatSearchMessage> page;
+          if (openIds == null) {
+            page = await snapshot.page(roomId, state.offset, pageSize);
+          } else {
+            var ids = state.ids;
+            if (ids == null) {
+              ids = await openIds!(roomId);
+              try {
+                check();
+              } catch (_) {
+                ids.dispose();
+                rethrow;
+              }
+              state.ids = ids;
+            }
+            final pageIds = await ids.page(state.offset, pageSize);
+            check();
+            page = await snapshot.pageByIds(roomId, pageIds, readByIds!);
+          }
           check();
           state.offset += page.length;
           state.buffer = page;
@@ -126,6 +163,12 @@ final class LocalRoomHistorySearch {
           await prepareHead(entry.key, entry.value);
         }
         check();
+        // A source without a matching head may still contain a newer hit.
+        // Defer the merge until every source has a head or is exhausted.
+        if (_sources.values.any((s) => !s.done && s.head == null)) {
+          if (sliceFull()) break;
+          continue;
+        }
         _LocalSourceCursor? best;
         for (final source in _sources.values) {
           if (source.head == null) continue;
@@ -156,6 +199,10 @@ final class LocalRoomHistorySearch {
               : ChatSearchCursor(order: _page, eventId: 'local:$_generation'));
     } catch (_) {
       if (generation == _generation) {
+        for (final entry in _sources.entries) {
+          final old = beforeSources[entry.key]?.ids;
+          if (!identical(entry.value.ids, old)) entry.value.ids?.dispose();
+        }
         _sources
           ..clear()
           ..addAll(beforeSources);
@@ -165,6 +212,9 @@ final class LocalRoomHistorySearch {
         if (sourceRevision != null && revision != sourceRevision!()) {
           // Release stale copied plaintext immediately. The same continuation
           // cursor can retry the latest source, skipping already published IDs.
+          for (final source in _sources.values) {
+            source.ids?.dispose();
+          }
           _sources.clear();
           for (final roomId in roomIds().toSet()) {
             _sources[roomId] = _LocalSourceCursor();
@@ -187,11 +237,13 @@ final class _LocalSourceCursor {
   bool lastPage = false, done = false;
   List<ChatSearchMessage> buffer = const [];
   ChatSearchMessage? head;
+  LocalSearchIdSnapshot? ids;
   _LocalSourceCursor copy() => _LocalSourceCursor()
     ..offset = offset
     ..index = index
     ..lastPage = lastPage
     ..done = done
     ..buffer = buffer
-    ..head = head;
+    ..head = head
+    ..ids = ids;
 }
