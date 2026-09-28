@@ -485,6 +485,27 @@ void main() {
     expect(nav.opened.single.anchorEventId, r'$local');
   });
 
+  testWidgets('new local matches wait for one explicit update without spinner',
+      (tester) async {
+    final api = await _api();
+    final repository = _repository(messages: [_localMessage(r'$old', '项目旧消息')]);
+    await repository.backfillLocalHistory();
+    await tester.pumpWidget(_page(api: api, repository: repository));
+    await _search(tester, '项目');
+    expect(find.byKey(const Key('global-search-conversation-!group:test')),
+        findsOneWidget);
+    repository.recordRoomMessages([_localMessage(r'$new', '项目新消息')]);
+    await tester.pump();
+    expect(find.byKey(const Key('global-search-refresh-new')), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    expect(find.text('2条相关聊天记录'), findsNothing);
+    await tester.tap(find.byKey(const Key('global-search-refresh-new')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('2条相关聊天记录'), findsOneWidget);
+    expect(find.byKey(const Key('global-search-refresh-new')), findsNothing);
+  });
+
   testWidgets('opening the page backfills the attached local repository',
       (tester) async {
     final api = await _api();

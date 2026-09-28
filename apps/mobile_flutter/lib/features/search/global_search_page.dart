@@ -412,13 +412,20 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
         ),
       );
     }
-    if (!controller.hasResults) {
+    if (!controller.hasResults && !controller.hasNewLocalResults) {
       return const _Hint(key: Key('global-search-empty'), text: '无搜索结果');
     }
     final contacts = controller.visibleContacts;
     final rooms = controller.visibleRooms;
     final conversations = controller.visibleConversations;
     return ListView(children: [
+      if (controller.hasNewLocalResults)
+        CupertinoButton(
+          key: const Key('global-search-refresh-new'),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          onPressed: () => unawaited(controller.refresh()),
+          child: const Text('有新消息，点击更新'),
+        ),
       if (contacts.isNotEmpty) ...[
         const _Section('联系人'),
         for (final contact in contacts)

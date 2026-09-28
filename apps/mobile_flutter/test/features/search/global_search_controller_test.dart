@@ -370,16 +370,20 @@ void main() {
       controller.dispose();
     });
 
-    test('repository updates re-run the active query but not a blank one',
+    test('ordinary appends keep the current search and refresh once on demand',
         () async {
       final repository = LocalMessageSearchRepository(
         source: InMemoryLocalHistorySource(),
         index: GlobalSearchIndex(),
       );
       repository.attachAccount('@alice:test');
+      var roomLoads = 0;
       final controller = GlobalSearchController(
         loadContacts: () async => const [],
-        loadRooms: () async => const [],
+        loadRooms: () async {
+          roomLoads++;
+          return const [];
+        },
         index: repository.index,
         repository: repository,
         debounce: Duration.zero,
@@ -387,6 +391,7 @@ void main() {
       controller.setQuery('项目');
       await controller.refresh();
       expect(controller.hasResults, isFalse);
+      final before = roomLoads;
 
       repository.recordRoomMessages([
         LocalSearchMessage(
@@ -401,12 +406,18 @@ void main() {
         ),
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(roomLoads, before, reason: '新消息不能持续重启本机搜索');
+      expect(controller.hasNewLocalResults, isTrue);
+      expect(controller.loading, isFalse);
+      await controller.refresh();
+      expect(roomLoads, before + 1);
+      expect(controller.hasNewLocalResults, isFalse);
       expect([
         for (final conversation in controller.results.conversations)
           for (final hit in conversation.hits) hit.eventId
       ], [
         r'$late'
-      ], reason: '本机索引更新后活跃查询必须自动刷新');
+      ]);
 
       controller.setQuery('');
       repository.recordRoomMessages([
@@ -423,6 +434,45 @@ void main() {
       ]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(controller.results.isEmpty, isTrue, reason: '空查询不得因为索引更新而匹配所有数据');
+      controller.dispose();
+    });
+
+    test('withdrawal removes visible text immediately without a full scan',
+        () async {
+      final repository = LocalMessageSearchRepository(
+          source: InMemoryLocalHistorySource(), index: GlobalSearchIndex());
+      repository.attachAccount('@alice:test');
+      repository.recordRoomMessages([
+        LocalSearchMessage(
+            eventId: r'$old',
+            senderId: '@peer:test',
+            senderName: '张三',
+            timestamp: DateTime.utc(2026, 9, 15),
+            body: '项目旧消息',
+            roomId: '!group:test',
+            roomName: '项目群',
+            isGroup: true),
+      ]);
+      var roomLoads = 0;
+      final controller = GlobalSearchController(
+          loadContacts: () async => const [],
+          loadRooms: () async {
+            roomLoads++;
+            return const [];
+          },
+          index: repository.index,
+          repository: repository,
+          debounce: Duration.zero);
+      controller.setQuery('项目');
+      await controller.refresh();
+      final before = roomLoads;
+      expect(controller.hasResults, isTrue);
+      repository.removeMessages([r'$old']);
+      expect(controller.results.conversations, isEmpty);
+      expect(roomLoads, before);
+      repository.clear();
+      expect(controller.results.isEmpty, isTrue);
+      expect(controller.loading, isFalse);
       controller.dispose();
     });
 
