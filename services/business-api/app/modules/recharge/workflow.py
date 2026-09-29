@@ -10,6 +10,8 @@ from sqlalchemy import select
 from app.core.errors import AppError
 from app.core.outbox import OutboxEvent, OutboxPublisher
 from app.modules.audit.models import AuditEvent
+from app.modules.identity.enums import RoleCode
+from app.modules.identity.models import UserRole
 from app.modules.recharge.models import RechargeRequest, RechargeCreditBinding
 
 
@@ -83,6 +85,46 @@ class SupportOrderWorkflow:
         self.wallet_receipts.require_recharge_reservation(session, request_id=row.id,
             receipt_id=row.receipt_id, user_id=row.user_id, now=self._utcnow())
 
+    def _require_unexecuted_handoff_facts(self, session, row):
+        """Prove token transfer is safe without granting a fresh settlement receipt."""
+        from app.modules.ledger.adjustment_models import AdjustmentRequest
+        from app.modules.ledger.models import LedgerTransaction
+        if row.ledger_transaction_id or row.status == 'CREDITED' or row.adjustment_id:
+            fail('RECHARGE_TAKEOVER_REVIEW_REQUIRED', '请先核对既有资金命令')
+        if row.receipt_id is None and (row.payment_verified_at is not None
+                or row.actual_received_usdt is not None):
+            fail('RECHARGE_TAKEOVER_REVIEW_REQUIRED', '到账凭证状态不一致')
+        if row.receipt_id is not None:
+            if (row.payment_verified_at is None or row.actual_received_usdt is None
+                    or self.wallet_receipts is None):
+                fail('RECHARGE_TAKEOVER_REVIEW_REQUIRED', '到账凭证状态不一致')
+            receipt, _ = self.wallet_receipts.require_recharge_handoff_reservation(session,
+                request_id=row.id, receipt_id=row.receipt_id, user_id=row.user_id)
+            official = row.official_payment or {}
+            if (receipt.amount != row.actual_received_usdt
+                    or receipt.txid != row.evidence_txid
+                    or receipt.official_address != official.get('address')
+                    or receipt.official_config_version != official.get('config_version')):
+                fail('RECHARGE_TAKEOVER_REVIEW_REQUIRED', '到账凭证与订单快照不一致')
+        bound = session.scalar(select(RechargeCreditBinding).where(
+            RechargeCreditBinding.request_id == row.id,
+            RechargeCreditBinding.state_active == '1').with_for_update())
+        if bound is not None:
+            if (not row.receipt_id or row.payment_verified_at is None
+                    or row.actual_received_usdt is None or bound.state != 'BOUND'):
+                fail('RECHARGE_TAKEOVER_REVIEW_REQUIRED', '活动财务绑定缺少可靠到账归属')
+            adjustment = session.get(AdjustmentRequest, bound.adjustment_id, with_for_update=True)
+            executed = session.scalar(select(LedgerTransaction.id).where(
+                LedgerTransaction.scope == 'ledger.adjustment',
+                LedgerTransaction.idempotency_key == 'adjustment-execute:'+bound.adjustment_id))
+            if (adjustment is None or adjustment.ledger_transaction_id
+                    or adjustment.user_id != row.user_id
+                    or bound.final_caibi_amount is not None
+                        and bound.final_caibi_amount != adjustment.amount
+                    or adjustment.status not in ('SUBMITTED', 'FINANCE_APPROVED', 'ADMIN_APPROVED')
+                    or executed):
+                fail('RECHARGE_TAKEOVER_REVIEW_REQUIRED', '既有财务命令待核对')
+
     def claim_order(self, *, request_id, actor_id, idempotency_key, review=False, reason=None, authorization=None):
         if review and (not reason or len(reason.strip()) < 3):
             fail('RECHARGE_REASON_REQUIRED', '待核对接单需填写原因', 422)
@@ -109,27 +151,20 @@ class SupportOrderWorkflow:
             if row.claimed_by and row.claimed_by != actor_id:
                 if occupied:
                     fail('RECHARGE_CLAIMED_BY_OTHER', '该订单已有客服处理')
-                if bound:
-                    # A reviewer may recover a stale operator only when the
-                    # authoritative financial command proves no execution yet.
-                    from app.modules.ledger.adjustment_models import AdjustmentRequest
-                    from app.modules.ledger.models import LedgerTransaction
-                    adjustment = session.get(AdjustmentRequest,bound.adjustment_id,with_for_update=True)
-                    executed = session.scalar(select(LedgerTransaction.id).where(
-                        LedgerTransaction.scope=='ledger.adjustment',
-                        LedgerTransaction.idempotency_key=='adjustment-execute:'+bound.adjustment_id))
-                    if (not review or adjustment is None or adjustment.ledger_transaction_id
-                            or adjustment.status not in ('SUBMITTED','FINANCE_APPROVED','ADMIN_APPROVED')
-                            or executed):
-                        fail('RECHARGE_CLAIMED_BY_OTHER', '该订单需原处理人或资金核对恢复')
+                if row.evidence_txid or row.receipt_id or bound:
+                    fail('RECHARGE_TAKEOVER_REQUIRED', '已有付款或资金证据，需管理员核对接管')
+            if review and (row.receipt_id or row.payment_verified_at or bound):
+                if row.claimed_by != actor_id:
+                    fail('RECHARGE_TAKEOVER_REQUIRED', '资金证据需管理员核对接管')
+                self._require_unexecuted_handoff_facts(session, row)
             token = secrets.token_urlsafe(32)
             row.claimed_by, row.claim_token_hash = actor_id, hashlib.sha256(token.encode()).hexdigest()
             row.claim_expires_at = now + timedelta(minutes=5)
             row.claim_version = (row.claim_version or 0) + 1
             if review:
                 row.review_authorized_at = now
-                row.processing_stage = 'REVIEWING'
-                row.payment_verified_at = None
+                if not row.receipt_id and not row.evidence_txid:
+                    row.processing_stage = 'REVIEWING'
             elif row.processing_stage == 'WAITING_PAYMENT':
                 row.processing_stage = 'VERIFYING_PAYMENT'
             self._order_event(session,row,actor_id,'recharge.review_claimed' if review else 'recharge.claimed')
@@ -138,6 +173,67 @@ class SupportOrderWorkflow:
                     subject_id=row.id, action='recharge.review_authorized', result='SUCCESS',
                     reason_code='RECHARGE_REVIEW_AUTHORIZED', trace_id=row.id[:32],
                     after_data={'reason':reason.strip()[:200]}, created_at=now))
+            return self._complete(command, dict(self._view(row), claim_token=token))
+
+    def takeover_order(self, *, request_id, actor_id, owner_id, expected_claim_version,
+                       reason_code, idempotency_key, authorization, owner_authorization):
+        reasons = frozenset({'RECHARGE_STAFF_UNAVAILABLE', 'RECHARGE_SHIFT_HANDOFF',
+            'RECHARGE_INCIDENT_REVIEW'})
+        if reason_code not in reasons:
+            fail('RECHARGE_TAKEOVER_REASON_REQUIRED', '请选择接管原因', 422)
+        if type(expected_claim_version) is not int or expected_claim_version < 0:
+            fail('RECHARGE_CLAIM_VERSION_REQUIRED', '请刷新订单后接管', 422)
+        if not owner_id or actor_id != owner_id or owner_authorization is None or authorization is None:
+            fail('PERMISSION_DENIED', '仅官方钱包所有者管理员可接管', 403)
+        with self._authorized_transaction(authorization) as session:
+            from app.modules.ledger.reserve import lock_budget
+            lock_budget(session)
+            owner_fresh = owner_authorization(session)
+            if not callable(owner_fresh):
+                fail('PERMISSION_DENIED', '接管验证无效', 403)
+
+            def require_owner():
+                if actor_id != owner_id or session.scalar(select(UserRole.id).where(
+                    UserRole.user_id == actor_id, UserRole.role_code == RoleCode.SUPER_ADMIN)
+                    .with_for_update()) is None:
+                    fail('PERMISSION_DENIED', '仅官方钱包所有者管理员可接管', 403)
+                owner_fresh()
+
+            require_owner()
+            command = self._claim(session, scope='recharge.takeover:'+actor_id,
+                key=idempotency_key, payload={'request_id':request_id,
+                    'expected_claim_version':expected_claim_version,'reason_code':reason_code})
+            row = self._order(session, request_id)
+            if command.status == 'COMPLETED':
+                token = command.response_body.get('claim_token')
+                self._require_claim(row, actor_id, token, allow_review=True)
+                if row.claim_version != expected_claim_version + 1:
+                    fail('RECHARGE_CLAIM_LOST', '接管已被后续处理替代')
+                require_owner()
+                return dict(self._view(row), claim_token=token)
+            now = self._utcnow()
+            if (row.status != 'SUBMITTED' or row.expires_at is None or row.claimed_by in (None, actor_id)
+                    or row.claim_expires_at is None):
+                fail('RECHARGE_TAKEOVER_UNAVAILABLE', '当前订单无他人处理权可移交')
+            if row.claim_version != expected_claim_version:
+                fail('RECHARGE_CLAIM_VERSION_CONFLICT', '订单处理权已变化，请刷新')
+            self._require_unexecuted_handoff_facts(session, row)
+            token = secrets.token_urlsafe(32)
+            row.claimed_by, row.claim_token_hash = actor_id, hashlib.sha256(token.encode()).hexdigest()
+            row.claim_expires_at = now + timedelta(minutes=5)
+            row.claim_version += 1
+            if self._processing_stage(row) == 'NEEDS_REVIEW':
+                # Review authorization changes who may inspect the order; it
+                # never clears a receipt, amount, binding, or payment evidence.
+                row.review_authorized_at = now
+                if not row.receipt_id and not row.evidence_txid:
+                    row.processing_stage = 'REVIEWING'
+            self._order_event(session, row, actor_id, 'recharge.owner_taken_over')
+            session.add(AuditEvent(id=str(uuid4()), actor_id=actor_id,
+                subject_type='recharge_request', subject_id=row.id,
+                action='recharge.owner_takeover_reason', result='SUCCESS',
+                reason_code=reason_code, trace_id=row.id[:32], created_at=now))
+            require_owner()
             return self._complete(command, dict(self._view(row), claim_token=token))
 
     def heartbeat_order(self, *, request_id, actor_id, claim_token, authorization=None):

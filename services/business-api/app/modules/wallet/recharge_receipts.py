@@ -121,19 +121,33 @@ class RechargeReceiptOperations:
         return {'receipt_id':row.id,'amount_usdt':str(row.amount)}
 
     @staticmethod
-    def require_recharge_reservation(session,*,request_id,receipt_id,user_id,now):
+    def _require_recharge_reservation(session,*,request_id,receipt_id,user_id,now=None):
         lock_budget(session)
         row=session.get(DepositReceipt,receipt_id,with_for_update=True)
         claim=session.get(RechargeReceiptReservation,receipt_id,with_for_update=True)
         if (not row or not claim or claim.request_id!=request_id or claim.user_id!=user_id
             or claim.state!='RESERVED' or row.status!='REVIEW' or not row.pending_obligation
-            or row.facts_digest!=claim.facts_digest): fail('RECHARGE_EVIDENCE_CONSUMED')
-        if not 0 <= (now-utc(claim.verified_at)).total_seconds()<=120: fail('RECHARGE_EVIDENCE_EXPIRED')
+            or row.facts_digest!=claim.facts_digest or row.amount is None or row.amount<=0):
+            fail('RECHARGE_EVIDENCE_CONSUMED')
+        if now is not None and not 0 <= (now-utc(claim.verified_at)).total_seconds()<=120:
+            fail('RECHARGE_EVIDENCE_EXPIRED')
         require_unambiguous_transaction(session, row)
         user = session.get(User, user_id)
         if user is None or user.status != AccountStatus.ACTIVE:
             fail('RECHARGE_PAYMENT_ATTRIBUTION_REQUIRED')
         return row,claim
+
+    @staticmethod
+    def require_recharge_reservation(session,*,request_id,receipt_id,user_id,now):
+        """Settlement requires a currently fresh receipt proof."""
+        return RechargeReceiptOperations._require_recharge_reservation(session,
+            request_id=request_id, receipt_id=receipt_id, user_id=user_id, now=now)
+
+    @staticmethod
+    def require_recharge_handoff_reservation(session,*,request_id,receipt_id,user_id):
+        """Prove immutable attribution for token transfer; never authorizes credit."""
+        return RechargeReceiptOperations._require_recharge_reservation(session,
+            request_id=request_id, receipt_id=receipt_id, user_id=user_id)
 
 
 def prepare_recharge_credit(session,*,request_id,receipt_id,user_id,now,reserve_policy,expected_amount=None):

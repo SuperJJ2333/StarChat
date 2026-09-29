@@ -4,14 +4,16 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.tokens import TokenService
-from app.modules.identity.support_order_auth import SupportOrderSessionAuthorizer
+from app.modules.identity.support_order_auth import (SupportOrderSessionAuthorizer,
+    fresh_owner_proof_authorization)
+from app.api.admin_wallet_auth import AdminWalletProofBody
 from app.modules.recharge.service import RechargeService
 from app.modules.recharge.notifications import SupportOrderNotifications  # model registration
 
@@ -54,6 +56,13 @@ class RechargeBindBody(StrictModel):
 class RechargeClaimBody(StrictModel):
     review: bool = False
     reason: str | None = Field(default=None, min_length=3, max_length=200)
+
+
+class RechargeTakeoverBody(StrictModel):
+    expected_claim_version: int = Field(ge=0, strict=True)
+    reason_code: Literal['RECHARGE_STAFF_UNAVAILABLE', 'RECHARGE_SHIFT_HANDOFF',
+        'RECHARGE_INCIDENT_REVIEW']
+    proof: AdminWalletProofBody
 
 
 class RechargeLeaseBody(StrictModel):
@@ -150,6 +159,24 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
         require_finance(actor_id)
         return recharge_service.claim_order(request_id=request_id, actor_id=actor_id,
             idempotency_key=idempotency_key, authorization=authorization, **body.model_dump())
+
+    @router.post('/admin/requests/{request_id}/takeover')
+    def takeover(request_id: str, body: RechargeTakeoverBody,
+                 idempotency_key: IdempotencyKey, request: Request,
+                 bearer: Annotated[str | None, Header(alias='Authorization')] = None,
+                 actor_id: str = Depends(actor), authorization=Depends(command_authorization)):
+        require_finance(actor_id)
+        if not bearer or not bearer.startswith('Bearer '):
+            raise AppError(code='AUTH_REQUIRED', message='需要管理会话', status_code=401)
+        claims = tokens.decode_access_token(bearer[7:])
+        owner_authorization = fresh_owner_proof_authorization(settings, session_factory,
+            lambda: datetime.now(timezone.utc), claims, body.proof,
+            rate_limiter=getattr(request.app.state, 'rate_limiter', None))
+        return recharge_service.takeover_order(request_id=request_id, actor_id=actor_id,
+            owner_id=settings.wallet_manual_owner_admin_id,
+            expected_claim_version=body.expected_claim_version,
+            reason_code=body.reason_code, idempotency_key=idempotency_key,
+            authorization=authorization, owner_authorization=owner_authorization)
 
     @router.post('/admin/requests/{request_id}/heartbeat')
     def heartbeat(request_id: str, body: RechargeLeaseBody, actor_id: str = Depends(actor),

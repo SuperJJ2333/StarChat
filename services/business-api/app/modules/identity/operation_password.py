@@ -171,13 +171,14 @@ class AdminWalletOperationPasswordService:
             return OperationPasswordProof(claims['sub'],claims['family_id'],claims['device_id'],row.version,now,self.scope)
         return self._execute(claims,verify,grant_verification=grant_verification)
 
-    def authorization(self,*,claims,proof):
+    def authorization(self,*,claims,proof,grant_verification=False):
         def authorize(session):
             if (self.auth_mode()!='operation_password' or not isinstance(proof,OperationPasswordProof)
                     or proof.scope != self.scope
                     or (proof.user_id,proof.session_id,proof.device_id)!=(claims['sub'],claims['family_id'],claims['device_id'])):
                 raise error('OPERATION_PASSWORD_REQUIRED')
-            fresh=self._identity(session,claims,proof.verified_at)
+            fresh=self._identity(session,claims,proof.verified_at,
+                grant_verification=grant_verification)
             row=self._credential(session,claims['sub'])
             if row is None or row.version!=proof.version: raise error('OPERATION_PASSWORD_CHANGED')
             def final():

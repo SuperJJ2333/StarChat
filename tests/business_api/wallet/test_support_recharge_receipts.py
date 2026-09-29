@@ -82,6 +82,22 @@ def test_reservation_identity_cannot_be_released_or_reassigned(core, change):
             else: reservation.request_id = 'another-order'
 
 
+def test_old_reserved_receipt_can_prove_handoff_without_renewing_settlement_freshness(core):
+    result = reserve(core)
+    service, factory, _, _, _, now = core
+    later = now + timedelta(minutes=3)
+    with factory.begin() as session:
+        with pytest.raises(AppError) as expired:
+            service.require_recharge_reservation(session, request_id='order',
+                receipt_id=result['receipt_id'], user_id='alice', now=later)
+        assert expired.value.code == 'RECHARGE_EVIDENCE_EXPIRED'
+        row, reservation = service.require_recharge_handoff_reservation(session,
+            request_id='order', receipt_id=result['receipt_id'], user_id='alice')
+        assert row.amount == Decimal(result['amount_usdt'])
+        assert reservation.state == 'RESERVED'
+        assert reservation.verified_at.replace(tzinfo=now.tzinfo) == now
+
+
 def test_transactional_adjustment_submission_rolls_back_with_order(core):
     workflow = AdjustmentWorkflow(core[1], LedgerService(core[1]), admin_threshold=Decimal('1000'))
     workflow.set_policy('cs', per_transaction=Decimal('100'), per_day=Decimal('1000'), allowed_users={'alice'})

@@ -627,24 +627,44 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
                 'user_display_name': profiles[row.user_id].nickname if row.user_id in profiles else None,
                 'user_chat_id': profiles[row.user_id].username if row.user_id in profiles else None,
                 **self._settlement_projection(session, bindings.get(row.id)),
-                **self._claim_capabilities(row, bindings.get(row.id), actor_id=actor_id,
+                **self._claim_capabilities(session, row, bindings.get(row.id), actor_id=actor_id,
                     owner_eligible=owner_eligible),
                 'binding_state': bindings[row.id].state if row.id in bindings else None,
                 'binding_id': bindings[row.id].id if row.id in bindings else None} for row in page],
                 'next_cursor': next_cursor}
 
-    def _claim_capabilities(self, row, binding, *, actor_id, owner_eligible):
+    def _claim_capabilities(self, session, row, binding, *, actor_id, owner_eligible):
         active = bool(row.claimed_by and row.claim_expires_at and
             utc(row.claim_expires_at) > self._utcnow())
         blocked = bool(row.evidence_txid or row.receipt_id or
             (binding and binding.state_active == '1'))
+        same_claimant = bool(actor_id and row.claimed_by == actor_id)
+        first_claim_blocked = bool(not same_claimant and (
+            row.receipt_id or (binding and binding.state_active == '1')
+            or (row.evidence_txid and row.claimed_by)))
         pending = row.status == 'SUBMITTED' and row.expires_at is not None
         reviewing = self._processing_stage(row) == 'NEEDS_REVIEW'
-        return {'can_claim': bool(actor_id and pending and not active and not blocked and not reviewing),
-            'can_process': bool(actor_id and pending and active and row.claimed_by == actor_id),
-            'can_takeover': bool(owner_eligible and pending and active and row.claimed_by != actor_id
-                and not blocked),
-            'takeover_review_required': bool(pending and blocked)}
+        binding_unsafe = False
+        if binding and binding.state_active == '1':
+            from app.modules.ledger.adjustment_models import AdjustmentRequest
+            from app.modules.ledger.models import LedgerTransaction
+            adjustment = session.get(AdjustmentRequest, binding.adjustment_id)
+            executed = session.scalar(select(LedgerTransaction.id).where(
+                LedgerTransaction.scope == 'ledger.adjustment',
+                LedgerTransaction.idempotency_key == 'adjustment-execute:'+binding.adjustment_id))
+            binding_unsafe = bool(not row.receipt_id or row.payment_verified_at is None
+                or row.actual_received_usdt is None or binding.state != 'BOUND'
+                or adjustment is None or adjustment.user_id != row.user_id
+                or adjustment.ledger_transaction_id or executed
+                or adjustment.status not in ('SUBMITTED', 'FINANCE_APPROVED', 'ADMIN_APPROVED')
+                or binding.final_caibi_amount is not None
+                    and binding.final_caibi_amount != adjustment.amount)
+        terminal_unsafe = bool(row.ledger_transaction_id or row.adjustment_id or binding_unsafe)
+        return {'can_claim': bool(actor_id and pending and not active and not first_claim_blocked and not reviewing),
+            'can_process': bool(same_claimant and pending and active and not reviewing),
+            'can_takeover': bool(owner_eligible and pending and row.claimed_by
+                and row.claimed_by != actor_id and not terminal_unsafe),
+            'takeover_review_required': bool(pending and (blocked or reviewing))}
 
     @staticmethod
     def _settlement_projection(session, binding):
