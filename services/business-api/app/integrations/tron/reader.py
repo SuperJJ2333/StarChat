@@ -161,12 +161,15 @@ class TronReader:
         except (KeyError, TypeError):
             raise TronReadError('Malformed solid block') from None
 
-    def _transactions(self, address: str, start_ms: int, end_ms: int) -> list[str]:
+    def _transactions(self, address: str, start_ms: int, end_ms: int, *, only_from: bool = False) -> list[str]:
         params = {'only_confirmed': 'true', 'contract_address': USDT_CONTRACT,
                   'min_timestamp': start_ms, 'max_timestamp': end_ms,
                   'limit': 200, 'order_by': 'block_timestamp,asc'}
+        if only_from:
+            params['only_from'] = 'true'
         transactions: dict[str, None] = {}
         cursors: set[str] = set()
+        scanned_rows = 0
         for page_index in range(self.max_pages):
             page = self._request('GET', f'/v1/accounts/{address}/transactions/trc20', params=params)
             if page.get('success') is not True or not isinstance(page.get('data'), list) or not isinstance(page.get('meta'), dict):
@@ -174,6 +177,9 @@ class TronReader:
             if len(page['data']) > 200:
                 raise TronReadError('TRON history page exceeds cap')
             for row in page['data']:
+                scanned_rows += 1
+                if only_from and scanned_rows > self.max_transactions:
+                    raise TronReadError('TRON transaction cap exceeded')
                 if not isinstance(row, dict):
                     raise TronReadError('Malformed TRON history row')
                 txid = _word(row.get('transaction_id'))
@@ -187,7 +193,7 @@ class TronReader:
             if not isinstance(links, dict):
                 raise TronReadError('Malformed TRON pagination links')
             if cursor is None:
-                if links.get('next'):
+                if links.get('next') or (only_from and len(page['data']) == params['limit']):
                     raise TronReadError('TRON pagination cursor missing')
                 return list(transactions)
             if not isinstance(cursor, str) or not cursor or len(cursor) > 4096 or cursor in cursors or not page['data']:
@@ -195,6 +201,28 @@ class TronReader:
             cursors.add(cursor)
             params['fingerprint'] = cursor
         raise TronReadError('TRON history page cap exceeded')
+
+    def discover_transaction_ids(self, address: str, start_ms: int, end_ms: int) -> list[str]:
+        """Find complete, solidified official-sender USDT history IDs; never settle funds."""
+        validate_tron_address(address)
+        _integer(start_ms)
+        _integer(end_ms)
+        if start_ms > end_ms:
+            raise ValueError('Invalid observation window')
+        self._deadline = time.monotonic() + self.max_scan_seconds
+        try:
+            before = self._head()
+            if end_ms > before[1]:
+                raise TronReadError('Observation window is not solidified yet')
+            txids = self._transactions(address, start_ms, end_ms, only_from=True)
+            after = self._head()
+            if after[0] < before[0] or after[1] < before[1]:
+                raise TronReadError('TRON solid head regressed')
+            if after[0] == before[0] and after != before:
+                raise TronReadError('TRON solid head conflicted')
+            return txids
+        finally:
+            self._deadline = None
 
     def _events(self, txid: str, address: str, start_ms: int, end_ms: int, head: int) -> list[dict]:
         data = self._request('POST', '/walletsolidity/gettransactioninfobyid', json={'value': txid})

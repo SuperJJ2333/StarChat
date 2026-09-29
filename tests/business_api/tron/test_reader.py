@@ -384,3 +384,154 @@ def test_retry_is_skipped_once_scan_budget_is_spent(monkeypatch):
     with pytest.raises(reader_module.TronReadError):
         chain.reader(max_scan_seconds=60).snapshot(ACCOUNT, 1000, 2000)
     assert state['head'] == 1
+
+
+def test_discovery_uses_only_confirmed_official_usdt_history_without_balance_or_receipts():
+    chain = Chain()
+    result = chain.reader().discover_transaction_ids(ACCOUNT, 1000, 2000)
+
+    assert result == [TXID]
+    assert [request.url.path for request in chain.requests] == [
+        '/walletsolidity/getnowblock',
+        f'/v1/accounts/{ACCOUNT}/transactions/trc20',
+        '/walletsolidity/getnowblock',
+    ]
+    history = chain.requests[1]
+    assert history.url.params['only_from'] == 'true'
+    assert history.url.params['only_confirmed'] == 'true'
+    assert history.url.params['contract_address'] == module().USDT_CONTRACT
+    assert history.url.params['min_timestamp'] == '1000'
+    assert history.url.params['max_timestamp'] == '2000'
+
+
+def test_discovery_empty_history_is_complete_only_after_second_solid_head():
+    chain = Chain()
+    chain.pages = [{'success': True, 'data': [], 'meta': {}}]
+
+    assert chain.reader().discover_transaction_ids(ACCOUNT, 1000, 2000) == []
+    assert [request.url.path for request in chain.requests].count('/walletsolidity/getnowblock') == 2
+
+
+def test_discovery_rejects_unsolidified_or_invalid_window_before_history():
+    chain = Chain()
+    reader = chain.reader()
+    with pytest.raises(module().TronReadError, match='solidified'):
+        reader.discover_transaction_ids(ACCOUNT, 1000, 2001)
+    assert len(chain.requests) == 1
+
+    for address_value, start_ms, end_ms in ((OTHER, 2000, 1000), ('bad', 1000, 2000),
+                                              (ACCOUNT, True, 2000)):
+        with pytest.raises((ValueError, module().TronReadError)):
+            reader.discover_transaction_ids(address_value, start_ms, end_ms)
+    assert len(chain.requests) == 1
+
+
+def test_discovery_deduplicates_paginated_txids_but_detects_repeated_cursor():
+    chain = Chain()
+    chain.pages = [{'success': True, 'data': [{'transaction_id': TXID}],
+                    'meta': {'fingerprint': 'cursor-A'}},
+                   {'success': True, 'data': [{'transaction_id': TXID}], 'meta': {}}]
+    assert chain.reader().discover_transaction_ids(ACCOUNT, 1000, 2000) == [TXID]
+    assert [request.url.params.get('fingerprint') for request in chain.requests if request.method == 'GET'] == [
+        None, 'cursor-A']
+
+    chain = Chain()
+    chain.pages = [{'success': True, 'data': [{'transaction_id': TXID}],
+                    'meta': {'fingerprint': 'repeat'}}] * 2
+    with pytest.raises(module().TronReadError, match='cursor'):
+        chain.reader().discover_transaction_ids(ACCOUNT, 1000, 2000)
+
+
+@pytest.mark.parametrize('page,max_pages,max_transactions', [
+    ({'success': True, 'data': [{'transaction_id': TXID}],
+      'meta': {'fingerprint': 'next'}}, 1, 10000),
+    ({'success': True, 'data': [{'transaction_id': TXID}, {'transaction_id': TXID}],
+      'meta': {}}, 100, 1),
+    ({'success': True, 'data': [{'transaction_id': 'bad'}], 'meta': {}}, 100, 10000),
+    ({'success': True, 'data': [], 'meta': {'links': {'next': 'next'}}}, 100, 10000),
+])
+def test_discovery_rejects_incomplete_or_malformed_history(page, max_pages, max_transactions):
+    chain = Chain()
+    chain.pages = [page]
+    with pytest.raises(module().TronReadError):
+        chain.reader(max_pages=max_pages, max_transactions=max_transactions).discover_transaction_ids(
+            ACCOUNT, 1000, 2000)
+    assert all(request.url.path != '/walletsolidity/triggerconstantcontract' for request in chain.requests)
+
+
+def test_discovery_rejects_full_page_without_continuation_cursor():
+    chain = Chain()
+    chain.pages = [{'success': True, 'data': [{'transaction_id': TXID}] * 200, 'meta': {}}]
+
+    with pytest.raises(module().TronReadError, match='pagination cursor missing'):
+        chain.reader().discover_transaction_ids(ACCOUNT, 1000, 2000)
+    assert sum(request.method == 'GET' for request in chain.requests) == 1
+    assert all(request.url.path != '/walletsolidity/triggerconstantcontract' for request in chain.requests)
+
+
+def test_snapshot_keeps_existing_full_page_pagination_behavior():
+    chain = Chain()
+    chain.pages = [{'success': True, 'data': [{'transaction_id': TXID}] * 200, 'meta': {}}]
+
+    result = chain.reader().snapshot(ACCOUNT, 1000, 2000)
+    assert len(result['events']) == 2
+    assert sum(request.method == 'GET' for request in chain.requests) == 1
+
+
+@pytest.mark.parametrize('regression', ['height', 'timestamp', 'hash'])
+def test_discovery_rejects_regressed_or_conflicting_final_solid_head(regression):
+    chain = Chain()
+    chain.heads = [110, 109 if regression == 'height' else 110]
+    original = chain.respond
+    head_reads = 0
+    def respond(request):
+        nonlocal head_reads
+        payload = original(request).json()
+        if request.url.path.endswith('/getnowblock'):
+            head_reads += 1
+            if head_reads == 2:
+                if regression == 'timestamp':
+                    payload['block_header']['raw_data']['timestamp'] = 1999
+                elif regression == 'hash':
+                    payload['blockID'] = 'ff' * 32
+        return httpx.Response(200, json=payload)
+    reader = module().TronReader(client=httpx.Client(transport=httpx.MockTransport(respond)))
+
+    with pytest.raises(module().TronReadError, match='regressed|conflicted'):
+        reader.discover_transaction_ids(ACCOUNT, 1000, 2000)
+
+
+def test_discovery_deadline_covers_head_and_history_and_rejects_partial_result(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr(module().time, 'monotonic', lambda: clock[0])
+    chain = Chain()
+    chain.pages = [{'success': True, 'data': [{'transaction_id': TXID}],
+                    'meta': {'fingerprint': 'more'}},
+                   {'success': True, 'data': [], 'meta': {}}]
+    def slow(request):
+        clock[0] += 1.1
+        return chain.respond(request)
+    reader = module().TronReader(client=httpx.Client(transport=httpx.MockTransport(slow)),
+                                 max_scan_seconds=3)
+
+    with pytest.raises(module().TronReadError, match='deadline'):
+        reader.discover_transaction_ids(ACCOUNT, 1000, 2000)
+    assert len(chain.requests) == 3
+
+
+def test_discovery_rate_limit_after_first_page_rejects_all_candidate_ids():
+    chain = Chain()
+    chain.pages = [{'success': True, 'data': [{'transaction_id': TXID}],
+                    'meta': {'fingerprint': 'more'}}]
+    original = chain.respond
+    def limited(request):
+        if request.method == 'GET' and request.url.params.get('fingerprint') == 'more':
+            chain.requests.append(request)
+            return httpx.Response(429, json={})
+        return original(request)
+    reader = module().TronReader(client=httpx.Client(transport=httpx.MockTransport(limited)),
+                                 max_scan_seconds=1)
+
+    with pytest.raises(module().TronReadError, match='request failed'):
+        reader.discover_transaction_ids(ACCOUNT, 1000, 2000)
+    assert len(chain.requests) == 3
