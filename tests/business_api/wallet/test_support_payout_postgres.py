@@ -1,6 +1,6 @@
 """Optional isolated PostgreSQL process race; never a production database."""
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import multiprocessing
 import os
@@ -9,11 +9,178 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, delete, select, text, update
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 import test_manual_payouts as original
 from test_support_payout import scoped
+
+
+@pytest.fixture
+def legacy_schema(monkeypatch):
+    """A 0092 database with old rows, upgraded only after those rows exist."""
+    raw = os.environ.get('SUPPORT_PAYOUT_TEST_DATABASE_URL')
+    if not raw:
+        pytest.skip('isolated support payout PostgreSQL URL not supplied')
+    url = make_url(raw)
+    if url.host not in ('127.0.0.1', 'localhost') or url.database != 'support_payout_review':
+        raise RuntimeError('only the dedicated local support_payout_review database is allowed')
+    from alembic import command
+    from alembic.config import Config
+    service_path = Path(__file__).resolve().parents[3] / 'services' / 'business-api'
+    schema = 'support_payout_legacy_' + uuid4().hex
+    admin = create_engine(url, isolation_level='AUTOCOMMIT')
+    with admin.connect() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    schema_url = url.update_query_dict({'options': '-csearch_path=' + schema})
+    engine = create_engine(schema_url)
+    config = Config(str(service_path / 'alembic.ini'))
+    config.set_main_option('script_location', str(service_path / 'migrations'))
+    config.set_main_option('path_separator', 'os')
+    config.set_main_option('sqlalchemy.url', schema_url.render_as_string(hide_password=False).replace('%', '%%'))
+    monkeypatch.delenv('BUSINESS_DATABASE_URL', raising=False)
+    try:
+        command.upgrade(config, '0092_admin_session_entry_mode')
+        yield engine, config
+    finally:
+        engine.dispose()
+        with admin.connect() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin.dispose()
+
+
+def test_0092_upgrade_retains_old_payout_and_recharge_rows(legacy_schema):
+    from alembic import command
+
+    engine, config = legacy_schema
+    now = datetime.now(timezone.utc)
+    with engine.begin() as connection:
+        connection.execute(text("""
+            INSERT INTO wallet_manual_payout_quotes
+                (id, user_id, amount, snapshot, digest, created_at, expires_at)
+            VALUES ('legacy-quote', 'legacy-user', 10.000000, '{}', :digest, :now, :expires)
+        """), {'digest': 'a' * 64, 'now': now, 'expires': now + timedelta(hours=1)})
+        connection.execute(text("""
+            INSERT INTO wallet_manual_payout_orders
+                (id, quote_id, user_id, amount, digest, status, created_at, updated_at)
+            VALUES ('legacy-order', 'legacy-quote', 'legacy-user', 10.000000,
+                :digest, 'REQUESTED', :now, :now)
+        """), {'digest': 'a' * 64, 'now': now})
+        connection.execute(text("""
+            INSERT INTO wallet_support_payout_states
+                (order_id, expires_at, version, review_required)
+            VALUES ('legacy-order', :expires, 3, false)
+        """), {'expires': now + timedelta(hours=2)})
+        connection.execute(text("""
+            INSERT INTO users
+                (id, username, username_normalized, email, email_normalized,
+                 nickname, profile_updated_at, password_hash, status, created_at, updated_at)
+            VALUES ('legacy-user', 'legacy-user', 'legacy-user',
+                'legacy@example.test', 'legacy@example.test', 'Legacy User', :now,
+                'unused', 'ACTIVE', :now, :now)
+        """), {'now': now})
+        connection.execute(text("""
+            INSERT INTO recharge_requests
+                (id, user_id, amount_usdt, status, created_at, updated_at)
+            VALUES ('legacy-recharge', 'legacy-user', 10.000000, 'SUBMITTED', :now, :now)
+        """), {'now': now})
+
+    command.upgrade(config, 'head')
+    with engine.begin() as connection:
+        connection.execute(text("""
+            INSERT INTO wallet_support_payout_rate_preparations
+                (id, order_id, version, rate, receive, digest, reason_code, actor_id, created_at)
+            VALUES ('legacy-preparation', 'legacy-order', 1, 1.000000, 10.000000,
+                :digest, 'RATE_REVIEWED', 'legacy-staff', :now)
+        """), {'digest': 'b' * 64, 'now': now})
+        connection.execute(text("""
+            INSERT INTO wallet_support_payout_rejections
+                (id, order_id, actor_id, reason_code, created_at)
+            VALUES ('legacy-rejection', 'legacy-order', 'legacy-staff',
+                'INVALID_DESTINATION', :now)
+        """), {'now': now})
+    command.upgrade(config, 'head')
+    with engine.connect() as connection:
+        row = connection.execute(text("""
+            SELECT version, prepared_rate, prepared_receive, prepared_digest,
+                   prepared_version, evidence_actor_id, evidence_token_hash,
+                   evidence_version
+            FROM wallet_support_payout_states WHERE order_id = 'legacy-order'
+        """)).one()
+        assert row == (3, None, None, None, 0, None, None, 0)
+        assert connection.scalar(text("""
+            SELECT claim_version FROM recharge_requests WHERE id = 'legacy-recharge'
+        """)) == 0
+        assert connection.scalar(text("""
+            SELECT count(*) FROM wallet_support_payout_rate_preparations
+            WHERE id = 'legacy-preparation'
+        """)) == 1
+        assert connection.scalar(text("""
+            SELECT count(*) FROM wallet_support_payout_rejections
+            WHERE id = 'legacy-rejection'
+        """)) == 1
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0093_support_finance_order_recovery'
+
+
+def test_preparation_and_rejection_history_reject_duplicates_and_mutation(scoped):
+    from app.modules.wallet.support_payout import SupportPayoutRatePreparation, SupportPayoutRejection
+    from test_manual_payouts import request
+
+    core, _, _ = scoped
+    order = request(core)
+    now = core[2][0]
+    preparation = SupportPayoutRatePreparation(id='prepared-1', order_id=order['id'], version=1,
+        rate=Decimal('1.000000'), receive=Decimal('10.000000'), digest='b' * 64,
+        reason_code='RATE_REVIEWED', actor_id='bob', created_at=now)
+    next_preparation = SupportPayoutRatePreparation(id='prepared-next', order_id=order['id'], version=2,
+        rate=Decimal('1.100000'), receive=Decimal('11.000000'), digest='c' * 64,
+        reason_code='RATE_REVIEWED', actor_id='bob', created_at=now)
+    rejection = SupportPayoutRejection(id='rejected-1', order_id=order['id'],
+        actor_id='bob', reason_code='INVALID_DESTINATION', created_at=now)
+    with core[1].begin() as session:
+        session.add_all((preparation, next_preparation, rejection))
+    with core[1]() as session:
+        assert len(session.scalars(select(SupportPayoutRatePreparation).where(
+            SupportPayoutRatePreparation.order_id == order['id'])).all()) == 2
+
+    with pytest.raises(IntegrityError):
+        with core[1].begin() as session:
+            session.add(SupportPayoutRatePreparation(id='prepared-2', order_id=order['id'], version=1,
+                rate=Decimal('1.200000'), receive=Decimal('12.000000'), digest='d' * 64,
+                reason_code='RATE_REVIEWED', actor_id='owner', created_at=now))
+    with pytest.raises(IntegrityError):
+        with core[1].begin() as session:
+            session.add(SupportPayoutRejection(id='rejected-2', order_id=order['id'],
+                actor_id='owner', reason_code='INVALID_DESTINATION', created_at=now))
+
+    engine = core[1].kw['bind']
+    for model, table, identifier in (
+        (SupportPayoutRatePreparation, 'wallet_support_payout_rate_preparations', 'prepared-1'),
+        (SupportPayoutRejection, 'wallet_support_payout_rejections', 'rejected-1'),
+    ):
+        with pytest.raises(ValueError, match='append-only'):
+            with core[1].begin() as session:
+                session.get(model, identifier).reason_code = 'TAMPERED'
+        with pytest.raises(ValueError, match='append-only'):
+            with core[1].begin() as session:
+                session.delete(session.get(model, identifier))
+        with pytest.raises(ValueError, match='append-only'):
+            with core[1].begin() as session:
+                session.execute(update(model).where(model.id == identifier).values(reason_code='TAMPERED'))
+        with pytest.raises(ValueError, match='append-only'):
+            with core[1].begin() as session:
+                session.execute(delete(model).where(model.id == identifier))
+        for sql in (
+            f'UPDATE {table} SET reason_code = \'TAMPERED\' WHERE id = :identifier',
+            f'DELETE FROM {table} WHERE id = :identifier',
+        ):
+            with pytest.raises(DBAPIError, match='append-only'):
+                with engine.begin() as connection:
+                    connection.execute(text(sql), {'identifier': identifier})
+        with engine.connect() as connection:
+            assert connection.scalar(text(f'SELECT count(*) FROM {table} WHERE id = :identifier'),
+                {'identifier': identifier}) == 1
 
 
 @pytest.fixture

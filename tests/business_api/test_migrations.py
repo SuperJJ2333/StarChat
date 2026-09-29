@@ -36,9 +36,8 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
     assert "down_revision = '0020_friend_request_reuse'" in revision
 
 
-def test_wallet_and_moments_merge_is_the_only_head() -> None:
-    # Bounded discovery adds a read index after stable username ownership.
-    assert _alembic("heads").strip() == "0092_admin_session_entry_mode (wallet_access) (head)"
+def test_support_finance_recovery_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0093_support_finance_order_recovery (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history
@@ -53,6 +52,47 @@ def test_wallet_and_moments_merge_is_the_only_head() -> None:
     assert "0087_support_payout_workflow -> 0088_profile_grapheme_limits" in history
     assert "0088_profile_grapheme_limits -> 0089_username_claims" in history
     assert "0089_username_claims -> 0090_friend_discovery_index" in history
+    assert "0092_admin_session_entry_mode -> 0093_support_finance_order_recovery" in history
+
+
+def test_support_finance_recovery_migration_only_expands_history() -> None:
+    sql = _normalized_sql(_alembic(
+        "upgrade", "0092_admin_session_entry_mode:0093_support_finance_order_recovery", "--sql"
+    ))
+    for column in (
+        "prepared_rate numeric(20, 6)",
+        "prepared_receive numeric(30, 6)",
+        "prepared_digest varchar(64)",
+        "prepared_version integer default '0' not null",
+        "evidence_actor_id varchar(36)",
+        "evidence_token_hash varchar(64)",
+        "evidence_version integer default '0' not null",
+    ):
+        assert f"alter table wallet_support_payout_states add column {column}" in sql
+    assert "alter table alembic_version alter column version_num type varchar(64)" in sql
+    assert "alter table recharge_requests add column claim_version integer default '0' not null" in sql
+    assert "create table wallet_support_payout_rate_preparations" in sql
+    assert "unique (order_id, version)" in sql
+    assert "create table wallet_support_payout_rejections" in sql
+    assert "unique (order_id)" in sql
+    assert "before update or delete on wallet_support_payout_rate_preparations" in sql
+    assert "before update or delete on wallet_support_payout_rejections" in sql
+    assert "drop table" not in sql
+    assert "delete from" not in sql
+    assert "update wallet_support_payout_states" not in sql
+
+
+def test_support_finance_recovery_downgrade_refuses_history_loss() -> None:
+    import importlib.util
+    import pytest
+
+    path = BUSINESS_API_ROOT / "migrations" / "versions" / "0093_support_finance_order_recovery.py"
+    spec = importlib.util.spec_from_file_location("support_finance_recovery_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    with pytest.raises(RuntimeError, match="retained|forward migration"):
+        module.downgrade()
 
 
 def test_admin_entry_mode_expands_session_without_trusting_existing_rows() -> None:

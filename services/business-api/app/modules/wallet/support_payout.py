@@ -1,11 +1,12 @@
 """Support-order coordination over the existing payout financial engine."""
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from hashlib import sha256
 import secrets
 import re
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, select
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, event, select
+from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.database import Base
 from app.core.errors import AppError
@@ -25,6 +26,59 @@ class SupportPayoutState(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     review_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     review_authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    prepared_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    prepared_receive: Mapped[Decimal | None] = mapped_column(Numeric(30, 6))
+    prepared_digest: Mapped[str | None] = mapped_column(String(64))
+    prepared_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
+    evidence_actor_id: Mapped[str | None] = mapped_column(String(36))
+    evidence_token_hash: Mapped[str | None] = mapped_column(String(64))
+    evidence_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
+
+
+class SupportPayoutRatePreparation(Base):
+    __tablename__ = 'wallet_support_payout_rate_preparations'
+    __table_args__ = (UniqueConstraint('order_id', 'version', name='uq_support_payout_preparation_version'),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey('wallet_manual_payout_orders.id'), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    receive: Mapped[Decimal] = mapped_column(Numeric(30, 6), nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SupportPayoutRejection(Base):
+    __tablename__ = 'wallet_support_payout_rejections'
+    __table_args__ = (UniqueConstraint('order_id', name='uq_support_payout_rejection_order'),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey('wallet_manual_payout_orders.id'), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+def _reject_history_mutation(*_args, **_kwargs) -> None:
+    raise ValueError('support payout decision history is append-only')
+
+
+for _history_model in (SupportPayoutRatePreparation, SupportPayoutRejection):
+    event.listen(_history_model, 'before_update', _reject_history_mutation)
+    event.listen(_history_model, 'before_delete', _reject_history_mutation)
+
+
+@event.listens_for(Session, 'do_orm_execute')
+def _reject_bulk_history_mutation(execute_state) -> None:
+    if not (execute_state.is_update or execute_state.is_delete):
+        return
+    table = getattr(execute_state.statement, 'table', None)
+    if table is not None and table.name in {
+        SupportPayoutRatePreparation.__tablename__, SupportPayoutRejection.__tablename__,
+    }:
+        _reject_history_mutation()
 
 
 def utc(value):

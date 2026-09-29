@@ -44,6 +44,7 @@ class RechargeRequest(Base):
     claimed_by: Mapped[str | None] = mapped_column(String(36))
     claim_token_hash: Mapped[str | None] = mapped_column(String(64))
     claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
     receipt_id: Mapped[str | None] = mapped_column(String(36), unique=True)
     actual_received_usdt: Mapped[Decimal | None] = mapped_column(Numeric(30, 6))
     payment_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
