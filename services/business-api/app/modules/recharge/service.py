@@ -25,6 +25,7 @@ from app.modules.recharge.models import CsDirectoryEntry, RechargeCreditBinding,
 
 from app.modules.recharge.workflow import SupportOrderWorkflow
 from app.modules.recharge.matching import AutomaticRechargeMatching
+from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
 
 RECHARGE_RULES_VERSION = "recharge-manual-v1"
 
@@ -37,6 +38,7 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
         self.rate_provider = rate_provider
         self.wallet_receipts = wallet_receipts
         self.official_config = official_config
+        self.recharge_binding_gate = WalletRechargeBindingGate()
         self.profile_reader = profile_reader
         self._now = now or (lambda: datetime.now(timezone.utc))
 
@@ -55,15 +57,37 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
         except (InvalidOperation, ValueError, TypeError):
             raise AppError(code='RECHARGE_AMOUNT_INVALID', message='充值金额或精度无效', status_code=422) from None
 
+    @staticmethod
+    def _claim_digest(payload):
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+    @staticmethod
+    def _require_claim_key(key):
+        if not isinstance(key, str) or not key.strip() or len(key) > 128:
+            raise AppError(code='IDEMPOTENCY_KEY_REQUIRED', message='需要幂等键', status_code=422)
+
+    def _completed_submit(self, *, scope, key, payload):
+        """Return an existing receipt before calling the independently transacting FX provider."""
+        self._require_claim_key(key)
+        digest = self._claim_digest(payload)
+        with self.factory() as session:
+            record = session.scalar(select(IdempotencyRecord).where(
+                IdempotencyRecord.scope == scope, IdempotencyRecord.idempotency_key == key))
+            if record is None:
+                return None
+            if record.request_hash != digest:
+                raise AppError(code='IDEMPOTENCY_KEY_REUSED',
+                    message='幂等键或入账凭证已用于其他请求', status_code=409)
+            return record.response_body if record.status == 'COMPLETED' else None
+
     def _claim(self, session, *, scope, key, payload, conflict_code='IDEMPOTENCY_KEY_REUSED'):
         """Claim and complete within the caller transaction, including on SQLite.
 
         The existing unique scope/key constraint serializes concurrent retries;
         an aborted business operation rolls its claim back as well.
         """
-        if not isinstance(key, str) or not key.strip() or len(key) > 128:
-            raise AppError(code='IDEMPOTENCY_KEY_REQUIRED', message='需要幂等键', status_code=422)
-        digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        self._require_claim_key(key)
+        digest = self._claim_digest(payload)
         dialect = session.get_bind().dialect.name
         if dialect == 'postgresql':
             from sqlalchemy.dialects.postgresql import insert
@@ -97,22 +121,40 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
                 evidence_txid = None
             elif len(evidence_txid) > 64:
                 raise AppError(code="RECHARGE_EVIDENCE_INVALID", message="凭证号格式无效", status_code=422)
+        request_id = str(uuid4())
+        key = idempotency_key if idempotency_key is not None else request_id
+        scope = 'recharge.submit:'+user_id
+        payload = dict(amount_usdt=str(amount), evidence_txid=evidence_txid, note=note or None)
+        if idempotency_key is not None:
+            replay = self._completed_submit(scope=scope, key=key, payload=payload)
+            if replay is not None:
+                return replay
+
+        # FxService uses independent sessions (and may write its cache). Fetch
+        # outside the recharge transaction so the idempotency write cannot block it.
         rate = stale = None
-        if self.rate_provider is not None:
+        if (getattr(self, 'settlement_enabled', True) is True and self.official_config is not None
+                and self.rate_provider is not None):
             try:
                 snapshot = self.rate_provider()
+                if (not isinstance(snapshot, (tuple, list)) or len(snapshot) != 2
+                        or isinstance(snapshot[0], bool) or type(snapshot[1]) is not bool):
+                    raise ValueError("invalid reference rate snapshot")
+                candidate = Decimal(snapshot[0])
+                if (not candidate.is_finite() or candidate <= 0 or candidate >= Decimal("1000")
+                        or candidate != candidate.quantize(Decimal("0.000001"))):
+                    raise ValueError("invalid reference rate")
+                rate, stale = candidate, snapshot[1]
             except Exception:
-                snapshot = None  # 参考汇率仅展示用：获取失败不阻塞申请单创建
-            if snapshot is not None:
-                rate, stale = Decimal(snapshot[0]), bool(snapshot[1])
+                rate = stale = None  # 参考汇率仅展示用：获取失败不阻塞申请单创建
+
         now = self._utcnow()
-        request_id = str(uuid4())
         with self.factory.begin() as session:
-            record = self._claim(session, scope='recharge.submit:'+user_id,
-                key=idempotency_key if idempotency_key is not None else request_id,
-                payload=dict(amount_usdt=str(amount), evidence_txid=evidence_txid, note=note or None))
+            record = self._claim(session, scope=scope, key=key, payload=payload)
             if record.status == 'COMPLETED':
                 return record.response_body
+            official_payment = self.official_payment_view()
+            self.recharge_binding_gate.require_active(session, user_id)
             if evidence_txid is not None:
                 existing = session.scalar(select(RechargeRequest.id).where(RechargeRequest.evidence_txid == evidence_txid))
                 if existing is not None:
@@ -120,10 +162,9 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
             row = RechargeRequest(id=request_id, user_id=user_id, amount_usdt=amount,
                 evidence_txid=evidence_txid, note=(note or None), status="SUBMITTED",
                 fx_rate=rate, fx_rate_stale=stale, created_at=now, updated_at=now)
-            if self.official_config is not None:
-                row.expires_at = now + timedelta(hours=2)
-                row.processing_stage = 'WAITING_PAYMENT'
-                row.official_payment = self.official_payment_view()
+            row.expires_at = now + timedelta(hours=2)
+            row.processing_stage = 'WAITING_PAYMENT'
+            row.official_payment = official_payment
             session.add(row)
             try:
                 session.flush()

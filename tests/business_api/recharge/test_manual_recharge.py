@@ -12,16 +12,19 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, select, event
+from sqlalchemy import create_engine, select, event, func
 from sqlalchemy.pool import StaticPool
 
 import app.modules.fx.models  # noqa: F401
 import app.modules.recharge.models  # noqa: F401
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
+from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxEvent
 from app.main import create_app
 from app.modules.audit.models import AuditEvent
+from app.modules.fx.models import FxRate
+from app.modules.fx.service import FxService
 from app.modules.identity.enums import AccountStatus, RoleCode
 from app.modules.identity.models import User, UserRole
 from app.modules.identity.passwords import PasswordHasher
@@ -80,6 +83,19 @@ def _caibi_balance(factory, account):
 def _wallet_snapshot(factory):
     with factory() as session:
         return wallet_binding_snapshot(session)
+
+
+def _submit_counts(factory):
+    with factory() as session:
+        return (
+            session.scalar(select(func.count()).select_from(RechargeRequest)),
+            session.scalar(select(func.count()).select_from(AuditEvent).where(
+                AuditEvent.action == "recharge.submitted")),
+            session.scalar(select(func.count()).select_from(OutboxEvent).where(
+                OutboxEvent.event_type == "recharge.submitted")),
+            session.scalar(select(func.count()).select_from(IdempotencyRecord).where(
+                IdempotencyRecord.scope.like("recharge.submit:%"))),
+        )
 
 
 def _seed_historical_recharge(factory, *, amount_usdt, evidence_txid=None):
@@ -248,6 +264,162 @@ def test_submit_creates_pending_order_without_balance_change(env):
     assert _caibi_balance(factory, "PLATFORM_CLEARING") == Decimal("-100.00")  # 账本仅种子分录
 
 
+@pytest.mark.parametrize(("binding_state", "expected_code"), (
+    ("unbound", "WALLET_BINDING_REQUIRED"),
+    ("pending", "WALLET_BINDING_PENDING"),
+    ("version_conflict", "WALLET_BINDING_VERSION_CONFLICT"),
+))
+def test_new_recharge_requires_active_binding_without_success_writes(env, binding_state, expected_code):
+    from app.core.errors import AppError
+
+    factory, _, recharge = env
+    user_id = "agent" if binding_state == "unbound" else "alice"
+    if binding_state != "unbound":
+        with factory.begin() as session:
+            state = session.get(WalletBindingState, "alice")
+            if binding_state == "pending":
+                state.pending_binding_id = "pending-alice-binding"
+            else:
+                state.version += 1
+    before = _submit_counts(factory)
+    with pytest.raises(AppError) as excinfo:
+        recharge.submit(user_id=user_id, amount_usdt=Decimal("10"),
+            idempotency_key=f"binding-{binding_state}")
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == expected_code
+    assert _submit_counts(factory) == before
+
+
+def test_active_recharge_creates_one_order_audit_outbox_and_no_money(env):
+    factory, _, recharge = env
+    before = _submit_counts(factory)
+    balance_before = _caibi_balance(factory, "alice")
+    created = recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+        idempotency_key="active-new-order")
+    assert created["status"] == "SUBMITTED"
+    assert created["official_payment"] == {
+        "network": "TRON", "address": "isolated-fixture-official", "config_version": "fixture-v1"}
+    assert _submit_counts(factory) == tuple(value + 1 for value in before)
+    assert _caibi_balance(factory, "alice") == balance_before
+
+
+def test_completed_replay_precedes_binding_config_and_rate_checks(env):
+    from app.core.errors import AppError
+
+    factory, _, recharge = env
+    created = recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+        idempotency_key="recover-existing")
+    after_create = _submit_counts(factory)
+    with factory.begin() as session:
+        session.get(WalletBindingState, "alice").active_binding_id = None
+    recharge.official_config = None
+    recharge.settlement_enabled = False
+    rate_calls = []
+
+    def unavailable_rate():
+        rate_calls.append(True)
+        raise RuntimeError("rate provider unavailable")
+
+    recharge.rate_provider = unavailable_rate
+    assert recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+        idempotency_key="recover-existing") == created
+    assert rate_calls == []
+    with pytest.raises(AppError) as excinfo:
+        recharge.submit(user_id="alice", amount_usdt=Decimal("11"),
+            idempotency_key="recover-existing")
+    assert excinfo.value.code == "IDEMPOTENCY_KEY_REUSED"
+    assert rate_calls == []
+    with pytest.raises(AppError) as excinfo:
+        recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+            idempotency_key="new-without-official-config")
+    assert excinfo.value.status_code == 503
+    assert rate_calls == []
+    recharge.official_config = SimpleNamespace(address="isolated-fixture-official", version="fixture-v1")
+    recharge.settlement_enabled = True
+    with pytest.raises(AppError) as excinfo:
+        recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+            idempotency_key="new-without-binding")
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "WALLET_BINDING_REQUIRED"
+    assert _submit_counts(factory) == after_create
+
+
+@pytest.mark.parametrize("rate_snapshot", (
+    (),
+    ("7.12",),
+    ("7.12", False, "extra"),
+    {"rate": "7.12", "stale": False},
+    ("not-a-decimal", False),
+    ("NaN", False),
+    ("Infinity", False),
+    ("0", False),
+    ("1000", False),
+    ("7.1234567", False),
+    ("7.12", "false"),
+), ids=("empty", "short", "extra", "mapping", "bad-decimal", "nan", "infinity",
+        "zero", "out-of-range", "excess-precision", "bad-stale"))
+def test_malformed_optional_rate_does_not_block_new_recharge(env, rate_snapshot):
+    factory, _, recharge = env
+    before = _submit_counts(factory)
+    recharge.rate_provider = lambda: rate_snapshot
+
+    created = recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+        idempotency_key="malformed-optional-rate")
+
+    assert created["status"] == "SUBMITTED"
+    assert created["fx_rate"] is None
+    assert created["fx_rate_stale"] is None
+    assert _submit_counts(factory) == tuple(value + 1 for value in before)
+
+
+def test_recharge_separate_session_rate_provider_refreshes_before_claim(env):
+    """An on-demand FX refresh must not wait on recharge's idempotency write lock."""
+    factory, _, recharge = env
+    fx_engine = create_engine(str(factory.kw["bind"].url),
+        connect_args={"check_same_thread": False, "timeout": 0.2})
+    fx_factory = create_session_factory(fx_engine)
+    fx = FxService(fx_factory, api_id="fixture-id", api_key="fixture-key",
+        http_get=lambda _url, _timeout: {"code": 200, "rate": "7.12", "from": "USD", "to": "CNY"})
+
+    def rate_provider():
+        snapshot = fx.get_rate_snapshot(actor_id="recharge-reference")
+        return snapshot["rate"], bool(snapshot["stale"])
+
+    recharge.rate_provider = rate_provider
+    try:
+        created = recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+            idempotency_key="fx-independent-session")
+        assert rate_provider() == (Decimal("7.120000"), False)  # succeeds after recharge releases its lock
+        assert created["fx_rate"] == "7.120000"
+        assert created["fx_rate_stale"] is False
+        with factory() as session:
+            assert session.get(FxRate, "USD/CNY").rate == Decimal("7.120000")
+    finally:
+        fx_engine.dispose()
+
+
+def test_existing_recharge_history_evidence_and_cancel_survive_unbinding(env):
+    from app.core.errors import AppError
+
+    factory, _, recharge = env
+    evidence_order = recharge.submit(user_id="alice", amount_usdt=Decimal("10"),
+        idempotency_key="existing-evidence")
+    cancel_order = recharge.submit(user_id="alice", amount_usdt=Decimal("20"),
+        idempotency_key="existing-cancel")
+    with factory.begin() as session:
+        session.get(WalletBindingState, "alice").active_binding_id = None
+    assert {item["id"] for item in recharge.list_mine(user_id="alice")} == {
+        evidence_order["id"], cancel_order["id"]}
+    assert recharge.list_mine(user_id="agent") == []
+    with pytest.raises(AppError) as excinfo:
+        recharge.submit_evidence(request_id=evidence_order["id"], user_id="agent",
+            txid="e" * 64, idempotency_key="cross-account")
+    assert excinfo.value.status_code == 404
+    assert recharge.submit_evidence(request_id=evidence_order["id"], user_id="alice",
+        txid="e" * 64, idempotency_key="existing-proof")["evidence_txid"] == "e" * 64
+    assert recharge.cancel(user_id="alice", request_id=cancel_order["id"])["status"] == "CANCELLED"
+
+
 def test_same_evidence_cannot_fund_two_requests(env):
     factory, ledger, recharge = env
     from app.core.errors import AppError
@@ -338,6 +510,9 @@ def test_recharge_api_contract(env):
         email_verification_secret="test-email-verification-secret",
         password_reset_secret="test-password-reset-secret")
     app = create_app(settings, session_factory=factory)
+    app.state.recharge_service.official_config = SimpleNamespace(
+        address="isolated-fixture-official", version="fixture-v1")
+    app.state.recharge_service.settlement_enabled = True
     tokens = TS(factory, jwt_secret=settings.jwt_secret, jwt_issuer=settings.jwt_issuer, require_session_claims=False)
     alice = tokens.issue_pair(user_id="alice", device_key="d", display_name="t").access_token
     from support_auth_helpers import staff_token
@@ -363,3 +538,72 @@ def test_recharge_api_contract(env):
     assert pending_denied.status_code == 401  # 无权限人员不能操作
     assert pending.status_code == 200 and len(pending.json()["items"]) == 1
     assert mine.status_code == 200 and mine.json()["items"][0]["status"] == "SUBMITTED"
+
+
+def test_http_new_recharge_requires_binding_and_preserves_completed_replay(env):
+    from httpx import ASGITransport, AsyncClient
+
+    factory, _, _ = env
+    settings = Settings(_env_file=None, environment="test", database_url="sqlite+pysqlite:///:memory:",
+        jwt_secret="test-jwt-secret-at-least-thirty-two-bytes",
+        email_verification_secret="test-email-verification-secret",
+        password_reset_secret="test-password-reset-secret")
+    app = create_app(settings, session_factory=factory)
+    service = app.state.recharge_service
+    service.official_config = SimpleNamespace(address="isolated-fixture-official", version="fixture-v1")
+    service.settlement_enabled = True
+    tokens = TokenService(factory, jwt_secret=settings.jwt_secret,
+        jwt_issuer=settings.jwt_issuer, require_session_claims=False)
+    alice = {"Authorization": "Bearer " + tokens.issue_pair(
+        user_id="alice", device_key="alice-device", display_name="Alice").access_token}
+    agent = {"Authorization": "Bearer " + tokens.issue_pair(
+        user_id="agent", device_key="agent-device", display_name="Agent").access_token}
+    path = "/api/v1/recharge/requests"
+    body = {"amount_usdt": "10"}
+
+    def post(headers, key, payload=body):
+        async def call():
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                return await client.post(path, headers={**headers, "Idempotency-Key": key}, json=payload)
+        return asyncio.run(call())
+
+    def get(headers, url):
+        async def call():
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                return await client.get(url, headers=headers)
+        return asyncio.run(call())
+
+    assert post({}, "anonymous").status_code == 401
+    denied = post(agent, "agent-unbound")
+    assert denied.status_code == 409
+    assert denied.json()["error"]["code"] == "WALLET_BINDING_REQUIRED"
+    created = post(alice, "alice-existing")
+    assert created.status_code == 201
+    after_create = _submit_counts(factory)
+    with factory.begin() as session:
+        session.get(WalletBindingState, "alice").active_binding_id = None
+    service.official_config = None
+    service.settlement_enabled = False
+    settings.environment = "development"  # exercise the former route precheck on replay
+    replay = post(alice, "alice-existing")
+    assert replay.status_code == 201
+    assert replay.json() == created.json()
+    assert post(alice, "alice-existing", {"amount_usdt": "11"}).status_code == 409
+    assert post(alice, "alice-new-official-disabled").status_code == 503
+    service.official_config = SimpleNamespace(address="isolated-fixture-official", version="fixture-v1")
+    service.settlement_enabled = True
+    new_without_binding = post(alice, "alice-new-unbound")
+    assert new_without_binding.status_code == 409
+    assert new_without_binding.json()["error"]["code"] == "WALLET_BINDING_REQUIRED"
+    assert _submit_counts(factory) == after_create
+    assert get(alice, path + "/mine").json()["items"][0]["id"] == created.json()["id"]
+    assert get(agent, path + "/mine").json()["items"] == []
+
+    async def cross_account_evidence():
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.post(path + "/" + created.json()["id"] + "/evidence",
+                headers={**agent, "Idempotency-Key": "agent-cross-evidence"}, json={"txid": "e" * 64})
+
+    denied_read = asyncio.run(cross_account_evidence())
+    assert denied_read.status_code == 404
+    assert denied_read.json()["error"]["code"] == "RECHARGE_NOT_FOUND"

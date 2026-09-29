@@ -10,10 +10,14 @@ from app.modules.ledger.adjustments import AdjustmentWorkflow
 from app.modules.ledger.adjustment_models import AdjustmentRequest
 from app.modules.ledger.service import LedgerService
 from app.modules.recharge.service import RechargeService
+from app.modules.wallet.binding_models import WalletBindingState
 
 
 def prepared_order(core):
     receipts, factory, adapter, _, _, now = core
+    with factory() as session:
+        state=session.get(WalletBindingState,'alice')
+        assert state is not None and state.active_binding_id and state.version==1
     ledger = LedgerService(factory)
     ledger.reserve_policy = 'manual_liquidity'
     clock = [now-timedelta(seconds=1)]

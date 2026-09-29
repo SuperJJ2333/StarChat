@@ -5,13 +5,16 @@ from test_review_flow_api import env, get, post  # noqa: F401
 from app.modules.identity.tokens import TokenService
 from app.modules.identity.models import RefreshTokenFamily, AdminSession
 from sqlalchemy import select
+from binding_fixture import seed_active_binding
 
 
 def test_passwordless_staff_can_claim_but_app_token_and_revoked_session_cannot(env):
     app,factory,_,headers=env
     service=app.state.recharge_service
     service.settlement_enabled=True
-    service.official_config=SimpleNamespace(address='isolated-test-address',version='v1')
+    service.official_config=SimpleNamespace(address='isolated-fixture-official',version='fixture-v1')
+    with factory.begin() as session:
+        seed_active_binding(session,user_id='alice',now=service._utcnow())
     order=service.submit(user_id='alice',amount_usdt=Decimal('10'),idempotency_key='new-managed')
     route=f"/api/v1/recharge/admin/requests/{order['id']}/claim"
     assert post(app,headers['alice'],route,{}).status_code==401

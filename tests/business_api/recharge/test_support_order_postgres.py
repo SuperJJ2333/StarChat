@@ -15,6 +15,7 @@ from app.modules.identity.models import User
 from app.modules.ledger.service import LedgerService
 from app.modules.recharge.models import RechargeRequest
 from app.modules.recharge.service import RechargeService
+from binding_fixture import seed_active_binding
 
 
 @pytest.fixture
@@ -31,8 +32,9 @@ def pg():
     with factory.begin() as session:
         session.add(User(id=uid,username=uid,username_normalized=uid,password_hash='unused',
             status='ACTIVE',created_at=clock[0],updated_at=clock[0]))
+        seed_active_binding(session,user_id=uid,now=clock[0])
     service=RechargeService(factory,ledger=LedgerService(factory),now=lambda:clock[0],
-        official_config=SimpleNamespace(address='isolated-fixture-official',version='v1'))
+        official_config=SimpleNamespace(address='isolated-fixture-official',version='fixture-v1'))
     order=service.submit(user_id=uid,amount_usdt=Decimal('10'),idempotency_key='new')
     yield service,order['id'],clock,factory
     engine.dispose()

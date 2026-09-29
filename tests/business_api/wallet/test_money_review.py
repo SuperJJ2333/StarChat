@@ -1,11 +1,16 @@
 """Review regressions: money writes must match durable business intent."""
+from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
 from app.core.errors import AppError
 from app.modules.ledger.service import LedgerService
 from app.modules.recharge.service import RechargeService
+from app.modules.recharge.models import RechargeRequest
+from app.modules.wallet.binding_models import WalletBindingState
 from test_manual_payout_rate import core, _caibi_quote, _request, _balance
 
 
@@ -15,9 +20,19 @@ def _manual(core):
     return svc
 
 
+def _historical_recharge(core):
+    """Finance-proof cases concern an existing order from the historical workflow."""
+    request_id = str(uuid4())
+    now = datetime.now(timezone.utc)
+    with core[1].begin() as session:
+        session.add(RechargeRequest(id=request_id, user_id='alice', amount_usdt=Decimal('10'),
+            status='SUBMITTED', created_at=now, updated_at=now))
+    return {'id': request_id}
+
+
 def test_recharge_rejects_nonexistent_ledger_proof(core):
     svc = RechargeService(core[1], ledger=LedgerService(core[1]))
-    request = svc.submit(user_id='alice', amount_usdt='10', idempotency_key='submit')
+    request = _historical_recharge(core)
     with pytest.raises(AppError):
         svc.mark_credited(request_id=request['id'], actor_id='owner',
             ledger_transaction_id='nonexistent', final_caibi_amount='71.20',
@@ -25,7 +40,11 @@ def test_recharge_rejects_nonexistent_ledger_proof(core):
 
 
 def test_recharge_submit_replays_same_idempotency_key(core):
-    svc = RechargeService(core[1], ledger=LedgerService(core[1]))
+    with core[1]() as session:
+        state = session.get(WalletBindingState, 'alice')
+        assert state is not None and state.active_binding_id and state.version == 1
+    svc = RechargeService(core[1], ledger=LedgerService(core[1]),
+        official_config=SimpleNamespace(address='isolated-fixture-official', version='fixture-v1'))
     first = svc.submit(user_id='alice', amount_usdt='10', idempotency_key='submit')
     second = svc.submit(user_id='alice', amount_usdt='10', idempotency_key='submit')
     assert first['id'] == second['id']
@@ -124,7 +143,7 @@ def test_recharge_requires_executed_adjustment_not_just_ledger_post(core):
     ledger = LedgerService(core[1])
     ledger.reserve_policy = 'manual_liquidity'
     svc = RechargeService(core[1], ledger=ledger)
-    request = svc.submit(user_id='alice', amount_usdt='10', idempotency_key='submit')
+    request = _historical_recharge(core)
     tx = ledger.adjust(user_id='alice', amount=Decimal('71.20'), actor_id='owner',
         reason_code='RECHARGE_CREDIT', idempotency_key='unapproved')
     with pytest.raises(AppError):
@@ -152,8 +171,8 @@ def test_executed_recharge_proof_consumed_once_and_payload_checked(core):
         reason_code='RECHARGE_CREDIT', idempotency_key='adjustment')
     workflow.finance_review(adjustment.id, reviewer_id='bob', approve=True)
     executed = workflow.execute(adjustment.id, actor_id='owner', idempotency_key='execute')
-    first = svc.submit(user_id='alice', amount_usdt='10', idempotency_key='first')
-    second = svc.submit(user_id='alice', amount_usdt='10', idempotency_key='second')
+    first = _historical_recharge(core)
+    second = _historical_recharge(core)
     payload = dict(actor_id='owner', ledger_transaction_id=executed.ledger_transaction_id,
         final_caibi_amount='71.20', final_rate='7.12', idempotency_key='credit')
     credited = svc.mark_credited(request_id=first['id'], **payload)
