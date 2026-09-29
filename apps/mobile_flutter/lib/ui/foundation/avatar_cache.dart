@@ -113,6 +113,13 @@ abstract final class AvatarCache {
   static ImageProvider? lastSuccessful(String userId) =>
       _lastSuccessfulByUser[userId];
 
+  /// Release signed URL providers when an account's identity projection ends.
+  /// Disk entries remain account-keyed for a later authorized cold start.
+  static void clearRetainedForAccount(String accountKey) {
+    final prefix = 'identity:${Uri.encodeComponent(accountKey)}:';
+    _lastSuccessfulByUser.removeWhere((key, _) => key.startsWith(prefix));
+  }
+
   @visibleForTesting
   static AvatarCacheImageProvider buildProvider({
     required String avatarUrl,

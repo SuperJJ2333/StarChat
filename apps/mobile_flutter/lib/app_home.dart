@@ -1249,10 +1249,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   void _openFriendRequests() {
     if (!mounted) return;
+    final accountApi = widget.api;
+    final accountMatrix = widget.matrix;
     Navigator.of(context, rootNavigator: true).push(
       MotionPageRoute(
         builder: (_) => FriendRequestsPage(
-          api: widget.api,
+          api: accountApi,
           pendingRequests: pendingFriendRequests,
           directChats: directChats,
           onRequestsChanged: () => unawaited(_refreshAfterFriendChanges()),
@@ -1261,7 +1263,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           onEstablishDirectChatWithRequest:
               (matrixUserId, friendUserId, friendDisplayName, request) =>
                   _establishDirectChatAndGreet(
-                      matrixUserId, friendDisplayName, request),
+                      matrixUserId, friendDisplayName, request,
+                      accountApi: accountApi, accountMatrix: accountMatrix),
         ),
       ),
     );
@@ -1275,26 +1278,57 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _establishDirectChatAndGreet(
     String matrixUserId,
     String friendDisplayName,
-    Map request,
-  ) async {
+    Map request, {
+    required BusinessApiClient accountApi,
+    required MatrixSdkE2eeClient accountMatrix,
+  }) async {
+    final accountEpoch = accountApi.sessionEpoch;
+    final accountUserId = accountMatrix.userId ?? '';
+    void requireCurrentAccount() {
+      if (!mounted ||
+          !identical(widget.api, accountApi) ||
+          !identical(widget.matrix, accountMatrix) ||
+          accountApi.sessionEpoch != accountEpoch ||
+          accountMatrix.userId != accountUserId) {
+        throw StateError('friend acceptance account changed');
+      }
+    }
+
+    requireCurrentAccount();
     final cache = await _identityCache();
+    requireCurrentAccount();
     await ensureCurrentFriendIdentity(cache, matrixUserId);
+    requireCurrentAccount();
     final ledger = await _greetingLedger();
+    requireCurrentAccount();
     await establishAcceptedFriendChat(
       ledger: ledger,
-      acceptingUserId: widget.matrix.userId ?? '',
+      acceptingUserId: accountUserId,
       requestId: request['id']?.toString(),
-      openRoom: () async => (await directChats.open(matrixUserId)).roomId,
-      sendGreeting: (roomId) => widget.matrix.sendFriendAccepted(
-        roomId,
-        matrixUserId,
-        friendDisplayName,
-        requestId: request['id']?.toString(),
-        requestMessage: request['message']?.toString(),
-      ),
+      openRoom: () async {
+        requireCurrentAccount();
+        final room = await directChats.open(matrixUserId);
+        requireCurrentAccount();
+        return room.roomId;
+      },
+      sendGreeting: (roomId) async {
+        requireCurrentAccount();
+        await accountMatrix.sendFriendAccepted(
+          roomId,
+          matrixUserId,
+          friendDisplayName,
+          requestId: request['id']?.toString(),
+          requestMessage: request['message']?.toString(),
+        );
+        requireCurrentAccount();
+      },
       // The recipient sees request context before this route exposes a composer.
-      openConversation: (roomId) => _openConversationFromNotification(roomId,
-          source: RoomOpenSource.friendAccept),
+      openConversation: (roomId) async {
+        requireCurrentAccount();
+        await _openConversationFromNotification(roomId,
+            source: RoomOpenSource.friendAccept);
+        requireCurrentAccount();
+      },
     );
   }
 

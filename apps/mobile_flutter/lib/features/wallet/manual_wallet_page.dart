@@ -2043,9 +2043,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   CupertinoButton(
                       onPressed: () => run(refresh, cacheFirst: true),
                       child: const Text('显示上次钱包内容 · 重试更新')),
-                if (widget.section == ManualWalletSection.overview) overview(),
                 if (capabilitiesUnavailable)
                   warningBox('功能状态暂不可用，请刷新；已有订单仍可查询。'),
+                if (widget.section == ManualWalletSection.overview) overview(),
                 if (widget.section == ManualWalletSection.binding) ...[
                   if (!addressOnly)
                     CupertinoButton(

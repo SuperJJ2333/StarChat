@@ -109,6 +109,7 @@ final class FriendsReviewHost extends StatelessWidget {
   Widget build(BuildContext context) => CupertinoApp(
         home: FriendRequestReviewPage(
           request: request,
+          avatarCacheKey: 'identity:test:bob-id',
           onAccept: () async => onAccept(),
           onReject: () async => onReject(),
         ),

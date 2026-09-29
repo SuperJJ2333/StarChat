@@ -13,6 +13,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
   const FriendRequestReviewPage({
     super.key,
     required this.request,
+    required this.avatarCacheKey,
     required this.onAccept,
     required this.onReject,
     this.onOpenAccepted,
@@ -23,6 +24,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
   /// {id, username, nickname, avatar_url, matrix_user_id, message,
   ///  remark, tags, status, requested_at}
   final Map request;
+  final String avatarCacheKey;
 
   /// 由「新的朋友」页提供的受理动作（accept 仅在点击通过验证时调用）。
   final Future<void> Function() onAccept;
@@ -65,6 +67,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
           children: [
             Center(
               child: UserAvatar(
+                avatarCacheKey: avatarCacheKey,
                 nickname: _nickname,
                 fallbackSeed: request['username']?.toString() ?? '',
                 avatarUrl: request['avatar_url']?.toString(),
@@ -164,8 +167,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
                     _statusLabel,
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight:
-                          _accepted ? FontWeight.w600 : FontWeight.w400,
+                      fontWeight: _accepted ? FontWeight.w600 : FontWeight.w400,
                       color: _accepted
                           ? WeChatColors.brandPrimary
                           : WeChatColors.resolve(

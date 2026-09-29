@@ -41,6 +41,7 @@ void main() {
       'group_announcement_service.dart': '群公告 sync 事件解析',
       'matrix_direct_chat_adapter.dart': '开私聊时受邀房间扫描（自动 join）',
       'matrix_notification_event_source.dart': '本地通知聚合与角标未读快照',
+      'matrix_sync_watchdog.dart': '仅统计同步响应中的 timeline 事件数量以判断积压，不生成会话展示入口',
     };
 
     final offenders = <String>[];

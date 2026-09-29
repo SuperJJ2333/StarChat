@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,17 @@ import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import '../friendship/friend_acceptance_coordinator_test.dart'
     show MemoryProfileStore;
+import '../wallet/manual_wallet_api_test.dart' as fixtures;
+
+Future<SecureSessionStore> _currentSession(
+    {String matrixUserId = '@me:test'}) async {
+  final session = SecureSessionStore(fixtures.MemoryStore());
+  await session.saveSession(
+      accessToken: 'e30.eyJzdWIiOiJtZSJ9.test',
+      refreshToken: 'refresh',
+      matrixUserId: matrixUserId);
+  return session;
+}
 
 void main() {
   for (final stillFriends in [true, false]) {
@@ -31,7 +43,7 @@ void main() {
       };
       final api = BusinessApiClient(
           baseUri: Uri.parse('https://business.test'),
-          sessionStore: SecureSessionStore(),
+          sessionStore: await _currentSession(),
           client: MockClient((call) async {
             if (call.method != 'GET') writes++;
             final items = call.url.path.endsWith('/requests') || stillFriends
@@ -78,7 +90,7 @@ void main() {
     };
     final api = BusinessApiClient(
         baseUri: Uri.parse('https://business.test'),
-        sessionStore: SecureSessionStore(),
+        sessionStore: await _currentSession(),
         client: MockClient((call) async {
           if (call.url.path.endsWith('/accept')) accepts++;
           return http.Response(
@@ -116,5 +128,84 @@ void main() {
     expect(accepts, 1, reason: 'Only encrypted chat initialization is retried');
     expect(initializations, 2);
     expect(find.text('已添加好友'), findsNothing);
+  });
+
+  testWidgets('in-flight acceptance cannot finish in a switched account',
+      (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final entered = Completer<void>();
+    final resume = Completer<void>();
+    var changes = 0;
+    var writesA = 0;
+    var writesB = 0;
+    final request = {
+      'id': 'r-switch',
+      'user_id': 'bob-id',
+      'username': 'bob',
+      'nickname': 'Bob',
+      'matrix_user_id': '@bob:test',
+      'status': 'PENDING',
+      'direction': 'INCOMING',
+    };
+    BusinessApiClient client(
+            SecureSessionStore session, void Function() onWrite) =>
+        BusinessApiClient(
+            baseUri: Uri.parse('https://business.test'),
+            sessionStore: session,
+            client: MockClient((call) async {
+              if (call.method != 'GET') onWrite();
+              return http.Response(
+                  jsonEncode(call.method == 'GET'
+                      ? {
+                          'items': [request]
+                        }
+                      : <String, Object>{}),
+                  200,
+                  headers: {'content-type': 'application/json'});
+            }));
+    final sessionA = await _currentSession();
+    final sessionB = await _currentSession(matrixUserId: '@bea:test');
+    final apiA = client(sessionA, () => writesA++);
+    final apiB = client(sessionB, () => writesB++);
+    final cacheA = ProfileRepository.forTesting(
+        accountKey: 'matrix:@me:test', store: MemoryProfileStore());
+    final cacheB = ProfileRepository.forTesting(
+        accountKey: 'matrix:@bea:test', store: MemoryProfileStore());
+    var activeApi = apiA;
+    var activeCache = cacheA;
+    late StateSetter setHostState;
+    await tester.pumpWidget(
+        CupertinoApp(home: StatefulBuilder(builder: (context, setState) {
+      setHostState = setState;
+      return FriendRequestsPage(
+          api: activeApi,
+          identityCache: activeCache,
+          onRequestsChanged: () => changes++,
+          onEstablishDirectChatWithRequest: (peer, id, name, context) async {
+            entered.complete();
+            await resume.future;
+          });
+    })));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bob'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('friend-request-accept')));
+    for (var i = 0; i < 20 && !entered.isCompleted; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(writesA, 1);
+    expect(entered.isCompleted, isTrue);
+
+    setHostState(() {
+      activeApi = apiB;
+      activeCache = cacheB;
+    });
+    await tester.pumpAndSettle();
+    resume.complete();
+    await tester.pumpAndSettle();
+    expect(writesA, 1);
+    expect(writesB, 0);
+    expect(changes, 0,
+        reason: 'A completion must not notify the now-active B request page');
   });
 }

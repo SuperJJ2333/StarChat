@@ -18,8 +18,7 @@ import 'package:liuhetong_mobile/ui/theme/wechat_theme.dart';
 /// 3. 「新的朋友」请求行昵称与招呼内容都与头像对齐；
 /// 4. 「通过朋友验证」页「打开聊天」有品牌底色、「已添加」有醒目文字背景。
 void main() {
-  testWidgets('需求2 通讯录入口行文字与 icon 垂直居中且与好友行同一水平网格',
-      (tester) async {
+  testWidgets('需求2 通讯录入口行文字与 icon 垂直居中且与好友行同一水平网格', (tester) async {
     await _pumpContacts(tester);
 
     for (final entry in const [
@@ -47,8 +46,7 @@ void main() {
     );
   });
 
-  testWidgets('需求1 好友列表使用 surfaceElevated 背景色并按组画渐隐分割线',
-      (tester) async {
+  testWidgets('需求1 好友列表使用 surfaceElevated 背景色并按组画渐隐分割线', (tester) async {
     await _pumpContacts(tester);
 
     final surfaces = find.byKey(const Key('wechat-contact-elevated-surface'));
@@ -79,8 +77,7 @@ void main() {
     expect(gradient.colors[1].b, closeTo(217 / 255, 0.01));
   });
 
-  testWidgets('需求1 深色下好友行取 darkElevated 且分割线使用深色 token',
-      (tester) async {
+  testWidgets('需求1 深色下好友行取 darkElevated 且分割线使用深色 token', (tester) async {
     await _pumpContacts(tester, brightness: Brightness.dark);
 
     for (final surface in tester.widgetList<ColoredBox>(
@@ -131,11 +128,11 @@ void main() {
     expect(nickname.left, greaterThan(avatar.right));
   });
 
-  testWidgets('需求4 通过朋友验证页打开聊天有品牌底色，已添加有醒目文字背景',
-      (tester) async {
+  testWidgets('需求4 通过朋友验证页打开聊天有品牌底色，已添加有醒目文字背景', (tester) async {
     await tester.pumpWidget(CupertinoApp(
       theme: WeChatTheme.build(Brightness.light),
       home: FriendRequestReviewPage(
+        avatarCacheKey: 'identity:test:request',
         request: {..._incomingRequest, 'status': 'ACCEPTED'},
         onAccept: () async {},
         onReject: () async {},
@@ -145,18 +142,15 @@ void main() {
     await tester.pumpAndSettle();
 
     final openChat = tester.widget<CupertinoButton>(find
-        .ancestor(
-            of: find.text('打开聊天'),
-            matching: find.byType(CupertinoButton))
+        .ancestor(of: find.text('打开聊天'), matching: find.byType(CupertinoButton))
         .first);
     expect(openChat.color, WeChatColors.brandPrimary,
         reason: '「打开聊天」必须按 UI_DESIGN.md 使用品牌填充色');
 
-    final status = tester.widget<Container>(
-        find.byKey(const Key('friend-request-status')));
+    final status = tester
+        .widget<Container>(find.byKey(const Key('friend-request-status')));
     final background = (status.decoration! as BoxDecoration).color!;
-    expect(background.a, greaterThan(0.05),
-        reason: '「已添加」必须有可见的文字背景色');
+    expect(background.a, greaterThan(0.05), reason: '「已添加」必须有可见的文字背景色');
     expect(background, WeChatColors.brandTint);
 
     final label = tester.widget<Text>(find.text('已添加'));
@@ -213,18 +207,18 @@ Future<void> _pumpContacts(WidgetTester tester,
   await tester.pumpAndSettle();
 }
 
-BoxDecoration _dividerDecoration(WidgetTester tester, Finder divider) =>
-    tester
-        .widget<DecoratedBox>(find.descendant(
-            of: divider, matching: find.byType(DecoratedBox)))
-        .decoration as BoxDecoration;
+BoxDecoration _dividerDecoration(WidgetTester tester, Finder divider) => tester
+    .widget<DecoratedBox>(
+        find.descendant(of: divider, matching: find.byType(DecoratedBox)))
+    .decoration as BoxDecoration;
 
 Future<BusinessApiClient> _api({
   List<Map<String, dynamic>>? contacts,
   List<Map<String, dynamic>>? requests,
 }) async {
   final store = SecureSessionStore(_MemoryStore());
-  await store.saveSession(accessToken: 'a', refreshToken: 'r');
+  await store.saveSession(
+      accessToken: 'a', refreshToken: 'r', matrixUserId: '@owner:test');
   return BusinessApiClient(
     baseUri: Uri.parse('https://business.example'),
     sessionStore: store,

@@ -84,6 +84,72 @@ final class ChatTransferSheet extends StatefulWidget {
 }
 
 final class _State extends State<ChatTransferSheet> {
+  static int _nextLocalAvatarScope = 0;
+  late final int _localAvatarScope = ++_nextLocalAvatarScope;
+  int _avatarScopeGeneration = 0;
+  String? _avatarAccountKey;
+  BusinessApiClient? _avatarApiAtScope;
+  int? _avatarSessionEpoch;
+
+  BusinessApiClient? _apiFor(ChatTransferSheet sheet) {
+    final balanceSource = sheet.balanceSource;
+    if (balanceSource is BusinessChatTransferBalanceSource) {
+      return balanceSource.api;
+    }
+    final contactsSource = sheet.contactsSource;
+    if (contactsSource is BusinessChatTransferContactsSource) {
+      return contactsSource.api;
+    }
+    return null;
+  }
+
+  String? _avatarCacheKey(String userId) {
+    final api = _apiFor(widget);
+    if (api != null &&
+        (!identical(api, _avatarApiAtScope) ||
+            _avatarSessionEpoch != api.sessionEpoch)) {
+      return null;
+    }
+    final account = _avatarAccountKey;
+    if (account == null) return null;
+    return 'identity:${Uri.encodeComponent(account)}:'
+        '${Uri.encodeComponent(userId)}';
+  }
+
+  String? _groupMemberAvatarCacheKey(GroupMemberIdentity member) =>
+      _avatarCacheKey(member.businessUserId ?? member.matrixUserId);
+
+  Future<void> _resolveAvatarScope() async {
+    final generation = ++_avatarScopeGeneration;
+    final api = _apiFor(widget);
+    if (api == null) {
+      _avatarAccountKey = 'transfer-local:$_localAvatarScope';
+      _avatarApiAtScope = null;
+      _avatarSessionEpoch = null;
+      return;
+    }
+    final epoch = api.sessionEpoch;
+    String? matrixUserId;
+    try {
+      matrixUserId = await api.currentMatrixUserId();
+    } catch (_) {
+      matrixUserId = null;
+    }
+    if (!mounted ||
+        generation != _avatarScopeGeneration ||
+        !identical(api, _apiFor(widget)) ||
+        epoch != api.sessionEpoch) {
+      return;
+    }
+    setState(() {
+      _avatarAccountKey = matrixUserId == null || matrixUserId.isEmpty
+          ? null
+          : 'matrix:$matrixUserId';
+      _avatarApiAtScope = api;
+      _avatarSessionEpoch = epoch;
+    });
+  }
+
   final amount = TextEditingController();
   final note = TextEditingController();
   String? recipientId;
@@ -95,6 +161,25 @@ final class _State extends State<ChatTransferSheet> {
   List<ContactSummary>? contacts;
   bool resolvingRecipient = false;
   int _resolutionGeneration = 0;
+  int _pickerGeneration = 0;
+  int _balanceGeneration = 0;
+  int _confirmationGeneration = 0;
+  Completer<GroupMemberIdentity?>? _groupPickerCompleter;
+
+  void _finishGroupPicker(GroupMemberIdentity? selected,
+      {bool rebuild = true}) {
+    final completer = _groupPickerCompleter;
+    if (completer == null) return;
+    _groupPickerCompleter = null;
+    if (rebuild && mounted) setState(() {});
+    completer.complete(selected);
+  }
+
+  Future<GroupMemberIdentity?> _showGroupPicker() {
+    final completer = Completer<GroupMemberIdentity?>();
+    setState(() => _groupPickerCompleter = completer);
+    return completer.future;
+  }
 
   @override
   void initState() {
@@ -103,11 +188,53 @@ final class _State extends State<ChatTransferSheet> {
     recipientId = widget.peerId;
     recipientName = widget.peerName;
     recipientAvatarUrl = widget.peerAvatarUrl;
+    unawaited(_resolveAvatarScope());
     _loadBalance();
   }
 
   @override
+  void didUpdateWidget(covariant ChatTransferSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final controllerChanged =
+        !identical(oldWidget.controller, widget.controller);
+    if (controllerChanged) {
+      oldWidget.controller.removeListener(_change);
+      widget.controller.addListener(_change);
+    }
+    final api = _apiFor(widget);
+    if (controllerChanged ||
+        !identical(_apiFor(oldWidget), api) ||
+        (api != null && _avatarSessionEpoch != api.sessionEpoch) ||
+        oldWidget.peerId != widget.peerId ||
+        oldWidget.peerMatrixUserId != widget.peerMatrixUserId ||
+        oldWidget.isGroup != widget.isGroup) {
+      _confirmationGeneration++;
+      _finishGroupPicker(null, rebuild: false);
+      _pickerGeneration++;
+      _resolutionGeneration++;
+      _avatarAccountKey = null;
+      _avatarApiAtScope = null;
+      _avatarSessionEpoch = null;
+      recipientId = widget.peerId;
+      recipientName = widget.peerName;
+      recipientAvatarUrl = widget.peerAvatarUrl;
+      recipientMatrixUserId = null;
+      selectedGroupMember = null;
+      contacts = null;
+      balance = null;
+      resolvingRecipient = false;
+      unawaited(_resolveAvatarScope());
+      unawaited(_loadBalance());
+    }
+  }
+
+  @override
   void dispose() {
+    _finishGroupPicker(null, rebuild: false);
+    _avatarScopeGeneration++;
+    _pickerGeneration++;
+    _resolutionGeneration++;
+    _balanceGeneration++;
     widget.controller.removeListener(_change);
     amount.dispose();
     note.dispose();
@@ -119,11 +246,21 @@ final class _State extends State<ChatTransferSheet> {
   }
 
   Future<void> _loadBalance() async {
+    final generation = ++_balanceGeneration;
     final source = widget.balanceSource;
     if (source == null) return;
+    final api = _apiFor(widget);
+    final epoch = api?.sessionEpoch;
     try {
       final loaded = await source.balance();
-      if (mounted) setState(() => balance = loaded);
+      if (!mounted ||
+          generation != _balanceGeneration ||
+          !identical(source, widget.balanceSource) ||
+          !identical(api, _apiFor(widget)) ||
+          epoch != api?.sessionEpoch) {
+        return;
+      }
+      setState(() => balance = loaded);
     } catch (_) {
       // The server remains authoritative for balance checks.
     }
@@ -151,16 +288,48 @@ final class _State extends State<ChatTransferSheet> {
           alertKey: const Key('chat-transfer-insufficient-dialog'));
       return;
     }
-    final confirmed = await _confirm(value);
-    if (!confirmed) return;
-    await widget.controller.submit(
-      receiverId: recipientId!,
-      amount: value.toStringAsFixed(2),
-      note: note.text.trim(),
-      receiverMatrixId: recipientMatrixUserId ?? widget.peerMatrixUserId,
+    final openingApi = _apiFor(widget);
+    final openingEpoch = openingApi?.sessionEpoch;
+    final openingGeneration = _confirmationGeneration;
+    final openingController = widget.controller;
+    final openingBalanceSource = widget.balanceSource;
+    final openingContactsSource = widget.contactsSource;
+    final openingPeerId = widget.peerId;
+    final openingPeerMatrixId = widget.peerMatrixUserId;
+    final openingRecipientId = recipientId!;
+    final openingRecipientMatrixId =
+        recipientMatrixUserId ?? widget.peerMatrixUserId;
+    final openingAmountText = amount.text.trim();
+    final openingAmount = value.toStringAsFixed(2);
+    final openingNote = note.text.trim();
+    bool stillCurrent() =>
+        mounted &&
+        openingGeneration == _confirmationGeneration &&
+        identical(openingApi, _apiFor(widget)) &&
+        openingEpoch == openingApi?.sessionEpoch &&
+        identical(openingController, widget.controller) &&
+        (openingApi != null ||
+            (identical(openingBalanceSource, widget.balanceSource) &&
+                identical(openingContactsSource, widget.contactsSource))) &&
+        openingPeerId == widget.peerId &&
+        openingPeerMatrixId == widget.peerMatrixUserId &&
+        openingRecipientId == recipientId &&
+        openingRecipientMatrixId ==
+            (recipientMatrixUserId ?? widget.peerMatrixUserId) &&
+        openingAmountText == amount.text.trim() &&
+        openingNote == note.text.trim();
+
+    final confirmed = await _confirm(value,
+        recipientLabel: recipientName ?? openingRecipientId);
+    if (!confirmed || !stillCurrent()) return;
+    await openingController.submit(
+      receiverId: openingRecipientId,
+      amount: openingAmount,
+      note: openingNote,
+      receiverMatrixId: openingRecipientMatrixId,
     );
-    if (!mounted) return;
-    final state = widget.controller.state;
+    if (!stillCurrent()) return;
+    final state = openingController.state;
     if (state.status == ChatTransferStatus.sent) {
       widget.onSent();
       return;
@@ -170,14 +339,13 @@ final class _State extends State<ChatTransferSheet> {
     }
   }
 
-  Future<bool> _confirm(double value) async {
+  Future<bool> _confirm(double value, {required String recipientLabel}) async {
     final selected = await showCupertinoDialog<bool>(
       context: context,
       builder: (dialogContext) => CupertinoAlertDialog(
         key: const Key('chat-transfer-confirm-dialog'),
         title: const Text('确认转账'),
-        content: Text(
-            '将向 ${recipientName ?? recipientId} 转账 ${value.toStringAsFixed(2)} 点钻'
+        content: Text('将向 $recipientLabel 转账 ${value.toStringAsFixed(2)} 点钻'
             '，手续费 ${_fee(value).toStringAsFixed(2)} 点钻由转出方承担。'),
         actions: [
           CupertinoDialogAction(
@@ -220,24 +388,27 @@ final class _State extends State<ChatTransferSheet> {
   Future<void> _pickRecipient() async {
     if (resolvingRecipient) return;
     if (_recipientLocked) return;
+    final pickerGeneration = ++_pickerGeneration;
+    final pickerApi = _apiFor(widget);
+    final pickerEpoch = pickerApi?.sessionEpoch;
+    bool pickerCurrent() =>
+        mounted &&
+        pickerGeneration == _pickerGeneration &&
+        identical(pickerApi, _apiFor(widget)) &&
+        pickerEpoch == pickerApi?.sessionEpoch;
     final groupMembers = widget.groupMembers;
     if (widget.isGroup) {
       // 群聊只允许当前房间成员；通讯录绝不参与群聊收款人选择。
       if (groupMembers == null || groupMembers.isEmpty) {
         if (widget.roomMembers.isNotEmpty) {
-          await _pickFromList(widget.roomMembers);
+          await _pickFromList(widget.roomMembers, isCurrent: pickerCurrent);
           return;
         }
         await _alert('群成员尚未加载，请稍后再试');
         return;
       }
-      final selected = await GroupMemberPicker.show(context,
-          title: '选择收款用户',
-          members: groupMembers,
-          selectedMatrixUserId: recipientMatrixUserId,
-          avatarMedia: widget.avatarMedia,
-          itemKeyPrefix: 'chat-transfer-contact');
-      if (!mounted) return;
+      final selected = await _showGroupPicker();
+      if (!pickerCurrent()) return;
       if (selected == null) return;
       final generation = ++_resolutionGeneration;
       setState(() => resolvingRecipient = true);
@@ -263,15 +434,21 @@ final class _State extends State<ChatTransferSheet> {
     if (contacts == null) {
       try {
         final loaded = await source.contacts();
-        if (mounted) setState(() => contacts = loaded);
+        if (!pickerCurrent() || !identical(source, widget.contactsSource)) {
+          return;
+        }
+        setState(() => contacts = loaded);
       } catch (_) {
-        if (mounted) {
+        if (pickerCurrent() && identical(source, widget.contactsSource)) {
           await _alert('通讯录加载失败，请稍后重试');
           return;
         }
+        return;
       }
     }
-    await _pickFromList(contacts ?? const <ContactSummary>[]);
+    if (!pickerCurrent() || !identical(source, widget.contactsSource)) return;
+    await _pickFromList(contacts ?? const <ContactSummary>[],
+        isCurrent: pickerCurrent);
   }
 
   Future<GroupMemberIdentity?> _resolveGroupMember(
@@ -334,7 +511,9 @@ final class _State extends State<ChatTransferSheet> {
     return retry == true;
   }
 
-  Future<void> _pickFromList(List<ContactSummary> list) async {
+  Future<void> _pickFromList(List<ContactSummary> list,
+      {bool Function()? isCurrent}) async {
+    if (isCurrent?.call() == false) return;
     if (list.isEmpty) {
       await _alert('暂无可转账的好友');
       return;
@@ -359,6 +538,7 @@ final class _State extends State<ChatTransferSheet> {
                     itemCount: list.length,
                     itemBuilder: (context, index) {
                       final contact = list[index];
+                      final avatarCacheKey = _avatarCacheKey(contact.userId);
                       return CupertinoButton(
                         key: Key('chat-transfer-contact-${contact.userId}'),
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -366,9 +546,12 @@ final class _State extends State<ChatTransferSheet> {
                         child: Row(
                           children: [
                             UserAvatar(
+                              avatarCacheKey: avatarCacheKey,
                               nickname: contact.displayName,
                               fallbackSeed: contact.userId,
-                              avatarUrl: contact.avatarUrl,
+                              avatarUrl: avatarCacheKey == null
+                                  ? null
+                                  : contact.avatarUrl,
                               size: 36,
                             ),
                             const SizedBox(width: 12),
@@ -397,6 +580,7 @@ final class _State extends State<ChatTransferSheet> {
         ),
       ),
     );
+    if (!mounted || isCurrent?.call() == false) return;
     if (selected != null) {
       setState(() {
         recipientId = selected.userId;
@@ -413,182 +597,231 @@ final class _State extends State<ChatTransferSheet> {
         state.status == ChatTransferStatus.sharing ||
         resolvingRecipient;
     final card = WeChatColors.elevatedSurface(context);
-    return WeChatPageScaffold.navigation(
-      navigationBar: const CupertinoNavigationBar(middle: Text('转账')),
-      child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              height: 68,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: card,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(children: [
-                Text('转账给',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: WeChatColors.resolveTextPrimary(context))),
-                const SizedBox(width: 10),
-                if (recipientId != null) ...[
-                  if (selectedGroupMember != null)
-                    GroupMemberAvatar(
-                        member: selectedGroupMember!,
-                        avatarMedia: widget.avatarMedia)
-                  else
-                    UserAvatar(
-                        nickname: recipientName ?? recipientId!,
-                        fallbackSeed: recipientId!,
-                        avatarUrl: recipientAvatarUrl,
-                        size: 36),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap:
-                        busy || _recipientLocked ? null : _pickRecipient,
-                    child: Text(
-                      _recipientLocked
-                          ? (recipientName ?? '当前会话对方')
-                          : (recipientName ?? '请选择收款用户'),
-                      key: const Key('chat-transfer-recipient'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+    final recipientAvatarCacheKey =
+        recipientId == null ? null : _avatarCacheKey(recipientId!);
+    return Stack(children: [
+      WeChatPageScaffold.navigation(
+        navigationBar: const CupertinoNavigationBar(middle: Text('转账')),
+        child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                height: 68,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: card,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  Text('转账给',
                       style: TextStyle(
                           fontSize: 16,
-                          color: recipientName == null && !_recipientLocked
-                              ? WeChatColors.textTertiary
-                              : WeChatColors.resolveTextPrimary(context)),
+                          fontWeight: FontWeight.w600,
+                          color: WeChatColors.resolveTextPrimary(context))),
+                  const SizedBox(width: 10),
+                  if (recipientId != null) ...[
+                    if (selectedGroupMember != null)
+                      GroupMemberAvatar(
+                          member: selectedGroupMember!,
+                          avatarMedia: widget.avatarMedia,
+                          avatarCacheKey:
+                              _groupMemberAvatarCacheKey(selectedGroupMember!))
+                    else
+                      UserAvatar(
+                          avatarCacheKey: recipientAvatarCacheKey,
+                          nickname: recipientName ?? recipientId!,
+                          fallbackSeed: recipientId!,
+                          avatarUrl: recipientAvatarCacheKey == null
+                              ? null
+                              : recipientAvatarUrl,
+                          size: 36),
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: busy || _recipientLocked ? null : _pickRecipient,
+                      child: Text(
+                        _recipientLocked
+                            ? (recipientName ?? '当前会话对方')
+                            : (recipientName ?? '请选择收款用户'),
+                        key: const Key('chat-transfer-recipient'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 16,
+                            color: recipientName == null && !_recipientLocked
+                                ? WeChatColors.textTertiary
+                                : WeChatColors.resolveTextPrimary(context)),
+                      ),
+                    ),
+                  ),
+                  // 私聊收款人固定为对方，不显示可点击的箭头。
+                  if (!_recipientLocked)
+                    const Icon(CupertinoIcons.chevron_right,
+                        size: 15, color: WeChatColors.textTertiary),
+                ]),
+              ),
+              if (resolvingRecipient)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CupertinoActivityIndicator(),
+                        SizedBox(width: 8),
+                        Text('正在确认收款账号'),
+                      ]),
+                ),
+              const SizedBox(height: 10),
+              Container(
+                height: 64,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: card,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  Text('金额',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: WeChatColors.resolveTextPrimary(context))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: CupertinoTextField(
+                      key: const Key('chat-transfer-amount'),
+                      controller: amount,
+                      enabled: !busy,
+                      textAlign: TextAlign.right,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: const [TwoDecimalAmountFormatter()],
+                      placeholder: '0.00',
+                      style: TextStyle(
+                          fontSize: 24,
+                          color: WeChatColors.resolveTextPrimary(context)),
+                      decoration: const BoxDecoration(),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text('点钻',
+                      style: TextStyle(
+                          fontSize: 15, color: WeChatColors.textSecondary)),
+                ]),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                height: 54,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: card,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  Text('转账说明',
+                      style: TextStyle(
+                          fontSize: 16,
+                          color: WeChatColors.resolveTextPrimary(context))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: CupertinoTextField(
+                      key: const Key('chat-transfer-note'),
+                      controller: note,
+                      enabled: !busy,
+                      textAlign: TextAlign.right,
+                      keyboardType: TextInputType.text,
+                      placeholder: '点击添加转账说明',
+                      style: TextStyle(
+                          fontSize: 15,
+                          color: WeChatColors.resolveTextPrimary(context)),
+                      maxLength: 64,
+                      decoration: const BoxDecoration(),
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                balance == null
+                    ? '转账将收取 0.5% 手续费，最低 0.01 点钻'
+                    : '余额 ${balance!.toStringAsFixed(2)} 点钻 · 收取 0.5% 手续费，最低 0.01 点钻',
+                key: const Key('chat-transfer-fee-hint'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: WeChatColors.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              ModernActionButton(
+                key: const Key('chat-transfer-send'),
+                icon: ChangliaoIcons.transfer,
+                label: '转账',
+                loading: busy,
+                onPressed: busy ? null : _send,
+              ),
+              if (state.status == ChatTransferStatus.sent)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: Center(
+                      child: Text('转账已发送',
+                          style: TextStyle(
+                              color: WeChatColors.brandPrimary, fontSize: 14))),
+                ),
+              if (state.status == ChatTransferStatus.shareFailed)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Center(
+                    child: CupertinoButton(
+                      onPressed: () => widget.controller.retryShare(),
+                      child: const Text('转账已创建，重新发送到会话',
+                          style: TextStyle(
+                              color: WeChatColors.socialLink, fontSize: 14)),
                     ),
                   ),
                 ),
-                // 私聊收款人固定为对方，不显示可点击的箭头。
-                if (!_recipientLocked)
-                  const Icon(CupertinoIcons.chevron_right,
-                      size: 15, color: WeChatColors.textTertiary),
-              ]),
-            ),
-            if (resolvingRecipient)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child:
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  CupertinoActivityIndicator(),
-                  SizedBox(width: 8),
-                  Text('正在确认收款账号'),
-                ]),
-              ),
-            const SizedBox(height: 10),
-            Container(
-              height: 64,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: card,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(children: [
-                Text('金额',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: WeChatColors.resolveTextPrimary(context))),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: CupertinoTextField(
-                    key: const Key('chat-transfer-amount'),
-                    controller: amount,
-                    enabled: !busy,
-                    textAlign: TextAlign.right,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: const [TwoDecimalAmountFormatter()],
-                    placeholder: '0.00',
-                    style: TextStyle(
-                        fontSize: 24,
-                        color: WeChatColors.resolveTextPrimary(context)),
-                    decoration: const BoxDecoration(),
-                  ),
+            ]),
+      ),
+      if (_groupPickerCompleter != null)
+        Positioned.fill(
+          child: PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) _finishGroupPicker(null);
+            },
+            child: Stack(children: [
+              Positioned.fill(
+                child: ModalBarrier(
+                  color: CupertinoDynamicColor.resolve(
+                      kCupertinoModalBarrierColor, context),
+                  dismissible: true,
+                  onDismiss: () => _finishGroupPicker(null),
                 ),
-                const SizedBox(width: 6),
-                const Text('点钻',
-                    style: TextStyle(
-                        fontSize: 15, color: WeChatColors.textSecondary)),
-              ]),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              height: 54,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: card,
-                borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(children: [
-                Text('转账说明',
-                    style: TextStyle(
-                        fontSize: 16,
-                        color: WeChatColors.resolveTextPrimary(context))),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: CupertinoTextField(
-                    key: const Key('chat-transfer-note'),
-                    controller: note,
-                    enabled: !busy,
-                    textAlign: TextAlign.right,
-                    keyboardType: TextInputType.text,
-                    placeholder: '点击添加转账说明',
-                    style: TextStyle(
-                        fontSize: 15,
-                        color: WeChatColors.resolveTextPrimary(context)),
-                    maxLength: 64,
-                    decoration: const BoxDecoration(),
-                  ),
-                ),
-              ]),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              balance == null
-                  ? '转账将收取 0.5% 手续费，最低 0.01 点钻'
-                  : '余额 ${balance!.toStringAsFixed(2)} 点钻 · 收取 0.5% 手续费，最低 0.01 点钻',
-              key: const Key('chat-transfer-fee-hint'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: WeChatColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 20),
-            ModernActionButton(
-              key: const Key('chat-transfer-send'),
-              icon: ChangliaoIcons.transfer,
-              label: '转账',
-              loading: busy,
-              onPressed: busy ? null : _send,
-            ),
-            if (state.status == ChatTransferStatus.sent)
-              const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: Center(
-                    child: Text('转账已发送',
-                        style: TextStyle(
-                            color: WeChatColors.brandPrimary, fontSize: 14))),
-              ),
-            if (state.status == ChatTransferStatus.shareFailed)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Center(
-                  child: CupertinoButton(
-                    onPressed: () => widget.controller.retryShare(),
-                    child: const Text('转账已创建，重新发送到会话',
-                        style: TextStyle(
-                            color: WeChatColors.socialLink, fontSize: 14)),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: CupertinoPopupSurface(
+                  child: SafeArea(
+                    top: false,
+                    child: SizedBox(
+                      height: 400,
+                      child: GroupMemberPicker(
+                        title: '选择收款用户',
+                        members: widget.groupMembers ??
+                            const <GroupMemberIdentity>[],
+                        selectedMatrixUserId: recipientMatrixUserId,
+                        avatarMedia: widget.avatarMedia,
+                        avatarCacheKeyForMember: _groupMemberAvatarCacheKey,
+                        itemKeyPrefix: 'chat-transfer-contact',
+                        onSelected: (member) => _finishGroupPicker(member),
+                      ),
+                    ),
                   ),
                 ),
               ),
-          ]),
-    );
+            ]),
+          ),
+        ),
+    ]);
   }
 }

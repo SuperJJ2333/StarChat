@@ -659,6 +659,9 @@ final class ProfileRepository extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (_accountKey case final accountKey?) {
+      AvatarCache.clearRetainedForAccount(accountKey);
+    }
     _remoteReadGeneration++;
     _profileReadGeneration++;
     for (final selection
@@ -864,7 +867,12 @@ final class ProfileRepository extends ChangeNotifier {
     final old = {for (final contact in previous) contact.userId: contact};
     for (final contact in current) {
       final before = old[contact.userId];
-      if (before?.avatarUrl != contact.avatarUrl ||
+      if ((before?.avatarUrl == null
+                  ? null
+                  : AvatarCache.avatarVersion(before!.avatarUrl!)) !=
+              (contact.avatarUrl == null
+                  ? null
+                  : AvatarCache.avatarVersion(contact.avatarUrl!)) ||
           before?.avatarIsKnown != contact.avatarIsKnown) {
         for (final key in [
           contact.username,

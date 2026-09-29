@@ -46,6 +46,14 @@ final class _UserAvatarState extends State<UserAvatar> {
   @override
   void didUpdateWidget(covariant UserAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final identityChanged = oldWidget.fallbackSeed != widget.fallbackSeed ||
+        oldWidget.avatarCacheKey != widget.avatarCacheKey;
+    final previousVersion = oldWidget.avatarUrl == null
+        ? null
+        : AvatarCache.avatarVersion(oldWidget.avatarUrl!);
+    final nextVersion = widget.avatarUrl == null
+        ? null
+        : AvatarCache.avatarVersion(widget.avatarUrl!);
     if (oldWidget.fallbackSeed != widget.fallbackSeed ||
         oldWidget.avatarCacheKey != widget.avatarCacheKey ||
         oldWidget.avatarUrl != widget.avatarUrl ||
@@ -53,7 +61,7 @@ final class _UserAvatarState extends State<UserAvatar> {
       _generation++;
       _retry.reset();
       _retrying = false;
-      _imageEpoch++;
+      if (identityChanged || previousVersion != nextVersion) _imageEpoch++;
     }
   }
 

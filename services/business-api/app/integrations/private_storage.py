@@ -54,9 +54,12 @@ class LocalPrivateObjectStorage:
 
     def signed_read_url(self, object_key: str, expires_in: int) -> str:
         token = self.sign_key(object_key)
+        query = f"expires_in={expires_in}"
+        if object_key.startswith("avatars/"):
+            query += f'&v={sha256(object_key.encode("utf-8")).hexdigest()[:32]}'
         return (
             f"{self._public_base_url}/api/v1/profile/avatar/content/"
-            f"{quote(token, safe='')}?expires_in={expires_in}"
+            f"{quote(token, safe='')}?{query}"
         )
 
     def sign_key(self, object_key: str) -> str:
