@@ -23,8 +23,9 @@ try {
   [...panel.querySelectorAll("button")].find(x=>x.textContent==="下一页").click(); await flush();
   assert(calls[1].snapshot===7 && calls[1].offset===25,"stable pagination");
   [...panel.querySelectorAll("button")].find(x=>x.textContent==="详情").click(); await flush();
-  assert(panel.textContent.includes("隔离测试目标"),"detail");
-  assert(panel.textContent.includes("isolated-ledger") && panel.textContent.includes("isolated-user"),"financial linkage");
+  const detail = document.querySelector("dialog[open]");
+  assert(detail?.textContent.includes("隔离测试目标"),"detail");
+  assert(detail.textContent.includes("isolated-ledger") && detail.textContent.includes("isolated-user"),"financial linkage");
   document.querySelector("#result").textContent="PASS";document.body.dataset.result="PASS";
 }catch(error){document.querySelector("#result").textContent=error.message;document.body.dataset.result="FAIL";}
 </script></body></html>
