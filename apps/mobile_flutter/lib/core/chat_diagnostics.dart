@@ -27,6 +27,15 @@ enum ChatDiagnosticStage {
   refreshResultSuperseded,
   matrixSyncSoftKick,
   matrixSyncHardRestart,
+  momentPrepare,
+  momentVideoBegin,
+  momentVideoPut,
+  momentVideoComplete,
+  momentPosterExtract,
+  momentPosterBegin,
+  momentPosterPut,
+  momentPosterComplete,
+  momentPublish,
   networkRequest;
 
   String get wireName => switch (this) {
@@ -39,6 +48,15 @@ enum ChatDiagnosticStage {
         refreshResultSuperseded => 'result_superseded',
         matrixSyncSoftKick => 'matrix_sync_soft_kick',
         matrixSyncHardRestart => 'matrix_sync_hard_restart',
+        momentPrepare => 'moment_prepare',
+        momentVideoBegin => 'moment_video_begin',
+        momentVideoPut => 'moment_video_put',
+        momentVideoComplete => 'moment_video_complete',
+        momentPosterExtract => 'moment_poster_extract',
+        momentPosterBegin => 'moment_poster_begin',
+        momentPosterPut => 'moment_poster_put',
+        momentPosterComplete => 'moment_poster_complete',
+        momentPublish => 'moment_publish',
         _ => name,
       };
 }
@@ -52,6 +70,8 @@ enum ChatDiagnosticError {
   incomplete,
   unknown,
   recovered,
+  size,
+  format,
 }
 
 enum ChatDiagnosticPlatform { android, ios, other }
@@ -62,6 +82,14 @@ enum ChatDiagnosticLifecycle { foreground, background, unknown }
 
 bool _allowedDiagnosticOutcome(
     ChatDiagnosticStage stage, ChatDiagnosticError error) {
+  if (_isMomentStage(stage)) {
+    return error == ChatDiagnosticError.timeout ||
+        error == ChatDiagnosticError.network ||
+        error == ChatDiagnosticError.rejected ||
+        error == ChatDiagnosticError.size ||
+        error == ChatDiagnosticError.format ||
+        error == ChatDiagnosticError.unknown;
+  }
   if (!_isWatchdogStage(stage)) {
     return true;
   }
@@ -74,6 +102,20 @@ bool _allowedDiagnosticOutcome(
 bool _isWatchdogStage(ChatDiagnosticStage stage) =>
     stage == ChatDiagnosticStage.matrixSyncSoftKick ||
     stage == ChatDiagnosticStage.matrixSyncHardRestart;
+
+const _momentStages = {
+  ChatDiagnosticStage.momentPrepare,
+  ChatDiagnosticStage.momentVideoBegin,
+  ChatDiagnosticStage.momentVideoPut,
+  ChatDiagnosticStage.momentVideoComplete,
+  ChatDiagnosticStage.momentPosterExtract,
+  ChatDiagnosticStage.momentPosterBegin,
+  ChatDiagnosticStage.momentPosterPut,
+  ChatDiagnosticStage.momentPosterComplete,
+  ChatDiagnosticStage.momentPublish,
+};
+
+bool _isMomentStage(ChatDiagnosticStage stage) => _momentStages.contains(stage);
 
 typedef _EventKey = (
   ChatDiagnosticStage,
@@ -748,6 +790,7 @@ final class ChatDiagnostics {
   DateTime? _spoolCreated;
   bool _networkStageSupported = true;
   bool _watchdogStageSupported = true;
+  bool _momentStageSupported = true;
   int get pendingCount =>
       _pending.length +
       _pendingOperations.length +
@@ -837,6 +880,7 @@ final class ChatDiagnostics {
     _operationExtensionsSupported = true;
     _networkStageSupported = true;
     _watchdogStageSupported = true;
+    _momentStageSupported = true;
     _failures = 0;
     _nextAllowed = null;
     final abort = _abort;
@@ -862,6 +906,7 @@ final class ChatDiagnostics {
       _recordLoss(events: count.clamp(1, 1000000));
       return;
     }
+    if (_isMomentStage(stage) && !_momentStageSupported) return;
     if (stage == ChatDiagnosticStage.networkRequest &&
         !_networkStageSupported) {
       return;
@@ -1355,6 +1400,15 @@ final class ChatDiagnostics {
       if (identical(_abort, abort)) _abort = null;
     }
     if (epoch != _epoch) return;
+    if (status == 422 && events.any((event) => _isMomentStage(event.stage))) {
+      _disableMomentStageExtension();
+      _failures = 0;
+      _nextAllowed = _now().add(const Duration(minutes: 1));
+      _pendingOperations.releaseFrozen();
+      _releaseFrozenEvents();
+      _queueSpoolWrite();
+      return;
+    }
     if (status == 422 && requests.isNotEmpty) {
       _disableRequestExtension();
       _failures = 0;
@@ -1523,6 +1577,36 @@ final class ChatDiagnostics {
       count: lost,
     );
     _reportedNetworkDrops = networks.droppedAttempts + networks.droppedRequests;
+  }
+
+  void _disableMomentStageExtension() {
+    _momentStageSupported = false;
+    for (final key in _pending.keys.toList(growable: false)) {
+      if (_isMomentStage(key.$1)) _removePendingEvent(key);
+    }
+    for (var i = 0; i < _regionalBackfill.length; i++) {
+      final old = _regionalBackfill[i];
+      _regionalBackfill[i] = ChatDiagnosticBatch._(
+        old.version,
+        old.platform,
+        old._events.where((event) => !_isMomentStage(event.stage)).toList(),
+        old._frames,
+        old._operations,
+        operationExtensionsSupported: old._operationExtensionsSupported,
+        networks: old._networks,
+        networkRequests: old._networkRequests,
+        frameWindows: old._frameWindows,
+        diagnosticLoss: old._diagnosticLoss,
+      );
+    }
+    _regionalBackfill.removeWhere((batch) =>
+        batch._events.isEmpty &&
+        batch._frames == null &&
+        batch._operations.isEmpty &&
+        batch._networks.isEmpty &&
+        batch._networkRequests.isEmpty &&
+        batch._frameWindows.isEmpty &&
+        batch._diagnosticLoss == null);
   }
 
   void _disableRequestExtension() {
@@ -1810,6 +1894,10 @@ final class ChatDiagnostics {
           ),
         );
       }
+      _failures = 0;
+    } else if (status == 422 &&
+        events.any((event) => _isMomentStage(event.stage))) {
+      _disableMomentStageExtension();
       _failures = 0;
     } else if (status == 422 && requests.isNotEmpty) {
       _disableRequestExtension();

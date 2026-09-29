@@ -8,7 +8,9 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
 import 'package:liuhetong_mobile/features/moments/moment_image_preprocessor.dart';
 import 'package:liuhetong_mobile/features/moments/moment_draft_store.dart';
 import 'package:liuhetong_mobile/features/moments/moment_publish_coordinator.dart';
@@ -808,6 +810,254 @@ void main() {
       queue.revoke();
     });
   }
+
+  test('Moment failure reasons map typed errors without error text', () {
+    expect(momentDiagnosticReason(TimeoutException('private URL')),
+        ChatDiagnosticError.timeout);
+    expect(momentDiagnosticReason(const SocketException('private file path')),
+        ChatDiagnosticError.network);
+    expect(momentDiagnosticReason(const GroupVideoTooLargeException()),
+        ChatDiagnosticError.size);
+    expect(momentDiagnosticReason(const VideoCompressionException()),
+        ChatDiagnosticError.format);
+    expect(momentDiagnosticReason(const MomentImageException('媒体大小超过限制')),
+        ChatDiagnosticError.size);
+    expect(
+        momentDiagnosticReason(
+            const MomentImageException('视频封面生成失败，内容已保留，请重试')),
+        ChatDiagnosticError.format);
+    expect(
+        momentDiagnosticReason(const BusinessApiException(
+            statusCode: 503, code: 'PRIVATE', message: 'private response')),
+        ChatDiagnosticError.rejected);
+    expect(
+        momentDiagnosticReason(const BusinessApiException(
+            statusCode: 413, code: 'PRIVATE', message: 'private response')),
+        ChatDiagnosticError.size);
+  });
+
+  for (final failedPhase in [
+    'video-begin',
+    'video-read',
+    'video-put',
+    'video-put-persist',
+    'video-complete-persist',
+    'poster-begin',
+    'poster-read',
+    'poster-put',
+    'poster-complete',
+  ]) {
+    test('$failedPhase reports only its bounded failure stage', () async {
+      final previousDiagnostics = ChatDiagnostics.instance;
+      var diagnosticNow = DateTime.utc(2026);
+      final batches = <Map<String, Object?>>[];
+      final diagnostics = ChatDiagnostics(now: () => diagnosticNow);
+      ChatDiagnostics.instance = diagnostics;
+      addTearDown(() {
+        diagnostics.stopSession();
+        ChatDiagnostics.instance = previousDiagnostics;
+      });
+      diagnostics.startSession(
+          version: '0.4.22+2191',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch.toJson());
+            return 202;
+          });
+      final directoryRoot = await directory();
+      _mockVideoRendition(directoryRoot, image);
+      var publishes = 0;
+      late MomentPublishCoordinator queue;
+      final api = BusinessApiClient(
+          baseUri: Uri.parse('https://example.test'),
+          sessionStore: await session(),
+          client: MockClient((request) async {
+            final path = request.url.path;
+            if (path.endsWith('/video-posters/uploads')) {
+              if (failedPhase == 'poster-begin') {
+                throw TimeoutException('private begin URL');
+              }
+              if (failedPhase == 'poster-read') {
+                final jobId =
+                    request.headers['Idempotency-Key']!.split(':').first;
+                await File('${queue.root.path}/$jobId/media-0.poster').delete();
+              }
+              return http.Response('{"id":"poster-upload"}', 201);
+            }
+            if (path.endsWith('/uploads')) {
+              if (failedPhase == 'video-begin') {
+                throw TimeoutException('private begin URL');
+              }
+              if (failedPhase == 'video-read') {
+                final jobId =
+                    request.headers['Idempotency-Key']!.split(':').first;
+                await File('${queue.root.path}/$jobId/media-0.ready').delete();
+              }
+              return http.Response('{"id":"video-upload"}', 201);
+            }
+            if (request.method == 'PUT') {
+              if (failedPhase == 'video-put-persist' &&
+                  path.contains('/video-upload/')) {
+                final jobId = queue.jobs.single.id;
+                await Directory('${queue.root.path}/$jobId')
+                    .rename('${queue.root.path}/saved-$jobId');
+                return http.Response('', 204);
+              }
+              if (failedPhase == 'poster-put' &&
+                  path.contains('/poster-upload/')) {
+                return http.Response('', 503);
+              }
+              if (failedPhase == 'video-put' &&
+                  path.contains('/video-upload/')) {
+                throw const SocketException('private file path');
+              }
+              return http.Response('', 204);
+            }
+            if (path.endsWith('/complete')) {
+              if (path.contains('/poster-upload/')) {
+                return failedPhase == 'poster-complete'
+                    ? http.Response(
+                        '{"error":{"code":"PRIVATE","message":"private URL"}}',
+                        503)
+                    : http.Response(
+                        '{"status":"COMPLETED","media_url":"https://example.test/poster"}',
+                        200);
+              }
+              if (failedPhase == 'video-complete-persist') {
+                final jobId = queue.jobs.single.id;
+                await Directory('${queue.root.path}/$jobId')
+                    .rename('${queue.root.path}/saved-$jobId');
+              }
+              return http.Response(
+                  '{"status":"COMPLETED","media_url":"https://example.test/video"}',
+                  200);
+            }
+            if (path.endsWith('/moments')) publishes++;
+            return http.Response('{"id":"post"}', 201);
+          }));
+      queue =
+          await MomentPublishCoordinator.open(api, directory: directoryRoot);
+      final job = await queue.enqueue(payload, [
+        MomentPublishMedia(
+            XFile.fromData(Uint8List.fromList([1, 2, 3]),
+                mimeType: 'video/mp4'),
+            video: true,
+            poster: image)
+      ]);
+      await waitFor(() => job.state == MomentPublishState.failed);
+      diagnosticNow = diagnosticNow.add(const Duration(minutes: 1));
+      await diagnostics.flush();
+      final wire = jsonEncode(batches);
+      final momentEvents = [
+        for (final batch in batches)
+          for (final event in batch['events'] as List)
+            if ((event as Map)['stage'].toString().startsWith('moment_')) event
+      ];
+      expect(momentEvents, hasLength(1));
+      final event = momentEvents.single;
+      expect(
+          event['stage'],
+          switch (failedPhase) {
+            'video-begin' => 'moment_video_begin',
+            'video-read' => 'moment_prepare',
+            'video-put' => 'moment_video_put',
+            'video-put-persist' || 'video-complete-persist' =>
+              'moment_prepare',
+            'poster-begin' => 'moment_poster_begin',
+            'poster-read' => 'moment_poster_extract',
+            'poster-put' => 'moment_poster_put',
+            _ => 'moment_poster_complete',
+          });
+      expect(
+          event['error'],
+          switch (failedPhase) {
+            'video-begin' || 'poster-begin' => 'timeout',
+            'video-read' ||
+            'video-put-persist' ||
+            'video-complete-persist' ||
+            'poster-read' =>
+              'unknown',
+            'video-put' => 'network',
+            _ => 'rejected',
+          });
+      expect(
+          event['status'],
+          failedPhase == 'video-put' ||
+                  failedPhase == 'video-read' ||
+                  failedPhase.endsWith('-persist') ||
+                  failedPhase == 'poster-read' ||
+                  failedPhase.endsWith('begin')
+              ? null
+              : 503);
+      expect(event['elapsed_ms'], inInclusiveRange(0, 3600000));
+      expect(wire, isNot(contains('private')));
+      expect(wire, isNot(contains('video-upload')));
+      expect(wire, isNot(contains('poster-upload')));
+      expect(wire, isNot(contains('https://example.test/video')));
+      expect(
+          job.message,
+          failedPhase == 'video-read' || failedPhase.endsWith('-persist')
+              ? '视频准备失败，内容已保留，请重试'
+              : failedPhase == 'poster-read'
+                  ? '视频封面生成失败，内容已保留，请重试'
+              : failedPhase.startsWith('video-')
+                  ? '视频上传失败，内容已保留，请重试'
+                  : '视频封面暂不可用，请稍后重试');
+      expect(publishes, 0);
+      queue.revoke();
+    });
+  }
+
+  test('account switch suppresses an old video publish diagnostic', () async {
+    final previousDiagnostics = ChatDiagnostics.instance;
+    var diagnosticNow = DateTime.utc(2026);
+    final batches = <Map<String, Object?>>[];
+    final diagnostics = ChatDiagnostics(now: () => diagnosticNow);
+    ChatDiagnostics.instance = diagnostics;
+    addTearDown(() {
+      diagnostics.stopSession();
+      ChatDiagnostics.instance = previousDiagnostics;
+    });
+    void startDiagnostics(String version) => diagnostics.startSession(
+        version: version,
+        platform: ChatDiagnosticPlatform.android,
+        upload: (batch, _) async {
+          batches.add(batch.toJson());
+          return 202;
+        });
+    startDiagnostics('0.4.22+2191');
+    final store = await session();
+    final started = Completer<void>();
+    final response = Completer<http.Response>();
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: store,
+        client: MockClient((request) async {
+          started.complete();
+          return response.future;
+        }));
+    final queue =
+        await MomentPublishCoordinator.open(api, directory: await directory());
+    final job = await queue.enqueue({
+      ...payload,
+      'video_urls': ['media://moments/a/video.mp4'],
+      'video_poster_media_ids': ['poster-upload']
+    }, []);
+    await started.future;
+    await api.clearLocalSession();
+    await store.saveSession(
+        accessToken: 'other-access',
+        refreshToken: 'other-refresh',
+        matrixUserId: '@b:example.test');
+    startDiagnostics('0.4.22+2192');
+    response.complete(http.Response(
+        '{"error":{"code":"PRIVATE","message":"private URL"}}', 503));
+    await waitFor(() => job.state == MomentPublishState.failed);
+    diagnosticNow = diagnosticNow.add(const Duration(minutes: 1));
+    await diagnostics.flush();
+    expect(jsonEncode(batches), isNot(contains('moment_publish')));
+    queue.revoke();
+  });
 }
 
 void _mockVideoRendition(Directory directoryRoot, Uint8List posterFrame) {

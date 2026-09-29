@@ -224,6 +224,237 @@ void main() {
     });
   });
 
+  test('Moment failures use only closed stages and reasons on the wire', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3+2191',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return 202;
+          });
+      final failures = [
+        (ChatDiagnosticStage.momentPrepare, ChatDiagnosticError.format),
+        (ChatDiagnosticStage.momentVideoBegin, ChatDiagnosticError.timeout),
+        (ChatDiagnosticStage.momentVideoPut, ChatDiagnosticError.timeout),
+        (ChatDiagnosticStage.momentVideoComplete, ChatDiagnosticError.network),
+        (ChatDiagnosticStage.momentPosterExtract, ChatDiagnosticError.size),
+        (ChatDiagnosticStage.momentPosterBegin, ChatDiagnosticError.network),
+        (ChatDiagnosticStage.momentPosterPut, ChatDiagnosticError.rejected),
+        (ChatDiagnosticStage.momentPosterComplete, ChatDiagnosticError.unknown),
+        (ChatDiagnosticStage.momentPublish, ChatDiagnosticError.rejected),
+      ];
+      for (final (stage, error) in failures) {
+        diagnostics.record(
+            stage: stage,
+            error: error,
+            elapsed: const Duration(milliseconds: 81),
+            status: 504);
+      }
+      time.elapse(const Duration(minutes: 1));
+      final json = batches.single.toJson();
+      expect(json['version'], '1.2.3+2191');
+      final events = json['events'] as List;
+      expect(events.map((event) => (event as Map)['stage']), [
+        'moment_prepare',
+        'moment_video_begin',
+        'moment_video_put',
+        'moment_video_complete',
+        'moment_poster_extract',
+        'moment_poster_begin',
+        'moment_poster_put',
+        'moment_poster_complete',
+        'moment_publish',
+      ]);
+      expect(events.map((event) => (event as Map)['error']), [
+        'format',
+        'timeout',
+        'timeout',
+        'network',
+        'size',
+        'network',
+        'rejected',
+        'unknown',
+        'rejected'
+      ]);
+      for (final event in events) {
+        expect((event as Map).keys.toSet(), {
+          'operation_id',
+          'stage',
+          'error',
+          'elapsed_ms',
+          'count',
+          'status'
+        });
+        expect(event['elapsed_ms'], 81);
+        expect(event['status'], 504);
+      }
+      diagnostics.stopSession();
+    });
+  });
+
+  test('Moment stages suppress nonfailure outcomes but legacy keeps them', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return 202;
+          });
+      for (final stage in [
+        ChatDiagnosticStage.momentVideoBegin,
+        ChatDiagnosticStage.momentPosterBegin,
+        ChatDiagnosticStage.momentPosterPut,
+      ]) {
+        for (final error in [
+          ChatDiagnosticError.slow,
+          ChatDiagnosticError.cancelled,
+          ChatDiagnosticError.incomplete,
+          ChatDiagnosticError.recovered,
+        ]) {
+          diagnostics.record(
+              stage: stage,
+              error: error,
+              elapsed: const Duration(milliseconds: 300));
+        }
+      }
+      diagnostics.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.recovered);
+      diagnostics.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.slow,
+          elapsed: const Duration(milliseconds: 300));
+      time.elapse(const Duration(minutes: 1));
+      final events = batches.single.toJson()['events'] as List;
+      expect(events, hasLength(2));
+      expect(
+          events.map((event) => event['stage']), ['matrixSend', 'matrixSend']);
+      expect(events.map((event) => event['error']), ['recovered', 'slow']);
+      diagnostics.stopSession();
+    });
+  });
+
+  test('old receiver 422 disables only Moment extension and keeps legacy', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      var status = 422;
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return status;
+          });
+      diagnostics.record(
+          stage: ChatDiagnosticStage.momentPosterPut,
+          error: ChatDiagnosticError.timeout);
+      diagnostics.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.network);
+      time.elapse(const Duration(minutes: 1));
+      expect(batches, hasLength(1));
+      status = 202;
+      time.elapse(const Duration(minutes: 1));
+      expect(batches, hasLength(2));
+      expect((batches.last.toJson()['events'] as List).single['stage'],
+          'matrixSend');
+      expect(diagnostics.pendingCount, 0);
+      diagnostics.record(
+          stage: ChatDiagnosticStage.momentPosterPut,
+          error: ChatDiagnosticError.timeout);
+      expect(diagnostics.pendingCount, 0);
+      diagnostics.stopSession();
+    });
+  });
+
+  test('old receiver strips restored Moment events but retains legacy batch',
+      () {
+    fakeAsync((time) {
+      final spool = _SpoolMemory();
+      DateTime now() => DateTime.utc(2026).add(time.elapsed);
+      final old = ChatDiagnostics(now: now);
+      old.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (_, __) async => 401,
+          store: spool,
+          spoolScope: () async => List.filled(64, 'a').join());
+      time.flushMicrotasks();
+      old.record(
+          stage: ChatDiagnosticStage.momentVideoPut,
+          error: ChatDiagnosticError.timeout);
+      old.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.network);
+      time.elapse(const Duration(seconds: 2));
+      time.flushMicrotasks();
+      old.stopSession();
+      time.flushMicrotasks();
+      expect(spool.payload, contains('moment_video_put'));
+
+      final batches = <ChatDiagnosticBatch>[];
+      final restored = ChatDiagnostics(now: now);
+      restored.startSession(
+          version: '1.2.4',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            final events = batch.toJson()['events'] as List;
+            return events.any((event) => event['stage'] == 'moment_video_put')
+                ? 422
+                : 202;
+          },
+          store: spool,
+          spoolScope: () async => List.filled(64, 'a').join());
+      time.flushMicrotasks();
+      time.elapse(const Duration(minutes: 2));
+      time.flushMicrotasks();
+      expect(batches, hasLength(2));
+      expect(batches.every((batch) => batch.version == '1.2.3'), isTrue);
+      expect((batches.last.toJson()['events'] as List).single['stage'],
+          'matrixSend');
+      expect(restored.pendingCount, 0);
+      restored.stopSession();
+      time.flushMicrotasks();
+    });
+  });
+
+  test('legacy diagnostic JSON retains its byte shape', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      final diagnostics =
+          ChatDiagnostics(now: () => DateTime(2026).add(time.elapsed));
+      diagnostics.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return 202;
+          });
+      diagnostics.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.network);
+      time.elapse(const Duration(minutes: 1));
+      final normalized = jsonEncode(batches.single.toJson()).replaceFirst(
+          RegExp(
+              r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'),
+          '<id>');
+      expect(normalized,
+          '{"version":"1.2.3","platform":"android","events":[{"operation_id":"<id>","stage":"matrixSend","error":"network","elapsed_ms":0,"count":1,"status":null}]}');
+      diagnostics.stopSession();
+    });
+  });
+
   test('failed uploads persist pending metadata; next session backfills', () {
     fakeAsync((time) {
       final spool = _SpoolMemory();

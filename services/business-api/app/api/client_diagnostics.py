@@ -27,8 +27,12 @@ class DiagnosticEvent(BaseModel):
                    'dateMonth', 'dateLocate', 'scrollAnchor', 'framework', 'network_request',
                    'pending_write_failed', 'request_uncertain', 'result_write_failed',
                    'retry_recovered', 'terminal_invalidated', 'result_superseded',
-                   'matrix_sync_soft_kick', 'matrix_sync_hard_restart']
-    error: Literal['slow', 'network', 'timeout', 'rejected', 'cancelled', 'incomplete', 'unknown', 'recovered']
+                   'matrix_sync_soft_kick', 'matrix_sync_hard_restart',
+                   'moment_prepare', 'moment_video_begin', 'moment_video_put', 'moment_video_complete',
+                   'moment_poster_extract', 'moment_poster_begin', 'moment_poster_put',
+                   'moment_poster_complete', 'moment_publish']
+    error: Literal['slow', 'network', 'timeout', 'rejected', 'cancelled', 'incomplete', 'unknown', 'recovered',
+                   'size', 'format']
     elapsed_ms: int = Field(ge=0, le=3600000)
     count: int = Field(ge=1, le=1000000)
     status: int | None = Field(default=None, ge=100, le=599)
@@ -36,11 +40,17 @@ class DiagnosticEvent(BaseModel):
     lifecycle: Literal['foreground', 'background', 'unknown'] | None = None
 
     @model_validator(mode='after')
-    def consistent_watchdog_stage(self):
+    def consistent_stage_outcome(self):
         if self.stage in ('matrix_sync_soft_kick', 'matrix_sync_hard_restart') and self.error not in (
             'slow', 'timeout', 'unknown', 'recovered'
         ):
             raise ValueError('Unsupported watchdog diagnostic outcome')
+        if self.stage in (
+            'moment_prepare', 'moment_video_begin', 'moment_video_put', 'moment_video_complete',
+            'moment_poster_extract', 'moment_poster_begin', 'moment_poster_put',
+            'moment_poster_complete', 'moment_publish',
+        ) and self.error not in ('timeout', 'network', 'rejected', 'size', 'format', 'unknown'):
+            raise ValueError('Unsupported Moment diagnostic outcome')
         return self
 
 

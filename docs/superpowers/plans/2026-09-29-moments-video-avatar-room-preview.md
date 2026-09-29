@@ -235,7 +235,7 @@ posterIds.add(posterId);
 - Test: `apps/mobile_flutter/test/features/moments/moment_publish_coordinator_test.dart`
 - Test: `tests/business_api/test_client_diagnostics.py`
 
-- [ ] **Step 1: 写两侧封闭枚举红灯。** 客户端失败事件仅包含 `moment_prepare`、`moment_video_put`、`moment_video_complete`、`moment_poster_extract`、`moment_poster_put`、`moment_poster_complete`、`moment_publish` 阶段，以及 `timeout/network/rejected/size/format/unknown` 原因、HTTP 状态、耗时和 existing performance `size_bucket`。现有批次顶层 `version` 即 App build，不另传设备/文件名。服务端对这几个固定字符串接受，对额外 `file_name`、URL、异常正文、任意阶段拒绝 422。客户端账号切换后旧任务不得上报。正式客户端须在接收端候选发布后才启用新阶段；旧接收端 422 要仅停用本扩展并保留旧诊断批次，不能无界重试。
+- [ ] **Step 1: 写两侧封闭枚举红灯。** 客户端失败事件仅包含 `moment_prepare`、`moment_video_begin`、`moment_video_put`、`moment_video_complete`、`moment_poster_extract`、`moment_poster_begin`、`moment_poster_put`、`moment_poster_complete`、`moment_publish` 阶段，以及 `timeout/network/rejected/size/format/unknown` 原因、HTTP 状态、耗时和 existing performance `size_bucket`。现有批次顶层 `version` 即 App build，不另传设备/文件名。服务端对这几个固定字符串接受，对额外 `file_name`、URL、异常正文、任意阶段拒绝 422。客户端账号切换后旧任务不得上报。正式客户端须在接收端候选发布后才启用新阶段；旧接收端 422 要仅停用本扩展并保留旧诊断批次，不能无界重试。
 
 ```python
 def test_moment_stage_is_closed_and_private(endpoint):
@@ -261,7 +261,7 @@ python -m pytest tests/business_api/test_client_diagnostics.py -q
 
 预期：新阶段/原因当前不在双方枚举；记录实际失败行。后端从仓库根目录运行并按仓库测试配置设置 `PYTHONPATH`，不要导入生产 `.env`。
 
-- [ ] **Step 3: 实施封闭的客户端与服务端枚举。** 在 `ChatDiagnosticStage` 加 7 个值及 `wireName` 映射；`ChatDiagnosticError` 加 `size`、`format`。业务 API 的 `DiagnosticEvent.stage` 与 `.error` 只加相同字符串；保留 `extra='forbid'`、长度、速率、用户鉴权及日志脱敏。队列在每阶段入口启动 `Stopwatch`，成功只更新既有 `PerformanceTrace` 阶段；失败通过单一 `recordMomentFailure(stage, error, elapsed, status, sizeBucket)` 映射到固定枚举。大小分桶只经现有 `PerformanceTrace.setMedia(size: ...)`，不把原始字节数或自由文本塞进事件。
+- [ ] **Step 3: 实施封闭的客户端与服务端枚举。** 在 `ChatDiagnosticStage` 加 9 个值及 `wireName` 映射：准备、视频 begin、视频 PUT、视频完成、抽帧、封面 begin、封面 PUT、封面完成、发布。质量复核要求 begin 与真正 PUT 分开，避免把上传会话创建请求的超时归入 PUT。`ChatDiagnosticError` 加 `size`、`format`；业务 API 的 `DiagnosticEvent.stage` 与 `.error` 只加相同字符串，保留 `extra='forbid'`、长度、速率、用户鉴权及日志脱敏。队列在每阶段入口启动 `Stopwatch`，成功只更新既有 `PerformanceTrace` 阶段；失败通过单一 `recordMomentFailure(stage, error, elapsed, status)` 映射到固定枚举。大小分桶只经现有 `PerformanceTrace.setMedia(size: ...)`，不把原始字节数或自由文本塞进事件。
 
 ```dart
 void recordMomentFailure(ChatDiagnosticStage stage,

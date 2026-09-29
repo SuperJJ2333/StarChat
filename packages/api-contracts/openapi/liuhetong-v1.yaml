@@ -19994,7 +19994,9 @@
                             "cancelled",
                             "incomplete",
                             "unknown",
-                            "recovered"
+                            "recovered",
+                            "size",
+                            "format"
                           ],
                           "title": "Error",
                           "type": "string"
@@ -20051,7 +20053,16 @@
                             "terminal_invalidated",
                             "result_superseded",
                             "matrix_sync_soft_kick",
-                            "matrix_sync_hard_restart"
+                            "matrix_sync_hard_restart",
+                            "moment_prepare",
+                            "moment_video_begin",
+                            "moment_video_put",
+                            "moment_video_complete",
+                            "moment_poster_extract",
+                            "moment_poster_begin",
+                            "moment_poster_put",
+                            "moment_poster_complete",
+                            "moment_publish"
                           ],
                           "title": "Stage",
                           "type": "string"
@@ -33443,6 +33454,9 @@
               }
             },
             "description": "Application error"
+          },
+          "409": {
+            "description": "WALLET_BINDING_REQUIRED, WALLET_BINDING_PENDING, WALLET_BINDING_VERSION_CONFLICT, or idempotency/evidence conflict"
           },
           "422": {
             "content": {

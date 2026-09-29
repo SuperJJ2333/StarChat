@@ -240,6 +240,80 @@ def test_network_request_stage_accepts_transport_errors(endpoint, capsys):
     assert logged['events'][0]['count'] == 3
 
 
+@pytest.mark.parametrize(('stage', 'error'), [
+    ('moment_prepare', 'format'),
+    ('moment_video_begin', 'timeout'),
+    ('moment_video_put', 'timeout'),
+    ('moment_video_complete', 'network'),
+    ('moment_poster_extract', 'size'),
+    ('moment_poster_begin', 'network'),
+    ('moment_poster_put', 'rejected'),
+    ('moment_poster_complete', 'unknown'),
+    ('moment_publish', 'rejected'),
+])
+def test_moment_failure_stage_is_closed_and_private(endpoint, capsys, stage, error):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage=stage, error=error, status=504)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    output = capsys.readouterr().out
+    logged = json.loads(output)
+    assert logged['events'] == data['events']
+    assert logged['version'] == data['version']
+    assert 'private-user-sentinel' not in output
+    assert headers['Authorization'] not in output
+
+
+@pytest.mark.parametrize('error', ['slow', 'cancelled', 'incomplete', 'recovered'])
+@pytest.mark.parametrize('stage', ['moment_video_begin', 'moment_poster_begin', 'moment_poster_put'])
+def test_moment_stage_rejects_nonfailure_outcomes(endpoint, capsys, stage, error):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage=stage, error=error, elapsed_ms=300)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert capsys.readouterr().out == ''
+
+
+def test_legacy_stage_keeps_its_existing_outcomes(endpoint, capsys):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='matrixSend', error='recovered')
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    assert json.loads(capsys.readouterr().out)['events'] == data['events']
+
+
+@pytest.mark.parametrize('extra', [
+    {'file_name': 'private-video.mp4'},
+    {'media_url': 'https://private.example/video'},
+    {'exception': 'private file path'},
+    {'size_bucket': 'private arbitrary bucket'},
+    {'stage': 'moment_other'},
+    {'error': 'private error'},
+])
+def test_moment_failure_rejects_extra_or_unbounded_metadata(endpoint, capsys, extra):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='moment_poster_put', error='timeout')
+    data['events'][0].update(extra)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert 'private' not in response.text
+    assert capsys.readouterr().out == ''
+
+
+def test_legacy_diagnostic_event_shape_remains_unchanged(endpoint, capsys):
+    client, _, headers = endpoint
+    data = payload()
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    assert logged['events'] == data['events']
+    assert set(logged) == {'event', 'version', 'platform', 'events', 'subject_ref'}
+
+
 @pytest.mark.parametrize('stage', ['matrix_sync_soft_kick', 'matrix_sync_hard_restart'])
 @pytest.mark.parametrize('error', ['slow', 'timeout', 'unknown', 'recovered'])
 def test_sync_watchdog_stages_are_closed_and_bounded(endpoint, capsys, stage, error):

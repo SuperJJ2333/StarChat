@@ -6,10 +6,12 @@ import 'dart:ui' as ui;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as paths;
 
 import '../../core/business_api_client.dart';
+import '../../core/chat_diagnostics.dart';
 import '../../core/performance_trace.dart';
 import '../matrix/gif_image_policy.dart';
 import '../matrix/video_poster_extractor.dart';
@@ -21,6 +23,64 @@ import 'moment_draft_store.dart';
 
 typedef MomentPosterExtractor = Future<Uint8List?> Function(
     File file, List<int> positionsMs);
+
+/// Only closed failure types reach diagnostics; exception text stays local.
+ChatDiagnosticError momentDiagnosticReason(Object error) => switch (error) {
+      TimeoutException() => ChatDiagnosticError.timeout,
+      SocketException() ||
+      HandshakeException() ||
+      http.ClientException() =>
+        ChatDiagnosticError.network,
+      GroupVideoTooLargeException() => ChatDiagnosticError.size,
+      VideoCompressionException() ||
+      FormatException() =>
+        ChatDiagnosticError.format,
+      MomentImageException(message: '媒体大小超过限制') => ChatDiagnosticError.size,
+      MomentImageException(message: '视频封面生成失败，内容已保留，请重试') =>
+        ChatDiagnosticError.format,
+      MomentImageException(message: '媒体尚未准备好，请重试') =>
+        ChatDiagnosticError.rejected,
+      BusinessApiException(statusCode: 408 || 504) =>
+        ChatDiagnosticError.timeout,
+      BusinessApiException(statusCode: 413) => ChatDiagnosticError.size,
+      BusinessApiException() => ChatDiagnosticError.rejected,
+      _ => ChatDiagnosticError.unknown,
+    };
+
+void recordMomentFailure(
+    ChatDiagnosticStage stage, ChatDiagnosticError reason, Duration elapsed,
+    {int? status}) {
+  ChatDiagnostics.instance
+      .record(stage: stage, error: reason, elapsed: elapsed, status: status);
+}
+
+String _momentFailureMessage(ChatDiagnosticStage stage) => switch (stage) {
+      ChatDiagnosticStage.momentPrepare => '视频准备失败，内容已保留，请重试',
+      ChatDiagnosticStage.momentVideoBegin ||
+      ChatDiagnosticStage.momentVideoPut ||
+      ChatDiagnosticStage.momentVideoComplete =>
+        '视频上传失败，内容已保留，请重试',
+      ChatDiagnosticStage.momentPosterExtract => '视频封面生成失败，内容已保留，请重试',
+      ChatDiagnosticStage.momentPosterBegin ||
+      ChatDiagnosticStage.momentPosterPut ||
+      ChatDiagnosticStage.momentPosterComplete =>
+        '视频封面暂不可用，请稍后重试',
+      _ => '发送失败，内容已保留，请重试',
+    };
+
+// Includes local poster bytes and task-journal writes, not only frame decoding.
+ChatDiagnosticStage _momentLocalStage(bool poster) => poster
+    ? ChatDiagnosticStage.momentPosterExtract
+    : ChatDiagnosticStage.momentPrepare;
+
+PerformanceSizeBucket _momentSizeBucket(int bytes) => switch (bytes) {
+      <= 0 => PerformanceSizeBucket.zero,
+      <= 64 * 1024 => PerformanceSizeBucket.tiny,
+      <= 1024 * 1024 => PerformanceSizeBucket.small,
+      <= 10 * 1024 * 1024 => PerformanceSizeBucket.medium,
+      <= 100 * 1024 * 1024 => PerformanceSizeBucket.large,
+      _ => PerformanceSizeBucket.huge,
+    };
 
 /// Posters use a separate, bounded rendition; original videos stay in the sandbox.
 Future<Uint8List?> prepareMomentVideoPoster(File video,
@@ -325,6 +385,18 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       notifyListeners();
       final trace = PerformanceTraceRecorder.instance
           .start(PerformanceOperationType.messageSend);
+      final diagnosticSession = ChatDiagnostics.instance;
+      final diagnosticGeneration = diagnosticSession.sessionGeneration;
+      ChatDiagnosticStage? failureStage;
+      Object? originalFailure;
+      final stageWatch = Stopwatch();
+      void enterStage(ChatDiagnosticStage? stage) {
+        failureStage = stage;
+        stageWatch
+          ..reset()
+          ..start();
+      }
+
       try {
         final imageUrls =
             List<String>.from(job.payload['image_urls'] as List? ?? []);
@@ -336,11 +408,15 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         for (var i = 0; i < job.media.length; i++) {
           _guardJob(job);
           final media = job.media[i];
-          final ready = await _prepare(job, i, trace);
+          final isVideo = media['video'] == true;
+          enterStage(isVideo ? ChatDiagnosticStage.momentPrepare : null);
+          final ready = await _prepare(job, i, trace,
+              onStage: isVideo ? enterStage : null);
           _guardJob(job);
           trace.mark(PerformanceStage.videoUploadStarted);
-          final result = await trace.runChildOperations(() =>
-              _upload(job, media, ready, '$i', media['mime'] as String, false));
+          final result = await trace.runChildOperations(() => _upload(
+              job, media, ready, '$i', media['mime'] as String, false,
+              onStage: isVideo ? enterStage : null));
           trace.mark(PerformanceStage.videoUploadDone);
           _guardJob(job);
           if (media['video'] == true) {
@@ -359,19 +435,26 @@ final class MomentPublishCoordinator extends ChangeNotifier {
               }
             } catch (_) {/* Cache pressure must not fail an accepted upload. */}
             final poster = File('${root.path}/${job.id}/media-$i.poster');
+            enterStage(ChatDiagnosticStage.momentPosterExtract);
             if (!await poster.exists()) {
               throw const MomentImageException('视频封面生成失败，内容已保留，请重试');
             }
             final Map<String, dynamic> posterResult;
             try {
               posterResult = await _upload(
-                  job, media, poster, 'poster-$i', 'image/jpeg', true);
+                  job, media, poster, 'poster-$i', 'image/jpeg', true,
+                  onStage: enterStage);
             } on Exception catch (error) {
               if (error is BusinessApiException &&
                   (error.statusCode == 401 || error.statusCode == 403)) {
                 rethrow;
               }
+              originalFailure = error;
               _guardJob(job);
+              if (failureStage == ChatDiagnosticStage.momentPosterExtract) {
+                throw const MomentImageException(
+                    '视频封面生成失败，内容已保留，请重试');
+              }
               throw const MomentImageException('视频封面暂不可用，请稍后重试');
             }
             final posterId = posterResult['id'];
@@ -398,13 +481,16 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         var videoIndex = (job.payload['video_urls'] as List? ?? []).length;
         for (var i = 0; i < job.media.length; i++) {
           final media = job.media[i];
+          final isVideo = media['video'] == true;
+          enterStage(isVideo ? ChatDiagnosticStage.momentVideoComplete : null);
           final result = await _upload(
               job,
               media,
               File('${root.path}/${job.id}/${media['file']}'),
               '$i',
               media['mime'] as String,
-              false);
+              false,
+              onStage: isVideo ? enterStage : null);
           if (media['video'] == true) {
             videoUrls[videoIndex++] =
                 (result['media_ref'] ?? result['media_url']) as String;
@@ -414,6 +500,8 @@ final class MomentPublishCoordinator extends ChangeNotifier {
           }
         }
         _guardJob(job);
+        enterStage(
+            videoUrls.isNotEmpty ? ChatDiagnosticStage.momentPublish : null);
         final body = {
           ...job.payload,
           'image_urls': imageUrls,
@@ -453,14 +541,36 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         trace.finish();
       } catch (error) {
         trace.finish(result: PerformanceResult.failed);
+        final stage = failureStage;
+        final cause = originalFailure ?? error;
+        if (stage != null &&
+            job.state != MomentPublishState.cancelled &&
+            active &&
+            identical(ChatDiagnostics.instance, diagnosticSession) &&
+            diagnosticSession.sessionGeneration == diagnosticGeneration) {
+          recordMomentFailure(
+              stage, momentDiagnosticReason(cause), stageWatch.elapsed,
+              status: cause is BusinessApiException ? cause.statusCode : null);
+        }
         if (job.state != MomentPublishState.cancelled &&
             job.state != MomentPublishState.succeeded) {
           job.state = MomentPublishState.failed;
           job.message = error is MomentImageException
               ? error.message
-              : error is BusinessApiException
-                  ? error.message
-                  : '发送失败，内容已保留，请重试';
+              : error is GroupVideoTooLargeException
+                  ? '视频大小不能超过20MB'
+                  : error is VideoCompressionException
+                      ? '视频压缩失败，请重新选择或使用其他视频'
+                      : stage != null && error is! BusinessApiException
+                          ? _momentFailureMessage(stage)
+                          : stage != null &&
+                                  error is BusinessApiException &&
+                                  error.statusCode != 401 &&
+                                  error.statusCode != 403
+                              ? _momentFailureMessage(stage)
+                              : error is BusinessApiException
+                                  ? error.message
+                                  : '发送失败，内容已保留，请重试';
           try {
             await _persist(job);
           } catch (_) {}
@@ -489,8 +599,8 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     }
   }
 
-  Future<File> _prepare(
-      MomentPublishJob job, int i, PerformanceTrace trace) async {
+  Future<File> _prepare(MomentPublishJob job, int i, PerformanceTrace trace,
+      {void Function(ChatDiagnosticStage)? onStage}) async {
     final media = job.media[i];
     final directory = '${root.path}/${job.id}';
     final source = File('$directory/${media['file']}');
@@ -505,7 +615,9 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     if (media['video'] == true) {
       final rendition = await transcodeForChat(source, performanceTrace: trace);
       try {
-        validateGroupVideoSize(await rendition.file.length());
+        final encodedSize = await rendition.file.length();
+        trace.setMedia(size: _momentSizeBucket(encodedSize));
+        validateGroupVideoSize(encodedSize);
         await rendition.file.copy(output.path);
         media['mime'] = 'video/mp4';
         final posterSource = File('$directory/media-$i.poster-source');
@@ -517,6 +629,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         } catch (_) {
           // Extraction from this video remains available without the preview.
         }
+        onStage?.call(ChatDiagnosticStage.momentPosterExtract);
         final small =
             await prepareMomentVideoPoster(rendition.file, source: poster);
         if (small == null) {
@@ -545,6 +658,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       if (processed.isEmpty || processed.length > 20 * 1024 * 1024) {
         throw const MomentImageException('图片大小不能超过20MB');
       }
+      trace.setMedia(size: _momentSizeBucket(processed.length));
       await output.writeAsBytes(processed, flush: true);
       media['mime'] = gif ? 'image/gif' : 'image/jpeg';
     }
@@ -566,12 +680,14 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       File file,
       String key,
       String mime,
-      bool poster) async {
+      bool poster,
+      {void Function(ChatDiagnosticStage)? onStage}) async {
     final generationKey = poster ? 'poster_generation' : 'generation';
     final generation = media[generationKey] as int? ?? 0;
     try {
       return await _uploadAttempt(
-          job, media, file, '$key:$generation', mime, poster);
+          job, media, file, '$key:$generation', mime, poster,
+          onStage: onStage);
     } on BusinessApiException catch (error) {
       if (error.code == 'MOMENT_MEDIA_EXPIRED' ||
           error.code == 'MEDIA_UPLOAD_EXPIRED') {
@@ -579,7 +695,12 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         media.remove(poster ? 'poster_upload' : 'upload');
         media.remove(poster ? 'poster_put' : 'put');
         media.remove(poster ? 'poster_result' : 'result');
-        await _persist(job);
+        try {
+          await _persist(job);
+        } catch (_) {
+          onStage?.call(_momentLocalStage(poster));
+          rethrow;
+        }
       }
       rethrow;
     }
@@ -591,10 +712,14 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       File file,
       String key,
       String mime,
-      bool poster) async {
+      bool poster,
+      {void Function(ChatDiagnosticStage)? onStage}) async {
     _guardJob(job);
     final completedKey = poster ? 'poster_result' : 'result';
     if (media[completedKey] case final Map saved) {
+      onStage?.call(poster
+          ? ChatDiagnosticStage.momentPosterComplete
+          : ChatDiagnosticStage.momentVideoComplete);
       final renewed = await api.postMomentTask(
           session,
           '/moments/media/uploads/${saved['id']}/complete',
@@ -611,9 +736,13 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       };
     }
     final idKey = poster ? 'poster_upload' : 'upload';
+    onStage?.call(_momentLocalStage(poster));
     if (media[idKey] == null) {
       final byteSize = await file.length();
       _guardJob(job);
+      onStage?.call(poster
+          ? ChatDiagnosticStage.momentPosterBegin
+          : ChatDiagnosticStage.momentVideoBegin);
       final begun = await api.postMomentTask(
           session,
           poster ? '/moments/video-posters/uploads' : '/moments/media/uploads',
@@ -630,6 +759,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
           },
           '${job.id}:begin:$key');
       _guardJob(job);
+      onStage?.call(_momentLocalStage(poster));
       media[idKey] = begun['id'] as String;
       await _persist(job);
     }
@@ -641,6 +771,9 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         throw const MomentImageException('媒体大小超过限制');
       }
       _guardJob(job);
+      onStage?.call(poster
+          ? ChatDiagnosticStage.momentPosterPut
+          : ChatDiagnosticStage.momentVideoPut);
       try {
         await api.putMomentTask(session, id, bytes, mime);
       } on BusinessApiException catch (error) {
@@ -648,9 +781,13 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       }
       _guardJob(job);
       media[putKey] = true;
+      onStage?.call(_momentLocalStage(poster));
       await _persist(job);
     }
     _guardJob(job);
+    onStage?.call(poster
+        ? ChatDiagnosticStage.momentPosterComplete
+        : ChatDiagnosticStage.momentVideoComplete);
     final completed = await api.postMomentTask(session,
         '/moments/media/uploads/$id/complete', {}, '${job.id}:complete:$key');
     _guardJob(job);
@@ -665,6 +802,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       if (completed['media_cache_key'] != null)
         'media_cache_key': completed['media_cache_key']
     };
+    onStage?.call(_momentLocalStage(poster));
     await _persist(job);
     return Map<String, dynamic>.from(media[completedKey] as Map);
   }
