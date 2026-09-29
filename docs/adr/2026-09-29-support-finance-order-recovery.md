@@ -1,7 +1,7 @@
 # 客服提现取消边界、链上发现与独占订单接管 ADR
 
 - 日期：2026-09-29。
-- 状态：**提议，待用户批准 ADR 与逐项实施计划**。用户已批准[书面规格](../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)及其汇率暂存、地址分阶段安全修订；这不等于批准代码实施或生产发布。
+- 状态：**用户已批准实施及受控生产发布**。用户先批准[书面规格](../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)及其汇率暂存、地址分阶段安全修订，随后于 2026-09-30 明确要求“修改产品代码和生产环境”，按[逐项实施计划](../superpowers/plans/2026-09-29-support-finance-order-recovery.md)执行；发布仍受该计划的测试、审查、现网基线与回退门禁约束。
 - 适用：`SUPPORT_MANUAL_V1` 提现及客服充值订单的管理入口、提现资金状态、TronGrid 只读发现、订单处理资格。旧 `OWNER_MANUAL_V1` 的付款策略和既成订单记录不追溯改写。
 
 ## 现象及既有决策

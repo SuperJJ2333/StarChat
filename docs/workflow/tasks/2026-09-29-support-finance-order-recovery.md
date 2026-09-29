@@ -3,11 +3,11 @@
 ## 恢复入口
 
 - 目标、用户授权与边界：用户报告提现取消出现 `Wallet_payout_cannot_cancel`、客服确认汇率后无法返回/复制客户地址/拒绝订单、无哈希链上查询不可用、他人认领的提现或充值单仍可点处理。用户已选定“确认开始出款前可取消及拒绝”、无哈希 TronGrid 候选发现并人工选择、官方钱包所有者管理员经单独确认审计接管、弹窗返回列表且出款前可重调汇率。独立资金审查后，用户另批准安全修订：调汇率只暂存待执行值，不改变冻结；真正开始出款时原子调整冻结且此后才开放完整地址与复制。本轮仅后台与 API，Android 新包后续交付；旧版 Android 的原始错误消息由 API 兼容中文化。历史已开始订单仅只读核查，不自动退款。
-- 关联规格：[本轮书面规格](../../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)已获用户批准；[受保护 ADR](../../adr/2026-09-29-support-finance-order-recovery.md)与[逐项实施计划](../../superpowers/plans/2026-09-29-support-finance-order-recovery.md)已起草、待用户审阅和批准。[原人工出款 ADR](../../adr/0013-trongrid-single-source-manual-payout.md)、[客服订单原规格](../../superpowers/specs/2026-09-23-support-order-workflow-design.md)继续约束链上与资金事实。
-- 当前状态：根因只读调查完成，用户批准会话内设计、安全修订及已提交的书面规格；ADR 和逐项计划完成领域/链上/权限审查，发现的充值凭证、候选入单、管理员证明、数据库不可变与角色能力投影缺口已写入文件，尚未获实施批准。**未修改可执行代码、未发布 API/后台、未操作资金。**
-- 负责人、工作树、文件所有权、源码 commit：主代理独占本规格、任务记录及后续总体整合；`cancel_audit`、`chain_audit`、`claim_audit` 只读核查互不编辑。工作树 `C:/Users/Administrator/.codex/worktrees/wallet-ui-polish/StarChat`，基线 `fd9ab39d8c8b562e3c1198519d3df039cabfbf26`，开始时 `git status --porcelain` 为空；D 主目录另有大量其他任务未提交内容，不在本任务修改。后续文件所有权须在实施计划逐项声明。
-- 最后更新时间（含时区）：2026-09-30 00:10 +08:00。
-- 下一条具体操作、必要输入、阻断的验收 ID：完成 ADR 与逐项计划链接/提交检查并请用户按根 `AGENTS.md` 批准；批准后从 Task 1 的实时环境与生产只读基线开始。用户若提供受影响提现单号，只读核查该订单的真实开始、候选、审计与链上状态；在证据足够前不对旧单执行退款或拒绝。SFO-1 至 SFO-6 全部未实施。
+- 关联规格：[本轮书面规格](../../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)已获用户批准；用户于 2026-09-30 明确要求“修改产品代码和生产环境”，按[受保护 ADR](../../adr/2026-09-29-support-finance-order-recovery.md)与[逐项实施计划](../../superpowers/plans/2026-09-29-support-finance-order-recovery.md)执行及受控发布。[原人工出款 ADR](../../adr/0013-trongrid-single-source-manual-payout.md)、[客服订单原规格](../../superpowers/specs/2026-09-23-support-order-workflow-design.md)继续约束链上与资金事实。
+- 当前状态：根因只读调查及 ADR/计划预审完成，用户已批准实施和受控生产发布。2026-09-30 00:22 +08:00 开始环境与现网基线；基线时尚未修改可执行代码、发布 API/后台或操作资金。
+- 负责人、工作树、文件所有权、源码 commit：主代理独占 ADR、计划、任务记录、验证报告及总体整合；`prod_baseline` 只读现网、`tron_reader_impl` 独占 Tron reader/专项测试、`migration_impl` 独占 0093 迁移/模型/专项测试。工作树 `C:/Users/Administrator/.codex/worktrees/wallet-ui-polish/StarChat`，本次代码实施基线 `1a246939261b076b25299260875126ab0a987445`，开始时 `git status --porcelain` 为空；D 主目录另有其他任务未提交内容，不在本任务修改。
+- 最后更新时间（含时区）：2026-09-30 00:30 +08:00。
+- 下一条具体操作、必要输入、阻断的验收 ID：完成 Task 1 生产只读基线和测试记录，确认生产 schema/镜像无漂移后从 Task 2 expand 迁移开始。用户若提供受影响提现单号，只读核查该订单的真实开始、候选、审计与链上状态；在证据足够前不对旧单执行退款或拒绝。SFO-1 至 SFO-6 尚待实施和验收。
 
 ## 验收台账
 
@@ -25,10 +25,10 @@
 | 平台/服务 | 实际版本/build/镜像 | 来源 commit | 包名/签名渠道 | 文件位置及 SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
 | 当前 Android 正式包 | `0.4.24+2193`；本轮不重建 | 前轮 Android 2193 发布记录位于独立工作树 `withdrawal-quote-policy`；本工作树发布前须重新核实 | `com.liuhetong.mobile` 固定签名 | 前轮 APK SHA `8ea9eafb95bcf07c5655266d3eb71766c5799ba364103b23004820f3cf4e6dec` | 前轮已发布；本轮无 Android 包 |
-| 当前钱包/客服后端 | 生产关键钱包模块与本工作树 `fd9ab39d` SHA 一致；确切运行镜像须发布前重查 | `fd9ab39d` 调查基线 | API 容器 | `manual_payouts.py`、`support_payout.py`、TronGrid reader/finality 由只读核查逐字节确认 | 本轮只读，非候选发布 |
-| 后台提现/充值静态 | 生产与工作树整体 SHA 不同，但故障行仍在 | 调查基线 | HTTPS 静态 | 生产/公开静态 SHA 在只读核查中一致；本任务尚未冻结新候选 | 本轮未发布 |
+| 当前钱包/客服后端 | 2026-09-30 00:27 +08:00 生产 API `sha256:fadabb52cd61c078599ceda2544cea6f34dd85b0dbc0b6c5d276c5d3a96ab7dd`，Worker `sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf`，schema 0092 | 后继 friend-video 任务镜像；本轮实施基线 `1a246939` | API/Worker 容器 | `manual_payouts.py`、`support_payout.py`、TronGrid reader、充值 workflow 与本工作树逐字节一致；镜像必须以当前 `fadabb52` 为基底 | 本轮只读，非候选发布 |
+| 后台提现/充值静态 | 生产/公开静态原始 SHA 与本地不同，经 CRLF→LF 归一逐字节一致 | `1a246939` 内容 | HTTPS 静态 | 生产 payout `a61ab9f8…`、recharge `15685b3b…`；仅行尾差异，发布需按最终原始 SHA 核对 | 本轮未发布 |
 
-当前仅有调查时的测试基线：`node --test frontend/tests/admin-support-payouts.test.mjs frontend/tests/admin-recharge-panel.test.mjs` exit 0，46/46 通过，但不覆盖本轮新行为，不能把它记为修复通过。正式命令、环境版本、输入 SHA、红绿输出、迁移及生产证据均待实施阶段记录。
+本次正式基线详见[实施证据](../../verification/2026-09-30-support-finance-order-recovery.md)：后端专项 143/143、前端专项 46/46、隔离 PostgreSQL 4/4；这些是修复前回归基线，不代表新行为通过。红绿输出、最终输入 SHA、迁移及发布证据实施中补齐。
 
 ## 阶段计时
 
@@ -37,14 +37,15 @@
 | 代码/现网只读调查及用户决策 | 2026-09-29 本轮，准确开始时间未记录 | 约 23:05 +08:00 | 主动调查和 SSH/测试工具；并行代理，准确耗时未知 | 取消、链上、认领三条独立核查 | 生产后端一致、静态故障存在；用户明确四项行为与发布范围 | 书面规格 |
 | 书面规格起草与自查 | 约 23:05 +08:00 | 约 23:25 +08:00 | 主代理文档；三项只读评审并行；首轮审查意见逐项修正 | 主代理/三代理 | [规格](../../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)在 `ffc9132b` 提交，用户批准；领域/链上/权限 P1 已逐项修正 | ADR/计划 |
 | 受保护 ADR 与逐项计划 | 约 23:25 +08:00 | 约 00:10 +08:00（次日） | 主代理起草；三项只读 ADR/计划复核，逐项修订 P1；未改产品代码 | 主代理/三代理 | ADR 补齐已有付款凭证；14 项计划补齐候选入单、owner 证明、PG 触发器与按 actor 能力投影，待用户批准 | 请求批准 |
+| 实施授权与基线 | 2026-09-30 00:22:03 +08:00 | 进行中 | 主代理本地 Python/Node/隔离 PG；生产代理经 jumper 只读核对；Tron reader 和迁移实施并行 | 主代理/`prod_baseline`/`tron_reader_impl`/`migration_impl` | 用户要求代码及生产；本地唯一 0092、生产唯一 0092、后端 143/143、前端 46/46、隔离 PG 4/4；现网 API 已有后继镜像须作为候选基底 | 完成实现、两阶段审查和发布门禁 |
 
 总墙钟与并行区间：本轮准确起点未记录，不估算总分钟数；后续从明确时钟采样开始记录。没有代码实施、构建或部署时长。
 
 ## 交接与回退
 
 - 已确认根因/已排除假设：`adjust-rate` 独立先提交 `begin-payment`，使未付款单也成为 `CLAIMED`；失败后该状态仍残留。取消仅允许 `REQUESTED`，Android 直接显示服务端英文代码。链上 reconcile 无候选时不查询 TronGrid，地址仅在 begin 响应，前端外层入口不看他人认领。
-- 待办及验收失败项：SFO-1 至 SFO-6 未实施；ADR/计划实施批准、红绿测试、领域/安全评审、发布与真实会话验收均待完成。现有受影响订单 ID 未提供，不能推断其链上未付款。
-- 已发布与仅候选的区别：此前钱包工作台和 2193 Android 已发布；本轮只有已批准规格及待批 ADR/计划，无 API/后台候选或新 APK。
-- 生产备份位置、恢复操作、漂移检查、可重试阶段：本轮尚无生产写入或备份。以后按批准计划冻结实时镜像、静态、schema、Compose 与私有备份；不对现有已开始订单直接回滚资金。
-- 运行中 CI/命令/自己创建的隧道（无凭据）：无 CI、构建或本任务创建的 SSH 隧道；ADR 与计划已由三项只读审查覆盖并修订。
-- 下次恢复先检查的事实：用户是否批准 ADR 与计划、是否提供具体单号、生产 API/静态版本及其后继变更，然后按计划从只读基线与测试红灯继续。D 盘脏工作区不得直接用于生产发布。
+- 待办及验收失败项：SFO-1 至 SFO-6 尚待实现；红绿测试、领域/安全评审、发布与真实会话验收均待完成。现有受影响订单 ID 未提供，不能推断其链上未付款。
+- 已发布与仅候选的区别：此前钱包工作台和 Android 2193 已发布；本轮实施已获授权，但尚无 API/后台候选或新 APK，生产尚无本轮写入。
+- 生产备份位置、恢复操作、漂移检查、可重试阶段：本轮尚无生产写入或备份。按批准计划切换前再次冻结实时镜像、静态、schema、Compose 与私有备份；不对现有已开始订单直接回滚资金。
+- 运行中 CI/命令/自己创建的隧道（无凭据）：本地专用 `starchat-support-recovery-pg` PostgreSQL 容器运行中；无 CI、构建或本任务创建的 SSH 隧道。独立子代理负责链上 reader、迁移和现网只读核查，主代理负责整合。
+- 下次恢复先检查的事实：用户实施授权已记录；重新核对生产 API/静态和 0092 后继变更，再按计划继续红灯/绿灯及受控发布。D 盘脏工作区不得直接用于生产发布。

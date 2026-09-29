@@ -1,8 +1,8 @@
 # 移动交付恢复索引
 
-## 2026-09-30 客服资金订单取消、链上发现与认领接管：规格获批，ADR/计划待批
+## 2026-09-30 客服资金订单取消、链上发现与认领接管：ADR/计划获批，实施中
 
-用户报告已发行 Android 在取消提现时显示 `Wallet_payout_cannot_cancel`，后台确认汇率后过早开始出款、无法返回/复制收款地址/拒绝，以及无哈希无法搜索链上和他人认领按钮仍可点。只读根因与[任务台账](tasks/2026-09-29-support-finance-order-recovery.md)已记录；用户批准[书面规格](../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)：保存汇率仅作待执行准备，确认开始出款时才原子调整冻结并开放完整地址；开始前可取消或拒绝；TronGrid 仅发现候选，最终按固化收据及跨订单归属核验；仅官方钱包所有者管理员经当次验证和审计接管。 [受保护 ADR](../adr/2026-09-29-support-finance-order-recovery.md)与[逐项实施计划](../superpowers/plans/2026-09-29-support-finance-order-recovery.md)已起草待用户批准。**本轮尚未修改可执行代码、迁移或生产，也未对历史已开始订单退款。** 下一步审阅批准后先重新冻结现网基线；本轮计划仅后台与 API，Android 交互修复后续另做。
+用户报告已发行 Android 在取消提现时显示 `Wallet_payout_cannot_cancel`，后台确认汇率后过早开始出款、无法返回/复制收款地址/拒绝，以及无哈希无法搜索链上和他人认领按钮仍可点。只读根因与[任务台账](tasks/2026-09-29-support-finance-order-recovery.md)已记录；用户批准[书面规格](../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)：保存汇率仅作待执行准备，确认开始出款时才原子调整冻结并开放完整地址；开始前可取消或拒绝；TronGrid 仅发现候选，最终按固化收据及跨订单归属核验；仅官方钱包所有者管理员经当次验证和审计接管。用户于 2026-09-30 明确要求“修改产品代码和生产环境”，批准按[受保护 ADR](../adr/2026-09-29-support-finance-order-recovery.md)与[逐项实施计划](../superpowers/plans/2026-09-29-support-finance-order-recovery.md)执行。当前从现网基线及红灯测试开始；历史已开始订单不得自动退款。本轮仅后台与 API，Android 交互修复后续另做。
 
 ## 2026-09-29 USDT 钱包工作台与链上流水现场：生产技术验收通过，真实管理员会话待验收
 

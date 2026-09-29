@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-状态：用户已批准[书面规格](../specs/2026-09-29-support-finance-order-recovery-design.md)及汇率/地址安全修订；[受保护 ADR](../../adr/2026-09-29-support-finance-order-recovery.md)和本计划待用户批准。**批准前不开始产品代码、迁移或生产发布。**
+状态：用户已批准[书面规格](../specs/2026-09-29-support-finance-order-recovery-design.md)及汇率/地址安全修订，并于 2026-09-30 明确要求“修改产品代码和生产环境”，批准按[受保护 ADR](../../adr/2026-09-29-support-finance-order-recovery.md)和本计划实施及受控生产发布。测试、审查、现网基线与回退门禁仍须逐项满足。
 
 **Goal:** 让客服提现在真正开始出款前可取消、拒绝与重调汇率；安全发现及核验链上付款；让他人认领的提现/充值真实禁用，并由官方钱包所有者管理员受控接管。
 
