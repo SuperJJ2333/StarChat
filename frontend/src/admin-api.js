@@ -86,6 +86,13 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
       if(!['claim','review-claim','heartbeat','begin-payment','adjust-rate','txid','correct-candidate','reconcile'].includes(action))throw new TypeError('Invalid support payout action');
       return command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/${action}`,body,options);
     },
+    rejectSupportPayout: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/reject`,body,options),
+    readSupportPayoutAddress: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/payment-address/read`,body,options),
+    discoverSupportPayout: async (id,claimToken)=>request(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/discover`,{
+      cache:'no-store',headers:claimToken?{'X-Support-Claim-Token':claimToken}:{}
+    }),
+    selectSupportPayoutCandidate: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/select-discovered`,body,options),
+    takeoverSupportPayout: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/takeover`,body,options),
     getSupportOrderAccess: async ()=>request('/api/v1/admin/support-orders/security',{cache:'no-store'}),
     verifySupportOrderAccess: async body=>request('/api/v1/admin/support-orders/security/verify',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(body)}),
     setSupportOrderPassword: async (body,options)=>command('/api/v1/admin/support-orders/security/operation-password',body,{...options,method:'PUT'}),

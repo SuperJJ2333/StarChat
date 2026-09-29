@@ -115,3 +115,14 @@ html[data-theme="dark"] .admin-modern .admin-wallet-workspace :is(.admin-chain-p
 @media(max-width:700px){.admin-modern .admin-wallet-hero{display:block;min-height:auto;padding:23px}.admin-modern .admin-wallet-hero-badge{margin-top:17px}.admin-modern .admin-wallet-section-nav{top:66px}.admin-modern .admin-wallet-workspace [id^="wallet-"]{scroll-margin-top:132px}.admin-modern .admin-wallet-workspace .admin-chain-panel,.admin-modern .admin-wallet-history{padding:18px}.admin-modern .admin-wallet-workspace .admin-chain-panel .admin-filter{flex-basis:100%}.admin-modern .admin-wallet-workspace .wallet-monitor-heartbeat{grid-template-columns:1fr}.admin-chain-detail dl{grid-template-columns:1fr;gap:4px}.admin-chain-detail dd{margin-bottom:11px}.admin-proof-dialog:has(.admin-chain-detail){width:calc(100vw - 16px);max-height:calc(100dvh - 16px);border-radius:15px}}
 @media(prefers-reduced-motion:reduce){.admin-modern .admin-wallet-hero::after{box-shadow:none}.admin-modern .admin-wallet-section-nav{scroll-behavior:auto}.admin-wallet-access>p[role="status"]{animation:none}}
 @media(prefers-contrast:more){.admin-modern .admin-wallet-workspace{--wallet-line:currentColor}.admin-modern .admin-wallet-section-nav,.admin-modern .admin-wallet-hero-badge,.admin-chain-detail>section{border-width:2px}}
+.admin-payout-dialog{width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
+.admin-payout-dialog .admin-proof-body{display:grid;gap:10px;min-width:0}
+.admin-payout-dialog .admin-proof-body .admin-filter{width:100%;min-width:0;box-sizing:border-box}
+.admin-payout-order,.admin-payout-confirm,.admin-payout-candidate{min-width:0;overflow-wrap:anywhere}
+.admin-payout-address{min-width:0;padding:16px;border:2px solid var(--wallet-accent,#247c88);border-radius:12px;background:var(--wallet-paper,#f5fbfc)}
+.admin-payout-address h3{margin:0 0 8px}
+.admin-payout-address-value{font-size:16px;font-weight:650;line-height:1.6;overflow-wrap:anywhere;user-select:text}
+.admin-payout-address button::before{content:"⧉ "}
+.admin-payout-candidate{padding:12px;border:1px solid var(--wallet-line,#d7e5e8);border-radius:10px}
+.admin-payout-candidate p{overflow-wrap:anywhere}
+@media(max-width:640px){.admin-payout-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);padding:16px}.admin-payout-dialog .admin-proof-body>button{width:100%;margin:0}.admin-payout-address button,.admin-payout-candidate button{width:100%;margin:0}}

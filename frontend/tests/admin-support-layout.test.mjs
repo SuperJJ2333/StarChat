@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const source = await readFile(new URL('../src/admin-support-panel.js', import.meta.url), 'utf8');
 const css = await readFile(new URL('../src/styles/admin-modern.css', import.meta.url), 'utf8');
+const payoutCss = await readFile(new URL('../src/styles/admin-wallet.css', import.meta.url), 'utf8');
 
 test('support command fields, action and feedback use their own layout regions', () => {
   for (const name of ['客服管理', '客服点钻派发']) {
@@ -15,4 +16,11 @@ test('support command fields, action and feedback use their own layout regions',
   assert.match(css, /\.admin-modern \.admin-support-panel \.admin-command-form/u);
   assert.match(css, /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*15rem\),\s*1fr\)\)/u);
   assert.match(css, /@media\(max-width:760px\)[\s\S]*\.admin-modern \.admin-support-panel \.admin-command-form/u);
+});
+
+test('payout address and candidate details wrap and action buttons fit narrow screens', () => {
+  assert.match(payoutCss, /\.admin-payout-address-value\{[^}]*overflow-wrap:anywhere/u);
+  assert.match(payoutCss, /\.admin-payout-candidate\{[^}]*overflow-wrap:anywhere/u);
+  assert.match(payoutCss, /@media\(max-width:640px\)\{[^}]*\.admin-payout-dialog[^}]*width:calc\(100vw - 16px\)/u);
+  assert.match(payoutCss, /\.admin-payout-dialog \.admin-proof-body>button\{[^}]*width:100%/u);
 });

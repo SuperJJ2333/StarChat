@@ -124,3 +124,20 @@ test('network failure has a safe localized error and never replays a password co
  await assert.rejects(api.setWalletOperationPassword({login_password:'synthetic-login',new_operation_password:'synthetic-operation'},{idempotencyKey:'network-test'}),error=>error.code==='NETWORK_ERROR'&&error.status===0&&error.message.includes('网络'));
  assert.equal(calls,1);
 });
+
+test('support payout recovery routes keep claim proof out of URLs and protect commands with distinct keys',async()=>{
+  const calls=[];
+  const api=createAdminApi({fetchImpl:async(url,options)=>{calls.push({url,options});return new Response('{}',{headers:{'content-type':'application/json'}});}});
+  await api.rejectSupportPayout('order/1',{claim_token:'lease',reason_code:'PAYOUT_ADDRESS_INVALID'},{idempotencyKey:'reject-key'});
+  await api.readSupportPayoutAddress('order/1',{claim_token:'lease'},{idempotencyKey:'address-key'});
+  await api.discoverSupportPayout('order/1','lease');
+  await api.selectSupportPayoutCandidate('order/1',{claim_token:'lease',txid:'ab'.repeat(32)},{idempotencyKey:'select-key'});
+  await api.takeoverSupportPayout('order/1',{expected_claim_version:2,reason_code:'SUPPORT_PAYOUT_OWNER_TAKEOVER',proof:{operation_password:'synthetic-password'}},{idempotencyKey:'takeover-key'});
+  assert.deepEqual(calls.map(call=>call.url),['reject','payment-address/read','discover','select-discovered','takeover'].map(suffix=>`/api/v1/admin/support-orders/payouts/order%2F1/${suffix}`));
+  assert.deepEqual(calls.map(call=>call.options.headers['Idempotency-Key']),['reject-key','address-key',undefined,'select-key','takeover-key']);
+  assert.equal(calls[2].options.method,undefined);
+  assert.equal(calls[2].options.headers['X-Support-Claim-Token'],'lease');
+  assert.equal(calls[2].options.cache,'no-store');
+  assert.equal(calls.every(call=>!call.url.includes('lease')&&!call.url.includes('synthetic-password')),true);
+  assert.deepEqual(JSON.parse(calls[4].options.body).proof,{operation_password:'synthetic-password'});
+});
