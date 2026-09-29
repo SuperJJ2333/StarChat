@@ -279,7 +279,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     await ensureCurrentScope();
     // The public endpoint checks current availability; only the order's frozen
     // official_payment snapshot is displayed after submission.
-    if (rechargeOp == null) await api.officialRechargePayment();
+    if (rechargeOp == null) {
+      if (!activeBinding) throw StateError('请先绑定钱包地址');
+      await api.officialRechargePayment();
+    }
     rechargeOp ??=
         await store.begin('recharge', {'amount': manualAmount(amount.text)});
     final result = await widget.client.submitRecharge(
@@ -450,7 +453,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       !busy &&
       ready &&
       capabilitiesKnown &&
-      (cnyPricing || (activeBinding && depositEnabled));
+      activeBinding &&
+      (cnyPricing || depositEnabled);
   bool get canWithdraw =>
       !busy &&
       activeBinding &&
@@ -934,9 +938,11 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       {bool recover = false}) async {
     // Disabled shortcuts never navigate or issue an HTTP request.
     final existing = section == ManualWalletSection.deposit
-        ? depositOp != null
+        ? depositOp != null || (cnyPricing && rechargeOp != null)
         : quoteOp != null || payoutOp != null;
-    if (!recover || !existing) {
+    final browsingRechargeHistory =
+        recover && section == ManualWalletSection.deposit && cnyPricing;
+    if ((!recover || !existing) && !browsingRechargeHistory) {
       if (section == ManualWalletSection.deposit && !canDeposit) return;
       if (section == ManualWalletSection.payout && !canWithdraw) return;
     }
@@ -1759,35 +1765,42 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   child: Text('USDT · TRC20',
                       style: TextStyle(
                           fontSize: 18, fontWeight: FontWeight.w600))),
-              Semantics(
-                  label: binding?.status == ManualBindingState.active
-                      ? '更改绑定'
-                      : '绑定钱包地址',
-                  child: CupertinoButton(
-                      key: const Key('manual-wallet-rebind'),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      onPressed: busy ||
-                              !ready ||
-                              !bindingFresh ||
-                              !capabilitiesKnown ||
-                              binding?.bindingEnabled != true
-                          ? null
-                          : () => openSection(ManualWalletSection.binding),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(CupertinoIcons.pencil,
-                            size: 16, color: WeChatColors.brandPrimary),
-                        const SizedBox(width: 4),
-                        Text(
-                            binding?.status == ManualBindingState.active
-                                ? '更改绑定'
-                                : '绑定钱包',
-                            style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: WeChatColors.brandPrimary)),
-                      ]))),
             ]),
+            const SizedBox(height: 16),
+            Text('当前点钻余额',
+                style: TextStyle(
+                    fontSize: WeChatTypography.subhead,
+                    color: WeChatColors.resolve(
+                        context, WeChatColors.textSecondary))),
+            const SizedBox(height: WeChatSpacing.xs),
+            Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Flexible(
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(pointsAvailable ?? '—',
+                              key: const Key('manual-wallet-balance-value'),
+                              maxLines: 1,
+                              style: TextStyle(
+                                  fontSize: WeChatTypography.brand,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.1,
+                                  color: WeChatColors.resolveTextPrimary(
+                                      context))))),
+                  const SizedBox(width: WeChatSpacing.xs),
+                  Text('点钻',
+                      style: TextStyle(
+                          fontSize: WeChatTypography.callout,
+                          color: WeChatColors.resolve(
+                              context, WeChatColors.textSecondary))),
+                ]),
+            const SizedBox(height: 16),
+            Container(
+                height: 1,
+                color: WeChatColors.resolve(context, WeChatColors.divider)),
             const SizedBox(height: 16),
             Row(children: [
               Expanded(
@@ -1815,11 +1828,52 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   style: const TextStyle(
                       fontSize: 12, color: WeChatColors.textSecondary)),
             ],
-            const SizedBox(height: 16),
-            Text('当前点钻余额：${pointsAvailable ?? '—'}',
-                style: const TextStyle(fontSize: 14)),
           ]),
         ),
+        if (bindingFresh && binding?.status != ManualBindingState.active)
+          KeyedSubtree(
+              key: const Key('manual-wallet-binding-warning'),
+              child: warningBox(binding?.status == ManualBindingState.pending
+                  ? '钱包地址正在同步，完成后才能充值和提现。'
+                  : '请绑定你的钱包地址后再充值、提现。')),
+        Container(
+            key: const Key('manual-wallet-binding-card'),
+            margin: const EdgeInsets.only(bottom: WeChatSpacing.md),
+            decoration: BoxDecoration(
+                color: WeChatColors.elevatedSurface(context),
+                borderRadius: BorderRadius.circular(12)),
+            child: Semantics(
+                label: binding?.status == ManualBindingState.active
+                    ? '更改绑定'
+                    : '绑定钱包地址',
+                child: CupertinoButton(
+                    key: const Key('manual-wallet-rebind'),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: WeChatSpacing.lg, vertical: 14),
+                    onPressed: busy ||
+                            !ready ||
+                            !bindingFresh ||
+                            !capabilitiesKnown ||
+                            binding?.bindingEnabled != true
+                        ? null
+                        : () => openSection(ManualWalletSection.binding),
+                    child: Row(children: [
+                      const Icon(CupertinoIcons.link,
+                          size: 20, color: WeChatColors.brandPrimary),
+                      const SizedBox(width: WeChatSpacing.md),
+                      Expanded(
+                          child: Text(
+                              binding?.status == ManualBindingState.active
+                                  ? '更改绑定'
+                                  : '绑定钱包',
+                              style: TextStyle(
+                                  fontSize: WeChatTypography.callout,
+                                  fontWeight: FontWeight.w600,
+                                  color: WeChatColors.resolveTextPrimary(
+                                      context)))),
+                      const Icon(CupertinoIcons.chevron_right,
+                          size: 16, color: WeChatColors.textSecondary),
+                    ])))),
         Row(children: [
           Expanded(
               child: fundingShortcut('充值', CupertinoIcons.arrow_down_circle,
@@ -1834,6 +1888,15 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary)),
         if (pointsError != null) warningBox(pointsError!),
+        if (cnyPricing)
+          CupertinoButton(
+              key: const Key('manual-recharge-history-open'),
+              padding: const EdgeInsets.symmetric(vertical: WeChatSpacing.md),
+              onPressed: ready && !busy
+                  ? () =>
+                      openSection(ManualWalletSection.deposit, recover: true)
+                  : null,
+              child: const Text('查看已有充值申请')),
         const SizedBox(height: 20),
         Row(children: [
           Expanded(
@@ -2201,6 +2264,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   List<Widget> manualRechargeFields() => [
         stepIndicator(const ['填写金额', '客服处理'], rechargeOp?['id'] == null ? 0 : 1,
             keyPrefix: 'manual-deposit-step'),
+        if (!activeBinding && rechargeOp == null)
+          warningBox('请先绑定钱包地址；已有充值申请仍可查看。'),
         if (rechargeError != null) ...[
           warningBox(rechargeError!),
           button('重新加载充值信息', loadRecharges),
@@ -2210,7 +2275,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
               enabled: rechargeOp == null),
           referenceFxCard(),
           button(rechargeOp == null ? '下一步' : '重试同一申请', submitManualRecharge,
-              enabled: ready && capabilitiesKnown && rechargeError == null,
+              enabled: ready &&
+                  capabilitiesKnown &&
+                  rechargeError == null &&
+                  (rechargeOp != null || activeBinding),
               key: 'manual-recharge-submit'),
         ],
         if (rechargeOp?['id'] != null)
@@ -2220,6 +2288,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         if (rechargeOp?['id'] != null &&
             !rechargeHistory.any((row) => row['id'] == rechargeOp?['id']))
           codeRow('待刷新订单', rechargeOp!['id'] as String, 'recharge-pending-id'),
+        for (final request
+            in rechargeHistory.where((row) => row['id'] != rechargeOp?['id']))
+          rechargeOrder(request),
         if (rechargeOp?['id'] != null &&
             rechargeHistory.any((row) =>
                 row['id'] == rechargeOp?['id'] &&
@@ -2229,7 +2300,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             await store.clear('recharge');
             rechargeOp = null;
             amount.clear();
-          }),
+          }, enabled: activeBinding),
       ];
 
   List<Widget> depositFields() => cnyPricing && depositOp == null
