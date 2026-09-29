@@ -67,7 +67,7 @@
 ## Task 4：x86_64 Debug 构建与模拟器覆盖安装
 
 - [ ] **Step 1:** 以 2192 的 `freeze-mobile-input.py`、`build-android-debug.ps1`、`frozen-input-gate.ps1`、`verify_debug_payload_x64.py` 与配套语义门禁为范本，在本任务 C: 证据目录创建新副本；冻结生成器的 `ROOT`/`OUTPUT`、驱动旧 `chat-search-jank` 绝对路径、`0.4.23`/`2192`、输出目录与成功标志都精确改成本任务路径/最终版本。保留 HTTPS 三个 dart-define、性能诊断、x86_64 ABI、Apktool 2.12.1、build-tools 36.0.0、固定签名和完整验证。记录旧/新脚本 SHA，不调用旧脚本，不生成新密钥。
-- [ ] **Step 2:** 本工作树运行 `flutter pub get`；准备本工作树自己的 `apps/mobile_flutter/build` 普通目录。用本任务修改后的 `freeze-mobile-input.py` 生成新清单，覆盖**全部已跟踪** mobile 文件的路径/SHA 和当前 source commit，使用新 `frozen-input-gate.ps1` 回读并确认无未提交 mobile 修改；新文件数以实际提交为准，不能硬编码 1811。确认 P12/DPAPI 文件存在、`R:` 映射准确指本工作树、模拟器旧安装为 2192 且证书一致；新驱动 `-PreflightOnly` 通过后才构建。
+- [ ] **Step 2:** 本工作树运行 `flutter pub get`；准备本工作树自己的 `apps/mobile_flutter/build` 普通目录。用本任务修改后的 `freeze-mobile-input.py` 生成新清单，覆盖**全部已跟踪** mobile 文件的路径/SHA 和当前 source commit，使用新 `frozen-input-gate.ps1` 回读并确认无未提交 mobile 修改；新文件数以实际提交为准，不能硬编码 1811。现有 `R:` 已映射别人的 `chat-search-jank`，不得抢占；先检查 `U:` 空闲，再映射到本工作树并向新驱动传 `-ShortDrive U`，或记录另一个空闲 R–X 盘符。确认 P12/DPAPI 文件存在、模拟器旧安装为 2192 且证书一致；新驱动 `-PreflightOnly` 通过后才构建。
 - [ ] **Step 3:** 从已冻结源码构建 standard x86_64 Debug 源 APK，完成常规 DEX/资源/清单重建、zipalign、固定签名；运行 Debug 载荷、apksigner、aapt、资源/DEX/清单/资产语义门禁。记录最终 `final.apk` SHA/大小、`com.liuhetong.mobile.debug`、版本/build、证书及每步 exit code；原始 Flutter APK 不作为交付品。
 - [ ] **Step 4:** `adb devices -l` 确认 `emulator-5556` 在线；安装前记录旧 2192 包名/版本/firstInstallTime/证书；执行 `adb -s emulator-5556 install -r --no-streaming <本次 final.apk>`，不卸载、清数据或降级。读回新版本、firstInstallTime 未变、进程/窗口和有界 crash/ANR 日志；没有授权测试账号时真实报价交互标记待验收，绝不发起资金申请。
 
