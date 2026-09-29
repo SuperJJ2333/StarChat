@@ -13,7 +13,7 @@ from app.modules.identity.models import User, UserRole, Device, RefreshTokenFami
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.staff_activation import StaffActivation, staff_identity
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder
-from app.modules.wallet.support_payout import SupportPayoutRatePreparation, SupportPayoutState
+from app.modules.wallet.support_payout import SupportPayoutRatePreparation, SupportPayoutRejection, SupportPayoutState
 from app.modules.ledger.reserve import RedeemabilityReserve
 from app.modules.ledger.service import LedgerService
 from app.modules.fx.models import FxRate
@@ -338,6 +338,181 @@ def test_cancel_after_lease_prevents_begin_and_releases_once(scoped):
     assert core[5].balance('alice')==Decimal('1000')
 
 
+def test_staff_reject_releases_original_caibi_conversion_once_and_records_decision(scoped):
+    from app.core.outbox import OutboxEvent
+    from app.modules.audit.models import AuditEvent
+    from app.modules.ledger.models import LedgerTransaction
+    from app.modules.wallet.models import WalletConversion, WalletLedgerTransaction
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    prepare(scoped, order, lease, rate='6.500000', version=0, key='reject-preparation')
+    params = dict(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+        reason_code='PAYOUT_ADDRESS_INVALID', idempotency_key='staff-reject')
+    rejected = service.reject(**params)
+    assert rejected['status'] == 'CANCELLED' and rejected['processing_stage'] == 'REJECTED'
+    assert service.reject(**params) == rejected
+    with pytest.raises(AppError, match='WALLET_IDEMPOTENCY_CONFLICT'):
+        service.reject(**(params | dict(reason_code='PAYOUT_DETAILS_MISMATCH')))
+    assert core[5].balance('HOLD:alice') == Decimal('0')
+    assert core[5].balance('alice') == Decimal('1000')
+    assert LedgerService(core[1]).balance('alice') == Decimal('300.00')
+    with core[1]() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        state = session.get(SupportPayoutState, order['id'])
+        decision = session.scalar(select(SupportPayoutRejection).where(
+            SupportPayoutRejection.order_id == order['id']))
+        conversion = session.scalar(select(WalletConversion).where(
+            WalletConversion.idempotency_key == 'payout:'+order['id']))
+        reversal = session.scalar(select(WalletConversion).where(
+            WalletConversion.idempotency_key == 'reverse:'+conversion.id))
+        released = session.scalar(select(WalletLedgerTransaction).where(
+            WalletLedgerTransaction.scope == 'wallet.manual_release'))
+        original = session.scalar(select(LedgerTransaction).where(
+            LedgerTransaction.scope == 'wallet.conversion'))
+        mirror = session.scalar(select(LedgerTransaction).where(
+            LedgerTransaction.scope == 'wallet.conversion_reversal'))
+        assert (row.status, state.prepared_rate, state.prepared_receive, state.prepared_digest) == (
+            'CANCELLED', None, None, None)
+        assert state.prepared_version == 2
+        assert (decision.actor_id, decision.reason_code) == ('bob', 'PAYOUT_ADDRESS_INVALID')
+        assert (conversion.source_amount, conversion.target_amount) == (Decimal('142.40'), Decimal('20'))
+        assert (reversal.source_amount, reversal.target_amount) == (Decimal('20'), Decimal('142.40'))
+        assert (released.actor_id, released.reason_code) == ('bob', 'MANUAL_PAYOUT_REJECTED')
+        assert (mirror.actor_id, mirror.reason_code, mirror.reversal_of_id) == (
+            'bob', 'MANUAL_PAYOUT_REJECTED', original.id)
+        audit = session.scalar(select(AuditEvent).where(AuditEvent.subject_id == order['id'],
+            AuditEvent.reason_code == 'PAYOUT_ADDRESS_INVALID'))
+        outbox = session.scalar(select(OutboxEvent).where(OutboxEvent.aggregate_id == order['id'],
+            OutboxEvent.event_type == 'wallet.support_payout_rejected'))
+        assert audit.actor_id == 'bob' and outbox.payload['reason_code'] == 'PAYOUT_ADDRESS_INVALID'
+
+
+def test_reject_requires_current_lease_role_reason_and_owner_fresh_proof(scoped):
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='reject-lease')
+    base = dict(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+        reason_code='PAYOUT_POLICY_INELIGIBLE', idempotency_key='reject-invalid')
+    for change in (dict(reason_code='WRONG_REASON'), dict(claim_token='x'*43)):
+        with pytest.raises(AppError):
+            service.reject(**(base | change))
+    with core[1].begin() as session:
+        session.delete(session.get(UserRole, 'bob-finance'))
+    with pytest.raises(AppError):
+        service.reject(**base)
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+
+
+def test_configured_owner_requires_fresh_proof_even_if_finance_support(scoped):
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['owner'], order_id=order['id'], idempotency_key='owner-lease')
+    with core[1].begin() as session:
+        session.add(UserRole(id='owner-finance', user_id='owner', role_code=RoleCode.FINANCE_SUPPORT,
+            assigned_by='owner', assigned_at=core[2][0]))
+    params = dict(claims=claims['owner'], order_id=order['id'], claim_token=lease['claim_token'],
+        reason_code='PAYOUT_DETAILS_MISMATCH', idempotency_key='owner-reject')
+    with pytest.raises(AppError):
+        service.reject(**params)
+    calls = []
+    def owner_authorize(session):
+        calls.append('initial')
+        def final():
+            calls.append('final')
+        return final
+    with core[1].begin() as session:
+        session.delete(session.get(UserRole, 'role'))
+    with pytest.raises(AppError):
+        service.reject(**(params | dict(owner_authorize=owner_authorize)))
+    assert calls == []
+    with core[1].begin() as session:
+        session.add(UserRole(id='owner-super-restored', user_id='owner', role_code=RoleCode.SUPER_ADMIN,
+            assigned_by='owner', assigned_at=core[2][0]))
+    result = service.reject(**(params | dict(owner_authorize=owner_authorize)))
+    assert result['processing_stage'] == 'REJECTED'
+    assert calls == ['initial', 'final']
+    assert service.reject(**params) == result
+
+
+def test_expired_claim_cannot_reject_unstarted_order(scoped):
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='reject-expired-lease')
+    core[2][0] += timedelta(minutes=6)
+    with pytest.raises(AppError, match='SUPPORT_PAYOUT_CLAIM_EXPIRED'):
+        service.reject(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+            reason_code='PAYOUT_ADDRESS_INVALID', idempotency_key='reject-expired')
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+
+
+def test_owner_operation_proof_expiry_rolls_back_rejection(scoped):
+    from app.api.admin_wallet_auth import AdminWalletProofBody
+    from app.core.database import Base
+    from app.modules.identity.operation_password import AdminWalletOperationPasswordService
+    from app.modules.identity.operation_password_models import (
+        AdminOperationAttempt, AdminOperationCommand, AdminOperationCredential)
+    from app.modules.identity.support_order_auth import fresh_owner_proof_authorization
+    core, service, claims = scoped
+    with core[1]() as session:
+        Base.metadata.create_all(session.get_bind(), tables=[AdminOperationAttempt.__table__,
+            AdminOperationCommand.__table__, AdminOperationCredential.__table__], checkfirst=True)
+    password = AdminWalletOperationPasswordService(core[1], owner_id=lambda: 'owner',
+        auth_mode=lambda: 'operation_password', clock=lambda: core[2][0], scope='support-orders')
+    password.set_password(claims=claims['owner'], login_password='correct login password',
+        new_operation_password='operation-password-123', idempotency_key='owner-expiry-setup')
+    order = request(core)
+    lease = service.claim(claims=claims['owner'], order_id=order['id'], idempotency_key='owner-expiry-lease')
+    proof = fresh_owner_proof_authorization(service.settings, core[1], core[0].clock,
+        claims['owner'], AdminWalletProofBody(operation_password='operation-password-123'))
+    core[2][0] += timedelta(seconds=31)
+    with pytest.raises(AppError):
+        service.reject(claims=claims['owner'], order_id=order['id'], claim_token=lease['claim_token'],
+            reason_code='PAYOUT_POLICY_INELIGIBLE', idempotency_key='owner-expired-proof',
+            owner_authorize=proof)
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'REQUESTED'
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+    with core[1]() as session:
+        assert session.scalar(select(SupportPayoutRejection).where(
+            SupportPayoutRejection.order_id == order['id'])) is None
+
+
+def test_reject_denies_started_and_unknown_payment_without_refund(scoped):
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='start-lease')
+    service.begin_payment(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+        expected_digest=order['digest'], idempotency_key='start-before-reject')
+    with pytest.raises(AppError):
+        service.reject(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+            reason_code='PAYOUT_DETAILS_MISMATCH', idempotency_key='reject-started')
+    service.submit_txid(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+        txid='a'*64, idempotency_key='unknown-before-reject')
+    with pytest.raises(AppError):
+        service.reject(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+            reason_code='PAYOUT_DETAILS_MISMATCH', idempotency_key='reject-unknown')
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'UNKNOWN'
+
+
+def test_started_and_unknown_cancel_keep_legacy_code_with_chinese_reason(scoped):
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='cancel-message-lease')
+    service.begin_payment(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+        expected_digest=order['digest'], idempotency_key='cancel-message-begin')
+    with pytest.raises(AppError) as started:
+        core[0].cancel(user_id='alice', order_id=order['id'], idempotency_key='cancel-message-started')
+    assert started.value.code == 'WALLET_PAYOUT_CANNOT_CANCEL'
+    assert '已开始出款' in started.value.message and started.value.message != started.value.code
+    service.submit_txid(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+        txid='a'*64, idempotency_key='cancel-message-txid')
+    with pytest.raises(AppError) as unknown:
+        core[0].cancel(user_id='alice', order_id=order['id'], idempotency_key='cancel-message-unknown')
+    assert unknown.value.code == 'WALLET_PAYOUT_CANNOT_CANCEL'
+    assert '待核对' in unknown.value.message and unknown.value.message != unknown.value.code
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+
+
 def test_timeout_event_is_durable_and_deduplicated_without_balance_mutation(scoped):
     from app.core.outbox import OutboxEvent
     core,svc,claims=scoped
@@ -421,6 +596,103 @@ async def test_scoped_payout_http_contract_and_app_token_rejection(scoped):
             json={'claim_token':token,'expected_digest':order['digest']})
         assert begun.status_code==200,begun.text
         assert begun.json()['instructions']['amount']=='10.000000'
+
+
+@pytest.mark.asyncio
+async def test_reject_http_requires_fixed_reason_key_and_current_owner_operation_proof(scoped):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from app.api.support_payout import create_support_payout_router
+    from app.core.config import Settings
+    from app.core.database import Base
+    from app.core.errors import install_error_handlers
+    from app.modules.identity.operation_password import AdminWalletOperationPasswordService
+    from app.modules.identity.operation_password_models import (
+        AdminOperationAttempt, AdminOperationCommand, AdminOperationCredential)
+    from app.modules.identity.tokens import TokenService
+    core, service, claims = scoped
+    with core[1]() as session:
+        Base.metadata.create_all(session.get_bind(), tables=[AdminOperationAttempt.__table__,
+            AdminOperationCommand.__table__, AdminOperationCredential.__table__], checkfirst=True)
+    password = AdminWalletOperationPasswordService(core[1], owner_id=lambda: 'owner',
+        auth_mode=lambda: 'operation_password', clock=lambda: core[2][0], scope='support-orders')
+    password.set_password(claims=claims['owner'], login_password='correct login password',
+        new_operation_password='operation-password-123', idempotency_key='owner-password-setup')
+    settings = Settings(_env_file=None, environment='test',
+        jwt_secret='test-jwt-secret-at-least-thirty-two-bytes').model_copy(update=vars(service.settings))
+    tokens = TokenService(core[1], jwt_secret=settings.jwt_secret,
+        jwt_issuer=settings.jwt_issuer, now_factory=lambda: core[2][0])
+    owner_pair = tokens.issue_admin_pair(user_id='owner', display_name='Browser')
+    order = request(core)
+    lease = service.claim(claims=tokens.decode_access_token(owner_pair.access_token),
+        order_id=order['id'], idempotency_key='api-owner-lease')
+    app = FastAPI(); install_error_handlers(app)
+    app.include_router(create_support_payout_router(settings, core[1], runtime=SimpleNamespace(
+        payouts=core[0], payout_execution_enabled=True)), prefix='/api/v1')
+    path = '/api/v1/admin/support-orders/payouts/'+order['id']+'/reject'
+    headers = {'Authorization': 'Bearer '+owner_pair.access_token, 'Idempotency-Key': 'api-owner-reject'}
+    body = {'claim_token': lease['claim_token'], 'reason_code': 'PAYOUT_ADDRESS_INVALID'}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test') as client:
+        assert (await client.post(path, headers={'Authorization': headers['Authorization']}, json=body)).status_code == 422
+        assert (await client.post(path, headers=headers, json=body | {'reason_code': 'OTHER'})).status_code == 422
+        missing = await client.post(path, headers=headers, json=body)
+        assert missing.status_code == 403, missing.text
+        wrong_mode = await client.post(path, headers=headers,
+            json=body | {'proof': {'mfa_proof': '123456'}})
+        assert wrong_mode.status_code == 403, wrong_mode.text
+        rejected = await client.post(path, headers=headers,
+            json=body | {'proof': {'operation_password': 'operation-password-123'}})
+        assert rejected.status_code == 200, rejected.text
+        assert rejected.json()['processing_stage'] == 'REJECTED'
+        replay = await client.post(path, headers=headers, json=body)
+        assert replay.status_code == 200 and replay.json() == rejected.json()
+
+
+@pytest.mark.asyncio
+async def test_reject_http_totp_owner_and_staff_use_selected_proof_boundary(scoped):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from app.api.support_payout import create_support_payout_router
+    from app.core.config import Settings
+    from app.core.errors import install_error_handlers
+    from app.modules.identity.tokens import TokenService
+    core, service, claims = scoped
+    service.settings.wallet_admin_auth_mode = 'totp'
+    settings = Settings(_env_file=None, environment='test',
+        jwt_secret='test-jwt-secret-at-least-thirty-two-bytes').model_copy(update=vars(service.settings))
+    tokens = TokenService(core[1], jwt_secret=settings.jwt_secret,
+        jwt_issuer=settings.jwt_issuer, now_factory=lambda: core[2][0])
+    owner_pair = tokens.issue_admin_pair(user_id='owner', display_name='Browser')
+    bob_pair = tokens.issue_admin_pair(user_id='bob', display_name='Browser')
+    owner_order = request(core, quote(core, idempotency_key='totp-owner-quote'),
+        idempotency_key='totp-owner-request')
+    staff_order = request(core, quote(core, idempotency_key='totp-staff-quote'),
+        idempotency_key='totp-staff-request')
+    owner_lease = service.claim(claims=tokens.decode_access_token(owner_pair.access_token),
+        order_id=owner_order['id'], idempotency_key='totp-owner-lease')
+    staff_lease = service.claim(claims=tokens.decode_access_token(bob_pair.access_token),
+        order_id=staff_order['id'], idempotency_key='totp-staff-lease')
+    app = FastAPI(); install_error_handlers(app)
+    app.include_router(create_support_payout_router(settings, core[1], runtime=SimpleNamespace(
+        payouts=core[0], payout_execution_enabled=True)), prefix='/api/v1')
+    path = '/api/v1/admin/support-orders/payouts/'
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test') as client:
+        owner_headers = {'Authorization': 'Bearer '+owner_pair.access_token, 'Idempotency-Key': 'totp-owner-reject'}
+        owner_body = {'claim_token': owner_lease['claim_token'], 'reason_code': 'PAYOUT_DETAILS_MISMATCH'}
+        wrong = await client.post(path+owner_order['id']+'/reject', headers=owner_headers,
+            json=owner_body | {'proof': {'operation_password': 'operation-password-123'}})
+        assert wrong.status_code == 403, wrong.text
+        owner_rejected = await client.post(path+owner_order['id']+'/reject', headers=owner_headers,
+            json=owner_body | {'proof': {'mfa_proof': '123456'}})
+        assert owner_rejected.status_code == 200 and owner_rejected.json()['processing_stage'] == 'REJECTED'
+        staff_headers = {'Authorization': 'Bearer '+bob_pair.access_token, 'Idempotency-Key': 'totp-staff-reject'}
+        staff_body = {'claim_token': staff_lease['claim_token'], 'reason_code': 'PAYOUT_POLICY_INELIGIBLE'}
+        staff_proof = await client.post(path+staff_order['id']+'/reject', headers=staff_headers,
+            json=staff_body | {'proof': {'mfa_proof': '123456'}})
+        assert staff_proof.status_code == 403, staff_proof.text
+        staff_rejected = await client.post(path+staff_order['id']+'/reject', headers=staff_headers,
+            json=staff_body)
+        assert staff_rejected.status_code == 200 and staff_rejected.json()['processing_stage'] == 'REJECTED'
 
 
 @pytest.mark.parametrize('change', ['disabled', 'unactivated', 'role', 'contact',

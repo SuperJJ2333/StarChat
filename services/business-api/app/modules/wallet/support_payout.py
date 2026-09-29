@@ -1,6 +1,7 @@
 """Support-order coordination over the existing payout financial engine."""
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from uuid import uuid4
 import secrets
 import re
 
@@ -9,6 +10,9 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.database import Base
 from app.core.errors import AppError
+from app.core.outbox import OutboxPublisher
+from app.modules.identity.enums import RoleCode
+from app.modules.identity.models import UserRole
 from app.modules.identity.support_order_auth import SupportOrderSessionAuthorizer
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder, ManualPayoutQuote
 from app.modules.wallet.safety import audit_write
@@ -95,7 +99,9 @@ def support_payout_projection(session, row, now, actor=None):
     if row.status == 'SETTLED':
         stage = 'COMPLETED'
     elif row.status == 'CANCELLED':
-        stage = 'CANCELLED'
+        rejected = session.scalar(select(SupportPayoutRejection.id).where(
+            SupportPayoutRejection.order_id == row.id)) is not None
+        stage = 'REJECTED' if rejected else 'CANCELLED'
     elif row.status == 'UNKNOWN' or (not state.review_authorized_at and (state.review_required or now >= utc(state.expires_at))):
         stage = 'NEEDS_REVIEW'
     elif state.review_authorized_at and not state.execution_started_at:
@@ -113,7 +119,7 @@ def support_payout_projection(session, row, now, actor=None):
         prepared_rate=format(state.prepared_rate, '.6f') if state.prepared_rate is not None else None,
         prepared_receive=format(state.prepared_receive, '.6f') if state.prepared_receive is not None else None,
         prepared_digest=state.prepared_digest,prepared_version=state.prepared_version,
-        **({'claim_token':state.claim_token} if actor and state.claimed_by==actor else {}))
+        **({'claim_token':state.claim_token} if actor and state.claimed_by==actor and row.status not in ('CANCELLED','SETTLED') else {}))
 
 
 def expire_support_payout_orders(factory, *, now, limit=100):
@@ -297,6 +303,86 @@ class SupportPayoutService:
             idempotency_key=idempotency_key,
             authorize=_PayoutAuthorization(self,claims,order_id,claim_token,prepare=True))
         return self.detail(claims=claims,order_id=order_id)
+
+    def _rejection_receipt(self, session, *, state, actor_id, order_id, claim_token,
+                           reason_code, idempotency_key):
+        payload = {'order_id': order_id, 'claim_token': claim_token, 'reason_code': reason_code}
+        replay = self.payout._replay(session, actor_id, 'SUPPORT_REJECT', idempotency_key, payload)
+        if replay:
+            decision = session.scalar(select(SupportPayoutRejection).where(
+                SupportPayoutRejection.order_id == order_id))
+            if (decision is None or decision.actor_id != actor_id or decision.reason_code != reason_code
+                    or state.claimed_by != actor_id or not claim_token
+                    or not secrets.compare_digest(state.claim_token or '', claim_token)):
+                fail('SUPPORT_PAYOUT_CLAIM_REQUIRED', 403)
+        return replay, payload
+
+    def rejection_receipt(self, *, claims, order_id, claim_token, reason_code, idempotency_key):
+        """Read an exact committed rejection before a retry consumes owner proof."""
+        with self.factory.begin() as session:
+            row, _ = self.payout._order_lock(session, order_id)
+            state = self._state(session, row)
+            fresh = self.order_access.authorization(claims=claims)(session)
+            actor_id = claims['sub']
+            if actor_id == self.settings.wallet_manual_owner_admin_id:
+                roles = set(session.scalars(select(UserRole.role_code).where(
+                    UserRole.user_id == actor_id).with_for_update()))
+                if RoleCode.SUPER_ADMIN not in roles:
+                    fail('PERMISSION_DENIED', 403)
+            replay, _ = self._rejection_receipt(session, state=state, actor_id=actor_id,
+                order_id=order_id, claim_token=claim_token, reason_code=reason_code,
+                idempotency_key=idempotency_key)
+            fresh()
+            return replay
+
+    def reject(self, *, claims, order_id, claim_token, reason_code, idempotency_key,
+               owner_authorize=None):
+        if reason_code not in {'PAYOUT_ADDRESS_INVALID', 'PAYOUT_DETAILS_MISMATCH',
+                'PAYOUT_POLICY_INELIGIBLE'}:
+            fail('SUPPORT_PAYOUT_REJECTION_REASON_INVALID', 422)
+        with self.factory.begin() as session:
+            row, _ = self.payout._order_lock(session, order_id)
+            state = self._state(session, row)
+            fresh = self.order_access.authorization(claims=claims)(session)
+            actor_id = claims['sub']
+            owner_id = self.settings.wallet_manual_owner_admin_id
+            if actor_id == owner_id:
+                roles = set(session.scalars(select(UserRole.role_code).where(
+                    UserRole.user_id == actor_id).with_for_update()))
+                if RoleCode.SUPER_ADMIN not in roles:
+                    fail('PERMISSION_DENIED', 403)
+            elif owner_authorize is not None:
+                fail('SUPPORT_OWNER_PROOF_NOT_ALLOWED', 403)
+            replay, payload = self._rejection_receipt(session, state=state, actor_id=actor_id,
+                order_id=order_id, claim_token=claim_token, reason_code=reason_code,
+                idempotency_key=idempotency_key)
+            if replay:
+                fresh()
+                return replay
+            owner_fresh = None
+            if actor_id == owner_id:
+                if owner_authorize is None:
+                    fail('SUPPORT_OWNER_PROOF_REQUIRED', 403)
+                owner_fresh = owner_authorize(session)
+            self._held(state, claims, claim_token)
+            if row.status != 'REQUESTED' or state.execution_started_at is not None or row.candidate_txid:
+                fail('SUPPORT_PAYOUT_ALREADY_STARTED')
+            now = self.payout._now()
+            self.payout.release_unstarted_order(session=session, row=row, actor_id=actor_id,
+                reason_code='MANUAL_PAYOUT_REJECTED', now=now)
+            session.add(SupportPayoutRejection(id=str(uuid4()), order_id=order_id,
+                actor_id=actor_id, reason_code=reason_code, created_at=now))
+            session.flush()
+            result = self._view(session, row, actor_id)
+            self.payout._record(session, actor_id, 'SUPPORT_REJECT', idempotency_key,
+                payload, result, now, reason_code=reason_code)
+            OutboxPublisher.enqueue(session, topic='wallet', event_type='wallet.support_payout_rejected',
+                aggregate_type='manual_payout_order', aggregate_id=order_id,
+                payload={'order_id': order_id, 'actor_id': actor_id, 'reason_code': reason_code}, now=now)
+            fresh()
+            if owner_fresh is not None:
+                owner_fresh()
+            return result
 
     def submit_txid(self, *, claims, order_id, claim_token, txid, idempotency_key):
         self.payout.submit_txid(admin_id=claims['sub'],order_id=order_id,txid=txid,idempotency_key=idempotency_key,

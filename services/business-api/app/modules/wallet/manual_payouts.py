@@ -36,6 +36,18 @@ def _fail(code, status=409):
     raise AppError(code=code, message=code, status_code=status)
 
 
+def _cannot_cancel(row, *, has_payment_evidence=False):
+    if row.status == 'SETTLED':
+        message = '提现已完成，不能取消或退款'
+    elif row.status == 'CANCELLED':
+        message = '提现已终止，不能重复取消或退款'
+    elif row.status == 'UNKNOWN' or has_payment_evidence:
+        message = '付款结果待核对，暂不能取消或退款'
+    else:
+        message = '提现已开始出款，不能取消或退款'
+    raise AppError(code='WALLET_PAYOUT_CANNOT_CANCEL', message=message, status_code=409)
+
+
 def _utc(value):
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
@@ -582,14 +594,14 @@ class ManualPayoutService:
             raise ValueError('invalid payout release actor or reason')
         locked_row, _ = self._order_lock(session, row.id)
         if locked_row is not row or row.status != 'REQUESTED' or row.candidate_txid is not None:
-            _fail('WALLET_PAYOUT_CANNOT_CANCEL')
+            _cannot_cancel(row, has_payment_evidence=row.candidate_txid is not None)
         support_state = session.get(SupportPayoutState, row.id, with_for_update=True)
-        if (support_state is not None and support_state.execution_started_at is not None) or (
-                session.scalar(select(ManualPayoutCandidate.id).where(
-                    ManualPayoutCandidate.order_id == row.id).limit(1)) is not None) or (
-                session.scalar(select(ManualPayoutEvent.id).where(
-                    ManualPayoutEvent.order_id == row.id).limit(1)) is not None):
-            _fail('WALLET_PAYOUT_CANNOT_CANCEL')
+        has_payment_evidence = (session.scalar(select(ManualPayoutCandidate.id).where(
+            ManualPayoutCandidate.order_id == row.id).limit(1)) is not None or
+            session.scalar(select(ManualPayoutEvent.id).where(
+                ManualPayoutEvent.order_id == row.id).limit(1)) is not None)
+        if (support_state is not None and support_state.execution_started_at is not None) or has_payment_evidence:
+            _cannot_cancel(row, has_payment_evidence=has_payment_evidence)
         user_id = row.user_id
         self.wallet_ledger.post(entries={'HOLD:'+user_id: -row.amount, user_id: row.amount},
             actor_id=actor_id, reason_code=reason_code, idempotency_key=row.id,

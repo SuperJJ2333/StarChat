@@ -1,8 +1,10 @@
 """Management-session support payout queue; all financial proof is scope-bound."""
-from typing import Annotated
+from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
+from app.api.admin_wallet_auth import AdminWalletProofBody
 from app.core.errors import AppError
+from app.modules.identity.support_order_auth import fresh_owner_proof_authorization
 from app.modules.identity.tokens import TokenService
 from app.modules.wallet.support_payout import SupportPayoutService
 
@@ -24,6 +26,12 @@ class RateBody(LeaseBody):
     new_rate: str=Field(pattern=r'^(0|[1-9][0-9]{0,3})(\.[0-9]{1,6})?$')
     reason_code: str=Field(min_length=3,max_length=100)
     expected_preparation_version: int|None=Field(default=None,ge=0,strict=True)
+
+
+class RejectBody(LeaseBody):
+    reason_code: Literal['PAYOUT_ADDRESS_INVALID', 'PAYOUT_DETAILS_MISMATCH',
+        'PAYOUT_POLICY_INELIGIBLE']
+    proof: AdminWalletProofBody|None=Field(default=None,repr=False)
 
 
 class TxidBody(LeaseBody):
@@ -75,6 +83,22 @@ def create_support_payout_router(settings,factory,*,runtime=None):
     @router.post('/{order_id}/adjust-rate')
     def adjust(order_id:str,body:RateBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key',min_length=1,max_length=128)],claims=Depends(actor)):
         return service(execution=True).adjust_rate(claims=claims,order_id=order_id,idempotency_key=idempotency_key,**body.model_dump())
+    @router.post('/{order_id}/reject')
+    def reject(order_id:str,body:RejectBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key',min_length=1,max_length=128)],claims=Depends(actor)):
+        payout_service=service(execution=True)
+        owner_authorize=None
+        if claims['sub']==settings.wallet_manual_owner_admin_id:
+            receipt=payout_service.rejection_receipt(claims=claims,order_id=order_id,
+                claim_token=body.claim_token,reason_code=body.reason_code,idempotency_key=idempotency_key)
+            if receipt is not None:
+                return receipt
+            owner_authorize=fresh_owner_proof_authorization(settings,factory,runtime.payouts.clock,
+                claims,body.proof,mfa_verifier=runtime.payouts.mfa_verifier)
+        elif body.proof is not None:
+            raise AppError(code='SUPPORT_OWNER_PROOF_NOT_ALLOWED',message='仅官方钱包所有者管理员可使用此证明',status_code=403)
+        return payout_service.reject(claims=claims,order_id=order_id,claim_token=body.claim_token,
+            reason_code=body.reason_code,idempotency_key=idempotency_key,
+            owner_authorize=owner_authorize)
     @router.post('/{order_id}/txid')
     def txid(order_id:str,body:TxidBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key',min_length=1,max_length=128)],claims=Depends(actor)):
         return service().submit_txid(claims=claims,order_id=order_id,idempotency_key=idempotency_key,**body.model_dump())

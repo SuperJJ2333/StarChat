@@ -381,11 +381,14 @@ def _begin_or_cancel_worker(raw_url, now_text, official, claims, order_id, token
             result = service.begin_payment(claims=claims, order_id=order_id, claim_token=token,
                 expected_digest=digest, expected_preparation_version=version,
                 idempotency_key='race-begin-'+str(version))
+        elif operation == 'reject':
+            result = service.reject(claims=claims, order_id=order_id, claim_token=token,
+                reason_code='PAYOUT_ADDRESS_INVALID', idempotency_key='race-reject')
         else:
             result = payout.cancel(user_id='alice', order_id=order_id, idempotency_key='race-cancel')
-        return {'status': result['status'], 'pid': os.getpid()}
+        return {'status': result['status'], 'operation': operation, 'pid': os.getpid()}
     except AppError as error:
-        return {'error': error.code, 'pid': os.getpid()}
+        return {'error': error.code, 'operation': operation, 'pid': os.getpid()}
     finally:
         engine.dispose()
 
@@ -407,12 +410,42 @@ def test_independent_cancel_and_begin_have_one_financial_winner(scoped):
                 for operation in ('begin', 'cancel')]
             results = [future.result(timeout=60) for future in futures]
     assert len({result['pid'] for result in results}) == 2
-    assert len([result for result in results if 'status' in result]) == 1, results
+    winners = [result for result in results if 'status' in result]
+    assert len(winners) == 1, results
     with core[1]() as session:
         row = session.get(ManualPayoutOrder, order['id'])
         state = session.get(SupportPayoutState, order['id'])
         assert row.status in {'CLAIMED', 'CANCELLED'}
         assert (state.execution_started_at is not None) == (row.status == 'CLAIMED')
+    assert core[5].balance('HOLD:alice') == (Decimal('10') if row.status == 'CLAIMED' else Decimal('0'))
+
+
+def test_independent_cancel_reject_begin_have_one_financial_winner(scoped):
+    from app.modules.wallet.manual_payout_models import ManualPayoutOrder
+    from app.modules.wallet.support_payout import SupportPayoutRejection, SupportPayoutState
+    from test_manual_payouts import request
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='three-way-lease')
+    context = multiprocessing.get_context('spawn')
+    with context.Manager() as manager:
+        barrier = manager.Barrier(3)
+        with ProcessPoolExecutor(max_workers=3, mp_context=context) as executor:
+            futures = [executor.submit(_begin_or_cancel_worker, core[0].pg_test_url, core[2][0].isoformat(),
+                core[4], claims['bob'], order['id'], lease['claim_token'], order['digest'], None,
+                operation, barrier) for operation in ('begin', 'cancel', 'reject')]
+            results = [future.result(timeout=60) for future in futures]
+    assert len({result['pid'] for result in results}) == 3
+    winners = [result for result in results if 'status' in result]
+    assert len(winners) == 1, results
+    with core[1]() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        state = session.get(SupportPayoutState, order['id'])
+        rejection = session.scalar(select(SupportPayoutRejection).where(
+            SupportPayoutRejection.order_id == order['id']))
+        assert row.status in {'CLAIMED', 'CANCELLED'}
+        assert (state.execution_started_at is not None) == (row.status == 'CLAIMED')
+        assert (rejection is not None) == (winners[0]['operation'] == 'reject')
     assert core[5].balance('HOLD:alice') == (Decimal('10') if row.status == 'CLAIMED' else Decimal('0'))
 
 
