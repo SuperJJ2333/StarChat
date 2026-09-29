@@ -125,6 +125,7 @@ class SupportOrderWorkflow:
             token = secrets.token_urlsafe(32)
             row.claimed_by, row.claim_token_hash = actor_id, hashlib.sha256(token.encode()).hexdigest()
             row.claim_expires_at = now + timedelta(minutes=5)
+            row.claim_version = (row.claim_version or 0) + 1
             if review:
                 row.review_authorized_at = now
                 row.processing_stage = 'REVIEWING'

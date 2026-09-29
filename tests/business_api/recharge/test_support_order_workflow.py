@@ -42,6 +42,23 @@ def test_claim_excludes_other_staff_and_stale_token_after_lease(flow):
         service.heartbeat_order(request_id=order['id'],actor_id='cs1',claim_token=first['claim_token'])
     assert err.value.code=='RECHARGE_CLAIM_LOST'
 
+
+def test_recharge_claim_version_advances_only_when_lease_changes(flow):
+    service,clock,factory=flow; order=submit(service)
+    assert order['claim_version']==0
+    first=service.claim_order(request_id=order['id'],actor_id='cs1',idempotency_key='claim-1')
+    assert first['claim_version']==1
+    replay=service.claim_order(request_id=order['id'],actor_id='cs1',idempotency_key='claim-1')
+    assert replay['claim_version']==1
+    service.heartbeat_order(request_id=order['id'],actor_id='cs1',claim_token=first['claim_token'])
+    assert service.admin_requests(status='SUBMITTED')['items'][0]['claim_version']==1
+    clock[0]+=timedelta(minutes=6)
+    second=service.claim_order(request_id=order['id'],actor_id='cs2',idempotency_key='claim-2')
+    assert second['claim_version']==2
+    with factory() as session:
+        from app.modules.recharge.models import RechargeRequest
+        assert session.get(RechargeRequest,order['id']).claim_version==2
+
 def test_unverified_order_cannot_bind_and_deadline_becomes_review(flow):
     service,clock,_=flow;order=submit(service)
     assert order['expires_at'] and order['official_payment']['address']=='official-test-address'

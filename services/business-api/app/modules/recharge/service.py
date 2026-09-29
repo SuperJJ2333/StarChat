@@ -747,6 +747,7 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
             "processing_stage": self._processing_stage(row),
             "official_payment": row.official_payment,
             "claimed_by": row.claimed_by,
+            "claim_version": row.claim_version,
             "claim_expires_at": row.claim_expires_at.isoformat() if row.claim_expires_at else None,
             "payment_verified": row.receipt_id is not None and row.payment_verified_at is not None,
             "actual_received_usdt": str(row.actual_received_usdt) if row.actual_received_usdt is not None else None,
