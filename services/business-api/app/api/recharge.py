@@ -170,7 +170,8 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
                 scope: Literal['all', 'mine'] = 'all', actor_id: str = Depends(actor)):
         require_finance(actor_id)
         return recharge_service.pending_page(cursor=cursor, limit=limit,
-            claimed_by=actor_id if scope == 'mine' else None)
+            claimed_by=actor_id if scope == 'mine' else None,
+            actor_id=actor_id, owner_id=settings.wallet_manual_owner_admin_id)
 
     @router.get('/admin/events', dependencies=[Depends(command_authorization)])
     def events(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):
@@ -211,7 +212,8 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
     def admin_requests(status: str | None = None, cursor: str | None = None,
                        limit: int = 50, actor_id: str = Depends(actor)):
         require_finance(actor_id)
-        return recharge_service.admin_requests(status=status, cursor=cursor, limit=limit)
+        return recharge_service.admin_requests(status=status, cursor=cursor, limit=limit,
+            actor_id=actor_id, owner_id=settings.wallet_manual_owner_admin_id)
 
     @router.get("/admin/review-queue", dependencies=[Depends(command_authorization)])
     def review_queue(cursor: str | None = None, limit: int = 50, actor_id: str = Depends(actor)):

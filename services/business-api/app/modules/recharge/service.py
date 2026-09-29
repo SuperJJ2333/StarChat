@@ -22,8 +22,10 @@ from app.modules.audit.models import AuditEvent
 from app.modules.ledger.adjustment_models import AdjustmentRequest
 from app.modules.ledger.models import LedgerEntry, LedgerTransaction
 from app.modules.recharge.models import CsDirectoryEntry, RechargeCreditBinding, RechargeRequest
+from app.modules.identity.enums import RoleCode
+from app.modules.identity.models import UserRole
 
-from app.modules.recharge.workflow import SupportOrderWorkflow
+from app.modules.recharge.workflow import SupportOrderWorkflow, utc
 from app.modules.recharge.matching import AutomaticRechargeMatching
 
 RECHARGE_RULES_VERSION = "recharge-manual-v1"
@@ -164,9 +166,9 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
             return [self._view(row) for row in rows]
 
     # ------------------------------------------------------------------ 客服/管理
-    def pending_page(self, *, cursor=None, limit=50, claimed_by=None):
+    def pending_page(self, *, cursor=None, limit=50, claimed_by=None, actor_id=None, owner_id=None):
         return self.admin_requests(status='SUBMITTED', cursor=cursor, limit=limit,
-            claimed_by=claimed_by)
+            claimed_by=claimed_by, actor_id=actor_id, owner_id=owner_id)
 
     def list_pending(self, *, limit=50):
         with self.factory() as session:
@@ -592,7 +594,8 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
             next_cursor = page[-1].created_at.isoformat() + '|' + page[-1].id if len(rows) > limit else None
             return {'items': items, 'next_cursor': next_cursor}
 
-    def admin_requests(self, *, status=None, cursor=None, limit: int = 50, claimed_by=None) -> dict:
+    def admin_requests(self, *, status=None, cursor=None, limit: int = 50, claimed_by=None,
+                       actor_id=None, owner_id=None) -> dict:
         """Stable case pagination with current or most recent historical binding."""
         limit = max(1, min(int(limit), 100))
         with self.factory() as session:
@@ -616,14 +619,32 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
                     case((RechargeCreditBinding.state_active == '1', 0), else_=1),
                     RechargeCreditBinding.created_at.desc(), RechargeCreditBinding.id.desc())):
                 bindings.setdefault(binding.request_id, binding)
+            owner_eligible = bool(actor_id and owner_id and actor_id == owner_id and session.scalar(
+                select(UserRole.id).where(UserRole.user_id == actor_id,
+                    UserRole.role_code == RoleCode.SUPER_ADMIN)))
             next_cursor = page[-1].created_at.isoformat() + '|' + page[-1].id if len(rows) > limit else None
             return {'items': [{**self._view(row),
                 'user_display_name': profiles[row.user_id].nickname if row.user_id in profiles else None,
                 'user_chat_id': profiles[row.user_id].username if row.user_id in profiles else None,
                 **self._settlement_projection(session, bindings.get(row.id)),
+                **self._claim_capabilities(row, bindings.get(row.id), actor_id=actor_id,
+                    owner_eligible=owner_eligible),
                 'binding_state': bindings[row.id].state if row.id in bindings else None,
                 'binding_id': bindings[row.id].id if row.id in bindings else None} for row in page],
                 'next_cursor': next_cursor}
+
+    def _claim_capabilities(self, row, binding, *, actor_id, owner_eligible):
+        active = bool(row.claimed_by and row.claim_expires_at and
+            utc(row.claim_expires_at) > self._utcnow())
+        blocked = bool(row.evidence_txid or row.receipt_id or
+            (binding and binding.state_active == '1'))
+        pending = row.status == 'SUBMITTED' and row.expires_at is not None
+        reviewing = self._processing_stage(row) == 'NEEDS_REVIEW'
+        return {'can_claim': bool(actor_id and pending and not active and not blocked and not reviewing),
+            'can_process': bool(actor_id and pending and active and row.claimed_by == actor_id),
+            'can_takeover': bool(owner_eligible and pending and active and row.claimed_by != actor_id
+                and not blocked),
+            'takeover_review_required': bool(pending and blocked)}
 
     @staticmethod
     def _settlement_projection(session, binding):

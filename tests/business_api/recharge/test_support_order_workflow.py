@@ -59,6 +59,42 @@ def test_recharge_claim_version_advances_only_when_lease_changes(flow):
         from app.modules.recharge.models import RechargeRequest
         assert session.get(RechargeRequest,order['id']).claim_version==2
 
+
+def test_recharge_list_capabilities_follow_current_actor_and_configured_owner(flow):
+    from uuid import uuid4
+    from app.modules.identity.enums import RoleCode
+    from app.modules.identity.models import UserRole
+    service,_,factory=flow; order=submit(service)
+    with factory.begin() as session:
+        session.add(User(id='owner',username='owner',username_normalized='owner',
+            password_hash='unused',status=AccountStatus.ACTIVE,
+            created_at=service._utcnow(),updated_at=service._utcnow()))
+        session.add(UserRole(id=str(uuid4()),user_id='owner',role_code=RoleCode.SUPER_ADMIN,
+            assigned_by='owner',assigned_at=service._utcnow()))
+        session.add(UserRole(id=str(uuid4()),user_id='cs2',role_code=RoleCode.SUPER_ADMIN,
+            assigned_by='owner',assigned_at=service._utcnow()))
+
+    def view(actor):
+        return service.pending_page(actor_id=actor,owner_id='owner')['items'][0]
+
+    assert view('cs2')['can_claim'] is True
+    first=service.claim_order(request_id=order['id'],actor_id='cs1',idempotency_key='owned')
+    other=view('cs2')
+    assert other['claimed_by']=='cs1'
+    assert other['can_claim'] is False and other['can_takeover'] is False
+    assert other['can_process'] is False and other['takeover_review_required'] is False
+    assert view('cs1')['can_process'] is True
+    assert view('owner')['can_takeover'] is True
+
+    with factory.begin() as session:
+        session.query(UserRole).filter_by(user_id='owner').delete()
+    assert view('owner')['can_takeover'] is False
+
+    service.submit_evidence(request_id=order['id'],user_id='alice',txid='a'*64,idempotency_key='evidence')
+    assert view('cs2')['can_claim'] is False
+    assert view('cs2')['takeover_review_required'] is True
+    service.heartbeat_order(request_id=order['id'],actor_id='cs1',claim_token=first['claim_token'])
+
 def test_unverified_order_cannot_bind_and_deadline_becomes_review(flow):
     service,clock,_=flow;order=submit(service)
     assert order['expires_at'] and order['official_payment']['address']=='official-test-address'
