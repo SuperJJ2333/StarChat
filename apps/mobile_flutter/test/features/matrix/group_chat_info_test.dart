@@ -5,7 +5,13 @@ import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/group_qr_code_page.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
+import 'package:liuhetong_mobile/ui/components/wechat_toast.dart';
+import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
+
+import 'profile_repository_test.dart' show MemoryProfileStore;
 
 final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   @override
@@ -203,6 +209,115 @@ void main() {
     expect(find.text('转让状态暂未获取，请重试'), findsNothing);
     expect(find.byKey(const Key('group-transfer-status')), findsNothing);
   });
+  testWidgets('owner transfer picker searches nickname, pinyin and username',
+      (tester) async {
+    final gateway = _OwnerGroupInfoGateway();
+    gateway.snapshot = gateway.snapshot.copyWith(members: const [
+      GroupChatMember(matrixUserId: '@member0:example.test', displayName: '张三'),
+      GroupChatMember(matrixUserId: '@member1:example.test', displayName: '李四'),
+      GroupChatMember(matrixUserId: '@member2:example.test', displayName: '王五'),
+    ]);
+    final identity = ProfileRepository.forTesting(
+        accountKey: 'transfer-search', store: MemoryProfileStore());
+    addTearDown(identity.dispose);
+    identity.contactsByMatrixId = const {
+      '@member1:example.test': ContactDetails(
+        userId: 'member1',
+        username: 'member1',
+        matrixUserId: '@member1:example.test',
+        nickname: '李四',
+        remark: '项目李四',
+      ),
+      '@member2:example.test': ContactDetails(
+        userId: 'member2',
+        username: 'star_123',
+        matrixUserId: '@member2:example.test',
+        nickname: '昵称小王',
+      ),
+    };
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+    await tester.pumpWidget(CupertinoApp(
+        home: GroupManagementPage(
+            controller: controller, identityCache: identity)));
+    await tester.tap(find.text('群主管理权转让'));
+    await tester.pumpAndSettle();
+
+    final search = find.byKey(const Key('group-role-search'));
+    expect(search, findsOneWidget);
+    final firstRow = find.ancestor(
+        of: find.text('张三'), matching: find.byType(WeChatListTile));
+    expect(tester.widget<WeChatListTile>(firstRow).leadingSize,
+        WeChatDimensions.contactAvatar);
+    final avatar =
+        find.descendant(of: firstRow, matching: find.byType(UserAvatar));
+    expect(
+        tester.widget<UserAvatar>(avatar).size, WeChatDimensions.contactAvatar);
+
+    await tester.enterText(search, 'zhangsan');
+    await tester.pump();
+    expect(find.text('张三'), findsOneWidget);
+    expect(find.text('李四'), findsNothing);
+    await tester.enterText(search, 'zs');
+    await tester.pump();
+    expect(find.text('张三'), findsOneWidget);
+    await tester.enterText(search, '昵称小王');
+    await tester.pump();
+    expect(
+        find.ancestor(
+            of: find.text('昵称小王'), matching: find.byType(WeChatListTile)),
+        findsOneWidget);
+    await tester.enterText(search, '项目李四');
+    await tester.pump();
+    expect(
+        find.ancestor(
+            of: find.text('项目李四'), matching: find.byType(WeChatListTile)),
+        findsOneWidget);
+    await tester.enterText(search, 'star_123');
+    await tester.pump();
+    expect(find.text('昵称小王'), findsOneWidget);
+    expect(find.text('张三'), findsNothing);
+  });
+
+  testWidgets('transfer selection survives filtering and excludes nonjoined',
+      (tester) async {
+    final gateway = _OwnerGroupInfoGateway();
+    gateway.snapshot = gateway.snapshot.copyWith(members: [
+      ...gateway.snapshot.members,
+      const GroupChatMember(
+          matrixUserId: '@owner:example.test', displayName: '群主'),
+      const GroupChatMember(
+          matrixUserId: '@invited:example.test',
+          displayName: '受邀成员',
+          membership: GroupMemberMembership.invited),
+    ]);
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupManagementPage(controller: controller)));
+    await tester.tap(find.text('群主管理权转让'));
+    await tester.pumpAndSettle();
+    expect(find.text('群主'), findsNothing);
+    expect(find.text('受邀成员'), findsNothing);
+
+    await tester.tap(find.text('成员0'));
+    await tester.pump();
+    final search = find.byKey(const Key('group-role-search'));
+    await tester.enterText(search, 'member1');
+    await tester.pump();
+    expect(find.text('成员0'), findsNothing);
+    expect(find.text('成员1'), findsOneWidget);
+    await tester.enterText(search, '');
+    await tester.pump();
+    final selectedRow = find.ancestor(
+        of: find.text('成员0'), matching: find.byType(WeChatListTile));
+    expect(
+      find.descendant(
+          of: selectedRow,
+          matching: find.byIcon(CupertinoIcons.check_mark_circled_solid)),
+      findsOneWidget,
+    );
+  });
   test('legacy unsupported transfer timeline retains received Matrix ownership',
       () async {
     final gateway = _OwnerGroupInfoGateway();
@@ -286,21 +401,36 @@ void main() {
   testWidgets(
       'transfer keeps neutral status on member picker and refreshes completion',
       (tester) async {
+    tester.view.physicalSize = const Size(393, 1300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final gateway = _OwnerGroupInfoGateway();
     var submitted = false;
-    final controller = GroupChatInfoController(gateway,
-        submitOwnershipTransfer: (_) async {
-          submitted = true;
-          return {'transfer_id': 'intent-1', 'stage': 'NEEDS_REVIEW'};
-        },
-        loadOwnershipTransfers: () async => submitted
-            ? [
-                {'id': 'intent-1', 'stage': 'COMPLETED'}
-              ]
-            : []);
-    await controller.load();
-    await tester.pumpWidget(
-        CupertinoApp(home: GroupManagementPage(controller: controller)));
+    final controller =
+        GroupChatInfoController(gateway, submitOwnershipTransfer: (_) async {
+      submitted = true;
+      return {'transfer_id': 'intent-1', 'stage': 'NEEDS_REVIEW'};
+    }, loadOwnershipTransfers: () async {
+      if (!submitted) return [];
+      gateway.snapshot =
+          gateway.snapshot.copyWith(ownerId: '@member0:example.test');
+      return [
+        {'id': 'intent-1', 'stage': 'COMPLETED'}
+      ];
+    });
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('群管理'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('群主管理权转让'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('成员0'));
@@ -312,11 +442,150 @@ void main() {
     expect(find.byKey(const Key('group-transfer-status')), findsOneWidget);
     expect(find.textContaining('转让待人工核对'), findsOneWidget);
     expect(controller.state.snapshot!.isOwner, isTrue);
+    expect(find.byType(WeChatToast), findsNothing);
     await tester.tap(find.text('刷新状态'));
     await tester.pumpAndSettle();
+    expect(find.text('聊天信息(4)'), findsOneWidget);
     expect(find.text('群主转让已完成'), findsOneWidget);
+    expect(find.text('转让群主'), findsNothing);
+    expect(find.byType(WeChatToast), findsOneWidget);
     expect(controller.state.snapshot!.isOwner, isFalse);
     expect(gateway.transferredTo, isNull);
+    await controller.refreshOwnershipTransfer();
+    await tester.pump();
+    expect(find.byType(WeChatToast), findsOneWidget);
+  });
+  testWidgets(
+      'completed transfer returns to refreshed group info with one toast',
+      (tester) async {
+    tester.view.physicalSize = const Size(393, 1300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = _OwnerGroupInfoGateway();
+    final controller = GroupChatInfoController(gateway,
+        submitOwnershipTransfer: (target) async {
+          gateway.snapshot = gateway.snapshot.copyWith(ownerId: target);
+          return {'transfer_id': 'intent-1', 'stage': 'COMPLETED'};
+        },
+        loadOwnershipTransfers: () async => []);
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final initialLoads = gateway.loadCount;
+    await tester.tap(find.text('群管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('群主管理权转让'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('成员0'));
+    await tester.pump();
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('转让'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('聊天信息(4)'), findsOneWidget);
+    expect(find.text('转让群主'), findsNothing);
+    expect(find.text('群主管理权转让'), findsNothing);
+    expect(find.byKey(const Key('group-transfer-status')), findsNothing);
+    expect(find.text('刷新状态'), findsNothing);
+    expect(find.byType(WeChatToast), findsOneWidget);
+    expect(find.text('群主转让已完成'), findsOneWidget);
+    expect(gateway.loadCount, greaterThan(initialLoads));
+    expect(controller.state.snapshot!.ownerId, '@member0:example.test');
+    expect(gateway.transferredTo, isNull);
+  });
+
+  testWidgets('pending transfer remains in picker without a success toast',
+      (tester) async {
+    final gateway = _OwnerGroupInfoGateway();
+    final controller = GroupChatInfoController(gateway,
+        submitOwnershipTransfer: (_) async =>
+            {'transfer_id': 'intent-1', 'stage': 'NEEDS_REVIEW'},
+        loadOwnershipTransfers: () async => []);
+    await controller.load();
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupManagementPage(controller: controller)));
+    await tester.tap(find.text('群主管理权转让'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('成员0'));
+    await tester.pump();
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('转让'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('转让群主'), findsOneWidget);
+    expect(find.textContaining('转让待人工核对'), findsOneWidget);
+    expect(find.text('刷新状态'), findsOneWidget);
+    expect(find.byType(WeChatToast), findsNothing);
+    expect(controller.state.snapshot!.ownerId, '@owner:example.test');
+    final doneButton = find.ancestor(
+        of: find.text('完成'), matching: find.byType(CupertinoButton));
+    expect(tester.widget<CupertinoButton>(doneButton).onPressed, isNull);
+  });
+
+  testWidgets('initial old completed intent never auto-closes a new picker',
+      (tester) async {
+    final controller = GroupChatInfoController(_OwnerGroupInfoGateway(),
+        loadOwnershipTransfers: () async => []);
+    await controller.load();
+    controller.ownershipTransfer = {'transfer_id': 'old', 'stage': 'COMPLETED'};
+    await tester.pumpWidget(
+        CupertinoApp(home: GroupManagementPage(controller: controller)));
+    await tester.tap(find.text('群主管理权转让'));
+    await tester.pumpAndSettle();
+    expect(find.text('转让群主'), findsOneWidget);
+    expect(find.byKey(const Key('group-transfer-status')), findsNothing);
+    expect(find.byType(WeChatToast), findsNothing);
+  });
+  testWidgets('initial refresh completes a previously pending transfer',
+      (tester) async {
+    tester.view.physicalSize = const Size(393, 1300);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = _OwnerGroupInfoGateway();
+    final controller =
+        GroupChatInfoController(gateway, loadOwnershipTransfers: () async {
+      gateway.snapshot =
+          gateway.snapshot.copyWith(ownerId: '@member0:example.test');
+      return [
+        {'id': 'intent-1', 'stage': 'COMPLETED'}
+      ];
+    });
+    controller.ownershipTransfer = {
+      'transfer_id': 'intent-1',
+      'stage': 'NEEDS_REVIEW',
+      'expected_old_owner_matrix_id': '@owner:example.test',
+    };
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('群管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('群主管理权转让'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('聊天信息(4)'), findsOneWidget);
+    expect(find.text('转让群主'), findsNothing);
+    expect(find.byType(WeChatToast), findsOneWidget);
+    expect(find.text('群主转让已完成'), findsOneWidget);
+    expect(controller.state.snapshot!.ownerId, '@member0:example.test');
   });
   test('transfer without coordinator does not write Matrix or change owner',
       () async {
@@ -765,6 +1034,14 @@ final class _OwnerGroupInfoGateway extends FakeGroupChatInfoGateway
       ownerId: '@owner:example.test',
       currentUserId: '@owner:example.test',
     );
+  }
+
+  int loadCount = 0;
+
+  @override
+  Future<GroupChatInfoSnapshot> load() async {
+    loadCount++;
+    return super.load();
   }
 
   @override
