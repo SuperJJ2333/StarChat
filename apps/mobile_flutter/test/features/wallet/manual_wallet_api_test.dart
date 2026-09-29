@@ -143,6 +143,22 @@ void main() {
     }
   });
 
+  test('payout quote accepts the two published approval policies only', () {
+    expect(ManualPayoutQuote.fromJson(quote).approvalPolicy, 'OWNER_MANUAL_V1');
+    expect(
+        ManualPayoutQuote.fromJson({
+          ...quote,
+          'approval_policy': 'SUPPORT_MANUAL_V1',
+        }).approvalPolicy,
+        'SUPPORT_MANUAL_V1');
+    expect(
+        () => ManualPayoutQuote.fromJson({
+              ...quote,
+              'approval_policy': 'UNKNOWN_POLICY',
+            }),
+        throwsFormatException);
+  });
+
   test('authentication refresh preserves financial body and idempotency key',
       () async {
     final session = SecureSessionStore(MemoryStore());
@@ -209,7 +225,11 @@ void main() {
         sessionStore: session,
         client: MockClient((request) async {
           requests.add(request);
-          return http.Response(jsonEncode(response), 200);
+          return http.Response(
+              jsonEncode(response),
+              request.url.path.endsWith('/wallet/manual/payout-quotes')
+                  ? 201
+                  : 200);
         })));
   });
 
@@ -275,16 +295,16 @@ void main() {
   });
 
   test('payout quote create read cancel HTTP contracts', () async {
-    response = quote;
-    expect(
-        (await api.createPayoutQuote(
-                amount: '10.000000',
-                expectedBindingVersion: 1,
-                idempotencyKey: 'stable-key'))
-            .fee,
-        '0.000000');
+    response = {...quote, 'approval_policy': 'SUPPORT_MANUAL_V1'};
+    final createdQuote = await api.createPayoutQuote(
+        amount: '10.000000',
+        expectedBindingVersion: 1,
+        idempotencyKey: 'stable-key');
+    expect(createdQuote.fee, '0.000000');
+    expect(createdQuote.approvalPolicy, 'SUPPORT_MANUAL_V1');
     contract('POST', '/wallet/manual/payout-quotes',
         {'amount': '10.000000', 'expected_binding_version': 1});
+    expect(requests.last.headers['idempotency-key'], 'stable-key');
     response = payout;
     expect(
         (await api.createPayout(

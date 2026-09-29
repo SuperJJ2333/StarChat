@@ -189,15 +189,26 @@ void main() {
   testWidgets(
       'quote displays locked destination and exact zero fee before confirmation',
       (tester) async {
-    final api = await client(
-        (request) async => json(request.url.path.endsWith('/binding')
-            ? fixtures.binding
-            : {
-                ...fixtures.quote,
-                'funding_asset': 'CAIBI',
-                'funding_amount': '10.00',
-              }));
-    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    final requests = <http.Request>[];
+    final now = DateTime.utc(2026, 9, 7, 10);
+    final api = await client((request) async {
+      requests.add(request);
+      if (request.url.path.endsWith('/binding')) {
+        return json(fixtures.binding);
+      }
+      return http.Response(
+          jsonEncode({
+            ...fixtures.quote,
+            'approval_policy': 'SUPPORT_MANUAL_V1',
+            'funding_asset': 'CAIBI',
+            'funding_amount': '10.00',
+            'expires_at': now.add(const Duration(minutes: 5)).toIso8601String(),
+          }),
+          201,
+          headers: {'content-type': 'application/json'});
+    });
+    await tester.pumpWidget(
+        CupertinoApp(home: ManualWalletPage(client: api, clock: () => now)));
     await tester.pumpAndSettle();
     await openPayout(tester);
     await tester.enterText(find.byKey(const Key('manual-payout-amount')), '10');
@@ -207,8 +218,22 @@ void main() {
     // 报价明细改为键值分组卡片：标签与数值分列显示（design-demo 对齐）。
     expect(find.text('扣除点钻'), findsOneWidget);
     expect(find.text('10.00'), findsWidgets);
+    expect(find.text('提现 USDT'), findsOneWidget);
+    expect(find.text('10.000000'), findsWidgets);
     expect(find.text('服务费 USDT'), findsOneWidget);
     expect(find.text('0.000000'), findsWidgets);
+    expect(find.text('确认有效期'), findsOneWidget);
+    expect(find.textContaining('报价有效期至'), findsOneWidget);
+    expect(
+        tester
+            .widget<CupertinoButton>(
+                find.byKey(const Key('manual-payout-confirm')))
+            .onPressed,
+        isNotNull);
+    expect(
+        requests.where((request) =>
+            request.method == 'POST' && request.url.path.endsWith('/payouts')),
+        isEmpty);
     expect(find.text('总冻结 USDT'), findsNothing);
     expect(find.byKey(const Key('wallet-withdraw-address')), findsNothing);
   });

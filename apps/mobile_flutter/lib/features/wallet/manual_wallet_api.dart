@@ -58,6 +58,14 @@ String _literal(Map<String, dynamic> json, String key, String expected) {
   return value;
 }
 
+String _approvalPolicy(Map<String, dynamic> json) {
+  final value = _string(json, 'approval_policy');
+  if (!const {'OWNER_MANUAL_V1', 'SUPPORT_MANUAL_V1'}.contains(value)) {
+    _invalid();
+  }
+  return value;
+}
+
 String _tronAddress(Map<String, dynamic> json, String key) {
   final value = json[key];
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -560,7 +568,7 @@ final class ManualPayoutQuote {
           _string(json, 'official_config_version'),
           _string(json, 'owner_admin_id'),
           _string(json, 'policy_version'),
-          _literal(json, 'approval_policy', 'OWNER_MANUAL_V1'),
+          _approvalPolicy(json),
           _literal(json, 'finality_policy', 'TRONGRID_SINGLE_SOURCE_V1'),
           _literal(json, 'network', 'tron-mainnet'),
           _string(json, 'contract'),
