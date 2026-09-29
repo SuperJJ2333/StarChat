@@ -21,9 +21,11 @@ from app.modules.identity.enums import AccountStatus, RoleCode
 from app.modules.identity.models import Device, RefreshTokenFamily, User, UserRole
 from app.modules.wallet.binding_models import WalletAddressOwner, WalletBinding, WalletBindingState
 from app.modules.wallet.models import WalletControl, WalletConversion, WalletLedgerEntry, WalletLedgerTransaction
+from app.modules.wallet.support_payout import SupportPayoutState
 from app.modules.wallet.service import WalletLedger
 from app.modules.ledger.reserve import RedeemabilityReserve
 from app.modules.ledger.service import LedgerService
+from app.modules.ledger.models import LedgerEntry, LedgerTransaction
 
 
 @pytest.fixture
@@ -158,6 +160,73 @@ def test_request_converts_and_holds_final_usdt(core):
     assert _balance(core, factory, 'alice') == Decimal('1000')
     assert _balance(core, factory, 'HOLD:alice') == Decimal('0')
     assert _balance(core, factory, 'alice', 'caibi') == Decimal('500.00')  # 点钻退回
+
+
+def test_staff_release_uses_beneficiary_amounts_and_actual_actor(core):
+    svc, factory = core[:2]
+    svc.support_orders_enabled = True
+    order = _request(core, _caibi_quote(core))
+    with factory.begin() as session:
+        row, _ = svc._order_lock(session, order['id'])
+        svc.release_unstarted_order(session=session, row=row, actor_id='owner',
+            reason_code='MANUAL_PAYOUT_REJECTED', now=svc._now())
+
+    with factory() as session:
+        conversion = session.scalar(select(WalletConversion).where(
+            WalletConversion.idempotency_key == 'payout:'+order['id']))
+        reversal = session.scalar(select(WalletConversion).where(
+            WalletConversion.idempotency_key == 'reverse:'+conversion.id))
+        release = session.scalar(select(WalletLedgerTransaction).where(
+            WalletLedgerTransaction.scope == 'wallet.conversion_reversal'))
+        original = session.scalar(select(LedgerTransaction).where(
+            LedgerTransaction.scope == 'wallet.conversion'))
+        mirror = session.scalar(select(LedgerTransaction).where(
+            LedgerTransaction.scope == 'wallet.conversion_reversal'))
+        hold_release = session.scalar(select(WalletLedgerTransaction).where(
+            WalletLedgerTransaction.scope == 'wallet.manual_release'))
+        assert (conversion.source_amount, conversion.target_amount) == (Decimal('71.20'), Decimal('10'))
+        assert (reversal.source_amount, reversal.target_amount) == (Decimal('10'), Decimal('71.20'))
+        assert (release.actor_id, release.reason_code, release.idempotency_key) == (
+            'owner', 'MANUAL_PAYOUT_REJECTED', 'reverse:'+conversion.id)
+        assert (hold_release.actor_id, hold_release.reason_code) == ('owner', 'MANUAL_PAYOUT_REJECTED')
+        assert {entry.account_id: entry.amount for entry in session.scalars(select(WalletLedgerEntry).where(
+            WalletLedgerEntry.transaction_id == release.id))} == {
+                'alice': Decimal('-10'), 'PLATFORM_CONVERSION': Decimal('10')}
+        assert {entry.account_id: entry.amount for entry in session.scalars(select(WalletLedgerEntry).where(
+            WalletLedgerEntry.transaction_id == hold_release.id))} == {
+                'HOLD:alice': Decimal('-10'), 'alice': Decimal('10')}
+        assert (mirror.actor_id, mirror.reason_code, mirror.reversal_of_id) == (
+            'owner', 'MANUAL_PAYOUT_REJECTED', original.id)
+        assert {entry.account_id: entry.amount for entry in session.scalars(select(LedgerEntry).where(
+            LedgerEntry.transaction_id == mirror.id))} == {
+                'alice': Decimal('71.20'), 'PLATFORM_CLEARING': Decimal('-71.20')}
+    assert _balance(core, factory, 'alice') == Decimal('1000')
+    assert _balance(core, factory, 'HOLD:alice') == Decimal('0')
+    assert LedgerService(factory).balance('alice') == Decimal('500.00')
+
+
+def test_prepared_lower_payable_keeps_original_hold_until_release_with_second_order(core):
+    svc, factory = core[:2]
+    svc.support_orders_enabled = True
+    first = _request(core, _caibi_quote(core, amount='142.400000'))
+    with factory.begin() as session:
+        state = session.get(SupportPayoutState, first['id'])
+        state.prepared_rate = Decimal('8.000000')
+        state.prepared_receive = Decimal('17.800000')
+        state.prepared_digest = 'b' * 64
+        state.prepared_version = 1
+    second_quote = svc.quote(user_id='alice', amount='10.000000', expected_binding_version=1,
+        idempotency_key='second-usdt-quote', funding_asset='USDT')
+    second = _request(core, second_quote, key='second-usdt-request')
+    assert _balance(core, factory, 'HOLD:alice') == Decimal('30')
+    assert svc.cancel(user_id='alice', order_id=first['id'], idempotency_key='first-cancel')['status'] == 'CANCELLED'
+    with factory() as session:
+        state = session.get(SupportPayoutState, first['id'])
+        assert state.prepared_rate is None and state.prepared_receive is None and state.prepared_digest is None
+        assert session.get(SupportPayoutState, second['id']) is not None
+    assert _balance(core, factory, 'HOLD:alice') == Decimal('10')
+    assert _balance(core, factory, 'alice') == Decimal('990')
+    assert LedgerService(factory).balance('alice') == Decimal('500.00')
 
 
 def test_adjust_rate_only_when_claimed_with_history(core):

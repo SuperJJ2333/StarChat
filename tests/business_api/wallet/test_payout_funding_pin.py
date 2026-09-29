@@ -150,6 +150,28 @@ def test_reverse_requires_persisted_matching_usdt_release(core):
     assert LedgerService(core[1]).balance('alice') == Decimal('90')
 
 
+def test_conversion_release_replay_rejects_actor_reason_and_order_mismatch(core):
+    from app.modules.wallet.conversions import reverse_payout_conversion
+    order = request(core, funded(core))
+    core[0].cancel(user_id='alice', order_id=order['id'], idempotency_key='cancel')
+    with core[1].begin() as session:
+        replay = reverse_payout_conversion(session, core[1], user_id='alice', actor_id='alice',
+            reason_code='MANUAL_PAYOUT_CANCELLED', order_id=order['id'], amount=Decimal('10'))
+        assert replay.idempotency_key.startswith('reverse:')
+        for actor_id, reason_code in (('owner', 'MANUAL_PAYOUT_REJECTED'),
+                ('owner', 'MANUAL_PAYOUT_CANCELLED'),
+                ('alice', 'MANUAL_PAYOUT_REJECTED')):
+            with pytest.raises(ValueError, match='reversal|release|payload'):
+                reverse_payout_conversion(session, core[1], user_id='alice', actor_id=actor_id,
+                    reason_code=reason_code, order_id=order['id'], amount=Decimal('10'))
+        with pytest.raises(ValueError, match='source conversion mismatch'):
+            reverse_payout_conversion(session, core[1], user_id='alice', actor_id='alice',
+                reason_code='MANUAL_PAYOUT_CANCELLED', order_id='unrelated-order', amount=Decimal('10'))
+        with pytest.raises(ValueError, match='source conversion mismatch'):
+            reverse_payout_conversion(session, core[1], user_id='alice', actor_id='alice',
+                reason_code='MANUAL_PAYOUT_CANCELLED', order_id=order['id'], amount=Decimal('9'))
+
+
 def test_quote_reader_checks_owner_and_authorization_payload_is_strict(core):
     q = funded(core)
     assert core[0].quote_status(user_id='alice', quote_id=q['id'])['digest'] == q['digest']

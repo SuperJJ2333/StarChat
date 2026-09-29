@@ -63,7 +63,8 @@ class WalletLedger:
     def balance(self, account_id):
         with self.factory() as session: return usdt(Decimal(session.scalar(select(func.coalesce(func.sum(WalletLedgerEntry.amount),0)).where(WalletLedgerEntry.account_id==account_id, WalletLedgerEntry.asset=="USDT-TRC20"))))
 
-    def require_conversion_release(self, *, session, user_id, conversion_id, release_id, amount):
+    def require_conversion_release(self, *, session, user_id, actor_id, reason_code,
+                                   conversion_id, release_id, amount):
         """Public proof for an exact conversion rollback, never a raw ledger read by callers."""
         from app.modules.wallet.models import WalletConversion
         original = session.get(WalletConversion, conversion_id)
@@ -71,8 +72,10 @@ class WalletLedger:
         if (original is None or original.user_id != user_id or original.direction != 'CAIBI_TO_USDT'
                 or original.status != 'COMPLETED' or original.source_amount != amount or original.target_amount <= 0
                 or not original.idempotency_key.startswith('payout:')
-                or release is None or release.actor_id != user_id or release.scope != 'wallet.conversion_reversal'
-                or release.reason_code != 'MANUAL_PAYOUT_CANCELLED' or release.idempotency_key != 'reverse:'+conversion_id):
+                or release is None or release.actor_id != actor_id or release.scope != 'wallet.conversion_reversal'
+                or release.reason_code != reason_code or release.idempotency_key != 'reverse:'+conversion_id
+                or reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED'}
+                or (reason_code == 'MANUAL_PAYOUT_CANCELLED') != (actor_id == user_id)):
             raise ValueError('conversion release proof invalid')
         # ADR-0077：率结兑换 source(点钻)≠target(USDT)；回收额按 target 校验。
         entries = {entry.account_id: entry.amount for entry in session.scalars(select(WalletLedgerEntry).where(

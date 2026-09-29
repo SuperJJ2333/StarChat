@@ -489,6 +489,46 @@ class ManualPayoutService:
             fresh()
             return result
 
+    def release_unstarted_order(self, *, session, row, actor_id, reason_code, now):
+        """Release an unstarted order in the caller's authorized transaction.
+
+        The caller owns its operation-specific receipt and authorization. This
+        application boundary acquires the shared budget/order locks, then keeps
+        the hold, linked conversion reversal, and terminal state atomic.
+        """
+        if object_session(row) is not session or not actor_id or (
+                reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED'}) or (
+                (reason_code == 'MANUAL_PAYOUT_CANCELLED') != (actor_id == row.user_id)):
+            raise ValueError('invalid payout release actor or reason')
+        locked_row, _ = self._order_lock(session, row.id)
+        if locked_row is not row or row.status != 'REQUESTED' or row.candidate_txid is not None:
+            _fail('WALLET_PAYOUT_CANNOT_CANCEL')
+        support_state = session.get(SupportPayoutState, row.id, with_for_update=True)
+        if (support_state is not None and support_state.execution_started_at is not None) or (
+                session.scalar(select(ManualPayoutCandidate.id).where(
+                    ManualPayoutCandidate.order_id == row.id).limit(1)) is not None) or (
+                session.scalar(select(ManualPayoutEvent.id).where(
+                    ManualPayoutEvent.order_id == row.id).limit(1)) is not None):
+            _fail('WALLET_PAYOUT_CANNOT_CANCEL')
+        user_id = row.user_id
+        self.wallet_ledger.post(entries={'HOLD:'+user_id: -row.amount, user_id: row.amount},
+            actor_id=actor_id, reason_code=reason_code, idempotency_key=row.id,
+            scope='wallet.manual_release', session=session)
+        quote = session.get(ManualPayoutQuote, row.quote_id)
+        if quote.snapshot.get('funding_asset', 'USDT') == 'CAIBI':
+            from app.modules.wallet.conversions import reverse_payout_conversion
+            reverse_payout_conversion(session, self.factory, user_id=user_id, actor_id=actor_id,
+                reason_code=reason_code, order_id=row.id, amount=row.amount)
+        if support_state is not None:
+            had_preparation = support_state.prepared_digest is not None
+            support_state.prepared_rate = None
+            support_state.prepared_receive = None
+            support_state.prepared_digest = None
+            if had_preparation:
+                support_state.prepared_version += 1
+        row.status, row.updated_at = 'CANCELLED', now
+        return row
+
     @_precise
     def cancel(self, *, user_id, order_id, idempotency_key):
         now = self._now()
@@ -501,18 +541,8 @@ class ManualPayoutService:
             replay = self._replay(session, user_id, 'CANCEL', idempotency_key, payload)
             if replay:
                 return replay
-            if row.status != 'REQUESTED':
-                _fail('WALLET_PAYOUT_CANNOT_CANCEL')
-            support_state=session.get(SupportPayoutState,row.id,with_for_update=True)
-            if support_state is not None and support_state.execution_started_at is not None:
-                _fail('WALLET_PAYOUT_CANNOT_CANCEL')
-            self.wallet_ledger.post(entries={'HOLD:'+user_id: -row.amount, user_id: row.amount}, actor_id=user_id,
-                reason_code='MANUAL_PAYOUT_CANCELLED', idempotency_key=row.id, scope='wallet.manual_release', session=session)
-            quote = session.get(ManualPayoutQuote, row.quote_id)
-            if quote.snapshot.get('funding_asset', 'USDT') == 'CAIBI':
-                from app.modules.wallet.conversions import reverse_payout_conversion
-                reverse_payout_conversion(session, self.factory, user_id=user_id, order_id=row.id, amount=row.amount)
-            row.status, row.updated_at = 'CANCELLED', now
+            self.release_unstarted_order(session=session, row=row, actor_id=user_id,
+                reason_code='MANUAL_PAYOUT_CANCELLED', now=now)
             return self._record(session, user_id, 'CANCEL', idempotency_key, payload, self._result(row), now)
 
     def _claim_result(self, row, quote):
