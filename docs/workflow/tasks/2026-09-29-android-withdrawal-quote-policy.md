@@ -80,5 +80,5 @@
 - 待办及验收失败项：QP-0 至 QP-5 的代码、构建、分发和生产回读已完成；真实账户 `SUPPORT_MANUAL_V1`/`OWNER_MANUAL_V1` 报价、同键恢复及正式包真机体验待授权设备反馈。Flutter 全量最终 exit 0；整库脚本因缺 `.env` exit 1，旧 iOS 发布器三项测试因现行按钮标记变化失败，均保留真实记录。
 - 已发布与仅候选的区别：2193 x86_64 Debug 仅安装在模拟器；同源码 2193 ARM64 正式包已经公开发布，Android 设置最终指向网络择优入口；iOS 2189 与 API v4r2 未在本任务改变。没有执行真实账户报价、资金确认或出款。
 - 生产备份位置、恢复操作、漂移检查、可重试阶段：标准/网络两段私有 0700 备份分别在 `/opt/starchat/docs/verification/artifacts/2026-09-29/withdrawal-quote-2193-standard-20260929T132752Z` 和 `/opt/starchat/docs/verification/artifacts/2026-09-29/withdrawal-quote-2193-network-20260929T132929Z`，均含设置 before/after 与审计。SG 私有 0600 前态策略/分发配置已保存，原始 policy/config SHA 如 Task 6；具体路径按发布操作者记录定位，不臆造。任何恢复先读现值、审计、HK alias、S3 policy 与 CloudFront ETag，确认无后继变更，再按两阶段相反顺序 CAS 恢复精确前态；旧 2188/2190 下载对象与行为保留。数据库结果未知不得盲重试或回滚；不得删除报价、申请、审计或账本。
-- 运行中 CI/命令/自己创建的隧道（无凭据）：文档交接时未记录持续运行命令；临时网络通道的关闭须以 Task 6 操作者最终记录核对，不凭本地进程状态推断。
+- 运行中 CI/命令/自己创建的隧道（无凭据）：Task 6 工作站公网核验使用的临时 SOCKS 监听 `127.0.0.1:18947` 已发送 Ctrl-C 停止；随后 `Get-NetTCPConnection -LocalPort 18947 -State Listen` 未发现监听。交接时无本任务持续运行命令。
 - 下次恢复先检查的事实：现网 Android `0.4.24+2193` 三设置、HK alias、CloudFront 三行为/三对象及 ETag、`android-release.json`/JS SHA、API v4r2 digest/schema、iOS 2189；本 C 工作树旧 `admin-home.js` 与 live SHA 不同，整站静态部署前先整合后台分支并重验。再收集正式包真实设备报价体验；不要把匿名 401 当真实用户成功报价。
