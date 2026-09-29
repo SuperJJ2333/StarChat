@@ -8,6 +8,7 @@ import '../../core/performance_trace.dart';
 import '../matrix/conversation_presentation.dart';
 import '../matrix/decryption_state_controller.dart';
 import '../matrix/matrix_e2ee_client.dart';
+import '../matrix/matrix_user_avatar.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_list_tile.dart';
@@ -18,6 +19,7 @@ import '../contacts/contacts_page.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/room_visibility_policy.dart';
 import 'global_search_controller.dart';
+import 'global_search_avatar.dart';
 import 'global_search_index.dart';
 import 'global_search_models.dart';
 import 'local_message_search_repository.dart';
@@ -50,6 +52,7 @@ final class GlobalSearchPage extends StatefulWidget {
     required this.api,
     required this.onOpenRoom,
     this.matrix,
+    this.avatarMedia,
     this.identityCache,
     this.contactActions,
     this.contactsLoader,
@@ -70,6 +73,7 @@ final class GlobalSearchPage extends StatefulWidget {
 
   /// 搜索入口统一数据源：提供 Matrix 客户端时页面自行加载会话快照。
   final MatrixSdkE2eeClient? matrix;
+  final AvatarMediaCapability? avatarMedia;
   final Future<List<ContactSummary>> Function()? contactsLoader;
 
   /// 会话快照 → typed 房间结果（可注入，测试用）。
@@ -99,7 +103,7 @@ final class GlobalSearchPage extends StatefulWidget {
 }
 
 final class _GlobalSearchPageState extends State<GlobalSearchPage> {
-  late final GlobalSearchController controller;
+  late GlobalSearchController controller;
   Future<List<ContactSummary>>? contacts;
   late final PerformanceTrace _performanceTrace = widget.performanceTrace ??
       PerformanceTrace.start(
@@ -113,6 +117,20 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   bool _queryContactsDone = false;
   bool _queryRenderScheduled = false;
   int _queryGeneration = 0;
+  int _roomGeneration = 0;
+  int _roomLoadSequence = 0;
+  bool _awaitingRepositoryBinding = false;
+  final Map<String, GlobalSearchRoomResult> _currentRooms = {};
+
+  AvatarMediaCapability? get _avatarMedia =>
+      widget.avatarMedia ?? widget.matrix;
+
+  bool get _repositoryOwnerMismatch {
+    final account = _repository?.accountKey;
+    return widget.matrix != null &&
+        account != null &&
+        account != widget.matrix!.userId;
+  }
 
   void _finishPageTrace() {
     if (!_firstFrameRendered || !_initialSourcesSettled) return;
@@ -178,6 +196,24 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
       RoomVisibilityPolicy.forRoomIds(
           widget.matrix?.controlRoomIds ?? const <String>{});
 
+  GlobalSearchController _newController(
+          LocalMessageSearchRepository? repository) =>
+      GlobalSearchController(
+        loadContacts: _loadContacts,
+        loadRooms: _loadRooms,
+        index: widget.index ?? repository?.index ?? GlobalSearchIndex.shared,
+        repository: repository,
+        searchTrace: () => _searchTrace,
+        debounce: widget.debounce,
+        sectionLimit: widget.sectionLimit,
+        primaryRoomIdOf: widget.matrix == null
+            ? null
+            : (roomId) async {
+                await widget.matrix!.prepareConversationAssociations();
+                return widget.matrix!.logicalPrimaryRoomIdSync(roomId);
+              },
+      );
+
   @override
   void initState() {
     super.initState();
@@ -189,21 +225,8 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
           .runChildOperations(widget.identityCache!.refreshContactsQuietly));
     }
     final repository = _repository;
-    controller = GlobalSearchController(
-      loadContacts: _loadContacts,
-      loadRooms: _loadRooms,
-      index: widget.index ?? repository?.index ?? GlobalSearchIndex.shared,
-      repository: repository,
-      searchTrace: () => _searchTrace,
-      debounce: widget.debounce,
-      sectionLimit: widget.sectionLimit,
-      primaryRoomIdOf: widget.matrix == null
-          ? null
-          : (roomId) async {
-              await widget.matrix!.prepareConversationAssociations();
-              return widget.matrix!.logicalPrimaryRoomIdSync(roomId);
-            },
-    )..addListener(_changed);
+    controller = _newController(repository)..addListener(_changed);
+    _awaitingRepositoryBinding = _repositoryOwnerMismatch;
     // 打开搜索页即触发一次**有界的本机库回填**（零网络、每账号一次）。
     final sourceFutures = <Future<void>>[
       contacts!.then<void>((_) {}),
@@ -230,6 +253,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   void _changed() {
+    if (_awaitingRepositoryBinding && !_repositoryOwnerMismatch) {
+      _awaitingRepositoryBinding = false;
+      if (!controller.isBlank) unawaited(controller.refresh());
+    }
     final trace = _searchTrace;
     if (trace != null && !_firstQueryObserved && !controller.isBlank) {
       if (controller.error != null) {
@@ -261,7 +288,40 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   @override
+  void didUpdateWidget(covariant GlobalSearchPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final ownerChanged = oldWidget.matrix != widget.matrix ||
+        oldWidget.identityCache != widget.identityCache;
+    if (oldWidget.identityCache != widget.identityCache) {
+      oldWidget.identityCache?.removeListener(_identityChanged);
+      widget.identityCache?.addListener(_identityChanged);
+    }
+    if (ownerChanged) {
+      contacts = _loadContactSummaries();
+      _roomGeneration++;
+      _roomLoadSequence++;
+      _currentRooms.clear();
+      final query = controller.query;
+      controller.removeListener(_changed);
+      controller.dispose();
+      _searchTrace?.dispose();
+      _searchTrace = null;
+      _firstQueryObserved = false;
+      _queryContactsDone = false;
+      _queryRenderScheduled = false;
+      _queryGeneration++;
+      controller = _newController(_repository);
+      _awaitingRepositoryBinding = _repositoryOwnerMismatch;
+      if (query.isNotEmpty) controller.setQuery(query);
+      controller.addListener(_changed);
+    }
+  }
+
+  @override
   void dispose() {
+    _roomGeneration++;
+    _roomLoadSequence++;
+    _currentRooms.clear();
     widget.identityCache?.removeListener(_identityChanged);
     _performanceTrace.dispose();
     _searchTrace?.dispose();
@@ -309,6 +369,9 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   /// 展示并允许打开。判定只用 roomId + accountData，不用展示名；
   /// **注入的 roomsLoader 也走同一条过滤**（否则测试/未来数据源会绕过策略）。
   Future<List<GlobalSearchRoomResult>> _loadRooms() async {
+    final owner = widget.matrix;
+    final generation = _roomGeneration;
+    final sequence = ++_roomLoadSequence;
     if (!_firstQueryObserved && _searchTrace == null) {
       final injected = widget.searchPerformanceTrace;
       if (injected != null && !_injectedSearchTraceUsed) {
@@ -324,10 +387,19 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
     final loader = widget.roomsLoader;
     final rooms =
         loader != null ? await loader() : await _roomsFromLocalSnapshot();
-    return [
+    if (generation != _roomGeneration ||
+        sequence != _roomLoadSequence ||
+        owner != widget.matrix) {
+      return const [];
+    }
+    final visible = [
       for (final room in rooms)
         if (visibility.isVisible(room.roomId)) room,
     ];
+    _currentRooms
+      ..clear()
+      ..addEntries(visible.map((room) => MapEntry(room.roomId, room)));
+    return visible;
   }
 
   Future<List<GlobalSearchRoomResult>> _roomsFromLocalSnapshot() async {
@@ -342,6 +414,16 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
           isDirect: room.isDirect,
           memberCount: room.members.isEmpty ? null : room.members.length,
           avatarSeed: room.id,
+          matrixAvatarUri: room.avatar,
+          directPeerId: room.directPeerId,
+          avatarMembers: [
+            for (final member in room.members.take(9))
+              GlobalSearchAvatarMember(
+                userId: member.id,
+                displayName: member.displayName,
+                matrixAvatarUri: member.avatar,
+              ),
+          ],
           matchedText: room.lastEvent?.decryptionState ==
                   MessageDecryptionState.decrypted
               ? room.lastEvent!.text
@@ -398,6 +480,11 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   Widget _body() {
     // 空查询：页面保持干净（不显示任何分组与结果）。
     if (controller.isBlank) return const SizedBox.shrink();
+    // The Matrix owner can change before the local history repository is
+    // rebound. Never paint that previous account's hits with the new owner.
+    if (_repositoryOwnerMismatch) {
+      return const Center(child: CupertinoActivityIndicator(radius: 12));
+    }
     if (controller.loading && !controller.hasResults) {
       return const Center(child: CupertinoActivityIndicator(radius: 12));
     }
@@ -474,6 +561,8 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
         for (final room in rooms)
           _RoomRow(
             room: room,
+            avatarMedia: _avatarMedia,
+            identityCache: widget.identityCache,
             onTap: () => unawaited(_openRoom(room)),
           ),
         if (controller.hasMoreRooms)
@@ -486,6 +575,8 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                 for (final room in controller.results.rooms)
                   _RoomRow(
                     room: room,
+                    avatarMedia: _avatarMedia,
+                    identityCache: widget.identityCache,
                     onTap: () => unawaited(_openRoom(room)),
                   ),
               ],
@@ -497,6 +588,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
         for (final conversation in conversations)
           _ConversationRow(
             conversation: conversation,
+            room:
+                _currentRooms[conversation.roomId] ?? conversation.latest.room,
+            avatarMedia: _avatarMedia,
+            identityCache: widget.identityCache,
             query: controller.query,
             onTap: conversation.isSingleHit
                 ? () => unawaited(_openRoom(conversation.latest.room,
@@ -513,6 +608,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                 for (final conversation in controller.results.conversations)
                   _ConversationRow(
                     conversation: conversation,
+                    room: _currentRooms[conversation.roomId] ??
+                        conversation.latest.room,
+                    avatarMedia: _avatarMedia,
+                    identityCache: widget.identityCache,
                     query: controller.query,
                     onTap: conversation.isSingleHit
                         ? () => unawaited(_openRoom(conversation.latest.room,
@@ -605,10 +704,12 @@ final class _ContactRow extends StatelessWidget {
   Widget build(BuildContext context) => WeChatListTile(
         key: Key('global-search-contact-${contact.userId}'),
         onTap: onTap,
+        leadingSize: WeChatDimensions.contactAvatar,
         leading: UserAvatar(
           nickname: contact.displayName,
           fallbackSeed: contact.cacheKey ?? contact.userId,
           avatarUrl: contact.avatarUrl,
+          size: WeChatDimensions.contactAvatar,
         ),
         title: Text(contact.displayName,
             maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -618,19 +719,28 @@ final class _ContactRow extends StatelessWidget {
 }
 
 final class _RoomRow extends StatelessWidget {
-  const _RoomRow({required this.room, required this.onTap});
+  const _RoomRow({
+    required this.room,
+    required this.onTap,
+    this.avatarMedia,
+    this.identityCache,
+  });
 
   final GlobalSearchRoomResult room;
   final VoidCallback onTap;
+  final AvatarMediaCapability? avatarMedia;
+  final ProfileRepository? identityCache;
 
   @override
   Widget build(BuildContext context) => WeChatListTile(
         key: Key('global-search-room-${room.roomId}'),
         onTap: onTap,
-        leading: UserAvatar(
-          nickname: room.displayName,
-          fallbackSeed: room.avatarSeed ?? room.roomId,
-          avatarUrl: room.avatarUrl,
+        leadingSize: WeChatDimensions.contactAvatar,
+        leading: SearchRoomAvatar(
+          room: room,
+          avatarMedia: avatarMedia,
+          identityCache: identityCache,
+          size: WeChatDimensions.contactAvatar,
         ),
         title: Text(
           room.memberCount == null
@@ -647,12 +757,21 @@ final class _RoomRow extends StatelessWidget {
 }
 
 final class _ConversationRow extends StatelessWidget {
-  const _ConversationRow(
-      {required this.conversation, required this.query, required this.onTap});
+  const _ConversationRow({
+    required this.conversation,
+    required this.room,
+    required this.query,
+    required this.onTap,
+    this.avatarMedia,
+    this.identityCache,
+  });
 
   final GlobalSearchConversationHit conversation;
+  final GlobalSearchRoomResult room;
   final String query;
   final VoidCallback onTap;
+  final AvatarMediaCapability? avatarMedia;
+  final ProfileRepository? identityCache;
 
   @override
   Widget build(BuildContext context) {
@@ -660,10 +779,12 @@ final class _ConversationRow extends StatelessWidget {
     return WeChatListTile(
       key: Key('global-search-conversation-${conversation.roomId}'),
       onTap: onTap,
-      leading: UserAvatar(
-        nickname: conversation.roomName,
-        fallbackSeed: conversation.roomAvatarSeed ?? conversation.roomId,
-        avatarUrl: conversation.roomAvatarUrl,
+      leadingSize: WeChatDimensions.contactAvatar,
+      leading: SearchRoomAvatar(
+        room: room,
+        avatarMedia: avatarMedia,
+        identityCache: identityCache,
+        size: WeChatDimensions.contactAvatar,
       ),
       title: Text(conversation.roomName,
           maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -688,9 +809,11 @@ final class _MessageHitRow extends StatelessWidget {
   Widget build(BuildContext context) => WeChatListTile(
         key: Key('global-search-hit-${hit.eventId}'),
         onTap: onTap,
+        leadingSize: WeChatDimensions.contactAvatar,
         leading: UserAvatar(
           nickname: hit.senderName,
           fallbackSeed: hit.senderId,
+          size: WeChatDimensions.contactAvatar,
         ),
         title:
             Text(hit.senderName, maxLines: 1, overflow: TextOverflow.ellipsis),
