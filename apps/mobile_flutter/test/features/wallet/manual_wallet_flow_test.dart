@@ -204,7 +204,7 @@ void main() {
             'funding_amount': '10.00',
             'expires_at': now.add(const Duration(minutes: 5)).toIso8601String(),
           }),
-          201,
+          request.method == 'POST' ? 201 : 200,
           headers: {'content-type': 'application/json'});
     });
     await tester.pumpWidget(
@@ -224,6 +224,19 @@ void main() {
     expect(find.text('0.000000'), findsWidgets);
     expect(find.text('确认有效期'), findsOneWidget);
     expect(find.textContaining('报价有效期至'), findsOneWidget);
+    final quotePosts = requests
+        .where((request) =>
+            request.method == 'POST' &&
+            request.url.path.endsWith('/payout-quotes'))
+        .toList();
+    expect(quotePosts, hasLength(1));
+    final originalKey = quotePosts.single.headers['idempotency-key'];
+    expect(originalKey, isNotEmpty);
+    final store = ManualOperationStore(api);
+    await store.initialize();
+    final savedQuote = await store.read('quote');
+    expect(savedQuote?['id'], 'quote');
+    expect(savedQuote?['key'], originalKey);
     expect(
         tester
             .widget<CupertinoButton>(
@@ -236,6 +249,28 @@ void main() {
         isEmpty);
     expect(find.text('总冻结 USDT'), findsNothing);
     expect(find.byKey(const Key('wallet-withdraw-address')), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+        CupertinoApp(home: ManualWalletPage(client: api, clock: () => now)));
+    await tester.pumpAndSettle();
+    await openPayout(tester);
+    expect(find.text('target'), findsOneWidget);
+    expect(
+        requests.where((request) =>
+            request.method == 'GET' &&
+            request.url.path.endsWith('/payout-quotes/quote')),
+        hasLength(1));
+    expect(
+        requests.where((request) =>
+            request.method == 'POST' &&
+            request.url.path.endsWith('/payout-quotes')),
+        hasLength(1));
+    expect((await store.read('quote'))?['key'], originalKey);
+    expect(
+        requests.where((request) =>
+            request.method == 'POST' && request.url.path.endsWith('/payouts')),
+        isEmpty);
   });
 
   testWidgets(
