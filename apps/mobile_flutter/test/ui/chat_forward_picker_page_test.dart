@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_forward_picker_page.dart';
+import 'package:liuhetong_mobile/ui/chat/group_avatar_mosaic.dart';
 
 ChatForwardCandidate _candidate(String id, String title,
         {bool isGroup = false, int memberCount = 0}) =>
@@ -16,6 +17,54 @@ ChatForwardCandidate _candidate(String id, String title,
     );
 
 void main() {
+  testWidgets('forward avatar slots align under a nonzero safe-area inset',
+      (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+        home: MediaQuery(
+      data: const MediaQueryData(padding: EdgeInsets.only(top: 32)),
+      child: ChatForwardPickerPage(
+        candidates: [
+          ChatForwardCandidate(
+            roomId: 'group',
+            title: '测试群',
+            isGroup: true,
+            avatar: GroupAvatarMosaic(size: 52, avatars: const [
+              ColoredBox(color: CupertinoColors.systemBlue),
+              ColoredBox(color: CupertinoColors.systemGreen),
+            ]),
+          ),
+          ChatForwardCandidate(
+            roomId: 'person',
+            title: '好友',
+            avatar: const SizedBox.square(
+                dimension: 52,
+                child: ColoredBox(color: CupertinoColors.systemGrey)),
+          ),
+        ],
+        recentRoomIds: const ['group', 'person'],
+        onForward: (_) async {},
+      ),
+    )));
+    await tester.pumpAndSettle();
+
+    for (final id in ['group', 'person']) {
+      final recent =
+          tester.getRect(find.byKey(Key('forward-avatar-recent-$id')));
+      final row = tester.getRect(find.byKey(Key('forward-avatar-row-$id')));
+      expect(recent.size, const Size(52, 52));
+      expect(row.size, const Size(42, 42));
+    }
+    await tester.tap(find.byKey(const Key('forward-chat-group')));
+    await tester.pumpAndSettle();
+    final confirmation =
+        tester.getRect(find.byKey(const Key('forward-avatar-confirm-group')));
+    expect(confirmation.size, const Size(44, 44));
+    final mosaic = tester.getRect(find.byType(GroupAvatarMosaic).last);
+    final first =
+        tester.getRect(find.byKey(const Key('group-avatar-member-0')).last);
+    expect(first.top, closeTo(mosaic.top + mosaic.height * .045, .5));
+  });
+
   testWidgets('oversized group forwarding shows exact video size guidance',
       (tester) async {
     await tester.pumpWidget(CupertinoApp(

@@ -63,4 +63,28 @@ void main() {
     expect(second.right, closeTo(mosaic.right - (72 * .045), .1));
     expect(first.width, closeTo(first.height, .1));
   });
+
+  testWidgets('mosaic cells ignore the parent safe-area top inset',
+      (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+      home: Center(
+        child: MediaQuery(
+          data: const MediaQueryData(padding: EdgeInsets.only(top: 32)),
+          child: GroupAvatarMosaic(
+            size: 44,
+            avatars: const [
+              ColoredBox(color: Color(0xff111111)),
+              ColoredBox(color: Color(0xff222222)),
+            ],
+          ),
+        ),
+      ),
+    ));
+
+    final mosaic = tester.getRect(find.byType(GroupAvatarMosaic));
+    final first =
+        tester.getRect(find.byKey(const Key('group-avatar-member-0')));
+    expect(first.top, closeTo(mosaic.top + 44 * .045, .5));
+    expect(mosaic.size, const Size(44, 44));
+  });
 }
