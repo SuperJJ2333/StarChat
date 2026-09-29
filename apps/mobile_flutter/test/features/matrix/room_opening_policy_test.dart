@@ -493,7 +493,10 @@ void main() {
           File('lib/features/contacts/contacts_page.dart').readAsStringSync();
       // 旧回退必须标注为测试专用，避免被生产复用为"第二套建私聊实现"。
       expect(contacts, contains('@visibleForTesting'));
-      expect(contacts, contains('onEstablishDirectChat ??'));
+      expect(contacts,
+          contains('widget.onEstablishDirectChatWithRequest == null'));
+      expect(contacts,
+          contains('final establish = widget.onEstablishDirectChat;'));
     });
 
     test('会话状态只有一个真相源：作用域栈由打开流程驱动，不由页面维护', () {
