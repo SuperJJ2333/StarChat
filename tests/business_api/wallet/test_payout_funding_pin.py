@@ -172,6 +172,18 @@ def test_conversion_release_replay_rejects_actor_reason_and_order_mismatch(core)
                 reason_code='MANUAL_PAYOUT_CANCELLED', order_id=order['id'], amount=Decimal('9'))
 
 
+def test_ledger_reversal_replay_requires_same_wallet_release_proof(core):
+    order = request(core, funded(core))
+    core[0].cancel(user_id='alice', order_id=order['id'], idempotency_key='cancel')
+    with core[1].begin() as session:
+        conversion = session.scalar(select(WalletConversion).where(
+            WalletConversion.idempotency_key == 'payout:'+order['id']))
+        with pytest.raises(ValueError, match='release proof'):
+            LedgerService(core[1]).reverse_conversion_debit(session=session, user_id='alice',
+                actor_id='alice', reason_code='MANUAL_PAYOUT_CANCELLED',
+                conversion_id=conversion.id, wallet_release_id='unrelated-wallet-release')
+
+
 def test_quote_reader_checks_owner_and_authorization_payload_is_strict(core):
     q = funded(core)
     assert core[0].quote_status(user_id='alice', quote_id=q['id'])['digest'] == q['digest']

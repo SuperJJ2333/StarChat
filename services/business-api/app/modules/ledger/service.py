@@ -167,6 +167,12 @@ class LedgerService:
             LedgerTransaction.scope == 'wallet.conversion', LedgerTransaction.idempotency_key == 'convert:'+conversion_id))
         if original is None:
             raise ValueError('conversion debit not found')
+        from app.modules.wallet.service import WalletLedger
+        source = {entry.account_id: money(entry.amount) for entry in original.entries}
+        WalletLedger(self.session_factory).require_conversion_release(session=session,
+            user_id=user_id, actor_id=actor_id, reason_code=reason_code,
+            conversion_id=conversion_id, release_id=wallet_release_id,
+            amount=-source.get(user_id, Decimal('0')))
         if require_existing and session.scalar(select(LedgerTransaction.id).where(
                 LedgerTransaction.scope == 'wallet.conversion_reversal',
                 LedgerTransaction.idempotency_key == 'reverse:'+conversion_id)) is None:
