@@ -6209,6 +6209,51 @@
         "title": "OwnerTransferBody",
         "type": "object"
       },
+      "OwnerTransferPreviewBody": {
+        "additionalProperties": false,
+        "properties": {
+          "log_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Index"
+          },
+          "ownership_attested": {
+            "title": "Ownership Attested",
+            "type": "boolean"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,99}$",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "reason_detail": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason Detail",
+            "type": "string"
+          },
+          "txid": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Txid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "txid",
+          "reason_code",
+          "reason_detail",
+          "ownership_attested"
+        ],
+        "title": "OwnerTransferPreviewBody",
+        "type": "object"
+      },
       "PasswordCodeProofResponse": {
         "additionalProperties": false,
         "properties": {
@@ -16968,7 +17013,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OwnerTransferBody"
+                "$ref": "#/components/schemas/OwnerTransferPreviewBody"
               }
             }
           },
@@ -16992,6 +17037,16 @@
               }
             },
             "description": "Application error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TRANSFER_NOT_FOUND: no official USDT outflow in the transaction; TRANSFER_SELECTION_REQUIRED: multiple official USDT outflows require an exact log_index."
           },
           "422": {
             "content": {

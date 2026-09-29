@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>管理员钱包菜单返回集成回归</title>
+<style>
+  body { min-height: 3200px; }
+  .admin-chain-panel .admin-table-scroll { width: 160px; overflow-x: auto; }
+  .admin-chain-panel .admin-table { min-width: 900px; }
+</style>
+<body><div id="app"></div><output id="result">RUNNING</output>
+<script type="module">
+const result = document.querySelector('#result');
+const txid = 'a'.repeat(64);
+const draftTxid = 'b'.repeat(64);
+const accessReplies = [];
+const logoutReplies = [];
+const calls = {access: 0, summary: 0, lists: [], details: 0, unexpected: []};
+let chainVersion = 1;
+const nativeFetch = globalThis.fetch.bind(globalThis);
+const json = value => new Response(JSON.stringify(value), {
+  status: 200, headers: {'content-type': 'application/json'}
+});
+const readStatus = () => ({enabled: true, configured: true,
+  auth_mode: 'operation_password', verified: false});
+const summary = () => ({asset: 'USDT', network: 'TRON', balance: chainVersion === 1 ? '10.000001' : '20.000001',
+  last_success_ms: 1780000000000, checkpoint_ms: 1780000000000,
+  coverage_start_ms: 1770000000000, observer_status: 'OK', reconciliation: 'SOURCE_MATCHED'});
+const transaction = index => ({txid, log_index: index, timestamp_ms: 1780000000000 + index,
+  direction: 'UNMATCHED_OUTFLOW', amount: chainVersion === 1 ? '10.000001' : '20.000001',
+  asset: 'USDT', network: 'TRON', block_number: 1000 + index,
+  from_address: 'T' + 'c'.repeat(33), to_address: 'T' + 'd'.repeat(33),
+  platform_record: {kind: 'OWNER', user_username: chainVersion === 1 ? 'cached-owner-unique' : 'new-session-owner'}});
+const fetchStub = async (input) => {
+  const url = new URL(input, location.origin), path = url.pathname;
+  if (path === '/api/v1/auth/admin-session/refresh') return json({access_token: 'synthetic-token-1',
+    expires_in: 3600, user_id: 'owner', session_id: 'session-1'});
+  if (path === '/api/v1/auth/admin-login') return json({access_token: 'synthetic-token-2',
+    expires_in: 3600, user_id: 'owner', session_id: 'session-2'});
+  if (path === '/api/v1/auth/admin-session/logout') return new Promise(resolve => logoutReplies.push(() => resolve(json({ok: true}))));
+  if (path === '/api/v1/auth/admin-captcha') return json({challenge_id: 'synthetic', image: ''});
+  if (path === '/api/v1/admin/context') return json({actor: {id: 'owner', display_name: '管理员', roles: ['SUPER_ADMIN']},
+    permissions: ['*'], capabilities: {wallet_owner_read: true}, overview: {}, modules: {}});
+  if (path === '/api/v1/admin/point-issuance') return json({items: []});
+  if (path === '/api/v1/recharge/admin/events') return json({items: [], next_cursor: null});
+  if (path === '/api/v1/wallet/manual/access') {
+    calls.access++;
+    return new Promise(resolve => accessReplies.push(() => resolve(json(readStatus()))));
+  }
+  if (path === '/api/v1/admin/wallet/chain/summary') { calls.summary++; return json(summary()); }
+  if (path === '/api/v1/admin/wallet/chain/transactions') {
+    const query = Object.fromEntries(url.searchParams);
+    calls.lists.push(query);
+    const offset = Number(query.offset ?? 0), count = Math.min(25, 30 - offset);
+    return json({items: Array.from({length: count}, (_, i) => transaction(offset + i)),
+      total: 30, offset, snapshot: chainVersion === 1 ? 7 : 8});
+  }
+  if (path.startsWith('/api/v1/admin/wallet/chain/transactions/')) {
+    calls.details++;
+    return json(transaction(Number(path.split('/').at(-1))));
+  }
+  if (path === '/api/v1/admin/wallet/security') return json({auth_mode: 'operation_password', configured: true, version: 1});
+  if (path === '/api/v1/admin/wallet/manual/payouts') return json({items: []});
+  if (path === '/api/v1/admin/wallet/incidents') return json({items: []});
+  if (path === '/api/v1/admin/wallet/monitor/status') return json({last_success_at: '2026-09-29T00:00:00Z', stale: false});
+  if (path === '/api/v1/admin/wallet/manual/operations/diagnostics') return json({});
+  if (path === '/api/v1/admin/wallet/manual/operations/control') return json({status: 'PAUSED', restriction_scopes: [], unresolved_incidents: 0});
+  if (path === '/api/v1/admin/modules/wallet' || path === '/api/v1/admin/modules/ads') return json({items: []});
+  calls.unexpected.push(path);
+  return new Response(JSON.stringify({error: {code: 'UNEXPECTED_TEST_REQUEST', message: path}}),
+    {status: 500, headers: {'content-type': 'application/json'}});
+};
+globalThis.fetch = fetchStub;
+// The regression drives each authorization boundary explicitly; background polls
+// would consume headless virtual time and add unrelated access requests.
+globalThis.setInterval = () => -1;
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+async function until(predicate, label) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (predicate()) return;
+    document.body.dataset.diag = `${label}:${attempt}:rows=${chain()?.querySelectorAll('tbody tr').length ?? 0}:detail=${Boolean(details()?.open)}:access=${accessReplies.length}:lists=${calls.lists.length}`;
+    await tick();
+  }
+  throw Error(`timed out waiting for ${label}`);
+}
+function check(condition, message) { if (!condition) throw Error(message); }
+function nav(key) {
+  const button = document.querySelector(`[data-module="${key}"]`);
+  check(button, `${key} menu exists`);
+  button.click();
+}
+const chain = () => document.querySelector('.admin-chain-panel');
+const details = () => document.querySelector('dialog[aria-label="流水详情"]');
+const button = (root, label) => [...root.querySelectorAll('button')].find(item => item.textContent === label);
+const submit = form => form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+const counts = () => [calls.summary, calls.lists.length, calls.details];
+function noPrivateView(stage) {
+  check(!chain(), `${stage}: chain DOM appeared before owner authorization`);
+  check(!details()?.open, `${stage}: detached detail appeared before owner authorization`);
+  check(!document.querySelector('#app').textContent.includes('cached-owner-unique'),
+    `${stage}: old detail content appeared before owner authorization`);
+}
+try {
+  document.body.dataset.stage = 'importing';
+  const homeSource = await (await nativeFetch('/src/admin-home.js')).text();
+  const sessionImport = homeSource.match(/from ["']\.\/(admin-session\.js\?v=[^"']+)["']/u)?.[1];
+  check(sessionImport, 'admin-home session module import is discoverable');
+  const {adminSession} = await import(`/src/${sessionImport}`);
+  await import('/src/admin-home.js');
+  document.body.dataset.stage = 'shell';
+  await until(() => document.querySelector('[data-module="wallet"]'), 'real admin shell');
+  nav('wallet');
+  document.body.dataset.stage = 'initial-auth';
+  await until(() => accessReplies.length === 1, 'initial owner check');
+  noPrivateView('initial entry');
+  accessReplies.shift()();
+  document.body.dataset.stage = 'initial-chain';
+  await until(() => chain()?.querySelectorAll('tbody tr').length === 25, 'initial chain page');
+  check(calls.summary === 1 && calls.lists.length === 1, 'initial chain data is loaded once');
+
+  const first = chain();
+  first.querySelector('select[aria-label="流水方向"]').value = 'UNMATCHED_OUTFLOW';
+  submit(first.querySelector('form'));
+  document.body.dataset.stage = 'filter';
+  await until(() => calls.lists.length === 2, 'applied direction filter');
+  button(first, '下一页').click();
+  document.body.dataset.stage = 'page-two';
+  await until(() => calls.lists.length === 3 && first.querySelectorAll('tbody tr').length === 5, 'second page');
+  check(calls.lists.at(-1).offset === '25' && calls.lists.at(-1).direction === 'UNMATCHED_OUTFLOW',
+    'applied filter and offset reached the second page');
+  first.querySelector('input[aria-label="完整交易哈希"]').value = draftTxid;
+  const rows = first.querySelector('.admin-table-scroll');
+  rows.scrollLeft = 74;
+  window.scrollTo(0, 540);
+  await tick();
+  check(rows.scrollLeft > 0 && window.scrollY > 0, 'test fixture has real horizontal and page scroll');
+  const savedScroll = [rows.scrollLeft, window.scrollY];
+  button(first, '详情').click();
+  document.body.dataset.stage = 'detail';
+  await until(() => details()?.open && details()?.textContent.includes('cached-owner-unique'), 'read chain detail');
+  check(calls.details === 1, 'detail was read once');
+
+  nav('ads');
+  document.body.dataset.stage = 'ads';
+  await until(() => document.querySelector('.admin-module-panel'), 'other menu');
+  check(!details()?.open, 'menu switch closes the detached detail');
+  const beforeReturn = counts();
+  nav('wallet');
+  document.body.dataset.stage = 'return-auth';
+  await until(() => accessReplies.length === 1, 'return owner check');
+  noPrivateView('same-session return');
+  check(JSON.stringify(counts()) === JSON.stringify(beforeReturn), 'return checks authorization before chain reads');
+  accessReplies.shift()();
+  document.body.dataset.stage = 'restoring';
+  await until(() => chain()?.querySelectorAll('tbody tr').length === 5 && details()?.open, 'restored page and detail');
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  check(JSON.stringify(counts()) === JSON.stringify(beforeReturn), 'authorized menu return does not re-fetch summary, list, or detail');
+  const restored = chain();
+  check(restored.querySelector('select[aria-label="流水方向"]').value === 'UNMATCHED_OUTFLOW', 'applied direction restored');
+  check(restored.querySelector('input[aria-label="完整交易哈希"]').value === draftTxid, 'unapplied filter draft restored');
+  check(restored.textContent.includes('显示 26–30') && restored.textContent.includes('本页缓存于'), 'page and cache time restored');
+  check(restored.textContent.includes('最近成功扫描'), 'observer scan time remains separate');
+  check(details().textContent.includes('cached-owner-unique'), 'already read detail restored');
+  check(restored.querySelector('.admin-table-scroll').scrollLeft === savedScroll[0], 'table horizontal scroll restored');
+  check(window.scrollY === savedScroll[1], 'page scroll restored');
+
+  button(restored, '上一页').click();
+  document.body.dataset.stage = 'explicit-page';
+  await until(() => calls.lists.length === beforeReturn[1] + 1, 'explicit previous page request');
+  check(calls.lists.at(-1).offset === '0' && calls.lists.at(-1).direction === 'UNMATCHED_OUTFLOW',
+    'explicit navigation uses the applied filter, not the draft');
+  check(!calls.lists.at(-1).txid, 'unapplied full hash was not silently queried');
+
+  nav('ads');
+  document.body.dataset.stage = 'ads-before-epoch';
+  await until(() => document.querySelector('.admin-module-panel'), 'other menu before session replacement');
+  check(!chain() && !details()?.open, 'leaving wallet removed its chain view and dialog');
+  check(accessReplies.length === 0, `no old owner checks remain before session replacement (${accessReplies.length})`);
+  const oldEpoch = adminSession.cacheEpoch();
+  await adminSession.login({username: 'owner', password: 'synthetic'});
+  document.body.dataset.epochs = `${oldEpoch}->${adminSession.cacheEpoch()}`;
+  check(adminSession.cacheEpoch() !== oldEpoch, 'same actor received a new management session epoch');
+  chainVersion = 2;
+  const beforeReplacement = counts();
+  const accessBeforeReplacement = calls.access;
+  nav('wallet');
+  document.body.dataset.stage = 'epoch-auth';
+  await until(() => calls.access === accessBeforeReplacement + 1 && accessReplies.length === 1, 'new-epoch owner check');
+  noPrivateView('same-actor new session');
+  accessReplies.shift()();
+  document.body.dataset.stage = 'epoch-chain';
+  await until(() => chain()?.textContent.includes('20.000001'), 'fresh new-session chain data');
+  check(calls.lists.length === beforeReplacement[1] + 1 && calls.summary === beforeReplacement[0] + 1,
+    'new session discards the cached page and fetches a fresh chain view');
+  check(calls.details === beforeReplacement[2] && !details()?.open, 'old detail was not restored in the new session');
+  check(!chain().textContent.includes('本页缓存于') && !chain().textContent.includes('10.000001'),
+    'old cached chain values were cleared');
+  const logout = [...document.querySelectorAll('.admin-topbar-actions button')].find(item => item.textContent === '退出');
+  check(logout, 'admin logout button exists');
+  logout.click();
+  document.body.dataset.stage = 'logout-pending';
+  check(!chain() && !details()?.open, 'logout removes wallet data and detached detail before server reply');
+  await until(() => logoutReplies.length === 1, 'pending logout request');
+  logoutReplies.shift()();
+  await until(() => document.body.dataset.appReady === 'login-required', 'logout completion');
+  check(calls.unexpected.length === 0, `unexpected API calls: ${calls.unexpected.join(', ')}`);
+  document.body.dataset.result = 'PASS';
+  result.textContent = 'PASS';
+} catch (error) {
+  document.body.dataset.result = 'FAIL';
+  result.textContent = error.stack || String(error);
+}
+</script>
+</body></html>

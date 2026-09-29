@@ -78,10 +78,11 @@ class OwnerTransferService:
             fail('EVIDENCE_CONFLICT', 409)
         return proof
 
-    def _validate(self, txid, log_index, reason_code, reason_detail, ownership_attested, idempotency_key=None):
+    def _validate(self, txid, log_index, reason_code, reason_detail, ownership_attested,
+                  idempotency_key=None, *, allow_missing_index=False):
         if TXID_PATTERN.fullmatch(txid or '') is None:
             fail('REPAIR_QUERY_INVALID', 422)
-        if type(log_index) is not int or log_index < 0:
+        if not (log_index is None and allow_missing_index) and (type(log_index) is not int or log_index < 0):
             fail('REPAIR_QUERY_INVALID', 422)
         if REASON_PATTERN.fullmatch(reason_code or '') is None:
             fail('REPAIR_REASON_INVALID', 422)
@@ -99,6 +100,14 @@ class OwnerTransferService:
         proof = self._proof(txid)
         if not transaction_evidence_fresh(proof, _aware(self.clock())):
             fail('EVIDENCE_EXPIRED', 503)
+        if log_index is None:
+            official_outflows = [transfer for transfer in proof.transfers
+                if transfer.from_address == self.official_config.address]
+            if not official_outflows:
+                fail('TRANSFER_NOT_FOUND', 409)
+            if len(official_outflows) != 1:
+                fail('TRANSFER_SELECTION_REQUIRED', 409)
+            log_index = official_outflows[0].log_index
         at_index = [transfer for transfer in proof.transfers if transfer.log_index == log_index]
         transfer = at_index[0] if len(at_index) == 1 else None
         blockers = []
@@ -127,7 +136,8 @@ class OwnerTransferService:
             blockers=sorted(set(blockers)))
 
     def preview(self, *, actor_id, txid, log_index, reason_code, reason_detail, ownership_attested, authorize):
-        self._validate(txid, log_index, reason_code, reason_detail, ownership_attested)
+        self._validate(txid, log_index, reason_code, reason_detail, ownership_attested,
+            allow_missing_index=True)
         with self.factory.begin() as session:
             lock_budget(session)
             snapshot = self._snapshot(session, actor_id=actor_id, txid=txid, log_index=log_index,

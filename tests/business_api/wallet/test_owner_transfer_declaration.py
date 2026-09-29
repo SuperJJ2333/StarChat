@@ -29,10 +29,10 @@ def ok(session):
     return lambda: None
 
 
-def owner_outflow(core, coverage, monitor, *, txid=TX, amount_units=2_000000, to_address=TARGET):
+def owner_outflow(core, coverage, monitor, *, txid=TX, log_index=0, amount_units=2_000000, to_address=TARGET):
     from app.integrations.tron.finality import NETWORK, USDT_CONTRACT, POLICY, SOURCE_ID
     source = monitor[1]
-    facts = dict(txid=txid, log_index=0, amount_units=str(amount_units),
+    facts = dict(txid=txid, log_index=log_index, amount_units=str(amount_units),
         from_address=monitor[0].config.address, to_address=to_address,
         block_number=102, timestamp_ms=core[2].value.timestamp_ms)
     rowid = source.value.max_rowid + 1
@@ -49,14 +49,16 @@ def owner_outflow(core, coverage, monitor, *, txid=TX, amount_units=2_000000, to
     source.value = digest_cut(source.value, max_rowid=rowid)
 
 
-def owner_adapter(core, monitor, *, txid=TX, amount_units=2_000000, to_address=TARGET):
+def owner_adapter(core, monitor, *, txid=TX, log_indices=(0,), amount_units=2_000000,
+                  to_address=TARGET, from_address=None, from_addresses=None):
     from app.integrations.tron.finality import TransactionEvidence, TransferEvidence, SolidHead
     now = monitor[2][0]
     ms = int(now.timestamp() * 1000)
-    transfer = TransferEvidence(txid, 0, 102, 'c' * 64, core[2].value.timestamp_ms,
-        monitor[0].config.address, to_address, amount_units)
+    transfers = tuple(TransferEvidence(txid, log_index, 102, 'c' * 64, core[2].value.timestamp_ms,
+        (from_addresses or {}).get(log_index, from_address or monitor[0].config.address),
+        to_address, amount_units) for log_index in log_indices)
     evidence = TransactionEvidence(txid, 102, 'c' * 64, core[2].value.timestamp_ms,
-        SolidHead(104, 'd' * 64, ms, now), (transfer,), now)
+        SolidHead(104, 'd' * 64, ms, now), transfers, now)
 
     class Adapter:
         def transaction_evidence(self, value):
@@ -170,6 +172,106 @@ def test_untrusted_clock_is_rejected(core, coverage, monitor, owner):
 def test_unknown_log_index_is_reported_as_blocker(core, coverage, monitor, service):
     owner_outflow(core, coverage, monitor)
     assert 'TRANSFER_NOT_FOUND' in preview(service, log_index=1)['blockers']
+
+
+def test_preview_without_index_resolves_the_only_official_outflow_at_nonzero_index(
+        core, coverage, monitor, service):
+    from app.modules.wallet.owner_transfer_models import WalletManualOwnerTransfer
+    from app.modules.wallet.models import WalletLedgerEntry, WalletLedgerTransaction
+
+    owner_outflow(core, coverage, monitor, log_index=7)
+    service.adapter = owner_adapter(core, monitor, log_indices=(7,))
+    with core[1]() as session:
+        ledger_before = (session.scalar(select(func.count()).select_from(WalletLedgerTransaction)),
+            session.scalar(select(func.count()).select_from(WalletLedgerEntry)))
+    result = preview(service, log_index=None)
+    assert result['log_index'] == 7
+    assert result['amount_units'] == '2000000'
+    assert result['to_address'] == TARGET
+    assert result['blockers'] == []
+    with core[1]() as session:
+        assert session.scalar(select(func.count()).select_from(WalletManualOwnerTransfer)) == 0
+        ledger_after = (session.scalar(select(func.count()).select_from(WalletLedgerTransaction)),
+            session.scalar(select(func.count()).select_from(WalletLedgerEntry)))
+    assert ledger_after == ledger_before
+    assert service.ledger.balance('PLATFORM_OWNER_DRAWING') == Decimal('0')
+
+
+def test_preview_without_index_rejects_zero_official_outflows(core, coverage, monitor, service):
+    service.adapter = owner_adapter(core, monitor, log_indices=())
+    with pytest.raises(AppError) as error:
+        preview(service, log_index=None)
+    assert (error.value.code, error.value.status_code) == ('TRANSFER_NOT_FOUND', 409)
+
+
+def test_preview_without_index_rejects_multiple_official_outflows(core, coverage, monitor, service):
+    service.adapter = owner_adapter(core, monitor, log_indices=(7, 8))
+    with pytest.raises(AppError) as error:
+        preview(service, log_index=None)
+    assert (error.value.code, error.value.status_code) == ('TRANSFER_SELECTION_REQUIRED', 409)
+
+
+def test_preview_without_index_uses_only_the_official_outflow(core, coverage, monitor, service):
+    owner_outflow(core, coverage, monitor, log_index=7)
+    service.adapter = owner_adapter(core, monitor, log_indices=(6, 7),
+        from_addresses={6: 'T' + 'Z' * 33})
+    chosen = preview(service, log_index=None)
+    assert chosen['log_index'] == 7
+    assert chosen['blockers'] == []
+
+
+def test_explicit_nonzero_index_still_selects_exact_transfer(core, coverage, monitor, service):
+    owner_outflow(core, coverage, monitor, log_index=7)
+    service.adapter = owner_adapter(core, monitor, log_indices=(7, 8))
+    chosen = preview(service, log_index=7)
+    assert chosen['log_index'] == 7 and chosen['blockers'] == []
+    other = preview(service, log_index=8)
+    assert other['log_index'] == 8 and 'COVERAGE_FACT_MISSING' in other['blockers']
+
+
+def test_execute_rechecks_exact_nonzero_transfer_after_preview_when_proof_changes(
+        core, coverage, monitor, service):
+    from app.core.outbox import OutboxEvent
+    from app.modules.audit.models import AuditEvent
+    from app.modules.wallet.owner_transfer_models import WalletManualOwnerTransfer
+    from app.modules.wallet.models import WalletLedgerEntry, WalletLedgerTransaction
+
+    def state_counts():
+        with core[1]() as session:
+            return tuple(session.scalar(select(func.count()).select_from(model)) for model in (
+                WalletManualOwnerTransfer, WalletLedgerTransaction, WalletLedgerEntry,
+                AuditEvent, OutboxEvent))
+
+    owner_outflow(core, coverage, monitor, log_index=7)
+    service.adapter = owner_adapter(core, monitor, log_indices=(7,))
+    before = state_counts()
+    snapshot = preview(service, log_index=None)
+    assert snapshot['log_index'] == 7 and snapshot['blockers'] == []
+    assert state_counts() == before
+
+    # The selected index still exists, but its fresh destination now conflicts
+    # with the VERIFIED coverage fact recorded for that exact event.
+    service.adapter = owner_adapter(core, monitor, log_indices=(7,),
+        to_address='T' + 'Z' * 33)
+    with pytest.raises(AppError) as error:
+        execute(service, log_index=snapshot['log_index'])
+    assert error.value.code == 'COVERAGE_FACT_CONFLICT'
+    assert state_counts() == before
+
+
+def test_optional_index_never_reads_proof_before_owner_authorization(core, coverage, monitor, service):
+    calls = []
+
+    class ProofSpy:
+        def transaction_evidence(self, txid):
+            calls.append(txid)
+            raise AssertionError('unauthorized caller must not reach TronGrid')
+
+    service.adapter = ProofSpy()
+    with pytest.raises(AppError) as error:
+        preview(service, actor_id='other', log_index=None)
+    assert error.value.code == 'PERMISSION_DENIED'
+    assert calls == []
 
 
 def test_already_allocated_payout_blocks_declaration(core, coverage, monitor, service):

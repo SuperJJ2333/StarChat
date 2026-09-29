@@ -1,11 +1,23 @@
 // Manual operations never sign or broadcast; API/ledger state is authoritative.
 import {processIncident, incidentSummary, incidentError, incidentTime, diagnosticSummary, fundControlError} from './wallet-incident-workflow.js?v=20260928-wallet-monitor-t2';
 import {detailDialog} from './admin-detail-dialog.js';
-const SAFE_METADATA = new Set(['expected_digest', 'txid', 'reason_code', 'expected_version', 'clearance_digest', 'credential_id', 'expected_epoch', 'snapshot_digest','preparation_id','manifest_digest','no_unregistered_payments','notice_received']);
+const SAFE_METADATA = new Set(['expected_digest', 'txid', 'log_index', 'reason_code', 'expected_version', 'clearance_digest', 'credential_id', 'expected_epoch', 'snapshot_digest','preparation_id','manifest_digest','no_unregistered_payments','notice_received']);
+const OWNER_PURPOSES = Object.freeze({
+  test: Object.freeze({label:'钱包测试转出', reason_code:'OWNER_TEST_DRAW', reason_detail:'官方钱包持有人测试转出'}),
+  payment: Object.freeze({label:'对外付款', reason_code:'OWNER_EXTERNAL_PAYMENT', reason_detail:'官方钱包持有人对外付款'})
+});
 export function exactUsdt(value) {
   if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)\.[0-9]{6}$/.test(value)) throw new Error('金额格式异常，操作已关闭');
   return value;
 }
+function ownerAmount(value) {
+  if (typeof value !== 'string' || value.length>78 || !/^(0|[1-9][0-9]*)$/.test(value)) throw new Error('链上金额格式异常，申报已关闭');
+  const units=BigInt(value);
+  if(units<=0n) throw new Error('链上金额格式异常，申报已关闭');
+  return `${units/1000000n}.${String(units%1000000n).padStart(6,'0')}`;
+}
+const ownerPurposeForCode=code=>Object.values(OWNER_PURPOSES).find(purpose=>purpose.reason_code===code);
+const shortTxid=txid=>`${txid.slice(0,8)}…${txid.slice(-6)}`;
 export function operationJournal(storage, actorId) {
   if (!actorId || !storage) throw new Error('无法保存请求恢复记录，资金操作已关闭');
   const prefix = `chatflow.manual.v1:${encodeURIComponent(actorId)}:`;
@@ -85,6 +97,8 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     return false;
   };
   let securitySnapshot, mfaSnapshot, selectedOrder, selectedIncident, orderCursor, incidentCursor;
+  let ownerConfirmModal, ownerPreviewed, ownerCandidate, ownerPreviewGeneration=0, ownerPendingQueried=false;
+  let ownerTxidInput, ownerPurposeInput, ownerAttestation, ownerState;
 
   function authFailure(error) {
     if (disposed || !(error?.status === 401 || ['RECENT_LOGIN_REQUIRED','AUTH_REQUIRED','UNAUTHORIZED'].includes(error?.code))) return;
@@ -117,7 +131,9 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     for (const input of inputs) if (input.type === 'password') secretInputs.add(input);
     const form = node('form'); form.name = name; form.className = 'admin-command-form';
     const blocked=()=>!journal||authMode==='loading'||authMode==='unavailable'||authMode==='operation_password'&&!operationConfigured&&name!=='operation-password';
-    const submit = node('button', label); submit.type = 'submit'; submit.className = 'admin-primary'; submit.disabled = blocked();
+    const submit = node('button', label); submit.type = 'submit';
+    const critical=['claim','txid','incident-process'].includes(name)||name.startsWith('control-')||name.startsWith('handover-');
+    submit.className = critical?'admin-primary wallet-critical-action':'admin-primary'; submit.disabled = blocked();
     commandForms.push({ name, submit, blocked });
     const state = node('p'); state.setAttribute('role', 'status');
     if (journal && operation) {
@@ -127,6 +143,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         state.textContent = walletAccess?'已恢复未确认请求；请先刷新服务端状态，核对原参数后确认继续。':'已恢复未确认请求；请先刷新服务端状态，再输入验证凭证重试。';
       }
     }
+    form.commandState=state;
     form.append(...inputs.map(input=>{
       const label=node('label');label.className=input.type==='checkbox'?'wallet-check':'wallet-field';
       const caption=node('span',input.getAttribute?.('aria-label')??input['aria-label']);
@@ -179,6 +196,10 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
           state.textContent=`${explanation}。本次${operationLabel}未提交，资金仍暂停。请刷新${resuming?'资金控制':'交接'}状态；重试时保留原参数和请求编号。`;
         } else if(name.startsWith('control-')) {
           state.textContent=error.message==='请完整填写有效参数'?'请勾选确认并输入有效凭证。':fundControlError(error);
+        } else if(name==='owner-transfer') {
+          state.textContent=error.message==='请完整填写有效参数'?
+            !ownerPurposeInput?.value?'请选择转出用途。':'请填写完整交易哈希并确认该转出由本人操作。':
+            '预检未确认；请核对链上证据后重新预检，未提交申报。';
         } else {
           state.textContent = `操作未确认：${error.code || 'REQUEST_FAILED'}。结果未知时请先刷新状态，禁止重复付款；重试必须保留原参数。`;
         }
@@ -198,7 +219,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     const result = await call({idempotencyKey:entry.key});
     journal.finish(operation); return result;
   }
-  const mfa = node('section'); mfa.className='wallet-surface wallet-security';mfa.setAttribute('aria-label','账户安全设置'); aside.append(mfa);
+  const mfa = node('section'); mfa.id='wallet-security';mfa.className='wallet-surface wallet-security';mfa.setAttribute('aria-label','账户安全设置'); aside.append(mfa);
   let mfaGeneration = 0;
   async function loadSecurity() {
     if(!api.getWalletOperationSecurity) return loadMfa();
@@ -266,8 +287,8 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   }
   const orders = node('section'), detail = node('section'); detail.setAttribute('aria-live','polite');
   const listState = node('p'); listState.setAttribute('role','status');
-  const queue=node('section');queue.className='wallet-surface wallet-queue';orders.className='wallet-orders';detail.className='wallet-detail';
-  queue.append(node('h4','人工出款队列'),node('p','核对锁定信息，领取后在 imToken 完成签名。'),...refreshAction('刷新出款队列',()=>loadOrders()),listState,orders,detail);primary.append(queue);
+  const queue=node('section');queue.id='wallet-payout';queue.className='wallet-surface wallet-queue';orders.className='wallet-orders';detail.className='wallet-detail';
+  queue.append(node('h4','用户提现申请 · 人工出款队列'),node('p','此队列来自用户提现申请。核对锁定信息，领取后在 imToken 完成签名；人工出款订单编号与链上交易哈希分别核对。'),...refreshAction('刷新出款队列',()=>loadOrders()),listState,orders,detail);primary.append(queue);
   let listGeneration=0, detailGeneration=0;
   async function loadOrders(cursor = orderCursor) {
     if (disposed) return;
@@ -275,11 +296,11 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     try {
       const page=await api.getManualPayouts({limit:25,cursor}); if(generation!==listGeneration) return;
       orders.replaceChildren();
-      listState.textContent=page.items.length?'金额均为 USDT，保留六位小数。':'暂无人工出款';
+      listState.textContent=`${page.items.length?'金额均为 USDT，保留六位小数。':'暂无人工出款。'}队列读取于 ${formatBeijingTime(Date.now())}。`;
       for(const item of page.items) {
         const row=node('article'),summary=node('div');summary.className='wallet-order-summary';
         const status=node('span',statusLabel(item.status));status.className=item.status==='UNKNOWN'?'wallet-order-state is-unknown':'wallet-order-state';
-        summary.append(node('p',item.id),node('strong',`${exactUsdt(item.amount)} USDT`),status);
+        summary.append(node('p','来源：用户提现申请'),node('p',`人工出款订单编号：${item.id}`),node('strong',`${exactUsdt(item.amount)} USDT`),status);
         row.append(summary,action('查看出款',()=>showOrder(item.id))); orders.append(row);
       }
       if(page.next_cursor) orders.append(action('下一页出款',()=>loadOrders(page.next_cursor)));
@@ -293,9 +314,9 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const s=item.snapshot;
       for(const name of ['amount','fee','hold','receive']) exactUsdt(s[name]);
       if(s.fee!=='0.000000'||s.amount!==item.amount||! /^[a-f0-9]{64}$/.test(item.digest)) throw new Error('Invalid snapshot');
-      detail.replaceChildren(node('h4',`出款 ${item.id}`),node('p',statusLabel(item.status)),...refreshAction('刷新此出款',()=>showOrder(id)));
-      describe(detail,[['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['到账 USDT',s.receive],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选哈希',item.candidate_txid],['结算哈希',item.settlement_txid],['复核原因',item.review_reason]]);
-      for(const candidate of item.candidates ?? []) describe(detail,[['候选历史',candidate.txid],['操作者',candidate.actor_id],['原因',candidate.reason_code],['时间',formatBeijingTime(candidate.created_at)]]);
+      detail.replaceChildren(node('h4',`用户提现申请 · 人工出款订单 ${item.id}`),node('p',statusLabel(item.status)),...refreshAction('刷新此出款',()=>showOrder(id)));
+      describe(detail,[['来源','用户提现申请'],['人工出款订单编号',item.id],['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['到账 USDT',s.receive],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选链上交易哈希',item.candidate_txid],['结算链上交易哈希',item.settlement_txid],['复核原因',item.review_reason]]);
+      for(const candidate of item.candidates ?? []) describe(detail,[['候选历史链上交易哈希',candidate.txid],['操作者',candidate.actor_id],['原因',candidate.reason_code],['时间',formatBeijingTime(candidate.created_at)]]);
       if(actor?.id!==s.owner_admin_id) { detail.append(node('p','当前账号不是官方钱包拥有者，仅可查看。')); return; }
       if(item.status==='REQUESTED') {
         detail.append(node('p','请核对以上完整快照。确认摘要并领取后，才可按指令在 imToken 付款。'));
@@ -330,6 +351,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     } catch (error) { if(disposed||generation!==detailGeneration)return;authFailure(error); if(generation===detailGeneration) return stale(detail,'详情读取或金额校验失败，付款操作已关闭。'); }
   }
   const incidents=node('section'), incidentDetail=node('section'), monitor=node('p'),diagnostics=node('p'),fundSummary=node('p');
+  incidentDetail.className='wallet-incident-detail';
   let incidentModal;
   const incidentFilters=node('form');incidentFilters.name='monitoring-filters';incidentFilters.className='admin-filters';const incidentInputs={};
   for(const [key,label,values] of [['status','处理状态',[['','全部状态'],['OPEN','未处理'],['ACKNOWLEDGED','已确认'],['RESOLVED','已结案']]],['severity','事故等级',[['','全部等级'],['P0','P0'],['P1','P1'],['T2','T2']]],['sort','排序',[['opened_desc','发生时间：新到旧'],['opened_asc','发生时间：旧到新'],['updated_desc','最近发现：新到旧']]]]){const select=node('select');select.className='admin-filter';select.setAttribute('aria-label',label);for(const [value,text] of values){const option=node('option',text);option.value=value;select.append(option);}incidentInputs[key]=select;incidentFilters.append(select);}
@@ -337,26 +359,158 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   let activeIncidentFilters={},incidentPages=[undefined],incidentPage=0;
   incidentFilters.append(action('查询',()=>loadIncidents(null,{filters:Object.fromEntries(Object.entries(incidentInputs).map(([k,v])=>[k,v.value])),page:0,pages:[null]})),action('重置',()=>loadIncidents(null,{filters:{},page:0,pages:[null],reset:true})));
   incidentFilters.addEventListener('submit',event=>event.preventDefault());
-  const monitoring=node('section');monitoring.className='wallet-surface';monitoring.append(node('h4','监控与事故'),fundSummary,monitor,diagnostics,node('p','历史事故与当前检查分别展示。处理事故不会启用资金，恢复需要单独核验。'),...refreshAction('刷新监控和事故',()=>loadIncidents(null,{page:0,pages:[null]})),incidentFilters,incidents);primary.append(monitoring);
+  const monitoring=node('section');monitoring.id='wallet-monitor';monitoring.className='wallet-surface';
+  const heartbeat=node('section');heartbeat.className='wallet-monitor-heartbeat';
+  heartbeat.append(node('h5','监控心跳与当前状态'),fundSummary,monitor,diagnostics,...refreshAction('刷新监控和事故',()=>loadIncidents(null,{page:0,pages:[null]})));
+  const incidentRecords=node('section');incidentRecords.className='wallet-monitor-incidents';
+  incidentRecords.append(node('h5','事故记录'),node('p','历史事故与当前检查分别展示。处理事故不会启用资金，恢复需要单独核验。'),incidentFilters,incidents);
+  monitoring.append(node('h4','监控与事故'),heartbeat,incidentRecords);primary.append(monitoring);
   if (walletAccess) {
-    const ownerTransfer=node('section');ownerTransfer.className='wallet-surface';
+    const ownerTransfer=node('section');ownerTransfer.id='wallet-owner';ownerTransfer.className='wallet-surface';
+    const recovery=node('section');recovery.setAttribute('role','status');
     ownerTransfer.append(node('h4','所有者转出申报'),
-      node('p','仅用于申报持有者本人已完成的链上转出（ADR-0071）。申报生成不可变记录与账本分录，使复核可以对账；未申报的转出仍会阻止恢复资金。'));
-    const txidInput=field('txid','链上交易哈希（64 位十六进制）');txidInput.pattern='[a-f0-9]{64}';
-    const logInput=field('log_index','日志序号 log_index（通常为 0）');logInput.pattern='[0-9]+';
-    const reasonInput=field('reason_code','原因码（大写字母开头，如 OWNER_TEST_DRAW）');reasonInput.pattern='[A-Z][A-Z0-9_]{2,99}';
-    const detailInput=field('reason_detail','用途说明（1–500 字）');
-    const attestation=node('input');attestation.type='checkbox';attestation.setAttribute('aria-label','我确认该转出由本人（官方钱包持有人）操作');
-    commandForm(ownerTransfer,'owner-transfer','预检并申报',[txidInput,logInput,reasonInput,detailInput,attestation],async(values,state)=>{
-      const payload={txid:values.txid,log_index:Number(values.log_index),reason_code:values.reason_code,reason_detail:values.reason_detail,ownership_attested:attestation.checked};
-      const snapshot=await api.previewOwnerTransfer(payload);
-      if(snapshot.blockers?.length){state.textContent=`预检未通过：${snapshot.blockers.join('、')}。未提交申报，资金状态未变。`;return;}
-      state.textContent=`预检通过：${snapshot.amount_units?(Number(snapshot.amount_units)/1000000):'—'} USDT。正在提交申报…`;
-      const result=await api.executeOwnerTransfer(payload,{idempotencyKey:`owner-transfer:${values.txid}:${values.log_index}`});
-      state.textContent=`已申报（${result.replayed?'重复请求，已返回原记录':'新记录'}）。请刷新监控和事故，再对事故执行“检查并处理”复核结案，之后到资金启停恢复资金。`;
-    },'owner-transfer');
-    ownerTransfer.append(node('p','预检会核对链上证据与监控覆盖事实；收款地址与金额以链上为准，不可手填。'));
-    primary.append(ownerTransfer);
+      node('p','仅申报官方钱包持有人已经完成的转出。预检不会申报或记账；执行后仍须独立检查事故与资金恢复。'));
+    ownerTxidInput=field('txid','链上交易哈希（64 位十六进制）',{pattern:'[a-f0-9]{64}'});
+    ownerPurposeInput=node('select');ownerPurposeInput.name='purpose';ownerPurposeInput.className='admin-filter';
+    ownerPurposeInput.required=true;ownerPurposeInput.setAttribute('aria-label','转出用途');
+    for(const [value,label] of [['','请选择转出用途'],...Object.entries(OWNER_PURPOSES).map(([key,purpose])=>[key,purpose.label])]){
+      const option=node('option',label);option.value=value;ownerPurposeInput.append(option);
+    }
+    ownerPurposeInput.value='';
+    ownerAttestation=checkbox('ownership_attested','我确认该转出由本人（官方钱包持有人）操作');
+    const draftFingerprint=()=>JSON.stringify([ownerTxidInput.value.trim(),ownerPurposeInput.value,
+      ownerAttestation.checked,ownerCandidate?.txid===ownerTxidInput.value.trim()?ownerCandidate.log_index:null]);
+    const closeOwnerConfirm=()=>{const modal=ownerConfirmModal;ownerConfirmModal=null;ownerPreviewed=null;if(modal)modal.close();};
+    const invalidateOwnerPreview=()=>{++ownerPreviewGeneration;closeOwnerConfirm();};
+    for(const [input,event] of [[ownerTxidInput,'input'],[ownerPurposeInput,'change'],[ownerAttestation,'change']])
+      input.addEventListener(event,()=>{invalidateOwnerPreview();if(input===ownerTxidInput&&ownerCandidate?.txid!==ownerTxidInput.value.trim())ownerCandidate=null;});
+    const pendingOwner=()=>{
+      if(!journal)return null;
+      try {
+        const entry=journal.pending('owner-transfer');if(!entry)return null;
+        const metadata=entry.metadata;
+        if(!/^[0-9a-f-]{36}$/.test(entry.key)||!metadata||
+            Object.keys(metadata).sort().join(',')!=='log_index,reason_code,txid'||
+            !/^[a-f0-9]{64}$/.test(metadata.txid)||!Number.isSafeInteger(metadata.log_index)||metadata.log_index<0||
+            !ownerPurposeForCode(metadata.reason_code))throw Error('Invalid owner recovery record');
+        return entry;
+      } catch {return {invalid:true};}
+    };
+    const matchingOwnerRecord=(record,metadata)=>record?.status==='DECLARED'&&record.txid===metadata.txid&&
+      record.log_index===metadata.log_index&&record.reason_code===metadata.reason_code&&
+      record.reason_detail===ownerPurposeForCode(metadata.reason_code)?.reason_detail&&record.declared_by===actor?.id;
+    function renderOwnerRecovery(message) {
+      recovery.replaceChildren();
+      const pending=pendingOwner();
+      if(!pending){if(message)recovery.append(node('p',message));return;}
+      if(pending.invalid){recovery.append(node('p','原申报恢复记录无效，写入已关闭；请由管理员核查。'));return;}
+      recovery.append(node('p',message??`原申报 ${shortTxid(pending.metadata.txid)} 的结果尚未确认；另一笔申报已关闭。`),
+        action('查询原申报状态',async()=>{
+          if(disposed||writing||refreshing||reading)return;
+          try {
+            const current=pendingOwner();if(!current||current.invalid)return;
+            const result=await api.getOwnerTransfer(current.metadata.txid);
+            if(disposed)return;
+            if(result?.txid===current.metadata.txid&&Array.isArray(result.transfers)&&
+                result.transfers.some(row=>matchingOwnerRecord(row,current.metadata))){
+              journal.finish('owner-transfer');ownerPendingQueried=false;invalidateOwnerPreview();
+              renderOwnerRecovery('原申报已按完整定位、用途和操作者确认；没有重新发送写请求。');
+              return;
+            }
+            ownerPendingQueried=true;invalidateOwnerPreview();ownerCandidate=null;
+            ownerTxidInput.value=current.metadata.txid;
+            ownerPurposeInput.value=Object.entries(OWNER_PURPOSES).find(([,purpose])=>purpose.reason_code===current.metadata.reason_code)[0];
+            ownerAttestation.checked=false;
+            renderOwnerRecovery('原请求尚未确认成功。只可重新预检同一链上事件；重新勾选所有权后主动确认，沿用原请求编号。');
+          } catch(error) {authFailure(error);if(!disposed)renderOwnerRecovery('原申报状态查询失败；不能判定成功或发起另一笔申报。');}
+        }));
+    }
+    async function confirmOwnerTransfer(button,state) {
+      if(disposed||refreshing||writing||reading||reauthenticating||button.disabled||!ownerPreviewed)return;
+      const current=ownerPreviewed;
+      if(current.fingerprint!==draftFingerprint()){
+        invalidateOwnerPreview();state.textContent='申报参数已变化，请重新预检并再次确认。';return;
+      }
+      if(accessController&&!accessController.canWrite()){
+        button.disabled=true;invalidateOwnerPreview();state.textContent='钱包验证已失效。验证后重新预检并再次点击确认；系统不会自动申报。';
+        await accessController.requestWriteGrant();return;
+      }
+      writing=true;button.disabled=true;root.setAttribute('aria-busy','true');
+      refreshStatus.textContent='申报正在处理；点击刷新会在完成后自动刷新。';
+      const metadata={txid:current.payload.txid,log_index:current.snapshot.log_index,reason_code:current.payload.reason_code};
+      try {
+        const pending=pendingOwner();
+        if(pending?.invalid||pending&&!ownerPendingQueried||pending&&JSON.stringify(pending.metadata)!==JSON.stringify(metadata))
+          throw Error('原请求结果尚未核清；不能发起另一笔申报');
+        const entry=journal.begin('owner-transfer',metadata);
+        ownerPendingQueried=false;renderOwnerRecovery();
+        const result=await api.executeOwnerTransfer({...current.payload,log_index:current.snapshot.log_index},{idempotencyKey:entry.key});
+        if(!matchingOwnerRecord(result,metadata))throw Error('申报响应与原定位不一致');
+        journal.finish('owner-transfer');renderOwnerRecovery();closeOwnerConfirm();
+        if(!disposed)ownerState.textContent=`已申报（${result.replayed?'原记录':'新记录'}）。请刷新监控和事故，再单独核验资金恢复。`;
+      } catch(error) {
+        authFailure(error);closeOwnerConfirm();renderOwnerRecovery();
+        if(!disposed)ownerState.textContent='申报结果尚未确认。请先查询原申报状态；不得自动重发或提交另一笔。';
+      } finally {
+        writing=false;root.setAttribute('aria-busy','false');
+        if(queuedRefresh){const pending=queuedRefresh;queuedRefresh=null;try{pending.resolve(await root.refresh());}catch{pending.resolve(false);}}
+        else if(!disposed)refreshStatus.textContent='本次处理已结束，请核对申报状态。';
+      }
+    }
+    const ownerForm=commandForm(ownerTransfer,'owner-transfer','预检所有者转出',
+      [ownerTxidInput,ownerPurposeInput,ownerAttestation],async(values,state)=>{
+        invalidateOwnerPreview();
+        const purpose=OWNER_PURPOSES[values.purpose];
+        if(!purpose){state.textContent='请先选择转出用途。';return;}
+        const pending=pendingOwner();
+        if(pending?.invalid||pending&&!ownerPendingQueried||pending&&
+            (pending.metadata.txid!==values.txid||pending.metadata.reason_code!==purpose.reason_code)){
+          state.textContent='原申报结果尚未核清；请先查询原请求状态，不得申报另一笔。';return;
+        }
+        const selected=ownerCandidate?.txid===values.txid?ownerCandidate:null;
+        if(selected&&pending&&selected.log_index!==pending.metadata.log_index){state.textContent='候选事件与原请求不一致，申报已关闭。';return;}
+        const payload={txid:values.txid,...(pending?{log_index:pending.metadata.log_index}:selected?{log_index:selected.log_index}:{}),
+          reason_code:purpose.reason_code,reason_detail:purpose.reason_detail,ownership_attested:true};
+        const fingerprint=draftFingerprint(),generation=++ownerPreviewGeneration;
+        try {
+          const snapshot=await api.previewOwnerTransfer(payload);
+          if(disposed||generation!==ownerPreviewGeneration||fingerprint!==draftFingerprint())return;
+          if(!snapshot||snapshot.txid!==values.txid||!Number.isSafeInteger(snapshot.log_index)||snapshot.log_index<0||
+              !Array.isArray(snapshot.blockers)||snapshot.reason_code!==purpose.reason_code||
+              snapshot.reason_detail!==purpose.reason_detail||snapshot.declared_by!==actor?.id||
+              typeof snapshot.to_address!=='string'||!snapshot.to_address)throw Error('预检证据不完整');
+          if(snapshot.blockers.length){state.textContent=`预检未通过：${snapshot.blockers.join('、')}。未提交申报。`;return;}
+          const amount=ownerAmount(snapshot.amount_units);
+          if(payload.log_index!==undefined&&snapshot.log_index!==payload.log_index||selected&&
+              (selected.amount!==amount||selected.to_address!==snapshot.to_address))throw Error('链上候选与预检证据不一致');
+          const body=node('section');body.append(node('p','请核对实际收款地址、精确金额与用途。预检未产生申报或账本记录。'));
+          describe(body,[['交易哈希',shortTxid(values.txid)],['精确金额',`${amount} USDT`],
+            ['收款地址',snapshot.to_address],['用途',purpose.label]]);
+          const confirm=action('确认申报',()=>confirmOwnerTransfer(confirm,state));confirm.className='admin-primary wallet-critical-action';body.append(confirm);
+          ownerPreviewed={payload,snapshot,fingerprint};
+          ownerConfirmModal=detailDialog('确认所有者转出申报',body,{onClose:()=>{ownerConfirmModal=null;ownerPreviewed=null;++ownerPreviewGeneration;}});
+          state.textContent='预检通过。请在确认窗口核对后，主动点击“确认申报”。';
+        } catch(error) {
+          if(disposed||generation!==ownerPreviewGeneration)return;
+          state.textContent=error?.code==='TRANSFER_SELECTION_REQUIRED'?'该交易包含多笔官方转出，请从上方链上流水选择具体记录。':
+            error?.code==='TRANSFER_NOT_FOUND'?'该交易没有可申报的官方转出，请核查链上流水。':
+            '预检未通过；链上证据或服务状态需核查，未提交申报。';
+        }
+      });
+    ownerState=ownerForm.commandState;
+    ownerTransfer.append(node('p','预检会核对新鲜链上证据与监控覆盖；表单不填写索引、金额或地址。'),recovery);
+    renderOwnerRecovery();primary.append(ownerTransfer);
+    root.selectOwnerTransferCandidate=value=>{
+      if(disposed||pendingOwner()||!value||typeof value.txid!=='string'||!/^[a-f0-9]{64}$/.test(value.txid)||
+          !Number.isSafeInteger(value.log_index)||value.log_index<0||typeof value.to_address!=='string'||
+          !value.to_address||!Number.isSafeInteger(value.timestamp_ms)||value.timestamp_ms<0)return false;
+      try {exactUsdt(value.amount);} catch {return false;}
+      invalidateOwnerPreview();ownerCandidate={txid:value.txid,log_index:value.log_index,amount:value.amount,
+        to_address:value.to_address,timestamp_ms:value.timestamp_ms};
+      ownerTxidInput.value=value.txid;ownerAttestation.checked=false;
+      ownerState.textContent='已选择链上观察记录。请核对用途并勾选所有权，再用新鲜链证据预检。';
+      return true;
+    };
   }
   let reservePolicy;
   let incidentGeneration=0, incidentSelection=0;
@@ -373,7 +527,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     if(list.status==='rejected') return stale(incidents,'事故加载失败。');
     incidentCursor=cursor;activeIncidentFilters=filters;incidentPage=page;incidentPages=pages;
     if(reset)for(const [key,input] of Object.entries(incidentInputs))input.value=key==='sort'?'opened_desc':'';
-    incidents.replaceChildren();
+    incidents.replaceChildren(node('p',`事故列表读取于 ${formatBeijingTime(Date.now())}。`));
     if(!list.value.items.length) incidents.append(node('p','暂无事故记录'));
     const table=node('table');table.className='admin-table';const headers=node('tr'),head=node('thead'),body=node('tbody');for(const label of ['事故','发生时间（北京时间）','等级','处理状态','影响范围','操作'])headers.append(node('th',label));head.append(headers);
     for(const item of list.value.items) { const summary=incidentSummary(item,reservePolicy),row=node('tr');for(const value of [summary.title,incidentTime(item.opened_at),item.severity,summary.status,summary.impact])row.append(node('td',value));const cell=node('td');cell.append(action('查看事故',()=>showIncident(item.id)));row.append(cell);body.append(row); }
@@ -398,8 +552,8 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const technical=node('details');technical.append(node('summary','技术详情与时间线'));
       describe(technical,[['事故编号',item.id],['技术代码',item.code],['级别',item.severity],['版本',item.version],['复核证据摘要',item.clearance_digest],['确认人',item.acknowledged_by],['结案人',item.resolved_by],['最近发现',incidentTime(item.last_seen_at)],['接手时间',incidentTime(item.acknowledged_at)],['异常消失时间',incidentTime(item.cleared_at)],['结案时间',incidentTime(item.resolved_at)]]);incidentDetail.append(technical);
       if(item.status==='RESOLVED'||summary.advisory)return;
-      const incidentGuidance=walletAccess?'钱包身份已验证。确认后执行事故检查与处理。':authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。';
-      incidentDetail.append(node('p',summary.temporarySource?`${incidentGuidance}处理不会改变资金启停，是否暂停请以当前资金控制状态为准。`:walletAccess?'钱包身份已验证。确认后执行事故检查与处理；不会恢复资金。':authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成；处理后资金仍暂停。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。'));
+      const incidentGuidance=walletAccess?'事故详情只读可查看；处理操作按需验证钱包写入权限，验证后须重新确认，系统不会自动处理。':authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。';
+      incidentDetail.append(node('p',summary.temporarySource?`${incidentGuidance}处理不会改变资金启停，是否暂停请以当前资金控制状态为准。`:walletAccess?`${incidentGuidance}处理不会恢复资金。`:authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成；处理后资金仍暂停。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。'));
       commandForm(incidentDetail,'incident-process','检查并处理事故',[checkbox('accept_incident',summary.temporarySource?'我确认处理这起事故；处理不会改变资金启停':'我确认处理这起事故；完成后可前往“资金启停”恢复资金'),...credentialFields()],async(values,state)=>{
         const credential=credentialPayload(values);
         delete values.operation_password;delete values.mfa_proof;
@@ -424,7 +578,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       describe(control,[['状态',({PAUSED:'已暂停',ACTIVE:'已启用',RUNNING:'运行中',UNAVAILABLE:'暂不可用'}[current.status]??'状态待核实')],['限制来源',current.restriction_scopes.map(x=>x==='manual_tron'?'人工钱包风控':x).join('、')||'无'],['未结阻断事故',current.unresolved_incidents]]);
       control.append(node('p','恢复会重新核验链上证据、储备、告警与限制来源。结案不等于恢复；来源不明或其他风控限制不能在此解除。'));
       if(current.status==='PAUSED'&&current.unresolved_incidents!==0) {
-        const recovery=node('button','核验并恢复资金');recovery.type='button';recovery.className='admin-secondary';recovery.disabled=true;
+        const recovery=node('button','核验并恢复资金');recovery.type='button';recovery.className='admin-secondary wallet-critical-action';recovery.disabled=true;
         control.append(recovery,node('p',`存在 ${current.unresolved_incidents} 起未结事故。请在“监控与事故”中逐起选择“检查并处理事故”。全部阻断事故处理后，再单独核验恢复资金。`));
       }
       for(const [kind,label] of [['pause','暂停新资金操作'],['resume','核验并恢复资金']]) {
@@ -515,13 +669,28 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       },extra,operation);
     } catch(error) {authFailure(error);if(!disposed&&generation===handoverGeneration) handover.append(node('p',`交接状态未确认：${error.code??'REQUEST_FAILED'}。请保留原请求并刷新。`),action('刷新交接状态',loadHandover));}
   }
-  let ownRefresh,queuedRefresh;
+  let ownRefresh,queuedRefresh,refreshDrafts,refreshInitialForms,accessCheckGeneration=0;
   const refreshStatus=node('p');refreshStatus.setAttribute('role','status');heading.append(refreshStatus);
   const check=action('检查当前状态',()=>root.refresh());
-  monitoring.append(node('p','检查当前状态无需操作密码，仅刷新当前状态，不会结案或恢复资金。'),check);
+  heartbeat.append(node('p','检查当前状态无需操作密码，仅刷新当前状态，不会结案或恢复资金。'),check);
+  root.suspendForAccessCheck = () => {
+    if(disposed)return;
+    ++accessCheckGeneration;
+    const writeForms=new Set([...forms(),...(refreshInitialForms??[])].filter(form=>form.className==='admin-command-form'));
+    ++detailGeneration;++incidentSelection;++ownerPreviewGeneration;
+    incidentModal?.close();ownerConfirmModal?.close();ownerConfirmModal=null;ownerPreviewed=null;ownerCandidate=null;ownerPendingQueried=false;
+    for(const form of writeForms)for(const input of descendants(form)){
+      if(input.tagName!=='INPUT'&&input.tag!=='input'&&input.tagName!=='SELECT'&&input.tag!=='select'&&
+          input.tagName!=='TEXTAREA'&&input.tag!=='textarea')continue;
+      if(input.type==='checkbox')input.checked=false;else input.value='';
+    }
+    for(const form of writeForms)refreshDrafts?.delete(form.name);
+    for(const input of secretInputs)input.value='';
+    if(ownerState)ownerState.textContent='钱包权限正在重新核验；旧预检和未提交草稿已清除。';
+  };
   root.dispose = () => {
-    disposed=true;++mfaGeneration;++listGeneration;++detailGeneration;++incidentGeneration;++incidentSelection;++controlGeneration;++handoverGeneration;
-    incidentModal?.close();
+    disposed=true;++mfaGeneration;++listGeneration;++detailGeneration;++incidentGeneration;++incidentSelection;++controlGeneration;++handoverGeneration;++ownerPreviewGeneration;
+    incidentModal?.close();ownerConfirmModal?.close();ownerConfirmModal=null;ownerPreviewed=null;ownerCandidate=null;
     if(queuedRefresh){queuedRefresh.resolve(false);queuedRefresh=null;}
     for(const input of secretInputs)input.value='';secretInputs.clear();
   };
@@ -534,14 +703,19 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     }
     refreshing=true;if(ownRefresh){ownRefresh.disabled=true;ownRefresh.setAttribute('aria-busy','true');}root.setAttribute('aria-busy','true');refreshStatus.textContent='正在刷新…';
     const selectionAtStart=[selectedOrder,selectedIncident];
+    const accessAtStart=accessCheckGeneration;
     const initialForms=forms();
     const drafts=new Map(initialForms.map(form=>[form.name,inputsOf(form).map(input=>({name:input.name,value:input.value,checked:input.checked}))]));
+    refreshInitialForms=initialForms;refreshDrafts=drafts;
     try {
       const securityResult=await loadSecurity();if(disposed)return false;
       if(securityOnly)return securityResult!==false;
       const results=await Promise.all([loadOrders(),loadIncidents(),loadControl(), selectedOrder ? showOrder(selectedOrder) : null, selectedIncident ? showIncident(selectedIncident) : null]);
       if(disposed)return false;
-      for(const oldForm of initialForms) drafts.set(oldForm.name,inputsOf(oldForm).map(input=>({name:input.name,value:input.value,checked:input.checked})));
+      for(const oldForm of initialForms){
+        if(accessCheckGeneration!==accessAtStart&&oldForm.className==='admin-command-form'){drafts.delete(oldForm.name);continue;}
+        drafts.set(oldForm.name,inputsOf(oldForm).map(input=>({name:input.name,value:input.value,checked:input.checked})));
+      }
       if(selectedOrder!==selectionAtStart[0]){drafts.delete('claim');drafts.delete('txid');}
       if(selectedIncident!==selectionAtStart[1])for(const name of drafts.keys())if(name.startsWith('incident-'))drafts.delete(name);
       for(const form of forms()) {
@@ -556,7 +730,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const success=securityResult!==false&&results.every(result=>result!==false);
       refreshStatus.textContent=`${success?'已刷新':'部分数据刷新失败'} · ${formatBeijingTime(Date.now())}`;
       return success;
-    } finally { drafts.clear(); refreshing=false;if(ownRefresh){ownRefresh.disabled=false;ownRefresh.setAttribute('aria-busy','false');}root.setAttribute('aria-busy','false'); }
+    } finally { drafts.clear();refreshDrafts=null;refreshInitialForms=null;refreshing=false;if(ownRefresh){ownRefresh.disabled=false;ownRefresh.setAttribute('aria-busy','false');}root.setAttribute('aria-busy','false'); }
   };
   if(!unifiedRefresh){const button=ownRefresh=action('↻',()=>root.refresh());button.className='admin-refresh';button.title='刷新';button.setAttribute('aria-label','刷新');heading.append(button);}
   if(securityOnly){workspace.replaceChildren(mfa);heading.hidden=true;}

@@ -306,3 +306,65 @@
   --conversation-pinned-surface: #EDEDED;
 }
 .ui-screen[data-theme="dark"], html[data-theme="dark"] { --conversation-pinned-surface: #191919; }
+
+/* Official wallet workspace palette, shared by light and dark compositions. */
+:root {
+  --wallet-workspace-color-0003: #0003;
+  --wallet-workspace-color-0b1c2a: #0b1c2a;
+  --wallet-workspace-color-0e6576: #0e6576;
+  --wallet-workspace-color-102c3b20: #102c3b20;
+  --wallet-workspace-color-102e3e: #102e3e;
+  --wallet-workspace-color-123344: #123344;
+  --wallet-workspace-color-14394415: #14394415;
+  --wallet-workspace-color-162f3b0b: #162f3b0b;
+  --wallet-workspace-color-192932: #192932;
+  --wallet-workspace-color-1b2d37: #1b2d37;
+  --wallet-workspace-color-1b4050: #1b4050;
+  --wallet-workspace-color-1f4655: #1f4655;
+  --wallet-workspace-color-20313b: #20313b;
+  --wallet-workspace-color-203743: #203743;
+  --wallet-workspace-color-223945: #223945;
+  --wallet-workspace-color-243945: #243945;
+  --wallet-workspace-color-245364: #245364;
+  --wallet-workspace-color-285968: #285968;
+  --wallet-workspace-color-293f4b: #293f4b;
+  --wallet-workspace-color-315d6b: #315d6b;
+  --wallet-workspace-color-396d79: #396d79;
+  --wallet-workspace-color-3d6472: #3d6472;
+  --wallet-workspace-color-3e6f7d: #3e6f7d;
+  --wallet-workspace-color-415967: #415967;
+  --wallet-workspace-color-456b7b: #456b7b;
+  --wallet-workspace-color-496370: #496370;
+  --wallet-workspace-color-607d89: #607d89;
+  --wallet-workspace-color-629baa: #629baa;
+  --wallet-workspace-color-647e8b: #647e8b;
+  --wallet-workspace-color-647f8a: #647f8a;
+  --wallet-workspace-color-6b838d: #6b838d;
+  --wallet-workspace-color-6dd2e248: #6dd2e248;
+  --wallet-workspace-color-75dbe5: #75dbe5;
+  --wallet-workspace-color-763142: #763142;
+  --wallet-workspace-color-7bc8d2: #7bc8d2;
+  --wallet-workspace-color-89dbe6: #89dbe6;
+  --wallet-workspace-color-8d4051: #8d4051;
+  --wallet-workspace-color-95cbd3: #95cbd3;
+  --wallet-workspace-color-9de7f1: #9de7f1;
+  --wallet-workspace-color-acc4cd: #acc4cd;
+  --wallet-workspace-color-b6d0da: #b6d0da;
+  --wallet-workspace-color-c2dce3: #c2dce3;
+  --wallet-workspace-color-d2f6f7: #d2f6f7;
+  --wallet-workspace-color-d5e8ed: #d5e8ed;
+  --wallet-workspace-color-dce7eb: #dce7eb;
+  --wallet-workspace-color-dde8eb: #dde8eb;
+  --wallet-workspace-color-deeaed: #deeaed;
+  --wallet-workspace-color-e4f0f3: #e4f0f3;
+  --wallet-workspace-color-edf3f5: #edf3f5;
+  --wallet-workspace-color-edfaff: #edfaff;
+  --wallet-workspace-color-eefdff: #eefdff;
+  --wallet-workspace-color-f2fcff: #f2fcff;
+  --wallet-workspace-color-f4f8f9: #f4f8f9;
+  --wallet-workspace-color-f5f9fa: #f5f9fa;
+  --wallet-workspace-color-f8fbfc: #f8fbfc;
+  --wallet-workspace-color-f9fcfd: #f9fcfd;
+  --wallet-workspace-color-fcfefe: #fcfefe;
+  --wallet-workspace-color-fff: #fff;
+}

@@ -570,3 +570,350 @@ test('refresh returns false for every failed panel or selected detail and true a
   failing=false;assert.equal(await panel.refresh(),true,failed);
  }
 });
+
+
+const ownerTxid='a'.repeat(64);
+const ownerOtherTxid='b'.repeat(64);
+const ownerPreview=(overrides={})=>({
+ txid:ownerTxid,log_index:7,to_address:'fixture-recipient',
+ amount_units:'100000000000000001000001',reason_code:'OWNER_TEST_DRAW',
+ reason_detail:'官方钱包持有人测试转出',declared_by:'owner',blockers:[],...overrides
+});
+const ownerPurpose=form=>form.find('select').find(input=>input.name==='purpose');
+const ownerDraft=form=>{
+ form.find('input').find(input=>input.name==='txid').value=ownerTxid;
+ ownerPurpose(form).value='test';
+ form.find('input').find(input=>input.name==='ownership_attested').checked=true;
+};
+const openOwnerDialogs=()=>document.body.find('dialog').filter(dialog=>dialog.open&&!dialog.removed);
+const ownerConfirm=()=>openOwnerDialogs().flatMap(dialog=>dialog.find('button')).find(button=>button.textContent==='确认申报');
+
+test('owner transfer requires empty-default purpose and previews a unique nonzero event without executing',async()=>{
+ const previews=[],executions=[];
+ const panel=setup({previewOwnerTransfer:async body=>{previews.push(body);return ownerPreview();},
+  executeOwnerTransfer:async(...args)=>{executions.push(args);return ownerPreview();}},{walletAccess:true});
+ await settle();const form=panel.find('form').find(item=>item.name==='owner-transfer');
+ assert.ok(form);assert.deepEqual(form.find('input').map(input=>input.name),['txid','ownership_attested']);
+ const purpose=ownerPurpose(form);assert.ok(purpose);assert.equal(purpose.value,'');
+ assert.deepEqual(purpose.find('option').map(option=>[option.value,option.textContent]),
+  [['','请选择转出用途'],['test','钱包测试转出'],['payment','对外付款']]);
+ form.find('input').find(input=>input.name==='txid').value=ownerTxid;
+ form.find('input').find(input=>input.name==='ownership_attested').checked=true;
+ await form.handlers.submit({preventDefault(){}});
+ assert.equal(previews.length,0);
+ assert.ok(form.find('p').some(item=>item.textContent?.includes('请选择转出用途')));
+ purpose.value='test';await form.handlers.submit({preventDefault(){}});
+ assert.deepEqual(previews,[{txid:ownerTxid,reason_code:'OWNER_TEST_DRAW',
+  reason_detail:'官方钱包持有人测试转出',ownership_attested:true}]);
+ assert.equal(executions.length,0);
+ const dialog=openOwnerDialogs()[0];assert.ok(dialog);
+ const details=dialog.find('dd').map(item=>item.textContent);
+ assert.ok(details.includes('100000000000000001.000001 USDT'));
+ assert.ok(details.includes('fixture-recipient'));
+ assert.ok(details.includes('钱包测试转出'));
+ assert.ok(details.some(value=>value.includes(ownerTxid.slice(0,8))&&value.includes(ownerTxid.slice(-6))));
+ assert.ok(ownerConfirm());
+});
+
+test('external payment purpose is fixed and controlled chain candidate supplies exact preview index',async()=>{
+ const previews=[];
+ const panel=setup({previewOwnerTransfer:async body=>{previews.push(body);return ownerPreview({reason_code:'OWNER_EXTERNAL_PAYMENT',reason_detail:'官方钱包持有人对外付款'});}},{walletAccess:true});
+ await settle();
+ assert.equal(typeof panel.selectOwnerTransferCandidate,'function');
+ assert.equal(panel.selectOwnerTransferCandidate({txid:ownerTxid,log_index:-1,amount:'1.000000',to_address:'fixture-recipient',timestamp_ms:1}),false);
+ assert.equal(panel.selectOwnerTransferCandidate({txid:ownerTxid,log_index:7,amount:'1e3',to_address:'fixture-recipient',timestamp_ms:1}),false);
+ assert.equal(panel.selectOwnerTransferCandidate({txid:ownerTxid,log_index:7,amount:'100000000000000001.000001',to_address:'fixture-recipient',timestamp_ms:1780000000000}),true);
+ const form=panel.find('form').find(item=>item.name==='owner-transfer');
+ ownerPurpose(form).value='payment';form.find('input').find(input=>input.name==='ownership_attested').checked=true;
+ await form.handlers.submit({preventDefault(){}});
+ assert.deepEqual(previews,[{txid:ownerTxid,log_index:7,reason_code:'OWNER_EXTERNAL_PAYMENT',
+  reason_detail:'官方钱包持有人对外付款',ownership_attested:true}]);
+ assert.ok(ownerConfirm());
+ ownerPurpose(form).value='test';ownerPurpose(form).handlers.change?.();
+ assert.equal(ownerConfirm(),undefined);
+});
+
+test('ambiguous or absent owner outflow stops at preview with actionable guidance',async()=>{
+ for(const [code,text] of [['TRANSFER_SELECTION_REQUIRED','链上流水'],['TRANSFER_NOT_FOUND','没有可申报']]){
+  let writes=0;
+  const panel=setup({previewOwnerTransfer:async()=>{throw {code};},executeOwnerTransfer:async()=>{writes++;}},{walletAccess:true});
+  await settle();const form=panel.find('form').find(item=>item.name==='owner-transfer');ownerDraft(form);
+  await form.handlers.submit({preventDefault(){}});
+  assert.equal(writes,0);assert.equal(ownerConfirm(),undefined);
+  assert.ok(form.find('p').some(item=>item.textContent?.includes(text)),code);
+  panel.dispose();
+ }
+});
+
+test('selected chain candidate must agree with fresh preview amount and destination',async()=>{
+ for(const changed of [{amount_units:'100000000000000001000002'},{to_address:'different-recipient'}]){
+  let writes=0;
+  const panel=setup({previewOwnerTransfer:async()=>ownerPreview(changed),executeOwnerTransfer:async()=>{writes++;}},{walletAccess:true});
+  await settle();
+  assert.equal(panel.selectOwnerTransferCandidate({txid:ownerTxid,log_index:7,amount:'100000000000000001.000001',
+   to_address:'fixture-recipient',timestamp_ms:1780000000000}),true);
+  const form=panel.find('form').find(item=>item.name==='owner-transfer');ownerPurpose(form).value='test';
+  form.find('input').find(input=>input.name==='ownership_attested').checked=true;
+  await form.handlers.submit({preventDefault(){}});
+  assert.equal(ownerConfirm(),undefined);assert.equal(writes,0);
+ }
+});
+
+test('owner preview rejects unbounded amount units before showing a confirmation',async()=>{
+ let writes=0;
+ const panel=setup({previewOwnerTransfer:async()=>ownerPreview({amount_units:'9'.repeat(1000)}),
+  executeOwnerTransfer:async()=>{writes++;}},{walletAccess:true});
+ await settle();const form=panel.find('form').find(item=>item.name==='owner-transfer');ownerDraft(form);
+ await form.handlers.submit({preventDefault(){}});
+ assert.equal(ownerConfirm(),undefined);assert.equal(writes,0);
+});
+
+test('owner confirmation double click and another financial command share one write lock',async()=>{
+ let release,executions=0,pauses=0;
+ const panel=setup({previewOwnerTransfer:async()=>ownerPreview(),
+  executeOwnerTransfer:async()=>{executions++;return new Promise(resolve=>release=()=>resolve({...ownerPreview(),status:'DECLARED',replayed:false}));},
+  getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'ACTIVE',restriction_scopes:[],unresolved_incidents:0}),
+  manualWalletControlAction:async()=>{pauses++;}},{walletAccess:true});
+ await settle();const form=panel.find('form').find(item=>item.name==='owner-transfer');ownerDraft(form);
+ await form.handlers.submit({preventDefault(){}});
+ const confirm=ownerConfirm();assert.ok(confirm);
+ const first=confirm.handlers.click();await settle();const second=confirm.handlers.click();
+ const pause=panel.find('form').find(item=>item.name==='control-pause');
+ pause.find('input')[0].checked=true;await pause.handlers.submit({preventDefault(){}});
+ assert.equal(executions,1);assert.equal(pauses,0);
+ release();await Promise.all([first,second]);assert.equal(executions,1);
+});
+
+test('lost wallet grant closes owner confirmation and requires a new deliberate preview and click',async()=>{
+ let authorized=true,prompts=0,writes=0;
+ const panel=setup({previewOwnerTransfer:async()=>ownerPreview(),executeOwnerTransfer:async()=>{writes++;}},
+  {walletAccess:true,accessController:{canWrite:()=>authorized,requestWriteGrant:async()=>{prompts++;authorized=true;return true;}}});
+ await settle();const form=panel.find('form').find(item=>item.name==='owner-transfer');ownerDraft(form);
+ await form.handlers.submit({preventDefault(){}});
+ authorized=false;await ownerConfirm().handlers.click();
+ assert.equal(writes,0);assert.equal(prompts,1);assert.equal(ownerConfirm(),undefined);
+ await form.handlers.submit({preventDefault(){}});assert.ok(ownerConfirm());assert.equal(writes,0);
+});
+
+test('unknown owner transfer retains one fixed journal key and only exact status closes it',async()=>{
+ const store=storage(),calls=[],txid=ownerTxid;
+ let status={txid,transfers:[{...ownerPreview({log_index:8}),status:'DECLARED'}]};
+ const api={previewOwnerTransfer:async()=>ownerPreview(),
+  executeOwnerTransfer:async(body,options)=>{calls.push({body,options});throw {code:'NETWORK_ERROR'};},
+  getOwnerTransfer:async()=>status};
+ let panel=setup(api,{walletAccess:true,storage:store});await settle();
+ let form=panel.find('form').find(item=>item.name==='owner-transfer');ownerDraft(form);
+ await form.handlers.submit({preventDefault(){}});await ownerConfirm().handlers.click();
+ assert.equal(calls.length,1);assert.equal(calls[0].body.log_index,7);
+ assert.match(calls[0].options.idempotencyKey,/^[0-9a-f-]{36}$/);
+ const pending=operationJournal(store,'owner').pending('owner-transfer');
+ assert.deepEqual(pending.metadata,{txid,log_index:7,reason_code:'OWNER_TEST_DRAW'});
+ assert.ok(!JSON.stringify([...store.data]).includes('fixture-recipient'));
+ panel.dispose();panel=setup(api,{walletAccess:true,storage:store});await settle();
+ form=panel.find('form').find(item=>item.name==='owner-transfer');
+ form.find('input').find(input=>input.name==='txid').value=ownerOtherTxid;
+ ownerPurpose(form).value='payment';form.find('input').find(input=>input.name==='ownership_attested').checked=true;
+ await form.handlers.submit({preventDefault(){}});assert.equal(calls.length,1);
+ let query=panel.find('button').find(button=>button.textContent==='查询原申报状态');assert.ok(query);
+ await query.handlers.click();assert.ok(operationJournal(store,'owner').pending('owner-transfer'));
+ status={txid,transfers:[{...ownerPreview({reason_detail:'不匹配说明'}),status:'DECLARED'}]};
+ await query.handlers.click();assert.ok(operationJournal(store,'owner').pending('owner-transfer'));
+ status={txid,transfers:[{...ownerPreview({reason_code:'OWNER_EXTERNAL_PAYMENT'}),status:'DECLARED'}]};
+ await query.handlers.click();assert.ok(operationJournal(store,'owner').pending('owner-transfer'));
+ status={txid,transfers:[{...ownerPreview({declared_by:'other'}),status:'DECLARED'}]};
+ await query.handlers.click();assert.ok(operationJournal(store,'owner').pending('owner-transfer'));
+ status={txid,transfers:[{...ownerPreview(),status:'DECLARED'}]};
+ await query.handlers.click();assert.equal(operationJournal(store,'owner').pending('owner-transfer'),null);
+});
+
+test('owner pending result can retry only after lookup, with original HTTP key and exact payload',async()=>{
+ const store=storage(),calls=[];
+ const api={previewOwnerTransfer:async body=>ownerPreview({log_index:body.log_index??7}),
+  executeOwnerTransfer:async(body,options)=>{calls.push({body,options});throw {code:'NETWORK_ERROR'};},
+  getOwnerTransfer:async()=>({txid:ownerTxid,transfers:[]})};
+ const panel=setup(api,{walletAccess:true,storage:store});await settle();
+ const form=panel.find('form').find(item=>item.name==='owner-transfer');ownerDraft(form);
+ await form.handlers.submit({preventDefault(){}});await ownerConfirm().handlers.click();
+ const key=calls[0].options.idempotencyKey;
+ await form.handlers.submit({preventDefault(){}});assert.equal(calls.length,1);
+ await panel.find('button').find(button=>button.textContent==='查询原申报状态').handlers.click();
+ assert.ok(panel.find('p').some(item=>item.textContent?.includes('原请求')));
+ form.find('input').find(input=>input.name==='ownership_attested').checked=true;
+ await form.handlers.submit({preventDefault(){}});
+ assert.equal(calls.length,1);assert.ok(ownerConfirm());
+ await ownerConfirm().handlers.click();
+ assert.equal(calls.length,2);
+ assert.equal(calls[1].options.idempotencyKey,key);
+ assert.deepEqual(calls[1].body,calls[0].body);
+});
+
+test('access suspension closes body dialogs, clears owner draft, and late preview cannot reopen',async()=>{
+ let releasePreview;
+ const panel=setup({previewOwnerTransfer:async()=>new Promise(resolve=>releasePreview=resolve),
+  getWalletIncidents:async()=>({items:[{id:'incident',code:'MANUAL_SOURCE_UNHEALTHY',status:'OPEN',version:1,condition_active:true}]}),
+  getWalletIncident:async()=>({id:'incident',code:'MANUAL_SOURCE_UNHEALTHY',status:'OPEN',version:1,condition_active:true})},{walletAccess:true});
+ await settle();await panel.find('button').find(button=>button.textContent==='查看事故').handlers.click();
+ assert.equal(openOwnerDialogs().length,1);
+ const incidentForm=document.body.find('form').find(item=>item.name==='incident-process');
+ incidentForm.find('input').find(input=>input.name==='accept_incident').checked=true;
+ assert.equal(typeof panel.suspendForAccessCheck,'function');
+ panel.suspendForAccessCheck();assert.equal(openOwnerDialogs().length,0);
+ assert.equal(incidentForm.find('input').find(input=>input.name==='accept_incident').checked,false);
+ const form=panel.find('form').find(item=>item.name==='owner-transfer');ownerDraft(form);
+ const pending=form.handlers.submit({preventDefault(){}});await settle();
+ panel.suspendForAccessCheck();releasePreview(ownerPreview());await pending;
+ assert.equal(openOwnerDialogs().length,0);
+ assert.equal(form.find('input').find(input=>input.name==='txid').value,'');
+ assert.equal(ownerPurpose(form).value,'');
+ assert.equal(form.find('input').find(input=>input.name==='ownership_attested').checked,false);
+});
+
+test('owner incident wording says write verification is on demand and requires a second confirmation',async()=>{
+ let checks=0,writes=0;
+ const incident={id:'incident',code:'MANUAL_SOURCE_UNHEALTHY',status:'OPEN',version:1,condition_active:true};
+ const panel=setup({getWalletIncidents:async()=>({items:[incident]}),getWalletIncident:async()=>incident,
+  manualWalletIncidentAction:async()=>{writes++;}},
+  {walletAccess:true,accessController:{canWrite:()=>false,requestWriteGrant:async()=>{checks++;return true;}}});
+ await settle();await panel.find('button').find(button=>button.textContent==='查看事故').handlers.click();
+ const explanation=document.body.find('p').map(item=>item.textContent??'').join(' ');
+ assert.doesNotMatch(explanation,/钱包身份已验证/);
+ assert.match(explanation,/按需验证/);
+ assert.match(explanation,/重新确认/);
+ const form=document.body.find('form').find(item=>item.name==='incident-process');
+ form.find('input').find(input=>input.name==='accept_incident').checked=true;
+ await form.handlers.submit({preventDefault(){}});
+ assert.equal(checks,1);assert.equal(writes,0);
+});
+
+test('manual wallet sections expose stable payout monitor owner and security anchor ids',async()=>{
+ const panel=setup({}, {walletAccess:true,unifiedRefresh:true});await settle();
+ const ids=['wallet-payout','wallet-monitor','wallet-owner','wallet-security'];
+ const sections=ids.map(id=>panel.find('section').find(section=>section.id===id));
+ assert.ok(sections.every(Boolean));
+ await panel.refresh();
+ assert.deepEqual(ids.map(id=>panel.find('section').find(section=>section.id===id)),sections);
+});
+
+test('access suspension during refresh cannot restore a detached payout draft or operation password',async()=>{
+ let delayControl=false,releaseControl;
+ const control={epoch:3,snapshot_digest:digest,status:'PAUSED',restriction_scopes:[],unresolved_incidents:0};
+ const panel=setup({
+  getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:true,version:1}),
+  getManualPayout:async()=>({...order,status:'CLAIMED',claimed_by:'owner'}),
+  getManualWalletControl:async()=>delayControl?new Promise(resolve=>{releaseControl=()=>resolve(control);}):control
+ },{unifiedRefresh:true});
+ await settle();await panel.find('button').find(button=>button.textContent==='查看出款').handlers.click();
+ const form=panel.find('form').find(item=>item.name==='txid');assert.ok(form);
+ form.find('input').find(input=>input.name==='txid').value='c'.repeat(64);
+ form.find('input').find(input=>input.name==='operation_password').value='synthetic-private-password';
+ const readFilter=panel.find('form').find(item=>item.name==='monitoring-filters').find('select').find(input=>input['aria-label']==='事故等级');
+ readFilter.value='T2';
+ delayControl=true;const pending=panel.refresh();await settle();
+ const replacement=panel.find('form').find(item=>item.name==='txid');assert.notEqual(replacement,form);
+ panel.suspendForAccessCheck();
+ assert.equal(replacement.find('input').find(input=>input.name==='txid').value,'');
+ assert.equal(replacement.find('input').find(input=>input.name==='operation_password').value,'');
+ releaseControl();await pending;
+ const after=panel.find('form').find(item=>item.name==='txid');
+ assert.equal(after.find('input').find(input=>input.name==='txid').value,'');
+ assert.equal(after.find('input').find(input=>input.name==='operation_password').value,'');
+ assert.equal(form.find('input').find(input=>input.name==='operation_password').value,'');
+ assert.equal(readFilter.value,'T2');
+});
+
+test('incident detail root exposes a stable styling class',async()=>{
+ const incident={id:'incident',code:'MANUAL_SOURCE_UNHEALTHY',status:'OPEN',version:1,condition_active:true};
+ const panel=setup({getWalletIncidents:async()=>({items:[incident]}),getWalletIncident:async()=>incident});
+ await settle();await panel.find('button').find(button=>button.textContent==='查看事故').handlers.click();
+ assert.ok(document.body.find('section').some(section=>section.className==='wallet-incident-detail'));
+});
+
+test('payout queue and detail identify user withdrawal origin, order number, and chain hashes',async()=>{
+ const panel=setup();await settle();
+ const queue=panel.find('section').find(section=>section.id==='wallet-payout');assert.ok(queue);
+ assert.match(queue.find('h4')[0].textContent,/用户提现申请/);
+ const row=queue.find('article')[0];
+ assert.match(row.find('p').map(item=>item.textContent).join(' '),/来源：用户提现申请/);
+ assert.match(row.find('p').map(item=>item.textContent).join(' '),/人工出款订单编号：order/);
+ await row.find('button').find(button=>button.textContent==='查看出款').handlers.click();
+ const detail=queue.find('section').find(section=>section.className==='wallet-detail');
+ assert.match(detail.find('h4')[0].textContent,/用户提现申请/);
+ const labels=detail.find('dt').map(item=>item.textContent);
+ assert.ok(labels.includes('人工出款订单编号'));
+ assert.ok(labels.includes('候选链上交易哈希'));
+ assert.ok(labels.includes('结算链上交易哈希'));
+});
+
+test('monitor heartbeat and incident records have separate sections without changing filters',async()=>{
+ const queries=[];
+ const panel=setup({getWalletIncidents:async query=>{queries.push(query);return {items:[]};}},{unifiedRefresh:true});
+ await settle();
+ const monitoring=panel.find('section').find(section=>section.id==='wallet-monitor');
+ const heartbeat=monitoring.find('section').find(section=>section.className==='wallet-monitor-heartbeat');
+ const records=monitoring.find('section').find(section=>section.className==='wallet-monitor-incidents');
+ assert.ok(heartbeat);assert.ok(records);assert.notEqual(heartbeat,records);
+ assert.match(heartbeat.find('h5')[0].textContent,/监控心跳/);
+ assert.match(records.find('h5')[0].textContent,/事故记录/);
+ assert.ok(heartbeat.find('button').some(button=>button.textContent==='检查当前状态'));
+ const filter=records.find('form').find(form=>form.name==='monitoring-filters');assert.ok(filter);
+ filter.find('select').find(select=>select['aria-label']==='事故等级').value='T2';
+ await filter.find('button').find(button=>button.textContent==='查询').handlers.click();
+  assert.equal(queries.at(-1).severity,'T2');
+});
+
+test('payout queue shows its own Beijing read time after initial load and local refresh',async t=>{
+  let instant=Date.parse('2026-09-29T00:00:00Z'),reads=0;
+  t.mock.method(Date,'now',()=>instant);
+  const panel=setup({getManualPayouts:async()=>{reads++;return {items:reads===1?[order]:[]};}});
+  await settle();
+  const queue=panel.find('section').find(section=>section.id==='wallet-payout');
+  assert.ok(queue.find('p').some(item=>item.textContent==='金额均为 USDT，保留六位小数。队列读取于 2026-09-29 08:00:00。'));
+  instant=Date.parse('2026-09-29T01:02:03Z');
+  await queue.find('button').find(button=>button.textContent==='刷新出款队列').handlers.click();
+  assert.equal(reads,2);
+  assert.ok(queue.find('p').some(item=>item.textContent==='暂无人工出款。队列读取于 2026-09-29 09:02:03。'));
+});
+
+test('incident list shows its own Beijing read time and keeps stale error feedback',async t=>{
+  let instant=Date.parse('2026-09-29T00:00:00Z'),reads=0;
+  t.mock.method(Date,'now',()=>instant);
+  const panel=setup({getWalletIncidents:async()=>{reads++;if(reads===3)throw Error('offline');return {items:[]};}});
+  await settle();
+  const monitoring=panel.find('section').find(section=>section.id==='wallet-monitor');
+  const records=monitoring.find('section').find(section=>section.className==='wallet-monitor-incidents');
+  assert.ok(records.find('p').some(item=>item.textContent==='事故列表读取于 2026-09-29 08:00:00。'));
+  assert.ok(records.find('p').some(item=>item.textContent==='暂无事故记录'));
+  instant=Date.parse('2026-09-29T01:02:03Z');
+  const refresh=monitoring.find('button').find(button=>button.textContent==='刷新监控和事故');
+  await refresh.handlers.click();
+  assert.equal(reads,2);
+  assert.ok(records.find('p').some(item=>item.textContent==='事故列表读取于 2026-09-29 09:02:03。'));
+  await refresh.handlers.click();
+  assert.ok(records.find('p').some(item=>item.textContent?.includes('事故加载失败')));
+  assert.ok(records.find('p').some(item=>item.textContent==='事故列表读取于 2026-09-29 09:02:03。'));
+});
+
+test('critical wallet writes expose a dedicated button class while read actions do not',async()=>{
+ const incident={id:'incident',code:'MANUAL_SOURCE_UNHEALTHY',status:'OPEN',version:1,condition_active:true};
+ const panel=setup({getWalletIncidents:async()=>({items:[incident]}),getWalletIncident:async()=>incident,
+  getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'ACTIVE',restriction_scopes:[],unresolved_incidents:0}),
+  previewOwnerTransfer:async()=>ownerPreview()},{walletAccess:true});
+ await settle();
+ await panel.find('button').find(button=>button.textContent==='查看出款').handlers.click();
+ const submitFor=(root,name)=>root.find('form').find(form=>form.name===name).find('button').find(button=>button.type==='submit');
+ assert.match(submitFor(panel,'claim').className,/\bwallet-critical-action\b/);
+ assert.match(submitFor(panel,'control-pause').className,/\bwallet-critical-action\b/);
+ await panel.find('button').find(button=>button.textContent==='查看事故').handlers.click();
+ const incidentSubmit=document.body.find('form').find(form=>form.name==='incident-process').find('button').find(button=>button.type==='submit');
+ assert.match(incidentSubmit.className,/\bwallet-critical-action\b/);
+ assert.doesNotMatch(panel.find('button').find(button=>button.textContent==='检查当前状态').className,/\bwallet-critical-action\b/);
+ const owner=panel.find('form').find(form=>form.name==='owner-transfer');ownerDraft(owner);
+ await owner.handlers.submit({preventDefault(){}});
+ assert.match(ownerConfirm().className,/\bwallet-critical-action\b/);
+ panel.dispose();
+ const paused=setup({getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'PAUSED',restriction_scopes:[],unresolved_incidents:0}),
+  getManualPayout:async()=>({...order,status:'CLAIMED',claimed_by:'owner'})},{walletAccess:true});
+ await settle();await paused.find('button').find(button=>button.textContent==='查看出款').handlers.click();
+ assert.match(submitFor(paused,'control-resume').className,/\bwallet-critical-action\b/);
+ assert.match(submitFor(paused,'txid').className,/\bwallet-critical-action\b/);
+});

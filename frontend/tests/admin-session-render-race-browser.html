@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>管理会话晚到响应回归</title>
+<body><div id="app"></div><output id="result">RUNNING</output>
+<script type="module">
+const held=[];
+const json=value=>new Response(JSON.stringify(value),{status:200,headers:{'content-type':'application/json'}});
+globalThis.fetch=async input=>{
+  const path=new URL(input,location.origin).pathname;
+  if(path==='/api/v1/auth/admin-session/refresh')return json({access_token:'old-token',expires_in:900,user_id:'old',session_id:'old-session'});
+  if(path==='/api/v1/admin/context')return new Promise(resolve=>held.push(resolve));
+  if(path==='/api/v1/auth/admin-captcha')return json({challenge_id:'synthetic',image:''});
+  return json({items:[]});
+};
+globalThis.setInterval=()=>-1;
+const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+const check=(okay,message)=>{if(!okay)throw Error(message);};
+try{
+  await import('/src/admin-home.js');
+  for(let i=0;i<100&&held.length===0;i++)await tick();
+  check(held.length===1,'old context request is pending');
+  globalThis.dispatchEvent(new Event('admin-session-expired'));
+  check(!document.querySelector('.admin-modern'),'old page was cleared on session change');
+  held.shift()(json({actor:{id:'old',display_name:'Old Admin'},permissions:['*'],overview:{},modules:{}}));
+  await tick();await tick();
+  check(!document.querySelector('.admin-modern'),'late old context must not rebuild the admin page');
+  check(document.body.dataset.appReady!=='true','late old context must not mark the page authenticated');
+  document.body.dataset.result='PASS';document.querySelector('#result').textContent='PASS';
+}catch(error){document.body.dataset.result='FAIL';document.querySelector('#result').textContent=error.stack||String(error);}
+</script></body></html>

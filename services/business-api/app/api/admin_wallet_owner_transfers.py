@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from app.api.admin_wallet_auth import wallet_grant_service
 from app.api.admin_session_boundary import wallet_read_allowlist
+from app.core.errors import ErrorEnvelope
 from app.modules.identity.tokens import TokenService
 from app.modules.wallet.owner_transfers import OwnerTransferService
 from app.modules.wallet.repairs import fail
@@ -17,6 +18,15 @@ class OwnerTransferBody(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     txid: str = Field(pattern=r'^[a-f0-9]{64}$')
     log_index: int = Field(ge=0)
+    reason_code: str = Field(pattern=REASON_PATTERN)
+    reason_detail: str = Field(min_length=1, max_length=500)
+    ownership_attested: bool
+
+
+class OwnerTransferPreviewBody(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    txid: str = Field(pattern=r'^[a-f0-9]{64}$')
+    log_index: int | None = Field(default=None, ge=0)
     reason_code: str = Field(pattern=REASON_PATTERN)
     reason_detail: str = Field(min_length=1, max_length=500)
     ownership_attested: bool
@@ -66,8 +76,10 @@ def create_admin_owner_transfer_router(settings, factory, *, runtime, clock_trus
             return commit_check
         return dict(actor_id=claims['sub'], authorize=authorize)
 
-    @router.post('/preview')
-    def preview(body: OwnerTransferBody, claims=Depends(actor)):
+    @router.post('/preview', responses={409: {'model': ErrorEnvelope,
+        'description': ('TRANSFER_NOT_FOUND: no official USDT outflow in the transaction; '
+            'TRANSFER_SELECTION_REQUIRED: multiple official USDT outflows require an exact log_index.')}})
+    def preview(body: OwnerTransferPreviewBody, claims=Depends(actor)):
         return response(service.preview(**write_context(claims), **body.model_dump()))
 
     @router.post('')

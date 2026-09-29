@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-状态：待受保护 ADR 与本计划的用户批准；当前仅完成设计和计划，未实施产品源码。
+状态：用户已于 2026-09-29 批准按本 ADR 与计划实施；实施及验证进行中，生产发布以实时门禁结果核对。
 
 **Goal:** 完成钱包管理页视觉改造、链上流水只读现场保留及完整值复制，并把所有者转出申报改为用途单选、自动或人工选择链上事件、预检后显式确认。
 

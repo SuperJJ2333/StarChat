@@ -58,16 +58,18 @@
 
 原因：监控发现官方钱包的一笔链上转出没有对应任何已结算出款订单。若该转出**不是**持有者操作的，按安全事件处置（先转移剩余资金、更换凭据、保留 txid 取证），事故保持暂停。
 
-若确认是持有者本人已完成的转出（测试、对外付款等），2026-09-15 起可通过「所有者转出申报」恢复（ADR-0071）：
+若确认是持有者本人已完成的转出（测试、对外付款等），可通过「所有者转出申报」记录事实（ADR-0071 及本版后台的申报设计）：
 
-1. 管理后台「USDT 钱包」→「所有者转出申报」（需钱包访问授权 + 独立操作密码）。填写链上交易哈希、log_index（通常 0）、原因码与用途说明，勾选所有权声明后提交。预检会核对链上证据与监控覆盖事实；收款地址与金额以链上为准，不可手填。
-2. 申报成功生成不可变记录与平衡账本分录（托管 → 所有者提款，`PLATFORM_OWNER_DRAWING`），不影响用户负债与储备充足性判断。
-3. 刷新「监控与事故」，对 `MANUAL_UNALLOCATED_OUTFLOW` 事故执行「检查并处理事故」：复核通过 → 结案。
-4. 「资金启停」→「核验并恢复人工钱包」。
+1. 管理后台「USDT 钱包」→「所有者转出申报」。输入完整链上交易哈希，从初始为空的用途菜单明确选择「钱包测试转出」或「对外付款」，勾选所有权声明，再点击预检。后台按用途写入固定的原因码和说明，不要求手填日志序号、原因码或重复说明。预检及确认申报均需当前有效的钱包访问授权；授权方式随后台配置使用操作密码或 TOTP。
+2. 预检从新鲜链上证据中寻找官方地址转出的 USDT Transfer。只有一笔时自动解析内部日志序号；没有官方转出时返回 `TRANSFER_NOT_FOUND`，多笔时返回 `TRANSFER_SELECTION_REQUIRED`，绝不默认序号 0。多笔时，在上方「官方钱包链上流水」用完整哈希查询，逐行打开详情，核对真实收款地址、金额和北京时间，再选择确切的观察记录供预检。观察记录不全、候选无法区分或证据冲突时停止申报并人工核查，不能凭猜测选择。
+3. 预检无阻断后，核对页面显示的真实收款地址、精确六位 USDT 金额、缩略交易哈希和用途，再单独点击「确认申报」。金额与地址以链上证据为准，不可手填。确认时服务端再次核验授权、链上证据、VERIFIED 覆盖事实及是否已有出款或申报；不自动改选另一笔转出。
+4. 申报成功生成不可变记录与平衡账本分录（托管 → 所有者提款，`PLATFORM_OWNER_DRAWING`），不影响用户负债与储备充足性判断。若提交结果未知，先按同一哈希、内部日志序号、原因和操作者查询原记录；未核清前不提交另一笔或自动重发。
+5. 刷新「监控与事故」，对 `MANUAL_UNALLOCATED_OUTFLOW` 事故执行「检查并处理事故」；复核通过后结案。申报本身不会结案或解除暂停。
+6. 另到「资金启停」执行「核验并恢复人工钱包」。资金恢复再次独立检查，不能用申报成功代替。
 
-接口等价物：`POST /api/v1/admin/wallet/manual/owner-transfers/preview`、`POST /api/v1/admin/wallet/manual/owner-transfers`（Header `Idempotency-Key`，建议固定值 `owner-transfer:<txid>:<log_index>` 以便安全重试）、`GET /api/v1/admin/wallet/manual/owner-transfers/<txid>`。
+接口对应：`POST /api/v1/admin/wallet/manual/owner-transfers/preview` 可省略 `log_index`；多事件时可传选定观察记录的精确序号。`POST /api/v1/admin/wallet/manual/owner-transfers` 的执行请求仍**必须**携带预检返回的精确 `log_index` 和稳定的 HTTP `Idempotency-Key`。后台将随机 HTTP 键保存在当前待确认操作记录中，明确重试才复用；账本内部去重键 `owner-transfer:<txid>:<log_index>` 与 HTTP 键用途不同，不可互换。`GET /api/v1/admin/wallet/manual/owner-transfers/<txid>` 用于按精确日志序号核对未知提交结果。旧 API 调用者显式指定序号和原有原因字段的请求格式仍受理。
 
-生产前提：部署迁移 `0067_wallet_owner_transfers`，且 API 环境开启 `WALLET_OWNER_TRANSFERS_ENABLED=true`（默认关闭）。未开启时接口返回 `OWNER_TRANSFERS_DISABLED`。
+生产前提：部署迁移 `0067_wallet_owner_transfers`，且 API 环境开启 `WALLET_OWNER_TRANSFERS_ENABLED=true`（默认关闭）。未开启时执行申报返回 `OWNER_TRANSFERS_DISABLED`；预检结果不代表执行已开放。
 
 在任何情况下都不要手改数据库来"解释"一笔转出：恢复核验基于不可变事实，伪造订单或清空事故无法通过复核，且违反账本与审计约束。
 

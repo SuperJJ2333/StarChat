@@ -1,4 +1,4 @@
-import {adminSession} from './admin-session.js?v=20260928-admin-entry';
+import {adminSession} from './admin-session.js?v=20260929-wallet-workspace';
 const DEFAULT_BASE_URL = "";
 
 export class AdminApiError extends Error {

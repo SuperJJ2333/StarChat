@@ -63,7 +63,7 @@ function installPanelDocument() {
  globalThis.addEventListener=(name,handler)=>listeners.set(`global:${name}`,handler);
  globalThis.removeEventListener=name=>listeners.delete(`global:${name}`);
  globalThis.BroadcastChannel=undefined;
- return {body,app,focus:()=>listeners.get('global:focus')?.(),restore:()=>Object.assign(globalThis,original)};
+ return {body,app,focus:()=>listeners.get('global:focus')?.(),visibility:()=>listeners.get('document:visibilitychange')?.(),restore:()=>Object.assign(globalThis,original)};
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const panelStatus=(overrides={})=>({enabled:true,verified:true,configured:true,auth_mode:'operation_password',server_time:new Date(start).toISOString(),expires_at:new Date(start+3600000).toISOString(),...overrides});
@@ -79,6 +79,8 @@ test('confirmed owner can read without grant while write intent verifies and req
   },{actor:{id:'a'},renderContent:(api,controller)=>{viewApi=api;access=controller;return new PanelElement('article');}});
   dom.app.append(root);await settle();await settle();
   assert.equal(root.find('article').length,1);
+  assert.equal(root.find('p').some(p=>p.textContent?.includes('当前可查看钱包资料')),false);
+  assert.equal(root.find('button').some(b=>b.textContent==='验证以操作'),false);
   assert.equal(access.canWrite(),false);assert.equal(access.usesGrant(),true);
   await viewApi.getManualPayouts();assert.equal(reads,1);
   await assert.rejects(viewApi.claimManualPayout('id',{},{}),{code:'WALLET_ACCESS_REQUIRED'});
@@ -103,14 +105,14 @@ test('wallet module rows are readable without grant but other modules are not al
  }finally{root?.dispose();dom.restore();}
 });
 
-test('grant expiry discards write state but keeps confirmed owner read access',async()=>{
- const dom=installPanelDocument();let root,expired=false,viewApi,access,rendered=0,disposed=0,reads=0;
+test('grant expiry locks writes without rebuilding the confirmed owner view',async()=>{
+ const dom=installPanelDocument();let root,article,expired=false,viewApi,access,rendered=0,disposed=0,reads=0;
  try{
   root=module.walletAccessPanel({getWalletAccess:async()=>expired?panelStatus({verified:false}):panelStatus(),getManualPayouts:async()=>{reads++;return {items:[]};}},
-   {actor:{id:'a'},renderContent:(api,controller)=>{viewApi=api;access=controller;rendered++;const article=new PanelElement('article');article.dispose=()=>{disposed++;};return article;}});
+   {actor:{id:'a'},renderContent:(api,controller)=>{viewApi=api;access=controller;rendered++;article=new PanelElement('article');article.dispose=()=>{disposed++;};return article;}});
   dom.app.append(root);await settle();await settle();assert.equal(access.canWrite(),true);
   expired=true;await root.refresh();assert.equal(access.canWrite(),false);
-  assert.equal(rendered,2);assert.equal(disposed,1);assert.equal(root.find('article').length,1);
+  assert.equal(rendered,1);assert.equal(disposed,0);assert.equal(root.find('article')[0],article);
   assert.equal(dom.body.find('dialog').length,0);
   await viewApi.getManualPayouts();assert.equal(reads,1);
  }finally{root?.dispose();dom.restore();}
@@ -200,6 +202,74 @@ test('delayed verified access and focus rechecks never create a modal or obscure
   assert.equal(dom.body.find('dialog').length,0);assert.equal(globalThis.document.modalCalls,0);assert.equal(dom.app.inert,false);assert.ok(checks>=2);
  } finally { root?.dispose();dom.restore(); }
 });
+test('malformed or failed owner recheck clears a read-only verify state',async()=>{
+ for(const failure of [()=>({enabled:true,configured:true,auth_mode:'operation_password'}),()=>{throw {status:500,code:'INTERNAL_ERROR'};}]){
+  let failed=false;const f=fixture({getWalletAccess:async()=>failed?failure():panelStatus({verified:false})});
+  await f.gate.check();assert.equal(f.gate.state().kind,'verify');assert.equal(f.gate.readAllowed(),true);
+  failed=true;await f.gate.check();assert.equal(f.gate.state().kind,'network');assert.equal(f.gate.readAllowed(),false);
+ }
+});
+test('a late status response cannot restore reads after an intervening permission denial',async()=>{
+ let release,checks=0;const f=fixture({getWalletAccess:()=>++checks===1?Promise.resolve(status()):new Promise(resolve=>{release=resolve;})});
+ await f.gate.check();const pending=f.gate.check();
+ await assert.rejects(f.gate.read(async()=>{throw {status:403,code:'PERMISSION_DENIED'};}));
+ assert.equal(f.gate.state().kind,'forbidden');release(status());await pending;
+ assert.equal(f.gate.state().kind,'forbidden');assert.equal(f.gate.readAllowed(),false);
+});
+test('a repeated read-only owner status does not cancel an in-flight wallet read',async()=>{
+ let release;const f=fixture({getWalletAccess:async()=>panelStatus({verified:false})});
+ await f.gate.check();const reading=f.gate.read(()=>new Promise(resolve=>{release=resolve;}));
+ await f.gate.check();release({items:['safe']});
+ assert.deepEqual(await reading,{items:['safe']});
+});
+
+test('focus and visibility recheck suspend detached dialogs once and retain the same read view',async()=>{
+ const dom=installPanelDocument();let root,article,release,checks=0,rendered=0,suspended=0,resumed=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>++checks===1?Promise.resolve(panelStatus()):new Promise(resolve=>release=resolve)},
+   {actor:{id:'a'},renderContent:()=>{rendered++;article=new PanelElement('article');article.suspendForAccessCheck=()=>{suspended++;};article.resumeReadDetail=()=>{resumed++;};return article;}});
+  dom.app.append(root);await settle();await settle();
+  dom.focus();dom.visibility();await settle();
+  assert.equal(checks,2,'focus and visibility share a pending owner check');
+  assert.equal(suspended,1,'detached dialogs close before authorization is known');
+  assert.equal(root.find('article')[0],article);
+  assert.ok(root.children.some(child=>child.inert&&child.style.visibility==='hidden'),'sensitive view is masked during recheck');
+  release(panelStatus());await settle();await settle();
+  assert.equal(rendered,1);assert.equal(resumed,1);
+  assert.equal(root.find('article')[0],article);
+  assert.equal(root.children.some(child=>child.inert),false);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('background polling keeps an authorized detail visible until a denied result clears it',async()=>{
+ const dom=installPanelDocument();const originalInterval=globalThis.setInterval,originalClear=globalThis.clearInterval;
+ let root,poll,release,checks=0,suspended=0,access;
+ globalThis.setInterval=fn=>{poll=fn;return 1;};globalThis.clearInterval=()=>{};
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>++checks===1?Promise.resolve(panelStatus()):new Promise(resolve=>release=resolve)},
+   {actor:{id:'a'},renderContent:(_,controller)=>{access=controller;const article=new PanelElement('article');article.suspendForAccessCheck=()=>{suspended++;};return article;}});
+  dom.app.append(root);await settle();await settle();
+  poll();await settle();
+  assert.equal(checks,2);assert.equal(root.find('article').length,1);
+  assert.equal(suspended,0,'background poll does not close visible detail');
+  assert.equal(root.children.some(child=>child.style.visibility==='hidden'),false);
+  assert.equal(access.canWrite(),false,'write actions are disabled while owner status is pending');
+  release(panelStatus());await settle();await settle();
+  assert.equal(root.find('article').length,1);
+ }finally{root?.dispose();globalThis.setInterval=originalInterval;globalThis.clearInterval=originalClear;dom.restore();}
+});
+test('active focus check supersedes a hung background poll and restores writes on success',async()=>{
+ const dom=installPanelDocument();const originalInterval=globalThis.setInterval,originalClear=globalThis.clearInterval;
+ let root,poll,releasePoll,checks=0,access;
+ globalThis.setInterval=fn=>{poll=fn;return 1;};globalThis.clearInterval=()=>{};
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>++checks===2?new Promise(resolve=>{releasePoll=resolve;}):Promise.resolve(panelStatus())},
+   {actor:{id:'a'},renderContent:(_,controller)=>{access=controller;return new PanelElement('article');}});
+  dom.app.append(root);await settle();await settle();poll();await settle();assert.equal(access.canWrite(),false);
+  dom.focus();await settle();await settle();assert.equal(checks,3);assert.equal(access.canWrite(),true,'stale poll cannot keep a new authorized view write-locked');
+  releasePoll(panelStatus());await settle();assert.equal(access.canWrite(),true);
+ }finally{root?.dispose();globalThis.setInterval=originalInterval;globalThis.clearInterval=originalClear;dom.restore();}
+});
 
 test('unverified or expired owner can read and opens the access dialog only for write intent',async()=>{
  for(const response of [panelStatus({verified:false}),panelStatus({expires_at:new Date(start).toISOString()})]) {
@@ -220,4 +290,33 @@ test('disposed pending status cannot create access UI, and a network recheck rem
   root=module.walletAccessPanel({getWalletAccess:()=>network?Promise.reject({code:'NETWORK_ERROR'}):new Promise(resolve=>release=resolve)},{actor:{id:'a'},renderContent:()=>{const content=new PanelElement('article');content.textContent='SENSITIVE-BALANCE';return content;}});dom.app.append(root);await settle();root.dispose();release(panelStatus({verified:false}));await settle();assert.equal(dom.body.find('dialog').length,0);
   active=module.walletAccessPanel({getWalletAccess:async()=>{if(network)throw {code:'NETWORK_ERROR'};return panelStatus();}},{actor:{id:'a'},renderContent:()=>{const content=new PanelElement('article');content.textContent='SENSITIVE-BALANCE';return content;}});dom.app.append(active);await settle();await settle();network=true;await active.refresh();assert.equal(active.find('article').some(node=>node.textContent==='SENSITIVE-BALANCE'),false);assert.ok(dom.body.find('dialog')[0]?.open);
  } finally { root?.dispose();active?.dispose();dom.restore(); }
+});
+test('only a confirmed owner can export a read snapshot and denial invalidates its shell cache',async()=>{
+ const dom=installPanelDocument();let root,release,denials=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>new Promise(resolve=>release=resolve)},
+   {actor:{id:'a'},onWalletReadDenied:()=>{denials++;},renderContent:()=>{const article=new PanelElement('article');article.exportReadView=()=>({offset:25});return article;}});
+  dom.app.append(root);await settle();
+  assert.equal(root.exportReadView(),null,'unconfirmed owner cannot export sensitive cache data');
+  release(panelStatus({verified:false}));await settle();await settle();
+  assert.deepEqual(root.exportReadView(),{offset:25},'read-only owner can export without write grant');
+  let rejectStatus;root.dispose();
+  root=module.walletAccessPanel({getWalletAccess:()=>new Promise((_,reject)=>{rejectStatus=reject;})},
+   {actor:{id:'a'},onWalletReadDenied:()=>{denials++;},renderContent:()=>new PanelElement('article')});
+  dom.app.append(root);await settle();rejectStatus({code:'NETWORK_ERROR'});await settle();await settle();
+  assert.equal(root.exportReadView(),null);assert.equal(denials,1);
+ }finally{root?.dispose();dom.restore();}
+});
+test('same-actor management session replacement clears an existing wallet view on recheck',async()=>{
+ const dom=installPanelDocument();let root,epoch=1,denials=0,logins=0,viewApi;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus(),getManualPayouts:async()=>({items:[]})},
+   {actor:{id:'a'},expectedCacheEpoch:1,getCacheEpoch:()=>epoch,onWalletReadDenied:()=>{denials++;},onLogin:()=>{logins++;},
+    renderContent:api=>{viewApi=api;return new PanelElement('article');}});
+  dom.app.append(root);await settle();await settle();assert.equal(root.find('article').length,1);
+  epoch=2;dom.focus();await settle();await settle();
+  assert.equal(root.find('article').length,0);assert.equal(root.exportReadView(),null);
+  assert.equal(denials,1);assert.equal(logins,1);
+  await assert.rejects(viewApi.getManualPayouts(),{code:'WALLET_ACCESS_REQUIRED'});
+ }finally{root?.dispose();dom.restore();}
 });

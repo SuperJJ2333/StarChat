@@ -43,7 +43,7 @@ export function canChangeStaffPassword(context) {
   const roles = context.actor?.roles ?? [];
   return !roles.includes('SUPER_ADMIN') && roles.some(role => ['SUPPORT_AGENT','FINANCE_SUPPORT','SUPPORT_SUPERVISOR'].includes(role));
 }
-export function createAdminShell({context,api,modules,renderModule,onLogout,onChangePassword}) {
+export function createAdminShell({context,api,modules,renderModule,onLogout,onChangePassword,getWalletCacheEpoch=()=>null}) {
   const page=el('div','admin-page admin-modern'),shell=el('div','admin-shell'),side=el('aside','admin-sidebar');side.id='admin-sidebar';
   const can=p=>context.permissions.includes('*')||context.permissions.includes(p);
   const logo=el('div','admin-logo'),mark=el('img','admin-brand-image');mark.src='/assets/branding/admin-logo.png';mark.alt='畅聊';logo.append(mark,el('span',null,'畅聊管理台'));side.append(logo);
@@ -58,17 +58,23 @@ export function createAdminShell({context,api,modules,renderModule,onLogout,onCh
   const content=el('main','admin-content');content.id='admin-content';const backdrop=btn('',()=>setHidden(true),'admin-sidebar-backdrop');backdrop.setAttribute('aria-label','关闭侧边栏');
   main.append(top,content);shell.append(side,main);page.append(shell,backdrop);
   const sidebar=installSidebarResize({page,side,main});let closeProof=null;
-  let current='overview',generation=0,days=30,currentPanel=null,initialOverview=true;
+  let current='overview',generation=0,days=30,currentPanel=null,initialOverview=true,walletViewSnapshot=null,walletPanelEpoch=null;
   const coordinate=refreshCoordinator();
   const links=new Map();
-  function addNavigation(key,label){const item=btn(label,()=>{if(key==='recharge')notifications?.markRead?.();if(current===key)return;current=key;for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;nav.append(item);links.set(key,item);}
+  function addNavigation(key,label){const item=btn(label,()=>{if(key==='recharge')notifications?.markRead?.();if(current===key)return;
+    if(current==='wallet'){
+      const epoch=getWalletCacheEpoch();
+      const view=epoch!==null&&epoch===walletPanelEpoch?currentPanel?.exportReadView?.():null;
+      walletViewSnapshot=view?{view,actorId:context.actor?.id,epoch}:null;
+    }
+    current=key;for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;nav.append(item);links.set(key,item);}
   addNavigation('overview','运营概览');links.get('overview').classList.add('active');links.get('overview').setAttribute('aria-current','page');
   const groups=[['用户与安全',['users','security','support-role','analytics','online']],['运营',['ads','notice']],['财务',['recharge','finance','ledger','wallet']]];
   for(const [label,keys] of groups){const entries=visibleAdminModules(context,modules).filter(([, ,key])=>keys.includes(key));if(!entries.length)continue;nav.append(el('p','admin-nav-group',label));for(const [name,,key] of entries)addNavigation(key,name);}
   const esc=event=>{if(event.key==='Escape'&&!side.hidden&&matchMedia('(max-width:760px)').matches)setHidden(true);};page.addEventListener('keydown',esc);
   const notifications=can('admin.finance.read') && typeof api.getOrderEvents==='function' ? orderNotifications(api,{actorId:context.actor.id,onOpen:()=>links.get('recharge')?.click(),onChange:async()=>{await currentPanel?.refreshOrders?.();}}):null;
   if(notifications)tools.append(notifications);
-  page.dispose=()=>{++generation;notifications?.dispose();sidebar.dispose();closeProof?.();page.removeEventListener('keydown',esc);if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();};
+  page.dispose=()=>{++generation;walletViewSnapshot=null;notifications?.dispose();sidebar.dispose();closeProof?.();page.removeEventListener('keydown',esc);if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();};
   async function loadCurrent(isRefresh){
     const revision=++generation;
     try{
@@ -85,7 +91,10 @@ export function createAdminShell({context,api,modules,renderModule,onLogout,onCh
       // Wallet owns its privacy gate; no sensitive module request before verification.
       const payload=['wallet','recharge','users'].includes(current)?{}:await api.getModule(current);if(revision!==generation)return;
       // Module tables refresh independently of command forms to retain user drafts.
-      const rendered=renderModule(current,routeTitle.textContent,{...context,onWalletExit:()=>links.get('overview').click(),onOpenPayout:can('admin.withdrawals.read')?()=>links.get('wallet')?.click():null,modules:{...context.modules,[current]:payload}});
+      const epoch=getWalletCacheEpoch();
+      if(walletViewSnapshot&&(epoch===null||walletViewSnapshot.epoch!==epoch||walletViewSnapshot.actorId!==context.actor?.id))walletViewSnapshot=null;
+      const rendered=renderModule(current,routeTitle.textContent,{...context,onWalletExit:()=>links.get('overview').click(),onWalletReadDenied:()=>{walletViewSnapshot=null;},walletReadView:current==='wallet'?walletViewSnapshot?.view:undefined,walletReadViewEpoch:current==='wallet'?walletViewSnapshot?.epoch:undefined,walletCacheEpochAtRender:current==='wallet'?epoch:undefined,onOpenPayout:can('admin.withdrawals.read')?()=>links.get('wallet')?.click():null,modules:{...context.modules,[current]:payload}});
+      if(current==='wallet')walletPanelEpoch=epoch;
       if(isRefresh&&currentPanel){const oldTable=currentPanel.querySelector('.admin-table'),newTable=rendered.querySelector('.admin-table');if(oldTable&&newTable)oldTable.replaceWith(newTable);}
       else{currentPanel=rendered;content.replaceChildren(rendered);}return true;
     }catch(error){if(revision!==generation)return;const old=content.querySelector('.admin-load-error');old?.remove();content.prepend(el('p','admin-load-error',`数据读取失败：${error.message??'请重试'}。现有数据可能已过期。`));return false;}
