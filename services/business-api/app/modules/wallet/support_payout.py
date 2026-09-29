@@ -382,6 +382,7 @@ class SupportPayoutService:
             fresh()
             if owner_fresh is not None:
                 owner_fresh()
+            self._held(state, claims, claim_token)
             return result
 
     def submit_txid(self, *, claims, order_id, claim_token, txid, idempotency_key):

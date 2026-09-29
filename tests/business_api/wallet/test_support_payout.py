@@ -445,6 +445,29 @@ def test_expired_claim_cannot_reject_unstarted_order(scoped):
     assert core[5].balance('HOLD:alice') == Decimal('10')
 
 
+def test_reject_rolls_back_when_lease_expires_during_release(scoped, monkeypatch):
+    from app.modules.wallet.models import WalletLedgerTransaction
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='reject-race-lease')
+    release = core[0].release_unstarted_order
+    def delayed_release(**kwargs):
+        result = release(**kwargs)
+        core[2][0] += timedelta(minutes=6)
+        return result
+    monkeypatch.setattr(core[0], 'release_unstarted_order', delayed_release)
+    with pytest.raises(AppError, match='SUPPORT_PAYOUT_CLAIM_EXPIRED'):
+        service.reject(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'],
+            reason_code='PAYOUT_ADDRESS_INVALID', idempotency_key='reject-race-expired')
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'REQUESTED'
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+    with core[1]() as session:
+        assert session.scalar(select(SupportPayoutRejection).where(
+            SupportPayoutRejection.order_id == order['id'])) is None
+        assert session.scalar(select(WalletLedgerTransaction).where(
+            WalletLedgerTransaction.scope == 'wallet.manual_release')) is None
+
+
 def test_owner_operation_proof_expiry_rolls_back_rejection(scoped):
     from app.api.admin_wallet_auth import AdminWalletProofBody
     from app.core.database import Base
