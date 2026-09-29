@@ -1,0 +1,2 @@
+/download.html -text whitespace=cr-at-eol
+/src/download-redirect.js -text whitespace=cr-at-eol

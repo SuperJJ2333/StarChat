@@ -13,7 +13,7 @@
 .download-instructions summary { font-weight: 600; cursor: pointer; }
 .download-instructions ol { padding-left: 22px; margin: 12px 0 0; }
 .download-instructions li + li { margin-top: 10px; }
-.download-caution { color: var(--admin-muted); margin-bottom: 12px; }
+.download-caution { color: var(--admin-ink); background: color-mix(in srgb, var(--color-warning) 12%, var(--admin-surface)); border: 1px solid color-mix(in srgb, var(--color-warning) 55%, var(--admin-border)); border-left: 4px solid var(--color-warning); border-radius: 10px; padding: 12px 14px; margin: 16px 0 0; font-weight: 600; }
 .download-side { display: grid; gap: 24px; }
 .download-alternatives { display: flex; gap: 24px; flex-wrap: wrap; }
 .download-qr { display: flex; gap: 24px; align-items: center; }
