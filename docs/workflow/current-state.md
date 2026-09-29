@@ -1,8 +1,8 @@
 # 移动交付恢复索引
 
-## 2026-09-29 Android 提现报价策略兼容：2193 Debug 已装模拟器，正式包待构建
+## 2026-09-29 Android 提现报价策略兼容：2193 正式 ARM64 已发布，待真实账户与真机验收
 
-用户确认以已安装的 Android Debug 0.4.23+2192 为基础，先交付修复后的模拟器 Debug，再构建并发布同源码 ARM64 正式包；修订计划已获批准。2192 的 1811 个移动文件已按冻结清单逐字节核验。本任务仅让客户端报价解析接受服务端现有 OWNER/SUPPORT 两种策略，保留未知值拒绝、资金门禁和幂等；候选 `0.4.24+2193` 源码 `dae8ec63`，RED/GREEN 钱包 38/38、analyze 0，独立规格与质量/安全复核无 P0–P2。Task 3 对 2190→2192 清单核出 18 新/93 变/0 删，并对应八项原任务；从短盘符 `V:` 的最终全量 Flutter **5132 通过/9 跳过、exit 0**，移动边界 238 通过/1 跳过、OpenAPI/UI 契约通过。首轮长路径 Flutter 因 Windows 265 字符临时路径失败，保留原 exit 1；整库脚本因无 `.env` exit 1，不能写作整库全绿。固定签名 `0.4.24+2193` x86_64 Debug SHA256 `167b70ab…cb2372` 已保留数据覆盖安装 `emulator-5556`，设备包 SHA 一致；正式 ARM64 尚未发布。配套 API v4b 同镜像经 v4r2 新备份/独立审查后已上线，20:35 +08 主任务读回 `fadabb…ab7dd` healthy/0；正式发布前仍要复核现场。真实账户报价及设备体验待验。下方其他任务条目是各自写入时快照。见[任务记录](tasks/2026-09-29-android-withdrawal-quote-policy.md)与[实施计划](../superpowers/plans/2026-09-29-android-withdrawal-quote-policy-compatibility.md)。
+用户批准以已安装的 Android Debug 0.4.23+2192 为基础，先装模拟器 Debug、再发布同源码正式 ARM64。`0.4.24+2193` 源码 `dae8ec63` 仅增加客户端对现有 OWNER/SUPPORT 两种报价策略的兼容，未知值拒绝、资金门禁与幂等不变；2192 的 1811 个移动文件按冻结清单继承。钱包 RED/GREEN、38/38 回归、analyze 0，短盘符全量 Flutter **5132 通过/9 跳过、exit 0**；长路径首轮失败及整库脚本因无 `.env` exit 1 保留真实记录。固定签名 x86_64 Debug SHA256 `167b70ab…cb2372` 已保留数据装入 `emulator-5556`。同源码 ARM64 `final.apk` 81,767,454 字节、SHA256 `8ea9eafb…e6dec` 经独立规格/质量安全复核，已于 2026-09-29 21:27–21:39 +08:00 通过 v4r2/schema 0092 门禁、HK/SG 同包与 CDN 精确三行为/三对象核验，完成标准直链和网络择优两段发布；最终 Android 0.4.24+2193、iOS 0.4.20+2189/API 镜像未变。静态源码提交 `102f94b9` 仅回填下载页、registry 和三段 JS，5/5 Git blob 与公网一致；公网 `admin-home.js` 保留，当前 C 工作树旧文件不能用于整站静态部署，完整前端 `npm test` 361/361。工作站 ready 200、匿名提现报价 401、下载页/registry/JS、两路 HEAD 与 CDN 206/CORS、iOS manifest/IPA 200 均回读通过；匿名 401 不能替代真实报价。真实账户 SUPPORT/OWNER 报价与正式包真机体验待验，未执行资金操作。下方其他任务条目是各自写入时快照。见[任务记录](tasks/2026-09-29-android-withdrawal-quote-policy.md)、[发布报告](../verification/2026-09-29-android-withdrawal-quote-policy-release.md)与[实施计划](../superpowers/plans/2026-09-29-android-withdrawal-quote-policy-compatibility.md)。
 
 ## 2026-09-29 Android Debug 2191 八项反馈：规格/ADR 已批，计划编写中
 
