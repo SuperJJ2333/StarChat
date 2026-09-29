@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-29 USDT 钱包工作台与链上流水现场：设计已批准，实施待 ADR/计划批准
+
+用户批准[钱包工作台规格](../superpowers/specs/2026-09-29-wallet-workspace-polish-design.md)，并补充要求所有者转出申报不填写日志序号、将原因码和用途说明合为必选用途菜单。[任务台账](tasks/2026-09-29-wallet-workspace-polish.md)记录 WUI-1 至 WUI-7、隔离工作树、验收缺口与下一步；[钱包视图及申报 ADR](../adr/2026-09-29-wallet-workspace-visibility-and-owner-transfer.md)和[逐项实施计划](../superpowers/plans/2026-09-29-wallet-workspace-polish.md)均待批准。本任务当前只有文档和静态视觉稿，未改业务代码、未发布生产。`PROTOCOL_PROBE_FAILED` 的[只读排查](../verification/2026-09-29-refresh-watch-protocol-probe.md)及[独立修复方案](../superpowers/plans/2026-09-29-refresh-watch-protocol-probe-repair.md)已归档；故障修复是独立认证/可用性任务，不能凭钱包 UI 设计声称已修复。
+
 ## 2026-09-29 管理台 A1–A5：v8 已生产技术发布，真实账号验收待办
 
 用户先按获批的[独立恢复计划](../superpowers/plans/2026-09-28-restore-published-identity-moments.md)恢复资料审计和朋友圈现网回归，再按[管理台 ADR](../adr/2026-09-28-admin-entry-merge.md)及[双角色镜像门禁 ADR](../adr/2026-09-28-role-aware-refresh-image-gate.md)发布 A1–A5。独立 r2 于 2026-09-28 23:14:50 +08:00 发布 API `8015e963…`/schema 0091，已成为 v8 的冻结基线；v3 注册/朋友圈旧失败仅属 r2 前历史。v8 于 2026-09-29 01:40:24 +08:00 完成生产非破坏 0092 迁移，01:41:37 切换候选 API 并发布 18 静态，01:41:54 内部 verify exit 0。**当前生产** API `sha256:0bdf751c05015454781c24b66a0c5066ca08ce23436c232ff8aecd1ba5042993`、Worker 原 `sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf`、schema `0092_admin_session_entry_mode`；`download.html` 和其他 iOS 发布未纳入。
