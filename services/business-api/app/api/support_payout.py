@@ -34,6 +34,10 @@ class RejectBody(LeaseBody):
     proof: AdminWalletProofBody|None=Field(default=None,repr=False)
 
 
+class AddressReadBody(EmptyBody):
+    claim_token: str|None=Field(default=None,min_length=32,max_length=64,repr=False)
+
+
 class TxidBody(LeaseBody):
     txid: str=Field(pattern=r'^[0-9a-fA-F]{64}$')
 
@@ -99,6 +103,10 @@ def create_support_payout_router(settings,factory,*,runtime=None):
         return payout_service.reject(claims=claims,order_id=order_id,claim_token=body.claim_token,
             reason_code=body.reason_code,idempotency_key=idempotency_key,
             owner_authorize=owner_authorize)
+    @router.post('/{order_id}/payment-address/read')
+    def payment_address(order_id:str,body:AddressReadBody,claims=Depends(actor)):
+        return service().read_payment_address(claims=claims,order_id=order_id,
+            claim_token=body.claim_token)
     @router.post('/{order_id}/txid')
     def txid(order_id:str,body:TxidBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key',min_length=1,max_length=128)],claims=Depends(actor)):
         return service().submit_txid(claims=claims,order_id=order_id,idempotency_key=idempotency_key,**body.model_dump())

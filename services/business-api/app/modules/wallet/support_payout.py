@@ -92,10 +92,24 @@ def fail(code, status=409):
     raise AppError(code=code, message=code, status_code=status)
 
 
+def _masked_address(address):
+    if len(address) <= 12:
+        return '…'
+    return address[:6] + '…' + address[-6:]
+
+
+def _without_target_address(result):
+    if 'instructions' not in result:
+        return result
+    return dict(result, instructions={key: value for key, value in result['instructions'].items()
+        if key != 'target_address'})
+
+
 def support_payout_projection(session, row, now, actor=None):
     state = session.get(SupportPayoutState, row.id)
     if state is None:
         return {}
+    quote = session.get(ManualPayoutQuote, row.quote_id)
     if row.status == 'SETTLED':
         stage = 'COMPLETED'
     elif row.status == 'CANCELLED':
@@ -119,6 +133,7 @@ def support_payout_projection(session, row, now, actor=None):
         prepared_rate=format(state.prepared_rate, '.6f') if state.prepared_rate is not None else None,
         prepared_receive=format(state.prepared_receive, '.6f') if state.prepared_receive is not None else None,
         prepared_digest=state.prepared_digest,prepared_version=state.prepared_version,
+        target_address_masked=_masked_address(quote.snapshot['target_address']),
         **({'claim_token':state.claim_token} if actor and state.claimed_by==actor and row.status not in ('CANCELLED','SETTLED') else {}))
 
 
@@ -290,11 +305,42 @@ class SupportPayoutService:
             result=self.payout.payment_instructions(admin_id=claims['sub'],order_id=order_id,
                 expected_digest=expected_digest,expected_preparation_version=expected_preparation_version,
                 authorize=authorize)
-            return result | self.detail(claims=claims,order_id=order_id)
+            return _without_target_address(result) | self.detail(claims=claims,order_id=order_id)
         result=self.payout.claim(admin_id=claims['sub'],session_id=claims['family_id'],order_id=order_id,
             expected_digest=expected_digest,expected_preparation_version=expected_preparation_version,
             idempotency_key=idempotency_key,authorize=authorize)
-        return result | self.detail(claims=claims,order_id=order_id)
+        return _without_target_address(result) | self.detail(claims=claims,order_id=order_id)
+
+    def _owner_address_access(self, session, claims):
+        if claims['sub'] != self.settings.wallet_manual_owner_admin_id:
+            fail('SUPPORT_PAYOUT_CLAIM_REQUIRED', 403)
+        roles = set(session.scalars(select(UserRole.role_code).where(
+            UserRole.user_id == claims['sub']).with_for_update()))
+        if RoleCode.SUPER_ADMIN not in roles:
+            fail('PERMISSION_DENIED', 403)
+
+    def read_payment_address(self, *, claims, order_id, claim_token=None):
+        with self.factory.begin() as session:
+            row, _ = self.payout._order_lock(session, order_id)
+            state = self._state(session, row)
+            fresh = self.order_access.authorization(claims=claims)(session)
+            if state.execution_started_at is None or row.status not in ('CLAIMED', 'UNKNOWN', 'SETTLED'):
+                fail('SUPPORT_PAYOUT_NOT_STARTED')
+            holder = claim_token is not None
+            if holder:
+                self._held(state, claims, claim_token, evidence=True)
+            else:
+                self._owner_address_access(session, claims)
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            result = {'target_address': quote.snapshot['target_address'], 'network': 'TRON'}
+            audit_write(session, claims['sub'], order_id,
+                'wallet.support_payout_address_read', 'SUPPORT_PAYOUT_ADDRESS_READ')
+            fresh()
+            if holder:
+                self._held(state, claims, claim_token, evidence=True)
+            else:
+                self._owner_address_access(session, claims)
+            return result
 
     def adjust_rate(self, *, claims, order_id, claim_token, new_rate, reason_code,
                     expected_preparation_version=None, idempotency_key):

@@ -615,10 +615,19 @@ async def test_scoped_payout_http_contract_and_app_token_rejection(scoped):
         lease=await client.post(path+'/'+order['id']+'/claim',headers={**headers,'Idempotency-Key':'api-claim'},json={})
         assert lease.status_code==200,lease.text
         token=lease.json()['claim_token']
+        address_path=path+'/'+order['id']+'/payment-address/read'
+        before=await client.post(address_path,headers=headers,json={'claim_token':token})
+        assert before.status_code==409
         begun=await client.post(path+'/'+order['id']+'/begin-payment',headers={**headers,'Idempotency-Key':'api-begin'},
             json={'claim_token':token,'expected_digest':order['digest']})
         assert begun.status_code==200,begun.text
         assert begun.json()['instructions']['amount']=='10.000000'
+        assert core[3] not in begun.text
+        assert core[3] not in (await client.get(path+'/'+order['id'],headers=headers)).text
+        address=await client.post(address_path,headers=headers,json={'claim_token':token})
+        assert address.status_code==200,address.text
+        assert address.headers['Cache-Control']=='no-store'
+        assert address.json()=={'target_address':core[3],'network':'TRON'}
 
 
 @pytest.mark.asyncio
@@ -716,6 +725,71 @@ async def test_reject_http_totp_owner_and_staff_use_selected_proof_boundary(scop
         staff_rejected = await client.post(path+staff_order['id']+'/reject', headers=staff_headers,
             json=staff_body)
         assert staff_rejected.status_code == 200 and staff_rejected.json()['processing_stage'] == 'REJECTED'
+
+
+def test_full_target_address_requires_started_payment_and_audited_evidence_access(scoped):
+    from app.modules.audit.models import AuditEvent
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='address-lease')
+    target = core[3]
+    for view in (order, lease, service.detail(claims=claims['bob'], order_id=order['id']),
+            service.list(claims=claims['bob'])['items'][0]):
+        assert target not in str(view)
+        assert view['target_address_masked'].startswith(target[:6])
+        assert view['target_address_masked'].endswith(target[-6:])
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['bob'], order_id=order['id'],
+            claim_token=lease['claim_token'])
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['owner'], order_id=order['id'])
+    started = service.begin_payment(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'], expected_digest=order['digest'], idempotency_key='address-begin')
+    assert target not in str(started)
+    assert target not in str(service.detail(claims=claims['bob'], order_id=order['id']))
+    assert target not in str(service.list(claims=claims['bob'])['items'][0])
+    assert target not in str(service.begin_payment(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'], expected_digest=order['digest'], idempotency_key='address-begin'))
+    assert service.read_payment_address(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token']) == {'target_address': target, 'network': 'TRON'}
+    core[2][0] += timedelta(minutes=6)
+    assert service.read_payment_address(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'])['target_address'] == target
+    assert service.read_payment_address(claims=claims['owner'], order_id=order['id'])['target_address'] == target
+    with core[1]() as session:
+        reads = session.scalars(select(AuditEvent).where(AuditEvent.subject_id == order['id'],
+            AuditEvent.action == 'wallet.support_payout_address_read')).all()
+        assert [item.actor_id for item in reads] == ['bob', 'bob', 'owner']
+
+
+def test_address_read_fails_closed_on_token_role_and_owner_session_revocation(scoped):
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='address-revoke-lease')
+    service.begin_payment(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'], expected_digest=order['digest'], idempotency_key='address-revoke-begin')
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['bob'], order_id=order['id'], claim_token='x'*43)
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['bob'], order_id=order['id'])
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['owner'], order_id=order['id'], claim_token='x'*43)
+    with core[1].begin() as session:
+        session.add(UserRole(id='owner-address-finance', user_id='owner', role_code=RoleCode.FINANCE_SUPPORT,
+            assigned_by='owner', assigned_at=core[2][0]))
+        session.delete(session.get(UserRole, 'role'))
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['owner'], order_id=order['id'])
+    with core[1].begin() as session:
+        session.delete(session.get(UserRole, 'bob-finance'))
+        session.add(UserRole(id='owner-address-super-restored', user_id='owner',
+            role_code=RoleCode.SUPER_ADMIN, assigned_by='owner', assigned_at=core[2][0]))
+        session.get(AdminSession, 'owner').expires_at = core[2][0]
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['bob'], order_id=order['id'],
+            claim_token=lease['claim_token'])
+    with pytest.raises(AppError):
+        service.read_payment_address(claims=claims['owner'], order_id=order['id'])
 
 
 @pytest.mark.parametrize('change', ['disabled', 'unactivated', 'role', 'contact',
