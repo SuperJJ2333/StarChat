@@ -17,7 +17,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   Future<Directory> directory() async {
     final root = await Directory(
-            '../../docs/verification/artifacts/2026-09-29/android-2191-followup/media-put/queue-tests')
+            '../../docs/verification/artifacts/2026-09-29/android-2191-followup/poster-policy/queue-tests')
         .create(recursive: true);
     return root.createTemp('case-');
   }
@@ -419,28 +419,43 @@ void main() {
     addTearDown(() => TestDefaultBinaryMessengerBinding
         .instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('video_compress'), null));
+    final oldCompressor = FlutterImageCompressPlatform.instance;
+    FlutterImageCompressPlatform.instance = _PosterCompressor(image);
+    addTearDown(() => FlutterImageCompressPlatform.instance = oldCompressor);
     final api = BusinessApiClient(
         baseUri: Uri.parse('https://example.test'),
         sessionStore: await session(),
         client: MockClient((request) async {
+          if (request.url.path.endsWith('/video-posters/uploads')) {
+            expect(jsonDecode(request.body)['byte_size'],
+                lessThanOrEqualTo(512 * 1024));
+            return http.Response('{"id":"poster"}', 201);
+          }
           if (request.url.path.endsWith('/uploads')) {
             expect(jsonDecode(request.body)['byte_size'], 3);
-            return http.Response('{"id":"upload"}', 201);
+            return http.Response('{"id":"video"}', 201);
           }
           if (request.method == 'PUT') {
-            uploadedBytes += request.bodyBytes.length;
+            if (!request.url.path.contains('/poster/')) {
+              uploadedBytes += request.bodyBytes.length;
+            }
             return http.Response('', 204);
           }
           if (request.url.path.endsWith('/complete')) {
-            return http.Response(
-                '{"status":"COMPLETED","media_url":"media://moments/a/video.mp4"}',
-                200);
+            return request.url.path.contains('/poster/')
+                ? http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/a/poster.jpg"}',
+                    200)
+                : http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/a/video.mp4"}',
+                    200);
           }
           return http.Response('{"id":"post"}', 201);
         }));
     final queue = await MomentPublishCoordinator.open(api, directory: root);
     final job = await queue.enqueue(payload, [
-      MomentPublishMedia(XFile(source.path, mimeType: 'video/mp4'), video: true)
+      MomentPublishMedia(XFile(source.path, mimeType: 'video/mp4'),
+          video: true, poster: image)
     ]);
     await waitFor(() => job.state == MomentPublishState.succeeded);
     expect(encoders, 1);
@@ -588,6 +603,233 @@ void main() {
     expect(published?['video_urls'], ['media://moments/a/video.mp4']);
     expect(published?['video_poster_media_ids'], ['poster']);
     queue.revoke();
+  });
+
+  test('video without its own frame or preview cannot publish', () async {
+    final directoryRoot = await directory();
+    _mockVideoRendition(directoryRoot, image);
+    var requests = 0, publishes = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: await session(),
+        client: MockClient((request) async {
+          requests++;
+          if (request.url.path.endsWith('/uploads')) {
+            return http.Response('{"id":"video-upload"}', 201);
+          }
+          if (request.method == 'PUT') return http.Response('', 204);
+          if (request.url.path.endsWith('/complete')) {
+            return http.Response(
+                '{"status":"COMPLETED","media_url":"https://example.test/video","media_ref":"media://moments/a/video.mp4"}',
+                200);
+          }
+          if (request.url.path.endsWith('/moments')) publishes++;
+          return http.Response('{"id":"post"}', 201);
+        }));
+    final queue =
+        await MomentPublishCoordinator.open(api, directory: directoryRoot);
+    final job = await queue.enqueue(payload, [
+      MomentPublishMedia(
+          XFile.fromData(Uint8List.fromList([1, 2, 3]), mimeType: 'video/mp4'),
+          video: true),
+      MomentPublishMedia(
+          XFile.fromData(Uint8List.fromList([4, 5, 6]), mimeType: 'video/mp4'),
+          video: true,
+          poster: image),
+    ]);
+
+    await waitFor(() =>
+        job.state == MomentPublishState.failed ||
+        job.state == MomentPublishState.succeeded);
+    expect(job.state, MomentPublishState.failed);
+    expect(job.message, '视频封面生成失败，内容已保留，请重试');
+    expect(requests, 0);
+    expect(publishes, 0);
+    expect(job.media.first['prepared'], false);
+    expect(await File('${queue.root.path}/${job.id}/media-0').exists(), isTrue);
+    queue.revoke();
+  });
+
+  test('remote draft video needs a paired poster before job admission',
+      () async {
+    var requests = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: await session(),
+        client: MockClient((_) async {
+          requests++;
+          return http.Response('{}', 200);
+        }));
+    final queue =
+        await MomentPublishCoordinator.open(api, directory: await directory());
+    await expectLater(
+        queue.enqueue({
+          ...payload,
+          'video_urls': ['media://moments/a/draft.mp4'],
+        }, []),
+        throwsA(isA<MomentImageException>()
+            .having((error) => error.message, 'message', '视频封面暂不可用，请稍后重试')));
+    expect(requests, 0);
+    expect(queue.jobs, isEmpty);
+    queue.revoke();
+  });
+
+  test('restored legacy posterless job cannot reach publish', () async {
+    var publishes = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: await session(),
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/moments')) publishes++;
+          return http.Response('{"id":"post"}', 201);
+        }));
+    final directoryRoot = await directory();
+    final first =
+        await MomentPublishCoordinator.open(api, directory: directoryRoot);
+    final root = first.root;
+    first.revoke();
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    final jobDirectory = await Directory('${root.path}/$id').create();
+    await File('${jobDirectory.path}/job.json').writeAsString(jsonEncode({
+      'account': '@a:example.test',
+      'id': id,
+      'payload': {
+        ...payload,
+        'video_urls': ['media://moments/a/old-draft.mp4']
+      },
+      'media': [],
+      'state': 'queued',
+    }));
+    final queue =
+        await MomentPublishCoordinator.open(api, directory: directoryRoot);
+    await waitFor(() => queue.jobs.single.state == MomentPublishState.failed);
+    expect(publishes, 0);
+    expect(queue.jobs.single.message, '视频封面暂不可用，请稍后重试');
+    queue.revoke();
+  });
+
+  for (final stage in [
+    'begin-404',
+    'begin-503',
+    'put',
+    'complete',
+    'not-ready'
+  ]) {
+    test('poster $stage failure retains video result and retries once',
+        () async {
+      final directoryRoot = await directory();
+      _mockVideoRendition(directoryRoot, image);
+      var failPoster = true;
+      var videoBegins = 0, videoPuts = 0, publishes = 0;
+      Map<String, dynamic>? published;
+      final api = BusinessApiClient(
+          baseUri: Uri.parse('https://example.test'),
+          sessionStore: await session(),
+          client: MockClient((request) async {
+            final path = request.url.path;
+            if (path.endsWith('/video-posters/uploads')) {
+              if (failPoster && stage.startsWith('begin')) {
+                return http.Response(
+                    '{"error":{"code":"POSTER_UNAVAILABLE","message":"unavailable"}}',
+                    stage == 'begin-404' ? 404 : 503);
+              }
+              return http.Response('{"id":"poster-upload"}', 201);
+            }
+            if (path.endsWith('/media/uploads')) {
+              videoBegins++;
+              return http.Response('{"id":"video-upload"}', 201);
+            }
+            if (request.method == 'PUT') {
+              if (path.contains('/poster-upload/')) {
+                if (failPoster && stage == 'put') {
+                  return http.Response(
+                      '{"error":{"code":"POSTER_UNAVAILABLE","message":"unavailable"}}',
+                      503);
+                }
+              } else {
+                videoPuts++;
+              }
+              return http.Response('', 204);
+            }
+            if (path.endsWith('/complete')) {
+              if (path.contains('/poster-upload/')) {
+                if (failPoster && stage == 'complete') {
+                  return http.Response(
+                      '{"error":{"code":"POSTER_UNAVAILABLE","message":"unavailable"}}',
+                      503);
+                }
+                if (failPoster && stage == 'not-ready') {
+                  return http.Response(
+                      '{"status":"PROCESSING","media_url":"https://example.test/poster"}',
+                      200);
+                }
+                return http.Response(
+                    '{"status":"COMPLETED","media_url":"https://example.test/poster","media_ref":"media://moments/a/poster.jpg"}',
+                    200);
+              }
+              return http.Response(
+                  '{"status":"COMPLETED","media_url":"https://example.test/video","media_ref":"media://moments/a/video.mp4"}',
+                  200);
+            }
+            if (path.endsWith('/moments')) {
+              publishes++;
+              published = Map<String, dynamic>.from(jsonDecode(request.body));
+            }
+            return http.Response('{"id":"post"}', 201);
+          }));
+      final queue =
+          await MomentPublishCoordinator.open(api, directory: directoryRoot);
+      final job = await queue.enqueue(payload, [
+        MomentPublishMedia(
+            XFile.fromData(Uint8List.fromList([1, 2, 3]),
+                mimeType: 'video/mp4'),
+            video: true,
+            poster: image)
+      ]);
+
+      await waitFor(() =>
+          job.state == MomentPublishState.failed ||
+          job.state == MomentPublishState.succeeded);
+      expect(job.state, MomentPublishState.failed);
+      expect(job.message, '视频封面暂不可用，请稍后重试');
+      expect(job.media.single['result'], isNotNull);
+      expect(publishes, 0);
+      expect(await File('${queue.root.path}/${job.id}/media-0.ready').exists(),
+          isTrue);
+
+      failPoster = false;
+      await queue.retry(job.id);
+      await waitFor(() => job.state == MomentPublishState.succeeded);
+      expect(videoBegins, 1);
+      expect(videoPuts, 1);
+      expect(publishes, 1);
+      expect(published?['video_urls'], ['media://moments/a/video.mp4']);
+      expect(published?['video_poster_media_ids'], ['poster-upload']);
+      queue.revoke();
+    });
+  }
+}
+
+void _mockVideoRendition(Directory directoryRoot, Uint8List posterFrame) {
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(const MethodChannel('video_compress'),
+      (call) async {
+    if (call.method == 'getMediaInfo') {
+      return jsonEncode({'path': call.arguments['path'], 'duration': 1000});
+    }
+    if (call.method != 'compressVideo') return null;
+    final output = await File(call.arguments['path'] as String)
+        .copy('${directoryRoot.path}/encoded.mp4');
+    return jsonEncode(
+        {'path': output.path, 'duration': 1000, 'isCancel': false});
+  });
+  final oldCompressor = FlutterImageCompressPlatform.instance;
+  FlutterImageCompressPlatform.instance = _PosterCompressor(posterFrame);
+  addTearDown(() {
+    messenger.setMockMethodCallHandler(
+        const MethodChannel('video_compress'), null);
+    FlutterImageCompressPlatform.instance = oldCompressor;
   });
 }
 

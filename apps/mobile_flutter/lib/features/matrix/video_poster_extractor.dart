@@ -36,6 +36,19 @@ Future<Uint8List?> extractVideoPoster(
     try {
       final bytes = await getFrame(videoPath, positionMs);
       if (bytes == null || bytes.isEmpty) continue;
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      try {
+        final descriptor = await ui.ImageDescriptor.encoded(buffer);
+        try {
+          if (descriptor.width * descriptor.height > 16 * 1024 * 1024) {
+            continue;
+          }
+        } finally {
+          descriptor.dispose();
+        }
+      } finally {
+        buffer.dispose();
+      }
       if (positionMs == 0) return bytes;
       final probe = onFrameDecoded == null ? null : (Stopwatch()..start());
       final luma = await frameAverageLuma(bytes);

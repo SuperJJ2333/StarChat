@@ -19,7 +19,7 @@ void main() {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==');
   setUpAll(() async {
     final parent = await Directory(
-            '../../docs/verification/artifacts/2026-09-28/ios-media-room-followup/moments/poster-tests')
+            '../../docs/verification/artifacts/2026-09-29/android-2191-followup/poster-policy/delivery-tests')
         .absolute
         .create(recursive: true);
     final root = await parent.createTemp('cache-');

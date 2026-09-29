@@ -4,6 +4,8 @@ import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart'
+    show CompressFormat, FlutterImageCompressPlatform;
 import 'package:liuhetong_mobile/features/moments/moment_publish_coordinator.dart';
 import 'package:liuhetong_mobile/features/moments/moment_image_preprocessor.dart';
 import 'dart:convert';
@@ -26,14 +28,29 @@ import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/gallery_video_preview.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache_metrics.dart';
 
+final _posterPng = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+final _posterJpeg = base64Decode(
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAj/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKpAB//Z');
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late PathProviderPlatform originalPaths;
   late Directory scratch;
+  Uint8List? videoFrame;
+  void provideVideoFrame() {
+    videoFrame = _posterPng;
+    final previousCompressor = FlutterImageCompressPlatform.instance;
+    FlutterImageCompressPlatform.instance = _VideoPosterCompressor();
+    addTearDown(
+        () => FlutterImageCompressPlatform.instance = previousCompressor);
+  }
+
   setUp(() async {
     originalPaths = PathProviderPlatform.instance;
+    videoFrame = null;
     scratch = await Directory(
-            '../../docs/verification/artifacts/2026-09-28/ios-media-room-followup/moments/legacy-video')
+            '../../docs/verification/artifacts/2026-09-29/android-2191-followup/poster-policy/video-regressions')
         .absolute
         .create(recursive: true);
     scratch = await scratch.createTemp('case-');
@@ -43,6 +60,14 @@ void main() {
             (call) async {
       if (call.method == 'getMediaInfo') {
         return jsonEncode({'path': call.arguments['path'], 'duration': 1000});
+      }
+      if (call.method == 'getByteThumbnail') {
+        if (videoFrame != null) {
+          final requested = call.arguments['path'] as String;
+          expect(requested, startsWith(scratch.path));
+          expect(await File(requested).exists(), isTrue);
+        }
+        return videoFrame;
       }
       if (call.method != 'compressVideo') return null;
       final output = await File(call.arguments['path'] as String).copy(
@@ -219,35 +244,69 @@ void main() {
 
   testWidgets('saving draft locks deletion and publish until upload completes',
       (tester) async {
+    provideVideoFrame();
     final uploaded = Completer<void>();
+    final entered = Completer<void>();
+    var saved = false;
     final api = BusinessApiClient(
         baseUri: Uri.parse('https://example.test'),
         sessionStore: SecureSessionStore(_Store()),
         client: MockClient((request) async {
+          if (request.url.path.endsWith('/video-posters/uploads')) {
+            return http.Response('{"id":"poster"}', 201);
+          }
           if (request.url.path.endsWith('/uploads')) {
             return http.Response('{"id":"v"}', 201);
           }
           if (request.url.path.endsWith('/content')) {
-            await uploaded.future;
+            if (request.url.path.contains('/v/content')) {
+              entered.complete();
+              await uploaded.future;
+            }
             return http.Response('', 204);
           }
           if (request.url.path.endsWith('/complete')) {
-            return http.Response(
-                '{"status":"COMPLETED","media_url":"media://moments/u/v.mp4"}',
-                200);
+            return request.url.path.contains('/poster/')
+                ? http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/u/poster.jpg"}',
+                    200)
+                : http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/u/v.mp4"}',
+                    200);
+          }
+          if (request.method == 'PUT' && request.url.path.endsWith('/draft')) {
+            saved = true;
           }
           return http.Response('{}', 200);
         }));
     await tester.pumpWidget(CupertinoApp(
-        home: MomentComposerPage(api: api, initialImages: [
-      XFile.fromData(Uint8List.fromList([1]), mimeType: 'video/mp4')
-    ])));
+        home: MomentComposerPage(
+            api: api,
+            galleryPicker: (_, __) async => (
+                  photos: [
+                    GalleryPhoto(
+                        id: 'locked',
+                        thumbnail: _posterPng,
+                        isVideo: true,
+                        mimeType: 'video/mp4',
+                        originalBytes: () async => Uint8List.fromList([1]),
+                        compressedBytes: () async => Uint8List.fromList([1]))
+                  ],
+                  original: true,
+                  flash: false,
+                ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moment-pick-images')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-compose-cancel')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('保存草稿'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.runAsync(() => tester.tap(find.text('保存草稿')));
+    for (var i = 0; i < 100 && !entered.isCompleted; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+    }
+    expect(entered.isCompleted, isTrue);
     final buttons = find.ancestor(
         of: find.byIcon(CupertinoIcons.clear_circled_solid),
         matching: find.byType(CupertinoButton));
@@ -259,13 +318,169 @@ void main() {
             .onPressed,
         isNull);
     uploaded.complete();
+    for (var i = 0; i < 100 && !saved; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+    }
     await tester.pumpAndSettle();
+    expect(saved, isTrue);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('saving video draft without a frame retains its local source',
+      (tester) async {
+    var videoBegins = 0;
+    var draftPuts = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: SecureSessionStore(_Store()),
+        client: MockClient((request) async {
+          if (request.method == 'POST' &&
+              request.url.path.endsWith('/moments/media/uploads')) {
+            videoBegins++;
+            return http.Response('{"id":"video"}', 201);
+          }
+          if (request.method == 'PUT' && request.url.path.endsWith('/draft')) {
+            draftPuts++;
+            return http.Response('{}', 200);
+          }
+          if (request.method == 'PUT' &&
+              request.url.path.endsWith('/content')) {
+            return http.Response('', 204);
+          }
+          if (request.url.path.endsWith('/complete')) {
+            return http.Response(
+                '{"status":"COMPLETED","media_url":"media://moments/u/video.mp4"}',
+                200);
+          }
+          return http.Response('{}', 200);
+        }));
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentComposerPage(api: api, initialImages: [
+      XFile.fromData(Uint8List.fromList([1, 2, 3]), mimeType: 'video/mp4')
+    ])));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moment-compose-cancel')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => tester.tap(find.text('保存草稿')));
+    await tester.pumpAndSettle();
+    expect(videoBegins, 0);
+    expect(draftPuts, 0);
+    expect(find.text('视频封面生成失败，内容已保留，请重试'), findsOneWidget);
+    expect(find.byKey(const Key('moment-compose-publish')), findsOneWidget);
+  });
+
+  testWidgets('poster 404 keeps a completed draft video for paired retry',
+      (tester) async {
+    provideVideoFrame();
+    const posterId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    var videoBegins = 0;
+    var posterBegins = 0;
+    var videoPuts = 0;
+    var draftPuts = 0;
+    Map<String, dynamic>? savedDraft;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: SecureSessionStore(_Store()),
+        client: MockClient((request) async {
+          final path = request.url.path;
+          if (request.method == 'GET' && path.endsWith('/draft')) {
+            return http.Response('{}', 200);
+          }
+          if (path.endsWith('/video-posters/uploads')) {
+            posterBegins++;
+            return posterBegins == 1
+                ? http.Response(
+                    '{"error":{"code":"POSTER_UNAVAILABLE","message":"unavailable"}}',
+                    404)
+                : http.Response(jsonEncode({'id': posterId}), 201);
+          }
+          if (path.endsWith('/media/uploads')) {
+            videoBegins++;
+            return http.Response('{"id":"video"}', 201);
+          }
+          if (request.method == 'PUT' && path.endsWith('/content')) {
+            if (path.contains('/video/content')) videoPuts++;
+            return http.Response('', 204);
+          }
+          if (path.endsWith('/complete')) {
+            return path.contains('/$posterId/')
+                ? http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/u/poster.jpg"}',
+                    200)
+                : http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/u/video.mp4"}',
+                    200);
+          }
+          if (request.method == 'PUT' && path.endsWith('/draft')) {
+            draftPuts++;
+            savedDraft =
+                Map<String, dynamic>.from(jsonDecode(request.body)['payload']);
+            return http.Response('{}', 200);
+          }
+          return http.Response('{}', 200);
+        }));
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentComposerPage(
+            api: api,
+            galleryPicker: (_, __) async => (
+                  photos: [
+                    GalleryPhoto(
+                        id: 'draft-video',
+                        thumbnail: _posterPng,
+                        isVideo: true,
+                        mimeType: 'video/mp4',
+                        originalBytes: () async => Uint8List.fromList(
+                            [0, 0, 0, 16, 102, 116, 121, 112]),
+                        compressedBytes: () async => Uint8List.fromList(
+                            [0, 0, 0, 16, 102, 116, 121, 112]))
+                  ],
+                  original: true,
+                  flash: false,
+                ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moment-pick-images')));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(CupertinoIcons.play_circle), findsOneWidget);
+    await tester.tap(find.byKey(const Key('moment-compose-cancel')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => tester.tap(find.text('保存草稿')));
+    for (var i = 0;
+        i < 100 && find.text('视频封面暂不可用，请稍后重试').evaluate().isEmpty;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)));
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(videoBegins, 1);
+    expect(videoPuts, 1);
+    expect(posterBegins, 1);
+    expect(draftPuts, 0);
+    expect(find.text('视频封面暂不可用，请稍后重试'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('moment-compose-cancel')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => tester.tap(find.text('保存草稿')));
+    for (var i = 0; i < 100 && draftPuts < 1; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)));
+    }
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(videoBegins, 1);
+    expect(videoPuts, 1);
+    expect(posterBegins, 2);
+    expect(draftPuts, 1);
+    expect(savedDraft?['video_urls'], ['media://moments/u/video.mp4']);
+    expect(savedDraft?['video_poster_media_ids'], [posterId]);
   });
 
   testWidgets(
       'saved video draft restores account poster after URL renewal and removes it',
       (tester) async {
+    provideVideoFrame();
     final oldPaths = PathProviderPlatform.instance;
     final scratch = Directory(path.normalize(path.absolute(
         '../../docs/verification/artifacts/2026-09-23/feedback-2165-moments/poster-widget')));
@@ -276,9 +491,11 @@ void main() {
     const first = '$origin/api/v1/moments/media/content/first';
     const renewed = '$origin/api/v1/moments/media/content/renewed';
     final key = 'c' * 64;
+    const posterId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
     final png = base64Decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
     var saved = false;
+    Map<String, dynamic>? savedPayload;
     final previousDraftStore = MomentDraftStores.shared;
     MomentDraftStores.shared = InMemoryMomentDraftStore();
     final sessions = SecureSessionStore(_Store());
@@ -289,21 +506,38 @@ void main() {
         sessionStore: sessions,
         client: MockClient((request) async {
           if (request.url.path.endsWith('/draft')) {
-            if (request.method == 'PUT') saved = true;
+            if (request.method == 'PUT') {
+              saved = true;
+              savedPayload = Map<String, dynamic>.from(
+                  jsonDecode(request.body)['payload']);
+            }
             return http.Response(
                 jsonEncode(saved
                     ? {
                         'video_urls': [first],
+                        'video_poster_media_ids': [posterId],
                       }
                     : {}),
                 200);
+          }
+          if (request.url.path.endsWith('/video-posters/uploads')) {
+            return http.Response(jsonEncode({'id': posterId}), 201);
           }
           if (request.url.path.endsWith('/uploads')) {
             return http.Response('{"id":"v"}', 201);
           }
           if (request.url.path.endsWith('/complete')) {
-            return http.Response(
-                jsonEncode({'media_url': first, 'media_cache_key': key}), 200);
+            return request.url.path.contains('/$posterId/')
+                ? http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/u/poster.jpg"}',
+                    200)
+                : http.Response(
+                    jsonEncode({
+                      'status': 'COMPLETED',
+                      'media_url': first,
+                      'media_cache_key': key
+                    }),
+                    200);
           }
           if (request.url.path.endsWith('/content') &&
               request.method == 'PUT') {
@@ -343,6 +577,7 @@ void main() {
       }
       await tester.pumpAndSettle();
       expect(saved, isTrue);
+      expect(savedPayload?['video_poster_media_ids'], [posterId]);
       expect(
           MomentDraftStores.shared!.read()!.payload['video_cache_keys'], [key]);
       await tester.pumpWidget(const SizedBox());
@@ -388,6 +623,8 @@ void main() {
   testWidgets(
       'mixed image video draft reopens and publishes with real request contract',
       (tester) async {
+    provideVideoFrame();
+    const posterId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
     final png = base64Decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
     Map<String, dynamic> draft = {};
@@ -406,6 +643,11 @@ void main() {
             }
             return http.Response(jsonEncode(draft), 200);
           }
+          if (request.url.path.endsWith('/video-posters/uploads')) {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            requests.add({'schema': 'BeginPosterUpload', 'body': body});
+            return http.Response(jsonEncode({'id': posterId}), 201);
+          }
           if (request.url.path.endsWith('/uploads')) {
             final body = jsonDecode(request.body) as Map<String, dynamic>;
             begins.add(body);
@@ -417,6 +659,11 @@ void main() {
             return http.Response('', 204);
           }
           if (request.url.path.endsWith('/complete')) {
+            if (request.url.path.contains('/$posterId/')) {
+              return http.Response(
+                  '{"status":"COMPLETED","media_url":"media://moments/u/poster.jpg"}',
+                  200);
+            }
             return http.Response(
                 jsonEncode({
                   'status': 'COMPLETED',
@@ -466,6 +713,7 @@ void main() {
     expect(begins, hasLength(2));
     expect(begins.first['file_name'], 'moment-0.mp4');
     expect(draft['video_urls'], ['media://moments/u/1']);
+    expect(draft['video_poster_media_ids'], [posterId]);
     expect(draft['image_urls'], ['media://moments/u/2']);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
@@ -581,6 +829,7 @@ void main() {
 
   testWidgets('published video reuses its uploaded bytes after URL renewal',
       (tester) async {
+    provideVideoFrame();
     final previousPaths = PathProviderPlatform.instance;
     // setUp provides a unique, short sandbox; fixed directories retain old jobs.
     const account = '@video-cache:example.test';
@@ -601,15 +850,29 @@ void main() {
           if (request.url.path.endsWith('/draft')) {
             return http.Response('{}', 200);
           }
+          if (request.url.path.endsWith('/video-posters/uploads')) {
+            expect(jsonDecode(request.body)['mime_type'], 'image/jpeg');
+            return http.Response('{"id":"poster"}', 201);
+          }
           if (request.url.path.endsWith('/uploads')) {
             return http.Response('{"id":"upload"}', 201);
           }
           if (request.method == 'PUT' &&
               request.url.path.endsWith('/content')) {
-            expect(request.bodyBytes, bytes);
+            if (request.url.path.contains('/upload/content')) {
+              expect(request.bodyBytes, bytes);
+            } else {
+              expect(request.url.path, contains('/poster/content'));
+              expect(request.bodyBytes, isNotEmpty);
+            }
             return http.Response('', 204);
           }
           if (request.url.path.endsWith('/complete')) {
+            if (request.url.path.contains('/poster/')) {
+              return http.Response(
+                  '{"status":"COMPLETED","media_url":"media://moments/u/poster.jpg"}',
+                  200);
+            }
             return http.Response(
                 jsonEncode({
                   'status': 'COMPLETED',
@@ -620,6 +883,8 @@ void main() {
           }
           if (request.method == 'POST' &&
               request.url.path.endsWith('/moments')) {
+            expect(
+                jsonDecode(request.body)['video_poster_media_ids'], ['poster']);
             published = true;
             return http.Response('{"id":"posted"}', 201);
           }
@@ -1050,8 +1315,7 @@ void main() {
     expect(find.byIcon(CupertinoIcons.play_circle), findsOneWidget);
   });
 
-  testWidgets('restored draft publishes video reference without upload',
-      (tester) async {
+  testWidgets('restored posterless video draft cannot publish', (tester) async {
     Map<String, dynamic>? published;
     final api = BusinessApiClient(
         baseUri: Uri.parse('https://example.test'),
@@ -1075,12 +1339,67 @@ void main() {
           }
           return http.Response('{}', 200);
         }));
+    _queues.add(api);
     await tester.pumpWidget(CupertinoApp(home: MomentComposerPage(api: api)));
     await tester.pumpAndSettle();
-    await _publish(tester);
+    await tester.runAsync(
+        () => tester.tap(find.byKey(const Key('moment-compose-publish'))));
+    for (var i = 0;
+        i < 100 && find.text('视频封面暂不可用，请稍后重试').evaluate().isEmpty;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+    }
     await tester.pumpAndSettle();
-    expect(published?['video_urls'], ['media://moments/u/saved.mp4']);
-    expect(published?['visibility'], 'SELF');
+    expect(published, isNull);
+    expect(find.text('视频封面暂不可用，请稍后重试'), findsOneWidget);
+  });
+
+  testWidgets('restored paired video poster retries publish without upload',
+      (tester) async {
+    const posterId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    final published = <Map<String, dynamic>>[];
+    final publishKeys = <String?>[];
+    var uploads = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: SecureSessionStore(_Store()),
+        client: MockClient((request) async {
+          if (request.method == 'GET' && request.url.path.endsWith('/draft')) {
+            return http.Response(
+                jsonEncode({
+                  'text': 'draft',
+                  'visibility': 'SELF',
+                  'video_urls': ['media://moments/u/saved.mp4'],
+                  'video_poster_media_ids': [posterId],
+                }),
+                200);
+          }
+          if (request.url.path.endsWith('/uploads')) uploads++;
+          if (request.method == 'POST' &&
+              request.url.path.endsWith('/moments')) {
+            published.add(Map<String, dynamic>.from(jsonDecode(request.body)));
+            publishKeys.add(request.headers['Idempotency-Key']);
+            return published.length == 1
+                ? http.Response(
+                    '{"error":{"code":"RETRY","message":"retry"}}', 503)
+                : http.Response('{"id":"posted"}', 201);
+          }
+          return http.Response('{}', 200);
+        }));
+    await tester.pumpWidget(CupertinoApp(home: MomentComposerPage(api: api)));
+    await tester.pumpAndSettle();
+    final queue = await _publish(tester);
+    expect(queue.jobs.single.state, MomentPublishState.failed);
+    await tester.runAsync(() => queue.retry(queue.jobs.single.id));
+    await _drain(tester, queue);
+    expect(queue.jobs.single.state, MomentPublishState.succeeded);
+    expect(uploads, 0);
+    expect(published, hasLength(2));
+    expect(published.last['video_urls'], ['media://moments/u/saved.mp4']);
+    expect(published.last['video_poster_media_ids'], [posterId]);
+    expect(publishKeys[1], publishKeys[0]);
   });
 
   testWidgets(
@@ -1118,6 +1437,7 @@ void main() {
   testWidgets(
       'composer uploads video without image conversion and retries publish without reupload',
       (tester) async {
+    provideVideoFrame();
     var uploads = 0;
     var publishes = 0;
     final publishKeys = <String?>[];
@@ -1127,6 +1447,10 @@ void main() {
       client: MockClient((request) async {
         final path = request.url.path;
         if (path.endsWith('/moments/draft')) return http.Response('{}', 200);
+        if (path.endsWith('/moments/video-posters/uploads')) {
+          expect(jsonDecode(request.body)['mime_type'], 'image/jpeg');
+          return http.Response('{"id":"poster"}', 201);
+        }
         if (path.endsWith('/moments/media/uploads')) {
           uploads++;
           expect(jsonDecode(request.body)['mime_type'], 'video/mp4');
@@ -1134,10 +1458,20 @@ void main() {
           return http.Response('{"id":"v"}', 201);
         }
         if (path.endsWith('/content')) {
-          expect(request.bodyBytes, [0, 0, 0, 16, 102, 116, 121, 112]);
+          if (path.contains('/v/content')) {
+            expect(request.bodyBytes, [0, 0, 0, 16, 102, 116, 121, 112]);
+          } else {
+            expect(path, contains('/poster/content'));
+            expect(request.bodyBytes, isNotEmpty);
+          }
           return http.Response('', 204);
         }
         if (path.endsWith('/complete')) {
+          if (path.contains('/poster/')) {
+            return http.Response(
+                '{"status":"COMPLETED","media_url":"media://moments/u/poster.jpg"}',
+                200);
+          }
           return http.Response(
               '{"status":"COMPLETED","media_url":"media://moments/u/v.mp4"}',
               200);
@@ -1148,6 +1482,7 @@ void main() {
           final payload = jsonDecode(request.body);
           expect(payload['image_urls'], isEmpty);
           expect(payload['video_urls'], ['media://moments/u/v.mp4']);
+          expect(payload['video_poster_media_ids'], ['poster']);
           return publishes == 1
               ? http.Response(
                   '{"error":{"code":"RETRY","message":"retry"}}', 503)
@@ -1206,6 +1541,29 @@ class _PosterPaths extends PathProviderPlatform {
   Future<String> getTemporaryPath() async => path;
   @override
   Future<String> getApplicationSupportPath() async => path;
+}
+
+final class _VideoPosterCompressor extends FlutterImageCompressPlatform {
+  @override
+  Future<Uint8List> compressWithList(Uint8List image,
+      {int minWidth = 1920,
+      int minHeight = 1080,
+      int quality = 95,
+      int rotate = 0,
+      int inSampleSize = 1,
+      bool autoCorrectionAngle = true,
+      CompressFormat format = CompressFormat.jpeg,
+      bool keepExif = false}) async {
+    expect(image, isNotEmpty);
+    expect(minWidth, lessThanOrEqualTo(480));
+    expect(minHeight, lessThanOrEqualTo(480));
+    expect(format, CompressFormat.jpeg);
+    return _posterJpeg;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw StateError('Unexpected poster compressor operation');
 }
 
 final _queues = <BusinessApiClient>[];

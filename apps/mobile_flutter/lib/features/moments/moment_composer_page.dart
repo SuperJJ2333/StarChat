@@ -24,6 +24,16 @@ import 'moment_image_preprocessor.dart';
 import 'moment_publish_coordinator.dart';
 import '../../ui/motion/motion_page_route.dart';
 
+final class _PendingDraftVideo {
+  _PendingDraftVideo(this.mediaUrl, this.cacheKey, this.poster);
+
+  final String mediaUrl;
+  final String? cacheKey;
+  final Uint8List poster;
+  String? posterUploadId;
+  bool posterPut = false;
+}
+
 final class MomentComposerPage extends StatefulWidget {
   const MomentComposerPage({
     super.key,
@@ -60,6 +70,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   final _uploadedVideoPreviews = <String, Uint8List>{};
   final _videoCacheKeys = <String, String>{};
   final _videoPosterIds = <String, String>{};
+  final _pendingDraftVideos = <XFile, _PendingDraftVideo>{};
   Map<String, dynamic> _serverDraftPayload = {};
   late final Future<MomentPublishSession?> _composerSession;
   int _editorRevision = 0;
@@ -412,44 +423,23 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     final preprocessor = widget.imagePreprocessor ?? MomentImagePreprocessor();
     while (images.isNotEmpty) {
       final image = images.first;
-      final account = await widget.api.currentMatrixUserId();
-      final generation =
-          account == null ? null : MediaCache.accountGeneration(account);
-      final videoMime = momentVideoMime(image);
-      Uint8List? smallPoster;
+      if (momentVideoMime(image) != null) {
+        await _uploadPendingVideo(lease, image);
+        if (!mounted) return remoteImageUrls.toList(growable: false);
+        continue;
+      }
       final Uint8List bytes;
       try {
-        if (videoMime != null && image.path.isNotEmpty) {
-          final rendition = await transcodeForChat(File(image.path));
-          try {
-            bytes = await rendition.file.readAsBytes();
-            smallPoster = await prepareMomentVideoPoster(rendition.file,
-                source: _previews[image]);
-          } finally {
-            await rendition.dispose();
-          }
-        } else {
-          if (await image.length() > 20 * 1024 * 1024) {
-            throw const MomentImageException('媒体大小不能超过20MB');
-          }
-          bytes = await image.readAsBytes();
+        if (await image.length() > 20 * 1024 * 1024) {
+          throw const MomentImageException('媒体大小不能超过20MB');
         }
+        bytes = await image.readAsBytes();
       } on MomentImageException {
         rethrow;
       } catch (_) {
         throw const MomentImageException('读取媒体失败，请重新选择');
       }
-      if (videoMime != null &&
-          (bytes.isEmpty || bytes.length > 20 * 1024 * 1024)) {
-        throw const MomentImageException('视频大小不能超过20MB');
-      }
-      if (videoMime != null &&
-          smallPoster == null &&
-          _previews[image]?.isNotEmpty == true) {
-        smallPoster = await prepareMomentVideoPoster(File(image.path),
-            source: _previews[image]);
-      }
-      final gif = videoMime == null && isGifBytes(bytes);
+      final gif = isGifBytes(bytes);
       if (gif) {
         try {
           validateGifStructureForSend(bytes);
@@ -457,32 +447,20 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           throw MomentImageException(error.message);
         }
       }
-      final processed =
-          videoMime == null && !gif ? await preprocessor.process(bytes) : bytes;
+      final processed = gif ? bytes : await preprocessor.process(bytes);
       if (processed.isEmpty || processed.length > 20 * 1024 * 1024) {
         throw const MomentImageException('媒体大小不能超过20MB');
       }
-      final mimeType =
-          videoMime != null ? 'video/mp4' : (gif ? 'image/gif' : 'image/jpeg');
+      final mimeType = gif ? 'image/gif' : 'image/jpeg';
       // XFile.fromData ignores name on native platforms. Keep upload metadata
       // separately; never send its empty native name to BeginUpload.
-      final suffix = videoMime == 'video/quicktime'
-          ? 'mov'
-          : videoMime != null
-              ? 'mp4'
-              : gif
-                  ? 'gif'
-                  : 'jpg';
+      final suffix = gif ? 'gif' : 'jpg';
       final fileName = _fileNames[image] ?? 'moment.$suffix';
       final begun = await widget.api.postMomentTask(
           lease,
           '/moments/media/uploads',
           {
-            'file_name': gif
-                ? 'moment.gif'
-                : videoMime == null
-                    ? _jpegFileName(fileName)
-                    : '${fileName.replaceAll(RegExp(r'\.[^.]+$'), '')}.mp4',
+            'file_name': gif ? 'moment.gif' : _jpegFileName(fileName),
             'mime_type': mimeType,
             'byte_size': processed.lengthInBytes,
           },
@@ -501,35 +479,83 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       if (mediaUrl == null || mediaUrl.isEmpty) {
         throw StateError('Moment upload completion is missing a media URL');
       }
-      final key = completed['media_cache_key']?.toString();
-      String? posterId;
-      if (videoMime != null && smallPoster != null) {
-        try {
-          final begunPoster = await widget.api.postMomentTask(
-              lease,
-              '/moments/video-posters/uploads',
-              {
-                'file_name': 'poster.jpg',
-                'mime_type': 'image/jpeg',
-                'byte_size': smallPoster.length,
-              },
-              widget.api.newIdempotencyKey());
-          final id = begunPoster['id'] as String;
-          await widget.api.putMomentTask(lease, id, smallPoster, 'image/jpeg');
-          final completePoster = await widget.api.postMomentTask(
-              lease,
-              '/moments/media/uploads/$id/complete',
-              {},
-              widget.api.newIdempotencyKey());
-          if (completePoster['status'] == 'COMPLETED') posterId = id;
-        } on BusinessApiException catch (error) {
-          // Previous servers have no poster route; a readable video remains valid.
-          if (error.statusCode != 404) rethrow;
+      if (!mounted) return remoteImageUrls.toList(growable: false);
+      setState(() {
+        images.removeAt(0);
+        _previews.remove(image);
+        _fileNames.remove(image);
+        remoteImageUrls.add(mediaUrl);
+      });
+    }
+    return remoteImageUrls.toList(growable: false);
+  }
+
+  Future<void> _uploadPendingVideo(
+      MomentPublishSession lease, XFile image) async {
+    final account = await widget.api.currentMatrixUserId();
+    final generation =
+        account == null ? null : MediaCache.accountGeneration(account);
+    var pending = _pendingDraftVideos[image];
+    if (pending == null) {
+      final Uint8List bytes;
+      Uint8List? smallPoster;
+      try {
+        if (image.path.isNotEmpty) {
+          final rendition = await transcodeForChat(File(image.path));
+          try {
+            bytes = await rendition.file.readAsBytes();
+            smallPoster = await prepareMomentVideoPoster(rendition.file,
+                source: _previews[image]);
+          } finally {
+            await rendition.dispose();
+          }
+        } else {
+          bytes = await image.readAsBytes();
+          final preview = _previews[image];
+          if (preview != null && preview.isNotEmpty) {
+            smallPoster = await prepareMomentVideoPoster(File(''),
+                source: preview, extract: (_, __) async => null);
+          }
         }
+      } on MomentImageException {
+        rethrow;
+      } catch (_) {
+        throw const MomentImageException('读取媒体失败，请重新选择');
       }
-      final poster = _previews[image];
-      if (videoMime != null &&
-          key != null &&
+      if (bytes.isEmpty || bytes.length > 20 * 1024 * 1024) {
+        throw const MomentImageException('视频大小不能超过20MB');
+      }
+      if (smallPoster == null) {
+        throw const MomentImageException('视频封面生成失败，内容已保留，请重试');
+      }
+      final fileName = _fileNames[image] ?? 'moment.mp4';
+      final begun = await widget.api.postMomentTask(
+          lease,
+          '/moments/media/uploads',
+          {
+            'file_name': '${fileName.replaceAll(RegExp(r'\.[^.]+$'), '')}.mp4',
+            'mime_type': 'video/mp4',
+            'byte_size': bytes.lengthInBytes,
+          },
+          widget.api.newIdempotencyKey());
+      final uploadId = begun['id']?.toString();
+      if (uploadId == null || uploadId.isEmpty) {
+        throw StateError('Moment upload session is missing an id');
+      }
+      await widget.api.putMomentTask(lease, uploadId, bytes, 'video/mp4');
+      final completed = await widget.api.postMomentTask(
+          lease,
+          '/moments/media/uploads/$uploadId/complete',
+          {},
+          widget.api.newIdempotencyKey());
+      final mediaUrl = completed['media_url']?.toString().trim();
+      if (mediaUrl == null || mediaUrl.isEmpty) {
+        throw StateError('Moment upload completion is missing a media URL');
+      }
+      final key = completed['media_cache_key']?.toString();
+      pending = _PendingDraftVideo(mediaUrl, key, smallPoster);
+      _pendingDraftVideos[image] = pending;
+      if (key != null &&
           account != null &&
           account.isNotEmpty &&
           generation != null) {
@@ -539,37 +565,102 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
               accountKey: 'matrix:$account',
               trustedOrigin: widget.api.baseUri.origin,
               expectedAccountGeneration: generation,
-              mimeType: mimeType);
-          if (poster != null && poster.isNotEmpty) {
-            await MomentMediaCache.storeVideoPoster(mediaUrl, poster,
-                cacheKey: key,
-                accountKey: 'matrix:$account',
-                trustedOrigin: widget.api.baseUri.origin,
-                expectedAccountGeneration: generation);
-          }
+              mimeType: 'video/mp4');
         } catch (_) {
-          // A completed upload stays publishable if the local cache is full or
-          // unavailable; playback can still download through the signed URL.
+          // A completed upload stays publishable when the local cache is full.
         }
       }
-      if (!mounted) return remoteImageUrls.toList(growable: false);
-      if (account != null &&
-          generation != MediaCache.accountGeneration(account)) {
+    }
+    final ready = pending;
+    final posterId = await _uploadDraftVideoPoster(lease, ready);
+    if (!mounted) return;
+    if (account != null &&
+        generation != MediaCache.accountGeneration(account)) {
+      throw const MomentImageException('账号已切换，请重新打开发表页面');
+    }
+    if (ready.cacheKey != null &&
+        account != null &&
+        account.isNotEmpty &&
+        generation != null) {
+      try {
+        await MomentMediaCache.storeVideoPoster(ready.mediaUrl, ready.poster,
+            cacheKey: ready.cacheKey,
+            accountKey: 'matrix:$account',
+            trustedOrigin: widget.api.baseUri.origin,
+            expectedAccountGeneration: generation);
+      } catch (_) {
+        // The confirmed server poster remains available when local cache fails.
+      }
+    }
+    setState(() {
+      _videoPosterIds[ready.mediaUrl] = posterId;
+      if (ready.cacheKey != null) {
+        _videoCacheKeys[ready.mediaUrl] = ready.cacheKey!;
+      }
+      images.removeAt(0);
+      _previews.remove(image);
+      _fileNames.remove(image);
+      _uploadedVideoPreviews[ready.mediaUrl] = ready.poster;
+      remoteVideoUrls.add(ready.mediaUrl);
+      _pendingDraftVideos.remove(image);
+    });
+  }
+
+  Future<String> _uploadDraftVideoPoster(
+      MomentPublishSession lease, _PendingDraftVideo pending) async {
+    try {
+      var id = pending.posterUploadId;
+      if (id == null) {
+        final begun = await widget.api.postMomentTask(
+            lease,
+            '/moments/video-posters/uploads',
+            {
+              'file_name': 'poster.jpg',
+              'mime_type': 'image/jpeg',
+              'byte_size': pending.poster.length,
+            },
+            widget.api.newIdempotencyKey());
+        final candidate = begun['id'];
+        if (candidate is! String || candidate.isEmpty) {
+          throw const MomentImageException('视频封面暂不可用，请稍后重试');
+        }
+        id = candidate;
+        pending.posterUploadId = id;
+      }
+      if (!pending.posterPut) {
+        try {
+          await widget.api
+              .putMomentTask(lease, id, pending.poster, 'image/jpeg');
+        } on BusinessApiException catch (error) {
+          if (error.code != 'MOMENT_MEDIA_COMPLETED') rethrow;
+        }
+        pending.posterPut = true;
+      }
+      final completed = await widget.api.postMomentTask(
+          lease,
+          '/moments/media/uploads/$id/complete',
+          {},
+          widget.api.newIdempotencyKey());
+      if (completed['status'] != 'COMPLETED' ||
+          completed['media_url'] is! String ||
+          (completed['media_url'] as String).isEmpty) {
+        throw const MomentImageException('视频封面暂不可用，请稍后重试');
+      }
+      return id;
+    } on BusinessApiException catch (error) {
+      if (error.statusCode == 401 || error.statusCode == 403) rethrow;
+      if (!await widget.api.isMomentPublishSessionCurrent(lease)) {
         throw const MomentImageException('账号已切换，请重新打开发表页面');
       }
-      setState(() {
-        if (posterId != null) _videoPosterIds[mediaUrl] = posterId;
-        if (videoMime != null && key != null) _videoCacheKeys[mediaUrl] = key;
-        images.removeAt(0);
-        final preview = _previews.remove(image);
-        _fileNames.remove(image);
-        if (videoMime != null && preview != null && preview.isNotEmpty) {
-          _uploadedVideoPreviews[mediaUrl] = preview;
-        }
-        (videoMime == null ? remoteImageUrls : remoteVideoUrls).add(mediaUrl);
-      });
+      throw const MomentImageException('视频封面暂不可用，请稍后重试');
+    } on MomentImageException {
+      rethrow;
+    } on Exception {
+      if (!await widget.api.isMomentPublishSessionCurrent(lease)) {
+        throw const MomentImageException('账号已切换，请重新打开发表页面');
+      }
+      throw const MomentImageException('视频封面暂不可用，请稍后重试');
     }
-    return remoteImageUrls.toList(growable: false);
   }
 
   Future<bool> _onBack() async {
@@ -1010,8 +1101,12 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                                 padding: EdgeInsets.zero,
                                 onPressed: busy
                                     ? null
-                                    : () => _editPayload(
-                                        () => images.remove(image)),
+                                    : () => _editPayload(() {
+                                          images.remove(image);
+                                          _pendingDraftVideos.remove(image);
+                                          _previews.remove(image);
+                                          _fileNames.remove(image);
+                                        }),
                                 child: const Icon(
                                   CupertinoIcons.clear_circled_solid,
                                   color: CupertinoColors.systemGrey,

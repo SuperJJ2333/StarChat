@@ -366,7 +366,7 @@ void main() {
       'visibility': 'SELF',
       'image_urls': <String>[],
       'video_urls': ['https://example.test/api/v1/moments/media/video?renewed'],
-      'video_poster_media_ids': [null]
+      'video_poster_media_ids': ['eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee']
     };
     Map<String, dynamic>? expected;
     final api = BusinessApiClient(

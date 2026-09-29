@@ -8,6 +8,14 @@
     }
   },
   {
+    "schema": "BeginPosterUpload",
+    "body": {
+      "file_name": "poster.jpg",
+      "mime_type": "image/jpeg",
+      "byte_size": 291
+    }
+  },
+  {
     "schema": "BeginUpload",
     "body": {
       "file_name": "moment-1.jpg",
@@ -27,6 +35,9 @@
         "video_urls": [
           "media://moments/u/1"
         ],
+        "video_poster_media_ids": [
+          "dddddddd-dddd-dddd-dddd-dddddddddddd"
+        ],
         "link_url": null,
         "include_user_ids": [],
         "include_tag_ids": [],
@@ -45,6 +56,9 @@
       ],
       "video_urls": [
         "media://moments/u/1"
+      ],
+      "video_poster_media_ids": [
+        "dddddddd-dddd-dddd-dddd-dddddddddddd"
       ],
       "include_user_ids": [],
       "exclude_user_ids": [],

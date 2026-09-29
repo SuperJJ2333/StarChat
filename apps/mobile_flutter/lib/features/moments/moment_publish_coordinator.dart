@@ -19,38 +19,75 @@ import '../../ui/moments/moment_media_cache.dart';
 import 'moment_image_preprocessor.dart';
 import 'moment_draft_store.dart';
 
+typedef MomentPosterExtractor = Future<Uint8List?> Function(
+    File file, List<int> positionsMs);
+
 /// Posters use a separate, bounded rendition; original videos stay in the sandbox.
 Future<Uint8List?> prepareMomentVideoPoster(File video,
-    {Uint8List? source}) async {
-  try {
-    final poster = source != null && source.isNotEmpty
-        ? source
-        : await extractVideoPoster(video.path,
-            positionsMs: const [200, 500, 1000, 2000]);
-    if (poster == null || poster.isEmpty || poster.length > 512 * 1024) {
+    {Uint8List? source, MomentPosterExtractor? extract}) async {
+  Future<Uint8List?> attempt(List<int> positions) async {
+    try {
+      return extract == null
+          ? extractVideoPoster(video.path, positionsMs: positions)
+          : extract(video, positions);
+    } catch (_) {
       return null;
     }
-    final buffer = await ui.ImmutableBuffer.fromUint8List(poster);
-    late ({int width, int height}) target;
+  }
+
+  final frame = await attempt(const [0, 200, 500, 1000, 2000]);
+  if (frame != null && frame.isNotEmpty) {
+    final encoded = await _encodeMomentPoster(frame);
+    if (encoded != null) return encoded;
+    // The first frame can have a valid header but fail during full encoding.
+    final later = await attempt(const [200, 500, 1000, 2000]);
+    if (later != null && later.isNotEmpty) {
+      final encodedLater = await _encodeMomentPoster(later);
+      if (encodedLater != null) return encodedLater;
+    }
+  }
+  return source == null || source.isEmpty ? null : _encodeMomentPoster(source);
+}
+
+Future<Uint8List?> _encodeMomentPoster(Uint8List bytes) async {
+  try {
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     try {
       final descriptor = await ui.ImageDescriptor.encoded(buffer);
       try {
-        target = targetDimensions(descriptor.width, descriptor.height, 480);
+        if (descriptor.width * descriptor.height > 16 * 1024 * 1024) {
+          return null;
+        }
+        final target =
+            targetDimensions(descriptor.width, descriptor.height, 480);
+        final small = await FlutterImageCompress.compressWithList(bytes,
+            minWidth: target.width,
+            minHeight: target.height,
+            quality: 80,
+            format: CompressFormat.jpeg);
+        return small.isNotEmpty && small.length <= 512 * 1024 ? small : null;
       } finally {
         descriptor.dispose();
       }
     } finally {
       buffer.dispose();
     }
-    final small = await FlutterImageCompress.compressWithList(poster,
-        minWidth: target.width, minHeight: target.height, quality: 80);
-    return small.isNotEmpty && small.length <= 512 * 1024 ? small : null;
   } catch (_) {
     return null;
   }
 }
 
 enum MomentPublishState { queued, uploading, failed, succeeded, cancelled }
+
+void _requirePairedVideoPosters(Map<String, dynamic> payload) {
+  final videos = payload['video_urls'] as List? ?? const [];
+  if (videos.isEmpty) return;
+  final posters = payload['video_poster_media_ids'] as List? ?? const [];
+  if (posters.length != videos.length ||
+      posters.any((id) => id is! String || id.isEmpty)) {
+    throw const MomentImageException('视频封面暂不可用，请稍后重试');
+  }
+}
 
 final class MomentPublishJob {
   MomentPublishJob(this.id, Map<String, dynamic> payload, this.media,
@@ -174,6 +211,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         9) {
       throw const MomentImageException('最多只能发布9个图片或视频');
     }
+    _requirePairedVideoPosters(payload);
     // Freeze the invocation before sandbox IO yields to hydration or another editor.
     final frozen =
         Map<String, dynamic>.from(jsonDecode(jsonEncode(payload)) as Map);
@@ -321,26 +359,34 @@ final class MomentPublishCoordinator extends ChangeNotifier {
               }
             } catch (_) {/* Cache pressure must not fail an accepted upload. */}
             final poster = File('${root.path}/${job.id}/media-$i.poster');
-            if (await poster.exists()) {
-              Map<String, dynamic>? posterResult;
-              try {
-                posterResult = await _upload(
-                    job, media, poster, 'poster-$i', 'image/jpeg', true);
-              } on BusinessApiException catch (error) {
-                if (error.statusCode != 404) rethrow;
-              }
-              posterIds.add(posterResult?['id'] as String?);
-              try {
-                await MomentMediaCache.storeVideoPoster(
-                    result['media_url'] as String, await poster.readAsBytes(),
-                    cacheKey: result['media_cache_key'] as String?,
-                    accountKey: 'matrix:$accountId',
-                    trustedOrigin: api.baseUri.origin,
-                    expectedAccountGeneration: _mediaGeneration);
-              } catch (_) {}
-            } else {
-              posterIds.add(null);
+            if (!await poster.exists()) {
+              throw const MomentImageException('视频封面生成失败，内容已保留，请重试');
             }
+            final Map<String, dynamic> posterResult;
+            try {
+              posterResult = await _upload(
+                  job, media, poster, 'poster-$i', 'image/jpeg', true);
+            } on Exception catch (error) {
+              if (error is BusinessApiException &&
+                  (error.statusCode == 401 || error.statusCode == 403)) {
+                rethrow;
+              }
+              _guardJob(job);
+              throw const MomentImageException('视频封面暂不可用，请稍后重试');
+            }
+            final posterId = posterResult['id'];
+            if (posterId is! String || posterId.isEmpty) {
+              throw const MomentImageException('视频封面暂不可用，请稍后重试');
+            }
+            posterIds.add(posterId);
+            try {
+              await MomentMediaCache.storeVideoPoster(
+                  result['media_url'] as String, await poster.readAsBytes(),
+                  cacheKey: result['media_cache_key'] as String?,
+                  accountKey: 'matrix:$accountId',
+                  trustedOrigin: api.baseUri.origin,
+                  expectedAccountGeneration: _mediaGeneration);
+            } catch (_) {}
           } else {
             imageUrls
                 .add((result['media_ref'] ?? result['media_url']) as String);
@@ -375,6 +421,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
           if (posterIds.any((p) => p != null))
             'video_poster_media_ids': posterIds
         };
+        _requirePairedVideoPosters(body);
         job.published = await trace.runChildOperations(
             () => api.postMomentTask(session, '/moments', body, job.id));
         _guardJob(job);
@@ -462,17 +509,25 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         await rendition.file.copy(output.path);
         media['mime'] = 'video/mp4';
         final posterSource = File('$directory/media-$i.poster-source');
+        Uint8List? poster;
         try {
-          final poster = await posterSource.exists()
+          poster = await posterSource.exists()
               ? await posterSource.readAsBytes()
               : null;
-          final small =
-              await prepareMomentVideoPoster(rendition.file, source: poster);
-          if (small != null) {
-            await File('$directory/media-$i.poster')
-                .writeAsBytes(small, flush: true);
-          }
-        } catch (_) {/* A missing thumbnail cannot discard a valid video. */}
+        } catch (_) {
+          // Extraction from this video remains available without the preview.
+        }
+        final small =
+            await prepareMomentVideoPoster(rendition.file, source: poster);
+        if (small == null) {
+          throw const MomentImageException('视频封面生成失败，内容已保留，请重试');
+        }
+        try {
+          await File('$directory/media-$i.poster')
+              .writeAsBytes(small, flush: true);
+        } on FileSystemException {
+          throw const MomentImageException('视频封面生成失败，内容已保留，请重试');
+        }
       } finally {
         await rendition.dispose();
       }
