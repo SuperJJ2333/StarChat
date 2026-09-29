@@ -1362,10 +1362,76 @@ app-transfer-card {
 .c-wallet-demo__notice { font-size: var(--type-caption-size); }
 .c-wallet-demo__card {
   padding: var(--space-xl); border-radius: var(--radius-control);
-  background: var(--color-brand-primary); color: var(--color-on-accent);
+  background: var(--color-surface-elevated); color: var(--color-text-primary);
   display: grid; gap: var(--space-md);
 }
+.p-chat-search__content,
+.c-transfer-picker { padding: var(--space-md); }
+.c-chat-search__input,
+.c-transfer-picker__search {
+  box-sizing: border-box; width: 100%; min-height: var(--size-touch);
+  padding: var(--space-sm) var(--space-md); margin-bottom: var(--space-sm);
+  border: var(--size-hairline) solid var(--color-divider); border-radius: var(--radius-control);
+  background: var(--color-surface-elevated); color: var(--color-text-primary); font: inherit;
+}
+.c-chat-search__result,
+.c-transfer-picker__member {
+  display: flex; align-items: center; gap: var(--space-md);
+  width: 100%; min-height: var(--size-row); padding: var(--space-sm);
+  border: 0; border-bottom: var(--size-hairline) solid var(--color-divider);
+  background: var(--color-surface-elevated); color: var(--color-text-primary); text-align: left;
+}
+.c-chat-avatar-slot {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 40px; height: 40px; overflow: hidden;
+  border-radius: var(--radius-card);
+}
+.c-chat-avatar-slot[data-size="42"] { width: 42px; height: 42px; }
+.c-chat-avatar-slot[data-size="44"] { width: 44px; height: 44px; }
+.c-chat-avatar-slot app-avatar { width: 100%; height: 100%; }
+.c-chat-search__result-body { display: grid; gap: var(--space-xs); min-width: 0; }
+.c-chat-search__result-name { font-size: var(--type-body-size); }
+.c-chat-search__result-detail { color: var(--color-text-secondary); font-size: var(--type-caption-size); }
+.c-transfer-picker__members { overflow: hidden; border-radius: var(--radius-card); }
+.c-transfer-picker__member { cursor: pointer; }
+.c-transfer-picker__member[data-selected="true"] { color: var(--color-brand-primary); }
+.c-transfer-picker__member[data-selected="true"]::after { content: "✓"; margin-left: auto; }
+.c-transfer-picker__status {
+  padding: var(--space-md); margin-bottom: var(--space-md); border-radius: var(--radius-card);
+  background: var(--color-surface-elevated); color: var(--color-text-primary);
+}
+.c-transfer-picker__status p { color: var(--color-text-secondary); font-size: var(--type-caption-size); }
+.c-transfer-picker__refresh { border: 0; background: transparent; color: var(--color-brand-primary); font: inherit; }
+.c-group-transfer-toast {
+  position: absolute; left: 50%; bottom: var(--space-xxl); transform: translateX(-50%);
+  padding: var(--space-sm) var(--space-md); border-radius: var(--radius-tag);
+  background: var(--color-text-primary); color: var(--color-page-background);
+  white-space: nowrap;
+}
 .c-wallet-demo__card-heading { display: flex; align-items: center; justify-content: space-between; }
+.c-wallet-demo__balance {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-xs);
+  padding-block: var(--space-sm) var(--space-lg);
+  border-bottom: var(--size-hairline) solid var(--color-divider);
+}
+.c-wallet-demo__balance-label { flex-basis: 100%; color: var(--color-text-secondary); font-size: var(--type-subhead-size); }
+.c-wallet-demo__balance-value { font-size: var(--type-brand-size); line-height: 1.1; overflow-wrap: anywhere; }
+.c-wallet-demo__balance-unit { color: var(--color-text-secondary); font-size: var(--type-callout-size); }
+.c-wallet-demo__binding-warning {
+  display: flex; align-items: flex-start; gap: var(--space-sm);
+  padding: var(--space-md); border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-surface-elevated));
+  border: var(--size-hairline) solid color-mix(in srgb, var(--color-warning) 30%, var(--color-divider));
+  color: var(--color-text-primary);
+}
+.c-wallet-demo__binding-warning svg { color: var(--color-warning); width: var(--size-icon-md); flex: none; }
+.c-wallet-demo__bind-card {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: var(--size-touch); width: 100%;
+  background: var(--color-surface-elevated); color: var(--color-text-primary);
+  border: var(--size-hairline) solid var(--color-divider);
+}
+.c-wallet-demo__bind-card svg { width: var(--size-icon-md); color: var(--color-text-secondary); }
 .c-wallet-demo__address { overflow-wrap: anywhere; font-size: var(--type-subhead-size); }
 .c-wallet-demo__shortcuts { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-lg); }
 .c-wallet-demo__button {
@@ -1518,6 +1584,8 @@ app-transfer-card {
   font: inherit;
   text-align: start;
 }
+.c-forward-picker__target { display: flex; align-items: center; gap: var(--space-md); }
+.c-forward-picker__target .c-chat-avatar-slot { border-radius: var(--radius-card); }
 
 .c-forward-confirmation {
   position: absolute;
@@ -1539,6 +1607,8 @@ app-transfer-card {
   grid-column: 1 / -1;
   margin: 0;
 }
+.c-forward-confirmation__recipient { grid-column: 1 / -1; display: flex; align-items: center; gap: var(--space-md); }
+.c-forward-confirmation__recipient .c-forward-confirmation__label { margin: 0; }
 
 .c-forward-confirmation__label { color: var(--color-text-primary); }
 .c-forward-confirmation__preview { color: var(--color-text-secondary); }

@@ -50,6 +50,94 @@ function conversationVariant(definition) {
   return root;
 }
 
+function demoAvatar(name, size = 40) {
+  const slot = element("span", "c-chat-avatar-slot");
+  slot.dataset.size = String(size);
+  slot.append(component("app-avatar", { name, size: "message" }));
+  return slot;
+}
+
+function searchResults(definition) {
+  const global = definition.state === "global-results";
+  const root = pageRoot(definition);
+  root.append(navigation(global ? "搜索" : "查找聊天记录", { leading: "返回" }));
+  const content = element("div", "p-chat-search__content");
+  const field = element("input", "c-chat-search__input");
+  field.type = "search";
+  field.value = global ? "周末" : "集合";
+  field.placeholder = "搜索";
+  field.setAttribute("aria-label", "搜索聊天记录");
+  content.append(field);
+  const results = global
+    ? [
+      ["周末徒步群", "群聊 · 12 人", "group"],
+      ["周然", "联系人", "direct"],
+      ["周末徒步群", "聊天记录 · 明天集合", "history"]
+    ]
+    : [
+      ["林晓", "昨天 09:41 · 明天集合", "history"],
+      ["周然", "9 月 20 日 · 集合地点已更新", "history"]
+    ];
+  for (const [name, detail, kind] of results) {
+    const row = element("article", "c-chat-search__result");
+    row.dataset.kind = kind;
+    row.append(demoAvatar(name), element("div", "c-chat-search__result-body"));
+    row.children[1].append(
+      element("strong", "c-chat-search__result-name", name),
+      element("span", "c-chat-search__result-detail", detail)
+    );
+    content.append(row);
+  }
+  root.append(content);
+  return root;
+}
+
+function transferMemberPicker(definition) {
+  if (definition.state === "transfer-completed") {
+    const root = groupInfo(definition);
+    root.append(element("div", "c-group-transfer-toast", "群主转让已完成"));
+    return root;
+  }
+  const root = pageRoot(definition);
+  root.append(navigation("转让群主", { leading: "返回", action: "完成" }));
+  const content = element("div", "p-chat-group-management__content c-transfer-picker");
+  const search = element("input", "c-transfer-picker__search");
+  search.type = "search";
+  search.placeholder = "搜索群成员";
+  search.setAttribute("aria-label", "搜索群成员");
+  content.append(search);
+  if (definition.state === "transfer-pending") {
+    const status = element("section", "c-transfer-picker__status");
+    status.append(
+      element("strong", "", "转让待人工核对"),
+      element("p", "", "确认完成前群主身份保持不变"),
+      button("c-transfer-picker__refresh", "刷新状态", "transfer:refresh")
+    );
+    content.append(status);
+  }
+  const list = element("div", "c-transfer-picker__members");
+  const members = ["成员甲", "成员乙", "成员丙"];
+  let selected = null;
+  const renderMembers = () => {
+    list.replaceChildren();
+    for (const name of members.filter(value => value.includes(search.value.trim()))) {
+      const row = button("c-transfer-picker__member", name, "transfer:member");
+      row.dataset.selected = String(selected === name);
+      row.append(demoAvatar(name), element("span", "c-transfer-picker__name", name));
+      row.addEventListener("click", () => {
+        selected = selected === name ? null : name;
+        renderMembers();
+      });
+      list.append(row);
+    }
+  };
+  search.addEventListener("input", renderMembers);
+  renderMembers();
+  content.append(list);
+  root.append(content);
+  return root;
+}
+
 function chatContent(definition) {
   const content = element("div", "p-chat-room__messages");
   if (definition.page === "selection") {
@@ -208,6 +296,7 @@ function forwardBackground(definition) {
     for (const target of visibleTargets) {
       const option = button("c-forward-picker__target", target.title, "forward:target");
       option.dataset.targetId = target.id;
+      option.append(demoAvatar(target.title, 42), element("span", "c-forward-picker__name", target.title));
       option.addEventListener("click", () => {
         confirmationTarget = target;
         render();
@@ -241,8 +330,11 @@ function forwardBackground(definition) {
     if (!confirmationTarget) return;
     const confirmation = element("section", "c-forward-confirmation");
     confirmation.dataset.testid = "forward-confirmation";
+    const recipient = element("div", "c-forward-confirmation__recipient");
+    recipient.append(demoAvatar(confirmationTarget.title, 44),
+      element("p", "c-forward-confirmation__label", `发送给：${confirmationTarget.title}`));
     confirmation.append(
-      element("p", "c-forward-confirmation__label", `发送给：${confirmationTarget.title}`),
+      recipient,
       element("p", "c-forward-confirmation__preview", `${sources[source].label} · ${sources[source].name}`)
     );
     const cancel = button("c-forward-confirmation__cancel", "取消", "forward:cancel");
@@ -477,7 +569,9 @@ function groupManagement(definition) {
 
 export function renderScreen(definition) {
   let root;
-  if (definition.page === "announcement") {
+  if (definition.page === "search") {
+    root = searchResults(definition);
+  } else if (definition.page === "announcement") {
     root = ["notice", "dismissed", "new-notice"].includes(definition.state)
       ? announcementNotice(definition)
       : definition.state === "editor" ? announcementEditor(definition)
@@ -486,7 +580,8 @@ export function renderScreen(definition) {
   } else if (definition.page === "group-info") {
     root = groupInfo(definition);
   } else if (definition.page === "group-management") {
-    root = groupManagement(definition);
+    root = definition.state.startsWith("transfer-") && definition.state !== "transfer-confirm"
+      ? transferMemberPicker(definition) : groupManagement(definition);
   } else if (definition.page === "image-editor") {
     root = pageRoot(definition, [component("app-image-editor", { state: definition.state })]);
   } else if (definition.page === "image-gallery") {

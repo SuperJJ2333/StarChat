@@ -2001,7 +2001,7 @@
     }
   },
   "screens": {
-    "expectedCount": 433
+    "expectedCount": 438
   },
   "adminCompletion20260910": {
     "html": [
@@ -2293,6 +2293,41 @@
       "WeChatDividerTokens.coreEnd = --divider-fade-core-end (82%)"
     ],
     "verification": "flutter analyze lib test clean; focused red→green recorded in docs/verification/2026-09-19-ui-review.md; verify_ui_contract PASS (32 components, 372 screens); frontend npm test 216 pass."
+  },
+  "android2191Followup20260929": {
+    "date": "2026-09-29",
+    "specs": [
+      "docs/superpowers/specs/2026-09-29-wallet-unbound-recharge-design.md",
+      "docs/superpowers/specs/2026-09-29-android-search-forward-transfer-ui-design.md"
+    ],
+    "flutter": [
+      "apps/mobile_flutter/lib/features/wallet/manual_wallet_page.dart",
+      "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
+      "apps/mobile_flutter/lib/ui/chat/chat_forward_picker_page.dart",
+      "apps/mobile_flutter/lib/ui/chat/group_avatar_mosaic.dart"
+    ],
+    "html": [
+      "frontend/src/screens/wallet-binding.js",
+      "frontend/src/screens/messaging.js",
+      "frontend/src/styles/primitives.css"
+    ],
+    "screens": [
+      "wallet-home-unbound",
+      "chat-search-history-results",
+      "chat-search-global-results",
+      "chat-forward-background",
+      "chat-group-management-transfer-members",
+      "chat-group-management-transfer-pending",
+      "chat-group-management-transfer-completed"
+    ],
+    "tokens": [
+      "WeChatColors.elevatedSurface = --color-surface-elevated",
+      "WeChatColors.brandPrimary = --color-brand-primary",
+      "WeChatColors.warning = --color-warning",
+      "WeChatTypography.brand = --font-size-brand",
+      "WeChatSpacing.md = --space-md"
+    ],
+    "behavior": "Unbound or pending wallet binding disables new recharge and withdrawal while preserving history. Group owner transfer shows member avatars and search; authoritative completion displays one toast and returns to group information. Search results and forward targets show full, top-aligned avatars."
   },
   "avatarAlbum20260923": {
     "selection": "Reuse ImagePickerPage; avatar static images only; hide video and GIF",
