@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 import test_manual_payouts as original
-from test_support_payout import scoped
+from test_support_payout import caibi_order, prepare, scoped
 
 
 @pytest.fixture
@@ -309,3 +309,130 @@ def test_independent_processes_consume_activation_otp_only_once(scoped):
     assert len({result['pid'] for result in results})==2
     assert sum(result.get('status')=='activated' for result in results)==1,results
     assert len([result for result in results if result.get('error') in ('OTP_INVALID','STAFF_ACTIVATION_INVALID')])==1
+
+
+def _rate_worker(raw_url, now_text, official, claims, order_id, token, rate, barrier):
+    from app.core.database import create_session_factory
+    from app.core.errors import AppError
+    from app.modules.wallet.funding import OfficialFundingConfig
+    from app.modules.wallet.manual_payouts import ManualPayoutPolicy, ManualPayoutService
+    from app.modules.wallet.support_payout import SupportPayoutService
+    engine = create_engine(raw_url)
+    now = datetime.fromisoformat(now_text)
+    payout = ManualPayoutService(create_session_factory(engine),
+        official_config=OfficialFundingConfig(official, 'official-v1'),
+        policy=ManualPayoutPolicy('test-v1', timedelta(minutes=5), Decimal('100'), Decimal('200'), Decimal('500')),
+        owner_admin_id='owner', mfa_verifier=lambda **kw: False, finality=None, clock=lambda: now)
+    service = SupportPayoutService(payout, SimpleNamespace(wallet_admin_auth_mode='operation_password',
+        wallet_manual_owner_admin_id='owner', wallet_real_mode='manual_tron', wallet_access_grant_enabled=True))
+    barrier.wait(timeout=30)
+    try:
+        result = service.adjust_rate(claims=claims, order_id=order_id, claim_token=token,
+            new_rate=rate, reason_code='RATE_REVIEWED', expected_preparation_version=0,
+            idempotency_key='race-rate-'+rate)
+        return {'prepared_version': result['prepared_version'], 'pid': os.getpid()}
+    except AppError as error:
+        return {'error': error.code, 'pid': os.getpid()}
+    finally:
+        engine.dispose()
+
+
+def test_independent_rate_preparations_have_one_version_winner(scoped):
+    from app.modules.wallet.support_payout import SupportPayoutRatePreparation, SupportPayoutState
+    core, _, claims = scoped
+    order, lease = caibi_order(scoped)
+    context = multiprocessing.get_context('spawn')
+    with context.Manager() as manager:
+        barrier = manager.Barrier(2)
+        with ProcessPoolExecutor(max_workers=2, mp_context=context) as executor:
+            futures = [executor.submit(_rate_worker, core[0].pg_test_url, core[2][0].isoformat(),
+                core[4], claims['bob'], order['id'], lease['claim_token'], rate, barrier)
+                for rate in ('7.500000', '8.000000')]
+            results = [future.result(timeout=60) for future in futures]
+    assert len({result['pid'] for result in results}) == 2
+    assert sum(result.get('prepared_version') == 1 for result in results) == 1, results
+    assert [result['error'] for result in results if 'error' in result] == ['WALLET_PAYOUT_PREPARATION_CONFLICT']
+    with core[1]() as session:
+        assert session.get(SupportPayoutState, order['id']).prepared_version == 1
+        assert len(session.scalars(select(SupportPayoutRatePreparation).where(
+            SupportPayoutRatePreparation.order_id == order['id'])).all()) == 1
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'REQUESTED'
+    assert core[5].balance('HOLD:alice') == Decimal('20')
+
+
+def _begin_or_cancel_worker(raw_url, now_text, official, claims, order_id, token,
+                            digest, version, operation, barrier):
+    from app.core.database import create_session_factory
+    from app.core.errors import AppError
+    from app.modules.wallet.funding import OfficialFundingConfig
+    from app.modules.wallet.manual_payouts import ManualPayoutPolicy, ManualPayoutService
+    from app.modules.wallet.support_payout import SupportPayoutService
+    engine = create_engine(raw_url)
+    now = datetime.fromisoformat(now_text)
+    payout = ManualPayoutService(create_session_factory(engine),
+        official_config=OfficialFundingConfig(official, 'official-v1'),
+        policy=ManualPayoutPolicy('test-v1', timedelta(minutes=5), Decimal('100'), Decimal('200'), Decimal('500')),
+        owner_admin_id='owner', mfa_verifier=lambda **kw: False, finality=None, clock=lambda: now)
+    service = SupportPayoutService(payout, SimpleNamespace(wallet_admin_auth_mode='operation_password',
+        wallet_manual_owner_admin_id='owner', wallet_real_mode='manual_tron', wallet_access_grant_enabled=True))
+    barrier.wait(timeout=30)
+    try:
+        if operation == 'begin':
+            result = service.begin_payment(claims=claims, order_id=order_id, claim_token=token,
+                expected_digest=digest, expected_preparation_version=version,
+                idempotency_key='race-begin-'+str(version))
+        else:
+            result = payout.cancel(user_id='alice', order_id=order_id, idempotency_key='race-cancel')
+        return {'status': result['status'], 'pid': os.getpid()}
+    except AppError as error:
+        return {'error': error.code, 'pid': os.getpid()}
+    finally:
+        engine.dispose()
+
+
+def test_independent_cancel_and_begin_have_one_financial_winner(scoped):
+    from app.modules.wallet.manual_payout_models import ManualPayoutOrder
+    from app.modules.wallet.support_payout import SupportPayoutState
+    from test_manual_payouts import request
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='race-lease')
+    context = multiprocessing.get_context('spawn')
+    with context.Manager() as manager:
+        barrier = manager.Barrier(2)
+        with ProcessPoolExecutor(max_workers=2, mp_context=context) as executor:
+            futures = [executor.submit(_begin_or_cancel_worker, core[0].pg_test_url, core[2][0].isoformat(),
+                core[4], claims['bob'], order['id'], lease['claim_token'], order['digest'], None,
+                operation, barrier)
+                for operation in ('begin', 'cancel')]
+            results = [future.result(timeout=60) for future in futures]
+    assert len({result['pid'] for result in results}) == 2
+    assert len([result for result in results if 'status' in result]) == 1, results
+    with core[1]() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        state = session.get(SupportPayoutState, order['id'])
+        assert row.status in {'CLAIMED', 'CANCELLED'}
+        assert (state.execution_started_at is not None) == (row.status == 'CLAIMED')
+    assert core[5].balance('HOLD:alice') == (Decimal('10') if row.status == 'CLAIMED' else Decimal('0'))
+
+
+def test_independent_stale_tab_cannot_begin_after_latest_preparation(scoped):
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    first = prepare(scoped, order, lease, rate='8.000000', version=0, key='first-pg-rate')
+    latest = prepare(scoped, order, lease, rate='7.500000', version=1, key='latest-pg-rate')
+    context = multiprocessing.get_context('spawn')
+    with context.Manager() as manager:
+        barrier = manager.Barrier(2)
+        with ProcessPoolExecutor(max_workers=2, mp_context=context) as executor:
+            futures = [executor.submit(_begin_or_cancel_worker, core[0].pg_test_url, core[2][0].isoformat(),
+                core[4], claims['bob'], order['id'], lease['claim_token'], digest, version,
+                'begin', barrier) for digest, version in (
+                    (first['prepared_digest'], 1), (latest['prepared_digest'], 2))]
+            results = [future.result(timeout=60) for future in futures]
+    assert len({result['pid'] for result in results}) == 2
+    assert sum(result.get('status') == 'CLAIMED' for result in results) == 1, results
+    assert [result['error'] for result in results if 'error' in result][0] in {
+        'WALLET_PAYOUT_PREPARATION_CONFLICT', 'WALLET_PAYOUT_ALREADY_CLAIMED'}
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'CLAIMED'
+    assert core[5].balance('HOLD:alice') == Decimal('18.986667')

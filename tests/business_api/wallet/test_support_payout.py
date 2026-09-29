@@ -3,6 +3,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from test_manual_payouts import core, quote, request, evidence
@@ -12,7 +13,10 @@ from app.modules.identity.models import User, UserRole, Device, RefreshTokenFami
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.staff_activation import StaffActivation, staff_identity
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder
+from app.modules.wallet.support_payout import SupportPayoutRatePreparation, SupportPayoutState
 from app.modules.ledger.reserve import RedeemabilityReserve
+from app.modules.ledger.service import LedgerService
+from app.modules.fx.models import FxRate
 
 
 def test_new_payout_policy_is_explicitly_support_scoped(core):
@@ -47,6 +51,210 @@ def scoped(core):
         claims[uid]=dict(sub=uid,device_id=uid+'-device',family_id=uid+'-family',session_scope='admin',
             iat=int(clock[0].timestamp()),exp=int((clock[0]+timedelta(hours=48)).timestamp()))
     return core,SupportPayoutService(svc,settings),claims
+
+
+def caibi_order(scoped):
+    core, service, claims = scoped
+    core[0].conversions_enabled = True
+    core[0].rate_provider = lambda: (Decimal('7.120000'), False, core[2][0].isoformat())
+    with core[1].begin() as session:
+        session.get(RedeemabilityReserve, 'global').eligible_usdt = Decimal('2000')
+        session.add(FxRate(pair='USD/CNY', rate=Decimal('7.120000'), fetched_at=core[2][0],
+            expires_at=core[2][0]+timedelta(hours=1), fetch_state='idle'))
+    LedgerService(core[1]).adjust(user_id='alice', amount=Decimal('300.00'), actor_id='finance',
+        reason_code='TEST_FUND', idempotency_key='support-caibi-fund')
+    terms = quote(core, amount='142.400000', funding_asset='CAIBI', idempotency_key='caibi-quote')
+    order = request(core, terms)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='caibi-lease')
+    return order, lease
+
+
+def prepare(scoped, order, lease, *, rate, version, key):
+    _, service, claims = scoped
+    return service.adjust_rate(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'], new_rate=rate, reason_code='RATE_REVIEWED',
+        expected_preparation_version=version, idempotency_key=key)
+
+
+def test_two_rate_preparations_preserve_original_hold_and_final_terms(scoped):
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    before = (core[5].balance('alice'), core[5].balance('HOLD:alice'),
+        LedgerService(core[1]).balance('alice'))
+    first = prepare(scoped, order, lease, rate='8.000000', version=0, key='prepare-one')
+    second = prepare(scoped, order, lease, rate='7.500000', version=1, key='prepare-two')
+    assert prepare(scoped, order, lease, rate='8.000000', version=0, key='prepare-one')['prepared_version'] == 2
+    with pytest.raises(AppError):
+        prepare(scoped, order, lease, rate='8.100000', version=0, key='prepare-one')
+    assert first['prepared_version'] == 1 and first['prepared_receive'] == '17.800000'
+    assert second['prepared_version'] == 2 and second['prepared_receive'] == '18.986667'
+    assert (core[5].balance('alice'), core[5].balance('HOLD:alice'),
+        LedgerService(core[1]).balance('alice')) == before
+    with core[1]() as session:
+        from app.core.outbox import OutboxEvent
+        row = session.get(ManualPayoutOrder, order['id'])
+        state = session.get(SupportPayoutState, order['id'])
+        history = session.scalars(select(SupportPayoutRatePreparation).where(
+            SupportPayoutRatePreparation.order_id == order['id']).order_by(
+            SupportPayoutRatePreparation.version)).all()
+        assert row.status == 'REQUESTED' and row.final_rate is None and row.final_receive is None
+        assert row.adjusted_digest is None and state.execution_started_at is None
+        assert [(item.version, item.actor_id) for item in history] == [(1, 'bob'), (2, 'bob')]
+        assert len(session.scalars(select(OutboxEvent).where(
+            OutboxEvent.event_type == 'wallet.manual_payout_rate_prepared',
+            OutboxEvent.aggregate_id == order['id'])).all()) == 2
+
+
+def test_preparation_version_conflict_failure_and_usdt_rate_denial(scoped):
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    for version in (None, 1):
+        with pytest.raises(AppError):
+            prepare(scoped, order, lease, rate='8.000000', version=version, key='bad-version-'+str(version))
+    with pytest.raises(AppError):
+        prepare(scoped, order, lease, rate='0.000000', version=0, key='bad-rate')
+    assert service.detail(claims=claims['bob'], order_id=order['id'])['execution_started_at'] is None
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'REQUESTED'
+    usdt = request(core, quote(core, amount='10.000000', funding_asset='USDT', idempotency_key='usdt-quote'),
+        idempotency_key='usdt-request')
+    usdt_lease = service.claim(claims=claims['bob'], order_id=usdt['id'], idempotency_key='usdt-lease')
+    with pytest.raises(AppError):
+        prepare(scoped, usdt, usdt_lease, rate='1.200000', version=0, key='usdt-rate')
+    assert core[5].balance('HOLD:alice') == Decimal('30')
+
+
+def test_caibi_begin_requires_latest_preparation_and_moves_hold_atomically(scoped):
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    first = prepare(scoped, order, lease, rate='8.000000', version=0, key='first-rate')
+    latest = prepare(scoped, order, lease, rate='7.500000', version=1, key='latest-rate')
+    args = dict(claims=claims['bob'], order_id=order['id'], claim_token=lease['claim_token'])
+    for digest, version in ((order['digest'], 2), (first['prepared_digest'], 1),
+            (latest['prepared_digest'], None)):
+        with pytest.raises(AppError):
+            service.begin_payment(**args, expected_digest=digest,
+                expected_preparation_version=version, idempotency_key='bad-begin-'+str(version)+digest[:8])
+    assert core[5].balance('HOLD:alice') == Decimal('20')
+    started = service.begin_payment(**args, expected_digest=latest['prepared_digest'],
+        expected_preparation_version=2, idempotency_key='begin-current')
+    assert started['status'] == 'CLAIMED' and started['instructions']['amount'] == '18.986667'
+    assert core[5].balance('HOLD:alice') == Decimal('18.986667')
+    assert core[5].balance('alice') == Decimal('1001.013333')
+    with core[1]() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        state = session.get(SupportPayoutState, order['id'])
+        assert (row.final_rate, row.final_receive, row.adjusted_digest) == (
+            Decimal('7.500000'), Decimal('18.986667'), latest['prepared_digest'])
+        assert state.execution_started_at is not None
+    assert service.begin_payment(**args, expected_digest=latest['prepared_digest'],
+        expected_preparation_version=2, idempotency_key='begin-current')['instructions'] == started['instructions']
+
+
+def test_started_support_order_cannot_use_legacy_rate_adjustment(scoped):
+    from app.modules.wallet.support_payout import _PayoutAuthorization
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    prepared = prepare(scoped, order, lease, rate='8.000000', version=0, key='prepare-rate')
+    service.begin_payment(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'], expected_digest=prepared['prepared_digest'],
+        expected_preparation_version=1, idempotency_key='begin')
+    with pytest.raises(AppError):
+        core[0].adjust_rate(admin_id='bob', session_id=claims['bob']['family_id'],
+            order_id=order['id'], new_rate='7.500000', reason_code='RATE_REVIEWED',
+            idempotency_key='legacy-adjust-after-start',
+            authorize=_PayoutAuthorization(service, claims['bob'], order['id'], lease['claim_token']))
+    assert core[5].balance('HOLD:alice') == Decimal('17.8')
+
+
+def test_usdt_begin_uses_original_digest_and_hold_without_preparation(scoped):
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='usdt-claim')
+    started = service.begin_payment(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'], expected_digest=order['digest'],
+        expected_preparation_version=None, idempotency_key='usdt-begin')
+    assert started['status'] == 'CLAIMED' and started['instructions']['amount'] == '10.000000'
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+
+
+def test_preparation_version_bodies_require_nonnegative_integer():
+    from app.api.support_payout import BeginBody, RateBody
+    common = dict(claim_token='x'*32)
+    assert BeginBody(**(common | dict(expected_digest='a'*64))).expected_preparation_version is None
+    assert RateBody(**(common | dict(new_rate='7.5', reason_code='RATE_REVIEWED'))).expected_preparation_version is None
+    for body, fields in ((BeginBody, dict(expected_digest='a'*64)),
+            (RateBody, dict(new_rate='7.5', reason_code='RATE_REVIEWED'))):
+        for bad in ('1', -1, True):
+            with pytest.raises(ValidationError):
+                body(**(common | fields | dict(expected_preparation_version=bad)))
+
+
+def test_historical_started_caibi_order_remains_readable_without_preparation(scoped):
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    with core[1].begin() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        state = session.get(SupportPayoutState, order['id'])
+        row.status, row.claimed_by, row.claimed_at = 'CLAIMED', 'bob', core[2][0]
+        state.execution_started_at = core[2][0]
+    read = service.begin_payment(claims=claims['bob'], order_id=order['id'],
+        claim_token=lease['claim_token'], expected_digest=order['digest'],
+        expected_preparation_version=None, idempotency_key='read-historical')
+    assert read['status'] == 'CLAIMED' and read['instructions']['amount'] == '20.000000'
+    assert core[5].balance('HOLD:alice') == Decimal('20')
+
+
+def test_tampered_preparation_rate_fails_closed_before_begin(scoped):
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    prepared = prepare(scoped, order, lease, rate='8.000000', version=0, key='valid-preparation')
+    with core[1].begin() as session:
+        session.get(SupportPayoutState, order['id']).prepared_rate = Decimal('0')
+    with pytest.raises(AppError):
+        service.begin_payment(claims=claims['bob'], order_id=order['id'],
+            claim_token=lease['claim_token'], expected_digest=prepared['prepared_digest'],
+            expected_preparation_version=1, idempotency_key='tampered-begin')
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'REQUESTED'
+    assert core[5].balance('HOLD:alice') == Decimal('20')
+
+
+def test_begin_rechecks_target_binding_snapshot(scoped):
+    from app.modules.wallet.binding_models import WalletBinding
+    core, service, claims = scoped
+    order = request(core)
+    lease = service.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='binding-lease')
+    with core[1].begin() as session:
+        session.get(WalletBinding, 'binding').version = 2
+    with pytest.raises(AppError):
+        service.begin_payment(claims=claims['bob'], order_id=order['id'],
+            claim_token=lease['claim_token'], expected_digest=order['digest'],
+            expected_preparation_version=None, idempotency_key='binding-drift-begin')
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'REQUESTED'
+    assert core[5].balance('HOLD:alice') == Decimal('10')
+
+
+@pytest.mark.parametrize('failure', ['insufficient', 'stale_reserve'])
+def test_failed_caibi_begin_preserves_release_eligibility(scoped, failure):
+    core, service, claims = scoped
+    order, lease = caibi_order(scoped)
+    prepared = prepare(scoped, order, lease, rate='6.500000', version=0, key='higher-payable')
+    if failure == 'insufficient':
+        core[5].post(entries={'alice': Decimal('-1000'), 'PLATFORM_CUSTODY': Decimal('1000')},
+            actor_id='alice', reason_code='TEST_DRAIN', idempotency_key='drain', scope='test')
+    else:
+        with core[1].begin() as session:
+            session.get(RedeemabilityReserve, 'global').observed_at -= timedelta(minutes=3)
+    with pytest.raises(AppError):
+        service.begin_payment(claims=claims['bob'], order_id=order['id'],
+            claim_token=lease['claim_token'], expected_digest=prepared['prepared_digest'],
+            expected_preparation_version=1, idempotency_key='failed-begin')
+    with core[1]() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        state = session.get(SupportPayoutState, order['id'])
+        assert row.status == 'REQUESTED' and row.final_receive is None
+        assert state.execution_started_at is None
+    assert core[5].balance('HOLD:alice') == Decimal('20')
+    assert core[0].cancel(user_id='alice', order_id=order['id'], idempotency_key='cancel-after-failed-begin')['status'] == 'CANCELLED'
 
 
 def test_support_lease_excludes_others_and_expired_holder(scoped):

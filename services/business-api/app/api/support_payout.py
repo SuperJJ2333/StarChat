@@ -17,11 +17,13 @@ class LeaseBody(EmptyBody):
 
 class BeginBody(LeaseBody):
     expected_digest: str=Field(pattern=r'^[0-9a-f]{64}$')
+    expected_preparation_version: int|None=Field(default=None,ge=0,strict=True)
 
 
 class RateBody(LeaseBody):
     new_rate: str=Field(pattern=r'^(0|[1-9][0-9]{0,3})(\.[0-9]{1,6})?$')
     reason_code: str=Field(min_length=3,max_length=100)
+    expected_preparation_version: int|None=Field(default=None,ge=0,strict=True)
 
 
 class TxidBody(LeaseBody):

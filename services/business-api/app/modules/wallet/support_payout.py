@@ -1,7 +1,6 @@
 """Support-order coordination over the existing payout financial engine."""
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from hashlib import sha256
 import secrets
 import re
 
@@ -111,6 +110,9 @@ def support_payout_projection(session, row, now, actor=None):
         claimed_by=state.claimed_by,claim_expires_at=utc(state.claim_expires_at).isoformat() if state.claim_expires_at else None,
         execution_started_at=utc(state.execution_started_at).isoformat() if state.execution_started_at else None,
         review_authorized_at=utc(state.review_authorized_at).isoformat() if state.review_authorized_at else None,
+        prepared_rate=format(state.prepared_rate, '.6f') if state.prepared_rate is not None else None,
+        prepared_receive=format(state.prepared_receive, '.6f') if state.prepared_receive is not None else None,
+        prepared_digest=state.prepared_digest,prepared_version=state.prepared_version,
         **({'claim_token':state.claim_token} if actor and state.claimed_by==actor else {}))
 
 
@@ -132,9 +134,9 @@ def expire_support_payout_orders(factory, *, now, limit=100):
 class _PayoutAuthorization:
     scope = 'support-orders'
 
-    def __init__(self, service, claims, order_id, claim_token, *, begin=False, evidence=False):
+    def __init__(self, service, claims, order_id, claim_token, *, begin=False, prepare=False, evidence=False):
         self.service,self.claims,self.order_id,self.token = service,claims,order_id,claim_token
-        self.begin,self.evidence=begin,evidence
+        self.begin,self.prepare,self.evidence=begin,prepare,evidence
 
     def __call__(self, session):
         fresh = self.service.order_access.authorization(claims=self.claims)(session)
@@ -142,10 +144,9 @@ class _PayoutAuthorization:
         self.service._held(state,self.claims,self.token,evidence=self.evidence)
         row=session.get(ManualPayoutOrder,self.order_id)
         if row is None or row.status=='CANCELLED': fail('SUPPORT_PAYOUT_UNAVAILABLE')
-        if self.begin and state.execution_started_at is None:
-            state.execution_started_at=self.service.payout._now()
-            audit_write(session,self.claims['sub'],row.id,'wallet.support_payout_started','SUPPORT_PAYOUT_STARTED')
-        elif not self.begin and state.execution_started_at is None:
+        if self.prepare and (state.execution_started_at is not None or row.status!='REQUESTED' or row.candidate_txid):
+            fail('SUPPORT_PAYOUT_ALREADY_STARTED')
+        if not self.begin and not self.prepare and state.execution_started_at is None:
             fail('SUPPORT_PAYOUT_NOT_STARTED')
         def final():
             fresh()
@@ -275,24 +276,26 @@ class SupportPayoutService:
             fresh()
             return result
 
-    def begin_payment(self, *, claims, order_id, claim_token, expected_digest, idempotency_key):
+    def begin_payment(self, *, claims, order_id, claim_token, expected_digest,
+                      expected_preparation_version=None, idempotency_key):
         authorize=_PayoutAuthorization(self,claims,order_id,claim_token,begin=True)
         view=self.detail(claims=claims,order_id=order_id)
         if view['execution_started_at']:
             result=self.payout.payment_instructions(admin_id=claims['sub'],order_id=order_id,
-                expected_digest=expected_digest,authorize=authorize)
+                expected_digest=expected_digest,expected_preparation_version=expected_preparation_version,
+                authorize=authorize)
             return result | self.detail(claims=claims,order_id=order_id)
         result=self.payout.claim(admin_id=claims['sub'],session_id=claims['family_id'],order_id=order_id,
-            expected_digest=expected_digest,idempotency_key=idempotency_key,authorize=authorize)
+            expected_digest=expected_digest,expected_preparation_version=expected_preparation_version,
+            idempotency_key=idempotency_key,authorize=authorize)
         return result | self.detail(claims=claims,order_id=order_id)
 
-    def adjust_rate(self, *, claims, order_id, claim_token, new_rate, reason_code, idempotency_key):
-        view=self.detail(claims=claims,order_id=order_id)
-        if not view['execution_started_at']:
-            self.begin_payment(claims=claims,order_id=order_id,claim_token=claim_token,expected_digest=view['digest'],
-                idempotency_key='rate-begin:'+sha256(idempotency_key.encode()).hexdigest())
-        self.payout.adjust_rate(admin_id=claims['sub'],session_id=claims['family_id'],order_id=order_id,new_rate=new_rate,
-            reason_code=reason_code,idempotency_key=idempotency_key,authorize=_PayoutAuthorization(self,claims,order_id,claim_token))
+    def adjust_rate(self, *, claims, order_id, claim_token, new_rate, reason_code,
+                    expected_preparation_version=None, idempotency_key):
+        self.payout.prepare_support_rate(admin_id=claims['sub'],order_id=order_id,new_rate=new_rate,
+            reason_code=reason_code,expected_preparation_version=expected_preparation_version,
+            idempotency_key=idempotency_key,
+            authorize=_PayoutAuthorization(self,claims,order_id,claim_token,prepare=True))
         return self.detail(claims=claims,order_id=order_id)
 
     def submit_txid(self, *, claims, order_id, claim_token, txid, idempotency_key):
