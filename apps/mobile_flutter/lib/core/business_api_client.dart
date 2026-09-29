@@ -29,6 +29,11 @@ part 'business_session_refresh.dart';
 
 enum BusinessSessionRestore { absent, authenticated, offline, invalid }
 
+Duration momentMediaPutTimeout(int byteCount) {
+  final seconds = ((byteCount + 65535) ~/ 65536) + 15;
+  return Duration(seconds: seconds.clamp(30, 360).toInt());
+}
+
 abstract interface class BusinessSessionGateway {
   Future<BusinessSessionRestore> restoreSession();
   Future<String?> currentMatrixUserId();
@@ -1974,11 +1979,14 @@ final class BusinessApiClient
     if (!RegExp(r'^[a-zA-Z0-9-]+$').hasMatch(uploadId)) {
       throw ArgumentError('Invalid upload reference');
     }
+    final mediaTimeout = momentMediaPutTimeout(bytes.length);
     final response = await _authorized(
         (headers) => _client.put(
             _uri('/moments/media/uploads/$uploadId/content'),
             headers: {...headers, 'Content-Type': mimeType},
             body: bytes),
+        timeout: mediaTimeout,
+        totalTimeout: mediaTimeout * 2 + const Duration(seconds: 20),
         expectedMomentSession: session);
     if (response.statusCode >= 400) _decode(response);
   }
@@ -2838,6 +2846,7 @@ final class BusinessApiClient
   Future<http.Response> _authorized(
     Future<http.Response> Function(Map<String, String>) operation, {
     Duration timeout = _httpTimeout,
+    Duration totalTimeout = _authorizedTotalTimeout,
     String? expectedWalletScope,
     String? expectedPaymentScope,
     MomentPublishSession? expectedMomentSession,
@@ -2870,7 +2879,7 @@ final class BusinessApiClient
       final epoch = _sessionEpoch;
       // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
       // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
-      final deadline = DateTime.now().add(_authorizedTotalTimeout);
+      final deadline = DateTime.now().add(totalTimeout);
       Future<Duration> remaining() async => deadline.difference(DateTime.now());
       final initial = await sessionStore.session();
       if (epoch != _sessionEpoch) throw _ended;

@@ -17,7 +17,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   Future<Directory> directory() async {
     final root = await Directory(
-            '../../docs/verification/artifacts/2026-09-28/ios-media-room-followup/moments/queue-tests')
+            '../../docs/verification/artifacts/2026-09-29/android-2191-followup/media-put/queue-tests')
         .create(recursive: true);
     return root.createTemp('case-');
   }
@@ -88,6 +88,52 @@ void main() {
     expect(keys.where((key) => key == job.id), [job.id, job.id]);
     expect(begins, 1);
     expect(puts, 1);
+    queue.revoke();
+  });
+
+  test('uncertain accepted PUT retries its upload ID and completes once',
+      () async {
+    var begins = 0, publishes = 0;
+    final putIds = <String>[];
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: await session(),
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/uploads')) {
+            begins++;
+            return http.Response('{"id":"upload-1"}', 201);
+          }
+          if (request.method == 'PUT') {
+            putIds.add(request.url.pathSegments[5]);
+            if (putIds.length == 1) {
+              // The server accepted the bytes, but its response was lost.
+              throw http.ClientException('response lost');
+            }
+            return http.Response(
+                '{"error":{"code":"MOMENT_MEDIA_COMPLETED","message":"already complete"}}',
+                409);
+          }
+          if (request.url.path.endsWith('/complete')) {
+            return http.Response(
+                '{"status":"COMPLETED","media_url":"media://moments/a/image.jpg"}',
+                200);
+          }
+          if (request.url.path.endsWith('/moments')) publishes++;
+          return http.Response('{"id":"post"}', 201);
+        }));
+    final queue =
+        await MomentPublishCoordinator.open(api, directory: await directory());
+    final job = await queue.enqueue(payload,
+        [MomentPublishMedia(XFile.fromData(image, mimeType: 'image/png'))],
+        preprocessor: processor);
+    await waitFor(() => job.state == MomentPublishState.failed);
+    expect(job.media.single['upload'], 'upload-1');
+
+    await queue.retry(job.id);
+    await waitFor(() => job.state == MomentPublishState.succeeded);
+    expect(begins, 1);
+    expect(putIds, ['upload-1', 'upload-1']);
+    expect(publishes, 1);
     queue.revoke();
   });
 
