@@ -38,8 +38,8 @@ $env:PYTHONUTF8 = '1'; $env:PYTHONIOENCODING = 'utf-8'
 
 **Files:** 新建 `services/business-api/app/modules/wallet/recharge_binding_gate.py`、`tests/business_api/recharge/binding_fixture.py`；修改 `tests/business_api/recharge/test_manual_recharge.py` 中所需 fixture。
 
-- [ ] **Step 1: 写 RED。** 在 `test_manual_recharge.py` 新增 `test_new_recharge_requires_active_binding`，用 `env` 的未绑定账号和新幂等键调用 `service.submit()`，断言 409 `WALLET_BINDING_REQUIRED`，且 `RechargeRequest`、`recharge.submitted` 审计与 Outbox 计数均未增加。再覆盖 `pending_binding_id` → `WALLET_BINDING_PENDING`、指向失效绑定/版本不符 → `WALLET_BINDING_VERSION_CONFLICT`。在共享 fixture 中显式设置隔离的 `official_config=SimpleNamespace(address='isolated-fixture-official', version='fixture-v1')`；只给现有成功路径账号创建 `WalletAddressOwner`、带激活证据的 `WalletBinding`、`WalletBindingState(version=1, active_binding_id=...)`，不给拒绝用例加跳过开关。
-- [ ] **Step 2: 验证 RED。** `py -3.12 -m pytest tests/business_api/recharge/test_manual_recharge.py -q -k binding`；预期未绑定申请被错误接受或期望业务码不符。
+- [ ] **Step 1: 写 RED。** 在 `test_manual_recharge.py` 新增直接调用 `WalletRechargeBindingGate().require_active(session, user_id)` 的三例：未绑定 → 409 `WALLET_BINDING_REQUIRED`，`pending_binding_id` → `WALLET_BINDING_PENDING`，指向失效绑定/版本不符 → `WALLET_BINDING_VERSION_CONFLICT`；ACTIVE 返回当前版本，所有情况都不写钱包表。在共享 fixture 中显式设置隔离的 `official_config=SimpleNamespace(address='isolated-fixture-official', version='fixture-v1')`；只给现有成功路径账号创建 `WalletAddressOwner`、带激活证据的 `WalletBinding`、`WalletBindingState(version=1, active_binding_id=...)`，不给拒绝用例加跳过开关。新申请、审计与 Outbox 的端到端断言归 Task 2，在门禁尚未接线时不宣称通过。
+- [ ] **Step 2: 验证 RED。** `py -3.12 -m pytest tests/business_api/recharge/test_manual_recharge.py -q -k binding_gate`；预期钱包公开门禁模块/方法尚不存在。
 - [ ] **Step 3: 最小实现。** 门禁只接受调用方的 SQLAlchemy `session`，不自行开事务，也不写钱包表；锁钱包状态并检查当前 ACTIVE 行和版本：
 
 ```python
@@ -59,7 +59,7 @@ class WalletRechargeBindingGate:
 ```
 
   从 `app.core.errors`、`app.modules.wallet.binding_models` 导入符号。钱包已有改绑锁顺序为资金控制后绑定状态；充值仅锁绑定状态且之后不取资金控制锁。用并发用例核验这条顺序。
-- [ ] **Step 4: 验证 GREEN。** 重跑 Step 2；预期对应三种 409 和零新订单/成功审计/Outbox。完成该任务后提交钱包公开接口、fixture 和测试；暂不提交整组未完更改。
+- [ ] **Step 4: 验证 GREEN。** 重跑 Step 2；预期门禁直接调用的三种 409 与 ACTIVE 版本断言通过，钱包表未变。完成该任务后提交钱包公开接口、fixture 和测试；真正的新申请零订单/审计/Outbox 由 Task 2 接线后验证。
 
 ### Task 2: 新申请门禁与历史幂等回放
 
