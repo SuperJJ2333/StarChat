@@ -2,8 +2,10 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Callable
 
 from app.integrations.tron.finality import POLICY, TronGridFinality, MANUAL_SOLID_HEAD_MAX_AGE_SECONDS
+from app.integrations.tron.reader import TronReader
 from app.modules.identity.totp import FernetSecretProtector, TotpService
 from app.modules.wallet.binding import WalletBindingService
 from app.modules.wallet.binding_adapters import TronBindingVerifier, WalletTotpVerifier
@@ -24,6 +26,7 @@ class ManualWalletRuntime:
     payout_request_gate: bool | None = None
     payout_execution_gate: bool | None = None
     conversions_enabled: bool = False
+    discovery_reader_factory: Callable[[], TronReader] | None = None
 
     @property
     def deposits_enabled(self):
@@ -40,14 +43,20 @@ class ManualWalletRuntime:
     def close(self):
         self.finality.close()
 
+    def new_discovery_reader(self) -> TronReader:
+        if self.discovery_reader_factory is None:
+            raise RuntimeError('TRON discovery is unavailable')
+        return self.discovery_reader_factory()
+
 
 def create_manual_wallet_runtime(settings, factory, rate_limiter):
     if settings.wallet_real_mode == 'disabled':
         return None
     clock = lambda: datetime.now(timezone.utc)
+    tron_api_key = settings.wallet_trongrid_api_key.get_secret_value() if settings.wallet_trongrid_api_key else None
     finality = TronGridFinality(base_url='https://api.trongrid.io', clock=clock, max_age_seconds=120,
         solid_head_max_age_seconds=MANUAL_SOLID_HEAD_MAX_AGE_SECONDS,
-        api_key=settings.wallet_trongrid_api_key.get_secret_value() if settings.wallet_trongrid_api_key else None)
+        api_key=tron_api_key)
     try:
         totp = TotpService(factory, protector=FernetSecretProtector(settings.wallet_totp_encryption_key.get_secret_value().encode('ascii')))
         mfa = WalletTotpVerifier(totp, rate_limiter, clock=clock)
@@ -92,9 +101,14 @@ def create_manual_wallet_runtime(settings, factory, rate_limiter):
             binding.address_registration_enabled = True
             binding.barrier_verifier = verifier.registration_barrier
             payouts.user_mfa_required = False
+        def discovery_reader_factory() -> TronReader:
+            return TronReader(base_url='https://api.trongrid.io', api_key=tron_api_key,
+                max_pages=10, max_transactions=2000, max_scan_seconds=15)
+
         return ManualWalletRuntime(binding, intents, receipts, payouts, finality, settings.wallet_real_funds_enabled,
             settings.wallet_deposits_enabled, settings.wallet_payout_requests_enabled,
-            settings.wallet_payout_execution_enabled, settings.wallet_conversions_enabled)
+            settings.wallet_payout_execution_enabled, settings.wallet_conversions_enabled,
+            discovery_reader_factory)
     except Exception:
         finality.close()
         raise

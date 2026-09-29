@@ -75,6 +75,29 @@ def test_runtime_wires_single_source_real_mfa_and_server_limits():
         engine.dispose()
 
 
+def test_discovery_uses_a_new_reader_per_request_without_sharing_scan_deadline():
+    from app.modules.wallet.runtime import create_manual_wallet_runtime
+    settings = configured(wallet_trongrid_api_key='isolated-test-api-key')
+    engine = create_engine('sqlite://')
+    runtime = create_manual_wallet_runtime(settings, create_session_factory(engine), NoopRateLimiter())
+    try:
+        first = runtime.new_discovery_reader()
+        second = runtime.new_discovery_reader()
+        try:
+            assert first is not second
+            assert first._deadline is None and second._deadline is None
+            first._deadline = 123.0
+            assert second._deadline is None
+            assert first.base_url == second.base_url == 'https://api.trongrid.io'
+            assert first._headers == second._headers == {'TRON-PRO-API-KEY': 'isolated-test-api-key'}
+        finally:
+            first.close()
+            second.close()
+    finally:
+        runtime.close()
+        engine.dispose()
+
+
 def test_default_manual_quote_window_is_24_hours():
     from app.modules.wallet.runtime import create_manual_wallet_runtime
     assert Settings(_env_file=None).wallet_manual_quote_ttl_seconds == 86400
