@@ -1,8 +1,8 @@
 # 移动交付恢复索引
 
-## 2026-09-29 Android 提现报价策略兼容：2192 冻结源码基线完成，修复待测试先行
+## 2026-09-29 Android 提现报价策略兼容：2193 Debug 已装模拟器，正式包待构建
 
-用户确认以已安装的 Android Debug 0.4.23+2192 为基础，先交付修复后的模拟器 Debug，再构建并发布同源码 ARM64 正式包；修订计划已获批准。客户端只接受 `OWNER_MANUAL_V1` 报价，而现网可返回 `SUPPORT_MANUAL_V1`，导致成功报价响应抛出 `Invalid manual wallet response`。本任务独立分支已重放规格/计划文档到 2192 提交 `6fc2cec9`；1811 个已跟踪移动文件按 2192 冻结清单逐字节核验通过，Git 无移动端差异。53 个新工作树换行字节差异已按已核验的 2192 源工作树恢复。尚未改解析代码、构建本任务包或发布；正式发布须先核对另一任务的 API v4b 已安全上线并通过现网门禁。下方其他任务条目是各自最后写入时的快照。见[任务记录](tasks/2026-09-29-android-withdrawal-quote-policy.md)与[实施计划](../superpowers/plans/2026-09-29-android-withdrawal-quote-policy-compatibility.md)。
+用户确认以已安装的 Android Debug 0.4.23+2192 为基础，先交付修复后的模拟器 Debug，再构建并发布同源码 ARM64 正式包；修订计划已获批准。2192 的 1811 个移动文件已按冻结清单逐字节核验。本任务仅让客户端报价解析接受服务端现有 OWNER/SUPPORT 两种策略，保留未知值拒绝、资金门禁和幂等；候选 `0.4.24+2193` 源码 `dae8ec63`，RED/GREEN 钱包 38/38、analyze 0，独立规格与质量/安全复核无 P0–P2。Task 3 对 2190→2192 清单核出 18 新/93 变/0 删，并对应八项原任务；从短盘符 `V:` 的最终全量 Flutter **5132 通过/9 跳过、exit 0**，移动边界 238 通过/1 跳过、OpenAPI/UI 契约通过。首轮长路径 Flutter 因 Windows 265 字符临时路径失败，保留原 exit 1；整库脚本因无 `.env` exit 1，不能写作整库全绿。固定签名 `0.4.24+2193` x86_64 Debug SHA256 `167b70ab…cb2372` 已保留数据覆盖安装 `emulator-5556`，设备包 SHA 一致；正式 ARM64 尚未发布。配套 API v4b 同镜像经 v4r2 新备份/独立审查后已上线，20:35 +08 主任务读回 `fadabb…ab7dd` healthy/0；正式发布前仍要复核现场。真实账户报价及设备体验待验。下方其他任务条目是各自写入时快照。见[任务记录](tasks/2026-09-29-android-withdrawal-quote-policy.md)与[实施计划](../superpowers/plans/2026-09-29-android-withdrawal-quote-policy-compatibility.md)。
 
 ## 2026-09-29 Android Debug 2191 八项反馈：规格/ADR 已批，计划编写中
 
