@@ -7,6 +7,56 @@ import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.da
 import 'package:liuhetong_mobile/ui/chat/chat_search_page.dart';
 
 void main() {
+  const oldWarning = '部分本地消息尚未解密，无法完整检索';
+
+  testWidgets('incomplete search coverage still shows a visible text hit',
+      (tester) async {
+    final hit = ChatSearchMessage(
+        eventId: 'visible',
+        senderId: '@a:x',
+        senderDisplayName: 'A',
+        timestamp: DateTime(2026, 9, 29),
+        timelineOrder: 1,
+        visibleText: 'hello');
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+      isGroup: false,
+      search: (filters, {cursor, limit = 50}) async => [],
+      searchBatch: (filters, {cursor, limit = 50}) async => ChatSearchSlice(
+          items: [hit], nextCursor: null, coverageIncomplete: true),
+      memberEntries: const [],
+      onJumpToMessage: (_) {},
+    )));
+
+    await tester.enterText(find.byKey(const Key('chat-search-input')), 'hello');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('chat-search-result-visible')), findsOneWidget);
+    expect(find.text(oldWarning), findsNothing);
+  });
+
+  testWidgets('incomplete search coverage with no hits has neutral empty copy',
+      (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+      isGroup: false,
+      search: (filters, {cursor, limit = 50}) async => [],
+      searchBatch: (filters, {cursor, limit = 50}) async =>
+          const ChatSearchSlice(
+              items: [], nextCursor: null, coverageIncomplete: true),
+      memberEntries: const [],
+      onJumpToMessage: (_) {},
+    )));
+
+    await tester.enterText(find.byKey(const Key('chat-search-input')), 'hello');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂无匹配记录'), findsOneWidget);
+    expect(find.text(oldWarning), findsNothing);
+  });
+
   testWidgets('member picker shows real avatar and authoritative remark',
       (tester) async {
     await tester.pumpWidget(CupertinoApp(

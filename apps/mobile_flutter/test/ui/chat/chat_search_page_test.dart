@@ -158,7 +158,7 @@ void main() {
       expect(find.text('Hello world'), findsOneWidget);
     });
 
-    testWidgets('无匹配显示"未找到"', (tester) async {
+    testWidgets('无匹配显示"暂无匹配记录"', (tester) async {
       await tester.pumpWidget(CupertinoApp(
         home: ChatSearchPage(
           isGroup: false,
@@ -170,7 +170,7 @@ void main() {
       await tester.enterText(find.byKey(const Key('chat-search-input')), '不存在');
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
-      expect(find.text('未找到符合条件的聊天记录'), findsOneWidget);
+      expect(find.text('暂无匹配记录'), findsOneWidget);
     });
 
     testWidgets('群聊显示成员筛选入口；私聊不显示', (tester) async {

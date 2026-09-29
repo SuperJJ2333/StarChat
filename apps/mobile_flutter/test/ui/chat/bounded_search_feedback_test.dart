@@ -28,7 +28,7 @@ void main() {
     failed = false;
     await tester.tap(find.byKey(const Key('chat-search-page-retry')));
     await tester.pumpAndSettle();
-    expect(find.text('未找到符合条件的聊天记录'), findsOneWidget);
+    expect(find.text('暂无匹配记录'), findsOneWidget);
   });
   testWidgets('empty partial scan offers continuation, never final no matches',
       (tester) async {
@@ -53,7 +53,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('chat-search-continue')), findsNothing);
     expect(batches, 2);
-    expect(find.text('未找到符合条件的聊天记录'), findsOneWidget);
+    expect(find.text('暂无匹配记录'), findsOneWidget);
   });
 
   testWidgets('opening calendar cancels pending keyword debounce',

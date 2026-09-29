@@ -434,10 +434,6 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     _scheduleAutomaticPage(page);
     if (page != null && page.items.isEmpty == false) {
       return Column(children: [
-        if (page.coverageIncomplete)
-          _inlineStatus(const Text('部分本地消息尚未解密，无法完整检索',
-              style:
-                  TextStyle(fontSize: 13, color: WeChatColors.textSecondary))),
         if (_state is ChatSearchLoadingState)
           _inlineStatus(const Text('正在查询…',
               style:
@@ -486,15 +482,9 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
               child: const Text('加载失败，点击重试')),
       ]));
     }
-    if (page?.coverageIncomplete ?? false) {
-      return const Center(
-          child: Text('部分本地消息尚未解密，无法完整检索',
-              style:
-                  TextStyle(fontSize: 14, color: WeChatColors.textSecondary)));
-    }
     return const Center(
       key: Key('chat-search-no-results'),
-      child: Text('未找到符合条件的聊天记录',
+      child: Text('暂无匹配记录',
           style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
     );
   }
