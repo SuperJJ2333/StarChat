@@ -1,0 +1,8 @@
+{
+  "trace": "android-popup-0.4.24-2193-20260929T142419Z",
+  "backup": "/opt/starchat/docs/verification/artifacts/2026-09-29/android-2193-popup-20260929T142419Z",
+  "script_sha256": "0476d72a1f791b61fa72eada0043b939a56e058feab12509570ef9d093e6a6b9",
+  "source_commit": "9b6d56654247ff11623f80f695ff8cd6e054fd44",
+  "notes": "修复 USDT 提现报价显示异常；优化聊天搜索、朋友圈视频与部分页面体验。",
+  "created_at_utc": "2026-09-29T14:24:19Z"
+}

@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-29 Android 0.4.24+2193 更新弹窗文案已发布，待旧版真机验收
+
+用户要求发布 Android 新版本更新弹窗。2193 的正式 APK、版本号和下载入口已在前一任务上线，旧版 Android 登录后及回到前台时已有自动检查。2026-09-29 22:26 +08:00，本轮通过仅允许 `app_update_notes` 的一次性发布器，将说明更新为“修复 USDT 提现报价显示异常；优化聊天搜索、朋友圈视频与部分页面体验。”；十项设置前后只有这一项改变，审计 trace `android-popup-0.4.24-2193-20260929T142419Z` 恰好一条，最低支持 build 仍为 3，属于可跳过更新。正式包 SHA256 `8ea9eafb…e6dec`、Android 0.4.24+2193 版本/build/下载 URL 和 iOS 全部设置未改。服务器读回和下载入口核验已通过；真实已登录旧版 Android 是否实际显示弹窗仍待设备反馈。见[任务记录](tasks/2026-09-29-android-2193-update-popup.md)与[本轮验证](../verification/2026-09-29-android-2193-update-popup.md)。
+
 ## 2026-09-29 Android 提现报价策略兼容：2193 正式 ARM64 已发布，待真实账户与真机验收
 
 用户批准以已安装的 Android Debug 0.4.23+2192 为基础，先装模拟器 Debug、再发布同源码正式 ARM64。`0.4.24+2193` 源码 `dae8ec63` 仅增加客户端对现有 OWNER/SUPPORT 两种报价策略的兼容，未知值拒绝、资金门禁与幂等不变；2192 的 1811 个移动文件按冻结清单继承。钱包 RED/GREEN、38/38 回归、analyze 0，短盘符全量 Flutter **5132 通过/9 跳过、exit 0**；长路径首轮失败及整库脚本因无 `.env` exit 1 保留真实记录。固定签名 x86_64 Debug SHA256 `167b70ab…cb2372` 已保留数据装入 `emulator-5556`。同源码 ARM64 `final.apk` 81,767,454 字节、SHA256 `8ea9eafb…e6dec` 经独立规格/质量安全复核，已于 2026-09-29 21:27–21:39 +08:00 通过 v4r2/schema 0092 门禁、HK/SG 同包与 CDN 精确三行为/三对象核验，完成标准直链和网络择优两段发布；最终 Android 0.4.24+2193、iOS 0.4.20+2189/API 镜像未变。静态源码提交 `102f94b9` 仅回填下载页、registry 和三段 JS，5/5 Git blob 与公网一致；公网 `admin-home.js` 保留，当前 C 工作树旧文件不能用于整站静态部署，完整前端 `npm test` 361/361。工作站 ready 200、匿名提现报价 401、下载页/registry/JS、两路 HEAD 与 CDN 206/CORS、iOS manifest/IPA 200 均回读通过；匿名 401 不能替代真实报价。真实账户 SUPPORT/OWNER 报价与正式包真机体验待验，未执行资金操作。下方其他任务条目是各自写入时快照。见[任务记录](tasks/2026-09-29-android-withdrawal-quote-policy.md)、[发布报告](../verification/2026-09-29-android-withdrawal-quote-policy-release.md)与[实施计划](../superpowers/plans/2026-09-29-android-withdrawal-quote-policy-compatibility.md)。
