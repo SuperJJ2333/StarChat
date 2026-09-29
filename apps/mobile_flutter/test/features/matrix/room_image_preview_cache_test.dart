@@ -9,6 +9,46 @@ import 'package:liuhetong_mobile/features/matrix/media_memory_budget.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 
 void main() {
+  test('prewarm skips legacy originals and bounds declared thumbnails',
+      () async {
+    var reads = 0;
+    Future<Uint8List?> cached(int maxBytes) async {
+      reads++;
+      expect(maxBytes, 512 * 1024);
+      return Uint8List(512 * 1024 + 1);
+    }
+
+    expect(
+      await prewarmDeclaredImagePreview(
+        hasDeclaredThumbnail: false,
+        animated: false,
+        readCached: cached,
+      ),
+      isNull,
+      reason: 'a legacy cache key can hold an entire original image',
+    );
+    expect(reads, 0);
+    expect(
+      await prewarmDeclaredImagePreview(
+        hasDeclaredThumbnail: true,
+        animated: true,
+        readCached: cached,
+      ),
+      isNull,
+    );
+    expect(reads, 0);
+    expect(
+      await prewarmDeclaredImagePreview(
+        hasDeclaredThumbnail: true,
+        animated: false,
+        readCached: cached,
+      ),
+      isNull,
+      reason: 'an oversized declared thumbnail must not enter prewarm',
+    );
+    expect(reads, 1);
+  });
+
   test('preview disk identity can differ while account memory stays canonical',
       () {
     final images = MediaMemoryCache(
@@ -75,6 +115,7 @@ void main() {
         [cache.readCached('event'), cache.readCached('event')]);
     expect(results, [bytes, bytes]);
     expect(reads, 1);
+    expect(cache.diskHits, 1);
     expect(cache.get('event'), same(results.first));
     expect(() => results.first![0] = 9, throwsUnsupportedError);
     expect(
@@ -82,6 +123,51 @@ void main() {
             'event', () async => throw StateError('must not load source')),
         same(results.first));
     cache.dispose();
+  });
+
+  test('source counters distinguish memory, disk and one joined source',
+      () async {
+    final disk = <String, Uint8List>{};
+    var requests = 0;
+    final first = RoomImagePreviewCache(
+        accountId: 'alice',
+        roomId: 'room',
+        read: (key) async => disk[key],
+        write: (key, bytes) async => disk[key] = bytes);
+    final loaded = await Future.wait([
+      first.load('image', () async {
+        requests++;
+        return Uint8List.fromList([1, 2, 3]);
+      }),
+      first.load('image', () async {
+        requests++;
+        return Uint8List.fromList([9]);
+      }),
+    ]);
+    expect(loaded.first, loaded.last);
+    expect(requests, 1);
+    expect(first.sourceLoads, 1);
+    expect(first.diskHits, 0);
+    expect(first.get('image'), isNotNull);
+    expect(first.memoryHits, greaterThanOrEqualTo(1));
+    first.dispose();
+
+    final reopened = RoomImagePreviewCache(
+        accountId: 'alice',
+        roomId: 'room',
+        read: (key) async => disk[key],
+        write: (key, bytes) async => disk[key] = bytes);
+    expect(await reopened.readCached('image'), [1, 2, 3]);
+    expect(reopened.diskHits, 1);
+    expect(reopened.sourceLoads, 0);
+    expect(
+        await reopened.load('image', () async {
+          requests++;
+          throw StateError('network must not run');
+        }),
+        [1, 2, 3]);
+    expect(requests, 1);
+    reopened.dispose();
   });
 
   test('oversized bytes never exceed the encrypted disk quota', () async {

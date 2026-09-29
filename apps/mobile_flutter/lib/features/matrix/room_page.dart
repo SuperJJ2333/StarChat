@@ -127,10 +127,7 @@ import 'video_poster_disk_store.dart';
 import 'video_poster_diagnostics.dart';
 import 'video_poster_pipeline.dart';
 import 'chat_search_query_controller.dart'
-    show
-        ChatSearchFilters,
-        ChatSearchCursor,
-        ChatSearchSlice;
+    show ChatSearchFilters, ChatSearchCursor, ChatSearchSlice;
 import 'conversation_preferences.dart';
 import '../../core/permissions/interaction_permission.dart';
 import 'conversation_presentation.dart';
@@ -647,9 +644,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final _posterDisk = VideoPosterDiskStore();
   final Map<String, String> _posterKeys = {};
 
-  /// Room-instance cache: independent encrypted temporary files, no global LRU.
-  /// （Phase 1 保留：会话级内存 LRU + 单飞 + 临时加密磁盘层，未删除。）
-  late final VideoPosterSessionCache videoPosterCache = VideoPosterSessionCache(
+  /// Each room owns its encrypted temporary files and in-flight work; only
+  /// completed small posters survive a same-account room reentry in memory.
+  late final VideoPosterSessionCache videoPosterCache =
+      VideoPosterSessionCache.forRoomSession(
     diskRead: _posterDisk.read,
     diskWrite: _posterDisk.write,
     diskDelete: _posterDisk.delete,
@@ -691,6 +689,100 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   final Set<String> _visibleReadIds = {};
+  final Set<String> _queuedMediaPreviews = {};
+  Timer? _mediaPreviewPaintTimer;
+
+  void _scheduleMediaPreviewPaint() {
+    _mediaPreviewPaintTimer ??= Timer(const Duration(milliseconds: 16), () {
+      _mediaPreviewPaintTimer = null;
+      if (mounted && !_disposing) setState(() {});
+    });
+  }
+
+  // Test seam for the toast/pending-paint race; no production caller.
+  void debugScheduleMediaPreviewPaint() => _scheduleMediaPreviewPaint();
+  bool get debugMediaPreviewPaintScheduled =>
+      _mediaPreviewPaintTimer?.isActive ?? false;
+
+  void debugWarmVisibleMediaPreviews() {
+    _queuedMediaPreviews.clear();
+    _warmVisibleMediaPreviews();
+  }
+
+  /// Only the built rows intersecting the viewport and existing poster warm
+  /// margin are eligible. These probes read local caches first; flash media
+  /// never enters either ordinary preview path.
+  void _warmVisibleMediaPreviews() {
+    if (!mounted ||
+        !context.mounted ||
+        _disposing ||
+        widget.roomLease.canceled ||
+        (WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final viewport = _timelineViewportKey.currentContext?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return;
+    final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
+    final warmBounds = Rect.fromLTRB(
+        bounds.left,
+        bounds.top - kVideoPosterWarmExtent,
+        bounds.right,
+        bounds.bottom + kVideoPosterWarmExtent);
+    var scheduled = 0;
+    for (final entry in messageKeys.entries) {
+      if (scheduled >= 8) break;
+      final message = controller?.findMessage(entry.key);
+      if (message == null ||
+          _mediaPolicyFor(message).requiresDedicatedSecureViewer ||
+          (message.kind != RoomMessageKind.image &&
+              message.kind != RoomMessageKind.video)) {
+        continue;
+      }
+      if (message.kind == RoomMessageKind.image &&
+          (_isAnimatedImage(message) ||
+              _mediaHashes(message.id)?.thumbnailSha256 == null)) {
+        continue;
+      }
+      final key = '${message.kind}:${message.stableId}';
+      if (_queuedMediaPreviews.contains(key)) continue;
+      final rowContext = entry.value.currentContext;
+      if (rowContext == null || !rowContext.mounted) continue;
+      final RenderObject? rendered;
+      try {
+        rendered = rowContext.findRenderObject();
+      } catch (_) {
+        continue;
+      }
+      if (rendered is! RenderBox || !rendered.hasSize) continue;
+      final rowBounds = rendered.localToGlobal(Offset.zero) & rendered.size;
+      if (!rowBounds.overlaps(warmBounds)) continue;
+      if (!_queuedMediaPreviews.add(key)) continue;
+      while (_queuedMediaPreviews.length > 256) {
+        _queuedMediaPreviews.remove(_queuedMediaPreviews.first);
+      }
+      scheduled++;
+      if (message.kind == RoomMessageKind.image) {
+        if (_cachedImagePreview(message) != null) continue;
+        unawaited(prewarmDeclaredImagePreview(
+          hasDeclaredThumbnail: true,
+          animated: false,
+          readCached: (maxBytes) =>
+              _readCachedImagePreview(message, maxBytes: maxBytes),
+        ).then((bytes) {
+          if (bytes != null) _scheduleMediaPreviewPaint();
+        }, onError: (Object _) {}));
+      } else {
+        if (_peekVideoPoster(message.id) != null) continue;
+        unawaited(_loadVideoPoster(message.id).then((bytes) {
+          if (bytes != null) _scheduleMediaPreviewPaint();
+        }, onError: (Object _) {}));
+      }
+    }
+  }
+
   // E1：搜索索引增量调度与突发去抖。
   RoomSearchIndexPump? _searchIndexPump;
   final Set<String> _acknowledgedVisibleIds = {};
@@ -741,6 +833,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   void _observeVisibleMentions() {
     if (!mounted || !context.mounted) return;
     _observeVisibleReadReceipts();
+    _warmVisibleMediaPreviews();
     final state = unreadMentions;
     if (state == null || !state.hasPending) return;
     if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
@@ -1350,7 +1443,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           _observeVisibleMentions();
         },
       );
-      WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _warmVisibleMediaPreviews();
+        _prefetchHistory();
+      });
     } catch (_) {
       widget.performanceTrace?.finish(result: PerformanceResult.failed);
       if (mounted) {
@@ -1826,8 +1923,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         outgoing: latest?.isOwn ?? false);
     for (final message in controller?.messages ?? <RoomMessageViewModel>[]) {
       if (message.isRecalled) {
-        final key = _posterKeys.remove(message.id);
-        if (key != null) unawaited(videoPosterCache.evict(key));
+        // A retained poster can be found before the async loader registers a
+        // key (or before this room has built the video row at all).
+        final registeredKey = _posterKeys.remove(message.id);
+        final key = registeredKey ?? videoPosterPipeline.keyFor(message.id);
+        if (!videoPosterCache.isEvicted(key) &&
+            (registeredKey != null || videoPosterCache.peek(key) != null)) {
+          unawaited(videoPosterCache.evict(key));
+        }
         // 撤回：同时丢弃流水线的来源归属/冷却状态，避免残留影响诊断与重试。
         videoPosterPipeline.forget(message.id);
       }
@@ -2108,6 +2211,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
   }
 
+  /// First-frame cache hits still need a key for recall eviction.
+  Uint8List? _peekVideoPoster(String messageId) {
+    final bytes = videoPosterPipeline.peek(messageId);
+    if (bytes != null) {
+      _posterKeys.putIfAbsent(
+          messageId, () => videoPosterPipeline.keyFor(messageId));
+    }
+    return bytes;
+  }
+
   /// 视频消息封面帧（Phase 1：**绝不为了封面下载整段视频**）。
   ///
   /// 旧实现：事件没有可用缩略图时会 `resolveCachedVideoFile` 把整段视频
@@ -2142,7 +2255,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 本机持久封面缓存（复用 MediaCache：账号命名空间 + 内容寻址 + 配额 LRU）。
   Future<Uint8List?> _readCachedVideoPoster(String messageId) async {
-    final file = await MediaCache.probeCachedObject(
+    final file = await MediaCache.cached(
       roomInfo.id,
       videoPosterCacheRefId(messageId),
       accountId: roomInfo.currentUserId ?? '',
@@ -2150,9 +2263,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (file == null) return null;
     try {
       final bytes = await file.readAsBytes();
-      // 探测路径不刷新 mtime；这里按 LRU 语义记一次访问。
-      await file.setLastModified(DateTime.now());
-      return bytes;
+      return bytes.length <= 512 * 1024 ? bytes : null;
     } on FileSystemException {
       return null;
     }
@@ -2223,15 +2334,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<Uint8List?> _readCachedImagePreview(
-    RoomMessageViewModel message,
-  ) async {
+  Future<Uint8List?> _readCachedImagePreview(RoomMessageViewModel message,
+      {int? maxBytes}) async {
     if (_mediaHashes(message.id) == null) {
+      if (maxBytes != null) return null;
       return roomImagePreviewCache.readCached(message.stableId);
     }
     final key = _previewKey(message);
+    if (maxBytes != null && !key.eventId.startsWith('thumb:')) return null;
     final cached = contentMediaMemoryCache.get(key.cacheId);
-    if (cached != null) return cached;
+    if (cached != null) {
+      return maxBytes == null || cached.length <= maxBytes ? cached : null;
+    }
     final file = await MediaCache.cached(
       key.roomId,
       key.eventId,
@@ -2239,7 +2353,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       contentSha256: key.contentSha256,
     );
     if (file == null) return null;
-    return loadMediaWithCache(key, file.readAsBytes);
+    if (maxBytes != null && await file.length() > maxBytes) return null;
+    final bytes = await loadMediaWithCache(key, file.readAsBytes);
+    return maxBytes == null || bytes.length <= maxBytes ? bytes : null;
   }
 
   Future<Uint8List> _loadImagePreview(RoomMessageViewModel message) async {
@@ -3248,16 +3364,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     var searchOpen = true;
     RoomHistoryDayLocation? resolvedDateLocation;
     final searchResultVisibility = LocalSearchResultVisibility();
-    bool searchResultHidden(String sourceRoomId, String eventId,
-            DateTime timestamp) =>
+    bool searchResultHidden(
+            String sourceRoomId, String eventId, DateTime timestamp) =>
         hiddenEvents?.isEventHidden(sourceRoomId, eventId,
             eventTimestamp: timestamp) ??
         false;
     RoomMessageViewModel? currentSearchMessage(String id) {
       // A retained iterator may outlive a recall or source refresh. Resolve the
       // current indexed row before exposing its text, never a stale snapshot.
-      if (!searchResultVisibility.isVisible(id,
-          isHidden: searchResultHidden)) {
+      if (!searchResultVisibility.isVisible(id, isHidden: searchResultHidden)) {
         return null;
       }
       final message = controller?.findMessage(id);
@@ -3985,7 +4100,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             ),
           ),
         RoomMessageKind.video => VideoMessageCard(
+            posterIdentity: message.id,
+            posterRevision: _posterRevisions[message.id] ?? 0,
             duration: message.videoDuration,
+            initialPosterBytes: _peekVideoPoster(message.id),
             posterLoader: () => _loadVideoPoster(message.id),
             onOpen: () => unawaited(_openVideoViewer(message)),
           ),
@@ -4219,6 +4337,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               posterIdentity: message.id,
               posterRevision: _posterRevisions[message.id] ?? 0,
               duration: message.videoDuration,
+              initialPosterBytes: _peekVideoPoster(message.id),
               posterLoader: () => _loadVideoPoster(message.id),
               onOpen: () => unawaited(_openVideoViewer(message)),
             ),
@@ -4960,8 +5079,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     roomImagePreviewCache.dispose();
     imageMemoryCache.dispose();
     thumbnailMemoryCache.dispose();
-    unawaited(videoPosterCache
-        .clearAll()
+    final posterCleanup = videoPosterCache.clearAll();
+    videoPosterCache.disposeRoomSession();
+    unawaited(posterCleanup
         .whenComplete(_posterDisk.dispose)
         .catchError((Object _) {}));
     _identityCache.removeListener(_identityChanged);

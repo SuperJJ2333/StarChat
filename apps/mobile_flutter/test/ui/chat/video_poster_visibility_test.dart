@@ -42,8 +42,7 @@ void main() {
     poster = Uint8List(0);
   });
 
-  testWidgets('Test 1：有 poster 时进入聊天立即显示封面（加载一次）',
-      (tester) async {
+  testWidgets('Test 1：有 poster 时进入聊天立即显示封面（加载一次）', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final bytes = (await tester.runAsync(_png))!;
@@ -69,8 +68,34 @@ void main() {
     expect(find.text('0:12'), findsOneWidget);
   });
 
-  testWidgets('Test 2：无 poster 先显示占位，生成完成后更新为封面',
+  testWidgets(
+      'retained poster paints before visibility callback without loading',
       (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final bytes = (await tester.runAsync(_png))!;
+    var loads = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: Center(
+        child: VideoMessageCard(
+          duration: const Duration(seconds: 12),
+          onOpen: () {},
+          posterIdentity: 'event',
+          initialPosterBytes: bytes,
+          posterLoader: () async {
+            loads++;
+            return bytes;
+          },
+        ),
+      ),
+    ));
+    expect(find.byType(Image), findsOneWidget,
+        reason: 'retained bytes paint in the initial frame');
+    await _settle(tester);
+    expect(loads, 0, reason: 'visible retained poster needs no new request');
+  });
+
+  testWidgets('Test 2：无 poster 先显示占位，生成完成后更新为封面', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final bytes = (await tester.runAsync(_png))!;
@@ -132,8 +157,7 @@ void main() {
       ),
     ));
     await _settle(tester);
-    expect(loads, isEmpty,
-        reason: '卡片已构建但在窗口外（视口 600 + 前瞻 790 远不及 3000），不得加载');
+    expect(loads, isEmpty, reason: '卡片已构建但在窗口外（视口 600 + 前瞻 790 远不及 3000），不得加载');
 
     controller.jumpTo(3000 - 200);
     await _settle(tester);
@@ -175,14 +199,11 @@ void main() {
     ));
     await _settle(tester);
 
-    expect(loads, contains('A'),
-        reason: '视口下方 400pt（±5 行缓冲内）应当预热');
-    expect(loads, isNot(contains('B')),
-        reason: '视口下方 1200pt（缓冲外）不得生成封面');
+    expect(loads, contains('A'), reason: '视口下方 400pt（±5 行缓冲内）应当预热');
+    expect(loads, isNot(contains('B')), reason: '视口下方 1200pt（缓冲外）不得生成封面');
   });
 
-  testWidgets('Test 4：100 个视频消息 + 快速滚动，不会全部生成封面',
-      (tester) async {
+  testWidgets('Test 4：100 个视频消息 + 快速滚动，不会全部生成封面', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final loads = <String>{};
@@ -216,21 +237,16 @@ void main() {
     await tester.pumpWidget(list(cacheExtent: 100000));
     await _settle(tester);
     expect(loads, contains('v0'));
-    expect(loads, isNot(contains('v20')),
-        reason: '缓冲外的第 20 行不得生成封面');
-    expect(loads.length, lessThan(20),
-        reason: '首屏只处理「可见 + ±5 行」，而不是 100 行');
+    expect(loads, isNot(contains('v20')), reason: '缓冲外的第 20 行不得生成封面');
+    expect(loads.length, lessThan(20), reason: '首屏只处理「可见 + ±5 行」，而不是 100 行');
     final firstScreen = loads.length;
 
     // ② 快速滚动到底部（一次跳到底，等价于快速滑动）：只有新进入窗口的行
     //    才被处理；累计仍远少于全量。
     controller.jumpTo(controller.position.maxScrollExtent);
     await _settle(tester);
-    expect(loads.length, greaterThan(firstScreen),
-        reason: '滚动后新进入窗口的行应当被处理');
-    expect(loads.contains('v99'), isTrue,
-        reason: '滚到末尾后最后一行可见并处理');
-    expect(loads.length, lessThan(40),
-        reason: '100 条视频消息快速滚动后仍远少于全量处理');
+    expect(loads.length, greaterThan(firstScreen), reason: '滚动后新进入窗口的行应当被处理');
+    expect(loads.contains('v99'), isTrue, reason: '滚到末尾后最后一行可见并处理');
+    expect(loads.length, lessThan(40), reason: '100 条视频消息快速滚动后仍远少于全量处理');
   });
 }

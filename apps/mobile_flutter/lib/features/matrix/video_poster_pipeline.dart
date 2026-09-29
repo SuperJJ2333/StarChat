@@ -106,8 +106,8 @@ final class VideoPosterOutcome {
 /// 解析顺序：
 /// ```
 /// ① 会话内存 LRU / 会话磁盘（VideoPosterSessionCache：单飞 + LRU，复用）
-/// ② 服务端 poster（事件缩略图附件；只有小图）
-/// ③ 本机持久封面缓存（MediaCache 账号命名空间 + 配额 LRU）
+/// ② 本机持久封面缓存（MediaCache 账号命名空间 + 配额 LRU）
+/// ③ 服务端 poster（事件缩略图附件；只有小图）
 /// ④ 本地视频抽帧（仅当本地已存在视频文件）
 /// ⑤ 占位图（无封面可用）
 /// ```
@@ -199,6 +199,11 @@ final class VideoPosterPipeline {
         mediaVersion: mediaId,
         spec: spec,
       );
+
+  /// A completed poster can paint before the visibility callback runs.
+  /// The cache key includes account, room, media version and display spec.
+  Uint8List? peek(String mediaId) =>
+      mediaId.isEmpty ? null : _memory.peek(keyFor(mediaId));
 
   /// 解析封面。[forceGenerate] 用于「视频刚播放完，本地已有文件」的补生成。
   Future<VideoPosterOutcome> resolve(
@@ -309,22 +314,23 @@ final class VideoPosterPipeline {
       void Function() onCancelled) async {
     final started = _now();
 
-    // ① 服务端 poster：事件自带的加密缩略图附件（≤480px），**不是**视频。
-    final server = await _attempt(() => _loadServerPoster(mediaId),
-        timeout: serverTimeout);
-    if (_hasBytes(server)) {
-      serverHits++;
-      _remember(key, VideoPosterSource.server, started, 0);
-      return server;
-    }
-
-    // ② 本机持久封面缓存（含本地抽帧产物与账号命名空间）。
+    // ① 本机持久封面缓存。Reentry and offline first paint must not depend
+    // on another Matrix thumbnail request when verified local bytes exist.
     trace?.mark(PerformanceStage.cacheLoadStarted);
     final cached = await _attempt(() => _readCachedPoster(mediaId));
     trace?.mark(PerformanceStage.cacheLoadDone);
     if (_hasBytes(cached)) {
       _remember(key, VideoPosterSource.disk, started, 0);
       return cached;
+    }
+
+    // ② 服务端 poster：事件自带的加密缩略图附件（≤480px），**不是**视频。
+    final server = await _attempt(() => _loadServerPoster(mediaId),
+        timeout: serverTimeout);
+    if (_hasBytes(server)) {
+      serverHits++;
+      _remember(key, VideoPosterSource.server, started, 0);
+      return server;
     }
 
     // ③ 本地抽帧：只在「本地已有视频文件」时进行；冷却期内不重复尝试。
