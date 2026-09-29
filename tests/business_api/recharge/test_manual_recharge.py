@@ -9,6 +9,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, select, event
@@ -28,8 +29,11 @@ from app.modules.identity.tokens import TokenService
 from app.modules.ledger.models import LedgerEntry
 from app.modules.ledger.service import LedgerService
 from app.modules.recharge.service import RechargeService
+from app.modules.recharge.models import RechargeRequest
 from app.modules.wallet import receipt_models, repair_models, manual_payout_models, funding_models  # noqa: F401
 from app.modules.wallet.models import WalletLedgerEntry
+from app.modules.wallet.binding_models import WalletBinding, WalletBindingState
+from binding_fixture import seed_active_binding, wallet_binding_snapshot
 
 
 @pytest.fixture()
@@ -51,6 +55,7 @@ def env(tmp_path):
                 status=AccountStatus.ACTIVE, matrix_user_id=f"@{uid}:x.test", created_at=now, updated_at=now))
             if role is not None:
                 session.add(UserRole(id=f"role-{uid}", user_id=uid, role_code=role, assigned_by="root", assigned_at=now))
+        seed_active_binding(session, user_id="alice", now=now)
     ledger = LedgerService(factory)
     ledger.adjust(user_id="alice", amount=Decimal("100.00"), actor_id="finance",
         reason_code="SEED", idempotency_key="seed-alice")
@@ -58,7 +63,8 @@ def env(tmp_path):
     def rate_provider():
         return Decimal("7.120000"), False
 
-    recharge = RechargeService(factory, ledger=ledger, rate_provider=rate_provider)
+    recharge = RechargeService(factory, ledger=ledger, rate_provider=rate_provider,
+        official_config=SimpleNamespace(address='isolated-fixture-official', version='fixture-v1'))
     yield factory, ledger, recharge
     engine.dispose()
 
@@ -69,6 +75,168 @@ def _caibi_balance(factory, account):
     with factory() as session:
         return Decimal(session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0))
             .where(LedgerEntry.account_id == account)))
+
+
+def _wallet_snapshot(factory):
+    with factory() as session:
+        return wallet_binding_snapshot(session)
+
+
+def _seed_historical_recharge(factory, *, amount_usdt, evidence_txid=None):
+    """Existing pre-support-workflow order; no new submit is made by these tests."""
+    now = datetime.now(timezone.utc)
+    request_id = "historical-recharge"
+    with factory.begin() as session:
+        session.add(RechargeRequest(id=request_id, user_id="alice",
+            amount_usdt=amount_usdt, evidence_txid=evidence_txid, status="SUBMITTED",
+            fx_rate=Decimal("7.120000"), fx_rate_stale=False,
+            created_at=now, updated_at=now))
+    return {"id": request_id}
+
+
+def test_binding_gate_rejects_unbound_user_without_wallet_writes(env):
+    from app.core.errors import AppError
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    before = _wallet_snapshot(factory)
+    with factory.begin() as session, pytest.raises(AppError) as excinfo:
+        WalletRechargeBindingGate().require_active(session, "agent")
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "WALLET_BINDING_REQUIRED"
+    assert _wallet_snapshot(factory) == before
+
+
+def test_binding_gate_rejects_pending_before_active_without_wallet_writes(env):
+    from app.core.errors import AppError
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    with factory.begin() as session:
+        session.get(WalletBindingState, "alice").pending_binding_id = "pending-alice-binding"
+    before = _wallet_snapshot(factory)
+    with factory.begin() as session, pytest.raises(AppError) as excinfo:
+        WalletRechargeBindingGate().require_active(session, "alice")
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "WALLET_BINDING_PENDING"
+    assert _wallet_snapshot(factory) == before
+
+
+def test_binding_gate_rejects_version_conflict_without_wallet_writes(env):
+    from app.core.errors import AppError
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    with factory.begin() as session:
+        session.get(WalletBindingState, "alice").version = 2
+    before = _wallet_snapshot(factory)
+    with factory.begin() as session, pytest.raises(AppError) as excinfo:
+        WalletRechargeBindingGate().require_active(session, "alice")
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "WALLET_BINDING_VERSION_CONFLICT"
+    assert _wallet_snapshot(factory) == before
+
+
+def test_binding_gate_returns_active_version_without_wallet_writes(env):
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    before = _wallet_snapshot(factory)
+    with factory.begin() as session:
+        assert WalletRechargeBindingGate().require_active(session, "alice") == 1
+    assert _wallet_snapshot(factory) == before
+
+
+def test_binding_gate_stale_preloaded_state_sees_committed_pending(env):
+    from app.core.errors import AppError
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    with factory() as preloaded:
+        state = preloaded.get(WalletBindingState, "alice")
+        assert state.pending_binding_id is None
+        with factory.begin() as writer:
+            writer.get(WalletBindingState, "alice").pending_binding_id = "pending-alice-binding"
+        assert state.pending_binding_id is None  # identity-map value is stale
+        before = _wallet_snapshot(factory)
+        with pytest.raises(AppError) as excinfo:
+            WalletRechargeBindingGate().require_active(preloaded, "alice")
+        assert excinfo.value.status_code == 409
+        assert excinfo.value.code == "WALLET_BINDING_PENDING"
+    assert _wallet_snapshot(factory) == before
+
+
+def test_binding_gate_stale_preloaded_binding_sees_committed_retirement(env):
+    from app.core.errors import AppError
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    with factory() as preloaded:
+        state = preloaded.get(WalletBindingState, "alice")
+        binding = preloaded.get(WalletBinding, state.active_binding_id)
+        assert binding.status == "ACTIVE"
+        with factory.begin() as writer:
+            current = writer.get(WalletBinding, state.active_binding_id)
+            current.status = "RETIRED"
+            current.effective_to_block = 102
+        assert binding.status == "ACTIVE"  # identity-map value is stale
+        before = _wallet_snapshot(factory)
+        with pytest.raises(AppError) as excinfo:
+            WalletRechargeBindingGate().require_active(preloaded, "alice")
+        assert excinfo.value.status_code == 409
+        assert excinfo.value.code == "WALLET_BINDING_VERSION_CONFLICT"
+    assert _wallet_snapshot(factory) == before
+
+
+@pytest.mark.parametrize("invalid", ("missing", "wrong_owner", "retired"))
+def test_binding_gate_invalid_active_reference_has_no_wallet_writes(env, invalid):
+    from app.core.errors import AppError
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    with factory.begin() as writer:
+        state = writer.get(WalletBindingState, "alice")
+        if invalid == "missing":
+            state.active_binding_id = "missing-binding"
+        else:
+            binding = writer.get(WalletBinding, state.active_binding_id)
+            if invalid == "wrong_owner":
+                binding.user_id = "agent"
+            else:
+                binding.status = "RETIRED"
+                binding.effective_to_block = 102
+    before = _wallet_snapshot(factory)
+    with factory.begin() as session, pytest.raises(AppError) as excinfo:
+        WalletRechargeBindingGate().require_active(session, "alice")
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "WALLET_BINDING_VERSION_CONFLICT"
+    assert _wallet_snapshot(factory) == before
+
+
+@pytest.mark.parametrize(("effective_from", "effective_to"), ((None, None), (101, 102)))
+def test_binding_gate_invalid_active_interval_has_no_wallet_writes(env, monkeypatch,
+                                                                  effective_from, effective_to):
+    from app.core.errors import AppError
+    from app.modules.wallet.recharge_binding_gate import WalletRechargeBindingGate
+
+    factory, _, _ = env
+    before = _wallet_snapshot(factory)
+    with factory.begin() as session:
+        real_get = session.get
+
+        def get_with_invalid_binding(model, key, **kwargs):
+            if model is WalletBinding:
+                # Database CHECK constraints forbid these corrupt ACTIVE rows.
+                return SimpleNamespace(user_id="alice", status="ACTIVE", version=1,
+                    effective_from_block=effective_from, effective_to_block=effective_to)
+            return real_get(model, key, **kwargs)
+
+        monkeypatch.setattr(session, "get", get_with_invalid_binding)
+        with pytest.raises(AppError) as excinfo:
+            WalletRechargeBindingGate().require_active(session, "alice")
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "WALLET_BINDING_VERSION_CONFLICT"
+    assert _wallet_snapshot(factory) == before
 
 
 def test_submit_creates_pending_order_without_balance_change(env):
@@ -91,10 +259,10 @@ def test_same_evidence_cannot_fund_two_requests(env):
 
 
 def test_credit_marks_request_and_requires_public_ledger_proof(env):
-    """真实审批执行凭证才能登记；汇率和金额一致，重放不重复入账。"""
+    """历史申请须有真实审批执行凭证；登记重放不重复入账。"""
     from app.modules.ledger.adjustments import AdjustmentWorkflow
     factory, ledger, recharge = env
-    view = recharge.submit(user_id="alice", amount_usdt=Decimal("50"), evidence_txid="C" * 64)
+    view = _seed_historical_recharge(factory, amount_usdt=Decimal("50"), evidence_txid="C" * 64)
     workflow = AdjustmentWorkflow(factory, ledger, admin_threshold=Decimal('10000'))
     workflow.set_policy('agent', per_transaction=Decimal('1000'), per_day=Decimal('10000'), allowed_users={'alice'})
     adjustment = workflow.submit(actor_id='agent', user_id='alice', amount=Decimal('355.00'),
@@ -128,7 +296,7 @@ def test_credit_marks_request_and_requires_public_ledger_proof(env):
 
 def test_reject_requires_reason_and_records_timeline(env):
     factory, ledger, recharge = env
-    view = recharge.submit(user_id="alice", amount_usdt=Decimal("10"))
+    view = _seed_historical_recharge(factory, amount_usdt=Decimal("10"))
     from app.core.errors import AppError
 
     with pytest.raises(AppError) as excinfo:
