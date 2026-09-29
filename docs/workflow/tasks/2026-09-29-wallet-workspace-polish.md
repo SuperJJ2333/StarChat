@@ -4,10 +4,10 @@
 
 - 目标、授权与边界：用户要求移除只读验证横幅、美化钱包/链上详情/监控与事故/所有者转出，缩略显示哈希但复制完整，失焦和菜单返回保留链上只读现场，并解释人工出款与旧提现编号。用户批准书面规格后补充：所有者转出表单移除日志序号，原因码与用途说明合为管理员必选菜单；本轮又明确答复“批准你开始执行”，批准钱包 ADR 与含受控发布的逐项计划。反复 `PROTOCOL_PROBE_FAILED` 的修复方案独立制定，不混入钱包界面代码；生产发布以完成的候选和实时现场证据为准。
 - 关联规格：[钱包工作台书面规格](../../superpowers/specs/2026-09-29-wallet-workspace-polish-design.md)及[静态视觉稿](../../verification/artifacts/2026-09-29/wallet-ui-design/wallet-direction.html)；[受保护 ADR](../../adr/2026-09-29-wallet-workspace-visibility-and-owner-transfer.md)及[逐项实施计划](../../superpowers/plans/2026-09-29-wallet-workspace-polish.md)已获用户本轮实施批准。[刷新探针故障修复方案](../../superpowers/plans/2026-09-29-refresh-watch-protocol-probe-repair.md)独立处理。[本轮验证记录](../../verification/2026-09-29-wallet-workspace-polish.md)逐阶段更新。
-- 当前状态：本地 WUI-1 至 WUI-7 已实现；领域与独立质量/安全审查通过，规格复核提出的两处文案/时点细节已测试先行补齐。最终前端 400 项中 395 通过，剩余 5 项均与改动前全局样式基线同名；OpenAPI 和 owner 专项通过。完整 verify 在缺少本工作树 `.env` 的配置渲染阶段停止；生产尚未发布，业务 API/Worker 全目录测试进行中。
+- 当前状态：本地 WUI-1 至 WUI-7 已实现；领域与独立质量/安全审查通过，规格复核提出的两处文案/时点细节已测试先行补齐。最终前端 400 项中 395 通过，剩余 5 项均与改动前全局样式基线同名；OpenAPI 和 owner 专项通过；业务 API/Worker 全目录 3182 通过、79 跳过、exit 0。完整 verify 在缺少本工作树 `.env` 的配置渲染阶段停止；生产尚未发布，隔离发布包仍在准备。
 - 负责人、工作树、文件所有权、源码 commit：`C:/Users/Administrator/.codex/worktrees/wallet-ui-polish/StarChat`，`codex/wallet-ui-polish-20260929`；设计/计划提交 `87541ff3`、`c6a1e73c`、`e3535ca9`，基于 `e014619e`。领域代理独占 `admin_wallet_owner_transfers.py`、`owner_transfers.py` 及领域/API 测试；链上代理独占 `admin-chain-panel.js`、新纯函数模块及对应测试；主代理拥有本任务记录、验证记录与后续授权生命周期整合。各文件互不并发编辑。
-- 最后更新时间：2026-09-29 17:56 +08:00。
-- 下一条具体操作：取得业务全目录测试最终结果，冻结精确 API/静态清单与实时生产基线，完成隔离发布和回退门禁；不得把本地静态稿或匿名探针当作真实管理员会话验收。
+- 最后更新时间：2026-09-29 18:10 +08:00。
+- 下一条具体操作：完成发布包的隔离 PostgreSQL 钱包断言与独立安全复核，再冻结精确 API/静态清单和实时生产基线、执行受控发布与回退门禁；不得把本地静态稿或匿名探针当作真实管理员会话验收。
 
 ## 验收台账
 
@@ -44,14 +44,15 @@
 | 本地实施启动/预检 | 2026-09-29 15:07 +08:00 | 2026-09-29 15:08 +08:00 | 主动/工具 | 领域与链上代理并行前置 | 干净 HEAD、唯一迁移 head、OpenAPI 基线与工具版本已记录 | 专项 red/green |
 | 本地实现、专项与审查返工 | 2026-09-29 15:08 +08:00 | 2026-09-29 17:56 +08:00 | 主动/工具、代理并行；部分等待计时未分离 | 领域、链上、会话、规格/安全审查 | WUI-1 至 WUI-7 实现；两处规格细节补测；最终 `npm test` 395/400，五项旧基线失败；真实 Chrome 菜单/会话 2/2 | 业务全目录与发布冻结 |
 | 生产只读预查 | 2026-09-29 17:42 +08:00 | 2026-09-29 17:50 +08:00 | 工具/只读 | 发布准备代理，与本地审查并行 | API/Worker healthy、schema 0092、2 API + 11 静态目标；[精确快照](../../verification/artifacts/2026-09-29/wallet-ui-acceptance/release-prep.md) | 最终源码/实时生产重新冻结 |
+| 业务 API/Worker 全目录 | 2026-09-29 17:28:39 +08:00 | 2026-09-29 18:09:13 +08:00 | 工具；与前端审查/发布准备并行，不叠加墙钟 | Python 全目录 | 3182 passed、79 skipped、1 条依赖弃用警告、exit 0，2434.03 秒；[日志](../../verification/artifacts/2026-09-29/wallet-ui-acceptance/business-api-worker-pytest.txt) | 隔离发布门禁 |
 
 总墙钟及重复工作耗时：历史阶段没有完整起止计时，不能精确计算。修订原因是用户在批准规格时提出申报表单修正，已集中落在本工作树，不重复业务代码实现。
 
 ## 交接与回退
 
 - 已确认根因/已排除假设：链上列表消失由 `admin-wallet-access.js` 的失焦授权回查清空与 `admin-dashboard.js` 的菜单切换销毁共同导致；现在保留受授权的只读现场并阻断旧会话响应回填。监控探针故障另见[只读排查](../../verification/2026-09-29-refresh-watch-protocol-probe.md)，不能把当前已恢复视为邮件历史投递成功。
-- 待办及验收失败项：业务 API/Worker 全目录仍运行；完整 verify 被缺少 `.env` 阻断，不能称全绿；五项原有前端样式测试仍失败。隔离 PG、双角色镜像门禁、发布/回退和真实管理员会话验收尚未完成。
+- 待办及验收失败项：完整 verify 被缺少 `.env` 阻断，不能称全绿；五项原有前端样式测试仍失败。隔离 PG、双角色镜像门禁、发布/回退和真实管理员会话验收尚未完成。
 - 已发布与仅候选的区别：此分支为本地功能候选，尚无生产切换；只读现场见[发布预查](../../verification/artifacts/2026-09-29/wallet-ui-acceptance/release-prep.md)。
 - 生产备份位置、恢复操作、漂移检查、可重试阶段：本任务尚无生产变更或备份；发布包准备按 2 API + 11 静态精确清单绑定候选与当前 0092 回退镜像、静态原始字节及双角色门禁。
-- 运行中 CI/命令/隧道：本地 `pytest tests/business_api tests/business_worker -q` 仍运行，输出至 `docs/verification/artifacts/2026-09-29/wallet-ui-acceptance/business-api-worker-pytest.txt`；本任务无运行中 SSH 隧道。
-- 下次恢复先检查的事实：读取本任务规格、ADR、计划和批准记录；核对工作树源码 SHA、全目录测试退出码及实时生产镜像/Compose/schema/静态 SHA，再继续隔离发布门禁。
+- 运行中 CI/命令/隧道：本地业务全目录测试已退出 0；本任务无运行中 SSH 隧道。
+- 下次恢复先检查的事实：读取本任务规格、ADR、计划和批准记录；核对候选提交 `ec34c51ddf92a084b0681be388b70505a89d4b91`、本轮全目录测试与实时生产镜像/Compose/schema/静态 SHA，再继续隔离发布门禁。

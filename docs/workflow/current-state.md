@@ -2,7 +2,7 @@
 
 ## 2026-09-29 USDT 钱包工作台与链上流水现场：ADR/计划已批准，本地实施中
 
-用户批准[钱包工作台规格](../superpowers/specs/2026-09-29-wallet-workspace-polish-design.md)，并补充要求所有者转出申报不填写日志序号、将原因码和用途说明合为必选用途菜单；本轮又明确批准[钱包视图及申报 ADR](../adr/2026-09-29-wallet-workspace-visibility-and-owner-transfer.md)和[逐项实施计划](../superpowers/plans/2026-09-29-wallet-workspace-polish.md)执行。[任务台账](tasks/2026-09-29-wallet-workspace-polish.md)和[本轮验证记录](../verification/2026-09-29-wallet-workspace-polish.md)追踪 WUI-1 至 WUI-7、隔离工作树及验收缺口。截至 2026-09-29 17:54 +08:00，本地功能与专项回归已完成，最终文案/数据时点复核修补及业务 API/Worker 全目录测试仍在进行；生产保持原版本，发布包与隔离/回退门禁准备中。`PROTOCOL_PROBE_FAILED` 的[只读排查](../verification/2026-09-29-refresh-watch-protocol-probe.md)及[独立修复方案](../superpowers/plans/2026-09-29-refresh-watch-protocol-probe-repair.md)已归档；故障修复是独立认证/可用性任务，不能凭钱包 UI 改动声称已修复。
+用户批准[钱包工作台规格](../superpowers/specs/2026-09-29-wallet-workspace-polish-design.md)，并补充要求所有者转出申报不填写日志序号、将原因码和用途说明合为必选用途菜单；本轮又明确批准[钱包视图及申报 ADR](../adr/2026-09-29-wallet-workspace-visibility-and-owner-transfer.md)和[逐项实施计划](../superpowers/plans/2026-09-29-wallet-workspace-polish.md)执行。[任务台账](tasks/2026-09-29-wallet-workspace-polish.md)和[本轮验证记录](../verification/2026-09-29-wallet-workspace-polish.md)追踪 WUI-1 至 WUI-7、隔离工作树及验收缺口。截至 2026-09-29 18:10 +08:00，本地功能与专项回归已完成，业务 API/Worker 全目录 3182 通过、79 跳过、exit 0；生产保持原版本，发布包与隔离/回退门禁准备中。`PROTOCOL_PROBE_FAILED` 的[只读排查](../verification/2026-09-29-refresh-watch-protocol-probe.md)及[独立修复方案](../superpowers/plans/2026-09-29-refresh-watch-protocol-probe-repair.md)已归档；故障修复是独立认证/可用性任务，不能凭钱包 UI 改动声称已修复。
 
 ## 2026-09-29 管理台 A1–A5：v8 已生产技术发布，真实账号验收待办
 

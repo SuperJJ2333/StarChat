@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | TDD 实现 | WUI-1 至 WUI-7 代码与专项回归已完成；owner 预检唯一解析、菜单现场与二次确认均先红后绿 | 冻结最终源码身份 |
 | 规格、领域与质量安全审查 | 独立规格复核、领域复核、质量/安全复核均完成；审查发现的跨标签页/晚到响应与重取证明测试缺口已修复，队列/事故独立读取时点及观察器扫描时点文案已补齐，最终无 P0–P2 | 发布前重核候选 SHA |
-| 完整门禁与发布 | 前端全量 400/395/5（五项已知基线）；OpenAPI 与领域专项通过；完整 verify 因缺 `.env` 停在 render-only 配置；业务 API/Worker 全目录测试仍运行；生产尚未发布 | 取得全目录结果，完成隔离发布门禁 |
+| 完整门禁与发布 | 前端全量 400/395/5（五项已知基线）；OpenAPI 与领域专项通过；业务 API/Worker 全目录 3182 通过、79 跳过、exit 0；完整 verify 因缺 `.env` 停在 render-only 配置；生产尚未发布 | 完成隔离发布门禁 |
 
 ## 本地实现与审查（2026-09-29 15:08–17:44 +08:00）
 
@@ -39,6 +39,7 @@
 | 前端 `npm test` | 400 项：395 通过、5 失败、0 跳过，exit 1；[最终完整日志](artifacts/2026-09-29/wallet-ui-acceptance/frontend-npm-test-final.txt) | 五项失败与实施前 345/340/5 的全局样式令牌测试**同名**，新增钱包/会话测试无新增失败 |
 | 真实浏览器与会话专项 | 新增菜单往返、退出同步遮蔽、旧 context 晚到；最终真实 Chrome 2/2，exit 0；[日志](artifacts/2026-09-29/wallet-ui-acceptance/browser-final.txt)。独立质量审查此前复跑钱包/会话/链上/人工钱包合计 140/140，exit 0；文案修补后对应链上 27/27、人工钱包 67/67 | 通过 |
 | Owner 领域 + OpenAPI 合同 | `pytest` 27 passed，exit 0；`export_openapi.py --check` exit 0；单一 Alembic head 0092 | 通过 |
+| 业务 API/Worker 全目录 | `py -3.12 -m pytest tests/business_api tests/business_worker -q`，3182 passed、79 skipped、1 条 Starlette/httpx 依赖弃用警告，2434.03 秒，exit 0；[日志](artifacts/2026-09-29/wallet-ui-acceptance/business-api-worker-pytest.txt)。最终提交 `ec34c51ddf92a084b0681be388b70505a89d4b91` 仅在该测试执行期间补了前端文案/时点及文档，没有改 Python 产品文件 | 通过；依赖警告不影响本次钱包域断言 |
 | JS 解析与差异 | 八个改动/新增 JS `node --check` 通过；`git diff --check` exit 0；源码样式规则测试通过 | 通过 |
 | `scripts/verify.ps1` | Repository/Deployment/Template 三段通过；Matrix RenderOnly 缺根 `.env`，exit 1；[原始日志](artifacts/2026-09-29/wallet-ui-acceptance/verify-full.txt) | 环境阻断，不能称全绿 |
 
@@ -49,3 +50,7 @@
 经已配置 jumper/严格主机密钥只读检查：API 运行镜像 `sha256:0bdf751c05015454781c24b66a0c5066ca08ce23436c232ff8aecd1ba5042993`、Worker `sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf`，二者 healthy、restart 0；API 容器 Alembic 为单一 `0092_admin_session_entry_mode`。gateway 的静态挂载源为 `/opt/starchat/frontend`。钱包新候选尚未上传或切换；`admin.html`、`admin-home.js`、`admin-wallet.css`、`tokens.css` 当前 SHA256 依次为 `cd82dbf9813e9fe3b7805bbf5deed72fcd42c712629cdba143a3c5ef8c87923f`、`fd4e76b5f905bda79c531acd905cf867b64666c4355f73815ac392ad0963b0d9`、`9c34ef1f98cb0193838d5461759edb7341c8ad30d668d3d184085c827d0a301d`、`39bebda4b6b18452f79da5fc758bedc20a8b8bb453ff02ad489dfc88046e1853`。两项 API 源码当前 SHA 为 `a3de9a28...`、`760547c6...`，完整值见后续精确发布清单。角色化发布 guard SHA `78b2beb6...` 与 runbook 历史值相同，探针路径仍待清单复核。
 
 只读现场逐文件目标与 v8 旧发布器适配差异见[发布预查](artifacts/2026-09-29/wallet-ui-acceptance/release-prep.md)。上述只是 17:44 的只读现场，正式切换前必须重新冻结所有实际 Compose、镜像、schema、静态 before SHA、双角色探针及隔离 PG/回退证据。未做真实资金申报、出款或生产账号登录。
+
+## 候选身份（2026-09-29 18:09 +08:00）
+
+本地功能与证据提交为 `ec34c51ddf92a084b0681be388b70505a89d4b91`，工作树当时干净。发布包须使用此提交的受控 API/静态目标生成 after SHA，且在切换前重新核对生产 before SHA；本提交不表示生产已发布。
