@@ -71,3 +71,20 @@ class WalletTotpVerifier:
                 or not 0 <= (checked_at.astimezone(timezone.utc) - verified_at.astimezone(timezone.utc)).total_seconds() <= 30):
             raise AppError(code='TOTP_REQUIRED', message='需要重新验证动态验证码', status_code=403)
         return True
+
+    def verify_proof(self, *, user_id, session_id, proof, now):
+        """Capture the exact verified credential while identity holds its lock."""
+        from app.modules.identity.totp import TotpVerificationProof
+        if not user_id or not session_id:
+            raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+        key = 'wallet-mfa:' + hashlib.sha256(user_id.encode()).hexdigest()
+        self.rate_limiter.hit(key, limit=5, window_seconds=300)
+        if not isinstance(proof, str) or re.fullmatch(r'[0-9]{6}', proof) is None:
+            raise AppError(code='TOTP_INVALID', message='动态验证码无效', status_code=401)
+        verified = self.totp.verify_proof(user_id, proof)
+        checked_at = self.clock()
+        if (not isinstance(verified, TotpVerificationProof) or verified.user_id != user_id
+                or verified.verified_at.tzinfo is None
+                or not 0 <= (checked_at - verified.verified_at).total_seconds() <= 30):
+            raise AppError(code='TOTP_REQUIRED', message='需要重新验证动态验证码', status_code=403)
+        return verified

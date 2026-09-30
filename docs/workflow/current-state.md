@@ -1080,3 +1080,7 @@ Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-histor
 ## 2026-09-22 Android v0.4.0/2157 与刷新恢复服务器（已发布）
 
 服务器refresh-040-20260922/0080已上线；Android正式ARM64 0.4.0+2157已发布，候选28bdfc48包含main2156全部指定修复、刷新恢复及启动会话保护。Flutter3803/analyze0、生产隔离恢复与协议门禁、APK固定签名重建通过；iOS设置和最低版本未改，真机待反馈。[任务](tasks/2026-09-22-android-040-release.md) · [报告](../verification/2026-09-22-android-040-release.md)。
+
+## 管理员提现一致性 · 2026-09-30 已发布
+
+用户审阅批准三份文档并授权直接实施。[任务记录](tasks/2026-09-30-admin-withdrawal-parity.md)与[验收](../verification/2026-09-30-admin-withdrawal-parity.md)为本功能恢复入口。API `40ad213c`，worker `3efd5924` 原容器保持；无自动退款/恢复资金。取消未知结果订单仍须当前链上预检与管理员独立声明。发布事实不推断历史事故已消失。

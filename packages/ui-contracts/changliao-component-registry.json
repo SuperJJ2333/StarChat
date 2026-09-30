@@ -25,9 +25,33 @@
         "apps/mobile_flutter/lib/features/moments/personal_moments_page.dart",
         "apps/mobile_flutter/lib/features/moments/moment_detail_page.dart"
       ],
-      "props": ["routeDepth", "nickname", "signature", "invitationHistory", "selfUserId", "interactionUnreadCount", "notificationId", "commentId"],
-      "states": ["tab-visible-only-on-primary", "grapheme-counting", "over-limit-dialog", "invitation-history-paged", "invitation-empty", "self-published-only", "interaction-unread", "interaction-paged", "interaction-unavailable"],
-      "tokens": ["WeChatColors.surface = --color-surface-primary", "WeChatColors.textSecondary = --color-text-secondary", "WeChatColors.brandPrimary = --color-brand-primary", "WeChatSpacing.md = --space-md"],
+      "props": [
+        "routeDepth",
+        "nickname",
+        "signature",
+        "invitationHistory",
+        "selfUserId",
+        "interactionUnreadCount",
+        "notificationId",
+        "commentId"
+      ],
+      "states": [
+        "tab-visible-only-on-primary",
+        "grapheme-counting",
+        "over-limit-dialog",
+        "invitation-history-paged",
+        "invitation-empty",
+        "self-published-only",
+        "interaction-unread",
+        "interaction-paged",
+        "interaction-unavailable"
+      ],
+      "tokens": [
+        "WeChatColors.surface = --color-surface-primary",
+        "WeChatColors.textSecondary = --color-text-secondary",
+        "WeChatColors.brandPrimary = --color-brand-primary",
+        "WeChatSpacing.md = --space-md"
+      ],
       "behavior": "All Me secondary routes cover the primary Tab and return to it on pop; profile input counts Unicode graphemes and rejects overflow. Invitation history shows real paged registrations. Me opens only published own Moments with a separate interaction badge and inbox; a notification target is revalidated before detail, while inaccessible history remains generic."
     },
     "2026-09-24-group-moments-wallet-debug": {
@@ -516,6 +540,48 @@
         "admin-table",
         "admin-audit-note"
       ]
+    },
+    "2026-09-30-admin-withdrawal-parity": {
+      "html": "frontend/src/admin-support-payout-panel.js",
+      "demo": "frontend/src/catalog/admin-withdrawal-parity.html",
+      "additionalHtml": [
+        "frontend/src/admin-settlement-preview.js",
+        "frontend/src/admin-recharge-panel.js"
+      ],
+      "components": [
+        "admin-card",
+        "admin-button",
+        "admin-audit-note",
+        "admin-table"
+      ],
+      "states": [
+        "queue",
+        "proof-required",
+        "loading",
+        "empty",
+        "failed",
+        "reference-stale",
+        "preview",
+        "cancel-unstarted",
+        "stop-review",
+        "void-unbroadcast",
+        "terminal"
+      ],
+      "props": [
+        "canOperate",
+        "funding_amount",
+        "final_rate",
+        "prepared_receive",
+        "version",
+        "claim_version",
+        "allowed_actions"
+      ],
+      "tokens": [
+        "admin-card",
+        "admin-button",
+        "admin-audit-note"
+      ],
+      "behavior": "Admin withdrawals share recharge visual tokens. Preview uses integer fixed point division and baseline FX adjustments; server amounts and privileges stay authoritative. Only unstarted cancellation or independently verified never-signed/never-broadcast reversal refunds. Broadcast unknown stops for review without refund."
     }
   },
   "tokenMappings": {

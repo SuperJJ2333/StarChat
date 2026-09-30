@@ -1,21 +1,25 @@
-import {adminSession} from "./admin-session.js?v=20260908-modern";
-import {createAdminShell} from "./admin-dashboard.js?v=20260923-direct";
-import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260910-readability";
+import {adminSession} from "./admin-session.js?v=20260929-wallet-workspace";
+import {createAdminShell} from "./admin-dashboard.js?v=20260929-wallet-workspace";
+import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260928-admin-entry";
 import { element, button } from "./components/base.js";
-import { browserAdminApi, can } from "./admin-api.js?v=20260930-wallet-alert-void";
+import { browserAdminApi, can } from "./admin-api.js?v=20260930-admin-payout";
 import { presentModuleRows } from "./admin-presenters.js";
 import { userPanel } from "./admin-user-panel.js";
+import {userDirectory} from './admin-user-directory.js';
 import { ledgerPanel } from './admin-ledger-panel.js';
 import { statusLabel } from "./admin-formatters.js";
-import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260930-payout-grant";
-import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
+import { chainPanel } from "./admin-chain-panel.js?v=20260929-wallet-workspace";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260929-wallet-workspace";
+import { walletAccessPanel } from './admin-wallet-access.js?v=20260929-wallet-workspace';
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';
 import {supportOrderAccessPanel} from './admin-support-order-access.js';
-import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260930-wallet-void-entry';
+import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260930-admin-payout';
+import {staffPasswordDialog} from './admin-staff-password-dialog.js';
+import {adminLoadingView} from './admin-loading.js';
 
 const modules = [
+  ["用户管理", "全部用户资料与点钻余额", "users", "*"],
   ["客服点钻派发", "批次与审计记录", "finance", "admin.adjustments.read"],
   ["封禁 IP 和用户", "封禁与解封操作", "security", "admin.bans.read"],
   ["客服管理", "角色和权限范围", "support-role", "admin.support_roles.read"],
@@ -30,7 +34,7 @@ const modules = [
 const headerFallbacks = {
   finance: ["批次号", "用户标识", "数量（点钻）", "状态", "原因", "创建时间"], security: ["注册时间", "畅聊号", "用户名", "邮箱验证", "账号状态"],
   "support-role": ["畅聊号", "角色", "授权时间"], analytics: ["注册时间", "畅聊号", "用户名", "邮箱验证", "账号状态"], online: ["畅聊号", "状态", "最近活跃"],
-  ads: ["广告 ID", "广告主", "文案", "创建时间", "状态"], notice: ["公告", "受众", "发布时间", "状态"], ledger: ["交易 ID", "时间", "用户标识", "类型", "金额", "原因"], wallet: ["提现单号", "用户标识", "金额", "支付地址", "状态"]
+  ads: ["广告 ID", "广告主", "文案", "创建时间", "状态"], notice: ["公告", "受众", "发布时间", "状态"], ledger: ["交易 ID", "时间", "用户标识", "类型", "金额", "原因"], wallet: ["托管提现申请编号", "用户标识", "金额", "支付地址", "状态"]
 };
 
 function text(value, fallback = "—") {
@@ -60,14 +64,20 @@ function tableFor(key, dataset = {}) {
   return table;
 }
 function modulePanel(key, title, context) {
+  if(key==='users')return userDirectory(browserAdminApi());
   if(key==='support-role')return supportPanel(browserAdminApi(),{mode:'manage'});
   if(key==='recharge')return supportOrderAccessPanel(browserAdminApi(),{actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,onReauthenticate:reauthenticateManualWallet,renderContent:api=>supportOrderContent(api,context)});
   if(key==='finance')return supportPanel(browserAdminApi(),{mode:'grant'});
   if(key==='ledger')return ledgerPanel(browserAdminApi());
   if(key==='wallet') return walletAccessPanel(browserAdminApi(),{
-    actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,
+    actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,onWalletReadDenied:context.onWalletReadDenied,
+    expectedCacheEpoch:context.walletCacheEpochAtRender,getCacheEpoch:()=>adminSession.cacheEpoch(),
     renderSetup:(api,onSecurityChanged)=>manualWalletPanel(api,{actor:context.actor,securityOnly:true,onSecurityChanged,onReauthenticate:reauthenticateManualWallet}),
-    renderContent:(api,walletAccess)=>walletContent(api,context,walletAccess)
+    renderContent:(api,accessController)=>{
+      const sameSession=context.walletReadViewEpoch===adminSession.cacheEpoch();
+      if(context.walletReadView&&!sameSession)context.onWalletReadDenied?.();
+      return walletContent(api,{...context,walletReadView:sameSession?context.walletReadView:undefined},accessController);
+    }
   });
   if (key === 'security' || key === 'analytics') return userPanel(browserAdminApi(), {module:key,context,initialData:context.modules[key],onReauthenticate:reauthenticateManualWallet});
   const panel = element("section", "admin-card admin-module-panel"); const head = element("div", "admin-panel-heading"); const titleBlock = element("div"); titleBlock.append(element("h2", null, title)); head.append(titleBlock, element("span", "admin-chip", "服务端权限已验证")); panel.append(head);
@@ -81,17 +91,27 @@ function modulePanel(key, title, context) {
 }
 function supportOrderContent(api,context){
   const container=element('section');let child;
-  const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),canManage:can(context,'*'),onOpenPayout:showPayout});container.replaceChildren(child);};
-  const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onBack:showRecharge,onOpenWallet:can(context,'*')?context.onOpenPayout:null});container.replaceChildren(child);};
+  const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),canManage:can(context,'*'),onOpenPayout:can(context,'*')?showPayout:null});container.replaceChildren(child);};
+  const showPayout=()=>{if(!can(context,'*'))return;child?.dispose?.();child=walletAccessPanel(browserAdminApi(),{actor:context.actor,title:'提现订单',onExit:showRecharge,onLogin:expireSession,onReauthenticate:reauthenticateManualWallet,renderContent:guarded=>supportPayoutPanel(guarded,{actor:context.actor,canOperate:true,onBack:showRecharge,onOpenWallet:context.onOpenPayout})});container.replaceChildren(child);};
   container.refresh=()=>child?.refresh?.();container.refreshOrders=()=>child?.refreshOrders?.();container.dispose=()=>child?.dispose?.();
   showRecharge();return container;
 }
-function walletContent(api,context,walletAccess){
-  const panel=element('section','admin-card admin-module-panel');
-  panel.append(element('h2',null,'USDT提现与支付'));
-  const table=element('div'),wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess}),chain=chainPanel(api,{actorId:context.actor?.id});
-  panel.append(chain,wallet,table);let disposed=false,revision=0;
-  const loadTable=async()=>{const version=++revision;try{const payload=await api.getModule('wallet');if(!disposed&&version===revision)table.replaceChildren(tableFor('wallet',{headers:headerFallbacks.wallet,rows:presentModuleRows('wallet',payload.items??[])}));return true;}catch(error){if(!disposed)table.replaceChildren(element('p','admin-load-error',error.message??'钱包记录加载失败，请重试。'));return false;}};
+function walletContent(api,context,accessController){
+  const panel=element('section','admin-wallet-workspace');
+  const hero=element('header','admin-wallet-hero');
+  const heroCopy=element('div');heroCopy.append(element('p','admin-wallet-eyebrow','TRON · OFFICIAL WALLET'),element('h2',null,'USDT 钱包操作台'),element('p',null,'链上事实、人工出款和事故处置在同一工作区核对。链上观察余额不等于账本可用余额。'));
+  hero.append(heroCopy,element('span','admin-wallet-hero-badge','链上核对工作区'));
+  const navigation=element('nav','admin-wallet-section-nav');navigation.setAttribute('aria-label','钱包页面分区');
+  for(const [id,label] of [['wallet-chain','链上流水'],['wallet-payout','人工出款'],['wallet-monitor','监控与事故'],['wallet-owner','所有者转出'],['wallet-security','账户安全']]){const link=element('a',null,label);link.href=`#${id}`;navigation.append(link);}
+  const wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess:accessController.usesGrant(),accessController});
+  const chain=chainPanel(api,{actorId:context.actor?.id,accessController,initialReadView:context.walletReadView,onSelectOwnerTransfer:value=>wallet.selectOwnerTransferCandidate?.(value)??false});chain.id='wallet-chain';
+  const history=element('section','admin-card admin-wallet-history');history.append(element('h3',null,'托管提现申请记录'),element('p','admin-audit-note','托管提现申请编号用于定位平台申请与审计记录；人工出款订单编号跟踪领取、链下签名和核对，链上交易哈希定位实际转账。三者关联后才能核定结算。'));
+  const table=element('div','admin-table-scroll');history.append(table);
+  panel.append(hero,navigation,chain,wallet,history);let disposed=false,revision=0;
+  const loadTable=async()=>{const version=++revision;try{const payload=await api.getModule('wallet');if(!disposed&&version===revision)table.replaceChildren(tableFor('wallet',{headers:headerFallbacks.wallet,rows:presentModuleRows('wallet',payload.items??[])}));return true;}catch(error){if(!disposed)table.replaceChildren(element('p','admin-load-error',error.message??'托管提现申请记录加载失败，请重试。'));return false;}};
+  panel.exportReadView=()=>disposed?null:chain.exportReadView?.()??null;
+  panel.suspendForAccessCheck=()=>{chain.suspendForAccessCheck?.();wallet.suspendForAccessCheck?.();};
+  panel.resumeReadDetail=()=>chain.resumeReadDetail?.();
   panel.dispose=()=>{disposed=true;++revision;wallet.dispose?.();chain.dispose?.();table.replaceChildren();};
   panel.refresh=async()=>{const results=await Promise.allSettled([wallet.refresh(),chain.refresh(),loadTable()]);return results.every(r=>r.status==='fulfilled'&&r.value!==false);};
   void loadTable();return panel;
@@ -106,7 +126,11 @@ function commandForm(key, context) {
 }
 function errorView(error, retry) { const root = element("main", "admin-content"); root.append(element("h1", null, error.code === "UNAUTHORIZED" ? "登录已失效" : error.code === "FORBIDDEN" ? "没有访问权限" : "暂时无法加载管理台"), element("p", null, error.message || "请检查网络连接后重试。")); const action = button("admin-primary", "重新加载"); action.textContent = "重新加载"; action.addEventListener("click", retry); root.append(action); return root; }
 function adminView(context) {
-  return createAdminShell({context,api:browserAdminApi(),modules,renderModule:modulePanel,onLogout:signOut});
+  return createAdminShell({context,api:browserAdminApi(),modules,renderModule:modulePanel,onLogout:signOut,
+    getWalletCacheEpoch:()=>adminSession.cacheEpoch(),
+    onChangePassword:()=>staffPasswordDialog({session:adminSession,onSuccess:()=>{
+      disposeCurrent();app.replaceChildren(showLogin());document.body.dataset.appReady='login-required';
+    }})});
 }
 // 下载链接使用版本无关的稳定别名：/downloads/latest-<abi>.apk
 // （服务器侧以符号链接指向当前版本的 APK），发版不再需要改动本页面。
@@ -116,6 +140,7 @@ const abiChoices = [
   ["x86_64", "x86_64（模拟器）"],
 ];
 function androidApkPath(abi) {
+  if (abi === "arm64") return "/download?platform=android&install=1";
   return "/downloads/latest-" + abi + ".apk";
 }
 function platformButtons() {
@@ -123,7 +148,6 @@ function platformButtons() {
   const row = element("div", "land-download-row");
   const android = element("a", "land-btn land-btn-primary", "下载 Android 版");
   android.href = androidApkPath("arm64");
-  android.setAttribute("download", "");
   android.setAttribute("aria-label", "下载 Android 安装包");
   const abiSelect = element("select", "land-abi-select");
   abiSelect.setAttribute("aria-label", "选择安装包 CPU 架构");
@@ -137,16 +161,17 @@ function platformButtons() {
   abiSelect.addEventListener("change", () => {
     const path = androidApkPath(abiSelect.value);
     android.href = path;
-    android.setAttribute("download", "");
+    if (abiSelect.value === "arm64") android.removeAttribute("download");
+    else android.setAttribute("download", "");
     abiHint.textContent = path;
   });
   row.append(android, abiSelect, abiHint);
   actions.append(row);
   const ios = element("a", "land-btn land-btn-primary");
   ios.href = "/download";
-  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.7（2173）");
+  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.20（2189）");
   const iosLabel = element("span", "land-platform-chip", "iOS 版下载");
-  iosLabel.append(element("span", "land-platform-status", "0.4.7（2173）· 企业正式版"));
+  iosLabel.append(element("span", "land-platform-status", "0.4.20（2189）· 企业正式版"));
   ios.append(iosLabel);
   actions.append(ios);
   return actions;
@@ -231,7 +256,7 @@ function homeView() {
   const downloadCopy = element("div");
   const downloadHead = element("div", "land-section-head");
   downloadHead.append(element("p", "land-kicker", "立即开始"), element("h2", null, "下载畅聊 ChatFlow"));
-  downloadCopy.append(downloadHead, element("p", "land-download-note", "Android 安装包由官方渠道分发；iOS 正式版 0.4.7（2173）请前往安装页，使用 Safari 安装或扫码下载。"));
+  downloadCopy.append(downloadHead, element("p", "land-download-note", "Android 安装包由官方渠道分发；iOS 正式版 0.4.20（2189）请前往安装页，使用 Safari 安装或扫码下载。"));
   downloadCard.append(downloadCopy, platformButtons());
   download.append(downloadCard);
   page.append(download);
@@ -254,8 +279,12 @@ function homeView() {
 }
 
 async function signOut(){
+  ++renderGeneration;
+  disposeCurrent();
+  const pending=adminLoadingView();pending.querySelector('p').textContent='正在退出管理台';pending.querySelector('small').textContent='本页资料已清除';
+  app.replaceChildren(pending);document.body.dataset.appReady='logout-pending';
   let message='';try{await adminSession.logout();}catch(error){message=error.status===401?'当前标签页的会话已经变化，请重新登录。':'退出请求未能确认，本页已清除登录状态。';}
-  finally{disposeCurrent();app.replaceChildren(showLogin());document.body.dataset.appReady='login-required';if(message)app.prepend(element('p','admin-load-error',message));}
+  finally{app.replaceChildren(showLogin());document.body.dataset.appReady='login-required';if(message)app.prepend(element('p','admin-load-error',message));}
 }
 function showLogin() { return loginView(browserAdminApi(), () => render()); }
 let stepUpPending=null;
@@ -264,7 +293,8 @@ function reauthenticateManualWallet() {
 }
 function disposeCurrent(){app.querySelector('.admin-modern')?.dispose?.();app.querySelector('.admin-manual-wallet-panel')?.dispose?.();}
 function expireSession(){
-  adminSession.clear();disposeCurrent();app.replaceChildren();
+  ++renderGeneration;
+  if(adminSession.peek())adminSession.clear();disposeCurrent();app.replaceChildren();
   sessionExpiredDialog(()=>void render());
 }
 globalThis.addEventListener('admin-session-expired',expireSession);
@@ -279,9 +309,9 @@ async function render() {
   if(mode==='home'){app.replaceChildren(homeView());document.body.dataset.appReady='true';return;}
   // Remove legacy persistent credentials after upgrading to Cookie-based sessions.
   sessionStorage.removeItem('chatflow_access_token');
-  app.replaceChildren(element('main','admin-content','正在加载管理台…'));
+  app.replaceChildren(adminLoadingView());
   try{await adminSession.getToken();const context=await browserAdminApi().getContext();if(generation!==renderGeneration)return;app.replaceChildren(adminView(context));document.body.dataset.appReady='true';}
   catch(error){if(generation!==renderGeneration)return;if(error.status===401){adminSession.clear();app.replaceChildren(showLogin());document.body.dataset.appReady='login-required';}else{app.replaceChildren(errorView(error,render));document.body.dataset.appReady='error';}}
 }
-async function checkSession(){if(mode==='home'||!adminSession.peek()||document.hidden)return;try{await adminSession.check();}catch(error){if(error.status===401){disposeCurrent();app.replaceChildren();sessionExpiredDialog(()=>void render());}}}
+async function checkSession(){if(mode==='home'||!adminSession.peek()||document.hidden)return;try{await adminSession.check();}catch(error){if(error.status===401)expireSession();}}
 setInterval(checkSession,30000);document.addEventListener('visibilitychange',checkSession);void render();

@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.modules.ledger.reserve import lock_budget, require_coverage
 from app.modules.ledger.service import LedgerService
-from app.modules.wallet.models import WalletConversion
+from app.modules.wallet.models import WalletConversion, WalletLedgerTransaction
 from app.modules.wallet.safety import audit_write, precise_amount
 
 
@@ -50,8 +50,7 @@ def convert_in_session(session, factory, *, user_id, direction, amount,
     return row
 
 
-def reverse_payout_conversion(session, factory, *, user_id, order_id, amount,
-                              reason_code='MANUAL_PAYOUT_CANCELLED'):
+def reverse_payout_conversion(session, factory, *, user_id, actor_id, reason_code, order_id, amount):
     """Reverse exactly the source conversion after its hold was released.
 
     ADR-0077：按原转换的镜像冲正——退回原 source 点钻、收回原 target
@@ -60,9 +59,10 @@ def reverse_payout_conversion(session, factory, *, user_id, order_id, amount,
     wallet-side debit to it; the CAIBI entry also uses reversal_of_id.
     """
     from app.modules.wallet.service import WalletLedger
-    from app.modules.wallet.models import WalletLedgerTransaction
-    if reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_VOIDED'}:
-        raise ValueError('invalid payout conversion reversal reason')
+    if (not actor_id or reason_code not in {
+            'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED', 'MANUAL_PAYOUT_VOIDED', 'MANUAL_PAYOUT_ADMIN_CANCELLED'}
+            or (reason_code == 'MANUAL_PAYOUT_CANCELLED') != (actor_id == user_id)):
+        raise ValueError('invalid payout reversal actor or reason')
     lock_budget(session)
     original = session.scalar(select(WalletConversion).where(
         WalletConversion.user_id == user_id, WalletConversion.idempotency_key == 'payout:'+order_id))
@@ -80,19 +80,25 @@ def reverse_payout_conversion(session, factory, *, user_id, order_id, amount,
         release = session.scalar(select(WalletLedgerTransaction).where(
             WalletLedgerTransaction.scope == 'wallet.conversion_reversal',
             WalletLedgerTransaction.idempotency_key == reversal_key))
-        if release is None or release.reason_code != reason_code:
-            raise ValueError('payout reversal reason conflict')
+        if release is None:
+            raise ValueError('payout reversal release missing')
+        WalletLedger(factory).require_conversion_release(session=session, user_id=user_id,
+            actor_id=actor_id, reason_code=reason_code, conversion_id=original.id,
+            release_id=release.id, amount=source_amount)
+        LedgerService(factory).reverse_conversion_debit(session=session, user_id=user_id,
+            actor_id=actor_id, reason_code=reason_code, conversion_id=original.id,
+            wallet_release_id=release.id, require_existing=True)
         return existing
     release = WalletLedger(factory).post(entries={user_id: -target_amount, 'PLATFORM_CONVERSION': target_amount},
-        actor_id=user_id, reason_code=reason_code, idempotency_key=reversal_key,
+        actor_id=actor_id, reason_code=reason_code, idempotency_key=reversal_key,
         scope='wallet.conversion_reversal', session=session)
     LedgerService(factory).reverse_conversion_debit(session=session, user_id=user_id,
-        conversion_id=original.id, wallet_release_id=release.id, reason_code=reason_code)
+        actor_id=actor_id, reason_code=reason_code, conversion_id=original.id, wallet_release_id=release.id)
     reversal = WalletConversion(id=str(uuid4()), user_id=user_id, idempotency_key=reversal_key,
         direction='USDT_TO_CAIBI', requested_amount=target_amount, source_amount=target_amount,
         target_amount=source_amount, status='COMPLETED', created_at=datetime.now(timezone.utc))
     session.add(reversal)
-    audit_write(session, user_id, original.id, 'wallet.conversion_reversed', reason_code)
+    audit_write(session, actor_id, original.id, 'wallet.conversion_reversed', reason_code)
     session.flush()
     return reversal
 

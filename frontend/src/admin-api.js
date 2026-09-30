@@ -1,4 +1,4 @@
-import {adminSession} from './admin-session.js?v=20260908-modern';
+import {adminSession} from './admin-session.js?v=20260929-wallet-workspace';
 const DEFAULT_BASE_URL = "";
 
 export class AdminApiError extends Error {
@@ -18,6 +18,7 @@ export function normalizeAdminContext(payload = {}) {
     permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
     overview: payload.overview ?? {},
     modules: payload.modules && typeof payload.modules === "object" ? payload.modules : {},
+    capabilities: payload.capabilities && typeof payload.capabilities === "object" ? payload.capabilities : {},
     updated_at: payload.updated_at ?? null
   };
 }
@@ -72,6 +73,7 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     // ADR-0077 后台：人工充值案件 / 客服目录 / 汇率与储备展示。
     getRechargePending: async (filters={})=>request(`/api/v1/recharge/admin/requests/pending${Object.keys(filters).length?`?${new URLSearchParams(filters)}`:''}`,{cache:'no-store'}),
     claimRecharge: async (id,options,body={})=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/claim`,body,options),
+    takeoverRecharge: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/takeover`,body,options),
     heartbeatRecharge: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/heartbeat`,body,options),
     verifyRechargePayment: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/verify-payment`,body,options),
     prepareRechargeSettlement: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/prepare-settlement`,body,options),
@@ -82,9 +84,16 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     getSupportPayouts: async (filters={})=>request(`/api/v1/admin/support-orders/payouts?${new URLSearchParams(filters)}`,{cache:'no-store'}),
     getSupportPayout: async id=>request(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}`,{cache:'no-store'}),
     supportPayoutCommand: async (id,action,body,options)=>{
-      if(!['claim','review-claim','heartbeat','begin-payment','adjust-rate','txid','correct-candidate','reconcile'].includes(action))throw new TypeError('Invalid support payout action');
+      if(!['claim','review-claim','heartbeat','begin-payment','adjust-rate','txid','correct-candidate','reconcile','cancel-unstarted','stop-for-review'].includes(action))throw new TypeError('Invalid support payout action');
       return command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/${action}`,body,options);
     },
+    rejectSupportPayout: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/reject`,body,options),
+    readSupportPayoutAddress: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/payment-address/read`,body,options),
+    discoverSupportPayout: async (id,claimToken)=>request(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/discover`,{
+      cache:'no-store',headers:claimToken?{'X-Support-Claim-Token':claimToken}:{}
+    }),
+    selectSupportPayoutCandidate: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/select-discovered`,body,options),
+    takeoverSupportPayout: async (id,body,options)=>command(`/api/v1/admin/support-orders/payouts/${encodeURIComponent(id)}/takeover`,body,options),
     getSupportOrderAccess: async ()=>request('/api/v1/admin/support-orders/security',{cache:'no-store'}),
     verifySupportOrderAccess: async body=>request('/api/v1/admin/support-orders/security/verify',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(body)}),
     setSupportOrderPassword: async (body,options)=>command('/api/v1/admin/support-orders/security/operation-password',body,{...options,method:'PUT'}),
@@ -153,8 +162,6 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     claimManualPayout: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/claim`, body, options),
     submitManualPayoutTxid: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/txid`, body, options),
     correctManualPayoutCandidate: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/correct-candidate`, body, options),
-    voidUnbroadcastPayout: async (id, body, options) => command(`/api/v1/admin/wallet/manual/operations/payouts/${encodeURIComponent(id)}/void-unbroadcast`, body, options),
-    getVoidUnbroadcastPreview: async id => request(`/api/v1/admin/wallet/manual/operations/payouts/${encodeURIComponent(id)}/void-unbroadcast/preview`, {cache:'no-store'}),
     getWalletOperationSecurity: async () => request('/api/v1/admin/wallet/security', {cache:'no-store'}),
     setWalletOperationPassword: async (body,options) => command('/api/v1/admin/wallet/security/operation-password',body,options),
     getWalletMfaStatus: async () => request("/api/v1/security/mfa", {cache: "no-store"}),
@@ -172,6 +179,11 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     },
     getChainTransaction: async (txid, logIndex) => request(`/api/v1/admin/wallet/chain/transactions/${encodeURIComponent(txid)}/${encodeURIComponent(logIndex)}`),
     getContext: async () => normalizeAdminContext(await request("/api/v1/admin/context")),
+    searchUsers: async ({q='',limit=50,cursor=null}={}) => request('/api/v1/admin/users/search', {
+      method:'POST',credentials:'same-origin',cache:'no-store',
+      headers:{'Content-Type':'application/json','X-Admin-CSRF':'1'},
+      body:JSON.stringify({q,limit,cursor})
+    }),
     getSupportAgents: async ({query,limit=25,offset=0,dispatch_eligible}={}) => { const q=new URLSearchParams({limit:String(limit),offset:String(offset)}); if(query)q.set('query',query); if(dispatch_eligible!==undefined)q.set('dispatch_eligible',String(dispatch_eligible)); return request(`/api/v1/admin/support-agents?${q}`,{cache:'no-store'}); },
     login: async ({ username, password, device_key = "admin-browser", device_name = "ChatFlow Admin" }) => request("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, device_key, device_name }) }),
     getModule: async (module, options = {}) => {

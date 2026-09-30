@@ -2,7 +2,7 @@ from base64 import b32encode
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hmac
-from hashlib import sha1
+from hashlib import sha1, sha256
 import secrets
 from typing import Protocol
 from uuid import uuid4
@@ -39,6 +39,15 @@ class FernetSecretProtector:
 class TotpEnrollment:
     credential_id: str
     secret: str
+
+
+@dataclass(frozen=True)
+class TotpVerificationProof:
+    user_id: str
+    credential_id: str
+    secret_digest: str
+    accepted_step: int
+    verified_at: datetime
 
 
 class TotpService:
@@ -92,6 +101,9 @@ class TotpService:
             session.delete(credential)
 
     def verify(self, user_id: str, code: str) -> datetime:
+        return self.verify_proof(user_id, code).verified_at
+
+    def verify_proof(self, user_id: str, code: str) -> TotpVerificationProof:
         now = self._now_factory()
         step = int(now.timestamp()) // 30
         with self._session_factory.begin() as session:
@@ -104,7 +116,9 @@ class TotpService:
             if not self._matches(secret, code, now):
                 self._invalid()
             credential.last_accepted_step = step
-        return now
+            proof = TotpVerificationProof(user_id, credential.id,
+                sha256(credential.encrypted_secret.encode()).hexdigest(), step, now)
+        return proof
 
     def require_recent(
         self, user_id: str, *, verified_at: datetime | None, max_age_seconds: int

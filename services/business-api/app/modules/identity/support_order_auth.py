@@ -1,4 +1,5 @@
 """Narrow financial identity policy for support orders, never owner repairs."""
+import hashlib
 from sqlalchemy import select
 from app.core.errors import AppError
 from app.modules.identity.enums import RoleCode
@@ -61,3 +62,110 @@ class SupportOrderSessionAuthorizer:
                 expires_at=None, server_time=self.clock().isoformat())
             final()
             return result
+
+
+def fresh_owner_proof_authorization(settings, factory, clock, claims, body, *,
+                                    mfa_verifier=None, rate_limiter=None):
+    """Verify the configured owner for this request, then recheck before commit.
+
+    An existing wallet read grant is deliberately irrelevant to a takeover.
+    The returned callback runs inside the financial command's locked transaction.
+    """
+    owner_id = settings.wallet_manual_owner_admin_id
+    if not owner_id or claims.get('sub') != owner_id or body is None:
+        raise AppError(code='PERMISSION_DENIED', message='仅官方钱包所有者管理员可接管', status_code=403)
+
+    def require_owner(session):
+        if (settings.wallet_manual_owner_admin_id != owner_id
+                or session.scalar(select(UserRole.id).where(
+                    UserRole.user_id == owner_id,
+                    UserRole.role_code == RoleCode.SUPER_ADMIN).with_for_update()) is None):
+            raise AppError(code='PERMISSION_DENIED', message='仅官方钱包所有者管理员可接管', status_code=403)
+
+    def owner_checked(authorize):
+        def checked(session):
+            if settings.wallet_admin_auth_mode != mode:
+                raise AppError(code='ADMIN_WALLET_AUTH_MODE_MISMATCH',
+                    message='钱包验证方式已变化，请重新验证', status_code=403)
+            final = authorize(session)
+            require_owner(session)
+            def recheck():
+                if settings.wallet_admin_auth_mode != mode:
+                    raise AppError(code='ADMIN_WALLET_AUTH_MODE_MISMATCH',
+                        message='钱包验证方式已变化，请重新验证', status_code=403)
+                final()
+                require_owner(session)
+            return recheck
+        return checked
+
+    mode = settings.wallet_admin_auth_mode
+    if mode == 'operation_password':
+        if body.mfa_proof is not None or body.operation_password is None:
+            raise AppError(code='ADMIN_WALLET_AUTH_MODE_MISMATCH',
+                message='请选择当前钱包验证方式', status_code=403)
+        from app.modules.identity.operation_password import AdminWalletOperationPasswordService
+        service = AdminWalletOperationPasswordService(factory,
+            owner_id=lambda: settings.wallet_manual_owner_admin_id,
+            auth_mode=lambda: settings.wallet_admin_auth_mode,
+            clock=clock, scope='support-orders')
+        proof = service.verify(claims=claims,
+            operation_password=body.operation_password.get_secret_value(),
+            grant_verification=True)
+        return owner_checked(service.authorization(claims=claims, proof=proof,
+            grant_verification=True))
+
+    if mode == 'totp':
+        if body.operation_password is not None or body.mfa_proof is None:
+            raise AppError(code='ADMIN_WALLET_AUTH_MODE_MISMATCH',
+                message='请选择当前钱包验证方式', status_code=403)
+        sessions = SupportOrderSessionAuthorizer(settings, factory, clock)
+        with factory.begin() as session:
+            final = sessions.authorization(claims=claims)(session)
+            require_owner(session)
+            final()
+        verifier = mfa_verifier
+        if verifier is None:
+            from app.modules.identity.totp import FernetSecretProtector, TotpService
+            from app.modules.wallet.binding_adapters import WalletTotpVerifier
+            key = getattr(settings, 'wallet_totp_encryption_key', None)
+            if key is None or rate_limiter is None:
+                raise AppError(code='WALLET_MFA_NOT_CONFIGURED',
+                    message='动态验证尚未配置', status_code=503)
+            verifier = WalletTotpVerifier(TotpService(factory, protector=FernetSecretProtector(
+                key.get_secret_value().encode('ascii'))), rate_limiter, clock=clock)
+        from app.modules.identity.totp import TotpVerificationProof
+        verify_proof = getattr(verifier, 'verify_proof', None)
+        if verify_proof is None:
+            raise AppError(code='WALLET_MFA_NOT_CONFIGURED',
+                message='动态验证服务不支持凭据复核', status_code=503)
+        verified = verify_proof(user_id=owner_id, session_id=claims['family_id'],
+            proof=body.mfa_proof.get_secret_value(), now=clock())
+        if not isinstance(verified, TotpVerificationProof) or verified.user_id != owner_id:
+            raise AppError(code='TOTP_REQUIRED', message='需要重新验证动态验证码', status_code=403)
+        verified_at = verified.verified_at
+        from app.modules.identity.wallet_access import require_wallet_session
+        from app.modules.identity.models import TotpCredential
+        def authorize(session):
+            current_session = sessions.authorization(claims=claims)(session)
+            current_proof = require_wallet_session(session, claims=claims, clock=clock,
+                verified_at=verified_at, require_recent=False)
+            def credential_current():
+                credential = session.execute(select(TotpCredential.id, TotpCredential.enabled,
+                    TotpCredential.encrypted_secret, TotpCredential.last_accepted_step).where(
+                    TotpCredential.user_id == owner_id).with_for_update()).first()
+                if (credential is None or credential.id != verified.credential_id
+                        or not credential.enabled or credential.last_accepted_step is None
+                        or credential.last_accepted_step < verified.accepted_step
+                        or hashlib.sha256(credential.encrypted_secret.encode()).hexdigest()
+                            != verified.secret_digest):
+                    raise AppError(code='TOTP_REQUIRED', message='验证器已变化，请重新验证', status_code=403)
+            credential_current()
+            def final():
+                current_session()
+                current_proof()
+                credential_current()
+            return final
+        return owner_checked(authorize)
+
+    raise AppError(code='ADMIN_WALLET_AUTH_MODE_MISMATCH',
+        message='钱包验证方式不可用', status_code=403)

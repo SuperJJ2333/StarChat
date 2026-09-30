@@ -13,6 +13,7 @@ class Element {
   getAttribute(name){return this.attributes?.[name];}
   addEventListener(n,h){this.handlers[n]=h;}
   find(tag){return [this,...this.children.flatMap(x=>x.find?.(tag)??[])].filter(x=>x.tag===tag);}
+  querySelectorAll(tag){return this.find(tag);}
   createTHead(){const t=new Element('thead');this.children.push(t);return t;}
   createTBody(){const t=new Element('tbody');this.children.push(t);return t;}
   insertRow(){const r=new Element('tr');this.children.push(r);return r;}
@@ -318,11 +319,11 @@ test('empty lookup does not invalidate an existing valid in-flight lookup',async
 
 test('other actor is read-only; unverified owned order cannot settle; forbidden heartbeat removes mutation',async()=>{
   install();let item={...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString(),claimed_by:'other',claim_expires_at:new Date(Date.now()+300000).toISOString()};
-  const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff'};return {...item,claim_token:'lease'};},heartbeatRecharge:async()=>{throw {status:403};}};
+  const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,can_claim:false,can_process:true,claimed_by:'staff'};return {...item,claim_token:'lease'};},heartbeatRecharge:async()=>{throw {status:403};}};
   const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
   assert.equal(panel.find('button').some(b=>b.textContent==='接手处理'),false);
   assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
-  item={...item,claimed_by:null};await panel.refreshOrders();
+  item={...item,claimed_by:null,can_claim:true};await panel.refreshOrders();
   panel.find('button').find(b=>b.textContent==='处理请求').handlers.click();await settle();await settle();
   assert.equal(panel.find('button').some(b=>b.textContent==='核验实际到账'),false);
   assert.equal(panel.find('button').some(b=>b.textContent==='绑定调整'),false);
@@ -332,7 +333,7 @@ test('other actor is read-only; unverified owned order cannot settle; forbidden 
 });
 
 test('late pending response cannot restore another actor actions and disposed panel cannot claim',async()=>{
-  install();const managedPending={items:[{...PENDING.items[0],expires_at:new Date(Date.now()+7200000).toISOString()}]};const pending=[];let claims=0;const api={...makeApi([]),getRechargePending:()=>new Promise(resolve=>pending.push(resolve)),claimRecharge:async()=>{claims++;return {};}};
+  install();const managedPending={items:[{...PENDING.items[0],can_claim:true,expires_at:new Date(Date.now()+7200000).toISOString()}]};const pending=[];let claims=0;const api={...makeApi([]),getRechargePending:()=>new Promise(resolve=>pending.push(resolve)),claimRecharge:async()=>{claims++;return {};}};
   const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();
   const newer=panel.refreshOrders();pending[1]({items:[{...PENDING.items[0],claimed_by:'other',claim_expires_at:new Date(Date.now()+300000).toISOString()}]});await newer;
   pending[0](managedPending);await settle();assert.equal(panel.find('button').some(b=>b.textContent==='接手处理'),false);
@@ -342,7 +343,7 @@ test('late pending response cannot restore another actor actions and disposed pa
 
 test('overdue managed order needs explicit finance review claim and reason',async()=>{
   install();let sent;
-  const item={...PENDING.items[0],processing_stage:'NEEDS_REVIEW',expires_at:'2020-01-01T00:00:00Z'};
+  const item={...PENDING.items[0],can_claim:true,processing_stage:'NEEDS_REVIEW',expires_at:'2020-01-01T00:00:00Z'};
   const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),claimRecharge:async(...args)=>{sent=args;return {};}};
   const normal=rechargePanel(api,{actor:{id:'staff'}});await settle();assert.equal(normal.find('button').some(b=>b.textContent.includes('认领')),false);normal.dispose();
   const panel=rechargePanel(api,{actor:{id:'staff'},canReview:true});await settle();
@@ -384,8 +385,8 @@ test('public recharge queue pages by opaque server cursor',async()=>{
 async function settlementPanel(overrides = {}, apiOverrides = {}) {
   install(); const calls=[];
   let item={...PENDING.items[0],amount_usdt:'10.000000',actual_received_usdt:'10.000000',fx_rate:'7.123456',fx_rate_stale:false,payment_verified:true,
-    expires_at:new Date(Date.now()+7200000).toISOString(),...overrides};
-  const api={...makeApi(calls),getFxRate:async()=>({rate:item.fx_rate,stale:item.fx_rate_stale,fetched_at:'2026-09-23T10:00:00Z'}),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...item,claim_token:'lease'};},
+    expires_at:new Date(Date.now()+7200000).toISOString(),can_claim:true,can_process:false,can_takeover:false,claim_version:1,...overrides};
+  const api={...makeApi(calls),getFxRate:async()=>({rate:item.fx_rate,stale:item.fx_rate_stale,fetched_at:'2026-09-23T10:00:00Z'}),getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,can_claim:false,can_process:true,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...item,claim_token:'lease'};},
     prepareRechargeSettlement:async(...args)=>{calls.push(['prepare',...args]);return {status:'PENDING_APPROVAL',binding_adjustment_id:'prepared-1'};},
     executeRechargeSettlement:async(...args)=>{calls.push(['execute',...args]);return {status:'CREDITED',binding_state:'REGISTERED'};}};
   return {panel:await claimedPanel({...api,...apiOverrides}),calls};
@@ -453,9 +454,9 @@ test('missing actual receipt and invalid final rates cannot prepare a settlement
 test('settlement uses this load current FX snapshot, retaining historical order reference',async()=>{
   install();let fetches=0;
   let item={...PENDING.items[0],actual_received_usdt:'10.000000',payment_verified:true,
-    fx_rate:'6.000000',fx_rate_stale:false,expires_at:new Date(Date.now()+7200000).toISOString()};
+    fx_rate:'6.000000',fx_rate_stale:false,can_claim:true,expires_at:new Date(Date.now()+7200000).toISOString()};
   const api={...makeApi([]),getFxRate:async()=>{fetches++;return {rate:'7.123456',stale:false,fetched_at:'2026-09-23T10:00:00Z'};},
-    getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...item,claim_token:'lease'};}};
+    getRechargePending:async()=>({items:[item]}),claimRecharge:async()=>{item={...item,can_claim:false,can_process:true,claimed_by:'staff',claim_expires_at:new Date(Date.now()+300000).toISOString()};return {...item,claim_token:'lease'};}};
   const panel=await claimedPanel(api);
   assert.equal(panel.find('input').find(i=>i.placeholder==='最终结算率（点钻/USDT）').value,'7.123456');
   assert.ok(panel.find('td').some(td=>td.textContent.includes('6.000000')));
@@ -476,7 +477,7 @@ test('ordinary staff workbench separates admin tools and gives clear selected fi
  panel.dispose();
 });
 test('user cell uses display identity and prominent processing action',async()=>{
- install();const api=makeApi([]);api.getRechargePending=async()=>({items:[{id:'req',user_id:'private-id',user_display_name:'小林',user_chat_id:'lin2026',amount_usdt:'10.000000',expires_at:new Date(Date.now()+3600000).toISOString()}]});
+ install();const api=makeApi([]);api.getRechargePending=async()=>({items:[{id:'req',user_id:'private-id',user_display_name:'小林',user_chat_id:'lin2026',amount_usdt:'10.000000',can_claim:true,expires_at:new Date(Date.now()+3600000).toISOString()}]});
  const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();await settle();
  assert.ok(panel.find('strong').some(n=>n.textContent==='小林'));
  assert.ok(panel.find('small').some(n=>n.textContent==='畅聊号：lin2026'));
@@ -545,4 +546,74 @@ test('review dialog stays in review mode and keeps release draft after order ref
  const review=panel.find('dialog').find(d=>d.find('h2').some(h=>h.textContent==='处理待核对充值'));
  assert.equal(review.open,true);assert.equal(review.find('input')[0].value,'已核对调整拒绝');
  assert.equal(panel.find('dialog').some(d=>d.open&&d.find('h2').some(h=>h.textContent==='处理充值请求')),false);panel.dispose();
+});
+
+test('server capability projection controls occupied, expired and unsafe recharge actions',async()=>{
+  install();let claims=0;
+  const items=[
+    {id:'occupied',claimed_by:'other',can_claim:false,can_process:false,can_takeover:false},
+    {id:'expired',claimed_by:'other',claim_expires_at:'2020-01-01T00:00:00Z',can_claim:true,can_process:false,can_takeover:false},
+    {id:'unsafe',claimed_by:'other',can_claim:false,can_process:false,can_takeover:false,payment_verified:true,binding_adjustment_id:'bound'},
+    {id:'unknown',claimed_by:null}
+  ].map(item=>({...PENDING.items[0],expires_at:new Date(Date.now()+3600000).toISOString(),...item}));
+  const panel=rechargePanel({...makeApi([]),getRechargePending:async()=>({items}),claimRecharge:async()=>{claims++;return {};}},{actor:{id:'staff'}});
+  await settle();const rows=panel.find('tbody')[0].find('tr');
+  const byId=id=>rows.find(row=>row.find('td').some(td=>td.textContent===id));
+  for(const id of ['occupied','unsafe']){const control=byId(id).find('button').find(node=>node.textContent==='正被其他客服处理中');assert.ok(control);assert.equal(control.disabled,true);control.handlers.click();}
+  assert.equal(claims,0);
+  assert.equal(byId('expired').find('button').find(node=>node.textContent==='处理请求').disabled,false);
+  assert.equal(byId('unknown').find('button').find(node=>node.textContent==='暂无处理权限').disabled,true);
+  panel.dispose();
+});
+
+test('owner opens read-only recharge facts then separately confirms reason and fresh proof takeover',async()=>{
+  install();let sent;let item={...PENDING.items[0],expires_at:new Date(Date.now()+3600000).toISOString(),claimed_by:'other',claim_version:4,
+    can_claim:false,can_process:false,can_takeover:true,takeover_review_required:true,payment_verified:true,actual_received_usdt:'50.000000',binding_adjustment_id:'retained-binding',binding_final_rate:'7.000000',binding_final_caibi_amount:'350.00'};
+  const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),getWalletOperationSecurity:async()=>({auth_mode:'operation_password'}),
+    takeoverRecharge:async(id,body,options)=>{sent={id,body,options};item={...item,can_takeover:false,can_process:true,claimed_by:'owner',claim_version:5};const {can_claim,can_takeover,can_process,takeover_review_required,...response}=item;return {...response,claim_token:'new-token'};}};
+  const panel=rechargePanel(api,{actor:{id:'owner'}});await settle();
+  const view=panel.find('button').find(node=>node.textContent==='查看订单');assert.ok(view);view.handlers.click();
+  assert.equal(sent,undefined);assert.equal(panel.find('button').some(node=>node.textContent==='继续下发点钻'),false);
+  panel.find('button').find(node=>node.textContent==='申请接管').handlers.click();await settle();
+  const proof=panel.find('input').find(node=>node.placeholder==='操作密码');assert.ok(proof);
+  assert.equal(panel.find('button').find(node=>node.textContent==='确认接管').disabled,true);
+  proof.value='fresh-proof';proof.handlers.input();
+  const reason=panel.find('select').find(node=>node.getAttribute('aria-label')==='接管原因');reason.value='RECHARGE_SHIFT_HANDOFF';
+  panel.find('button').find(node=>node.textContent==='确认接管').handlers.click();await settle();await settle();
+  assert.deepEqual(sent.body,{expected_claim_version:4,reason_code:'RECHARGE_SHIFT_HANDOFF',proof:{operation_password:'fresh-proof'}});
+  assert.ok(sent.options.idempotencyKey);assert.equal(proof.value,'');
+  assert.ok(panel.find('button').some(node=>node.textContent==='继续下发点钻'));
+  assert.equal(panel.find('input').find(node=>node.placeholder==='最终结算率（点钻/USDT）').value,'7.000000');
+  panel.dispose();
+});
+
+test('recharge takeover API uses encoded fixed path and nested proof with idempotency',async()=>{
+  const calls=[];const api=createAdminApi({fetchImpl:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({})};}});
+  const body={expected_claim_version:2,reason_code:'RECHARGE_INCIDENT_REVIEW',proof:{mfa_proof:'123456'}};
+  await api.takeoverRecharge('order/1',body,{idempotencyKey:'takeover'});
+  assert.equal(calls[0].url,'/api/v1/recharge/admin/requests/order%2F1/takeover');
+  assert.equal(calls[0].options.headers['Idempotency-Key'],'takeover');assert.deepEqual(JSON.parse(calls[0].options.body),body);
+});
+
+test('refresh rejection clears an open takeover proof and invalidates its detached submit control',async()=>{
+  install();let reads=0,writes=0;
+  const item={...PENDING.items[0],expires_at:new Date(Date.now()+3600000).toISOString(),claimed_by:'other',claim_version:2,can_takeover:true,can_claim:false,can_process:false};
+  const panel=rechargePanel({...makeApi([]),getRechargePending:async()=>{if(++reads>1)throw {status:403};return {items:[item]};},getWalletOperationSecurity:async()=>({auth_mode:'totp'}),takeoverRecharge:async()=>{writes++;return {};}},{actor:{id:'owner'}});
+  await settle();panel.find('button').find(node=>node.textContent==='查看订单').handlers.click();
+  panel.find('button').find(node=>node.textContent==='申请接管').handlers.click();await settle();
+  const proof=panel.find('input').find(node=>node.placeholder==='当前六位验证码');proof.value='123456';proof.handlers.input();
+  const submit=panel.find('button').find(node=>node.textContent==='确认接管');
+  await panel.refreshOrders();assert.equal(proof.value,'');submit.handlers.click();await settle();assert.equal(writes,0);
+  assert.equal(panel.find('button').some(node=>['确认接管','接手处理','继续下发点钻'].includes(node.textContent)),false);panel.dispose();
+});
+
+test('session revocation during preparation blocks the dependent execute HTTP command',async()=>{
+  const callbacks=new Map();const oldAdd=globalThis.addEventListener,oldRemove=globalThis.removeEventListener;
+  globalThis.addEventListener=(name,fn)=>callbacks.set(name,fn);globalThis.removeEventListener=(name)=>callbacks.delete(name);
+  let prepared;let executions=0;
+  try{const {panel}=await settlementPanel({}, {prepareRechargeSettlement:()=>new Promise(resolve=>{prepared=resolve;}),executeRechargeSettlement:async()=>{executions++;return {status:'CREDITED'};}});
+    panel.find('button').find(node=>node.textContent==='确认下发点钻').handlers.click();await settle();
+    callbacks.get('admin-session-expired')();prepared({status:'BOUND',binding_adjustment_id:'retained'});await settle();await settle();
+    assert.equal(executions,0);panel.dispose();
+  }finally{globalThis.addEventListener=oldAdd;globalThis.removeEventListener=oldRemove;}
 });

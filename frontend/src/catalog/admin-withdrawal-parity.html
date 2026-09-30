@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>充值与提现样式验收</title>
+<link rel="stylesheet" href="../styles/reset.css"><link rel="stylesheet" href="../styles/tokens.css">
+<link rel="stylesheet" href="../styles/gallery.css"><link rel="stylesheet" href="../styles/admin-modern.css">
+<link rel="stylesheet" href="../styles/admin-wallet.css">
+<style>body{padding:24px;background:var(--wallet-canvas,#f5f6f8)}main{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;align-items:start}h1{font-size:24px;margin-bottom:8px}.demo-note{margin-bottom:24px;color:#64748b}@media(max-width:800px){main{grid-template-columns:1fr}body{padding:12px}}</style></head>
+<body class="admin-page admin-modern"><h1>充值 / 提现一致性</h1><p class="demo-note">仅示例数据，用于样式与交互验收，不连接生产。点击“处理请求”查看金额预览及确认状态。</p><main id="comparison"></main>
+<script type="module">
+import {rechargePanel} from '../admin-recharge-panel.js';
+import {previewWithdrawal} from '../admin-settlement-preview.js';
+import {supportPayoutPanel} from '../admin-support-payout-panel.js';
+const owner={id:'demo-owner'},now=new Date().toISOString();
+let payout={id:'DEMO-WITHDRAWAL',user_id:'示例用户',funding_asset:'CAIBI',funding_amount:'200.00',amount:'28.571429',final_receive:'28.571429',conversion_rate:'7.000000',prepared_version:0,version:1,claim_version:1,status:'REQUESTED',claimed_by:owner.id,claim_token:'demo-lease',can_begin:true,can_cancel:true,can_claim:false,can_evidence:false,target_address_masked:'T示例…收款地址',owner_proof_required:true};
+const recharge={id:'DEMO-RECHARGE',user_id:'示例用户',amount_usdt:'20.000000',actual_received_usdt:'20.000000',payment_verified:true,status:'SUBMITTED',fx_rate:'7.000000',claimed_by:owner.id,claim_token:'demo-lease',can_process:true,expires_at:new Date(Date.now()+7200000).toISOString()};
+const api=new Proxy({
+getFxRate:async()=>({rate:'7.000000',stale:false,fetched_at:now}),
+getReserveValuation:async()=>({caibi_face:'10000.00',caibi_reference_usdt:'1428.571429',usdt_obligation:'200.000000'}),
+getRechargePending:async()=>({items:[recharge]}),getRechargeDirectory:async()=>({items:[]}),
+getSupportPayouts:async()=>({items:[payout]}),getSupportPayout:async()=>payout,
+getWalletOperationSecurity:async()=>({auth_mode:'operation_password'}),
+supportPayoutCommand:async(id,action,body)=>{
+ if(action==='adjust-rate')payout={...payout,prepared_rate:body.new_rate,prepared_receive:previewWithdrawal(payout.funding_amount,body.new_rate),prepared_version:payout.prepared_version+1};
+ if(action==='cancel-unstarted')payout={...payout,status:'CANCELLED',can_begin:false,can_cancel:false};
+ return payout;
+}}, {get:(target,key)=>target[key]??(async()=>({items:[]}))});
+const rechargeView=rechargePanel(api,{actor:owner,canManage:false}),withdrawalView=supportPayoutPanel(api,{actor:owner,canOperate:true});
+document.querySelector('#comparison').append(rechargeView,withdrawalView);
+const scenario=new URLSearchParams(location.search).get('scenario');
+if(['withdrawal','recharge'].includes(scenario)){
+ const target=scenario==='withdrawal'?withdrawalView:rechargeView;
+ const timer=setInterval(()=>{const button=[...target.querySelectorAll('button')].find(node=>node.textContent==='处理请求');
+ if(button&&!button.disabled){clearInterval(timer);button.click();}},50);
+}
+</script></body></html>

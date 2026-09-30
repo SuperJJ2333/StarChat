@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import object_session
 
 from app.core.errors import AppError
+from app.core.outbox import OutboxPublisher
 from app.integrations.tron.finality import NETWORK, POLICY, SOURCE_ID, TransactionEvidence, TronEvidenceUnavailable, transaction_evidence_fresh
 from app.integrations.tron.reader import USDT_CONTRACT
 from app.integrations.tron.message_signature import canonical_address
@@ -28,11 +29,23 @@ from app.modules.wallet.service import WalletLedger
 from app.modules.wallet.manual_payout_models import (
     ManualPayoutQuote, ManualPayoutOrder, ManualPayoutCommand, ManualPayoutEvent, ManualPayoutCandidate,
 )
-from app.modules.wallet.support_payout import SupportPayoutState, support_payout_projection
+from app.modules.wallet.support_payout import SupportPayoutRatePreparation, SupportPayoutState, support_payout_projection
 
 
 def _fail(code, status=409):
     raise AppError(code=code, message=code, status_code=status)
+
+
+def _cannot_cancel(row, *, has_payment_evidence=False):
+    if row.status == 'SETTLED':
+        message = '提现已完成，不能取消或退款'
+    elif row.status == 'CANCELLED':
+        message = '提现已终止，不能重复取消或退款'
+    elif row.status == 'UNKNOWN' or has_payment_evidence:
+        message = '付款结果待核对，暂不能取消或退款'
+    else:
+        message = '提现已开始出款，不能取消或退款'
+    raise AppError(code='WALLET_PAYOUT_CANNOT_CANCEL', message=message, status_code=409)
 
 
 def _utc(value):
@@ -377,11 +390,68 @@ class ManualPayoutService:
         return Decimal(quote.snapshot['receive'])
 
     @_precise
-    def adjust_rate(self, *, admin_id, session_id, mfa_proof=None, order_id, new_rate, reason_code, idempotency_key, authorize=None):
-        """ADR-0077 决策9：客服调整结算汇率（无需用户确认/复核/金额审批）。
+    def prepare_support_rate(self, *, admin_id, order_id, new_rate, reason_code,
+                             expected_preparation_version, idempotency_key, authorize):
+        """Save a support payout rate without moving the original conversion or hold."""
+        if not isinstance(reason_code, str) or re.fullmatch(r'[A-Z][A-Z0-9_]{2,79}', reason_code) is None:
+            _fail('WALLET_PAYOUT_REASON_INVALID', 400)
+        try:
+            rate = Decimal(str(new_rate))
+        except Exception:
+            _fail('WALLET_RATE_INVALID', 400)
+        if (not rate.is_finite() or not Decimal('0') < rate < Decimal('1000')
+                or rate != rate.quantize(Decimal('0.000001'))):
+            _fail('WALLET_RATE_INVALID', 400)
+        payload = dict(order_id=order_id, new_rate=format(rate, '.6f'),
+            reason_code=reason_code, expected_preparation_version=expected_preparation_version)
+        with self.factory.begin() as session:
+            row, _ = self._order_lock(session, order_id)
+            self._financial_actor(session, row, admin_id, authorize)
+            fresh = authorize(session)
+            fresh()
+            state = session.get(SupportPayoutState, row.id, with_for_update=True)
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            if (state is None or quote.snapshot.get('approval_policy') != 'SUPPORT_MANUAL_V1'
+                    or row.status != 'REQUESTED' or state.execution_started_at is not None
+                    or row.candidate_txid is not None):
+                _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE')
+            if quote.snapshot.get('funding_asset', 'USDT') != 'CAIBI':
+                _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE')
+            replay = self._replay(session, admin_id, 'PREPARE_RATE', idempotency_key, payload)
+            if replay:
+                fresh()
+                return replay
+            if (type(expected_preparation_version) is not int
+                    or expected_preparation_version != state.prepared_version):
+                _fail('WALLET_PAYOUT_PREPARATION_CONFLICT')
+            from decimal import ROUND_HALF_UP
+            caibi_amount = Decimal(quote.snapshot['funding_amount'])
+            receive = (caibi_amount / rate).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP)
+            if receive < Decimal('10') or receive > self.policy.max_per:
+                _fail('WALLET_PAYOUT_AMOUNT_INVALID', 400)
+            now = self._now()
+            self._limits(session, quote, now, effective=receive, exclude_order_id=row.id)
+            version = state.prepared_version + 1
+            digest = _digest(dict(quote.snapshot, receive=format(receive, '.6f'),
+                conversion_rate=format(rate, '.6f'), adjusted=True, preparation_version=version))
+            session.add(SupportPayoutRatePreparation(id=str(uuid4()), order_id=row.id, version=version,
+                rate=rate, receive=receive, digest=digest, reason_code=reason_code,
+                actor_id=admin_id, created_at=now))
+            state.prepared_rate, state.prepared_receive = rate, receive
+            state.prepared_digest, state.prepared_version = digest, version
+            result = self._record(session, admin_id, 'PREPARE_RATE', idempotency_key, payload,
+                self._result(row), now, reason_code='MANUAL_PAYOUT_RATE_PREPARED')
+            OutboxPublisher.enqueue(session, topic='wallet', event_type='wallet.manual_payout_rate_prepared',
+                aggregate_type='manual_payout_order', aggregate_id=row.id,
+                payload={'order_id': row.id, 'preparation_version': version}, now=now)
+            fresh()
+            return result
 
-        仅 CLAIMED 状态可调；记录处理人/时间/原因/前后值；冻结差额即时
-        调平（HOLD 始终等于最终应付）；SETTLED/CANCELLED/UNKNOWN 不可调。
+    @_precise
+    def adjust_rate(self, *, admin_id, session_id, mfa_proof=None, order_id, new_rate, reason_code, idempotency_key, authorize=None):
+        """Legacy instruction-issued orders cannot be repriced; replay old receipts only.
+
+        New orders use prepare_rate before instruction issuance.
         """
         if not isinstance(reason_code, str) or len(reason_code.strip()) < 3:
             _fail('WALLET_PAYOUT_REASON_INVALID', 400)
@@ -409,56 +479,7 @@ class ManualPayoutService:
             if replay:
                 fresh()
                 return replay
-            if row.status != 'CLAIMED' or row.candidate_txid is not None:
-                _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE', 409)
-            require_wallet_actor(session, user_id=row.user_id, clock=self.clock)
-            if locked[1].withdrawals_paused:
-                _fail('WALLET_WITHDRAWALS_PAUSED')
-            safety = session.get(WalletSafetyState, row.user_id)
-            if safety and safety.restricted:
-                _fail('WALLET_ACCOUNT_RESTRICTED', 403)
-            if locked[0] is None or locked[0].outgoing_restricted:
-                _fail('WALLET_RESERVE_UNAVAILABLE', 503)
-            quote = session.get(ManualPayoutQuote, row.quote_id)
-            if quote.snapshot.get('funding_asset', 'USDT') != 'CAIBI':
-                _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE', 409)
-            from decimal import ROUND_HALF_UP
-            caibi_amount = Decimal(quote.snapshot['funding_amount'])
-            new_receive = (caibi_amount / rate).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP)
-            if new_receive < Decimal('10') or new_receive > self.policy.max_per:
-                _fail('WALLET_PAYOUT_AMOUNT_INVALID', 400)
-            self._limits(session, quote, self._now(), effective=new_receive, exclude_order_id=row.id)
-            old_receive = self._payable(row, quote)
-            delta = new_receive - old_receive
-            if delta > 0 and locked[0].eligible_usdt < new_receive:
-                _fail('WALLET_PAYMENT_LIQUIDITY_INSUFFICIENT')
-            # Only move existing user funds into/out of HOLD. No platform issuance
-            # or coverage bypass; WalletLedger serializes and verifies the debit.
-            if delta:
-                operation_key = _digest(dict(actor=admin_id, order_id=row.id, key=idempotency_key))
-                try:
-                    self.wallet_ledger.post(entries={row.user_id: -delta, 'HOLD:'+row.user_id: delta},
-                        actor_id=admin_id, reason_code='MANUAL_PAYOUT_RATE_ADJUSTED',
-                        idempotency_key='adj-hold:'+operation_key, scope='wallet.manual_hold_adjust', session=session)
-                except ValueError as exc:
-                    if str(exc) == 'insufficient USDT balance':
-                        _fail('WALLET_PAYOUT_INSUFFICIENT_BALANCE')
-                    raise
-            history = list(row.adjustment_history or [])
-            history.append(dict(actor_id=admin_id, at=self._now().isoformat(), reason_code=reason_code[:100],
-                old_rate=format(row.final_rate, '.6f') if row.final_rate is not None else quote.snapshot.get('conversion_rate'),
-                new_rate=format(rate, '.6f'),
-                old_receive=format(old_receive, '.6f'), new_receive=format(new_receive, '.6f')))
-            row.final_rate = rate
-            row.final_receive = new_receive
-            row.adjustment_history = history
-            row.adjusted_digest = _digest(dict(quote.snapshot, receive=format(new_receive, '.6f'),
-                conversion_rate=format(rate, '.6f'), adjusted=True))
-            row.updated_at = self._now()
-            result = self._record(session, admin_id, 'ADJUST_RATE', idempotency_key, payload, self._result(row), self._now(),
-                reason_code='MANUAL_PAYOUT_RATE_ADJUSTED')
-            fresh()
-            return result
+            _fail('WALLET_PAYOUT_RATE_ADJUST_UNAVAILABLE', 409)
 
     def _order_lock(self, session, order_id):
         # Read identity only, then acquire the shared lock order before row locking.
@@ -475,22 +496,87 @@ class ManualPayoutService:
             if (not isinstance(authorize,_PayoutAuthorization) or authorize.order_id!=row.id
                     or authorize.claims.get('sub')!=admin_id):
                 _fail('SUPPORT_PAYOUT_AUTHORIZATION_REQUIRED',403)
-            require_wallet_actor(session,user_id=admin_id,clock=self.clock)
+            require_wallet_actor(session,user_id=admin_id,clock=self.clock,administrator=True)
         else:
             require_wallet_actor(session,user_id=admin_id,clock=self.clock,administrator=True)
+        if admin_id != self.owner_admin_id or admin_id != quote.snapshot['owner_admin_id']:
+            _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
 
-    def payment_instructions(self, *, admin_id, order_id, expected_digest, authorize):
+    def payment_instructions(self, *, admin_id, order_id, expected_digest,
+                             expected_preparation_version=None, authorize):
         with self.factory.begin() as session:
             row,_=self._order_lock(session,order_id)
             self._financial_actor(session,row,admin_id,authorize)
             fresh=authorize(session)
             if row.status!='CLAIMED' or row.claimed_by!=admin_id:
                 _fail('WALLET_PAYOUT_CLAIM_UNAVAILABLE')
-            if expected_digest not in (row.digest,row.adjusted_digest):
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            if quote.snapshot.get('approval_policy') == 'SUPPORT_MANUAL_V1':
+                state = session.get(SupportPayoutState, row.id, with_for_update=True)
+                if state is None or state.execution_started_at is None:
+                    _fail('WALLET_PAYOUT_CLAIM_UNAVAILABLE')
+                if quote.snapshot.get('funding_asset', 'USDT') == 'CAIBI':
+                    historical = state.prepared_digest is None and state.prepared_version == 0
+                    if historical:
+                        valid = (expected_preparation_version is None
+                            and expected_digest == (row.adjusted_digest or row.digest))
+                    else:
+                        valid = (type(expected_preparation_version) is int
+                            and expected_preparation_version == state.prepared_version
+                            and expected_digest == row.adjusted_digest)
+                    if not valid:
+                        _fail('WALLET_PAYOUT_PREPARATION_CONFLICT')
+                elif expected_preparation_version is not None or expected_digest != row.digest:
+                    _fail('WALLET_PAYOUT_DIGEST_CONFLICT')
+            elif expected_digest != (row.adjusted_digest or row.digest):
                 _fail('WALLET_PAYOUT_DIGEST_CONFLICT')
-            result=self._claim_result(row,session.get(ManualPayoutQuote,row.quote_id))
+            result=self._claim_result(row,quote)
             fresh()
             return result
+
+    def release_unstarted_order(self, *, session, row, actor_id, reason_code, now):
+        """Release an unstarted order in the caller's authorized transaction.
+
+        The caller owns its operation-specific receipt and authorization. This
+        application boundary acquires the shared budget/order locks, then keeps
+        the hold, linked conversion reversal, and terminal state atomic.
+        """
+        if object_session(row) is not session or not actor_id or (
+                reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED', 'MANUAL_PAYOUT_ADMIN_CANCELLED'}) or (
+                (reason_code == 'MANUAL_PAYOUT_CANCELLED') != (actor_id == row.user_id)):
+            raise ValueError('invalid payout release actor or reason')
+        if reason_code == 'MANUAL_PAYOUT_ADMIN_CANCELLED':
+            require_wallet_actor(session, user_id=actor_id, clock=self.clock, administrator=True)
+            if actor_id != self.owner_admin_id:
+                _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
+        locked_row, _ = self._order_lock(session, row.id)
+        if locked_row is not row or row.status != 'REQUESTED' or row.candidate_txid is not None:
+            _cannot_cancel(row, has_payment_evidence=row.candidate_txid is not None)
+        support_state = session.get(SupportPayoutState, row.id, with_for_update=True)
+        has_payment_evidence = (session.scalar(select(ManualPayoutCandidate.id).where(
+            ManualPayoutCandidate.order_id == row.id).limit(1)) is not None or
+            session.scalar(select(ManualPayoutEvent.id).where(
+                ManualPayoutEvent.order_id == row.id).limit(1)) is not None)
+        if (support_state is not None and support_state.execution_started_at is not None) or has_payment_evidence:
+            _cannot_cancel(row, has_payment_evidence=has_payment_evidence)
+        user_id = row.user_id
+        self.wallet_ledger.post(entries={'HOLD:'+user_id: -row.amount, user_id: row.amount},
+            actor_id=actor_id, reason_code=reason_code, idempotency_key=row.id,
+            scope='wallet.manual_release', session=session)
+        quote = session.get(ManualPayoutQuote, row.quote_id)
+        if quote.snapshot.get('funding_asset', 'USDT') == 'CAIBI':
+            from app.modules.wallet.conversions import reverse_payout_conversion
+            reverse_payout_conversion(session, self.factory, user_id=user_id, actor_id=actor_id,
+                reason_code=reason_code, order_id=row.id, amount=row.amount)
+        if support_state is not None:
+            had_preparation = support_state.prepared_digest is not None
+            support_state.prepared_rate = None
+            support_state.prepared_receive = None
+            support_state.prepared_digest = None
+            if had_preparation:
+                support_state.prepared_version += 1
+        row.status, row.updated_at = 'CANCELLED', now
+        return row
 
     @_precise
     def cancel(self, *, user_id, order_id, idempotency_key):
@@ -504,18 +590,8 @@ class ManualPayoutService:
             replay = self._replay(session, user_id, 'CANCEL', idempotency_key, payload)
             if replay:
                 return replay
-            if row.status != 'REQUESTED':
-                _fail('WALLET_PAYOUT_CANNOT_CANCEL')
-            support_state=session.get(SupportPayoutState,row.id,with_for_update=True)
-            if support_state is not None and support_state.execution_started_at is not None:
-                _fail('WALLET_PAYOUT_CANNOT_CANCEL')
-            self.wallet_ledger.post(entries={'HOLD:'+user_id: -row.amount, user_id: row.amount}, actor_id=user_id,
-                reason_code='MANUAL_PAYOUT_CANCELLED', idempotency_key=row.id, scope='wallet.manual_release', session=session)
-            quote = session.get(ManualPayoutQuote, row.quote_id)
-            if quote.snapshot.get('funding_asset', 'USDT') == 'CAIBI':
-                from app.modules.wallet.conversions import reverse_payout_conversion
-                reverse_payout_conversion(session, self.factory, user_id=user_id, order_id=row.id, amount=row.amount)
-            row.status, row.updated_at = 'CANCELLED', now
+            self.release_unstarted_order(session=session, row=row, actor_id=user_id,
+                reason_code='MANUAL_PAYOUT_CANCELLED', now=now)
             return self._record(session, user_id, 'CANCEL', idempotency_key, payload, self._result(row), now)
 
     @_precise
@@ -571,7 +647,7 @@ class ManualPayoutService:
                 from app.modules.wallet.conversions import reverse_payout_conversion
                 try:
                     reverse_payout_conversion(session, self.factory, user_id=row.user_id,
-                        order_id=row.id, amount=row.amount, reason_code='MANUAL_PAYOUT_VOIDED')
+                        actor_id=admin_id, order_id=row.id, amount=row.amount, reason_code='MANUAL_PAYOUT_VOIDED')
                 except ValueError as exc:
                     if str(exc) == 'insufficient USDT balance':
                         _fail('WALLET_PAYOUT_INSUFFICIENT_BALANCE')
@@ -614,7 +690,8 @@ class ManualPayoutService:
             warning='VERIFY_EXISTING_PAYMENT_BEFORE_SIGNING'))
 
     @_precise
-    def claim(self, *, admin_id, session_id, mfa_proof=None, order_id, expected_digest, idempotency_key, authorize=None):
+    def claim(self, *, admin_id, session_id, mfa_proof=None, order_id, expected_digest,
+              expected_preparation_version=None, idempotency_key, authorize=None):
         now = self._now()
         verified_at = now
         if authorize is None:
@@ -627,8 +704,12 @@ class ManualPayoutService:
             fresh = authorize(session) if authorize is not None else lambda: self._fresh_mfa(verified_at)
             fresh()
             quote = session.get(ManualPayoutQuote, row.quote_id)
-            if quote.snapshot.get('approval_policy') != 'SUPPORT_MANUAL_V1' and admin_id != quote.snapshot['owner_admin_id']:
+            support = quote.snapshot.get('approval_policy') == 'SUPPORT_MANUAL_V1'
+            funding_asset = quote.snapshot.get('funding_asset', 'USDT')
+            if not support and admin_id != quote.snapshot['owner_admin_id']:
                 _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
+            if support and funding_asset == 'CAIBI':
+                payload['expected_preparation_version'] = expected_preparation_version
             replay = self._replay(session, admin_id, 'CLAIM', idempotency_key, payload)
             if replay:
                 if row.claimed_by != admin_id or row.status != 'CLAIMED':
@@ -638,24 +719,80 @@ class ManualPayoutService:
                 # Project current locked terms without rewriting claim history.
                 result = self._claim_result(row, quote)
             else:
+                state = session.get(SupportPayoutState, row.id, with_for_update=True) if support else None
+                if support and (state is None or state.execution_started_at is not None or row.candidate_txid):
+                    _fail('WALLET_PAYOUT_ALREADY_CLAIMED')
+                if support and funding_asset == 'CAIBI':
+                    if (type(expected_preparation_version) is not int
+                            or expected_preparation_version != state.prepared_version
+                            or state.prepared_rate is None or state.prepared_rate <= 0
+                            or state.prepared_receive is None
+                            or state.prepared_digest is None or expected_digest != state.prepared_digest):
+                        _fail('WALLET_PAYOUT_PREPARATION_CONFLICT')
+                    from decimal import ROUND_HALF_UP
+                    source_amount = Decimal(quote.snapshot['funding_amount'])
+                    expected_receive = (source_amount / state.prepared_rate).quantize(
+                        Decimal('0.000001'), rounding=ROUND_HALF_UP)
+                    prepared_digest = _digest(dict(quote.snapshot,
+                        receive=format(expected_receive, '.6f'),
+                        conversion_rate=format(state.prepared_rate, '.6f'), adjusted=True,
+                        preparation_version=state.prepared_version))
+                    preparation = session.scalar(select(SupportPayoutRatePreparation).where(
+                        SupportPayoutRatePreparation.order_id == row.id,
+                        SupportPayoutRatePreparation.version == state.prepared_version))
+                    if (expected_receive != state.prepared_receive or expected_receive < Decimal('10')
+                            or prepared_digest != state.prepared_digest or preparation is None
+                            or preparation.rate != state.prepared_rate
+                            or preparation.receive != state.prepared_receive
+                            or preparation.digest != state.prepared_digest):
+                        _fail('WALLET_PAYOUT_PREPARATION_CONFLICT')
+                elif support and (expected_preparation_version is not None
+                        or expected_digest != row.digest or state.prepared_digest is not None):
+                    _fail('WALLET_PAYOUT_DIGEST_CONFLICT')
                 binding, epoch = self._gate(session, row.user_id, now, locked, execution=True)
                 now = self._now()
                 fresh()
                 quote = session.get(ManualPayoutQuote, row.quote_id)
                 if row.status != 'REQUESTED':
                     _fail('WALLET_PAYOUT_ALREADY_CLAIMED')
-                final_receive = row.final_receive if row.final_receive is not None else Decimal(quote.snapshot['receive'])
-                digest_ok = expected_digest in (row.digest, row.adjusted_digest)
+                final_receive = (state.prepared_receive if support and funding_asset == 'CAIBI'
+                    else row.final_receive if row.final_receive is not None
+                    else Decimal(quote.snapshot['receive']))
+                digest_ok = (expected_digest == state.prepared_digest if support and funding_asset == 'CAIBI'
+                    else expected_digest == row.digest if support
+                    else expected_digest == (row.adjusted_digest or row.digest))
                 if (not digest_ok or row.digest != _digest(quote.snapshot)
-                        or binding.id != quote.snapshot['binding_id'] or epoch != quote.snapshot['safety_epoch']
+                        or binding.id != quote.snapshot['binding_id']
+                        or binding.version != quote.snapshot['binding_version']
+                        or binding.address != quote.snapshot['target_address']
+                        or epoch != quote.snapshot['safety_epoch']
                         or self.official_config.address != quote.snapshot['official_address']
                         or self.official_config.version != quote.snapshot['official_config_version']
                         or self.owner_admin_id != quote.snapshot['owner_admin_id']):
                     _fail('WALLET_PAYOUT_DIGEST_CONFLICT')
                 if self.reserve_policy == 'manual_liquidity' and locked[0].eligible_usdt < final_receive:
                     _fail('WALLET_PAYMENT_LIQUIDITY_INSUFFICIENT')
+                if support:
+                    self._limits(session, quote, now, effective=final_receive, exclude_order_id=row.id)
+                if support and funding_asset == 'CAIBI':
+                    delta = final_receive - row.amount
+                    if delta:
+                        try:
+                            self.wallet_ledger.post(entries={row.user_id: -delta, 'HOLD:'+row.user_id: delta},
+                                actor_id=admin_id, reason_code='MANUAL_PAYOUT_BEGIN_ADJUSTED',
+                                idempotency_key='begin-hold:'+row.id,
+                                scope='wallet.manual_hold_adjust', session=session)
+                        except ValueError as exc:
+                            if str(exc) == 'insufficient USDT balance':
+                                _fail('WALLET_PAYOUT_INSUFFICIENT_BALANCE')
+                            raise
+                    row.final_rate, row.final_receive = state.prepared_rate, final_receive
+                    row.adjusted_digest = state.prepared_digest
                 reserve_observed_at = _utc(locked[0].observed_at)
                 row.status, row.claimed_by, row.claimed_at, row.updated_at = 'CLAIMED', admin_id, now, now
+                if support:
+                    state.execution_started_at = now
+                    audit_write(session, admin_id, row.id, 'wallet.support_payout_started', 'SUPPORT_PAYOUT_STARTED')
                 mark_manual_payout_pending(locked[0])
                 result = self._claim_result(row, quote)
                 self._record(session, admin_id, 'CLAIM', idempotency_key, payload, result, now)
@@ -676,7 +813,7 @@ class ManualPayoutService:
             self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: None
             fresh()
-            if row.claimed_by != admin_id:
+            if row.claimed_by != admin_id and session.get(ManualPayoutQuote,row.quote_id).snapshot.get('approval_policy')!='SUPPORT_MANUAL_V1':
                 _fail('WALLET_PAYOUT_CLAIM_UNAVAILABLE', 403)
             replay = self._replay(session, admin_id, 'SUBMIT_TXID', idempotency_key, payload)
             if replay:
@@ -690,6 +827,9 @@ class ManualPayoutService:
                     reason_code='INITIAL_LOCATOR', created_at=self._now()))
             row.candidate_txid, row.status, row.updated_at = txid, 'UNKNOWN', now
             result = self._record(session, admin_id, 'SUBMIT_TXID', idempotency_key, payload, self._result(row), now)
+            OutboxPublisher.enqueue(session,topic='wallet',event_type='wallet.manual_payout_locator_submitted',
+                aggregate_type='manual_payout_order',aggregate_id=row.id,
+                payload=dict(order_id=row.id,actor_id=admin_id,reason_code='INITIAL_LOCATOR'),now=now)
             fresh()
             return result
 
@@ -715,7 +855,7 @@ class ManualPayoutService:
             self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: self._fresh_mfa(verified_at)
             fresh()
-            if row.claimed_by != admin_id:
+            if row.claimed_by != admin_id and session.get(ManualPayoutQuote,row.quote_id).snapshot.get('approval_policy')!='SUPPORT_MANUAL_V1':
                 _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
             replay = self._replay(session, admin_id, 'CORRECT_CANDIDATE', idempotency_key, payload)
             if replay:
@@ -733,6 +873,9 @@ class ManualPayoutService:
                 reason_code=reason_code, created_at=now))
             result = self._record(session, admin_id, 'CORRECT_CANDIDATE', idempotency_key, payload, self._result(row), now,
                 reason_code=reason_code)
+            OutboxPublisher.enqueue(session,topic='wallet',event_type='wallet.manual_payout_locator_corrected',
+                aggregate_type='manual_payout_order',aggregate_id=row.id,
+                payload=dict(order_id=row.id,actor_id=admin_id,reason_code=reason_code),now=now)
             fresh()
             return result
 
@@ -752,6 +895,28 @@ class ManualPayoutService:
             and transfer.block_number == evidence.block_number and transfer.block_id == evidence.block_id
             and type(transfer.log_index) is int and transfer.log_index >= 0]
 
+    @staticmethod
+    def matching_payout_transfers(evidence, row, quote, txid):
+        """Public exact receipt filter shared by settlement and read-only discovery."""
+        return ManualPayoutService._matches(evidence, row, quote, txid)
+
+    def _require_unambiguous_owner(self, session, row, quote, transfer):
+        # The caller holds the global reserve lock, also held by request/begin.
+        # Include other users and legacy OWNER orders; event ownership is global.
+        from sqlalchemy import cast, Numeric
+        event_at = datetime.fromtimestamp(transfer.timestamp_ms // 1000, timezone.utc) + timedelta(
+            milliseconds=transfer.timestamp_ms % 1000)
+        ids = session.scalars(select(ManualPayoutOrder.id).join(ManualPayoutQuote,
+            ManualPayoutQuote.id == ManualPayoutOrder.quote_id).where(
+            ManualPayoutOrder.status.in_(('CLAIMED', 'UNKNOWN')),
+            ManualPayoutOrder.claimed_at <= event_at,
+            ManualPayoutQuote.snapshot['official_address'].as_string() == transfer.from_address,
+            ManualPayoutQuote.snapshot['target_address'].as_string() == transfer.to_address,
+            func.coalesce(ManualPayoutOrder.final_receive,
+                cast(ManualPayoutQuote.snapshot['receive'].as_string(), Numeric(30, 6))) ==
+                Decimal(transfer.amount_units) / Decimal(1000000)).limit(2)).all()
+        return ids == [row.id]
+
     @_precise
     def reconcile(self, *, order_id, authorize=None):
         with self.factory() as session:
@@ -761,6 +926,8 @@ class ManualPayoutService:
             if row.status in {'SETTLED', 'CANCELLED', 'VOIDED', 'REQUESTED'} or row.review_reason == 'MULTIPLE_MATCHING_PAYOUT_EVENTS':
                 return self._result(row)
             candidates = self._candidates(session, row)
+            if not candidates:
+                return self._result(row)
         # Every locator/audit is durable before network I/O; never hold DB locks here.
         evidence_by_txid = {}
         for txid in candidates[:10]:
@@ -791,10 +958,12 @@ class ManualPayoutService:
                 used = session.scalar(select(ManualPayoutEvent.id).where(ManualPayoutEvent.network == NETWORK,
                     ManualPayoutEvent.contract == USDT_CONTRACT, ManualPayoutEvent.txid == txid,
                     ManualPayoutEvent.log_index == transfer.log_index))
-            if transfer is None or used:
+            ambiguous = transfer is not None and not self._require_unambiguous_owner(session, row, quote, transfer)
+            if transfer is None or used or ambiguous:
                 reason = ('MULTIPLE_MATCHING_PAYOUT_EVENTS' if len(matches) > 1 else
                     'CANDIDATE_LIMIT_EXCEEDED' if len(candidates) > 10 else
-                    'EVENT_ALREADY_ALLOCATED' if used else 'EVIDENCE_UNAVAILABLE_OR_MISMATCH')
+                    'EVENT_ALREADY_ALLOCATED' if used else
+                    'ORDER_ATTRIBUTION_AMBIGUOUS' if ambiguous else 'EVIDENCE_UNAVAILABLE_OR_MISMATCH')
                 if row.status != 'UNKNOWN' or row.review_reason != reason:
                     row.status, row.review_reason, row.updated_at = 'UNKNOWN', reason, now
                     audit_write(session, 'manual-payout-reconciler', row.id, 'wallet.manual_payout_review', reason)

@@ -1,9 +1,10 @@
 """The official owner may compensate a support agent's unbroadcast payout."""
 from datetime import timedelta, timezone
 from decimal import Decimal
+from sqlalchemy import update
 
 from test_manual_payouts import core, request  # noqa: F401
-from test_support_payout import scoped  # noqa: F401
+from test_support_payout import scoped, verified  # noqa: F401
 from app.modules.ledger.reserve import RedeemabilityReserve
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder
 from app.modules.wallet.support_payout import SupportPayoutState
@@ -13,9 +14,13 @@ def test_official_owner_voids_support_claim_without_rewriting_claimant(scoped):
     core, support, claims = scoped
     payout, factory, clock = core[:3]
     order = request(core)
-    lease = support.claim(claims=claims['bob'], order_id=order['id'], idempotency_key='support-lease')
-    support.begin_payment(claims=claims['bob'], order_id=order['id'],
-        claim_token=lease['claim_token'], expected_digest=order['digest'], idempotency_key='support-begin')
+    lease = support.claim(claims=claims['owner'], order_id=order['id'], idempotency_key='support-lease')
+    support.begin_payment(claims=claims['owner'], order_id=order['id'],
+        claim_token=lease['claim_token'], expected_digest=order['digest'], idempotency_key='support-begin', **verified(support, order['id']))
+    # Seed historical staff claimant; current APIs forbid creating this state.
+    with factory.begin() as session:
+        session.execute(update(ManualPayoutOrder).where(ManualPayoutOrder.id == order['id']).values(claimed_by='bob',status='UNKNOWN'))
+        state=session.get(SupportPayoutState, order['id']); state.claimed_by='bob'
     assert payout.reconcile(order_id=order['id'])['status'] == 'UNKNOWN'
     with factory() as session:
         row = session.get(ManualPayoutOrder, order['id'])
@@ -34,7 +39,7 @@ def test_official_owner_voids_support_claim_without_rewriting_claimant(scoped):
     assert result['status'] == 'VOIDED'
     assert result['processing_stage'] == 'VOIDED'
     assert payout.wallet_ledger.balance('HOLD:alice') == Decimal('0')
-    assert support.detail(claims=claims['bob'], order_id=order['id'])['processing_stage'] == 'VOIDED'
+    assert support.detail(claims=claims['owner'], order_id=order['id'])['processing_stage'] == 'VOIDED'
     clock[0] += timedelta(hours=2)
     assert support.expire_orders() == 0
     with factory() as session:

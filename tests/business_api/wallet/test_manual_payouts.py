@@ -293,6 +293,7 @@ def test_missing_evidence_never_releases(core):
 def test_unbroadcast_void_releases_claimed_unknown_once(core):
     from app.modules.wallet.manual_payout_models import ManualPayoutOrder
     order = claim(core)
+    mark_unknown(core, order)
     unknown = core[0].reconcile(order_id=order['id'])
     assert unknown['status'] == 'UNKNOWN'
     assert unknown['version'] == core[0].status(user_id='alice', order_id=order['id'])['version']
@@ -345,6 +346,7 @@ def test_unbroadcast_void_rejects_invalid_intent_atomically(core, change, code):
             session.add(UserRole(id='bob-admin', user_id='bob', role_code=RoleCode.SUPER_ADMIN,
                 assigned_by='owner', assigned_at=core[2][0]))
     order = claim(core)
+    mark_unknown(core, order)
     core[0].reconcile(order_id=order['id'])
     with core[1]() as session:
         row = session.get(ManualPayoutOrder, order['id'])
@@ -375,6 +377,7 @@ def test_unbroadcast_void_rejects_recorded_candidate(core, artifact):
     if artifact == 'locator':
         core[0].submit_txid(admin_id='owner', order_id=order['id'], txid='a'*64, idempotency_key='tx-void')
     else:
+        mark_unknown(core, order)
         core[0].reconcile(order_id=order['id'])
         with core[1].begin() as session:
             if artifact == 'candidate_row':
@@ -713,7 +716,7 @@ def test_candidate_correction_audits_operator_reason(core):
 
 def test_candidate_correction_requires_existing_initial_locator(core):
     o = claim(core)
-    assert core[0].reconcile(order_id=o['id'])['status'] == 'UNKNOWN'
+    assert core[0].reconcile(order_id=o['id'])['status'] == 'CLAIMED'
     with pytest.raises(AppError, match='CORRECTION_UNAVAILABLE'):
         correct(core, o)
 
@@ -799,6 +802,7 @@ def test_void_rolls_back_compensation_when_final_authorization_expires(core):
     from sqlalchemy import func
     from test_manual_payout_void_postgres import void_arguments
     order=claim(core)
+    mark_unknown(core, order)
     core[0].reconcile(order_id=order['id'])
     args=void_arguments(core,order)
     calls=[]
@@ -817,3 +821,11 @@ def test_void_rolls_back_compensation_when_final_authorization_expires(core):
         assert session.get(RedeemabilityReserve,'global').pending_payouts==1
         assert session.scalar(select(func.count()).select_from(WalletLedgerTransaction).where(
             WalletLedgerTransaction.scope=='wallet.manual_void_release'))==0
+
+
+def mark_unknown(core, order):
+    """Historical explicit review state; no-hash scanning does not infer a broadcast."""
+    from app.modules.wallet.manual_payout_models import ManualPayoutOrder
+    with core[1].begin() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        row.status = 'UNKNOWN'
