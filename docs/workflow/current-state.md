@@ -1,8 +1,10 @@
 # 移动交付恢复索引
 
-## 2026-09-30 客服资金订单取消、链上发现与认领接管：ADR/计划获批，实施中
+## 2026-09-30 客服资金订单恢复：代码审查通过，生产私有备份完成，发布门禁执行中
 
-用户报告已发行 Android 在取消提现时显示 `Wallet_payout_cannot_cancel`，后台确认汇率后过早开始出款、无法返回/复制收款地址/拒绝，以及无哈希无法搜索链上和他人认领按钮仍可点。只读根因与[任务台账](tasks/2026-09-29-support-finance-order-recovery.md)已记录；用户批准[书面规格](../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)：保存汇率仅作待执行准备，确认开始出款时才原子调整冻结并开放完整地址；开始前可取消或拒绝；TronGrid 仅发现候选，最终按固化收据及跨订单归属核验；仅官方钱包所有者管理员经当次验证和审计接管。用户于 2026-09-30 明确要求“修改产品代码和生产环境”，批准按[受保护 ADR](../adr/2026-09-29-support-finance-order-recovery.md)与[逐项实施计划](../superpowers/plans/2026-09-29-support-finance-order-recovery.md)执行。截至 2026-09-30，本轮 API/后台实现及领域/安全审查已完成，最新前端修复 `64305b86` 专项79通过、复审关闭5项P1；提现后端 `c03737b0` 聚合269通过及隔离PG12+增量4通过。API/Worker全目录回归与受控发布工件仍进行中，尚未发布本轮生产。发布预检发现 Worker 独立导入旧资金模块，必须同步五文件安全依赖闭包并验证自动核对路径，兼容回退保留安全Worker；详见任务记录裁定。完整verify缺本地.env停止，未声称全仓通过。历史已开始订单不得自动退款。本轮仅后台与 API，Android 交互修复后续另做。
+用户授权修改产品代码与生产，按获批[规格](../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)、[ADR](../adr/2026-09-29-support-finance-order-recovery.md)、[计划](../superpowers/plans/2026-09-29-support-finance-order-recovery.md)实施。确认汇率仅暂存；确认开始出款前可取消/拒绝，开始后审计读取完整地址；TronGrid发现候选后明确选择核验；只有钱包所有者管理员经当次验证可接管。代码与最终领域/质量安全审查已通过，专项及隔离PG通过；完整API/Worker实际3276pass/73skip/6fail，失败由最终聚焦复测关闭，完整verify仍缺本地.env。
+
+生产另一授权钱包任务已更新API902eaefc/Worker90d7fb74/schema0093_void，本次完整保留并将扩展迁移改为0094。06:51 UTC最终snapshot一致，sourcec204发布包冻结、服务器preflight及私有备份通过，其他28容器冻结。构建门禁先发现actualCmd直接uvicorn，已修订为先实际fence后单次限时迁移（02e0f382独立审查通过）；之后3镜像库存通过，但actual多服务Compose合并覆回旧API镜像，被门禁拒绝。正在TDD修订派生role配置并审查固定imageID恢复，生产尚无本次服务/schema/静态切换。实际状态及下一执行步骤见[任务记录](tasks/2026-09-29-support-finance-order-recovery.md)。Worker需同步6模块双镜像副本与严格事件任务；兼容回退保留安全Worker/fencedAPI及数据。真实后台角色会话待验收，历史已开始单不自动退款；Android交互改动后续另做。
 
 ## 2026-09-29 USDT 钱包工作台与链上流水现场：生产技术验收通过，真实管理员会话待验收
 
