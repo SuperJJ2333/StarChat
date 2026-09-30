@@ -1,0 +1,1 @@
+Startup/sequence tests initially: 3 failed,10 passed (missing direct-Uvicorn validator; bridge incorrectly demanded0094 before migration). Final isolated suite:60 passed in0.33s. Includes guard failure, actual-fence rejection, migration-timeout gate and immutable-ID exec. No production writes performed by implementer.

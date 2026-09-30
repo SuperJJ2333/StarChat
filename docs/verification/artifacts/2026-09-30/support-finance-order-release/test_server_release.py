@@ -1,4 +1,5 @@
 from pathlib import Path
+from contextlib import nullcontext
 import sys,json
 import pytest
 HERE=Path(__file__).resolve().parent
@@ -6,6 +7,78 @@ sys.path.insert(0,str(HERE))
 import server_release as s
 import public_verify as p
 import release_prep as r
+
+ACTUAL_CMD=['uvicorn','app.main:create_default_app','--factory','--host','0.0.0.0','--port','8082','--workers','2']
+
+def test_actual_direct_uvicorn_startup_is_preserved_and_auto_migration_rejected():
+    config={'Cmd':ACTUAL_CMD.copy(),'Entrypoint':None}
+    assert s.validate_actual_startup(config)==ACTUAL_CMD
+    assert config['Cmd']==ACTUAL_CMD
+    with pytest.raises(ValueError):s.validate_actual_startup({'Cmd':['sh','-c','alembic upgrade head && uvicorn app.main:create_default_app --factory'],'Entrypoint':None})
+
+@pytest.mark.parametrize('scenario',['success','guard-failure','fence-failure','migration-timeout'])
+def test_bridge_serves_fence_on_old_schema_before_one_bounded_migration(monkeypatch,tmp_path,scenario):
+    events=[];head=[r.BASE_SCHEMA]
+    images={'api':'candidate-api','worker':'safe-worker'};back={'api':'fenced-api','worker':'safe-worker'}
+    m={'roles':{'api':{'base_image':'old-api'},'worker':{'base_image':'old-worker'}}}
+    status={'api':container('fenced-id','fenced-api'),'worker':container('original-worker','old-worker')}
+    snapshot=tmp_path/'guard-compose';snapshot.write_text('compose')
+    records={'images.json':images,'rollback-images.json':back,'api-rendered-compose.json':{},'worker-rendered-compose.json':{}}
+    monkeypatch.setattr(s.c,'PRIVATE',tmp_path)
+    monkeypatch.setattr(s,'exclusive_bridge_lock',nullcontext)
+    monkeypatch.setattr(s.c,'read_private',lambda name:records[name])
+    monkeypatch.setattr(s.c,'write_private',lambda name,data:records.__setitem__(name,data))
+    monkeypatch.setattr(s.c,'check_prepared',lambda *a:None)
+    monkeypatch.setattr(s,'validate_restore',lambda *a:None)
+    monkeypatch.setattr(s,'compose_with_image',lambda *a:{})
+    monkeypatch.setattr(s.c,'_render_compose',lambda *a:None)
+    monkeypatch.setattr(s.c,'protocol_images',lambda *a:{})
+    def guard(action,*a,**kw):
+        if action=='deploy':events.append('guard-fenced-api')
+        if action=='deploy' and scenario=='guard-failure':raise ValueError('guard switch failed')
+        return {'snapshot':str(snapshot)}
+    monkeypatch.setattr(s.c,'_guard',guard)
+    monkeypatch.setattr(s.c,'_selected_health',lambda *a,**kw:status)
+    monkeypatch.setattr(s.c,'database_value',lambda *a:head[0])
+    monkeypatch.setattr(s.c,'docker_inspect',lambda name:status['api'])
+    def fence(health,snapshot_path):
+        events.append('actual-http-fence');assert head[0]==r.BASE_SCHEMA
+        if scenario=='fence-failure':raise ValueError('live fence proof failed')
+        return {'passed':True,'container_id':'fenced-id','image':'fenced-api','schema':r.BASE_SCHEMA}
+    monkeypatch.setattr(s,'bridge_runtime_fence',fence,raising=False)
+    def run(*args,**kwargs):
+        events.append('single-migration');assert args[:2]==('docker','exec')
+        assert 'fenced-id' in args and s.ROLE_CONTAINER['api'] not in args
+        assert args[-5:]==(s.ROLE_CONTAINER['api'],'python','-m','alembic','upgrade',r.TARGET_SCHEMA)[-5:]
+        assert 'PGOPTIONS=-c lock_timeout=5000 -c statement_timeout=120000' in args
+        assert kwargs['timeout']==180
+        if scenario=='migration-timeout':raise TimeoutError('bounded migration timeout')
+        head[0]=r.TARGET_SCHEMA
+    monkeypatch.setattr(s.c,'run',run)
+    if scenario=='success':
+        assert s.bridge_expand(m)['schema']==r.TARGET_SCHEMA
+        assert events==['guard-fenced-api','actual-http-fence','single-migration']
+        assert records['bridge-fenced.json']['schema']==r.BASE_SCHEMA
+        assert records['bridge-result.json']['containers']['api']['Id']=='fenced-id'
+    elif scenario=='guard-failure':
+        with pytest.raises(ValueError,match='guard switch'):s.bridge_expand(m)
+        assert events==['guard-fenced-api']
+        assert records['bridge-failure.json']['phase']=='guarded-fence-switch'
+        assert records['bridge-failure.json']['guard_snapshot'] is None
+        assert 'bridge-result.json' not in records
+    elif scenario=='fence-failure':
+        with pytest.raises(ValueError,match='live fence'):s.bridge_expand(m)
+        assert events==['guard-fenced-api','actual-http-fence']
+        assert 'bridge-result.json' not in records
+        assert 'bridge-failure.json' in records
+    else:
+        with pytest.raises(TimeoutError):s.bridge_expand(m)
+        assert events==['guard-fenced-api','actual-http-fence','single-migration']
+        assert records['bridge-fenced.json']['schema']==r.BASE_SCHEMA
+        assert records['bridge-failure.json']['phase']=='single-bounded-expand'
+        assert 'bridge-result.json' not in records
+        with pytest.raises(KeyError):s.activate_safe_worker(m)
+        assert events==['guard-fenced-api','actual-http-fence','single-migration']
 
 def container(cid,image,restarts=0):
     return {'Id':cid,'Image':image,'RestartCount':restarts,'State':{'Status':'running','Health':{'Status':'healthy'}}}

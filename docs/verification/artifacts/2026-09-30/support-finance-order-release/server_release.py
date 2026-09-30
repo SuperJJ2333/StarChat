@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import shutil
+from contextlib import contextmanager
 from uuid import uuid4
 import server_r3 as c
 from release import *
@@ -17,6 +18,52 @@ from finance_write_fence import FACTORY_SUFFIX
 ORIGINAL_BUILD=c.build
 ORIGINAL_ROLLBACK=c.rollback
 ORIGINAL_DEPLOY=c.deploy
+
+ACTUAL_API_CMD=['uvicorn','app.main:create_default_app','--factory','--host','0.0.0.0','--port','8082','--workers','2']
+
+def validate_actual_startup(config):
+    if config.get('Cmd')!=ACTUAL_API_CMD or config.get('Entrypoint') not in (None,[]):
+        raise ValueError('unreviewed API actual startup/entry')
+    return list(config['Cmd'])
+
+@contextmanager
+def exclusive_bridge_lock():
+    import fcntl
+    with (c.PRIVATE/'bridge-operation.lock').open('a',encoding='utf-8') as lock:
+        fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+        try:yield
+        finally:fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
+
+LIVE_FENCE_CODE='''
+import json,urllib.request,urllib.error,shutil
+assert shutil.which('timeout'),'remote bounded process runner unavailable'
+base='http://127.0.0.1:8082/api/v1'
+with urllib.request.urlopen(base+'/health/ready',timeout=10) as response:
+    ready=json.load(response)
+    assert response.status==200 and ready.get('ok') is True and ready.get('database')=='ready'
+paths=['/admin/support-orders/payouts/release-synthetic/adjust-rate','/wallet/manual/admin/payouts/release-synthetic/void-unbroadcast','/recharge/admin/requests/release-synthetic/execute-settlement']
+for path in paths:
+    request=urllib.request.Request(base+path,data=b'{}',headers={'Content-Type':'application/json'},method='POST')
+    try:response=urllib.request.urlopen(request,timeout=10)
+    except urllib.error.HTTPError as error:response=error
+    with response:
+        body=json.load(response)
+        assert response.status==503 and body['error']['code']=='SUPPORT_FINANCE_RELEASE_WRITE_FENCE'
+        assert set(body['error'])=={'code','message','trace_id','fields'} and body['error']['fields']=={}
+        assert response.headers.get('Cache-Control')=='no-store'
+print(json.dumps({'passed':True,'actual_http':True,'ready_json':True,'blocked_routes':paths,'remote_timeout_available':True}))
+'''
+
+def bridge_runtime_fence(health,snapshot):
+    current=c.docker_inspect(health['api']['Id'])
+    if (current['Id']!=health['api']['Id'] or current['Image']!=health['api']['Image']
+            or current['Config']['Labels']['com.docker.compose.project.config_files']!=str(snapshot)):
+        raise ValueError('bridge identity or guarded Compose changed')
+    validate_actual_startup(current['Config']);c._same_runtime_configuration('api')
+    proof=json.loads(c.run('docker','exec',current['Id'],'python','-c',LIVE_FENCE_CODE,timeout=60))
+    if proof.get('passed') is not True or proof.get('actual_http') is not True:
+        raise ValueError('actual bridge HTTP fence required')
+    return {**proof,'container_id':current['Id'],'image':current['Image'],'guard_snapshot':str(snapshot),'guard_snapshot_sha256':sha_file(Path(snapshot))}
 
 def overlay(role,base,inventory,files,label):
     context=c.PRIVATE/'build'/label;context.mkdir(parents=True)
@@ -42,9 +89,7 @@ def role_payload(record):
 def build(m):
     c.check_prepared(m)
     api_config=c.read_private('api-container-inspect.json')['Config']
-    startup=' '.join(api_config.get('Cmd') or [])
-    if not all(token in startup for token in ('alembic','upgrade head','app.main:create_default_app','--factory')):raise ValueError('unreviewed API actual startup/entry')
-    if api_config.get('Entrypoint') not in (None,[]):raise ValueError('unexpected API entrypoint')
+    validate_actual_startup(api_config)
     if (c.PRIVATE/'images.json').exists():raise ValueError('candidate already built')
     images={};back={}
     for role in ('api','worker'):
@@ -192,10 +237,12 @@ def before_switch(m,expected_images,expected_schema):
     return baseline
 
 def bridge_expand(m):
-    # The fenced API retains exact production startup; its Alembic auto-upgrade
-    # expands0094 before serving. No financial writes can pass its middleware.
+    with exclusive_bridge_lock():return _bridge_expand_locked(m)
+
+def _bridge_expand_locked(m):
+    # Preserve direct Uvicorn startup. Fence first on0093, then one bounded DDL process.
     c.check_prepared(m);validate_restore(m)
-    if (c.PRIVATE/'bridge-result.json').exists():raise ValueError('bridge already attempted')
+    if (c.PRIVATE/'bridge-attempt.json').exists():raise ValueError('bridge already attempted; reviewed recovery required')
     candidate=c.read_private('images.json');back=c.read_private('rollback-images.json')
     if back['api']==m['roles']['api']['base_image'] or back['worker']!=candidate['worker']:raise ValueError('unsafe rollback identity')
     bridge={'api':back['api'],'worker':m['roles']['worker']['base_image']}
@@ -204,10 +251,26 @@ def bridge_expand(m):
         c._render_compose(role,'bridge',compose_with_image(config,ROLE_SERVICE[role],bridge[role]),bridge[role])
     c._guard('check',c.protocol_images(candidate,back))
     c.write_private('bridge-attempt.json',{'started_utc':utc(),'images':bridge})
-    result=c._guard('deploy',services=['business-api'],version='bridge')
-    health=c._selected_health(bridge,wait=True,replaced_roles=('api',))
-    if c.database_value('select version_num from alembic_version')!=TARGET_SCHEMA:raise ValueError('fenced bridge did not expand0094')
-    c.write_private('bridge-result.json',{'images':bridge,'schema':TARGET_SCHEMA,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot'])),'restart_counts':c._restart_counts(health),'containers':health})
+    result={};phase='guarded-fence-switch'
+    try:
+        result=c._guard('deploy',services=['business-api'],version='bridge')
+        phase='guarded-fence-health'
+        health=c._selected_health(bridge,wait=True,replaced_roles=('api',))
+        if c.database_value('select version_num from alembic_version')!=BASE_SCHEMA:raise ValueError('bridge must serve on frozen0093 before migration')
+        proof=bridge_runtime_fence(health,result['snapshot'])
+        c.write_private('bridge-fenced.json',{'images':bridge,'schema':BASE_SCHEMA,'fence':proof,'containers':health,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot']))})
+        phase='single-bounded-expand'
+        current=c.docker_inspect(health['api']['Id'])
+        if current['Id']!=health['api']['Id'] or current['Image']!=bridge['api'] or c.database_value('select version_num from alembic_version')!=BASE_SCHEMA:raise ValueError('bridge ID/image/schema changed before migration')
+        c.write_private('bridge-migration-attempt.json',{'started_utc':utc(),'container_id':current['Id'],'image':current['Image'],'before_schema':BASE_SCHEMA,'target_schema':TARGET_SCHEMA,'process_timeout_seconds':150,'lock_timeout_ms':5000,'statement_timeout_ms':120000})
+        c.run('docker','exec','-e','PGOPTIONS=-c lock_timeout=5000 -c statement_timeout=120000',current['Id'],'timeout','--signal=TERM','--kill-after=10s','150s','python','-m','alembic','upgrade',TARGET_SCHEMA,output_file=c.PRIVATE/'bridge-migration.private.log',timeout=180)
+        if c.database_value('select version_num from alembic_version')!=TARGET_SCHEMA:raise ValueError('explicit bridge expansion did not reach0094')
+        phase='expanded-bridge-health'
+        health=c._selected_health(bridge,wait=True,frozen=health)
+        c.write_private('bridge-result.json',{'images':bridge,'schema':TARGET_SCHEMA,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot'])),'restart_counts':c._restart_counts(health),'containers':health,'fence_before_migration':proof,'migration':'single bounded docker exec'})
+    except Exception:
+        c.write_private('bridge-failure.json',{'failed_utc':utc(),'phase':phase,'images':bridge,'guard_snapshot':result.get('snapshot'),'recovery':'retain actual guarded state; inspect containers, fence, head and process; no automatic retry, Worker or final API switch'})
+        raise
     return {'bridge_fenced':True,'schema':TARGET_SCHEMA,'worker_original_until_dual_candidate_switch':True}
 
 
