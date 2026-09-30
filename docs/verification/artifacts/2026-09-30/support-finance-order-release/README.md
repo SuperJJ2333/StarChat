@@ -56,3 +56,22 @@ After a completed expansion, `python3 server_release.py rollback` activates the 
 Tooling-only server replacement is limited to `server_release.py` and this README, with old/new byte hashes and versioned backups recorded by the operator. Do not re-freeze or replace the product manifest, payload, probes, guards or private backups.
 
 Required remaining gates: source reconciliation and tooling review; actual immutable image builds, guards, clone and Worker outputs; strict TLS readiness, anonymous rejection, OpenAPI and static hashes from server and workstation; bounded log checks and unchanged other containers. Use `public_verify.py --socks5-hostname 127.0.0.1:<port>` through the approved temporary jumper tunnel on the workstation. Authorized staff and owner UI acceptance remains separate. Release checks do not authorize real payments or production financial writes.
+
+
+## Failed fixture clone recovery
+
+The first actual clone probe reached 0094 but failed its synthetic fixture on `ck_manual_payout_claim`; it has no compatibility proof or saved before-fingerprint. It must never be counted as a successful migration rehearsal. Fixed fixture commit c315c4f5 passed real PostgreSQL 0094 and actual ASGI checks locally. Each order has its own quote, UNKNOWN original payer/claim time, valid staged/evidence/recharge leases and synthetic users with owned FK references.
+
+After independent review, version-back up and replace only the probe, add `clone_recovery.py`, and preserve the operator's raw old probe copy inside this release directory. The helper copies current private failure logs before any subprocess can overwrite stderr. Run:
+
+```
+python3 clone_recovery.py amend-probe --old-manifest-sha <actual-old-manifest-SHA> --old-baseline-sha <actual-private-baseline-SHA> --old-probe-sha 2bfc24cbf3355a6f6113d8ab9682e58f655e869542c0d371cb8305b1aaa20877 --new-probe-sha 5c9ab84727b0a44acda65752a3afb081e8809104a07417039d85485f8cbf9b84 --old-probe-file <versioned-old-probe-file-inside-this-release>
+python3 clone_recovery.py recover-clone --volume b4b77e146cd41cc80502d0e847e89c66c5b3aa82fb388300bb5440d1a2159308
+python3 server_release.py probe-clone
+python3 server_release.py probe-worker
+python3 server_release.py restore-finalize
+```
+
+Amendment archives exact old/new manifest, baseline and probe bytes plus hashes. The manifest changes only `wallet_probe_sha256`; private baseline changes only its `manifest_sha256` binding. Payload, source identity, image IDs and other proofs remain exact. A partially completed two-file binding update blocks ordinary gates; preserve its intent/byte archives and obtain reviewed recovery before proceeding.
+
+Recovery requires no completed clone proof or production attempt. It verifies recorded generated clone name/ID, pinned Postgres image, network none, no host binds/published ports, exactly the explicitly named anonymous local data volume and no other container using it. It removes only the immutable recorded container ID with its anonymous volume and proves both absent. Original restore record and failed logs are retained under a unique private attempt. A fresh 0093 clone must restore from the same dump SHA; then 0093→0094, financial fingerprints and fixed ASGI probe run afresh. Never download private evidence or run these helpers against production database/containers.
