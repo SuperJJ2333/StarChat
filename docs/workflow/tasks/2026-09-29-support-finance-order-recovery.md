@@ -67,3 +67,20 @@
 2026-09-30 13:44 +08:00 前后（准确分钟以后续工具时钟为准），release implementer 检查发现现网 Worker 独立安装业务 API app package，`ManualWalletMaintenanceTask` 不依赖新资金开关而持续对 CLAIMED/UNKNOWN 调用旧 `ManualPayoutService.reconcile`。仅更新 API 会让自动核对绕过本轮新的跨订单归属校验。
 
 Ruling: 将本轮已获批准的共享资金模块同步覆盖到 Worker 实际 site-packages 导入来源及 /opt/business-api 镜像副本，Worker任务代码不改；候选和兼容回退都保留同一安全核对，双角色门禁和隔离克隆验证后切换 API/Worker。依据是用户已授权产品及生产修复，Task14 “代码不改则保持Worker”条件不满足共享依赖实现更新；保留旧Worker无法实现规格。代价：需要重建并受控重启Worker，扩大到两服务的发布清单，必须证明其余任务/配置与容器不变。独立领域审查正在验证精确模块及恢复边界，未做生产写入。
+
+Ruling: 受控切换使用 fenced API bridge，由已验证的兼容镜像启动扩展0093并暂时拒绝提现/充值HTTP写入；隔离迁移及候选/回退双角色门禁先通过，随后guard先切安全Worker再候选API/静态。依据是防止旧adjust-rate在迁移/切换窗口继续自动开始出款；保留原数据。代价：短暂写入口不可用及两次API受控重启，需要逐阶段绑定实际镜像/Compose/schema并支持从bridge恢复。尚为发布工具实现方案，未执行生产切换。
+
+## 完整基线源码漂移核对
+
+2026-09-30 05:51:13 UTC snapshot 冻结API fadabb52、Worker3c9e4、schema0092、实际Compose及全部拟覆盖文件。主代理逐条比对Git1a246939原字节：API recharge.py/service.py有已发布7bffa68c绑定门槛、先完成重放后FX、参考率校验增量；已从不可变镜像安全读取三份源码并SHA绑定到support-source-drift。该变化不能被本轮覆盖，payout_finish按现网submit语义与本轮接管代码整合，冻结候选暂停至专项及复审完成。WalletRechargeBindingGate的已发布来源dd70c1a9，现网镜像已含该模块，本地会恢复同源代码和测试fixture。Workerledger差异仅缺管理员read-only balances_for；五文件共享安全闭包同步API当前类时新增该无写入方法，不损失Worker规则，源码SHA仍按本轮portableprobe绑定。暂无生产切换。
+
+## 2026-09-30 06:45 UTC 最新恢复与发布基线
+
+- 生产另一授权钱包任务于13:59:33 +08发布API `sha256:902eaefcb237924caf9b60145f728f9e2b4ec67fc2b659bd98ad7ea82edd101f` / Worker `sha256:90d7fb7472c82b78b9a9a56ef114620dd0aa0bd4a989e3011e3aa4ed24537282` / schema `0093_unbroadcast_payout_void`。06:37:48 UTC新只读snapshot已重新确认；上文fadabb52/0092仅为历史，不能用于新发布。
+- `479d4d57`保留不可变当前API镜像的非重叠模块及0093 VOID，恢复已发布监控行为；本次扩展迁移重编号0094→0093，22迁移/历史链专项通过23.02s。OpenAPI重新导出/check通过，包含已发布void接口和本次恢复接口。Worker additive AuditWriter保留其实际内部发布helper，所有API财务audit方法AST与当前API一致。
+- `4f17fb82`/`ec1e128a`保留VOIDED精确原始资产/管理员actor；`c4c96fb9`显式review仅清payment_verified_at、保留receipt/binding，严格Worker恢复事件合同。独立finance规格/领域及质量安全审查无P0–P2，121专项通过15.65s；提现合并最终独立复审待办。
+- 全API/Worker已完成：3276 passed / 73 skipped / 6 failed / 1既有httpx弃用warning，2496.21s。6失败分别为两项旧head断言、发现截止旧采集输入、review未清付款验证、Worker合同缺失、旧UNKNOWNfixture。最终聚焦复测已分别关闭；不将最初全量exit1改称通过，不重复41分钟同输入无关门禁。完整verify仍缺本地.env；未导入生产secret。
+- 发布工具补齐Worker逐阶段ID、兼容回退允许受控重建且禁止未授权替换、admin void写入口fence。55行为专项通过，独立工具审查待完成。portable probe `b6108a7f` SHA `3c86002497d334b43c412e7736f99f6392780a7d3d5f3eb4022adf8b7ba4be33`绑定6业务模块和2实际Worker任务，要求0094。
+- 下一执行步骤：完成独立工具/提现复审，冻结当前源码和实时snapshot；服务器私有备份、隔离恢复0093→0094、实际Worker旧红新绿、候选及兼容回退双角色门禁；bridge→Worker→API/4静态受控发布。尚无本次生产服务/数据库/静态变更，真实角色会话验收仍待提供账号。
+
+- 新0094隔离PGv2专项：recharge并发/直接settlement/receipt 31 passed，9.24s，无跳过；未使用生产资金操作。
