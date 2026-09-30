@@ -123,6 +123,9 @@ def test_recharge_takeover_route_requires_current_owner_proof_and_rotates_token(
     recharge = app.state.recharge_service
     recharge.settlement_enabled = True
     recharge.official_config = SimpleNamespace(address='isolated-test-address', version='v1')
+    from binding_fixture import seed_active_binding
+    with factory.begin() as session:
+        seed_active_binding(session,user_id='alice',now=recharge._utcnow())
     order = recharge.submit(user_id='alice', amount_usdt='10', idempotency_key='owner-route-order')
     first = recharge.claim_order(request_id=order['id'], actor_id='agent',
         idempotency_key='first-owner-route-claim')

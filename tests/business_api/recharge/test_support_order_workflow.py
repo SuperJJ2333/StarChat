@@ -11,6 +11,7 @@ from app.modules.identity.models import User
 from app.modules.identity.enums import AccountStatus
 from app.modules.ledger.service import LedgerService
 from app.modules.recharge.service import RechargeService
+from binding_fixture import seed_active_binding
 
 @pytest.fixture
 def flow(tmp_path):
@@ -21,8 +22,9 @@ def flow(tmp_path):
     with factory.begin() as s:
         for name in ('alice','bob','cs1','cs2'):
             s.add(User(id=name,username=name,username_normalized=name,email=name+'@example.test',email_normalized=name+'@example.test',password_hash='unused',status=AccountStatus.ACTIVE,created_at=clock[0],updated_at=clock[0]))
+        seed_active_binding(s,user_id='alice',now=clock[0])
     service=RechargeService(factory,ledger=LedgerService(factory),now=lambda:clock[0])
-    service.official_config=SimpleNamespace(address='official-test-address',version='v1')
+    service.official_config=SimpleNamespace(address='isolated-fixture-official',version='fixture-v1')
     yield service,clock,factory
     engine.dispose()
 
@@ -198,7 +200,7 @@ def test_recharge_takeover_does_not_transfer_unattributed_binding(
     if has_receipt:
         service.wallet_receipts=SimpleNamespace(require_recharge_handoff_reservation=lambda *args,**kwargs:
             (SimpleNamespace(amount=Decimal('10'),txid='a'*64,
-                official_address='official-test-address',official_config_version='v1'),
+                official_address=service.official_config.address,official_config_version=service.official_config.version),
              SimpleNamespace(state='RESERVED')))
     assert service.pending_page(actor_id='owner',owner_id='owner')['items'][0]['can_takeover'] is False
     authorization=lambda session: lambda: None
@@ -249,12 +251,12 @@ def test_owner_takeover_preserves_old_receipt_and_active_unexecuted_binding(flow
         preview_recharge_handoff_reservation=lambda *args,**kwargs: None,
         require_recharge_handoff_reservation=lambda *args,**kwargs:
             (SimpleNamespace(amount=Decimal('10'),txid='a'*64,
-                official_address='official-test-address',official_config_version='v1'),
+                official_address=service.official_config.address,official_config_version=service.official_config.version),
              SimpleNamespace(state='RESERVED')))
     assert service.pending_page(actor_id='owner',owner_id='owner')['items'][0]['can_takeover'] is False
     service.wallet_receipts.preview_recharge_handoff_reservation=(lambda *args,**kwargs:
         SimpleNamespace(amount=Decimal('10'),txid='a'*64,
-            official_address='official-test-address',official_config_version='v1'))
+            official_address=service.official_config.address,official_config_version=service.official_config.version))
     owner_view=service.pending_page(actor_id='owner',owner_id='owner')['items'][0]
     assert owner_view['can_takeover'] is True
     assert owner_view['takeover_review_required'] is True
@@ -293,7 +295,7 @@ def test_same_claimant_can_enter_expired_receipt_review_without_erasing_proof(fl
     clock[0]+=timedelta(hours=3)
     service.wallet_receipts=SimpleNamespace(require_recharge_handoff_reservation=lambda *args,**kwargs:
         (SimpleNamespace(amount=Decimal('10'),txid='a'*64,
-            official_address='official-test-address',official_config_version='v1'),
+            official_address=service.official_config.address,official_config_version=service.official_config.version),
          SimpleNamespace(state='RESERVED')))
     renewed=service.claim_order(request_id=order['id'],actor_id='cs1',
         idempotency_key='review-own-proof',review=True,reason='继续核对已到账凭证')
@@ -306,7 +308,7 @@ def test_same_claimant_can_enter_expired_receipt_review_without_erasing_proof(fl
 
 def test_unverified_order_cannot_bind_and_deadline_becomes_review(flow):
     service,clock,_=flow;order=submit(service)
-    assert order['expires_at'] and order['official_payment']['address']=='official-test-address'
+    assert order['expires_at'] and order['official_payment']['address']=='isolated-fixture-official'
     claim=service.claim_order(request_id=order['id'],actor_id='cs1',idempotency_key='c1')
     with pytest.raises(AppError) as err:
         service.bind_finance_adjustment(request_id=order['id'],actor_id='cs1',adjustment_id='anything',final_rate='7',idempotency_key='b1',claim_token=claim['claim_token'])

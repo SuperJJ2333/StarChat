@@ -132,10 +132,10 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
     def official_payment(user_id: str = Depends(actor)):
         return recharge_service.official_payment_view()
 
-    @router.post("/requests", status_code=201)
+    @router.post("/requests", status_code=201, responses={409: {
+        "description": "WALLET_BINDING_REQUIRED, WALLET_BINDING_PENDING, "
+                       "WALLET_BINDING_VERSION_CONFLICT, or idempotency/evidence conflict"}})
     def submit(body: RechargeSubmitBody, idempotency_key: IdempotencyKey, user_id: str = Depends(actor)):
-        if settings.environment != 'test':
-            recharge_service.official_payment_view()
         return recharge_service.submit(user_id=user_id, amount_usdt=Decimal(body.amount_usdt),
             evidence_txid=body.evidence_txid, note=body.note, idempotency_key=idempotency_key)
 

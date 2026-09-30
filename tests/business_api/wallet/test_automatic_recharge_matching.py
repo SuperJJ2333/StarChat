@@ -8,12 +8,15 @@ from app.modules.ledger.service import LedgerService
 from app.modules.recharge.service import RechargeService
 from app.modules.recharge.models import RechargeRequest
 from app.modules.wallet.recharge_receipt_models import RechargeReceiptReservation
-from app.modules.wallet.binding_models import WalletBinding
+from app.modules.wallet.binding_models import WalletBinding, WalletBindingState
 from tasks.recharge_registration import RechargeRegistrationTask
 
 
 def setup_order(core,amount='10',keys=('one',)):
     receipts,factory,adapter,_,_,now=core
+    with factory() as session:
+        state=session.get(WalletBindingState,'alice')
+        assert state is not None and state.active_binding_id and state.version==1
     clock=[now]
     service=RechargeService(factory,ledger=LedgerService(factory),wallet_receipts=receipts,
         official_config=receipts.official_config,now=lambda:clock[0])
