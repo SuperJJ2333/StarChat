@@ -43,3 +43,11 @@
 `c03737b0` payout discovery/selection/final attribution/takeover 完成。269 focused passed，后续20 discovery/takeover及16 discovery passed；隔离PG12 passed58.89s、变更增量4 passed17.55s。独立 scoped spec/domain then quality/security PASS，无P0–P2；最终 backend integration review 进行中。
 
 `64305b86` 前端复审五项P1统一修复，额外未知候选不可选择及真实 evidence_token 响应断言；先6个失败，后79 focused/source tests PASS。前端 scoped re-review 进行中，候选尚未部署。
+
+## 最终源码审查及生产准备（2026-09-30 06:51 UTC）
+
+最终frontend64305、payoutc037/ec1、finance4f17/c4c、生产rebase479及工具c204均完成独立规格/领域与质量安全审查，无P0–P2待修。独立121 finance专项、12VOID、22迁移+5OpenAPI通过；root新0094 PG31/9.24s和发现/maintenance31/5.79s通过。完整API/Worker门禁保留真实结果：3276pass/73skip/6fail/1warning，2496.21s；6个失败由最终聚焦测试逐项关闭，无重复全量或假称最初exit0。
+
+生产新基线API902eaefc/Worker90d7fb74/schema0093_void已按不可变源码完整核对并保留；0094扩展不替换0093。最终archiveSHA9f4ba401…、manifestSHA42ad9a8e…，sourcec204；06:51:05 UTC实时snapshot+服务器preflightPASS。prepare私有备份PASS，备份SHA d76ea343…，其余28容器冻结。数据备份留服务器0700目录未下载。
+
+build在构建前因actualAPI启动直接uvicorn（无alembic）安全停止。尚未构建候选或切换服务/迁移生产schema。修订工具将先切真实fencedAPI再单次dockerexec扩展，保持Cmd/Compose，补红绿与独立审查后按SHA原子替换工具再恢复执行。真实管理员会话及金融实际操作验收仍待，历史已开始单不自动退款。

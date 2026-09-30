@@ -84,3 +84,10 @@ Ruling: 受控切换使用 fenced API bridge，由已验证的兼容镜像启动
 - 下一执行步骤：完成独立工具/提现复审，冻结当前源码和实时snapshot；服务器私有备份、隔离恢复0093→0094、实际Worker旧红新绿、候选及兼容回退双角色门禁；bridge→Worker→API/4静态受控发布。尚无本次生产服务/数据库/静态变更，真实角色会话验收仍待提供账号。
 
 - 新0094隔离PGv2专项：recharge并发/直接settlement/receipt 31 passed，9.24s，无跳过；未使用生产资金操作。
+
+## 06:51 UTC 发布执行阶段
+
+- 最终独立release工具c204审查PASS；VOID合并12tests独立PASS；恢复基线22+5contracts独立PASS。06:51:05 UTCsnapshot镜像/schema/config/file与既有baseline一致。冻结sourcec204，archiveSHA `9f4ba401318c434d21a00e5304b02aeaa6cb2f4c0275da0c69d8f6e13e0383b4`，manifestSHA `42ad9a8e293a452165343aefa4ea07dc498c47dfc720b35e06bb92a8d6bdf21d`。服务器上传哈希校验/preflightPASS。
+- preparePASS：备份SHA `d76ea3434f99dd33b48ff83dcde5c0503d8f6687fa4d9557ba7d1ba068b52a23`，私有目录 `/opt/starchat/releases/support-finance-order-recovery-20260930-v1/private`，备份未下载。冻结目标2服务，其他28容器。
+- build在构建前拒绝：工具假定startup含alembic，而actualCmd仅uvicorn factory port8082 workers2，Entrypoint null。尚无候选image/context/服务切换/schema写入。修订工具红绿及独立审查进行中；不得规避检查直接发布。
+- Ruling：保持actualCmd与Compose，先guard激活fencedAPI、核实health及HTTP写503，再单次dockerexec迁移0094；避免未fence迁移窗口和两个uvicornworker并发迁移。迁移失败保持fence并保留私有attempt证据，不盲目恢复unfenced旧API。产品payload仍c204冻结，工具更新独立SHA记录。该裁定实现中、未执行。
