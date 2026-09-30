@@ -444,6 +444,9 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
       MotionPageRoute(
         builder: (_) => GlobalSearchConversationRecordsPage(
           conversation: conversation,
+          room: _currentRooms[conversation.roomId] ?? conversation.latest.room,
+          identityCache: widget.identityCache,
+          avatarMedia: _avatarMedia,
           query: controller.query,
           onOpenHit: (hit) => _openRoom(hit.room, anchorEventId: hit.eventId),
         ),
@@ -659,19 +662,34 @@ final class GlobalSearchConversationRecordsPage extends StatelessWidget {
     required this.conversation,
     required this.query,
     required this.onOpenHit,
+    this.room,
+    this.identityCache,
+    this.avatarMedia,
   });
 
   final GlobalSearchConversationHit conversation;
   final String query;
   final Future<void> Function(GlobalSearchMessageHit hit) onOpenHit;
+  final GlobalSearchRoomResult? room;
+  final ProfileRepository? identityCache;
+  final AvatarMediaCapability? avatarMedia;
 
   @override
-  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
+  Widget build(BuildContext context) => identityCache == null
+      ? _buildPage(context)
+      : ListenableBuilder(
+          listenable: identityCache!,
+          builder: (context, _) => _buildPage(context));
+
+  Widget _buildPage(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
-          middle: Text(conversation.roomName,
-              maxLines: 1, overflow: TextOverflow.ellipsis),
+          middle: Text(
+              _searchConversationName(room ?? conversation.latest.room,
+                  conversation, identityCache),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
         ),
         child: SafeArea(
           child: ListView.separated(
@@ -686,6 +704,9 @@ final class GlobalSearchConversationRecordsPage extends StatelessWidget {
             ),
             itemBuilder: (context, index) => _MessageHitRow(
               hit: conversation.hits[index],
+              room: room,
+              identityCache: identityCache,
+              avatarMedia: avatarMedia,
               query: query,
               onTap: () => unawaited(onOpenHit(conversation.hits[index])),
             ),
@@ -786,7 +807,7 @@ final class _ConversationRow extends StatelessWidget {
         identityCache: identityCache,
         size: WeChatDimensions.contactAvatar,
       ),
-      title: Text(conversation.roomName,
+      title: Text(_searchConversationName(room, conversation, identityCache),
           maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         conversation.isSingleHit ? hit.body : '${conversation.total}条相关聊天记录',
@@ -799,24 +820,45 @@ final class _ConversationRow extends StatelessWidget {
 
 final class _MessageHitRow extends StatelessWidget {
   const _MessageHitRow(
-      {required this.hit, required this.query, required this.onTap});
+      {required this.hit,
+      required this.query,
+      required this.onTap,
+      this.room,
+      this.identityCache,
+      this.avatarMedia});
 
   final GlobalSearchMessageHit hit;
   final String query;
   final VoidCallback onTap;
+  final GlobalSearchRoomResult? room;
+  final ProfileRepository? identityCache;
+  final AvatarMediaCapability? avatarMedia;
+
+  String get senderName =>
+      identityCache
+          ?.resolveIdentity(
+              matrixUserId: hit.senderId, displayName: hit.senderName)
+          .displayName ??
+      hit.senderName;
 
   @override
   Widget build(BuildContext context) => WeChatListTile(
         key: Key('global-search-hit-${hit.eventId}'),
         onTap: onTap,
         leadingSize: WeChatDimensions.contactAvatar,
-        leading: UserAvatar(
-          nickname: hit.senderName,
-          fallbackSeed: hit.senderId,
+        leading: SearchRoomAvatar(
+          room: GlobalSearchRoomResult(
+            roomId: hit.roomId,
+            displayName: senderName,
+            isDirect: true,
+            directPeerId: hit.senderId,
+            matrixAvatarUri: _senderAvatar,
+          ),
+          identityCache: identityCache,
+          avatarMedia: avatarMedia,
           size: WeChatDimensions.contactAvatar,
         ),
-        title:
-            Text(hit.senderName, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(senderName, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -827,6 +869,42 @@ final class _MessageHitRow extends StatelessWidget {
           ],
         ),
       );
+
+  Uri? get _senderAvatar {
+    if (room?.isDirect == true && room?.directPeerId == hit.senderId)
+      return room?.matrixAvatarUri;
+    for (final member
+        in room?.avatarMembers ?? const <GlobalSearchAvatarMember>[]) {
+      if (member.userId == hit.senderId) return member.matrixAvatarUri;
+    }
+    return null;
+  }
+}
+
+String _searchConversationName(
+    GlobalSearchRoomResult room,
+    GlobalSearchConversationHit conversation,
+    ProfileRepository? identityCache) {
+  String? peer = room.directPeerId;
+  if (room.isDirect && peer == null) {
+    for (final hit in conversation.hits) {
+      if (!hit.senderIsSelf) {
+        peer = hit.senderId;
+        break;
+      }
+    }
+  }
+  final fallback =
+      room.displayName.startsWith('!') || room.displayName.startsWith('@')
+          ? (room.isDirect ? '聊天' : '群聊')
+          : room.displayName;
+  if (room.isDirect && peer != null) {
+    return identityCache
+            ?.resolveIdentity(matrixUserId: peer, displayName: fallback)
+            .displayName ??
+        fallback;
+  }
+  return fallback;
 }
 
 /// 关键词高亮（基于纯文本片段，不执行消息中的 HTML/markdown）。

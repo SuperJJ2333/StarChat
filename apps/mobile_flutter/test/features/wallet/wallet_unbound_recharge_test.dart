@@ -69,6 +69,58 @@ void main() {
         home: ManualWalletPage(client: api, section: section));
   }
 
+  testWidgets('overview does not repeat application links below wallet cards',
+      (tester) async {
+    await tester.pumpWidget(await walletFor('ACTIVE'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('manual-recharge-history-open')), findsNothing);
+    expect(find.text('查看已有充值申请'), findsNothing);
+    expect(find.text('查看已有提现申请'), findsNothing);
+  });
+
+  testWidgets('recharge form shows only newest order from unsorted history',
+      (tester) async {
+    await tester.pumpWidget(await walletFor('ACTIVE',
+        section: ManualWalletSection.deposit,
+        history: [
+          {
+            'id': 'older',
+            'amount_usdt': '10.000000',
+            'status': 'CREDITED',
+            'created_at': '2026-09-28T10:00:00Z'
+          },
+          {
+            'id': 'newest',
+            'amount_usdt': '20.000000',
+            'status': 'CANCELLED',
+            'created_at': '2026-09-30T10:00:00Z'
+          },
+          {
+            'id': 'middle',
+            'amount_usdt': '30.000000',
+            'status': 'REJECTED',
+            'created_at': '2026-09-29T10:00:00Z'
+          },
+        ]));
+    await tester.pumpAndSettle();
+    expect(find.text('newest'), findsWidgets);
+    expect(find.text('older'), findsNothing);
+    expect(find.text('middle'), findsNothing);
+  });
+
+  testWidgets('pending recharge is reachable through the top notice only',
+      (tester) async {
+    await tester.pumpWidget(await walletFor('UNBOUND', history: [
+      {'id': 'pending', 'amount_usdt': '10.000000', 'status': 'SUBMITTED'}
+    ]));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('manual-deposit-notice')), findsOneWidget);
+    expect(find.text('查看已有充值申请'), findsOneWidget);
+    expect(find.byKey(const Key('manual-recharge-history-open')), findsNothing);
+    await flow.tap(tester, find.byKey(const Key('manual-deposit-notice-open')));
+    expect(find.text('pending'), findsWidgets);
+  });
+
   for (final status in ['UNBOUND', 'PENDING']) {
     testWidgets('$status cannot open a new CNY recharge', (tester) async {
       var creates = 0;
@@ -174,14 +226,13 @@ void main() {
       (tester) async {
     var creates = 0;
     await tester.pumpWidget(await walletFor('UNBOUND',
+        section: ManualWalletSection.deposit,
         history: [
           {'id': 'old-1', 'amount_usdt': '10.000000', 'status': 'CREDITED'}
         ],
         onCreate: () => creates++));
     await tester.pumpAndSettle();
 
-    await flow.tap(
-        tester, find.byKey(const Key('manual-recharge-history-open')));
     expect(find.text('old-1'), findsWidgets);
     expect(
         tester

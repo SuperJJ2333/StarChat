@@ -623,7 +623,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     }
     // 快照刚由 enter() 取回：这里的 refresh 只补绑定状态与草稿恢复，
     // 不再重复请求一次能力配置/余额。
-    if (cnyPricing && widget.section == ManualWalletSection.deposit) {
+    if (cnyPricing &&
+        (widget.section == ManualWalletSection.deposit ||
+            widget.section == ManualWalletSection.overview)) {
       unawaited(_performanceTrace
           .runChildOperations(() => loadRecharges(entering: true)));
     }
@@ -1888,15 +1890,6 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: WeChatColors.textSecondary)),
         if (pointsError != null) warningBox(pointsError!),
-        if (cnyPricing)
-          CupertinoButton(
-              key: const Key('manual-recharge-history-open'),
-              padding: const EdgeInsets.symmetric(vertical: WeChatSpacing.md),
-              onPressed: ready && !busy
-                  ? () =>
-                      openSection(ManualWalletSection.deposit, recover: true)
-                  : null,
-              child: const Text('查看已有充值申请')),
         const SizedBox(height: 20),
         Row(children: [
           Expanded(
@@ -1911,7 +1904,16 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       ]);
 
   /// 需要跟进的申请提醒身份（null = 没有）。
-  String? get depositNotice => depositNoticeIdentity(depositOp);
+  String? get depositNotice {
+    if (cnyPricing && rechargeOp != null) {
+      final id = rechargeOp?['id'];
+      final terminal = rechargeHistory.any((row) =>
+          row['id'] == id &&
+          const {'CREDITED', 'CANCELLED', 'REJECTED'}.contains(row['status']));
+      if (!terminal) return 'recharge:${id ?? rechargeOp!['key']}';
+    }
+    return depositNoticeIdentity(depositOp);
+  }
 
   String? get payoutNotice => payoutNoticeIdentity(payoutOp, quoteOp);
 
@@ -2261,6 +2263,20 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     ]);
   }
 
+  Map<String, dynamic>? get latestRecharge {
+    Map<String, dynamic>? latest;
+    DateTime? newestAt;
+    for (final row in rechargeHistory) {
+      final at = DateTime.tryParse(row['created_at']?.toString() ?? '');
+      if (latest == null ||
+          (at != null && (newestAt == null || at.isAfter(newestAt)))) {
+        latest = row;
+        newestAt = at;
+      }
+    }
+    return latest;
+  }
+
   List<Widget> manualRechargeFields() => [
         stepIndicator(const ['填写金额', '客服处理'], rechargeOp?['id'] == null ? 0 : 1,
             keyPrefix: 'manual-deposit-step'),
@@ -2281,16 +2297,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   (rechargeOp != null || activeBinding),
               key: 'manual-recharge-submit'),
         ],
-        if (rechargeOp?['id'] != null)
-          for (final request
-              in rechargeHistory.where((row) => row['id'] == rechargeOp?['id']))
-            rechargeOrder(request),
+        if (latestRecharge != null) rechargeOrder(latestRecharge!),
         if (rechargeOp?['id'] != null &&
             !rechargeHistory.any((row) => row['id'] == rechargeOp?['id']))
           codeRow('待刷新订单', rechargeOp!['id'] as String, 'recharge-pending-id'),
-        for (final request
-            in rechargeHistory.where((row) => row['id'] != rechargeOp?['id']))
-          rechargeOrder(request),
         if (rechargeOp?['id'] != null &&
             rechargeHistory.any((row) =>
                 row['id'] == rechargeOp?['id'] &&

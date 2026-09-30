@@ -13,6 +13,8 @@ import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 import 'package:liuhetong_mobile/features/matrix/duplicate_room_registry.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
+import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/features/search/global_search_avatar.dart';
 import 'package:liuhetong_mobile/features/search/global_search_index.dart';
 import 'package:liuhetong_mobile/features/search/global_search_models.dart';
@@ -134,6 +136,7 @@ Widget _page({
   PerformanceTrace? performanceTrace,
   PerformanceTrace? searchPerformanceTrace,
   AvatarMediaCapability? avatarMedia,
+  ProfileRepository? identityCache,
 }) =>
     CupertinoApp(
       home: GlobalSearchPage(
@@ -148,6 +151,7 @@ Widget _page({
         performanceTrace: performanceTrace,
         searchPerformanceTrace: searchPerformanceTrace,
         avatarMedia: avatarMedia,
+        identityCache: identityCache,
         onOpenRoom: nav == null
             ? (_, {anchorEventId}) async {}
             : (room, {anchorEventId}) =>
@@ -184,6 +188,74 @@ Future<void> _search(WidgetTester tester, String query) async {
 }
 
 void main() {
+  testWidgets(
+      'search records resolve current room and sender remark and avatar',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = await _api();
+    const contact = ContactSummary(
+      userId: 'peer',
+      username: 'peer-account',
+      matrixUserId: '@peer:test',
+      nickname: '好友昵称',
+      remark: '好友备注',
+      avatarUrl: 'https://avatar.test/current.png',
+    );
+    final identity = ProfileRepository.forTesting(
+      accountKey: '@alice:test',
+      store:
+          SharedPreferencesProfileStore(await SharedPreferences.getInstance()),
+      loadContacts: () async => [contact],
+    );
+    await identity.applyUpdatedContact(contact);
+    final index = GlobalSearchIndex()
+      ..recordRoom(
+        roomId: '!dm:test',
+        roomName: '!dm:test',
+        isGroup: false,
+        messages: [
+          _record(r'$one', '项目一', senderName: '过期昵称'),
+          _record(r'$two', '项目二', senderName: '过期昵称')
+        ],
+      );
+    final nav = _Nav();
+    await tester.pumpWidget(_page(
+      api: api,
+      index: index,
+      nav: nav,
+      contacts: const [],
+      identityCache: identity,
+      rooms: const [
+        GlobalSearchRoomResult(
+            roomId: '!dm:test',
+            displayName: '公开昵称',
+            isDirect: true,
+            directPeerId: '@peer:test')
+      ],
+    ));
+    await _search(tester, '项目');
+    final row = find.byKey(const Key('global-search-conversation-!dm:test'));
+    expect(
+        find.descendant(of: row, matching: find.text('好友备注')), findsOneWidget);
+    expect(find.text('!dm:test'), findsNothing);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text('好友备注'), findsNWidgets(3));
+    expect(find.text('过期昵称'), findsNothing);
+    final avatars = tester.widgetList<UserAvatar>(find.descendant(
+        of: find.byKey(const Key('global-search-conversation-records')),
+        matching: find.byType(UserAvatar)));
+    expect(avatars, hasLength(2));
+    expect(
+        avatars.every(
+            (avatar) => avatar.avatarUrl == 'https://avatar.test/current.png'),
+        isTrue);
+    await tester.tap(find.byKey(const Key('global-search-hit-\$one')));
+    await tester.pump();
+    expect(nav.opened.single, (roomId: '!dm:test', anchorEventId: r'$one'));
+    await tester.pumpWidget(const SizedBox.shrink());
+    identity.dispose();
+  });
   testWidgets('old-account rows disappear while the new owner is loading',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
