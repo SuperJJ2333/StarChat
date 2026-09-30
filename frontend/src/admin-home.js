@@ -13,7 +13,7 @@ import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completio
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';
 import {supportOrderAccessPanel} from './admin-support-order-access.js';
-import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260930-wallet-alert-void';
+import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260930-wallet-void-entry';
 
 const modules = [
   ["客服点钻派发", "批次与审计记录", "finance", "admin.adjustments.read"],
@@ -82,7 +82,7 @@ function modulePanel(key, title, context) {
 function supportOrderContent(api,context){
   const container=element('section');let child;
   const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),canManage:can(context,'*'),onOpenPayout:showPayout});container.replaceChildren(child);};
-  const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onBack:showRecharge});container.replaceChildren(child);};
+  const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onBack:showRecharge,onOpenWallet:can(context,'*')?context.onOpenPayout:null});container.replaceChildren(child);};
   container.refresh=()=>child?.refresh?.();container.refreshOrders=()=>child?.refreshOrders?.();container.dispose=()=>child?.dispose?.();
   showRecharge();return container;
 }

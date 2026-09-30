@@ -1,6 +1,6 @@
 import {refreshIcon} from './admin-dashboard.js';
 const make=(tag,cls,text)=>{const node=document.createElement(tag);node.className=cls??'';if(text!==undefined)node.textContent=String(text);return node;};
-export function supportPayoutPanel(api,{actor={},onBack}={}) {
+export function supportPayoutPanel(api,{actor={},onBack,onOpenWallet}={}) {
   const panel=make('section','admin-card admin-recharge-panel'),status=make('p','admin-audit-note'),body=make('div','recharge-section');
   status.setAttribute('role','status');panel.append(make('h2',null,'客服提现订单'),status);
   let disposed=false,generation=0,items=[],filter='all',cursor=null;
@@ -29,6 +29,10 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
         make('p',null,`申请 ${item.funding_amount??item.amount} ${item.funding_asset==='CAIBI'?'点钻':'USDT'} · 最终应付 ${item.final_receive??'待确认'} USDT`));
       if(item.expires_at)card.append(make('p','admin-audit-note',`截止（北京） ${new Date(item.expires_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
       if(['SETTLED','CANCELLED','VOIDED'].includes(item.status)){card.append(make('p','admin-audit-note',item.settlement_txid?`核验交易 ${item.settlement_txid}`:'订单已结束'));continue;}
+      if(item.status==='UNKNOWN'&&onOpenWallet){
+        card.append(make('p','admin-audit-note','确认从未签名、从未广播的出款，请在官方钱包的“人工出款”中查看本订单，完成链上预检和本次操作验证后撤销。'));
+        button(card,'前往官方钱包核对并撤销',onOpenWallet);
+      }
       const summary=card,dialog=make('dialog','admin-proof-dialog admin-order-dialog');dialog.setAttribute('aria-label','处理提现请求');dialog.hidden=true;
       dialog.dataset && (dialog.dataset.orderId=item.id);
       dialog.addEventListener('input',event=>{if(event.target?.tagName==='INPUT'){const draft=drafts.get(item.id)??{};draft[event.target.placeholder]=event.target.value;drafts.set(item.id,draft);}});

@@ -14,6 +14,17 @@ class Element {
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const button=(panel,text)=>panel.find('button').find(node=>node.textContent===text);
 
+test('unknown payout exposes owner workspace entry independently of support lease',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};const opened=[];
+  const order={id:'unknown-other',status:'UNKNOWN',claimed_by:'other',execution_started_at:'2026-09-29T00:00:00Z',amount:'10'};
+  const api={getSupportPayouts:async()=>({items:[order]}),supportPayoutCommand:async()=>assert.fail('navigation must not write financial state')};
+  const panel=supportPayoutPanel(api,{actor:{id:'owner'},onOpenWallet:()=>opened.push('wallet')});await flush();
+  const entry=button(panel,'前往官方钱包核对并撤销');assert.ok(entry);entry.handlers.click();await flush();
+  assert.deepEqual(opened,['wallet']);panel.dispose();
+  const staff=supportPayoutPanel(api,{actor:{id:'staff'}});await flush();
+  assert.equal(button(staff,'前往官方钱包核对并撤销'),undefined);staff.dispose();
+});
+
 test('expired unstarted payout uses explicit review claim via scoped API',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};const calls=[];
   const order={id:'expired',status:'REQUESTED',processing_stage:'NEEDS_REVIEW',amount:'10',expires_at:'2020-01-01T00:00:00Z'};
