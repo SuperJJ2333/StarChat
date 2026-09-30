@@ -65,3 +65,7 @@ python scripts/verify_ios_enterprise_ipa.py <最终IPA绝对路径> --bundle-id 
 用户在前述官网分发后明确要求启用 iOS 2173 应用内更新弹窗。本次用 `scripts/publish_ios_update_popup.py` 对**已发布且精确匹配上述一次性例外记录**的 2173 IPA 做设置切换；这不是后续 IPA 的通用豁免。命令输入之前官网发布的 `release.json`、私有备份中的 `result.json`、官网根目录、全新私有备份目录、非空新版说明及唯一审计 trace。它在共享发布锁内核对记录与固定签名差异、服务器 IPA SHA/大小、三个官网静态 SHA、公网 HEAD/小元数据、十项设置前态和空审计 trace，然后仅通过 `SettingService.set_many` 设置 `app_ios_latest_version=0.4.7`、`app_ios_latest_build=2173`、`app_ios_update_notes`。写入后核对十项设置及恰好三条审计；不改 iOS URL/最低支持 build 或 Android 设置。生产备份和验证见[弹窗任务](../workflow/tasks/2026-09-25-ios2173-update-popup.md)与[证据](../verification/2026-09-25-ios2173-update-popup.md)。
 
 当前设置服务的前态检查与写入不在同一数据库事务。发布时保持其他设置操作暂停，发布后核对完整现值与审计；若结果不明，先检查现值/trace，不能盲目重放或静默回退。将来若再次使用同类设置发布器，应先把 expected 比较纳入写事务。
+
+## 2026-09-30 iOS 2194 精确回签包分发例外
+
+用户获知ATHelper.dylib、flag与Runner加载命令三项差异后，对SHA256 `552a07a491129f0dd61120eff54a293eb6c3a8b0a3b57ab9001a17c16eef13bc`明确确认“确认，直接发布这个包”。[本次记录](../verification/2026-09-30-ios2194-distribution.md)限定原始CI SHA、最终SHA及精确三项差异；特殊签名AppID沿用已发布2189的新团队渠道，普通严格验包失败事实保留。一次性发布器在服务器重验19个Mach-O签名/页hash、双包与差异，并用共享锁、三静态SHA CAS、十键数据库事务CAS及SettingService审计发布iOS2194和说明。没有放宽通用门禁，也没有把旧包授权推广到后续包。用户同意直接分发，设备覆盖/历史/通知未验证；安装警示保留。后续包必须重新取得对应身份、差异与授权证据。

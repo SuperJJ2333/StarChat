@@ -1,0 +1,57 @@
+{
+  "download.html": {
+    "sha256": "f309c3fc5fb6fa59f74da217a645f32a173a50aea6938217cf18fb97b5fc78be",
+    "publication_sha256": "f309c3fc5fb6fa59f74da217a645f32a173a50aea6938217cf18fb97b5fc78be",
+    "concurrent_admin_import_change": false,
+    "content_type": "text/html",
+    "cache_control": "no-store"
+  },
+  "src/admin-home.js": {
+    "sha256": "554fef70c9f2d2b253badcf922faf187458ee412616e50a448dd6e08511f229a",
+    "publication_sha256": "2a53e0a08892760089ea60ce01816748c398421486228ef57dcbb03328135ee6",
+    "concurrent_admin_import_change": true,
+    "content_type": "application/javascript",
+    "cache_control": "no-store"
+  },
+  "downloads/ios/manifest.plist": {
+    "sha256": "afbff72ccc5e9fe2c5f5688d74bb3ce109067f9d6f2852125b4ea084bdbbb669",
+    "publication_sha256": "afbff72ccc5e9fe2c5f5688d74bb3ce109067f9d6f2852125b4ea084bdbbb669",
+    "concurrent_admin_import_change": false,
+    "content_type": "application/xml",
+    "cache_control": "no-store"
+  },
+  "downloads/android-release.json": {
+    "sha256": "4123d0e9f1a962d113266015068c2f713a63d4554a61ef1113bbfc608a0d97f7",
+    "android_unchanged": true
+  },
+  "src/download-network-selector.js": {
+    "sha256": "b7a8b3652b73874b270857c43d6fcda9119e7a87fe3ad1e0410283ba1afcc232",
+    "android_unchanged": true
+  },
+  "src/download-network.js": {
+    "sha256": "4082f63b8a04b8557344e87ede72789c1353e7e140ada4a125fb3e39ab507154",
+    "android_unchanged": true
+  },
+  "src/download-redirect.js": {
+    "sha256": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827",
+    "android_unchanged": true
+  },
+  "anonymous_ios": 401,
+  "anonymous_android": 401,
+  "https://www.liuhetong888.com/downloads/ios/ChatFlow-0.4.25-2194-enterprise-552a07a4.ipa": {
+    "status": 200,
+    "bytes": 61709705,
+    "method": "HEAD"
+  },
+  "https://www.liuhetong888.com/downloads/ios/ChatFlow-0.4.20-2189-enterprise-a2f8a145.ipa": {
+    "status": 200,
+    "bytes": 61871675,
+    "method": "HEAD"
+  },
+  "https://www.liuhetong888.com/downloads/ChatFlow-0.4.25-build2194-arm64.apk": {
+    "status": 200,
+    "bytes": 81767454,
+    "method": "HEAD"
+  },
+  "observed_at": "2026-09-30T14:02:16.373029+00:00"
+}

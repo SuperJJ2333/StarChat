@@ -24,12 +24,12 @@ test('download page offers the 2194 direct fallback and the published network se
   assert.match(source('../src/download-redirect.js'), /installAndroidNetworkDownload/);
 });
 
-test('published iOS 2189 install warning remains visible without an automatic redirect', () => {
+test('published iOS install warning remains visible without an automatic redirect', () => {
   const html = source('../download.html');
-  assert.match(html, /0\.4\.20（2189）/);
+  assert.match(html, /0\.4\.25（2194）/);
   assert.match(html, /id="ios-signing-warning"[^>]*>[^<]*更换企业签名团队/);
   assert.match(html, /aria-describedby="ios-signing-warning"/);
-  assert.match(html, /ChatFlow-0\.4\.20-2189-enterprise-a2f8a145\.ipa/);
+  assert.match(html, /ChatFlow-0\.4\.25-2194-enterprise-552a07a4\.ipa/);
   assert.doesNotMatch(html, /已有版本请直接覆盖升级/);
   assert.match(source('../src/styles/download.css'), /\.download-caution[^\n]*border-left/);
   const location = {search: '?install=1', assign() { assert.fail('iOS install must wait for a deliberate click'); }};
