@@ -13,13 +13,13 @@
 
 |ID|Expected|State|
 |---|---|---|
-|G1|Review branches, retain all useful changes in main, only main branch remains|Integrating|
-|W1|No repeated green application link below wallet cards; top notice remains|Root cause found|
-|W2|Recharge form shows only latest order, history preserved elsewhere|Root cause found|
-|S1|Search room/contact labels show current remark/nickname, no raw room IDs|Root cause found|
-|S2|Multi-hit records and opened chat preserve correct remark/avatar and event routing|Root cause found|
-|A1|Rebuilt stable-signed Android released with update popup|Pending|
-|I1|Updated iOS IPA delivered for user enterprise signing|Pending candidate; distribution depends on signed return|
+|G1|Review branches, retain all useful changes in main, only main branch remains|Complete; local/remote main only|
+|W1|No repeated green application link below wallet cards; top notice remains|Implemented, tested and released in Android2194|
+|W2|Recharge form shows only latest order, history preserved elsewhere|Implemented, tested and released in Android2194|
+|S1|Search room/contact labels show current remark/nickname, no raw room IDs|Implemented, tested and released in Android2194|
+|S2|Multi-hit records and opened chat preserve correct remark/avatar and event routing|Implemented, tested and released in Android2194|
+|A1|Rebuilt stable-signed Android released with update popup|Android2194 published; audited popup read back|
+|I1|Updated iOS IPA delivered for user enterprise signing|Verified IPA2194 delivered for user enterprise signing; distribution awaits signed return|
 
 ## Decisions and evidence
 
@@ -44,3 +44,20 @@
 - All original worktree source patches/untracked files remain in the snapshot and original worktrees. After unique integration, superseded branch heads will be joined using history-only merges; no older source snapshot may overwrite the tested final tree. Final ancestry is checked before branch deletion.
 
 Next: freeze source, build rebuilt/stable-signed ARM64 2194, push main for iOS CI, publish Android metadata/popup after package checks. iOS candidate goes to the user for enterprise signing; distribution waits for the signed return. No new production writes yet.
+
+## Final delivery gates and publication (2026-09-30 +08)
+
+- Mobile frozen source05c05793, version0.4.25+2194. Android final APK SHA97d26386…aa8d6, 81,767,454bytes, stable signer75b31c66…ba61fff. Build finished20:17:53+08. Both HK immutable object and S3/CDN verified; only new exact CDN object authorized, old3 retained.
+- Android standard metadata backup20:41 UTC12:41, network backup20:44, popup audit trace android-2194-popup-20260930T124500Z; server and workstation TLS HEAD/registry/page/hash readback PASS. iOS2189 and both minimum versions preserved. DownloadJS Windows CRLF vs server LF normalized-content-identical; record uses public-byte hashes.
+- Backend initial full3979:3822passed/40failed/117conditional skips,2391.39s.40failures individually triaged;2fixture issues isolated;9reserve-proof failures reflect a real missing invalidation restored independently of global pause;29legacyauto-pause assertions aligned to approved alert-only ADR with administrator pause explicitly seeded. New3healthy→failedproof tests prove require_coverage拒绝新义务、无三项全局冻结。
+- Incremental244passed86.07s; complete wallet+worker1445passed31conditional skips157.00s; startup/timeline142passed18.51s. Frontend519passed10.22s after live2194metadata copied back to source. No remaining scoped failures. Other full gates reused on unchanged mobile/infra inputs, not claimed rerun; verify.ps1 still blocked by local.env. Existing Starlette/httpx deprecation documented.
+- Fresh spec review then quality/security review: startup header/canonical-slash P2 and reserve proof P1 fixed, final incremental review no newP0–P2. Protected financial formula/schema/auth and E2EE unchanged by these corrections.
+- Every original branch head reachable from main; concurrent chat's recreateded0dbbc branch also already reachable. Final cleanup detached dirty worktree with identicalstatusbytes, deleted nonmain refs. All original WIP remains snapshotted plus root stash16018d5c; never blindly apply stale mobile WIP.
+- iOS CI36712413903: simulator job10987840718520:07:53–20:41:07+08 success; build job10989013325820:41 onward success, IPA artifact11097116937created20:53:20+08. CI artifact ZIP SHA271394ad…5d1d17; local download then identity verification required before handoff.
+- Final source corrections/publication metadata and documents are copied to root main with HEAD-baseline guards, explicitly staged only; historical artifact deletions remain user's original WIP. No backend production deployment or financial action by this task. Other authorized administrator task independently published API40ad213c, worker3efd5924 preserved.
+
+Next executable step: finish verified CI IPA download and identity manifest, commit/push final main and documentation, deliver IPA for user enterprise signing. Signed return alone blocks iOS distribution, not Android completion.
+
+## Verified iOS handoff
+
+IPA `D:\pythonProject\outsource\StarChat\docs\verification\artifacts\2026-09-30\main-wallet-search\ios-release\ChatFlow-0.4.25-build2194-ios-candidate.ipa`, 61363376bytes, SHA256`a2f7db096df422c87ab472869909a073c38c8144729b2d1d049e7f7cca3ab6d1`. CI artifact ZIP SHA and local CRC/Info.plist/signed-entitlement checks PASS; strict deep codesign and native/simulator/SQLCipher gates passed on CI. Bundlecom.liuhetong.liuhetongMobile, productionAPNs, build2194. Only pending input is user enterprise-signed IPA, then payload comparison and final enterprise identity/device validation before distribution. Next executable step: receive signed return and validate against this immutable candidate; Android2194 is already published.

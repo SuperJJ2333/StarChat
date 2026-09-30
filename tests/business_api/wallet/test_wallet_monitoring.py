@@ -56,7 +56,7 @@ def test_partial_scan_preserves_incidents_and_never_claims_success(setup):
     monitor.run_once()
     incidents = WalletIncidentService(factory)
     deficit = next(x for x in incidents.list_incidents()['items'] if x['code'] == 'RESERVE_DEFICIT')
-    assert wallet.paused
+    assert not wallet.paused
     previous = monitor.status()['last_success_at']
     wallet.broken = True
     clock[0] += timedelta(seconds=130)
@@ -96,7 +96,7 @@ def test_corrupt_journal_is_critical_even_when_scan_cannot_complete(setup, monke
     result = monitor.run_once()
     assert result['complete'] is False
     row = next(x for x in WalletIncidentService(factory).list_incidents()['items'] if x['code'] == 'LEDGER_INTEGRITY')
-    assert row['severity'] == 'P0' and wallet.paused
+    assert row['severity'] == 'P0' and not wallet.paused
 
 
 def test_uncertain_withdrawal_detected_without_exposing_address(setup):

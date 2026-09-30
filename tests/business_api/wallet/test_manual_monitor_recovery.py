@@ -11,6 +11,11 @@ from test_manual_reserve_monitor import core, coverage, monitor  # noqa: F401
 
 
 def test_review_clears_only_manual_conditions_without_releasing_funds(core, monitor):
+    from app.modules.wallet.manual_control import apply_manual_pause
+    from app.modules.ledger.service import LedgerService
+    with core[1].begin() as session:
+        apply_manual_pause(session, ledger=LedgerService(core[1]), actor_id='owner',
+                           reason_code='OWNER_REVIEW', now=monitor[2][0])
     service, source, clock = monitor
     original = source.read_reserve_cut
     source.read_reserve_cut = lambda: (_ for _ in ()).throw(ValueError('unavailable'))

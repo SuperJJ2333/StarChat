@@ -21,9 +21,13 @@
 
 ## Tasks
 
-1. [ ] Snapshot branch/worktree inputs, audit unique commits, integrate latest published sources and unique changes, record every supersession and conflict decision. Verify every branch head is an ancestor of the final candidate.
-2. [ ] Add widget regressions: overview has no redundant green application links; recharge page contains latest order only, with cancelled/current/draft cases. Watch RED, remove duplicate button and limit rendered history, watch GREEN.
-3. [ ] Add widget regressions with raw Matrix room ID and stale sender name, current remark/avatar, multiple hits and exact event navigation. Watch RED; pass current room/contact/avatar projections into result rows and records page; watch GREEN.
-4. [ ] Run focused wallet/search tests, full Flutter suite, analyze, impacted frontend/mobile/backend gates and verify.ps1 after environment preflight. Record real failures and evidence scope. Perform specification review before security/quality review.
-5. [ ] Freeze next free version/build after reading live settings and CI. Build Android ARM64, rebuild with Apktool 2.12.1, align and stable-sign, verify manifest/DEX/assets. Build matching iOS via established signed compatibility Action and deliver IPA labelled pending user enterprise signing.
-6. [ ] Publish Android immutable package, download metadata and update popup with audited settings and rollback. Check public TLS HEAD/metadata/platform isolation. Merge/push main and remove all merged local/remote non-main branches after preserving dirty worktrees. Update task/current-state with remaining iOS handoff.
+1. [x] Snapshot branch/worktree inputs, audit unique commits, integrate latest published sources and unique changes, record every supersession and conflict decision. Verify every branch head is an ancestor of the final candidate.
+2. [x] Add widget regressions: overview has no redundant green application links; recharge page contains latest order only, with cancelled/current/draft cases. Watch RED, remove duplicate button and limit rendered history, watch GREEN.
+3. [x] Add widget regressions with raw Matrix room ID and stale sender name, current remark/avatar, multiple hits and exact event navigation. Watch RED; pass current room/contact/avatar projections into result rows and records page; watch GREEN.
+4. [x] Run focused wallet/search tests, full Flutter suite, analyze, impacted frontend/mobile/backend gates and verify.ps1 after environment preflight. Record real failures and evidence scope. Perform specification review before security/quality review.
+5. [x] Freeze next free version/build after reading live settings and CI. Build Android ARM64, rebuild with Apktool 2.12.1, align and stable-sign, verify manifest/DEX/assets. Build matching iOS via established signed compatibility Action and deliver IPA labelled pending user enterprise signing.
+6. [x] Publish Android immutable package, download metadata and update popup with audited settings and rollback. Check public TLS HEAD/metadata/platform isolation. Merge/push main and remove all merged local/remote non-main branches after preserving dirty worktrees. Update task/current-state with remaining iOS handoff.
+
+## Execution status
+
+Source integration, mobile fixes, required scoped gates, Android stable rebuild and audited publication completed. iOS CI candidate succeeds; local IPA identity and immutable handoff verified. iOS enterprise signing/distribution intentionally depends on the user returning the signed candidate. The full verify environment limitation and initial-backend red→green accounting are recorded in the task/verification.

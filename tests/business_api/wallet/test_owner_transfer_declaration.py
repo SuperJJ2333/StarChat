@@ -113,6 +113,11 @@ def test_declared_owner_transfer_releases_review_and_blocks_before_declaration(c
     assert record['status'] == 'DECLARED'
     assert execute(service)['id'] == record['id']
 
+    assert monitor[0].run_once()['status'] == 'PUBLISHED'
+    from app.modules.wallet.models import WalletControl
+    with core[1].begin() as session:
+        row = session.get(WalletControl, 'global')
+        row.withdrawals_paused, row.pause_reason = True, 'OWNER_REVIEW'
     assert monitor[0].run_once()['codes'] == ['MANUAL_WALLET_PAUSED']
     assert monitor[0].review_once(on_review=lambda s: None)['status'] == 'REVIEWED'
     with core[1]() as s:

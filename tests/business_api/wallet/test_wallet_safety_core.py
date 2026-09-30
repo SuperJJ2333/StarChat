@@ -161,7 +161,8 @@ def test_recovery_enumerates_terminal_orphans_and_pauses(core):
     provider.submit_withdrawal(client_order_id='missing-local', address='T_UNKNOWN', amount=Decimal('10'))
     provider.withdrawal_event(client_order_id='missing-local', status='CHAIN_CONFIRMED', confirmations=20, event_id='orphan')
     assert service.detect_orphan_external_orders(actor_id='recovery')['orphan_order_ids'] == ['missing-local']
-    assert service.withdrawals_paused()
+    assert not service.withdrawals_paused()
+    service.pause_on_reconciliation_mismatch("OWNER_REVIEW", actor_id="administrator")
     with pytest.raises(ValueError, match='paused'):
         service.convert('alice', 'USDT_TO_CAIBI', '10', 'paused')
 

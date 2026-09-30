@@ -247,17 +247,19 @@ class _PerformanceRequestMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope)
-        request_id = (None if scope.get('path') == '/api/v1/startup-diagnostics'
+        anonymous_startup = scope.get('path', '').rstrip('/') == '/api/v1/startup-diagnostics'
+        request_id = (None if anonymous_startup
                       else valid_request_id(request.headers.get('X-ChatFlow-Request-Id')))
         # A request-scoped random ID is separate from all business/audit state.
         timeline_active = request_id is not None and self.timeline_sink is not None
         server_started_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z') if timeline_active else None
         # Anonymous startup metadata never reflects caller-supplied labels.
-        candidate = ('' if scope.get('path') == '/api/v1/startup-diagnostics'
+        candidate = ('' if anonymous_startup
                      else request.headers.get("X-Trace-Id", ""))
         trace_id = candidate if _TRACE_ID_PATTERN.fullmatch(candidate) else uuid4().hex
         request.state.trace_id = trace_id
-        performance_id = request.headers.get("X-ChatFlow-Performance-Id")
+        performance_id = (None if anonymous_startup
+                          else request.headers.get("X-ChatFlow-Performance-Id"))
         # An explicitly reused audit trace ID must not become a performance
         # correlation key. Never write this header into request.state.
         if performance_id is not None and performance_id.lower() == trace_id.lower():

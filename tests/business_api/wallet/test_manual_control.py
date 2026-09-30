@@ -100,7 +100,7 @@ def test_manual_monitor_restrictions_record_provenance_without_claiming_legacy_f
     monitor[1].read_reserve_cut = lambda: (_ for _ in ()).throw(ValueError('offline'))
     monitor[0].run_once()
     status = service.status()
-    assert 'legacy_unknown' in status['restriction_scopes'] and 'manual_tron' in status['restriction_scopes']
+    assert 'legacy_unknown' in status['restriction_scopes'] and 'manual_tron' not in status['restriction_scopes']
     with core[1]() as session:
         assert session.get(WalletControl, 'global').pause_reason == 'LEGACY_PAUSE'
 

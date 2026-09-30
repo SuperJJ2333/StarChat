@@ -142,6 +142,9 @@ class ManualReserveMonitor:
         diag.emit('ERROR', 'monitor_block_requested', component='manual_monitor', reason_code=code)
         self.incidents.observe_in_session(session, [dict(fingerprint='manual-reserve:'+code,
             code=code, severity='P0', subject_id='global')], actor_id=ACTOR, complete=False)
+        # A failed proof cannot leave the previous reserve usable. Invalidating
+        # evidence does not acquire or mutate administrator pause ownership.
+        invalidate_wallet_reserve(session)
         self._heartbeat(session, now, code)
         return dict(complete=False, status='BLOCKED', codes=[code])
 

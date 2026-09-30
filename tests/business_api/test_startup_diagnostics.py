@@ -280,6 +280,27 @@ def test_startup_endpoint_never_echoes_caller_trace_id(capsys):
     assert 'PRIVATE_SECRET' not in captured.out + captured.err
 
 
+@pytest.mark.parametrize('suffix,status', [('', 422), ('/', 307)])
+def test_startup_endpoint_discards_all_caller_correlation_headers(capsys, suffix, status):
+    app = create_app(Settings(environment='test', database_url='sqlite+pysqlite:///:memory:'),
+                     startup_diagnostics_admission=Admission())
+    performance_id = '01234567-89ab-4cde-8123-456789abcdef'
+    request_id = '01234567-89ab-4cde-8123-456789abcdee'
+    response = TestClient(app).post('/api/v1/startup-diagnostics' + suffix, json={},
+                                    follow_redirects=False, headers={
+                                        'X-Trace-Id': 'PRIVATE_SECRET',
+                                        'X-ChatFlow-Performance-Id': performance_id,
+                                        'X-ChatFlow-Request-Id': request_id,
+                                    })
+    assert response.status_code == status
+    assert 'PRIVATE_SECRET' not in str(response.headers)
+    snapshot = app.state.request_latency_metrics.snapshot()
+    assert snapshot['recent_operation_requests'] == []
+    captured = capsys.readouterr()
+    assert all(value not in captured.out + captured.err
+               for value in ('PRIVATE_SECRET', performance_id, request_id))
+
+
 @pytest.mark.parametrize('category', ['metadata', 'database', 'filesystem', 'matrix_identity',
                                     'matrix_credentials', 'matrix_rejected', 'matrix_rate_limited',
                                     'matrix_service', 'network', 'unknown'])

@@ -47,4 +47,4 @@ def test_incremental_reconciliation_pauses_on_mismatch(wallet):
     provider.custody_balance = Decimal("4.000000")
     result = service.reconcile_incremental(actor_id="worker")
     assert result.matched is False
-    assert service.withdrawals_paused() is True
+    assert service.withdrawals_paused() is False

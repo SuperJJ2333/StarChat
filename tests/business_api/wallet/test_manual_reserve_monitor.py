@@ -97,7 +97,7 @@ def test_non_budget_source_error_remains_p0_and_pauses(core, monitor, error):
     source.read_reserve_cut = malformed
     assert service.run_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
     with core[1]() as session:
-        assert session.get(WalletControl, 'global').withdrawals_paused
+        assert not session.get(WalletControl, 'global').withdrawals_paused
         assert session.scalar(select(WalletIncident)).severity == 'P0'
 
 
@@ -242,7 +242,7 @@ def test_escalation_failure_invalidates_reserve_without_publishing(core, monitor
     assert result == dict(complete=False, status='BLOCKED', codes=['MANUAL_MONITOR_UNAVAILABLE'])
     with core[1]() as session:
         assert session.get(RedeemabilityReserve, 'global').observed_at.year == 1970
-        assert session.get(WalletControl, 'global').withdrawals_paused
+        assert not session.get(WalletControl, 'global').withdrawals_paused
 
 
 def test_reserve_publication_then_retry_credits_once(core, monitor):
@@ -306,8 +306,8 @@ def test_unavailable_or_incomplete_reserve_pauses_without_publishing(core, cover
             incident = session.scalar(select(WalletIncident))
             assert incident is not None and incident.severity == 'P1'
         else:
-            assert session.get(WalletControl, 'global').withdrawals_paused
-            assert session.get(RedeemabilityReserve, 'global').outgoing_restricted
+            assert not session.get(WalletControl, 'global').withdrawals_paused
+            assert not session.get(RedeemabilityReserve, 'global').outgoing_restricted
             assert session.scalar(select(WalletIncident)) is not None
         assert session.get(RedeemabilityReserve, 'global').observed_at.year == 1970
         assert session.scalar(select(WalletLedgerTransaction)) is None
@@ -349,6 +349,33 @@ def test_existing_pause_is_never_cleared(core, monitor):
     with core[1]() as session:
         assert session.get(WalletControl, 'global').withdrawals_paused
         assert session.get(RedeemabilityReserve, 'global').outgoing_restricted
+
+
+@pytest.mark.parametrize('fault', ['deficit', 'coverage', 'escalation'])
+def test_failed_proof_invalidates_previously_usable_reserve_without_global_pause(core, monitor, monkeypatch, fault):
+    from app.modules.ledger.reserve import require_coverage
+    service, source, _ = monitor
+    assert service.run_once()['status'] == 'PUBLISHED'
+    with core[1]() as session:
+        require_coverage(session, session.get(RedeemabilityReserve, 'global'), usdt_delta=Decimal('1'))
+    if fault == 'deficit':
+        source.value = digest_cut(source.value, balance_units=9_000000)
+    elif fault == 'coverage':
+        with core[1].begin() as session:
+            session.delete(session.get(WalletFundingScanState, 'global'))
+    else:
+        def failed_escalation():
+            raise RuntimeError('private-database-error')
+        monkeypatch.setattr(service.incidents, 'escalate', failed_escalation)
+    assert service.run_once()['status'] == 'BLOCKED'
+    with core[1]() as session:
+        reserve = session.get(RedeemabilityReserve, 'global')
+        with pytest.raises(ValueError, match='reserve evidence stale'):
+            require_coverage(session, reserve, usdt_delta=Decimal('1'))
+        assert not session.get(WalletControl, 'global').withdrawals_paused
+        assert not reserve.outgoing_restricted
+        safety = session.get(WalletSafetyState, 'global')
+        assert safety is None or not safety.restricted
 
 
 def payout(core, monitor, *, status='CLAIMED', age=0, amount='10.000000', txid='e'*64, allocate=False, evidence_amount=None):
@@ -403,7 +430,7 @@ def test_pending_normal_progress_waits_until_uncertain(core, monitor, status, ag
     with core[1]() as s:
         reserve = s.get(RedeemabilityReserve, 'global')
         assert reserve.observed_at.year == 1970
-        assert s.get(WalletControl, 'global').withdrawals_paused == (age == 300)
+        assert s.get(WalletControl, 'global').withdrawals_paused is False
 
 
 @pytest.mark.parametrize('field,value', [('observation_id', True), ('healthy', 1),
@@ -563,7 +590,7 @@ def test_backlog_waits_and_ages_from_creation(core, coverage, monitor, kind, age
     result = monitor[0].run_once()
     assert result['status'] == ('BLOCKED' if age == 300 else 'WAITING')
     with core[1]() as s:
-        assert s.get(WalletControl, 'global').withdrawals_paused == (age == 300)
+        assert s.get(WalletControl, 'global').withdrawals_paused is False
         assert s.get(RedeemabilityReserve, 'global').observed_at.year == 1970
 
 

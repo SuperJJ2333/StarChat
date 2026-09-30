@@ -1113,3 +1113,8 @@ Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-histor
 ## 2026-09-22 Android v0.4.0/2157 与刷新恢复服务器（已发布）
 
 服务器refresh-040-20260922/0080已上线；Android正式ARM64 0.4.0+2157已发布，候选28bdfc48包含main2156全部指定修复、刷新恢复及启动会话保护。Flutter3803/analyze0、生产隔离恢复与协议门禁、APK固定签名重建通过；iOS设置和最低版本未改，真机待反馈。[任务](tasks/2026-09-22-android-040-release.md) · [报告](../verification/2026-09-22-android-040-release.md)。
+
+
+## 2026-09-30 main整合、钱包与搜索、Android2194
+
+19个原分支及远端iOS历史已整合，所有删除分支头可追溯；工作树未提交内容与根目录stash保留。本地/远端只保留main。钱包重复申请入口移除、充值仅最新单、搜索当前备注/头像已发布Android0.4.25+2194，稳定签名重建与CDN/入口/更新弹窗审计验证通过。iOS2194候选CI36712413903成功，交用户企业重签后返回再分发；线上iOS2189保持。[任务](tasks/2026-09-30-main-wallet-search-release.md) · [验收](../verification/2026-09-30-main-wallet-search-release.md)。后端合并证明失效与匿名header修复仅源码，此任务未部署后台；另一个已批准后台任务的生产API40ad213c/Worker3efd5924为最后观察事实。

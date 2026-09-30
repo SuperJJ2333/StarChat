@@ -294,7 +294,7 @@ async def test_staff_login_password_budget_and_admin_captcha_preserved(env, monk
     from types import SimpleNamespace
     factory, _, _, _ = env
     # Exercise real CAPTCHA validation against an empty test store, never live Redis.
-    monkeypatch.setattr('app.api.identity.Redis.from_url', lambda *args, **kwargs: SimpleNamespace(getdel=lambda key: None))
+    monkeypatch.setattr('app.api.identity.Redis', SimpleNamespace(from_url=lambda *args, **kwargs: SimpleNamespace(getdel=lambda key: None)))
     counts = {}
     class TestLimiter:
         def hit(self, key, *, limit, window_seconds):

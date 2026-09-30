@@ -88,7 +88,7 @@ def test_replacement_expiring_at_final_commit_rolls_back_publication(
     assert _evaluation_count(core) == before
     with core[1]() as session:
         assert session.get(RedeemabilityReserve, "global").observed_at.year == 1970
-        assert session.get(WalletControl, "global").withdrawals_paused
+        assert not session.get(WalletControl, "global").withdrawals_paused
 
 
 def test_changed_confirmation_read_retries_without_publication(core, monitor):

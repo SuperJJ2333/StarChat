@@ -21,7 +21,7 @@ async def test_reopened_get_video_draft_publish_then_compare_clear(poster_ctx):
         expected = reopened.json()
         assert expected["video_urls"] != saved.json()["video_urls"]
         published = await client.post("/api/v1/moments", headers={**headers, "Idempotency-Key": "get-draft-publish"},
-                                      json={key: value for key, value in expected.items() if key != "nested"})
+                                      json={key: value for key, value in expected.items() if key not in {"nested", "video_cache_keys"}})
         assert published.status_code == 201
         cleared = await client.post("/api/v1/moments/draft/clear-if-unchanged", headers=headers,
                                     json={"expected_payload": expected})

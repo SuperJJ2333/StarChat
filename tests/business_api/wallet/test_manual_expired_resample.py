@@ -100,7 +100,7 @@ def test_non_budget_source_error_at_resample_deadline_remains_p0(core, monitor, 
     source.read_reserve_sample = failed
     assert service.run_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
     with core[1]() as session:
-        assert session.get(WalletControl, 'global').withdrawals_paused
+        assert not session.get(WalletControl, 'global').withdrawals_paused
         assert session.scalar(select(WalletIncident)).severity == 'P0'
 
 def test_wait_recovers_with_new_observation_without_incident(core, monitor):

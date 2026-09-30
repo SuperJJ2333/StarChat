@@ -46,6 +46,11 @@ def operations(core, monitor):
 
 
 def test_owner_can_ack_review_resolve_without_releasing_funds(core, monitor, operations):
+    from app.modules.wallet.manual_control import apply_manual_pause
+    from app.modules.ledger.service import LedgerService
+    with core[1].begin() as session:
+        apply_manual_pause(session, ledger=LedgerService(core[1]), actor_id='owner',
+                           reason_code='OWNER_REVIEW', now=monitor[2][0])
     client, headers, settings, mfa = operations
     source = monitor[1]
     original = source.read_reserve_cut
@@ -135,6 +140,11 @@ def test_incomplete_review_preserves_safe_reason_and_does_not_clear_incident(cor
 
 
 def test_read_only_diagnostics_reports_current_evidence_without_clearing_pause(core, monitor, operations):
+    from app.modules.wallet.manual_control import apply_manual_pause
+    from app.modules.ledger.service import LedgerService
+    with core[1].begin() as session:
+        apply_manual_pause(session, ledger=LedgerService(core[1]), actor_id='owner',
+                           reason_code='OWNER_REVIEW', now=monitor[2][0])
     from app.modules.wallet.models import WalletControl
     client, headers, _, _ = operations
     row = pending_incident(monitor)
