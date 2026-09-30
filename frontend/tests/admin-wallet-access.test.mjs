@@ -115,10 +115,10 @@ test('explicit payout command requests wallet verification and never executes or
  const dom=installPanelDocument();let root,guarded,writes=0;
  try{
   root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),verifyWalletAccess:async()=>panelStatus(),supportPayoutCommand:async()=>{writes++;return {status:'CLAIMED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
-  await settle();await settle();await assert.rejects(guarded.supportPayoutCommand('p1','claim'),{code:'WALLET_ACCESS_REQUIRED'});
+  await settle();await settle();await assert.rejects(guarded.supportPayoutCommand('p1','begin-payment'),{code:'WALLET_ACCESS_REQUIRED'});
   assert.equal(writes,0);const dialog=dom.body.find('dialog')[0];assert.ok(dialog?.open);
   const input=dialog.find('input')[0];input.value='test-proof';await dialog.find('form')[0].handlers.submit({preventDefault(){}});
-  assert.equal(writes,0);assert.equal(input.value,'');await guarded.supportPayoutCommand('p1','claim');assert.equal(writes,1);
+  assert.equal(writes,0);assert.equal(input.value,'');await guarded.supportPayoutCommand('p1','begin-payment');assert.equal(writes,1);
  }finally{root?.dispose();dom.restore();}
 });
 
@@ -128,5 +128,78 @@ test('real payout panel loads through wallet access wrapper before operation ver
   root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getSupportPayouts:async()=>{reads++;return {items:[{id:'payout-read-integration',status:'REQUESTED',processing_stage:'REQUESTED',amount:'70.00',final_receive:'10.000000',can_claim:true}]};},getFxRate:async()=>({rate:'7'})},{actor:{id:'a'},renderContent:api=>supportPayoutPanel(api,{actor:{id:'a'},canOperate:true})});
   await settle();await settle();await settle();assert.equal(reads,1);assert.ok(root.find('button').some(x=>x.textContent==='处理请求'));
   assert.equal(root.find('p').some(x=>x.textContent.startsWith('提现列表加载失败')),false);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('payout query waits for focus authorization recheck without warning',async()=>{
+ const dom=installPanelDocument();let root,guarded,release,checks=0,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>++checks===1?Promise.resolve(panelStatus()):new Promise(r=>release=r),getSupportPayouts:async()=>{reads++;return {items:[]};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();dom.focus();const read=guarded.getSupportPayouts();read.catch(()=>{});await settle();assert.equal(reads,0);
+  release(panelStatus());assert.deepEqual(await read,{items:[]});assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('only a stale GET is fetched again after healthy focus recheck',async()=>{
+ const dom=installPanelDocument();let root,guarded,release,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus(),getSupportPayouts:()=>++reads===1?new Promise(r=>release=r):Promise.resolve({items:['current']})},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();const read=guarded.getSupportPayouts();read.catch(()=>{});await settle();assert.equal(reads,1);dom.focus();await settle();release({items:['stale']});
+  assert.deepEqual(await read,{items:['current']});assert.equal(reads,2);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('one explicitly supplied cancellation password satisfies grant and fresh operation proof',async()=>{
+ const dom=installPanelDocument();let root,guarded,verifies=0,commands=0;
+ const body={proof:{operation_password:'single-test-proof'},expected_version:1};
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),verifyWalletAccess:async proof=>{verifies++;assert.deepEqual(proof,body.proof);return panelStatus();},supportPayoutCommand:async(id,action,payload)=>{commands++;assert.equal(action,'cancel-unstarted');assert.equal(payload,body);return {status:'CANCELLED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();assert.deepEqual(await guarded.supportPayoutCommand('p1','cancel-unstarted',body),{status:'CANCELLED'});
+  assert.equal(verifies,1);assert.equal(commands,1);assert.equal(dom.body.find('dialog').length,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('claim and heartbeat use the live session without asking for a wallet password',async()=>{
+ const dom=installPanelDocument();let root,guarded,calls=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),supportPayoutCommand:async()=>{calls++;return {status:'CLAIMED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await guarded.supportPayoutCommand('p1','claim',{});await guarded.supportPayoutCommand('p1','heartbeat',{});assert.equal(calls,2);assert.equal(dom.body.find('dialog').length,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('server authorization denial is never retried as a stale GET',async()=>{
+ const dom=installPanelDocument();let root,guarded,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus(),getSupportPayouts:async()=>{reads++;throw {status:403,code:'PERMISSION_DENIED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await assert.rejects(guarded.getSupportPayouts(),{code:'PERMISSION_DENIED'});assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('failed single-password verification never sends a cancellation',async()=>{
+ const dom=installPanelDocument();let root,guarded,commands=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),verifyWalletAccess:async()=>{throw {status:403,code:'OPERATION_PASSWORD_INVALID'};},supportPayoutCommand:async()=>{commands++;}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await assert.rejects(guarded.supportPayoutCommand('p1','cancel-unstarted',{proof:{operation_password:'wrong-test-proof'}}));assert.equal(commands,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('query waits for periodic check and sends only one fresh GET',async()=>{
+ const interval=globalThis.setInterval;let poll;globalThis.setInterval=fn=>{poll=fn;return {unref(){}};};
+ const dom=installPanelDocument();let root,guarded,release,checks=0,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>++checks===1?Promise.resolve(panelStatus()):new Promise(r=>release=r),getSupportPayouts:async()=>{reads++;return {items:[]};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();poll();const read=guarded.getSupportPayouts();read.catch(()=>{});await settle();assert.equal(reads,0);release(panelStatus());await read;assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();globalThis.setInterval=interval;}
+});
+
+test('actual payout cancellation asks for one password and sends one financial command',async()=>{
+ const {supportPayoutPanel}=await import('../src/admin-support-payout-panel.js');const dom=installPanelDocument();let root,verifies=0;const commands=[];
+ const order={id:'single-password-cancel',status:'REQUESTED',processing_stage:'REQUESTED',amount:'70.00',final_receive:'10.000000',version:1,claim_version:1,can_claim:true,can_cancel:true};
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getSupportPayouts:async()=>({items:[order]}),getFxRate:async()=>({rate:'7'}),getWalletOperationSecurity:async()=>({auth_mode:'operation_password'}),verifyWalletAccess:async proof=>{verifies++;assert.equal(proof.operation_password,'single-ui-proof');return panelStatus();},supportPayoutCommand:async(id,action,body)=>{commands.push(action);if(action==='cancel-unstarted')assert.equal(body.proof.operation_password,'single-ui-proof');return {...order,status:action==='cancel-unstarted'?'CANCELLED':'CLAIMED',processing_stage:'CLAIMED',can_claim:false,can_cancel:action!=='cancel-unstarted',claim_token:'fixture-lease'};}},{actor:{id:'a'},renderContent:api=>supportPayoutPanel(api,{actor:{id:'a'},canOperate:true})});
+  await settle();await settle();root.find('button').find(x=>x.textContent==='处理请求').handlers.click();await settle();await settle();assert.equal(verifies,0);
+  root.find('button').find(x=>x.textContent==='取消提现').handlers.click();await settle();await settle();
+  const proof=root.find('input').find(x=>x.type==='password');assert.ok(proof);proof.value='single-ui-proof';proof.handlers.input();root.find('button').find(x=>x.textContent==='验证并确认本次操作').handlers.click();await settle();await settle();
+  assert.equal(proof.value,'');assert.equal(verifies,1);assert.deepEqual(commands,['claim','cancel-unstarted']);assert.equal(dom.body.find('dialog').length,0);
  }finally{root?.dispose();dom.restore();}
 });

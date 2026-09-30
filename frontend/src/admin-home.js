@@ -11,7 +11,7 @@ import { ledgerPanel } from './admin-ledger-panel.js?v=20260930-admin-navigation
 import { statusLabel } from "./admin-formatters.js";
 import { chainPanel } from "./admin-chain-panel.js?v=20260930-admin-navigation";
 import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260930-admin-navigation";
-import { walletAccessPanel } from './admin-wallet-access.js?v=20260930-payout-read-fix';
+import { walletAccessPanel } from './admin-wallet-access.js?v=20260930-payout-auth-race';
 import { supportPanel } from './admin-support-panel.js?v=20260930-admin-navigation';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260930-admin-navigation';
 import {supportOrderAccessPanel} from './admin-support-order-access.js';
