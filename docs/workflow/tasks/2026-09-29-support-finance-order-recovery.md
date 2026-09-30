@@ -112,3 +112,12 @@ Ruling: 受控切换使用 fenced API bridge，由已验证的兼容镜像启动
 - V2 source仍c204d415；manifestSHA c32fe3b6b8de5c8ee1937e00167418db43da3f8a835e61cdd4554f3fc7847d12，archiveSHA 9b8861c879bcc7275f207f41816d06d79fa55ae4f445d4b69f2d1fbf248bafd0；上传严格校验PASS。
 - V2 preflight在prepare之前拒绝：API源Compose含旧Workerpeer，而当前Worker已单独发布00c。没有创建私有备份、构建、迁移或切换。本轮前述072dd仅修派生candidate/rollback，源baseline读取仍错误地要求两个历史源中的peer相同。
 - Ruling：每个实际容器标签绑定的源Compose只以所属service为权威，精确SHA与所属live镜像/Env继续核对；完整合并baseline由两个所属角色派生并严格核对，不把旧peer当现状。必须TDD/独立领域及安全审查，通过后只SHA门禁替换工具；产品manifest/payload不变。成本是多一轮发布工具修订，不能牺牲实际配置检查绕过门禁。
+
+## V2 作废与 V3 保留新汇率参考访问增量（08:35 UTC 起）
+
+- 70bf566d工具修订9tests/独立领域与安全PASS，单server_release.py SHA门禁替换至bf7b39414d5ceddac69e2c54f4d4002291a4e9154c0bdddc506e78e6e428496e；manifest/payload未改。重跑preflight因api image drift停止，prepare未执行。
+- 08:35:24 UTC现场snapshot：API d791c7fc2facaf5d44ee9c082903aaf62fd1eec37c1352ef87b1abc42e085f95，Worker00c/schema0093不变。另一授权任务finance-reference-read-access于08:20:42 UTC发布汇率参考只读权限与UI并已获真实客服验收。完整API库存902→d791仅recharge.py变动，imageConfig完全相同；目标静态仅admin-recharge-panel.js变动。实际发布artifactSHA与线上SHA严格相同。
+- Ruling：保留V2原冻结包与失败证据，不重绑定；精确合并已发布reserve_valuation路由与refreshFxUI，保持本轮恢复逻辑，其余新生产文件依托d791/00c基线。V3 release_prep只改releaseID和BASE_API，Worker/角色门禁不变，重新冻结实际snapshot与新source后跑私有备份和真实镜像门禁。成本为增量红绿/独立复审和新包，不重复不变41分钟全量。
+- frontend04fbc230 RED4failed45pass→GREEN49pass/325.87ms；导入接口兼容，实际strictTLS静态Cache-Control:no-store，四文件发布足够刷新读取新模块。
+- Backend公布路由增量RED2failed13pass→GREEN15pass/49.67s，仅reserve_valuation AST变动，其他路由AST保持；独立审查进行中。08:40:55 UTC OpenAPI重新导出/checkPASS，生成契约无diff。
+- 本任务截至此处仍无生产API/Worker/schema/静态切换，V2无private备份/候选；V1仅清本任务隔离clone，备份和日志留服务器。
