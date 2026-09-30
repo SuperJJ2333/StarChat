@@ -83,7 +83,7 @@ def recover_clone(volume,*,cleanup_only=False):
         raise ValueError('original clone backup/image identity drift')
     current=c.docker_inspect(restored['clone']);validate_owned_clone(restored,current,m['clone_image'],volume)
     inspected_volume=json.loads(c.run('docker','volume','inspect',volume))[0]
-    if inspected_volume['Name']!=volume or inspected_volume.get('Driver')!='local' or inspected_volume.get('Labels') or inspected_volume.get('Options') or current['Mounts'][0].get('Source')!=inspected_volume.get('Mountpoint'):
+    if inspected_volume['Name']!=volume or inspected_volume.get('Driver')!='local' or inspected_volume.get('Labels') not in (None,{}, {'com.docker.volume.anonymous':''}) or inspected_volume.get('Options') or current['Mounts'][0].get('Source')!=inspected_volume.get('Mountpoint'):
         raise ValueError('anonymous local volume provenance drift')
     users=c.run('docker','ps','-a','-q','--no-trunc','--filter','volume='+volume).splitlines()
     if users!=[restored['clone_id']]:raise ValueError('clone volume is shared or substituted')

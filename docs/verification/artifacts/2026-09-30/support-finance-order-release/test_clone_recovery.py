@@ -41,7 +41,8 @@ def test_probe_amendment_changes_only_probe_and_baseline_manifest_binding():
     wrong=json.dumps({'manifest_sha256':'f'*64}).encode()
     with pytest.raises(ValueError):q.amended_documents(old,wrong,'c'*64,'a'*64)
 
-def test_cleanup_only_ignores_obsolete_production_identity_but_preserves_bindings(monkeypatch,tmp_path):
+@pytest.mark.parametrize('labels',[None,{}, {'com.docker.volume.anonymous':''}, {'com.docker.volume.anonymous':'wrong'}, {'com.docker.compose.project':'production'}, {'com.docker.volume.anonymous':'','extra':'unexpected'}])
+def test_cleanup_only_ignores_obsolete_production_identity_but_preserves_bindings(monkeypatch,tmp_path,labels):
     restored,current,image,volume=owned();current['Mounts'][0]['Source']='/anonymous/data'
     backup=b'private-backup';restored.update({'backup_sha256':q.sha_bytes(backup),'before':{'schema':q.s.BASE_SCHEMA},'candidate_images':{'api':'candidate'},'rollback_images':{'api':'fenced'}})
     manifest=json.dumps({'clone_image':image,'wallet_probe_sha256':'old-unchanged'}).encode()
@@ -57,11 +58,16 @@ def test_cleanup_only_ignores_obsolete_production_identity_but_preserves_binding
     monkeypatch.setattr(q.c,'clone_database_value',lambda *a:q.s.TARGET_SCHEMA)
     removed=[]
     def run(*args,**kw):
-        if args[:3]==('docker','volume','inspect'):return json.dumps([{'Name':volume,'Driver':'local','Labels':None,'Options':None,'Mountpoint':'/anonymous/data'}])
+        if args[:3]==('docker','volume','inspect'):return json.dumps([{'Name':volume,'Driver':'local','Labels':labels,'Options':None,'Mountpoint':'/anonymous/data'}])
         if args[:2]==('docker','ps'):return restored['clone_id']
         if args[:3]==('docker','rm','-f'):removed.append(args[-1]);return ''
         return ''
     monkeypatch.setattr(q.c,'run',run)
+    if labels not in (None,{}, {'com.docker.volume.anonymous':''}):
+        with pytest.raises(ValueError,match='provenance drift'):q.recover_clone(volume,cleanup_only=True)
+        assert removed==[] and (tmp_path/'restore-running.json').exists()
+        assert (tmp_path/'manifest.json').read_bytes()==manifest and (tmp_path/'baseline.json').read_bytes()==baseline
+        return
     result=q.recover_clone(volume,cleanup_only=True)
     assert result['cleanup_only'] is True and removed==[restored['clone_id']]
     assert (tmp_path/'manifest.json').read_bytes()==manifest and (tmp_path/'baseline.json').read_bytes()==baseline
