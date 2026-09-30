@@ -44,3 +44,5 @@
 - 证据：red.log/green.log/frontend-all.log/compatibility.log/verify.log/browser-dom.html/range-before.log/cache-before.log/deploy.log及candidate/manifest.json；副作用范围仅3静态文件。
 - 主工作区回填限定2JS/2测试/独立任务文档，先与c545addc内容或候选内容比较，禁止覆盖未知漂移；计划只追加Task6，其他脏改动保留。
 - 没有大陆用户本次长下载速度测量，不宣称已达到固定MB/s；用户可通过测速入口复验。本任务配置与兼容验收已完成，无待执行部署步骤。
+- 源码提交1740b378；限定内容已回填主工作区，48项网络/新版iOS桥接整合测试通过（8912.75ms）。验证日志按白名单复制，不复制浏览器profile或敏感配置。本次HTTP18877验证服务已停止；未关闭其他任务既有SOCKS。
+
