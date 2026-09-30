@@ -88,7 +88,9 @@ def own_role_merged_baseline(manifest,configs):
             path=Path(directory)/(role+'.json')
             descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
             with os.fdopen(descriptor,'w',encoding='utf-8') as stream:
-                json.dump(role_compose(configs[role]['rendered'],ROLE_SERVICE[role]),stream)
+                service=ROLE_SERVICE[role]
+                owned=role_compose(configs[role]['rendered'],service)
+                json.dump(ORIGINAL_COMPOSE_WITH_IMAGE(owned,service,owned['services'][service]['image']),stream)
             command+=['-f',str(path)]
         merged=json.loads(c.run(*command,'config','--format','json'))
     if merged!=expected:raise ValueError('merged baseline differs from authoritative role configurations')
