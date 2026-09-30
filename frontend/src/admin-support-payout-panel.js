@@ -4,6 +4,8 @@ const make=(tag,cls,text)=>{const node=document.createElement(tag);node.classNam
 const capabilities=['can_claim','can_takeover','can_begin','can_evidence'];
 const labels={REQUESTED:'等待处理',CLAIMED:'处理中',REVIEWING:'核对中',NEEDS_REVIEW:'需核对',UNKNOWN:'出款结果待核对',SETTLED:'已完成',CANCELLED:'已取消',REJECTED:'已拒绝'};
 const terminal=item=>['SETTLED','CANCELLED','REJECTED'].includes(item.status);
+const rejected=item=>item.status==='REJECTED'||item.processing_stage==='REJECTED';
+const payable=item=>item.execution_started_at?item.final_receive:item.prepared_receive??item.final_receive;
 const has=(item,capability)=>item?.[capability]===true;
 const shortHash=value=>typeof value==='string'&&value.length>=16?`${value.slice(0,8)}…${value.slice(-8)}`:'交易哈希待核对';
 
@@ -15,6 +17,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   let disposed=false,invalidated=false,generation=0,items=[],filter='all',cursor=null,activeOrder=null,opener=null;
   let address=null,discovery=null,confirmation=null,securityMode=null,copyFeedback='';
   const tokens=new Map(),busy=new Set(),uncertain=new Set(),drafts=new Map(),messages=new Map();
+  const openers=new Map();
   const authorized=()=>!disposed&&!invalidated&&(actor.id??actor.user_id)===actorId;
   const current=()=>items.find(item=>item.id===activeOrder);
   const tokenFor=item=>tokens.get(item.id)?.evidence??tokens.get(item.id)?.claim??null;
@@ -31,6 +34,8 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   function remember(item,result){
     if(!result||typeof result!=='object'||result.id&&result.id!==item.id)throw Error('订单状态未确认');
     const publicResult={...result},saved=tokens.get(item.id)??{};
+    delete publicResult.target_address;
+    if(publicResult.instructions){publicResult.instructions={...publicResult.instructions};delete publicResult.instructions.target_address;}
     if(typeof publicResult.claim_token==='string')saved.claim=publicResult.claim_token;
     if(typeof publicResult.evidence_token==='string')saved.evidence=publicResult.evidence_token;
     tokens.set(item.id,saved);delete publicResult.claim_token;delete publicResult.evidence_token;
@@ -40,12 +45,13 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   }
   function scrub(){
     address=null;discovery=null;confirmation=null;securityMode=null;copyFeedback='';
-    drafts.clear();tokens.clear();uncertain.clear();dialogBody.replaceChildren();
+    drafts.clear();tokens.clear();uncertain.clear();clearProof();dialogBody.replaceChildren();
   }
+  function clearProof(){for(const input of dialogBody.querySelectorAll?.('input')??[])if(input.type==='password')input.value='';}
   function finishClose(){
-    const previous=opener;activeOrder=null;opener=null;
+    const previous=openers.get(activeOrder)??opener;activeOrder=null;opener=null;
     address=null;discovery=null;confirmation=null;securityMode=null;copyFeedback='';
-    dialogBody.replaceChildren();dialog.hidden=true;previous?.focus?.();
+    clearProof();dialogBody.replaceChildren();dialog.hidden=true;previous?.focus?.();
   }
   const dialog=make('dialog','admin-proof-dialog admin-order-dialog admin-payout-dialog');
   dialog.setAttribute('aria-label','处理提现请求');dialog.hidden=true;
@@ -64,28 +70,37 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   panel.append(header,body);const next=button(panel,'下一页提现',()=>load(false),true);panel.append(dialog);
 
   function renderList(){
-    body.replaceChildren();
+    body.replaceChildren();openers.clear();
     const shown=items.filter(item=>filter==='mine'?item.claimed_by===actorId||item.evidence_actor_id===actorId:filter==='review'?item.processing_stage==='NEEDS_REVIEW'||item.status==='UNKNOWN':filter==='history'?terminal(item):true);
     if(!shown.length)body.append(make('p','admin-audit-note','暂无符合条件的提现订单'));
     for(const item of shown){
       const card=make('section','recharge-section admin-payout-order');body.append(card);
       card.append(make('h3',null,`提现单 ${item.id}`),make('p','admin-audit-note',`用户 ${item.user_id??'—'} · ${labels[item.processing_stage??item.status]??'状态待确认'}`),
-        make('p',null,`申请 ${item.funding_amount??item.amount??'—'} ${item.funding_asset==='CAIBI'?'点钻':'USDT'} · 应付 ${item.final_receive??item.prepared_receive??'待确认'} USDT`));
+        make('p',null,`申请 ${item.funding_amount??item.amount??'—'} ${item.funding_asset==='CAIBI'?'点钻':'USDT'} · 应付 ${payable(item)??'待确认'} USDT`));
       if(item.expires_at)card.append(make('p','admin-audit-note',`截止（北京） ${new Date(item.expires_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
-      if(terminal(item)){card.append(make('p','admin-audit-note',item.status==='REJECTED'?'订单已拒绝':item.status==='CANCELLED'?'订单已取消':'订单已完成'));continue;}
+      if(terminal(item)){card.append(make('p','admin-audit-note',rejected(item)?'订单已拒绝':item.status==='CANCELLED'?'订单已取消':'订单已完成'));continue;}
       const permitted=has(item,'can_claim')||has(item,'can_begin')||has(item,'can_evidence');
       const viewOnly=!permitted&&has(item,'can_takeover');
       const occupied=Boolean(item.claimed_by&&item.claimed_by!==actorId)||Boolean(item.execution_started_at);
       const label=permitted?'处理请求':viewOnly?'查看订单':occupied?'正被其他客服处理中':'暂无处理权限';
-      button(card,label,node=>openOrder(item,node),!permitted&&!viewOnly,permitted?'admin-primary':'admin-secondary');
+      openers.set(item.id,button(card,label,node=>openOrder(item,node),!permitted&&!viewOnly,permitted?'admin-primary':'admin-secondary'));
     }
     if(activeOrder)renderDialog();
   }
   async function detail(item){
     if(typeof api.getSupportPayout!=='function')return;
-    try{const result=await api.getSupportPayout(item.id);if(!authorized()||activeOrder!==item.id)return;
+    try{const result=await api.getSupportPayout(item.id);if(!authorized()||current()!==item)return;
       remember(item,result);renderList();if(item.execution_started_at&&has(item,'can_evidence'))await readAddress(item);
-    }catch(error){if(authorized()&&activeOrder===item.id){address=null;notify(item,`详情读取失败：${error.message??'请刷新'}`,true);}}
+    }catch(error){if(authorized()&&current()===item){revoke(item);renderList();notify(item,`详情读取失败：${error.message??'请刷新'}`,true);}}
+  }
+  function revoke(item){tokens.delete(item.id);drafts.delete(item.id);address=null;discovery=null;confirmation=null;securityMode=null;copyFeedback='';for(const cap of capabilities)item[cap]=false;}
+  async function requestProof(item,kind){confirmation=kind;securityMode=null;renderDialog();
+    try{const state=await api.getWalletOperationSecurity();if(authorized()&&current()===item&&confirmation===kind){securityMode=state?.auth_mode;renderDialog();}}
+    catch(error){if(authorized()&&activeOrder===item.id)notify(item,`操作验证方式读取失败：${error.message??'请重试'}`,true);}
+  }
+  function freshProof(){
+    if(!['operation_password','totp'].includes(securityMode)){dialogBody.append(make('p','admin-load-error','正在核对当前验证方式…'));return null;}
+    return input(securityMode==='operation_password'?'操作密码':'当前六位验证码','','password');
   }
   async function openOrder(item,openButton){
     if(!authorized())return;
@@ -95,9 +110,9 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     else await detail(item);
   }
   async function execute(item,action,call){
-    if(!authorized()||busy.has(item.id)||uncertain.has(item.id))return;
+    if(!authorized()||!items.includes(item)||busy.has(item.id)||uncertain.has(item.id))return;
     busy.add(item.id);renderDialog();
-    try{const result=await call(crypto.randomUUID());if(!authorized())return;
+    try{const result=await call(crypto.randomUUID());if(!authorized()||!items.includes(item))return;
       remember(item,result);renderList();notify(item,result.status==='SETTLED'?'服务端已核验出款并完成结算':'已更新服务端状态；未核验前勿重复付款。');
       if(action==='begin-payment'&&item.execution_started_at&&has(item,'can_evidence'))await readAddress(item);
     }catch(error){if(!authorized())return;
@@ -132,7 +147,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
         if(!/^\d+(?:\.\d{1,6})?$/.test(value)||!Number.isSafeInteger(item.prepared_version)){notify(item,'请填写有效汇率并刷新准备版本',true);return;}
         void execute(item,'adjust-rate',key=>api.supportPayoutCommand(item.id,'adjust-rate',{claim_token:tokenFor(item),new_rate:value,reason_code:'SUPPORT_PAYOUT_SETTLEMENT',expected_preparation_version:item.prepared_version},{idempotencyKey:key}));},!tokenFor(item));
     }
-    action(item,'拒绝提现',()=>{confirmation='reject';renderDialog();},!tokenFor(item));
+    action(item,'拒绝提现',()=>{if(item.owner_proof_required)void requestProof(item,'reject');else{confirmation='reject';renderDialog();}},!tokenFor(item));
     const terms=beginBody(item);
     action(item,'确认开始出款',()=>{confirmation='begin';renderDialog();},!terms);
     if(confirmation==='begin'){
@@ -143,13 +158,18 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     if(confirmation==='reject'){
       const reasons=reasonSelect([['PAYOUT_ADDRESS_INVALID','收款地址无效'],['PAYOUT_DETAILS_MISMATCH','订单资料不符'],['PAYOUT_POLICY_INELIGIBLE','不符合受理规则']]);
       dialogBody.append(make('p','admin-audit-note','拒绝会释放原冻结并记录实际操作人，请再次确认。'));
-      action(item,'确认拒绝提现',()=>{confirmation=null;void execute(item,'reject',key=>api.rejectSupportPayout(item.id,{claim_token:tokenFor(item),reason_code:reasons.value},{idempotencyKey:key}));});
+      const proof=item.owner_proof_required?freshProof():null;
+      if(item.owner_proof_required&&!proof)return;
+      const confirm=action(item,'确认拒绝提现',()=>{const body={claim_token:tokenFor(item),reason_code:reasons.value};
+        if(item.owner_proof_required){if(!proof.value.trim())return;body.proof={[securityMode==='operation_password'?'operation_password':'mfa_proof']:proof.value};proof.value='';}
+        confirmation=null;securityMode=null;void execute(item,'reject',key=>api.rejectSupportPayout(item.id,body,{idempotencyKey:key}));},Boolean(proof));
+      proof?.addEventListener('input',()=>{confirm.disabled=!proof.value.trim()||busy.has(item.id)||uncertain.has(item.id);});
     }
   }
   async function readAddress(item){
     if(!authorized()||activeOrder!==item.id||!item.execution_started_at||!has(item,'can_evidence'))return;
     try{const result=await api.readSupportPayoutAddress(item.id,{claim_token:tokenFor(item)},{idempotencyKey:crypto.randomUUID()});
-      if(!authorized()||activeOrder!==item.id||!has(item,'can_evidence'))return;
+      if(!authorized()||current()!==item||!has(item,'can_evidence'))return;
       if(typeof result?.target_address!=='string'||!result.target_address)throw Error('地址响应无效');
       address={target_address:result.target_address,network:result.network};renderDialog();
     }catch(error){
@@ -168,7 +188,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     if(!authorized()||!has(item,'can_evidence'))return;
     discovery={status:'LOADING',candidates:[]};renderDialog();
     try{const result=await api.discoverSupportPayout(item.id,tokenFor(item));
-      if(!authorized()||activeOrder!==item.id||!has(item,'can_evidence'))return;
+      if(!authorized()||current()!==item||!has(item,'can_evidence'))return;
       discovery={status:result?.status,candidates:Array.isArray(result?.candidates)?result.candidates:[]};renderDialog();
     }catch(error){if(authorized()&&activeOrder===item.id){discovery={status:'ERROR',candidates:[]};notify(item,`链上发现失败：${error?.message??'请手动输入哈希'}`,true);}}
   }
@@ -202,9 +222,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     if(item.candidate_txid)action(item,'核验已选交易',()=>void execute(item,'reconcile',key=>api.supportPayoutCommand(item.id,'reconcile',{claim_token:tokenFor(item)},{idempotencyKey:key})));
   }
   function renderTakeover(item){
-    action(item,'申请接管',async()=>{confirmation='takeover';securityMode=null;renderDialog();
-      try{const state=await api.getWalletOperationSecurity();if(authorized()&&activeOrder===item.id){securityMode=state?.auth_mode;renderDialog();}}
-      catch(error){if(authorized()&&activeOrder===item.id)notify(item,`操作验证方式不可用：${error?.message??'请刷新'}`,true);}});
+    action(item,'申请接管',()=>requestProof(item,'takeover'));
     if(confirmation!=='takeover')return;
     dialogBody.append(make('p','admin-payout-confirm','接管须另行确认原因及本次钱包操作证明；已开始订单只能移交证据核对权。'));
     if(!['operation_password','totp'].includes(securityMode)){dialogBody.append(make('p','admin-load-error','正在核对当前验证方式…'));return;}
@@ -216,9 +234,9 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   }
   function renderDialog(){
     if(!activeOrder)return;
-    const item=current();dialogBody.replaceChildren();
+    const item=current();clearProof();dialogBody.replaceChildren();
     if(!item){dialogBody.append(make('p','admin-load-error','订单已不在当前列表，请返回后刷新。'));return;}
-    const message=messages.get(item.id);dialogBody.append(make('p','admin-audit-note',`订单 ${item.id}`),make('h3',null,`应付 ${item.prepared_receive??item.final_receive??'待确认'} USDT`));
+    const message=messages.get(item.id);dialogBody.append(make('p','admin-audit-note',`订单 ${item.id}`),make('h3',null,`应付 ${payable(item)??'待确认'} USDT`));
     if(message){const notice=make('p',message.error?'admin-load-error':'admin-audit-note',message.text);notice.setAttribute('role','status');dialogBody.append(notice);}
     if(item.target_address_masked)dialogBody.append(make('p','admin-audit-note',`收款地址 ${item.target_address_masked}`));
     action(item,'返回提现列表',()=>dialog.close?.());
@@ -233,13 +251,14 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     if(!items.length)body.replaceChildren(make('p','admin-audit-note','正在加载提现请求…'));
     try{const page=await api.getSupportPayouts({...cursor?{cursor}:{},limit:50});if(!authorized()||version!==generation)return;
       items=(page.items??[]).map(raw=>{const item={...raw},saved=tokens.get(item.id)??{};
+        delete item.target_address;if(item.instructions){item.instructions={...item.instructions};delete item.instructions.target_address;}
         if(typeof item.claim_token==='string')saved.claim=item.claim_token;if(typeof item.evidence_token==='string')saved.evidence=item.evidence_token;
         if(saved.claim||saved.evidence)tokens.set(item.id,saved);delete item.claim_token;delete item.evidence_token;
         for(const capability of capabilities)item[capability]=raw[capability]===true;
         if(!has(item,'can_begin')&&!has(item,'can_evidence'))tokens.delete(item.id);return item;});
       cursor=page.next_cursor??null;next.disabled=!cursor;
       const active=current();if(active&&!has(active,'can_evidence')){address=null;discovery=null;drafts.delete(active.id);}renderList();
-    }catch(error){if(authorized()&&version===generation){tokens.clear();address=null;body.replaceChildren();notify(null,`提现列表加载失败：${error?.message??'请重试'}`,true);}}
+    }catch(error){if(authorized()&&version===generation){scrub();items=[];openers.clear();body.replaceChildren();renderDialog();notify(null,`提现列表加载失败：${error?.message??'请重试'}`,true);}}
   }
   panel.heartbeat=async()=>{if(!authorized()||document.hidden)return;
     for(const item of items){if(!has(item,'can_begin')||item.execution_started_at||!tokenFor(item)||busy.has(item.id))continue;

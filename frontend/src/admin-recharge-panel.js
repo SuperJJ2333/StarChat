@@ -5,6 +5,7 @@ import {formatBeijingTime} from './admin-formatters.js';
 
 function element(tag, className, textContent) {
   const node = document.createElement(tag);
+  if(tag==='button')node.type='button';
   if (className) node.className = className.replace(/\badmin-button\b/g, "admin-secondary");
   else if (tag === "input") node.className = "admin-filter";
   if (textContent !== undefined && textContent !== null) node.textContent = String(textContent);
@@ -34,7 +35,7 @@ function previewPoints(amount, rate) {
 }
 
 export function rechargePanel(api, { actor = {}, canReview = false, canApprove = false, canManage = false, onOpenPayout = null } = {}) {
-  let disposed = false, casesGeneration = 0, filter = 'all';
+  let disposed = false, invalidated=false, casesGeneration = 0, filter = 'all';
   const claims = new Map(), busyOrders = new Set(), dialogs = new Set();
   const operationDialogs = new Set();
   const drafts = new Map(), orderFeedbacks = new Map();
@@ -47,8 +48,9 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   };
   const actorId = actor.id ?? actor.user_id;
   const key = prefix => `${prefix}:${globalThis.crypto.randomUUID()}`;
-  const owned = item => !item.expires_at || Boolean(actorId && item.claimed_by === actorId && claims.has(item.id)
-    && Date.parse(item.claim_expires_at) > Date.now());
+  const owned = item => !item.expires_at || item.can_process===true && claims.has(item.id);
+  const authorized=()=>!disposed&&!invalidated&&(actor.id??actor.user_id)===actorId;
+  const clearProof=dialog=>{for(const input of dialog.querySelectorAll?.('input')??[])if(input.type==='password')input.value='';};
 
   const panel = element("section", "admin-card admin-recharge-panel");
   const panelAlertNode = element("p", "admin-audit-note recharge-alert");
@@ -133,7 +135,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   let currentItems = [];
   const renderCases = () => {
     rebuilding=true;
-    for(const dialog of operationDialogs){dialog.close?.();dialogs.delete(dialog);}
+    for(const dialog of operationDialogs){clearProof(dialog);dialog.close?.();dialogs.delete(dialog);}
     operationDialogs.clear();if(activeKind!=='review')operationFeedback=null;
     body.replaceChildren();
     const items = currentItems.filter(item => filter !== 'mine' || item.claimed_by === actorId);
@@ -150,22 +152,25 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       const actions=element('div','recharge-action-controls'),notes=element('div','recharge-action-notes');
       const dialog=element('dialog','admin-proof-dialog admin-order-dialog');dialog.setAttribute('aria-label','处理充值请求');dialog.hidden=true;
       dialog.dataset && (dialog.dataset.orderId=item.id);
-      dialog.addEventListener('input',event=>{if(event.target?.tagName==='INPUT'){const draft=drafts.get(item.id)??{};draft[event.target.placeholder]=event.target.value;drafts.set(item.id,draft);}});
+      dialog.addEventListener('input',event=>{if(event.target?.tagName==='INPUT'&&event.target.type!=='password'){const draft=drafts.get(item.id)??{};draft[event.target.placeholder]=event.target.value;drafts.set(item.id,draft);}});
       const heading=element('header','admin-proof-heading'),close=element('button','admin-dialog-close','×');close.setAttribute('aria-label','关闭处理窗口');
       heading.append(element('h2',null,'处理充值请求'),close);
       const content=element('div','admin-proof-body'),feedback=element('p','recharge-alert');feedback.hidden=true;feedback.setAttribute('aria-live','polite');
       content.append(element('p','admin-audit-note',`订单 ${item.id} · ${item.user_display_name??'用户资料暂缺'} · 畅聊号 ${item.user_chat_id??'暂缺'}`),element('h3',null,`申请 ${item.amount_usdt} USDT`),feedback,notes,actions);dialog.append(heading,content);dialogs.add(dialog);operationDialogs.add(dialog);
       let claimAction=null;
-      const open=element('button','admin-primary','处理请求');open.disabled=busyOrders.has(item.id);
+      const permitted=!item.expires_at||item.can_claim===true||item.can_process===true;
+      const viewOnly=!permitted&&item.can_takeover===true;
+      const open=element('button',permitted?'admin-primary':'admin-secondary',permitted?'处理请求':item.claimed_by&&item.claimed_by!==actorId?'正被其他客服处理中':'暂无处理权限');open.disabled=busyOrders.has(item.id)||!permitted;
       open.addEventListener('click',()=>{if(disposed||open.disabled)return;activeOrder=item.id;activeKind='normal';operationFeedback=feedback;actionsCell.append(dialog);dialog.hidden=false;dialog.showModal?.();if(claimAction)void claimAction();});
-      close.addEventListener('click',()=>{dialog.hidden=true;dialog.close?.();cache.append(dialog);activeOrder=null;activeKind=null;operationFeedback=null;});dialog.addEventListener('close',()=>{dialog.hidden=true;if(!rebuilding&&operationDialogs.has(dialog)&&activeOrder===item.id){cache.append(dialog);activeOrder=null;activeKind=null;operationFeedback=null;open.focus?.();}});
+      close.addEventListener('click',()=>{clearProof(dialog);dialog.hidden=true;dialog.close?.();cache.append(dialog);activeOrder=null;activeKind=null;operationFeedback=null;});dialog.addEventListener('close',()=>{clearProof(dialog);dialog.hidden=true;if(!rebuilding&&operationDialogs.has(dialog)&&activeOrder===item.id){cache.append(dialog);activeOrder=null;activeKind=null;operationFeedback=null;open.focus?.();}});
       const cache=element('div','recharge-operation-cache');cache.append(dialog);actionsCell.append(open,element('p','admin-audit-note','在弹窗中核对到账与完成处理'),cache);
+      if(viewOnly){const view=element('button','admin-secondary','查看订单');view.disabled=busyOrders.has(item.id);view.addEventListener('click',()=>{if(!authorized()||view.disabled)return;activeOrder=item.id;activeKind='normal';operationFeedback=feedback;actionsCell.append(dialog);dialog.hidden=false;dialog.showModal?.();});actionsCell.append(view);}
       if(activeKind==='normal'&&activeOrder===item.id){actionsCell.append(dialog);operationFeedback=feedback;if(orderFeedbacks.has(item.id)){const savedFeedback=orderFeedbacks.get(item.id);feedback.textContent=savedFeedback.message;feedback.className='recharge-alert '+(savedFeedback.failed?'admin-load-error':'admin-feedback-success');feedback.hidden=false;}dialog.hidden=false;dialog.showModal?.();}
       const detail=element('button','admin-secondary','查看记录');detail.addEventListener('click',()=>openTimeline(item.id));notes.append(detail);
       notes.append(element('p','admin-audit-note', `实际到账 ${item.actual_received_usdt ?? '待核验'} USDT · 最终点钻 ${item.final_caibi_amount ?? item.binding_final_caibi_amount ?? '待结算'}`));
       if (item.expires_at) notes.append(element('p','admin-audit-note', `处理截止（北京）：${new Date(item.expires_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
       const command = async operation => {
-        if (disposed || busyOrders.has(item.id) || !owned(item)) return;
+        if (!authorized() || !currentItems.includes(item) || busyOrders.has(item.id) || !owned(item)) return;
         busyOrders.add(item.id); renderCases();
         try { const result = await operation(claims.get(item.id));
           if (!disposed) { orderAlert(result.status === 'CREDITED' ? '已入账并完成登记'
@@ -201,14 +206,37 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
         notes.append(element('p','admin-audit-note',activeOther ? '另一位客服正在处理，当前仅可查看' : '接手后由你负责，其他客服无法同时处理'));
         if(needsReview && !canReview)actions.append(element('p','admin-audit-note','已转待核对，需要财务复核权限受理。'));
         if(needsReview && canReview && !activeOther)actions.append(reviewReason);
-        if (!activeOther && actorId && (!needsReview || canReview)) {claimAction=async()=>{
+        if (item.can_claim===true && actorId && (!needsReview || canReview)) {claimAction=async()=>{
           if(needsReview && reviewReason.value.trim().length<3){orderAlert('请填写核对受理原因（至少3字符）');return;}
-          if(disposed || busyOrders.has(item.id))return;busyOrders.add(item.id);renderCases();
+          if(!authorized() || !currentItems.includes(item)||busyOrders.has(item.id)||item.can_claim!==true)return;busyOrders.add(item.id);renderCases();
           try {const result=await api.claimRecharge(item.id,{idempotencyKey:key(`claim:${item.id}`)},needsReview?{review:true,reason:reviewReason.value.trim()}:{});
             if(!disposed && result.claim_token && result.claimed_by===actorId){claims.set(item.id,result.claim_token);orderAlert(result.payment_verified?'已接手该请求，到账已核验，请确认结算金额。':'已接手该请求，请等待系统确认到账后继续结算。');}
           }catch(error){claims.delete(item.id);orderAlert(`接手失败：${error.message ?? '案件已被认领'}`);}
           finally{busyOrders.delete(item.id);if(!disposed){await loadCases();await loadReview();}}
         };addButton(needsReview?'处理待核对请求':'接手处理',claimAction);if(needsReview)claimAction=null;}
+        if(item.can_takeover===true){
+          notes.append(element('p','admin-audit-note',item.takeover_review_required?'只读核对：保留原到账凭证与结算绑定，接管后继续核对既有记录。':'当前只读；接管需提交原因和本次操作证明。'));
+          const takeover=addButton('申请接管',async()=>{
+            if(!authorized()||takeover.disabled||item.can_takeover!==true)return;takeover.disabled=true;
+            try{const security=await api.getWalletOperationSecurity();if(!authorized()||activeOrder!==item.id||!operationDialogs.has(dialog))return;
+              if(!['operation_password','totp'].includes(security?.auth_mode)){orderAlert('操作验证方式未确认，请刷新');return;}
+              const reason=element('select');reason.setAttribute('aria-label','接管原因');
+              for(const [code,label] of [['RECHARGE_STAFF_UNAVAILABLE','原客服无法继续处理'],['RECHARGE_SHIFT_HANDOFF','交班移交'],['RECHARGE_INCIDENT_REVIEW','异常事件核对']]){const option=element('option',null,label);option.value=code;reason.append(option);}reason.value='RECHARGE_STAFF_UNAVAILABLE';
+              const proof=element('input');proof.type='password';proof.autocomplete='off';proof.placeholder=security.auth_mode==='operation_password'?'操作密码':'当前六位验证码';proof.setAttribute('aria-label',proof.placeholder);
+              actions.append(element('p','admin-payout-confirm','请再次确认接管原因与本次证明；接管不会自动入账或重新生成结算。'),reason,proof);
+              const confirm=addButton('确认接管',async()=>{
+                if(!authorized()||!currentItems.includes(item)||!operationDialogs.has(dialog)||item.can_takeover!==true||!proof.value.trim()||!Number.isSafeInteger(item.claim_version)||busyOrders.has(item.id))return;
+                const credential=proof.value;proof.value='';const body={expected_claim_version:item.claim_version,reason_code:reason.value,proof:{[security.auth_mode==='operation_password'?'operation_password':'mfa_proof']:credential}};
+                busyOrders.add(item.id);renderCases();
+                try{const result=await api.takeoverRecharge(item.id,body,{idempotencyKey:key(`takeover:${item.id}`)});
+                  if(authorized()&&result.claim_token&&result.can_process===true){claims.set(item.id,result.claim_token);orderAlert('已接管，继续沿用原到账凭证和结算绑定；尚未因此入账。');}
+                }catch(error){claims.delete(item.id);drafts.delete(item.id);orderAlert(`接管未确认，请刷新核对权威状态：${error.message??'请重试'}`);}
+                finally{busyOrders.delete(item.id);if(authorized())await loadCases();}
+              },true);
+              proof.addEventListener('input',()=>{confirm.disabled=!proof.value.trim()||!Number.isSafeInteger(item.claim_version)||busyOrders.has(item.id);});
+            }catch(error){orderAlert(`操作验证方式读取失败：${error.message??'请重试'}`);}
+          });
+        }
         continue;
       }
       if(item.expires_at && canReview && item.processing_stage==='NEEDS_REVIEW'){
@@ -284,20 +312,22 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
     rebuilding=false;
   };
   const loadCases = async (nextPage=false) => {
+    if(!authorized())return;
     if(nextPage){if(nextCases.disabled)return;casesPageCursor=nextCasesCursor;}
     nextCases.disabled=true;
     const generation = ++casesGeneration;
     try {
       const [page, snapshot] = await Promise.all([api.getRechargePending({scope:filter,...casesPageCursor?{cursor:casesPageCursor}:{},limit:50}), loadReference()]);
-      if(disposed || generation!==casesGeneration)return;
+      if(!authorized() || generation!==casesGeneration)return;
       currentFx=snapshot;
       nextCasesCursor=page.next_cursor??null;nextCases.disabled=!nextCasesCursor;
       currentItems=page.items??[];
-      for(const id of claims.keys())if(!currentItems.some(item=>item.id===id && item.claimed_by===actorId && Date.parse(item.claim_expires_at)>Date.now()))claims.delete(id);
+      for(const id of claims.keys())if(!currentItems.some(item=>item.id===id && (!item.expires_at||item.can_process===true)))claims.delete(id);
       renderCases();
     } catch(error) {
       if(disposed || generation!==casesGeneration)return;
       claims.clear();currentItems=[];body.replaceChildren();
+      for(const dialog of operationDialogs){clearProof(dialog);dialog.close?.();dialog.replaceChildren();dialogs.delete(dialog);}operationDialogs.clear();drafts.clear();activeOrder=null;activeKind=null;operationFeedback=null;
       body.insertRow().append(element('td','admin-status-cell','案件加载失败，请检查权限或网络；修改已停止'));
     }
   };
@@ -323,7 +353,9 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const resume=()=>{if(!document.hidden)void loadCases();};document.addEventListener?.('visibilitychange',resume);
   panel.heartbeat=heartbeat;
   panel.refreshOrders=async()=>{await loadCases();if(!disposed)await loadReview();};
-  panel.dispose=()=>{disposed=true;for(const dialog of dialogs){dialog.close?.();dialog.remove?.();}dialogs.clear();++casesGeneration;claims.clear();clearInterval(leaseTimer);document.removeEventListener?.('visibilitychange',resume);};
+  const revokeSession=()=>{invalidated=true;++casesGeneration;claims.clear();drafts.clear();currentItems=[];for(const dialog of dialogs){clearProof(dialog);dialog.close?.();dialog.replaceChildren();}renderCases();};
+  globalThis.addEventListener?.('admin-session-expired',revokeSession);
+  panel.dispose=()=>{disposed=true;for(const dialog of dialogs){clearProof(dialog);dialog.close?.();dialog.replaceChildren();dialog.remove?.();}dialogs.clear();++casesGeneration;claims.clear();drafts.clear();clearInterval(leaseTimer);document.removeEventListener?.('visibilitychange',resume);globalThis.removeEventListener?.('admin-session-expired',revokeSession);};
   const reloadButton = refreshControl("刷新充值请求",()=>{casesPageCursor=null;return loadCases();});
   const tableScroll=element("div","admin-table-scroll");tableScroll.append(table);
   sectionHead.append(reloadButton);section.append(tableScroll, nextCases);

@@ -73,6 +73,7 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     // ADR-0077 后台：人工充值案件 / 客服目录 / 汇率与储备展示。
     getRechargePending: async (filters={})=>request(`/api/v1/recharge/admin/requests/pending${Object.keys(filters).length?`?${new URLSearchParams(filters)}`:''}`,{cache:'no-store'}),
     claimRecharge: async (id,options,body={})=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/claim`,body,options),
+    takeoverRecharge: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/takeover`,body,options),
     heartbeatRecharge: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/heartbeat`,body,options),
     verifyRechargePayment: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/verify-payment`,body,options),
     prepareRechargeSettlement: async (id,body,options)=>command(`/api/v1/recharge/admin/requests/${encodeURIComponent(id)}/prepare-settlement`,body,options),

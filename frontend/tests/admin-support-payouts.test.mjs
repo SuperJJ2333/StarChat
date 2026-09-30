@@ -4,9 +4,9 @@ import {createAdminApi} from '../src/admin-api.js';
 import {supportPayoutPanel} from '../src/admin-support-payout-panel.js';
 
 class Element {
-  constructor(tag){this.tag=tag;this.tagName=tag.toUpperCase();this.children=[];this.handlers={};this.attributes={};this.value='';this.textContent='';this.disabled=false;this.dataset={};}
-  append(...children){this.children.push(...children);}
-  replaceChildren(...children){this.children=children;}
+  constructor(tag){this.tag=tag;this.tagName=tag.toUpperCase();this.children=[];this.handlers={};this.attributes={};this.value='';this.textContent='';this.disabled=false;this.dataset={};this.parentNode=null;}
+  append(...children){for(const child of children)child.parentNode=this;this.children.push(...children);}
+  replaceChildren(...children){for(const child of this.children)child.parentNode=null;this.children=children;for(const child of children)child.parentNode=this;}
   addEventListener(name,fn){this.handlers[name]=fn;}
   setAttribute(name,value){this.attributes[name]=String(value);}
   getAttribute(name){return this.attributes[name]??null;}
@@ -14,6 +14,7 @@ class Element {
   showModal(){this.open=true;this.hidden=false;}
   close(){this.open=false;this.handlers.close?.();}
   querySelectorAll(tag){return this.find(tag);}
+  contains(other){for(let node=other;node;node=node.parentNode)if(node===this)return true;return false;}
   find(tag){return [this,...this.children.flatMap(node=>node.find?.(tag)??[])].filter(node=>node.tag===tag);}
 }
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
@@ -283,9 +284,37 @@ test('returning from a payout keeps the selected list filter and restores focus'
   assert.ok(button(panel,'返回提现列表'));
   button(panel,'返回提现列表').handlers.click();
   assert.equal(button(panel,'我正在处理').getAttribute('aria-pressed'),'true');
-  assert.equal(globalThis.document.activeElement,opener);
+  assert.notEqual(button(panel,'处理请求'),opener);
+  assert.equal(globalThis.document.activeElement,button(panel,'处理请求'));
   assert.equal(panel.find('dialog')[0].hidden,true);
   assert.ok(panel.find('button').every(node=>node.type==='button'));
+  panel.dispose();
+});
+
+test('forbidden list refresh removes a previously read full address and all old actions',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};let reads=0;
+  const order={id:'private-refresh',status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
+  const api={getSupportPayouts:async()=>{if(++reads>1)throw {status:403,message:'forbidden'};return {items:[order]};},
+    getSupportPayout:async()=>({...order,instructions:{target_address:'Tnested-private-address'}}),
+    readSupportPayoutAddress:async()=>({target_address:'Tfull-private-address',network:'TRON'})};
+  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});
+  await flush();button(panel,'处理请求').handlers.click();await flush();await flush();
+  assert.match(visibleText(panel),/Tfull-private-address/u);
+  await panel.refresh();
+  assert.doesNotMatch(visibleText(panel),/Tfull-private-address|Tnested-private-address/u);
+  assert.equal(button(panel,'查找链上出款'),undefined);
+  assert.equal(button(panel,'处理请求'),undefined);
+  panel.dispose();
+});
+
+test('forbidden detail read revokes previously projected evidence actions',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};
+  const order={id:'private-detail',status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),
+    getSupportPayout:async()=>{throw {status:403,message:'forbidden'};}},{actor:{id:'staff'}});
+  await flush();button(panel,'处理请求').handlers.click();await flush();
+  assert.equal(button(panel,'查找链上出款'),undefined);
+  assert.equal(button(panel,'提交出款交易凭证'),undefined);
   panel.dispose();
 });
 
@@ -319,4 +348,31 @@ test('rejected payout remains visible in history without a processing action',as
   assert.match(visibleText(panel),/已拒绝/u);
   assert.equal(button(panel,'处理请求'),undefined);
   panel.dispose();
+});
+
+test('staged receive and rejected projection reflect the server processing stage',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[
+    {id:'staged',status:'REQUESTED',prepared_receive:'9.000000',final_receive:'10.000000',...caps()},
+    {id:'rejected-stage',status:'CANCELLED',processing_stage:'REJECTED',...caps()}
+  ]})},{actor:{id:'staff'}});await flush();
+  assert.match(visibleText(panel),/应付 9.000000 USDT/u);
+  assert.doesNotMatch(visibleText(panel),/应付 10.000000 USDT|订单已取消/u);
+  assert.match(visibleText(panel),/订单已拒绝/u);panel.dispose();
+});
+
+test('configured owner rejection collects a fresh selected proof rather than a cached grant',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};const writes=[];
+  const order={id:'owner-reject',status:'REQUESTED',owner_proof_required:true,claim_token:'lease',...caps({can_begin:true})};
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
+    getWalletOperationSecurity:async()=>({auth_mode:'totp'}),
+    rejectSupportPayout:async(id,body)=>{writes.push(body);return {...order,status:'CANCELLED',processing_stage:'REJECTED',...caps()};}
+  },{actor:{id:'owner'}});await flush();button(panel,'处理请求').handlers.click();await flush();
+  button(panel,'拒绝提现').handlers.click();await flush();
+  assert.equal(writes.length,0);
+  const proof=panel.find('input').find(node=>node.placeholder==='当前六位验证码');assert.ok(proof);
+  assert.equal(button(panel,'确认拒绝提现').disabled,true);
+  proof.value='123456';proof.handlers.input();button(panel,'确认拒绝提现').handlers.click();await flush();
+  assert.deepEqual(writes,[{claim_token:'lease',reason_code:'PAYOUT_ADDRESS_INVALID',proof:{mfa_proof:'123456'}}]);
+  assert.equal(proof.value,'');panel.dispose();
 });
