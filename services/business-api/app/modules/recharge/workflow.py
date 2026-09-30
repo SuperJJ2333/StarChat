@@ -2,6 +2,7 @@
 from datetime import timedelta, timezone
 from decimal import Decimal
 import hashlib
+import json
 import re
 import secrets
 from uuid import uuid4
@@ -174,6 +175,38 @@ class SupportOrderWorkflow:
                     reason_code='RECHARGE_REVIEW_AUTHORIZED', trace_id=row.id[:32],
                     after_data={'reason':reason.strip()[:200]}, created_at=now))
             return self._complete(command, dict(self._view(row), claim_token=token))
+
+    def takeover_receipt(self, *, request_id, actor_id, owner_id, expected_claim_version,
+                         reason_code, idempotency_key, authorization):
+        """Read an exact completed result under current identity and claim checks."""
+        if not owner_id or actor_id != owner_id or authorization is None:
+            fail('PERMISSION_DENIED', '仅官方钱包所有者管理员可接管', 403)
+        from app.core.idempotency import IdempotencyRecord
+        with self._authorized_transaction(authorization) as session:
+            from app.modules.ledger.reserve import lock_budget
+            lock_budget(session)
+            if session.scalar(select(UserRole.id).where(UserRole.user_id == actor_id,
+                    UserRole.role_code == RoleCode.SUPER_ADMIN).with_for_update()) is None:
+                fail('PERMISSION_DENIED', '仅官方钱包所有者管理员可接管', 403)
+            record = session.scalar(select(IdempotencyRecord).where(
+                IdempotencyRecord.scope == 'recharge.takeover:'+actor_id,
+                IdempotencyRecord.idempotency_key == idempotency_key).with_for_update())
+            if record is None:
+                return None
+            payload = {'request_id':request_id, 'expected_claim_version':expected_claim_version,
+                'reason_code':reason_code}
+            digest = hashlib.sha256(json.dumps(payload, sort_keys=True,
+                separators=(',', ':')).encode()).hexdigest()
+            if record.request_hash != digest:
+                fail('IDEMPOTENCY_KEY_REUSED', '幂等键已用于其他请求')
+            if record.status != 'COMPLETED':
+                fail('IDEMPOTENCY_IN_PROGRESS', '请求正在处理中')
+            row = self._order(session, request_id)
+            token = record.response_body.get('claim_token')
+            self._require_claim(row, actor_id, token, allow_review=True)
+            if row.status != 'SUBMITTED' or row.claim_version != expected_claim_version + 1:
+                fail('RECHARGE_CLAIM_LOST', '接管已被后续处理替代')
+            return dict(self._view(row), claim_token=token)
 
     def takeover_order(self, *, request_id, actor_id, owner_id, expected_claim_version,
                        reason_code, idempotency_key, authorization, owner_authorization):

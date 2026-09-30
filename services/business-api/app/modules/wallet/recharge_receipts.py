@@ -121,10 +121,11 @@ class RechargeReceiptOperations:
         return {'receipt_id':row.id,'amount_usdt':str(row.amount)}
 
     @staticmethod
-    def _require_recharge_reservation(session,*,request_id,receipt_id,user_id,now=None):
-        lock_budget(session)
-        row=session.get(DepositReceipt,receipt_id,with_for_update=True)
-        claim=session.get(RechargeReceiptReservation,receipt_id,with_for_update=True)
+    def _require_recharge_reservation(session,*,request_id,receipt_id,user_id,now=None,lock=True):
+        if lock:
+            lock_budget(session)
+        row=session.get(DepositReceipt,receipt_id,with_for_update=lock)
+        claim=session.get(RechargeReceiptReservation,receipt_id,with_for_update=lock)
         if (not row or not claim or claim.request_id!=request_id or claim.user_id!=user_id
             or claim.state!='RESERVED' or row.status!='REVIEW' or not row.pending_obligation
             or row.facts_digest!=claim.facts_digest or row.amount is None or row.amount<=0):
@@ -148,6 +149,15 @@ class RechargeReceiptOperations:
         """Prove immutable attribution for token transfer; never authorizes credit."""
         return RechargeReceiptOperations._require_recharge_reservation(session,
             request_id=request_id, receipt_id=receipt_id, user_id=user_id)
+
+    @staticmethod
+    def preview_recharge_handoff_reservation(session,*,request_id,receipt_id,user_id):
+        """Read-only capability hint; a command must repeat the locked proof."""
+        try:
+            return RechargeReceiptOperations._require_recharge_reservation(session,
+                request_id=request_id, receipt_id=receipt_id, user_id=user_id, lock=False)[0]
+        except AppError:
+            return None
 
 
 def prepare_recharge_credit(session,*,request_id,receipt_id,user_id,now,reserve_policy,expected_amount=None):

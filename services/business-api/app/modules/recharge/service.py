@@ -659,7 +659,18 @@ class RechargeService(SupportOrderWorkflow, AutomaticRechargeMatching):
                 or adjustment.status not in ('SUBMITTED', 'FINANCE_APPROVED', 'ADMIN_APPROVED')
                 or binding.final_caibi_amount is not None
                     and binding.final_caibi_amount != adjustment.amount)
-        terminal_unsafe = bool(row.ledger_transaction_id or row.adjustment_id or binding_unsafe)
+        receipt_unsafe = False
+        if row.receipt_id:
+            preview = getattr(self.wallet_receipts, 'preview_recharge_handoff_reservation', None)
+            receipt = preview(session, request_id=row.id, receipt_id=row.receipt_id,
+                user_id=row.user_id) if preview else None
+            official = row.official_payment or {}
+            receipt_unsafe = bool(receipt is None or row.payment_verified_at is None
+                or receipt.amount != row.actual_received_usdt or receipt.txid != row.evidence_txid
+                or receipt.official_address != official.get('address')
+                or receipt.official_config_version != official.get('config_version'))
+        terminal_unsafe = bool(row.ledger_transaction_id or row.adjustment_id
+            or binding_unsafe or receipt_unsafe)
         return {'can_claim': bool(actor_id and pending and not active and not first_claim_blocked and not reviewing),
             'can_process': bool(same_claimant and pending and active and not reviewing),
             'can_takeover': bool(owner_eligible and pending and row.claimed_by

@@ -246,10 +246,15 @@ def test_owner_takeover_preserves_old_receipt_and_active_unexecuted_binding(flow
     def stale_settlement(*args,**kwargs):
         raise AppError(code='RECHARGE_EVIDENCE_EXPIRED',message='stale',status_code=409)
     service.wallet_receipts=SimpleNamespace(require_recharge_reservation=stale_settlement,
+        preview_recharge_handoff_reservation=lambda *args,**kwargs: None,
         require_recharge_handoff_reservation=lambda *args,**kwargs:
             (SimpleNamespace(amount=Decimal('10'),txid='a'*64,
                 official_address='official-test-address',official_config_version='v1'),
              SimpleNamespace(state='RESERVED')))
+    assert service.pending_page(actor_id='owner',owner_id='owner')['items'][0]['can_takeover'] is False
+    service.wallet_receipts.preview_recharge_handoff_reservation=(lambda *args,**kwargs:
+        SimpleNamespace(amount=Decimal('10'),txid='a'*64,
+            official_address='official-test-address',official_config_version='v1'))
     owner_view=service.pending_page(actor_id='owner',owner_id='owner')['items'][0]
     assert owner_view['can_takeover'] is True
     assert owner_view['takeover_review_required'] is True

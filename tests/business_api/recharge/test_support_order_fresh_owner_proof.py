@@ -76,15 +76,17 @@ def test_non_owner_cannot_get_takeover_proof(env):
 
 
 def test_owner_totp_mode_requires_new_one_time_proof(env):
+    from app.modules.identity.totp import TotpService, FernetSecretProtector
+    from app.modules.wallet.binding_adapters import WalletTotpVerifier
     factory, now, settings, claims, _ = owner_setup(env)
     settings.wallet_admin_auth_mode = 'totp'
-    calls = []
-    def verify(**kwargs):
-        calls.append((kwargs['user_id'], kwargs['session_id'], kwargs['proof']))
-        return True
+    totp = TotpService(factory, protector=FernetSecretProtector.generate(), now_factory=lambda:now[0])
+    enrollment = totp.enroll('root')
+    code = totp.code_at(enrollment.secret, now[0])
+    totp.enable('root', code)
+    verifier = WalletTotpVerifier(totp, SimpleNamespace(hit=lambda *args,**kwargs:None), clock=lambda:now[0])
     authorize = fresh_owner_proof_authorization(settings, factory, lambda: now[0], claims,
-        AdminWalletProofBody(mfa_proof='123456'), mfa_verifier=verify)
-    assert calls == [('root', claims['family_id'], '123456')]
+        AdminWalletProofBody(mfa_proof=code), mfa_verifier=verifier)
     with factory.begin() as session:
         authorize(session)()
     settings.wallet_admin_auth_mode = 'operation_password'
@@ -96,7 +98,26 @@ def test_owner_totp_mode_requires_new_one_time_proof(env):
         authorize(session)()
 
 
-def test_recharge_takeover_route_requires_current_owner_proof_and_rotates_token(env):
+def test_owner_totp_proof_cannot_survive_credential_replacement(env):
+    from app.modules.identity.models import TotpCredential
+    from app.modules.identity.totp import TotpService, FernetSecretProtector
+    from app.modules.wallet.binding_adapters import WalletTotpVerifier
+    factory, now, settings, claims, _ = owner_setup(env)
+    settings.wallet_admin_auth_mode = 'totp'
+    totp = TotpService(factory, protector=FernetSecretProtector.generate(), now_factory=lambda:now[0])
+    enrollment = totp.enroll('root')
+    code = totp.code_at(enrollment.secret, now[0])
+    totp.enable('root', code)
+    verifier = WalletTotpVerifier(totp, SimpleNamespace(hit=lambda *args,**kwargs:None), clock=lambda:now[0])
+    authorize = fresh_owner_proof_authorization(settings, factory, lambda:now[0], claims,
+        AdminWalletProofBody(mfa_proof=code), mfa_verifier=verifier)
+    with factory.begin() as session:
+        session.delete(session.get(TotpCredential, enrollment.credential_id))
+    with factory.begin() as session, pytest.raises(AppError):
+        authorize(session)()
+
+
+def test_recharge_takeover_route_requires_current_owner_proof_and_rotates_token(env, monkeypatch):
     app, _, _, _ = env
     factory, _, _, _, token = owner_setup(env)
     recharge = app.state.recharge_service
@@ -114,5 +135,12 @@ def test_recharge_takeover_route_requires_current_owner_proof_and_rotates_token(
     assert readable.status_code == 200, readable.text
     response = post(app, {'Authorization': 'Bearer ' + token}, route, body)
     assert response.status_code == 200, response.text
+    assert response.headers.get('cache-control') == 'no-store'
     assert response.json()['claimed_by'] == 'root'
     assert response.json()['claim_version'] == first['claim_version'] + 1
+    def reused_proof(self, **kwargs):
+        raise AppError(code='TOTP_REPLAYED', message='proof already consumed', status_code=403)
+    monkeypatch.setattr(AdminWalletOperationPasswordService, 'verify', reused_proof)
+    replay = post(app, {'Authorization': 'Bearer ' + token}, route, body)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()['claim_token'] == response.json()['claim_token']

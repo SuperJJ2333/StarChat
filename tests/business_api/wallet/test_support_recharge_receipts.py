@@ -96,6 +96,10 @@ def test_old_reserved_receipt_can_prove_handoff_without_renewing_settlement_fres
         assert row.amount == Decimal(result['amount_usdt'])
         assert reservation.state == 'RESERVED'
         assert reservation.verified_at.replace(tzinfo=now.tzinfo) == now
+        assert service.preview_recharge_handoff_reservation(session,
+            request_id='order', receipt_id=result['receipt_id'], user_id='alice') is not None
+        assert service.preview_recharge_handoff_reservation(session,
+            request_id='order', receipt_id=result['receipt_id'], user_id='other-user') is None
 
 
 def test_transactional_adjustment_submission_rolls_back_with_order(core):

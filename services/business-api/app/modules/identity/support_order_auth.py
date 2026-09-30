@@ -1,5 +1,5 @@
 """Narrow financial identity policy for support orders, never owner repairs."""
-from datetime import timedelta
+import hashlib
 from sqlalchemy import select
 from app.core.errors import AppError
 from app.modules.identity.enums import RoleCode
@@ -133,18 +133,37 @@ def fresh_owner_proof_authorization(settings, factory, clock, claims, body, *,
                     message='动态验证尚未配置', status_code=503)
             verifier = WalletTotpVerifier(TotpService(factory, protector=FernetSecretProtector(
                 key.get_secret_value().encode('ascii'))), rate_limiter, clock=clock)
-        if verifier(user_id=owner_id, session_id=claims['family_id'],
-                    proof=body.mfa_proof.get_secret_value(), now=clock()) is not True:
+        from app.modules.identity.totp import TotpVerificationProof
+        verify_proof = getattr(verifier, 'verify_proof', None)
+        if verify_proof is None:
+            raise AppError(code='WALLET_MFA_NOT_CONFIGURED',
+                message='动态验证服务不支持凭据复核', status_code=503)
+        verified = verify_proof(user_id=owner_id, session_id=claims['family_id'],
+            proof=body.mfa_proof.get_secret_value(), now=clock())
+        if not isinstance(verified, TotpVerificationProof) or verified.user_id != owner_id:
             raise AppError(code='TOTP_REQUIRED', message='需要重新验证动态验证码', status_code=403)
-        verified_at = clock()
+        verified_at = verified.verified_at
         from app.modules.identity.wallet_access import require_wallet_session
+        from app.modules.identity.models import TotpCredential
         def authorize(session):
             current_session = sessions.authorization(claims=claims)(session)
             current_proof = require_wallet_session(session, claims=claims, clock=clock,
                 verified_at=verified_at, require_recent=False)
+            def credential_current():
+                credential = session.execute(select(TotpCredential.id, TotpCredential.enabled,
+                    TotpCredential.encrypted_secret, TotpCredential.last_accepted_step).where(
+                    TotpCredential.user_id == owner_id).with_for_update()).first()
+                if (credential is None or credential.id != verified.credential_id
+                        or not credential.enabled or credential.last_accepted_step is None
+                        or credential.last_accepted_step < verified.accepted_step
+                        or hashlib.sha256(credential.encrypted_secret.encode()).hexdigest()
+                            != verified.secret_digest):
+                    raise AppError(code='TOTP_REQUIRED', message='验证器已变化，请重新验证', status_code=403)
+            credential_current()
             def final():
                 current_session()
                 current_proof()
+                credential_current()
             return final
         return owner_checked(authorize)
 
