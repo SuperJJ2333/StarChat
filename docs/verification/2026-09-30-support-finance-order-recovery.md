@@ -76,3 +76,20 @@ build在构建前因actualAPI启动直接uvicorn（无alembic）安全停止。�
 - bridge开始生产APIguard切换至ab500封闭镜像；08:55:09UTCguarded-fence-health阶段因HostConfig.Binds顺序变化拒绝，尚无bridge-migration-attempt/bridge-result；数据库真实0093，API健康0restart，实际写503 SUPPORT_FINANCE_RELEASE_WRITE_FENCE。Worker仍00c、静态未变。
 - 只读诊断：三个Binds排序后相同，actualMounts按Destination排序完全相同，其他HostConfig字段相同。固定当前API容器115bdaebf9044f74cead7c2f8a1057774721a00b8b59e79af3a8693e43ed0ac9；guarded-vptpbgwx/compose.json SHA9801ed18136d8230ddd1660b9ea5c6260e4051fa512681e3a03aee9254d2a1e0。
 - Ruling：Binds仅规范顺序，重复/源/目标/模式仍严格拒绝；加入显式resume-bridge，只准已核实guarded-fence-health且无迁移attempt/结果，显式绑定上述容器ID和配置SHA，复查原manifest/backup/source/runtime/Worker/其他容器，再证明actualfence后执行唯一有时限迁移。保留原失败日志，不重新guard部署API、不盲重跑迁移。实施红8failed3pass，等待绿与独立复审；资金写入口当前暂时封闭，必须继续恢复执行。
+
+## 最终生产发布与公开技术验收（2026-09-30 09:12 UTC 收尾）
+
+- 311441f8明确恢复工具12tests/独立领域及安全PASS，SHA62b935730e1377b218feacd576248ae8f0673656c29ee303d7fb88bf05d8c6f3按旧200dc绑定替换；保留旧失败证据，resume严格绑定115b容器与9801guardSHA，无重新API部署、无旧迁移attempt。09:04:33UTC唯一有时限DDL成功扩展0094；实际封闭HTTP再次证明后才执行。09:05:13安全Worker阶段完成。
+- 09:05:55.163536UTC / 17:05:55+08:00候选API62614149与Worker3efd5924、4静态正式部署成功，财务写封闭解除；09:05:59.944880UTC内部verify exit0，verified.json SHAe8b344e015a81564baeccf438d4eb695e91eb9915453aa81af16ec623c868296。两服务健康，重启计数API0/Worker0；完整运行配置/实际Python目标库存及静态SHA符合冻结清单；其余28容器不变。切换后API47行、Worker1行日志中tracebacks/fatal/exits均0。未在生产调用带身份金融写入或自动退款。
+- 首次公开探针readyJSON与匿名读拒绝通过，但误以为/openapi.json公网可读，真实404导致探针失败；/api/v1/openapi.json同样404。实际3新接口匿名POST均401。Ruling：按生产公开边界检查3个真实候选端点的匿名POST拒绝，不开放生产文档；404/503/2xx一律失败，保留证书验证、readyJSON、匿名读拒绝和4static完整SHA。
+- 3a671d22探针RED6→GREEN6，独立领域安全PASS，SHA a1c937f8e1a2cea222b214c5cc656cfe51ca5cebbbfd82d5d69bf4f25c068018按原SHA5661c绑定备份替换；产品manifest/镜像/静态未再变。服务器及工作站经jumper loopback SOCKS两次严格TLS public_verify实际exit0：ready true、anonymous_denial true、static_files4、expect candidate。证据public-server-output.log/public-workstation-output.log，未关闭证书验证。
+- 原bridgeguard切换开始08:54:46UTC，到最终候选09:05:55UTC相差11分09秒；实际写封闭发生在该窗口内，精确首末HTTP封闭时刻未持续采样，不把整个窗口伪称精确停机时长。Binds顺序误报导致恢复返工已如实记录，不隐瞒发布阶段失败。
+- 安全清理：所有隔离测试clone及独占匿名卷已证明删除；本任务临时loopback18948的PID6928确认ssh.exe/精确端口/jumper后只关闭该PID，监听已消失。保留服务器0700私有目录/备份/审计及兼容回退镜像，不下载敏感数据，不删其他容器。
+
+### 最终验收范围与交接
+
+SFO-1–6均已实现、两阶段独立审查、聚焦红绿/隔离PG及生产技术验收；真实双客服/官方钱包所有者管理员会话和安全测试单未提供，交互正式验收仍待办。既有全量3276pass/73skip/6fail的六失败由最终聚焦闭合，不称原全量exit0；verify.ps1实际环境缺本地.env/Flutter，未引入生产秘密。Android取消按钮与失败刷新按用户选择后续版本；本轮只后台/API和旧版中文错误兼容。历史已开始单不自动退款；需要具体订单与链上证据才能单独核查。
+
+候选API `sha256:62614149b7e469fdbcd0bd5a1465c921dce61d0acaaf1aecce19878ef6207f62`，Worker `sha256:3efd5924f343d7e81056e014519a43f411b617747903e2f8e26b6281e00c43ea`，schema0094；源码冻结 `6cb19f47d1c320750ca2242c8543f251292a9b4c`。Manifest `fb253169a9917bf8e7f16cbdf054d903bc46c832a25691c77c32b1df2a544ce3`，archive `bbe085a3d632c671b2b4ce39a48649b74a1e568f258ae592399139a1c31dc378`；私有baselineSHA cb53b85606c3539f8d3453864efffb1780eff4ee5b70c80b9058728a98678643；deployedSHA24612fda76e51b0b94d777fcff47bb4a457b7c788f06d078dd38107e5012c104。
+
+回退须使用已审查封闭APIab500bdb和安全Worker3efd，保留0094与全部账本/审计，禁止降schema或回旧不安全Worker。服务器恢复路径 `/opt/starchat/releases/support-finance-order-recovery-20260930-v3/private`；真实角色验收为下一具体步骤，不伪造生产会话。

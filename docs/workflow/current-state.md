@@ -1,10 +1,12 @@
 # 移动交付恢复索引
 
-## 2026-09-30 客服资金订单恢复：代码审查通过，生产私有备份完成，发布门禁执行中
+## 2026-09-30 客服资金订单恢复：生产技术发布通过，真实角色交互待验收
 
-用户授权修改产品代码与生产，按获批[规格](../superpowers/specs/2026-09-29-support-finance-order-recovery-design.md)、[ADR](../adr/2026-09-29-support-finance-order-recovery.md)、[计划](../superpowers/plans/2026-09-29-support-finance-order-recovery.md)实施。确认汇率仅暂存；确认开始出款前可取消/拒绝，开始后审计读取完整地址；TronGrid发现候选后明确选择核验；只有钱包所有者管理员经当次验证可接管。代码与最终领域/质量安全审查已通过，专项及隔离PG通过；完整API/Worker实际3276pass/73skip/6fail，失败由最终聚焦复测关闭，完整verify仍缺本地.env。
+用户授权产品及生产修复，执行获批规格/ADR/计划。2026-09-30 17:05:55 +08:00已发布API `62614149…`、Worker `3efd5924…`、扩展schema0094和4后台静态；17:05:59内部verify通过，两端严格TLS、JSONready、匿名拒绝和静态SHA通过，服务健康0restart、其余28容器不变。保留已发布客服邮件、出款作废与汇率参考访问修复。临时财务写封闭已解除；隔离克隆/匿名卷和本任务临时SOCKS已清理，私有备份和回退证据留服务器。
 
-生产另一授权钱包任务已更新API902eaefc/Worker90d7fb74/schema0093_void，本次完整保留并将扩展迁移改为0094。06:51 UTC最终snapshot一致，sourcec204发布包冻结、服务器preflight及私有备份通过，其他28容器冻结。构建门禁先发现actualCmd直接uvicorn，已修订为先实际fence后单次限时迁移（02e0f382独立审查通过）；之后3镜像库存通过，但actual多服务Compose合并覆回旧API镜像，被门禁拒绝。正在TDD修订派生role配置并审查固定imageID恢复，生产尚无本次服务/schema/静态切换。实际状态及下一执行步骤见[任务记录](tasks/2026-09-29-support-finance-order-recovery.md)。Worker需同步6模块双镜像副本与严格事件任务；兼容回退保留安全Worker/fencedAPI及数据。真实后台角色会话待验收，历史已开始单不自动退款；Android交互改动后续另做。
+确认汇率只暂存，确认开始出款前可取消/拒绝；开始后审计读取完整地址/复制；TronGrid发现候选后人工选择核验；普通客服他人占用禁用，官方钱包所有者管理员当次证明与审计接管，已开始只能证据核对。最终独立领域/安全审查通过。完整API/Worker初次3276pass/73skip/6fail，六项已由最终聚焦复测关闭；完整verify仍有本地.env/Flutter缺口，不宣称全仓全绿。
+
+[任务记录](tasks/2026-09-29-support-finance-order-recovery.md)及[验证证据](../verification/2026-09-30-support-finance-order-recovery.md)追踪SFO-1–6。真实双客服/所有者管理员会话和安全测试单尚未提供，交互验收待办；历史已开始单未自动退款，Android界面交互后续独立交付。
 
 ## 2026-09-29 USDT 钱包工作台与链上流水现场：生产技术验收通过，真实管理员会话待验收
 
