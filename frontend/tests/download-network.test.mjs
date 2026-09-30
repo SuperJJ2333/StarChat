@@ -59,7 +59,7 @@ test('oversized registry is canceled before JSON parsing and no external request
 test('valid measured route is used and status avoids promising sustained speed',async()=>{
   const r=release();const status={textContent:''};let target;
   const result=await api().runNetworkDownload({cdnHost:host,fetchImpl:async()=>new Response(JSON.stringify(r)),
-    selectRoute:async opts=>{assert.equal(opts.artifactBytes,r.artifact_bytes);assert.ok(opts.budgetMs<=5000);return {id:'cdn',url:r.cdn_url};},
+    selectRoute:async opts=>{assert.equal(opts.artifactBytes,r.artifact_bytes);assert.ok(opts.budgetMs<=9000);return {id:'cdn',url:r.cdn_url};},
     status,navigate:url=>{target=url;}});
   assert.equal(result.id,'cdn');assert.equal(target,r.cdn_url);
   assert.match(status.textContent,/备用/);assert.doesNotMatch(status.textContent,/保证|全球最快/);
@@ -76,11 +76,29 @@ test('manual backup cancels probing without launching a second download',async()
 
 test('exhausted overall budget uses exact direct route without starting any probes',async()=>{
   const r=release();let ticks=0;let probes=0;const targets=[];
-  await api().runNetworkDownload({cdnHost:host,now:()=>ticks++===0?0:6000,
+  await api().runNetworkDownload({cdnHost:host,now:()=>ticks++===0?0:12000,
     fetchImpl:async()=>new Response(JSON.stringify(r)),
     selectRoute:async()=>{probes++;return {id:'cdn',url:r.cdn_url};},
     navigate:url=>targets.push(url)});
   assert.equal(probes,0);assert.deepEqual(targets,[r.direct_url]);
+});
+
+test('registry taking more than one second can still lead to a measured download',async()=>{
+  const r=release();const targets=[];let probes=0;
+  const result=await api().runNetworkDownload({cdnHost:host,
+    fetchImpl:async()=>{await new Promise(resolve=>setTimeout(resolve,1500));return new Response(JSON.stringify(r));},
+    selectRoute:async opts=>{probes++;assert.ok(opts.budgetMs>8000&&opts.budgetMs<=9000);return {id:'cdn',url:r.cdn_url,reason:'fastest-stable'};},
+    navigate:url=>targets.push(url)});
+  assert.equal(probes,1);assert.equal(result.id,'cdn');assert.deepEqual(targets,[r.cdn_url]);
+});
+
+test('six seconds spent before selection leaves five seconds for both routes',async()=>{
+  const r=release();let ticks=0;const targets=[];let probes=0;
+  await api().runNetworkDownload({cdnHost:host,now:()=>ticks++===0?0:6000,
+    fetchImpl:async()=>new Response(JSON.stringify(r)),
+    selectRoute:async opts=>{probes++;assert.equal(opts.budgetMs,5000);return {id:'cdn',url:r.cdn_url,reason:'fastest-stable'};},
+    navigate:url=>targets.push(url)});
+  assert.equal(probes,1);assert.deepEqual(targets,[r.cdn_url]);
 });
 
 for(const missing of ['AbortController','fetch']) test(`missing ${missing} retains native download before intercepting click`,()=>{
