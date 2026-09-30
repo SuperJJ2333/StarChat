@@ -91,3 +91,10 @@ Ruling: 受控切换使用 fenced API bridge，由已验证的兼容镜像启动
 - preparePASS：备份SHA `d76ea3434f99dd33b48ff83dcde5c0503d8f6687fa4d9557ba7d1ba068b52a23`，私有目录 `/opt/starchat/releases/support-finance-order-recovery-20260930-v1/private`，备份未下载。冻结目标2服务，其他28容器。
 - build在构建前拒绝：工具假定startup含alembic，而actualCmd仅uvicorn factory port8082 workers2，Entrypoint null。尚无候选image/context/服务切换/schema写入。修订工具红绿及独立审查进行中；不得规避检查直接发布。
 - Ruling：保持actualCmd与Compose，先guard激活fencedAPI、核实health及HTTP写503，再单次dockerexec迁移0094；避免未fence迁移窗口和两个uvicornworker并发迁移。迁移失败保持fence并保留私有attempt证据，不盲目恢复unfenced旧API。产品payload仍c204冻结，工具更新独立SHA记录。该裁定实现中、未执行。
+
+## 后续服务器门禁（07:25 UTC 前后）
+
+- 02e0f382 startup修订60tests/独立审查PASS，两文件SHA门禁原子替换；产品sourcec204不变。第二build构建API27028fd5/Worker7a0046de/兼容API913e6b79，库存PASS；真实derivedcompose bothservices合并覆回旧API，被strict merged check拒绝。
+- 072dd62f修订角色派生配置仅含所属服务，其他顶层/服务配置严格保留；65tests/独立审查PASS。两文件SHA门禁patch3375483b…；resume-build以三个固定ID完整重验Config、库存、sourceintent，归档旧派生文件并保留contexts/logs，候选及兼容回退双角色guard与兼容归档PASS，attempt `resume-build-c1915b96b9894cc99daf0e921af50f9d`。
+- restorePASS：ownedclone `admin-entry-restore-39148463f671`，network none/no publishedports，从同一私有备份恢复真实0093。probe-clone已在隔离库扩展0094，但模拟UNKNOWN订单缺claimed_by/claimed_at，并共用quote，违反真实constraints。未形成clonecompatibilityproof，production切换继续阻止。
+- 下一步：TDD补完整真实PG合法fixture、独立审查只改probeSHA的版本化manifest绑定，以及只清理exactownedclone/anonymousvolume后重建同备份克隆。不得用已0094库伪造beforefingerprint，不修改生产订单。本次尚无API/Worker/schema/静态生产切换。
