@@ -74,7 +74,8 @@ class WalletLedger:
                 or not original.idempotency_key.startswith('payout:')
                 or release is None or release.actor_id != actor_id or release.scope != 'wallet.conversion_reversal'
                 or release.reason_code != reason_code or release.idempotency_key != 'reverse:'+conversion_id
-                or reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED'}
+                or reason_code not in {
+                    'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED', 'MANUAL_PAYOUT_VOIDED'}
                 or (reason_code == 'MANUAL_PAYOUT_CANCELLED') != (actor_id == user_id)):
             raise ValueError('conversion release proof invalid')
         # ADR-0077：率结兑换 source(点钻)≠target(USDT)；回收额按 target 校验。

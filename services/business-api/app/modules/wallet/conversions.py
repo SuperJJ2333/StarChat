@@ -59,7 +59,8 @@ def reverse_payout_conversion(session, factory, *, user_id, actor_id, reason_cod
     wallet-side debit to it; the CAIBI entry also uses reversal_of_id.
     """
     from app.modules.wallet.service import WalletLedger
-    if (not actor_id or reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED'}
+    if (not actor_id or reason_code not in {
+            'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED', 'MANUAL_PAYOUT_VOIDED'}
             or (reason_code == 'MANUAL_PAYOUT_CANCELLED') != (actor_id == user_id)):
         raise ValueError('invalid payout reversal actor or reason')
     lock_budget(session)

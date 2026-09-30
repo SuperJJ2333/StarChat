@@ -141,7 +141,8 @@ class LedgerService:
                 or original.reason_code != 'CAIBI_TO_USDT' or original.actor_id != user_id
                 or not original.idempotency_key.startswith('convert:')
                 or scope != 'wallet.conversion_reversal'
-                or reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED'}
+                or reason_code not in {
+                    'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_REJECTED', 'MANUAL_PAYOUT_VOIDED'}
                 or (reason_code == 'MANUAL_PAYOUT_CANCELLED') != (actor_id == user_id)):
             raise ValueError('invalid conversion reversal source')
         conversion_id = original.idempotency_key.removeprefix('convert:')
