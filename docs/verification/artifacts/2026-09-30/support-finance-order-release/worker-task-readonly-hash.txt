@@ -1,0 +1,1 @@
+d8c38a01dbb9bc04e17bceb8480eec8b9899f6667e5f99f4da7a497c861e65a8  /opt/business-worker/app/tasks/manual_wallet.py
