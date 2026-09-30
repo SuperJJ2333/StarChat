@@ -6,6 +6,17 @@ class Element { constructor(tag){this.tag=tag;this.children=[];this.handlers={};
 const install=()=>globalThis.document={createElement:t=>new Element(t)};
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('Chinese role badges and single-role removal preserve the other role', async()=>{
+  install();globalThis.confirm=()=>true;const calls=[],queries=[];
+  const panel=supportPanel({getSupportAgents:async q=>{queries.push(q);return {items:[{id:'agent',username:'客服1',roles:['FINANCE_SUPPORT','SUPPORT_AGENT']}],total:1};},command:async(...args)=>calls.push(args)},{mode:'manage'});
+  await settle();assert.equal(queries[0].limit,10);
+  assert.ok(panel.find('span').some(x=>x.textContent==='财务客服'&&x.className.includes('admin-role-badge')));
+  const remove=panel.find('button').find(x=>x.textContent==='移除财务客服');assert.ok(remove);
+  await remove.handlers.click();assert.equal(calls[0][0],'/api/v1/admin/support-roles/agent/FINANCE_SUPPORT');
+  const size=panel.find('select').find(x=>x.className.includes('admin-page-size'));assert.ok(size);
+  size.value='50';size.handlers.change();await settle();assert.equal(queries.at(-1).limit,50);assert.equal(queries.at(-1).offset,0);
+});
+
 test('support panel sends defaults and amount as a string', async()=>{
   install(); const calls=[];
   const api={getSupportAgents:async()=>({items:[],total:0}),command:async(...args)=>{calls.push(args);return {status:'POSTED',amount:'12.34'}}};
@@ -22,7 +33,7 @@ test('support search discards old replies and cancel removal makes no command', 
   const originalConfirm=globalThis.confirm;globalThis.confirm=()=>false;
   const panel=supportPanel(api);await settle();const search=panel.find('input').find(x=>x.placeholder?.includes('搜索'));search.value='old';search.handlers.input();search.value='new';search.handlers.input();await settle();first?.({items:[{id:'old'}],total:1});await settle();
   assert.ok(panel.find('td').some(x=>x.textContent==='new'));
-  panel.find('button').find(x=>x.textContent==='移除客服身份')?.handlers.click();
+  panel.find('button').find(x=>x.textContent==='移除客服')?.handlers.click();
   assert.equal(calls.length,0);globalThis.confirm=originalConfirm;
 });
 
@@ -43,14 +54,14 @@ test('grant select writes target and keeps the same key after a failed retry', a
 test('failed removal keeps the current table and reports an error', async()=>{
   install();globalThis.confirm=()=>true;
   const panel=supportPanel({getSupportAgents:async()=>({items:[{id:'agent',username:'agent',roles:['SUPPORT_AGENT'],badge:'官方客服'}],total:1}),command:async()=>{throw Error('denied')}},{mode:'manage'});
-  await settle();panel.find('button').find(x=>x.textContent==='移除客服身份').handlers.click();await settle();
+  await settle();panel.find('button').find(x=>x.textContent==='移除客服').handlers.click();await settle();
   assert.ok(panel.find('td').some(x=>x.textContent==='agent'));
   assert.ok(panel.find('p').some(x=>x.textContent?.includes('移除失败')));
 });
 
-test('pagination requests offset 25 and hides non-dispatchable options', async()=>{
+test('pagination requests offset 10 and hides non-dispatchable options', async()=>{
   install();const calls=[];const api={getSupportAgents:async q=>{calls.push(q);return {items:q.offset?[]:[{id:'no',username:'no',dispatch_eligible:false}],total:26}},command:async()=>({})};
-  const panel=supportPanel(api,{mode:'grant'});await settle();assert.equal(panel.find('select')[0].find('option').length,1);panel.find('button').find(x=>x.textContent==='下一页').handlers.click();await settle();assert.equal(calls.at(-1).offset,25);assert.equal(panel.find('button').some(x=>x.textContent==='选择客服'),false);
+  const panel=supportPanel(api,{mode:'grant'});await settle();assert.equal(panel.find('select')[0].find('option').length,1);panel.find('button').find(x=>x.textContent==='下一页').handlers.click();await settle();assert.equal(calls.at(-1).offset,10);assert.equal(panel.find('button').some(x=>x.textContent==='选择客服'),false);
 });
 
 test('grant rejects malformed amounts locally without calling the API', async()=>{

@@ -1,3 +1,4 @@
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
 // Manual operations never sign or broadcast; API/ledger state is authoritative.
 import {processIncident, incidentSummary, incidentError, incidentTime, diagnosticSummary, fundControlError} from './wallet-incident-workflow.js?v=20260930-wallet-alert-void';
 import {detailDialog} from './admin-detail-dialog.js';
@@ -54,7 +55,7 @@ function describe(parent, pairs) {
 }
 const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消', VOIDED:'已撤销（确认未广播）'}[status] ?? '状态未知');
 
-export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, accessController, securityOnly = false, onSecurityChanged} = {}) {
+export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, accessController, securityOnly = false, view = null, ownerCandidate, onSecurityChanged} = {}) {
   const root = node('section'); root.className = 'admin-card admin-manual-wallet-panel';
   const heading=node('header');heading.className='wallet-heading';
   const intro=node('div');intro.append(node('p','TRON · 人工签名'),node('h3','USDT 钱包'),node('p','核对每笔出款，让每一步都有据可查。'));
@@ -260,18 +261,19 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       await mutate(`mfa:abort:${credentialId}`,{credential_id:credentialId},options=>api.abortWalletMfaEnrollment({...values,credential_id:credentialId},options)); await loadMfa();if(onSecurityChanged)await onSecurityChanged();
     });
   }
+  let orderSize=10,incidentSize=10,orderPages=[null],orderPage=0;
   const orders = node('section'), detail = node('section'); detail.setAttribute('aria-live','polite');
   let payoutModal;
   const listState = node('p'); listState.setAttribute('role','status');
   const queue=node('section');queue.className='wallet-surface wallet-queue';orders.className='wallet-orders';detail.className='wallet-detail';
-  queue.append(node('h4','人工出款队列'),node('p','核对锁定信息，领取后在 imToken 完成签名。'),...refreshAction('刷新出款队列',()=>loadOrders()),listState,orders,detail);primary.append(queue);
+  queue.append(pageSizeControl(changePageSize(value=>orderSize=value,()=>loadOrders(null,{page:0,pages:[null]}))),node('h4','人工出款队列'),node('p','核对锁定信息，领取后在 imToken 完成签名。'),...refreshAction('刷新出款队列',()=>loadOrders()),listState,orders,detail);primary.append(queue);
   let listGeneration=0, detailGeneration=0;
-  async function loadOrders(cursor = orderCursor) {
+  async function loadOrders(cursor = orderCursor,{page:requestedPage=orderPage,pages=orderPages}={}) {
     if (disposed) return;
-    const generation=++listGeneration; orderCursor=cursor; listState.textContent='正在加载出款…';
+    const generation=++listGeneration; listState.textContent='正在加载出款…';
     try {
-      const page=await api.getManualPayouts({limit:25,cursor}); if(generation!==listGeneration) return;
-      orders.replaceChildren();
+      const page=await api.getManualPayouts({limit:orderSize,cursor}); if(generation!==listGeneration) return;
+      orderCursor=cursor;orderPage=requestedPage;orderPages=pages;orders.replaceChildren();
       listState.textContent=page.items.length?'金额均为 USDT，保留六位小数。':'暂无人工出款';
       for(const item of page.items) {
         const row=node('article'),summary=node('div');summary.className='wallet-order-summary';
@@ -279,7 +281,9 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         summary.append(node('p',item.id),node('strong',`${exactUsdt(item.amount)} USDT`),status);
         row.append(summary,action('查看出款',()=>showOrder(item.id))); orders.append(row);
       }
-      if(page.next_cursor) orders.append(action('下一页出款',()=>loadOrders(page.next_cursor)));
+      if(orderPage>0)orders.append(action('上一页出款',()=>loadOrders(orderPages[orderPage-1],{page:orderPage-1})));
+      if(page.next_cursor)orders.append(action('下一页出款',()=>loadOrders(page.next_cursor,{page:orderPage+1,pages:[...orderPages.slice(0,orderPage+1),page.next_cursor]})));
+      return true;
     } catch (error) { if(disposed||generation!==listGeneration)return;authFailure(error); if(generation===listGeneration) { listState.textContent='出款加载失败，上次数据已过期，请刷新重试。'; return false; } }
   }
   async function showOrder(id) {
@@ -375,13 +379,15 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   let activeIncidentFilters={},incidentPages=[undefined],incidentPage=0;
   incidentFilters.append(action('查询',()=>loadIncidents(null,{filters:Object.fromEntries(Object.entries(incidentInputs).map(([k,v])=>[k,v.value])),page:0,pages:[null]})),action('重置',()=>loadIncidents(null,{filters:{},page:0,pages:[null],reset:true})));
   incidentFilters.addEventListener('submit',event=>event.preventDefault());
-  const monitoring=node('section');monitoring.className='wallet-surface';monitoring.append(node('h4','监控与事故'),fundSummary,monitor,diagnostics,node('p','历史事故与当前检查分别展示。处理事故不会启用资金，恢复需要单独核验。'),...refreshAction('刷新监控和事故',()=>loadIncidents(null,{page:0,pages:[null]})),incidentFilters,incidents);primary.append(monitoring);
+  let ownerTransfer;
+  const monitoring=node('section');monitoring.className='wallet-surface';monitoring.append(pageSizeControl(changePageSize(value=>incidentSize=value,()=>loadIncidents(null,{page:0,pages:[null]}))),node('h4','监控与事故'),fundSummary,monitor,diagnostics,node('p','历史事故与当前检查分别展示。处理事故不会启用资金，恢复需要单独核验。'),...refreshAction('刷新监控和事故',()=>loadIncidents(null,{page:0,pages:[null]})),incidentFilters,incidents);primary.append(monitoring);
   if (walletAccess) {
-    const ownerTransfer=node('section');ownerTransfer.className='wallet-surface';
+    ownerTransfer=node('section');ownerTransfer.className='wallet-surface';
     ownerTransfer.append(node('h4','所有者转出申报'),
       node('p','仅用于申报持有者本人已完成的链上转出（ADR-0071）。申报生成不可变记录与账本分录，使复核可以对账；未申报的转出仍会阻止恢复资金。'));
     const txidInput=field('txid','链上交易哈希（64 位十六进制）');txidInput.pattern='[a-f0-9]{64}';
     const logInput=field('log_index','日志序号 log_index（通常为 0）');logInput.pattern='[0-9]+';
+    root.selectOwnerTransferCandidate=value=>{if(disposed||!value?.txid||!Number.isSafeInteger(value.log_index))return false;txidInput.value=value.txid;logInput.value=String(value.log_index);return true;};
     const reasonInput=field('reason_code','原因码（大写字母开头，如 OWNER_TEST_DRAW）');reasonInput.pattern='[A-Z][A-Z0-9_]{2,99}';
     const detailInput=field('reason_detail','用途说明（1–500 字）');
     const attestation=node('input');attestation.type='checkbox';attestation.setAttribute('aria-label','我确认该转出由本人（官方钱包持有人）操作');
@@ -401,7 +407,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   async function loadIncidents(cursor = incidentCursor,{filters=activeIncidentFilters,page=incidentPage,pages=incidentPages,reset=false}={}) {
     if (disposed) return;
     const generation=++incidentGeneration;
-    const results=await Promise.allSettled([api.getWalletIncidents({...filters,limit:25,cursor}),api.getWalletMonitorStatus(),api.getManualWalletDiagnostics?api.getManualWalletDiagnostics():Promise.resolve(null)]);
+    const results=await Promise.allSettled([api.getWalletIncidents({...filters,limit:incidentSize,cursor}),api.getWalletMonitorStatus(),api.getManualWalletDiagnostics?api.getManualWalletDiagnostics():Promise.resolve(null)]);
     if(generation!==incidentGeneration) return;
     const [list,status,diagnostic]=results;
     for (const result of results) if (result.status === 'rejected') authFailure(result.reason);
@@ -578,7 +584,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     try {
       const securityResult=await loadSecurity();if(disposed)return false;
       if(securityOnly)return securityResult!==false;
-      const results=await Promise.all([loadOrders(),loadIncidents(),loadControl(), selectedOrder ? showOrder(selectedOrder) : null, selectedIncident ? showIncident(selectedIncident) : null]);
+      const results=await Promise.all([(!view||view==='payout')?loadOrders():null,(!view||view==='monitor')?loadIncidents():null,(!view||view==='monitor')?loadControl():null,selectedOrder?showOrder(selectedOrder):null,selectedIncident?showIncident(selectedIncident):null]);
       if(disposed)return false;
       for(const oldForm of initialForms) drafts.set(oldForm.name,inputsOf(oldForm).map(input=>({name:input.name,value:input.value,checked:input.checked})));
       if(selectedOrder!==selectionAtStart[0]){drafts.delete('claim');drafts.delete('txid');drafts.delete('void-unbroadcast');}
@@ -598,8 +604,16 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     } finally { drafts.clear(); refreshing=false;if(ownRefresh){ownRefresh.disabled=false;ownRefresh.setAttribute('aria-busy','false');}root.setAttribute('aria-busy','false'); }
   };
   if(!unifiedRefresh){const button=ownRefresh=action('↻',()=>root.refresh());button.className='admin-refresh';button.title='刷新';button.setAttribute('aria-label','刷新');heading.append(button);}
-  if(securityOnly){workspace.replaceChildren(mfa);heading.hidden=true;}
-  void loadSecurity().then(()=>{if(!disposed&&!securityOnly){void loadOrders();void loadIncidents();void loadControl();void loadHandover();}});
+  if(securityOnly||view==='security'){workspace.replaceChildren(mfa);heading.hidden=true;}
+  else if(view){
+    workspace.className='wallet-workspace wallet-single-module';
+    const selected={payout:queue,monitor:monitoring,owner:ownerTransfer}[view];
+    workspace.replaceChildren(...selected?[selected]:[]);
+    if(view==='monitor')workspace.append(control,history);
+    heading.hidden=true;
+  }
+  if(ownerCandidate&&view==='owner')root.selectOwnerTransferCandidate?.(ownerCandidate);
+  void loadSecurity().then(()=>{if(!disposed&&!securityOnly){if(!view||view==='payout')void loadOrders();if(!view||view==='monitor'){void loadIncidents();void loadControl();void loadHandover();}}});
   return root;
 }
 import {formatBeijingTime} from './admin-formatters.js';

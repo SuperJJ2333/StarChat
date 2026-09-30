@@ -1,4 +1,5 @@
-import {refreshIcon} from './admin-dashboard.js';
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
+import {refreshIcon} from './admin-dashboard.js?v=20260930-admin-navigation';
 import {previewWithdrawal,adjustReferenceRate} from './admin-settlement-preview.js?v=20260930-admin-payout';
 
 const make=(tag,cls,text)=>{const node=document.createElement(tag);node.className=cls??'';if(text!==undefined)node.textContent=String(text);return node;};
@@ -16,6 +17,7 @@ export function supportPayoutPanel(api,{actor={},onBack,canOperate=false}={}) {
   const status=make('p','admin-audit-note');status.setAttribute('role','status');
   const body=make('div','recharge-section');panel.append(make('h2',null,'提现订单'),status);
   if(!canOperate){status.textContent='仅管理员可处理提现';panel.dispose=()=>{};return panel;}
+  let pageSize=10,payoutPage=0,payoutStack=[null];
   let disposed=false,invalidated=false,generation=0,items=[],filter='all',cursor=null,activeOrder=null,opener=null;
   let address=null,discovery=null,confirmation=null,securityMode=null,copyFeedback='';
   let referenceFx=null,pendingFinancial=null,voidPreview=null;
@@ -71,7 +73,8 @@ export function supportPayoutPanel(api,{actor={},onBack,canOperate=false}={}) {
   const header=make('header','admin-panel-heading');header.append(filters);
   const refresh=refreshIcon(async()=>{if(refresh.disabled)return;refresh.disabled=true;refresh.setAttribute('aria-busy','true');try{await load();}finally{refresh.disabled=false;refresh.setAttribute('aria-busy','false');}});
   refresh.title='刷新提现请求';refresh.setAttribute('aria-label',refresh.title);header.append(refresh);
-  panel.append(header,body);const next=button(panel,'下一页提现',()=>load(false),true);panel.append(dialog);
+  header.append(pageSizeControl(changePageSize(value=>pageSize=value,()=>load(true))));
+  panel.append(header,body);const next=button(panel,'下一页提现',()=>load(false),true);const previous=button(panel,'上一页提现',()=>load(false,{cursor:payoutStack[payoutPage-1],index:payoutPage-1,stack:payoutStack}),true);panel.append(dialog);
 
   function renderList(){
     body.replaceChildren();openers.clear();
@@ -303,10 +306,11 @@ export function supportPayoutPanel(api,{actor={},onBack,canOperate=false}={}) {
       const enable=()=>{confirm.disabled=!attest.checked||!proof.value.trim()||busy.has(item.id);};attest.addEventListener('change',enable);proof.addEventListener('input',enable);
     }
   }
-  async function load(reset=true){
-    const version=++generation;next.disabled=true;if(reset)cursor=null;address=null;discovery=null;copyFeedback='';
+  async function load(reset=true,target){
+    const requested=target??(reset?{cursor:null,index:0,stack:[null]}:{cursor,index:payoutPage+1,stack:[...payoutStack.slice(0,payoutPage+1),cursor]});
+    const version=++generation;next.disabled=previous.disabled=true;address=null;discovery=null;copyFeedback='';
     if(!items.length)body.replaceChildren(make('p','admin-audit-note','正在加载提现请求…'));
-    try{const [page,fx]=await Promise.all([api.getSupportPayouts({...cursor?{cursor}:{},limit:50}),api.getFxRate?api.getFxRate().catch(()=>null):Promise.resolve(null)]);if(!authorized()||version!==generation)return;
+    try{const [page,fx]=await Promise.all([api.getSupportPayouts({...requested.cursor?{cursor:requested.cursor}:{},limit:pageSize}),api.getFxRate?api.getFxRate().catch(()=>null):Promise.resolve(null)]);if(!authorized()||version!==generation)return;
       referenceFx=fx;
       items=(page.items??[]).map(raw=>{const item={...raw},saved=tokens.get(item.id)??{};
         delete item.target_address;if(item.instructions){item.instructions={...item.instructions};delete item.instructions.target_address;}
@@ -314,9 +318,9 @@ export function supportPayoutPanel(api,{actor={},onBack,canOperate=false}={}) {
         if(saved.claim||saved.evidence)tokens.set(item.id,saved);delete item.claim_token;delete item.evidence_token;
         for(const capability of capabilities)item[capability]=raw[capability]===true;
         if(!has(item,'can_begin')&&!has(item,'can_evidence'))tokens.delete(item.id);return item;});
-      cursor=page.next_cursor??null;next.disabled=!cursor;
-      const active=current();if(active&&!has(active,'can_evidence')){address=null;discovery=null;if(!has(active,'can_begin'))drafts.delete(active.id);}renderList();
-    }catch(error){if(authorized()&&version===generation){scrub();items=[];openers.clear();body.replaceChildren();renderDialog();notify(null,`提现列表加载失败：${error?.message??'请重试'}`,true);}}
+      payoutPage=requested.index;payoutStack=requested.stack;cursor=page.next_cursor??null;next.disabled=!cursor;previous.disabled=payoutPage===0;
+      const active=current();if(active&&!has(active,'can_evidence')){address=null;discovery=null;if(!has(active,'can_begin'))drafts.delete(active.id);}renderList();return true;
+    }catch(error){if(authorized()&&version===generation){scrub();items=[];openers.clear();body.replaceChildren();renderDialog();notify(null,`提现列表加载失败：${error?.message??'请重试'}`,true);}return false;}
   }
   panel.heartbeat=async()=>{if(!authorized()||document.hidden)return;
     for(const item of items){if(!has(item,'can_begin')||item.execution_started_at||!tokenFor(item)||busy.has(item.id))continue;

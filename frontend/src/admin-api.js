@@ -61,6 +61,7 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     return request(path, { method, headers, cache: "no-store", body: JSON.stringify(body ?? {}) });
   };
   return {
+    getActiveBans: async ({limit=10,offset=0}={})=>request(`/api/v1/admin/security/bans?limit=${limit}&offset=${offset}`,{cache:'no-store'}),
     getLedgerEntries: async (filters={})=>{const query=new URLSearchParams();for(const [key,value] of Object.entries(filters))if(value!==undefined&&value!==null&&value!=='')query.set(key,String(value));return request(`/api/v1/admin/ledger-entries?${query}`,{cache:'no-store'});},
     getDepositRepairCandidates: async filters=>request(`/api/v1/admin/wallet/manual/deposit-repairs/candidates?${new URLSearchParams(filters)}`,{cache:'no-store'}),
     getManualDepositCaseContext: async filters=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/context?${new URLSearchParams(filters)}`,{cache:'no-store'}),
@@ -125,12 +126,12 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     verifyWalletAccess: async proof => request('/api/v1/wallet/manual/access/verify', {method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(proof)}),
     revokeWalletAccess: async () => request('/api/v1/wallet/manual/access/revoke', {method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:'{}'}),
     getOverview: async ({days=30}={})=>request(`/api/v1/admin/overview?days=${days}`,{cache:'no-store'}),
-    getPointIssuance: async ({limit=25,cursor,kind}={})=>{const query=new URLSearchParams({limit:String(limit)});if(cursor)query.set('cursor',cursor);if(kind)query.set('kind',kind);return request(`/api/v1/admin/point-issuance?${query}`,{cache:'no-store'});},
+    getPointIssuance: async ({limit=10,cursor,kind}={})=>{const query=new URLSearchParams({limit:String(limit)});if(cursor)query.set('cursor',cursor);if(kind)query.set('kind',kind);return request(`/api/v1/admin/point-issuance?${query}`,{cache:'no-store'});},
     getPointIssuanceDetail: async id=>request(`/api/v1/admin/point-issuance/${encodeURIComponent(id)}`,{cache:'no-store'}),
     getLoginCaptcha: async () => request('/api/v1/auth/admin-captcha', {cache:'no-store'}),
     staffLogin: async body => request('/api/v1/auth/staff-login', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Admin-CSRF':'1'},cache:'no-store',body:JSON.stringify({...body,device_key:'admin-browser',device_name:'ChatFlow Staff'})}),
     adminLogin: async body => request('/api/v1/auth/admin-login', {method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store', body:JSON.stringify({...body, device_key:'admin-browser', device_name:'ChatFlow Admin'})}),
-    getWalletIncidents: async ({limit = 25, cursor, status, severity, code, sort} = {}) => {
+    getWalletIncidents: async ({limit=10, cursor, status, severity, code, sort} = {}) => {
       const query = new URLSearchParams({limit: String(limit)});
       if (cursor) query.set('cursor', cursor);
       for(const [key,value] of Object.entries({status,severity,code,sort}))if(value)query.set(key,value);
@@ -153,7 +154,7 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
       if (!['pause','resume'].includes(action)) throw new TypeError('Invalid control action');
       return command(`/api/v1/admin/wallet/manual/operations/control/${action}`, body, options);
     },
-    getManualPayouts: async ({limit = 50, cursor} = {}) => {
+    getManualPayouts: async ({limit=10, cursor} = {}) => {
       const query = new URLSearchParams({limit: String(limit)});
       if (cursor != null && cursor !== "") query.set("cursor", cursor);
       return request(`/api/v1/admin/wallet/manual/payouts?${query}`, {cache: "no-store"});
@@ -179,12 +180,12 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     },
     getChainTransaction: async (txid, logIndex) => request(`/api/v1/admin/wallet/chain/transactions/${encodeURIComponent(txid)}/${encodeURIComponent(logIndex)}`),
     getContext: async () => normalizeAdminContext(await request("/api/v1/admin/context")),
-    searchUsers: async ({q='',limit=50,cursor=null}={}) => request('/api/v1/admin/users/search', {
+    searchUsers: async ({q='',limit=10,cursor=null}={}) => request('/api/v1/admin/users/search', {
       method:'POST',credentials:'same-origin',cache:'no-store',
       headers:{'Content-Type':'application/json','X-Admin-CSRF':'1'},
       body:JSON.stringify({q,limit,cursor})
     }),
-    getSupportAgents: async ({query,limit=25,offset=0,dispatch_eligible}={}) => { const q=new URLSearchParams({limit:String(limit),offset:String(offset)}); if(query)q.set('query',query); if(dispatch_eligible!==undefined)q.set('dispatch_eligible',String(dispatch_eligible)); return request(`/api/v1/admin/support-agents?${q}`,{cache:'no-store'}); },
+    getSupportAgents: async ({query,limit=10,offset=0,dispatch_eligible}={}) => { const q=new URLSearchParams({limit:String(limit),offset:String(offset)}); if(query)q.set('query',query); if(dispatch_eligible!==undefined)q.set('dispatch_eligible',String(dispatch_eligible)); return request(`/api/v1/admin/support-agents?${q}`,{cache:'no-store'}); },
     login: async ({ username, password, device_key = "admin-browser", device_name = "ChatFlow Admin" }) => request("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, device_key, device_name }) }),
     getModule: async (module, options = {}) => {
       const accessToken = typeof options === 'string' ? options : token;
@@ -194,7 +195,7 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     command,
     requestModule: async (module, filters = {}) => {
       const query = new URLSearchParams();
-      for (const key of ['q', 'limit', 'cursor']) {
+      for (const key of ['q', 'limit', 'cursor', 'offset']) {
         if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') query.set(key, String(filters[key]));
       }
       return request(`/api/v1/admin/modules/${encodeURIComponent(module)}${query.size ? `?${query}` : ''}`, {cache:'no-store'});

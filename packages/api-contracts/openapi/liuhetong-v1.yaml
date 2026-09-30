@@ -480,6 +480,11 @@
       },
       "AdminModulePage": {
         "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
           "items": {
             "items": {
               "additionalProperties": true,
@@ -491,6 +496,11 @@
           "module": {
             "title": "Module",
             "type": "string"
+          },
+          "offset": {
+            "default": 0,
+            "title": "Offset",
+            "type": "integer"
           }
         },
         "required": [
@@ -619,6 +629,18 @@
       },
       "AdminUserItem": {
         "properties": {
+          "active_ban": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Ban"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -12200,7 +12222,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
+              "default": 10,
               "maximum": 100,
               "minimum": 1,
               "title": "Limit",
@@ -12442,7 +12464,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 100,
+              "default": 10,
               "maximum": 100,
               "minimum": 1,
               "title": "Limit",
@@ -12465,6 +12487,18 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
             }
           }
         ],
@@ -12931,7 +12965,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
+              "default": 10,
               "maximum": 100,
               "minimum": 1,
               "title": "Limit",
@@ -13227,6 +13261,84 @@
       }
     },
     "/api/v1/admin/security/bans": {
+      "get": {
+        "operationId": "active_bans_api_v1_admin_security_bans_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Active Bans",
+        "tags": [
+          "admin"
+        ]
+      },
       "post": {
         "operationId": "create_ban_api_v1_admin_security_bans_post",
         "parameters": [
@@ -13472,7 +13584,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
+              "default": 10,
               "maximum": 100,
               "minimum": 1,
               "title": "Limit",

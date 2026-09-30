@@ -1,17 +1,19 @@
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from decimal import Decimal
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from datetime import date, datetime, timedelta, timezone
 from app.modules.wallet.reporting import ReportDataError, WalletReportService, to_csv
 from app.api.wallet_report_contracts import DailyWalletReport
-from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail, AdminUserPage, AdminModulePage
+from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail, AdminUserPage, AdminModulePage, AdminDirectoryPage
 from app.modules.admin.user_reports import user_page
+from app.modules.admin.user_directory import UserDirectoryService
 from app.modules.admin.ledger_entries import ledger_page
 from app.api.admin_wallet_repairs import create_admin_wallet_repairs_router
 from app.api.admin_wallet_owner_transfers import create_admin_owner_transfer_router
+from app.api.admin_wallet_auth import wallet_grant_service
 from app.modules.wallet.clock_health import ClockHealth
 from app.modules.admin.dashboard_reports import registration_trend
 from app.modules.ledger.supply_reports import point_supply, issuance_page, issuance_detail
@@ -96,6 +98,24 @@ class AppUpdateSettingsBody(BaseModel):
 class RedPacketSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     max_total: Decimal = Field(gt=0, decimal_places=2)
+
+class SearchUsersBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    q: str | None = Field(default=None, max_length=128)
+    limit: int = Field(default=50, ge=1, le=100)
+    cursor: str | None = Field(default=None, min_length=1, max_length=1024)
+
+class AdminContextCapabilities(BaseModel):
+    wallet_owner_read: bool
+
+class AdminContextResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    actor: dict[str, Any]
+    permissions: list[str]
+    capabilities: AdminContextCapabilities
+    overview: dict[str, Any]
+    modules: dict[str, Any]
+
 # 点钻派发账本 ValueError → 对外错误码/文案。储备类失败是系统状态问题，
 # 不得笼统报"请求无效"；键为 ledger/reserve 模块的 ValueError 消息原文。
 CAIBI_GRANT_ERROR_DETAILS = {
@@ -109,13 +129,13 @@ CAIBI_GRANT_ERROR_DETAILS = {
 }
 MODULE_PERMISSIONS = {
     "finance": Permission.FINANCE_REVIEW,
-    "security": Permission.SYSTEM_ADMIN,
+    "security": Permission.BANS_MANAGE,
     "support-role": Permission.SUPPORT_SCOPE_MANAGE,
-    "analytics": Permission.AUDIT_VIEW,
+    "analytics": Permission.ANALYTICS_VIEW,
     "online": Permission.SUPPORT_TICKET_ASSIGN,
-    "ads": Permission.SYSTEM_ADMIN,
-    "notice": Permission.SYSTEM_ADMIN,
-    "ledger": Permission.AUDIT_VIEW,
+    "ads": Permission.ADS_MANAGE,
+    "notice": Permission.NOTICES_MANAGE,
+    "ledger": Permission.LEDGER_VIEW,
     "wallet": Permission.FINANCE_REVIEW,
 }
 
@@ -147,10 +167,22 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
         if not authorization or not authorization.startswith("Bearer "):
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
-        return str(tokens.decode_access_token(authorization[7:])["sub"])
+        claims = tokens.decode_access_token(authorization[7:])
+        user_id = str(claims['sub'])
+        if Permission.SYSTEM_ADMIN not in rbac.permissions_for(user_id):
+            if claims.get('session_scope') != 'admin':
+                raise AppError(code='PERMISSION_DENIED', message='需要已开通的客服管理会话', status_code=403)
+            with session_factory() as session:
+                user = session.get(User, user_id)
+                if user is None:
+                    raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+                require_staff_admin_access(session, user)
+        return user_id
 
     def require(actor_id: str, permission: Permission):
         if Permission.SYSTEM_ADMIN in rbac.permissions_for(actor_id):
+            return
+        if permission in (Permission.LEDGER_VIEW, Permission.ANALYTICS_VIEW) and Permission.AUDIT_VIEW in rbac.permissions_for(actor_id):
             return
         rbac.require(actor_id, permission)
 
@@ -172,6 +204,13 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
 
     def trace(request: Request) -> str:
         return getattr(request.state, "trace_id", "admin-command")
+
+    def require_directory_origin(request: Request) -> None:
+        expected = str(request.base_url).rstrip('/')
+        if settings.environment == 'production':
+            expected = 'https://' + request.url.netloc
+        if request.headers.get('origin') != expected or request.headers.get('x-admin-csrf') != '1':
+            raise AppError(code='ADMIN_CSRF_REJECTED', message='管理请求来源无效', status_code=403)
 
     @router.get("/wallet/reports/daily", response_model=DailyWalletReport,
                 responses={200: {"content": {"text/csv": {"schema": {"type": "string"}}}}})
@@ -200,15 +239,29 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
             return Response(content=payload, media_type="text/csv; charset=utf-8", headers=headers)
         return JSONResponse(content=payload, headers=headers)
 
+    @router.get("/security/bans")
+    def active_bans(response: Response, user_id: str = Depends(actor), limit: int = Query(default=10, ge=1, le=100), offset: int = Query(default=0, ge=0, le=100000)):
+        require(user_id, Permission.BANS_MANAGE)
+        response.headers['Cache-Control'] = 'no-store'
+        now = datetime.now(timezone.utc)
+        with session_factory() as session:
+            statement = select(AdminBan).where(AdminBan.revoked_at.is_(None), AdminBan.starts_at <= now,
+                or_(AdminBan.ends_at.is_(None), AdminBan.ends_at > now))
+            total = session.scalar(select(func.count()).select_from(statement.subquery()))
+            rows = session.scalars(statement.order_by(AdminBan.starts_at.desc(), AdminBan.id.desc()).offset(offset).limit(limit)).all()
+            return {'items': [{'id': row.id, 'target_type': row.subject_type, 'target': row.subject_value,
+                'reason_code': row.reason_code, 'starts_at': (row.starts_at.replace(tzinfo=timezone.utc) if row.starts_at.tzinfo is None else row.starts_at).isoformat(),
+                'ends_at': row.ends_at.isoformat() if row.ends_at else None} for row in rows], 'total': total, 'offset': offset, 'limit': limit}
+
     @router.post("/security/bans", status_code=201)
     def create_ban(body: BanBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
+        require(user_id, Permission.BANS_MANAGE)
         return controls.ban(actor_id=user_id, target_type=body.target_type, target=body.target, reason_code=body.reason_code, duration_minutes=body.duration_minutes, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.post("/security/bans/{ban_id}/revoke")
     def revoke_ban(ban_id: str, request: Request, body: dict, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
-        return controls.unban(actor_id=user_id, ban_id=ban_id, reason_code=str(body.get("reason_code", "BAN_REVOKE")), idempotency_key=idempotency_key, trace_id=trace(request))
+        require(user_id, Permission.BANS_MANAGE)
+        return controls.unban(actor_id=user_id, ban_id=ban_id, reason_code=str(body.get("reason_code", "BAN_REVOKE")), idempotency_key=idempotency_key, trace_id=trace(request), expected_starts_at=body.get("expected_starts_at"))
 
     @router.post("/support-roles/{target_user_id}", status_code=201)
     def assign_support_role(target_user_id: str, body: RoleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
@@ -216,28 +269,28 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         return controls.set_support_role(actor_id=user_id, target=target_user_id, role_code=body.role_code, badge=body.badge, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.get("/support-agents")
-    def support_agents(query: str | None = Query(default=None, max_length=320), limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), dispatch_eligible: bool | None = None, user_id: str = Depends(actor)):
+    def support_agents(query: str | None = Query(default=None, max_length=320), limit: int = Query(default=10, ge=1, le=100), offset: int = Query(default=0, ge=0), dispatch_eligible: bool | None = None, user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
         return controls.support_agents(query=query, limit=limit, offset=offset, dispatch_eligible=dispatch_eligible)
 
     @router.post("/notices", status_code=201)
     def create_notice(body: NoticeBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
+        require(user_id, Permission.NOTICES_MANAGE)
         return controls.create_notice(actor_id=user_id, title=body.title, content=body.content, audience=body.audience, publish_at=body.publish_at, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.post("/ads", status_code=201)
     def create_ad(body: AdBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
+        require(user_id, Permission.ADS_MANAGE)
         return controls.create_ad(actor_id=user_id, advertiser_name=body.advertiser_name, text=body.text, link_url=body.link_url, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.put("/notices/{notice_id}")
     def update_notice(notice_id: str, body: NoticeBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
+        require(user_id, Permission.NOTICES_MANAGE)
         return controls.update_notice(actor_id=user_id, notice_id=notice_id, title=body.title, content=body.content, audience=body.audience, publish_at=body.publish_at, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.post("/notices/{notice_id}/retract")
     def retract_notice(notice_id: str, body: RetractBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
+        require(user_id, Permission.NOTICES_MANAGE)
         return controls.retract_notice(actor_id=user_id, notice_id=notice_id, reason_code=body.reason_code, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.delete("/support-roles/{target_user_id}/{role_code}")
@@ -252,7 +305,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
 
     @router.post("/ads/{ad_id}/schedule")
     def schedule_ad(ad_id: str, body: AdScheduleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
+        require(user_id, Permission.ADS_MANAGE)
         return controls.schedule_ad(actor_id=user_id, ad_id=ad_id, starts_at=body.starts_at, ends_at=body.ends_at, audience=body.audience, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.post("/ads/{ad_id}/events/{event_type}")
@@ -364,21 +417,33 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
             roles = [r.value for r in session.scalars(select(UserRole.role_code).where(UserRole.user_id == user_id))]
         return {"user_id": user_id, "username": user.username, "roles": roles, "permissions": sorted(p.value for p in rbac.permissions_for(user_id)), "brand": "ChatFlow", "display_name": "畅聊"}
 
-    @router.get("/context")
+    @router.get("/context", response_model=AdminContextResponse)
     def context(request: Request, user_id: str = Depends(actor)):
         info = session_info(user_id)
         actual = set(info["permissions"])
         is_admin = "system.admin" in actual
+        wallet_owner_read = is_admin and not getattr(settings, 'wallet_access_grant_enabled', False)
+        if is_admin and getattr(settings, 'wallet_access_grant_enabled', False):
+            authorization = request.headers.get('authorization', '')
+            claims = tokens.decode_access_token(authorization[7:])
+            try:
+                wallet_grant_service(settings, session_factory,
+                    lambda: datetime.now(timezone.utc)).require_read(claims=claims)
+            except AppError as exc:
+                if exc.status_code not in (401, 403):
+                    raise
+            else:
+                wallet_owner_read = True
         frontend_map = {
             "admin.finance.read": "finance.review",
             "admin.finance.review": "finance.review",
-            "admin.bans.read": "system.admin",
+            "admin.bans.read": "admin.bans.manage",
             "admin.support_roles.read": "support.scope.manage",
-            "admin.analytics.read": "audit.view",
+            "admin.analytics.read": "admin.analytics.view",
             "admin.presence.read": "support.ticket.assign",
-            "admin.ads.read": "system.admin",
-            "admin.notices.read": "system.admin",
-            "admin.ledger.read": "audit.view",
+            "admin.ads.read": "admin.ads.manage",
+            "admin.notices.read": "admin.notices.manage",
+            "admin.ledger.read": "admin.ledger.view",
             "admin.withdrawals.read": "finance.review",
             "admin.operations.create": "system.admin",
         }
@@ -393,8 +458,38 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
             if name == 'wallet' and (not is_admin or getattr(settings, 'wallet_access_grant_enabled', False)):
                 continue
             if is_admin or required in actual:
-                modules[name] = module_data(name, user_id).get("items", [])
-        return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员" if is_admin else "畅聊客服", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}
+                modules[name] = module_data(name, Response(), user_id).get("items", [])
+        return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员" if is_admin else "畅聊客服", "roles": info["roles"]}, "permissions": permissions, "capabilities": {"wallet_owner_read": wallet_owner_read}, "overview": overview_data, "modules": modules}
+
+    @router.post("/users/search", response_model=AdminDirectoryPage,
+        description="仅 SUPER_ADMIN 管理会话可查。浏览器请求须携带同源 Origin 与 X-Admin-CSRF: 1；响应不可缓存。")
+    def search_users(body: SearchUsersBody, request: Request, response: Response,
+                     user_id: str = Depends(actor)):
+        authorization = request.headers.get('authorization', '')
+        access_token = authorization[7:]
+        tokens.admin_session(access_token)
+        require(user_id, Permission.SYSTEM_ADMIN)
+        require_directory_origin(request)
+        request.state.admin_directory_token = access_token
+        try:
+            result = UserDirectoryService(session_factory,
+                cursor_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes").search(
+                q=body.q, limit=body.limit, cursor=body.cursor)
+        except ValueError as exc:
+            raise AppError(code='ADMIN_USER_FILTER_INVALID', message='用户筛选或分页参数无效',
+                status_code=422) from exc
+        # A slow directory query may outlive the administrator's role or session.
+        tokens.admin_session(access_token)
+        require(user_id, Permission.SYSTEM_ADMIN)
+        audit.record(actor_id=user_id, subject_type='admin_user_directory', subject_id=user_id,
+            action='admin.users.searched', result='SUCCESS', reason_code='ADMIN_USER_DIRECTORY_READ',
+            trace_id=trace(request), after={
+                'query_present': bool((body.q or '').strip()),
+                'result_count': len(result['items']), 'total': result['total'],
+            })
+        response.headers['Cache-Control'] = 'no-store'
+        return result
+
     @router.get("/overview", response_model=AdminOverview)
     def overview(request: Request, user_id: str = Depends(actor), days: int = Query(default=30, enum=[7, 30, 90])):
         require_overview(request, user_id)
@@ -416,7 +511,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
 
     @router.get('/ledger-entries')
     def ledger_entries(request: Request, user_id: str = Depends(actor),
-                       limit: int = Query(default=50, ge=1, le=100),
+                       limit: int = Query(default=10, ge=1, le=100),
                        cursor: str | None = Query(default=None, max_length=1024),
                        username: str | None = Query(default=None, max_length=128),
                        nickname: str | None = Query(default=None, max_length=128),
@@ -425,7 +520,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
                        mode: Literal['RANDOM', 'EQUAL', 'EXCLUSIVE', 'OTHER'] | None = None,
                        start_at: str | None = Query(default=None, max_length=40),
                        end_at: str | None = Query(default=None, max_length=40)):
-        require(user_id, Permission.AUDIT_VIEW)
+        require(user_id, Permission.LEDGER_VIEW)
         with session_factory() as session:
             try:
                 result = ledger_page(session, limit=limit, cursor=cursor, filters=dict(
@@ -438,10 +533,10 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         return JSONResponse(result, headers={'Cache-Control': 'no-store'})
 
     @router.get("/point-issuance", response_model=PointIssuancePage)
-    def point_issuance(user_id: str = Depends(actor), limit: int = Query(default=50, ge=1, le=100),
+    def point_issuance(user_id: str = Depends(actor), limit: int = Query(default=10, ge=1, le=100),
                        cursor: str | None = Query(default=None, max_length=512),
                        kind: Literal["issued", "returned"] | None = None):
-        require(user_id, Permission.AUDIT_VIEW)
+        require(user_id, Permission.LEDGER_VIEW)
         with session_factory() as session:
             if session.get_bind().dialect.name == "postgresql":
                 session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
@@ -452,7 +547,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
 
     @router.get("/point-issuance/{transaction_id}", response_model=PointIssuanceDetail)
     def point_issuance_detail(transaction_id: str, user_id: str = Depends(actor)):
-        require(user_id, Permission.AUDIT_VIEW)
+        require(user_id, Permission.LEDGER_VIEW)
         with session_factory() as session:
             if session.get_bind().dialect.name == "postgresql":
                 session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
@@ -462,14 +557,17 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         return result
 
     @router.get("/modules/{module}", response_model=AdminUserPage | AdminModulePage)
-    def module_data(module: str, user_id: str = Depends(actor),
+    def module_data(module: str, response: Response, user_id: str = Depends(actor),
                     q: Annotated[str | None, Query(max_length=128)] = None,
-                    limit: Annotated[int, Query(ge=1, le=100)] = 100,
-                    cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None):
+                    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+                    cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None,
+                    offset: Annotated[int, Query(ge=0, le=100000)] = 0):
         permission = MODULE_PERMISSIONS.get(module)
         if permission is None:
             raise AppError(code="ADMIN_MODULE_NOT_FOUND", message="模块不存在", status_code=404)
         require(user_id, permission)
+        if module == 'wallet':
+            require(user_id, Permission.SYSTEM_ADMIN)
         with session_factory() as session:
             if module in ('analytics', 'security'):
                 try:
@@ -478,26 +576,28 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
                     raise AppError(code='ADMIN_USER_FILTER_INVALID', message='用户筛选或分页参数无效', status_code=422) from exc
             if module == "online":
                 cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-                rows = session.execute(select(User, Device.last_seen_at).join(Device, Device.user_id == User.id).where(User.status == AccountStatus.ACTIVE, Device.revoked_at.is_(None), Device.last_seen_at >= cutoff).order_by(Device.last_seen_at.desc()).limit(100)).all()
-                seen = set(); items = []
-                for u, last_seen in rows:
-                    if u.id in seen: continue
-                    seen.add(u.id); items.append({"id": u.id, "username": u.username, "status": "在线", "last_seen_at": last_seen.isoformat()})
-                return {"items": items, "module": module}
+                seen_at = func.max(Device.last_seen_at)
+                rows = session.execute(select(User.id, User.username, seen_at.label('last_seen_at'))
+                    .join(Device, Device.user_id == User.id)
+                    .where(User.status == AccountStatus.ACTIVE, Device.revoked_at.is_(None), Device.last_seen_at >= cutoff)
+                    .group_by(User.id, User.username).order_by(seen_at.desc(), User.id.asc())
+                    .offset(offset).limit(limit+1)).all()
+                items = [{"id": row.id, "username": row.username, "status": "在线", "last_seen_at": row.last_seen_at.isoformat()} for row in rows]
+                return {"items": items[:limit], "module": module, "has_more": len(items)>limit, "offset": offset}
             if module == "support-role":
-                rows = session.execute(select(User, UserRole.role_code).join(UserRole, UserRole.user_id == User.id).order_by(UserRole.assigned_at.desc()).limit(100)).all()
-                return {"module": module, "items": [{"id": u.id, "username": u.username, "role": role.value, "assigned_at": next((r.assigned_at.isoformat() for r in session.scalars(select(UserRole).where(UserRole.user_id == u.id, UserRole.role_code == role).limit(1)).all()), None)} for u, role in rows]}
+                rows = session.execute(select(User, UserRole.role_code).join(UserRole, UserRole.user_id == User.id).order_by(UserRole.assigned_at.desc(), UserRole.id.desc()).offset(offset).limit(limit + 1)).all()
+                return {"module": module, "has_more": len(rows)>limit, "offset": offset, "items": [{"id": u.id, "username": u.username, "role": role.value, "assigned_at": next((r.assigned_at.isoformat() for r in session.scalars(select(UserRole).where(UserRole.user_id == u.id, UserRole.role_code == role).limit(1)).all()), None)} for u, role in rows[:limit]]}
             if module == "finance":
-                rows = session.scalars(select(AdjustmentRequest).order_by(AdjustmentRequest.created_at.desc()).limit(100)).all()
-                return {"module": module, "items": [{"id": r.id, "user_id": r.user_id, "amount": f"{r.amount:.2f}", "status": r.status, "reason_code": r.reason_code, "created_at": r.created_at.isoformat()} for r in rows]}
+                rows = session.scalars(select(AdjustmentRequest).order_by(AdjustmentRequest.created_at.desc(), AdjustmentRequest.id.desc()).offset(offset).limit(limit + 1)).all()
+                return {"module": module, "has_more": len(rows)>limit, "offset": offset, "items": [{"id": r.id, "user_id": r.user_id, "amount": f"{r.amount:.2f}", "status": r.status, "reason_code": r.reason_code, "created_at": r.created_at.isoformat()} for r in rows[:limit]]}
             if module == "ledger":
                 rows = session.execute(
                     select(LedgerTransaction, LedgerEntry)
                     .join(LedgerEntry, LedgerEntry.transaction_id == LedgerTransaction.id)
                     .order_by(LedgerTransaction.created_at.desc(), LedgerEntry.id.asc())
-                    .limit(100)
+                    .offset(offset).limit(limit + 1)
                 ).all()
-                return {"module": module, "items": [
+                return {"module": module, "has_more": len(rows)>limit, "offset": offset, "items": [
                     {
                         "transaction_id": tx.id,
                         "time": tx.created_at.isoformat(),
@@ -506,12 +606,13 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
                         "amount": f"{entry.amount:.2f}",
                         "reason_code": tx.reason_code,
                     }
-                    for tx, entry in rows
+                    for tx, entry in rows[:limit]
                     if not entry.account_id.startswith("PLATFORM_")
                 ]}
             if module == "wallet":
-                rows = session.scalars(select(Withdrawal).order_by(Withdrawal.created_at.desc()).limit(100)).all()
-                return {"module": module, "items": [
+                response.headers['Cache-Control'] = 'no-store'
+                rows = session.scalars(select(Withdrawal).order_by(Withdrawal.created_at.desc(), Withdrawal.id.desc()).offset(offset).limit(limit + 1)).all()
+                return {"module": module, "has_more": len(rows)>limit, "offset": offset, "items": [
                     {
                         "id": withdrawal.id,
                         "user_id": withdrawal.user_id,
@@ -520,11 +621,11 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
                         "address": _mask_wallet_address(withdrawal.address),
                         "created_at": withdrawal.created_at.isoformat(),
                     }
-                    for withdrawal in rows
+                    for withdrawal in rows[:limit]
                 ]}
             if module == "ads":
-                rows = session.scalars(select(NativeMomentAd).order_by(NativeMomentAd.created_at.desc()).limit(100)).all()
-                return {"module": module, "items": [
+                rows = session.scalars(select(NativeMomentAd).order_by(NativeMomentAd.created_at.desc(), NativeMomentAd.id.desc()).offset(offset).limit(limit + 1)).all()
+                return {"module": module, "has_more": len(rows)>limit, "offset": offset, "items": [
                     {
                         "id": ad.id,
                         "advertiser_name": ad.advertiser_name,
@@ -532,8 +633,11 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
                         "status": ad.status,
                         "created_at": ad.created_at.isoformat(),
                     }
-                    for ad in rows
+                    for ad in rows[:limit]
                 ]}
+            if module == "notice":
+                rows = session.scalars(select(OfficialNotice).order_by(OfficialNotice.created_at.desc(), OfficialNotice.id.desc()).offset(offset).limit(limit+1)).all()
+                return {"module": module, "has_more": len(rows)>limit, "offset": offset, "items": [{"id": row.id, "title": row.title, "content": row.content, "status": row.status, "audience": row.audience, "created_at": row.created_at.isoformat()} for row in rows[:limit]]}
             return {"items": [], "module": module}
 
     return router
@@ -544,5 +648,3 @@ def _mask_wallet_address(address: str) -> str:
     if len(address) <= 8:
         return "***"
     return f"{address[:1]}***{address[-4:]}"
-
-

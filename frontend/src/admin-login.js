@@ -1,4 +1,5 @@
-import {createStaffActivationApi} from './admin-staff-activation.js';
+import {showStaffActivationDialog} from './admin-staff-activation-dialog.js';
+import {startLoginScene} from './admin-login-scene.js';
 function node(tag, className, text) {
   const item = document.createElement(tag); item.className = className || '';
   if (text) item.textContent = text;
@@ -6,12 +7,16 @@ function node(tag, className, text) {
 }
 export function loginView(api, onSuccess) {
   const page = node('main', 'admin-login-page');
+  const scene = node('canvas', 'admin-login-scene');scene.setAttribute('aria-hidden','true');
   const brand = node('header', 'admin-login-brand');
   const mark=node('img','admin-login-mark');mark.src='/assets/branding/admin-logo.png';mark.alt='畅聊';
-  brand.append(mark, node('p', 'admin-login-eyebrow', 'CHATFLOW'), node('h1', '', '畅聊管理后台'), node('p', 'admin-login-intro', '让每一次管理，都清晰有序。'));
+  const markRow=node('div','admin-login-mark-row');markRow.append(mark,node('span',null,'CHATFLOW · 畅聊管理台'));
+  const verse=node('p','admin-login-verse','赵客缦胡缨，吴钩霜雪明。\n银鞍照白马，飒沓如流星。\n十步杀一人，千里不留行。\n事了拂衣去，深藏身与名。');
+  brand.append(markRow,node('p','admin-login-eyebrow','墨夜银锋'),node('h1','','行过霜雪'),verse,
+    node('p','admin-login-intro','锋芒藏于秩序，关键操作皆有据可循。'));
   const card = node('section', 'admin-card admin-login-card');
   const kicker=node('p','admin-login-kicker','管理员入口');
-  card.append(kicker, node('h2', '', '欢迎回来'), node('p', 'admin-audit-note', '登录保留 48 小时；新设备登录后，旧设备将退出。'));
+  card.append(kicker, node('h2', '', '进入管理台'), node('p', 'admin-audit-note', '守住每一次关键操作 · 管理会话最长 48 小时。'));
   const form = node('form', 'admin-login-form');
   function field(name, title, type, autocomplete) {
     const label = node('label', 'admin-login-label', title), input = node('input', 'admin-filter');
@@ -36,33 +41,24 @@ export function loginView(api, onSuccess) {
   pictureRow.append(picture, refresh);
   const submit = node('button', 'admin-primary', '登录'); submit.type = 'submit'; submit.disabled = true;
   const status = node('p', 'admin-login-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-  const activationCode=field('activation_code','绑定手机或邮箱验证码','text','one-time-code');
-  activationCode.input.inputMode='numeric';activationCode.input.maxLength=6;activationCode.input.pattern='[0-9]{6}';
-  activationCode.label.hidden=true;activationCode.input.required=false;
-  const entry=node('div','admin-captcha-row'),admin=node('button','admin-secondary','管理员入口'),staff=node('button','admin-secondary','客服入口'),activate=node('button','admin-secondary','首次开通');
+  const entry=node('div','admin-captcha-row'),admin=node('button','admin-secondary','管理员入口'),staff=node('button','admin-secondary','客服入口');
   entry.className='admin-captcha-row admin-login-modes';
   entry.setAttribute('role','group');entry.setAttribute('aria-label','登录入口');
-  entry.append(admin,staff,activate);
-  const channelLabel=node('label','admin-login-label','首次开通验证方式'),channel=node('select','admin-filter');
-  channel.name='channel';channel.setAttribute('aria-label','首次开通验证方式');
-  for(const [value,label] of [['email','邮箱验证码'],['phone','手机验证码']]) {const option=node('option','',label);option.value=value;channel.append(option);}
-  channel.value='email';channelLabel.append(channel);channelLabel.hidden=true;
-  const activationApi=createStaffActivationApi();
-  let challengeId = null, busy = false, generation = 0, mode='admin', activationId=null;
+  entry.append(admin,staff);
+  let challengeId = null, busy = false, generation = 0, mode='admin', activationDialog=null;
   function viewMode(next) {
-    ++generation;mode=next;challengeId=null;activationId=null;activationCode.input.value='';password.input.value='';
-    activationCode.label.hidden=true;activationCode.input.required=false;
+    activationDialog?.close();
+    ++generation;mode=next;challengeId=null;password.input.value='';
     username.label.hidden=false;password.label.hidden=false;captcha.label.hidden=false;pictureRow.hidden=false;challengeStatus.hidden=false;
     username.input.required=true;password.input.required=true;captcha.input.required=next!=='staff';
     captcha.label.hidden=next==='staff';pictureRow.hidden=next==='staff';challengeStatus.hidden=next==='staff';
-    channelLabel.hidden=next!=='activate';channel.required=next==='activate';
-    for(const [button,value] of [[admin,'admin'],[staff,'staff'],[activate,'activate']])button.setAttribute('aria-pressed',String(next===value));
-    kicker.textContent=next==='admin'?'管理员入口':next==='staff'?'客服入口':'首次开通';
+    for(const [button,value] of [[admin,'admin'],[staff,'staff']])button.setAttribute('aria-pressed',String(next===value));
+    kicker.textContent=next==='admin'?'管理员入口':'客服入口';
     submit.disabled=next!=='staff';
-    submit.textContent=next==='activate'?'发送开通验证码':'登录';
-    status.textContent=next==='activate'?'仅限已有官方客服身份；验证码发送到 APP 当前已验证的绑定联系方式。':next==='staff'?'客服入口：使用原 APP 账号与登录密码。':'使用现有管理员账号与登录密码。';
+    submit.textContent='登录';
+    status.textContent=next==='staff'?'客服入口：使用原 APP 账号与登录密码。':'使用现有管理员账号与登录密码。';
   }
-  for(const [button,next] of [[admin,'admin'],[staff,'staff'],[activate,'activate']]) {
+  for(const [button,next] of [[admin,'admin'],[staff,'staff']]) {
     button.type='button';button.addEventListener('click',()=>{if(busy)return;viewMode(next);return loadChallenge();});
   }
   async function loadChallenge() {
@@ -78,39 +74,46 @@ export function loginView(api, onSuccess) {
     } catch (error) { if (revision === generation) challengeStatus.textContent = error.message || '验证码加载失败，请点击换一张。'; }
     finally { if (revision === generation) {refresh.disabled = busy; submit.disabled = busy || !challengeId;} }
   }
-  picture.addEventListener('error', () => {if(mode === 'staff' || activationId) return; challengeId = null; submit.disabled = true; picture.hidden = true; challengeStatus.textContent = '验证码图片未能显示，请点击换一张。';});
+  picture.addEventListener('error', () => {if(mode === 'staff') return; challengeId = null; submit.disabled = true; picture.hidden = true; challengeStatus.textContent = '验证码图片未能显示，请点击换一张。';});
   refresh.addEventListener('click', () => {if (!busy) return loadChallenge();});
   form.addEventListener('submit', async event => {
-    event.preventDefault(); if (busy || (mode!=='staff' && !challengeId && !activationId)) return;
+    event.preventDefault(); if (busy || (mode==='admin' && !challengeId)) return;
     busy = true; submit.disabled = true; refresh.disabled = true; form.setAttribute('aria-busy', 'true'); status.textContent = '正在验证…';
-    const body = {username:username.input.value.trim(),password:password.input.value,...(mode==='staff'?{}:{challenge_id:challengeId,captcha_answer:captcha.input.value}),...(mode==='activate'?{channel:channel.value}:{})};
+    const body = {username:username.input.value.trim(),password:password.input.value,...(mode==='staff'?{}:{challenge_id:challengeId,captcha_answer:captcha.input.value})};
+    let loginPassword = body.password;
     challengeId = null; password.input.value = ''; captcha.input.value = '';
     try {
-      if(mode==='activate') {
-        if(activationId) {
-          const code=activationCode.input.value;activationCode.input.value='';
-          const result=await (api.confirmStaffActivation??activationApi.confirmStaffActivation)({activation_id:activationId,code});
-          if(result.status!=='activated')throw Error('开通响应无效，请重新核对。');
-          viewMode('staff');await loadChallenge();status.textContent='开通成功，请使用原 APP 账号与登录密码登录。';
-        } else {
-          const result=await (api.requestStaffActivation??activationApi.requestStaffActivation)(body);
-          if(typeof result.activation_id!=='string'||!result.activation_id||!['phone','email'].includes(result.channel)||typeof result.masked_target!=='string')throw Error('验证码响应无效，请重试。');
-          activationId=result.activation_id;channelLabel.hidden=true;channel.required=false;
-          username.label.hidden=true;password.label.hidden=true;captcha.label.hidden=true;pictureRow.hidden=true;challengeStatus.hidden=true;
-          username.input.required=false;password.input.required=false;captcha.input.required=false;
-          activationCode.label.hidden=false;activationCode.input.required=true;activationCode.input.focus();
-          submit.textContent='确认开通';status.textContent=`验证码已发送至 ${result.masked_target}，5 分钟内有效。`;
-        }
-        return;
-      }
       const tokens = await (mode==='staff'?api.staffLogin(body):api.adminLogin(body));
       if (typeof tokens.access_token !== 'string' || !tokens.access_token) throw Error('登录响应无效，请重新登录。');
       await onSuccess(tokens); status.textContent = '登录成功';
-    } catch (error) {status.textContent = error.message || '登录失败，请重试。'; if(!activationId){await loadChallenge();password.input.focus();}}
-    finally {busy = false; refresh.disabled = false; submit.disabled = mode!=='staff'&&!challengeId&&!activationId; form.setAttribute('aria-busy', 'false');}
+    } catch (error) {
+      if(mode==='staff' && error.code==='STAFF_ACTIVATION_REQUIRED' && !activationDialog) {
+        const credentials = {username:body.username, password:loginPassword};
+        activationDialog = showStaffActivationDialog({api, ...credentials,
+          onActivated: async current => {
+            try {
+              const tokens = await api.staffLogin(current);
+              if (typeof tokens.access_token !== 'string' || !tokens.access_token) throw Error('登录响应无效，请重新登录。');
+              await onSuccess(tokens); status.textContent = '登录成功';
+            } catch (nextError) {
+              status.textContent = `${nextError.message || '登录未完成'}，请重新输入密码登录。`;
+              password.input.focus();
+            }
+          },
+          onClose: () => {activationDialog=null; password.input.focus();}});
+        status.textContent='请完成首次开通验证方式选择。';
+      } else {
+        status.textContent=error.message || '登录失败，请重试。';
+        if(mode==='admin') await loadChallenge();
+        password.input.focus();
+      }
+    } finally {
+      loginPassword='';
+      busy = false; refresh.disabled = false; submit.disabled = mode==='admin'&&!challengeId; form.setAttribute('aria-busy', 'false');
+    }
   });
-  form.append(entry,username.label, password.label, captcha.label, pictureRow, challengeStatus, channelLabel, activationCode.label, submit, status);
-  card.append(form); page.append(brand, card, node('p', 'admin-login-footer', 'ChatFlow · 管理员安全入口')); viewMode('admin');void loadChallenge(); return page;
+  form.append(entry,username.label, password.label, captcha.label, pictureRow, challengeStatus, submit, status);
+  card.append(form); page.append(scene,brand, card, node('p', 'admin-login-footer', 'ChatFlow · 权限、操作与审计逐项可追溯')); viewMode('admin');void loadChallenge(); startLoginScene(scene); return page;
 }
 
 export function sessionExpiredDialog(onLogin) {

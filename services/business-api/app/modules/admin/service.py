@@ -11,6 +11,7 @@ from app.modules.admin.models import AdminBan, AdminCommand, OfficialNotice, Not
 from app.modules.audit.writer import AuditWriter
 from app.modules.identity.enums import AccountStatus, RoleCode
 from app.modules.identity.models import User, UserRole
+from app.modules.identity.staff_activation import StaffActivation, staff_identity, require_staff_admin_access
 from app.modules.support.service import set_support_badge, support_profile_badges
 from app.modules.moments.models import NativeMomentAd
 
@@ -25,7 +26,9 @@ class AdminControlService:
         if target_type not in {"user", "ip"} or not target or not reason_code:
             raise AppError(code="ADMIN_COMMAND_INVALID", message="封禁参数无效", status_code=422)
         now = self._now()
+        self._check_ban_target(actor_id, target_type, target)
         def mutate(session):
+            self._check_ban_target(actor_id, target_type, target, session=session)
             existing = session.scalar(select(AdminBan).where(AdminBan.subject_type == target_type, AdminBan.subject_value == target).with_for_update())
             if existing is None:
                 existing = AdminBan(id=str(uuid4()), subject_type=target_type, subject_value=target, reason_code=reason_code, starts_at=now, ends_at=now + timedelta(minutes=duration_minutes) if duration_minutes else None, revoked_at=None, created_by=actor_id, created_at=now)
@@ -40,12 +43,29 @@ class AdminControlService:
             self._record(session, actor_id, "admin_ban", existing.id, "admin.ban.created", reason_code, trace_id, {"target_type": target_type})
             OutboxPublisher.enqueue(session, topic="admin", event_type="admin.ban.created", aggregate_type="admin_ban", aggregate_id=existing.id, payload={"subject_type": target_type, "subject_id": target})
             return result
-        return self._command("admin.ban", idempotency_key, {"target_type":target_type,"target":target,"reason_code":reason_code,"duration_minutes":duration_minutes}, mutate)
+        return self._command("admin.ban", idempotency_key, {"target_type":target_type,"target":target,"reason_code":reason_code,"duration_minutes":duration_minutes}, mutate, actor_id=actor_id)
 
-    def unban(self, *, actor_id: str, ban_id: str, reason_code: str, idempotency_key: str, trace_id: str) -> dict:
+    def unban(self, *, actor_id: str, ban_id: str, reason_code: str, idempotency_key: str, trace_id: str, expected_starts_at: str | None = None) -> dict:
+        with self._session_factory() as session:
+            observed = session.get(AdminBan, ban_id)
+            if observed is None:
+                raise AppError(code="BAN_NOT_FOUND", message="封禁记录不存在", status_code=404)
+            self._check_ban_target(actor_id, observed.subject_type, observed.subject_value, session=session)
+            is_admin = session.scalar(select(UserRole.id).where(UserRole.user_id == actor_id, UserRole.role_code == RoleCode.SUPER_ADMIN)) is not None
+            if not is_admin and not expected_starts_at:
+                raise AppError(code="BAN_STATE_REQUIRED", message="请刷新当前封禁记录再解除", status_code=409)
         def mutate(session):
-            ban = session.get(AdminBan, ban_id)
+            ban = session.scalar(select(AdminBan).where(AdminBan.id == ban_id).with_for_update())
             if ban is None: raise AppError(code="BAN_NOT_FOUND", message="封禁记录不存在", status_code=404)
+            self._check_ban_target(actor_id, ban.subject_type, ban.subject_value, session=session)
+            if expected_starts_at:
+                try:
+                    expected = datetime.fromisoformat(expected_starts_at)
+                    actual = ban.starts_at.replace(tzinfo=timezone.utc) if ban.starts_at.tzinfo is None else ban.starts_at
+                    if expected.tzinfo is None or expected.astimezone(timezone.utc) != actual.astimezone(timezone.utc):
+                        raise ValueError("round changed")
+                except (ValueError, TypeError):
+                    raise AppError(code="BAN_STATE_CHANGED", message="封禁记录已变化，请刷新后重新确认", status_code=409)
             ban.revoked_at = self._now()
             if ban.subject_type == "user":
                 user = session.get(User, ban.subject_value)
@@ -54,7 +74,24 @@ class AdminControlService:
             self._record(session, actor_id, "admin_ban", ban.id, "admin.ban.revoked", reason_code, trace_id)
             OutboxPublisher.enqueue(session, topic="admin", event_type="admin.ban.revoked", aggregate_type="admin_ban", aggregate_id=ban.id, payload={"subject_type":ban.subject_type,"subject_id":ban.subject_value})
             return result
-        return self._command("admin.unban", idempotency_key, {"ban_id":ban_id,"reason_code":reason_code}, mutate)
+        payload = {"ban_id":ban_id,"reason_code":reason_code}
+        if expected_starts_at is not None:
+            payload['expected_starts_at'] = expected_starts_at
+        return self._command("admin.unban", idempotency_key, payload, mutate, actor_id=actor_id)
+
+    def _check_ban_target(self, actor_id, target_type, target, *, session=None):
+        if session is None:
+            with self._session_factory() as current:
+                return self._check_ban_target(actor_id, target_type, target, session=current)
+        administrator = session.scalar(select(UserRole.id).where(UserRole.user_id == actor_id,
+            UserRole.role_code == RoleCode.SUPER_ADMIN)) is not None
+        if administrator or target_type != 'user':
+            return
+        protected = session.scalar(select(UserRole.id).where(UserRole.user_id == target,
+            UserRole.role_code.in_((RoleCode.SUPER_ADMIN, RoleCode.SUPPORT_AGENT,
+                RoleCode.FINANCE_SUPPORT, RoleCode.SUPPORT_SUPERVISOR))).limit(1))
+        if actor_id == target or protected is not None:
+            raise AppError(code='BAN_TARGET_PROTECTED', message='客服不可封禁或解除管理账号，请联系管理员', status_code=403)
 
     _SUPPORT_ROLES = frozenset((RoleCode.SUPPORT_AGENT, RoleCode.FINANCE_SUPPORT, RoleCode.SUPPORT_SUPERVISOR))
 
@@ -93,7 +130,7 @@ class AdminControlService:
         badge = self._validate_badge(badge)
         target_user_id = self.resolve_support_target(target)
         def mutate(session):
-            if session.get(User, target_user_id) is None:
+            if session.scalar(select(User).where(User.id == target_user_id).with_for_update()) is None:
                 raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
             row = session.scalar(select(UserRole).where(UserRole.user_id == target_user_id, UserRole.role_code == role_code))
             if row is None: session.add(UserRole(id=str(uuid4()), user_id=target_user_id, role_code=role_code, assigned_by=actor_id, assigned_at=self._now()))
@@ -105,7 +142,7 @@ class AdminControlService:
         payload = {"user_id": target_user_id, "role_code": role_code.value}
         if badge is not None:
             payload["badge"] = badge
-        return self._command("admin.support-role", idempotency_key, payload, mutate)
+        return self._command("admin.support-role", idempotency_key, payload, mutate, actor_id=actor_id)
 
     def create_notice(self, *, actor_id: str, title: str, content: str, audience: str, publish_at: datetime | None, idempotency_key: str, trace_id: str) -> dict:
         now=self._now()
@@ -115,7 +152,7 @@ class AdminControlService:
             self._record(session, actor_id, "official_notice", row.id, "admin.notice.created", "NOTICE_CREATE", trace_id, {"audience":audience,"status":row.status})
             OutboxPublisher.enqueue(session,topic="notification",event_type="notice.publish.requested",aggregate_type="official_notice",aggregate_id=row.id,payload={"audience":audience,"status":row.status})
             return result
-        return self._command("admin.notice",idempotency_key,{"title":title,"content":content,"audience":audience,"publish_at":publish_at.isoformat() if publish_at else None},mutate)
+        return self._command("admin.notice",idempotency_key,{"title":title,"content":content,"audience":audience,"publish_at":publish_at.isoformat() if publish_at else None},mutate,actor_id=actor_id)
 
     def update_notice(self, *, actor_id: str, notice_id: str, title: str, content: str, audience: str, publish_at: datetime | None, idempotency_key: str, trace_id: str) -> dict:
         now = self._now()
@@ -128,7 +165,7 @@ class AdminControlService:
             self._record(session, actor_id, "official_notice", row.id, "admin.notice.updated", "NOTICE_UPDATE", trace_id, {"status":row.status})
             OutboxPublisher.enqueue(session, topic="notification", event_type="notice.publish.requested", aggregate_type="official_notice", aggregate_id=row.id, payload={"audience":row.audience,"status":row.status})
             return result
-        return self._command("admin.notice.update", idempotency_key, {"notice_id":notice_id,"title":title,"content":content,"audience":audience,"publish_at":publish_at.isoformat() if publish_at else None}, mutate)
+        return self._command("admin.notice.update", idempotency_key, {"notice_id":notice_id,"title":title,"content":content,"audience":audience,"publish_at":publish_at.isoformat() if publish_at else None}, mutate, actor_id=actor_id)
 
     def retract_notice(self, *, actor_id: str, notice_id: str, reason_code: str, idempotency_key: str, trace_id: str) -> dict:
         def mutate(session):
@@ -139,7 +176,7 @@ class AdminControlService:
             self._record(session,actor_id,"official_notice",row.id,"admin.notice.retracted",reason_code,trace_id,{"status":"RETRACTED"})
             OutboxPublisher.enqueue(session,topic="notification",event_type="notice.retracted",aggregate_type="official_notice",aggregate_id=row.id,payload={})
             return result
-        return self._command("admin.notice.retract",idempotency_key,{"notice_id":notice_id,"reason_code":reason_code},mutate)
+        return self._command("admin.notice.retract",idempotency_key,{"notice_id":notice_id,"reason_code":reason_code},mutate,actor_id=actor_id)
 
     def record_notice_read(self, *, user_id: str, notice_id: str, idempotency_key: str) -> dict:
         with self._session_factory.begin() as session:
@@ -159,7 +196,7 @@ class AdminControlService:
             self._record(session,actor_id,"native_moment_ad",row.id,"admin.ad.created","AD_CREATE",trace_id,{"status":row.status})
             OutboxPublisher.enqueue(session,topic="moments",event_type="native_ad.created",aggregate_type="native_moment_ad",aggregate_id=row.id,payload={"status":row.status})
             return result
-        return self._command("admin.ad",idempotency_key,{"advertiser_name":advertiser_name,"text":text,"link_url":link_url},mutate)
+        return self._command("admin.ad",idempotency_key,{"advertiser_name":advertiser_name,"text":text,"link_url":link_url},mutate,actor_id=actor_id)
 
     def schedule_ad(self, *, actor_id: str, ad_id: str, starts_at: datetime, ends_at: datetime, audience: dict, idempotency_key: str, trace_id: str) -> dict:
         if starts_at >= ends_at: raise AppError(code="AD_SCHEDULE_INVALID", message="投放结束时间必须晚于开始时间", status_code=422)
@@ -177,7 +214,7 @@ class AdminControlService:
             self._record(session,actor_id,"native_ad_campaign",campaign.id,"admin.ad.scheduled","AD_SCHEDULE",trace_id,{"status":campaign.status})
             OutboxPublisher.enqueue(session,topic="moments",event_type="native_ad.schedule.changed",aggregate_type="native_ad_campaign",aggregate_id=campaign.id,payload={"ad_id":ad_id,"status":campaign.status})
             return result
-        return self._command("admin.ad.schedule",idempotency_key,{"ad_id":ad_id,"starts_at":starts_at.isoformat(),"ends_at":ends_at.isoformat(),"audience":audience},mutate)
+        return self._command("admin.ad.schedule",idempotency_key,{"ad_id":ad_id,"starts_at":starts_at.isoformat(),"ends_at":ends_at.isoformat(),"audience":audience},mutate,actor_id=actor_id)
 
     def record_ad_event(self, *, ad_id: str, event_type: str) -> dict:
         if event_type not in {"impression", "click"}: raise AppError(code="AD_EVENT_INVALID",message="广告事件无效",status_code=422)
@@ -194,17 +231,31 @@ class AdminControlService:
         if role_code not in self._SUPPORT_ROLES:
             raise AppError(code="ADMIN_ROLE_INVALID", message="仅可撤销客服角色", status_code=422)
         def mutate(session):
+            user = session.scalar(select(User).where(User.id == user_id).with_for_update())
+            verified_activation = None
+            if user is not None:
+                try:
+                    require_staff_admin_access(session, user)
+                    verified_activation = session.get(StaffActivation, user_id)
+                except AppError:
+                    pass
             row=session.scalar(select(UserRole).where(UserRole.user_id==user_id,UserRole.role_code==role_code))
             if row is not None: session.delete(row)
+            session.flush()
+            remaining = session.scalar(select(UserRole.id).where(UserRole.user_id == user_id,
+                UserRole.role_code.in_(self._SUPPORT_ROLES)).limit(1))
+            if verified_activation is not None and remaining is not None:
+                # Removing authority preserves the already verified unchanged contact.
+                _, _, verified_activation.identity_digest = staff_identity(session, user)
             result={"user_id":user_id,"role_code":role_code.value,"status":"REVOKED"}
             self._record(session,actor_id,"user_role",user_id,"admin.support_role.revoked","SUPPORT_ROLE_REVOKE",trace_id,{"role_code":role_code.value})
             OutboxPublisher.enqueue(session,topic="admin",event_type="admin.support_role.revoked",aggregate_type="user",aggregate_id=user_id,payload={"role_code":role_code.value})
             return result
-        return self._command("admin.support-role.revoke",idempotency_key,{"user_id":user_id,"role_code":role_code.value},mutate)
+        return self._command("admin.support-role.revoke",idempotency_key,{"user_id":user_id,"role_code":role_code.value},mutate,actor_id=actor_id)
 
     def revoke_all_support_roles(self, *, actor_id: str, user_id: str, idempotency_key: str, trace_id: str) -> dict:
         def mutate(session):
-            if session.get(User, user_id) is None:
+            if session.scalar(select(User).where(User.id == user_id).with_for_update()) is None:
                 raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
             rows = list(session.scalars(select(UserRole).where(UserRole.user_id == user_id, UserRole.role_code.in_(self._SUPPORT_ROLES))))
             roles = sorted(row.role_code.value for row in rows)
@@ -214,7 +265,7 @@ class AdminControlService:
             self._record(session, actor_id, "user_role", user_id, "admin.support_roles.revoked", "SUPPORT_ROLE_REVOKE", trace_id, {"roles": roles})
             OutboxPublisher.enqueue(session, topic="admin", event_type="admin.support_roles.revoked", aggregate_type="user", aggregate_id=user_id, payload={"roles": roles})
             return result
-        return self._command("admin.support-roles.revoke-all", idempotency_key, {"user_id": user_id}, mutate)
+        return self._command("admin.support-roles.revoke-all", idempotency_key, {"user_id": user_id}, mutate, actor_id=actor_id)
 
     def support_agents(self, *, query: str | None, limit: int, offset: int, dispatch_eligible: bool | None) -> dict:
         support_roles = self._SUPPORT_ROLES
@@ -247,7 +298,12 @@ class AdminControlService:
             return f"{local[:1]}***@{domain}"
         return {"items": [{"id": u.id, "username": u.username, "nickname": u.nickname, "masked_email": masked(u.email_normalized), "roles": sorted(roles_by_user[u.id]), "badge": profiles.get(u.id, "官方客服"), "dispatch_eligible": RoleCode.SUPPORT_AGENT.value in roles_by_user[u.id]} for u in users], "total": total, "limit": limit, "offset": offset}
 
-    def _command(self, scope, key, payload, mutate):
+    def _command(self, scope, key, payload, mutate, *, actor_id):
+        with self._session_factory() as access:
+            administrator = access.scalar(select(UserRole.id).where(UserRole.user_id == actor_id,
+                UserRole.role_code == RoleCode.SUPER_ADMIN)) is not None
+        if not administrator:
+            scope = scope + ':' + actor_id
         request_hash=hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
         with self._session_factory.begin() as session:
             command=session.scalar(select(AdminCommand).where(AdminCommand.scope==scope,AdminCommand.idempotency_key==key).with_for_update())

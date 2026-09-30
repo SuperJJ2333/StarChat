@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, func, or_, select
 
 from app.modules.identity.models import User
+from app.modules.admin.models import AdminBan
 
 
 def utc_text(value):
@@ -66,7 +67,13 @@ def user_page(session, *, q=None, limit=100, cursor=None):
     if len(rows) > limit:
         last = rows[limit-1]
         next_cursor = base64.urlsafe_b64encode(json.dumps([utc_text(last.created_at), last.id, _search_digest(query)]).encode()).decode()
+    now = datetime.now(timezone.utc)
+    bans = session.scalars(select(AdminBan).where(AdminBan.subject_type == 'user',
+        AdminBan.subject_value.in_([row.id for row in rows[:limit]]), AdminBan.revoked_at.is_(None),
+        AdminBan.starts_at <= now, or_(AdminBan.ends_at.is_(None), AdminBan.ends_at > now))).all()
+    active = {ban.subject_value: {'id': ban.id, 'starts_at': utc_text(ban.starts_at)} for ban in bans}
     return {'items': [{'id': row.id, 'username': row.username, 'nickname': row.nickname,
+        'active_ban': active.get(row.id),
         'status': row.status.value, 'created_at': utc_text(row.created_at),
         'updated_at': utc_text(row.updated_at), 'email_verified_at': utc_text(row.email_verified_at)}
         for row in rows[:limit]], 'total': total, 'next_cursor': next_cursor}

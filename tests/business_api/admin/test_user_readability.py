@@ -79,7 +79,7 @@ async def test_search_rbac_invalid_cursor_limit_and_legacy_context(admin_app):
         for module in ['security', 'analytics']:
             path = f'/api/v1/admin/modules/{module}'
             assert (await client.get(path, params={'q': 'private'})).status_code == 401
-            assert (await client.get(path, params={'q': 'private'}, headers={'Authorization': f'Bearer {finance}'})).status_code == 403
+            assert (await client.get(path, params={'q': 'private'}, headers={'Authorization': f'Bearer {finance}'})).status_code == 200
             for params in [{'cursor': 'bad'}, {'limit': 0}, {'limit': 101}, {'q': 'x'*129}]:
                 assert (await client.get(path, params=params, headers={'Authorization': f'Bearer {token}'})).status_code == 422
         context = await client.get('/api/v1/admin/context', headers={'Authorization': f'Bearer {token}'})

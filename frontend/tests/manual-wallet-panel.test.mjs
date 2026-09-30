@@ -301,6 +301,13 @@ function setup(extra={},options={}) {
   return manualWalletPanel(api,{actor:{id:'owner'},storage:storage(),...options});
 }
 
+test('standalone wallet sections do not load other module lists',async()=>{
+  for(const view of ['payout','monitor','owner','security']){
+    const calls=[];const panel=setup({getManualPayouts:async()=>{calls.push('payout');return {items:[]};},getWalletIncidents:async()=>{calls.push('monitor');return {items:[]};}},{view,walletAccess:true});await settle();
+    assert.deepEqual(calls,view==='payout'?['payout']:view==='monitor'?['monitor']:[]);panel.dispose();
+  }
+});
+
 test('controlled resume retains original epoch digest and key after unknown result',async()=>{
  const calls=[], store=storage();
  const extra={getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'PAUSED',restriction_scopes:['manual_tron'],unresolved_incidents:0}),manualWalletControlAction:async(kind,body,options)=>{calls.push({kind,body,options});throw Error('lost');}};

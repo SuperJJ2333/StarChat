@@ -1,5 +1,6 @@
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
 import {formatBeijingTime, statusLabel} from './admin-formatters.js';
-import {can} from './admin-api.js?v=20260910-readability';
+import {can} from './admin-api.js?v=20260930-admin-navigation';
 
 const el=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=String(text);return node;};
 const action=(label,handler,cls='admin-secondary')=>{const node=el('button',cls,label);node.type='button';node.addEventListener('click',handler);return node;};
@@ -9,10 +10,11 @@ export const BAN_DURATIONS=[['60','1 小时'],['1440','24 小时'],['10080','7 �
 
 export function userPanel(api,{module='security',context={},initialData,onReauthenticate}={}) {
   const panel=el('section','admin-card admin-user-panel');
+  let pageSize=10;
   let revision=0,disposed=false,currentQuery='',cursors=[undefined],page=0,nextCursor=null,loading=false,failedRequest=null;
   const security=module==='security'&&can(context,'admin.bans.read');
   let selectUser=()=>{};
-  if(security){const form=banForm(api,{onReauthenticate,onSuccess:()=>load()});selectUser=form.selectUser;panel.append(form);}
+  if(security){const form=banForm(api,{onReauthenticate,onSuccess:()=>Promise.all([load(),loadBans()])});selectUser=form.selectUser;panel.append(form);}
   const heading=el('div','admin-panel-heading');heading.append(el('h2',null,module==='security'?'用户列表':'平台注册用户'));
   const search=el('form','admin-user-search');search.name='user-search';
   const input=el('input','admin-filter');input.name='q';input.type='search';input.maxLength=128;input.placeholder='搜索畅聊号、用户名或邮箱';input.setAttribute('aria-label','搜索畅聊号、用户名或邮箱');
@@ -25,7 +27,7 @@ export function userPanel(api,{module='security',context={},initialData,onReauth
   const pager=el('div','admin-user-pagination'),position=el('span');
   const previous=action('上一页',()=>{if(loading||page===0)return;load({query:currentQuery,cursors:[...cursors],page:page-1});});
   const next=action('下一页',()=>{if(loading||!nextCursor)return;load({query:currentQuery,cursors:[...cursors.slice(0,page+1),nextCursor],page:page+1});});
-  const retry=action('重新加载',()=>load(failedRequest??undefined));pager.append(previous,position,next,retry);
+  const retry=action('重新加载',()=>load(failedRequest??undefined));pager.append(previous,position,next,retry,pageSizeControl(changePageSize(value=>pageSize=value,()=>load({query:currentQuery,cursors:[undefined],page:0}))));
   panel.append(heading,search,message,tableWrap,pager);
   function render(payload){
     body.replaceChildren();
@@ -34,7 +36,7 @@ export function userPanel(api,{module='security',context={},initialData,onReauth
     for(const item of items){
       const row=el('tr');
       for(const value of [formatBeijingTime(item.created_at),item.username||'—',item.nickname||'—',item.email_verified_at?`已验证 · ${formatBeijingTime(item.email_verified_at)}`:'未验证',statusLabel(item.status)])row.append(el('td',null,value));
-      if(security){const cell=el('td');cell.append(action('选择封禁',()=>selectUser(item)));row.append(cell);}
+      if(security){const cell=el('td');if(item.active_ban)cell.append(unbanButton(item.active_ban,userName(item)));else if(item.status==='SUSPENDED')cell.append(el('span','admin-audit-note','账号受限 · 请核对记录'));else cell.append(action('选择封禁',()=>selectUser(item)));row.append(cell);}
       body.append(row);
     }
     nextCursor=payload.next_cursor||null;position.textContent=`第 ${page+1} 页 · 共 ${payload.total??items.length} 位用户`;
@@ -44,12 +46,32 @@ export function userPanel(api,{module='security',context={},initialData,onReauth
   async function load(target={query:currentQuery,cursors:[...cursors],page}){
     if(disposed)return false;
     const request=++revision;loading=true;controls();message.textContent='正在加载用户…';
-    try{const data=await api.getModule(module,{q:target.query,limit:50,cursor:target.cursors[target.page]});if(disposed||request!==revision)return false;currentQuery=target.query;cursors=[...target.cursors];page=target.page;failedRequest=null;render(data);return true;}
+    try{const data=await api.getModule(module,{q:target.query,limit:pageSize,cursor:target.cursors[target.page]});if(disposed||request!==revision)return false;currentQuery=target.query;cursors=[...target.cursors];page=target.page;failedRequest=null;render(data);return true;}
     catch(error){if(disposed||request!==revision)return false;failedRequest=target;message.textContent=`用户加载失败：${error.message||'请重新加载'}。保留上次筛选和页码，现有列表可能已过期。`;return false;}
     finally{if(!disposed&&request===revision){loading=false;controls();}}
   }
   search.addEventListener('submit',event=>{event.preventDefault();return load({query:input.value.trim(),page:0,cursors:[undefined]});});
-  panel.refresh=()=>load();panel.dispose=()=>{disposed=true;revision++;};
+  function unbanButton(ban,label){
+    let commandKey;
+    const button=action('解除封禁',async()=>{
+      if(button.disabled||!globalThis.confirm?.(`确认解除 ${label} 的当前封禁？`))return;
+      button.disabled=true;commandKey??=crypto.randomUUID();
+      try{await api.command(`/api/v1/admin/security/bans/${encodeURIComponent(ban.id)}/revoke`,{reason_code:'BAN_REVOKE',expected_starts_at:ban.starts_at},{idempotencyKey:commandKey});commandKey=null;await Promise.all([load(),loadBans()]);}
+      catch(error){message.textContent=`解除失败：${error.message??'请重试'}。请刷新核对当前封禁。`;button.disabled=false;}
+    });return button;
+  }
+  let bansOffset=0,bansSize=10,bansRevision=0;
+  const bans=el('section','admin-active-bans'),bansRows=el('div','admin-table-scroll'),bansState=el('p','admin-audit-note');bansState.setAttribute('role','status');
+  const bansPrevious=action('上一页封禁',()=>{void loadBans(Math.max(0,bansOffset-bansSize));}),bansNext=action('下一页封禁',()=>{void loadBans(bansOffset+bansSize);});
+  if(security&&api.getActiveBans){bans.append(el('h2',null,'当前封禁的用户与 IP'),bansState,bansRows,bansPrevious,bansNext,pageSizeControl(changePageSize(value=>bansSize=value,()=>loadBans(0)),{label:'封禁列表每页条数'}));panel.append(bans);void loadBans();}
+  async function loadBans(targetOffset=bansOffset){
+    if(!security||!api.getActiveBans||disposed)return true;const version=++bansRevision;bansPrevious.disabled=bansNext.disabled=true;
+    try{const result=await api.getActiveBans({limit:bansSize,offset:targetOffset});if(disposed||version!==bansRevision)return false;
+      bansOffset=targetOffset;const table=el('table','admin-table'),head=el('thead'),row=el('tr'),body=el('tbody');for(const label of ['类型','对象','封禁时间','到期时间','操作'])row.append(el('th',null,label));head.append(row);
+      for(const item of result.items){const row=el('tr');for(const value of [item.target_type==='ip'?'IP':'用户',item.target,formatBeijingTime(item.starts_at),item.ends_at?formatBeijingTime(item.ends_at):'永久'])row.append(el('td',null,value));const cell=el('td');cell.append(unbanButton(item,item.target));row.append(cell);body.append(row);}table.append(head,body);bansRows.replaceChildren(table);bansState.textContent=result.total?`共 ${result.total} 条当前封禁 · 第 ${Math.floor(bansOffset/bansSize)+1} 页`:'暂无当前封禁';bansPrevious.disabled=bansOffset===0;bansNext.disabled=bansOffset+result.items.length>=result.total;return true;
+    }catch(error){if(!disposed&&version===bansRevision)bansState.textContent=`封禁记录加载失败：${error.message??'请重试'}。上次数据可能已过期。`;return false;}
+  }
+  panel.refresh=async()=>{const result=await Promise.all([load(),loadBans()]);return result.every(Boolean);};panel.dispose=()=>{disposed=true;revision++;bansRevision++;};
   if(initialData){render(initialData);controls();}else load();
   return panel;
 }

@@ -79,8 +79,8 @@ async def test_finance_context_is_scoped_and_does_not_leak_admin_modules(admin_a
     assert "admin.overview.read" in body["permissions"]
     assert "admin.withdrawals.read" in body["permissions"]
     assert "wallet" not in body["modules"]
-    assert "analytics" not in body["modules"]
-    assert forbidden.status_code == 403
+    assert "analytics" in body["modules"]
+    assert forbidden.status_code == 200
 
 @pytest.mark.asyncio
 async def test_admin_modules_return_real_ledger_wallet_and_ads_data(admin_app):

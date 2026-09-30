@@ -92,3 +92,18 @@
 .admin-modern .admin-order-dialog:not([open]){display:none}.admin-modern .admin-order-dialog[open]{margin:auto;border-radius:24px;overflow:auto}.admin-modern .recharge-cases td:nth-child(3),.admin-modern .recharge-cases td:nth-child(4){white-space:nowrap}
 .recharge-operation-cache{display:none}
 html:has(.admin-order-dialog[open]){overflow:hidden}.admin-modern .admin-order-dialog{white-space:normal}.admin-modern .admin-order-dialog[open]{position:fixed;inset:0}.admin-modern .admin-order-dialog .admin-proof-heading{flex-wrap:nowrap}
+/* Module navigation and role labels use the existing administration palette. */
+.admin-wallet-nav-toggle {width:100%;display:flex;align-items:center;text-align:left;padding:12px 14px;border:0;border-radius:10px;background:transparent;color:inherit;font:inherit;cursor:pointer;}
+.admin-wallet-nav-toggle:hover {background:var(--admin-modern-color-9);}
+.admin-wallet-subnav {margin:4px 0 12px 18px;padding-left:10px;border-left:1px solid var(--admin-border);display:grid;gap:4px;}
+.admin-wallet-subnav[hidden] {display:none;}
+.admin-nav .admin-wallet-subnav-item {font-size:13px;padding:10px 12px;border-radius:8px;}
+.admin-role-badge {display:inline-flex;align-items:center;white-space:nowrap;margin:3px 6px 3px 0;padding:4px 9px;border:1px solid #b8d1f4;border-radius:999px;background:#edf5ff;color:#245fa8;font-size:12px;font-weight:600;}
+.admin-role-badge.role-finance_support {background:#edf8f2;border-color:#a7d6bb;color:#226949;}
+.admin-role-badge.role-support_supervisor {background:#f3efff;border-color:#cab8ef;color:#6841a1;}
+.admin-role-remove {margin:3px;font-size:12px;}
+.admin-page-size {min-width:112px;max-width:150px;}
+.admin-user-pagination {display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px;}
+.admin-active-bans {margin-top:28px;padding-top:22px;border-top:1px solid #e4eaf2;}
+.wallet-single-module {display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:18px;}
+.wallet-single-module>.wallet-surface {min-width:0;}

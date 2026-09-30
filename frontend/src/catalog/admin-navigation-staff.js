@@ -1,0 +1,22 @@
+import {createAdminShell} from '../admin-dashboard.js';
+import {supportPanel} from '../admin-support-panel.js';
+import {userPanel} from '../admin-user-panel.js';
+import {ledgerPanel} from '../admin-ledger-panel.js';
+import {chainPanel} from '../admin-chain-panel.js';
+import {manualWalletPanel} from '../admin-manual-wallet-panel.js';
+const stamp='2026-09-30T04:00:00Z',records=Array.from({length:36},(_,i)=>({id:`demo-${i}`,username:`a10${String(i).padStart(6,'0')}`,nickname:i===0?'这个小鸿':`客服 ${i+1}`,masked_email:'1***@163.com',roles:['FINANCE_SUPPORT','SUPPORT_AGENT'],badge:'官方客服',created_at:stamp,updated_at:stamp,email_verified_at:stamp,status:'ACTIVE'}));
+const api={getModule:async(key,{limit=10,offset=0}={})=>({module:key,items:records.slice(offset,offset+limit),total:records.length,next_cursor:null,has_more:offset+limit<records.length}),getSupportAgents:async({limit=10,offset=0}={})=>({items:records.slice(offset,offset+limit),total:36}),getPointIssuance:async()=>({items:[]}),getLedgerEntries:async()=>({items:[],total:0}),getActiveBans:async()=>({items:[{id:'ban-demo',target_type:'ip',target:'192.0.2.24',starts_at:stamp}],total:1}),getChainSummary:async()=>({balance:'1250.000000',last_success_ms:Date.parse(stamp),checkpoint_ms:Date.parse(stamp),observer_status:'OK'}),getChainTransactions:async()=>({items:[],total:0,snapshot:1}),getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:true,version:1}),getManualPayouts:async()=>({items:[]}),getWalletIncidents:async()=>({items:[]}),getWalletMonitorStatus:async()=>({stale:false,external_delivery_configured:true}),getManualWalletDiagnostics:async()=>({source_status:'HEALTHY',coverage_status:'CURRENT'}),getManualWalletControl:async()=>({status:'RUNNING',epoch:1,unresolved_incidents:0,restriction_scopes:[]}),command:async()=>{throw Error('演示页不会提交生产操作');}};
+const modules=[['封禁 IP 和用户','','security','admin.bans.read'],['客服管理','','support-role','admin.support_roles.read'],['平台注册用户统计','','analytics','admin.analytics.read'],['朋友圈原生广告','','ads','admin.ads.read'],['官方通知公告','','notice','admin.notices.read'],['点钻流水','','ledger','admin.ledger.read'],['USDT提现与支付','','wallet','admin.withdrawals.read']];
+const isStaff=new URLSearchParams(location.search).get('actor')==='staff';
+const permissions=isStaff?['admin.bans.read','admin.analytics.read','admin.ads.read','admin.notices.read','admin.ledger.read']:['*'];
+const context={actor:{id:'demo-admin',display_name:isStaff?'客服演示':'管理员演示',roles:[isStaff?'SUPPORT_AGENT':'SUPER_ADMIN']},permissions,capabilities:{wallet_owner_read:!isStaff},overview:{registered_users:36,online_customers:7,pending_withdrawals:0,today_point_volume:'12500.00',registration_trend:[]},modules:{}};
+const renderModule=(key,title,context)=>{
+  if(key==='support-role')return supportPanel(api,{mode:'manage'});
+  if(['security','analytics'].includes(key))return userPanel(api,{module:key,context});
+  if(key==='ledger')return ledgerPanel(api);
+  if(key==='wallet-chain')return chainPanel(api,{actorId:context.actor.id});
+  if(key.startsWith('wallet-'))return manualWalletPanel(api,{actor:context.actor,view:key.slice(7),walletAccess:true});
+  const panel=document.createElement('section');panel.className='admin-card';const heading=document.createElement('h2');heading.textContent=title;panel.append(heading);return panel;
+};
+document.querySelector('#app').append(createAdminShell({context,api,modules,renderModule,onLogout:()=>{}}));
+const note=document.createElement('p');note.className='admin-audit-note';note.textContent='虚构数据演示 · 不连接生产接口';note.style.cssText='position:fixed;bottom:8px;right:12px;z-index:50;font-size:11px;background:white;padding:4px 8px;border-radius:6px';document.body.append(note);

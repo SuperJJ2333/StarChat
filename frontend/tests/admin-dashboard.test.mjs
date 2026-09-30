@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatPoints, trendGeometry, refreshCoordinator} from '../src/admin-dashboard.js';
+import {formatPoints, trendGeometry, refreshCoordinator, walletNavigation} from '../src/admin-dashboard.js';
+
+test('wallet navigation exposes five distinct authorized submodule routes',()=>{
+  assert.deepEqual(walletNavigation({permissions:['*']}).map(x=>x[0]),['wallet-chain','wallet-payout','wallet-monitor','wallet-owner','wallet-security']);
+  assert.deepEqual(walletNavigation({permissions:['admin.withdrawals.read']}),[]);
+});
 
 test('staff navigation excludes administrator USDT wallet without broadening permissions',async()=>{
   const {visibleAdminModules}=await import('../src/admin-dashboard.js');
@@ -8,7 +13,7 @@ test('staff navigation excludes administrator USDT wallet without broadening per
   const context={permissions:['admin.finance.read','admin.withdrawals.read','admin.overview.read'],actor:{roles:['FINANCE_SUPPORT']}};
   assert.equal(typeof visibleAdminModules,'function');
   assert.deepEqual(visibleAdminModules(context,modules).map(x=>x[2]),['recharge']);
-  assert.equal(visibleAdminModules({permissions:['*']},modules).length,3);
+  assert.equal(visibleAdminModules({permissions:['*'],capabilities:{wallet_owner_read:true}},modules).length,3);
 });
 
 test('point totals preserve cents beyond JavaScript safe integer',()=>{
