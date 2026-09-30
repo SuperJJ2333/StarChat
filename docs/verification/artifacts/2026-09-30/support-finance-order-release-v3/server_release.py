@@ -152,6 +152,40 @@ for path in paths:
 print(json.dumps({'passed':True,'actual_http':True,'ready_json':True,'blocked_routes':paths,'remote_timeout_available':True}))
 '''
 
+def ordered_mounts(value):
+    # Sort complete entries without parsing or deduplicating bind strings/mounts.
+    return sorted(value,key=lambda item:json.dumps(item,sort_keys=True)) if isinstance(value,list) else value
+
+def same_runtime_configuration(role: str) -> None:
+    before = c.read_private(f"{role}-container-inspect.json")
+    now = c.docker_inspect(ROLE_CONTAINER[role])
+    def env_entries(inspected: dict) -> list[str]:
+        entries = inspected["Config"].get("Env")
+        if not isinstance(entries, list):
+            raise ValueError(f"{role} runtime environment is malformed")
+        keys = set()
+        for entry in entries:
+            if not isinstance(entry, str):
+                raise ValueError(f"{role} runtime environment is malformed")
+            key = entry.partition("=")[0]
+            if not key or key in keys:
+                raise ValueError(f"{role} runtime environment has duplicate or empty keys")
+            keys.add(key)
+        return sorted(entries)
+    if env_entries(now) != env_entries(before):
+        raise ValueError(f"{role} runtime environment changed")
+    for field in ("Cmd", "Entrypoint", "WorkingDir", "User"):
+        if now["Config"].get(field) != before["Config"].get(field):
+            raise ValueError(f"{role} runtime configuration changed")
+    for field in ("Binds", "Mounts", "NetworkMode", "RestartPolicy", "LogConfig"):
+        if ordered_mounts(now["HostConfig"].get(field)) != ordered_mounts(before["HostConfig"].get(field)):
+            raise ValueError(f"{role} runtime host configuration changed")
+
+    if ordered_mounts(now.get('Mounts'))!=ordered_mounts(before.get('Mounts')):
+        raise ValueError('actual runtime mounts changed')
+
+c._same_runtime_configuration=same_runtime_configuration
+
 def bridge_runtime_fence(health,snapshot):
     current=c.docker_inspect(health['api']['Id'])
     if (current['Id']!=health['api']['Id'] or current['Image']!=health['api']['Image']
@@ -413,19 +447,75 @@ def _bridge_expand_locked(m):
         proof=bridge_runtime_fence(health,result['snapshot'])
         c.write_private('bridge-fenced.json',{'images':bridge,'schema':BASE_SCHEMA,'fence':proof,'containers':health,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot']))})
         phase='single-bounded-expand'
-        current=c.docker_inspect(health['api']['Id'])
-        if current['Id']!=health['api']['Id'] or current['Image']!=bridge['api'] or c.database_value('select version_num from alembic_version')!=BASE_SCHEMA:raise ValueError('bridge ID/image/schema changed before migration')
-        c.write_private('bridge-migration-attempt.json',{'started_utc':utc(),'container_id':current['Id'],'image':current['Image'],'before_schema':BASE_SCHEMA,'target_schema':TARGET_SCHEMA,'process_timeout_seconds':150,'lock_timeout_ms':5000,'statement_timeout_ms':120000})
-        c.run('docker','exec','-e','PGOPTIONS=-c lock_timeout=5000 -c statement_timeout=120000',current['Id'],'timeout','--signal=TERM','--kill-after=10s','150s','python','-m','alembic','upgrade',TARGET_SCHEMA,output_file=c.PRIVATE/'bridge-migration.private.log',timeout=180)
-        if c.database_value('select version_num from alembic_version')!=TARGET_SCHEMA:raise ValueError('explicit bridge expansion did not reach0094')
-        phase='expanded-bridge-health'
-        health=c._selected_health(bridge,wait=True,frozen=health)
-        c.write_private('bridge-result.json',{'images':bridge,'schema':TARGET_SCHEMA,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot'])),'restart_counts':c._restart_counts(health),'containers':health,'fence_before_migration':proof,'migration':'single bounded docker exec'})
+        complete_bridge_expand(bridge,health,result['snapshot'],proof)
     except Exception:
         c.write_private('bridge-failure.json',{'failed_utc':utc(),'phase':phase,'images':bridge,'guard_snapshot':result.get('snapshot'),'recovery':'retain actual guarded state; inspect containers, fence, head and process; no automatic retry, Worker or final API switch'})
         raise
     return {'bridge_fenced':True,'schema':TARGET_SCHEMA,'worker_original_until_dual_candidate_switch':True}
 
+
+def complete_bridge_expand(bridge,health,snapshot,proof):
+    current=c.docker_inspect(health['api']['Id'])
+    if current['Id']!=health['api']['Id'] or current['Image']!=bridge['api'] or c.database_value('select version_num from alembic_version')!=BASE_SCHEMA:raise ValueError('bridge ID/image/schema changed before migration')
+    c.write_private('bridge-migration-attempt.json',{'started_utc':utc(),'container_id':current['Id'],'image':current['Image'],'before_schema':BASE_SCHEMA,'target_schema':TARGET_SCHEMA,'process_timeout_seconds':150,'lock_timeout_ms':5000,'statement_timeout_ms':120000})
+    c.run('docker','exec','-e','PGOPTIONS=-c lock_timeout=5000 -c statement_timeout=120000',current['Id'],'timeout','--signal=TERM','--kill-after=10s','150s','python','-m','alembic','upgrade',TARGET_SCHEMA,output_file=c.PRIVATE/'bridge-migration.private.log',timeout=180)
+    if c.database_value('select version_num from alembic_version')!=TARGET_SCHEMA:raise ValueError('explicit bridge expansion did not reach0094')
+    health=c._selected_health(bridge,wait=True,frozen=health)
+    c.write_private('bridge-result.json',{'images':bridge,'schema':TARGET_SCHEMA,'guard_snapshot':snapshot,'guard_snapshot_sha256':sha_file(Path(snapshot)),'restart_counts':c._restart_counts(health),'containers':health,'fence_before_migration':proof,'migration':'single bounded docker exec'})
+    return {'bridge_fenced':True,'schema':TARGET_SCHEMA,'worker_original_until_dual_candidate_switch':True}
+
+def resume_bridge(m,expected_api_id,expected_snapshot_sha):
+    with exclusive_bridge_lock():return _resume_bridge_locked(m,expected_api_id,expected_snapshot_sha)
+
+def _resume_bridge_locked(m,expected_api_id,expected_snapshot_sha):
+    import re
+    if not re.fullmatch('[0-9a-f]{64}',expected_api_id) or not re.fullmatch('[0-9a-f]{64}',expected_snapshot_sha):
+        raise ValueError('explicit immutable bridge ID and snapshot SHA required')
+    blocked=['bridge-migration-attempt.json','bridge-result.json','worker-bridge-result.json','switch-attempt.json','deployed.json','bridge-fenced.json']
+    if any((c.PRIVATE/name).exists() for name in blocked):raise ValueError('bridge phase cannot be resumed')
+    failure=c.read_private('bridge-failure.json');attempt=c.read_private('bridge-attempt.json')
+    if failure.get('phase')!='guarded-fence-health':raise ValueError('only pre-migration fence-health failure may resume')
+    validate_restore(m)
+    candidate=c.read_private('images.json');back=c.read_private('rollback-images.json')
+    bridge={'api':back['api'],'worker':m['roles']['worker']['base_image']}
+    if back['api']==m['roles']['api']['base_image'] or back['worker']!=candidate['worker'] or failure.get('images')!=bridge or attempt.get('images')!=bridge:
+        raise ValueError('bridge intent or safety image binding changed')
+    snapshot=Path(failure['guard_snapshot'])
+    if not snapshot.is_absolute() or snapshot.is_symlink() or not snapshot.is_file() or sha_file(snapshot)!=expected_snapshot_sha:
+        raise ValueError('explicit guarded snapshot SHA mismatch')
+    directory=c.PRIVATE/('resume-bridge-'+uuid4().hex);directory.mkdir(mode=0o700)
+    # Preserve first failure/diagnostic bytes before any command can overwrite stderr.
+    for name in ('bridge-failure.json','bridge-attempt.json','last-command.stderr.private.log'):
+        source=c.PRIVATE/name
+        if source.exists():shutil.copy2(source,directory/name)
+    prefix=directory.name
+    before_switch(m,bridge,BASE_SCHEMA)
+    health=c._selected_health(bridge,wait=True,replaced_roles=('api',))
+    if health['api']['Id']!=expected_api_id:raise ValueError('explicit bridge ID changed')
+    labels=health['api']['Config']['Labels']
+    if labels.get('com.docker.compose.project')!='starchat' or labels.get('com.docker.compose.service')!=ROLE_SERVICE['api'] or labels.get('com.docker.compose.project.config_files')!=str(snapshot):
+        raise ValueError('bridge actual role/guard source mismatch')
+    original_worker=c.read_private('worker-container-inspect.json')
+    if health['worker']['Id']!=original_worker['Id'] or health['worker']['Config']['Labels']!=original_worker['Config']['Labels']:
+        raise ValueError('original Worker identity or source changed')
+    expected=copy.deepcopy(c.read_private('merged-baseline-compose.json'))
+    for role,service in ROLE_SERVICE.items():expected['services'][service]['image']=bridge[role]
+    rendered=json.loads(c.run('docker','compose','-p','starchat','-f',str(snapshot),'config','--format','json'))
+    if rendered!=expected:raise ValueError('actual bridge guard configuration changed')
+    c.write_private(prefix+'/attempt.json',{'started_utc':utc(),'container_id':expected_api_id,'guard_snapshot':str(snapshot),'guard_snapshot_sha256':expected_snapshot_sha,'images':bridge,'no_guard_deploy':True})
+    phase='reprove-fence'
+    try:
+        if c.database_value('select version_num from alembic_version')!=BASE_SCHEMA:raise ValueError('resume requires frozen0093')
+        proof=bridge_runtime_fence(health,snapshot)
+        if sha_file(snapshot)!=expected_snapshot_sha or c.docker_inspect(expected_api_id)['Id']!=expected_api_id:raise ValueError('bridge proof binding changed before migration')
+        c.write_private('bridge-fenced.json',{'images':bridge,'schema':BASE_SCHEMA,'fence':proof,'containers':health,'guard_snapshot':str(snapshot),'guard_snapshot_sha256':expected_snapshot_sha})
+        phase='single-bounded-expand'
+        result=complete_bridge_expand(bridge,health,str(snapshot),proof)
+        c.write_private(prefix+'/result.json',{'completed_utc':utc(),'container_id':expected_api_id,'schema':TARGET_SCHEMA})
+        return result
+    except Exception:
+        c.write_private(prefix+'/failure.json',{'failed_utc':utc(),'phase':phase,'container_id':expected_api_id,'recovery':'retain fenced bridge; inspect phase records; no automatic retry or service switch'})
+        raise
 
 def activate_safe_worker(m):
     validate_restore(m);bridge=c.read_private('bridge-result.json')
@@ -484,12 +574,14 @@ def verify(m):
     return {'verified':True,'roles':2,'schema':TARGET_SCHEMA,'public_tls':'separate required'}
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('operation',choices=['preflight','prepare','build','resume-build','restore','probe-clone','probe-worker','restore-finalize','bridge-expand','activate-safe-worker','deploy','rollback','verify'])
-    p.add_argument('--candidate-api');p.add_argument('--candidate-worker');p.add_argument('--rollback-api');args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('operation',choices=['preflight','prepare','build','resume-build','restore','probe-clone','probe-worker','restore-finalize','bridge-expand','resume-bridge','activate-safe-worker','deploy','rollback','verify'])
+    p.add_argument('--expected-bridge-api-id');p.add_argument('--expected-guard-snapshot-sha256');p.add_argument('--candidate-api');p.add_argument('--candidate-worker');p.add_argument('--rollback-api');args=p.parse_args()
     if args.operation=='resume-build' and not all((args.candidate_api,args.candidate_worker,args.rollback_api)):p.error('resume-build requires all three immutable image IDs')
     if args.operation!='resume-build' and any((args.candidate_api,args.candidate_worker,args.rollback_api)):p.error('immutable resume IDs apply only to resume-build')
+    if args.operation=='resume-bridge' and not all((args.expected_bridge_api_id,args.expected_guard_snapshot_sha256)):p.error('resume-bridge requires explicit bridge ID and snapshot SHA')
+    if args.operation!='resume-bridge' and any((args.expected_bridge_api_id,args.expected_guard_snapshot_sha256)):p.error('bridge identity arguments apply only to resume-bridge')
     if PACKAGE!=c.RELEASE_ROOT:raise SystemExit('dedicated server release directory required')
     m=validate_manifest(json.loads(MANIFEST.read_text(encoding='utf-8')))
-    operations={'preflight':lambda:{'schema':c.preflight(m)['schema']},'prepare':lambda:c.prepare(m),'build':lambda:build(m),'resume-build':lambda:resume_build(m,{'api':args.candidate_api,'worker':args.candidate_worker,'rollback_api':args.rollback_api}),'restore':lambda:c.restore(m),'probe-clone':lambda:probe_clone(m),'probe-worker':lambda:probe_worker(m),'restore-finalize':lambda:restore_finalize(m),'bridge-expand':lambda:bridge_expand(m),'activate-safe-worker':lambda:activate_safe_worker(m),'deploy':lambda:deploy(m),'rollback':lambda:rollback(m),'verify':lambda:verify(m)}
+    operations={'preflight':lambda:{'schema':c.preflight(m)['schema']},'prepare':lambda:c.prepare(m),'build':lambda:build(m),'resume-build':lambda:resume_build(m,{'api':args.candidate_api,'worker':args.candidate_worker,'rollback_api':args.rollback_api}),'restore':lambda:c.restore(m),'probe-clone':lambda:probe_clone(m),'probe-worker':lambda:probe_worker(m),'restore-finalize':lambda:restore_finalize(m),'bridge-expand':lambda:bridge_expand(m),'resume-bridge':lambda:resume_bridge(m,args.expected_bridge_api_id,args.expected_guard_snapshot_sha256),'activate-safe-worker':lambda:activate_safe_worker(m),'deploy':lambda:deploy(m),'rollback':lambda:rollback(m),'verify':lambda:verify(m)}
     print(json.dumps(operations[args.operation](),ensure_ascii=False),flush=True)
 if __name__=='__main__':main()
