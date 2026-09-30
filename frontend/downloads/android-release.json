@@ -1,9 +1,9 @@
 {
-  "artifact_bytes": 81914910,
-  "build": 2195,
-  "cdn_url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.26-build2195-arm64.apk",
-  "direct_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.4.26-build2195-arm64.apk",
+  "artifact_bytes": 81980446,
+  "build": 2196,
+  "cdn_url": "https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.27-build2196-arm64.apk",
+  "direct_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.4.27-build2196-arm64.apk",
   "platform": "android",
-  "sha256": "f56d3cc19f4b36bd660421165ae4a4446542307e0f966c86cf78d9b8abf228b4",
-  "version": "0.4.26"
+  "sha256": "79d5d41e746ae73c3c5d50395ac482e377a09b4463b3508c67c78e2f4596571f",
+  "version": "0.4.27"
 }

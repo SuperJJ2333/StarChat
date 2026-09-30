@@ -44,6 +44,6 @@ Owner root/tests/docs. No runtime change without new focused red/green.
 
 ### Task 4: Delivery
 
-- [ ] Read actual current production version/occupied CI versions. Reserve next Android/iOS version/build, update version contracts, freeze source/inputs.
-- [ ] Conventional Android rebuild/alignment/stable signer verification and authorized publication/update notes using existing lightweight gates; iOS native CI/signed candidate and enterprise-resign handoff. Preserve previous 2195 package and both platform settings isolation.
-- [ ] Merge/push main; preserve all named artifacts before only own worktree/branch cleanup. Return actual release links and iOS candidate; maintain iOS suspended discovery and device-only acceptance gaps.
+- [x] Read actual current production version/occupied CI versions. Reserve next Android/iOS version/build, update version contracts, freeze source/inputs.
+- [x] Conventional Android rebuild/alignment/stable signer verification and authorized publication/update notes using existing lightweight gates; iOS native CI/signed candidate verified for enterprise-resign handoff. Preserve previous2195 package and both platform settings isolation.
+- [ ] Merge/push reviewed download/doc backfill; complete artifact preservation and own worktree/branch cleanup. Return actual release links and iOS candidate; maintain iOS suspended discovery and device-only acceptance gaps.
