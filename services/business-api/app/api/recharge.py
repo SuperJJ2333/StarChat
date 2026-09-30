@@ -299,15 +299,24 @@ def create_recharge_router(settings: Settings, session_factory, *, recharge_serv
             claim_token=body.claim_token if body else None, authorization=authorization)
 
     @router.get("/admin/reserve-valuation")
-    def reserve_valuation(actor_id: str = Depends(actor)):
+    def reserve_valuation(actor_id: str = Depends(actor),
+                          authorization: Annotated[str | None, Header()] = None):
         """ADR-0076 三类数量一次读齐：点钻账面 / 参考估值 / 实际 USDT 义务。"""
         from app.modules.identity.rbac import Permission
 
-        rbac.require(actor_id, Permission.SYSTEM_ADMIN)
+        administrator = Permission.SYSTEM_ADMIN in rbac.permissions_for(actor_id)
+        if not administrator:
+            # TokenService checks activation, current management family, device,
+            # account and expiry. Read aggregates do not authorize wallet writes.
+            tokens.admin_session((authorization or '')[7:])
+            rbac.require(actor_id, Permission.FINANCE_REVIEW)
         from app.modules.ledger.reserve import reserve_valuation_snapshot
 
         with session_factory() as session:
             snapshot = reserve_valuation_snapshot(session)
+        if not administrator:
+            snapshot = {key: snapshot[key] for key in (
+                'caibi_face', 'caibi_reference_usdt', 'usdt_obligation')}
         return {key: (str(value) if value is not None else None)
             for key, value in snapshot.items()}
 
