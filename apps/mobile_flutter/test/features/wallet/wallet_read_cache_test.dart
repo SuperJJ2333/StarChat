@@ -17,6 +17,7 @@ void main() {
     expect(walletHistoryStatus('FAILED_COMPENSATED'), '失败已退回');
     expect(walletHistoryStatus('CREDITED'), '已到账');
     expect(walletHistoryStatus('UNKNOWN'), '结果待核验');
+    expect(walletHistoryStatus('VOIDED'), '已撤销（确认未广播）');
     expect(formatLedgerShortTime('2026-09-22T10:05:33.123Z'),
         isNot(contains('T')));
     expect(formatLedgerShortTime('2026-09-22T10:05:33.123Z'),

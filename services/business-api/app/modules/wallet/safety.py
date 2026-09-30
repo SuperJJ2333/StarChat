@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
-from app.modules.ledger.reserve import RedeemabilityReserve, lock_budget, require_coverage
+from app.modules.ledger.reserve import RedeemabilityReserve, lock_budget
 from app.modules.ledger.service import LedgerService
 from app.modules.wallet.models import Deposit, WalletConversion, WalletLedgerEntry, WalletPayoutIntent, WalletSafetyState, Withdrawal
 from app.modules.wallet.receipt_models import DepositReceipt
@@ -178,7 +178,7 @@ class WalletSafetyMixin:
         if manual is None:
             self.refresh_reserve_evidence(actor_id=user_id)
         with self.factory.begin() as session:
-            reserve = lock_budget(session)
+            lock_budget(session)
             self._check_user(session, user_id)
             if manual is not None:
                 from app.modules.identity.wallet_access import require_wallet_actor
@@ -238,6 +238,4 @@ class WalletSafetyMixin:
         external = self._offline_provider().enumerate_withdrawals()
         with self.factory() as session:
             orphans = [row['client_order_id'] for row in external if session.get(Withdrawal, row['client_order_id']) is None]
-        if orphans:
-            self.pause_on_reconciliation_mismatch('ORPHAN_EXTERNAL_ORDER', actor_id=actor_id)
         return {'status': 'ORPHAN_EXTERNAL_ORDER' if orphans else 'MATCHED', 'orphan_order_ids': orphans}

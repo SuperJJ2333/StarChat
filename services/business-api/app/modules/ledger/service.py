@@ -125,7 +125,8 @@ class LedgerService:
         if (original is None or original.scope != 'wallet.conversion'
                 or original.reason_code != 'CAIBI_TO_USDT' or original.actor_id != actor_id
                 or not original.idempotency_key.startswith('convert:')
-                or scope != 'wallet.conversion_reversal' or reason_code != 'MANUAL_PAYOUT_CANCELLED'):
+                or scope != 'wallet.conversion_reversal'
+                or reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_VOIDED'}):
             raise ValueError('invalid conversion reversal source')
         conversion_id = original.idempotency_key.removeprefix('convert:')
         if idempotency_key != 'reverse:'+conversion_id:
@@ -137,17 +138,21 @@ class LedgerService:
                 or session.scalar(select(LedgerTransaction.id).where(LedgerTransaction.reversal_of_id == original_id))):
             raise ValueError('conversion debit already reversed or mismatched')
         WalletLedger(self.session_factory).require_conversion_release(session=session,
-            user_id=actor_id, conversion_id=conversion_id, release_id=release_id, amount=amount)
+            user_id=actor_id, conversion_id=conversion_id, release_id=release_id,
+            amount=amount, reason_code=reason_code)
 
-    def reverse_conversion_debit(self, *, session, user_id, conversion_id, wallet_release_id):
+    def reverse_conversion_debit(self, *, session, user_id, conversion_id, wallet_release_id,
+                                 reason_code='MANUAL_PAYOUT_CANCELLED'):
         """Public exact linked reversal, inside the caller's global-budget lock."""
+        if reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_VOIDED'}:
+            raise ValueError('invalid payout conversion reversal reason')
         lock_budget(session)
         original = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries)).where(
             LedgerTransaction.scope == 'wallet.conversion', LedgerTransaction.idempotency_key == 'convert:'+conversion_id))
         if original is None:
             raise ValueError('conversion debit not found')
         return self._post(entries={entry.account_id: -entry.amount for entry in original.entries},
-            actor_id=user_id, reason_code='MANUAL_PAYOUT_CANCELLED', idempotency_key='reverse:'+conversion_id,
+            actor_id=user_id, reason_code=reason_code, idempotency_key='reverse:'+conversion_id,
             scope='wallet.conversion_reversal', reversal_of_id=original.id, session=session,
             conversion_release_id=wallet_release_id)
 

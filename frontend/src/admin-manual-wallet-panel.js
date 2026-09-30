@@ -1,5 +1,5 @@
 // Manual operations never sign or broadcast; API/ledger state is authoritative.
-import {processIncident, incidentSummary, incidentError, incidentTime, diagnosticSummary, fundControlError} from './wallet-incident-workflow.js?v=20260910-readability';
+import {processIncident, incidentSummary, incidentError, incidentTime, diagnosticSummary, fundControlError} from './wallet-incident-workflow.js?v=20260930-wallet-alert-void';
 import {detailDialog} from './admin-detail-dialog.js';
 const SAFE_METADATA = new Set(['expected_digest', 'txid', 'reason_code', 'expected_version', 'clearance_digest', 'credential_id', 'expected_epoch', 'snapshot_digest','preparation_id','manifest_digest','no_unregistered_payments','notice_received']);
 export function exactUsdt(value) {
@@ -52,7 +52,7 @@ function describe(parent, pairs) {
   for (const [label, value] of pairs) dl.append(node('dt', label), node('dd', value ?? '—'));
   parent.append(dl);
 }
-const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消'}[status] ?? '状态未知');
+const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消', VOIDED:'已撤销（确认未广播）'}[status] ?? '状态未知');
 
 export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, securityOnly = false, onSecurityChanged} = {}) {
   const root = node('section'); root.className = 'admin-card admin-manual-wallet-panel';
@@ -289,7 +289,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       for(const name of ['amount','fee','hold','receive']) exactUsdt(s[name]);
       if(s.fee!=='0.000000'||s.amount!==item.amount||! /^[a-f0-9]{64}$/.test(item.digest)) throw new Error('Invalid snapshot');
       detail.replaceChildren(node('h4',`出款 ${item.id}`),node('p',statusLabel(item.status)),...refreshAction('刷新此出款',()=>showOrder(id)));
-      describe(detail,[['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['到账 USDT',s.receive],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选哈希',item.candidate_txid],['结算哈希',item.settlement_txid],['复核原因',item.review_reason]]);
+      describe(detail,[['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['原到账 USDT',s.receive],['最终应付 USDT',exactUsdt(item.final_receive??s.receive)],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选哈希',item.candidate_txid],['结算哈希',item.settlement_txid],['复核原因',item.review_reason]]);
       for(const candidate of item.candidates ?? []) describe(detail,[['候选历史',candidate.txid],['操作者',candidate.actor_id],['原因',candidate.reason_code],['时间',formatBeijingTime(candidate.created_at)]]);
       if(actor?.id!==s.owner_admin_id) { detail.append(node('p','当前账号不是官方钱包拥有者，仅可查看。')); return; }
       if(item.status==='REQUESTED') {
@@ -301,6 +301,24 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       }
       if(['CLAIMED','UNKNOWN'].includes(item.status)) {
         detail.append(node('p','已领取或结果未知：禁止重复付款。先查询原交易与本订单；资金继续冻结，回填哈希不代表已结算。'));
+        if(item.status==='UNKNOWN'&&!item.candidate_txid&&Number.isSafeInteger(item.version)&&item.version>0){
+          detail.append(node('p','仅在确认此单从未签名、从未广播且最新链上复核通过后，才能撤销。撤销会冲回本单冻结及原兑换；不会自动恢复资金。'));
+          let preview;
+          try { preview=await api.getVoidUnbroadcastPreview?.(id); } catch { preview={status:'UNAVAILABLE'}; }
+          if(generation!==detailGeneration)return;
+          const evidence=preview?.evidence;
+          const ready=preview?.status==='READY'&&typeof evidence?.observation_id==='string'&&Number.isSafeInteger(evidence?.checkpoint);
+          if(ready){
+            detail.append(node('p',`链上观察已覆盖领取时段 · 观察编号 ${evidence.observation_id} · 检查点 ${formatBeijingTime(evidence.checkpoint)}。这是单源观察，仍需本人确认未签名、未广播。`));
+            commandForm(detail,'void-unbroadcast','确认未广播并撤销',[field('reason_code','撤销原因代码',{pattern:'[A-Z][A-Z0-9_]{2,79}'}),checkbox('never_signed','我确认此单从未签名'),checkbox('never_broadcast','我确认此单从未广播'),credentialField()],async values=>{
+              const metadata={expected_version:item.version,reason_code:values.reason_code};
+              const proof=authMode==='operation_password'?{operation_password:values.operation_password}:{mfa_proof:values.mfa_proof};
+              const body={...metadata,never_signed:true,never_broadcast:true,...proof};
+              await mutate(`${id}:void-unbroadcast`,metadata,options=>api.voidUnbroadcastPayout(id,body,options));
+              if(generation===detailGeneration)await showOrder(id);
+            },`${id}:void-unbroadcast`);
+          }else detail.append(node('p',preview?.status==='INELIGIBLE'?'链上观察或订单状态不满足撤销条件，请核对原交易与订单。':'链上观察暂不可用，撤销操作已关闭；请稍后刷新核验。'));
+        }
         if (item.claimed_by !== actor.id) {
           detail.append(node('p','此订单未由当前管理员领取，仅可核查记录；不提供付款指令或哈希提交。'));
           return;
@@ -327,7 +345,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   const incidents=node('section'), incidentDetail=node('section'), monitor=node('p'),diagnostics=node('p'),fundSummary=node('p');
   let incidentModal;
   const incidentFilters=node('form');incidentFilters.name='monitoring-filters';incidentFilters.className='admin-filters';const incidentInputs={};
-  for(const [key,label,values] of [['status','处理状态',[['','全部状态'],['OPEN','未处理'],['ACKNOWLEDGED','已确认'],['RESOLVED','已结案']]],['severity','事故等级',[['','全部等级'],['P0','P0'],['P1','P1']]],['sort','排序',[['opened_desc','发生时间：新到旧'],['opened_asc','发生时间：旧到新'],['updated_desc','最近发现：新到旧']]]]){const select=node('select');select.className='admin-filter';select.setAttribute('aria-label',label);for(const [value,text] of values){const option=node('option',text);option.value=value;select.append(option);}incidentInputs[key]=select;incidentFilters.append(select);}
+  for(const [key,label,values] of [['status','处理状态',[['','全部状态'],['OPEN','未处理'],['ACKNOWLEDGED','已确认'],['RESOLVED','已结案']]],['severity','事故等级',[['','全部等级'],['P0','P0'],['P1','P1'],['T2','T2']]],['sort','排序',[['opened_desc','发生时间：新到旧'],['opened_asc','发生时间：旧到新'],['updated_desc','最近发现：新到旧']]]]){const select=node('select');select.className='admin-filter';select.setAttribute('aria-label',label);for(const [value,text] of values){const option=node('option',text);option.value=value;select.append(option);}incidentInputs[key]=select;incidentFilters.append(select);}
   const incidentSearch=node('input');incidentSearch.className='admin-filter';incidentSearch.placeholder='事故代码';incidentSearch.setAttribute('aria-label','事故代码');incidentSearch.maxLength=100;incidentInputs.code=incidentSearch;incidentFilters.append(incidentSearch);
   let activeIncidentFilters={},incidentPages=[undefined],incidentPage=0;
   incidentFilters.append(action('查询',()=>loadIncidents(null,{filters:Object.fromEntries(Object.entries(incidentInputs).map(([k,v])=>[k,v.value])),page:0,pages:[null]})),action('重置',()=>loadIncidents(null,{filters:{},page:0,pages:[null],reset:true})));
@@ -393,13 +411,14 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const technical=node('details');technical.append(node('summary','技术详情与时间线'));
       describe(technical,[['事故编号',item.id],['技术代码',item.code],['级别',item.severity],['版本',item.version],['复核证据摘要',item.clearance_digest],['确认人',item.acknowledged_by],['结案人',item.resolved_by],['最近发现',incidentTime(item.last_seen_at)],['接手时间',incidentTime(item.acknowledged_at)],['异常消失时间',incidentTime(item.cleared_at)],['结案时间',incidentTime(item.resolved_at)]]);incidentDetail.append(technical);
       if(item.status==='RESOLVED'||summary.advisory)return;
-      incidentDetail.append(node('p',walletAccess?'钱包身份已验证。确认后执行事故检查与处理；不会恢复资金。':authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成；处理后资金仍暂停。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。'));
-      commandForm(incidentDetail,'incident-process','检查并处理事故',[checkbox('accept_incident','我确认处理这起事故；完成后可前往“资金启停”恢复资金'),...credentialFields()],async(values,state)=>{
+      const incidentGuidance=walletAccess?'钱包身份已验证。确认后执行事故检查与处理。':authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。';
+      incidentDetail.append(node('p',`${incidentGuidance}处理不会改变资金启停，是否暂停请以当前资金控制状态为准。`));
+      commandForm(incidentDetail,'incident-process','检查并处理事故',[checkbox('accept_incident','我确认处理这起事故；处理不会改变资金启停'),...credentialFields()],async(values,state)=>{
         const credential=credentialPayload(values);
         delete values.operation_password;delete values.mfa_proof;
         const result=await processIncident({id,api,journal,credentials:credential,authMode:walletAccess?'operation_password':authMode,onProgress:message=>{state.textContent=message;},shouldStop:()=>disposed||selection!==incidentSelection});
         if(disposed||selection!==incidentSelection)return;
-        const message=walletAccess&&result.status==='resolved'?'事故已结案。请前往资金启停，核对并单独确认恢复资金。':result.status==='resolved'?'事故已结案。下一步：前往“资金启停”，勾选恢复确认并输入操作密码，点击“核验并恢复资金”。核验通过后才会启用资金。':result.status==='needs_credential'?'当前步骤已完成或状态已更新。请使用下一组验证码，再次确认并继续检查。':'实时检查仍有异常，处理已停止。请按当前诊断排查后重新检查。';
+        const message=result.status==='resolved'?'事故已结案。事故处理不会改变资金启停；请核对当前资金控制状态，需要新鲜链上证据的操作仍须独立核验。':result.status==='needs_credential'?'当前步骤已完成或状态已更新。请使用下一组验证码，再次确认并继续检查。':'实时检查仍有异常，处理已停止。请按当前诊断排查后重新检查。';
         await showIncident(id);await loadIncidents();await loadControl();
         if(!disposed&&selectedIncident===id)incidentDetail.append(node('p',message));
       });
@@ -536,7 +555,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const results=await Promise.all([loadOrders(),loadIncidents(),loadControl(), selectedOrder ? showOrder(selectedOrder) : null, selectedIncident ? showIncident(selectedIncident) : null]);
       if(disposed)return false;
       for(const oldForm of initialForms) drafts.set(oldForm.name,inputsOf(oldForm).map(input=>({name:input.name,value:input.value,checked:input.checked})));
-      if(selectedOrder!==selectionAtStart[0]){drafts.delete('claim');drafts.delete('txid');}
+      if(selectedOrder!==selectionAtStart[0]){drafts.delete('claim');drafts.delete('txid');drafts.delete('void-unbroadcast');}
       if(selectedIncident!==selectionAtStart[1])for(const name of drafts.keys())if(name.startsWith('incident-'))drafts.delete(name);
       for(const form of forms()) {
         for(const draft of drafts.get(form.name)??[]) {

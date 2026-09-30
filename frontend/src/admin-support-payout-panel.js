@@ -7,7 +7,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   let activeOrder=null,operationFeedback=null,listFailed=false;
   const dialogs=new Set(),drafts=new Map(),orderFeedbacks=new Map();
   function feedback(text,error=false,orderId=activeOrder){if(orderId){text=`订单 ${orderId}：${text}`;orderFeedbacks.set(orderId,{text,error});}status.textContent=text;status.className=error?'admin-load-error':'admin-audit-note';if(operationFeedback&&activeOrder===orderId){operationFeedback.textContent=text;operationFeedback.className=status.className;operationFeedback.hidden=false;}}
-  const labels={SUBMITTED:'等待处理',REQUESTED:'等待处理',CLAIMED:'处理中',REVIEWING:'核对中',NEEDS_REVIEW:'需核对',UNKNOWN:'出款结果待核对',SETTLED:'已完成',CANCELLED:'已取消'};
+  const labels={SUBMITTED:'等待处理',REQUESTED:'等待处理',CLAIMED:'处理中',REVIEWING:'核对中',NEEDS_REVIEW:'需核对',UNKNOWN:'出款结果待核对',SETTLED:'已完成',CANCELLED:'已取消',VOIDED:'已撤销（确认未广播）'};
   const claims=new Map(),busy=new Set();
   const owned=item=>item.claimed_by===actor.id && claims.has(item.id) && Date.parse(item.claim_expires_at)>Date.now();
   const evidenceOwned=item=>item.claimed_by===actor.id && claims.has(item.id) && Boolean(item.execution_started_at);
@@ -20,7 +20,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   function render(){
     for(const dialog of dialogs)dialog.close?.();dialogs.clear();operationFeedback=null;
     body.replaceChildren();
-    const shown=items.filter(item=>filter==='mine'?item.claimed_by===actor.id:filter==='review'?item.processing_stage==='NEEDS_REVIEW'||item.status==='UNKNOWN':filter==='history'?['SETTLED','CANCELLED'].includes(item.status):true);
+    const shown=items.filter(item=>filter==='mine'?item.claimed_by===actor.id:filter==='review'?item.processing_stage==='NEEDS_REVIEW'||item.status==='UNKNOWN':filter==='history'?['SETTLED','CANCELLED','VOIDED'].includes(item.status):true);
     if(!shown.length)body.append(make('p','admin-audit-note','暂无符合条件的提现订单'));
     for(const item of shown){
       const orderFeedback=(text,error=false)=>feedback(text,error,item.id);
@@ -28,7 +28,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
       card.append(make('h3',null,`提现单 ${item.id}`),make('p','admin-audit-note',`用户 ${item.user_id??'—'} · ${labels[item.processing_stage??item.status]??'状态待确认'}`),
         make('p',null,`申请 ${item.funding_amount??item.amount} ${item.funding_asset==='CAIBI'?'点钻':'USDT'} · 最终应付 ${item.final_receive??'待确认'} USDT`));
       if(item.expires_at)card.append(make('p','admin-audit-note',`截止（北京） ${new Date(item.expires_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`));
-      if(['SETTLED','CANCELLED'].includes(item.status)){card.append(make('p','admin-audit-note',item.settlement_txid?`核验交易 ${item.settlement_txid}`:'订单已结束'));continue;}
+      if(['SETTLED','CANCELLED','VOIDED'].includes(item.status)){card.append(make('p','admin-audit-note',item.settlement_txid?`核验交易 ${item.settlement_txid}`:'订单已结束'));continue;}
       const summary=card,dialog=make('dialog','admin-proof-dialog admin-order-dialog');dialog.setAttribute('aria-label','处理提现请求');dialog.hidden=true;
       dialog.dataset && (dialog.dataset.orderId=item.id);
       dialog.addEventListener('input',event=>{if(event.target?.tagName==='INPUT'){const draft=drafts.get(item.id)??{};draft[event.target.placeholder]=event.target.value;drafts.set(item.id,draft);}});
@@ -92,7 +92,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   panel.heartbeat=async()=>{
     if(disposed||document.hidden)return;
     let lost=false;
-    for(const item of items){if(!owned(item)||busy.has(item.id)||item.status==='UNKNOWN'||item.processing_stage==='NEEDS_REVIEW')continue;
+    for(const item of items){if(!owned(item)||busy.has(item.id)||['UNKNOWN','SETTLED','CANCELLED','VOIDED'].includes(item.status)||item.processing_stage==='NEEDS_REVIEW')continue;
       try{const result=await api.supportPayoutCommand(item.id,'heartbeat',{claim_token:claims.get(item.id)},{idempotencyKey:crypto.randomUUID()});if(!disposed)Object.assign(item,result);}
       catch{claims.delete(item.id);lost=true;feedback('续租未确认，已停止修改，请刷新查询。',true,item.id);}
     }

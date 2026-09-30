@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -45,7 +45,7 @@ def operations(core, monitor):
     return TestClient(app), {'Authorization':'Bearer '+token, 'Idempotency-Key':'ops-key'}, settings, mfa
 
 
-def test_owner_can_ack_review_resolve_without_releasing_funds(core, monitor, operations):
+def test_owner_can_ack_review_resolve_without_changing_controls(core, monitor, operations):
     client, headers, settings, mfa = operations
     source = monitor[1]
     original = source.read_reserve_cut
@@ -69,7 +69,163 @@ def test_owner_can_ack_review_resolve_without_releasing_funds(core, monitor, ope
     assert response.json()['status'] == 'RESOLVED'
     from app.modules.wallet.models import WalletControl
     with core[1]() as session:
-        assert session.get(WalletControl, 'global').withdrawals_paused
+        assert session.get(WalletControl, 'global').withdrawals_paused is False
+
+
+def test_void_route_requires_owner_session_and_strict_declaration(operations):
+    client, headers, _, _ = operations
+    path = '/api/v1/admin/wallet/manual/operations/payouts/order-1/void-unbroadcast'
+    body = dict(expected_version=1, reason_code='NEVER_BROADCAST', never_signed=True,
+        never_broadcast=True, mfa_proof='123456')
+    assert client.post(path, json=body).status_code == 401
+    assert client.post(path, headers=headers, json=body | {'never_signed': False}).status_code == 422
+
+
+def test_void_preview_requires_owner_session(operations):
+    client, headers, _, _ = operations
+    path = '/api/v1/admin/wallet/manual/operations/payouts/order-1/void-unbroadcast/preview'
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers=headers).status_code == 503
+
+
+@pytest.mark.parametrize('mode', ['totp', 'operation_password'])
+@pytest.mark.parametrize('change', ['none', 'login_age', 'grant_revoked'])
+def test_void_route_passes_chain_evidence_and_authorization_to_core(core, operations, monkeypatch, mode, change):
+    from decimal import Decimal
+    from pydantic import SecretStr
+    from app.api.manual_wallet_operations import create_manual_wallet_operations_router
+    from app.modules.wallet.manual_payout_models import ManualPayoutOrder, ManualPayoutQuote
+    import app.api.manual_wallet_operations as api
+
+    _, headers, settings, _ = operations
+    now = datetime.now(timezone.utc)
+    settings.wallet_admin_auth_mode = mode
+    settings.wallet_access_grant_enabled = True
+    grant_state={'valid':True}
+    class Grant:
+        def require(self, **kwargs):
+            return True
+        def authorization(self, **kwargs):
+            def authorize(session):
+                def fresh():
+                    if not grant_state['valid']:
+                        from app.core.errors import AppError
+                        raise AppError(code='WALLET_ACCESS_REQUIRED',message='required',status_code=403)
+                fresh()
+                return fresh
+            return authorize
+    monkeypatch.setattr(api,'wallet_grant_service',lambda *args:Grant())
+    if mode == 'operation_password':
+        from app.modules.identity.operation_password_models import AdminOperationCredential
+        from app.modules.identity.passwords import PasswordHasher
+        with core[1].begin() as session:
+            session.add(AdminOperationCredential(user_id='alice',password_hash=PasswordHasher().hash('independent-proof-test'),
+                version=1,created_at=now,updated_at=now))
+    if change=='login_age':
+        from app.modules.identity.models import RefreshTokenFamily
+        with core[1].begin() as session:
+            session.scalar(select(RefreshTokenFamily)).created_at=now-timedelta(minutes=6)
+    settings.wallet_official_address = SecretStr('official')
+    settings.tron_observer_database_path = 'unused-test-path'
+    with core[1].begin() as session:
+        session.add(ManualPayoutQuote(id='quote-void', user_id='alice', amount=Decimal('10'),
+            snapshot={'official_address':'official', 'target_address':'target', 'receive':'10.000000'}, digest='a'*64,
+            created_at=now, expires_at=now+timedelta(minutes=5)))
+        session.add(ManualPayoutOrder(id='order-void', quote_id='quote-void', user_id='alice',
+            amount=Decimal('10'), digest='a'*64, status='UNKNOWN', version=1,
+            claimed_by='alice', claimed_at=now, created_at=now, updated_at=now))
+    observed = []
+    class Observer:
+        def __init__(self, *args, **kwargs):
+            assert kwargs['official_address'] == 'official'
+        def observe(self, **kwargs):
+            observed.append(kwargs)
+            return {'source_id':'source'}
+        def verify(self, evidence):
+            return evidence == {'source_id':'source'}
+    class Payout:
+        def void_unbroadcast(self, **kwargs):
+            assert kwargs['authorize'] is not None
+            with core[1].begin() as session:
+                final=kwargs['authorize'](session)
+                if change=='grant_revoked':
+                    grant_state['valid']=False
+                final()
+                assert kwargs['verify_evidence'](session, kwargs['evidence']) is True
+            assert kwargs['never_signed'] is kwargs['never_broadcast'] is True
+            return {'id':kwargs['order_id'], 'status':'VOIDED'}
+    monkeypatch.setattr(api, 'PayoutVoidEvidence', Observer)
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(create_manual_wallet_operations_router(settings, core[1],
+        mfa_verifier=lambda **kwargs: True, runtime=SimpleNamespace(payouts=Payout())), prefix='/api/v1/admin')
+    result = TestClient(app).post('/api/v1/admin/wallet/manual/operations/payouts/order-void/void-unbroadcast',
+        headers=headers, json=dict(expected_version=1, reason_code='NEVER_BROADCAST', never_signed=True,
+            never_broadcast=True, **({'mfa_proof':'123456'} if mode=='totp' else {'operation_password':'independent-proof-test'})))
+    if change!='none':
+        assert result.status_code==403,result.text
+        assert result.json()['error']['code']==('RECENT_LOGIN_REQUIRED' if change=='login_age' else 'WALLET_ACCESS_REQUIRED')
+        with core[1]() as session:
+            assert session.get(ManualPayoutOrder,'order-void').status=='UNKNOWN'
+        return
+    assert result.status_code == 200, result.text
+    assert result.json()['status'] == 'VOIDED'
+    assert observed[0]['amount_units'] == 10000000
+
+
+def test_void_preview_reports_safe_ready_unavailable_ineligible_and_auth(core, operations, monkeypatch):
+    from decimal import Decimal
+    from pydantic import SecretStr
+    from app.api.manual_wallet_operations import create_manual_wallet_operations_router
+    from app.integrations.tron.admin_query import ChainWatchUnavailable
+    from app.modules.wallet.manual_payout_models import ManualPayoutOrder, ManualPayoutQuote
+    import app.api.manual_wallet_operations as api
+
+    _, headers, settings, _ = operations
+    now = datetime.now(timezone.utc)
+    settings.wallet_official_address = SecretStr('official')
+    settings.tron_observer_database_path = 'unused-test-path'
+    with core[1].begin() as session:
+        session.add(ManualPayoutQuote(id='quote-preview', user_id='alice', amount=Decimal('10'),
+            snapshot={'owner_admin_id':'alice', 'official_address':'official', 'target_address':'target',
+                'receive':'10.000000'}, digest='a'*64, created_at=now, expires_at=now+timedelta(minutes=5)))
+        session.add(ManualPayoutOrder(id='order-preview', quote_id='quote-preview', user_id='alice',
+            amount=Decimal('10'), digest='a'*64, status='UNKNOWN', version=1,
+            claimed_by='alice', claimed_at=now, created_at=now, updated_at=now))
+    state = {'offline':False, 'matching':0}
+    class Observer:
+        def __init__(self, *args, **kwargs):
+            pass
+        def observe(self, **kwargs):
+            if state['offline']:
+                raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE')
+            return dict(source_id='source-hash', observation_id='5', checkpoint=123,
+                scanned_from=100, fresh_until_ms=456, observed_at=now,
+                matching_outflows=state['matching'], suspicious_outflows=0)
+    monkeypatch.setattr(api, 'PayoutVoidEvidence', Observer)
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(create_manual_wallet_operations_router(settings, core[1],
+        runtime=SimpleNamespace(payouts=object())), prefix='/api/v1/admin')
+    client = TestClient(app)
+    path = '/api/v1/admin/wallet/manual/operations/payouts/order-preview/void-unbroadcast/preview'
+    assert client.get(path).status_code == 401
+    ready = client.get(path, headers=headers)
+    assert ready.status_code == 200, ready.text
+    assert ready.json()['status'] == 'READY'
+    assert ready.json()['evidence']['observation_id'] == '5'
+    assert 'target' not in ready.text and 'official' not in ready.text
+    state['offline'] = True
+    unavailable = client.get(path, headers=headers)
+    assert unavailable.json() == {'status':'UNAVAILABLE',
+        'reason_code':'WALLET_PAYOUT_VOID_EVIDENCE_UNAVAILABLE', 'evidence':None}
+    state['offline'], state['matching'] = False, 1
+    assert client.get(path, headers=headers).json()['reason_code'] == 'WALLET_PAYOUT_OUTFLOW_OBSERVED'
+    with core[1].begin() as session:
+        session.get(ManualPayoutOrder, 'order-preview').candidate_txid = 'b'*64
+    assert client.get(path, headers=headers).json()['reason_code'] == 'WALLET_PAYOUT_VOID_UNAVAILABLE'
+    settings.wallet_manual_owner_admin_id = 'other-owner'
+    assert client.get(path, headers=headers).status_code == 403
 
 
 def test_other_owner_and_unrelated_scope_cannot_use_manual_commands(core, monitor, operations):
@@ -109,7 +265,7 @@ def test_incomplete_review_preserves_safe_reason_and_does_not_clear_incident(cor
     assert monitor[0].incidents.get(row['id'])['condition_active'] is True
 
 
-def test_read_only_diagnostics_reports_current_evidence_without_clearing_pause(core, monitor, operations):
+def test_read_only_diagnostics_reports_current_evidence_without_changing_controls(core, monitor, operations):
     from app.modules.wallet.models import WalletControl
     client, headers, _, _ = operations
     row = pending_incident(monitor)
@@ -124,7 +280,7 @@ def test_read_only_diagnostics_reports_current_evidence_without_clearing_pause(c
     assert 'balance' not in response.text and 'address' not in response.text
     assert monitor[0].incidents.get(row['id']) == before
     with core[1]() as session:
-        assert session.get(WalletControl, 'global').withdrawals_paused
+        assert session.get(WalletControl, 'global').withdrawals_paused is False
 
 
 @pytest.mark.parametrize('case,source_status,coverage_status,reason', [
@@ -309,3 +465,30 @@ def test_manual_review_rolls_back_clearance_if_command_record_fails(core, monito
     assert current['condition_active'] and current['version'] == row['version']
     with core[1]() as session:
         assert session.get(WalletIncidentCommand, 'ops-key') is None
+
+def test_void_requires_fresh_operation_proof_even_with_wallet_grant(core, operations, monkeypatch):
+    import app.api.manual_wallet_operations as api
+    from app.api.manual_wallet_operations import create_manual_wallet_operations_router
+    _, headers, settings, _ = operations
+    settings.wallet_access_grant_enabled = True
+    class Grant:
+        def require(self, **kwargs):
+            return True
+        def authorization(self, **kwargs):
+            return lambda session: lambda: None
+    monkeypatch.setattr(api, 'wallet_grant_service', lambda *args: Grant())
+    import app.api.admin_wallet_auth as auth
+    monkeypatch.setattr(auth, 'wallet_grant_service', lambda *args: Grant())
+    app = FastAPI()
+    install_error_handlers(app)
+    app.include_router(create_manual_wallet_operations_router(settings, core[1],
+        runtime=SimpleNamespace(payouts=object()), mfa_verifier=lambda **kw: kw['proof']=='123456'), prefix='/api/v1/admin')
+    client = TestClient(app)
+    path='/api/v1/admin/wallet/manual/operations/payouts/missing/void-unbroadcast'
+    body=dict(expected_version=1,reason_code='NEVER_BROADCAST',never_signed=True,never_broadcast=True)
+    absent=client.post(path,headers=headers,json=body)
+    assert absent.status_code==403 and absent.json()['error']['code']=='TOTP_REQUIRED'
+    invalid=client.post(path,headers=headers,json=body|{'mfa_proof':'000000'})
+    assert invalid.status_code==403
+    valid=client.post(path,headers=headers,json=body|{'mfa_proof':'123456'})
+    assert valid.status_code==404

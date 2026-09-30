@@ -1,5 +1,7 @@
 """Read-only observer evidence. No user attribution or ledger authority."""
 from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -126,3 +128,99 @@ class ChainWatchQuery:
                                         in ('SOURCE_MATCHED', 'BALANCE_DISCREPANCY') else 'RECONCILIATION_UNVERIFIED'),
                         balance=_amount(observation['balance_units']) if observation else None,
                         total=total)
+
+
+class PayoutVoidEvidence:
+    """Bounded read-only observation of official outflows after a payout claim."""
+
+    def __init__(self, database_path, *, official_address, now_ms=None):
+        self.path = Path(database_path) if database_path else None
+        self.source_id = hashlib.sha256(('tron-mainnet-usdt:' + official_address).encode()).hexdigest()
+        self.official_address = official_address
+        self.now_ms = now_ms or (lambda: time.time_ns() // 1_000_000)
+
+    @contextmanager
+    def _read(self):
+        if self.path is None:
+            raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE')
+        connection = None
+        deadline = time.monotonic() + 2
+        try:
+            connection = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True, timeout=2)
+            connection.row_factory = sqlite3.Row
+            connection.execute('PRAGMA query_only=ON')
+            connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 100)
+            connection.execute('BEGIN')
+            yield connection
+        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, IndexError, OverflowError):
+            raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE') from None
+        finally:
+            if connection is not None:
+                connection.close()
+
+    def _state(self, db):
+        state = db.execute('SELECT * FROM observer_state WHERE singleton=1').fetchone()
+        observation = db.execute('SELECT * FROM observations ORDER BY id DESC LIMIT 1').fetchone()
+        run = db.execute('SELECT * FROM runs ORDER BY id DESC LIMIT 1').fetchone()
+        if state is None or observation is None or run is None or state['identity'] != self.source_id:
+            raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE')
+        now = self.now_ms()
+        checkpoint, heartbeat, observed, solid = (state['checkpoint_ms'], run['heartbeat_ms'],
+            observation['heartbeat_ms'], observation['solid_timestamp_ms'])
+        if (any(type(value) is not int or not 0 <= now-value <= 120000 for value in
+                (checkpoint, heartbeat, observed, solid))
+                or observation['checkpoint_ms'] != checkpoint or run['checkpoint_ms'] != checkpoint
+                or solid < checkpoint
+                or run['status'] != 'OK' or run['error_code'] is not None
+                or observation['stable_balance'] != 1 or observation['reconciliation'] != 'SOURCE_MATCHED'
+                or observation['difference_units'] != '0'):
+            raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE')
+        maximum = db.execute('SELECT COALESCE(MAX(rowid),0) FROM events').fetchone()[0]
+        return state, observation, maximum, min(heartbeat, observed, solid) + 120000
+
+    def observe(self, *, claimed_at, target_address, amount_units):
+        if (not isinstance(claimed_at, datetime) or claimed_at.tzinfo is None
+                or type(amount_units) is not int or amount_units <= 0):
+            raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE')
+        claim_ms = int(claimed_at.astimezone(timezone.utc).timestamp()*1000)
+        with self._read() as db:
+            state, observation, maximum, fresh_until = self._state(db)
+            if not 0 <= state['start_ms'] <= claim_ms <= state['checkpoint_ms']:
+                raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE')
+            matching = suspicious = 0
+            rows = db.execute("SELECT payload,txid,log_index,timestamp_ms,amount_units,classification FROM events "
+                "WHERE timestamp_ms>=? AND timestamp_ms<=?",
+                (claim_ms, state['checkpoint_ms']))
+            for row in rows:
+                event = json.loads(row['payload'])
+                if (not isinstance(event, dict) or event['txid'] != row['txid']
+                        or event['log_index'] != row['log_index'] or event['timestamp_ms'] != row['timestamp_ms']
+                        or str(event['amount_units']) != row['amount_units']
+                        or row['classification'] not in ('INFLOW', 'UNMATCHED_OUTFLOW')
+                        or (event['from_address'] == self.official_address) !=
+                            (row['classification'] == 'UNMATCHED_OUTFLOW')):
+                    raise ChainWatchUnavailable('CHAIN_WATCH_UNAVAILABLE')
+                if row['classification'] == 'INFLOW':
+                    continue
+                if event['to_address'] == target_address and event['amount_units'] == amount_units:
+                    matching += 1
+                else:
+                    suspicious += 1
+            return dict(source_id=self.source_id, observation_id=str(observation['id']),
+                checkpoint=state['checkpoint_ms'], observed_at=datetime.fromtimestamp(
+                    observation['heartbeat_ms']/1000, timezone.utc), scanned_from=state['start_ms'],
+                reconciliation_status='SOURCE_MATCHED', matching_outflows=matching,
+                suspicious_outflows=suspicious, fresh_until_ms=fresh_until, max_rowid=maximum)
+
+    def verify(self, evidence):
+        try:
+            with self._read() as db:
+                state, observation, maximum, fresh_until = self._state(db)
+                return (evidence['source_id'] == self.source_id
+                    and evidence['observation_id'] == str(observation['id'])
+                    and evidence['checkpoint'] == state['checkpoint_ms']
+                    and evidence['scanned_from'] == state['start_ms']
+                    and evidence['max_rowid'] == maximum
+                    and evidence['fresh_until_ms'] == fresh_until)
+        except (ChainWatchUnavailable, KeyError, TypeError):
+            return False

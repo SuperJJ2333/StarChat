@@ -91,7 +91,7 @@ def test_resume_rejects_snapshot_aba_and_rolls_back_expired_authorization(core, 
     assert service.status()['withdrawals_paused']
 
 
-def test_manual_monitor_restrictions_record_provenance_without_claiming_legacy_flags(core, monitor):
+def test_manual_monitor_preserves_legacy_restriction_provenance(core, monitor):
     service = control(core, monitor)
     with core[1].begin() as session:
         session.get(WalletControl, 'global').withdrawals_paused = True
@@ -100,9 +100,10 @@ def test_manual_monitor_restrictions_record_provenance_without_claiming_legacy_f
     monitor[1].read_reserve_cut = lambda: (_ for _ in ()).throw(ValueError('offline'))
     monitor[0].run_once()
     status = service.status()
-    assert 'legacy_unknown' in status['restriction_scopes'] and 'manual_tron' in status['restriction_scopes']
+    assert status['restriction_scopes'] == ['legacy_unknown']
     with core[1]() as session:
         assert session.get(WalletControl, 'global').pause_reason == 'LEGACY_PAUSE'
+        assert session.get(RedeemabilityReserve, 'global').outgoing_restricted is True
 
 
 def test_healthy_monitor_preserves_owner_pause_without_opening_an_incident(core, monitor):

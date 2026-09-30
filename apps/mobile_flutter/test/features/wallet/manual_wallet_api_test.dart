@@ -382,7 +382,22 @@ void main() {
             {...quote, 'finality_policy': 'OTHER_POLICY'}),
         throwsFormatException);
     expect(() => ManualPayout.fromJson({...payout, 'digest': 'not-a-digest'}),
-        throwsFormatException);
+        throwsFormatException,
+    );
+  });
+
+  test('verified unbroadcast payout void is a supported terminal state', () {
+    expect(
+      ManualPayout.fromJson({
+        ...payout,
+        'status': 'CANCELLED',
+        'terminal_status': 'VOIDED',
+      }).status,
+      ManualPayoutState.voided,
+    );
+    expect(
+      ManualPayout.fromJson({...payout, 'status': 'VOIDED'}).status,
+      ManualPayoutState.voided,);
   });
 
   test('invalid amounts versions keys and path identifiers never dispatched',

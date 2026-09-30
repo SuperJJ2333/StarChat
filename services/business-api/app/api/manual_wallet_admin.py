@@ -23,7 +23,9 @@ class ManualPayoutSummary(PayoutReadModel):
     user_id: str
     quote_id: str
     amount: str = Field(pattern=r'^\d+\.\d{6}$')
-    status: Literal['REQUESTED','CLAIMED','UNKNOWN','SETTLED','CANCELLED']
+    status: Literal['REQUESTED','CLAIMED','UNKNOWN','SETTLED','CANCELLED','VOIDED']
+    version: int
+    final_receive: str | None
     digest: str
     candidate_txid: str | None
     settlement_txid: str | None

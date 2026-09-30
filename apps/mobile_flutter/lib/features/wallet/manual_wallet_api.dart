@@ -124,7 +124,8 @@ enum ManualBindingState { active, pending, unbound }
 
 enum ManualIntentState { open, expired, closedByRebind, fulfilled, cancelled }
 
-enum ManualPayoutState { requested, claimed, unknown, settled, cancelled }
+enum ManualPayoutState { requested, claimed, unknown, settled, cancelled ,
+  voided,}
 
 final class _ScopedWalletTransport {
   _ScopedWalletTransport(this.client) : scope = client.walletIntentScope();
@@ -629,13 +630,16 @@ final class ManualPayout {
       _string(json, 'user_id'),
       _string(json, 'quote_id'),
       _money(json, 'amount'),
-      _state(json, 'status', {
+      _state(json['status'] == 'CANCELLED' && json['terminal_status'] == 'VOIDED'
+          ? {...json, 'status': 'VOIDED'}
+          : json, 'status', {
         'REQUESTED': ManualPayoutState.requested,
         'CLAIMED': ManualPayoutState.claimed,
         'UNKNOWN': ManualPayoutState.unknown,
         'SETTLED': ManualPayoutState.settled,
         'CANCELLED': ManualPayoutState.cancelled
-      }),
+      ,
+        'VOIDED': ManualPayoutState.voided,}),
       _digest(json, 'digest'),
       _optionalString(json, 'candidate_txid'),
       _optionalString(json, 'settlement_txid'),

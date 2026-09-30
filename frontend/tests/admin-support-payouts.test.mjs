@@ -75,6 +75,18 @@ test('unknown payment permits audited candidate correction without starting anot
   assert.equal(button(panel,'确认开始出款'),undefined);panel.dispose();
 });
 
+test('voided support payout remains in history and offers no payment actions',async()=>{
+ globalThis.document={createElement:tag=>new Element(tag),hidden:false};
+ const order={id:'voided',status:'VOIDED',processing_stage:'VOIDED',claimed_by:'staff',amount:'10',final_receive:'10.000000'};
+ const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),supportPayoutCommand:async()=>assert.fail('terminal payout must not mutate')},{actor:{id:'staff'}});
+ await flush();
+ button(panel,'已完成与取消').handlers.click();
+ assert.ok(panel.find('h3').some(node=>node.textContent==='提现单 voided'));
+ assert.ok(panel.find('p').some(node=>node.textContent.includes('已撤销（确认未广播）')));
+ assert.equal(button(panel,'处理请求'),undefined);
+ await panel.heartbeat();panel.dispose();
+});
+
 test('payout A late completion cannot appear as payout B success',async()=>{
  globalThis.document={createElement:tag=>new Element(tag),hidden:false};let finishA;
  const orders=[{id:'A',status:'REQUESTED',amount:'10'},{id:'B',status:'REQUESTED',amount:'20'}];

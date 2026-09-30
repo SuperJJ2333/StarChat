@@ -10,7 +10,7 @@ from app.modules.wallet.safety import WalletSafetyMixin, precise_amount, audit_w
 from app.modules.wallet.models import WalletPayoutIntent, WalletSafetyState, WalletWithdrawalAuthorization
 from app.modules.wallet.manual_payout_models import ManualPayoutOrder
 from app.modules.wallet.receipt_models import DepositReceipt
-from app.modules.ledger.reserve import RedeemabilityReserve, lock_budget, refresh_valuation, require_coverage
+from app.modules.ledger.reserve import RedeemabilityReserve, lock_budget, require_coverage
 import hashlib
 import json
 USDT = Decimal("0.000001")
@@ -63,8 +63,11 @@ class WalletLedger:
     def balance(self, account_id):
         with self.factory() as session: return usdt(Decimal(session.scalar(select(func.coalesce(func.sum(WalletLedgerEntry.amount),0)).where(WalletLedgerEntry.account_id==account_id, WalletLedgerEntry.asset=="USDT-TRC20"))))
 
-    def require_conversion_release(self, *, session, user_id, conversion_id, release_id, amount):
+    def require_conversion_release(self, *, session, user_id, conversion_id, release_id, amount,
+                                   reason_code):
         """Public proof for an exact conversion rollback, never a raw ledger read by callers."""
+        if reason_code not in {'MANUAL_PAYOUT_CANCELLED', 'MANUAL_PAYOUT_VOIDED'}:
+            raise ValueError('invalid payout conversion reversal reason')
         from app.modules.wallet.models import WalletConversion
         original = session.get(WalletConversion, conversion_id)
         release = session.get(WalletLedgerTransaction, release_id)
@@ -72,7 +75,7 @@ class WalletLedger:
                 or original.status != 'COMPLETED' or original.source_amount != amount or original.target_amount <= 0
                 or not original.idempotency_key.startswith('payout:')
                 or release is None or release.actor_id != user_id or release.scope != 'wallet.conversion_reversal'
-                or release.reason_code != 'MANUAL_PAYOUT_CANCELLED' or release.idempotency_key != 'reverse:'+conversion_id):
+                or release.reason_code != reason_code or release.idempotency_key != 'reverse:'+conversion_id):
             raise ValueError('conversion release proof invalid')
         # ADR-0077：率结兑换 source(点钻)≠target(USDT)；回收额按 target 校验。
         entries = {entry.account_id: entry.amount for entry in session.scalars(select(WalletLedgerEntry).where(
@@ -292,7 +295,6 @@ class WalletService(WalletSafetyMixin):
             row = session.get(Withdrawal, withdrawal_id)
             if row is None: raise ValueError("withdrawal not found")
             result = self.provider.get_withdrawal(row.id)
-        status = result.get("status")
         with self.factory.begin() as session:
             lock_budget(session)
             row = session.get(Withdrawal, withdrawal_id, with_for_update=True)
@@ -377,7 +379,6 @@ class WalletService(WalletSafetyMixin):
                 reserve = session.get(RedeemabilityReserve, 'global', with_for_update=True)
                 if reserve is not None:
                     refresh_valuation(session, reserve)
-        if not matched: self.pause_on_reconciliation_mismatch(f"{mode}: custody={actual} internal={expected}")
         return ReconciliationResult(mode=mode, expected=expected, actual=actual, matched=matched,
             caibi_face=valuation["caibi_face"], valuation_rate=valuation["valuation_rate"],
             caibi_reference_usdt=valuation["caibi_reference_usdt"],
@@ -415,7 +416,7 @@ class WalletService(WalletSafetyMixin):
             pending = s.scalars(select(Withdrawal).where(Withdrawal.status.in_(['SUBMITTING', 'PROVIDER_SUBMITTED', 'UNKNOWN']))).all()
             if Decimal(provider.custody_balance) - sum((r.amount for r in pending), Decimal('0')) < row.amount:
                 raise ValueError('insufficient payout liquidity')
-            user,address,amount,order_id=row.user_id,row.address,row.amount,row.id
+            address,amount,order_id=row.address,row.amount,row.id
             state = s.get(WalletSafetyState, 'global')
             epoch = state.epoch if state else 0
             digest = hashlib.sha256(json.dumps({'id':order_id, 'network':'TRC20', 'asset':'USDT-TRC20', 'address':address, 'amount':str(amount), 'finance':row.finance_approver_id, 'admin':row.admin_approver_id, 'epoch':epoch}, sort_keys=True).encode()).hexdigest()

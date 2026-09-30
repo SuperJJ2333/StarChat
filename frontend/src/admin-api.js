@@ -153,6 +153,8 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     claimManualPayout: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/claim`, body, options),
     submitManualPayoutTxid: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/txid`, body, options),
     correctManualPayoutCandidate: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/correct-candidate`, body, options),
+    voidUnbroadcastPayout: async (id, body, options) => command(`/api/v1/admin/wallet/manual/operations/payouts/${encodeURIComponent(id)}/void-unbroadcast`, body, options),
+    getVoidUnbroadcastPreview: async id => request(`/api/v1/admin/wallet/manual/operations/payouts/${encodeURIComponent(id)}/void-unbroadcast/preview`, {cache:'no-store'}),
     getWalletOperationSecurity: async () => request('/api/v1/admin/wallet/security', {cache:'no-store'}),
     setWalletOperationPassword: async (body,options) => command('/api/v1/admin/wallet/security/operation-password',body,options),
     getWalletMfaStatus: async () => request("/api/v1/security/mfa", {cache: "no-store"}),

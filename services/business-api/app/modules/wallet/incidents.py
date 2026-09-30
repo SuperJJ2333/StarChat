@@ -10,9 +10,20 @@ from app.integrations.tron import diagnostics as diag
 from sqlalchemy import select, text
 
 from app.core.errors import AppError
-from app.core.outbox import OutboxPublisher
+from app.core.outbox import OutboxEvent, OutboxMessage, OutboxPublisher
 from app.modules.audit.models import AuditEvent
 from app.modules.wallet.incident_models import WalletAlertReceipt, WalletIncident, WalletIncidentCommand
+
+
+SOURCE_TIMEOUT_IDENTITY = dict(fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
+    code='MANUAL_SOURCE_UNAVAILABLE', subject_id='global', severity='T2')
+SOURCE_TIMEOUT_POLICY_REASON = 'SOURCE_READ_BUDGET_T2_POLICY'
+
+
+def _source_timeout_predicate():
+    """The only T2 record allowed past global incident-control checks."""
+    return tuple(getattr(WalletIncident, field) == value
+        for field, value in SOURCE_TIMEOUT_IDENTITY.items())
 
 
 def _error(code, status=409):
@@ -57,13 +68,16 @@ class WalletIncidentService:
         self.factory = factory
         self.now_factory = now_factory or (lambda: datetime.now(timezone.utc))
 
-    def _record(self, session, row, action, actor, reason, now, key=None, alert=False):
+    def _record(self, session, row, action, actor, reason, now, key=None, alert=False, audit_evidence=None):
         payload = dict(incident_id=row.id, subject_id=row.subject_id, code=row.code, severity=row.severity)
+        after_data = dict(status=row.status, generation=row.generation, version=row.version,
+                          condition_active=row.condition_active)
+        if audit_evidence is not None:
+            after_data.update(audit_evidence)
         session.add(AuditEvent(
             id=str(uuid4()), actor_id=actor, subject_type='wallet_incident', subject_id=row.id,
             action=action, result='SUCCESS', reason_code=reason, trace_id=key or uuid4().hex,
-            after_data=dict(status=row.status, generation=row.generation, version=row.version,
-                            condition_active=row.condition_active), created_at=now,
+            after_data=after_data, created_at=now,
         ))
         recorded = OutboxPublisher.enqueue(session, topic='wallet.incident', event_type=action,
                                 aggregate_type='wallet_incident', aggregate_id=row.id,
@@ -99,7 +113,9 @@ class WalletIncidentService:
         for signal in signals:
             if (not isinstance(signal, dict) or set(signal) != {'fingerprint', 'code', 'severity', 'subject_id'}
                     or not _safe(signal['fingerprint'], 128) or not _safe(signal['subject_id'], 128)
-                    or not _safe(signal['code'], 100, code=True) or signal['severity'] not in ('P0', 'P1')):
+                    or not _safe(signal['code'], 100, code=True) or signal['severity'] not in ('P0', 'P1', 'T2')):
+                raise _error('WALLET_INCIDENT_SIGNAL_INVALID', 422)
+            if signal['severity'] == 'T2' and signal != SOURCE_TIMEOUT_IDENTITY:
                 raise _error('WALLET_INCIDENT_SIGNAL_INVALID', 422)
             if signal['fingerprint'] in observed and observed[signal['fingerprint']] != signal:
                 raise _error('WALLET_INCIDENT_FINGERPRINT_CONFLICT')
@@ -170,9 +186,17 @@ class WalletIncidentService:
             WalletIncident.code == 'MANUAL_BACKING_DEFICIT', WalletIncident.severity == 'P1',
             WalletIncident.subject_id == 'global')))
 
+    def nonblocking_incident_ids_in_session(self, session, *, allow_backing_advisory=False):
+        _lock(session)
+        allowed = set(session.scalars(select(WalletIncident.id).where(*_source_timeout_predicate())))
+        if allow_backing_advisory:
+            allowed.update(self.nonblocking_backing_advisories_in_session(session))
+        return allowed
+
     def require_resolved_in_session(self, session, *, allow_backing_advisory=False):
         rows = self.control_snapshot_in_session(session)
-        allowed = self.nonblocking_backing_advisories_in_session(session) if allow_backing_advisory else set()
+        allowed = self.nonblocking_incident_ids_in_session(session,
+            allow_backing_advisory=allow_backing_advisory)
         if any((row['status'] != 'RESOLVED' or row['active']) and row['id'] not in allowed for row in rows):
             raise _error('WALLET_UNRESOLVED_INCIDENTS')
 
@@ -334,6 +358,55 @@ class WalletIncidentService:
             self._record(session, row, 'wallet.incident.' + command, actor_id, reason_code, now, key=key)
             return result
 
+    def reclassify_source_timeout(self, incident_id, *, actor_id, idempotency_key,
+                                  generation, expected_version, diagnostic_code, evidence_digest):
+        """Correct one reviewed generation; keep old alerts, status and control state intact.
+
+        The caller must independently verify the documentary evidence. Its digest
+        and exact diagnostic are bound to the immutable command and audit entry.
+        """
+        if (not _safe(incident_id, 36) or not _safe(actor_id, 36)
+                or not isinstance(idempotency_key, str) or not idempotency_key.strip()
+                or len(idempotency_key) > 128 or type(generation) is not int or generation < 1
+                or type(expected_version) is not int or expected_version < 1
+                or diagnostic_code != 'SOURCE_READ_BUDGET_EXPIRED'
+                or not isinstance(evidence_digest, str)
+                or re.fullmatch('[a-f0-9]{64}', evidence_digest) is None):
+            raise _error('WALLET_INCIDENT_COMMAND_INVALID', 422)
+        payload_digest = _digest(dict(command='source_timeout_reclassify', incident_id=incident_id,
+            actor_id=actor_id, reason_code=SOURCE_TIMEOUT_POLICY_REASON,
+            generation=generation, expected_version=expected_version,
+            diagnostic_code=diagnostic_code, evidence_digest=evidence_digest))
+        with self.factory.begin() as session:
+            _lock(session)
+            replay = session.get(WalletIncidentCommand, idempotency_key)
+            if replay is not None:
+                if replay.payload_digest != payload_digest:
+                    raise _error('WALLET_INCIDENT_IDEMPOTENCY_CONFLICT')
+                return replay.result
+            row = session.get(WalletIncident, incident_id)
+            if row is None:
+                raise _error('WALLET_INCIDENT_NOT_FOUND', 404)
+            if (row.fingerprint != SOURCE_TIMEOUT_IDENTITY['fingerprint']
+                    or row.code != SOURCE_TIMEOUT_IDENTITY['code']
+                    or row.subject_id != SOURCE_TIMEOUT_IDENTITY['subject_id']):
+                raise _error('WALLET_INCIDENT_MANUAL_SCOPE_REQUIRED')
+            if row.generation != generation or row.version != expected_version:
+                raise _error('WALLET_INCIDENT_VERSION_CONFLICT')
+            if row.severity != 'P0':
+                raise _error('WALLET_INCIDENT_SEVERITY_CONFLICT')
+            row.severity = 'T2'
+            row.version += 1
+            result = _dto(row)
+            now = _aware(self.now_factory())
+            session.add(WalletIncidentCommand(idempotency_key=idempotency_key,
+                payload_digest=payload_digest, result=result, created_at=now))
+            self._record(session, row, 'wallet.incident.source_timeout_reclassified',
+                actor_id, SOURCE_TIMEOUT_POLICY_REASON, now, key=_digest(idempotency_key),
+                audit_evidence=dict(diagnostic_code=diagnostic_code,
+                    evidence_digest=evidence_digest))
+            return result
+
     def escalate(self):
         now = _aware(self.now_factory())
         with self.factory.begin() as session:
@@ -358,18 +431,35 @@ class SandboxWalletAlertHandler:
         self.factory = factory
 
     def __call__(self, event):
+        if not isinstance(event, OutboxMessage) or not isinstance(event.payload, dict):
+            raise _error('WALLET_ALERT_PAYLOAD_INVALID', 422)
         payload = event.payload
         if (event.topic != 'wallet.alert' or set(payload) != {'incident_id', 'subject_id', 'code', 'severity'}
                 or not _safe(payload['incident_id'], 36) or not _safe(payload['subject_id'], 128)
-                or not _safe(payload['code'], 100, code=True) or payload['severity'] not in ('P0', 'P1')):
+                or not _safe(payload['code'], 100, code=True) or payload['severity'] not in ('P0', 'P1', 'T2')):
             raise _error('WALLET_ALERT_PAYLOAD_INVALID', 422)
         with self.factory.begin() as session:
             _lock(session)
+            persisted = session.get(OutboxEvent, event.id)
+            if (persisted is None or persisted.topic != 'wallet.alert'
+                    or persisted.aggregate_type != 'wallet_incident'
+                    or persisted.event_type not in ('wallet.incident.opened', 'wallet.incident.reopened',
+                        'wallet.incident.severity_changed', 'wallet.incident.escalated')
+                    or any(getattr(persisted, field) != getattr(event, field)
+                        for field in ('topic', 'event_type', 'aggregate_type', 'aggregate_id', 'payload'))
+                    or persisted.aggregate_id != payload['incident_id']):
+                raise _error('WALLET_ALERT_EVENT_CONFLICT')
             existing = session.get(WalletAlertReceipt, event.id)
             if existing:
-                if existing.payload != payload:
+                if (existing.transport != 'SANDBOX' or existing.incident_id != persisted.aggregate_id
+                        or existing.payload != payload):
                     raise _error('WALLET_ALERT_EVENT_CONFLICT')
                 return
+            incident = session.get(WalletIncident, persisted.aggregate_id)
+            if (incident is None or incident.severity not in ('P0', 'P1', 'T2')
+                    or any(payload[field] != getattr(incident, field)
+                        for field in ('subject_id', 'code'))):
+                raise _error('WALLET_ALERT_INCIDENT_CONFLICT')
             session.add(WalletAlertReceipt(event_id=event.id, incident_id=payload['incident_id'],
                                             transport='SANDBOX', payload=payload,
                                             created_at=datetime.now(timezone.utc)))

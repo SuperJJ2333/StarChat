@@ -83,8 +83,6 @@ class WalletMonitoringService:
             # Never persist provider errors, wallet addresses or other raw exception text.
             complete = False
             signals.append(self._signal('MONITOR_UNAVAILABLE', 'P1'))
-        if signals and not self.controls.withdrawals_paused():
-            self.controls.pause_on_reconciliation_mismatch('WALLET_MONITOR_SIGNAL', actor_id='wallet-monitor')
         if self.controls.withdrawals_paused():
             signals.append(self._signal('WALLET_PAUSED', 'P1'))
         self.incidents.observe(signals, complete=complete)

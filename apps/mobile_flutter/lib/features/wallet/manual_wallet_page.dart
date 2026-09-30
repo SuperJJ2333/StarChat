@@ -2547,14 +2547,17 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
               key: 'manual-payout-status-hero',
               icon: switch (payout!.status) {
                 ManualPayoutState.settled => CupertinoIcons.checkmark_alt,
-                ManualPayoutState.unknown => CupertinoIcons.question,
+                ManualPayoutState.voided => CupertinoIcons.xmark_circle,
+          ManualPayoutState.unknown => CupertinoIcons.question,
                 _ => CupertinoIcons.clock,
               },
-              amount: payout!.finalReceive ?? '—',
+              amount: payout!.status == ManualPayoutState.voided
+            ? '—': payout!.finalReceive ?? '—',
               subtitle: switch (payout!.status) {
                 ManualPayoutState.settled => '已结算 · 请在钱包内确认到账',
                 ManualPayoutState.unknown => '付款结果待核验，资金继续冻结',
                 ManualPayoutState.cancelled => '已取消',
+          ManualPayoutState.voided => '已撤销（确认未广播）',
                 _ => '管理员人工付款处理中',
               },
               tone: switch (payout!.status) {
@@ -2564,9 +2567,11 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
               }),
           rowsCard([
             codeRow('订单', payout!.id, 'manual-payout-id'),
-            detail('状态', payout!.status.name),
+            detail('状态', payout!.status== ManualPayoutState.voided
+              ? '已撤销（确认未广播）'
+              : payout!.status.name),
             detail('参考提现 USDT', payout!.amount),
-            detail('最终到账 USDT', payout!.finalReceive ?? '待客服结算'),
+            detail(payout!.status == ManualPayoutState.voided ? '原应付 USDT' :'最终到账 USDT', payout!.finalReceive ?? '待客服结算'),
             if (payout!.finalRate != null) detail('结算汇率', payout!.finalRate!),
             if (payout!.expiresAt != null)
               detail('处理截止时间（2小时）', shortDate(payout!.expiresAt!)),
@@ -2588,7 +2593,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                     label: '取消提现申请',
                     tone: WeChatButtonTone.danger,
                     onPressed: busy ? null : cancel)),
-          if ({ManualPayoutState.settled, ManualPayoutState.cancelled}
+          if ({ManualPayoutState.settled, ManualPayoutState.cancelled,
+        ManualPayoutState.voided,}
               .contains(payout!.status))
             button('开始新的提现', () async {
               await store.clear('payout');

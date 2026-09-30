@@ -58,6 +58,7 @@ class PayoutView(BaseModel):
     quote_id: str
     amount: str
     status: str
+    terminal_status: Literal['VOIDED'] | None = None
     digest: str
     candidate_txid: str | None
     settlement_txid: str | None = None
@@ -233,7 +234,10 @@ def create_manual_wallet_router(settings, factory, *, runtime):
 
     @router.get('/payouts/{order_id}', response_model=PayoutView)
     def status(order_id: str, identity=Depends(actor)):
-        return call(ready().payouts.status, user_id=identity[0], order_id=order_id)
+        result = call(ready().payouts.status, user_id=identity[0], order_id=order_id)
+        # Legacy clients recognize CANCELLED as terminal; retain the precise
+        # authoritative state in an additive field for updated clients.
+        return dict(result, status='CANCELLED', terminal_status='VOIDED') if result['status'] == 'VOIDED' else result
 
     @router.post('/payouts/{order_id}/cancel', response_model=PayoutView)
     def cancel(order_id: str, idempotency_key: IdempotencyKey, identity=Depends(actor)):

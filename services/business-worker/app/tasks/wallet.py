@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 from sqlalchemy import select
+from app.modules.wallet.incidents import WalletIncidentService
 from app.modules.wallet.models import Withdrawal
 from app.modules.wallet.service import WalletService
 
@@ -19,6 +19,17 @@ class WalletMaintenanceTask:
                 resolved += 1
             except ValueError:
                 pass
-        self.service.detect_orphan_external_orders(actor_id=actor_id)
+        orphan = self.service.detect_orphan_external_orders(actor_id=actor_id)
         reconciliation = self.service.reconcile_incremental(actor_id=actor_id)
+        signals = []
+        for present, code in (
+            (orphan['status'] != 'MATCHED', 'ORPHAN_EXTERNAL_ORDER'),
+            (not reconciliation.matched, 'RESERVE_DEFICIT'),
+        ):
+            if present:
+                signals.append(dict(fingerprint=f'wallet-maintenance:{code}',
+                    code=code, severity='P0', subject_id='global'))
+        with self.factory.begin() as session:
+            WalletIncidentService(self.factory).observe_in_session(session, signals,
+                actor_id=actor_id, complete=True, clear_prefix='wallet-maintenance:')
         return {"resolved": resolved, "reconciliation": reconciliation}

@@ -1775,6 +1775,18 @@
             "title": "Status",
             "type": "string"
           },
+          "terminal_status": {
+            "anyOf": [
+              {
+                "const": "VOIDED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Status"
+          },
           "user_id": {
             "title": "User Id",
             "type": "string"
@@ -4619,6 +4631,17 @@
             "title": "Digest",
             "type": "string"
           },
+          "final_receive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Receive"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4658,7 +4681,8 @@
               "CLAIMED",
               "UNKNOWN",
               "SETTLED",
-              "CANCELLED"
+              "CANCELLED",
+              "VOIDED"
             ],
             "title": "Status",
             "type": "string"
@@ -4666,6 +4690,10 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -4674,6 +4702,8 @@
           "quote_id",
           "amount",
           "status",
+          "version",
+          "final_receive",
           "digest",
           "candidate_txid",
           "settlement_txid",
@@ -4977,6 +5007,17 @@
             "title": "Digest",
             "type": "string"
           },
+          "final_receive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Receive"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -5013,7 +5054,8 @@
               "CLAIMED",
               "UNKNOWN",
               "SETTLED",
-              "CANCELLED"
+              "CANCELLED",
+              "VOIDED"
             ],
             "title": "Status",
             "type": "string"
@@ -5021,6 +5063,10 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -5029,6 +5075,8 @@
           "quote_id",
           "amount",
           "status",
+          "version",
+          "final_receive",
           "digest",
           "candidate_txid",
           "settlement_txid",
@@ -6212,6 +6260,18 @@
             "title": "Status",
             "type": "string"
           },
+          "terminal_status": {
+            "anyOf": [
+              {
+                "const": "VOIDED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Status"
+          },
           "user_id": {
             "title": "User Id",
             "type": "string"
@@ -6228,6 +6288,159 @@
           "review_reason"
         ],
         "title": "PayoutView",
+        "type": "object"
+      },
+      "PayoutVoidBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "mfa_proof": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 6,
+                "minLength": 6,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Proof"
+          },
+          "never_broadcast": {
+            "const": true,
+            "title": "Never Broadcast",
+            "type": "boolean"
+          },
+          "never_signed": {
+            "const": true,
+            "title": "Never Signed",
+            "type": "boolean"
+          },
+          "operation_password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 128,
+                "minLength": 12,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Password"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,79}$",
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_version",
+          "reason_code",
+          "never_signed",
+          "never_broadcast"
+        ],
+        "title": "PayoutVoidBody",
+        "type": "object"
+      },
+      "PayoutVoidEvidenceView": {
+        "properties": {
+          "checkpoint": {
+            "title": "Checkpoint",
+            "type": "integer"
+          },
+          "fresh_until_ms": {
+            "title": "Fresh Until Ms",
+            "type": "integer"
+          },
+          "matching_outflows": {
+            "title": "Matching Outflows",
+            "type": "integer"
+          },
+          "observation_id": {
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "scanned_from": {
+            "title": "Scanned From",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "suspicious_outflows": {
+            "title": "Suspicious Outflows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "observation_id",
+          "checkpoint",
+          "scanned_from",
+          "fresh_until_ms",
+          "observed_at",
+          "matching_outflows",
+          "suspicious_outflows"
+        ],
+        "title": "PayoutVoidEvidenceView",
+        "type": "object"
+      },
+      "PayoutVoidPreviewView": {
+        "properties": {
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayoutVoidEvidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "status": {
+            "enum": [
+              "READY",
+              "UNAVAILABLE",
+              "INELIGIBLE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason_code",
+          "evidence"
+        ],
+        "title": "PayoutVoidPreviewView",
         "type": "object"
       },
       "PerformanceSnapshot": {
@@ -16083,6 +16296,161 @@
           }
         ],
         "summary": "Recheck",
+        "tags": [
+          "admin",
+          "manual-wallet-operations"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/operations/payouts/{order_id}/void-unbroadcast": {
+      "post": {
+        "operationId": "void_unbroadcast_api_v1_admin_wallet_manual_operations_payouts__order_id__void_unbroadcast_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutVoidBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Void Unbroadcast",
+        "tags": [
+          "admin",
+          "manual-wallet-operations"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/operations/payouts/{order_id}/void-unbroadcast/preview": {
+      "get": {
+        "operationId": "void_unbroadcast_preview_api_v1_admin_wallet_manual_operations_payouts__order_id__void_unbroadcast_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutVoidPreviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Void Unbroadcast Preview",
         "tags": [
           "admin",
           "manual-wallet-operations"

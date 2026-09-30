@@ -130,6 +130,6 @@ String walletHistoryStatus(Object? value) => switch (value) {
       'UNKNOWN' => '结果待核验',
       'REJECTED' => '已拒绝',
       'CANCELLED' => '已取消',
-      'EXPIRED' => '已过期',
+      'VOIDED' => '已撤销（确认未广播）','EXPIRED' => '已过期',
       _ => '待核验',
     };

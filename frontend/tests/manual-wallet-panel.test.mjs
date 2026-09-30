@@ -93,7 +93,7 @@ test('simple incident form accepts one password and confirmation, explains histo
  const form=document.body.find('form').find(x=>x.name==='incident-process');assert.ok(form);
  assert.equal(document.body.find('form').filter(x=>x.name.startsWith('incident-')).length,1);
  assert.deepEqual(form.find('input').map(x=>x.name),['accept_incident','operation_password']);
- assert.equal(form.find('input')[0]['aria-label'],'我确认处理这起事故；完成后可前往“资金启停”恢复资金');
+ assert.equal(form.find('input')[0]['aria-label'],'我确认处理这起事故；处理不会改变资金启停');
  assert.ok(document.body.find('details').some(x=>x.find('summary').some(x=>x.textContent==='技术详情与时间线')));
  assert.ok(document.body.find('dd').some(x=>x.textContent?.includes('17:08:55')));
  assert.ok(panel.find('p').some(x=>x.textContent?.includes('链上数据正常')));
@@ -102,6 +102,49 @@ test('simple incident form accepts one password and confirmation, explains histo
  await form.handlers.submit({preventDefault(){}});
  assert.deepEqual(calls,['ack','review','resolve']);assert.equal(form.find('input')[1].value,'');
  assert.ok(!JSON.stringify([...store.data]).includes('synthetic-password'));
+});
+
+test('T2 is a literal incident filter and detail level while an independent pause remains visible',async()=>{
+  const item={id:'temporary-source',code:'MANUAL_SOURCE_UNAVAILABLE',fingerprint:'manual-reserve:MANUAL_SOURCE_UNAVAILABLE',subject_id:'global',severity:'T2',status:'OPEN',version:1,condition_active:true};
+  const requests=[];
+  const panel=setup({getWalletIncidents:async filters=>{requests.push(filters);return {items:[item]};},getWalletIncident:async()=>item,
+    getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'PAUSED',restriction_scopes:['manual_tron'],unresolved_incidents:0})});
+  await settle();
+  const form=panel.find('form').find(n=>n.name==='monitoring-filters');
+  const severity=form.find('select').find(n=>n['aria-label']==='事故等级');
+  assert.deepEqual(severity.find('option').map(n=>n.value),['','P0','P1','T2']);
+  severity.value='T2';await form.find('button').find(n=>n.textContent==='查询').handlers.click();
+  assert.equal(requests.at(-1).severity,'T2');
+  assert.ok(panel.find('td').some(n=>n.textContent==='T2'));
+  assert.ok(panel.find('td').some(n=>n.textContent?.includes('不会因这条记录自动暂停')));
+  assert.ok(panel.find('p').some(n=>n.textContent?.includes('资金已暂停')));
+  await panel.find('button').find(n=>n.textContent==='查看事故').handlers.click();
+  assert.ok(document.body.find('dd').some(n=>n.textContent==='T2'));
+  assert.ok(document.body.find('p').some(n=>n.textContent?.includes('链上数据暂不可用')));
+  assert.ok(document.body.find('dd').some(n=>n.textContent?.includes('已有暂停须单独处理')));
+  assert.ok(document.body.find('p').some(n=>n.textContent?.includes('处理不会改变资金启停')));
+  const process=document.body.find('form').find(n=>n.name==='incident-process');
+  assert.equal(process.find('input').find(n=>n.name==='accept_incident')['aria-label'],'我确认处理这起事故；处理不会改变资金启停');
+});
+
+test('processing a T2 source record leaves a running wallet running and gives no resume instruction',async()=>{
+  let item={id:'temporary-source',code:'MANUAL_SOURCE_UNAVAILABLE',fingerprint:'manual-reserve:MANUAL_SOURCE_UNAVAILABLE',subject_id:'global',severity:'T2',status:'OPEN',version:1,condition_active:true};
+  const actions=[];
+  const panel=setup({getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:true,version:1}),
+    getWalletIncidents:async()=>({items:[item]}),getWalletIncident:async()=>item,
+    getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'RUNNING',restriction_scopes:[],unresolved_incidents:0}),
+    manualWalletIncidentAction:async(id,kind)=>{actions.push(kind);item={...item,status:kind==='resolve'?'RESOLVED':'ACKNOWLEDGED',version:item.version+1,...(kind==='review'?{condition_active:false,clearance_digest:digest}:{})};return item;},
+    manualWalletControlAction:async()=>assert.fail('incident handling cannot change fund control')});
+  await settle();await panel.find('button').find(n=>n.textContent==='查看事故').handlers.click();
+  const form=document.body.find('form').find(n=>n.name==='incident-process');
+  form.find('input').find(n=>n.name==='accept_incident').checked=true;
+  form.find('input').find(n=>n.name==='operation_password').value='synthetic-password';
+  await form.handlers.submit({preventDefault(){}});
+  assert.deepEqual(actions,['ack','review','resolve']);
+  assert.ok(panel.find('p').some(n=>n.textContent?.includes('资金已启用')));
+  const message=document.body.find('p').map(n=>n.textContent??'').join(' ');
+  assert.match(message,/事故已结案.*不会改变资金启停/);
+  assert.doesNotMatch(message,/前往“资金启停”.*恢复资金|处理后资金仍暂停/);
 });
 
 test('restore requires separate explicit confirmation and has no technical reason input',async()=>{
@@ -328,6 +371,48 @@ test('claimed order recovers payment details without permitting repayment and tx
  assert.equal(panel.find('button').some(n=>n.textContent==='领取付款指令'),false);
  assert.ok(panel.find('form').some(n=>n.name==='txid'));
 });
+test('unknown payout void requires both declarations and keeps its request key after an unknown result',async()=>{
+ const calls=[],store=storage();
+ const pending={...order,status:'UNKNOWN',version:3,final_receive:'10.000000',claimed_by:'owner',claimed_at:'2026-09-29T14:45:51Z'};
+ const panel=setup({getManualPayout:async()=>pending,getVoidUnbroadcastPreview:async()=>({status:'READY',reason_code:null,evidence:{observation_id:'42',checkpoint:1790710000000,matching_outflows:0,suspicious_outflows:0}}),voidUnbroadcastPayout:async(id,body,options)=>{calls.push({id,body,options});throw {code:'NETWORK_ERROR'};}},{storage:store,walletAccess:true});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ const form=panel.find('form').find(n=>n.name==='void-unbroadcast');
+ assert.ok(form);
+ assert.ok(panel.find('p').some(n=>n.textContent?.includes('链上观察已覆盖')));
+ assert.ok(panel.find('dd').some(n=>n.textContent==='10.000000'));
+ form.find('input').find(n=>n.name==='reason_code').value='NEVER_BROADCAST_CONFIRMED';
+ form.find('input').find(n=>n.name==='mfa_proof').value='123456';
+ await form.handlers.submit({preventDefault(){}});assert.equal(calls.length,0);
+ form.find('input').find(n=>n.name==='never_signed').checked=true;
+ form.find('input').find(n=>n.name==='never_broadcast').checked=true;
+ form.find('input').find(n=>n.name==='mfa_proof').value='123456';
+ await form.handlers.submit({preventDefault(){}});
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].body.expected_version,3);
+ assert.equal(calls[0].body.never_signed,true);
+ assert.equal(calls[0].body.never_broadcast,true);
+ assert.equal(calls[0].body.mfa_proof,'123456');
+ await panel.refresh();
+ const restored=panel.find('form').find(n=>n.name==='void-unbroadcast');
+ for(const name of ['never_signed','never_broadcast'])restored.find('input').find(n=>n.name===name).checked=true;
+ restored.find('input').find(n=>n.name==='mfa_proof').value='654321';
+ await restored.handlers.submit({preventDefault(){}});
+ assert.equal(calls.length,2);
+ assert.equal(calls[0].options.idempotencyKey,calls[1].options.idempotencyKey);
+ assert.ok(!JSON.stringify([...store.data]).includes('123456'));
+});
+test('unavailable chain preview keeps unknown payout visible but disables void submission',async()=>{
+ const panel=setup({getManualPayout:async()=>({...order,status:'UNKNOWN',version:3,claimed_by:'owner'}),getVoidUnbroadcastPreview:async()=>({status:'UNAVAILABLE',reason_code:'WALLET_PAYOUT_VOID_EVIDENCE_UNAVAILABLE',evidence:null})});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ assert.ok(panel.find('p').some(n=>n.textContent?.includes('链上观察暂不可用')));
+ assert.equal(panel.find('form').some(n=>n.name==='void-unbroadcast'),false);
+});
+test('voided payout is terminal and has a distinct status label',async()=>{
+ const panel=setup({getManualPayout:async()=>({...order,status:'VOIDED',version:4})});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ assert.ok(panel.find('p').some(n=>n.textContent==='已撤销（确认未广播）'));
+ assert.equal(panel.find('form').some(n=>n.name==='void-unbroadcast'),false);
+});
 test('missing server key permits only password-confirmed pending cancellation',async()=>{
  const panel=setup({getWalletMfaStatus:async()=>({configured:false,enabled:false,pending_credential_id:'pending'})});
  await settle();
@@ -416,7 +501,7 @@ test('incident review uses current version and returned clearance and preserves 
  await submit('123456'); await submit('654321');
  assert.equal(calls[0].body.expected_version,2); assert.equal(calls[1].body.expected_version,3);
  assert.equal(calls[1].body.clearance_digest,digest);
- assert.ok(document.body.find('p').some(n=>n.textContent?.includes('下一步：前往“资金启停”')));
+ assert.ok(document.body.find('p').some(n=>n.textContent?.includes('事故处理不会改变资金启停')));
  assert.equal(panel.find('form').some(n=>n.name==='incident-resolve'),false);
 });
 

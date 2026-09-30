@@ -136,7 +136,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     router.include_router(create_wallet_operations_router(settings, session_factory, wallet_service))
     router.include_router(create_wallet_chain_router(settings, session_factory))
     router.include_router(create_manual_wallet_admin_router(settings, session_factory))
-    router.include_router(create_manual_wallet_operations_router(settings, session_factory))
+    router.include_router(create_manual_wallet_operations_router(settings, session_factory, runtime=manual_runtime))
     router.include_router(create_manual_wallet_handover_router(settings, session_factory))
     router.include_router(create_admin_wallet_security_router(settings, session_factory))
     router.include_router(create_admin_wallet_repairs_router(settings, session_factory,
@@ -544,6 +544,5 @@ def _mask_wallet_address(address: str) -> str:
     if len(address) <= 8:
         return "***"
     return f"{address[:1]}***{address[-4:]}"
-
 
 

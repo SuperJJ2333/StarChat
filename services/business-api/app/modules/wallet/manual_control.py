@@ -107,7 +107,8 @@ class ManualWalletControl:
         others = [dict(id=row.id, epoch=row.epoch, reason=row.reason) for row in session.scalars(
             select(WalletSafetyState).where(WalletSafetyState.id != 'global',
                 WalletSafetyState.restricted.is_(True)).order_by(WalletSafetyState.id)).all()]
-        allowed = self.incidents.nonblocking_backing_advisories_in_session(session) if self.reserve_policy == 'manual_liquidity' else set()
+        allowed = self.incidents.nonblocking_incident_ids_in_session(session,
+            allow_backing_advisory=self.reserve_policy == 'manual_liquidity')
         unresolved = sum((row['status'] != 'RESOLVED' or row['active']) and row['id'] not in allowed for row in incidents)
         paused = control is None or control.withdrawals_paused
         global_restricted = bool(safety and safety.restricted)

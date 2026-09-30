@@ -72,6 +72,8 @@ def test_replacement_expiring_at_final_commit_rolls_back_publication(
     service, source, clock, elapsed, sleeps = setup_wait(monitor)
     fresh = expire(source, clock)
     before = _evaluation_count(core)
+    with core[1]() as session:
+        version_before = session.get(RedeemabilityReserve, 'global').version
     _refresh_after_sleep(service, source, fresh)
     original = service._heartbeat
     expired = []
@@ -87,8 +89,12 @@ def test_replacement_expiring_at_final_commit_rolls_back_publication(
     assert expired == [True]
     assert _evaluation_count(core) == before
     with core[1]() as session:
-        assert session.get(RedeemabilityReserve, "global").observed_at.year == 1970
-        assert session.get(WalletControl, "global").withdrawals_paused
+        reserve = session.get(RedeemabilityReserve, 'global')
+        # Preflight invalidation remains an operation proof gate; publication
+        # rolls back, and the monitor does not add a global pause.
+        assert reserve.observed_at.year == 1970
+        assert reserve.version == version_before + 1
+        assert session.get(WalletControl, 'global').withdrawals_paused is False
 
 
 def test_changed_confirmation_read_retries_without_publication(core, monitor):

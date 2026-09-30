@@ -129,6 +129,35 @@ def test_sender_minimal_content_stable_message_id_tls():
     with pytest.raises(EmailDeliveryError): DisabledEmailSender().send_wallet_alert(recipient='ops@example.test',event_id='event-1',code='FIXTURE',severity='P0')
 
 
+@pytest.mark.parametrize('severity', ['P1', 'T2'])
+def test_sender_delivers_literal_wallet_alert_severity_over_tls(severity):
+    messages=[]
+    def factory(host,port,*,timeout):
+        smtp=RecordingSmtp(host,port,timeout=timeout)
+        messages.append(smtp)
+        return smtp
+    sender=SmtpEmailSender(SmtpConfig(host='smtp.example.test',port=587,
+        from_address='noreply@example.test',use_starttls=True),smtp_factory=factory)
+    for _ in range(2):
+        sender.send_wallet_alert(recipient='ops@example.test',event_id='event-1',
+            code='MANUAL_SOURCE_UNAVAILABLE',severity=severity)
+    assert len(messages)==2
+    assert all(smtp.started_tls for smtp in messages)
+    assert messages[0].message['Message-ID']==messages[1].message['Message-ID']
+    assert f'等级：{severity}' in messages[0].message.get_content()
+    assert 'MANUAL_SOURCE_UNAVAILABLE' in messages[0].message.get_content()
+
+
+def test_sender_rejects_unrecognized_wallet_alert_severity_before_smtp():
+    calls=[]
+    sender=SmtpEmailSender(SmtpConfig(host='smtp.example.test',port=587,
+        from_address='noreply@example.test',use_starttls=True),smtp_factory=lambda *a,**k: calls.append(1))
+    with pytest.raises(EmailDeliveryError,match='SMTP wallet alert delivery failed'):
+        sender.send_wallet_alert(recipient='ops@example.test',event_id='event-1',
+            code='MANUAL_SOURCE_UNAVAILABLE',severity='P2')
+    assert calls==[]
+
+
 def test_alert_sender_rejects_plaintext_transport():
     sender=SmtpEmailSender(SmtpConfig(host='smtp.example.test',port=25,from_address='noreply@example.test',use_starttls=False))
     with pytest.raises(EmailDeliveryError): sender.send_wallet_alert(recipient='ops@example.test',event_id='event-1',code='FIXTURE',severity='P0')
@@ -187,5 +216,29 @@ def test_queued_historical_severity_survives_legitimate_change(alert,when):
     assert sender.calls[0]['severity']=='P0'
     with factory() as s:
         assert s.get(WalletIncident,event.aggregate_id).severity=='P1'
+        assert s.get(WalletAlertReceipt,event.id).payload['severity']=='P0'
+        assert s.get(OutboxEvent,event.id).payload['severity']=='P0'
+
+
+@pytest.mark.parametrize('when',['before_delivery','during_smtp'])
+def test_queued_p0_alert_replays_after_incident_becomes_t2(alert,when):
+    handler,sender,factory,event,_=alert
+    def reclassify():
+        with factory.begin() as s:
+            s.get(WalletIncident,event.aggregate_id).severity='T2'
+    original=sender.send_wallet_alert
+    if when=='before_delivery':
+        reclassify()
+    else:
+        def send(**kwargs):
+            original(**kwargs)
+            reclassify()
+        sender.send_wallet_alert=send
+    handler(event)
+    handler(event)
+    assert len(sender.calls)==1
+    assert sender.calls[0]['severity']=='P0'
+    with factory() as s:
+        assert s.get(WalletIncident,event.aggregate_id).severity=='T2'
         assert s.get(WalletAlertReceipt,event.id).payload['severity']=='P0'
         assert s.get(OutboxEvent,event.id).payload['severity']=='P0'

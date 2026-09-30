@@ -219,3 +219,14 @@ def test_manual_wallet_flags_match_bound_only_disabled_conversion(core, api):
     assert config['conversion_enabled'] is False
     balances = client.get('/wallet/balances/me', headers=headers['alice']).json()
     assert balances['conversion_enabled'] is False
+
+def test_voided_user_status_is_compatible_without_changing_authoritative_result(api, monkeypatch):
+    client, headers, runtime=api
+    result=dict(id='voided',user_id='alice',quote_id='q',amount='10.000000',status='VOIDED',
+        digest='a'*64,candidate_txid=None,settlement_txid=None,review_reason='NEVER_BROADCAST_CONFIRMED')
+    monkeypatch.setattr(runtime.payouts,'status',lambda **kwargs:result)
+    response=client.get('/manual/payouts/voided',headers=headers['alice'])
+    assert response.status_code==200
+    assert response.json()['status']=='CANCELLED'
+    assert response.json()['terminal_status']=='VOIDED'
+    assert result['status']=='VOIDED'

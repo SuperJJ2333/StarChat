@@ -2,18 +2,18 @@ import {adminSession} from "./admin-session.js?v=20260908-modern";
 import {createAdminShell} from "./admin-dashboard.js?v=20260923-direct";
 import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260910-readability";
 import { element, button } from "./components/base.js";
-import { browserAdminApi, can } from "./admin-api.js?v=20260910-completion";
+import { browserAdminApi, can } from "./admin-api.js?v=20260930-wallet-alert-void";
 import { presentModuleRows } from "./admin-presenters.js";
 import { userPanel } from "./admin-user-panel.js";
 import { ledgerPanel } from './admin-ledger-panel.js';
 import { statusLabel } from "./admin-formatters.js";
 import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-completion";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260930-wallet-alert-void";
 import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';
 import {supportOrderAccessPanel} from './admin-support-order-access.js';
-import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260923-direct';
+import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260930-wallet-alert-void';
 
 const modules = [
   ["客服点钻派发", "批次与审计记录", "finance", "admin.adjustments.read"],

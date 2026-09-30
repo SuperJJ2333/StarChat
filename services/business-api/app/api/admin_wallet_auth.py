@@ -16,8 +16,8 @@ def operation_service(settings,factory,clock):
         auth_mode=lambda:getattr(settings,'wallet_admin_auth_mode','totp'),clock=clock)
 
 
-def selected_password_authorization(settings,factory,clock,claims,body):
-    if getattr(settings,'wallet_access_grant_enabled',False):
+def selected_password_authorization(settings,factory,clock,claims,body,*,independent=False):
+    if not independent and getattr(settings,'wallet_access_grant_enabled',False):
         return wallet_grant_service(settings,factory,clock).authorization(claims=claims)
     mode=getattr(settings,'wallet_admin_auth_mode','totp')
     if mode=='totp':

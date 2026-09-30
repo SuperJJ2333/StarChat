@@ -41,10 +41,10 @@ def test_unknown_withdrawal_result_is_queried_by_original_order(wallet):
     provider.withdrawal_event(client_order_id=row.id, status='CHAIN_CONFIRMED', confirmations=20, event_id='query-final')
     assert service.resolve_unknown_withdrawal(row.id, actor_id="worker").status == "CHAIN_CONFIRMED"
 
-def test_incremental_reconciliation_pauses_on_mismatch(wallet):
+def test_incremental_reconciliation_reports_mismatch_without_pausing(wallet):
     service, provider, _ = wallet
     service.credit_for_test("u3", Decimal("5.000000"))
     provider.custody_balance = Decimal("4.000000")
     result = service.reconcile_incremental(actor_id="worker")
     assert result.matched is False
-    assert service.withdrawals_paused() is True
+    assert service.withdrawals_paused() is False

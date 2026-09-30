@@ -158,6 +158,85 @@ def test_request_converts_and_holds_final_usdt(core):
     assert _balance(core, factory, 'alice') == Decimal('1000')
     assert _balance(core, factory, 'HOLD:alice') == Decimal('0')
     assert _balance(core, factory, 'alice', 'caibi') == Decimal('500.00')  # 点钻退回
+    with factory() as session:
+        from app.modules.ledger.models import LedgerTransaction
+        from app.modules.wallet.conversions import reverse_payout_conversion
+        wallet_reversal = session.scalar(select(WalletLedgerTransaction).where(
+            WalletLedgerTransaction.scope == 'wallet.conversion_reversal'))
+        caibi_reversal = session.scalar(select(LedgerTransaction).where(
+            LedgerTransaction.scope == 'wallet.conversion_reversal'))
+        assert wallet_reversal.reason_code == caibi_reversal.reason_code == 'MANUAL_PAYOUT_CANCELLED'
+        with pytest.raises(ValueError, match='reason conflict'):
+            reverse_payout_conversion(session, factory, user_id='alice', order_id=order['id'],
+                amount=order['amount'], reason_code='MANUAL_PAYOUT_VOIDED')
+
+
+@pytest.mark.parametrize('spend_refund', [False, True])
+def test_void_reverses_original_caibi_conversion_after_rate_refund(core, spend_refund):
+    from app.modules.wallet.manual_payout_models import ManualPayoutOrder
+    svc, factory, now, target, official, ledger, _ = core
+    # Leave no unrelated USDT available. The original conversion mints 11 USDT;
+    # the adjusted payable is 10, so the user's 1 USDT refund must remain for
+    # a full linked reversal.
+    ledger.post(entries={'alice': Decimal('-1000'), 'bob': Decimal('1000')},
+        actor_id='alice', reason_code='TEST_TRANSFER', idempotency_key='drain', scope='test')
+    q = _caibi_quote(core, amount='78.320000')
+    order = _request(core, q)
+    svc.claim(admin_id='owner', session_id='session', order_id=order['id'],
+        expected_digest=order['digest'], idempotency_key='claim-void', mfa_proof='123456')
+    svc.adjust_rate(admin_id='owner', session_id='session', mfa_proof='123456',
+        order_id=order['id'], new_rate='7.832', reason_code='CS_RATE_OVERRIDE', idempotency_key='adj-void')
+    assert _balance(core, factory, 'HOLD:alice') == Decimal('10')
+    assert _balance(core, factory, 'alice') == Decimal('1')
+    assert svc.reconcile(order_id=order['id'])['status'] == 'UNKNOWN'
+    with factory() as session:
+        row = session.get(ManualPayoutOrder, order['id'])
+        version, claimed_ms = row.version, int(row.claimed_at.replace(tzinfo=timezone.utc).timestamp()*1000)
+    proof = dict(source_id='official-observer', observation_id='obs-caibi',
+        checkpoint=int(now[0].timestamp()*1000), observed_at=now[0], scanned_from=claimed_ms,
+        reconciliation_status='SOURCE_MATCHED', matching_outflows=0, suspicious_outflows=0,
+        fresh_until_ms=int((now[0]+timedelta(seconds=60)).timestamp()*1000), max_rowid=100)
+    args = dict(admin_id='owner', order_id=order['id'], expected_version=version,
+        reason_code='NEVER_BROADCAST_CONFIRMED', never_signed=True, never_broadcast=True,
+        idempotency_key='void-caibi', evidence=proof, authorize=lambda session: lambda: None,
+        verify_evidence=lambda session, evidence: True)
+    if spend_refund:
+        ledger.post(entries={'alice': Decimal('-1'), 'bob': Decimal('1')},
+            actor_id='alice', reason_code='TEST_TRANSFER', idempotency_key='spend-refund', scope='test')
+        with pytest.raises(AppError, match='WALLET_PAYOUT_INSUFFICIENT_BALANCE'):
+            svc.void_unbroadcast(**args)
+        assert svc.status(user_id='alice', order_id=order['id'])['status'] == 'UNKNOWN'
+        assert _balance(core, factory, 'HOLD:alice') == Decimal('10')
+        assert _balance(core, factory, 'alice', 'caibi') == Decimal('421.68')
+    else:
+        assert svc.void_unbroadcast(**args)['status'] == 'VOIDED'
+        assert _balance(core, factory, 'HOLD:alice') == Decimal('0')
+        assert _balance(core, factory, 'alice') == Decimal('0')
+        assert _balance(core, factory, 'alice', 'caibi') == Decimal('500')
+        with factory() as session:
+            from app.modules.audit.models import AuditEvent
+            from app.core.outbox import OutboxEvent
+            from app.modules.ledger.models import LedgerTransaction
+            reversals = list(session.scalars(select(WalletConversion).where(
+                WalletConversion.idempotency_key.like('reverse:%'))))
+            assert len(reversals) == 1
+            assert reversals[0].source_amount == Decimal('11')
+            assert reversals[0].target_amount == Decimal('78.32')
+            wallet_reasons = {tx.scope: tx.reason_code for tx in session.scalars(select(WalletLedgerTransaction).where(
+                WalletLedgerTransaction.scope.in_(['wallet.manual_void_release', 'wallet.conversion_reversal'])))}
+            assert wallet_reasons == {'wallet.manual_void_release': 'MANUAL_PAYOUT_VOIDED',
+                'wallet.conversion_reversal': 'MANUAL_PAYOUT_VOIDED'}
+            ledger_reversal = session.scalar(select(LedgerTransaction).where(
+                LedgerTransaction.scope == 'wallet.conversion_reversal'))
+            assert ledger_reversal.reason_code == 'MANUAL_PAYOUT_VOIDED'
+            original = session.scalar(select(WalletConversion).where(
+                WalletConversion.idempotency_key == 'payout:'+order['id']))
+            audit = session.scalar(select(AuditEvent).where(AuditEvent.subject_id == original.id,
+                AuditEvent.action == 'wallet.conversion_reversed'))
+            assert audit.reason_code == 'MANUAL_PAYOUT_VOIDED'
+            outbox = session.scalar(select(OutboxEvent).where(OutboxEvent.aggregate_id == original.id,
+                OutboxEvent.event_type == 'wallet.conversion_reversed'))
+            assert outbox.payload['reason_code'] == 'MANUAL_PAYOUT_VOIDED'
 
 
 def test_adjust_rate_only_when_claimed_with_history(core):

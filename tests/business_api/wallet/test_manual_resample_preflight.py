@@ -73,7 +73,8 @@ def test_domain_fault_prevents_age_only_wait(core, monitor, fault, code, status)
     service, source, clock, _, sleeps = setup_wait(monitor)
     expire(source, clock)
     with core[1].begin() as session:
-        reserve_version = session.get(RedeemabilityReserve, "global").version
+        reserve = session.get(RedeemabilityReserve, "global")
+        reserve_version, reserve_observed_at = reserve.version, reserve.observed_at
     if fault == "baseline":
         source.value = digest_cut(source.value, solid_block=service.baseline_height - 1)
     elif fault == "deficit":
@@ -116,16 +117,15 @@ def test_domain_fault_prevents_age_only_wait(core, monitor, fault, code, status)
     assert sleeps == []
     with core[1]() as session:
         reserve = session.get(RedeemabilityReserve, "global")
-        if fault == "baseline":
-            # T3 advisory: no pause, no invalidation, and never a publication.
-            assert reserve.observed_at.replace(tzinfo=None).year == 2026
+        # Blocked signals preserve the prior cut; existing WAITING paths still
+        # invalidate it while fresh proof is required for another publication.
+        if status == 'BLOCKED':
+            assert reserve.observed_at == reserve_observed_at
             assert reserve.version == reserve_version
-            assert (
-                session.get(WalletControl, "global").withdrawals_paused
-                is False
-            )
         else:
             assert reserve.observed_at.year == 1970
+            assert reserve.version == reserve_version + 1
+        assert session.get(WalletControl, "global").withdrawals_paused is (fault == "external_pause")
         if status == "BLOCKED":
             assert (
                 session.scalar(

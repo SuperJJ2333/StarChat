@@ -173,22 +173,25 @@ class ManualPayoutService:
         return response
 
     def _result(self, row):
-        quote = object_session(row).get(ManualPayoutQuote, row.quote_id)
+        session = object_session(row)
+        if session.is_modified(row, include_collections=False):
+            session.flush([row])
+        quote = session.get(ManualPayoutQuote, row.quote_id)
         terms = quote.snapshot
         asset = terms.get('funding_asset', 'USDT')
         settlement_txid = None
         if row.status == 'SETTLED':
-            settlement_txid = object_session(row).scalar(select(ManualPayoutEvent.txid).where(ManualPayoutEvent.order_id == row.id))
+            settlement_txid = session.scalar(select(ManualPayoutEvent.txid).where(ManualPayoutEvent.order_id == row.id))
         final_receive = row.final_receive if row.final_receive is not None else Decimal(terms.get('receive', str(row.amount)))
         return dict(id=row.id, user_id=row.user_id, quote_id=row.quote_id, amount=format(row.amount, '.6f'),
-            status=row.status, digest=row.digest, candidate_txid=row.candidate_txid, review_reason=row.review_reason,
+            status=row.status, version=row.version, digest=row.digest, candidate_txid=row.candidate_txid, review_reason=row.review_reason,
             settlement_txid=settlement_txid, funding_asset=asset,
             funding_amount=terms.get('funding_amount', format(row.amount, '.6f')),
             conversion_rate=terms.get('conversion_rate', '1'), rate_stale=bool(terms.get('rate_stale', False)),
             final_rate=format(row.final_rate, '.6f') if row.final_rate is not None else None,
             final_receive=format(final_receive, '.6f'),
             cancellation_asset=asset,
-            **support_payout_projection(object_session(row),row,self._now()))
+            **support_payout_projection(session,row,self._now()))
 
     def quote_status(self, *, user_id, quote_id):
         with self.factory.begin() as session:
@@ -265,7 +268,7 @@ class ManualPayoutService:
         cutoff = now-timedelta(hours=24)
         orders = select(ManualPayoutOrder.user_id,
             func.coalesce(ManualPayoutOrder.final_receive, ManualPayoutOrder.amount)).where(
-            ManualPayoutOrder.created_at > cutoff, ManualPayoutOrder.status != 'CANCELLED')
+            ManualPayoutOrder.created_at > cutoff, ManualPayoutOrder.status.notin_(['CANCELLED', 'VOIDED']))
         if exclude_order_id is not None:
             orders = orders.where(ManualPayoutOrder.id != exclude_order_id)
         totals = list(session.execute(orders))
@@ -515,6 +518,95 @@ class ManualPayoutService:
             row.status, row.updated_at = 'CANCELLED', now
             return self._record(session, user_id, 'CANCEL', idempotency_key, payload, self._result(row), now)
 
+    @_precise
+    def void_unbroadcast(self, *, admin_id, order_id, expected_version, reason_code,
+                         never_signed, never_broadcast, idempotency_key, evidence,
+                         authorize, verify_evidence):
+        """Compensate one claimed UNKNOWN order after independent never-broadcast proof.
+
+        The caller obtains the chain observation before this method. The cheap
+        identity check is repeated under the financial locks; no signing or
+        broadcast capability is accepted here.
+        """
+        if not callable(authorize) or not callable(verify_evidence):
+            _fail('WALLET_PAYOUT_VOID_AUTHORIZATION_REQUIRED', 403)
+        if (never_signed is not True or never_broadcast is not True
+                or not isinstance(reason_code, str)
+                or re.fullmatch('[A-Z][A-Z0-9_]{2,79}', reason_code) is None):
+            _fail('WALLET_PAYOUT_VOID_DECLARATION_REQUIRED', 400)
+        if type(expected_version) is not int or expected_version < 1:
+            _fail('WALLET_PAYOUT_VERSION_INVALID', 400)
+        payload = dict(order_id=order_id, expected_version=expected_version,
+            reason_code=reason_code, never_signed=True, never_broadcast=True)
+        with self.factory.begin() as session:
+            row, locked = self._order_lock(session, order_id)
+            require_wallet_actor(session, user_id=admin_id, clock=self.clock, administrator=True)
+            fresh = authorize(session)
+            if not callable(fresh):
+                _fail('WALLET_PAYOUT_VOID_AUTHORIZATION_REQUIRED', 403)
+            fresh()
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            if admin_id != self.owner_admin_id or admin_id != quote.snapshot.get('owner_admin_id'):
+                _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
+            replay = self._replay(session, admin_id, 'VOID_UNBROADCAST', idempotency_key, payload)
+            if replay:
+                fresh()
+                return replay
+            if row.version != expected_version:
+                _fail('WALLET_PAYOUT_VERSION_CONFLICT')
+            if (row.status != 'UNKNOWN' or row.candidate_txid is not None
+                    or self._candidates(session, row)
+                    or session.scalar(select(ManualPayoutEvent.id).where(ManualPayoutEvent.order_id == row.id))):
+                _fail('WALLET_PAYOUT_VOID_UNAVAILABLE')
+            if not self._valid_void_evidence(evidence, row, self._now()):
+                _fail('WALLET_PAYOUT_VOID_EVIDENCE_INVALID', 409)
+            if verify_evidence(session, evidence) is not True:
+                _fail('WALLET_PAYOUT_VOID_EVIDENCE_CHANGED', 409)
+            fresh()
+            payable = self._payable(row, quote)
+            self.wallet_ledger.post(entries={'HOLD:'+row.user_id: -payable, row.user_id: payable},
+                actor_id=admin_id, reason_code='MANUAL_PAYOUT_VOIDED', idempotency_key=row.id,
+                scope='wallet.manual_void_release', session=session)
+            if quote.snapshot.get('funding_asset', 'USDT') == 'CAIBI':
+                from app.modules.wallet.conversions import reverse_payout_conversion
+                try:
+                    reverse_payout_conversion(session, self.factory, user_id=row.user_id,
+                        order_id=row.id, amount=row.amount, reason_code='MANUAL_PAYOUT_VOIDED')
+                except ValueError as exc:
+                    if str(exc) == 'insufficient USDT balance':
+                        _fail('WALLET_PAYOUT_INSUFFICIENT_BALANCE')
+                    raise
+            finish_manual_payout_pending(locked[0])
+            row.status, row.updated_at = 'VOIDED', self._now()
+            session.flush()
+            result = dict(self._result(row), void_evidence={key: evidence[key] for key in
+                ('source_id', 'observation_id', 'checkpoint', 'max_rowid')})
+            result = self._record(session, admin_id, 'VOID_UNBROADCAST', idempotency_key,
+                payload, result, self._now(), reason_code=reason_code)
+            fresh()
+            return result
+
+    @staticmethod
+    def _valid_void_evidence(evidence, row, now):
+        if not isinstance(evidence, dict):
+            return False
+        required = ('source_id', 'observation_id', 'checkpoint', 'observed_at', 'scanned_from',
+            'reconciliation_status', 'matching_outflows', 'suspicious_outflows', 'fresh_until_ms', 'max_rowid')
+        if any(key not in evidence for key in required):
+            return False
+        observed = evidence['observed_at']
+        if not isinstance(observed, datetime) or observed.tzinfo is None:
+            return False
+        claim_ms, now_ms = int(_utc(row.claimed_at).timestamp()*1000), int(now.timestamp()*1000)
+        return (all(isinstance(evidence[key], str) and bool(evidence[key]) for key in ('source_id', 'observation_id'))
+            and all(type(evidence[key]) is int and evidence[key] >= 0 for key in
+                ('checkpoint', 'scanned_from', 'fresh_until_ms', 'max_rowid', 'matching_outflows', 'suspicious_outflows'))
+            and evidence['reconciliation_status'] == 'SOURCE_MATCHED'
+            and evidence['scanned_from'] <= claim_ms <= evidence['checkpoint']
+            and 0 <= (now - _utc(observed)).total_seconds() <= 120
+            and evidence['fresh_until_ms'] >= now_ms
+            and evidence['matching_outflows'] == evidence['suspicious_outflows'] == 0)
+
     def _claim_result(self, row, quote):
         return dict(self._result(row), instructions=dict(target_address=quote.snapshot['target_address'],
             official_address=quote.snapshot['official_address'], amount=format(self._payable(row, quote), '.6f'),
@@ -666,7 +758,7 @@ class ManualPayoutService:
             row = session.get(ManualPayoutOrder, order_id)
             if row is None:
                 _fail('WALLET_PAYOUT_NOT_FOUND', 404)
-            if row.status in {'SETTLED', 'CANCELLED', 'REQUESTED'} or row.review_reason == 'MULTIPLE_MATCHING_PAYOUT_EVENTS':
+            if row.status in {'SETTLED', 'CANCELLED', 'VOIDED', 'REQUESTED'} or row.review_reason == 'MULTIPLE_MATCHING_PAYOUT_EVENTS':
                 return self._result(row)
             candidates = self._candidates(session, row)
         # Every locator/audit is durable before network I/O; never hold DB locks here.

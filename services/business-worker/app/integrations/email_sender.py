@@ -152,6 +152,9 @@ class SmtpEmailSender:
         purposes = {
             'staff_activation_email': '客服后台首次开通',
             'email_rebind_old': '绑定手机',
+            'password_reset_email': '更换登录密码',
+            'email_bind_old_email': '验证原邮箱',
+            'email_bind_new': '绑定新邮箱',
         }
         try:
             if purpose not in purposes or not isinstance(code, str) or re.fullmatch(r'[0-9]{6}', code) is None:
@@ -187,7 +190,7 @@ class SmtpEmailSender:
             if (not self._config.use_starttls and not self._config.use_ssl
                     or not isinstance(event_id,str) or re.fullmatch('[A-Za-z0-9-]{1,36}',event_id) is None
                     or not isinstance(code,str) or re.fullmatch('[A-Z][A-Z0-9_]{0,99}',code) is None
-                    or severity not in ('P0','P1')):
+                    or severity not in ('P0','P1','T2')):
                 raise ValueError('invalid wallet alert')
             message=EmailMessage()
             message['Subject']='畅聊 ChatFlow 钱包告警'

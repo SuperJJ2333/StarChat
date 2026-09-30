@@ -40,8 +40,8 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
-    # 2026-09-21：迁移链扩至 0080（ADR-0075..0079 及实施补充），仍单头。
-    assert _alembic("heads").strip() == "0088_profile_grapheme_limits (wallet_access) (head)"
+    # 2026-09-30：生产已应用管理会话 0092，未广播出款撤销扩展至 0093，仍单头。
+    assert _alembic("heads").strip() == "0093_unbroadcast_payout_void (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history

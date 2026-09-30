@@ -156,14 +156,12 @@ def test_conversion_target_failure_rolls_back_source_and_order(core, monkeypatch
         assert session.scalar(select(func.count()).select_from(WalletConversion)) == 0
 
 
-def test_recovery_enumerates_terminal_orphans_and_pauses(core):
+def test_recovery_enumerates_terminal_orphans_without_pausing(core):
     service, provider, _ = core
     provider.submit_withdrawal(client_order_id='missing-local', address='T_UNKNOWN', amount=Decimal('10'))
     provider.withdrawal_event(client_order_id='missing-local', status='CHAIN_CONFIRMED', confirmations=20, event_id='orphan')
     assert service.detect_orphan_external_orders(actor_id='recovery')['orphan_order_ids'] == ['missing-local']
-    assert service.withdrawals_paused()
-    with pytest.raises(ValueError, match='paused'):
-        service.convert('alice', 'USDT_TO_CAIBI', '10', 'paused')
+    assert service.withdrawals_paused() is False
 
 
 def test_reverse_conversion_preserves_all_liabilities(core):

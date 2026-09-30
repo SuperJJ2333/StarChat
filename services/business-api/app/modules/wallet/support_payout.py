@@ -43,6 +43,8 @@ def support_payout_projection(session, row, now, actor=None):
         stage = 'COMPLETED'
     elif row.status == 'CANCELLED':
         stage = 'CANCELLED'
+    elif row.status == 'VOIDED':
+        stage = 'VOIDED'
     elif row.status == 'UNKNOWN' or (not state.review_authorized_at and (state.review_required or now >= utc(state.expires_at))):
         stage = 'NEEDS_REVIEW'
     elif state.review_authorized_at and not state.execution_started_at:
@@ -67,7 +69,7 @@ def expire_support_payout_orders(factory, *, now, limit=100):
     with factory.begin() as session:
         states=session.scalars(select(SupportPayoutState).join(ManualPayoutOrder,
             ManualPayoutOrder.id==SupportPayoutState.order_id).where(SupportPayoutState.expires_at<=now,
-            SupportPayoutState.review_required.is_(False),ManualPayoutOrder.status.not_in(('SETTLED','CANCELLED')))
+            SupportPayoutState.review_required.is_(False),ManualPayoutOrder.status.not_in(('SETTLED','CANCELLED','VOIDED')))
             .order_by(SupportPayoutState.expires_at).limit(limit).with_for_update(of=SupportPayoutState)).all()
         for state in states:
             state.review_required=True
@@ -87,7 +89,7 @@ class _PayoutAuthorization:
         state=session.get(SupportPayoutState,self.order_id,with_for_update=True)
         self.service._held(state,self.claims,self.token,evidence=self.evidence)
         row=session.get(ManualPayoutOrder,self.order_id)
-        if row is None or row.status=='CANCELLED': fail('SUPPORT_PAYOUT_UNAVAILABLE')
+        if row is None or row.status in ('CANCELLED','VOIDED'): fail('SUPPORT_PAYOUT_UNAVAILABLE')
         if self.begin and state.execution_started_at is None:
             state.execution_started_at=self.service.payout._now()
             audit_write(session,self.claims['sub'],row.id,'wallet.support_payout_started','SUPPORT_PAYOUT_STARTED')
@@ -185,7 +187,7 @@ class SupportPayoutService:
             state=self._state(session,row)
             fresh=self.order_access.authorization(claims=claims)(session)
             self._held(state,claims,claim_token)
-            if row.status in ('SETTLED','CANCELLED','UNKNOWN'): fail('SUPPORT_PAYOUT_UNAVAILABLE')
+            if row.status in ('SETTLED','CANCELLED','VOIDED','UNKNOWN'): fail('SUPPORT_PAYOUT_UNAVAILABLE')
             deadline=self.payout._now()+timedelta(minutes=5)
             state.claim_expires_at=deadline if state.review_authorized_at else min(deadline,utc(state.expires_at))
             audit_write(session,claims['sub'],order_id,'wallet.support_payout_heartbeat','SUPPORT_PAYOUT_HEARTBEAT')

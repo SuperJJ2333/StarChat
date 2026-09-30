@@ -111,7 +111,7 @@ def test_declared_owner_transfer_releases_review_and_blocks_before_declaration(c
     assert record['status'] == 'DECLARED'
     assert execute(service)['id'] == record['id']
 
-    assert monitor[0].run_once()['codes'] == ['MANUAL_WALLET_PAUSED']
+    assert monitor[0].run_once()['codes'] == []
     assert monitor[0].review_once(on_review=lambda s: None)['status'] == 'REVIEWED'
     with core[1]() as s:
         from app.modules.wallet.owner_transfer_models import WalletManualOwnerTransfer

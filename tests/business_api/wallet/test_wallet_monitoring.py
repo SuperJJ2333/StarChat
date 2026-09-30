@@ -56,7 +56,7 @@ def test_partial_scan_preserves_incidents_and_never_claims_success(setup):
     monitor.run_once()
     incidents = WalletIncidentService(factory)
     deficit = next(x for x in incidents.list_incidents()['items'] if x['code'] == 'RESERVE_DEFICIT')
-    assert wallet.paused
+    assert wallet.paused is False
     previous = monitor.status()['last_success_at']
     wallet.broken = True
     clock[0] += timedelta(seconds=130)
@@ -85,6 +85,20 @@ def test_retrying_failed_alert_remains_visible(setup):
     with factory.begin() as session:
         session.get(OutboxEvent, id).status = 'FAILED'
     assert 'ALERT_DELIVERY_UNHEALTHY' in monitor.run_once()['codes']
+    assert wallet.paused is False
+    assert any(row['code'] == 'ALERT_DELIVERY_UNHEALTHY'
+        for row in WalletIncidentService(factory).list_incidents()['items'])
+
+
+def test_existing_pause_is_reported_and_preserved(setup):
+    factory, _, wallet, monitor = setup
+    wallet.paused = True
+    wallet.matched = False
+    result = monitor.run_once()
+    assert wallet.paused is True
+    assert {'RESERVE_DEFICIT', 'WALLET_PAUSED'} <= set(result['codes'])
+    assert all(row['condition_active'] for row in WalletIncidentService(factory).list_incidents()['items']
+        if row['code'] in ('RESERVE_DEFICIT', 'WALLET_PAUSED'))
 
 
 def test_corrupt_journal_is_critical_even_when_scan_cannot_complete(setup, monkeypatch):
@@ -96,7 +110,7 @@ def test_corrupt_journal_is_critical_even_when_scan_cannot_complete(setup, monke
     result = monitor.run_once()
     assert result['complete'] is False
     row = next(x for x in WalletIncidentService(factory).list_incidents()['items'] if x['code'] == 'LEDGER_INTEGRITY')
-    assert row['severity'] == 'P0' and wallet.paused
+    assert row['severity'] == 'P0' and wallet.paused is False
 
 
 def test_uncertain_withdrawal_detected_without_exposing_address(setup):
