@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
+import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -534,6 +535,35 @@ void main() {
     expect(bare.avatarVersion, 'none');
   });
 
+  test('disposing one account drops only its retained avatar providers',
+      () async {
+    ProfileRepository repository(String account) =>
+        ProfileRepository.forTesting(
+          accountKey: account,
+          store: MemoryProfileStore(),
+          loadProfile: () async => profile('Alice'),
+          loadContacts: () async => [contact(remark: 'Bob')],
+        );
+    final first = repository('matrix:@first:example.test');
+    final second = repository('matrix:@second:example.test');
+    await first.preload();
+    await second.preload();
+    final firstKey = first.resolveIdentity(userId: 'bob-id').cacheKey;
+    final secondKey = second.resolveIdentity(userId: 'bob-id').cacheKey;
+    final provider = AvatarCache.buildProvider(
+      avatarUrl: 'https://media.example.test/avatar?v=stable',
+      cacheKey: 'avatar:stable',
+    );
+    AvatarCache.rememberSuccessful(firstKey, provider);
+    AvatarCache.rememberSuccessful(secondKey, provider);
+
+    first.dispose();
+
+    expect(AvatarCache.lastSuccessful(firstKey), isNull);
+    expect(AvatarCache.lastSuccessful(secondKey), same(provider));
+    second.dispose();
+  });
+
   // 在线状态字段（last_seen_at）必须参与判等：否则静默刷新拉到了新值
   // 也被判为“未变化”，缓存与 UI 永远停留在旧数据（暂无在线记录）。
   test('quiet refresh applies a changed last_seen_at', () async {
@@ -556,32 +586,34 @@ void main() {
     cache.dispose();
   });
   test('contactDetailsByUserId returns null when matrix binding is blank', () {
-      final blank = ContactSummary(
+    final blank = ContactSummary(
+      userId: 'zhsb-id',
+      username: 'zhsb',
+      matrixUserId: '   ',
+      nickname: 'zhsb',
+    );
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'k', store: MemoryProfileStore())
+      ..upsertContactDetails(blank.toDetails());
+    // 空 matrixUserId 的条目不是权威联系人：解析必须返回 null，
+    // 由调用方走目录刷新/回填，绝不拿空 id 去开加密私聊。
+    expect(cache.contactDetailsByUserId('zhsb-id'), isNull);
+  });
+
+  test('contactDetailsByUserId resolves the authoritative contact', () {
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'k2', store: MemoryProfileStore())
+      ..upsertContactDetails(const ContactDetails(
         userId: 'zhsb-id',
         username: 'zhsb',
-        matrixUserId: '   ',
+        matrixUserId: '@zhsb:matrix.localhost',
         nickname: 'zhsb',
-      );
-      final cache = ProfileRepository.forTesting(accountKey: 'k', store: MemoryProfileStore())
-        ..upsertContactDetails(blank.toDetails());
-      // 空 matrixUserId 的条目不是权威联系人：解析必须返回 null，
-      // 由调用方走目录刷新/回填，绝不拿空 id 去开加密私聊。
-      expect(cache.contactDetailsByUserId('zhsb-id'), isNull);
-    });
-
-    test('contactDetailsByUserId resolves the authoritative contact', () {
-      final cache = ProfileRepository.forTesting(accountKey: 'k2', store: MemoryProfileStore())
-        ..upsertContactDetails(const ContactDetails(
-          userId: 'zhsb-id',
-          username: 'zhsb',
-          matrixUserId: '@zhsb:matrix.localhost',
-          nickname: 'zhsb',
-        ));
-      final resolved = cache.contactDetailsByUserId('zhsb-id');
-      expect(resolved, isNotNull);
-      expect(resolved!.matrixUserId, '@zhsb:matrix.localhost');
-      expect(resolved.nickname, 'zhsb');
-    });
+      ));
+    final resolved = cache.contactDetailsByUserId('zhsb-id');
+    expect(resolved, isNotNull);
+    expect(resolved!.matrixUserId, '@zhsb:matrix.localhost');
+    expect(resolved.nickname, 'zhsb');
+  });
 }
 
 ProfileData profile(String nickname) => ProfileData(
@@ -602,8 +634,6 @@ ContactSummary contact(
       avatarUrl: avatarUrl,
       lastSeenAt: lastSeenAt,
     );
-
-
 
 final class MemoryProfileStore implements ProfileStore {
   final values = <String, ProfileSnapshot>{};

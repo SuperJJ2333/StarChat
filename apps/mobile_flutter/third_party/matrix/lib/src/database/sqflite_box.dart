@@ -8,6 +8,8 @@ import 'package:matrix/src/database/zone_transaction_mixin.dart';
 /// Key-Value store abstraction over Sqflite so that the sdk database can use
 /// a single interface for all platforms. API is inspired by Hive.
 class BoxCollection with ZoneTransactionMixin {
+  static const _timelineFragmentsBoxName = 'box_timeline_fragments';
+
   final Database _db;
   final Set<String> boxNames;
   final String name;
@@ -40,10 +42,20 @@ class BoxCollection with ZoneTransactionMixin {
     if (!boxNames.contains(name)) {
       throw ('Box with name $name is not in the known box names of this collection.');
     }
-    return Box<V>(name, this);
+    final box = Box<V>(name, this);
+    _cacheInvalidators.add(box._invalidateCache);
+    return box;
   }
 
   Batch? _activeBatch;
+  bool _batchPoisoned = false;
+  final _cacheInvalidators = <void Function()>[];
+  final _pendingBoxValues = <String, Map<String, Object?>>{};
+  final _pendingClearedBoxes = <String>{};
+  final _pendingTimelinePuts = <String, void Function()>{};
+  final _pendingTimelineValues = <String, Object?>{};
+  final _pendingTimelineDeletes = <String>{};
+  bool _timelineCleared = false;
 
   Future<void> transaction(
     Future<void> Function() action, {
@@ -51,11 +63,41 @@ class BoxCollection with ZoneTransactionMixin {
     bool readOnly = false,
   }) =>
       zoneTransaction(() async {
+        if (_activeBatch != null) {
+          try {
+            await action();
+          } catch (_) {
+            _batchPoisoned = true;
+            rethrow;
+          }
+          return;
+        }
         final batch = _db.batch();
         _activeBatch = batch;
-        await action();
-        _activeBatch = null;
-        await batch.commit(noResult: true);
+        try {
+          await action();
+          if (_batchPoisoned) {
+            throw StateError('Nested database action failed');
+          }
+          for (final put in _pendingTimelinePuts.values) {
+            put();
+          }
+          await batch.commit(noResult: true);
+        } catch (_) {
+          for (final invalidate in _cacheInvalidators) {
+            invalidate();
+          }
+          rethrow;
+        } finally {
+          _activeBatch = null;
+          _batchPoisoned = false;
+          _pendingBoxValues.clear();
+          _pendingClearedBoxes.clear();
+          _pendingTimelinePuts.clear();
+          _pendingTimelineValues.clear();
+          _pendingTimelineDeletes.clear();
+          _timelineCleared = false;
+        }
       });
 
   Future<void> clear() => transaction(
@@ -108,6 +150,11 @@ class Box<V> {
     }
   }
 
+  void _invalidateCache() {
+    _cache.clear();
+    _cachedKeys = null;
+  }
+
   String? _toString(V? value) {
     if (value == null) return null;
     switch (V) {
@@ -151,8 +198,18 @@ class Box<V> {
 
     final executor = txn ?? boxCollection._db;
 
-    final result = await executor.query(name, columns: ['k']);
+    final timeline = name == BoxCollection._timelineFragmentsBoxName;
+    final result = timeline && boxCollection._timelineCleared
+        ? const <Map<String, Object?>>[]
+        : await executor.query(name, columns: ['k']);
     final keys = result.map((row) => row['k'] as String).toList();
+    if (timeline) {
+      keys.removeWhere(boxCollection._pendingTimelineDeletes.contains);
+      final knownKeys = keys.toSet();
+      for (final key in boxCollection._pendingTimelinePuts.keys) {
+        if (knownKeys.add(key)) keys.add(key);
+      }
+    }
 
     _cachedKeys = keys.toSet();
     return keys;
@@ -161,8 +218,11 @@ class Box<V> {
   Future<Map<String, V>> getAllValues([Transaction? txn]) async {
     final executor = txn ?? boxCollection._db;
 
-    final result = await executor.query(name);
-    return Map.fromEntries(
+    final timeline = name == BoxCollection._timelineFragmentsBoxName;
+    final result = timeline && boxCollection._timelineCleared
+        ? const <Map<String, Object?>>[]
+        : await executor.query(name);
+    final values = Map<String, V>.fromEntries(
       result.map(
         (row) => MapEntry(
           row['k'] as String,
@@ -170,10 +230,24 @@ class Box<V> {
         ),
       ),
     );
+    if (timeline) {
+      for (final key in boxCollection._pendingTimelineDeletes) {
+        values.remove(key);
+      }
+      for (final key in boxCollection._pendingTimelinePuts.keys) {
+        values[key] = boxCollection._pendingTimelineValues[key] as V;
+      }
+    }
+    return values;
   }
 
   Future<V?> get(String key, [Transaction? txn]) async {
     if (_cache.containsKey(key)) return _cache[key];
+    if (name == BoxCollection._timelineFragmentsBoxName &&
+        (boxCollection._timelineCleared ||
+            boxCollection._pendingTimelineDeletes.contains(key))) {
+      return null;
+    }
 
     final executor = txn ?? boxCollection._db;
 
@@ -209,14 +283,27 @@ class Box<V> {
 
     final list = <V?>[];
 
-    final result = await executor.query(
-      name,
-      where: 'k IN (${keys.map((_) => '?').join(',')})',
-      whereArgs: keys,
-    );
+    final timeline = name == BoxCollection._timelineFragmentsBoxName;
+    final result = timeline && boxCollection._timelineCleared
+        ? const <Map<String, Object?>>[]
+        : await executor.query(
+            name,
+            where: 'k IN (${keys.map((_) => '?').join(',')})',
+            whereArgs: keys,
+          );
     final resultMap = Map<String, V?>.fromEntries(
       result.map((row) => MapEntry(row['k'] as String, _fromString(row['v']))),
     );
+    if (timeline) {
+      for (final key in boxCollection._pendingTimelineDeletes) {
+        resultMap.remove(key);
+      }
+      for (final key in keys) {
+        if (boxCollection._pendingTimelinePuts.containsKey(key)) {
+          resultMap[key] = boxCollection._pendingTimelineValues[key] as V;
+        }
+      }
+    }
 
     // We want to make sure that they values are returnd in the exact same
     // order than the given keys. That's why we do this instead of just return
@@ -228,8 +315,54 @@ class Box<V> {
     return list;
   }
 
+  /// Read one search page without adding its event rows to the persistent Box
+  /// cache. The collection gate keeps SQL and staged batch values consistent.
+  Future<List<V?>> getAllTransient(List<String> keys) async {
+    if (keys.isEmpty) return const [];
+    late List<V?> aligned;
+    await boxCollection.zoneTransaction(() async {
+      final values = <String, V?>{};
+      if (!boxCollection._pendingClearedBoxes.contains(name)) {
+        const batchSize = 800;
+        for (var offset = 0; offset < keys.length; offset += batchSize) {
+          final slice = keys.skip(offset).take(batchSize).toList();
+          final result = await boxCollection._db.query(name,
+              where: 'k IN (${slice.map((_) => '?').join(',')})',
+              whereArgs: slice);
+          for (final row in result) {
+            values[row['k'] as String] = _fromString(row['v']);
+          }
+        }
+      }
+      final pending = boxCollection._pendingBoxValues[name];
+      for (final key in keys) {
+        if (pending?.containsKey(key) ?? false) {
+          values[key] = pending![key] as V?;
+        }
+      }
+      aligned = keys.map((key) => values[key]).toList();
+    });
+    return aligned;
+  }
+
   Future<void> put(String key, V val) async {
     final txn = boxCollection._activeBatch;
+
+    if (txn != null && name == BoxCollection._timelineFragmentsBoxName) {
+      // Keep the final list in memory during the transaction. Encoding and
+      // SQLite replacement happen once per fragment just before commit.
+      boxCollection._pendingTimelinePuts[key] = () => txn.insert(
+            name,
+            {'k': key, 'v': _toString(val)},
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+      boxCollection._pendingTimelineValues[key] = val;
+      boxCollection._pendingTimelineDeletes.remove(key);
+      _cache[key] = val;
+      boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = val;
+      _cachedKeys?.add(key);
+      return;
+    }
 
     final params = {
       'k': key,
@@ -250,12 +383,21 @@ class Box<V> {
     }
 
     _cache[key] = val;
+    if (txn != null) {
+      boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = val;
+    }
     _cachedKeys?.add(key);
     return;
   }
 
   Future<void> delete(String key, [Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
+    if (identical(txn, boxCollection._activeBatch) &&
+        name == BoxCollection._timelineFragmentsBoxName) {
+      boxCollection._pendingTimelinePuts.remove(key);
+      boxCollection._pendingTimelineValues.remove(key);
+      boxCollection._pendingTimelineDeletes.add(key);
+    }
 
     if (txn == null) {
       await boxCollection._db.delete(name, where: 'k = ?', whereArgs: [key]);
@@ -266,12 +408,23 @@ class Box<V> {
     // Set to null instead remove() so that inside of transactions null is
     // returned.
     _cache[key] = null;
+    if (identical(txn, boxCollection._activeBatch)) {
+      boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = null;
+    }
     _cachedKeys?.remove(key);
     return;
   }
 
   Future<void> deleteAll(List<String> keys, [Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
+    if (identical(txn, boxCollection._activeBatch) &&
+        name == BoxCollection._timelineFragmentsBoxName) {
+      for (final key in keys) {
+        boxCollection._pendingTimelinePuts.remove(key);
+        boxCollection._pendingTimelineValues.remove(key);
+        boxCollection._pendingTimelineDeletes.add(key);
+      }
+    }
 
     final placeholder = keys.map((_) => '?').join(',');
     if (txn == null) {
@@ -290,6 +443,9 @@ class Box<V> {
 
     for (final key in keys) {
       _cache[key] = null;
+      if (identical(txn, boxCollection._activeBatch)) {
+        boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = null;
+      }
       _cachedKeys?.removeAll(keys);
     }
     return;
@@ -297,6 +453,13 @@ class Box<V> {
 
   Future<void> clear([Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
+    if (identical(txn, boxCollection._activeBatch) &&
+        name == BoxCollection._timelineFragmentsBoxName) {
+      boxCollection._pendingTimelinePuts.clear();
+      boxCollection._pendingTimelineValues.clear();
+      boxCollection._pendingTimelineDeletes.clear();
+      boxCollection._timelineCleared = true;
+    }
 
     if (txn == null) {
       await boxCollection._db.delete(name);
@@ -305,6 +468,10 @@ class Box<V> {
     }
 
     _cache.clear();
+    if (identical(txn, boxCollection._activeBatch)) {
+      boxCollection._pendingClearedBoxes.add(name);
+      boxCollection._pendingBoxValues.remove(name);
+    }
     _cachedKeys = null;
     return;
   }

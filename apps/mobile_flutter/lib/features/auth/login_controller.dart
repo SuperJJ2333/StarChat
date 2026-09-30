@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../core/business_api_error.dart';
 import '../../core/session_failure.dart';
+import '../../core/startup_failure_metadata.dart';
 import '../../core/business_auth_contracts.dart';
 
 typedef LoginOperation = Future<void> Function(
@@ -333,13 +334,13 @@ final class DualDomainLoginService {
             }
             await (gateway as PhoneInvitationContinuationGateway)
                 .completePhoneLoginInvitation(
-                invitationTicket: invitationTicket,
-                phone: phone,
-                invitationCode: invitationCode,
-                termsAccepted: termsAccepted,
-                shouldContinue: shouldContinue,
-                deviceKey: deviceKey(),
-                deviceName: '畅聊移动端');
+                    invitationTicket: invitationTicket,
+                    phone: phone,
+                    invitationCode: invitationCode,
+                    termsAccepted: termsAccepted,
+                    shouldContinue: shouldContinue,
+                    deviceKey: deviceKey(),
+                    deviceName: '畅聊移动端');
           }));
 
   Future<void> _login(Future<void> Function() authenticate) async {
@@ -561,17 +562,35 @@ final class DualDomainLoginService {
   }
 }
 
-final class LoginStageException implements Exception {
+final class LoginStageException implements Exception, StartupFailureProvider {
   const LoginStageException(this.stage,
-      {this.network = false, this.category = SessionFailureCategory.unknown});
+      {this.network = false,
+      this.category = SessionFailureCategory.unknown,
+      this.failureMetadata});
   factory LoginStageException.fromCause(String stage, Object error) {
     if (error is LoginStageException) return error;
-    final category = classifySessionFailure(error);
+    final loginStage = StartupLoginStage.fromLocalStage(stage);
+    final failure = safeStartupFailure(error,
+            boundary:
+                loginStage?.boundary ?? StartupFailureBoundary.localRestore)
+        .withLoginStage(loginStage);
+    final category = failure.category;
     return LoginStageException(stage,
         network: category == SessionFailureCategory.network,
-        category: category);
+        category: category,
+        failureMetadata: failure);
   }
   final SessionFailureCategory category;
+  final StartupFailureMetadata? failureMetadata;
+  @override
+  StartupFailureMetadata get startupFailure =>
+      failureMetadata ??
+      StartupFailureMetadata(
+        category: network ? SessionFailureCategory.network : category,
+        boundary: StartupLoginStage.fromLocalStage(stage)?.boundary ??
+            StartupFailureBoundary.localRestore,
+        loginStage: StartupLoginStage.fromLocalStage(stage),
+      );
   final String stage;
   final bool network;
   String get diagnosticCode =>

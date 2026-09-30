@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../ui/foundation/avatar_cache.dart';
@@ -50,6 +51,11 @@ abstract interface class SystemNotificationPresenter {
     int? unreadCount,
   });
   Future<void> cancelConversation(int notificationId);
+}
+
+/// Remote APNs alerts have platform request IDs rather than our local hash ID.
+abstract interface class DeliveredConversationNotificationPresenter {
+  Future<void> cancelDeliveredConversation(String roomId);
 }
 
 /// PRD §31 渠道定义。`calls`/`call-ongoing`/`changliao_message_reminders`/
@@ -117,7 +123,9 @@ ChannelSpec channelSpecFor(SystemNotificationChannel channel) =>
     );
 
 final class FlutterLocalSystemNotificationPresenter
-    implements SystemNotificationPresenter {
+    implements
+        SystemNotificationPresenter,
+        DeliveredConversationNotificationPresenter {
   FlutterLocalSystemNotificationPresenter({
     FlutterLocalNotificationsPlugin? plugin,
     this.onConversationTap,
@@ -131,6 +139,18 @@ final class FlutterLocalSystemNotificationPresenter
   final void Function(String roomId)? onConversationTap;
 
   final NotificationDiagnostics diagnostics;
+
+  @override
+  Future<void> cancelDeliveredConversation(String roomId) async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      await const MethodChannel('chatflow/badge').invokeMethod<void>(
+          'clearConversation',
+          {'roomId': roomId}).timeout(const Duration(seconds: 2));
+    } on MissingPluginException {
+      // Older native hosts still cancel their locally generated alerts.
+    }
+  }
 
   bool _initialized = false;
 

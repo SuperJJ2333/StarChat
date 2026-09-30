@@ -12,6 +12,7 @@ import 'call_connected_fallback.dart';
 import 'call_controller.dart';
 import 'call_diagnostics.dart';
 import 'call_quality_monitor.dart';
+import '../../core/performance_trace.dart';
 import 'call_wakeup_client.dart';
 import 'incoming_call_gate.dart';
 import 'turn_credentials_cache.dart';
@@ -91,7 +92,8 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
   Future<void> handleGroupCallEnded(GroupCallSession groupCall) async {}
 }
 
-final class MatrixCallBackend implements CallBackend {
+final class MatrixCallBackend
+    implements CallBackend, CallPerformanceCorrelationBackend {
   MatrixCallBackend._(this._client, this._voip, this._delegate,
       this.diagnostics, this._ensureActive);
 
@@ -161,6 +163,14 @@ final class MatrixCallBackend implements CallBackend {
   );
   CallSession? _call;
   CallQualityMonitor? _quality;
+  PerformanceCorrelationContext? _performanceCorrelation;
+
+  @override
+  void setPerformanceCorrelationContext(
+      PerformanceCorrelationContext? context) {
+    _performanceCorrelation = context;
+  }
+
   bool _connectedEmitted = false;
   bool _signalingEmitted = false;
   var _disposed = false;
@@ -467,6 +477,7 @@ final class MatrixCallBackend implements CallBackend {
     if (pc == null) return;
     _quality = CallQualityMonitor(
       getStats: () => pc.getStats(),
+      correlationContext: _performanceCorrelation,
     )..start();
   }
 

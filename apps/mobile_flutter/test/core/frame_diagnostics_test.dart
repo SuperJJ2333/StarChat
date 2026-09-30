@@ -7,6 +7,72 @@ void main() {
   void frame(ChatDiagnostics d, int build, int raster, {int budget = 16667}) =>
       d.recordFrame(buildUs: build, rasterUs: raster, budgetUs: budget);
 
+  test('closed tab windows retain counts and immutable retry identity', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      final d =
+          ChatDiagnostics(now: () => DateTime.utc(2026).add(time.elapsed));
+      d.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return batches.length == 1 ? 503 : 202;
+          });
+      d.setFrameTab(ChatDiagnosticTab.messages);
+      frame(d, 20000, 1000);
+      frame(d, 1000, 21000);
+      frame(d, 1000, 1000);
+      d.setFrameTab(ChatDiagnosticTab.contacts);
+      frame(d, 18000, 19000);
+      time.elapse(const Duration(minutes: 2));
+      expect(batches, hasLength(2));
+      final first = batches.first.toJson();
+      expect(first['frames'], {
+        'frame_count': 4,
+        'slow_frame_count': 3,
+        'slow_build_count': 2,
+        'slow_raster_count': 2,
+      });
+      final windows = first['frame_windows'] as List;
+      expect(windows, hasLength(2));
+      expect(windows.map((w) => w['active_tab']), ['messages', 'contacts']);
+      expect(windows.map((w) => w['frame_count']), [3, 1]);
+      expect(windows.map((w) => w['slow_frame_count']), [2, 1]);
+      expect(windows.first['max_build_us'], 20000);
+      expect(windows.first['max_raster_us'], 21000);
+      expect(batches.last.toJson()['frame_windows'], windows);
+      d.stopSession();
+    });
+  });
+
+  test('overflowed frame windows report dropped frames once', () {
+    fakeAsync((time) {
+      final batches = <ChatDiagnosticBatch>[];
+      final d =
+          ChatDiagnostics(now: () => DateTime.utc(2026).add(time.elapsed));
+      d.startSession(
+          version: '1.2.3',
+          platform: ChatDiagnosticPlatform.android,
+          upload: (batch, _) async {
+            batches.add(batch);
+            return 202;
+          });
+      for (var i = 0; i < 10; i++) {
+        d.setFrameTab(
+            i.isEven ? ChatDiagnosticTab.messages : ChatDiagnosticTab.contacts);
+        frame(d, 20000, 1000);
+      }
+      time.elapse(const Duration(minutes: 1));
+      expect(batches, hasLength(1));
+      final body = batches.single.toJson();
+      expect(body['frame_windows'], hasLength(8));
+      expect((body['diagnostic_loss'] as Map)['dropped_frames'], 2);
+      expect((body['frames'] as Map)['frame_count'], 10);
+      d.stopSession();
+    });
+  });
+
   test('bounded whole-frame sampling survives transport failure', () {
     fakeAsync((time) {
       final batches = <ChatDiagnosticBatch>[];
@@ -102,7 +168,7 @@ void main() {
     });
   });
 
-  test('old server rejects frames once, existing events retry without frames',
+  test('old server strips new window first, then frames, preserving events',
       () {
     fakeAsync((time) {
       final batches = <ChatDiagnosticBatch>[];
@@ -112,18 +178,30 @@ void main() {
           platform: ChatDiagnosticPlatform.ios,
           upload: (b, _) async {
             batches.add(b);
-            return batches.length == 1 ? 422 : 202;
+            return b.toJson().containsKey('frame_windows') ||
+                    b.toJson().containsKey('frames')
+                ? 422
+                : 202;
           });
       frame(d, 20000, 20000);
       d.record(
           stage: ChatDiagnosticStage.framework,
           error: ChatDiagnosticError.unknown);
       time.elapse(const Duration(minutes: 1));
-      frame(d, 20000, 20000);
-      time.elapse(const Duration(minutes: 1));
-      expect(batches, hasLength(2));
+      // The installed client preserves events on the first frame-schema 422,
+      // then retries without the optional frames payload.
+      d.record(
+          stage: ChatDiagnosticStage.matrixSend,
+          error: ChatDiagnosticError.network);
+      time.elapse(const Duration(minutes: 2));
+      expect(batches, hasLength(3));
+      expect(batches[1].toJson().containsKey('frame_windows'), isFalse);
+      expect(batches[1].toJson().containsKey('frames'), isTrue);
       expect(batches.last.toJson().containsKey('frames'), isFalse);
-      expect(batches.last.toJson()['events'], hasLength(1));
+      final events = batches.last.toJson()['events'] as List;
+      expect(events, hasLength(2));
+      expect(events.map((event) => (event as Map)['stage']),
+          ['framework', 'matrixSend']);
       d.stopSession();
     });
   });

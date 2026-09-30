@@ -1,4 +1,7 @@
 import json
+import hashlib
+import hmac
+import sys
 import time
 from uuid import uuid4
 
@@ -11,6 +14,7 @@ from starlette.requests import Request
 from app.api.client_diagnostics import create_client_diagnostics_router, read_bounded_body
 from app.core.config import Settings
 from app.core.errors import AppError, install_error_handlers
+from app.modules.identity.tokens import TokenService
 
 
 class Limiter:
@@ -26,7 +30,8 @@ class Limiter:
 
 @pytest.fixture
 def endpoint():
-    settings = Settings(environment='test', jwt_secret='test-secret-for-diagnostics-32-bytes')
+    settings = Settings(environment='test', jwt_secret='test-secret-for-diagnostics-32-bytes',
+                        diagnostic_identity_secret='diagnostic-test-secret-32-bytes-long')
     limiter = Limiter()
     app = FastAPI()
     install_error_handlers(app)
@@ -37,47 +42,145 @@ def endpoint():
     return TestClient(app), limiter, {'Authorization': f'Bearer {token}'}
 
 
+def test_authenticated_batch_logs_server_derived_subject_without_username(endpoint, capsys):
+    client, _, headers = endpoint
+    result = client.post('/api/v1/client-diagnostics', json=payload(), headers=headers)
+    assert result.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    expected = hmac.new(
+        b'diagnostic-test-secret-32-bytes-long',
+        b'chatflow/diagnostics/subject/v1\0private-user-sentinel',
+        hashlib.sha256,
+    ).hexdigest()
+    assert logged.get('subject_ref') == expected
+    assert 'device_ref' not in logged
+    assert 'private-user-sentinel' not in json.dumps(logged)
+
+
+@pytest.mark.parametrize('client_field',
+                         ['username', 'user_id', 'device_id', 'subject_ref', 'device_ref'])
+def test_client_identity_field_is_rejected(endpoint, client_field):
+    client, _, headers = endpoint
+    data = payload()
+    data[client_field] = 'attacker-controlled-account'
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+
+
+def test_validated_device_claim_gets_separate_server_derived_ref(endpoint, monkeypatch, capsys):
+    client, _, headers = endpoint
+    monkeypatch.setattr(TokenService, 'decode_access_token',
+                        lambda self, token: {'sub': 'private-user-sentinel',
+                                             'device_id': 'private-device-sentinel'})
+    result = client.post('/api/v1/client-diagnostics', json=payload(), headers=headers)
+    assert result.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    expected = hmac.new(
+        b'diagnostic-test-secret-32-bytes-long',
+        b'chatflow/diagnostics/device/v1\0private-device-sentinel',
+        hashlib.sha256,
+    ).hexdigest()
+    assert logged.get('device_ref') == expected
+    assert logged['subject_ref'] != logged['device_ref']
+    assert 'private-device-sentinel' not in json.dumps(logged)
+
+
 def payload():
     return {'version': '0.3.103+2153', 'platform': 'ios', 'events': [
         {'operation_id': str(uuid4()), 'stage': 'dateMonth', 'error': 'timeout',
          'elapsed_ms': 5000, 'count': 1, 'status': None}]}
 
 
-@pytest.mark.parametrize(('error', 'status'), [
-    ('timeout', None), ('network', None), ('rejected', 401),
-])
-def test_network_failure_diagnostics_closed_metadata(endpoint, capsys, error, status):
-    client, _, headers = endpoint
-    data = payload()
-    data['events'][0].update(stage='network_request', error=error,
-                             status=status, elapsed_ms=1250)
-    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
-    assert response.status_code == 202
-    logged = json.loads(capsys.readouterr().out)
-    assert logged['events'] == data['events']
-    assert 'private-user-sentinel' not in json.dumps(logged)
-    assert headers['Authorization'] not in json.dumps(logged)
-
-
-@pytest.mark.parametrize('extra', [
-    {'url': 'PRIVATE_NETWORK_SENTINEL'},
-    {'exception': 'PRIVATE_NETWORK_SENTINEL'},
-    {'token': 'PRIVATE_NETWORK_SENTINEL'},
-    {'user_id': 'PRIVATE_NETWORK_SENTINEL'},
-])
-def test_network_failure_diagnostics_reject_free_text(endpoint, capsys, extra):
-    client, _, headers = endpoint
-    data = payload()
-    data['events'][0].update(stage='network_request', **extra)
-    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
-    assert response.status_code == 422
-    assert 'PRIVATE_NETWORK_SENTINEL' not in response.text
-    assert capsys.readouterr().out == ''
-
-
 def frame_summary():
     return {'frame_count': 100, 'slow_frame_count': 7,
             'slow_build_count': 4, 'slow_raster_count': 5}
+
+
+def frame_window():
+    return {'window_id': str(uuid4()), 'window_start': '2026-09-28T00:00:00Z',
+            'window_end': '2026-09-28T00:00:30Z', 'active_tab': 'messages',
+            'budget_us': 16667, 'frame_count': 3, 'slow_frame_count': 2,
+            'slow_build_count': 1, 'slow_raster_count': 1,
+            'max_build_us': 20000, 'max_raster_us': 21000}
+
+
+def diagnostic_loss():
+    return {'sample_id': str(uuid4()), 'dropped_events': 0,
+            'dropped_operations': 1, 'dropped_frames': 0}
+
+
+class RecordingStdout:
+    def __init__(self, *, max_write=None):
+        self.buffer = self
+        self.calls = []
+        self.max_write = max_write
+
+    def write(self, data):
+        value = data.encode('ascii') if isinstance(data, str) else bytes(data)
+        chunk = value[:self.max_write] if self.max_write else value
+        self.calls.append(chunk)
+        return len(chunk)
+
+    def flush(self):
+        pass
+
+
+def test_diagnostic_json_and_newline_use_one_stdout_write(endpoint, monkeypatch):
+    client, _, headers = endpoint
+    stdout = RecordingStdout()
+    monkeypatch.setattr(sys, 'stdout', stdout)
+    response = client.post('/api/v1/client-diagnostics', json=payload(), headers=headers)
+    assert response.status_code == 202
+    assert len(stdout.calls) == 1
+    assert stdout.calls[0].endswith(b'\n')
+    record = json.loads(stdout.calls[0])
+    assert record['version'] == '0.3.103+2153'
+    assert record['platform'] == 'ios'
+    assert headers['Authorization'].encode() not in stdout.calls[0]
+
+
+def test_short_stdout_write_finishes_same_diagnostic_line(endpoint, monkeypatch):
+    client, _, headers = endpoint
+    stdout = RecordingStdout(max_write=7)
+    monkeypatch.setattr(sys, 'stdout', stdout)
+    response = client.post('/api/v1/client-diagnostics', json=payload(), headers=headers)
+    assert response.status_code == 202
+    assert len(stdout.calls) > 1
+    assert b''.join(stdout.calls).endswith(b'\n')
+    assert json.loads(b''.join(stdout.calls))['event'] == 'client_diagnostics'
+
+
+def test_optional_window_and_loss_can_form_authenticated_bounded_batch(endpoint, capsys):
+    client, _, headers = endpoint
+    data = {'version': '0.4.19+2188', 'platform': 'android',
+            'frame_windows': [frame_window()], 'diagnostic_loss': diagnostic_loss()}
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    assert logged['frame_windows'] == data['frame_windows']
+    assert logged['diagnostic_loss'] == data['diagnostic_loss']
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda d: d['frame_windows'][0].update(active_tab='private-room-id'),
+    lambda d: d['frame_windows'][0].update(window_end='2026-09-27T23:59:00Z'),
+    lambda d: d['frame_windows'][0].update(slow_frame_count=0),
+    lambda d: d['frame_windows'][0].update(max_build_us='private'),
+    lambda d: d['frame_windows'][0].update(room_id='private'),
+    lambda d: d.update(frame_windows=d['frame_windows'] * 9),
+    lambda d: d.update(diagnostic_loss={**d['diagnostic_loss'], 'sample_id': 'private'}),
+    lambda d: d.update(diagnostic_loss={**d['diagnostic_loss'], 'dropped_operations': -1}),
+    lambda d: d.update(diagnostic_loss={**d['diagnostic_loss'], 'message': 'private'}),
+])
+def test_optional_window_and_loss_reject_unbounded_metadata(endpoint, capsys, mutate):
+    client, _, headers = endpoint
+    data = {'version': '0.4.19+2188', 'platform': 'android',
+            'frame_windows': [frame_window()], 'diagnostic_loss': diagnostic_loss()}
+    mutate(data)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert 'private' not in response.text
+    assert capsys.readouterr().out == ''
 
 
 def test_frame_summary_without_error_events(endpoint, capsys):
@@ -109,6 +212,7 @@ def test_frame_summary_rejects_invalid_counts_and_identifiers(endpoint, capsys, 
 @pytest.mark.parametrize('stage', [
     'pending_write_failed', 'request_uncertain', 'result_write_failed',
     'retry_recovered', 'terminal_invalidated', 'result_superseded',
+    'network_request',
 ])
 def test_refresh_diagnostics_closed_metadata(endpoint, capsys, stage):
     client, _, headers = endpoint
@@ -121,6 +225,114 @@ def test_refresh_diagnostics_closed_metadata(endpoint, capsys, stage):
     assert logged['events'][0]['stage'] == stage
     assert logged['events'][0]['retry_count'] == 1
     assert headers['Authorization'] not in json.dumps(logged)
+
+
+def test_network_request_stage_accepts_transport_errors(endpoint, capsys):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='network_request', error='timeout', count=3,
+                             lifecycle=None, retry_count=None)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    assert logged['events'][0]['stage'] == 'network_request'
+    assert logged['events'][0]['error'] == 'timeout'
+    assert logged['events'][0]['count'] == 3
+
+
+@pytest.mark.parametrize(('stage', 'error'), [
+    ('moment_prepare', 'format'),
+    ('moment_video_begin', 'timeout'),
+    ('moment_video_put', 'timeout'),
+    ('moment_video_complete', 'network'),
+    ('moment_poster_extract', 'size'),
+    ('moment_poster_begin', 'network'),
+    ('moment_poster_put', 'rejected'),
+    ('moment_poster_complete', 'unknown'),
+    ('moment_publish', 'rejected'),
+])
+def test_moment_failure_stage_is_closed_and_private(endpoint, capsys, stage, error):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage=stage, error=error, status=504)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    output = capsys.readouterr().out
+    logged = json.loads(output)
+    assert logged['events'] == data['events']
+    assert logged['version'] == data['version']
+    assert 'private-user-sentinel' not in output
+    assert headers['Authorization'] not in output
+
+
+@pytest.mark.parametrize('error', ['slow', 'cancelled', 'incomplete', 'recovered'])
+@pytest.mark.parametrize('stage', ['moment_video_begin', 'moment_poster_begin', 'moment_poster_put'])
+def test_moment_stage_rejects_nonfailure_outcomes(endpoint, capsys, stage, error):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage=stage, error=error, elapsed_ms=300)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert capsys.readouterr().out == ''
+
+
+def test_legacy_stage_keeps_its_existing_outcomes(endpoint, capsys):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='matrixSend', error='recovered')
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    assert json.loads(capsys.readouterr().out)['events'] == data['events']
+
+
+@pytest.mark.parametrize('extra', [
+    {'file_name': 'private-video.mp4'},
+    {'media_url': 'https://private.example/video'},
+    {'exception': 'private file path'},
+    {'size_bucket': 'private arbitrary bucket'},
+    {'stage': 'moment_other'},
+    {'error': 'private error'},
+])
+def test_moment_failure_rejects_extra_or_unbounded_metadata(endpoint, capsys, extra):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='moment_poster_put', error='timeout')
+    data['events'][0].update(extra)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert 'private' not in response.text
+    assert capsys.readouterr().out == ''
+
+
+def test_legacy_diagnostic_event_shape_remains_unchanged(endpoint, capsys):
+    client, _, headers = endpoint
+    data = payload()
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    logged = json.loads(capsys.readouterr().out)
+    assert logged['events'] == data['events']
+    assert set(logged) == {'event', 'version', 'platform', 'events', 'subject_ref'}
+
+
+@pytest.mark.parametrize('stage', ['matrix_sync_soft_kick', 'matrix_sync_hard_restart'])
+@pytest.mark.parametrize('error', ['slow', 'timeout', 'unknown', 'recovered'])
+def test_sync_watchdog_stages_are_closed_and_bounded(endpoint, capsys, stage, error):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage=stage, error=error, elapsed_ms=30000)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 202
+    assert json.loads(capsys.readouterr().out)['events'][0]['stage'] == stage
+
+
+@pytest.mark.parametrize('error', ['network', 'rejected', 'cancelled', 'incomplete'])
+def test_sync_watchdog_stages_reject_misleading_errors(endpoint, capsys, error):
+    client, _, headers = endpoint
+    data = payload()
+    data['events'][0].update(stage='matrix_sync_soft_kick', error=error)
+    response = client.post('/api/v1/client-diagnostics', json=data, headers=headers)
+    assert response.status_code == 422
+    assert capsys.readouterr().out == ''
 
 
 @pytest.mark.parametrize('extra', [

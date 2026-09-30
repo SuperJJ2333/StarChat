@@ -6,12 +6,13 @@ import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 
 void main() {
-  testWidgets('renders an HTTP business avatar with UserAvatar',
+  testWidgets('renders a business avatar only with an account cache scope',
       (tester) async {
     await tester.pumpWidget(CupertinoApp(
       home: GroupMemberPicker(
         title: '选择成员',
         avatarMedia: _AvatarMedia(),
+        avatarCacheKeyForMember: (_) => 'identity:matrix-alice:user-alice',
         members: [
           GroupMemberIdentity(
             matrixUserId: '@alice:test',
@@ -25,6 +26,29 @@ void main() {
 
     expect(find.byType(UserAvatar), findsOneWidget);
     expect(find.byType(MatrixUserAvatar), findsNothing);
+    final avatar = tester.widget<UserAvatar>(find.byType(UserAvatar));
+    expect(avatar.avatarUrl, 'https://example.test/alice.png');
+    expect(avatar.avatarCacheKey, 'identity:matrix-alice:user-alice');
+  });
+
+  testWidgets('unscoped business avatar falls back without loading its URL',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+      home: GroupMemberPicker(
+        title: '选择成员',
+        members: [
+          GroupMemberIdentity(
+            matrixUserId: '@alice:test',
+            displayName: 'Alice',
+            businessUserId: 'user-alice',
+            businessAvatarUrl: 'https://example.test/alice.png',
+          ),
+        ],
+      ),
+    ));
+
+    expect(
+        tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl, isNull);
   });
 
   testWidgets('renders an MXC avatar through MatrixUserAvatar', (tester) async {

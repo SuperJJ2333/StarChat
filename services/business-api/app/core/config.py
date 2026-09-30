@@ -300,7 +300,6 @@ class Settings(BaseSettings):
             self.avatar_url_signing_secret,
             self.referral_code_secret,
         )
-        unsafe_prefixes = ("change-this", "development-")
         if (
             not self.totp_issuer
             or any(not value for value in secret_values)
@@ -331,6 +330,5 @@ class Settings(BaseSettings):
                     "BUSINESS_WALLET_WEBHOOK_SECRET"
                 )
         return self
-
 
 

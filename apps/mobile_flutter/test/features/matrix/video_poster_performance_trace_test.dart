@@ -70,12 +70,10 @@ void main() {
       accountId: 'account',
       roomId: 'room',
       memory: VideoPosterSessionCache(),
-      loadServerPoster: (_) async {
-        nowUs = 300000;
-        return null;
-      },
+      loadServerPoster: (_) async =>
+          throw StateError('local disk poster must bypass the server'),
       readCachedPoster: (_) async {
-        nowUs = 430000;
+        nowUs = 130000;
         return poster;
       },
       writeCachedPoster: (_, __) async {},

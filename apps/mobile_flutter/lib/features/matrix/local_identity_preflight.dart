@@ -7,6 +7,8 @@ import 'package:olm/olm.dart' as olm;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../core/matrix_local_binding.dart';
+import '../../core/session_failure.dart';
+import '../../core/startup_failure_metadata.dart';
 
 enum MatrixLocalIdentityCause {
   missingDatabaseWithBinding,
@@ -23,12 +25,36 @@ enum MatrixLocalIdentityCause {
 }
 
 /// No key, account identifier, fingerprint, pickle or SQL is part of this error.
-final class MatrixLocalIdentityPreflightException implements Exception {
+final class MatrixLocalIdentityPreflightException
+    implements Exception, StartupFailureProvider {
   const MatrixLocalIdentityPreflightException(this.cause,
-      {this.canCreateNewDevice = false});
+      {this.canCreateNewDevice = false, this.failureMetadata});
+
+  factory MatrixLocalIdentityPreflightException.fromError(
+          MatrixLocalIdentityCause cause, Object error,
+          {required StartupFailureBoundary boundary,
+          bool canCreateNewDevice = false}) =>
+      MatrixLocalIdentityPreflightException(cause,
+          canCreateNewDevice: canCreateNewDevice,
+          failureMetadata: safeStartupFailure(error, boundary: boundary));
 
   final MatrixLocalIdentityCause cause;
   final bool canCreateNewDevice;
+  final StartupFailureMetadata? failureMetadata;
+
+  @override
+  StartupFailureMetadata get startupFailure => StartupFailureMetadata(
+        category: failureMetadata?.category ??
+            (cause == MatrixLocalIdentityCause.unreadable
+                ? SessionFailureCategory.unknown
+                : SessionFailureCategory.matrixIdentity),
+        boundary: failureMetadata?.boundary ??
+            StartupFailureBoundary.databaseIdentityRead,
+        preflightCause: failureMetadata?.preflightCause ??
+            StartupIdentityCause.values.byName(cause.name),
+        nativeStatus: failureMetadata?.nativeStatus,
+        loginStage: failureMetadata?.loginStage,
+      );
 
   @override
   String toString() => 'MatrixLocalIdentityPreflightException(${cause.name})';
@@ -318,9 +344,10 @@ final class MatrixLocalIdentityPreflight {
     bool present;
     try {
       present = await reader.exists(databasePath);
-    } catch (_) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.unreadable);
+    } catch (error) {
+      throw MatrixLocalIdentityPreflightException.fromError(
+          MatrixLocalIdentityCause.unreadable, error,
+          boundary: StartupFailureBoundary.databasePresence);
     }
     if (!present) {
       if (binding != null) {
@@ -340,9 +367,10 @@ final class MatrixLocalIdentityPreflight {
         plaintext = reader is MatrixPlaintextIdentityProbe &&
             await (reader as MatrixPlaintextIdentityProbe)
                 .hasPlaintextHeader(databasePath);
-      } catch (_) {
-        throw const MatrixLocalIdentityPreflightException(
-            MatrixLocalIdentityCause.unreadable);
+      } catch (error) {
+        throw MatrixLocalIdentityPreflightException.fromError(
+            MatrixLocalIdentityCause.unreadable, error,
+            boundary: StartupFailureBoundary.databaseHeader);
       }
       if (!plaintext) {
         throw const MatrixLocalIdentityPreflightException(
@@ -352,9 +380,10 @@ final class MatrixLocalIdentityPreflight {
     MatrixLocalIdentityRecord record;
     try {
       record = await reader.read(databasePath, cipher ?? '');
-    } catch (_) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.unreadable);
+    } catch (error) {
+      throw MatrixLocalIdentityPreflightException.fromError(
+          MatrixLocalIdentityCause.unreadable, error,
+          boundary: StartupFailureBoundary.databaseIdentityRead);
     }
     final userId = record.matrixUserId;
     if (userId == null || userId.isEmpty) {
@@ -380,9 +409,10 @@ final class MatrixLocalIdentityPreflight {
     String fingerprint;
     try {
       fingerprint = await fingerprintReader(userId, pickle);
-    } catch (_) {
-      throw const MatrixLocalIdentityPreflightException(
-          MatrixLocalIdentityCause.unreadable);
+    } catch (error) {
+      throw MatrixLocalIdentityPreflightException.fromError(
+          MatrixLocalIdentityCause.unreadable, error,
+          boundary: StartupFailureBoundary.olmIdentityCheck);
     }
     final boundFingerprint = binding?.ed25519Fingerprint;
     if (record.requiresAuthenticatedMigration && boundFingerprint == null) {

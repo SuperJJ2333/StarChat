@@ -22,6 +22,17 @@ final class ChatForwardCandidate {
   final int memberCount;
 }
 
+Widget _forwardAvatarSlot(
+        ChatForwardCandidate candidate, double size, String placement) =>
+    SizedBox.square(
+      key: Key('forward-avatar-$placement-${candidate.roomId}'),
+      dimension: size,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox.square(dimension: 52, child: candidate.avatar),
+      ),
+    );
+
 /// 独立选择聊天页；选择后由底部确认卡片执行发送。
 /// - 导航栏右上角“多选”；
 /// - 第一行搜索栏（按会话名过滤）；
@@ -275,7 +286,7 @@ final class _RecentAvatar extends StatelessWidget {
             width: 60,
             child: Column(children: [
               Stack(children: [
-                SizedBox(width: 52, height: 52, child: candidate.avatar),
+                _forwardAvatarSlot(candidate, 52, 'recent'),
                 if (selected)
                   const Positioned(
                       right: 0,
@@ -328,7 +339,7 @@ final class _ChatRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(children: [
-              SizedBox(width: 42, height: 42, child: candidate.avatar),
+              _forwardAvatarSlot(candidate, 42, 'row'),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -433,8 +444,8 @@ final class _ForwardConfirmationState extends State<_ForwardConfirmation> {
                               Padding(
                                   padding: const EdgeInsets.only(bottom: 16),
                                   child: Row(children: [
-                                    SizedBox.square(
-                                        dimension: 44, child: recipient.avatar),
+                                    _forwardAvatarSlot(
+                                        recipient, 44, 'confirm'),
                                     const SizedBox(width: 12),
                                     Expanded(
                                         child: Text(recipient.title,

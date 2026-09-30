@@ -13,6 +13,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
       theme: WeChatTheme.build(Brightness.light),
       home: FriendRequestReviewPage(
+        avatarCacheKey: 'identity:test:request',
         request: _accepted,
         onAccept: () async {},
         onReject: () async {},
@@ -21,24 +22,24 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    final badge = tester.getRect(find.byKey(const Key('friend-request-status')));
+    final badge =
+        tester.getRect(find.byKey(const Key('friend-request-status')));
     final button =
         tester.getRect(find.byKey(const Key('friend-request-open-chat')));
     final gap = button.top - badge.bottom;
     expect(gap, greaterThanOrEqualTo(WeChatSpacing.md),
         reason: '徽标与按钮之间的实际间距是 ${gap.toStringAsFixed(1)}dp，'
             '必须 ≥ WeChatSpacing.md(${WeChatSpacing.md})');
-    expect(button.top, greaterThan(badge.bottom),
-        reason: '按钮必须排在徽标下方，两者不得重叠');
+    expect(button.top, greaterThan(badge.bottom), reason: '按钮必须排在徽标下方，两者不得重叠');
     // 与设计网格对齐：间距必须是 4dp 网格的整数倍。
-    expect(gap % 4, 0,
-        reason: '间距 ${gap.toStringAsFixed(1)}dp 必须落在 4dp 设计网格上');
+    expect(gap % 4, 0, reason: '间距 ${gap.toStringAsFixed(1)}dp 必须落在 4dp 设计网格上');
   });
 
   testWidgets('间距调整不得削弱徽标醒目度与按钮规范', (tester) async {
     await tester.pumpWidget(CupertinoApp(
       theme: WeChatTheme.build(Brightness.light),
       home: FriendRequestReviewPage(
+        avatarCacheKey: 'identity:test:request',
         request: _accepted,
         onAccept: () async {},
         onReject: () async {},
@@ -48,8 +49,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 徽标：品牌淡底 + 品牌色粗体文字。
-    final badge = tester.widget<Container>(
-        find.byKey(const Key('friend-request-status')));
+    final badge = tester
+        .widget<Container>(find.byKey(const Key('friend-request-status')));
     final background = (badge.decoration! as BoxDecoration).color!;
     expect(background, WeChatColors.brandTint);
     expect(background.a, greaterThan(0.05));
@@ -59,13 +60,15 @@ void main() {
 
     // 按钮：品牌填充、白字 16sp、48dp 高、12dp 圆角。
     final button = tester.widget<CupertinoButton>(find
-        .ancestor(
-            of: find.text('打开聊天'), matching: find.byType(CupertinoButton))
+        .ancestor(of: find.text('打开聊天'), matching: find.byType(CupertinoButton))
         .first);
     expect(button.color, WeChatColors.brandPrimary);
     expect(button.borderRadius, BorderRadius.circular(WeChatRadius.dialog));
     expect(WeChatRadius.dialog, 12);
-    expect(tester.getSize(find.byKey(const Key('friend-request-open-chat'))).height,
+    expect(
+        tester
+            .getSize(find.byKey(const Key('friend-request-open-chat')))
+            .height,
         48);
     final text = tester.widget<Text>(find.text('打开聊天'));
     expect(text.style!.color, CupertinoColors.white);
@@ -76,6 +79,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
       theme: WeChatTheme.build(Brightness.light),
       home: FriendRequestReviewPage(
+        avatarCacheKey: 'identity:test:request',
         request: _accepted,
         onAccept: () async {},
         onReject: () async {},
@@ -97,7 +101,8 @@ void main() {
         .first);
     expect(button.onPressed, isNull, reason: 'busy 期间不得重复触发打开聊天');
 
-    final badge = tester.getRect(find.byKey(const Key('friend-request-status')));
+    final badge =
+        tester.getRect(find.byKey(const Key('friend-request-status')));
     final box =
         tester.getRect(find.byKey(const Key('friend-request-open-chat')));
     expect(box.top - badge.bottom, greaterThanOrEqualTo(WeChatSpacing.md));
@@ -116,6 +121,7 @@ void main() {
           minScaleFactor: 2,
           maxScaleFactor: 2,
           child: FriendRequestReviewPage(
+            avatarCacheKey: 'identity:test:request',
             request: _longestStatus,
             onAccept: () async {},
             onReject: () async {},
@@ -126,7 +132,8 @@ void main() {
       expect(tester.takeException(), isNull,
           reason: '$brightness 下 320dp 宽 + 2× 字号不得溢出');
       expect(find.text('对方已撤销申请'), findsOneWidget);
-      final badge = tester.getRect(find.byKey(const Key('friend-request-status')));
+      final badge =
+          tester.getRect(find.byKey(const Key('friend-request-status')));
       expect(badge.right, lessThanOrEqualTo(320),
           reason: '徽标右边界 ${badge.right} 超出 320dp 屏幕');
     }
@@ -145,6 +152,7 @@ void main() {
         minScaleFactor: 2,
         maxScaleFactor: 2,
         child: const FriendRequestReviewPage(
+          avatarCacheKey: 'identity:test:request',
           request: _longestStatus,
           onAccept: _noop,
           onReject: _noop,
@@ -154,7 +162,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull, reason: '窄容器下徽标不得溢出');
-    final badge = tester.getRect(find.byKey(const Key('friend-request-status')));
+    final badge =
+        tester.getRect(find.byKey(const Key('friend-request-status')));
     expect(badge.right, lessThanOrEqualTo(200),
         reason: '徽标右边界 ${badge.right} 超出 200dp 容器');
     // 2× 字号下 7 个字在 136dp 文本宽度里必须折行（单行约 30dp 高）。
@@ -174,6 +183,7 @@ void main() {
         minScaleFactor: 1.4,
         maxScaleFactor: 1.4,
         child: FriendRequestReviewPage(
+          avatarCacheKey: 'identity:test:request',
           request: _accepted,
           onAccept: () async {},
           onReject: () async {},
@@ -184,7 +194,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    final badge = tester.getRect(find.byKey(const Key('friend-request-status')));
+    final badge =
+        tester.getRect(find.byKey(const Key('friend-request-status')));
     final button =
         tester.getRect(find.byKey(const Key('friend-request-open-chat')));
     expect(button.top - badge.bottom, greaterThanOrEqualTo(WeChatSpacing.md));

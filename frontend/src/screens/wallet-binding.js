@@ -41,7 +41,7 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
   const root = pageRoot(definition);
   let page = definition.page;
   let offline = definition.state === "cached-offline";
-  let bound = !["unbound", "binding", "address-invalid"].includes(definition.state);
+  let bound = !["unbound", "binding", "address-invalid", "pending"].includes(definition.state);
   let ready = !["unavailable", "allocating", "allocation-failed"].includes(definition.state);
   let amount = definition.state === "amount-invalid" ? "1" : definition.state === "insufficient" ? "99999" : "20.00";
   let pin = "", note = "", error = ({
@@ -66,17 +66,16 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
       if (cancelling) { note = "已取消，未提交提现申请"; draw(); }
     }, { secondary: true }));
     if (page === "home") {
-      const card = element("section", "c-wallet-demo__card");
+      const card = element("section", "c-wallet-demo__card c-wallet-demo__balance-card");
       const heading = element("div", "c-wallet-demo__card-heading");
-      heading.append(element("h2", "", "TRON"));
-      const change = action("", () => jump("binding"), { secondary: true });
-      change.classList.add("c-wallet-demo__change");
-      change.setAttribute("aria-label", bound ? "更改绑定钱包" : "绑定钱包");
-      change.append(icon("edit"));
-      heading.append(change);
+      heading.append(element("h2", "", "USDT · TRC20"));
+      const balance = element("div", "c-wallet-demo__balance");
+      balance.append(element("span", "c-wallet-demo__balance-label", "当前点钻余额"),
+        element("strong", "c-wallet-demo__balance-value", demoBalance),
+        element("span", "c-wallet-demo__balance-unit", "点钻"));
       // 复制 icon 紧贴钱包地址本体（与 Flutter 一致：不再挂在余额行）。
       const addressRow = element("div", "c-wallet-demo__address-row");
-      addressRow.append(element("span", "c-wallet-demo__address", bound ? fixtures.finance.walletAddress : "绑定后可充值和提现"));
+      addressRow.append(element("span", "c-wallet-demo__address", bound ? fixtures.finance.walletAddress : "请先绑定你的钱包地址"));
       if (bound) {
         const copy = action("", () => { note = "地址已复制（演示）"; feedback(); }, { secondary: true });
         copy.classList.add("c-wallet-demo__address-copy");
@@ -84,15 +83,29 @@ export function walletBindingDemo(definition, { depositContent } = {}) {
         copy.append(icon("copy"));
         addressRow.append(copy);
       }
-      card.append(heading, element("p", "", bound ? "已绑定私人钱包" : "尚未绑定私人钱包"), addressRow);
+      card.append(heading, balance, addressRow,
+        element("p", "c-wallet-demo__muted", bound ? "已绑定" : "绑定后可使用充值与提现"));
       if (!ready) card.append(element("p", "c-wallet-demo__error", "钱包暂不可用，请稍后重试"));
-      body.append(card, element("p", "c-wallet-demo__muted", "仅支持 TRON 网络 · 1 点钻 = 1 CNY · 手续费 0"));
+      body.append(card);
+      if (!bound) {
+        const warning = element("div", "c-wallet-demo__binding-warning");
+        warning.append(icon("error"), element("span", "", "请绑定你的钱包地址后再充值、提现。"));
+        body.append(warning);
+      }
+      const bindCard = action(bound ? "更改绑定" : "绑定钱包", () => jump("binding"), { secondary: true, disabled: !ready });
+      bindCard.classList.add("c-wallet-demo__bind-card");
+      bindCard.append(icon("chevron"));
+      body.append(bindCard, element("p", "c-wallet-demo__muted", "仅支持 TRON 网络 · 1 点钻 = 1 CNY · 手续费 0"));
       const shortcuts = element("div", "c-wallet-demo__shortcuts");
       shortcuts.append(action("充值", () => jump("deposit"), { disabled: !bound || !ready }),
         action("提现", () => jump("withdrawal"), { disabled: !bound || !ready }));
       body.append(shortcuts);
-      if (!bound) body.append(action("绑定私人钱包", () => jump("binding"), { secondary: true }));
+      body.append(action("查看已有充值申请", () => jump("history"), { secondary: true }));
       if (!ready) body.append(action("重新加载演示", () => { ready = true; draw(); }, { secondary: true }));
+    } else if (page === "history") {
+      body.append(element("h2", "", "已有充值申请"),
+        element("p", "c-wallet-demo__muted", "示例旧申请 · 只读"),
+        element("p", "", "示例订单 recharge-1 · 待客服处理"));
     } else if (page === "binding") {
       body.append(element("h2", "", bound ? "更改绑定钱包" : "绑定私人钱包"),
         element("p", "", "请使用你自己的 TRON 钱包完成控制权验证。"),

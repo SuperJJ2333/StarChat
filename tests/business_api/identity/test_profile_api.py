@@ -166,7 +166,10 @@ async def test_profile_read_masks_email_and_never_exposes_private_object_key() -
     assert body["nickname"] == "Alice"
     assert body["signature"] is None
     assert body["masked_email"] == "al***@example.test"
-    assert body["avatar_url"] == "https://media.example.test/private/avatar/signed"
+    avatar_url = urlparse(body["avatar_url"])
+    assert avatar_url.scheme == "https"
+    assert avatar_url.path == "/private/avatar/signed"
+    assert "v" not in parse_qs(avatar_url.query)  # Fake storage owns its URL contract.
     assert body["avatar_fallback_seed"]
     serialized = str(body)
     assert "alice@example.test" not in serialized
@@ -604,7 +607,10 @@ def test_local_avatar_storage_uses_tamper_resistant_five_minute_urls(tmp_path) -
     token = unquote(parsed.path.rsplit("/", 1)[-1])
 
     assert parsed.netloc == "api.example.test"
-    assert parse_qs(parsed.query) == {"expires_in": ["300"]}
+    assert parse_qs(parsed.query) == {
+        "expires_in": ["300"],
+        "v": [sha256(b"avatars/user-1/avatar.png").hexdigest()[:32]],
+    }
     assert "avatars/user-1/avatar.png" not in url
     assert storage.read_signed(token, 300) == (content, "image/png")
     tampered = token[:20] + ("A" if token[20] != "A" else "B") + token[21:]

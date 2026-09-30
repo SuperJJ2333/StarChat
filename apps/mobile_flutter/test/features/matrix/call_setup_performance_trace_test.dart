@@ -28,7 +28,15 @@ final class _SilentAlerts implements CallAlertDriver {
   Future<void> vibrate() async {}
 }
 
-final class _Backend with CallBackendTestDefaults implements CallBackend {
+final class _Backend
+    with CallBackendTestDefaults
+    implements CallBackend, CallPerformanceCorrelationBackend {
+  PerformanceCorrelationContext? context;
+  @override
+  void setPerformanceCorrelationContext(PerformanceCorrelationContext? value) {
+    context = value;
+  }
+
   final events = StreamController<CallBackendEvent>.broadcast();
   final answer = Completer<void>();
   bool throwOnVerify = false;
@@ -123,7 +131,14 @@ void main() {
     expect(record.toJson().toString(), isNot(contains('private')));
     expect(recorder.activeCount, 0);
 
+    expect(backend.context, isNotNull);
+    final quality = backend.context!
+        .startOperation(PerformanceOperationType.callActive, windowIndex: 0);
+    quality.finish();
+    expect(records.last.operationId, record.operationId);
+
     controller.dispose();
+    expect(backend.context, isNull);
     await backend.events.close();
   });
 

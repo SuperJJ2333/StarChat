@@ -4,6 +4,23 @@ import 'emoji_preview_cache.dart';
 import 'media_cache.dart';
 import 'media_memory_budget.dart';
 
+const int roomImagePrewarmMaxBytes = 512 * 1024;
+
+/// A legacy preview key may contain the full original. Only a declared,
+/// static thumbnail may be probed ahead of the visible bubble, and its local
+/// reader must check the file length before decoding it into memory.
+Future<Uint8List?> prewarmDeclaredImagePreview({
+  required bool hasDeclaredThumbnail,
+  required bool animated,
+  required Future<Uint8List?> Function(int maxBytes) readCached,
+}) async {
+  if (!hasDeclaredThumbnail || animated) return null;
+  final bytes = await readCached(roomImagePrewarmMaxBytes);
+  return bytes != null && bytes.length <= roomImagePrewarmMaxBytes
+      ? bytes
+      : null;
+}
+
 /// Account-scoped chat previews. The existing authenticated encrypted store
 /// owns persistent bytes and its disk quota; GIF originals are never flattened.
 /// Keep one instance for a room/account lifetime and dispose on account change.
@@ -42,6 +59,11 @@ final class RoomImagePreviewCache {
   late final Future<Uint8List?> Function(String) _read;
   late final Future<void> Function(String, Uint8List) _write;
   bool _disposed = false;
+
+  /// Counts actual cache probes and source invocations, never joined flights.
+  int memoryHits = 0;
+  int diskHits = 0;
+  int sourceLoads = 0;
   // The existing store initializes a secure-storage key on first write. Keep
   // different room instances from racing key creation or quota sweeps. Reads
   // and source requests remain independent; only durable writes are serialized.
@@ -101,8 +123,10 @@ final class RoomImagePreviewCache {
   Uint8List? get(String eventId) {
     if (_disposed) return null;
     final key = _key(eventId);
-    return _memory?.get(key) ??
-        _completedSessionMemory?.get(_sessionKey(eventId));
+    final bytes =
+        _memory?.get(key) ?? _completedSessionMemory?.get(_sessionKey(eventId));
+    if (bytes != null) memoryHits++;
+    return bytes;
   }
 
   final _cachedReads = <String, Future<Uint8List?>>{};
@@ -115,9 +139,15 @@ final class RoomImagePreviewCache {
     final generation = cache.generation;
     final readKey = '$generation:$key';
     final memory = cache.get(key);
-    if (memory != null) return Future<Uint8List?>.value(memory);
+    if (memory != null) {
+      memoryHits++;
+      return Future<Uint8List?>.value(memory);
+    }
     final completed = _completedSessionMemory?.get(_sessionKey(eventId));
-    if (completed != null) return Future<Uint8List?>.value(completed);
+    if (completed != null) {
+      memoryHits++;
+      return Future<Uint8List?>.value(completed);
+    }
     return _cachedReads[readKey] ??= () async {
       try {
         final bytes = await _read(key);
@@ -127,6 +157,7 @@ final class RoomImagePreviewCache {
         if (bytes != null && bytes.isNotEmpty) {
           final retained = _memory!.put(key, bytes);
           _completedSessionMemory?.put(_sessionKey(eventId), retained);
+          diskHits++;
           return retained;
         }
         return null;
@@ -161,6 +192,7 @@ final class RoomImagePreviewCache {
         throw StateError('Image cache cleared');
       }
       if (bytes == null || bytes.isEmpty) {
+        sourceLoads++;
         bytes = await source();
         if (_disposed || memory.generation != generation) {
           throw StateError('Image cache cleared');

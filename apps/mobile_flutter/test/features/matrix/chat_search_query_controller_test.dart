@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
 
 /// 规格 #4/#5：搜索查询控制器。
@@ -24,6 +27,163 @@ void main() {
         mediaCategory: category,
         hasMedia: hasMedia,
       );
+
+  test('legacy short result page is exhausted without an extra request',
+      () async {
+    final controller = ChatSearchQueryController(
+      search: (f, {cursor, limit = 50}) async => [msg('only', 'hello')],
+    )..setKeyword('hello');
+    final page = await controller.executeNow();
+    expect(page.nextCursor, isNull);
+  });
+
+  test('history search records first visible hit and complete local coverage',
+      () async {
+    var nowUs = 1000000;
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      clockUs: () => nowUs,
+      onRecord: records.add,
+    );
+    final controller = ChatSearchQueryController(
+      traceRecorder: recorder,
+      search: (filters, {cursor, limit = 50}) async => const [],
+      searchBatch: (filters, {cursor, limit = 50}) async {
+        nowUs += cursor == null ? 5000 : 4000;
+        return cursor == null
+            ? ChatSearchSlice(
+                items: [msg('event-1', 'secret-keyword')],
+                nextCursor: const ChatSearchCursor(order: 1, eventId: 'next'),
+                scannedPages: 1,
+                scannedRows: 12)
+            : const ChatSearchSlice(
+                items: [], nextCursor: null, scannedPages: 1, scannedRows: 50);
+      },
+    )..setKeyword('secret-keyword');
+
+    final first = await controller.executeNow();
+    expect(first.items, hasLength(1));
+    expect(records, isEmpty, reason: 'partial coverage must stay measurable');
+    final complete = await controller.loadMore(first);
+    expect(complete.nextCursor, isNull);
+    expect(records, hasLength(1));
+    final record = records.single;
+    expect(record.operation, PerformanceOperationType.historySearch);
+    expect(record.result, PerformanceResult.success);
+    expect(
+        record.stagesUs.keys,
+        containsAllInOrder([
+          PerformanceStage.searchScanStarted,
+          PerformanceStage.searchFirstHit,
+          PerformanceStage.searchCoverageComplete,
+        ]));
+    expect(record.firstHitMs, 5);
+    expect(record.fullCoverageMs, 9);
+    expect(record.scanPageCount, 2);
+    expect(record.scanRowCount, 62);
+    final encoded = jsonEncode(record.toJson());
+    expect(encoded, isNot(contains('secret-keyword')));
+    expect(encoded, isNot(contains('event-1')));
+  });
+
+  test('new query cancels an unfinished history search trace', () async {
+    var nowUs = 1000000;
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      clockUs: () => nowUs,
+      onRecord: records.add,
+    );
+    final controller = ChatSearchQueryController(
+      traceRecorder: recorder,
+      search: (filters, {cursor, limit = 50}) async => const [],
+      searchBatch: (filters, {cursor, limit = 50}) async {
+        nowUs += 2000;
+        return const ChatSearchSlice(
+            items: [], nextCursor: ChatSearchCursor(order: 1, eventId: 'next'));
+      },
+    )..setKeyword('private-one');
+    await controller.executeNow();
+    controller.setKeyword('private-two');
+    expect(records, hasLength(1));
+    expect(records.single.result, PerformanceResult.cancelled);
+    expect(records.single.searchCancelReason,
+        PerformanceSearchCancelReason.newQuery);
+    expect(jsonEncode(records.single.toJson()), isNot(contains('private-one')));
+  });
+
+  test('invalid continuation closes its history search trace', () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final controller = ChatSearchQueryController(
+      traceRecorder: recorder,
+      search: (filters, {cursor, limit = 50}) async => const [],
+      searchBatch: (filters, {cursor, limit = 50}) async =>
+          const ChatSearchSlice(
+        items: [],
+        nextCursor: ChatSearchCursor(order: 1, eventId: 'same'),
+      ),
+    )..setKeyword('needle');
+    final first = await controller.executeNow();
+    expect(recorder.activeCount, 1);
+    await expectLater(controller.loadMore(first), throwsStateError);
+    expect(recorder.activeCount, 0);
+    expect(records.single.result, PerformanceResult.failed);
+  });
+
+  test('history search emits only closed restart and cancellation reasons',
+      () async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    final controller = ChatSearchQueryController(
+      traceRecorder: recorder,
+      search: (filters, {cursor, limit = 50}) async => const [],
+      searchBatch: (filters, {cursor, limit = 50}) async =>
+          const ChatSearchSlice(
+        items: [],
+        nextCursor: ChatSearchCursor(order: 1, eventId: 'next'),
+      ),
+    )..setKeyword('private-one');
+
+    await controller.executeNow();
+    controller.setKeyword('private-two');
+    expect(records.last.searchCancelReason,
+        PerformanceSearchCancelReason.newQuery);
+    await controller.executeNow();
+    controller.invalidate(
+      restartReason: PerformanceSearchRestartReason.safetyInvalidation,
+      cancelReason: PerformanceSearchCancelReason.visibilityRevoked,
+    );
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.queryChanged);
+    expect(records.last.searchCancelReason,
+        PerformanceSearchCancelReason.visibilityRevoked);
+
+    await controller.executeNow();
+    controller.invalidate(
+        cancelReason: PerformanceSearchCancelReason.routeClosed);
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.safetyInvalidation);
+    expect(records.last.searchCancelReason,
+        PerformanceSearchCancelReason.routeClosed);
+
+    await controller.executeNow();
+    await controller.executeNow();
+    controller.invalidate(
+        cancelReason: PerformanceSearchCancelReason.routeClosed);
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.manualRefresh);
+    final wire = jsonEncode(records.map((record) => record.toJson()).toList());
+    expect(wire, isNot(contains('private-one')));
+    expect(wire, isNot(contains('private-two')));
+  });
 
   group('#4 默认空态与组合筛选', () {
     test('首次进入（无条件）为空态：不查询', () async {
@@ -106,7 +266,9 @@ void main() {
           search: (f, {cursor, limit = 50}) async => const []);
       controller.setMediaCategory(ChatSearchMediaCategory.imageVideo);
       controller.setMediaCategory(ChatSearchMediaCategory.file);
-      expect(controller.activeFilters.where((f) => f.kind == ChatSearchFilterKind.media),
+      expect(
+          controller.activeFilters
+              .where((f) => f.kind == ChatSearchFilterKind.media),
           hasLength(1));
     });
   });
@@ -121,12 +283,14 @@ void main() {
     });
 
     test('分类匹配：图片视频含说明文字匹配；文件匹配正文/文件名；链接匹配正文与 URL 文字', () {
-      final image = msg('i1', 'holiday.jpg', order: 1,
-          category: ChatSearchMediaCategory.imageVideo, hasMedia: true);
-      final file = msg('f1', 'report.pdf', order: 2,
-          category: ChatSearchMediaCategory.file, hasMedia: true);
-      final link = msg('l1', '看这个 https://example.test/a', order: 3,
-          category: ChatSearchMediaCategory.link);
+      final image = msg('i1', 'holiday.jpg',
+          order: 1,
+          category: ChatSearchMediaCategory.imageVideo,
+          hasMedia: true);
+      final file = msg('f1', 'report.pdf',
+          order: 2, category: ChatSearchMediaCategory.file, hasMedia: true);
+      final link = msg('l1', '看这个 https://example.test/a',
+          order: 3, category: ChatSearchMediaCategory.link);
       expect(
           ChatSearchFilters(mediaCategory: ChatSearchMediaCategory.imageVideo)
               .matches(image),
@@ -153,7 +317,8 @@ void main() {
         final matched = data.where(f.matches).toList();
         int start = 0;
         if (cursor != null) {
-          start = matched.indexWhere((m) => m.timelineOrder == cursor.order) + 1;
+          start =
+              matched.indexWhere((m) => m.timelineOrder == cursor.order) + 1;
         }
         final end = (start + limit).clamp(0, matched.length);
         return matched.sublist(start, end);
@@ -216,9 +381,10 @@ void main() {
   group('高亮与时间', () {
     test('安全文本高亮片段（不执行 HTML）', () {
       const text = '<script>alert(1)</script> Hello <b>world</b>';
-      final segments =
-          buildHighlightSnippet(text, 'hello');
-      expect(segments.any((s) => s.highlighted && s.text.toLowerCase().contains('hello')),
+      final segments = buildHighlightSnippet(text, 'hello');
+      expect(
+          segments.any(
+              (s) => s.highlighted && s.text.toLowerCase().contains('hello')),
           isTrue);
       expect(segments.map((s) => s.text).join(), contains('script>'),
           reason: '原文保留（作为纯文本）但不执行');
@@ -226,7 +392,8 @@ void main() {
 
     test('时间格式：当天 HH:mm；其他日期 yyyy-MM-dd HH:mm', () {
       final now = DateTime(2026, 9, 6, 15, 0);
-      expect(formatSearchResultTime(DateTime(2026, 9, 6, 9, 5), now: now), '09:05');
+      expect(formatSearchResultTime(DateTime(2026, 9, 6, 9, 5), now: now),
+          '09:05');
       expect(formatSearchResultTime(DateTime(2026, 9, 5, 9, 5), now: now),
           '2026-09-05 09:05');
     });

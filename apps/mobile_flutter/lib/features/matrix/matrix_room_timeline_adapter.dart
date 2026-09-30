@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import '../../core/performance_trace.dart';
 
 import 'room_timeline_controller.dart';
 import 'room_history_date_capability.dart';
@@ -76,6 +77,7 @@ String friendAcceptedTransactionId({
 final class MatrixRoomTimelineAdapter
     implements
         RoomTimelineAdapter,
+        RoomRetryDiagnostics,
         RoomOptimisticTextAdapter,
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
@@ -263,6 +265,16 @@ final class MatrixRoomTimelineAdapter
   @override
   Future<void> retry(String transactionId) async {
     await _capability.retry(transactionId);
+  }
+
+  @override
+  Future<void> retryWithDiagnostics(
+      String transactionId, PerformanceTrace Function() startSdkAttempt) {
+    final capability = _capability;
+    return capability is RoomRetryDiagnostics
+        ? (capability as RoomRetryDiagnostics)
+            .retryWithDiagnostics(transactionId, startSdkAttempt)
+        : capability.retry(transactionId);
   }
 
   @override

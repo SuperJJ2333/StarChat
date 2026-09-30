@@ -10,7 +10,7 @@ import 'package:liuhetong_mobile/ui/chat/chat_search_page.dart';
 /// 打开/切月都会请求该月 metadata（有界、不加载正文），且：
 /// - knownPresent 高亮可点；
 /// - knownEmpty 弱化不可点；
-/// - unknown 保持可点（点击走该日的有界定位查询）；
+/// - unknown 不可点；
 /// - 未来日期不可点；
 /// - 加载中/失败是独立状态，绝不显示成"本月没有聊天记录"。
 void main() {
@@ -20,9 +20,45 @@ void main() {
     Map<int, RoomHistoryDayState> states = const {},
   }) =>
       RoomHistoryMonthDays(
-          month: CalendarMonth(year, m), dayStates: states);
+          month: CalendarMonth(year, m),
+          coverageComplete: true,
+          dayStates: {
+            for (var d = 1; d <= CalendarMonth(year, m).daysInMonth; d++)
+              d: states[d] ?? RoomHistoryDayState.knownEmpty
+          });
 
-  testWidgets('打开时读取当前月 metadata，knownPresent 高亮、knownEmpty 灰显、unknown 可点',
+  testWidgets('open calendar refreshes removed and newly decrypted local days',
+      (tester) async {
+    final revisions = ValueNotifier<int>(0);
+    var presentDay = 3;
+    var loads = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: CalendarPickerPage(
+      latest: const CalendarMonth(2026, 9),
+      historyChanges: revisions,
+      loadMonth: (m) async {
+        loads++;
+        return month(m.year, m.month,
+            states: {presentDay: RoomHistoryDayState.knownPresent});
+      },
+      onDateTap: (_) {},
+    )));
+    await tester.pumpAndSettle();
+    GestureDetector day(int number) =>
+        tester.widget<GestureDetector>(find.byKey(Key('calendar-day-$number')));
+    expect(day(3).onTap, isNotNull);
+    expect(day(4).onTap, isNull);
+    presentDay = 4;
+    revisions.value++;
+    await tester.pumpAndSettle();
+    expect(loads, 2);
+    expect(day(3).onTap, isNull);
+    expect(day(4).onTap, isNotNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    revisions.dispose();
+  });
+
+  testWidgets('打开时读取当前月 metadata，knownPresent 高亮、knownEmpty 灰显、unknown 不可点',
       (tester) async {
     final requested = <CalendarMonth>[];
     DateTime? picked;
@@ -49,8 +85,8 @@ void main() {
       of: find.byKey(const Key('calendar-day-3')),
       matching: find.byType(Container),
     ));
-    expect((present.decoration! as BoxDecoration).color,
-        isNotNull, reason: 'knownPresent 有消息标记');
+    expect((present.decoration! as BoxDecoration).color, isNotNull,
+        reason: 'knownPresent 有消息标记');
 
     final empty = tester.widget<Container>(find.descendant(
       of: find.byKey(const Key('calendar-day-10')),
@@ -64,10 +100,12 @@ void main() {
     await tester.pump();
     expect(picked, isNull);
 
-    // unknown 仍是普通可点日期（可能只是本地没有覆盖证据）。
     await tester.tap(find.byKey(const Key('calendar-day-15')));
     await tester.pump();
-    expect(picked, DateTime(2026, 9, 15));
+    expect(picked, isNull);
+    await tester.tap(find.byKey(const Key('calendar-day-3')));
+    await tester.pump();
+    expect(picked, DateTime(2026, 9, 3));
   });
 
   testWidgets('切月读取新月份并丢弃过期响应', (tester) async {
@@ -79,8 +117,7 @@ void main() {
         earliest: const CalendarMonth(2026, 8),
         latest: const CalendarMonth(2026, 9),
         onCancelMonthLookup: () => cancels++,
-        loadMonth: (m) =>
-            m.month == 9 ? september.future : august.future,
+        loadMonth: (m) => m.month == 9 ? september.future : august.future,
       ),
     ));
     await tester.pump();
@@ -156,6 +193,8 @@ void main() {
   });
 
   testWidgets('未来日期始终不可点，即使 metadata 标记为有消息', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final future = DateTime.now().add(const Duration(days: 2));
     DateTime? picked;
     await tester.pumpWidget(CupertinoApp(
@@ -171,6 +210,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final day = find.byKey(Key('calendar-day-${future.day}'));
+    await tester.ensureVisible(day);
     await tester.tap(day);
     await tester.pump();
     expect(picked, isNull);
@@ -208,10 +248,10 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
-    final prev = tester.widget<CupertinoButton>(
-        find.byKey(const Key('calendar-prev-month')));
-    final next = tester.widget<CupertinoButton>(
-        find.byKey(const Key('calendar-next-month')));
+    final prev = tester
+        .widget<CupertinoButton>(find.byKey(const Key('calendar-prev-month')));
+    final next = tester
+        .widget<CupertinoButton>(find.byKey(const Key('calendar-next-month')));
     expect(prev.onPressed, isNull);
     expect(next.onPressed, isNull);
   });

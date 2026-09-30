@@ -121,7 +121,7 @@ void main() {
       expect(first.source, VideoPosterSource.server);
       expect(first.cacheHit, isFalse);
       expect(first.downloadBytes, 0);
-      expect(h.diskReads, 0, reason: '服务端已有 poster 时不必读本地缓存');
+      expect(h.diskReads, 1, reason: '先探测本机小封面，断网重进时不依赖服务端');
       expect(h.localProbes, 0, reason: '有 poster 时必须不探测/不抽帧本地视频');
       expect(h.extractions, 0);
 
@@ -260,6 +260,19 @@ void main() {
   });
 
   group('Test 5：缓存命中', () {
+    test('durable local poster wins over server retrieval on reentry',
+        () async {
+      final h = Harness(
+          serverPoster: posterBytes, disk: {'alice:reopened': posterBytes});
+      final outcome = await h.pipeline.resolve('reopened');
+      expect(outcome.source, VideoPosterSource.disk);
+      expect(h.diskReads, 1);
+      expect(h.serverCalls, 0,
+          reason: 'reentering offline should not request a known poster');
+      expect(h.pipeline.diskHits, 1);
+      expect(h.pipeline.downloadBytes, 0);
+    });
+
     test('第一次抽帧生成，第二次（新流水线、空内存）直读磁盘', () async {
       final disk = <String, Uint8List>{};
       final first = Harness(

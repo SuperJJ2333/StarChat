@@ -11,6 +11,7 @@ import '../features/matrix/matrix_security_logger.dart';
 import 'business_api_client.dart';
 import 'business_auth_contracts.dart';
 import 'session_failure.dart';
+import 'startup_failure_metadata.dart';
 import '../features/auth/login_controller.dart'
     show LoginStageException, MatrixNewDeviceRecoveryRequired;
 import 'cache/cache_repository.dart';
@@ -36,6 +37,7 @@ final class SessionBootstrapController extends ChangeNotifier {
     required this.business,
     required this.matrix,
     this.restoreLocalMatrixSession,
+    this.onFailure,
     MatrixSecurityLogger? securityLogger,
     this.remoteLogoutTimeout = const Duration(seconds: 5),
   }) : securityLogger =
@@ -54,6 +56,7 @@ final class SessionBootstrapController extends ChangeNotifier {
   final BusinessSessionGateway business;
   final MatrixSessionGateway matrix;
   final Future<void> Function(String? matrixUserId)? restoreLocalMatrixSession;
+  final StartupFailureObserver? onFailure;
   bool canShowCachedMessages = false;
   int _generation = 0;
   Future<void>? _bootstrapFlight;
@@ -267,6 +270,12 @@ final class SessionBootstrapController extends ChangeNotifier {
         _matrixRestorePending = false;
       }
       if (!matrix.isLoggedIn || _matrixRestorePending) {
+        notifyStartupFailure(
+            onFailure,
+            const StartupFailureMetadata(
+              category: SessionFailureCategory.unknown,
+              boundary: StartupFailureBoundary.localRestore,
+            ));
         // A local restore failure is not evidence that the business token was
         // revoked. Keep credentials and encrypted history; deny chat access.
         _set(const SessionBootstrapState(
@@ -278,6 +287,12 @@ final class SessionBootstrapController extends ChangeNotifier {
       final expectedMatrixUser = await business.currentMatrixUserId();
       if (generation != _generation) return;
       if (expectedMatrixUser == null || expectedMatrixUser != matrix.userId) {
+        notifyStartupFailure(
+            onFailure,
+            const StartupFailureMetadata(
+              category: SessionFailureCategory.matrixIdentity,
+              boundary: StartupFailureBoundary.localIdentity,
+            ));
         _set(
           const SessionBootstrapState(
             SessionBootstrapStatus.fatalError,
@@ -373,11 +388,15 @@ final class SessionBootstrapController extends ChangeNotifier {
       _offlineIfPossible();
     } catch (error) {
       if (generation != _generation) return;
+      final failure =
+          safeStartupFailure(error, boundary: StartupFailureBoundary.bootstrap);
+      notifyStartupFailure(onFailure, failure);
       _set(SessionBootstrapState(
         SessionBootstrapStatus.fatalError,
         message: error is LoginStageException
             ? error.message
-            : sessionFailureMessage(error, stage: 'local_restore'),
+            : sessionFailureCategoryMessage(failure.category,
+                stage: 'local_restore'),
       ));
     }
   }

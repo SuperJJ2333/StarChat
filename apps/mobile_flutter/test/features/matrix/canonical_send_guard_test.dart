@@ -355,6 +355,54 @@ void main() {
     await lease.cancel();
   });
 
+  test('room search defers new heads but revokes withdrawn plaintext',
+      () async {
+    final client = _Client();
+    final room = _Room(client, '!room:test');
+    client.roomsById[room.id] = room;
+    final owner =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    final lease = await owner.openRoomLease(room.id);
+    final timeline = await lease.openLogicalRoomTimeline(onUpdate: () {});
+    var appends = 0, security = 0, calendar = 0;
+    lease.localHistoryAppends.addListener(() => appends++);
+    lease.localHistoryChanges.addListener(() => security++);
+    lease.localHistoryCalendarChanges.addListener(() => calendar++);
+    final initialRevision = lease.localHistorySearchRevision;
+    final initialGeneration = lease.localHistorySnapshot.generation;
+    void emit(EventUpdateType type, String id,
+        {String eventType = 'm.room.message',
+        Map<String, dynamic> body = const {}}) {
+      client.onEvent.add(EventUpdate(roomID: room.id, type: type, content: {
+        'event_id': id,
+        'type': eventType,
+        'content': body,
+      }));
+    }
+
+    emit(EventUpdateType.timeline, 'fresh');
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    expect(appends, 1);
+    expect(calendar, 1);
+    expect(security, 0);
+    expect(lease.localHistorySearchRevision, initialRevision);
+    expect(lease.localHistorySnapshot.generation, initialGeneration);
+    emit(EventUpdateType.ephemeral, 'receipt');
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    expect(appends, 1);
+    expect(security, 0);
+    emit(EventUpdateType.timeline, 'redaction',
+        eventType: 'm.room.redaction', body: {'redacts': 'fresh'});
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    expect(security, 1);
+    expect(lease.localHistorySearchRevision, greaterThan(initialRevision));
+    expect(
+        lease.localHistorySnapshot.generation, greaterThan(initialGeneration));
+    timeline.dispose();
+    await lease.cancel();
+    await client.dispose();
+  });
+
   test('initial history attachment failure disposes already opened primary',
       () async {
     final registry = DuplicateRoomRegistry();

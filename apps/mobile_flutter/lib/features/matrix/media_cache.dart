@@ -12,6 +12,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/performance_metrics.dart';
 import '../../core/performance_trace.dart';
+import '../../core/network_state_manager.dart' show networkFailureHttpStatus;
 import 'media_cache_metrics.dart';
 import 'media_index.dart';
 
@@ -1311,7 +1312,29 @@ Future<Uint8List> _loadMediaWithCacheObserved(
   } on MediaLoadCanceled {
     ownedTrace?.finish(result: PerformanceResult.cancelled);
     rethrow;
-  } catch (_) {
+  } catch (error) {
+    final rawStatus = networkFailureHttpStatus(error);
+    final status = rawStatus != null && rawStatus >= 100 && rawStatus <= 599
+        ? rawStatus
+        : null;
+    observed?.setNetwork(
+      error: switch (error) {
+        TimeoutException() => PerformanceNetworkError.requestTimeout,
+        SocketException() => PerformanceNetworkError.socketFailure,
+        HandshakeException() => PerformanceNetworkError.tlsFailure,
+        _ when status == 429 => PerformanceNetworkError.rateLimit,
+        _ when status == 401 || status == 403 =>
+          PerformanceNetworkError.authFailure,
+        _ when status != null && status >= 500 =>
+          PerformanceNetworkError.server5xx,
+        _ when status != null && status >= 400 =>
+          PerformanceNetworkError.businessRejection,
+        _ => PerformanceNetworkError.unknown,
+      },
+    );
+    if (status != null) {
+      observed?.statusCode = status;
+    }
     ownedTrace?.finish(result: PerformanceResult.failed);
     rethrow;
   }

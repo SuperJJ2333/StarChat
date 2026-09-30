@@ -17,6 +17,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -2341,6 +2342,46 @@ void main() {
     await matrix.suspend().timeout(const Duration(seconds: 1));
     expect(client.deletedPushers, ['opaque-key']);
     expect(() => capability.createPusherGateway(), throwsStateError);
+  });
+
+  test('managed home watchdog reports only bounded sync timeline count',
+      () async {
+    final client = SnapshotClient();
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'), suspendClient: (_) async {});
+    late SyncWatchdogTarget target;
+    final resource = await matrix.registerAppHomeResource(
+      open: (capability) async {
+        target = capability.createSyncWatchdogTarget();
+      },
+      close: () async {},
+    );
+    expect(target, isA<SyncTimelineCountSource>());
+    final counts = <int>[];
+    final subscription = (target as SyncTimelineCountSource)
+        .timelineEventCounts
+        .listen(counts.add);
+    MatrixEvent event(String id) => MatrixEvent(
+          content: const {},
+          type: 'm.room.message',
+          eventId: id,
+          senderId: '@test:example.invalid',
+          originServerTs: DateTime.utc(2026),
+        );
+    client.onSync.add(SyncUpdate(
+      nextBatch: 'n',
+      rooms: RoomsUpdate(join: {
+        '!room:test': JoinedRoomUpdate(
+          timeline: TimelineUpdate(events: [event('a'), event('b')]),
+        ),
+      }),
+    ));
+    await Future<void>.delayed(Duration.zero);
+    expect(counts, [2]);
+    await subscription.cancel();
+    await resource.cancel();
+    expect(() => (target as SyncTimelineCountSource).timelineEventCounts,
+        throwsStateError);
   });
 
   test('clear and account changes cannot reuse previous decrypted preview',

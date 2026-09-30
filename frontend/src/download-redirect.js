@@ -1,6 +1,5 @@
-// itms-services 的 url= 参数里禁止携带查询串（?v=...）：部分 iOS 版本会
-// 静默失败，点击安装毫无反应（2026-09-24 实测）。防缓存靠 manifest 的
-// no-store 响应头即可；若未来真需要按版本区分，用独立文件名而不是查询串。
+import {installAndroidNetworkDownload} from './download-network.js';
+
 const iosInstall = 'itms-services://?action=download-manifest&url=https://www.liuhetong888.com/downloads/ios/manifest.plist';
 
 export function downloadDestination(search, device) {
@@ -17,6 +16,10 @@ export function downloadDestination(search, device) {
 export function startDownload(location, device, status) {
   const target = downloadDestination(location.search, device);
   if (!target) return;
+  if (target.startsWith('itms-services:')) {
+    if (status) status.textContent = '本版更换企业签名团队。请先阅读下方提示，再点击“安装 iOS 正式版”。';
+    return;
+  }
   if (status) status.textContent = '正在打开安装入口。如未出现系统提示，请点击下方对应设备的安装按钮。';
   try { location.assign(target); } catch {
     if (status) status.textContent = '浏览器未能自动打开安装入口，请点击下方对应设备的安装按钮。';
@@ -24,5 +27,9 @@ export function startDownload(location, device, status) {
 }
 
 if (typeof window !== 'undefined') {
-  startDownload(window.location, window.navigator, document.getElementById('download-status'));
+  const network=installAndroidNetworkDownload({document,location:window.location,device:window.navigator,
+    autoStart:downloadDestination(window.location.search,window.navigator)==='/downloads/latest-arm64.apk'});
+  if (!network) startDownload(window.location, window.navigator, document.getElementById('download-status'));
+  else if (downloadDestination(window.location.search,window.navigator)?.startsWith('itms-services:'))
+    startDownload(window.location, window.navigator, document.getElementById('download-status'));
 }

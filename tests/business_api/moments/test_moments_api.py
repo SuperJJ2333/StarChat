@@ -248,9 +248,7 @@ async def test_identity_projection_is_remark_free(ctx):
             'username': 'alice_id',
             'nickname': 'Alice',
             'display_name': 'Alice',
-            'avatar_url': (
-                'https://media.example.test/avatars/u1/avatar.png?signed=1'
-            ),
+            'avatar_url': 'https://media.example.test/avatars/u1/avatar.png?signed=1',
         }
         assert 'remark' not in author, '朋友圈响应不得包含备注字段'
         await client.post(

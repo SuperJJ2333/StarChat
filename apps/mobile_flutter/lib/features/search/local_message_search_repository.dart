@@ -129,6 +129,15 @@ final class UnavailableLocalHistorySource implements LocalHistorySearchSource {
       const [];
 }
 
+enum LocalSearchChangeKind { append, remove, reset, backfill }
+
+@immutable
+final class LocalSearchRepositoryChange {
+  const LocalSearchRepositoryChange(this.kind, [this.eventIds = const {}]);
+  final LocalSearchChangeKind kind;
+  final Set<String> eventIds;
+}
+
 /// 账号维度的**本机聊天记录搜索仓库**。
 ///
 /// 产品语义：搜索「本机已经存在、已经解密、用户可见」的聊天记录，
@@ -180,6 +189,8 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
   bool _backfillComplete = false;
   bool _cancelRequested = false;
   Future<int>? _inFlight;
+  LocalSearchRepositoryChange lastChange =
+      const LocalSearchRepositoryChange(LocalSearchChangeKind.reset);
 
   /// 当前绑定的账号 key（通常是 Matrix userId）；未登录时为 null。
   String? get accountKey => _accountKey;
@@ -209,6 +220,7 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     _cancelRequested = false;
     _inFlight = null;
     index.clear();
+    lastChange = const LocalSearchRepositoryChange(LocalSearchChangeKind.reset);
     notifyListeners();
   }
 
@@ -290,6 +302,8 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     // 只有真的扫完整个范围才认为「回填完成」——否则后续 ensureBackfilled
     // 仍会继续推进，历史不会被永久截断。
     if (completed) _backfillComplete = true;
+    lastChange =
+        const LocalSearchRepositoryChange(LocalSearchChangeKind.backfill);
     notifyListeners();
     return indexed;
   }
@@ -311,6 +325,8 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     _backfillComplete = false;
     _inFlight = null;
     _cancelRequested = true;
+    lastChange =
+        const LocalSearchRepositoryChange(LocalSearchChangeKind.backfill);
     notifyListeners();
   }
 
@@ -321,13 +337,24 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
   int recordRoomMessages(Iterable<LocalSearchMessage> messages,
       {bool replace = false}) {
     final indexed = _ingest(messages, replace: replace);
-    if (indexed > 0) notifyListeners();
+    if (indexed > 0) {
+      lastChange =
+          const LocalSearchRepositoryChange(LocalSearchChangeKind.append);
+      notifyListeners();
+    }
     return indexed;
   }
 
   /// E1：按 eventId 删除（消息撤回联动）。命中删除时通知监听者。
   void removeMessages(Iterable<String> eventIds) {
-    if (index.removeMessages(eventIds) > 0) notifyListeners();
+    final removedIds = Set<String>.of(eventIds);
+    if (removedIds.isEmpty) return;
+    index.removeMessages(removedIds);
+    // A hit may still be visible after its index row was evicted. Notify even
+    // when the index reports zero removals, so rendered plaintext is revoked.
+    lastChange = LocalSearchRepositoryChange(
+        LocalSearchChangeKind.remove, Set.unmodifiable(removedIds));
+    notifyListeners();
   }
 
   /// 账号维度的检索：完全走内存索引，有界且无 I/O。
@@ -350,6 +377,7 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     _cancelRequested = false;
     _inFlight = null;
     index.clear();
+    lastChange = const LocalSearchRepositoryChange(LocalSearchChangeKind.reset);
     notifyListeners();
   }
 

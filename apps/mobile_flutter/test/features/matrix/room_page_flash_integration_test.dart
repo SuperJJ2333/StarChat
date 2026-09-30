@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,10 +12,14 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/video_poster_pipeline.dart';
+import 'package:liuhetong_mobile/features/matrix/video_poster_session_cache.dart';
 import 'package:liuhetong_mobile/ui/chat/flash_photo.dart';
 import 'package:liuhetong_mobile/ui/chat/contain_image_bubble.dart';
 import 'package:liuhetong_mobile/ui/chat/room_image_gallery.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
+import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
 
@@ -32,7 +39,26 @@ final class _FlashClient extends Client {
 
 final class _FlashRoom extends Room {
   _FlashRoom(Client client, String tag)
-      : super(id: '!flash-$tag:test', client: client);
+      : _tag = tag,
+        super(id: '!flash-$tag:test', client: client);
+
+  final String _tag;
+  _FlashTimeline? _timeline;
+  void Function()? _onTimelineUpdate;
+
+  void redactVideo() {
+    final video =
+        _timeline!.events.firstWhere((event) => event.eventId == r'$video');
+    video.setRedactionEvent(Event(
+      room: this,
+      eventId: r'$video-redaction',
+      senderId: '@peer:test',
+      type: EventTypes.Redaction,
+      originServerTs: DateTime.utc(2026, 9, 17),
+      content: const {'redacts': r'$video'},
+    ));
+    _onTimelineUpdate?.call();
+  }
 
   @override
   bool get isDirectChat => false;
@@ -48,8 +74,11 @@ final class _FlashRoom extends Room {
     void Function()? onNewEvent,
     void Function()? onUpdate,
     String? eventContextId,
-  }) async =>
-      _FlashTimeline(this);
+  }) async {
+    _onTimelineUpdate = onUpdate;
+    return _timeline ??=
+        _FlashTimeline(this, includeVideo: _tag.startsWith('video-'));
+  }
 
   @override
   Future<String?> sendEvent(
@@ -65,7 +94,7 @@ final class _FlashRoom extends Room {
 }
 
 final class _FlashTimeline extends Fake implements Timeline {
-  _FlashTimeline(Room room)
+  _FlashTimeline(Room room, {bool includeVideo = false})
       : events = [
           Event(
             room: room,
@@ -101,6 +130,20 @@ final class _FlashTimeline extends Fake implements Timeline {
               'body': '普通图片2',
             },
           ),
+          if (includeVideo)
+            Event(
+              room: room,
+              eventId: r'$video',
+              senderId: '@peer:test',
+              type: EventTypes.Message,
+              originServerTs: DateTime.utc(2026, 9, 16),
+              content: {
+                'msgtype': 'm.video',
+                'body': '视频',
+                'url': 'mxc://test/video',
+                'info': {'mimetype': 'video/mp4', 'duration': 12000},
+              },
+            ),
         ].reversed.toList();
 
   @override
@@ -184,6 +227,173 @@ final class _MemoryStore implements SecureKeyValueStore {
 }
 
 void main() {
+  testWidgets('room reentry passes retained video poster into first frame',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(clearMediaMemoryCaches);
+    final client = _FlashClient('video-preview');
+    const mediaId = r'$video';
+    final bytes = Uint8List.fromList(base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='));
+    final key = VideoPosterSessionCache.keyFor(
+      accountId: client.userID!,
+      roomId: client.room.id,
+      mediaId: mediaId,
+      mediaVersion: mediaId,
+      spec: chatVideoPosterSpec,
+    );
+    final first = VideoPosterSessionCache.forRoomSession();
+    await first.load(key, () async => bytes);
+    first.disposeRoomSession();
+
+    await _pumpRoom(tester, client);
+    await tester.pump(const Duration(milliseconds: 200));
+    final card = tester.widget<VideoMessageCard>(find.byType(VideoMessageCard));
+    expect(card.initialPosterBytes, bytes);
+    expect(find.byType(Image), findsWidgets);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+
+  testWidgets('recalled video evicts poster retained across room reentry',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    addTearDown(clearMediaMemoryCaches);
+    final client = _FlashClient('video-redaction');
+    const mediaId = r'$video';
+    final bytes = Uint8List.fromList(base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='));
+    final key = VideoPosterSessionCache.keyFor(
+      accountId: client.userID!,
+      roomId: client.room.id,
+      mediaId: mediaId,
+      mediaVersion: mediaId,
+      spec: chatVideoPosterSpec,
+    );
+    final previousRoom = VideoPosterSessionCache.forRoomSession();
+    await previousRoom.load(key, () async => bytes);
+    previousRoom.disposeRoomSession();
+
+    await _pumpRoom(tester, client);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(
+        tester
+            .widget<VideoMessageCard>(find.byType(VideoMessageCard))
+            .initialPosterBytes,
+        bytes);
+    client.room.redactVideo();
+    expect(
+        client.room._timeline!.events
+            .firstWhere((event) => event.eventId == r'$video')
+            .redacted,
+        isTrue);
+    final state = tester.state(find.byType(RoomPage)) as dynamic;
+    await state.controller.refresh();
+    expect(state.controller.findMessage(r'$video').isRecalled, isTrue);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    expect(find.textContaining('撤回'), findsWidgets);
+
+    final nextRoom = VideoPosterSessionCache.forRoomSession();
+    expect(nextRoom.peek(key), isNull,
+        reason: 'a recalled poster must not survive in the account pool');
+    nextRoom.disposeRoomSession();
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+
+  testWidgets('nudge toast keeps a pending media preview repaint scheduled',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _FlashClient('toast-paint');
+    await _pumpRoom(tester, client);
+    final state = tester.state(find.byType(RoomPage)) as dynamic;
+    expect(state.ownProfile, isNotNull);
+    for (var i = 0; i < 3; i++) {
+      tester
+          .widget<WeChatMessageBubble>(find.byType(WeChatMessageBubble).first)
+          .onAvatarDoubleTap!();
+      await tester.pump();
+      await tester.pump();
+    }
+
+    state.debugScheduleMediaPreviewPaint();
+    expect(state.debugMediaPreviewPaintScheduled, isTrue);
+    tester
+        .widget<WeChatMessageBubble>(find.byType(WeChatMessageBubble).first)
+        .onAvatarDoubleTap!();
+    await tester.pump();
+
+    expect(find.byKey(const Key('room-nudge-toast')), findsOneWidget);
+    expect(state.debugMediaPreviewPaintScheduled, isTrue,
+        reason: 'the toast must not cancel the pending preview repaint');
+    await tester.pump(const Duration(milliseconds: 17));
+    expect(state.debugMediaPreviewPaintScheduled, isFalse);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+
+  testWidgets('room prewarm skips a large legacy original image',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _FlashClient('large-original');
+    await _pumpRoom(tester, client);
+    await tester.pump(const Duration(milliseconds: 200));
+    final state = tester.state(find.byType(RoomPage)) as dynamic;
+    expect(state.messageKeys.containsKey(r'$normal-after'), isTrue);
+    expect(find.byKey(const ValueKey('image-\$normal-after')), findsOneWidget);
+    state.roomImagePreviewCache
+        .seed(r'$normal-after', Uint8List(2 * 1024 * 1024));
+    state.roomImagePreviewCache.memoryHits = 0;
+
+    state.debugWarmVisibleMediaPreviews();
+
+    expect(state.roomImagePreviewCache.memoryHits, 0,
+        reason:
+            'legacy keys may hold full originals and must not be prewarmed');
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+
+  testWidgets('selected message keeps a full row highlight until deselected',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await _pumpRoom(tester, _FlashClient('selection'));
+    await tester.pump(const Duration(milliseconds: 200));
+    final bubble = tester
+        .widget<WeChatMessageBubble>(find.byType(WeChatMessageBubble).first);
+    bubble.onLongPress!();
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('多选'));
+    await tester.pump();
+    final checkbox =
+        find.byKey(const ValueKey('message-select-\$normal-after'));
+    final button = tester.widget<CupertinoButton>(checkbox);
+    if ((button.child as Icon).icon == CupertinoIcons.circle) {
+      await tester.tap(checkbox);
+      await tester.pump();
+    }
+    expect((tester.widget<CupertinoButton>(checkbox).child as Icon).icon,
+        CupertinoIcons.checkmark_circle_fill);
+    final selected = find
+        .byKey(const ValueKey('message-selection-highlight-\$normal-after'));
+    expect(selected, findsOneWidget);
+    final decoration =
+        tester.widget<DecoratedBox>(selected).decoration as BoxDecoration;
+    expect(decoration.color!.a, greaterThan(0));
+    await tester.pump(const Duration(seconds: 2));
+    expect(
+        find.byKey(
+            const ValueKey('message-selection-highlight-\$normal-after')),
+        findsOneWidget);
+    await tester.tap(checkbox);
+    await tester.pump();
+    expect(selected, findsNothing);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+
   testWidgets('flash photo: no forward action, destroyed caption blocks reopen',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

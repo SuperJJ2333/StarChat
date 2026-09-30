@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'media_cache_metrics.dart';
+import '../../core/performance_trace.dart';
 
 /// 媒体变体（同一原始媒体不同字节 → 不同 object_hash，属正常现象）。
 enum MediaVariantKind {
@@ -117,10 +118,13 @@ final class MediaIndex {
     this.maxPendingTouches = 32,
     this.hotCapacity = 512,
     DateTime Function()? clock,
+    PerformanceTraceRecorder? performanceRecorder,
   })  : _path = databasePath,
         _factory = factory ?? databaseFactoryFfi,
         _directory = supportDirectory ?? _defaultDirectory,
-        _now = clock ?? DateTime.now;
+        _now = clock ?? DateTime.now,
+        _performanceRecorder =
+            performanceRecorder ?? PerformanceTraceRecorder.instance;
 
   /// 进程级单例。生产依赖矩阵 SDK 在初始化本地库时对 `sqlite3` 的全局
   /// `open` 覆盖（`SQfLiteEncryptionHelper.ffiInit`）；索引若在覆盖之前
@@ -141,6 +145,7 @@ final class MediaIndex {
   final DatabaseFactory _factory;
   final Future<String> Function() _directory;
   final DateTime Function() _now;
+  final PerformanceTraceRecorder _performanceRecorder;
 
   /// 同一对象 last_access 的最小刷新间隔。
   final Duration touchDebounce;
@@ -300,6 +305,30 @@ CREATE TABLE $_table (
     }
   }
 
+  Future<List<Map<String, Object?>>> _measuredQuery(
+      Future<List<Map<String, Object?>>> Function() query) async {
+    if (!_performanceRecorder.recordingEnabled) return query();
+    // Open/flush and memory lookup are deliberately outside this SQL span.
+    final trace = _performanceRecorder.start(
+      PerformanceOperationType.mediaLoad,
+      parentOperation: PerformanceTrace.currentOperation,
+    )..mark(PerformanceStage.cacheLoadStarted);
+    trace.databaseOperation = PerformanceDatabaseOperation.mediaIndexLookup;
+    try {
+      final rows = await query();
+      trace.mark(PerformanceStage.cacheLoadDone);
+      trace.setDatabase(
+          operation: PerformanceDatabaseOperation.mediaIndexLookup,
+          rowCount: rows.length);
+      trace.finish();
+      return rows;
+    } catch (_) {
+      trace.mark(PerformanceStage.cacheLoadDone);
+      trace.finish(result: PerformanceResult.failed);
+      rethrow;
+    }
+  }
+
   /// 查询：进程内热条目 → SQLite。
   Future<MediaIndexEntry?> lookup(
       String accountId, String roomId, String eventId) async {
@@ -318,10 +347,10 @@ CREATE TABLE $_table (
         return null;
       }
       await _flushIfDebounced();
-      final rows = await db.query(_table,
+      final rows = await _measuredQuery(() => db.query(_table,
           where: 'account_namespace=? AND reference_key=?',
           whereArgs: [namespace, referenceKey],
-          limit: 1);
+          limit: 1));
       if (rows.isEmpty) {
         MediaCacheMetrics.indexMisses++;
         return null;
@@ -363,10 +392,10 @@ CREATE TABLE $_table (
         return null;
       }
       await _flushIfDebounced();
-      final rows = await db.query(_table,
+      final rows = await _measuredQuery(() => db.query(_table,
           where: 'account_namespace=? AND object_hash=? AND verified_at>0',
           whereArgs: [namespace, objectHash],
-          limit: 1);
+          limit: 1));
       if (rows.isEmpty) {
         MediaCacheMetrics.indexMisses++;
         return null;

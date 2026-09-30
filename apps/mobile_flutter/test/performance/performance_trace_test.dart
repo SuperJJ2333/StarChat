@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/diagnostic_time_anchor.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 
@@ -111,6 +112,105 @@ void main() {
     expect(record.slowFrameCount, 2);
     expect(record.slowBuildCount, 1);
     expect(record.slowRasterCount, 1);
+  });
+
+  test('sync timeline event count is bounded and survives frame attribution',
+      () {
+    final trace = recorder.start(PerformanceOperationType.matrixSync);
+    trace.timelineEventCount = 17;
+    nowUs = 120000;
+    final record = trace.finish();
+    expect(record.timelineEventCount, 17);
+    expect(record.toJson()['timeline_event_count'], 17);
+    expect(
+      record
+          .withFrameAttribution(
+            const PerformanceFrameCounts(),
+            complete: true,
+          )
+          .toJson()['timeline_event_count'],
+      17,
+    );
+
+    final oversized = recorder.start(PerformanceOperationType.matrixSync);
+    oversized.timelineEventCount = 100001;
+    expect(oversized.finish().toJson()['timeline_event_count'], 100000);
+
+    final unrelated = recorder.start(PerformanceOperationType.apiRequest);
+    unrelated.timelineEventCount = 4;
+    expect(
+        unrelated.finish().toJson(), isNot(contains('timeline_event_count')));
+  });
+
+  test('closed search, keyboard and room stages serialize without raw labels',
+      () {
+    final keyboard = recorder.start(
+      PerformanceOperationType.keyboardTransition,
+    );
+    keyboard.keyboardDirection = PerformanceKeyboardDirection.show;
+    keyboard.mark(PerformanceStage.keyboardRequested);
+    nowUs = 18000;
+    keyboard.mark(PerformanceStage.keyboardStableFrame);
+    expect(
+        keyboard.finish().toJson(), containsPair('keyboard_direction', 'show'));
+
+    final room = recorder.start(PerformanceOperationType.roomLocalFrame);
+    room.roomRoutePhase = PerformanceRoomRoutePhase.leave;
+    room.mark(PerformanceStage.routeExitRequested);
+    nowUs = 31000;
+    room.mark(PerformanceStage.routeExitFrame);
+    expect(room.finish().toJson(), containsPair('room_route_phase', 'leave'));
+
+    final search = recorder.start(PerformanceOperationType.historySearch);
+    search.searchRestartReason = PerformanceSearchRestartReason.queryChanged;
+    search.scanPageCount = 3;
+    search.scanRowCount = 140;
+    search.firstHitMs = 9;
+    search.fullCoverageMs = 42;
+    search.mark(PerformanceStage.searchScanStarted);
+    nowUs = 41000;
+    search.mark(PerformanceStage.searchFirstHit);
+    nowUs = 69000;
+    search.mark(PerformanceStage.searchCoverageComplete);
+    final json = search.finish().toJson();
+    expect(json['operation'], 'history_search');
+    expect(json['restart_reason'], 'query_changed');
+    expect(json['scan_page_count'], 3);
+    expect(json['scan_row_count'], 140);
+    expect(json['first_hit_ms'], 9);
+    expect(json['full_coverage_ms'], 42);
+  });
+
+  test('fresh Date anchor attaches UTC to final trace and delayed frame copy',
+      () {
+    final anchor = DiagnosticTimeAnchor();
+    anchor.observe(
+      dateHeader: 'Mon, 28 Sep 2026 08:00:00 GMT',
+      sentAtMs: 1000,
+      receivedAtMs: 1200,
+    );
+    nowUs = 1200000;
+    final timed = PerformanceTraceRecorder(
+      metrics: metrics,
+      clockUs: () => nowUs,
+      timeAnchor: anchor,
+    );
+    final trace = timed.start(PerformanceOperationType.apiRequest);
+    nowUs = 2200000;
+    final record = trace.finish();
+    expect(record.toJson()['started_at_utc'], '2026-09-28T08:00:00.100Z');
+    expect(record.toJson()['time_anchor_age_ms'], 1000);
+    expect(
+        record
+            .withFrameAttribution(
+              const PerformanceFrameCounts(),
+              complete: true,
+            )
+            .toJson()['started_at_utc'],
+        '2026-09-28T08:00:00.100Z');
+    expect(
+        recorder.start(PerformanceOperationType.apiRequest).finish().toJson(),
+        isNot(contains('started_at_utc')));
   });
 
   test('media scheduler counters and priority use bounded typed fields', () {

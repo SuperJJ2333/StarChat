@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+import 'media_cache.dart';
+
 /// 视频预览图（封面/首帧缩略图）会话缓存（规格 #1）。
 ///
 /// 生命周期：**当前账号登录期间的房间会话实例**——普通页面重建不清空；
@@ -30,7 +32,91 @@ final class VideoPosterSessionCache {
     this.diskWrite,
     this.diskDelete,
     this.diskListKeys,
-  });
+    bool retainCompletedPreviews = false,
+  }) : _retainCompletedPreviews = retainCompletedPreviews;
+
+  /// Room instances share only completed, bounded encoded posters. In-flight
+  /// work and encrypted temporary disk files remain owned by their room.
+  factory VideoPosterSessionCache.forRoomSession({
+    Future<Uint8List?> Function(String cacheKey)? diskRead,
+    Future<void> Function(String cacheKey, Uint8List bytes)? diskWrite,
+    Future<void> Function(String cacheKey)? diskDelete,
+    Future<List<String>> Function()? diskListKeys,
+  }) {
+    if (!_sessionClearerRegistered) {
+      registerDecodedMediaCacheClearer(clearSessionMemory);
+      _sessionClearerRegistered = true;
+    }
+    final cache = VideoPosterSessionCache(
+      diskRead: diskRead,
+      diskWrite: diskWrite,
+      diskDelete: diskDelete,
+      diskListKeys: diskListKeys,
+      retainCompletedPreviews: true,
+    );
+    _activeRoomSessions.add(cache);
+    return cache;
+  }
+
+  static const _completedMaxBytes = 16 * 1024 * 1024;
+  static const _completedMaxEntryBytes = 512 * 1024;
+  static const _completedMaxEntries = 256;
+  static final _completed = <String, Uint8List>{};
+  static final _activeRoomSessions = <VideoPosterSessionCache>{};
+  static int _completedBytes = 0;
+  static bool _sessionClearerRegistered = false;
+
+  /// Clears account-owned plaintext on sign-out and resource pressure.
+  static void clearSessionMemory() {
+    for (final cache in _activeRoomSessions.toList()) {
+      cache.clearMemory();
+    }
+    _completed.clear();
+    _completedBytes = 0;
+  }
+
+  static Uint8List? _completedGet(String key) {
+    final bytes = _completed.remove(key);
+    if (bytes != null) _completed[key] = bytes;
+    return bytes;
+  }
+
+  static void _completedPut(String key, Uint8List bytes) {
+    if (bytes.isEmpty || bytes.length > _completedMaxEntryBytes) return;
+    final previous = _completed.remove(key);
+    if (previous != null) _completedBytes -= previous.length;
+    _completed[key] = bytes;
+    _completedBytes += bytes.length;
+    while (_completedBytes > _completedMaxBytes ||
+        _completed.length > _completedMaxEntries) {
+      final oldest = _completed.keys.first;
+      _completedBytes -= _completed.remove(oldest)!.length;
+    }
+  }
+
+  static void _completedEvict(String key) {
+    final removed = _completed.remove(key);
+    if (removed != null) _completedBytes -= removed.length;
+  }
+
+  final bool _retainCompletedPreviews;
+
+  /// Synchronous first-frame lookup. Returned bytes are immutable.
+  Uint8List? peek(String cacheKey) {
+    final local = _memory.remove(cacheKey);
+    if (local != null) {
+      _memory[cacheKey] = local;
+      return local;
+    }
+    return _retainCompletedPreviews ? _completedGet(cacheKey) : null;
+  }
+
+  /// Releases this room's in-flight work and temporary memory, retaining only
+  /// completed posters for another room instance of the same account.
+  void disposeRoomSession() {
+    _activeRoomSessions.remove(this);
+    clearMemory();
+  }
 
   /// 内存预算（解码图片字节上限，默认 32 MiB）。
   final int memoryBudgetBytes;
@@ -78,6 +164,13 @@ final class VideoPosterSessionCache {
       _memory[cacheKey] = memory; // LRU 刷新。
       return Future.value(VideoPosterResult(memory, fromMemory: true));
     }
+    if (_retainCompletedPreviews) {
+      final completed = _completedGet(cacheKey);
+      if (completed != null) {
+        _storeMemory(cacheKey, completed);
+        return Future.value(VideoPosterResult(completed, fromMemory: true));
+      }
+    }
     final pending = _inFlight[cacheKey];
     if (pending != null) return pending;
 
@@ -110,8 +203,8 @@ final class VideoPosterSessionCache {
             return VideoPosterResult(cached, fromDisk: true, stale: true);
           }
           diskHits++;
-          _storeMemory(cacheKey, cached);
-          return VideoPosterResult(cached, fromDisk: true);
+          final retained = _storeMemory(cacheKey, cached);
+          return VideoPosterResult(retained, fromDisk: true);
         }
         // cached 为 null（磁盘无数据）→ 继续走加载器（evict 不阻止
         // 探测——加载结果由加载后的检查决定是否写回）。
@@ -134,7 +227,7 @@ final class VideoPosterSessionCache {
     if (!_isCurrent(cacheKey, generation, revision)) {
       return VideoPosterResult(fresh, freshlyLoaded: true, stale: true);
     }
-    _storeMemory(cacheKey, fresh);
+    final retained = _storeMemory(cacheKey, fresh);
     // ③ 回写会话磁盘（尽力而为；空间不足不失败——内存已命中）。
     if (diskWrite != null) {
       try {
@@ -149,16 +242,18 @@ final class VideoPosterSessionCache {
         // 磁盘满：例外路径（验证记录单独标注）；不影响本次显示。
       }
     }
-    return VideoPosterResult(fresh,
+    return VideoPosterResult(retained,
         freshlyLoaded: true,
         stale: !_isCurrent(cacheKey, generation, revision));
   }
 
-  void _storeMemory(String key, Uint8List bytes) {
+  Uint8List _storeMemory(String key, Uint8List bytes) {
+    final owned = Uint8List.fromList(bytes).asUnmodifiableView();
     final previous = _memory.remove(key);
     if (previous != null) _memoryBytes -= previous.length;
-    _memory[key] = bytes;
-    _memoryBytes += bytes.length;
+    _memory[key] = owned;
+    _memoryBytes += owned.length;
+    if (_retainCompletedPreviews) _completedPut(key, owned);
     // 超预算：只淘汰内存条目（磁盘不动——会话存续期间不淘汰已成功项）。
     while (_memory.isNotEmpty &&
         (_memoryBytes > memoryBudgetBytes ||
@@ -167,6 +262,7 @@ final class VideoPosterSessionCache {
       final removed = _memory.remove(oldestKey)!;
       _memoryBytes -= removed.length;
     }
+    return owned;
   }
 
   // —— R11 修复：会话代次 + 已移除键集合 ——
@@ -208,11 +304,24 @@ final class VideoPosterSessionCache {
   /// 撤回/删除：只移除对应媒体项（内存 + 磁盘）。
   /// R11：标记键已移除——在途加载完成时不再写回。
   Future<void> evict(String cacheKey) async {
+    if (_retainCompletedPreviews) {
+      // A second live route may already hold this poster in its own LRU or
+      // encrypted temporary disk. Invalidate every room before yielding to
+      // disk cleanup so no route can repaint a recalled item.
+      final rooms = <VideoPosterSessionCache>{this, ..._activeRoomSessions};
+      await Future.wait<void>(rooms.map((room) => room._evictOwn(cacheKey)));
+      return;
+    }
+    await _evictOwn(cacheKey);
+  }
+
+  Future<void> _evictOwn(String cacheKey) async {
     _evictedKeys.add(cacheKey);
     _keyRevisions[cacheKey] = (_keyRevisions[cacheKey] ?? 0) + 1;
     _inFlight.remove(cacheKey);
     final removed = _memory.remove(cacheKey);
     if (removed != null) _memoryBytes -= removed.length;
+    if (_retainCompletedPreviews) _completedEvict(cacheKey);
     if (diskDelete != null) {
       try {
         await _mutate(cacheKey, () => diskDelete!(cacheKey));

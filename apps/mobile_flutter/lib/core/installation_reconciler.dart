@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'installation_container_probe.dart';
 import 'installation_marker.dart';
 import 'session_store.dart';
+import 'session_failure.dart';
+import 'startup_failure_metadata.dart';
 
 /// 启动时安装世代核对的结果。
 enum InstallationResetOutcome {
@@ -33,11 +35,24 @@ final class InstallationReconciler {
     required this.marker,
     required this.probe,
     required this.store,
+    this.onFailure,
   });
 
   final InstallationMarkerStore marker;
   final InstallationContainerProbe probe;
   final SecureSessionStore store;
+  final StartupFailureObserver? onFailure;
+
+  void _failure(StartupFailureBoundary boundary, Object error) =>
+      notifyStartupFailure(
+          onFailure, safeStartupFailure(error, boundary: boundary));
+
+  void _protectedDataFailure() => notifyStartupFailure(
+      onFailure,
+      const StartupFailureMetadata(
+        category: SessionFailureCategory.protectedData,
+        boundary: StartupFailureBoundary.protectedDataProbe,
+      ));
 
   Future<bool> _canInspectUnregisteredInstallation() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return true;
@@ -50,7 +65,8 @@ final class InstallationReconciler {
     final bool registered;
     try {
       registered = await marker.isRegistered();
-    } catch (_) {
+    } catch (error) {
+      _failure(StartupFailureBoundary.markerRead, error);
       // 不确定是否为全新安装时，绝不抹掉可能是有效的会话与密钥。
       return InstallationResetOutcome.failed;
     }
@@ -61,15 +77,18 @@ final class InstallationReconciler {
     // AfterFirstUnlock background-call path without requiring an unlocked UI.
     try {
       if (!await _canInspectUnregisteredInstallation()) {
+        _protectedDataFailure();
         return InstallationResetOutcome.failed;
       }
-    } catch (_) {
+    } catch (error) {
+      _failure(StartupFailureBoundary.protectedDataProbe, error);
       return InstallationResetOutcome.failed;
     }
     final bool continuation;
     try {
       continuation = await probe.hasPreviousMatrixStore();
-    } catch (_) {
+    } catch (error) {
+      _failure(StartupFailureBoundary.containerProbe, error);
       // 探测回答的是"密钥是否还有效"，探测不出来就不能删任何东西。
       return InstallationResetOutcome.failed;
     }
@@ -77,7 +96,8 @@ final class InstallationReconciler {
       // 覆盖升级：容器完好意味着这些密钥仍在使用。只播种标记。
       try {
         await marker.register();
-      } catch (_) {
+      } catch (error) {
+        _failure(StartupFailureBoundary.markerRegister, error);
         return InstallationResetOutcome.failed;
       }
       return InstallationResetOutcome.adopted;
@@ -85,17 +105,20 @@ final class InstallationReconciler {
 
     try {
       if (!await _canInspectUnregisteredInstallation()) {
+        _protectedDataFailure();
         return InstallationResetOutcome.failed;
       }
       await store.clearInstallation();
-    } catch (_) {
+    } catch (error) {
+      _failure(StartupFailureBoundary.installationCleanup, error);
       // 清除未完成就不写标记，否则残留会被永久化，下次启动不再重试。
       // 部分清除是安全的：任一残留都不会让状态比修复前更差。
       return InstallationResetOutcome.failed;
     }
     try {
       await marker.register();
-    } catch (_) {
+    } catch (error) {
+      _failure(StartupFailureBoundary.markerRegister, error);
       // 清除已生效，但标记未落定，下次启动会幂等地重跑一次清除。
       return InstallationResetOutcome.failed;
     }

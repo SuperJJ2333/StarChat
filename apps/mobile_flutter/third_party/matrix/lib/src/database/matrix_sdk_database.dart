@@ -37,6 +37,147 @@ import 'package:matrix/src/database/indexeddb_box.dart'
 import 'package:matrix/src/database/database_file_storage_stub.dart'
     if (dart.library.io) 'package:matrix/src/database/database_file_storage_io.dart';
 
+final class MatrixSearchSnapshotInvalidated implements Exception {
+  const MatrixSearchSnapshotInvalidated();
+}
+
+final class MatrixSearchBackendUnavailable implements Exception {
+  const MatrixSearchBackendUnavailable();
+}
+
+bool _searchJsonUnavailable(Object error) {
+  final message = error.toString().toLowerCase();
+  return (message.contains('no such function:') && message.contains('json_')) ||
+      message.contains('no such table: json_each') ||
+      message.contains('no such module: json_each');
+}
+
+/// Bounds the event ID copies retained by all rooms in one search query.
+/// The encrypted database's own timeline storage is outside this budget.
+final class MatrixSearchSnapshotBudget {
+  MatrixSearchSnapshotBudget({int maxBytes = 32 * 1024 * 1024})
+      : maxBytes = maxBytes.clamp(0, 32 * 1024 * 1024).toInt();
+
+  final int maxBytes;
+  int _retainedBytes = 0;
+  int get retainedBytes => _retainedBytes;
+
+  bool _tryRetain(int bytes) {
+    if (bytes < 0 || bytes > maxBytes - _retainedBytes) return false;
+    _retainedBytes += bytes;
+    return true;
+  }
+
+  void _release(int bytes) {
+    _retainedBytes -= bytes;
+    assert(_retainedBytes >= 0);
+  }
+}
+
+/// One search query's ordered local event IDs. The low-memory form retains
+/// page anchors instead of another copy of a large timeline fragment.
+final class MatrixSearchEventIds {
+  MatrixSearchEventIds._fixed(List<String> ids,
+      {MatrixSearchSnapshotBudget? budget, int retainedBytes = 0})
+      : _ids = ids,
+        _readCurrent = null,
+        _readSqlPage = null,
+        _first = null,
+        _last = null,
+        _length = ids.length,
+        _budget = budget,
+        _retainedBytes = retainedBytes;
+
+  MatrixSearchEventIds._anchored(
+      this._readCurrent, this._first, this._last, this._length)
+      : _readSqlPage = null,
+        _budget = null,
+        _retainedBytes = 0;
+
+  MatrixSearchEventIds._sqlPaged(this._readSqlPage, this._length)
+      : _ids = null,
+        _readCurrent = null,
+        _first = null,
+        _last = null,
+        _budget = null,
+        _retainedBytes = 0;
+
+  List<String>? _ids;
+  final Future<List<String>> Function()? _readCurrent;
+  final Future<List<String>> Function(int, int, String?)? _readSqlPage;
+  final String? _first, _last;
+  final int _length;
+  final MatrixSearchSnapshotBudget? _budget;
+  final int _retainedBytes;
+  final Map<int, String> _checkpoints = {};
+  bool _disposed = false;
+
+  Future<List<String>> page(int offset, int limit) async {
+    if (_disposed) throw StateError('Search ID snapshot was disposed');
+    if (offset < 0) throw RangeError.value(offset, 'offset');
+    if (limit <= 0 || offset >= _length) return const [];
+    final fixed = _ids;
+    if (fixed != null) {
+      return fixed.sublist(offset, min(fixed.length, offset + limit));
+    }
+    final sqlPage = _readSqlPage;
+    if (sqlPage != null) {
+      final previous = offset == 0 ? null : _checkpoints[offset - 1];
+      if (offset > 0 && previous == null) {
+        throw const MatrixSearchSnapshotInvalidated();
+      }
+      final result =
+          await sqlPage(offset, min(limit, _length - offset), previous);
+      if (_disposed) throw StateError('Search ID snapshot was disposed');
+      if (result.length != min(limit, _length - offset)) {
+        throw const MatrixSearchSnapshotInvalidated();
+      }
+      _checkpoints[offset + result.length - 1] = result.last;
+      return result;
+    }
+    final current = await _readCurrent!();
+    if (_disposed) throw StateError('Search ID snapshot was disposed');
+    final first = _first!, last = _last!;
+    final firstIndex = current.indexOf(first);
+    final lastIndex = current.lastIndexOf(last);
+    // New heads may precede the captured first ID, but a changed span means
+    // that this bounded snapshot can no longer preserve its original rows.
+    if (firstIndex < 0 ||
+        lastIndex < firstIndex ||
+        lastIndex - firstIndex + 1 != _length) {
+      throw const MatrixSearchSnapshotInvalidated();
+    }
+    final start = offset == 0
+        ? firstIndex
+        : () {
+            final previous = _checkpoints[offset - 1];
+            if (previous == null) {
+              throw const MatrixSearchSnapshotInvalidated();
+            }
+            final position = current.indexOf(previous, firstIndex);
+            if (position < firstIndex || position >= lastIndex) {
+              throw const MatrixSearchSnapshotInvalidated();
+            }
+            return position + 1;
+          }();
+    final end = min(lastIndex + 1, start + limit);
+    if (start > lastIndex || end - start < min(limit, _length - offset)) {
+      throw const MatrixSearchSnapshotInvalidated();
+    }
+    final result = current.sublist(start, end);
+    _checkpoints[offset + result.length - 1] = result.last;
+    return result;
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _ids = null;
+    _checkpoints.clear();
+    _budget?._release(_retainedBytes);
+  }
+}
+
 /// Database based on SQlite3 on native and IndexedDB on web. For native you
 /// have to pass a `Database` object, which can be created with the sqflite
 /// package like this:
@@ -436,6 +577,21 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     final raw = await _eventsBox.get(TupleKey(room.id, eventId).toString());
     if (raw == null) return null;
     return Event.fromJson(copyMap(raw), room);
+  }
+
+  /// Aligned batch lookup. A missing row remains a null slot at its ID's
+  /// original position, so local-search coverage is never silently completed.
+  Future<List<Event?>> getSearchEventsByIds(
+      Room room, List<String> eventIds) async {
+    if (eventIds.isEmpty) return const [];
+    final keys = [
+      for (final id in eventIds) TupleKey(room.id, id).toString(),
+    ];
+    final raws = await _eventsBox.getAllTransient(keys);
+    return [
+      for (final raw in raws)
+        raw == null ? null : Event.fromJson(copyMap(raw), room),
+    ];
   }
 
   /// Loads a whole list of events at once from the store for a specific room
@@ -1758,6 +1914,196 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
         return eventIds;
       });
+
+  Future<T> _searchRead<T>(Future<T> Function() operation) async {
+    late T result;
+    await _collection.zoneTransaction(() async {
+      result = await operation();
+    });
+    return result;
+  }
+
+  Future<MatrixSearchEventIds> _openSearchWithoutJson1(Database sql, String key,
+      int maxBytes, MatrixSearchSnapshotBudget? budget) async {
+    final sizes = await sql.rawQuery('''
+SELECT length(CAST(v AS BLOB)) AS json_bytes
+FROM "$_timelineFragmentsBoxName" WHERE k = ?
+''', [key]);
+    if (sizes.isEmpty) return MatrixSearchEventIds._fixed(const []);
+    final bytes = (sizes.single['json_bytes'] as num).toInt();
+    // For a JSON string array, each element needs at least two quotes and a
+    // separator. Thus 8 bytes per ID plus UTF-16 text is below 5x JSON bytes.
+    // Refuse a larger row before transferring or decoding it into Dart.
+    final upperBound = bytes * 5;
+    if (upperBound > min(maxBytes, 32 * 1024 * 1024) ||
+        !(budget?._tryRetain(upperBound) ?? true)) {
+      throw const MatrixSearchBackendUnavailable();
+    }
+    try {
+      final rows = await sql.rawQuery('''
+SELECT v FROM "$_timelineFragmentsBoxName" WHERE k = ?
+''', [key]);
+      if (rows.length != 1 || rows.single['v'] is! String) {
+        throw const MatrixSearchSnapshotInvalidated();
+      }
+      final ids =
+          (jsonDecode(rows.single['v'] as String) as List).cast<String>();
+      return MatrixSearchEventIds._fixed(ids,
+          budget: budget, retainedBytes: budget == null ? 0 : upperBound);
+    } catch (_) {
+      budget?._release(upperBound);
+      rethrow;
+    }
+  }
+
+  /// Capture the current synced timeline once. Ordinary head appends do not
+  /// shift subsequent search pages; a removed anchor invalidates the query.
+  Future<MatrixSearchEventIds> openSearchEventIds(Room room,
+      {int maxBytes = 32 * 1024 * 1024,
+      MatrixSearchSnapshotBudget? budget}) async {
+    final key = TupleKey(room.id, '').toString();
+    Future<List<String>> readCurrent() async =>
+        List<String>.from(await _timelineFragmentsBox.get(key) ?? const []);
+    final sql = database;
+    // IndexedDB has no SQL JSON1 reader. Native searches always inspect the
+    // encrypted row's size before asking Box to decode its entire ID array.
+    if (sql == null) {
+      final ids = await readCurrent();
+      if (ids.isEmpty) return MatrixSearchEventIds._fixed(ids);
+      final estimatedBytes =
+          ids.fold<int>(0, (bytes, id) => bytes + 8 + id.length * 2);
+      if (estimatedBytes <= min(maxBytes, 32 * 1024 * 1024) &&
+          (budget?._tryRetain(estimatedBytes) ?? true)) {
+        return MatrixSearchEventIds._fixed(ids,
+            budget: budget, retainedBytes: budget == null ? 0 : estimatedBytes);
+      }
+      return MatrixSearchEventIds._anchored(
+          readCurrent, ids.first, ids.last, ids.length);
+    }
+
+    return _searchRead(() async {
+      late final List<Map<String, Object?>> metadata;
+      try {
+        metadata = await sql.rawQuery('''
+SELECT json_array_length(v) AS item_count,
+       length(CAST(v AS BLOB)) AS json_bytes,
+       CASE WHEN json_array_length(v) > 0
+            THEN json_extract(v, '\$[0]') END AS first_id,
+       CASE WHEN json_array_length(v) > 0
+            THEN json_extract(v, '\$[#-1]') END AS last_id
+FROM "$_timelineFragmentsBoxName" WHERE k = ?
+''', [key]);
+      } catch (error) {
+        if (!_searchJsonUnavailable(error)) rethrow;
+        return _openSearchWithoutJson1(sql, key, maxBytes, budget);
+      }
+      if (metadata.isEmpty) return MatrixSearchEventIds._fixed(const []);
+      final row = metadata.single;
+      final length = (row['item_count'] as num).toInt();
+      if (length == 0) return MatrixSearchEventIds._fixed(const []);
+      final first = row['first_id'] as String;
+      final last = row['last_id'] as String;
+      // JSON UTF-8 bytes conservatively bound the UTF-16 ID strings, including
+      // escapes and surrogate pairs. The fragment JSON is not copied to Dart.
+      final estimatedBytes =
+          length * 8 + (row['json_bytes'] as num).toInt() * 2;
+      final withinRoomLimit = estimatedBytes <= min(maxBytes, 32 * 1024 * 1024);
+      final retained =
+          withinRoomLimit && (budget?._tryRetain(estimatedBytes) ?? true);
+      if (retained) {
+        try {
+          // Use the same committed SQL source as metadata. Box.get can expose
+          // uncommitted cached heads from an active receive batch.
+          final encoded = await sql.rawQuery('''
+SELECT v FROM "$_timelineFragmentsBoxName" WHERE k = ?
+''', [key]);
+          if (encoded.length != 1 || encoded.single['v'] is! String) {
+            throw const MatrixSearchSnapshotInvalidated();
+          }
+          final ids = (jsonDecode(encoded.single['v'] as String) as List)
+              .cast<String>();
+          if (ids.length != length || ids.first != first || ids.last != last) {
+            throw const MatrixSearchSnapshotInvalidated();
+          }
+          // This private decoded list is the only search-owned retained ID set.
+          // The fixed handle releases its shared reservation on dispose.
+          return MatrixSearchEventIds._fixed(ids,
+              budget: budget,
+              retainedBytes: budget == null ? 0 : estimatedBytes);
+        } catch (_) {
+          budget?._release(estimatedBytes);
+          rethrow;
+        }
+      }
+
+      Future<List<String>> readSqlPage(
+          int offset, int count, String? previous) async {
+        return _searchRead(() async {
+          try {
+            final size = await sql.rawQuery('''
+SELECT json_array_length(v) AS item_count
+FROM "$_timelineFragmentsBoxName" WHERE k = ?
+''', [key]);
+            if (size.length != 1 || size.single['item_count'] is! num) {
+              throw const MatrixSearchSnapshotInvalidated();
+            }
+            final currentLength = (size.single['item_count'] as num).toInt();
+            final firstIndex = currentLength - length;
+            if (firstIndex < 0) {
+              throw const MatrixSearchSnapshotInvalidated();
+            }
+            final previousIndex = offset == 0 ? -1 : firstIndex + offset - 1;
+            // Include the captured endpoints and prior-page checkpoint in the same
+            // JSON1 walk as the requested page. Only count + 3 IDs cross into Dart.
+            final rows = await sql.rawQuery('''
+SELECT ids.key AS item_index, ids.value AS event_id
+FROM "$_timelineFragmentsBoxName" AS fragment, json_each(fragment.v) AS ids
+WHERE fragment.k = ? AND (
+  CAST(ids.key AS INTEGER) = ? OR CAST(ids.key AS INTEGER) = ? OR
+  CAST(ids.key AS INTEGER) = ? OR
+  CAST(ids.key AS INTEGER) BETWEEN ? AND ?)
+''', [
+              key,
+              firstIndex,
+              currentLength - 1,
+              previousIndex,
+              firstIndex + offset,
+              firstIndex + offset + count - 1,
+            ]);
+            final selected = <int, String>{};
+            for (final row in rows) {
+              if (row['item_index'] is! num || row['event_id'] is! String) {
+                throw const MatrixSearchSnapshotInvalidated();
+              }
+              selected[(row['item_index'] as num).toInt()] =
+                  row['event_id'] as String;
+            }
+            if (selected[firstIndex] != first ||
+                selected[currentLength - 1] != last ||
+                (offset > 0 && selected[previousIndex] != previous)) {
+              throw const MatrixSearchSnapshotInvalidated();
+            }
+            final result = <String>[];
+            for (var i = 0; i < count; i++) {
+              final id = selected[firstIndex + offset + i];
+              if (id == null) {
+                throw const MatrixSearchSnapshotInvalidated();
+              }
+              result.add(id);
+            }
+            return result;
+          } catch (error) {
+            if (_searchJsonUnavailable(error)) {
+              throw const MatrixSearchBackendUnavailable();
+            }
+            rethrow;
+          }
+        });
+      }
+
+      return MatrixSearchEventIds._sqlPaged(readSqlPage, length);
+    });
+  }
 
   @override
   Future<void> storePresence(String userId, CachedPresence presence) =>

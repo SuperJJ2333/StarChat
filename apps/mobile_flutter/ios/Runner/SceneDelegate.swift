@@ -11,8 +11,21 @@ class SceneDelegate: FlutterSceneDelegate {
     let controller = engine.viewController ?? FlutterViewController(engine: engine, nibName: nil, bundle: nil)
     window.rootViewController = controller
     self.window = window
+    window.isUserInteractionEnabled = windowScene.activationState == .foregroundActive
     registerSceneLifeCycle(with: engine)
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     window.makeKeyAndVisible()
+  }
+
+  override func sceneWillResignActive(_ scene: UIScene) {
+    window?.isUserInteractionEnabled = false
+    window?.endEditing(true)
+    super.sceneWillResignActive(scene)
+  }
+
+  override func sceneDidBecomeActive(_ scene: UIScene) {
+    super.sceneDidBecomeActive(scene)
+    window?.isUserInteractionEnabled = true
+    (UIApplication.shared.delegate as? AppDelegate)?.resumeMessageNotificationRouting()
   }
 }

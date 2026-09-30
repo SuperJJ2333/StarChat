@@ -63,6 +63,8 @@ register("chat", "announcement", [
 ]);
 register("chat", "group-info", [["default", "聊天信息 / 12 字群聊名称"]]);
 register("chat", "group-management", [["owner", "群管理 / 群主"], ["transfer-confirm", "群管理 / 群主转让确认"], ["dissolve-confirm", "群管理 / 解散确认"]]);
+register("chat", "search", [["history-results", "查找聊天记录 / 结果"], ["global-results", "全局搜索 / 群聊与聊天记录"]]);
+register("chat", "group-management", [["transfer-members", "转让群主 / 搜索成员"], ["transfer-pending", "转让群主 / 待核对"], ["transfer-completed", "群聊信息 / 转让完成"]]);
 
 register("foundation", "tokens", [
   ["overview", "Foundations / 语义 Token / 浅色", 1180]

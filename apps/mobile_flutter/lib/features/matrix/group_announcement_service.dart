@@ -33,6 +33,12 @@ final class AnnouncementDecryptionUnavailable implements Exception {
   const AnnouncementDecryptionUnavailable();
 }
 
+/// The current public reference exists, but its document is no longer present.
+/// This is distinct from transport, access-denied and sender-integrity failures.
+final class AnnouncementReferencedEventUnavailable implements Exception {
+  const AnnouncementReferencedEventUnavailable();
+}
+
 final class AnnouncementBlock {
   const AnnouncementBlock.text(this.value)
       : isImage = false,
@@ -129,9 +135,20 @@ abstract interface class GroupAnnouncementService {
   Future<Uint8List> loadImage(String eventId);
 }
 
-final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
-  MatrixGroupAnnouncementService(this.room);
+/// Opaque, local-only identity of the current account, room and state revision.
+/// Implemented by both Matrix services and their room-lease adapter.
+abstract interface class GroupAnnouncementReferenceSource {
+  String get announcementReferenceIdentity;
+}
+
+final class MatrixGroupAnnouncementService
+    implements GroupAnnouncementService, GroupAnnouncementReferenceSource {
+  MatrixGroupAnnouncementService(this.room, {this.ensureCurrent});
   final Room room;
+
+  /// The room lease can revoke an operation while an encrypted send awaits.
+  /// Standalone services retain the account/room/reference checks below.
+  final void Function()? ensureCurrent;
   // Stop retrying the same inaccessible historical payload on every sync.
   // Cached ciphertext can still decrypt locally when a valid key arrives.
   static final _unavailable = Expando<Map<String, Event>>();
@@ -175,7 +192,27 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   }
 
   @override
-  bool get canEdit => GroupRoomAuthority(room).canManage;
+  bool get canEdit =>
+      room.client.userID != null &&
+      room.membership == Membership.join &&
+      GroupRoomAuthority(room).canManage &&
+      room.canChangeStateEvent(groupAnnouncementStateType);
+
+  @override
+  String get announcementReferenceIdentity {
+    final reference = room.getState(groupAnnouncementStateType);
+    final topic =
+        reference == null ? room.getState(EventTypes.RoomTopic) : null;
+    final eventId = reference?.content['event_id'];
+    return jsonEncode([
+      room.client.userID,
+      room.id,
+      reference is Event ? reference.eventId : null,
+      eventId is String ? eventId : null,
+      topic is Event ? topic.eventId : null,
+    ]);
+  }
+
   @override
   Stream<void> get changes => Stream<void>.multi((controller) {
         final sync = room.client.onSync.stream
@@ -215,8 +252,8 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     }
     final event = await _loadEncryptedEvent(eventId,
         expectedSenderId: reference.senderId);
-    if (event == null ||
-        event.senderId != reference.senderId ||
+    if (event == null) throw const AnnouncementReferencedEventUnavailable();
+    if (event.senderId != reference.senderId ||
         event.type != EventTypes.Message) {
       throw StateError('公告暂不可用');
     }
@@ -233,6 +270,7 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   }
 
   void _requireMember() {
+    ensureCurrent?.call();
     if (room.client.userID == null || room.membership != Membership.join) {
       throw StateError('仅群成员可查看公告');
     }
@@ -279,25 +317,45 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     return event;
   }
 
-  void _requireEncryptedManager() {
+  void _requireReferenceManager() {
     _requireMember();
     GroupRoomAuthority(room).requireManager();
-    if (!room.encrypted || !room.client.encryptionEnabled) {
+    if (!room.canChangeStateEvent(groupAnnouncementStateType)) {
+      throw StateError('当前角色无权修改群公告');
+    }
+    if (!room.encrypted) {
       throw StateError('请完成端到端加密设置后发布公告');
+    }
+  }
+
+  void _requireEncryptedManager() {
+    _requireReferenceManager();
+    if (!room.client.encryptionEnabled) {
+      throw StateError('请完成端到端加密设置后发布公告');
+    }
+  }
+
+  void _requireSameReference(String identity) {
+    if (announcementReferenceIdentity != identity) {
+      throw StateError('公告或账号已变更，请重新打开后编辑');
     }
   }
 
   @override
   Future<void> save(GroupAnnouncement announcement) async {
     announcement.validateForSave();
-    _requireEncryptedManager();
+    _requireReferenceManager();
+    final reference = announcementReferenceIdentity;
+    if (announcement.isEffective) _requireEncryptedManager();
     await GroupRoomAuthority(room).protectState();
-    _requireEncryptedManager();
+    _requireReferenceManager();
+    _requireSameReference(reference);
     if (!announcement.isEffective) {
       await room.client
           .setRoomStateWithKey(room.id, groupAnnouncementStateType, '', {});
       return;
     }
+    _requireEncryptedManager();
     final publishedBlocks = <AnnouncementBlock>[];
     for (final block in announcement.blocks) {
       if (!block.isImage) {
@@ -309,13 +367,16 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
         publishedBlocks.add(AnnouncementBlock.image(
             await _encryptedImageReference(block.value)));
       }
+      _requireSameReference(reference);
     }
     _requireEncryptedManager();
+    _requireSameReference(reference);
     final id =
         await room.sendEvent(GroupAnnouncement(publishedBlocks).toContent());
     if (id == null || !id.startsWith(r'$')) throw StateError('公告发送失败');
     // Public state contains only the encrypted document's event ID.
     _requireEncryptedManager();
+    _requireSameReference(reference);
     await room.client.setRoomStateWithKey(
         room.id, groupAnnouncementStateType, '', {'event_id': id});
   }

@@ -1,3 +1,20 @@
+import 'dart:async';
+
+/// A local viewing transition, independent of the server receipt acknowledgement.
+final class ConversationReadChange {
+  const ConversationReadChange({
+    required this.accountId,
+    this.roomId,
+    this.isOpen = false,
+    this.cleared = false,
+  });
+
+  final String? accountId;
+  final String? roomId;
+  final bool isOpen;
+  final bool cleared;
+}
+
 /// 会话未读状态机（BUG 5）。
 ///
 /// 规则（与需求一一对应）：
@@ -22,6 +39,11 @@ final class ConversationReadState {
   factory ConversationReadState.shared() => _shared;
 
   String? _accountId;
+  String? get accountId => _accountId;
+  final _changes =
+      StreamController<ConversationReadChange>.broadcast(sync: true);
+  Stream<ConversationReadChange> get changes => _changes.stream;
+  Set<String> get openRoomIds => Set.unmodifiable(_openRooms);
 
   /// Room identifiers can be shared by accounts. Keep same-account navigation
   /// state, but never reuse read suppression after changing the active identity.
@@ -30,6 +52,7 @@ final class ConversationReadState {
     _accountId = accountId;
     _openRooms.clear();
     _clearedEventByRoom.clear();
+    _changes.add(ConversationReadChange(accountId: accountId));
   }
 
   /// 测试隔离用：重置共享实例的本地状态。
@@ -46,14 +69,27 @@ final class ConversationReadState {
   final Map<String, String?> _clearedEventByRoom = {};
 
   void setRoomOpen(String roomId, {required bool open}) {
-    open ? _openRooms.add(roomId) : _openRooms.remove(roomId);
+    final changed = open ? _openRooms.add(roomId) : _openRooms.remove(roomId);
+    if (changed) {
+      _changes.add(ConversationReadChange(
+          accountId: _accountId, roomId: roomId, isOpen: open));
+    }
   }
 
   bool isRoomOpen(String roomId) => _openRooms.contains(roomId);
 
   /// 推进本地"已清零"位点（打开页面/查看中收到新消息/自己发送成功）。
   void markCleared(String roomId, {required String? eventId}) {
+    if (_clearedEventByRoom.containsKey(roomId) &&
+        _clearedEventByRoom[roomId] == eventId) {
+      return;
+    }
     _clearedEventByRoom[roomId] = eventId;
+    _changes.add(ConversationReadChange(
+        accountId: _accountId,
+        roomId: roomId,
+        cleared: true,
+        isOpen: _openRooms.contains(roomId)));
   }
 
   int unreadCount({

@@ -4,6 +4,32 @@ import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.da
 import 'package:liuhetong_mobile/ui/chat/chat_search_page.dart';
 
 void main() {
+  testWidgets('failed continuation exposes retry without clearing results',
+      (tester) async {
+    var failed = true;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+            isGroup: false,
+            memberEntries: const [],
+            onJumpToMessage: (_) {},
+            search: (f, {cursor, limit = 50}) async => [],
+            searchBatch: (f, {cursor, limit = 50}) async {
+              if (cursor != null && failed) throw StateError('synthetic');
+              return ChatSearchSlice(
+                  items: const [],
+                  nextCursor: cursor == null
+                      ? const ChatSearchCursor(order: 1, eventId: 'scan')
+                      : null);
+            })));
+    await tester.enterText(find.byKey(const Key('chat-search-input')), 'rare');
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.text('加载失败，点击重试'), findsOneWidget);
+    failed = false;
+    await tester.tap(find.byKey(const Key('chat-search-page-retry')));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无匹配记录'), findsOneWidget);
+  });
   testWidgets('empty partial scan offers continuation, never final no matches',
       (tester) async {
     var batches = 0;
@@ -25,12 +51,9 @@ void main() {
     await tester.enterText(find.byKey(const Key('chat-search-input')), 'rare');
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
-    expect(find.text('未找到符合条件的聊天记录'), findsNothing);
-    expect(find.byKey(const Key('chat-search-continue')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('chat-search-continue')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('chat-search-continue')), findsNothing);
     expect(batches, 2);
-    expect(find.text('未找到符合条件的聊天记录'), findsOneWidget);
+    expect(find.text('暂无匹配记录'), findsOneWidget);
   });
 
   testWidgets('opening calendar cancels pending keyword debounce',

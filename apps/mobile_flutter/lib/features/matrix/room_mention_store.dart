@@ -7,9 +7,29 @@ import 'local_hidden_events.dart';
 
 /// Device-local event identities only; never stores message content.
 final class RoomMentionStore extends ChangeNotifier {
+  RoomMentionStore(
+      {this.maxObservationRooms = 8, this.maxObservationEvents = 4096})
+      : assert(maxObservationRooms > 0),
+        assert(maxObservationEvents > 0);
+  final int maxObservationRooms, maxObservationEvents;
+  @visibleForTesting
+  int get observationRoomCount => _eventVersions.length;
+  @visibleForTesting
+  int observationEventCount(Room room) =>
+      _eventVersions[_key(room)]?.length ?? 0;
+  void invalidateObservation(Room room) {
+    _eventVersions.remove(_key(room));
+    _bounds.remove(_key(room));
+  }
+
   static final shared = RoomMentionStore();
   final _states = <String, UnreadMentionTracker>{};
   final _opening = <String, Future<UnreadMentionTracker>>{};
+  // Weak identity checks never retain Event -> Room -> Client or decrypted
+  // message content. The bounded maps retain only IDs and visibility metadata.
+  final _eventVersions =
+      <String, Map<String, (WeakReference<Event>, bool, bool)>>{};
+  final _bounds = <String, (int, String?, String?)>{};
   String _key(Room room) => 'chat-mentions-v2:${room.client.userID}:${room.id}';
 
   bool hasPending(Room room) =>
@@ -52,7 +72,7 @@ final class RoomMentionStore extends ChangeNotifier {
   }
 
   Future<void> ingest(Room room, Iterable<Event> events,
-      {bool Function()? shouldContinue}) async {
+      {bool Function()? shouldContinue, Set<String>? changedEventIds}) async {
     try {
       _check(shouldContinue);
       if (room.isDirectChat) return;
@@ -62,14 +82,75 @@ final class RoomMentionStore extends ChangeNotifier {
           preferences: await SharedPreferences.getInstance(),
           accountId: room.client.userID ?? '');
       _check(shouldContinue);
-      final before = state.encode();
-      final ordered = events.toList();
-      state.registerTimeline(ordered.map((event) => event.eventId).toList());
-      for (final event in ordered) {
-        if (event.redacted ||
-            localHistory.isEventHidden(room.id, event.eventId,
-                eventTimestamp: event.originServerTs)) {
-          state.onRedacted(event.eventId);
+      final isLocallyHidden = localHistory.readFilter(room.id);
+      final ordered = events is List<Event> ? events : events.toList();
+      final key = _key(room);
+      final previous = _bounds[key];
+      final head = ordered.firstOrNull?.eventId;
+      final tail = ordered.lastOrNull?.eventId;
+      final difference = ordered.length - (previous?.$1 ?? 0);
+      final registration =
+          previous != null && difference > 0 && tail == previous.$3
+              ? ordered.take(difference + 1)
+              : previous != null && difference > 0 && head == previous.$2
+                  ? ordered.skip(previous.$1 > 0 ? previous.$1 - 1 : 0)
+                  : previous != null &&
+                          difference == 0 &&
+                          head == previous.$2 &&
+                          tail == previous.$3
+                      ? const <Event>[]
+                      : ordered;
+      final registrationIds =
+          registration.map((event) => event.eventId).toList();
+      final newlyRegistered = {
+        for (final id in registrationIds)
+          if (!state.hasEventOrder(id)) id
+      };
+      var changed = state.registerTimeline(registrationIds);
+      _bounds[key] = (ordered.length, head, tail);
+      final versions = _eventVersions.remove(key) ??
+          <String, (WeakReference<Event>, bool, bool)>{};
+      _eventVersions[key] = versions;
+      while (_eventVersions.length > maxObservationRooms) {
+        final oldest = _eventVersions.keys.first;
+        _eventVersions.remove(oldest);
+        _bounds.remove(oldest);
+      }
+      for (final event in ordered.reversed) {
+        final hidden = isLocallyHidden(event.eventId, event.originServerTs);
+        final redacted = event.redacted;
+        final before = versions[event.eventId];
+        if (before != null &&
+            identical(before.$1.target, event) &&
+            before.$2 == redacted &&
+            before.$3 == hidden &&
+            !(changedEventIds?.contains(event.eventId) ?? false)) {
+          continue;
+        }
+        if (before == null &&
+            previous != null &&
+            changedEventIds != null &&
+            !newlyRegistered.contains(event.eventId) &&
+            !changedEventIds.contains(event.eventId) &&
+            !redacted &&
+            !hidden) {
+          // Older unchanged rows need no payload parsing or identity cache.
+          // Live/decrypted/recall IDs arrive through the public event stream;
+          // overflow or an initial scan passes null to inspect every row.
+          continue;
+        }
+        versions.remove(event.eventId);
+        versions[event.eventId] = (WeakReference(event), redacted, hidden);
+        while (versions.length > maxObservationEvents) {
+          versions.remove(versions.keys.first);
+        }
+        if (!state.hasEventOrder(event.eventId)) {
+          changed = state.registerTimeline(
+                  ordered.map((event) => event.eventId).toList()) ||
+              changed;
+        }
+        if (redacted || hidden) {
+          changed = state.onRedacted(event.eventId) || changed;
           continue;
         }
         if (event.type != EventTypes.Message) continue;
@@ -80,14 +161,19 @@ final class RoomMentionStore extends ChangeNotifier {
           if (users is List) targets.addAll(users.whereType<String>());
           if (mentions['room'] == true) targets.add(state.accountId);
         }
-        state.onMessageArrived(
-            eventId: event.eventId,
-            order: state.orderFor(event.eventId),
-            senderIsSelf: event.senderId == state.accountId,
-            mentionedUserIds: targets);
+        changed = state.onMessageArrived(
+                eventId: event.eventId,
+                order: state.orderFor(event.eventId),
+                senderIsSelf: event.senderId == state.accountId,
+                mentionedUserIds: targets) ||
+            changed;
       }
-      if (before != state.encode()) {
+      if (changed) {
         await save(room, shouldContinue: shouldContinue);
+      }
+      if (versions.length > ordered.length) {
+        final retained = {for (final event in ordered) event.eventId};
+        versions.removeWhere((id, _) => !retained.contains(id));
       }
     } on _MentionScanCanceled {
       // Revoked sessions do not publish or persist further mention updates.
@@ -175,6 +261,46 @@ final class RoomMentionStore extends ChangeNotifier {
       timeline?.cancelSubscriptions();
       _scanning.remove(_key(room));
     }
+  }
+}
+
+final class MentionIngestCoalescer {
+  MentionIngestCoalescer({required this.isActive, required this.ingest});
+  final bool Function() isActive;
+  final Future<void> Function(bool Function() shouldContinue) ingest;
+  Future<void>? _running;
+  bool _requested = false;
+  int _generation = 0;
+
+  Future<void> request() {
+    if (!isActive()) return Future<void>.value();
+    _requested = true;
+    final running = _running;
+    if (running != null) return running;
+    final completion = Completer<void>();
+    _running = completion.future;
+    unawaited(_drain(completion));
+    return completion.future;
+  }
+
+  Future<void> _drain(Completer<void> completion) async {
+    try {
+      while (_requested && isActive()) {
+        _requested = false;
+        final generation = _generation;
+        await ingest(() => generation == _generation && isActive());
+      }
+      completion.complete();
+    } catch (error, stack) {
+      completion.completeError(error, stack);
+    } finally {
+      _running = null;
+    }
+  }
+
+  void cancel() {
+    _generation++;
+    _requested = false;
   }
 }
 

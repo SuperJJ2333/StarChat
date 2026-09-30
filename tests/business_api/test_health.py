@@ -10,6 +10,7 @@ def _settings(**overrides) -> Settings:
         "database_url": "sqlite+pysqlite:///:memory:",
         "redis_url": "redis://localhost:6379/15",
         "environment": "test",
+        "diagnostic_identity_secret": "health-test-diagnostic-hmac-key-" + "d" * 32,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)

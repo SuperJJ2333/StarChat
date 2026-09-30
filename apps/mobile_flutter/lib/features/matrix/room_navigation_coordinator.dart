@@ -139,6 +139,23 @@ final class RoomOpenRequest {
   /// 查看历史（保留 roomId+anchor 定位），不提供输入框，不得作为独立
   /// 可发送的会话出现。
   final bool readOnly;
+
+  RoomOpenRequest withPerformanceTrace(PerformanceTrace trace) =>
+      RoomOpenRequest(
+          roomId: roomId,
+          roomName: roomName,
+          initialContact: initialContact,
+          anchorEventId: anchorEventId,
+          anchorRoomId: anchorRoomId,
+          source: source,
+          modeOverride: modeOverride,
+          onRoomReady: onRoomReady,
+          onRoomClosed: onRoomClosed,
+          onRoomLanded: onRoomLanded,
+          performanceTrace: trace,
+          outbox: outbox,
+          outboxLocalIds: outboxLocalIds,
+          readOnly: readOnly);
 }
 
 /// All entrances open the logical representative; an anchor retains its source

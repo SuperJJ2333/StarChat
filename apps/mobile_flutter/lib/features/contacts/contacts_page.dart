@@ -4,6 +4,7 @@ import 'scan_qr_page.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/business_api_client.dart';
 import '../../core/performance_trace.dart';
@@ -25,6 +26,7 @@ import 'friend_request_review_page.dart';
 import 'contact_profile_sections.dart';
 import '../moments/moment_profile_preview.dart';
 import '../search/global_search_page.dart';
+import '../auth/phone_number_format.dart';
 import '../friendship/friend_acceptance_coordinator.dart';
 import '../friendship/friend_request_snapshot_store.dart';
 import '../matrix/profile_repository.dart';
@@ -210,9 +212,12 @@ final class _ContactsPageState extends State<ContactsPage> {
         (widget.api is BusinessApiClient
             ? (widget.api as BusinessApiClient).supportIdentities
             : widget.api is SupportIdentityGateway
-                ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+                ? SupportIdentityRepository(
+                    widget.api as SupportIdentityGateway)
                 : null);
-    _ownsSupport = widget.supportIdentities == null && widget.api is! BusinessApiClient && _support != null;
+    _ownsSupport = widget.supportIdentities == null &&
+        widget.api is! BusinessApiClient &&
+        _support != null;
   }
 
   @override
@@ -681,9 +686,12 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
         (widget.api is BusinessApiClient
             ? (widget.api as BusinessApiClient).supportIdentities
             : widget.api is SupportIdentityGateway
-                ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+                ? SupportIdentityRepository(
+                    widget.api as SupportIdentityGateway)
                 : null);
-    _ownsSupport = widget.supportIdentities == null && widget.api is! BusinessApiClient && _support != null;
+    _ownsSupport = widget.supportIdentities == null &&
+        widget.api is! BusinessApiClient &&
+        _support != null;
     unawaited(_support?.warm([contact.userId, contact.matrixUserId]) ??
         Future<void>.value());
   }
@@ -1559,12 +1567,18 @@ final class AddFriendPage extends StatefulWidget {
 
 final class _AddFriendState extends State<AddFriendPage> {
   static const _minQueryLength = 2;
+  static const _searchHint = '输入至少 $_minQueryLength 个字符，可通过畅聊号、邮箱或手机号搜索';
 
   final q = TextEditingController();
+  final _queryLengthLimit = LengthLimitingTextInputFormatter(320);
+  TextEditingValue _lastInput = TextEditingValue.empty;
   Timer? _debounce;
   List items = [];
-  String? hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+  String? hint = _searchHint;
   bool searching = false;
+  String _query = '';
+  int _searchEpoch = 0;
+  int? _pendingSearchEpoch;
 
   @override
   void initState() {
@@ -1593,6 +1607,7 @@ final class _AddFriendState extends State<AddFriendPage> {
       oldWidget.identityCache?.removeListener(_identityChanged);
       widget.identityCache?.addListener(_identityChanged);
     }
+    if (oldWidget.api != widget.api) _invalidateQuery();
   }
 
   String _displayName(Map user) =>
@@ -1610,47 +1625,92 @@ final class _AddFriendState extends State<AddFriendPage> {
           .displayName;
 
   void _onChanged() {
+    // CupertinoSearchTextField has no inputFormatters parameter. Keep its
+    // standard appearance while applying the same IME-aware length policy.
+    final input = _queryLengthLimit.formatEditUpdate(_lastInput, q.value);
+    _lastInput = input;
+    if (input != q.value) {
+      q.value = input;
+      return;
+    }
+    final query = q.text.trim();
+    if (query == _query) return;
+    _query = query;
+    _invalidateQuery();
+  }
+
+  String? _queryHint(String query) {
+    if (query.length < _minQueryLength) return _searchHint;
+    if (query.length > 320) return '搜索内容最多 320 个字符';
+    final phoneLike = RegExp(r'^[+0-9 ()-]+$').hasMatch(query);
+    if (phoneLike && normalizeMainlandPhone(query) == null) {
+      return '请输入完整的 11 位手机号，可带 +86 区号';
+    }
+    return null;
+  }
+
+  void _invalidateQuery() {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), _search);
+    _searchEpoch++;
+    _pendingSearchEpoch = null;
+    final validation = _queryHint(_query);
+    setState(() {
+      items = [];
+      searching = false;
+      hint = validation;
+    });
+    if (validation == null) {
+      _debounce = Timer(const Duration(milliseconds: 300), _search);
+    }
   }
 
   Future<void> _search() async {
+    _debounce?.cancel();
     final query = q.text.trim();
-    if (query.length < _minQueryLength) {
+    final validation = _queryHint(query);
+    if (validation != null) {
       if (!mounted) return;
       setState(() {
         items = [];
         searching = false;
-        hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+        hint = validation;
       });
       return;
     }
+    final epoch = _searchEpoch;
+    if (_pendingSearchEpoch == epoch) return;
+    _pendingSearchEpoch = epoch;
+    final api = widget.api;
     setState(() => searching = true);
     try {
-      final result = await widget.api.searchUsers(query);
-      if (!mounted) return;
+      final result = await api.searchUsers(query);
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
       setState(() {
         items = result['items'] as List;
         searching = false;
         hint = items.isEmpty ? '未找到匹配的用户' : null;
       });
     } on BusinessApiException catch (error) {
-      if (!mounted) return;
-      // 失败不覆盖：保留上一次成功的结果，只更新提示（微信级加载模型）。
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
+      // A same-query refresh may keep its rows. New drafts have already
+      // removed the previous query's actionable results.
       setState(() {
         searching = false;
         hint = error.message;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || epoch != _searchEpoch || api != widget.api) return;
       setState(() {
         searching = false;
-        hint = '搜索失败，正在显示上次结果';
+        hint = items.isEmpty ? '搜索失败，请重试' : '搜索失败，正在显示上次结果';
       });
+    } finally {
+      if (_pendingSearchEpoch == epoch) _pendingSearchEpoch = null;
     }
   }
 
   void _openRequestPage(Map user) {
+    if (!mounted || !items.contains(user)) return;
     // BUG 2：先看资料再决定是否添加，禁止快捷直接发送请求。
     final nickname = user['nickname']?.toString();
     Navigator.push(
@@ -1684,7 +1744,7 @@ final class _AddFriendState extends State<AddFriendPage> {
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
               child: CupertinoSearchTextField(
                 controller: q,
-                placeholder: '畅聊号 / 邮箱',
+                placeholder: '畅聊号 / 邮箱 / 手机号',
                 onSubmitted: (_) => _search(),
               ),
             ),
@@ -1804,20 +1864,56 @@ final class FriendRequestsPage extends StatefulWidget {
 }
 
 final class _FriendRequestsPageState extends State<FriendRequestsPage> {
-  /// 本地优先：进入即用上次成功的列表（首帧就有内容），随后后台刷新。
+  static final Expando<int> _avatarSessionIdByApi =
+      Expando<int>('friend-request-avatar-session');
+  static int _nextAvatarSessionId = 0;
+
+  /// Saved requests can be painted only after their account scope is checked.
   FriendRequestSnapshot? _snapshot;
   Map<String, dynamic>? _payload;
+  BusinessApiClient? _verifiedApi;
+  int? _verifiedEpoch;
+  String? _verifiedScope;
+  bool _scopeUnavailable = false;
   Object? _error;
-  bool _loading = false;
+  bool _loading = true;
   int _generation = 0;
   bool _disposed = false;
+  MotionPageRoute<void>? _activeReviewRoute;
 
   @override
   void initState() {
     super.initState();
     _snapshot = FriendRequestSnapshotStores.shared?.read();
-    _payload = _snapshot?.payload;
     unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant FriendRequestsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.api, widget.api) ||
+        oldWidget.identityCache != widget.identityCache ||
+        _verifiedEpoch != widget.api.sessionEpoch) {
+      _invalidateActiveReview();
+      _generation++;
+      _snapshot = FriendRequestSnapshotStores.shared?.read();
+      _payload = null;
+      _verifiedApi = null;
+      _verifiedEpoch = null;
+      _verifiedScope = null;
+      _scopeUnavailable = false;
+      _error = null;
+      _loading = true;
+      unawaited(_load());
+    }
+  }
+
+  void _invalidateActiveReview() {
+    final route = _activeReviewRoute;
+    if (route == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && route.isActive) Navigator.of(context).removeRoute(route);
+    });
   }
 
   @override
@@ -1831,27 +1927,59 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
   Future<void> _load() async {
     final generation = ++_generation;
+    final api = widget.api;
+    final epoch = api.sessionEpoch;
     if (mounted) setState(() => _loading = true);
     String? scope;
     try {
-      final userId = await widget.api.currentMatrixUserId();
+      final userId = await api.currentMatrixUserId();
       scope = userId == null || userId.isEmpty ? null : 'matrix:$userId';
     } catch (_) {
       scope = null;
     }
-    if (_disposed || generation != _generation) return;
-    final cached = _snapshot;
-    if (scope != null && cached != null && cached.scope != scope) {
-      // 账号切换保护：绝不展示上一个账号的申请列表。
+    if (_disposed ||
+        generation != _generation ||
+        !identical(api, widget.api) ||
+        epoch != api.sessionEpoch) {
+      return;
+    }
+    if (scope == null) {
       setState(() {
-        _snapshot = null;
         _payload = null;
+        _verifiedApi = null;
+        _verifiedEpoch = null;
+        _verifiedScope = null;
+        _scopeUnavailable = true;
+        _error = StateError('request account scope unavailable');
+        _loading = false;
       });
+      return;
+    }
+    final cached = _snapshot;
+    final differentScope = !identical(_verifiedApi, api) ||
+        _verifiedEpoch != epoch ||
+        _verifiedScope != scope;
+    setState(() {
+      _verifiedApi = api;
+      _verifiedEpoch = epoch;
+      _verifiedScope = scope;
+      _scopeUnavailable = false;
+      if (differentScope || _payload == null) {
+        _payload = cached?.scope == scope ? cached?.payload : null;
+      }
+      if (cached != null && cached.scope != scope) _snapshot = null;
+    });
+    if (cached != null && cached.scope != scope) {
       unawaited(FriendRequestSnapshotStores.shared?.clear());
     }
     try {
-      final body = await widget.api.friendRequests();
-      if (_disposed || generation != _generation) return;
+      final body = await api.friendRequests();
+      if (_disposed ||
+          generation != _generation ||
+          !identical(api, widget.api) ||
+          epoch != api.sessionEpoch) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _payload = body;
@@ -1859,21 +1987,24 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
           _loading = false;
         });
       }
-      if (scope != null) {
-        final snapshot = FriendRequestSnapshot(
-            scope: scope, payload: body, savedAt: DateTime.now());
-        _snapshot = snapshot;
-        final store = FriendRequestSnapshotStores.shared;
-        if (store != null) {
-          try {
-            await store.write(snapshot);
-          } catch (_) {
-            // 本地快照写失败不是刷新失败。
-          }
+      final snapshot = FriendRequestSnapshot(
+          scope: scope, payload: body, savedAt: DateTime.now());
+      _snapshot = snapshot;
+      final store = FriendRequestSnapshotStores.shared;
+      if (store != null) {
+        try {
+          await store.write(snapshot);
+        } catch (_) {
+          // 本地快照写失败不是刷新失败。
         }
       }
     } catch (error) {
-      if (_disposed || generation != _generation) return;
+      if (_disposed ||
+          generation != _generation ||
+          !identical(api, widget.api) ||
+          epoch != api.sessionEpoch) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _error = error;
@@ -1884,20 +2015,68 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   }
 
   /// BUG 2：点击申请进入"通过朋友验证"页；accept/reject 只在该页触发。
+  String _requestAvatarCacheKey(Map request) {
+    final userId = request['user_id']?.toString();
+    final username = request['username']?.toString();
+    final matrixUserId = request['matrix_user_id']?.toString();
+    final identityCache = widget.identityCache;
+    if (identityCache != null &&
+        identityCache.accountKey == _verifiedScope &&
+        identical(_verifiedApi, widget.api) &&
+        _verifiedEpoch == widget.api.sessionEpoch) {
+      return identityCache
+          .resolveIdentity(
+              userId: userId, matrixUserId: matrixUserId, username: username)
+          .cacheKey;
+    }
+    // A repository from the previous account can remain injected briefly
+    // during an account switch. Its retained avatar must never cross over.
+    final stableId = userId ?? matrixUserId ?? username ?? '';
+    final clientId =
+        _avatarSessionIdByApi[widget.api] ??= ++_nextAvatarSessionId;
+    return 'identity:session:$clientId:'
+        '${widget.api.sessionEpoch}:${Uri.encodeComponent(stableId)}';
+  }
+
   Future<void> _openReview(Map request) async {
-    await Navigator.push(
-      context,
-      MotionPageRoute(
-        builder: (_) => FriendRequestReviewPage(
-          request: request,
-          onAccept: () => _resolve(request, true),
-          onReject: () => _resolve(request, false),
-          onOpenAccepted: () => _openAcceptedRequest(request),
-        ),
+    final api = widget.api;
+    final epoch = api.sessionEpoch;
+    final scope = _verifiedScope;
+    if (scope == null || !_reviewScopeIsCurrent(api, epoch, scope)) return;
+    late final MotionPageRoute<void> route;
+    bool isCurrent() => _reviewScopeIsCurrent(api, epoch, scope);
+    void closeIfStale() {
+      if (!isCurrent() && mounted && route.isCurrent) {
+        Navigator.of(context).pop();
+      }
+    }
+
+    route = MotionPageRoute<void>(
+      builder: (_) => FriendRequestReviewPage(
+        request: request,
+        avatarCacheKey: _requestAvatarCacheKey(request),
+        onAccept: () => _resolve(request, true, api, isCurrent, closeIfStale),
+        onReject: () => _resolve(request, false, api, isCurrent, closeIfStale),
+        onOpenAccepted: () =>
+            _openAcceptedRequest(request, api, isCurrent, closeIfStale),
       ),
     );
+    _activeReviewRoute = route;
+    await Navigator.of(context).push<void>(route);
+    if (identical(_activeReviewRoute, route)) {
+      _activeReviewRoute = null;
+    }
     if (mounted) _reload();
   }
+
+  bool _reviewScopeIsCurrent(BusinessApiClient api, int epoch, String scope) =>
+      mounted &&
+      identical(widget.api, api) &&
+      api.sessionEpoch == epoch &&
+      identical(_verifiedApi, api) &&
+      _verifiedEpoch == epoch &&
+      _verifiedScope == scope &&
+      !_scopeUnavailable;
 
   /// BUG 3：accept 编排（对应领域事件 friend.accepted）。
   /// 仅当用户在"通过朋友验证"页点击通过验证时才调用 accept API；
@@ -1906,13 +2085,22 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   /// 禁止要求用户退出 APP 才能看到好友。
   bool _resolving = false;
 
-  Future<void> _openAcceptedRequest(Map request) async {
+  Future<void> _openAcceptedRequest(Map request, BusinessApiClient api,
+      bool Function() isCurrent, VoidCallback closeIfStale) async {
+    if (!isCurrent()) {
+      closeIfStale();
+      return;
+    }
     if (_resolving || request['status'] != 'ACCEPTED') return;
     _resolving = true;
     try {
       // Historical acceptance is not current friendship authority. A removed
       // friend must not be reinserted merely by reopening an old request.
-      final body = await widget.api.friends();
+      final body = await api.friends();
+      if (!isCurrent()) {
+        closeIfStale();
+        return;
+      }
       final current = ((body['items'] as List?) ?? const []).whereType<Map>();
       if (!current.any((friend) =>
           friend['user_id'] == request['user_id'] &&
@@ -1921,8 +2109,12 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
       }
       if (!mounted) return;
       Navigator.of(context).pop();
-      await _initializeAcceptedRequest(request);
+      await _initializeAcceptedRequest(request, isCurrent, closeIfStale);
     } catch (_) {
+      if (!isCurrent()) {
+        closeIfStale();
+        return;
+      }
       if (!mounted) return;
       await showCupertinoDialog<void>(
         context: context,
@@ -1942,15 +2134,24 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
     }
   }
 
-  Future<void> _resolve(Map request, bool accept) async {
+  Future<void> _resolve(Map request, bool accept, BusinessApiClient api,
+      bool Function() isCurrent, VoidCallback closeIfStale) async {
+    if (!isCurrent()) {
+      closeIfStale();
+      return;
+    }
     if (_resolving) return;
     _resolving = true;
     try {
       final id = request['id'].toString();
       if (accept) {
-        await widget.api.acceptFriendRequest(id);
+        await api.acceptFriendRequest(id);
       } else {
-        await widget.api.rejectFriendRequest(id);
+        await api.rejectFriendRequest(id);
+      }
+      if (!isCurrent()) {
+        closeIfStale();
+        return;
       }
       if (!mounted) return;
       // 先退出验证页，接下来的加密私聊导航成为当前页面。
@@ -1958,11 +2159,20 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
       final pending = widget.pendingRequests;
       if (pending != null && pending.value > 0) pending.value -= 1;
       if (accept) {
-        await _initializeAcceptedRequest({...request, 'status': 'ACCEPTED'});
+        await _initializeAcceptedRequest(
+            {...request, 'status': 'ACCEPTED'}, isCurrent, closeIfStale);
+      }
+      if (!isCurrent()) {
+        closeIfStale();
+        return;
       }
       widget.onRequestsChanged?.call();
       if (mounted) _reload();
     } catch (_) {
+      if (!isCurrent()) {
+        closeIfStale();
+        return;
+      }
       if (!mounted) return;
       await showCupertinoDialog<void>(
           context: context,
@@ -1980,13 +2190,17 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
     }
   }
 
-  Future<void> _initializeAcceptedRequest(Map request) async {
-    while (mounted) {
+  Future<void> _initializeAcceptedRequest(
+      Map request, bool Function() isCurrent, VoidCallback closeIfStale) async {
+    while (isCurrent()) {
       try {
-        await _onFriendAccepted(request);
+        await _onFriendAccepted(request, isCurrent);
         return;
       } catch (_) {
-        if (!mounted) return;
+        if (!mounted || !isCurrent()) {
+          closeIfStale();
+          return;
+        }
         final retry = await showCupertinoDialog<bool>(
           context: context,
           builder: (dialogContext) => CupertinoAlertDialog(
@@ -2007,22 +2221,41 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
         if (retry != true) return;
       }
     }
+    closeIfStale();
   }
 
-  Future<void> _onFriendAccepted(Map request) async {
+  Future<void> _onFriendAccepted(Map request, bool Function() isCurrent) async {
+    if (!isCurrent()) throw StateError('request account changed');
     final cache = widget.identityCache;
     if (cache == null) return;
+    if (cache.accountKey != _verifiedScope) {
+      throw StateError('request identity scope mismatch');
+    }
     // BUG 3 编排：乐观插入 + 私聊建立 + 好友接受系统消息。
     final coordinator = FriendAcceptanceCoordinator(
       identityCache: cache,
-      establishDirectChatWithRequest: widget.onEstablishDirectChatWithRequest,
-      establishDirectChat: widget.onEstablishDirectChat ??
+      establishDirectChatWithRequest:
+          widget.onEstablishDirectChatWithRequest == null
+              ? null
+              : (matrixUserId, friendUserId, friendDisplayName,
+                  originalRequest) async {
+                  if (!isCurrent()) throw StateError('request account changed');
+                  await widget.onEstablishDirectChatWithRequest!(matrixUserId,
+                      friendUserId, friendDisplayName, originalRequest);
+                  if (!isCurrent()) throw StateError('request account changed');
+                },
+      establishDirectChat:
           (matrixUserId, friendUserId, friendDisplayName) async {
-            final directChats = widget.directChats;
-            if (directChats != null) {
-              await directChats.open(matrixUserId);
-            }
-          },
+        if (!isCurrent()) throw StateError('request account changed');
+        final establish = widget.onEstablishDirectChat;
+        if (establish != null) {
+          await establish(matrixUserId, friendUserId, friendDisplayName);
+        } else {
+          final directChats = widget.directChats;
+          if (directChats != null) await directChats.open(matrixUserId);
+        }
+        if (!isCurrent()) throw StateError('request account changed');
+      },
     );
     await coordinator.onAccepted(request);
   }
@@ -2036,7 +2269,11 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
             middle: Text('新的朋友')),
         child: SafeArea(
           child: Builder(builder: (context) {
-            final items = ((_payload?['items'] as List?) ?? const [])
+            final scopePending = !_scopeUnavailable &&
+                (!identical(_verifiedApi, widget.api) ||
+                    _verifiedEpoch != widget.api.sessionEpoch);
+            final payload = scopePending ? null : _payload;
+            final items = ((payload?['items'] as List?) ?? const [])
                 .where((item) => item is Map && item['direction'] != 'OUTGOING')
                 .toList();
             return ListView(
@@ -2044,17 +2281,21 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
                 for (final request in items)
                   _FriendRequestTile(
                     request: request as Map,
+                    avatarCacheKey: _requestAvatarCacheKey(request),
                     onTap: () => _openReview(request),
                   ),
                 // 三种"没有行"的情形必须区分：加载中 / 加载失败 / 真的没有。
                 // 旧实现把前两种都渲染成「暂无新的朋友」，断网时会把上一份真实
                 // 列表丢掉并谎报"没有新朋友"。
-                if (items.isEmpty && _loading)
+                if (items.isEmpty && (_loading || scopePending))
                   const Padding(
                     padding: EdgeInsets.only(top: WeChatSpacing.xxl),
                     child: Center(child: CupertinoActivityIndicator()),
                   ),
-                if (items.isEmpty && !_loading && _error != null)
+                if (items.isEmpty &&
+                    !_loading &&
+                    !scopePending &&
+                    _error != null)
                   Padding(
                     padding: const EdgeInsets.only(top: WeChatSpacing.xxl),
                     child: Column(children: [
@@ -2069,7 +2310,10 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
                       ),
                     ]),
                   ),
-                if (items.isEmpty && !_loading && _error == null)
+                if (items.isEmpty &&
+                    !_loading &&
+                    !scopePending &&
+                    _error == null)
                   const Padding(
                     padding: EdgeInsets.only(top: WeChatSpacing.xxl),
                     child: Center(child: Text('暂无新的朋友')),
@@ -2082,8 +2326,12 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
 }
 
 final class _FriendRequestTile extends StatelessWidget {
-  const _FriendRequestTile({required this.request, required this.onTap});
+  const _FriendRequestTile(
+      {required this.request,
+      required this.avatarCacheKey,
+      required this.onTap});
   final Map request;
+  final String avatarCacheKey;
   final VoidCallback onTap;
 
   @override
@@ -2109,6 +2357,7 @@ final class _FriendRequestTile extends StatelessWidget {
         leadingSize: WeChatDimensions.contactAvatar,
         leadingToTitle: WeChatSpacing.md,
         leading: UserAvatar(
+            avatarCacheKey: avatarCacheKey,
             nickname: request['nickname']?.toString() ??
                 request['username']?.toString() ??
                 '',

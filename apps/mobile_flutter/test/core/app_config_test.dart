@@ -29,7 +29,7 @@ void main() {
       PackageInfo.setMockInitialValues(
         appName: 'ChatFlow',
         packageName: 'com.liuhetong.mobile',
-        version: '0.4.13',
+        version: '0.4.15',
         buildNumber: '$installedBuild',
         buildSignature: '',
       );
@@ -42,7 +42,7 @@ void main() {
 
   tearDown(() {
     debugDefaultTargetPlatformOverride = null;
-    AppConfig.appVersionName = '0.4.13';
+    AppConfig.appVersionName = '0.4.15';
     AppConfig.appBuildNumber = AppConfig.compiledBuildNumber;
   });
 
@@ -56,17 +56,18 @@ void main() {
     // 平台通道不可用时（如测试环境）保留默认值，不抛错。
     await AppConfig.loadRuntimeVersion();
     expect(AppConfig.appVersionName, isNotEmpty);
-    expect(AppConfig.appBuildNumber, 2179);
+    expect(AppConfig.appBuildNumber, AppConfig.compiledBuildNumber);
   });
 
   test('Android non-split four-digit build remains intact at runtime',
       () async {
-    expect(await loadAndroidBuild(2179), 2179);
+    expect(await loadAndroidBuild(2184), 2184);
   });
 
   test('Android known ABI split offsets map to the compiled build', () async {
     for (final offset in [1000, 2000, 4000]) {
-      expect(await loadAndroidBuild(2179 + offset), 2179,
+      expect(await loadAndroidBuild(AppConfig.compiledBuildNumber + offset),
+          AppConfig.compiledBuildNumber,
           reason: 'ABI offset $offset');
     }
   });
@@ -76,22 +77,22 @@ void main() {
   });
 
   testWidgets('About detail displays the full Android build', (tester) async {
-    await loadAndroidBuild(2179);
+    await loadAndroidBuild(2184);
     final api = BusinessApiClient(
       baseUri: Uri.parse('https://business.example'),
       sessionStore: SecureSessionStore(_Memory()),
       client: MockClient((_) async => http.Response('{}', 200)),
     );
     await tester.pumpWidget(CupertinoApp(home: AboutDetailPage(api: api)));
-    expect(find.text('V0.4.13 (Build 2179)'), findsOneWidget);
+    expect(find.text('V0.4.15 (Build 2184)'), findsOneWidget);
   });
 
   test('full Android build does not trigger a false forced update', () async {
-    final build = await loadAndroidBuild(2179);
+    final build = await loadAndroidBuild(2184);
     const info = AppUpdateInfo(
-      latestVersion: '0.4.13',
-      latestBuild: 2179,
-      minSupportedBuild: 2179,
+      latestVersion: '0.4.15',
+      latestBuild: 2184,
+      minSupportedBuild: 2184,
       notes: '',
       apkUrl: '',
     );
@@ -99,10 +100,14 @@ void main() {
   });
 
   test('build number normalization strips only known ABI offsets', () {
-    expect(AppConfig.normalizeBuildNumber(6179), 2179, reason: 'x86_64 包');
-    expect(AppConfig.normalizeBuildNumber(4179), 2179, reason: 'arm64 包');
-    expect(AppConfig.normalizeBuildNumber(3179), 2179, reason: 'arm32 包');
-    expect(AppConfig.normalizeBuildNumber(2179), 2179, reason: '普通四位包');
+    const compiled = AppConfig.compiledBuildNumber;
+    expect(AppConfig.normalizeBuildNumber(compiled + 4000), compiled,
+        reason: 'x86_64 包');
+    expect(AppConfig.normalizeBuildNumber(compiled + 2000), compiled,
+        reason: 'arm64 包');
+    expect(AppConfig.normalizeBuildNumber(compiled + 1000), compiled,
+        reason: 'arm32 包');
+    expect(AppConfig.normalizeBuildNumber(2184), 2184, reason: '普通四位包');
     expect(AppConfig.normalizeBuildNumber(3197), 3197, reason: '未知四位包');
     expect(AppConfig.normalizeBuildNumber(20), 20, reason: '旧三位内构建号');
     expect(AppConfig.normalizeBuildNumber(6), 6);

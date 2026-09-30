@@ -309,3 +309,20 @@ private final class FakeSessionSecurity: IOSSessionSecurityOperations {
   func add(_ attributes: [String: Any]) -> OSStatus { additions.append(attributes); return addStatus }
   func delete(_ query: [String: Any]) -> OSStatus { deletions.append(query); return errSecSuccess }
 }
+
+final class IOSConversationNotificationStateTests: XCTestCase {
+  func testOnlyExactRoomMessagesAreRemoved() {
+    let message: [AnyHashable: Any] = ["room_id": "!A", "event_id": "$message"]
+    XCTAssertTrue(IOSConversationNotificationState.matches(roomId: "!A", userInfo: message))
+    XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "!B", userInfo: message))
+    XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "!", userInfo: message))
+    XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "", userInfo: message))
+  }
+  func testCallsMalformedAndOpaqueWakeupsArePreserved() {
+    for payload: [AnyHashable: Any] in [[:], ["room_id": "!A"],
+        ["room_id": "!A", "event_id": ""], ["room_id": "!A", "event_id": 1],
+        ["room_id": "!A", "event_id": "$call", "call_id": "call"]] {
+      XCTAssertFalse(IOSConversationNotificationState.matches(roomId: "!A", userInfo: payload))
+    }
+  }
+}

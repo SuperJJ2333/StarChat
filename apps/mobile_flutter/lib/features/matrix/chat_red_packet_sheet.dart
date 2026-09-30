@@ -131,18 +131,136 @@ final class _State extends State<ChatRedPacketSheet>
   bool _submitting = false;
   bool resolvingRecipient = false;
   int _resolutionGeneration = 0;
+  int _pickerGeneration = 0;
+  int _accountGeneration = 0;
+  int _avatarScopeGeneration = 0;
+  int _balanceGeneration = 0;
+  int _limitGeneration = 0;
+  BusinessApiClient? _observedApi;
+  int? _observedEpoch;
+  BusinessApiClient? _avatarApiAtScope;
+  int? _avatarSessionEpoch;
+  String? _avatarAccountKey;
+  Completer<GroupMemberIdentity?>? _memberPickerCompleter;
+
+  BusinessApiClient? _apiFor(ChatRedPacketSheet sheet) {
+    final support = sheet.support;
+    return support is BusinessChatRedPacketSupport ? support.api : null;
+  }
+
+  String? _memberAvatarCacheKey(GroupMemberIdentity member) {
+    final api = _apiFor(widget);
+    if (api == null ||
+        !identical(api, _avatarApiAtScope) ||
+        _avatarSessionEpoch != api.sessionEpoch) {
+      return null;
+    }
+    final account = _avatarAccountKey;
+    if (account == null) return null;
+    final memberId = member.businessUserId ?? member.matrixUserId;
+    return 'identity:${Uri.encodeComponent(account)}:'
+        '${Uri.encodeComponent(memberId)}';
+  }
+
+  Future<void> _resolveAvatarScope() async {
+    final generation = ++_avatarScopeGeneration;
+    final api = _apiFor(widget);
+    if (api == null) return;
+    final epoch = api.sessionEpoch;
+    String? matrixUserId;
+    try {
+      matrixUserId = await api.currentMatrixUserId();
+    } catch (_) {
+      matrixUserId = null;
+    }
+    if (!mounted ||
+        generation != _avatarScopeGeneration ||
+        !identical(api, _apiFor(widget)) ||
+        epoch != api.sessionEpoch) {
+      return;
+    }
+    setState(() {
+      _avatarAccountKey = matrixUserId == null || matrixUserId.isEmpty
+          ? null
+          : 'matrix:$matrixUserId';
+      _avatarApiAtScope = api;
+      _avatarSessionEpoch = epoch;
+    });
+  }
+
+  void _finishMemberPicker(GroupMemberIdentity? selected,
+      {bool rebuild = true}) {
+    final completer = _memberPickerCompleter;
+    if (completer == null) return;
+    _memberPickerCompleter = null;
+    if (rebuild && mounted) setState(() {});
+    completer.complete(selected);
+  }
+
+  Future<GroupMemberIdentity?> _showMemberPicker() {
+    final completer = Completer<GroupMemberIdentity?>();
+    setState(() => _memberPickerCompleter = completer);
+    return completer.future;
+  }
 
   @override
   void initState() {
     super.initState();
+    _observedApi = _apiFor(widget);
+    _observedEpoch = _observedApi?.sessionEpoch;
     widget.controller.addListener(_change);
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_resolveAvatarScope());
+    unawaited(_loadBalance());
+    unawaited(_loadLimits());
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatRedPacketSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_change);
+      widget.controller.addListener(_change);
+    }
+    final api = _apiFor(widget);
+    final changed = !identical(_observedApi, api) ||
+        (api != null && _observedEpoch != api.sessionEpoch);
+    _observedApi = api;
+    _observedEpoch = api?.sessionEpoch;
+    if (!changed) return;
+    _accountGeneration++;
+    _pickerGeneration++;
+    _resolutionGeneration++;
+    _avatarScopeGeneration++;
+    _balanceGeneration++;
+    _limitGeneration++;
+    _finishMemberPicker(null, rebuild: false);
+    _avatarAccountKey = null;
+    _avatarApiAtScope = null;
+    _avatarSessionEpoch = null;
+    recipientId = null;
+    recipientName = null;
+    recipientMatrixUserId = null;
+    resolvingRecipient = false;
+    balance = null;
+    maxTotal = null;
+    loadingLimits = false;
+    _limitLoad = null;
+    _submitting = false;
+    unawaited(_resolveAvatarScope());
     unawaited(_loadBalance());
     unawaited(_loadLimits());
   }
 
   @override
   void dispose() {
+    _finishMemberPicker(null, rebuild: false);
+    _accountGeneration++;
+    _pickerGeneration++;
+    _resolutionGeneration++;
+    _avatarScopeGeneration++;
+    _balanceGeneration++;
+    _limitGeneration++;
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_change);
     total.dispose();
@@ -161,31 +279,57 @@ final class _State extends State<ChatRedPacketSheet>
   }
 
   Future<void> _loadBalance() async {
+    final generation = ++_balanceGeneration;
     final support = widget.support;
     if (support == null) return;
+    final api = _apiFor(widget);
+    final epoch = api?.sessionEpoch;
     try {
       final loaded = await support.balance();
-      if (mounted) setState(() => balance = loaded);
+      if (!mounted ||
+          generation != _balanceGeneration ||
+          !identical(support, widget.support) ||
+          !identical(api, _apiFor(widget)) ||
+          epoch != api?.sessionEpoch) {
+        return;
+      }
+      setState(() => balance = loaded);
     } catch (_) {
       // Balance is a hint only; the server remains authoritative.
     }
   }
 
   Future<void> _loadLimits() {
-    return _limitLoad ??= _fetchLimits().whenComplete(() => _limitLoad = null);
+    final active = _limitLoad;
+    if (active != null) return active;
+    late final Future<void> request;
+    request = _fetchLimits().whenComplete(() {
+      if (identical(_limitLoad, request)) _limitLoad = null;
+    });
+    _limitLoad = request;
+    return request;
   }
 
   Future<void> _fetchLimits() async {
+    final generation = ++_limitGeneration;
     final support = widget.support;
     if (support == null || !mounted) return;
+    final api = _apiFor(widget);
+    final epoch = api?.sessionEpoch;
+    bool current() =>
+        mounted &&
+        generation == _limitGeneration &&
+        identical(support, widget.support) &&
+        identical(api, _apiFor(widget)) &&
+        epoch == api?.sessionEpoch;
     setState(() => loadingLimits = true);
     try {
       final limits = await support.limits();
-      if (mounted) setState(() => maxTotal = limits.maxTotal);
+      if (current()) setState(() => maxTotal = limits.maxTotal);
     } catch (_) {
-      if (mounted) setState(() => maxTotal = null);
+      if (current()) setState(() => maxTotal = null);
     } finally {
-      if (mounted) setState(() => loadingLimits = false);
+      if (current()) setState(() => loadingLimits = false);
     }
   }
 
@@ -198,15 +342,25 @@ final class _State extends State<ChatRedPacketSheet>
 
   Future<void> _send() async {
     if (resolvingRecipient || _submitting) return;
+    final generation = _accountGeneration;
+    final api = _apiFor(widget);
+    final epoch = api?.sessionEpoch;
     setState(() => _submitting = true);
     try {
       // Refresh before a cached cap can reject a newly permitted amount.
       // Concurrent resume/retry loads share the same bounded API request.
       await _loadLimits();
-      if (!mounted) return;
+      if (!mounted ||
+          generation != _accountGeneration ||
+          !identical(api, _apiFor(widget)) ||
+          epoch != api?.sessionEpoch) {
+        return;
+      }
       await _submit();
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (mounted && generation == _accountGeneration) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
@@ -328,27 +482,16 @@ final class _State extends State<ChatRedPacketSheet>
       await _alert('群成员尚未加载，请稍后再试');
       return;
     }
-    final selected = await GroupMemberPicker.show(
-      context,
-      title: '选择指定成员',
-      avatarMedia: widget.avatarMedia,
-      itemKeyPrefix: 'chat-red-packet-member',
-      selectedMatrixUserId: recipientMatrixUserId,
-      members: [
-        for (final member in widget.members)
-          GroupMemberIdentity(
-            matrixUserId: member.id,
-            displayName: member.name,
-            matrixAvatarUri: member.avatarUrl == null
-                ? null
-                : Uri.tryParse(member.avatarUrl!),
-            businessUserId: member.businessUserId ??
-                (member.id.startsWith('@') ? null : member.id),
-            businessAvatarUrl: member.businessAvatarUrl,
-          )
-      ],
-    );
-    if (!mounted) return;
+    final pickerGeneration = ++_pickerGeneration;
+    final pickerApi = _apiFor(widget);
+    final pickerEpoch = pickerApi?.sessionEpoch;
+    final selected = await _showMemberPicker();
+    if (!mounted ||
+        pickerGeneration != _pickerGeneration ||
+        !identical(pickerApi, _apiFor(widget)) ||
+        pickerEpoch != pickerApi?.sessionEpoch) {
+      return;
+    }
     if (selected != null) {
       final generation = ++_resolutionGeneration;
       setState(() => resolvingRecipient = true);
@@ -433,170 +576,227 @@ final class _State extends State<ChatRedPacketSheet>
         state.status == ChatRedPacketStatus.sharing ||
         resolvingRecipient;
     final exclusive = mode == 'EXCLUSIVE';
-    return WeChatPageScaffold.navigation(
-      backgroundColor: WeChatColors.resolve(
-          context, WeChatColors.redPacketCreateGradientTop),
-      navigationBar: CupertinoNavigationBar(
+    return Stack(children: [
+      WeChatPageScaffold.navigation(
         backgroundColor: WeChatColors.resolve(
             context, WeChatColors.redPacketCreateGradientTop),
-        automaticBackgroundVisibility: false,
-        enableBackgroundFilterBlur: false,
-        middle: Text('发红包',
-            style: TextStyle(
-                color: WeChatColors.resolveTextPrimary(context),
-                fontSize: 17,
-                fontWeight: FontWeight.w600)),
+        navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.resolve(
+              context, WeChatColors.redPacketCreateGradientTop),
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('发红包',
+              style: TextStyle(
+                  color: WeChatColors.resolveTextPrimary(context),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600)),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                WeChatColors.resolve(
+                    context, WeChatColors.redPacketCreateGradientTop),
+                WeChatColors.resolve(
+                    context, WeChatColors.redPacketCreateGradientBottom)
+              ],
+            ),
+          ),
+          child: Column(children: [
+            Expanded(
+                child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                const SizedBox(height: 10),
+                if (widget.isGroup)
+                  Center(
+                    child: CupertinoButton(
+                      key: const Key('chat-red-packet-type'),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      minimumSize: Size.zero,
+                      color: WeChatColors.redPacketCreateTint,
+                      borderRadius: BorderRadius.circular(16),
+                      onPressed: busy ? null : _pickType,
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text(redPacketTypeLabel(mode),
+                            style: TextStyle(
+                                color: WeChatColors.resolveTextPrimary(context),
+                                fontSize: 14)),
+                        const SizedBox(width: 4),
+                        const Icon(CupertinoIcons.chevron_down,
+                            size: 13, color: WeChatColors.textSecondary),
+                      ]),
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: WeChatColors.elevatedSurface(context),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(children: [
+                    _field(
+                      label: '总金额',
+                      key: const Key('chat-red-packet-total'),
+                      controller: total,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      placeholder: '0.00',
+                      suffix: '点钻',
+                      enabled: !busy,
+                      inputFormatters: const [TwoDecimalAmountFormatter()],
+                    ),
+                    _divider(),
+                    if (widget.isGroup && !exclusive)
+                      _field(
+                        label: '红包个数',
+                        key: const Key('chat-red-packet-shares'),
+                        controller: shares,
+                        keyboardType: TextInputType.number,
+                        placeholder: '请输入个数',
+                        suffix: '个',
+                        enabled: !busy,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(3),
+                        ],
+                      ),
+                    if (widget.isGroup && exclusive)
+                      _pickerRow(
+                        label: '指定成员',
+                        key: const Key('chat-red-packet-recipient'),
+                        value: recipientName,
+                        onTap: busy ? null : _pickRecipient,
+                      ),
+                    if (widget.isGroup) _divider(),
+                    _field(
+                      label: '祝福语',
+                      key: const Key('chat-red-packet-greeting'),
+                      controller: greeting,
+                      keyboardType: TextInputType.text,
+                      placeholder: '恭喜发财，大吉大利',
+                      enabled: !busy,
+                      alignRight: false,
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 8),
+                if (resolvingRecipient)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CupertinoActivityIndicator(),
+                          SizedBox(width: 8),
+                          Text('正在确认收款账号'),
+                        ]),
+                  ),
+                const SizedBox(height: 16),
+                CupertinoButton(
+                  key: const Key('chat-red-packet-send'),
+                  color: WeChatColors.redPacketAction,
+                  borderRadius: BorderRadius.circular(8),
+                  onPressed: busy ? null : _send,
+                  child: const Text('塞钱进红包',
+                      style: TextStyle(
+                          color: CupertinoColors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600)),
+                ),
+                if (state.status == ChatRedPacketStatus.sent)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 10),
+                    child: Center(
+                        child: Text('红包已发送',
+                            style: TextStyle(
+                                color: WeChatColors.brandPrimary,
+                                fontSize: 14))),
+                  ),
+                if (state.status == ChatRedPacketStatus.shareFailed)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Center(
+                      child: CupertinoButton(
+                        onPressed: () => widget.controller.retryShare(),
+                        child: const Text('红包已创建，重新发送到会话',
+                            style: TextStyle(
+                                color: WeChatColors.brandPrimary,
+                                fontSize: 14)),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 24),
+              ],
+            )),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Text('未领取的红包，将于24小时后发起退款',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: WeChatColors.textSecondary, fontSize: 12)),
+            ),
+          ]),
+        ),
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              WeChatColors.resolve(
-                  context, WeChatColors.redPacketCreateGradientTop),
-              WeChatColors.resolve(
-                  context, WeChatColors.redPacketCreateGradientBottom)
-            ],
+      if (_memberPickerCompleter != null)
+        Positioned.fill(
+          child: PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) _finishMemberPicker(null);
+            },
+            child: Stack(children: [
+              Positioned.fill(
+                child: ModalBarrier(
+                  color: CupertinoDynamicColor.resolve(
+                      kCupertinoModalBarrierColor, context),
+                  dismissible: true,
+                  onDismiss: () => _finishMemberPicker(null),
+                ),
+              ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: CupertinoPopupSurface(
+                  child: SafeArea(
+                    top: false,
+                    child: SizedBox(
+                      height: 400,
+                      child: GroupMemberPicker(
+                        title: '选择指定成员',
+                        avatarMedia: widget.avatarMedia,
+                        avatarCacheKeyForMember: _memberAvatarCacheKey,
+                        itemKeyPrefix: 'chat-red-packet-member',
+                        selectedMatrixUserId: recipientMatrixUserId,
+                        members: [
+                          for (final member in widget.members)
+                            GroupMemberIdentity(
+                              matrixUserId: member.id,
+                              displayName: member.name,
+                              matrixAvatarUri: member.avatarUrl == null
+                                  ? null
+                                  : Uri.tryParse(member.avatarUrl!),
+                              businessUserId: member.businessUserId ??
+                                  (member.id.startsWith('@')
+                                      ? null
+                                      : member.id),
+                              businessAvatarUrl: member.businessAvatarUrl,
+                            ),
+                        ],
+                        onSelected: (member) => _finishMemberPicker(member),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
           ),
         ),
-        child: Column(children: [
-          Expanded(
-              child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            children: [
-              const SizedBox(height: 10),
-              if (widget.isGroup)
-                Center(
-                  child: CupertinoButton(
-                    key: const Key('chat-red-packet-type'),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    minimumSize: Size.zero,
-                    color: WeChatColors.redPacketCreateTint,
-                    borderRadius: BorderRadius.circular(16),
-                    onPressed: busy ? null : _pickType,
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(redPacketTypeLabel(mode),
-                          style: TextStyle(
-                              color: WeChatColors.resolveTextPrimary(context),
-                              fontSize: 14)),
-                      const SizedBox(width: 4),
-                      const Icon(CupertinoIcons.chevron_down,
-                          size: 13, color: WeChatColors.textSecondary),
-                    ]),
-                  ),
-                ),
-              const SizedBox(height: 12),
-              Container(
-                decoration: BoxDecoration(
-                  color: WeChatColors.elevatedSurface(context),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(children: [
-                  _field(
-                    label: '总金额',
-                    key: const Key('chat-red-packet-total'),
-                    controller: total,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    placeholder: '0.00',
-                    suffix: '点钻',
-                    enabled: !busy,
-                    inputFormatters: const [TwoDecimalAmountFormatter()],
-                  ),
-                  _divider(),
-                  if (widget.isGroup && !exclusive)
-                    _field(
-                      label: '红包个数',
-                      key: const Key('chat-red-packet-shares'),
-                      controller: shares,
-                      keyboardType: TextInputType.number,
-                      placeholder: '请输入个数',
-                      suffix: '个',
-                      enabled: !busy,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(3),
-                      ],
-                    ),
-                  if (widget.isGroup && exclusive)
-                    _pickerRow(
-                      label: '指定成员',
-                      key: const Key('chat-red-packet-recipient'),
-                      value: recipientName,
-                      onTap: busy ? null : _pickRecipient,
-                    ),
-                  if (widget.isGroup) _divider(),
-                  _field(
-                    label: '祝福语',
-                    key: const Key('chat-red-packet-greeting'),
-                    controller: greeting,
-                    keyboardType: TextInputType.text,
-                    placeholder: '恭喜发财，大吉大利',
-                    enabled: !busy,
-                    alignRight: false,
-                  ),
-                ]),
-              ),
-              const SizedBox(height: 8),
-              if (resolvingRecipient)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
-                  child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CupertinoActivityIndicator(),
-                        SizedBox(width: 8),
-                        Text('正在确认收款账号'),
-                      ]),
-                ),
-              const SizedBox(height: 16),
-              CupertinoButton(
-                key: const Key('chat-red-packet-send'),
-                color: WeChatColors.redPacketAction,
-                borderRadius: BorderRadius.circular(8),
-                onPressed: busy ? null : _send,
-                child: const Text('塞钱进红包',
-                    style: TextStyle(
-                        color: CupertinoColors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600)),
-              ),
-              if (state.status == ChatRedPacketStatus.sent)
-                const Padding(
-                  padding: EdgeInsets.only(top: 10),
-                  child: Center(
-                      child: Text('红包已发送',
-                          style: TextStyle(
-                              color: WeChatColors.brandPrimary, fontSize: 14))),
-                ),
-              if (state.status == ChatRedPacketStatus.shareFailed)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Center(
-                    child: CupertinoButton(
-                      onPressed: () => widget.controller.retryShare(),
-                      child: const Text('红包已创建，重新发送到会话',
-                          style: TextStyle(
-                              color: WeChatColors.brandPrimary, fontSize: 14)),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 24),
-            ],
-          )),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
-            child: Text('未领取的红包，将于24小时后发起退款',
-                textAlign: TextAlign.center,
-                style:
-                    TextStyle(color: WeChatColors.textSecondary, fontSize: 12)),
-          ),
-        ]),
-      ),
-    );
+    ]);
   }
 
   Widget _divider() => Container(

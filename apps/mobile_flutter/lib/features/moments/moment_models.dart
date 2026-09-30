@@ -134,6 +134,8 @@ final class MomentItem {
     this.imageCacheKeys = const [],
     this.videos = const [],
     this.videoCacheKeys = const [],
+    this.videoPosterUrls = const [],
+    this.videoPosterCacheKeys = const [],
     this.liked = false,
     this.likeCount = 0,
     this.likeUsers = const [],
@@ -184,6 +186,13 @@ final class MomentItem {
       images: List<String>.from(json['image_urls'] ?? const []),
       imageCacheKeys: _imageCacheKeys(json),
       videos: List<String>.from(json['video_urls'] ?? const []),
+      videoPosterUrls: (json['video_poster_urls'] as List? ?? const [])
+          .map((v) => v is String ? v : null)
+          .toList(),
+      videoPosterCacheKeys: _imageCacheKeys({
+        'image_urls': json['video_urls'],
+        'image_cache_keys': json['video_poster_cache_keys']
+      }),
       videoCacheKeys: _imageCacheKeys({
         'image_urls': json['video_urls'],
         'image_cache_keys': json['video_cache_keys']
@@ -268,6 +277,7 @@ final class MomentItem {
   final List<String> images;
   final List<String> videos;
   final List<String?> videoCacheKeys;
+  final List<String?> videoPosterUrls, videoPosterCacheKeys;
   final List<String?> imageCacheKeys;
   final List<MomentAuthor> likeUsers;
   final List<MomentCommentView> comments;
@@ -294,6 +304,8 @@ final class MomentItem {
         imageCacheKeys: imageCacheKeys,
         videos: videos,
         videoCacheKeys: videoCacheKeys,
+        videoPosterUrls: videoPosterUrls,
+        videoPosterCacheKeys: videoPosterCacheKeys,
         createdAt: createdAt,
         liked: liked ?? this.liked,
         likeCount: likeCount ?? this.likeCount,

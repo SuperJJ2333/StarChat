@@ -90,9 +90,13 @@ void main() {
   });
   test('encrypted previews persist without exposing bytes and isolate accounts',
       () async {
-    final root = Directory(
-        '${Directory.current.path}/../../docs/verification/artifacts/2026-09-06/cache-entry/favorites/encryption-test');
-    await root.create(recursive: true);
+    // Normalize ../ segments before Windows directory enumeration and isolate
+    // this fixture from other tests and earlier runs in a long worktree path.
+    final fixtures = Directory.fromUri(Directory.current.uri.resolve(
+        '../../docs/verification/artifacts/2026-09-26/cache-fixtures/'));
+    await fixtures.create(recursive: true);
+    final root = await fixtures.createTemp('emoji-');
+    addTearDown(() => root.delete(recursive: true));
     final keys = _Keys();
     final a = EncryptedEmojiPreviewStore('account-a',
         keys: keys, directory: () async => root);

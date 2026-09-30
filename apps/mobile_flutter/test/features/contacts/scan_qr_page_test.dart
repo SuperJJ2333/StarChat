@@ -73,14 +73,19 @@ class ScannerPlatformFake extends MobileScannerPlatform {
   Future<void> dispose() async {}
 }
 
-class ProfileFake implements AddFriendGateway, ProfileGateway {  bool fail = false;
+class ProfileFake implements AddFriendGateway, ProfileGateway {
+  bool fail = false;
   int requests = 0;
+  List<Map<String, dynamic>> results = [
+    {'user_id': 'bob-id', 'username': 'bob', 'nickname': '鲍勃'},
+  ];
+  final queries = <String>[];
   @override
-  Future<Map<String, dynamic>> searchUsers(String query) async => {
-        'items': [
-          {'user_id': 'bob-id', 'username': 'bob', 'nickname': '鲍勃'}
-        ]
-      };
+  Future<Map<String, dynamic>> searchUsers(String query) async {
+    queries.add(query);
+    return {'items': results};
+  }
+
   @override
   Future<Map<String, dynamic>> contactTags() async => {'items': []};
   @override
@@ -146,6 +151,46 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
             const MethodChannel('com.fluttercandies/photo_manager'), null);
+  });
+
+  testWidgets('friend QR never falls back to a suffix search candidate',
+      (tester) async {
+    final api = ProfileFake()
+      ..results = [
+        {'user_id': 'wrong-id', 'username': 'a1111123', 'nickname': '另一位'},
+      ];
+    await tester.pumpWidget(CupertinoApp(home: ScanQrPage(api: api)));
+    await advance(tester);
+    camera.captures.add(const BarcodeCapture(
+        barcodes: [Barcode(rawValue: 'changliao://u/a1111144')]));
+    await advance(tester);
+    expect(api.queries, ['a1111144']);
+    expect(find.byType(RequestFriendPage), findsNothing);
+    expect(find.text('未找到该好友，请确认二维码有效'), findsOneWidget);
+    expect(api.requests, 0);
+    expect(camera.starts, greaterThanOrEqualTo(2));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('friend QR selects only the complete case-insensitive username',
+      (tester) async {
+    final api = ProfileFake()
+      ..results = [
+        {'user_id': 'wrong-id', 'username': 'a1111123', 'nickname': '另一位'},
+        {'user_id': 'exact-id', 'username': 'a1111144', 'nickname': '精确用户'},
+      ];
+    await tester.pumpWidget(CupertinoApp(home: ScanQrPage(api: api)));
+    await advance(tester);
+    camera.captures.add(const BarcodeCapture(
+        barcodes: [Barcode(rawValue: 'changliao://u/A1111144')]));
+    await advance(tester);
+    expect(api.queries, ['A1111144']);
+    expect(find.byType(RequestFriendPage), findsOneWidget);
+    expect(
+        tester.widget<RequestFriendPage>(find.byType(RequestFriendPage)).userId,
+        'exact-id');
+    expect(api.requests, 0);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('camera that finishes initializing behind own QR is stopped',
@@ -291,7 +336,9 @@ void main() {
 
     expect(find.byType(MyQrCodePage), findsOneWidget,
         reason: '有本地资料时断网也要能打开自己的二维码');
-    expect(tester.widget<MyQrCodePage>(find.byType(MyQrCodePage)).avatarCacheKey, repository.resolveIdentity(username: 'alice').cacheKey);
+    expect(
+        tester.widget<MyQrCodePage>(find.byType(MyQrCodePage)).avatarCacheKey,
+        repository.resolveIdentity(username: 'alice').cacheKey);
     expect(find.text('个人二维码加载失败，请重试'), findsNothing);
     Navigator.of(tester.element(find.byType(MyQrCodePage))).pop();
     await advance(tester);
@@ -330,10 +377,9 @@ void main() {
             BottomNavigationBarItem(
                 icon: Icon(CupertinoIcons.compass), label: '发现')
           ]),
-          tabBuilder: (_, index) =>
-              CupertinoTabView(
-                  builder: (_) => DiscoveryPage(
-                      api: api, onOpenRoom: (_, {anchorEventId}) async {})),
+          tabBuilder: (_, index) => CupertinoTabView(
+              builder: (_) => DiscoveryPage(
+                  api: api, onOpenRoom: (_, {anchorEventId}) async {})),
         )));
     await tester.tap(find.byKey(const Key('discovery-scan-entry')));
     await advance(tester);

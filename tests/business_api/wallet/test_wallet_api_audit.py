@@ -122,6 +122,7 @@ def _production_settings(**overrides) -> Settings:
         database_url="sqlite+pysqlite:///:memory:",
         redis_url="redis://localhost:6379/15",
         jwt_secret="p" * 32,
+        diagnostic_identity_secret="wallet-test-diagnostic-hmac-key-" + "d" * 32,
         totp_issuer="六合通",
         email_verification_secret="prod-email-secret",
         password_reset_secret="prod-reset-secret",

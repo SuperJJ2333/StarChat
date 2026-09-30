@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:matrix/matrix.dart' show Client, SyncStatus, SyncStatusUpdate;
+import 'package:matrix/matrix.dart'
+    show Client, SyncStatus, SyncStatusUpdate, SyncUpdate;
 
 import '../../core/performance_metrics.dart';
 import 'matrix_sync_recovery_controller.dart';
@@ -22,12 +23,42 @@ abstract interface class SyncWatchdogTarget {
   set backgroundSync(bool enabled);
 }
 
-final class ClientSyncWatchdogTarget implements SyncWatchdogTarget {
+/// Optional bounded sync-volume stream. Existing watchdog targets may omit it.
+abstract interface class SyncTimelineCountSource {
+  Stream<int> get timelineEventCounts;
+}
+
+final class ClientSyncWatchdogTarget
+    implements SyncWatchdogTarget, SyncTimelineCountSource {
   const ClientSyncWatchdogTarget(this._client);
   final Client _client;
 
   @override
   Stream<SyncStatusUpdate> get syncStatus => _client.onSyncStatus.stream;
+
+  @override
+  Stream<int> get timelineEventCounts =>
+      _client.onSync.stream.map(countTimelineEnvelopes);
+
+  /// Counts raw joined/left timeline envelopes, without reading event fields.
+  static int countTimelineEnvelopes(SyncUpdate update) {
+    var count = 0;
+    final joined = update.rooms?.join;
+    if (joined != null) {
+      for (final room in joined.values) {
+        count += room.timeline?.events?.length ?? 0;
+        if (count >= 100000) return 100000;
+      }
+    }
+    final left = update.rooms?.leave;
+    if (left != null) {
+      for (final room in left.values) {
+        count += room.timeline?.events?.length ?? 0;
+        if (count >= 100000) return 100000;
+      }
+    }
+    return count;
+  }
 
   @override
   Future<void> oneShotSync() => _client.oneShotSync();
@@ -38,6 +69,17 @@ final class ClientSyncWatchdogTarget implements SyncWatchdogTarget {
   @override
   set backgroundSync(bool enabled) => _client.backgroundSync = enabled;
 }
+
+/// Closed recovery facts. The callback never receives SDK errors or room data.
+enum MatrixSyncRecoveryAction { softKick, hardRestart }
+
+enum MatrixSyncRecoverySignal { stalled, timeout, failed }
+
+typedef MatrixSyncRecoveryDiagnostic = void Function(
+  MatrixSyncRecoveryAction action,
+  MatrixSyncRecoverySignal signal,
+  Duration elapsed,
+);
 
 /// Matrix 同步循环看门狗（后台/锁屏通知 BUG 第四次修复）。
 ///
@@ -53,7 +95,8 @@ final class ClientSyncWatchdogTarget implements SyncWatchdogTarget {
 ///   `oneShotSync` 立即对账漏掉的消息。
 ///
 /// Profile/diagnostic builds can print detailed actions under the
-/// `chatflow/matrix` tag. Release keeps only bounded typed counters.
+/// `chatflow/matrix` tag. Release keeps bounded typed counters and, when a
+/// diagnostic sink is attached, closed stall/recovery failure facts.
 final class MatrixSyncWatchdog {
   MatrixSyncWatchdog({
     required this.target,
@@ -61,13 +104,17 @@ final class MatrixSyncWatchdog {
     this.interval = const Duration(minutes: 1),
     this.softStallThreshold = const Duration(minutes: 2, seconds: 30),
     this.hardStallThreshold = const Duration(minutes: 5),
+    this.oneShotTimeout = const Duration(seconds: 45),
     MatrixTransportMonitor? transport,
     MatrixSyncPhaseMetrics? syncPhaseMetrics,
-  })  : _clock = clock ?? DateTime.now,
+    this.onRecoveryDiagnostic,
+  })  : assert(oneShotTimeout > Duration.zero),
+        _clock = clock ?? DateTime.now,
         _transport = transport,
         _syncPhaseMetrics = syncPhaseMetrics ?? MatrixSyncPhaseMetrics();
 
   final SyncWatchdogTarget target;
+  final MatrixSyncRecoveryDiagnostic? onRecoveryDiagnostic;
   final Duration interval;
 
   /// 无心跳判定为软停跳的阈值（健康长轮询 40s 一跳，2.5min 足够宽容）。
@@ -77,6 +124,9 @@ final class MatrixSyncWatchdog {
   /// 软踢后仍无心跳，强制重建循环的阈值。
   @visibleForTesting
   final Duration hardStallThreshold;
+
+  /// Bounds recovery attempts; tests can use a shorter duration.
+  final Duration oneShotTimeout;
 
   final DateTime Function() _clock;
   final MatrixTransportMonitor? _transport;
@@ -90,6 +140,7 @@ final class MatrixSyncWatchdog {
   ValueListenable<bool?> get transportAvailable => _transportAvailable;
 
   StreamSubscription<SyncStatusUpdate>? _subscription;
+  StreamSubscription<int>? _countSubscription;
   Timer? _timer;
   Future<void>? _restarting;
   Future<void>? _softKicking;
@@ -138,9 +189,20 @@ final class MatrixSyncWatchdog {
   void start() {
     if (_disposed || _timer != null) return;
     _lastProgress = _clock();
+    final SyncTimelineCountSource? countSource =
+        target is SyncTimelineCountSource
+            ? target as SyncTimelineCountSource
+            : null;
+    if (countSource != null) {
+      _countSubscription = countSource.timelineEventCounts.listen(
+        (count) {
+          if (!_disposed) _syncPhaseMetrics.recordTimelineEventCount(count);
+        },
+        onError: (Object _, StackTrace __) {},
+      );
+    }
     _subscription = target.syncStatus.listen((update) {
       if (_disposed) return;
-      _syncPhaseMetrics.record(update.status);
       // waitingForResponse 每轮长轮询必发，是最可靠的心跳；
       // finished/processing 视为额外进展。error 不算心跳——持续报错
       // 的循环同样需要被强制重建。
@@ -167,6 +229,14 @@ final class MatrixSyncWatchdog {
           connectionStatus.value != MatrixConnectionStatus.offline) {
         _setStatus(MatrixConnectionStatus.serviceUnavailable);
       }
+      _syncPhaseMetrics.record(update.status,
+          error: update.error,
+          counters: MatrixSyncCounterSnapshot(
+              softKicks: _softKickCount,
+              hardRestarts: _hardRestartCount,
+              errors: _syncErrorCount,
+              reconnects: _reconnectCount,
+              lastHealthyAge: lastHealthySyncAge));
     });
     _timer = Timer.periodic(interval, (_) => tick());
     _recoveryController?.start();
@@ -200,6 +270,19 @@ final class MatrixSyncWatchdog {
     }
   }
 
+  void _reportRecovery(
+    MatrixSyncRecoveryAction action,
+    MatrixSyncRecoverySignal signal, [
+    Duration elapsed = Duration.zero,
+  ]) {
+    if (_disposed) return;
+    try {
+      onRecoveryDiagnostic?.call(action, signal, elapsed);
+    } catch (_) {
+      // Telemetry cannot change the SDK recovery sequence.
+    }
+  }
+
   /// 看门狗拍：按停跳时长分级处置。测试可直接驱动。
   @visibleForTesting
   Future<void> tick() async {
@@ -209,12 +292,17 @@ final class MatrixSyncWatchdog {
     final idle = _clock().difference(_lastProgress);
     if (idle <= softStallThreshold) return;
     if (idle <= hardStallThreshold) {
+      if (_softKicking != null) return;
+      _reportRecovery(MatrixSyncRecoveryAction.softKick,
+          MatrixSyncRecoverySignal.stalled, idle);
       _logDiagnostic('sync stalled ${idle.inSeconds}s, kicking oneShotSync');
       unawaited(_softKick());
       return;
     }
     _logDiagnostic(
         'sync stalled ${idle.inSeconds}s, queuing serialized loop restart');
+    _reportRecovery(MatrixSyncRecoveryAction.hardRestart,
+        MatrixSyncRecoverySignal.stalled, idle);
     _lastProgress = _clock(); // 重置阈值，避免连环重启。
     unawaited(_restartLoop());
   }
@@ -235,6 +323,8 @@ final class MatrixSyncWatchdog {
     _abortDiagnosticTimer?.cancel();
     final diagnostic = Timer(const Duration(seconds: 15), () {
       if (!_disposed) {
+        _reportRecovery(MatrixSyncRecoveryAction.hardRestart,
+            MatrixSyncRecoverySignal.timeout);
         _logDiagnostic('abortSync is still settling; '
             'waiting to avoid corrupting the replacement loop');
       }
@@ -246,6 +336,8 @@ final class MatrixSyncWatchdog {
       // request, then let a late abort clear the replacement's state.
       await target.abortSync();
     } catch (_) {
+      _reportRecovery(MatrixSyncRecoveryAction.hardRestart,
+          MatrixSyncRecoverySignal.failed);
       if (!_disposed &&
           !_transportOffline &&
           connectionStatus.value != MatrixConnectionStatus.offline) {
@@ -269,10 +361,13 @@ final class MatrixSyncWatchdog {
         connectionStatus.value == MatrixConnectionStatus.offline) {
       return;
     }
-    unawaited(target
-        .oneShotSync()
-        .timeout(const Duration(seconds: 45))
-        .catchError((_) {}));
+    unawaited(target.oneShotSync().timeout(oneShotTimeout).catchError((error) {
+      _reportRecovery(
+          MatrixSyncRecoveryAction.hardRestart,
+          error is TimeoutException
+              ? MatrixSyncRecoverySignal.timeout
+              : MatrixSyncRecoverySignal.failed);
+    }));
   }
 
   Future<void> _softKick() {
@@ -281,15 +376,17 @@ final class MatrixSyncWatchdog {
     _softKickCount++;
     _syncPhaseMetrics.metrics.increment(PerformanceCounter.syncSoftKicks);
     late final Future<void> kick;
-    kick = target
-        .oneShotSync()
-        .timeout(
-          const Duration(seconds: 45),
-          onTimeout: () => _logDiagnostic(
-              'oneShotSync kick timed out; escalating on next tick'),
-        )
-        .catchError((_) {})
-        .whenComplete(() {
+    kick = target.oneShotSync().timeout(
+      oneShotTimeout,
+      onTimeout: () {
+        _reportRecovery(MatrixSyncRecoveryAction.softKick,
+            MatrixSyncRecoverySignal.timeout);
+        _logDiagnostic('oneShotSync kick timed out; escalating on next tick');
+      },
+    ).catchError((_) {
+      _reportRecovery(
+          MatrixSyncRecoveryAction.softKick, MatrixSyncRecoverySignal.failed);
+    }).whenComplete(() {
       if (identical(_softKicking, kick)) _softKicking = null;
     });
     return _softKicking = kick;
@@ -309,5 +406,7 @@ final class MatrixSyncWatchdog {
     connectionStatus.dispose();
     unawaited(_subscription?.cancel());
     _subscription = null;
+    unawaited(_countSubscription?.cancel());
+    _countSubscription = null;
   }
 }

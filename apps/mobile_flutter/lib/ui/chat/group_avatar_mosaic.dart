@@ -40,6 +40,8 @@ final class GroupAvatarMosaic extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.all(gap),
             child: GridView.count(
+              padding: EdgeInsets.zero,
+              primary: false,
               crossAxisCount: gridDimension,
               mainAxisSpacing: gap,
               crossAxisSpacing: gap,

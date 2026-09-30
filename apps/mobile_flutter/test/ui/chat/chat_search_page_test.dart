@@ -1,12 +1,107 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/contacts/member_directory_service.dart';
-import 'package:liuhetong_mobile/features/matrix/chat_media_shared_logic.dart' as logic;
+import 'package:liuhetong_mobile/features/matrix/chat_media_shared_logic.dart'
+    as logic;
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_search_page.dart';
 
 /// 规格 #4/#6/#7/#8：搜索页/成员选择/月历/分类页 UI 组件验收。
 void main() {
+  testWidgets('history change removes withdrawn results without a user gesture',
+      (tester) async {
+    final history = ValueNotifier<int>(0);
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      metrics: PerformanceMetrics(enabled: true),
+      onRecord: records.add,
+    );
+    var queries = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+      isGroup: false,
+      memberEntries: const [],
+      historyChanges: history,
+      traceRecorder: recorder,
+      search: (f, {cursor, limit = 50}) async {
+        queries++;
+        return history.value == 0
+            ? [
+                ChatSearchMessage(
+                  eventId: 'withdrawn',
+                  senderId: '@a:x',
+                  senderDisplayName: 'A',
+                  timestamp: DateTime(2026, 9, 6),
+                  timelineOrder: 1,
+                  visibleText: 'hello withdrawn',
+                )
+              ]
+            : [];
+      },
+      onJumpToMessage: (_) {},
+    )));
+    await tester.enterText(find.byKey(const Key('chat-search-input')), 'hello');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(
+        find.byKey(const Key('chat-search-result-withdrawn')), findsOneWidget);
+    final before = queries;
+    history.value++;
+    await tester.pump();
+    expect(find.byKey(const Key('chat-search-result-withdrawn')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(queries, before + 1);
+    expect(find.byKey(const Key('chat-search-no-results')), findsOneWidget);
+    expect(records.last.searchRestartReason,
+        PerformanceSearchRestartReason.safetyInvalidation);
+    await tester.pumpWidget(const SizedBox());
+    history.dispose();
+  });
+  testWidgets('incoming burst keeps visible search until one explicit refresh',
+      (tester) async {
+    final appends = ValueNotifier<int>(0);
+    var queries = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+      isGroup: false,
+      memberEntries: const [],
+      ordinaryAppends: appends,
+      search: (_, {cursor, limit = 50}) async {
+        queries++;
+        return [
+          ChatSearchMessage(
+            eventId: 'old',
+            senderId: '@a:x',
+            senderDisplayName: 'A',
+            timestamp: DateTime(2026, 9, 6),
+            timelineOrder: 1,
+            visibleText: 'hello old',
+          ),
+        ];
+      },
+      onJumpToMessage: (_) {},
+    )));
+    await tester.enterText(find.byKey(const Key('chat-search-input')), 'hello');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    final before = queries;
+    for (var i = 0; i < 50; i++) {
+      appends.value++;
+    }
+    await tester.pump();
+    expect(queries, before);
+    expect(find.byKey(const Key('chat-search-result-old')), findsOneWidget);
+    expect(find.byKey(const Key('chat-search-refresh-new')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('chat-search-refresh-new')));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(queries, before + 1);
+    expect(find.byKey(const Key('chat-search-refresh-new')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    appends.dispose();
+  });
   ChatSearchMessage msg(String id, String text,
           {String sender = '@a:x', int order = 1, String? category}) =>
       ChatSearchMessage(
@@ -63,7 +158,7 @@ void main() {
       expect(find.text('Hello world'), findsOneWidget);
     });
 
-    testWidgets('无匹配显示"未找到"', (tester) async {
+    testWidgets('无匹配显示"暂无匹配记录"', (tester) async {
       await tester.pumpWidget(CupertinoApp(
         home: ChatSearchPage(
           isGroup: false,
@@ -72,11 +167,10 @@ void main() {
           onJumpToMessage: (_) {},
         ),
       ));
-      await tester.enterText(
-          find.byKey(const Key('chat-search-input')), '不存在');
+      await tester.enterText(find.byKey(const Key('chat-search-input')), '不存在');
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
-      expect(find.text('未找到符合条件的聊天记录'), findsOneWidget);
+      expect(find.text('暂无匹配记录'), findsOneWidget);
     });
 
     testWidgets('群聊显示成员筛选入口；私聊不显示', (tester) async {
@@ -99,7 +193,8 @@ void main() {
         home: MemberPickerPage(entries: [
           const MemberDirectoryEntry(userId: '@z:example.test', nickname: '张三'),
           const MemberDirectoryEntry(userId: '@a:example.test', nickname: '阿明'),
-          const MemberDirectoryEntry(userId: '@b:example.test', nickname: 'Bob'),
+          const MemberDirectoryEntry(
+              userId: '@b:example.test', nickname: 'Bob'),
         ]),
       ));
       await tester.pumpAndSettle();
@@ -122,8 +217,10 @@ void main() {
       await tester.enterText(
           find.byKey(const Key('member-picker-search')), 'zhang');
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('member-picker-@z:example.test')), findsOneWidget);
-      expect(find.byKey(const Key('member-picker-@a:example.test')), findsNothing);
+      expect(find.byKey(const Key('member-picker-@z:example.test')),
+          findsOneWidget);
+      expect(
+          find.byKey(const Key('member-picker-@a:example.test')), findsNothing);
     });
 
     testWidgets('无匹配显示"未找到群成员"', (tester) async {
@@ -170,7 +267,13 @@ void main() {
           latest: const logic.CalendarMonth(2026, 9),
           loadMonth: (month) async => logic.RoomHistoryMonthDays(
             month: month,
-            dayStates: const {3: logic.RoomHistoryDayState.knownPresent},
+            coverageComplete: true,
+            dayStates: {
+              for (var d = 1; d <= month.daysInMonth; d++)
+                d: d == 3
+                    ? logic.RoomHistoryDayState.knownPresent
+                    : logic.RoomHistoryDayState.knownEmpty
+            },
           ),
           onDateTap: (date) => result = date,
         ),
@@ -223,7 +326,8 @@ void main() {
       ));
       await tester.pumpAndSettle();
       expect(find.text('未命名文件'), findsOneWidget);
-      expect(find.textContaining('大小未知'), findsOneWidget, reason: '大小回退显示在副标题中');
+      expect(find.textContaining('大小未知'), findsOneWidget,
+          reason: '大小回退显示在副标题中');
     });
 
     testWidgets('链接列表：域名标题回退', (tester) async {
@@ -232,7 +336,8 @@ void main() {
           title: '链接',
           category: ChatSearchMediaCategory.link,
           messages: [
-            msg('l1', '看这个 https://news.example.test/article', category: 'link'),
+            msg('l1', '看这个 https://news.example.test/article',
+                category: 'link'),
           ],
           onOpen: (_) {},
         ),

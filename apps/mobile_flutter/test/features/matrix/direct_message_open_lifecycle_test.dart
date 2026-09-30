@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/app_home.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/core/outbox/persistent_outbox_manager.dart';
 import 'package:liuhetong_mobile/core/outbox/outbox_store.dart';
@@ -51,6 +52,7 @@ void main() {
       (tester) async {
     final harness = await _Harness.start(tester);
     addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
     await harness.tapFriendProfileSend(tester);
     await tester.pumpAndSettle();
     final next = _DirectRoom(harness.client, id: '!dm-b:test');
@@ -78,6 +80,8 @@ void main() {
     Navigator.of(tester.element(find.byType(RoomPage))).pop();
     await tester.pumpAndSettle();
     expect(find.byType(RoomPage, skipOffstage: false), findsNothing);
+    expect(harness.managedResources, initialCount,
+        reason: 'replacement and final pop release both route-owned leases');
   });
 
   testWidgets('Test 1: 好友资料首次「发消息」只解析一次身份/房间，只开一个 RoomPage+租约', (tester) async {
@@ -96,6 +100,115 @@ void main() {
     expect(harness.managedResources - leasesBefore, 1,
         reason: '只取一份 RoomLease');
     expect(harness.roomLeaseOf(tester).roomId, _roomId);
+  });
+
+  testWidgets('closed RoomPage releases its lease before the next open',
+      (tester) async {
+    final harness = await _Harness.start(tester);
+    addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
+
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    expect(harness.managedResources, initialCount + 1);
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsNothing);
+    expect(harness.managedResources, initialCount);
+
+    await tester.tap(find.byKey(const Key('friend-action-message')));
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsOneWidget);
+    expect(harness.managedResources, initialCount + 1);
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(harness.managedResources, initialCount);
+  });
+
+  testWidgets('managed room entry and exit emit independent visible frames',
+      (tester) async {
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      enabled: () => true,
+      onRecord: records.add,
+    );
+    final harness = await _Harness.start(tester, localFrameRecorder: recorder);
+    addTearDown(harness.dispose);
+
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    final local = records
+        .where((record) =>
+            record.operation == PerformanceOperationType.roomLocalFrame)
+        .toList();
+    expect(local, hasLength(1));
+    expect(local.single.roomRoutePhase, PerformanceRoomRoutePhase.enter);
+    expect(local.single.result, PerformanceResult.success);
+    expect(
+        local.single.stagesUs, contains(PerformanceStage.roomLocalFirstFrame));
+
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    await tester.pump();
+    final completed = records
+        .where((record) =>
+            record.operation == PerformanceOperationType.roomLocalFrame)
+        .toList();
+    expect(completed, hasLength(2));
+    expect(completed.last.roomRoutePhase, PerformanceRoomRoutePhase.leave);
+    expect(completed.last.result, PerformanceResult.success);
+    expect(completed.last.stagesUs, contains(PerformanceStage.routeExitFrame));
+    expect(recorder.activeCount, 0);
+  });
+
+  testWidgets('failed route drain retries without a caller-held lease',
+      (tester) async {
+    final harness = await _Harness.start(tester);
+    addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    var attempts = 0;
+    harness.roomLeaseOf(tester).bindOwnerDrain(() async {
+      if (++attempts == 1) throw StateError('synthetic drain failure');
+    });
+
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsNothing);
+    expect(attempts, 2);
+    expect(harness.managedResources, initialCount);
+  });
+
+  testWidgets('persistent route drain failure has bounded retries',
+      (tester) async {
+    final harness = await _Harness.start(tester);
+    addTearDown(harness.dispose);
+    final initialCount = harness.managedResources;
+    await harness.tapFriendProfileSend(tester);
+    await tester.pumpAndSettle();
+    var attempts = 0;
+    harness.roomLeaseOf(tester).bindOwnerDrain(() async {
+      attempts++;
+      throw StateError('synthetic persistent drain failure');
+    });
+
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(attempts, 2,
+        reason: 'one immediate retry is allowed, with no unbounded loop');
+    expect(harness.managedResources, initialCount + 1,
+        reason: 'failed drain remains managed and revoked for later retry');
+
+    await tester.tap(find.byKey(const Key('friend-action-message')));
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsOneWidget);
+    expect(attempts, 3,
+        reason: 'next room open retries the old lease without blocking entry');
+    expect(harness.managedResources, initialCount + 2);
+    harness.closeRoomA(tester);
+    await tester.pumpAndSettle();
+    expect(harness.managedResources, initialCount + 1);
   });
 
   testWidgets('Test 2: Room A 内再次「发消息」不再被闸门吞掉，popUntil 回到原 Room A',
@@ -420,6 +533,7 @@ final class _Harness {
     WidgetTester tester, {
     bool peerInCache = true,
     bool directChatMetadata = true,
+    PerformanceTraceRecorder? localFrameRecorder,
   }) async {
     final counters = _Counters();
     final client = _CountingClient(
@@ -487,6 +601,7 @@ final class _Harness {
         onLogout: () async {},
         themeController: ThemeController(store: _ThemeStore()),
         profileRepositoryFactory: (_, __) async => cache,
+        localFrameRecorder: localFrameRecorder,
       ),
     ));
     await tester.pump();

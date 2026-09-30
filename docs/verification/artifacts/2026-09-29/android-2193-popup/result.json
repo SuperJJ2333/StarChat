@@ -1,0 +1,50 @@
+{
+  "artifact_sha256": "8ea9eafb95bcf07c5655266d3eb71766c5799ba364103b23004820f3cf4e6dec",
+  "audit": [
+    {
+      "action": "settings.update",
+      "after": "修复 USDT 提现报价显示异常；优化聊天搜索、朋友圈视频与部分页面体验。",
+      "before": "优化群公告提醒与编辑、群管理；朋友圈支持 GIF、视频及互动消息；完善“我”页导航、邀请码历史、资料输入限制和钱包提示。",
+      "key": "app_update_notes",
+      "reason_code": "ADMIN_SETTING_UPDATED",
+      "result": "SUCCESS",
+      "subject_type": "app_setting"
+    }
+  ],
+  "audit_count": 1,
+  "audit_trace": "android-popup-0.4.24-2193-20260929T142419Z",
+  "changed_keys": [
+    "app_update_notes"
+  ],
+  "settings_after": {
+    "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+    "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+    "app_ios_latest_build": "2189",
+    "app_ios_latest_version": "0.4.20",
+    "app_ios_min_supported_build": "3",
+    "app_ios_update_notes": "优化 iOS 登录与本地聊天身份恢复；完善群公告、朋友圈、个人中心及钱包体验。",
+    "app_latest_build": "2193",
+    "app_latest_version": "0.4.24",
+    "app_min_supported_build": "3",
+    "app_update_notes": "修复 USDT 提现报价显示异常；优化聊天搜索、朋友圈视频与部分页面体验。"
+  },
+  "settings_before": {
+    "app_apk_url": "https://www.liuhetong888.com/download?platform=android&install=1",
+    "app_ios_download_url": "https://www.liuhetong888.com/download?platform=ios&install=1",
+    "app_ios_latest_build": "2189",
+    "app_ios_latest_version": "0.4.20",
+    "app_ios_min_supported_build": "3",
+    "app_ios_update_notes": "优化 iOS 登录与本地聊天身份恢复；完善群公告、朋友圈、个人中心及钱包体验。",
+    "app_latest_build": "2193",
+    "app_latest_version": "0.4.24",
+    "app_min_supported_build": "3",
+    "app_update_notes": "优化群公告提醒与编辑、群管理；朋友圈支持 GIF、视频及互动消息；完善“我”页导航、邀请码历史、资料输入限制和钱包提示。"
+  },
+  "static_sha256": {
+    "download.html": "83236b7332f698a036ee3d72a8e0000bfd82b34afece9a6d8178b50d139f6267",
+    "downloads/android-release.json": "c29b90b42ce7e707901ad4c97a0e8d173932e8e46a3136f8a7e6953b978b547a",
+    "src/download-network-selector.js": "a4030bc497d0453cc11f00a5bd4f567be8229a2ce822d93da738af211e6ab446",
+    "src/download-network.js": "4699ca1c729138990d79b12303b30ec7b71335a97ebb2859bb914fd55bc0302a",
+    "src/download-redirect.js": "a8f27e541081ae79c242dbccd075e780de7030cccf8c0d55c68dd5e7df5ac827"
+  }
+}

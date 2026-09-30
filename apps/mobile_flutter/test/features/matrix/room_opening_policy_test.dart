@@ -76,7 +76,8 @@ void main() {
   test('room opening diagnostic strings omit raw room and cause details', () {
     const secretRoom = '!private-room:example';
     const failure = RoomOpenFailure(RoomOpenFailureKind.temporaryFailure,
-        roomId: secretRoom, source: RoomOpenSource.search,
+        roomId: secretRoom,
+        source: RoomOpenSource.search,
         cause: 'private payload');
     const diagnostic = RoomOpenDiagnostic(
         source: RoomOpenSource.search,
@@ -110,7 +111,7 @@ void main() {
     test('组合根只通过策略层打开房间，且不存在第二条打开路径', () {
       final appHome = File('lib/app_home.dart').readAsStringSync();
       expect(appHome, contains('RoomOpeningPolicy('));
-      expect(appHome, contains('_roomOpening.open('));
+      expect(appHome, contains('_roomOpening.openPrepared('));
       expect(appHome, contains('probe: _MatrixRoomOpenProbe('));
       // 打开失败只有一个反馈点（2026-09-19 用户修订：非阻断 toast，不再弹窗）。
       expect(appHome, contains('showRoomOpenFailureToast('));
@@ -151,8 +152,7 @@ void main() {
       expect(openById, isNot(contains('waitForJoinedRoom')),
           reason: '本地已知的会话必须离线直接打开，不得先等同步');
       expect(openById, contains('RoomOpenSource.search'));
-      expect(openById, contains('_rooms.where'),
-          reason: '本地会话列表命中即直接打开（离线优先）');
+      expect(openById, contains('_rooms.where'), reason: '本地会话列表命中即直接打开（离线优先）');
       expect(home, contains('source: RoomOpenSource.scan'),
           reason: '扫码入群入口必须声明来源（策略据此判定 requireNetwork）');
     });
@@ -162,8 +162,8 @@ void main() {
           .readAsStringSync();
       expect(search, contains('required this.onOpenRoom'),
           reason: 'onOpenRoom 必须必填，不允许 optional');
-      final contacts = File('lib/features/contacts/contacts_page.dart')
-          .readAsStringSync();
+      final contacts =
+          File('lib/features/contacts/contacts_page.dart').readAsStringSync();
       expect(contacts, contains('onOpenRoom: widget.onOpenRoom'));
       final discovery =
           File('lib/features/discovery/discovery_page.dart').readAsStringSync();
@@ -187,8 +187,7 @@ void main() {
       );
 
       expect(recorder.navigated.single.roomId, '!room:test');
-      expect(recorder.awaited, isEmpty,
-          reason: '离线优先：本地已加入的房间绝不调用网络等待');
+      expect(recorder.awaited, isEmpty, reason: '离线优先：本地已加入的房间绝不调用网络等待');
       expect(policy.evaluate(_request('!room:test')).reason, 'local_joined');
     });
   });
@@ -236,8 +235,7 @@ void main() {
           awaitLocalRoom: recorder.awaitLocalRoom,
         ),
         throwsA(isA<RoomOpenFailure>()
-            .having((f) => f.kind, 'kind',
-                RoomOpenFailureKind.temporaryFailure)
+            .having((f) => f.kind, 'kind', RoomOpenFailureKind.temporaryFailure)
             .having((f) => f.userMessage, 'message', '无法打开会话，请检查网络')),
       );
       expect(recorder.navigated, isEmpty);
@@ -275,8 +273,7 @@ void main() {
 
       // Offline First（2026-09-18）：房间已在本地库 → 零网络等待立即进入；
       // 成员/加密状态由页面在后台刷新。有界等待只保留给本地完全未知的房间。
-      expect(recorder.awaited, isEmpty,
-          reason: '本地已知的房间绝不等待网络同步');
+      expect(recorder.awaited, isEmpty, reason: '本地已知的房间绝不等待网络同步');
       expect(recorder.navigated, hasLength(1));
     });
   });
@@ -334,20 +331,18 @@ void main() {
       await expectLater(
         policy.open(
           _request('!room:test'),
-          navigate: (_) async =>
-              throw StateError('Matrix room is unavailable'),
+          navigate: (_) async => throw StateError('Matrix room is unavailable'),
           awaitLocalRoom: (_) async => true,
         ),
-        throwsA(isA<RoomOpenFailure>().having((f) => f.kind, 'kind',
-            RoomOpenFailureKind.roomNotFound)),
+        throwsA(isA<RoomOpenFailure>()
+            .having((f) => f.kind, 'kind', RoomOpenFailureKind.roomNotFound)),
       );
     });
 
     test('可重试分类覆盖"刚入群/刚同步"的场景，不留死胡同', () {
       const notJoined = RoomOpenFailure(RoomOpenFailureKind.notJoined,
           roomId: '!r:test', source: RoomOpenSource.scan);
-      expect(notJoined.isRetryable, isTrue,
-          reason: '刚入群时房间可能还没同步到本地，必须允许重试');
+      expect(notJoined.isRetryable, isTrue, reason: '刚入群时房间可能还没同步到本地，必须允许重试');
       const missing = RoomOpenFailure(RoomOpenFailureKind.roomNotFound,
           roomId: '!r:test', source: RoomOpenSource.search);
       expect(missing.isRetryable, isFalse, reason: '会话不存在时不应引导重复尝试');
@@ -356,8 +351,7 @@ void main() {
       expect(denied.isRetryable, isFalse);
     });
 
-    testWidgets('toast 不提供弹窗按钮：重试由用户再次点入口完成（幂等）',
-        (tester) async {
+    testWidgets('toast 不提供弹窗按钮：重试由用户再次点入口完成（幂等）', (tester) async {
       await tester.pumpWidget(CupertinoApp(
         home: Builder(
           builder: (context) => CupertinoButton(
@@ -382,7 +376,8 @@ void main() {
     });
   });
 
-  group('Test 7: 控制房间在搜索中不可见', () {    testWidgets('控制房间不进搜索结果，普通群聊仍可打开', (tester) async {
+  group('Test 7: 控制房间在搜索中不可见', () {
+    testWidgets('控制房间不进搜索结果，普通群聊仍可打开', (tester) async {
       final store = SecureSessionStore(_MemoryStore());
       await store.saveSession(accessToken: 'a', refreshToken: 'r');
       final api = BusinessApiClient(
@@ -424,21 +419,21 @@ void main() {
 
   group('Test 8: 架构债守卫（审计 B 组）', () {
     test('控制房间身份只来自 roomId/accountData/会话登记，且创建即登记', () {
-      final registry =
-          File('lib/features/matrix/control_room_registry.dart').readAsStringSync();
+      final registry = File('lib/features/matrix/control_room_registry.dart')
+          .readAsStringSync();
       expect(registry, contains('class ControlRoomRegistry'));
       expect(registry, contains('static void register('));
       // 会话登记必须真正参与可见性判定（否则窗口期补不上）。
-      final resolver =
-          File('lib/features/matrix/matrix_control_rooms.dart').readAsStringSync();
+      final resolver = File('lib/features/matrix/matrix_control_rooms.dart')
+          .readAsStringSync();
       expect(resolver, contains('ControlRoomRegistry.sessionRoomIds'));
       // 两个控制房间的创建方都必须登记。
       final vault = File('lib/features/matrix/matrix_e2ee_client.dart')
           .readAsStringSync();
       expect(vault, contains('ControlRoomRegistry.register(roomId)'));
-      final reminders = File(
-              'lib/features/matrix/matrix_message_reminder_backend.dart')
-          .readAsStringSync();
+      final reminders =
+          File('lib/features/matrix/matrix_message_reminder_backend.dart')
+              .readAsStringSync();
       expect(reminders, contains('ControlRoomRegistry.register'));
       // 登出/清库必须清理账号级登记。
       expect(vault, contains('ControlRoomRegistry.clear()'));
@@ -482,26 +477,31 @@ void main() {
           reason: 'legacy 私聊创建面只能存在于定义处，生产入口一律走 '
               'DirectChatController + CoordinatedDirectChatGateway：$offenders');
       // 生产组合根必须使用带跨设备仲裁的网关。
-      final appHome = _stripComments(File('lib/app_home.dart').readAsStringSync());
+      final appHome =
+          _stripComments(File('lib/app_home.dart').readAsStringSync());
       expect(appHome, contains('CoordinatedDirectChatGateway('));
       expect(appHome, isNot(contains('DirectChatService(')));
       expect(appHome, isNot(contains('CanonicalDirectChatGateway(')));
     });
 
     test('好友通过的生产接线必须走带请求上下文的编排（回退仅测试用）', () {
-      final appHome = _stripComments(File('lib/app_home.dart').readAsStringSync());
+      final appHome =
+          _stripComments(File('lib/app_home.dart').readAsStringSync());
       expect(appHome, contains('onEstablishDirectChatWithRequest:'));
       expect(appHome, contains('_establishDirectChatAndGreet'));
-      final contacts = File('lib/features/contacts/contacts_page.dart')
-          .readAsStringSync();
+      final contacts =
+          File('lib/features/contacts/contacts_page.dart').readAsStringSync();
       // 旧回退必须标注为测试专用，避免被生产复用为"第二套建私聊实现"。
       expect(contacts, contains('@visibleForTesting'));
-      expect(contacts, contains('onEstablishDirectChat ??'));
+      expect(contacts,
+          contains('widget.onEstablishDirectChatWithRequest == null'));
+      expect(contacts,
+          contains('final establish = widget.onEstablishDirectChat;'));
     });
 
     test('会话状态只有一个真相源：作用域栈由打开流程驱动，不由页面维护', () {
-      final roomPage =
-          _stripComments(File('lib/features/matrix/room_page.dart').readAsStringSync());
+      final roomPage = _stripComments(
+          File('lib/features/matrix/room_page.dart').readAsStringSync());
       expect(roomPage, isNot(contains('StatisticsRoomScope.enter')),
           reason: 'RoomPage 不得再自行维护会话作用域栈');
       expect(roomPage, isNot(contains('StatisticsRoomScope.leave')));
@@ -521,10 +521,12 @@ void main() {
       expect(appHome, contains('_roomOpenFailureVisible'));
       final duplicateFeedbackGate = appHome.substring(
         appHome.indexOf('if (_roomOpenFailureVisible) {'),
-        appHome.indexOf('await widget.matrix.prepareConversationAssociations();',
+        appHome.indexOf(
+            'prepare: widget.matrix.prepareConversationAssociations,',
             appHome.indexOf('if (_roomOpenFailureVisible) {')),
       );
-      expect(duplicateFeedbackGate, contains('request.performanceTrace?.dispose();'));
+      expect(duplicateFeedbackGate,
+          contains('request.performanceTrace?.dispose();'));
       expect(duplicateFeedbackGate, contains('return;'));
       // 2026-09-19 用户修订：不再弹模态对话框、不再有弹窗内「重试」按钮；
       // 反馈走非阻断 toast，重试由再次点击入口幂等完成。
@@ -533,8 +535,9 @@ void main() {
       // 等待上限从 12 秒收紧，并且等待期间有可见进度。
       expect(appHome, contains('_roomOpenWaitTimeout = Duration(seconds: 5)'));
       expect(appHome, contains('room-open-waiting'));
-      final feedback = File('lib/features/matrix/room_open_failure_feedback.dart')
-          .readAsStringSync();
+      final feedback =
+          File('lib/features/matrix/room_open_failure_feedback.dart')
+              .readAsStringSync();
       expect(feedback, contains('showWeChatToast'));
       expect(feedback, isNot(contains('CupertinoAlertDialog')));
     });
@@ -553,11 +556,8 @@ final class _MemoryStore implements SecureKeyValueStore {
 /// 去掉行注释与块注释：守卫测试必须区分"注释里的历史说明"与"代码里的行为"。
 String _stripComments(String source) {
   final withoutBlock = source.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
-  return withoutBlock
-      .split('\n')
-      .map((line) {
-        final index = line.indexOf('//');
-        return index == -1 ? line : line.substring(0, index);
-      })
-      .join('\n');
+  return withoutBlock.split('\n').map((line) {
+    final index = line.indexOf('//');
+    return index == -1 ? line : line.substring(0, index);
+  }).join('\n');
 }

@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:typed_data';
+import '../../core/performance_trace.dart';
 
 import 'incremental_timeline_merge.dart';
 
 import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
 import 'room_timeline_controller.dart';
+import 'room_timeline_viewport.dart';
 
 /// Receipts are bounded by events actually displayed by the conversation UI.
 abstract interface class RoomVisibleReadCapability {
@@ -22,11 +24,14 @@ abstract interface class RoomEventSourceCapability {
 final class LogicalConversationTimelineCapability
     implements
         RoomTimelineCapability,
+        RoomRetryDiagnostics,
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomMessageLookupSource,
         RoomVisibleReadCapability,
         RoomEventSourceCapability,
+        RoomWindowedTimelineSource,
+        RoomNewestFirstTimelineSource,
         RoomHistoryDateCapability {
   LogicalConversationTimelineCapability({
     required this.primaryRoomId,
@@ -57,6 +62,96 @@ final class LogicalConversationTimelineCapability
   Completer<void>? _dateCancellation, _monthCancellation;
   static const _queryBudget = Duration(seconds: 13);
   RoomTimelineCapability get _primary => _sources[primaryRoomId]!;
+  bool _windowEnabled = false;
+  RoomTimelineViewport<RoomMessageViewModel>? _mergedWindow;
+  RoomWindowedTimelineSource? get _singleWindow => _windowEnabled &&
+          _sources.length == 1 &&
+          _primary is RoomWindowedTimelineSource
+      ? _primary as RoomWindowedTimelineSource
+      : null;
+
+  @override
+  void enableWindow() {
+    _windowEnabled = true;
+    for (final source
+        in _sources.values.whereType<RoomWindowedTimelineSource>()) {
+      source.enableWindow();
+    }
+    if (_singleWindow == null) {
+      _mergedWindow =
+          RoomTimelineViewport(idOf: (m) => m.id, project: (m) => m);
+    }
+  }
+
+  @override
+  void setHiddenFilter(bool Function(String, DateTime?)? hidden) {
+    for (final source
+        in _sources.values.whereType<RoomWindowedTimelineSource>()) {
+      source.setHiddenFilter(hidden);
+    }
+  }
+
+  @override
+  bool get hasEarlierWindow =>
+      _singleWindow?.hasEarlierWindow ?? _mergedWindow?.hasEarlier ?? false;
+  @override
+  bool get hasLaterWindow =>
+      _singleWindow?.hasLaterWindow ?? _mergedWindow?.hasLater ?? false;
+  @override
+  int get totalMessages =>
+      _singleWindow?.totalMessages ??
+      _mergedWindow?.total ??
+      _mergedSnapshot().length;
+  @override
+  Iterable<RoomMessageViewModel> get allMessages =>
+      _singleWindow?.allMessages ?? _mergedWindow?.all ?? _mergedSnapshot();
+  @override
+  RoomMessageViewModel? findMessage(String id) =>
+      _singleWindow?.findMessage(id) ?? _mergedWindow?.find(id);
+  @override
+  RoomMessageViewModel? get newestMessage =>
+      _singleWindow?.newestMessage ?? _mergedWindow?.newest;
+  @override
+  DateTime? previousTimestamp(String id) =>
+      _singleWindow?.previousTimestamp(id) ??
+      _mergedWindow?.previousTimestamp(id);
+  @override
+  bool selectAnchor(String id) =>
+      _singleWindow?.selectAnchor(id) ?? _mergedWindow?.anchor(id) ?? false;
+  @override
+  void selectEarlier() {
+    if (_singleWindow != null) {
+      _singleWindow!.selectEarlier();
+    } else {
+      _mergedWindow?.earlier();
+    }
+  }
+
+  @override
+  void selectLater() {
+    if (_singleWindow != null) {
+      _singleWindow!.selectLater();
+    } else {
+      _mergedWindow?.later();
+    }
+  }
+
+  @override
+  void pinWindow() {
+    _singleWindow?.pinWindow();
+    _mergedWindow?.pin();
+  }
+
+  @override
+  Iterable<RoomMessageViewModel> get newestFirstMessages =>
+      historyNewestFirst();
+  @override
+  Iterable<RoomMessageViewModel> historyNewestFirst({String? beforeEventId}) =>
+      _singleWindow != null && _primary is RoomNewestFirstTimelineSource
+          ? (_primary as RoomNewestFirstTimelineSource)
+              .historyNewestFirst(beforeEventId: beforeEventId)
+          : _mergedWindow?.historyNewestFirst(beforeEventId: beforeEventId) ??
+              _mergedSnapshot().reversed;
 
   /// Ownership transfers only on success; callers dispose rejected sources.
   void addSource(String roomId, RoomTimelineCapability source) {
@@ -66,6 +161,13 @@ final class LogicalConversationTimelineCapability
       throw StateError('Conversation source already attached');
     }
     _sources[roomId] = source;
+    if (_windowEnabled) {
+      if (source is RoomWindowedTimelineSource) {
+        (source as RoomWindowedTimelineSource).enableWindow();
+      }
+      _mergedWindow ??=
+          RoomTimelineViewport(idOf: (m) => m.id, project: (m) => m);
+    }
     _sourceIndexReady = false;
     cancelPendingDateLookup();
     cancelMonthLookup();
@@ -89,9 +191,33 @@ final class LogicalConversationTimelineCapability
   @override
   List<RoomMessageViewModel> snapshot() {
     _checkActive();
+    if (_singleWindow != null) {
+      final rows = _primary.snapshot();
+      for (final row in rows) {
+        _eventSources[row.id] = primaryRoomId;
+      }
+      _sourceIndexReady = true;
+      return rows;
+    }
+    final rows = _mergedSnapshot();
+    final window = _mergedWindow;
+    if (window == null) return rows;
+    window.update(rows);
+    return window.snapshot();
+  }
+
+  List<RoomMessageViewModel> _mergedSnapshot() {
+    _checkActive();
     final events = <String, RoomMessageViewModel>{};
     for (final entry in _sources.entries) {
-      for (final event in entry.value.snapshot()) {
+      if (_windowEnabled && entry.value is RoomWindowedTimelineSource) {
+        entry.value
+            .snapshot(); // Refresh authoritative references before merging.
+      }
+      for (final event
+          in _windowEnabled && entry.value is RoomWindowedTimelineSource
+              ? (entry.value as RoomWindowedTimelineSource).allMessages
+              : entry.value.snapshot()) {
         if (events.containsKey(event.id)) continue;
         events[event.id] = event;
         _eventSources[event.id] = entry.key;
@@ -104,6 +230,7 @@ final class LogicalConversationTimelineCapability
   @override
   String? sourceRoomId(String eventId) {
     _checkActive();
+    if (_singleWindow?.findMessage(eventId) != null) return primaryRoomId;
     // A cold caller gets one index build. Once a snapshot has been projected,
     // resolving every row for search/attachments must be O(1), including misses.
     // Sync/pagination refresh snapshots; a newly attached source invalidates the
@@ -162,7 +289,15 @@ final class LogicalConversationTimelineCapability
       (await _source(eventId)).loadThumbnail(eventId);
 
   @override
-  Future<void> retry(String transactionId) async {
+  Future<void> retry(String transactionId) => _retry(transactionId);
+
+  @override
+  Future<void> retryWithDiagnostics(
+          String transactionId, PerformanceTrace Function() startSdkAttempt) =>
+      _retry(transactionId, startSdkAttempt: startSdkAttempt);
+
+  Future<void> _retry(String transactionId,
+      {PerformanceTrace Function()? startSdkAttempt}) async {
     _checkActive();
     final owners = <String>{};
     for (final entry in _sources.entries) {
@@ -175,7 +310,13 @@ final class LogicalConversationTimelineCapability
       throw StateError(
           'Retry requires an unambiguous primary-room transaction');
     }
-    await _primary.retry(transactionId);
+    final primary = _primary;
+    if (startSdkAttempt != null && primary is RoomRetryDiagnostics) {
+      await (primary as RoomRetryDiagnostics)
+          .retryWithDiagnostics(transactionId, startSdkAttempt);
+    } else {
+      await primary.retry(transactionId);
+    }
   }
 
   @override
@@ -397,6 +538,13 @@ final class LogicalConversationTimelineCapability
     for (final source in _dates) {
       source.selectLatest();
     }
+    for (final source
+        in _sources.values.whereType<RoomWindowedTimelineSource>()) {
+      if (source is! RoomHistoryDateCapability) {
+        source.selectLatest();
+      }
+    }
+    _mergedWindow?.latest();
   }
 
   @override

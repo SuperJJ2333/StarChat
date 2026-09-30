@@ -20,8 +20,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$OutputEncoding = [System.Text.UTF8Encoding]::new()
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 
@@ -51,8 +53,8 @@ $versionLine = [regex]::Matches($pubspec, '(?m)(?<=^version:[ \t])\d+\.\d+\.\d+\
 if ($versionLine.Count -ne 1) { throw 'pubspec.yaml 必须恰好声明一行 version: X.Y.Z+build' }
 $nameDecl = [regex]::Matches($config, "appVersionName[ \t]*=[ \t]*'[^']+'")
 if ($nameDecl.Count -ne 1) { throw 'app_config.dart 必须恰好声明一处 appVersionName' }
-$buildDecl = [regex]::Matches($config, 'appBuildNumber[ \t]*=[ \t]*\d+')
-if ($buildDecl.Count -ne 1) { throw 'app_config.dart 必须恰好声明一处 appBuildNumber' }
+$buildDecl = [regex]::Matches($config, 'compiledBuildNumber[ \t]*=[ \t]*\d+')
+if ($buildDecl.Count -ne 1) { throw 'app_config.dart 必须恰好声明一处 compiledBuildNumber' }
 
 $changed = @()
 if ($versionLine[0].Value -cne $Version) {
@@ -68,9 +70,9 @@ if ($nameDecl[0].Value -cne "appVersionName = '$name'") {
     $config = $configNew
     $configChanged = $true
 }
-if ($buildDecl[0].Value -cne "appBuildNumber = $build") {
-    $configNew = [regex]::Replace($config, 'appBuildNumber[ \t]*=[ \t]*\d+', "appBuildNumber = $build")
-    if ($configNew -ceq $config) { throw 'app_config.dart appBuildNumber 替换失败——格式漂移？请人工检查' }
+if ($buildDecl[0].Value -cne "compiledBuildNumber = $build") {
+    $configNew = [regex]::Replace($config, 'compiledBuildNumber[ \t]*=[ \t]*\d+', "compiledBuildNumber = $build")
+    if ($configNew -ceq $config) { throw 'app_config.dart compiledBuildNumber 替换失败——格式漂移？请人工检查' }
     $config = $configNew
     $configChanged = $true
 }

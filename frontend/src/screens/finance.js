@@ -267,7 +267,8 @@ export function redpacket(definition, { details = [] } = {}) {
     const exclusiveCreate = definition.state === "group-exclusive";
     const fixedSinglePart = directCreate || exclusiveCreate;
     const maxParts = fixedSinglePart ? 1 : Math.min(500, groupRedPacketFixture.joinedMemberIds.length);
-    const count = field("红包个数", String(fixedSinglePart ? 1 : maxParts), "");
+    const count = field("红包个数", String(fixedSinglePart ? 1 : maxParts),
+      fixedSinglePart ? "仅限 1 份" : `群成员共 ${maxParts} 人，最多可发 ${maxParts} 个红包`);
     const countInput = count.querySelector("input");
     countInput.type = "number";
     countInput.min = "1";

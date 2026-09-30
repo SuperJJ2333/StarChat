@@ -38,6 +38,7 @@ final class RoomSearchIndexPump {
   bool _dirty = false;
   bool _disposed = false;
   bool _waitingForHistory = false;
+  bool _historyInitialized = false;
 
   @visibleForTesting
   int get pendingCount => _pending.length;
@@ -51,13 +52,16 @@ final class RoomSearchIndexPump {
     _dirty = true;
   }
 
-  void request(Iterable<RoomMessageViewModel> priority) {
+  void request(Iterable<RoomMessageViewModel> priority,
+      {bool rescanHistory = false}) {
     if (_disposed) return;
     if (!isActive()) {
       dispose();
       return;
     }
+    var hasPriority = false;
     for (final row in priority) {
+      hasPriority = true;
       if (!_pending.containsKey(row.id) && _pending.length >= maxPendingIds) {
         // The source owns overflow, rather than retaining an unbounded second
         // history. Never continue an older iterator after dropping overrides.
@@ -75,7 +79,13 @@ final class RoomSearchIndexPump {
         }
       }
     }
-    _dirty = true;
+    // Initial catch-up and explicit invalidation replay authoritative history.
+    // A steady visible update is already a delta; replaying every old row after
+    // each one turns sustained message delivery into continuous UI-isolate work.
+    if (!_historyInitialized || rescanHistory || !hasPriority) {
+      _historyInitialized = true;
+      _dirty = true;
+    }
     if (_waitingForHistory) {
       _timer?.cancel();
       _timer = null;

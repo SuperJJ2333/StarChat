@@ -44,6 +44,7 @@ final class GroupMemberPicker extends StatefulWidget {
     required this.members,
     this.selectedMatrixUserId,
     this.avatarMedia,
+    this.avatarCacheKeyForMember,
     this.itemKeyPrefix = 'group-member',
     this.onSelected,
   });
@@ -52,6 +53,7 @@ final class GroupMemberPicker extends StatefulWidget {
   final List<GroupMemberIdentity> members;
   final String? selectedMatrixUserId;
   final AvatarMediaCapability? avatarMedia;
+  final String? Function(GroupMemberIdentity)? avatarCacheKeyForMember;
   final String itemKeyPrefix;
   final ValueChanged<GroupMemberIdentity>? onSelected;
 
@@ -61,6 +63,7 @@ final class GroupMemberPicker extends StatefulWidget {
     required List<GroupMemberIdentity> members,
     String? selectedMatrixUserId,
     AvatarMediaCapability? avatarMedia,
+    String? Function(GroupMemberIdentity)? avatarCacheKeyForMember,
     required String itemKeyPrefix,
   }) =>
       showCupertinoModalPopup<GroupMemberIdentity>(
@@ -74,6 +77,7 @@ final class GroupMemberPicker extends StatefulWidget {
                 members: members,
                 selectedMatrixUserId: selectedMatrixUserId,
                 avatarMedia: avatarMedia,
+                avatarCacheKeyForMember: avatarCacheKeyForMember,
                 itemKeyPrefix: itemKeyPrefix,
                 onSelected: (member) => Navigator.pop(popupContext, member),
               ),
@@ -137,7 +141,10 @@ final class _GroupMemberPickerState extends State<GroupMemberPicker> {
               onPressed: () => widget.onSelected?.call(member),
               child: Row(children: [
                 GroupMemberAvatar(
-                    member: member, avatarMedia: widget.avatarMedia),
+                    member: member,
+                    avatarMedia: widget.avatarMedia,
+                    avatarCacheKey:
+                        widget.avatarCacheKeyForMember?.call(member)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: Text(member.displayName,
@@ -164,16 +171,20 @@ final class GroupMemberAvatar extends StatelessWidget {
       {super.key,
       required this.member,
       required this.avatarMedia,
+      this.avatarCacheKey,
       this.size = 36});
   final GroupMemberIdentity member;
   final AvatarMediaCapability? avatarMedia;
+  final String? avatarCacheKey;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    if (member.businessAvatarUrl != null &&
+    if (avatarCacheKey != null &&
+        member.businessAvatarUrl != null &&
         member.businessAvatarUrl!.startsWith(RegExp(r'https?://'))) {
       return UserAvatar(
+          avatarCacheKey: avatarCacheKey,
           nickname: member.displayName,
           fallbackSeed: member.businessUserId ?? member.matrixUserId,
           avatarUrl: member.businessAvatarUrl,

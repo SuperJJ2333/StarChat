@@ -159,6 +159,46 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('cold business avatar reuses disk bytes after URL is re-signed',
+      (tester) async {
+    const firstUrl =
+        'https://media.example.test/profile/avatar/content/token-one?expires_in=300&v=stable';
+    const renewedUrl =
+        'https://media.example.test/profile/avatar/content/token-two?expires_in=300&v=stable';
+    const accountKey = 'account-a:alice';
+    await tester.runAsync(() => AvatarCache.manager.putFile(
+          firstUrl,
+          base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='),
+          key: AvatarCache.cacheKey(userId: accountKey, avatarUrl: firstUrl),
+          fileExtension: 'png',
+        ));
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+
+    await tester.pumpWidget(const CupertinoApp(
+      home: UserAvatar(
+        nickname: 'Alice',
+        fallbackSeed: accountKey,
+        avatarUrl: renewedUrl,
+      ),
+    ));
+    var painted = false;
+    for (var i = 0; i < 20; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      painted = tester
+          .widgetList<RawImage>(find.byType(RawImage))
+          .any((image) => image.image != null);
+      if (painted) break;
+    }
+    expect(AvatarCache.cacheKey(userId: accountKey, avatarUrl: renewedUrl),
+        AvatarCache.cacheKey(userId: accountKey, avatarUrl: firstUrl));
+    expect(painted, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   for (final roomLease in [false, true]) {
     testWidgets(
         'cold ${roomLease ? "room" : "account"} avatar publishes cache URL before discovery',

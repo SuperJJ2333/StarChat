@@ -4,16 +4,80 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/app_connection_status.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_recovery_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_phase_metrics.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
-import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
+import 'package:matrix/matrix.dart'
+    show
+        JoinedRoomUpdate,
+        LeftRoomUpdate,
+        MatrixEvent,
+        RoomsUpdate,
+        SyncStatus,
+        SyncStatusUpdate,
+        SyncUpdate,
+        TimelineUpdate;
 
 /// BUG（后台/锁屏收不到通知第四次修复）：SDK 同步循环在后台可能悬挂
 /// （连接黑洞/续环断裂/事务卡死），无任何自愈——看门狗以循环心跳为准，
 /// 停跳先踢一次 oneShotSync，仍停跳强制 abortSync + 重启循环。
 void main() {
   SyncStatusUpdate status(SyncStatus s) => SyncStatusUpdate(s);
+
+  test('watchdog records bounded timeline envelope count from active sync',
+      () async {
+    final records = <PerformanceRecord>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder =
+        PerformanceTraceRecorder(metrics: metrics, onRecord: records.add);
+    final target = _FakeWatchdogTarget();
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      syncPhaseMetrics:
+          MatrixSyncPhaseMetrics(metrics: metrics, traceRecorder: recorder),
+    );
+    watchdog.start();
+    target.emit(status(SyncStatus.waitingForResponse));
+    await _settle();
+    target.emit(status(SyncStatus.processing));
+    await _settle();
+    target.emitTimelineEventCount(50);
+    await _settle();
+    target.emit(status(SyncStatus.cleaningUp));
+    target.emit(status(SyncStatus.finished));
+    await _settle();
+    expect(records.single.toJson()['timeline_event_count'], 50);
+    watchdog.dispose();
+    await _settle();
+    expect(target.hasCountListener, isFalse);
+  });
+
+  test('real target counts joined and left timeline envelopes only', () {
+    MatrixEvent event(String id) => MatrixEvent(
+          content: const {},
+          type: 'm.room.message',
+          eventId: id,
+          senderId: '@test:example.invalid',
+          originServerTs: DateTime.utc(2026),
+        );
+    final sync = SyncUpdate(
+      nextBatch: 'n',
+      rooms: RoomsUpdate(
+        join: {
+          '!joined:test': JoinedRoomUpdate(
+            timeline: TimelineUpdate(events: [event('a'), event('b')]),
+          ),
+        },
+        leave: {
+          '!left:test': LeftRoomUpdate(
+            timeline: TimelineUpdate(events: [event('c')]),
+          ),
+        },
+      ),
+    );
+    expect(ClientSyncWatchdogTarget.countTimelineEnvelopes(sync), 3);
+  });
 
   test('release-style watchdog stall records no detailed log', () async {
     final previous = debugPrint;
@@ -502,6 +566,104 @@ void main() {
         reason: 'an offline abort must not schedule the replacement sync');
     watchdog.dispose();
   });
+
+  test('stall and failed soft kick emit only closed recovery facts', () async {
+    final target = _FakeWatchdogTarget()..failOneShot = true;
+    final facts =
+        <(MatrixSyncRecoveryAction, MatrixSyncRecoverySignal, Duration)>[];
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          facts.add((action, signal, elapsed)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(facts, [
+      (
+        MatrixSyncRecoveryAction.softKick,
+        MatrixSyncRecoverySignal.stalled,
+        const Duration(minutes: 3)
+      ),
+      (
+        MatrixSyncRecoveryAction.softKick,
+        MatrixSyncRecoverySignal.failed,
+        Duration.zero
+      ),
+    ]);
+    watchdog.dispose();
+  });
+
+  test('failed hard abort reports failure without pretending recovery',
+      () async {
+    final target = _FakeWatchdogTarget()..failAbort = true;
+    final facts =
+        <(MatrixSyncRecoveryAction, MatrixSyncRecoverySignal, Duration)>[];
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          facts.add((action, signal, elapsed)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 6));
+    await watchdog.tick();
+    await _settle();
+    expect(facts, [
+      (
+        MatrixSyncRecoveryAction.hardRestart,
+        MatrixSyncRecoverySignal.stalled,
+        const Duration(minutes: 6)
+      ),
+      (
+        MatrixSyncRecoveryAction.hardRestart,
+        MatrixSyncRecoverySignal.failed,
+        Duration.zero
+      ),
+    ]);
+    expect(target.oneShots, 0);
+    watchdog.dispose();
+  });
+
+  test('timed out one-shot emits timeout and never a recovery claim', () async {
+    final target = _FakeWatchdogTarget()..holdOneShot = true;
+    final facts = <(MatrixSyncRecoveryAction, MatrixSyncRecoverySignal)>[];
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      oneShotTimeout: const Duration(milliseconds: 5),
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          facts.add((action, signal)),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(facts, [
+      (MatrixSyncRecoveryAction.softKick, MatrixSyncRecoverySignal.stalled),
+      (MatrixSyncRecoveryAction.softKick, MatrixSyncRecoverySignal.timeout),
+    ]);
+    watchdog.dispose();
+    target.releaseOneShot();
+  });
+
+  test('recovery diagnostic callback cannot break sync recovery', () async {
+    final target = _FakeWatchdogTarget();
+    final watchdog = MatrixSyncWatchdog(
+      target: target,
+      clock: target.clock.now,
+      onRecoveryDiagnostic: (action, signal, elapsed) =>
+          throw StateError('diagnostic sink failed'),
+    );
+    watchdog.start();
+    target.clock.elapse(const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(target.oneShots, 1);
+    watchdog.dispose();
+  });
 }
 
 Future<void> _settle() => Future<void>.delayed(Duration.zero);
@@ -512,9 +674,11 @@ final class _FakeClock {
   void elapse(Duration d) => _now = _now.add(d);
 }
 
-final class _FakeWatchdogTarget implements SyncWatchdogTarget {
+final class _FakeWatchdogTarget
+    implements SyncWatchdogTarget, SyncTimelineCountSource {
   final clock = _FakeClock();
   final _controller = StreamController<SyncStatusUpdate>.broadcast();
+  final _counts = StreamController<int>.broadcast();
   var oneShots = 0;
   var restarts = 0;
   var aborts = 0;
@@ -522,12 +686,20 @@ final class _FakeWatchdogTarget implements SyncWatchdogTarget {
   bool hangAbort = false;
   bool holdAbort = false;
   bool holdOneShot = false;
+  bool failOneShot = false;
   bool failAbort = false;
   Completer<void>? _abortGate;
   Completer<void>? _oneShotGate;
   final operations = <String>[];
 
   void emit(SyncStatusUpdate update) => _controller.add(update);
+
+  void emitTimelineEventCount(int count) => _counts.add(count);
+
+  bool get hasCountListener => _counts.hasListener;
+
+  @override
+  Stream<int> get timelineEventCounts => _counts.stream;
 
   @override
   Stream<SyncStatusUpdate> get syncStatus => _controller.stream;
@@ -537,6 +709,7 @@ final class _FakeWatchdogTarget implements SyncWatchdogTarget {
     oneShots++;
     operations.add('oneShot');
     if (holdOneShot) await (_oneShotGate ??= Completer<void>()).future;
+    if (failOneShot) throw StateError('one shot failed');
   }
 
   @override

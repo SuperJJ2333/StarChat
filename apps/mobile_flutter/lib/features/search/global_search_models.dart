@@ -26,6 +26,19 @@ final class GlobalSearchContactResult {
 }
 
 @immutable
+final class GlobalSearchAvatarMember {
+  const GlobalSearchAvatarMember({
+    required this.userId,
+    required this.displayName,
+    this.matrixAvatarUri,
+  });
+
+  final String userId;
+  final String displayName;
+  final Uri? matrixAvatarUri;
+}
+
+@immutable
 final class GlobalSearchRoomResult {
   const GlobalSearchRoomResult({
     required this.roomId,
@@ -35,6 +48,8 @@ final class GlobalSearchRoomResult {
     this.avatarSeed,
     this.avatarUrl,
     this.matrixAvatarUri,
+    this.directPeerId,
+    this.avatarMembers = const [],
     this.matchedText,
   });
 
@@ -47,6 +62,8 @@ final class GlobalSearchRoomResult {
   final String? avatarSeed;
   final String? avatarUrl;
   final Uri? matrixAvatarUri;
+  final String? directPeerId;
+  final List<GlobalSearchAvatarMember> avatarMembers;
   final String? matchedText;
 }
 
@@ -167,8 +184,8 @@ List<GlobalSearchConversationHit> aggregateConversationHits(
         roomId: key,
         roomName: grouped[key]!.first.roomName,
         isGroup: grouped[key]!.first.isGroup,
-        hits: List.unmodifiable(grouped[key]!
-          ..sort((a, b) => b.timestamp.compareTo(a.timestamp))),
+        hits: List.unmodifiable(
+            grouped[key]!..sort((a, b) => b.timestamp.compareTo(a.timestamp))),
         roomAvatarSeed: grouped[key]!.first.roomAvatarSeed,
         roomAvatarUrl: grouped[key]!.first.roomAvatarUrl,
       ),

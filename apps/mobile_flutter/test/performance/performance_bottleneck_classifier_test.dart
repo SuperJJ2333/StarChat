@@ -2,6 +2,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/performance_metrics.dart';
 import 'package:liuhetong_mobile/core/performance_trace.dart';
 
+PerformanceRecord _shortVideoPreparation({
+  List<PerformanceVideoTranscodeAttempt> attempts = const [
+    PerformanceVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.normal,
+      outcome: PerformanceVideoTranscodeOutcome.nativeFailure,
+      durationMs: 181,
+    ),
+    PerformanceVideoTranscodeAttempt(
+      profile: PerformanceVideoTranscodeProfile.aggressive,
+      outcome: PerformanceVideoTranscodeOutcome.nativeFailure,
+      durationMs: 77,
+    ),
+  ],
+  Map<PerformanceStage, int> stages = const {
+    PerformanceStage.videoTranscodeStarted: 431000,
+  },
+  PerformanceResult result = PerformanceResult.failed,
+  bool frameAttributionComplete = true,
+}) =>
+    PerformanceRecord(
+      operationId: '00000000-0000-4000-8000-000000000001',
+      operation: PerformanceOperationType.videoPrepare,
+      totalUs: 700000,
+      stagesUs: stages,
+      result: result,
+      lifecycle: PerformanceLifecycle.foreground,
+      frames: const PerformanceFrameCounts(total: 9, slow: 4, slowBuild: 4),
+      frameAttributionComplete: frameAttributionComplete,
+      videoTranscodeAttempts: attempts,
+    );
+
 void main() {
   test('a long Matrix sync poll alone does not prove a bottleneck', () {
     final record = PerformanceRecord(
@@ -308,5 +339,106 @@ void main() {
     expect(cancelledRecord.transcodeUntilFailureMs, isNull);
     expect(PerformanceBottleneckClassifier.classify(cancelledRecord),
         PerformanceBottleneck.unknown);
+  });
+  test(
+      'fast terminal native transcode failure is not attributed to slow frames',
+      () {
+    final record = _shortVideoPreparation();
+    expect(record.totalMs, 700);
+    expect(record.transcodeUntilFailureMs, 269);
+    expect(record.frames.slow, 4);
+    expect(PerformanceBottleneckClassifier.classify(record),
+        PerformanceBottleneck.mediaTranscode);
+    expect(record.frames.slow, 4,
+        reason: 'measured UI evidence stays independent');
+  });
+
+  test('native transcode failure does not require complete frame attribution',
+      () {
+    final record = _shortVideoPreparation(frameAttributionComplete: false);
+    expect(PerformanceBottleneckClassifier.classify(record),
+        PerformanceBottleneck.mediaTranscode);
+  });
+
+  test('short failed preparation without native attempt evidence is unknown',
+      () {
+    final record = _shortVideoPreparation(
+        attempts: const [], frameAttributionComplete: false);
+    expect(PerformanceBottleneckClassifier.classify(record),
+        PerformanceBottleneck.unknown);
+  });
+
+  test('a successful fallback transcode does not force terminal media failure',
+      () {
+    for (final result in [
+      PerformanceResult.success,
+      PerformanceResult.failed
+    ]) {
+      final record = _shortVideoPreparation(result: result, attempts: const [
+        PerformanceVideoTranscodeAttempt(
+            profile: PerformanceVideoTranscodeProfile.normal,
+            outcome: PerformanceVideoTranscodeOutcome.nativeFailure,
+            durationMs: 181),
+        PerformanceVideoTranscodeAttempt(
+            profile: PerformanceVideoTranscodeProfile.aggressive,
+            outcome: PerformanceVideoTranscodeOutcome.success,
+            durationMs: 77),
+      ]);
+      expect(PerformanceBottleneckClassifier.classify(record),
+          PerformanceBottleneck.clientUi);
+    }
+  });
+
+  test('later preparation or SDK advancement excludes terminal transcode fault',
+      () {
+    for (final stage in [
+      PerformanceStage.videoTranscodeDone,
+      PerformanceStage.videoPrepareDone,
+      PerformanceStage.videoUploadStarted,
+      PerformanceStage.videoUploadDone,
+      PerformanceStage.videoEventSent,
+      PerformanceStage.matrixSendStart,
+      PerformanceStage.matrixSendFinish,
+      PerformanceStage.ack,
+    ]) {
+      final record = _shortVideoPreparation(stages: {
+        PerformanceStage.videoTranscodeStarted: 431000,
+        stage: 600000
+      }, frameAttributionComplete: false);
+      expect(PerformanceBottleneckClassifier.classify(record),
+          PerformanceBottleneck.unknown,
+          reason:
+              '${stage.name} proves preparation advanced beyond failed passes');
+    }
+  });
+
+  test('cancelled preparation is not forced into native failure classification',
+      () {
+    final record = _shortVideoPreparation(
+        result: PerformanceResult.cancelled, frameAttributionComplete: false);
+    expect(PerformanceBottleneckClassifier.classify(record),
+        PerformanceBottleneck.unknown);
+  });
+
+  test('ordinary measured transcode retains the three-second threshold', () {
+    for (final durationMs in [2999, 3000]) {
+      final record = PerformanceRecord(
+        operationId: '00000000-0000-4000-8000-000000000001',
+        operation: PerformanceOperationType.videoPrepare,
+        totalUs: durationMs * 1000,
+        stagesUs: {
+          PerformanceStage.videoTranscodeStarted: 0,
+          PerformanceStage.videoTranscodeDone: durationMs * 1000,
+        },
+        result: PerformanceResult.success,
+        lifecycle: PerformanceLifecycle.foreground,
+        frames: const PerformanceFrameCounts(),
+      );
+      expect(
+          PerformanceBottleneckClassifier.classify(record),
+          durationMs == 3000
+              ? PerformanceBottleneck.mediaTranscode
+              : PerformanceBottleneck.unknown);
+    }
   });
 }

@@ -7,6 +7,7 @@ import '../../ui/components/wechat_scaffold.dart';
 
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
@@ -181,6 +182,25 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
     if (confirmed && await widget.controller.leave()) widget.onLeft();
   }
 
+  Future<void> _openManagement() async {
+    final completed = await Navigator.push<bool>(
+      context,
+      MotionPageRoute<bool>(
+        builder: (_) => GroupManagementPage(
+          identityCache: widget.identityCache,
+          avatarMedia: widget.avatarMedia,
+          controller: widget.controller,
+          onDissolved: widget.onLeft,
+        ),
+      ),
+    );
+    if (completed != true || !mounted) return;
+    await widget.controller.load();
+    if (!mounted) return;
+    showWeChatToast(context, '群主转让已完成',
+        semanticType: WeChatToastSemanticType.success);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
@@ -316,16 +336,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     WeChatListTile(
                       title: const Text('群管理'),
                       trailing: const CupertinoListTileChevron(),
-                      onTap: () => Navigator.push(
-                        context,
-                        MotionPageRoute(
-                          builder: (_) => GroupManagementPage(
-                            identityCache: widget.identityCache,
-                            controller: widget.controller,
-                            onDissolved: widget.onLeft,
-                          ),
-                        ),
-                      ),
+                      onTap: _openManagement,
                     ),
                   WeChatListTile(
                     title: const Text('查找聊天记录'),
@@ -705,8 +716,10 @@ final class GroupManagementPage extends StatelessWidget {
       {super.key,
       required this.controller,
       this.onDissolved,
-      this.identityCache});
+      this.identityCache,
+      this.avatarMedia});
   final ProfileRepository? identityCache;
+  final AvatarMediaCapability? avatarMedia;
   final GroupChatInfoController controller;
   final VoidCallback? onDissolved;
   @override
@@ -719,7 +732,9 @@ final class GroupManagementPage extends StatelessWidget {
           navigationBar: const CupertinoNavigationBar(middle: Text('群管理')),
           child: SafeArea(
               child: ListView(children: [
-            if (controller.state.message != null)
+            if (controller.state.message != null &&
+                !(controller.ownershipTransfer?['stage'] == 'COMPLETED' &&
+                    controller.state.message == '群主转让已完成'))
               Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(controller.state.message!,
@@ -788,20 +803,29 @@ final class GroupManagementPage extends StatelessWidget {
     }
   }
 
-  Future<void> _pick(BuildContext context, {required bool transfer}) =>
-      Navigator.push(
-          context,
-          MotionPageRoute<void>(
-              builder: (_) => _GroupRolePicker(
-                  controller: controller,
-                  transfer: transfer,
-                  identityCache: identityCache)));
+  Future<void> _pick(BuildContext context, {required bool transfer}) async {
+    final completed = await Navigator.push<bool>(
+        context,
+        MotionPageRoute<bool>(
+            builder: (_) => _GroupRolePicker(
+                controller: controller,
+                transfer: transfer,
+                identityCache: identityCache,
+                avatarMedia: avatarMedia)));
+    if (transfer && completed == true && context.mounted) {
+      Navigator.pop(context, true);
+    }
+  }
 }
 
 final class _GroupRolePicker extends StatefulWidget {
   const _GroupRolePicker(
-      {required this.controller, required this.transfer, this.identityCache});
+      {required this.controller,
+      required this.transfer,
+      this.identityCache,
+      this.avatarMedia});
   final ProfileRepository? identityCache;
+  final AvatarMediaCapability? avatarMedia;
   final GroupChatInfoController controller;
   final bool transfer;
   @override
@@ -812,15 +836,43 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
   late final selected = widget.transfer
       ? <String>{}
       : widget.controller.state.snapshot!.adminIds.toSet();
+  String query = '';
   bool busy = false;
+  bool completionHandled = false;
   @override
   void initState() {
     super.initState();
     if (widget.transfer) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.controller.refreshOwnershipTransfer();
+        if (!mounted) return;
+        if (widget.controller.ownershipTransferPending) {
+          _refreshPendingStatus();
+        } else {
+          widget.controller.refreshOwnershipTransfer();
+        }
       });
     }
+  }
+
+  void _completeOnce() {
+    if (completionHandled ||
+        !mounted ||
+        widget.controller.state.status != GroupChatInfoStatus.ready ||
+        widget.controller.ownershipTransfer?['stage'] != 'COMPLETED') {
+      return;
+    }
+    completionHandled = true;
+    Navigator.pop(context, true);
+  }
+
+  Future<void> _refreshPendingStatus() async {
+    final before = widget.controller.ownershipTransfer;
+    final beforeId = before?['transfer_id'] ?? before?['id'];
+    await widget.controller.refreshOwnershipTransfer();
+    if (!mounted || beforeId == null) return;
+    final after = widget.controller.ownershipTransfer;
+    final afterId = after?['transfer_id'] ?? after?['id'];
+    if (beforeId == afterId) _completeOnce();
   }
 
   Future<void> _save() async {
@@ -849,6 +901,10 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
     }
     if (!mounted) return;
     setState(() => busy = false);
+    if (widget.transfer) {
+      _completeOnce();
+      return;
+    }
     if (!widget.transfer &&
         widget.controller.state.status != GroupChatInfoStatus.failed) {
       Navigator.pop(context);
@@ -865,6 +921,28 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
               builder: (context, _) => _buildContent(context)));
   Widget _buildContent(BuildContext context) {
     final snapshot = widget.controller.state.snapshot!;
+    final eligible = snapshot.members
+        .where((member) =>
+            member.isJoined && member.matrixUserId != snapshot.ownerId)
+        .toList(growable: false);
+    final byId = {for (final member in eligible) member.matrixUserId: member};
+    final entries = [
+      for (final member in eligible)
+        MemberDirectoryEntry(
+          userId: member.matrixUserId,
+          remark: widget
+              .identityCache?.contactsByMatrixId[member.matrixUserId]?.remark,
+          nickname: widget.identityCache
+                  ?.contactsByMatrixId[member.matrixUserId]?.nickname ??
+              member.displayName,
+          username: widget.identityCache
+                  ?.contactsByMatrixId[member.matrixUserId]?.username ??
+              localPart(member.matrixUserId),
+        ),
+    ];
+    final filtered = sortAndFilterMemberEntries(entries, query);
+    final validTransferSelection =
+        selected.length == 1 && byId.containsKey(selected.single);
     return WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             middle: Text(widget.transfer ? '转让群主' : '群管理员'),
@@ -874,7 +952,7 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
                         widget.controller.state.status ==
                             GroupChatInfoStatus.saving ||
                         (widget.transfer &&
-                            (selected.isEmpty ||
+                            (!validTransferSelection ||
                                 widget.controller.ownershipTransferPending ||
                                 !snapshot.isOwner))
                     ? null
@@ -887,7 +965,9 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
                 padding: const EdgeInsets.all(16),
                 child: Text(widget.controller.state.message!,
                     style: const TextStyle(color: WeChatColors.danger))),
-          if (widget.transfer && widget.controller.ownershipTransfer != null)
+          if (widget.transfer &&
+              widget.controller.ownershipTransfer != null &&
+              widget.controller.ownershipTransfer?['stage'] != 'COMPLETED')
             Container(
                 key: const Key('group-transfer-status'),
                 margin: const EdgeInsets.all(16),
@@ -907,14 +987,31 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
                           onPressed: widget.controller.state.status ==
                                   GroupChatInfoStatus.saving
                               ? null
-                              : widget.controller.refreshOwnershipTransfer,
+                              : _refreshPendingStatus,
                           child: const Text('刷新状态')),
                     ])),
-          for (final member in snapshot.members
-              .where((m) => m.matrixUserId != snapshot.ownerId))
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: CupertinoSearchTextField(
+              key: const Key('group-role-search'),
+              placeholder: '搜索群成员',
+              onChanged: (value) => setState(() => query = value),
+            ),
+          ),
+          if (filtered.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: Text('未找到群成员')),
+            ),
+          for (final entry in filtered)
             WeChatListTile(
-                title: Text(_resolvedMemberName(widget.identityCache, member)),
-                trailing: Icon(selected.contains(member.matrixUserId)
+                leading: _memberAvatar(
+                    widget.identityCache, byId[entry.userId]!,
+                    size: WeChatDimensions.contactAvatar,
+                    media: widget.avatarMedia),
+                leadingSize: WeChatDimensions.contactAvatar,
+                title: Text(entry.displayName),
+                trailing: Icon(selected.contains(entry.userId)
                     ? CupertinoIcons.check_mark_circled_solid
                     : CupertinoIcons.circle),
                 onTap: busy ||
@@ -922,7 +1019,7 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
                             widget.controller.ownershipTransferPending)
                     ? null
                     : () => setState(() {
-                          final id = member.matrixUserId;
+                          final id = entry.userId;
                           if (selected.remove(id)) return;
                           if (widget.transfer) selected.clear();
                           if (selected.length < 3) selected.add(id);

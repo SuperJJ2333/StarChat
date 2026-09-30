@@ -1,10 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:liuhetong_mobile/core/performance_metrics.dart';
+import 'package:liuhetong_mobile/core/performance_trace.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:matrix/matrix.dart' show MatrixException;
 
 class _Paths extends PathProviderPlatform {
   _Paths(this.path);
@@ -16,8 +21,8 @@ class _Paths extends PathProviderPlatform {
 void main() {
   setUp(() async {
     clearMediaMemoryCaches();
-    final root = await Directory(
-            '../../docs/verification/artifacts/2026-09-09/redmi-polish')
+    final root = await Directory.fromUri(Directory.current.uri.resolve(
+            '../../docs/verification/artifacts/2026-09-26/cache-fixtures/'))
         .create(recursive: true);
     final dir = await root.createTemp('media-test-');
     PathProviderPlatform.instance = _Paths(dir.path);
@@ -70,16 +75,20 @@ void main() {
     mutable[0] = 99;
     expect(memory.get(key('alice', 'one').cacheId), bytes);
   });
-  test('outgoing content returns across rooms without downloading, after restart',
+  test(
+      'outgoing content returns across rooms without downloading, after restart',
       () async {
-    final bytes = Uint8List.fromList([0, 0, 0, 24, 102, 116, 121, 112,
-      109, 112, 52, 50, 0, 0, 0, 0]);
+    final bytes = Uint8List.fromList(
+        [0, 0, 0, 24, 102, 116, 121, 112, 109, 112, 52, 50, 0, 0, 0, 0]);
     final hash = sha256.convert(bytes).toString();
     await cacheOutgoingMedia(accountId: 'alice', roomId: 'sent', bytes: bytes);
     clearMediaMemoryCaches();
     final returned = await resolveCachedVideoFile(
-        key: MediaCacheKey(accountId: 'alice', roomId: 'returned',
-            eventId: 'other-sender', contentSha256: hash),
+        key: MediaCacheKey(
+            accountId: 'alice',
+            roomId: 'returned',
+            eventId: 'other-sender',
+            contentSha256: hash),
         decrypt: () async => throw StateError('must reuse sent content'));
     expect(await returned.readAsBytes(), bytes);
     expect(await MediaCache.totalCachedBytes(), bytes.length);
@@ -89,9 +98,16 @@ void main() {
     final payload = Uint8List(2 * 1024 * 1024)..[0] = 71;
     final hash = sha256.convert(payload).toString();
     var downloads = 0;
-    Future<Uint8List> download() async { downloads++; return payload; }
-    MediaCacheKey key(int i) => MediaCacheKey(accountId: 'alice',
-        roomId: 'room-$i', eventId: 'renamed-$i.gif', contentSha256: hash);
+    Future<Uint8List> download() async {
+      downloads++;
+      return payload;
+    }
+
+    MediaCacheKey key(int i) => MediaCacheKey(
+        accountId: 'alice',
+        roomId: 'room-$i',
+        eventId: 'renamed-$i.gif',
+        contentSha256: hash);
     final values = await Future.wait([
       for (var i = 0; i < 10; i++) loadMediaWithCache(key(i), download),
     ]);
@@ -281,4 +297,75 @@ void main() {
         }, thumbnail: true),
         isNot(matrixMediaSourceIdentity({'url': 'mxc://server/a'})));
   });
+  for (final sample in <(Object, PerformanceNetworkError, int?)>[
+    (TimeoutException('PRIVATE'), PerformanceNetworkError.requestTimeout, null),
+    (
+      const SocketException('PRIVATE'),
+      PerformanceNetworkError.socketFailure,
+      null
+    ),
+    (
+      const HandshakeException('PRIVATE'),
+      PerformanceNetworkError.tlsFailure,
+      null
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 503)),
+      PerformanceNetworkError.server5xx,
+      503
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 429)),
+      PerformanceNetworkError.rateLimit,
+      429
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 401)),
+      PerformanceNetworkError.authFailure,
+      401
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 400)),
+      PerformanceNetworkError.businessRejection,
+      400
+    ),
+    (
+      MatrixException(
+          http.Response('{"errcode":"M_UNKNOWN","error":"PRIVATE"}', 700)),
+      PerformanceNetworkError.unknown,
+      null
+    ),
+    (const FormatException('PRIVATE'), PerformanceNetworkError.unknown, null),
+  ]) {
+    test('failed media load keeps closed ${sample.$2.name} ${sample.$3}',
+        () async {
+      final records = <PerformanceRecord>[];
+      final recorder = PerformanceTraceRecorder(
+          metrics: PerformanceMetrics(enabled: true), onRecord: records.add);
+      final trace = recorder.start(PerformanceOperationType.mediaLoad);
+      await expectLater(
+          loadMediaWithCache(
+            const MediaCacheKey(
+                accountId: 'PRIVATE_ACCOUNT',
+                roomId: 'PRIVATE_ROOM',
+                eventId: 'PRIVATE_EVENT'),
+            () async => throw sample.$1,
+            trace: trace,
+          ),
+          throwsA(same(sample.$1)));
+      trace.finish(result: PerformanceResult.failed);
+
+      expect(records, hasLength(1));
+      expect(records.single.networkError, sample.$2);
+      expect(records.single.statusCode, sample.$3);
+      final json = jsonEncode(records.single.toJson());
+      expect(json, isNot(contains('PRIVATE')));
+      expect(json, isNot(contains('room_id')));
+      recorder.clear();
+    });
+  }
 }

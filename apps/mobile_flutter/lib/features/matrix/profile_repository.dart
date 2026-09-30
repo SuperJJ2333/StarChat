@@ -70,6 +70,7 @@ final class ProfileSnapshot {
           'username': profile.username,
           'nickname': profile.nickname,
           'masked_email': profile.maskedEmail,
+          'masked_phone': profile.maskedPhone,
           'fallback_seed': profile.fallbackSeed,
           'signature': profile.signature,
           'nudge_suffix': profile.nudgeSuffix,
@@ -126,6 +127,7 @@ final class ProfileSnapshot {
         username: username,
         nickname: nickname,
         maskedEmail: maskedEmail,
+        maskedPhone: profileJson['masked_phone'] as String?,
         fallbackSeed: fallbackSeed,
         signature: profileJson['signature']?.toString(),
         nudgeSuffix: profileJson['nudge_suffix']?.toString(),
@@ -657,6 +659,9 @@ final class ProfileRepository extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    if (_accountKey case final accountKey?) {
+      AvatarCache.clearRetainedForAccount(accountKey);
+    }
     _remoteReadGeneration++;
     _profileReadGeneration++;
     for (final selection
@@ -862,7 +867,12 @@ final class ProfileRepository extends ChangeNotifier {
     final old = {for (final contact in previous) contact.userId: contact};
     for (final contact in current) {
       final before = old[contact.userId];
-      if (before?.avatarUrl != contact.avatarUrl ||
+      if ((before?.avatarUrl == null
+                  ? null
+                  : AvatarCache.avatarVersion(before!.avatarUrl!)) !=
+              (contact.avatarUrl == null
+                  ? null
+                  : AvatarCache.avatarVersion(contact.avatarUrl!)) ||
           before?.avatarIsKnown != contact.avatarIsKnown) {
         for (final key in [
           contact.username,

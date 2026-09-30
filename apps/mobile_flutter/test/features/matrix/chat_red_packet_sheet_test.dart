@@ -9,9 +9,11 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_red_packet_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_red_packet_sheet.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_payment_flow.dart';
+import 'package:liuhetong_mobile/features/matrix/group_member_picker.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
 import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
+import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 
 final class FakeRedPacketBusiness implements ChatRedPacketBusinessGateway {
   int creates = 0;
@@ -85,7 +87,210 @@ Future<void> _pump(
   await tester.pump();
 }
 
+Future<BusinessApiClient> _accountApi(String matrixUserId,
+    {SecureKeyValueStore? store}) async {
+  final session = SecureSessionStore(store ?? _MemoryStore());
+  await session.saveSession(
+      accessToken: 'e30.eyJzdWIiOiJhbGljZSJ9.test',
+      refreshToken: 'refresh',
+      matrixUserId: matrixUserId);
+  return BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: session,
+      client: MockClient((_) async => http.Response(
+          jsonEncode({'balance': '500.00', 'max_total': '20000.00'}), 200,
+          headers: {'content-type': 'application/json'})));
+}
+
+Future<void> _chooseExclusive(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('chat-red-packet-type')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('专属红包').last);
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  testWidgets('exclusive picker displays a scoped business avatar',
+      (tester) async {
+    final api = await _accountApi('@account-a:test');
+    final controller = ChatRedPacketController(
+        business: FakeRedPacketBusiness(),
+        references: FakeRedPacketReference(),
+        roomId: '!room:test');
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatRedPacketSheet(
+            controller: controller,
+            isGroup: true,
+            support: BusinessChatRedPacketSupport(api),
+            members: const [
+              ChatRoomMember('@shared:test', 'Shared',
+                  businessUserId: 'shared-recipient',
+                  businessAvatarUrl:
+                      'https://media.example.test/avatar?token=a&v=1')
+            ],
+            onSent: () {})));
+    await tester.pump();
+    await _chooseExclusive(tester);
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    final avatar = tester.widget<UserAvatar>(find.descendant(
+        of: find.byType(GroupMemberPicker), matching: find.byType(UserAvatar)));
+    expect(avatar.avatarUrl, 'https://media.example.test/avatar?token=a&v=1');
+    expect(avatar.avatarCacheKey,
+        'identity:matrix%3A%40account-a%3Atest:shared-recipient');
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('open exclusive picker closes on first account B frame',
+      (tester) async {
+    final apiA = await _accountApi('@account-a:test');
+    final apiB = await _accountApi('@account-b:test');
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(
+        business: business,
+        references: FakeRedPacketReference(),
+        roomId: '!room:test');
+    Widget sheet(BusinessApiClient api, String name, String token) =>
+        CupertinoApp(
+            home: ChatRedPacketSheet(
+                controller: controller,
+                isGroup: true,
+                support: BusinessChatRedPacketSupport(api),
+                members: [
+                  ChatRoomMember('@shared:test', name,
+                      businessUserId: 'shared-recipient',
+                      businessAvatarUrl:
+                          'https://media.example.test/avatar?token=$token&v=1')
+                ],
+                onSent: () {}));
+    await tester.pumpWidget(sheet(apiA, 'Account A Member', 'a'));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('chat-red-packet-total')), '1');
+    await _chooseExclusive(tester);
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    expect(find.text('Account A Member'), findsOneWidget);
+    await tester
+        .tap(find.byKey(const Key('chat-red-packet-member-@shared:test')));
+    await tester.pumpAndSettle();
+    expect(find.text('Account A Member'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(sheet(apiB, 'Account B Member', 'b'));
+    expect(find.text('Account A Member'), findsNothing);
+    expect(
+        tester
+            .widgetList<UserAvatar>(find.byType(UserAvatar))
+            .where((avatar) => avatar.avatarUrl?.contains('token=a') == true),
+        isEmpty);
+    expect(find.byType(GroupMemberPicker), findsNothing);
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+    expect(business.creates, 0);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    final bAvatar = tester.widget<UserAvatar>(find.byType(UserAvatar));
+    expect(bAvatar.avatarUrl, 'https://media.example.test/avatar?token=b&v=1');
+    expect(bAvatar.avatarCacheKey,
+        'identity:matrix%3A%40account-b%3Atest:shared-recipient');
+    await tester
+        .tap(find.byKey(const Key('chat-red-packet-member-@shared:test')));
+    await tester.pumpAndSettle();
+    expect(find.text('Account B Member'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+    expect(business.exclusiveRecipientId, 'shared-recipient');
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('open exclusive picker closes on session epoch change',
+      (tester) async {
+    final api = await _accountApi('@account-a:test');
+    final controller = ChatRedPacketController(
+        business: FakeRedPacketBusiness(),
+        references: FakeRedPacketReference(),
+        roomId: '!room:test');
+    Widget sheet() => CupertinoApp(
+        home: ChatRedPacketSheet(
+            controller: controller,
+            isGroup: true,
+            support: BusinessChatRedPacketSupport(api),
+            members: const [
+              ChatRoomMember('@account-a-member:test', 'Account A Member',
+                  businessUserId: 'a-recipient',
+                  businessAvatarUrl: 'https://media.example.test/a?v=1')
+            ],
+            onSent: () {}));
+    await tester.pumpWidget(sheet());
+    await tester.pump();
+    await _chooseExclusive(tester);
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    expect(find.text('Account A Member'), findsOneWidget);
+
+    final oldEpoch = api.sessionEpoch;
+    await api.clearLocalSession();
+    expect(api.sessionEpoch, greaterThan(oldEpoch));
+    await tester.pumpWidget(sheet());
+    expect(find.text('Account A Member'), findsNothing);
+    expect(find.byType(GroupMemberPicker), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
+
+  testWidgets('late account A identity cannot overwrite account B avatar scope',
+      (tester) async {
+    final heldA = _HeldReadStore();
+    final apiA = await _accountApi('@account-a:test', store: heldA);
+    final apiB = await _accountApi('@account-b:test');
+    heldA.holdReads = true;
+    final controller = ChatRedPacketController(
+        business: FakeRedPacketBusiness(),
+        references: FakeRedPacketReference(),
+        roomId: '!room:test');
+    Widget sheet(BusinessApiClient api, String token) => CupertinoApp(
+        home: ChatRedPacketSheet(
+            controller: controller,
+            isGroup: true,
+            support: BusinessChatRedPacketSupport(api),
+            members: [
+              ChatRoomMember('@shared:test', 'Shared',
+                  businessUserId: 'shared-recipient',
+                  businessAvatarUrl:
+                      'https://media.example.test/avatar?token=$token&v=1')
+            ],
+            onSent: () {}));
+    await tester.pumpWidget(sheet(apiA, 'a'));
+    await tester.pump();
+    await _chooseExclusive(tester);
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl, isNull,
+        reason: 'business avatar stays hidden until A identity is verified');
+    await tester.pumpWidget(sheet(apiB, 'b'));
+    expect(find.byType(GroupMemberPicker), findsNothing);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
+    await tester.pumpAndSettle();
+    final before = tester.widget<UserAvatar>(find.byType(UserAvatar));
+    expect(before.avatarUrl, 'https://media.example.test/avatar?token=b&v=1');
+    expect(before.avatarCacheKey,
+        'identity:matrix%3A%40account-b%3Atest:shared-recipient');
+
+    heldA.release();
+    await tester.pumpAndSettle();
+    final after = tester.widget<UserAvatar>(find.byType(UserAvatar));
+    expect(after.avatarUrl, before.avatarUrl);
+    expect(after.avatarCacheKey, before.avatarCacheKey);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+  });
   test('authorization distinguishes group fee reference from transfer fee', () {
     expect(
         chatPaymentFeeDescription(
@@ -685,6 +890,25 @@ final class _MemoryStore implements SecureKeyValueStore {
   Future<void> delete(String key) async => values.remove(key);
   @override
   Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+}
+
+final class _HeldReadStore implements SecureKeyValueStore {
+  final values = <String, String>{};
+  final _readGate = Completer<void>();
+  bool holdReads = false;
+
+  void release() => _readGate.complete();
+
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+  @override
+  Future<String?> read(String key) async {
+    if (holdReads) await _readGate.future;
+    return values[key];
+  }
+
   @override
   Future<void> write(String key, String value) async => values[key] = value;
 }

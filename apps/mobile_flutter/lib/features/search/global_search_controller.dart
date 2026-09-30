@@ -49,16 +49,58 @@ final class GlobalSearchController extends ChangeNotifier {
   String _query = '';
   String get query => _query;
   bool loading = false;
+  bool hasNewLocalResults = false;
   Object? error;
   GlobalSearchResults results = GlobalSearchResults.empty;
   int _epoch = 0;
   Timer? _timer;
   bool _disposed = false;
 
-  /// 本机历史索引被回填/增量更新时，用当前查询重新出结果。
+  /// New events never restart an active local query. Withdrawals must remove
+  /// visible plaintext synchronously, including while a query is in flight.
   void _onLocalHistoryChanged() {
-    if (_disposed || isBlank) return;
-    unawaited(refresh());
+    if (_disposed) return;
+    final change = repository?.lastChange;
+    if (change == null || change.kind == LocalSearchChangeKind.backfill) {
+      if (!isBlank) unawaited(refresh());
+      return;
+    }
+    if (change.kind == LocalSearchChangeKind.append) {
+      if (!isBlank && !hasNewLocalResults) {
+        hasNewLocalResults = true;
+        notifyListeners();
+      }
+      return;
+    }
+    _epoch++;
+    _timer?.cancel();
+    _timer = null;
+    loading = false;
+    error = null;
+    hasNewLocalResults = false;
+    if (change.kind == LocalSearchChangeKind.reset) {
+      results = GlobalSearchResults.empty;
+    } else {
+      final removed = change.eventIds;
+      results = GlobalSearchResults(
+        contacts: results.contacts,
+        rooms: results.rooms,
+        conversations: [
+          for (final group in results.conversations)
+            if (group.hits.any((hit) => !removed.contains(hit.eventId)))
+              GlobalSearchConversationHit(
+                roomId: group.roomId,
+                roomName: group.roomName,
+                isGroup: group.isGroup,
+                hits: List.unmodifiable(
+                    group.hits.where((hit) => !removed.contains(hit.eventId))),
+                roomAvatarSeed: group.roomAvatarSeed,
+                roomAvatarUrl: group.roomAvatarUrl,
+              ),
+        ],
+      );
+    }
+    notifyListeners();
   }
 
   /// 聊天记录是否来自账号维度的本机历史仓库（否则是本会话共享索引）。
@@ -103,6 +145,7 @@ final class GlobalSearchController extends ChangeNotifier {
     if (_query == value) return;
     _query = value;
     _epoch++;
+    hasNewLocalResults = false;
     _timer?.cancel();
     _timer = null;
     if (isBlank) {
@@ -131,6 +174,8 @@ final class GlobalSearchController extends ChangeNotifier {
       return;
     }
     final epoch = ++_epoch;
+    hasNewLocalResults = false;
+    final needle = _query.trim().toLowerCase();
     loading = true;
     error = null;
     notifyListeners();
@@ -141,8 +186,7 @@ final class GlobalSearchController extends ChangeNotifier {
       final rooms = await loadRooms();
       if (epoch != _epoch || _disposed) return; // stale：旧查询不得覆盖新结果
       var contacts = results.contacts;
-      Future<void> publish() async {
-        final needle = _query.trim().toLowerCase();
+      Future<GlobalSearchResults> calculate() async {
         final activeRepository = repository;
         final trace = searchTrace?.call();
         final List<GlobalSearchMessageHit> hits;
@@ -152,10 +196,9 @@ final class GlobalSearchController extends ChangeNotifier {
           trace?.mark(PerformanceStage.localSearchDone);
           trace?.setSearchResultCount(hits.length);
         } else {
-          hits = activeRepository.search(needle,
-              limit: hitLimit, trace: trace);
+          hits = activeRepository.search(needle, limit: hitLimit, trace: trace);
         }
-        results = GlobalSearchResults(
+        return GlobalSearchResults(
           contacts: [
             for (final contact in contacts)
               if (_matchesContact(contact, needle)) contact,
@@ -169,7 +212,9 @@ final class GlobalSearchController extends ChangeNotifier {
       }
 
       // 先发布：本地房间/聊天记录立刻可见。
-      await publish();
+      final localResults = await calculate();
+      if (epoch != _epoch || _disposed) return;
+      results = localResults;
       loading = false;
       notifyListeners();
 
@@ -177,7 +222,9 @@ final class GlobalSearchController extends ChangeNotifier {
       final fresh = await loadContacts();
       if (epoch != _epoch || _disposed) return;
       contacts = fresh;
-      await publish();
+      final contactResults = await calculate();
+      if (epoch != _epoch || _disposed) return;
+      results = contactResults;
       notifyListeners();
     } catch (error) {
       if (epoch != _epoch || _disposed) return;

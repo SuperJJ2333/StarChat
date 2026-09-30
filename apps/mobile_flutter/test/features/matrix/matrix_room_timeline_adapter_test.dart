@@ -30,6 +30,16 @@ class RetryClient extends Client {
   Room? getRoomById(String id) => room.id == id ? room : null;
 }
 
+class LeaseRoomsClient extends RetryClient {
+  late final leaseRooms = <String, Room>{
+    '!lease-a:test': Room(id: '!lease-a:test', client: this),
+    '!lease-b:test': Room(id: '!lease-b:test', client: this),
+  };
+
+  @override
+  Room? getRoomById(String id) => leaseRooms[id];
+}
+
 class OutgoingRetryClient extends RetryClient {
   @override
   bool isLogged() => true;
@@ -142,6 +152,107 @@ class RetryEvent extends Event {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues({});
+  test('slow room lease drain does not block another room', () async {
+    final client = LeaseRoomsClient();
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        readContinuityMetadata: _continuity);
+    final initialCount = owner.debugManagedResourceCount;
+    final first = await owner.openRoomLease('!lease-a:test');
+    final drain = Completer<void>();
+    first.bindOwnerDrain(() => drain.future);
+    final closing = first.cancel();
+    final opening = owner.openRoomLease('!lease-b:test');
+    try {
+      final second = await opening.timeout(const Duration(milliseconds: 500));
+      expect(second.roomId, '!lease-b:test');
+      expect(owner.debugManagedResourceCount, initialCount + 2);
+      drain.complete();
+      await closing;
+      expect(owner.debugManagedResourceCount, initialCount + 1);
+      await second.cancel();
+      expect(owner.debugManagedResourceCount, initialCount);
+    } finally {
+      if (!drain.isCompleted) drain.complete();
+      await closing;
+      final second = await opening;
+      await second.cancel();
+    }
+  });
+
+  test('room lease cancel is single-flight and release is idempotent',
+      () async {
+    final client = LeaseRoomsClient();
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        readContinuityMetadata: _continuity);
+    final initialCount = owner.debugManagedResourceCount;
+    for (var index = 0; index < 3; index++) {
+      final lease = await owner.openRoomLease('!lease-a:test');
+      var drains = 0;
+      lease.bindOwnerDrain(() async {
+        drains++;
+      });
+      await Future.wait([lease.cancel(), lease.cancel()]);
+      await lease.cancel();
+      expect(drains, 1);
+      expect(owner.debugManagedResourceCount, initialCount);
+    }
+  });
+
+  test('suspend shares an in-flight room drain with cancellation', () async {
+    final client = LeaseRoomsClient();
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        readContinuityMetadata: _continuity);
+    final initialCount = owner.debugManagedResourceCount;
+    final lease = await owner.openRoomLease('!lease-a:test');
+    final drain = Completer<void>();
+    var drains = 0;
+    lease.bindOwnerDrain(() {
+      drains++;
+      return drain.future;
+    });
+    final closing = lease.cancel();
+    final suspending = owner.suspend();
+    try {
+      expect(lease.canceled, isTrue);
+      expect(owner.debugManagedResourceCount, initialCount + 1);
+    } finally {
+      if (!drain.isCompleted) drain.complete();
+      await Future.wait([closing, suspending]);
+    }
+    expect(drains, 1);
+    expect(owner.debugManagedResourceCount, initialCount);
+  });
+
+  test('failed room drain stays revoked and can be retried', () async {
+    final client = LeaseRoomsClient();
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        readContinuityMetadata: _continuity);
+    final initialCount = owner.debugManagedResourceCount;
+    final lease = await owner.openRoomLease('!lease-a:test');
+    var drains = 0;
+    lease.bindOwnerDrain(() async {
+      if (++drains == 1) throw StateError('synthetic drain failure');
+    });
+
+    await expectLater(
+        lease.cancel(),
+        throwsA(isA<StateError>().having((error) => error.message, 'message',
+            'E2EE_ROOM_LEASE_DRAIN_FAILED')));
+    expect(lease.canceled, isTrue);
+    expect(owner.debugManagedResourceCount, initialCount + 1);
+    final other = await owner.openRoomLease('!lease-b:test');
+    expect(other.roomId, '!lease-b:test');
+    await lease.cancel();
+    expect(drains, 2);
+    expect(owner.debugManagedResourceCount, initialCount + 1);
+    await other.cancel();
+    expect(owner.debugManagedResourceCount, initialCount);
+  });
+
   test(
       'account pending survives lease recreation, retries only failed item, and de-dupes event-id echo',
       () async {
@@ -757,7 +868,8 @@ void main() {
     await adapter.sendTransferReference('transfer-1', '20.00', '午饭',
         receiverId: 'business-bob', receiverMatrixId: '@bob:test');
     expect(room.sends.last, containsPair('transfer_id', 'transfer-1'));
-    expect(room.sends.last, containsPair('transfer_receiver_id', 'business-bob'));
+    expect(
+        room.sends.last, containsPair('transfer_receiver_id', 'business-bob'));
     expect(room.sends.last,
         containsPair('transfer_receiver_matrix_id', '@bob:test'));
     await adapter.sendRedPacketReference('packet-1', '恭喜发财',
@@ -766,8 +878,8 @@ void main() {
         recipientMatrixId: '@bob:test');
     expect(room.sends.last, containsPair('packet_id', 'packet-1'));
     expect(room.sends.last, containsPair('red_packet_mode', 'EXCLUSIVE'));
-    expect(
-        room.sends.last, containsPair('red_packet_recipient_id', 'business-bob'));
+    expect(room.sends.last,
+        containsPair('red_packet_recipient_id', 'business-bob'));
     expect(room.sends.last,
         containsPair('red_packet_recipient_matrix_id', '@bob:test'));
     // 旧客户端/旧消息路径：无收款对象时不得写入空字段。
@@ -826,8 +938,7 @@ void main() {
     adapter.dispose();
   });
 
-  test('BUG-28：顶层宽高缺失时回退 thumbnail_info 宽高（旧事件占位框稳定）',
-      () async {
+  test('BUG-28：顶层宽高缺失时回退 thumbnail_info 宽高（旧事件占位框稳定）', () async {
     final client = NoticeClient();
     final room = RetryRoom(client: client);
     final timeline = Timeline(
@@ -929,8 +1040,7 @@ void main() {
           }, room)
         ]));
     final adapter = await openAdapter(room, timeline);
-    expect(adapter.snapshot(), isEmpty,
-        reason: '非发起者/领取者的成员不得看到该提示');
+    expect(adapter.snapshot(), isEmpty, reason: '非发起者/领取者的成员不得看到该提示');
     adapter.dispose();
   });
 }

@@ -5,14 +5,21 @@ import '../settings/voice_auto_play_preferences.dart';
 import 'coordinated_direct_chat.dart';
 import 'timeline_scroll_anchor.dart';
 import 'bounded_history_search.dart';
+import 'room_route_frame_probe.dart';
+import 'room_keyboard_transition_probe.dart';
+import 'local_room_history_search.dart';
+import 'room_search_visibility.dart';
 import '../../core/chat_diagnostics.dart';
 import '../../core/chat_diagnostic_operation.dart';
 import 'nudge_rate_limiter.dart';
 // 会话聊天页（RoomPage）：私聊与群聊共用的消息时间线与交互。
 // 自 matrix_home_page.dart 拆分（巨石文件治理）。
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'package:matrix/matrix.dart' show SyncStatus, SyncStatusUpdate;
+import 'dart:ui' as ui;
+import 'package:matrix/matrix.dart'
+    show MatrixSearchSnapshotBudget, SyncStatus, SyncStatusUpdate;
 
 import 'room_draft_store.dart';
 import 'media_load_scheduler.dart';
@@ -120,12 +127,7 @@ import 'video_poster_disk_store.dart';
 import 'video_poster_diagnostics.dart';
 import 'video_poster_pipeline.dart';
 import 'chat_search_query_controller.dart'
-    show
-        ChatSearchMessage,
-        ChatSearchMediaCategory,
-        ChatSearchFilters,
-        ChatSearchCursor,
-        ChatSearchSlice;
+    show ChatSearchFilters, ChatSearchCursor, ChatSearchSlice;
 import 'conversation_preferences.dart';
 import '../../core/permissions/interaction_permission.dart';
 import 'conversation_presentation.dart';
@@ -173,6 +175,8 @@ class RoomPage extends StatefulWidget {
     this.voiceTranscriber,
     required this.api,
     this.performanceTrace,
+    this.roomRouteProbe,
+    this.interactionRecorder,
     this.onPerformanceContentReady,
     this.remoteSyncStatus,
     this.remoteSyncAlreadyReady = false,
@@ -194,13 +198,21 @@ class RoomPage extends StatefulWidget {
     this.initialAnchorRoomId,
     this.navigationRequests,
     this.requestOutboxDrain,
+    this.onOutboxCorrelation,
+    this.outboxCorrelationFor,
     this.resolveDirectSendTarget,
     this.onDirectTargetChanged,
     this.initialOutboxLocalIds = const <String>[],
   });
 
   final BusinessApiClient api;
+  final void Function(String localId, PerformanceCorrelationContext context)?
+      onOutboxCorrelation;
+  final PerformanceCorrelationContext? Function(String localId)?
+      outboxCorrelationFor;
   final PerformanceTrace? performanceTrace;
+  final RoomRouteFrameProbe? roomRouteProbe;
+  final PerformanceTraceRecorder? interactionRecorder;
   final VoidCallback? onPerformanceContentReady;
   final Stream<SyncStatusUpdate>? remoteSyncStatus;
   final bool remoteSyncAlreadyReady;
@@ -316,6 +328,40 @@ Future<void> openGroupMemberProfile(
 enum _ConversationSyncPhase { unseen, waiting, processing, cleaning, invalid }
 
 class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
+  RoomKeyboardTransitionProbe? _keyboardProbe;
+  ui.FlutterView? _roomFlutterView;
+
+  void _onComposerFocusChanged() {
+    _keyboardProbe?.request(inputFocusNode.hasFocus
+        ? PerformanceKeyboardDirection.show
+        : PerformanceKeyboardDirection.hide);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _roomFlutterView = View.of(context);
+    if (_keyboardProbe == null) {
+      _keyboardProbe = RoomKeyboardTransitionProbe(
+        recorder:
+            widget.interactionRecorder ?? PerformanceTraceRecorder.instance,
+        bottomInset: () {
+          final view = _roomFlutterView;
+          if (view == null) return double.nan;
+          return view.viewInsets.bottom / view.devicePixelRatio;
+        },
+        afterFrame: (callback) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => callback());
+          WidgetsBinding.instance.scheduleFrame();
+        },
+      );
+      inputFocusNode.addListener(_onComposerFocusChanged);
+    }
+  }
+
+  @override
+  void didChangeMetrics() => _keyboardProbe?.onMetricsChanged();
+
   StreamSubscription<SyncStatusUpdate>? _performanceSyncSubscription;
   Timer? _performanceSyncDeadline;
   bool _performanceLocalReady = false;
@@ -514,9 +560,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
+      _keyboardProbe?.pause();
       _readReceiptDebounce?.cancel();
       unawaited(RoomDraftStore.shared.flush(_draftKey));
     } else {
+      _keyboardProbe?.resume();
       _syncReadReceiptWhileViewing();
       if (_readReceiptDirty) _scheduleReadReceipt(Duration.zero);
       if (_performanceLocalReady) {
@@ -596,9 +644,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final _posterDisk = VideoPosterDiskStore();
   final Map<String, String> _posterKeys = {};
 
-  /// Room-instance cache: independent encrypted temporary files, no global LRU.
-  /// （Phase 1 保留：会话级内存 LRU + 单飞 + 临时加密磁盘层，未删除。）
-  late final VideoPosterSessionCache videoPosterCache = VideoPosterSessionCache(
+  /// Each room owns its encrypted temporary files and in-flight work; only
+  /// completed small posters survive a same-account room reentry in memory.
+  late final VideoPosterSessionCache videoPosterCache =
+      VideoPosterSessionCache.forRoomSession(
     diskRead: _posterDisk.read,
     diskWrite: _posterDisk.write,
     diskDelete: _posterDisk.delete,
@@ -640,6 +689,100 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   final Set<String> _visibleReadIds = {};
+  final Set<String> _queuedMediaPreviews = {};
+  Timer? _mediaPreviewPaintTimer;
+
+  void _scheduleMediaPreviewPaint() {
+    _mediaPreviewPaintTimer ??= Timer(const Duration(milliseconds: 16), () {
+      _mediaPreviewPaintTimer = null;
+      if (mounted && !_disposing) setState(() {});
+    });
+  }
+
+  // Test seam for the toast/pending-paint race; no production caller.
+  void debugScheduleMediaPreviewPaint() => _scheduleMediaPreviewPaint();
+  bool get debugMediaPreviewPaintScheduled =>
+      _mediaPreviewPaintTimer?.isActive ?? false;
+
+  void debugWarmVisibleMediaPreviews() {
+    _queuedMediaPreviews.clear();
+    _warmVisibleMediaPreviews();
+  }
+
+  /// Only the built rows intersecting the viewport and existing poster warm
+  /// margin are eligible. These probes read local caches first; flash media
+  /// never enters either ordinary preview path.
+  void _warmVisibleMediaPreviews() {
+    if (!mounted ||
+        !context.mounted ||
+        _disposing ||
+        widget.roomLease.canceled ||
+        (WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final viewport = _timelineViewportKey.currentContext?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return;
+    final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
+    final warmBounds = Rect.fromLTRB(
+        bounds.left,
+        bounds.top - kVideoPosterWarmExtent,
+        bounds.right,
+        bounds.bottom + kVideoPosterWarmExtent);
+    var scheduled = 0;
+    for (final entry in messageKeys.entries) {
+      if (scheduled >= 8) break;
+      final message = controller?.findMessage(entry.key);
+      if (message == null ||
+          _mediaPolicyFor(message).requiresDedicatedSecureViewer ||
+          (message.kind != RoomMessageKind.image &&
+              message.kind != RoomMessageKind.video)) {
+        continue;
+      }
+      if (message.kind == RoomMessageKind.image &&
+          (_isAnimatedImage(message) ||
+              _mediaHashes(message.id)?.thumbnailSha256 == null)) {
+        continue;
+      }
+      final key = '${message.kind}:${message.stableId}';
+      if (_queuedMediaPreviews.contains(key)) continue;
+      final rowContext = entry.value.currentContext;
+      if (rowContext == null || !rowContext.mounted) continue;
+      final RenderObject? rendered;
+      try {
+        rendered = rowContext.findRenderObject();
+      } catch (_) {
+        continue;
+      }
+      if (rendered is! RenderBox || !rendered.hasSize) continue;
+      final rowBounds = rendered.localToGlobal(Offset.zero) & rendered.size;
+      if (!rowBounds.overlaps(warmBounds)) continue;
+      if (!_queuedMediaPreviews.add(key)) continue;
+      while (_queuedMediaPreviews.length > 256) {
+        _queuedMediaPreviews.remove(_queuedMediaPreviews.first);
+      }
+      scheduled++;
+      if (message.kind == RoomMessageKind.image) {
+        if (_cachedImagePreview(message) != null) continue;
+        unawaited(prewarmDeclaredImagePreview(
+          hasDeclaredThumbnail: true,
+          animated: false,
+          readCached: (maxBytes) =>
+              _readCachedImagePreview(message, maxBytes: maxBytes),
+        ).then((bytes) {
+          if (bytes != null) _scheduleMediaPreviewPaint();
+        }, onError: (Object _) {}));
+      } else {
+        if (_peekVideoPoster(message.id) != null) continue;
+        unawaited(_loadVideoPoster(message.id).then((bytes) {
+          if (bytes != null) _scheduleMediaPreviewPaint();
+        }, onError: (Object _) {}));
+      }
+    }
+  }
+
   // E1：搜索索引增量调度与突发去抖。
   RoomSearchIndexPump? _searchIndexPump;
   final Set<String> _acknowledgedVisibleIds = {};
@@ -690,6 +833,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   void _observeVisibleMentions() {
     if (!mounted || !context.mounted) return;
     _observeVisibleReadReceipts();
+    _warmVisibleMediaPreviews();
     final state = unreadMentions;
     if (state == null || !state.hasPending) return;
     if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
@@ -746,6 +890,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   RoomTimelineController? controller;
 
   LocalHiddenEvents? hiddenEvents;
+  final Set<String> _openNotificationRooms = {};
+  String? _notificationAccount;
   final mentionDraft = MentionDraft();
 
   /// 规格#3：统一提及模型（范围式 token 替换，修复双 @）。
@@ -923,6 +1069,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (mounted) {
         _performanceFirstFrameSeen = true;
         widget.performanceTrace?.mark(PerformanceStage.firstFrameRendered);
+        widget.roomRouteProbe?.onRoomFirstFrame();
         _completeConversationOpenIfReady();
       }
     });
@@ -943,7 +1090,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 上滑接近顶部时自动加载更早的历史消息（顶部有加载/结束提示）。
     messageScrollController.addListener(_onMessageScroll);
     // 未读状态机（BUG 5）：本房间进入"查看中"，收到新消息不计未读。
-    ConversationReadState.shared().setRoomOpen(roomInfo.id, open: true);
+    _notificationAccount = roomInfo.currentUserId;
+    _syncOpenNotificationRooms();
     unawaited(_identityCache.preload().catchError((_) {}));
     final supportPeerId = roomInfo.directPeerId ?? peer?.matrixUserId;
     if (!isGroup && supportPeerId != null) {
@@ -1249,6 +1397,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       _logicalTimeline = timeline;
       controller = RoomTimelineController(
+        onSourceRefreshed: _recordGlobalSearchIndex,
         windowed: true,
         // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
         // 发送必失败，消息进入本地 failed 状态）。拉黑状态取自业务 API
@@ -1262,6 +1411,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         // Offline First：发送前先落盘；重试/重启复用同一 txid。
         outboxJournal: _outboxJournal,
         outboxRoomId: roomInfo.id,
+        onOutboxCorrelation: widget.onOutboxCorrelation,
+        outboxCorrelationFor: widget.outboxCorrelationFor,
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
       _observedOutbox = _outbox;
@@ -1292,7 +1443,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           _observeVisibleMentions();
         },
       );
-      WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _warmVisibleMediaPreviews();
+        _prefetchHistory();
+      });
     } catch (_) {
       widget.performanceTrace?.finish(result: PerformanceResult.failed);
       if (mounted) {
@@ -1733,11 +1888,28 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
   }
 
+  void _syncOpenNotificationRooms() {
+    final reads = ConversationReadState.shared();
+    if (widget.roomLease.canceled || reads.accountId != _notificationAccount) {
+      return;
+    }
+    final next = widget.roomLease.notificationRoomIds.toSet();
+    for (final id in _openNotificationRooms.difference(next)) {
+      reads.setRoomOpen(id, open: false);
+    }
+    for (final id in next.difference(_openNotificationRooms)) {
+      reads.setRoomOpen(id, open: true);
+    }
+    _openNotificationRooms
+      ..clear()
+      ..addAll(next);
+  }
+
   void _changed() {
     if (_disposing || !mounted) return;
+    _syncOpenNotificationRooms();
     unawaited(_ingestMentions());
     _applyInitialAnchorIfNeeded();
-    _recordGlobalSearchIndex();
     final timeline = controller;
     // Sending switches to the latest window and publishes a local bubble before
     // SDK acknowledgment. Scroll to that bubble even while transport is pending.
@@ -1751,8 +1923,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         outgoing: latest?.isOwn ?? false);
     for (final message in controller?.messages ?? <RoomMessageViewModel>[]) {
       if (message.isRecalled) {
-        final key = _posterKeys.remove(message.id);
-        if (key != null) unawaited(videoPosterCache.evict(key));
+        // A retained poster can be found before the async loader registers a
+        // key (or before this room has built the video row at all).
+        final registeredKey = _posterKeys.remove(message.id);
+        final key = registeredKey ?? videoPosterPipeline.keyFor(message.id);
+        if (!videoPosterCache.isEvicted(key) &&
+            (registeredKey != null || videoPosterCache.peek(key) != null)) {
+          unawaited(videoPosterCache.evict(key));
+        }
         // 撤回：同时丢弃流水线的来源归属/冷却状态，避免残留影响诊断与重试。
         videoPosterPipeline.forget(message.id);
       }
@@ -1900,7 +2078,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ? mimeFromFileName(file.name)
               : file.mimeType!;
       if (mime.startsWith('video/') &&
-          PerformanceTraceRecorder.instance.recordingEnabled) {
+          PerformanceTraceRecorder.instance.diagnosticsEnabled) {
         videoTrace = PerformanceTrace.start(
             operation: PerformanceOperationType.videoPrepare)
           ..mark(PerformanceStage.videoSelected);
@@ -2033,6 +2211,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
   }
 
+  /// First-frame cache hits still need a key for recall eviction.
+  Uint8List? _peekVideoPoster(String messageId) {
+    final bytes = videoPosterPipeline.peek(messageId);
+    if (bytes != null) {
+      _posterKeys.putIfAbsent(
+          messageId, () => videoPosterPipeline.keyFor(messageId));
+    }
+    return bytes;
+  }
+
   /// 视频消息封面帧（Phase 1：**绝不为了封面下载整段视频**）。
   ///
   /// 旧实现：事件没有可用缩略图时会 `resolveCachedVideoFile` 把整段视频
@@ -2067,7 +2255,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 本机持久封面缓存（复用 MediaCache：账号命名空间 + 内容寻址 + 配额 LRU）。
   Future<Uint8List?> _readCachedVideoPoster(String messageId) async {
-    final file = await MediaCache.probeCachedObject(
+    final file = await MediaCache.cached(
       roomInfo.id,
       videoPosterCacheRefId(messageId),
       accountId: roomInfo.currentUserId ?? '',
@@ -2075,9 +2263,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (file == null) return null;
     try {
       final bytes = await file.readAsBytes();
-      // 探测路径不刷新 mtime；这里按 LRU 语义记一次访问。
-      await file.setLastModified(DateTime.now());
-      return bytes;
+      return bytes.length <= 512 * 1024 ? bytes : null;
     } on FileSystemException {
       return null;
     }
@@ -2148,15 +2334,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<Uint8List?> _readCachedImagePreview(
-    RoomMessageViewModel message,
-  ) async {
+  Future<Uint8List?> _readCachedImagePreview(RoomMessageViewModel message,
+      {int? maxBytes}) async {
     if (_mediaHashes(message.id) == null) {
+      if (maxBytes != null) return null;
       return roomImagePreviewCache.readCached(message.stableId);
     }
     final key = _previewKey(message);
+    if (maxBytes != null && !key.eventId.startsWith('thumb:')) return null;
     final cached = contentMediaMemoryCache.get(key.cacheId);
-    if (cached != null) return cached;
+    if (cached != null) {
+      return maxBytes == null || cached.length <= maxBytes ? cached : null;
+    }
     final file = await MediaCache.cached(
       key.roomId,
       key.eventId,
@@ -2164,7 +2353,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       contentSha256: key.contentSha256,
     );
     if (file == null) return null;
-    return loadMediaWithCache(key, file.readAsBytes);
+    if (maxBytes != null && await file.length() > maxBytes) return null;
+    final bytes = await loadMediaWithCache(key, file.readAsBytes);
+    return maxBytes == null || bytes.length <= maxBytes ? bytes : null;
   }
 
   Future<Uint8List> _loadImagePreview(RoomMessageViewModel message) async {
@@ -2312,7 +2503,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     for (final photo in result.photos) {
       final videoSource = photo.localVideoFile;
       if (photo.isVideo && videoSource != null) {
-        final videoTrace = PerformanceTraceRecorder.instance.recordingEnabled
+        final videoTrace = PerformanceTraceRecorder.instance.diagnosticsEnabled
             ? (PerformanceTrace.start(
                 operation: PerformanceOperationType.videoPrepare)
               ..mark(PerformanceStage.videoSelected))
@@ -2500,7 +2691,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
       _dismissComposerExtensions();
       final capture = File(capturePath);
-      if (PerformanceTraceRecorder.instance.recordingEnabled) {
+      if (PerformanceTraceRecorder.instance.diagnosticsEnabled) {
         videoTrace = PerformanceTrace.start(
             operation: PerformanceOperationType.videoPrepare)
           ..mark(PerformanceStage.videoSelected);
@@ -2569,6 +2760,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _dismissComposerExtensions() {
+    if (inputFocusNode.hasFocus) {
+      _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     if (composerPanel != ComposerPanel.none) {
       setState(() => composerPanel = ComposerPanel.none);
@@ -2576,6 +2770,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _togglePanel(ComposerPanel panel) {
+    if (inputFocusNode.hasFocus) {
+      _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       composerPanel = composerPanel == panel ? ComposerPanel.none : panel;
@@ -2586,12 +2783,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 面板收回与键盘弹出同一帧处理，避免相互遮挡与二次跳动；
   /// 点击输入框以外的区域不经过本回调，面板保持原逻辑。
   void _dismissEmojiPanelForInput() {
+    _keyboardProbe?.request(PerformanceKeyboardDirection.show);
     if (composerPanel != ComposerPanel.emoji) return;
     setState(() => composerPanel = ComposerPanel.none);
     inputFocusNode.requestFocus();
   }
 
   void _toggleVoice() {
+    if (inputFocusNode.hasFocus) {
+      _keyboardProbe?.request(PerformanceKeyboardDirection.hide);
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       composerPanel = composerPanel == ComposerPanel.voice
@@ -3161,89 +3362,48 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // R5 修复：改用新 ChatSearchPage（默认空态+组合筛选+拼音成员+
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     var searchOpen = true;
-    var dateLookupGeneration = 0;
     RoomHistoryDayLocation? resolvedDateLocation;
-    Iterable<RoomMessageViewModel> currentSearchSource(
-            [String? beforeEventId]) =>
-        controller?.historyNewestFirst(beforeEventId: beforeEventId) ??
-        const <RoomMessageViewModel>[];
-
+    final searchResultVisibility = LocalSearchResultVisibility();
+    bool searchResultHidden(
+            String sourceRoomId, String eventId, DateTime timestamp) =>
+        hiddenEvents?.isEventHidden(sourceRoomId, eventId,
+            eventTimestamp: timestamp) ??
+        false;
     RoomMessageViewModel? currentSearchMessage(String id) {
       // A retained iterator may outlive a recall or source refresh. Resolve the
       // current indexed row before exposing its text, never a stale snapshot.
+      if (!searchResultVisibility.isVisible(id, isHidden: searchResultHidden)) {
+        return null;
+      }
       final message = controller?.findMessage(id);
-      if (message == null ||
-          message.isRecalled ||
-          (hiddenEvents?.isEventHidden(roomInfo.id, message.id,
-                  eventTimestamp: message.timestamp) ??
-              false)) {
+      if (message == null || message.isRecalled) {
         return null;
       }
       return message;
     }
 
-    ChatSearchMessage? projectSearchMessage(RoomMessageViewModel scanned) {
-      final message = currentSearchMessage(scanned.id);
-      if (message == null) return null;
-      return ChatSearchMessage(
-        eventId: message.id,
-        senderId: message.senderId,
-        senderDisplayName: MemberDirectoryEntry(
-          userId: message.senderId,
-          remark: contactsByMatrixId[message.senderId]?.remark,
-          nickname: contactsByMatrixId[message.senderId]?.nickname ??
-              _member(message.senderId).displayName,
-          username: contactsByMatrixId[message.senderId]?.username,
-        ).displayName,
-        timestamp: message.timestamp.toLocal(),
-        timelineOrder: message.timestamp.millisecondsSinceEpoch,
-        visibleText: message.text,
-        isFlashPhoto: message.isFlashPhoto,
-        displayText: switch (message.kind) {
-          RoomMessageKind.image =>
-            message.mimeType?.startsWith('video/') == true
-                ? '[视频消息]'
-                : '[图片消息]',
-          RoomMessageKind.video => '[视频消息]',
-          RoomMessageKind.voice => '[语音消息]',
-          RoomMessageKind.file => '[文件消息]',
-          RoomMessageKind.call => '[通话消息]',
-          RoomMessageKind.redPacket => '[红包消息]',
-          RoomMessageKind.transfer => '[转账消息]',
-          _ => message.text,
-        },
-        mediaCategory: _ordinarySearchMediaAllowed(message)
-            ? switch (message.kind) {
-                RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
-                RoomMessageKind.image
-                    when message.mimeType?.startsWith('video/') == true =>
-                  ChatSearchMediaCategory.imageVideo,
-                RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
-                RoomMessageKind.file => ChatSearchMediaCategory.file,
-                RoomMessageKind.text
-                    when RegExp(
-                      'https?://[^\\\\s<>"]+',
-                      caseSensitive: false,
-                    ).hasMatch(message.text) =>
-                  ChatSearchMediaCategory.link,
-                _ => null,
-              }
-            : null,
-        hasMedia: _ordinarySearchMediaAllowed(message) &&
-            message.kind != RoomMessageKind.text,
-        isVideo: message.kind == RoomMessageKind.video ||
-            message.mimeType?.startsWith('video/') == true,
-        duration: message.videoDuration,
-      );
-    }
-
-    final historySearch = BoundedHistorySearch<RoomMessageViewModel>(
-      snapshot: currentSearchSource,
-      snapshotBefore: currentSearchSource,
-      eventId: (message) => message.id,
-      project: projectSearchMessage,
-      exhausted: () => controller?.historyExhausted ?? true,
-      loadEarlier: _loadEarlier,
+    final searchBudget = MatrixSearchSnapshotBudget();
+    final historySearch = LocalRoomHistorySearch(
+      roomIds: () => widget.roomLease.localHistorySearchRoomIds,
+      readPage: widget.roomLease.readLocalSearchPage,
+      openIds: (sourceRoomId) => widget.roomLease
+          .openLocalSearchIds(sourceRoomId, budget: searchBudget),
+      readByIds: widget.roomLease.readLocalSearchByIds,
+      snapshot: widget.roomLease.localHistorySnapshot,
+      sourceRevision: () => widget.roomLease.localHistorySearchRevision,
+      onResult: searchResultVisibility.remember,
+      project: (sourceRoomId, item) {
+        final visible = visibleLocalSearchRow(
+          sourceRoomId: sourceRoomId,
+          row: item,
+          isHidden: searchResultHidden,
+        );
+        if (visible == null ||
+            (controller?.findMessage(item.eventId)?.isRecalled ?? false)) {
+          return null;
+        }
+        return visible;
+      },
     );
     Future<ChatSearchSlice> searchBatch(ChatSearchFilters filters,
         {ChatSearchCursor? cursor, int limit = 50}) async {
@@ -3269,7 +3429,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ];
     // Task A：月历日期 metadata 来自 RoomHistoryDayIndex（只读日期状态），
     // 不再从时间线正文投影；最早月份缺失时保持 null，绝不伪造 1970。
-    final earliestMonth = controller?.earliestMonth;
+    // The complete local snapshot determines days; a partial live timeline
+    // cannot clamp older retained-device history out of calendar navigation.
+    const CalendarMonth? earliestMonth = null;
     final latestMonth = CalendarMonth.of(DateTime.now());
 
     Navigator.push<void>(
@@ -3278,6 +3440,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         builder: (_) => ChatSearchPage(
           isGroup: isGroup,
           identityChanges: _identityCache,
+          historyChanges: widget.roomLease.localHistoryChanges,
+          ordinaryAppends: widget.roomLease.localHistoryAppends,
+          calendarChanges: widget.roomLease.localHistoryCalendarChanges,
           senderDisplayName: (id) => _identityCache
               .resolveIdentity(
                 matrixUserId: id,
@@ -3291,15 +3456,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           earliestMonth: earliestMonth,
           latestMonth: latestMonth,
           loadCalendarMonth: (month) async {
-            final load = controller;
-            if (load == null || !searchOpen) {
-              return RoomHistoryMonthDays(month: month);
+            if (!mounted || !searchOpen) {
+              throw const HistorySearchCancelled();
             }
-            return load.loadMonthDays(month);
+            return widget.roomLease.loadLocalHistoryMonthDays(month);
           },
           onCancelCalendarMonthLookup: () => controller?.cancelMonthLookup(),
           onCalendarClosed: () => controller?.cancelPendingDateLookup(),
-          onSearchInvalidated: historySearch.cancel,
+          onSearchInvalidated: () {
+            searchResultVisibility.clear();
+            historySearch.cancel();
+          },
           memberEntries: memberEntries(),
           liveMemberEntries: memberEntries,
           memberAvatarBuilder: (context, entry) {
@@ -3364,64 +3531,53 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             }
           },
           onJumpToMessage: (eventId) {
+            if (!searchResultVisibility.isVisible(eventId,
+                    isHidden: searchResultHidden) ||
+                (controller?.findMessage(eventId)?.isRecalled ?? false)) {
+              return;
+            }
             returnToRoom();
             unawaited(_scrollToMessage(eventId));
           },
           onJumpToDate: (date) {
             final location = resolvedDateLocation;
             if (location == null || location.day != date) return;
+            if (widget.roomLease.localAnchorForDay(date) != location.eventId) {
+              return;
+            }
+            final sourceRoomId = widget.roomLease.localAnchorSourceForDay(date);
+            if (sourceRoomId == null ||
+                (hiddenEvents?.isHidden(sourceRoomId, location.eventId) ??
+                    false) ||
+                (controller?.findMessage(location.eventId)?.isRecalled ??
+                    false)) {
+              return;
+            }
             returnToRoom();
             unawaited(_scrollToMessage(location.eventId));
           },
           onDateLookup: (date) async {
-            final lookup = controller;
-            final generation = ++dateLookupGeneration;
-            if (lookup == null || !searchOpen) {
+            if (!mounted || !searchOpen) {
+              throw const RoomHistoryLookupCancelled();
+            }
+            final anchor = widget.roomLease.localAnchorForDay(date);
+            if (anchor == null) {
               return CalendarDateLookupResult.incomplete;
             }
-            // Task A：月索引已经给出该日 anchor 时直接采用，不再重复访问
-            // timestamp_to_event（anchor 来自本机已解密的可见事件）。
-            final anchor = lookup.anchorForDay(date);
-            if (anchor != null) {
-              resolvedDateLocation =
-                  RoomHistoryDayLocation(eventId: anchor, day: date);
-              return CalendarDateLookupResult.located;
-            }
-            try {
-              final location = await lookup.locateDay(date);
-              if (!mounted ||
-                  !searchOpen ||
-                  generation != dateLookupGeneration ||
-                  !identical(lookup, controller)) {
-                throw const RoomHistoryLookupCancelled();
-              }
-              if (location == null) {
-                return CalendarDateLookupResult.confirmedEmpty;
-              }
-              resolvedDateLocation = location;
-              return CalendarDateLookupResult.located;
-            } on RoomHistoryLookupIncomplete {
-              if (mounted && searchOpen && generation == dateLookupGeneration) {
-                return CalendarDateLookupResult.incomplete;
-              }
-              throw const RoomHistoryLookupCancelled();
-            } on RoomHistoryLookupCancelled {
-              // A newer day, calendar close, lease change, or dispose won.
-              // The controller has already discarded its partial context.
-              rethrow;
-            }
+            resolvedDateLocation =
+                RoomHistoryDayLocation(eventId: anchor, day: date);
+            return CalendarDateLookupResult.located;
           },
           onCancelDateLookup: () {
-            dateLookupGeneration++;
             controller?.cancelPendingDateLookup();
           },
         ),
       ),
     ).whenComplete(() {
       searchOpen = false;
-      dateLookupGeneration++;
       controller?.cancelPendingDateLookup();
       historySearch.cancel();
+      searchResultVisibility.clear();
     });
   }
 
@@ -3657,10 +3813,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// [MediaMessageAccessPolicy]，禁止在各处散落 isFlashPhoto 判断）。
   MediaMessageAccessPolicy _mediaPolicyFor(RoomMessageViewModel message) =>
       MediaMessageAccessPolicy.forMessage(isFlashPhoto: message.isFlashPhoto);
-
-  /// 普通「图片与视频」历史搜索是否允许收录该消息。
-  bool _ordinarySearchMediaAllowed(RoomMessageViewModel message) =>
-      _mediaPolicyFor(message).includeInSearchMedia;
 
   List<RoomGalleryImage> _galleryImages() {
     final all = controller?.allMessages ?? const <RoomMessageViewModel>[];
@@ -3948,7 +4100,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             ),
           ),
         RoomMessageKind.video => VideoMessageCard(
+            posterIdentity: message.id,
+            posterRevision: _posterRevisions[message.id] ?? 0,
             duration: message.videoDuration,
+            initialPosterBytes: _peekVideoPoster(message.id),
             posterLoader: () => _loadVideoPoster(message.id),
             onOpen: () => unawaited(_openVideoViewer(message)),
           ),
@@ -4182,6 +4337,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               posterIdentity: message.id,
               posterRevision: _posterRevisions[message.id] ?? 0,
               duration: message.videoDuration,
+              initialPosterBytes: _peekVideoPoster(message.id),
               posterLoader: () => _loadVideoPoster(message.id),
               onOpen: () => unawaited(_openVideoViewer(message)),
             ),
@@ -4556,6 +4712,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       case MessageAction.deleteLocal:
         if (hiddenEvents == null) return;
         await hiddenEvents!.hide(roomInfo.id, message.id);
+        widget.roomLease.invalidateLocalHistorySearch();
         unreadMentions?.onRedacted(message.id);
         await widget.roomLease.saveMentions();
         controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
@@ -4636,6 +4793,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await store.hide(roomInfo.id, eventId);
       unreadMentions?.onRedacted(eventId);
     }
+    widget.roomLease.invalidateLocalHistorySearch();
     await widget.roomLease.saveMentions();
     if (!mounted) return;
     controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
@@ -4872,7 +5030,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
     // This list is the bounded viewport, never all loaded history. The pump
     // lazily catches up older records between frames without cancelling batches.
-    _searchIndexPump!.request(timeline.messages);
+    final delta = widget.roomLease.takeSearchEventDelta();
+    final changed = <RoomMessageViewModel>[];
+    final missing = <String>[];
+    for (final id in delta.ids) {
+      final row = timeline.findMessage(id);
+      if (row == null) {
+        missing.add(id);
+      } else {
+        changed.add(row);
+      }
+    }
+    if (missing.isNotEmpty) repository.removeMessages(missing);
+    _searchIndexPump!.request([...timeline.messages, ...changed],
+        rescanHistory: delta.rescan);
   }
 
   /// E1：元素停用（弹出/快速进出）即刻取消 100ms 可见性轮询——
@@ -4887,6 +5058,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    inputFocusNode.removeListener(_onComposerFocusChanged);
+    _keyboardProbe?.dispose();
+    _roomFlutterView = null;
     _performanceSyncDeadline?.cancel();
     unawaited(_performanceSyncSubscription?.cancel());
     final openTrace = widget.performanceTrace;
@@ -4905,8 +5079,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     roomImagePreviewCache.dispose();
     imageMemoryCache.dispose();
     thumbnailMemoryCache.dispose();
-    unawaited(videoPosterCache
-        .clearAll()
+    final posterCleanup = videoPosterCache.clearAll();
+    videoPosterCache.disposeRoomSession();
+    unawaited(posterCleanup
         .whenComplete(_posterDisk.dispose)
         .catchError((Object _) {}));
     _identityCache.removeListener(_identityChanged);
@@ -4946,7 +5121,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     input.dispose();
     messageScrollController.removeListener(_onMessageScroll);
     _searchIndexPump?.dispose();
-    ConversationReadState.shared().setRoomOpen(roomInfo.id, open: false);
+    final reads = ConversationReadState.shared();
+    if (reads.accountId == _notificationAccount) {
+      for (final roomId in _openNotificationRooms) {
+        reads.setRoomOpen(roomId, open: false);
+      }
+    }
+    _openNotificationRooms.clear();
     messageScrollController.dispose();
     super.dispose();
     _disposed.complete();
@@ -5434,6 +5615,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             key: messageKeys[message.id] =
                 _stableMessageKeys.putIfAbsent(message.stableId, GlobalKey.new),
             child: Stack(clipBehavior: Clip.none, children: [
+              if (selection.active &&
+                  selection.selectedIds.contains(message.id))
+                Positioned(
+                  left: -WeChatSpacing.md,
+                  right: -WeChatSpacing.md,
+                  top: -4,
+                  bottom: -4,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      key:
+                          ValueKey('message-selection-highlight-${message.id}'),
+                      decoration: BoxDecoration(
+                        color:
+                            WeChatColors.resolve(context, WeChatColors.divider),
+                      ),
+                    ),
+                  ),
+                ),
               // 规格 #3：高亮背景从屏幕左缘覆盖到右缘（负偏移抵消列表
               // 水平内边距），上下各外扩 4pt——正好到相邻气泡 8pt 间隙的
               // 中线，不会覆盖相邻消息；闪烁后归零，不残留。
@@ -5568,7 +5767,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             Column(
               children: [
                 if (isGroup)
-                  GroupAnnouncementBanner(service: announcementService),
+                  GroupAnnouncementBanner(
+                    service: announcementService,
+                    dismissalScope: roomInfo.currentUserId == null
+                        ? null
+                        : jsonEncode([roomInfo.currentUserId, roomInfo.id]),
+                  ),
                 Expanded(
                   child: ValueListenableBuilder<int>(
                     valueListenable: _timelineRevision,

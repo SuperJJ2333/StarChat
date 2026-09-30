@@ -57,7 +57,8 @@ void main() {
     final box =
         tester.widget<Container>(find.byKey(const Key('wechat-transfer-card')));
     // 浅色模式白底（demo .tf 白卡），不再使用橙色气泡底。
-    expect((box.decoration! as BoxDecoration).color, WeChatColors.lightElevated);
+    expect(
+        (box.decoration! as BoxDecoration).color, WeChatColors.lightElevated);
   });
   testWidgets('transfer card labels follow role and settlement state',
       (tester) async {
@@ -260,6 +261,31 @@ void main() {
       ),
       'https://media.example.test/avatars/u1/avatar.png',
     );
+  });
+  testWidgets('resigned avatar keeps the painted image identity',
+      (tester) async {
+    Future<Key?> paint(String url) async {
+      await tester.pumpWidget(CupertinoApp(
+        home: UserAvatar(
+          nickname: 'Alice',
+          fallbackSeed: 'account-a:alice',
+          avatarUrl: url,
+          size: 48,
+        ),
+      ));
+      return tester.widget<Image>(find.byType(Image).first).key;
+    }
+
+    final first = await paint(
+        'https://media.example.test/avatar/token-one?expires_in=300&v=abc');
+    final resigned = await paint(
+        'https://media.example.test/avatar/token-two?expires_in=300&v=abc');
+    final replaced = await paint(
+        'https://media.example.test/avatar/token-three?expires_in=300&v=def');
+
+    expect(resigned, first,
+        reason: 're-signing one S3 object must not remount its image');
+    expect(replaced, isNot(first), reason: 'a new avatar object must repaint');
   });
   test(
       'avatar provider does not request disk resizing from a standard cache manager',

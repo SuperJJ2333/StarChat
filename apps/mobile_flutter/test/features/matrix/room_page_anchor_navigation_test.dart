@@ -12,6 +12,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/room_route_frame_probe.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/ui/chat/message_highlight_pulse.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
@@ -122,6 +123,8 @@ Future<void> _pumpRoom(WidgetTester tester, String? anchorEventId,
     Completer<void>? timelineGate,
     String roomId = '!anchor:test',
     VoidCallback? onPerformanceContentReady,
+    RoomRouteFrameProbe? roomRouteProbe,
+    PerformanceTraceRecorder? interactionRecorder,
     void Function()? afterFirstFrame}) async {
   final client = _AnchorClient(roomId: roomId);
   client.room.timelineGate = timelineGate;
@@ -145,6 +148,8 @@ Future<void> _pumpRoom(WidgetTester tester, String? anchorEventId,
       api: await _api(),
       performanceTrace: performanceTrace,
       onPerformanceContentReady: onPerformanceContentReady,
+      roomRouteProbe: roomRouteProbe,
+      interactionRecorder: interactionRecorder,
       remoteSyncStatus: remoteSyncStatus,
       remoteSyncAlreadyReady: remoteSyncAlreadyReady,
       roomLease: lease,
@@ -177,6 +182,72 @@ Future<void> _disposeRoom(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('room first frame completes local route span before sync',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      enabled: () => true,
+      onRecord: records.add,
+    );
+    final routeProbe = RoomRouteFrameProbe(recorder)..beginEnter();
+    final sync = StreamController<SyncStatusUpdate>.broadcast(sync: true);
+    addTearDown(sync.close);
+    await _pumpRoom(tester, null,
+        roomRouteProbe: routeProbe,
+        remoteSyncStatus: sync.stream,
+        timelineGate: Completer<void>(),
+        roomId: '!route-frame:test');
+    expect(records, hasLength(1));
+    expect(records.single.operation, PerformanceOperationType.roomLocalFrame);
+    expect(records.single.result, PerformanceResult.success);
+    expect(records.single.stagesUs,
+        contains(PerformanceStage.roomLocalFirstFrame));
+    await _disposeRoom(tester);
+    routeProbe.dispose();
+  });
+
+  testWidgets('composer focus measures stable keyboard frame locally',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final records = <PerformanceRecord>[];
+    final recorder = PerformanceTraceRecorder(
+      enabled: () => true,
+      onRecord: records.add,
+    );
+    addTearDown(tester.view.resetViewInsets);
+    await _pumpRoom(tester, null,
+        interactionRecorder: recorder, roomId: '!keyboard-frame:test');
+    final input = tester
+        .widget<CupertinoTextField>(find.byType(CupertinoTextField).first);
+    input.focusNode!.requestFocus();
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+    var keyboard = records
+        .where((record) =>
+            record.operation == PerformanceOperationType.keyboardTransition)
+        .toList();
+    expect(keyboard, hasLength(1));
+    expect(keyboard.single.result, PerformanceResult.success);
+    expect(
+        keyboard.single.keyboardDirection, PerformanceKeyboardDirection.show);
+    expect(keyboard.single.stagesUs,
+        contains(PerformanceStage.keyboardStableFrame));
+    input.focusNode!.unfocus();
+    await tester.pump();
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+    keyboard = records
+        .where((record) =>
+            record.operation == PerformanceOperationType.keyboardTransition)
+        .toList();
+    expect(keyboard, hasLength(2));
+    expect(keyboard.last.result, PerformanceResult.success);
+    expect(keyboard.last.keyboardDirection, PerformanceKeyboardDirection.hide);
+    await _disposeRoom(tester);
+  });
+
   testWidgets('打开房间时 anchor 消息被定位并高亮（其他消息不高亮）', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await _pumpRoom(tester, r'$m2');

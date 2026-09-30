@@ -251,10 +251,95 @@ void main() {
     PathProviderPlatform.instance = ForwardPaths(dir.absolute.path);
     addTearDown(() => dir.delete(recursive: true));
   });
+  test('ten 20MiB media descriptors queue without reserving all payloads',
+      () async {
+    final envelope =
+        await MediaEnvelope.forBytes(Uint8List.fromList([1, 2, 3]));
+    final client = ForwardClient(
+        httpClient: MockClient((request) async =>
+            http.Response.bytes(envelope.encrypted.data, 200)));
+    final source = ForwardRoom(id: '!many-source:test', client: client);
+    final target = ForwardRoom(id: '!many-target:test', client: client);
+    client.destinations.addAll({source.id: source, target.id: target});
+    source.timeline = ForwardTimeline([
+      for (var i = 0; i < 10; i++)
+        AuthenticatedForwardVideo._(
+            room: source,
+            id: '\$many-$i',
+            envelope: envelope,
+            contentBytes: 20 * 1024 * 1024),
+    ]);
+    final owner = forwardOwner(client);
+    final lease = await owner.openRoomLease(source.id);
+    await lease.openRoomTimeline(onUpdate: () {});
+    final jobs = await lease.enqueueForward(batchId: 'many-media', messages: [
+      for (var i = 0; i < 10; i++) lease.snapshotForwardSource('\$many-$i')
+    ], targetRoomIds: [
+      target.id
+    ]);
+    expect(jobs, hasLength(10));
+    expect(jobs.map((job) => job.source!.retainedBytes),
+        everyElement(lessThan(8192)));
+    expect(owner.outgoingWork.retainedSourceBytes,
+        lessThanOrEqualTo(128 * 1024 * 1024));
+    await owner.outgoingWork.drain();
+    expect(target.sentFiles, hasLength(10));
+    expect(jobs.expand((job) => job.items).map((item) => item.state),
+        everyElement(MatrixOutgoingWorkState.sent));
+    expect(owner.outgoingWork.retainedSourceBytes, 0);
+  });
+
+  test('forward fanout drains through a bounded pending window', () async {
+    final envelope =
+        await MediaEnvelope.forBytes(Uint8List.fromList([41, 42, 43]));
+    final client = ForwardClient(
+        httpClient: MockClient(
+            (_) async => http.Response.bytes(envelope.encrypted.data, 200)));
+    final source = ForwardRoom(id: '!large-source:test', client: client);
+    final targets = [
+      for (var i = 0; i < 10; i++)
+        ForwardRoom(id: '!large-target-$i:test', client: client)
+    ];
+    client.destinations.addAll(
+        {source.id: source, for (final target in targets) target.id: target});
+    source.timeline = ForwardTimeline([
+      for (var i = 0; i < 20; i++)
+        AuthenticatedForwardVideo._(
+            room: source,
+            id: '\$large-$i',
+            envelope: envelope,
+            contentBytes: 20 * 1024 * 1024)
+    ]);
+    final owner = forwardOwner(client);
+    final lease = await owner.openRoomLease(source.id);
+    await lease.openRoomTimeline(onUpdate: () {});
+    final jobs = await lease.enqueueForward(
+        batchId: 'large-fanout',
+        messages: [
+          for (var i = 0; i < 20; i++) lease.snapshotForwardSource('\$large-$i')
+        ],
+        targetRoomIds: targets.map((target) => target.id).toList());
+    expect(jobs, hasLength(20));
+    var maximumWindow = owner.outgoingWork.activeWindowItemCount;
+    owner.outgoingWork.addListener(() {
+      final count = owner.outgoingWork.activeWindowItemCount;
+      if (count > maximumWindow) maximumWindow = count;
+    });
+    expect(jobs.expand((job) => job.items), hasLength(200));
+    await owner.outgoingWork.drain();
+    expect(targets.every((target) => target.sentFiles.length == 20), isTrue);
+    expect(jobs.expand((job) => job.items).map((item) => item.txid).toSet(),
+        hasLength(200));
+    expect(jobs.expand((job) => job.items).map((item) => item.state),
+        everyElement(MatrixOutgoingWorkState.sent));
+    expect(owner.outgoingWork.retainedSourceBytes, 0);
+    expect(maximumWindow, lessThanOrEqualTo(128));
+  });
+
   test('owner forwards two frozen existing media sources to two targets',
       () async {
-    final onePlaintext = Uint8List.fromList([1, 2, 3]);
-    final twoPlaintext = Uint8List.fromList([4, 5, 6]);
+    final onePlaintext = Uint8List.fromList([31, 32, 33]);
+    final twoPlaintext = Uint8List.fromList([34, 35, 36]);
     final one = await MediaEnvelope.forBytes(onePlaintext);
     final two = await MediaEnvelope.forBytes(twoPlaintext);
     var downloads = 0;
@@ -412,8 +497,7 @@ void main() {
     });
   }
 
-  test(
-      'legacy encrypted thumbnail reserves admission budget with no partial jobs',
+  test('legacy encrypted thumbnail reserves payload only during preparation',
       () async {
     final client = ForwardClient();
     final source = ForwardRoom(id: '!source:test', client: client);
@@ -440,18 +524,23 @@ void main() {
     final lease = await owner.openRoomLease(source.id);
     await lease.openRoomTimeline(onUpdate: () {});
 
-    await expectLater(
-      lease.enqueueForward(
-        batchId: 'budget',
-        messages: [
-          lease.snapshotForwardSource(r'$budget-one'),
-          lease.snapshotForwardSource(r'$budget-two'),
-        ],
-        targetRoomIds: [target.id],
-      ),
-      throwsA(isA<MatrixOutgoingWorkCapacityException>()),
+    final jobs = await lease.enqueueForward(
+      batchId: 'budget',
+      messages: [
+        lease.snapshotForwardSource(r'$budget-one'),
+        lease.snapshotForwardSource(r'$budget-two'),
+      ],
+      targetRoomIds: [target.id],
     );
-    expect(owner.outgoingWork.itemsForRoom(target.id), isEmpty);
+    expect(jobs, hasLength(2));
+    for (final job in jobs) {
+      expect(job.source!.retainedBytes, lessThan(8192));
+      expect(job.source!.preparationBytes, greaterThan(sixtyFourMiB));
+    }
+    expect(owner.outgoingWork.retainedSourceBytes,
+        lessThanOrEqualTo(128 * 1024 * 1024));
+    owner.outgoingWork.revoke('test cleanup');
+    await owner.outgoingWork.drain();
   });
 
   test('oversized hot thumbnail is dropped while its source media forwards',

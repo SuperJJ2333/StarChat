@@ -63,8 +63,8 @@ void main() {
         expect(events.map((event) => event.eventId), expectedIds);
         expect(events.map((event) => event.eventId).toSet().length,
             expectedIds.length);
-        expect(counter.timelineFragmentWrites, burstIds.length);
-        expect(counter.serializedBytes, greaterThan(finalListBytes));
+        expect(counter.timelineFragmentWrites, 1);
+        expect(counter.serializedBytes, finalListBytes);
 
         final writesBeforeReplay = counter.timelineFragmentWrites;
         await database.transaction(() async {
@@ -96,6 +96,102 @@ void main() {
         };
         debugPrint(jsonEncode(measurement));
 
+        // A single native batch may touch several rooms. Coalescing must be
+        // scoped to each fragment key, rather than retaining only the final
+        // room's fragment.
+        const otherRoomId = '!receive-burst-other:synthetic';
+        final otherRoom = Room(id: otherRoomId, client: client);
+        final nextPrimaryIds = List.generate(3, (index) => '\$next-$index');
+        final otherIds = List.generate(3, (index) => '\$other-$index');
+        counter.reset();
+        await database.transaction(() async {
+          for (var index = 0; index < nextPrimaryIds.length; index++) {
+            for (final (roomId, eventId) in [
+              (_roomId, nextPrimaryIds[index]),
+              (otherRoomId, otherIds[index]),
+            ]) {
+              await database.storeEventUpdate(
+                  EventUpdate(
+                      roomID: roomId,
+                      type: EventUpdateType.timeline,
+                      content: _eventSource(eventId, '@sender:synthetic',
+                          historySize + 100 + index)),
+                  client);
+            }
+          }
+        });
+        expect(counter.writesByKey, {
+          '$_roomId|': 1,
+          '$otherRoomId|': 1,
+        });
+        final finalPrimaryIds = <String>[
+          ...nextPrimaryIds.reversed,
+          ...expectedIds,
+        ];
+        expect(
+            (await database.getEventList(room)).map((event) => event.eventId),
+            finalPrimaryIds);
+        expect(
+            (await database.getEventList(otherRoom))
+                .map((event) => event.eventId),
+            otherIds.reversed);
+
+        // Exercise ordering-sensitive SDK paths together in one native batch:
+        // local-send ACK, old history, redaction, and duplicate live replay.
+        Future<void> store(
+                EventUpdateType type, Map<String, dynamic> content) =>
+            database.storeEventUpdate(
+                EventUpdate(roomID: _roomId, type: type, content: content),
+                client);
+        final local = {
+          ..._eventSource(r'$local', '@sender:synthetic', historySize + 200),
+          'status': EventStatus.sending.intValue,
+          'unsigned': <String, dynamic>{'transaction_id': r'$local'},
+        };
+        final synced = {
+          ..._eventSource(r'$synced', '@sender:synthetic', historySize + 201),
+          'unsigned': <String, dynamic>{'transaction_id': r'$local'},
+        };
+        final encrypted = {
+          ..._eventSource(
+              r'$encrypted', '@sender:synthetic', historySize + 202),
+          'type': EventTypes.Encrypted,
+          'content': {
+            'algorithm': 'm.megolm.v1.aes-sha2',
+            'ciphertext': 'synthetic-fixture',
+          },
+        };
+        counter.reset();
+        await database.transaction(() async {
+          await store(EventUpdateType.timeline, local);
+          await store(EventUpdateType.timeline, synced);
+          await store(EventUpdateType.history,
+              _eventSource(r'$older', '@sender:synthetic', 1));
+          await store(EventUpdateType.timeline, encrypted);
+          await store(EventUpdateType.timeline, {
+            ..._eventSource(r'$recall', '@sender:synthetic', historySize + 203),
+            'type': EventTypes.Redaction,
+            'content': {'redacts': r'$encrypted'},
+          });
+          await store(EventUpdateType.history, encrypted);
+          await store(EventUpdateType.timeline, synced);
+        });
+        expect(counter.writesByKey['$_roomId|'], 1);
+        expect(counter.writesByKey['$_roomId|SENDING'], 1);
+        expect(await database.getEventById(r'$local', room), isNull);
+        final mixedExpected = <String>[
+          r'$recall',
+          r'$encrypted',
+          r'$synced',
+          ...finalPrimaryIds,
+          r'$older',
+        ];
+        expect(
+            (await database.getEventList(room)).map((event) => event.eventId),
+            mixedExpected);
+        expect((await database.getEventById(r'$encrypted', room))!.redacted,
+            isTrue);
+
         await database.close();
         databaseClosed = true;
         final reopened = MatrixSdkDatabase(path,
@@ -105,7 +201,14 @@ void main() {
         try {
           expect(
               (await reopened.getEventList(room)).map((event) => event.eventId),
-              expectedIds);
+              mixedExpected);
+          expect(await reopened.getEventById(r'$local', room), isNull);
+          expect((await reopened.getEventById(r'$encrypted', room))!.redacted,
+              isTrue);
+          expect(
+              (await reopened.getEventList(otherRoom))
+                  .map((event) => event.eventId),
+              otherIds.reversed);
         } finally {
           await reopened.close();
         }
@@ -156,6 +259,7 @@ Future<void> _bulkSeed(Database raw, List<String> eventIds) async {
 class _TimelineFragmentWriteCounter {
   int timelineFragmentWrites = 0;
   int serializedBytes = 0;
+  final writesByKey = <String, int>{};
 
   void record(String table, Map<String, Object?> values) {
     if (table != _timelineTable) return;
@@ -163,11 +267,14 @@ class _TimelineFragmentWriteCounter {
     if (value is! String) return;
     timelineFragmentWrites++;
     serializedBytes += utf8.encode(value).length;
+    final key = values['k'] as String;
+    writesByKey.update(key, (count) => count + 1, ifAbsent: () => 1);
   }
 
   void reset() {
     timelineFragmentWrites = 0;
     serializedBytes = 0;
+    writesByKey.clear();
   }
 }
 
