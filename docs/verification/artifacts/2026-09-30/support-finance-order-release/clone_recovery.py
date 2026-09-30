@@ -66,14 +66,18 @@ def amend_probe(old_manifest_sha,old_baseline_sha,old_probe,new_probe,old_probe_
     c.write_private(directory.name+'/completed.json',{'completed_utc':s.utc(),'manifest_sha256':sha_bytes(fresh),'baseline_sha256':sha_bytes(newbaseline)})
     return {'amended':True,'attempt':directory.name,'manifest_sha256':sha_bytes(fresh),'baseline_sha256':sha_bytes(newbaseline)}
 
-def recover_clone(volume):
+def recover_clone(volume,*,cleanup_only=False):
     reject_production_or_completed_probe();directory=attempt_directory('failed-clone-recovery')
     path=c.PRIVATE/'restore-running.json';raw=path.read_bytes();restored=json.loads(raw)
     shutil.copyfile(path,directory/'restore-running.before.json');os.chmod(directory/'restore-running.before.json',0o600)
-    m=s.validate_manifest(json.loads(s.MANIFEST.read_text(encoding='utf-8')))
-    if m['clone_image']!=c.CLONE_IMAGE or m['wallet_probe_sha256']!=FIXED_PROBE_SHA or sha_file(s.PACKAGE/'clone-fence-probe.py')!=FIXED_PROBE_SHA:
+    manifest_bytes=s.MANIFEST.read_bytes();m=s.validate_manifest(json.loads(manifest_bytes));baseline=c.read_private('baseline.json')
+    if baseline['manifest_sha256']!=sha_bytes(manifest_bytes) or baseline['backup_sha256']!=sha_file(c.PRIVATE/'business.dump'):
+        raise ValueError('original private manifest/backup binding drift')
+    if m['clone_image']!=c.CLONE_IMAGE:
+        raise ValueError('reviewed clone image required')
+    if not cleanup_only and (m['wallet_probe_sha256']!=FIXED_PROBE_SHA or sha_file(s.PACKAGE/'clone-fence-probe.py')!=FIXED_PROBE_SHA):
         raise ValueError('reviewed clone image and fixed fixture probe required')
-    c.check_prepared(m,isolated_clone=restored)
+    if not cleanup_only:c.check_prepared(m,isolated_clone=restored)
     if (restored['backup_sha256']!=sha_file(c.PRIVATE/'business.dump') or restored['before']['schema']!=s.BASE_SCHEMA
             or restored['candidate_images']!=c.read_private('images.json') or restored['rollback_images']!=c.read_private('rollback-images.json')):
         raise ValueError('original clone backup/image identity drift')
@@ -85,7 +89,7 @@ def recover_clone(volume):
     if users!=[restored['clone_id']]:raise ValueError('clone volume is shared or substituted')
     head=c.clone_database_value(restored['clone'],'select version_num from alembic_version')
     if head not in (s.BASE_SCHEMA,s.TARGET_SCHEMA):raise ValueError('unexpected failed clone head')
-    c.write_private(directory.name+'/intent.json',{'restore_record_sha256':sha_bytes(raw),'clone':restored['clone'],'clone_id':current['Id'],'clone_image':current['Image'],'volume':volume,'failed_head':head,'backup_sha256':restored['backup_sha256'],'fresh_restore_required':True})
+    c.write_private(directory.name+'/intent.json',{'restore_record_sha256':sha_bytes(raw),'clone':restored['clone'],'clone_id':current['Id'],'clone_image':current['Image'],'volume':volume,'failed_head':head,'backup_sha256':restored['backup_sha256'],'fresh_restore_required':not cleanup_only,'cleanup_only':cleanup_only,'obsolete_production_identity_not_used_for_nonproduction_cleanup':cleanup_only})
     # Audited cleanup semantics, strengthened to remove the immutable ID rather
     # than a name that another process could replace between inspect and rm.
     c.run('docker','rm','-f','-v',current['Id'])
@@ -93,6 +97,9 @@ def recover_clone(volume):
         raise ValueError('owned clone/anonymous volume cleanup incomplete')
     c.write_private(directory.name+'/cleanup.json',{'clone_removed':True,'clone_volume_removed':True,'removed_container_id':current['Id'],'removed_volume':volume})
     path.rename(directory/'restore-running.json')
+    if cleanup_only:
+        c.write_private(directory.name+'/completed.json',{'completed_utc':s.utc(),'cleanup_only':True,'production_and_bindings_unchanged':True,'no_restore':True})
+        return {'cleanup_only':True,'attempt':directory.name,'clone_removed':True,'clone_volume_removed':True,'production_and_bindings_unchanged':True,'no_restore':True}
     fresh=c.restore(m)
     newrecord=c.read_private('restore-running.json')
     if newrecord['clone_id']==restored['clone_id'] or newrecord['backup_sha256']!=restored['backup_sha256'] or newrecord['before']['schema']!=s.BASE_SCHEMA:
@@ -104,9 +111,10 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='operation',required=True)
     amend=sub.add_parser('amend-probe')
     for flag in ('old-manifest-sha','old-baseline-sha','old-probe-sha','new-probe-sha','old-probe-file'):amend.add_argument('--'+flag,required=True)
-    recover=sub.add_parser('recover-clone');recover.add_argument('--volume',required=True);args=p.parse_args()
+    recover=sub.add_parser('recover-clone');recover.add_argument('--volume',required=True)
+    cleanup=sub.add_parser('cleanup-only');cleanup.add_argument('--volume',required=True);args=p.parse_args()
     if s.PACKAGE!=c.RELEASE_ROOT:raise SystemExit('dedicated server release directory required')
     with s.exclusive_bridge_lock():
-        result=amend_probe(args.old_manifest_sha,args.old_baseline_sha,args.old_probe_sha,args.new_probe_sha,args.old_probe_file) if args.operation=='amend-probe' else recover_clone(args.volume)
+        result=amend_probe(args.old_manifest_sha,args.old_baseline_sha,args.old_probe_sha,args.new_probe_sha,args.old_probe_file) if args.operation=='amend-probe' else recover_clone(args.volume,cleanup_only=args.operation=='cleanup-only')
     print(json.dumps(result),flush=True)
 if __name__=='__main__':main()

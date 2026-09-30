@@ -75,3 +75,16 @@ python3 server_release.py restore-finalize
 Amendment archives exact old/new manifest, baseline and probe bytes plus hashes. The manifest changes only `wallet_probe_sha256`; private baseline changes only its `manifest_sha256` binding. Payload, source identity, image IDs and other proofs remain exact. A partially completed two-file binding update blocks ordinary gates; preserve its intent/byte archives and obtain reviewed recovery before proceeding.
 
 Recovery requires no completed clone proof or production attempt. It verifies recorded generated clone name/ID, pinned Postgres image, network none, no host binds/published ports, exactly the explicitly named anonymous local data volume and no other container using it. It removes only the immutable recorded container ID with its anonymous volume and proves both absent. Original restore record and failed logs are retained under a unique private attempt. A fresh 0093 clone must restore from the same dump SHA; then 0093→0094, financial fingerprints and fixed ASGI probe run afresh. Never download private evidence or run these helpers against production database/containers.
+
+
+## Obsolete v1 baseline cleanup only
+
+A separately published Worker mail fix changed live Worker90d→00c. The v1 amendment stopped before any binding change or clone cleanup. V1 is now abandoned due to live baseline drift; original manifest42ad9a8e… and private baselined74a565c… remain intact. Production services were not changed by v1.
+
+After independent review, update only clone_recovery.py and run from the v1 server directory:
+
+```
+python3 clone_recovery.py cleanup-only --volume b4b77e146cd41cc80502d0e847e89c66c5b3aa82fb388300bb5440d1a2159308
+```
+
+This mode validates the original private manifest/backup/restore/image-record binding and all owned clone/volume restrictions. It intentionally does not apply the obsolete live-production identity gate to nonproduction cleanup. It archives failure logs and restore record, removes only recorded immutable cloneID9bffedb2… and its anonymous volume, proves both absent, and stops. It never amends bindings, restores another clone, switches production, or edits payload/static/database state. V1 evidence remains server-private. A separate v2 directory must bind the new00c Worker and current Compose/runtime with fresh snapshot, manifest, backups and builds.
