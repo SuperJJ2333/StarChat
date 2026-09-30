@@ -1,6 +1,6 @@
-# 2194 性能、静音与媒体修复验证（进行中）
+# 2194 性能、静音与媒体修复验证（Android2195已发布）
 
-授权、恢复步骤与独立范围见[任务记录](../workflow/tasks/2026-09-30-mobile-perf-mute-media.md)、[规格](../superpowers/specs/2026-09-30-mobile-perf-mute-media.md)、[计划](../superpowers/plans/2026-09-30-mobile-perf-mute-media.md)。工作树基线 main `8e173178`，候选 `0.4.26+2195`。截至2026-10-01 01:52 +08尚未提交/发布候选；最后生产核对仍2194，构建/发布前须重新读取。
+授权、恢复步骤与独立范围见[任务记录](../workflow/tasks/2026-09-30-mobile-perf-mute-media.md)、[规格](../superpowers/specs/2026-09-30-mobile-perf-mute-media.md)、[计划](../superpowers/plans/2026-09-30-mobile-perf-mute-media.md)。工作树基线 main `8e173178`。截至2026-10-01 02:53 +08，Android `0.4.26+2195` 已生产发布，iOS仍2194；首轮iOS原生CI超时，无新IPA，工作流修复已通过增量审查。
 
 ## 日志证据与归因边界
 
@@ -44,4 +44,14 @@ Android源代码保持既有foreground服务存活时Matrix sync/source运行，
 
 最终共享门禁：2026-10-01 02:00 +08前，`flutter-full-memory-final-green.txt` **5204通过/9跳过，exit0，3分24秒**；`analyze-release-final.txt` **No issues，exit0，8.9秒**；`mobile-contracts-memory-final.txt` **329通过/1跳过，exit0，30.06秒**。Moments取消与计数并发增量审查已关闭全部确认P0–P2。02:00:35 +08只读生产核对仍两端2194、min支持3；main/origin仍8e173178。
 
-下一步：提交合入main，正常pub get后冻结源码与包。Android按固定签名重建流程独立发布，iOS同源CI候选交回签。实际包SHA、签名、发布/CI时间届时补录。
+## Android实际发布
+
+源码main `88bd1c4aed1793a683696e3a78b40c305af95afa`，冻结1832输入SHA `fa1ac7e42edfd8e5dbe8f99e63ffb6c8d10a7d909b6c81c6ebd9ed47987d4e6d`。02:12:45 +08最终APK **81,914,910字节**、SHA `f56d3cc19f4b36bd660421165ae4a4446542307e0f966c86cf78d9b8abf228b4`，cert `75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff`。Apktool2.12.1→zipalign→固定签名；25358类、338资产及manifest语义相同，ABI/DEX/资源/原生lock/freeze门禁通过。详见`android-release/run-20261001-020600/artifact.json`及`steps.tsv`；dev-only registrant首轮失败有界修正重试后通过，不称第一次构建成功。
+
+02:40:35 +08启动受控发布，`hk-publish.jsonl`记录 **PUBLISH_PASS** 和十键readback；Android0.4.26/2195及更新说明已启用，iOS仍0.4.25/2194，两min支持3。私有备份/trace见任务记录。唯一release SHA `826a5490b13880f652250e4ffa38b333ef765d2e4519515fd4401a0b0d8c6437`；18离线、5真实PG事务/并发/回滚通过，独立规格/安全复核接受。新增CDN2195 exactpath仅指向现有HK HTTPS源，旧S3 policy/四条failover/OriginGroups原样，避免无CAS policy覆盖。CF ETag更新/Deployed、HEAD200/size/MIME/CORS通过；HK/工作站双侧严格TLS及小元数据SHA、匿名401、实际只读路由函数平台投影通过。没有公开完整APK回拉，没有真机安装/RSS/动画验收。
+
+[正式APK](https://www.liuhetong888.com/downloads/ChatFlow-0.4.26-build2195-arm64.apk)，[分发页](https://www.liuhetong888.com/download?platform=android&install=1)。现网admin-home/三个网络JS/iOS manifest未写，来源未知钱包变更通过活文件hash保护。
+
+Android CI`36756076135`移动分析/测试/native debug通过，infra整体失败已对比基线`36727389885`相同owner-only secret fixture错误且对应输入未变；日志`infra-ci-2195.log`/`infra-ci-baseline.log`，不称整体CI通过。
+
+iOS原始CI`36756076089`35分钟预检取消、build skipped，原生SQLCipher4/Keychain1/通知1已通过，raw XCTest结果缺失。工作流7行补丁仅复用当前sim架构/BUILD_DIR并45分钟预算，保留全部gates；4合同红绿、YAML/bash与独立复核通过。日志/证据`ios-preflight-diagnostic/`。Mac新CI、候选IPA、企业回签及锁屏新收件链仍待办，不复用2194单包例外。下一步提交此有界工作流修复并等待真实Mac结果。
