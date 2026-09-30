@@ -8,7 +8,7 @@ The unchanged Worker maintenance task automatically reconciles existing payout c
 - A distinct destination has a unique valid solid receipt: exactly one event and settlement debit its hold.
 - An empty locator preserves CLAIMED and its hold, without a provider call.
 
-The portable CLI requires an isolated localhost database named `clone`, `support_payout_review` or `support_worker_review`, with public migration head 0094. It creates and drops one random `support_worker_probe_*` schema, copying public table columns, checks and indexes via PostgreSQL LIKE. It never mutates public rows. This is an installed-code settlement regression; migration triggers/foreign keys are covered by the separate migration restoration gate rather than by LIKE copies.
+The portable CLI requires an isolated localhost database named `clone`, `support_payout_review` or `support_worker_review`, with exact public migration head 0094_support_finance_order_recovery. It creates and drops one random `support_worker_probe_*` schema, copying public table columns, checks and indexes via PostgreSQL LIKE. It never mutates public rows. This is an installed-code settlement regression; migration triggers/foreign keys are covered by the separate migration restoration gate rather than by LIKE copies.
 
 Run in the actual Worker image on the disposable clone's network namespace, from its normal Worker work directory:
 
@@ -17,7 +17,7 @@ SUPPORT_WORKER_PROBE_DATABASE_URL=postgresql+psycopg://postgres@127.0.0.1:5432/c
 python /probe/worker_probe.py --installed --expected-sources /probe/expected_sources.json
 ```
 
-Do not set PYTHONPATH. `--installed` refuses it and verifies that every business module was imported from `/site-packages/app/`, while the maintenance task came from `/opt/`. `expected_sources.json` is a module-name-to-SHA256 mapping for the six business overlay modules and the unchanged task. Every imported file must match before database writes. The result records those real import paths and SHA values, migration identity, and synthetic case PASS labels; no addresses, keys or database credentials are printed.
+Do not set PYTHONPATH. `--installed` refuses it and verifies that every business module was imported from `/site-packages/app/`, while both Worker tasks came from `/opt/`. `expected_sources.json` is a module-name-to-SHA256 mapping for the six business overlay modules and the unchanged maintenance task plus the updated internal publication task. Every imported file must match before database writes. The result records those real import paths and SHA values, migration identity, and synthetic case PASS labels; no addresses, keys or database credentials are printed.
 
 The release implementer separately freezes the clone container ID, confirms network isolation, checks the probe SHA and compares the site-packages and `/opt` mirror files. Candidate and rollback Worker images both require the safe six-module overlay. Use each image's separately frozen expected-source manifest for an old-image behavior reproduction; passing a candidate manifest to an old image should fail the SHA check before any database write.
 
@@ -32,3 +32,5 @@ Actual installed-image evidence is recorded by the release runner. The local gre
 ## Preserved void baseline
 
 The manifest also asserts the installed payout model version and VOIDED terminal guards. Candidate and safe rollback Workers run against the expanded 0094 clone; 0093 unbroadcast void remains its parent migration. The API-compatible payout methods preserve independent proof, owner actor attribution, immutable original conversion reversal and terminal capability revocation.
+
+The actual installed `tasks.internal_publication` source SHA is mandatory. Its additive financial event contracts are part of candidate and safe rollback overlays; no source-path override is permitted.

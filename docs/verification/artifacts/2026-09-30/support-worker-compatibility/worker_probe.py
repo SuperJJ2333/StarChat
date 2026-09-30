@@ -27,6 +27,7 @@ MODULES=(
     'app.modules.wallet.service',
     'app.modules.ledger.service',
     'tasks.manual_wallet',
+    'tasks.internal_publication',
 )
 
 
@@ -168,7 +169,7 @@ def main():
     try:
         with admin.connect() as connection:
             version=connection.scalar(text('SELECT version_num FROM public.alembic_version'))
-            assert version.startswith('0094'),'0094 support recovery clone migration required'
+            assert version=='0094_support_finance_order_recovery','exact 0094 support recovery clone migration required'
             connection.execute(text(f'CREATE SCHEMA "{schema}"'))
             tables=connection.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).all()
             for name in tables:
