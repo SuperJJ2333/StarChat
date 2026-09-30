@@ -1,7 +1,9 @@
-import {selectDownloadRoute} from './download-network-selector.js';
+import {selectDownloadRoute, DOWNLOAD_PROBE_BUDGET_MS} from './download-network-selector.js';
 
 const DIRECT = 'https://www.liuhetong888.com';
 const FALLBACK = '/downloads/latest-arm64.apk';
+const REGISTRY_MS = 2000;
+const TOTAL_MS = REGISTRY_MS + DOWNLOAD_PROBE_BUDGET_MS;
 
 export function validateAndroidRegistry(value, cdnHost) {
   if (!/^d[a-z0-9]+\.cloudfront\.net$/.test(cdnHost) || !value || value.platform !== 'android'
@@ -50,7 +52,7 @@ export async function runNetworkDownload({cdnHost,fetchImpl=globalThis.fetch,
     if(signal?.aborted) throw Error('Download cancelled');
     const timeout=new Promise((_,reject)=>{timer=setTimeout(()=>{
       controller.abort();reject(Error('Registry timeout'));
-    },1000);});
+    },REGISTRY_MS);});
     const value=await Promise.race([fetchImpl('/downloads/android-release.json',{
       cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal
     }).then(boundedRegistry),timeout]);
@@ -58,7 +60,7 @@ export async function runNetworkDownload({cdnHost,fetchImpl=globalThis.fetch,
     release=validateAndroidRegistry(value,cdnHost);
     const direct=release.candidates.find(candidate=>candidate.id==='direct');
     selected={...direct,reason:'fallback'};
-    const remaining=5000-(now()-started);
+    const remaining=Math.min(DOWNLOAD_PROBE_BUDGET_MS,TOTAL_MS-(now()-started));
     if (remaining>0) {
       const result=await selectRoute({candidates:release.candidates,artifactBytes:release.artifactBytes,
         fetchImpl,now,budgetMs:remaining,signal});

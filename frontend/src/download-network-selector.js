@@ -1,6 +1,6 @@
 const SAMPLE_BYTES = 262144;
-const REQUEST_MS = 2000;
-const TOTAL_MS = 5000;
+const REQUEST_MS = 4000;
+export const DOWNLOAD_PROBE_BUDGET_MS = 9000;
 const BINARY_TYPES = new Set(['application/vnd.android.package-archive', 'application/octet-stream']);
 
 class ProbeFailure extends Error {
@@ -110,7 +110,7 @@ async function probe(candidate, artifactBytes, fetchImpl, now, overallSignal) {
  * Results and timings stay in memory; no location, account or reporting is used.
  */
 export async function selectDownloadRoute({ candidates, artifactBytes,
-  fetchImpl = globalThis.fetch, now = () => performance.now(), budgetMs = TOTAL_MS, signal } = {}) {
+  fetchImpl = globalThis.fetch, now = () => performance.now(), budgetMs = DOWNLOAD_PROBE_BUDGET_MS, signal } = {}) {
   if (!Array.isArray(candidates) || candidates.length !== 2 ||
       new Set(candidates.map((item) => item.id)).size !== 2 ||
       !candidates.some((item) => item.id === 'cdn') || !candidates.some((item) => item.id === 'direct') ||
@@ -128,7 +128,8 @@ export async function selectDownloadRoute({ candidates, artifactBytes,
   const direct = candidates.find((item) => item.id === 'direct');
   const controller = new AbortController();
   const forwardAbort = () => controller.abort('aborted');
-  const budget = Number.isFinite(budgetMs) ? Math.max(0, Math.min(TOTAL_MS, budgetMs)) : TOTAL_MS;
+  const budget = Number.isFinite(budgetMs)
+    ? Math.max(0, Math.min(DOWNLOAD_PROBE_BUDGET_MS, budgetMs)) : DOWNLOAD_PROBE_BUDGET_MS;
   signal?.addEventListener('abort', forwardAbort, { once: true });
   if (signal?.aborted) forwardAbort();
   if (budget === 0) controller.abort('timeout');

@@ -102,6 +102,14 @@ test('all failed routes fall back to the exact direct input URL', async () => {
   assert.deepEqual([result.id, result.url, result.reason], ['direct', candidates[1].url, 'fallback']);
 });
 
+test('a usable route with first-byte latency beyond two seconds still qualifies', async () => {
+  const result = await run({cdn:[{headerDelay:2200},{headerDelay:2200}],
+    direct:[{error:true}]});
+  assert.equal(result.id,'cdn');
+  assert.equal(result.reason,'fastest-stable');
+  assert.ok(result.metrics[0].rounds.every(round=>round.status==='ok'));
+});
+
 test('overall deadline aborts noncooperative fetches and resolves fallback', async () => {
   const signals = [];
   const start = performance.now();
@@ -188,13 +196,13 @@ test('equal conservative throughput uses shorter first-byte latency', async () =
   assert.ok(result.metrics[1].ttfbMs < result.metrics[0].ttfbMs);
 });
 
-test('each request times out at two seconds without waiting for the five-second budget', async () => {
+test('each request times out at four seconds without waiting for the nine-second budget', async () => {
   const signals = [];
   const started = performance.now();
   const result = await selectDownloadRoute({ candidates, artifactBytes: bytes,
     fetchImpl: (_, options) => { signals.push(options.signal); return new Promise(() => {}); } });
   const elapsed = performance.now() - started;
-  assert.ok(elapsed >= 1900 && elapsed < 3500);
+  assert.ok(elapsed >= 3900 && elapsed < 5500);
   assert.equal(result.reason, 'fallback');
   assert.ok(signals.every((signal) => signal.aborted));
 });
