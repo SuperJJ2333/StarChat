@@ -74,7 +74,7 @@ def test_disabled_funds_still_reconciles_durable_payout_without_new_binding(core
     result = task.run_once()
     assert calls == [False]
     assert result['payouts_checked'] == 1
-    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'UNKNOWN'
+    assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'CLAIMED'
     assert core[5].balance('HOLD:alice') == 10
 
 

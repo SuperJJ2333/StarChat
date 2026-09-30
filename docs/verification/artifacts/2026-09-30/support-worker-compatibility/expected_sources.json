@@ -1,0 +1,8 @@
+{
+  "app.modules.wallet.manual_payouts": "49da38d7e79f7f430ef598634ba237cd55c27fbfd3bed85f2d9caaf131e46167",
+  "app.modules.wallet.support_payout": "d86f3fe80ec1fb4cefa1d4a125a498af23136e9f5851e80a94f1305ea1b6ac5d",
+  "app.modules.wallet.conversions": "33506b24d0bdc4a684854ff10428d467a6cd4bcf416f49b86a69db50d7b99605",
+  "app.modules.wallet.service": "9919d630e56b2b434e76f3534c19f5ab6f98f182c6d874b6bcbff3d31b7c36a7",
+  "app.modules.ledger.service": "8d9f8087e4918ef14bf31beed22557fd8d9d43d37359a77e1c0aa43f784e84fe",
+  "tasks.manual_wallet": "d8c38a01dbb9bc04e17bceb8480eec8b9899f6667e5f99f4da7a497c861e65a8"
+}
