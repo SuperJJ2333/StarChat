@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 
 MODULES=(
     'app.modules.wallet.manual_payouts',
+    'app.modules.wallet.manual_payout_models',
     'app.modules.wallet.support_payout',
     'app.modules.wallet.conversions',
     'app.modules.wallet.service',
@@ -167,7 +168,7 @@ def main():
     try:
         with admin.connect() as connection:
             version=connection.scalar(text('SELECT version_num FROM public.alembic_version'))
-            assert version.startswith('0093'),'0093 clone migration required'
+            assert version.startswith('0094'),'0094 support recovery clone migration required'
             connection.execute(text(f'CREATE SCHEMA "{schema}"'))
             tables=connection.scalars(text("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).all()
             for name in tables:

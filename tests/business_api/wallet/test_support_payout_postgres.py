@@ -176,7 +176,7 @@ def test_0092_upgrade_retains_old_payout_and_recharge_rows(legacy_schema):
             SELECT count(*) FROM wallet_support_payout_rejections
             WHERE id = 'legacy-rejection'
         """)) == 1
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0093_support_finance_order_recovery'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0094_support_finance_order_recovery'
 
 
 def test_preparation_and_rejection_history_reject_duplicates_and_mutation(scoped):
@@ -525,3 +525,8 @@ def test_independent_stale_tab_cannot_begin_after_latest_preparation(scoped):
         'WALLET_PAYOUT_PREPARATION_CONFLICT', 'WALLET_PAYOUT_ALREADY_CLAIMED'}
     assert core[0].status(user_id='alice', order_id=order['id'])['status'] == 'CLAIMED'
     assert core[5].balance('HOLD:alice') == Decimal('18.986667')
+
+
+def test_postgres_void_remains_terminal_after_evidence_takeover(scoped):
+    from test_support_payout_void_compatibility import test_published_void_preserves_payer_and_revokes_all_support_capabilities
+    test_published_void_preserves_payer_and_revokes_all_support_capabilities(scoped)

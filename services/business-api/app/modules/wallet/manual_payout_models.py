@@ -2,7 +2,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Numeric, String, UniqueConstraint, event, inspect
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, event, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -23,17 +23,20 @@ class ManualPayoutQuote(Base):
 
 class ManualPayoutOrder(Base):
     __tablename__ = 'wallet_manual_payout_orders'
-    __table_args__ = (CheckConstraint("status IN ('REQUESTED','CLAIMED','UNKNOWN','SETTLED','CANCELLED')", name='ck_manual_payout_status'),
+    __table_args__ = (CheckConstraint("status IN ('REQUESTED','CLAIMED','UNKNOWN','SETTLED','CANCELLED','VOIDED')", name='ck_manual_payout_status'),
         CheckConstraint('amount >= 10', name='ck_manual_payout_amount'),
-        CheckConstraint("(status IN ('REQUESTED','CANCELLED') AND claimed_by IS NULL AND claimed_at IS NULL AND candidate_txid IS NULL) OR (status IN ('CLAIMED','UNKNOWN','SETTLED') AND claimed_by IS NOT NULL AND claimed_at IS NOT NULL)", name='ck_manual_payout_claim'),
+        CheckConstraint("(status IN ('REQUESTED','CANCELLED') AND claimed_by IS NULL AND claimed_at IS NULL AND candidate_txid IS NULL) OR (status IN ('CLAIMED','UNKNOWN','SETTLED','VOIDED') AND claimed_by IS NOT NULL AND claimed_at IS NOT NULL)", name='ck_manual_payout_claim'),
         CheckConstraint("candidate_txid IS NULL OR status IN ('UNKNOWN','SETTLED')", name='ck_manual_payout_candidate'),
-        CheckConstraint("status != 'SETTLED' OR candidate_txid IS NOT NULL", name='ck_manual_payout_settled'))
+        CheckConstraint("status != 'SETTLED' OR candidate_txid IS NOT NULL", name='ck_manual_payout_settled'),
+        CheckConstraint("status != 'VOIDED' OR candidate_txid IS NULL", name='ck_manual_payout_voided'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     quote_id: Mapped[str] = mapped_column(ForeignKey('wallet_manual_payout_quotes.id'), unique=True, nullable=False)
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(30, 6), nullable=False)
     digest: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text('1'))
+    __mapper_args__ = {'version_id_col': version}
     claimed_by: Mapped[str | None] = mapped_column(String(36))
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     candidate_txid: Mapped[str | None] = mapped_column(String(64))
@@ -100,7 +103,7 @@ def _guard_order(mapper, connection, target):
     state = inspect(target)
     status_history = state.attrs.status.history
     previous_status = status_history.deleted[0] if status_history.deleted else target.status
-    if previous_status in {'SETTLED', 'CANCELLED'} and any(attr.history.has_changes() for attr in state.attrs):
+    if previous_status in {'SETTLED', 'CANCELLED', 'VOIDED'} and any(attr.history.has_changes() for attr in state.attrs):
         raise ValueError('illegal terminal manual payout mutation')
     for field in ('id', 'quote_id', 'user_id', 'amount', 'digest', 'created_at'):
         if state.attrs[field].history.has_changes():
@@ -112,6 +115,6 @@ def _guard_order(mapper, connection, target):
     history = state.attrs.status.history
     if history.has_changes() and history.deleted:
         allowed = {'REQUESTED': {'CLAIMED', 'CANCELLED'}, 'CLAIMED': {'UNKNOWN', 'SETTLED'},
-            'UNKNOWN': {'SETTLED'}, 'SETTLED': set(), 'CANCELLED': set()}
+            'UNKNOWN': {'SETTLED', 'VOIDED'}, 'SETTLED': set(), 'CANCELLED': set(), 'VOIDED': set()}
         if target.status not in allowed[history.deleted[0]]:
             raise ValueError('illegal manual payout transition')

@@ -123,6 +123,8 @@ def support_payout_projection(session, row, now, actor=None):
         rejected = session.scalar(select(SupportPayoutRejection.id).where(
             SupportPayoutRejection.order_id == row.id)) is not None
         stage = 'REJECTED' if rejected else 'CANCELLED'
+    elif row.status == 'VOIDED':
+        stage = 'VOIDED'
     elif row.status == 'UNKNOWN' or (not state.review_authorized_at and (state.review_required or now >= utc(state.expires_at))):
         stage = 'NEEDS_REVIEW'
     elif state.review_authorized_at and not state.execution_started_at:
@@ -143,7 +145,7 @@ def support_payout_projection(session, row, now, actor=None):
         target_address_masked=_masked_address(quote.snapshot['target_address']),
         claim_version=state.version,evidence_version=state.evidence_version,
         **({'claim_token':state.claim_token} if actor and state.claimed_by==actor and not state.evidence_actor_id
-            and row.status not in ('CANCELLED','SETTLED') else {}))
+            and row.status not in ('CANCELLED','SETTLED','VOIDED') else {}))
 
 
 def expire_support_payout_orders(factory, *, now, limit=100):
@@ -153,7 +155,7 @@ def expire_support_payout_orders(factory, *, now, limit=100):
     with factory.begin() as session:
         states=session.scalars(select(SupportPayoutState).join(ManualPayoutOrder,
             ManualPayoutOrder.id==SupportPayoutState.order_id).where(SupportPayoutState.expires_at<=now,
-            SupportPayoutState.review_required.is_(False),ManualPayoutOrder.status.not_in(('SETTLED','CANCELLED')))
+            SupportPayoutState.review_required.is_(False),ManualPayoutOrder.status.not_in(('SETTLED','CANCELLED','VOIDED')))
             .order_by(SupportPayoutState.expires_at).limit(limit).with_for_update(of=SupportPayoutState)).all()
         for state in states:
             state.review_required=True
@@ -177,7 +179,7 @@ class _PayoutAuthorization:
         if self.expected_version is not None and state.version != self.expected_version:
             fail('SUPPORT_PAYOUT_CLAIM_VERSION_CONFLICT')
         row=session.get(ManualPayoutOrder,self.order_id)
-        if row is None or row.status=='CANCELLED': fail('SUPPORT_PAYOUT_UNAVAILABLE')
+        if row is None or row.status in ('CANCELLED','VOIDED'): fail('SUPPORT_PAYOUT_UNAVAILABLE')
         if self.prepare and (state.execution_started_at is not None or row.status!='REQUESTED' or row.candidate_txid):
             fail('SUPPORT_PAYOUT_ALREADY_STARTED')
         if not self.begin and not self.prepare and state.execution_started_at is None:
@@ -228,7 +230,7 @@ class SupportPayoutService:
         now=self.payout._now()
         owner=actor == self.settings.wallet_manual_owner_admin_id and session.scalar(select(UserRole.id).where(
             UserRole.user_id==actor,UserRole.role_code==RoleCode.SUPER_ADMIN)) is not None
-        live=row.status not in ('CANCELLED','SETTLED')
+        live=row.status not in ('CANCELLED','SETTLED','VOIDED')
         leased=bool(state.claimed_by and state.claim_expires_at and now<utc(state.claim_expires_at))
         expired=now>=utc(state.expires_at) or state.review_required
         own=state.claimed_by==actor and leased and not state.evidence_actor_id
@@ -302,7 +304,7 @@ class SupportPayoutService:
             state=self._state(session,row)
             fresh=self.order_access.authorization(claims=claims)(session)
             self._held(state,claims,claim_token)
-            if row.status in ('SETTLED','CANCELLED','UNKNOWN'): fail('SUPPORT_PAYOUT_UNAVAILABLE')
+            if row.status in ('SETTLED','CANCELLED','VOIDED','UNKNOWN'): fail('SUPPORT_PAYOUT_UNAVAILABLE')
             deadline=self.payout._now()+timedelta(minutes=5)
             state.claim_expires_at=deadline if state.review_authorized_at else min(deadline,utc(state.expires_at))
             audit_write(session,claims['sub'],order_id,'wallet.support_payout_heartbeat','SUPPORT_PAYOUT_HEARTBEAT')
@@ -366,6 +368,8 @@ class SupportPayoutService:
             state=self._state(session,row)
             fresh=self.order_access.authorization(claims=claims)(session)
             self._owner_address_access(session,claims)
+            if row.status=='VOIDED':
+                fail('SUPPORT_PAYOUT_UNAVAILABLE')
             payload=dict(order_id=order_id,expected_claim_version=expected_claim_version,reason_code=reason_code)
             result=self.payout._replay(session,claims['sub'],'SUPPORT_TAKEOVER',idempotency_key,payload)
             if result:
@@ -385,6 +389,8 @@ class SupportPayoutService:
             state=self._state(session,row)
             fresh=self.order_access.authorization(claims=claims)(session)
             self._owner_address_access(session,claims)
+            if row.status=='VOIDED':
+                fail('SUPPORT_PAYOUT_UNAVAILABLE')
             payload=dict(order_id=order_id,expected_claim_version=expected_claim_version,reason_code=reason_code)
             replay=self.payout._replay(session,claims['sub'],'SUPPORT_TAKEOVER',idempotency_key,payload)
             if replay:
@@ -397,7 +403,7 @@ class SupportPayoutService:
             owner_fresh=owner_authorize(session)
             if state.version!=expected_claim_version:
                 fail('SUPPORT_PAYOUT_CLAIM_VERSION_CONFLICT')
-            if not state.claimed_by or row.status in ('CANCELLED','SETTLED'):
+            if not state.claimed_by or row.status in ('CANCELLED','SETTLED','VOIDED'):
                 fail('SUPPORT_PAYOUT_UNAVAILABLE')
             now=self.payout._now()
             previous_actor=state.evidence_actor_id or state.claimed_by
