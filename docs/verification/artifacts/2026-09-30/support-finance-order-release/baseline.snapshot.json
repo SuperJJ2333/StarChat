@@ -1,1 +1,219 @@
-{"captured_utc": "2026-09-30T06:37:48.361637+00:00", "schema": "0093_unbroadcast_payout_void", "roles": {"api": {"base_image": "sha256:902eaefcb237924caf9b60145f728f9e2b4ec67fc2b659bd98ad7ea82edd101f", "compose_path": "/opt/starchat/releases/guarded-to8ny40i/compose.json", "compose_sha256": "e0835fe25760614e889cdb9c1b5ce1b37be1039de407907b633b4cf24d323ff8", "health": "healthy", "restarts": 0, "files": [{"source": "services/business-api/app/api/recharge.py", "dest": "/opt/business-api/app/api/recharge.py", "before_sha256": "fedb7de7730b1e71fedccb1406b2bf72e6951f658554581e99972468ba96c80b"}, {"source": "services/business-api/app/api/support_payout.py", "dest": "/opt/business-api/app/api/support_payout.py", "before_sha256": "0198bc94adfb6e31bf93feb403cfd18fac0d5537469bfc0694eac12bc092e2f4"}, {"source": "services/business-api/app/integrations/tron/reader.py", "dest": "/opt/business-api/app/integrations/tron/reader.py", "before_sha256": "5e340deb11f96c64c8eeaf778efdd4742efb889e11bc1bdd263c0f2dc0679f69"}, {"source": "services/business-api/app/modules/identity/operation_password.py", "dest": "/opt/business-api/app/modules/identity/operation_password.py", "before_sha256": "e7a76477cf8cd47d67b8375fbd174bad9ecae27abbcec86cb8b00abf2921ca6d"}, {"source": "services/business-api/app/modules/identity/support_order_auth.py", "dest": "/opt/business-api/app/modules/identity/support_order_auth.py", "before_sha256": "e48d28a76ff775daeef45e21679f20f16dbdfb3c608fa52c8e14120cd3989adf"}, {"source": "services/business-api/app/modules/identity/totp.py", "dest": "/opt/business-api/app/modules/identity/totp.py", "before_sha256": "96bc51886794be7a8a35ea82075883e65ced8e39342da5c1b863765dd2cf95a1"}, {"source": "services/business-api/app/modules/ledger/service.py", "dest": "/opt/business-api/app/modules/ledger/service.py", "before_sha256": "15cdff6da1ab196418209fa9948104916e6e19b40d233c02e390d616d6cc57c5"}, {"source": "services/business-api/app/modules/recharge/models.py", "dest": "/opt/business-api/app/modules/recharge/models.py", "before_sha256": "f798c2e9d87cbe9edc1bc14376f2c399bcc6dda701c48f05ae6f54ad0e9c8c05"}, {"source": "services/business-api/app/modules/recharge/service.py", "dest": "/opt/business-api/app/modules/recharge/service.py", "before_sha256": "0cc9209568ae3026b8aefc08e073a8a26e2d4d6e03e342a595bd58ebe91b9f38"}, {"source": "services/business-api/app/modules/recharge/workflow.py", "dest": "/opt/business-api/app/modules/recharge/workflow.py", "before_sha256": "57ec0392c7363621631493c483bab51a7aac3c0a994a534000886b0d6a99ca21"}, {"source": "services/business-api/app/modules/wallet/binding_adapters.py", "dest": "/opt/business-api/app/modules/wallet/binding_adapters.py", "before_sha256": "dd2ca12a3162b2902c2906dad58555e37cfae7d3516405c3165c57c6589e2d78"}, {"source": "services/business-api/app/modules/wallet/conversions.py", "dest": "/opt/business-api/app/modules/wallet/conversions.py", "before_sha256": "a0270470a1f78371ba76ec3ff817c6776ff5731393d6146ad8d34f02436ee64a"}, {"source": "services/business-api/app/modules/wallet/manual_payout_models.py", "dest": "/opt/business-api/app/modules/wallet/manual_payout_models.py", "before_sha256": "04a1c677ce1e953eb0ea362e74ed972579902bf7e0a701a893e8d85be1875144"}, {"source": "services/business-api/app/modules/wallet/manual_payouts.py", "dest": "/opt/business-api/app/modules/wallet/manual_payouts.py", "before_sha256": "b51266ba80013b232501f6281445ecfc3d79e7f50b0a28f978ae7dcc53d801e9"}, {"source": "services/business-api/app/modules/wallet/recharge_binding_gate.py", "dest": "/opt/business-api/app/modules/wallet/recharge_binding_gate.py", "before_sha256": "bbc7b2e9f968459186e55c104dccdecf68ce108b6c9d58d44d75d410ac6f0a37"}, {"source": "services/business-api/app/modules/wallet/recharge_receipts.py", "dest": "/opt/business-api/app/modules/wallet/recharge_receipts.py", "before_sha256": "51ace9a6b629389daa28934c51c0daee2ad6e5d1bb557e5c103f8538cea36905"}, {"source": "services/business-api/app/modules/wallet/runtime.py", "dest": "/opt/business-api/app/modules/wallet/runtime.py", "before_sha256": "9471143f6b06a8e47348c9b2b5eb9950a0a4214474d53e08257bb4468685acbb"}, {"source": "services/business-api/app/modules/wallet/service.py", "dest": "/opt/business-api/app/modules/wallet/service.py", "before_sha256": "afe174064fcd5ad56d98e9da22b177b2b4fc78c90b9fb55c5452520b6025f76e"}, {"source": "services/business-api/app/modules/wallet/support_payout.py", "dest": "/opt/business-api/app/modules/wallet/support_payout.py", "before_sha256": "64d81993f233d632f1629a52d8809595ed0c9f34a61ae07b6dc4d7c1c3db0f2e"}, {"source": "services/business-api/migrations/versions/0094_support_finance_order_recovery.py", "dest": "/opt/business-api/migrations/versions/0094_support_finance_order_recovery.py", "before_sha256": null}]}, "worker": {"base_image": "sha256:90d7fb7472c82b78b9a9a56ef114620dd0aa0bd4a989e3011e3aa4ed24537282", "compose_path": "/opt/starchat/releases/guarded-to8ny40i/compose.json", "compose_sha256": "e0835fe25760614e889cdb9c1b5ce1b37be1039de407907b633b4cf24d323ff8", "health": "healthy", "restarts": 0, "files": [{"source": "services/business-api/app/modules/ledger/service.py", "dest": "/opt/business-api/app/modules/ledger/service.py", "before_sha256": "15cdff6da1ab196418209fa9948104916e6e19b40d233c02e390d616d6cc57c5"}, {"source": "services/business-api/app/modules/ledger/service.py", "dest": "/usr/local/lib/python3.12/site-packages/app/modules/ledger/service.py", "before_sha256": "15cdff6da1ab196418209fa9948104916e6e19b40d233c02e390d616d6cc57c5"}, {"source": "services/business-api/app/modules/wallet/conversions.py", "dest": "/opt/business-api/app/modules/wallet/conversions.py", "before_sha256": "a0270470a1f78371ba76ec3ff817c6776ff5731393d6146ad8d34f02436ee64a"}, {"source": "services/business-api/app/modules/wallet/conversions.py", "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/conversions.py", "before_sha256": "a0270470a1f78371ba76ec3ff817c6776ff5731393d6146ad8d34f02436ee64a"}, {"source": "services/business-api/app/modules/wallet/manual_payout_models.py", "dest": "/opt/business-api/app/modules/wallet/manual_payout_models.py", "before_sha256": "04a1c677ce1e953eb0ea362e74ed972579902bf7e0a701a893e8d85be1875144"}, {"source": "services/business-api/app/modules/wallet/manual_payout_models.py", "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/manual_payout_models.py", "before_sha256": "04a1c677ce1e953eb0ea362e74ed972579902bf7e0a701a893e8d85be1875144"}, {"source": "services/business-api/app/modules/wallet/manual_payouts.py", "dest": "/opt/business-api/app/modules/wallet/manual_payouts.py", "before_sha256": "b51266ba80013b232501f6281445ecfc3d79e7f50b0a28f978ae7dcc53d801e9"}, {"source": "services/business-api/app/modules/wallet/manual_payouts.py", "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/manual_payouts.py", "before_sha256": "b51266ba80013b232501f6281445ecfc3d79e7f50b0a28f978ae7dcc53d801e9"}, {"source": "services/business-api/app/modules/wallet/service.py", "dest": "/opt/business-api/app/modules/wallet/service.py", "before_sha256": "afe174064fcd5ad56d98e9da22b177b2b4fc78c90b9fb55c5452520b6025f76e"}, {"source": "services/business-api/app/modules/wallet/service.py", "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/service.py", "before_sha256": "afe174064fcd5ad56d98e9da22b177b2b4fc78c90b9fb55c5452520b6025f76e"}, {"source": "services/business-api/app/modules/wallet/support_payout.py", "dest": "/opt/business-api/app/modules/wallet/support_payout.py", "before_sha256": "64d81993f233d632f1629a52d8809595ed0c9f34a61ae07b6dc4d7c1c3db0f2e"}, {"source": "services/business-api/app/modules/wallet/support_payout.py", "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/support_payout.py", "before_sha256": "64d81993f233d632f1629a52d8809595ed0c9f34a61ae07b6dc4d7c1c3db0f2e"}, {"source": "services/business-api/migrations/versions/0094_support_finance_order_recovery.py", "dest": "/opt/business-api/migrations/versions/0094_support_finance_order_recovery.py", "before_sha256": null}, {"source": "services/business-worker/app/tasks/internal_publication.py", "dest": "/opt/business-worker/app/tasks/internal_publication.py", "before_sha256": "1e50d4b0bc09c9b7dd1a33c208dbc30c8795e870faf5cd8111189a1341325b2d"}]}}, "clone_image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7", "guard_sha256": "78b2beb6c20484cea04fa8e77c1dd23b9a3e401af9d6fafd3e4b7d316d07beec", "guard_probe_sha256": "d77a83e89d848bfc8b6d7dad72b9abd01d60550a6e356d0a12b382674c37b678", "static": [{"source": "frontend/src/admin-api.js", "dest": "src/admin-api.js", "before_sha256": "e5b5ce54f6ab52680f9152fcb8da681b281ca1e5be5debdf6d6383ae3adcbd57"}, {"source": "frontend/src/admin-recharge-panel.js", "dest": "src/admin-recharge-panel.js", "before_sha256": "15685b3b8e2bc6d42df5c6e2dffee78e6113c1a0145c957d08f53411bd8d76ad"}, {"source": "frontend/src/admin-support-payout-panel.js", "dest": "src/admin-support-payout-panel.js", "before_sha256": "0707c66384e6353f16a612e85fc9bd24102664d6a50cfd39803e32ccdc5e7932"}, {"source": "frontend/src/styles/admin-wallet.css", "dest": "src/styles/admin-wallet.css", "before_sha256": "c531485650145288bb63b18243c8e5a337f202663b6776a66a785db24064e911"}]}
+{
+  "captured_utc": "2026-09-30T06:51:05.240154+00:00",
+  "schema": "0093_unbroadcast_payout_void",
+  "roles": {
+    "api": {
+      "base_image": "sha256:902eaefcb237924caf9b60145f728f9e2b4ec67fc2b659bd98ad7ea82edd101f",
+      "compose_path": "/opt/starchat/releases/guarded-to8ny40i/compose.json",
+      "compose_sha256": "e0835fe25760614e889cdb9c1b5ce1b37be1039de407907b633b4cf24d323ff8",
+      "health": "healthy",
+      "restarts": 0,
+      "files": [
+        {
+          "source": "services/business-api/app/api/recharge.py",
+          "dest": "/opt/business-api/app/api/recharge.py",
+          "before_sha256": "fedb7de7730b1e71fedccb1406b2bf72e6951f658554581e99972468ba96c80b"
+        },
+        {
+          "source": "services/business-api/app/api/support_payout.py",
+          "dest": "/opt/business-api/app/api/support_payout.py",
+          "before_sha256": "0198bc94adfb6e31bf93feb403cfd18fac0d5537469bfc0694eac12bc092e2f4"
+        },
+        {
+          "source": "services/business-api/app/integrations/tron/reader.py",
+          "dest": "/opt/business-api/app/integrations/tron/reader.py",
+          "before_sha256": "5e340deb11f96c64c8eeaf778efdd4742efb889e11bc1bdd263c0f2dc0679f69"
+        },
+        {
+          "source": "services/business-api/app/modules/identity/operation_password.py",
+          "dest": "/opt/business-api/app/modules/identity/operation_password.py",
+          "before_sha256": "e7a76477cf8cd47d67b8375fbd174bad9ecae27abbcec86cb8b00abf2921ca6d"
+        },
+        {
+          "source": "services/business-api/app/modules/identity/support_order_auth.py",
+          "dest": "/opt/business-api/app/modules/identity/support_order_auth.py",
+          "before_sha256": "e48d28a76ff775daeef45e21679f20f16dbdfb3c608fa52c8e14120cd3989adf"
+        },
+        {
+          "source": "services/business-api/app/modules/identity/totp.py",
+          "dest": "/opt/business-api/app/modules/identity/totp.py",
+          "before_sha256": "96bc51886794be7a8a35ea82075883e65ced8e39342da5c1b863765dd2cf95a1"
+        },
+        {
+          "source": "services/business-api/app/modules/ledger/service.py",
+          "dest": "/opt/business-api/app/modules/ledger/service.py",
+          "before_sha256": "15cdff6da1ab196418209fa9948104916e6e19b40d233c02e390d616d6cc57c5"
+        },
+        {
+          "source": "services/business-api/app/modules/recharge/models.py",
+          "dest": "/opt/business-api/app/modules/recharge/models.py",
+          "before_sha256": "f798c2e9d87cbe9edc1bc14376f2c399bcc6dda701c48f05ae6f54ad0e9c8c05"
+        },
+        {
+          "source": "services/business-api/app/modules/recharge/service.py",
+          "dest": "/opt/business-api/app/modules/recharge/service.py",
+          "before_sha256": "0cc9209568ae3026b8aefc08e073a8a26e2d4d6e03e342a595bd58ebe91b9f38"
+        },
+        {
+          "source": "services/business-api/app/modules/recharge/workflow.py",
+          "dest": "/opt/business-api/app/modules/recharge/workflow.py",
+          "before_sha256": "57ec0392c7363621631493c483bab51a7aac3c0a994a534000886b0d6a99ca21"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/binding_adapters.py",
+          "dest": "/opt/business-api/app/modules/wallet/binding_adapters.py",
+          "before_sha256": "dd2ca12a3162b2902c2906dad58555e37cfae7d3516405c3165c57c6589e2d78"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/conversions.py",
+          "dest": "/opt/business-api/app/modules/wallet/conversions.py",
+          "before_sha256": "a0270470a1f78371ba76ec3ff817c6776ff5731393d6146ad8d34f02436ee64a"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/manual_payout_models.py",
+          "dest": "/opt/business-api/app/modules/wallet/manual_payout_models.py",
+          "before_sha256": "04a1c677ce1e953eb0ea362e74ed972579902bf7e0a701a893e8d85be1875144"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/manual_payouts.py",
+          "dest": "/opt/business-api/app/modules/wallet/manual_payouts.py",
+          "before_sha256": "b51266ba80013b232501f6281445ecfc3d79e7f50b0a28f978ae7dcc53d801e9"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/recharge_binding_gate.py",
+          "dest": "/opt/business-api/app/modules/wallet/recharge_binding_gate.py",
+          "before_sha256": "bbc7b2e9f968459186e55c104dccdecf68ce108b6c9d58d44d75d410ac6f0a37"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/recharge_receipts.py",
+          "dest": "/opt/business-api/app/modules/wallet/recharge_receipts.py",
+          "before_sha256": "51ace9a6b629389daa28934c51c0daee2ad6e5d1bb557e5c103f8538cea36905"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/runtime.py",
+          "dest": "/opt/business-api/app/modules/wallet/runtime.py",
+          "before_sha256": "9471143f6b06a8e47348c9b2b5eb9950a0a4214474d53e08257bb4468685acbb"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/service.py",
+          "dest": "/opt/business-api/app/modules/wallet/service.py",
+          "before_sha256": "afe174064fcd5ad56d98e9da22b177b2b4fc78c90b9fb55c5452520b6025f76e"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/support_payout.py",
+          "dest": "/opt/business-api/app/modules/wallet/support_payout.py",
+          "before_sha256": "64d81993f233d632f1629a52d8809595ed0c9f34a61ae07b6dc4d7c1c3db0f2e"
+        },
+        {
+          "source": "services/business-api/migrations/versions/0094_support_finance_order_recovery.py",
+          "dest": "/opt/business-api/migrations/versions/0094_support_finance_order_recovery.py",
+          "before_sha256": null
+        }
+      ]
+    },
+    "worker": {
+      "base_image": "sha256:90d7fb7472c82b78b9a9a56ef114620dd0aa0bd4a989e3011e3aa4ed24537282",
+      "compose_path": "/opt/starchat/releases/guarded-to8ny40i/compose.json",
+      "compose_sha256": "e0835fe25760614e889cdb9c1b5ce1b37be1039de407907b633b4cf24d323ff8",
+      "health": "healthy",
+      "restarts": 0,
+      "files": [
+        {
+          "source": "services/business-api/app/modules/ledger/service.py",
+          "dest": "/opt/business-api/app/modules/ledger/service.py",
+          "before_sha256": "15cdff6da1ab196418209fa9948104916e6e19b40d233c02e390d616d6cc57c5"
+        },
+        {
+          "source": "services/business-api/app/modules/ledger/service.py",
+          "dest": "/usr/local/lib/python3.12/site-packages/app/modules/ledger/service.py",
+          "before_sha256": "15cdff6da1ab196418209fa9948104916e6e19b40d233c02e390d616d6cc57c5"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/conversions.py",
+          "dest": "/opt/business-api/app/modules/wallet/conversions.py",
+          "before_sha256": "a0270470a1f78371ba76ec3ff817c6776ff5731393d6146ad8d34f02436ee64a"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/conversions.py",
+          "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/conversions.py",
+          "before_sha256": "a0270470a1f78371ba76ec3ff817c6776ff5731393d6146ad8d34f02436ee64a"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/manual_payout_models.py",
+          "dest": "/opt/business-api/app/modules/wallet/manual_payout_models.py",
+          "before_sha256": "04a1c677ce1e953eb0ea362e74ed972579902bf7e0a701a893e8d85be1875144"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/manual_payout_models.py",
+          "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/manual_payout_models.py",
+          "before_sha256": "04a1c677ce1e953eb0ea362e74ed972579902bf7e0a701a893e8d85be1875144"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/manual_payouts.py",
+          "dest": "/opt/business-api/app/modules/wallet/manual_payouts.py",
+          "before_sha256": "b51266ba80013b232501f6281445ecfc3d79e7f50b0a28f978ae7dcc53d801e9"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/manual_payouts.py",
+          "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/manual_payouts.py",
+          "before_sha256": "b51266ba80013b232501f6281445ecfc3d79e7f50b0a28f978ae7dcc53d801e9"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/service.py",
+          "dest": "/opt/business-api/app/modules/wallet/service.py",
+          "before_sha256": "afe174064fcd5ad56d98e9da22b177b2b4fc78c90b9fb55c5452520b6025f76e"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/service.py",
+          "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/service.py",
+          "before_sha256": "afe174064fcd5ad56d98e9da22b177b2b4fc78c90b9fb55c5452520b6025f76e"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/support_payout.py",
+          "dest": "/opt/business-api/app/modules/wallet/support_payout.py",
+          "before_sha256": "64d81993f233d632f1629a52d8809595ed0c9f34a61ae07b6dc4d7c1c3db0f2e"
+        },
+        {
+          "source": "services/business-api/app/modules/wallet/support_payout.py",
+          "dest": "/usr/local/lib/python3.12/site-packages/app/modules/wallet/support_payout.py",
+          "before_sha256": "64d81993f233d632f1629a52d8809595ed0c9f34a61ae07b6dc4d7c1c3db0f2e"
+        },
+        {
+          "source": "services/business-api/migrations/versions/0094_support_finance_order_recovery.py",
+          "dest": "/opt/business-api/migrations/versions/0094_support_finance_order_recovery.py",
+          "before_sha256": null
+        },
+        {
+          "source": "services/business-worker/app/tasks/internal_publication.py",
+          "dest": "/opt/business-worker/app/tasks/internal_publication.py",
+          "before_sha256": "1e50d4b0bc09c9b7dd1a33c208dbc30c8795e870faf5cd8111189a1341325b2d"
+        }
+      ]
+    }
+  },
+  "clone_image": "sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7",
+  "guard_sha256": "78b2beb6c20484cea04fa8e77c1dd23b9a3e401af9d6fafd3e4b7d316d07beec",
+  "guard_probe_sha256": "d77a83e89d848bfc8b6d7dad72b9abd01d60550a6e356d0a12b382674c37b678",
+  "static": [
+    {
+      "source": "frontend/src/admin-api.js",
+      "dest": "src/admin-api.js",
+      "before_sha256": "e5b5ce54f6ab52680f9152fcb8da681b281ca1e5be5debdf6d6383ae3adcbd57"
+    },
+    {
+      "source": "frontend/src/admin-recharge-panel.js",
+      "dest": "src/admin-recharge-panel.js",
+      "before_sha256": "15685b3b8e2bc6d42df5c6e2dffee78e6113c1a0145c957d08f53411bd8d76ad"
+    },
+    {
+      "source": "frontend/src/admin-support-payout-panel.js",
+      "dest": "src/admin-support-payout-panel.js",
+      "before_sha256": "0707c66384e6353f16a612e85fc9bd24102664d6a50cfd39803e32ccdc5e7932"
+    },
+    {
+      "source": "frontend/src/styles/admin-wallet.css",
+      "dest": "src/styles/admin-wallet.css",
+      "before_sha256": "c531485650145288bb63b18243c8e5a337f202663b6776a66a785db24064e911"
+    }
+  ]
+}
