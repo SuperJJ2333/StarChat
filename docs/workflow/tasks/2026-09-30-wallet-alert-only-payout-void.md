@@ -54,3 +54,12 @@
 - 新增合成同金额组合测试先因撤销表单被拦截失败，修正后专项54 passed，全部 tests/*.test.mjs 324 passed/0 failed、1.52s。真实 Chromium 同金额 fixture 验证金额显示、READY撤销表单、刷新、关闭与重新验证 PASS。规格/领域、质量/安全依次 PASS；未重复不受影响的长后端/移动门禁。
 - 14:50:45 精确发布三静态文件，版本20260930-payout-assets；前置hash与回退备份、所有容器不变；服务器 HTTPS 三文件与工作站面板hash一致。证据 artifacts/2026-09-30/payout-view-diagnosis.json、payout-asset-red.log、payout-asset-green.log、frontend-payout-asset-unit.log、asset-deployment-proof.json。调查开始准确时刻未记录，未按文件时间推算。
 - 生产原单仍 UNKNOWN，实际撤销、结案和独立恢复没有执行。下一步用户强制刷新后查看出款并完成未签名/未广播确认与独立操作验证。
+
+## 撤销预检授权入口修正：2026-09-30 15:08 +08
+
+- 用户看到“链上观察暂不可用”。14:58:34只读核验原单 UNKNOWN/version1、无候选，实际 PayoutVoidEvidence READY，matching/suspicious 均0，观察61671；事故ACKNOWLEDGED/version9，控制epoch2774、既有暂停仍开，无新增自动暂停。目标预检接口近期未产生HTTP请求。
+- 下载实际生产 admin-wallet-access.js 和 operations.actor 核对：预检仍须有效钱包写授权，前端 guard 在请求前拦截；manualWalletPanel 原来忽略传入 accessController，并把 WALLET_ACCESS_REQUIRED 吞为链上不可用。没有以当前结果推断历史首次异常原因。
+- 新增明确权限验证入口：canWrite=false时不调用预检，调用既有 requestWriteGrant；验证后再次点击重新核验，READY才显示撤销。原本独立凭证、未签名/未广播、权限与证据门槛不变，没有放宽读取白名单或后端权限，没有自动财务写。
+- 专项红：未授权预检调用次数1!=0；绿55 pass。tests/*.test.mjs 全量325 pass/0 fail、1.46s。真实Chromium以下载的生产 walletAccessPanel 包裹新面板验证读写分离：未授权preview0→权限弹窗→合成密码验证→preview仍0→再次点击preview1→撤销表单要求独立operation_password，PASS。规格/领域、质量/安全依次PASS。
+- 15:08:23只发布三静态文件，版本20260930-payout-grant；前置hash、备份回退、全部容器不变；服务器HTTPS三文件与工作站面板hash一致。证据 artifacts/2026-09-30/grant-deployment-proof.json、payout-grant-red.log、payout-grant-green.log、frontend-payout-grant-unit.log、payout-modal-browser-dom.html。主动调查起始时刻无准确记录，不推算阶段时长。
+- 下一步用户刷新→查看原单→“验证钱包操作权限并重新核验”→完成验证→再次点击该按钮→勾选声明、原因与本次独立证明→确认撤销。实际V6/V7仍待该管理员操作，不使用SQL或伪造会话。

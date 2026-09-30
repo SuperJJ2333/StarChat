@@ -54,7 +54,7 @@ function describe(parent, pairs) {
 }
 const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消', VOIDED:'已撤销（确认未广播）'}[status] ?? '状态未知');
 
-export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, securityOnly = false, onSecurityChanged} = {}) {
+export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, accessController, securityOnly = false, onSecurityChanged} = {}) {
   const root = node('section'); root.className = 'admin-card admin-manual-wallet-panel';
   const heading=node('header');heading.className='wallet-heading';
   const intro=node('div');intro.append(node('p','TRON · 人工签名'),node('h3','USDT 钱包'),node('p','核对每笔出款，让每一步都有据可查。'));
@@ -317,12 +317,23 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         detail.append(node('p','已领取或结果未知：禁止重复付款。先查询原交易与本订单；资金继续冻结，回填哈希不代表已结算。'));
         if(item.status==='UNKNOWN'&&!item.candidate_txid&&Number.isSafeInteger(item.version)&&item.version>0){
           detail.append(node('p','仅在确认此单从未签名、从未广播且最新链上复核通过后，才能撤销。撤销会冲回本单冻结及原兑换；不会自动恢复资金。'));
-          let preview;
-          try { preview=await api.getVoidUnbroadcastPreview?.(id); } catch { preview={status:'UNAVAILABLE'}; }
+          let preview,needsGrant=accessController?.canWrite()===false;
+          if(!needsGrant)try { preview=await api.getVoidUnbroadcastPreview?.(id); } catch(error) {
+            needsGrant=error?.code==='WALLET_ACCESS_REQUIRED';
+            preview={status:'UNAVAILABLE'};
+          }
           if(generation!==detailGeneration)return;
           const evidence=preview?.evidence;
           const ready=preview?.status==='READY'&&typeof evidence?.observation_id==='string'&&Number.isSafeInteger(evidence?.checkpoint);
-          if(ready){
+          if(needsGrant){
+            const notice=node('p','撤销预检需要钱包操作权限验证；这不表示链上观察故障。完成验证后，请再次点击下面按钮重新核验。');
+            detail.append(notice,action('验证钱包操作权限并重新核验',async()=>{
+              if(disposed||generation!==detailGeneration)return;
+              if(await accessController?.requestWriteGrant()){
+                if(!disposed&&generation===detailGeneration)await showOrder(id);
+              }else notice.textContent='请完成钱包操作权限验证，再点击此按钮重新核验；系统不会自动撤销。';
+            }));
+          }else if(ready){
             detail.append(node('p',`链上观察已覆盖领取时段 · 观察编号 ${evidence.observation_id} · 检查点 ${formatBeijingTime(evidence.checkpoint)}。这是单源观察，仍需本人确认未签名、未广播。`));
             commandForm(detail,'void-unbroadcast','确认未广播并撤销',[field('reason_code','撤销原因代码',{pattern:'[A-Z][A-Z0-9_]{2,79}'}),checkbox('never_signed','我确认此单从未签名'),checkbox('never_broadcast','我确认此单从未广播'),credentialField()],async values=>{
               const metadata={expected_version:item.version,reason_code:values.reason_code};

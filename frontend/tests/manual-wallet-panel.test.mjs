@@ -16,6 +16,18 @@ class Element {
 }
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('void preview explicitly requests write grant before querying then requires another confirmation',async()=>{
+ let authorized=false,requests=0,previews=0;const current={...order,status:'UNKNOWN',version:1,claimed_by:'owner'};
+ const panel=setup({getManualPayout:async()=>current,getVoidUnbroadcastPreview:async()=>{previews++;return {status:'READY',evidence:{observation_id:'fixture',checkpoint:1790748000000}};}},{walletAccess:true,accessController:{canWrite:()=>authorized,requestWriteGrant:async()=>{requests++;return authorized;}}});
+ await settle();await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+ assert.equal(previews,0);const verify=modal.find('button').find(x=>x.textContent==='验证钱包操作权限并重新核验');assert.ok(verify);
+ await verify.handlers.click();assert.equal(requests,1);assert.equal(previews,0);
+ authorized=true;await verify.handlers.click();assert.equal(requests,2);assert.equal(previews,1);
+ const form=modal.find('form').find(x=>x.name==='void-unbroadcast');assert.ok(form);
+ assert.ok(form.find('input').some(x=>x.name==='mfa_proof'),'void retains independent proof');panel.dispose();
+});
+
 test('CAIBI funded adjusted payout validates original USDT quote and copies final payable',async()=>{
  const values=[];const funded={...order,status:'UNKNOWN',version:1,claimed_by:'owner',amount:'29.754820',final_receive:'10.000000',snapshot:{...order.snapshot,funding_asset:'CAIBI',funding_amount:'200.00',amount:'200.000000',hold:'29.754820',receive:'29.754820'}};
  const panel=setup({getManualPayout:async()=>funded,getVoidUnbroadcastPreview:async()=>({status:'READY',evidence:{observation_id:'fixture',checkpoint:1790748000000}})},{clipboard:{writeText:async value=>values.push(value)}});
