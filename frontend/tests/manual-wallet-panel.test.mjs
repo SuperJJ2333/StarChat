@@ -16,6 +16,33 @@ class Element {
 }
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('view payout opens modal immediately and exposes failed read there',async()=>{
+ let rejectRead;const panel=setup({getManualPayout:()=>new Promise((_,reject)=>{rejectRead=reject;})});
+ await settle();const pending=panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+ assert.ok(modal?.open);assert.ok(modal.find('p').some(x=>x.textContent?.includes('正在加载')));
+ rejectRead(new Error('unavailable'));await pending;
+ assert.ok(modal.find('p').some(x=>x.textContent?.includes('详情读取或金额校验失败')));
+ panel.dispose();assert.equal(modal.open,false);
+});
+
+test('closing payout modal prevents late read from restoring details',async()=>{
+ let complete;const panel=setup({getManualPayout:()=>new Promise(resolve=>{complete=resolve;})});
+ await settle();const pending=panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');assert.ok(modal?.open);
+ modal.find('button').find(x=>x['aria-label']==='关闭出款详情').handlers.click();
+ complete(order);await pending;assert.equal(modal.open,false);assert.equal(modal.find('form').length,0);panel.dispose();
+});
+
+test('payout auth failures expose reauthentication within the open modal',async()=>{
+ for(const error of [{code:'RECENT_LOGIN_REQUIRED'},{status:401,code:'UNAUTHORIZED'}]){
+  const panel=setup({getManualPayout:async()=>{throw error;}},{onReauthenticate:async()=>true});await settle();
+  await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+  const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+  assert.ok(modal?.open);assert.ok(modal.find('button').some(x=>x.textContent==='重新登录'));panel.dispose();
+ }
+});
+
 test('server wallet grant omits repeated proof while keeping confirmation and original pending key',async()=>{
  const calls=[],store=storage();
  const panel=setup({getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'ACTIVE',restriction_scopes:[],unresolved_incidents:0}),manualWalletControlAction:async(kind,body,options)=>{calls.push({body,options});throw {code:'NETWORK_ERROR'};}},{walletAccess:true,storage:store});

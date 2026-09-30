@@ -38,3 +38,11 @@
 - 红：新增入口测试缺按钮失败（7 pass/1 fail）；绿：8 pass，前端全量 320 pass/0 fail，1.90s。规格/领域先 PASS，质量/安全随后 PASS。生产 live admin-home 语法检查通过。
 - 14:21:13 精确发布三个静态文件；基于实际生产源码保留既有钱包工作区。版本 `20260930-wallet-void-entry`，发布前后 SHA256、回退备份、全部运行容器未变；服务器 HTTPS 三文件哈希一致，工作站 HTTPS 面板哈希一致。证据在 artifacts/2026-09-30/entry-deployment-proof.json、frontend-entry-fix.log。
 - 原订单实际撤销、事故结案、独立恢复仍待管理员执行；下一步用户刷新后台，在本单新入口进入官方钱包的“人工出款”，查看本单并提交未广播撤销，再只读核对结果。
+
+## 出款详情弹窗修正：2026-09-30 14:35 +08
+
+- 用户反馈“查看出款”无反应。生产源码确认点击仅将详情写入长列表底部，没有弹窗。改为复用 detailDialog，读取前立即打开“出款详情”，显示加载或失败；关闭使迟到响应失效并清空当前密码输入，dispose 关闭，刷新草稿包含脱离主面板的弹窗 DOM。
+- 专项红：新增立即打开/迟到响应两测试均因缺弹窗失败；绿：52 passed。tests/*.test.mjs 全量322 passed、1.47s。默认自动发现测试另运行既有 scripts/offline-recovery-browser-test.mjs，因其 Chrome stdout 为空失败（其余321过）；该脚本不属于本次改动。使用已安装 Chromium headless shell 对本次真实 DOM 专项验证 PASS：弹窗、READY 撤销表单、刷新保留草稿、关闭清证明、dispose 关闭及弹窗内重新验证后重新读取。
+- 规格/领域 PASS；质量/安全发现 P2：登录恢复按钮在原生弹窗背后。已将既有登录恢复节点移入弹窗，关闭后恢复主页面；新增 RECENT_LOGIN_REQUIRED/401 测试，真实浏览器验证后质量/安全复核 PASS。
+- 14:35:28 精确发布 admin.html/admin-home.js/admin-manual-wallet-panel.js，版本20260930-payout-modal；基于最新生产源码保留前次导航入口及既有工作区。哈希前置断言、回退备份、全部容器未变；服务器 HTTPS 三文件与工作站 HTTPS 面板哈希一致。证据 artifacts/2026-09-30/modal-deployment-proof.json、payout-modal-browser-dom.html、payout-modal-green.log、frontend-modal-unit.log。阶段主动起始时间未可靠记录；浏览器专项自身执行约1s，未重复长后端/移动构建门禁。
+- V6/V7仍未执行；下一步用户强制刷新后查看出款并完成独立操作验证，收到结果后核对真实账本与事故状态。

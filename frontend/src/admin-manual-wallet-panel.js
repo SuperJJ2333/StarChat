@@ -67,7 +67,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   const credentialPayload=values=>walletAccess?{}:authMode==='operation_password'?{operation_password:values.operation_password}:{mfa_proof:values.mfa_proof};
   const secretInputs = new Set(); let disposed = false, refreshing = false, writing = false, reading = 0, reauthenticating = false;
   const descendants = el => [el, ...Array.from(el.children ?? []).flatMap(descendants)];
-  const forms = () => [...descendants(root), ...(incidentModal ? descendants(incidentDetail) : [])].filter(el => el.tagName === 'FORM' || el.tag === 'form');
+  const forms = () => [...new Set([...descendants(root), ...(incidentModal ? descendants(incidentDetail) : []), ...(payoutModal ? descendants(detail) : [])])].filter(el => el.tagName === 'FORM' || el.tag === 'form');
   const inputsOf = el => descendants(el).filter(el => el.tagName === 'INPUT' || el.tag === 'input');
   const rawApi=api;
   api=new Proxy(rawApi,{get(target,key){const value=target[key];
@@ -108,6 +108,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       for (const input of secretInputs) input.value = '';
       secretInputs.clear(); root.replaceChildren();
     }));
+    if(payoutModal)detail.append(authentication);
   }
   let journal;
   try { journal = operationJournal(storage ?? globalThis.localStorage, actor?.id); } catch { root.append(node('p', '无法保存管理员请求恢复记录，写操作已关闭。')); }
@@ -260,6 +261,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     });
   }
   const orders = node('section'), detail = node('section'); detail.setAttribute('aria-live','polite');
+  let payoutModal;
   const listState = node('p'); listState.setAttribute('role','status');
   const queue=node('section');queue.className='wallet-surface wallet-queue';orders.className='wallet-orders';detail.className='wallet-detail';
   queue.append(node('h4','人工出款队列'),node('p','核对锁定信息，领取后在 imToken 完成签名。'),...refreshAction('刷新出款队列',()=>loadOrders()),listState,orders,detail);primary.append(queue);
@@ -283,6 +285,13 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   async function showOrder(id) {
     if (disposed) return;
     const generation=++detailGeneration; selectedOrder=id;
+    detail.replaceChildren(node('p','正在加载出款详情…'));
+    if(!payoutModal)payoutModal=detailDialog('出款详情',detail,{onClose:()=>{
+      payoutModal=null;selectedOrder=undefined;++detailGeneration;
+      for(const input of inputsOf(detail))if(input.type==='password'){input.value='';secretInputs.delete(input);}
+      if(root.insertBefore)root.insertBefore(authentication,workspace);else root.append(authentication);
+      detail.replaceChildren();
+    }});
     try {
       const item=await api.getManualPayout(id); if(generation!==detailGeneration) return;
       const s=item.snapshot;
@@ -535,6 +544,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   root.dispose = () => {
     disposed=true;++mfaGeneration;++listGeneration;++detailGeneration;++incidentGeneration;++incidentSelection;++controlGeneration;++handoverGeneration;
     incidentModal?.close();
+    payoutModal?.close();
     if(queuedRefresh){queuedRefresh.resolve(false);queuedRefresh=null;}
     for(const input of secretInputs)input.value='';secretInputs.clear();
   };
