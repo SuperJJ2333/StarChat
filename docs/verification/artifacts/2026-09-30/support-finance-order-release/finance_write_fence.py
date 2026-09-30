@@ -5,6 +5,7 @@ PREFIXES=(
  '/api/v1/admin/support-orders/payouts',
  '/api/v1/manual/payouts','/api/v1/manual/payout-quotes',
  '/api/v1/wallet/manual/payouts','/api/v1/wallet/manual/payout-reconciliations',
+ '/api/v1/wallet/manual/admin/payouts',
  '/api/v1/recharge',
 )
 class FinanceWriteFence:

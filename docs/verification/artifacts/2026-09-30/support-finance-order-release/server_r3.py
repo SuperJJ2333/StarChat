@@ -891,14 +891,15 @@ def restore_finalize(manifest: dict) -> dict:
             "schema": TARGET_SCHEMA}
 
 
-def _selected_health(images: dict[str, str], *, wait: bool) -> dict:
-    frozen = {role: read_private(f"{role}-container-inspect.json") for role in ("api", "worker")}
+def _selected_health(images: dict[str, str], *, wait: bool, frozen=None, replaced_roles=()) -> dict:
+    if frozen is None:
+        frozen = {role: read_private(f"{role}-container-inspect.json") for role in ("api", "worker")}
     for attempt in range(40 if wait else 1):
         status = {role: docker_inspect(ROLE_CONTAINER[role]) for role in ("api", "worker")}
         for role, current in status.items():
             original = frozen[role]
-            if role == "worker" and current.get("Id") != original.get("Id"):
-                raise ValueError("unchanged Worker container identity drift")
+            if role not in replaced_roles and current.get("Id") != original.get("Id"):
+                raise ValueError(f"{role} container identity drift outside guarded replacement")
             expected_restarts = (original.get("RestartCount")
                                  if current.get("Id") == original.get("Id") else 0)
             if (not isinstance(expected_restarts, int) or expected_restarts < 0 or
@@ -1121,13 +1122,14 @@ def rollback(manifest: dict) -> dict:
         candidate = (PACKAGE / "payload" / item["source"]).read_bytes()
         restore_static_file(FRONTEND / item["dest"], before_file, candidate, before)
     guard = _guard("rollback", services=changed_services, version="rollback")
-    health = _selected_health(rollback_images, wait=True)
+    health = _selected_health(rollback_images, wait=True, replaced_roles=("api", "worker"))
     _other_containers_unchanged(saved, manifest)
     result = {"rolled_back_utc": utc(), "restored_services": changed_services,
               "static_files": len(ordered), "schema": database_value("select version_num from alembic_version"),
                "guard_snapshot": guard.get("snapshot") if guard else None,
                "data_downgrade": False, "management_sessions_preserved": True,
                "restart_counts": _restart_counts(health),
+               "containers": health,
                "rollback_api_image": rollback_images["api"]}
     if not (PRIVATE / "rollback-result.json").exists():
         write_private("rollback-result.json", result)

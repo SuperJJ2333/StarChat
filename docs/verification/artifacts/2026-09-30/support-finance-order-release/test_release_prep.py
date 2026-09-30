@@ -26,7 +26,7 @@ def manifest():
 def test_exact_allowlists_and_base_identity():
     m=manifest();r.validate_manifest(m)
     assert r.MIGRATION in r.API_SOURCES
-    assert len(m['roles']['worker']['files'])==11
+    assert len(m['roles']['worker']['files'])==14
     assert len(m['static'])==4
     for change in ('extra','missing','base','worker','destination','new-existing'):
         value=manifest()

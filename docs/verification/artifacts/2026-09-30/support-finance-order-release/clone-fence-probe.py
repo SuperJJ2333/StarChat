@@ -13,7 +13,7 @@ def main():
     schema='release_fence_'+uuid4().hex
     with engine.connect() as conn:
         assert conn.execute(text('select current_database()')).scalar_one()=='clone'
-        assert conn.execute(text('select version_num from alembic_version')).scalar_one()=='0093_support_finance_order_recovery'
+        assert conn.execute(text('select version_num from alembic_version')).scalar_one()=='0094_support_finance_order_recovery'
     try:
         with engine.begin() as conn:
             conn.execute(text('CREATE SCHEMA '+schema))
@@ -30,7 +30,7 @@ def main():
         with TestClient(create_default_app()) as client:
             ready=client.get('/api/v1/health/ready');assert ready.status_code==200
             for order in ('staged','started','taken'):
-                for route in (f'/api/v1/admin/support-orders/payouts/{order}/adjust-rate',f'/api/v1/manual/payouts/{order}/cancel',f'/api/v1/wallet/manual/payouts/{order}/reconcile'):
+                for route in (f'/api/v1/admin/support-orders/payouts/{order}/adjust-rate',f'/api/v1/manual/payouts/{order}/cancel',f'/api/v1/wallet/manual/payouts/{order}/reconcile',f'/api/v1/wallet/manual/admin/payouts/{order}/void-unbroadcast'):
                     result=client.post(route,json={});assert result.status_code==503 and result.json()['error']['code']=='SUPPORT_FINANCE_RELEASE_WRITE_FENCE'
             for route in ('/api/v1/recharge/requests','/api/v1/recharge/admin/requests/taken-recharge/execute-settlement','/api/v1/recharge/admin/requests/taken-recharge/takeover'):
                 result=client.post(route,json={});assert result.status_code==503

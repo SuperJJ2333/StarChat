@@ -30,8 +30,8 @@ def freeze(snapshot,repo,commit):
         for item in record['files']:item['after_sha256']=r.sha_bytes(blobs[item['source']])
     for item in m['static']:item['after_sha256']=r.sha_bytes(blobs[item['source']])
     task=(PACKAGE/'worker-task-readonly-hash.txt').read_text(encoding='utf-8-sig').split()[0];r.require_hash(task)
-    candidate={name.removeprefix('services/business-api/').removesuffix('.py').replace('/','.'):r.sha_bytes(blobs[name]) for name in r.WORKER_SOURCES};candidate['tasks.manual_wallet']=task
-    baseline={item['source'].removeprefix('services/business-api/').removesuffix('.py').replace('/','.'):item['before_sha256'] for item in m['roles']['worker']['files'] if item['source'] in r.WORKER_SOURCES and item['dest'].startswith('/usr/local/lib/')};baseline['tasks.manual_wallet']=task
+    candidate={name.removeprefix('services/business-api/').removesuffix('.py').replace('/','.'):r.sha_bytes(blobs[name]) for name in r.WORKER_SOURCES};candidate['tasks.manual_wallet']=task;candidate['tasks.internal_publication']=r.sha_bytes(blobs[r.WORKER_TASK])
+    baseline={item['source'].removeprefix('services/business-api/').removesuffix('.py').replace('/','.'):item['before_sha256'] for item in m['roles']['worker']['files'] if item['source'] in r.WORKER_SOURCES and item['dest'].startswith('/usr/local/lib/')};baseline['tasks.manual_wallet']=task;baseline['tasks.internal_publication']=next(item['before_sha256'] for item in m['roles']['worker']['files'] if item['source']==r.WORKER_TASK)
     for name,data in [('worker-expected-sources.json',candidate),('worker-baseline-expected-sources.json',baseline)]:
         (PACKAGE/name).write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
     m['worker_expected_sources_sha256']=r.sha_file(PACKAGE/'worker-expected-sources.json');m['worker_baseline_expected_sources_sha256']=r.sha_file(PACKAGE/'worker-baseline-expected-sources.json')

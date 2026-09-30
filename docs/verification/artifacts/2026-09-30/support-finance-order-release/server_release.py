@@ -52,7 +52,7 @@ def build(m):
         files=role_payload(record)
         images[role]=overlay(role,base,inventory,files,'candidate-'+role) if files else base
         back[role]=images[role] if role=='worker' else base
-    # A fenced API on the actual 0092 baseline, with 0093 migration context.
+    # A fenced API on the actual 0093 baseline, with 0094 migration context.
     base=m['roles']['api']['base_image'];inventory=c.image_inventory(base,'api')
     main_dest='/opt/business-api/app/main.py'
     code=c.run('docker','run','--rm','--pull','never','--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--entrypoint','python',base,'-c',"from pathlib import Path; import base64; print(base64.b64encode(Path('/opt/business-api/app/main.py').read_bytes()).decode())")
@@ -63,7 +63,7 @@ def build(m):
     (generated/'main.py').write_bytes(original+FACTORY_SUFFIX.encode())
     fence=PACKAGE/'finance_write_fence.py'
     if sha_file(fence)!=m['rollback_fence_sha256']:raise ValueError('rollback fence source changed')
-    migration=next(x for x in m['roles']['api']['files'] if x['source'].endswith('0093_support_finance_order_recovery.py'))
+    migration=next(x for x in m['roles']['api']['files'] if x['source'].endswith('0094_support_finance_order_recovery.py'))
     rollback_files=[{'dest':main_dest,'before_sha256':inventory[main_dest],'after_sha256':sha_file(generated/'main.py'),'payload':str(generated/'main.py')},
       {'dest':'/opt/business-api/app/release_finance_write_fence.py','before_sha256':None,'after_sha256':sha_file(fence),'payload':str(fence)},
       {**migration,'payload':str(PACKAGE/'payload'/migration['source'])}]
@@ -94,7 +94,7 @@ def fingerprint(clone):
 
 def compatibility_proof():
     proof=c.read_private('clone-compatibility.json')
-    if proof.get('before',{}).get('schema')!=BASE_SCHEMA or proof.get('after',{}).get('schema')!=TARGET_SCHEMA or proof.get('candidate_started') is not True or proof.get('rollback_started') is not True or proof.get('facts_before')!=proof.get('facts_after') or proof.get('fence_passed') is not True:raise ValueError('0093 expansion/compatibility evidence incomplete')
+    if proof.get('before',{}).get('schema')!=BASE_SCHEMA or proof.get('after',{}).get('schema')!=TARGET_SCHEMA or proof.get('candidate_started') is not True or proof.get('rollback_started') is not True or proof.get('facts_before')!=proof.get('facts_after') or proof.get('fence_passed') is not True:raise ValueError('0094 expansion/compatibility evidence incomplete')
     return proof
 
 def probe_clone(m):
@@ -103,7 +103,7 @@ def probe_clone(m):
     if inspected['Id']!=restored['clone_id'] or inspected['HostConfig']['NetworkMode']!='none':raise ValueError('clone identity changed')
     images=c.read_private('images.json');back=c.read_private('rollback-images.json')
     if restored['candidate_images']!=images or restored['rollback_images']!=back:raise ValueError('clone image identities changed')
-    if c.clone_snapshot(restored['clone'],after=True)['schema']!=BASE_SCHEMA:raise ValueError('restore must start at0092')
+    if c.clone_snapshot(restored['clone'],after=True)['schema']!=BASE_SCHEMA:raise ValueError('restore must start at0093')
     before=fingerprint(restored['clone'])
     c.run(*c._clone_runner(images['api'],restored['clone']),'--entrypoint','python',images['api'],'-m','alembic','upgrade',TARGET_SCHEMA,output_file=c.PRIVATE/'clone-migration.private.log')
     for label,image in [('candidate',images['api']),('rollback',back['api'])]:
@@ -113,7 +113,7 @@ def probe_clone(m):
     if sha_file(probe)!=m['wallet_probe_sha256']:raise ValueError('clone probe changed')
     c.run(*c._clone_runner(back['api'],restored['clone']),'--mount','type=bind,src='+str(probe)+',dst=/tmp/probe.py,readonly','--entrypoint','python',back['api'],'/tmp/probe.py',output_file=c.PRIVATE/'fence-probe.private.log',timeout=180)
     after=fingerprint(restored['clone']);snapshot=c.clone_snapshot(restored['clone'],after=True)
-    if snapshot['schema']!=TARGET_SCHEMA or before!=after:raise ValueError('0093 migration changed existing financial facts')
+    if snapshot['schema']!=TARGET_SCHEMA or before!=after:raise ValueError('0094 migration changed existing financial facts')
     result={'clone_id':restored['clone_id'],'before':restored['before'],'after':snapshot,'facts_before':before,'facts_after':after,'candidate_started':True,'rollback_started':True,'fence_passed':True,'candidate_api_image':images['api'],'rollback_api_image':back['api']}
     c.write_private('clone-compatibility.json',result)
     return {'expand_clone_passed':True,'schema':TARGET_SCHEMA,'rollback_fence_passed':True,'financial_facts_unchanged':True}
@@ -131,7 +131,7 @@ def restore_finalize(m):
 
 # Legacy helpers are reused with deliberately replaced schema/build/rehearsal paths.
 c.build=build;c.probe_clone=probe_clone;c.restore_finalize=restore_finalize;c.clone_compatibility_proof=compatibility_proof
-# Before restore production remains0092. After expansion preserve the identity check.
+# Before restore production remains0093. After expansion preserve the identity check.
 def assert_identity_schema(shape):
     if shape['schema'] not in (BASE_SCHEMA,TARGET_SCHEMA) or shape['column']!='YES:character varying:16' or not all(x in shape['check'] for x in ('entry_mode','STAFF','ADMIN')):raise ValueError('admin entry schema changed')
 c.assert_production_0092=assert_identity_schema
@@ -193,7 +193,7 @@ def before_switch(m,expected_images,expected_schema):
 
 def bridge_expand(m):
     # The fenced API retains exact production startup; its Alembic auto-upgrade
-    # expands0093 before serving. No financial writes can pass its middleware.
+    # expands0094 before serving. No financial writes can pass its middleware.
     c.check_prepared(m);validate_restore(m)
     if (c.PRIVATE/'bridge-result.json').exists():raise ValueError('bridge already attempted')
     candidate=c.read_private('images.json');back=c.read_private('rollback-images.json')
@@ -205,9 +205,9 @@ def bridge_expand(m):
     c._guard('check',c.protocol_images(candidate,back))
     c.write_private('bridge-attempt.json',{'started_utc':utc(),'images':bridge})
     result=c._guard('deploy',services=['business-api'],version='bridge')
-    health=c._selected_health(bridge,wait=True)
-    if c.database_value('select version_num from alembic_version')!=TARGET_SCHEMA:raise ValueError('fenced bridge did not expand0093')
-    c.write_private('bridge-result.json',{'images':bridge,'schema':TARGET_SCHEMA,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot'])),'restart_counts':c._restart_counts(health)})
+    health=c._selected_health(bridge,wait=True,replaced_roles=('api',))
+    if c.database_value('select version_num from alembic_version')!=TARGET_SCHEMA:raise ValueError('fenced bridge did not expand0094')
+    c.write_private('bridge-result.json',{'images':bridge,'schema':TARGET_SCHEMA,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot'])),'restart_counts':c._restart_counts(health),'containers':health})
     return {'bridge_fenced':True,'schema':TARGET_SCHEMA,'worker_original_until_dual_candidate_switch':True}
 
 
@@ -221,8 +221,8 @@ def activate_safe_worker(m):
         c._render_compose(role,'worker-bridge',compose_with_image(config,ROLE_SERVICE[role],target[role]),target[role])
     c._guard('check',c.protocol_images(images,back))
     result=c._guard('deploy',services=['business-worker'],version='worker-bridge')
-    health=c._selected_health(target,wait=True)
-    c.write_private('worker-bridge-result.json',{'images':target,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot'])),'restart_counts':c._restart_counts(health),'started_utc':utc()})
+    health=c._selected_health(target,wait=True,frozen=bridge['containers'],replaced_roles=('worker',))
+    c.write_private('worker-bridge-result.json',{'images':target,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot'])),'restart_counts':c._restart_counts(health),'containers':health,'started_utc':utc()})
     return {'safe_worker_active':True,'api_write_fenced':True,'images':target}
 
 def deploy(m):
@@ -235,22 +235,22 @@ def deploy(m):
     c.write_private('switch-attempt.json',{'started_utc':utc(),'images':images})
     try:
         result=c._guard('deploy',services=['business-api'],version='candidate')
-        health=c._selected_health(images,wait=True);c._publish_static(m);c._other_containers_unchanged(baseline,m)
-        c.write_private('deployed.json',{'deployed_utc':utc(),'images':images,'restart_counts':c._restart_counts(health),'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot']))})
+        health=c._selected_health(images,wait=True,frozen=bridge['containers'],replaced_roles=('api',));c._publish_static(m);c._other_containers_unchanged(baseline,m)
+        c.write_private('deployed.json',{'deployed_utc':utc(),'images':images,'restart_counts':c._restart_counts(health),'containers':health,'guard_snapshot':result['snapshot'],'guard_snapshot_sha256':sha_file(Path(result['snapshot']))})
         return {'deployed':True,'images':images,'schema':TARGET_SCHEMA,'static_files':len(m['static'])}
     except Exception:
         rollback(m);raise
 
 def rollback(m):
     validate_restore(m)
-    # Patched r3 rollback rejects originalAPI, requires safeWorker and0093;
+    # Patched r3 rollback rejects originalAPI, requires safeWorker and0094;
     # dual-role guard activates fencedAPI+safeWorker and preserves all records.
     return c.rollback(m)
 
 def verify(m):
     result=c.read_private('deployed.json');images=c.read_private('images.json')
     if result['images']!=images or c.database_value('select version_num from alembic_version')!=TARGET_SCHEMA:raise ValueError('deployed identity drift')
-    health=c._selected_health(images,wait=False);c._other_containers_unchanged(c.read_private('baseline.json'),m)
+    health=c._selected_health(images,wait=False,frozen=result['containers']);c._other_containers_unchanged(c.read_private('baseline.json'),m)
     snapshot=Path(result['guard_snapshot'])
     if snapshot.is_symlink() or sha_file(snapshot)!=result['guard_snapshot_sha256']:raise ValueError('guarded Compose snapshot changed')
     for role in ('api','worker'):

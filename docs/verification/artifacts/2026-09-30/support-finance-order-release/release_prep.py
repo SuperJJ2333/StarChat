@@ -1,6 +1,6 @@
 """Inert Task14 release preparation. No production execution or deployment command.
 
-Adapted from audited wallet release-package-r3 invariants, with explicit 0093
+Adapted from audited wallet release-package-r3 invariants, with explicit 0094
 expand and fail-closed post-expand rollback. Candidate payload is not frozen by
 this tool. Operators must complete release gates before any mutation.
 """
@@ -15,27 +15,29 @@ import shutil
 import tempfile
 
 RELEASE_ID='support-finance-order-recovery-20260930-v1'
-BASE_SCHEMA='0092_admin_session_entry_mode'
-TARGET_SCHEMA='0093_support_finance_order_recovery'
-BASE_API='sha256:fadabb52cd61c078599ceda2544cea6f34dd85b0dbc0b6c5d276c5d3a96ab7dd'
-BASE_WORKER='sha256:3c9e4bbf4760edd173263efb8a8ad2cbee99af9a287402c4d885f5186eaadaaf'
+BASE_SCHEMA='0093_unbroadcast_payout_void'
+TARGET_SCHEMA='0094_support_finance_order_recovery'
+BASE_API='sha256:902eaefcb237924caf9b60145f728f9e2b4ec67fc2b659bd98ad7ea82edd101f'
+BASE_WORKER='sha256:90d7fb7472c82b78b9a9a56ef114620dd0aa0bd4a989e3011e3aa4ed24537282'
 GUARD_SHA='78b2beb6c20484cea04fa8e77c1dd23b9a3e401af9d6fafd3e4b7d316d07beec'
 PROBE_SHA='d77a83e89d848bfc8b6d7dad72b9abd01d60550a6e356d0a12b382674c37b678'
 GUARD='/opt/starchat/ops/refresh-guards/business_release_guard.py'
-MIGRATION='services/business-api/migrations/versions/0093_support_finance_order_recovery.py'
+MIGRATION='services/business-api/migrations/versions/0094_support_finance_order_recovery.py'
 API_SOURCES=frozenset('services/business-api/'+name for name in (
  'app/api/recharge.py','app/api/support_payout.py','app/integrations/tron/reader.py',
  'app/modules/identity/operation_password.py','app/modules/identity/support_order_auth.py','app/modules/identity/totp.py',
  'app/modules/ledger/service.py','app/modules/recharge/models.py','app/modules/recharge/service.py','app/modules/recharge/workflow.py',
- 'app/modules/wallet/binding_adapters.py','app/modules/wallet/conversions.py','app/modules/wallet/manual_payouts.py',
+ 'app/modules/wallet/binding_adapters.py','app/modules/wallet/conversions.py','app/modules/wallet/manual_payouts.py','app/modules/wallet/manual_payout_models.py',
  'app/modules/wallet/recharge_binding_gate.py','app/modules/wallet/recharge_receipts.py','app/modules/wallet/runtime.py','app/modules/wallet/service.py','app/modules/wallet/support_payout.py',
- 'migrations/versions/0093_support_finance_order_recovery.py'))
+ 'migrations/versions/0094_support_finance_order_recovery.py'))
 WORKER_SOURCES=frozenset('services/business-api/'+name for name in (
- 'app/modules/wallet/manual_payouts.py','app/modules/wallet/support_payout.py',
+ 'app/modules/wallet/manual_payouts.py','app/modules/wallet/manual_payout_models.py','app/modules/wallet/support_payout.py',
  'app/modules/wallet/conversions.py','app/modules/wallet/service.py','app/modules/ledger/service.py'))
+WORKER_TASK='services/business-worker/app/tasks/internal_publication.py'
+
 def worker_destinations():
     return {(source,root+source.removeprefix('services/business-api/app/'))
-      for source in WORKER_SOURCES for root in ('/usr/local/lib/python3.12/site-packages/app/','/opt/business-api/app/')}|{(MIGRATION,'/opt/business-api/migrations/versions/0093_support_finance_order_recovery.py')}
+      for source in WORKER_SOURCES for root in ('/usr/local/lib/python3.12/site-packages/app/','/opt/business-api/app/')}|{(MIGRATION,'/opt/business-api/migrations/versions/0094_support_finance_order_recovery.py'),(WORKER_TASK,'/opt/business-worker/app/tasks/internal_publication.py')}
 STATIC_SOURCES=frozenset(('frontend/src/admin-api.js','frontend/src/admin-recharge-panel.js',
  'frontend/src/admin-support-payout-panel.js','frontend/src/styles/admin-wallet.css'))
 CLONE_NAME='support-finance-release-clone'
@@ -70,7 +72,7 @@ def validate_manifest(m):
         if len(files)!=len(expected) or {(x.get('source'),x.get('dest')) for x in files}!=expected:raise ValueError('exact role source/destination allowlist required')
         for item in files:
             if item['source']==MIGRATION:
-                if item.get('before_sha256') is not None:raise ValueError('0093 must be absent at0092 baseline')
+                if item.get('before_sha256') is not None:raise ValueError('0094 must be absent at0093 baseline')
             else:require_hash(item.get('before_sha256'))
             require_hash(item.get('after_sha256'))
     static=m.get('static',[])
@@ -137,7 +139,7 @@ def release_plan(m,candidate):
       'clone_after_head':['docker','exec',CLONE_NAME,'psql','-X','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-U','postgres','-d','clone','-Atqc','select version_num from alembic_version'],
       'clone_cleanup':['docker','rm','-f','-v',CLONE_NAME],
       'required_manual_gates':['verify clone identity/network and TCP readiness before restore',
-        'restore backup SHA; sole head 0092 before and 0093 after; fingerprints unchanged',
+        'restore backup SHA; sole head 0093 before and 0094 after; fingerprints unchanged',
         'synthetic isolated new-state old-write failure proof; no production financial writes',
         'reinspect clone identity/mounts before cleanup; prove container and anonymous volume removed',
         'fresh live image/schema/Compose/guard/static drift preflight before each future production step',
@@ -154,7 +156,7 @@ def validate_clone_proof(e):
         if e.get(name) is not True:raise ValueError('clone compatibility evidence missing')
 
 def rollback_gate(e):
-    if e.get('schema')!=TARGET_SCHEMA:raise ValueError('rollback must retain expanded 0093 schema')
+    if e.get('schema')!=TARGET_SCHEMA:raise ValueError('rollback must retain expanded 0094 schema')
     fence=e.get('write_fence',{})
     if any(fence.get(x) is not True for x in ('closed','payout','recharge','tested')):raise ValueError('tested live payout and recharge write fence required before old API rollback')
     require_hash(fence.get('sha256'))

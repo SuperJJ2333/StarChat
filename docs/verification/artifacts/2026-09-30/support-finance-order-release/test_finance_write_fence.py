@@ -20,3 +20,8 @@ def test_all_affected_mutations_block_before_auth_or_body(prefix,method):
 def test_other_api_routes_unchanged(path):assert asyncio.run(call(path,'POST'))[0]['status']==200
 @pytest.mark.parametrize('method',['GET','HEAD','OPTIONS'])
 def test_reads_and_preflight_unchanged(method):assert asyncio.run(call('/api/v1/recharge/admin/requests',method))[0]['status']==200
+
+def test_published_admin_void_mutation_is_fenced_but_read_stays_available():
+    path='/api/v1/wallet/manual/admin/payouts/synthetic-order/void-unbroadcast'
+    assert asyncio.run(call(path,'POST'))[0]['status']==503
+    assert asyncio.run(call(path,'GET'))[0]['status']==200
