@@ -1140,6 +1140,101 @@ void main() {
     }
   });
 
+  test('cancel retains copied source until its admitted local writer settles',
+      () async {
+    final entered = Completer<void>(), release = Completer<void>();
+    var requests = 0, cancelled = false;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: SecureSessionStore(_Store()),
+        client: MockClient((_) async {
+          requests++;
+          return http.Response('{}', 200);
+        }));
+    final queue = await MomentPublishCoordinator.open(api, directory: scratch);
+    final job = await queue.enqueue({
+      'text': 'immutable',
+      'image_urls': <String>[]
+    }, [
+      MomentPublishMedia(
+          XFile.fromData(Uint8List.fromList([1, 2, 3]), mimeType: 'image/jpeg'))
+    ], preprocessor: MomentImagePreprocessor.functional((bytes) async {
+      entered.complete();
+      await release.future;
+      return bytes;
+    }));
+    await entered.future;
+    final directory = Directory('${queue.root.path}/${job.id}');
+    final cancelling = queue.cancel(job.id).then((_) {
+      cancelled = true;
+    });
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(await directory.exists(), isTrue,
+          reason:
+              'local preparation still owns the copied source and may write its ready file');
+      expect(cancelled, isFalse);
+    } finally {
+      release.complete();
+      await cancelling;
+      queue.revoke();
+    }
+    expect(await directory.exists(), isFalse);
+    expect(job.state, MomentPublishState.cancelled);
+    expect(requests, 0, reason: 'cancelled local work cannot start an upload');
+    final reopened =
+        await MomentPublishCoordinator.open(api, directory: scratch);
+    expect(reopened.jobs, isEmpty);
+    reopened.revoke();
+  });
+
+  test('cancel releases local source without waiting for an admitted HTTP PUT',
+      () async {
+    final entered = Completer<void>(),
+        release = Completer<void>(),
+        finished = Completer<void>();
+    var publishes = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.test'),
+        sessionStore: SecureSessionStore(_Store()),
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/media/uploads')) {
+            return http.Response('{"id":"pending"}', 201);
+          }
+          if (request.method == 'PUT') {
+            entered.complete();
+            await release.future;
+            finished.complete();
+            return http.Response('', 204);
+          }
+          if (request.url.path.endsWith('/moments')) publishes++;
+          return http.Response('{}', 200);
+        }));
+    final queue = await MomentPublishCoordinator.open(api, directory: scratch);
+    final job = await queue.enqueue({
+      'text': 'immutable',
+      'image_urls': <String>[]
+    }, [
+      MomentPublishMedia(
+          XFile.fromData(Uint8List.fromList([1, 2, 3]), mimeType: 'image/jpeg'))
+    ],
+        preprocessor:
+            MomentImagePreprocessor.functional((bytes) async => bytes));
+    await entered.future;
+    try {
+      await Future.wait([queue.cancel(job.id), queue.cancel(job.id)])
+          .timeout(const Duration(seconds: 2));
+      expect(await Directory('${queue.root.path}/${job.id}').exists(), isFalse);
+    } finally {
+      release.complete();
+      await finished.future;
+      queue.revoke();
+    }
+    await Future<void>.delayed(Duration.zero);
+    expect(publishes, 0);
+    expect(job.state, MomentPublishState.cancelled);
+  });
+
   testWidgets(
       'admitted upload allows page controls while immutable task continues',
       (tester) async {

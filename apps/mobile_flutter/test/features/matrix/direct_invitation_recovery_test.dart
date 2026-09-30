@@ -209,6 +209,7 @@ void main() {
     expect(capability, contains('autoJoinFriendDirectInvites('));
     final identity = source.substring(source.indexOf('void _identityChanged()'),
         source.indexOf('void didUpdateWidget'));
-    expect(identity, contains('_processPendingDirectInvites()'));
+    expect(identity,
+        contains('_processPendingDirectInvites(forceDirectory: true)'));
   });
 }

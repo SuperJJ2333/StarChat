@@ -319,6 +319,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
   var _snapshotOwnerEpoch = 0;
   int _unresolvedRoomCount = 0;
   Object? _directRecoveryJob;
+  DateTime? _directoryRefreshAfter;
   Timer? _identityRecoveryRetry;
   int _identityRecoveryAttempt = 0;
   NetworkStateManager? _recoveryNetwork;
@@ -347,7 +348,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _identityRecoveryRetry = Timer(Duration(seconds: delays[index]), () {
       _identityRecoveryRetry = null;
       _identityRecoveryAttempt++;
-      unawaited(_processPendingDirectInvites());
+      unawaited(_processPendingDirectInvites(forceDirectory: true));
     });
   }
 
@@ -360,7 +361,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _cancelIdentityRetry();
     if (_canRecoverIdentity && _unresolvedRoomCount > 0) {
       _identityRecoveryAttempt = 0;
-      unawaited(_processPendingDirectInvites());
+      unawaited(_processPendingDirectInvites(forceDirectory: true));
     }
   }
 
@@ -433,22 +434,21 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     } catch (_) {/* Retry after the next sync. */}
   }
 
-  Future<void> _processPendingDirectInvites() async {
+  Future<void> _processPendingDirectInvites(
+      {bool forceDirectory = false}) async {
     if (!mounted ||
         widget.previewOnly ||
         !_canRecoverIdentity ||
         _directRecoveryJob != null) {
       return;
     }
-    _identityRecoveryRetry?.cancel();
-    _identityRecoveryRetry = null;
     final matrix = widget.matrix;
     final api = widget.api;
     final identities = _identityCache;
     final ownerEpoch = _snapshotOwnerEpoch;
     final userId = matrix.userId;
     final job = Object();
-    setState(() => _directRecoveryJob = job);
+    _directRecoveryJob = job;
     bool current() =>
         mounted &&
         ownerEpoch == _snapshotOwnerEpoch &&
@@ -459,9 +459,19 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     try {
       await identities.preload();
       if (!current()) return;
-      await matrix.conversations.autoJoinDirectInvites(
+      final joined = await matrix.conversations.autoJoinDirectInvites(
           identities.contactsByMatrixId.keys.toSet(), _directJoinInFlight);
       if (!current()) return;
+      final now = DateTime.now();
+      if (!forceDirectory &&
+          joined.isEmpty &&
+          _directoryRefreshAfter != null &&
+          now.isBefore(_directoryRefreshAfter!)) {
+        return;
+      }
+      _directoryRefreshAfter = now.add(const Duration(minutes: 1));
+      _identityRecoveryRetry?.cancel();
+      _identityRecoveryRetry = null;
       // Initial local snapshot loads independently. Refresh again only after
       // directory convergence completes, so resolved identities appear promptly.
       await matrix.conversations.convergeDirectRoomDirectory(
@@ -503,7 +513,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
       // Local history stays visible; the next sync or explicit retry can recover.
     } finally {
       if (mounted && identical(_directRecoveryJob, job)) {
-        setState(() => _directRecoveryJob = null);
+        _directRecoveryJob = null;
         _scheduleIdentityRecovery();
       }
     }
@@ -591,6 +601,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _sendPresenceHeartbeat();
     _presenceTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       _sendPresenceHeartbeat();
+      unawaited(_processPendingDirectInvites());
       // Renew short-lived profile image URLs without clearing visible avatars.
       unawaited(_identityCache.refreshContactsQuietly());
     });
@@ -885,7 +896,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     // keyed identity subscription lands, correctness requires invalidation.
     _roomProjectionCache.clear();
     _conversationRows.clear();
-    unawaited(_processPendingDirectInvites());
+    unawaited(_processPendingDirectInvites(forceDirectory: true));
     unawaited(_refreshClientSnapshot());
   }
 
@@ -937,6 +948,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     if (ownerChanged || identityChanged) {
       _snapshotOwnerEpoch++;
       _directRecoveryJob = null;
+      _directoryRefreshAfter = null;
       _roomProjectionCache.clear();
       _conversationRows.clear();
       _conversationKeys.clear();

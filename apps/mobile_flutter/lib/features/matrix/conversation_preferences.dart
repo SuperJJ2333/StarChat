@@ -5,6 +5,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:matrix/matrix.dart';
 
 const conversationPreferenceType = 'com.liuhetong.conversation.settings.v2';
+const _knownPreferenceKeys = <String>{
+  'muted',
+  'attention',
+  'pinned',
+  'saved',
+  'folded',
+  'notify_mention_me',
+  'notify_mention_all',
+  'notify_announcement',
+  'followed_member_ids',
+  'member_order_ids',
+  'pinned_at',
+  'manual_unread',
+  'hidden',
+  'hidden_at',
+};
 
 final class ConversationPreference {
   const ConversationPreference({
@@ -22,19 +38,27 @@ final class ConversationPreference {
     this.manualUnread = false,
     this.hidden = false,
     this.hiddenAt,
+    this.extraContent = const {},
   });
 
   factory ConversationPreference.fromContent(Map<String, Object?> content) {
     final followed = content['followed_member_ids'];
+    final explicitMuteExceptions = content['mute_exceptions_explicit'] == true;
     return ConversationPreference(
       muted: content['muted'] == true,
       attention: content['attention'] == true,
       pinned: content['pinned'] == true,
       saved: content['saved'] == true,
       folded: content['folded'] == true,
-      notifyMentionMe: content['notify_mention_me'] != false,
-      notifyMentionAll: content['notify_mention_all'] != false,
-      notifyAnnouncement: content['notify_announcement'] != false,
+      notifyMentionMe: content['muted'] == true
+          ? explicitMuteExceptions && content['notify_mention_me'] == true
+          : content['notify_mention_me'] != false,
+      notifyMentionAll: content['muted'] == true
+          ? explicitMuteExceptions && content['notify_mention_all'] == true
+          : content['notify_mention_all'] != false,
+      notifyAnnouncement: content['muted'] == true
+          ? explicitMuteExceptions && content['notify_announcement'] == true
+          : content['notify_announcement'] != false,
       followedMemberIds: followed is List
           ? followed.map((value) => value.toString()).take(4).toList()
           : const [],
@@ -47,6 +71,10 @@ final class ConversationPreference {
       manualUnread: content['manual_unread'] == true,
       hidden: content['hidden'] == true,
       hiddenAt: DateTime.tryParse(content['hidden_at']?.toString() ?? ''),
+      extraContent: Map<String, Object?>.unmodifiable({
+        for (final entry in content.entries)
+          if (!_knownPreferenceKeys.contains(entry.key)) entry.key: entry.value,
+      }),
     );
   }
 
@@ -67,7 +95,11 @@ final class ConversationPreference {
   final bool hidden;
   final DateTime? hiddenAt;
 
+  /// Preserve group metadata and newer account-data fields on old clients.
+  final Map<String, Object?> extraContent;
+
   Map<String, Object?> toContent() => {
+        ...extraContent,
         'muted': muted,
         'attention': attention,
         'pinned': pinned,
@@ -118,6 +150,7 @@ final class ConversationPreference {
         manualUnread: manualUnread ?? this.manualUnread,
         hidden: hidden ?? this.hidden,
         hiddenAt: clearHiddenAt ? null : (hiddenAt ?? this.hiddenAt),
+        extraContent: extraContent,
       );
 }
 
@@ -238,7 +271,20 @@ final class _LocalConversationPreferences {
     try {
       final decoded = jsonDecode(encoded);
       if (decoded is! Map<String, dynamic>) return;
+      final push = decoded['__push_pending__'];
+      if (push is Map) {
+        for (final entry in push.entries) {
+          if (entry.key is String && entry.value is bool) {
+            pushPending[entry.key as String] = entry.value as bool;
+          }
+        }
+      }
+      final applied = decoded['__push_applied__'];
+      if (applied is List) {
+        pushApplied.addAll(applied.whereType<String>());
+      }
       for (final entry in decoded.entries) {
+        if (entry.key.startsWith('__push_')) continue;
         if (entry.value is! Map<String, dynamic>) continue;
         pending[entry.key] = ConversationPreference.fromContent(
             Map<String, Object?>.from(entry.value as Map));
@@ -250,27 +296,80 @@ final class _LocalConversationPreferences {
   final SharedPreferences preferences;
   final String key;
   final pending = <String, ConversationPreference>{};
+  final pushPending = <String, bool>{};
+  final pushApplied = <String>{};
   final sending = <String>{};
   final acknowledged = <String, ConversationPreference>{};
-  Future<void> persist() async {
-    if (!await preferences.setString(
-        key,
-        jsonEncode({
-          for (final entry in pending.entries)
-            entry.key: entry.value.toContent(),
-        }))) {
-      throw StateError('无法保存会话设置');
-    }
+  Future<void> _lastPersistence = Future.value();
+  Future<void> persist() {
+    final encoded = jsonEncode({
+      for (final entry in pending.entries) entry.key: entry.value.toContent(),
+      '__push_pending__': pushPending,
+      '__push_applied__': pushApplied.toList(),
+    });
+    final write = _lastPersistence.then((_) async {
+      if (!await preferences.setString(key, encoded)) {
+        throw StateError('无法保存会话设置');
+      }
+    });
+    _lastPersistence = write.catchError((Object _) {});
+    return write;
   }
 }
 
 Future<void> loadConversationPreferences(Client client) async {
-  ConversationReadState.shared().bindAccount(client.userID);
-  if (client.userID == null) return;
-  if (_localPreferences[client] == null) {
+  final userId = client.userID;
+  ConversationReadState.shared().bindAccount(userId);
+  if (userId == null) return;
+  final key = 'conversation_preferences.v1.$userId';
+  if (_localPreferences[client]?.key != key) {
     final preferences = await SharedPreferences.getInstance();
-    _localPreferences[client] ??= _LocalConversationPreferences(
-        preferences, 'conversation_preferences.v1.${client.userID}');
+    if (client.userID != userId) return;
+    _localPreferences[client] = _LocalConversationPreferences(preferences, key);
+  }
+  final store = _localPreferences[client]!;
+  var migrated = false;
+  for (final room in client.rooms) {
+    final effective = store.pending[room.id] ?? remotePreferenceForRoom(room);
+    if (effective.muted &&
+        !store.pushApplied.contains(room.id) &&
+        store.pushPending[room.id] != true) {
+      store.pushPending[room.id] = true;
+      migrated = true;
+    } else if (!effective.muted &&
+        (store.pushApplied.contains(room.id) ||
+            store.pushPending.containsKey(room.id)) &&
+        store.pushPending[room.id] != false) {
+      store.pushPending[room.id] = false;
+      migrated = true;
+    }
+  }
+  if (migrated) await store.persist();
+}
+
+String conversationMutePushRuleId(String roomId) =>
+    'com.liuhetong.mute.${base64Url.encode(utf8.encode(roomId)).replaceAll('=', '')}';
+
+Future<void> _writeMutePushRule(
+    Client client, String roomId, bool muted) async {
+  final ruleId = conversationMutePushRuleId(roomId);
+  if (muted) {
+    // The SDK's Room.setPushRuleState reads a sync snapshot and may return
+    // before any HTTP write. Write this app-owned rule directly instead.
+    await client.setPushRule(
+      PushRuleKind.override,
+      ruleId,
+      [PushRuleAction.dontNotify],
+      conditions: [
+        PushCondition(kind: 'event_match', key: 'room_id', pattern: roomId),
+      ],
+    );
+  } else {
+    try {
+      await client.deletePushRule(PushRuleKind.override, ruleId);
+    } on MatrixException catch (error) {
+      if (error.errcode != 'M_NOT_FOUND') rethrow;
+    }
   }
 }
 
@@ -302,7 +401,12 @@ Future<void> saveLocalConversationPreference(
   await loadConversationPreferences(room.client);
   final store = _localPreferences[room.client];
   if (store == null) throw StateError('Matrix 账号尚未登录');
+  final previous = store.pending[room.id] ?? remotePreferenceForRoom(room);
   store.pending[room.id] = preference;
+  if (preference.muted != previous.muted ||
+      (preference.muted && !store.pushApplied.contains(room.id))) {
+    store.pushPending[room.id] = preference.muted;
+  }
   conversationPreferencesChanged.publish();
   await store.persist();
 }
@@ -313,19 +417,43 @@ Future<void> flushConversationPreferences(Client client,
     {bool Function()? shouldContinue}) async {
   final store = _localPreferences[client];
   final userId = client.userID;
-  if (store == null || userId == null) return;
+  if (store == null ||
+      userId == null ||
+      store.key != 'conversation_preferences.v1.$userId') {
+    return;
+  }
+  bool active() =>
+      client.userID == userId &&
+      identical(_localPreferences[client], store) &&
+      (shouldContinue?.call() ?? true);
   await Future.wait([
     for (final roomId in store.pending.keys.toList())
       () async {
         if (!store.sending.add(roomId)) return;
         try {
-          while (store.pending[roomId] != null &&
-              (shouldContinue?.call() ?? true)) {
+          while (store.pending[roomId] != null && active()) {
             final next = store.pending[roomId]!;
-            if (identical(store.acknowledged[roomId], next)) return;
-            await client.setAccountDataPerRoom(
-                userId, roomId, conversationPreferenceType, next.toContent());
-            store.acknowledged[roomId] = next;
+            if (!identical(store.acknowledged[roomId], next)) {
+              await client.setAccountDataPerRoom(
+                  userId, roomId, conversationPreferenceType, next.toContent());
+              if (!active()) return;
+              store.acknowledged[roomId] = next;
+            }
+            final muted = store.pushPending[roomId];
+            if (muted != null && active()) {
+              await _writeMutePushRule(client, roomId, muted);
+              if (!active()) return;
+              if (store.pushPending[roomId] == muted) {
+                store.pushPending.remove(roomId);
+                if (muted) {
+                  store.pushApplied.add(roomId);
+                } else {
+                  store.pushApplied.remove(roomId);
+                }
+                await store.persist();
+              }
+            }
+            if (identical(store.pending[roomId], next)) return;
           }
         } catch (_) {
           // Keep the local edit while offline; the next sync retries it.
@@ -333,6 +461,37 @@ Future<void> flushConversationPreferences(Client client,
           store.sending.remove(roomId);
         }
       }(),
+  ]);
+  // Existing muted server preferences may need a rule even without a local
+  // account-data edit (for example after upgrading from an older app).
+  await Future.wait([
+    for (final entry in store.pushPending.entries.toList())
+      if (!store.sending.contains(entry.key) &&
+          !store.pending.containsKey(entry.key))
+        () async {
+          if (!store.sending.add(entry.key)) return;
+          try {
+            while (active()) {
+              final muted = store.pushPending[entry.key];
+              if (muted == null || !active()) return;
+              await _writeMutePushRule(client, entry.key, muted);
+              if (!active()) return;
+              if (store.pushPending[entry.key] == muted) {
+                store.pushPending.remove(entry.key);
+                if (muted) {
+                  store.pushApplied.add(entry.key);
+                } else {
+                  store.pushApplied.remove(entry.key);
+                }
+                await store.persist();
+              }
+            }
+          } catch (_) {
+            // Preserve the desired rule for the next online sync.
+          } finally {
+            store.sending.remove(entry.key);
+          }
+        }(),
   ]);
 }
 

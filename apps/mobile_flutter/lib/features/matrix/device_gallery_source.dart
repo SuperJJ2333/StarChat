@@ -833,8 +833,8 @@ Future<Uint8List?> loadVideoFirstFrame(
 /// - **有界并发**：底层解码任务同时最多 [maxConcurrent] 个（快速滚动
 ///   不会瞬时堆积大量解码任务，整页展示不被阻塞——网格先渲染占位）；
 /// - **并发合并**：同一资源的并发请求共享同一个 in-flight Future；
-/// - **成功缓存**：成功结果内存 memoize（磁盘缓存由
-///   [loadVideoFirstFrame] 负责），后续请求零成本；
+/// - **成功缓存**：按字节/条目预算保留最近使用的成功结果（磁盘缓存由
+///   [loadVideoFirstFrame] 负责），淘汰后按需重读；
 /// - **失败不占坑**：失败结果绝不缓存，按 [retryBackoff] 退避有限重试
 ///   （[maxAttempts] 上限），退避窗口内的调用快速返回 null 而不排队
 ///   解码——既不会"每次 build 都重试"，也不会把失败永久 memoize；
@@ -845,13 +845,22 @@ Future<Uint8List?> loadVideoFirstFrame(
 final class VideoFirstFrameStore {
   VideoFirstFrameStore({
     this.maxConcurrent = 2,
+    this.maxCacheBytes = 8 * 1024 * 1024,
+    this.maxCacheEntries = 96,
+    this.maxQueued = 32,
+    this.maxFailureEntries = 192,
     this.timeout = const Duration(seconds: 10),
     this.maxAttempts = 3,
     this.retryBackoff = const Duration(seconds: 2),
     Future<Uint8List?> Function(AssetEntity asset)? loader,
     Future<Uint8List?> Function(AssetEntity asset)? forceLoader,
     DateTime Function()? clock,
-  })  : loader = loader ?? loadVideoFirstFrame,
+  })  : assert(maxConcurrent > 0),
+        assert(maxCacheBytes >= 0),
+        assert(maxCacheEntries >= 0),
+        assert(maxQueued >= 0),
+        assert(maxFailureEntries >= 0),
+        loader = loader ?? loadVideoFirstFrame,
         forceLoader = forceLoader ??
             ((asset) => loadVideoFirstFrame(asset, ignoreCache: true)),
         _clock = clock ?? (() => DateTime.now());
@@ -859,6 +868,42 @@ final class VideoFirstFrameStore {
   static const maxConcurrentDefault = 2;
 
   final int maxConcurrent;
+  final int maxCacheBytes, maxCacheEntries, maxQueued, maxFailureEntries;
+  int _cachedBytes = 0;
+  int _generation = 0;
+  int get cachedBytes => _cachedBytes;
+  int get cachedEntries => _successes.length;
+  int get failureEntries => _attempts.length;
+  void clearMemory() {
+    _generation++;
+    _successes.clear();
+    _cachedBytes = 0;
+    _attempts.clear();
+    _nextAllowedAt.clear();
+    _forceExtract.clear();
+    while (_queue.isNotEmpty) {
+      _dropQueued(_queue.removeAt(0));
+    }
+  }
+
+  void _dropQueued(_FirstFrameJob job) {
+    _inFlight.remove(job.key);
+    if (!job.completer.isCompleted) job.completer.complete(null);
+  }
+
+  Uint8List _retain(String key, Uint8List frame) {
+    _cachedBytes -= _successes.remove(key)?.length ?? 0;
+    if (frame.length > maxCacheBytes || maxCacheEntries <= 0) return frame;
+    final owned = Uint8List.fromList(frame).asUnmodifiableView();
+    _successes[key] = owned;
+    _cachedBytes += owned.length;
+    while (
+        _successes.length > maxCacheEntries || _cachedBytes > maxCacheBytes) {
+      _cachedBytes -= _successes.remove(_successes.keys.first)!.length;
+    }
+    return owned;
+  }
+
   final Duration timeout;
   final int maxAttempts;
   final Duration retryBackoff;
@@ -869,7 +914,7 @@ final class VideoFirstFrameStore {
   final Future<Uint8List?> Function(AssetEntity asset)? forceLoader;
   final DateTime Function() _clock;
 
-  final _successes = <String, Future<Uint8List?>>{};
+  final _successes = <String, Uint8List>{};
   final _inFlight = <String, Future<Uint8List?>>{};
   final _attempts = <String, int>{};
   final _nextAllowedAt = <String, DateTime>{};
@@ -879,8 +924,11 @@ final class VideoFirstFrameStore {
   /// 读取（自动合并并发、遵守退避与预算）。
   Future<Uint8List?> load(AssetEntity asset) {
     final key = asset.id;
-    final success = _successes[key];
-    if (success != null && !_forceExtract.contains(key)) return success;
+    final success = _successes.remove(key);
+    if (success != null) {
+      _successes[key] = success;
+      if (!_forceExtract.contains(key)) return SynchronousFuture(success);
+    }
     final pending = _inFlight[key];
     if (pending != null) return pending;
     final forced = _forceExtract.contains(key);
@@ -892,6 +940,12 @@ final class VideoFirstFrameStore {
       if (next != null && _clock().isBefore(next)) return Future.value(null);
     }
 
+    if (_active >= maxConcurrent) {
+      if (maxQueued <= 0) return Future.value(null);
+      while (_queue.length >= maxQueued) {
+        _dropQueued(_queue.removeAt(0));
+      }
+    }
     final completer = Completer<Uint8List?>();
     final future = completer.future;
     _inFlight[key] = future;
@@ -915,6 +969,11 @@ final class VideoFirstFrameStore {
     final attempts = (_attempts[key] ?? 0) + 1;
     _attempts[key] = attempts;
     _nextAllowedAt[key] = _clock().add(retryBackoff * attempts);
+    while (_attempts.length > maxFailureEntries) {
+      final oldest = _attempts.keys.first;
+      _attempts.remove(oldest);
+      _nextAllowedAt.remove(oldest);
+    }
   }
 
   /// 重试预算是否已耗尽（UI 显示重试入口的依据）。
@@ -933,7 +992,11 @@ final class VideoFirstFrameStore {
   /// 缓存路径。同时清零失败预算与退避。
   void invalidateById(String assetId) {
     resetById(assetId);
+    _cachedBytes -= _successes.remove(assetId)?.length ?? 0;
     _forceExtract.add(assetId);
+    while (_forceExtract.length > maxFailureEntries) {
+      _forceExtract.remove(_forceExtract.first);
+    }
   }
 
   /// 强制重抽集合（损坏恢复；load 命中后清除）。
@@ -947,7 +1010,9 @@ final class VideoFirstFrameStore {
 }
 
 final class _FirstFrameJob {
-  _FirstFrameJob(this.store, this.key, this.asset, this.completer);
+  _FirstFrameJob(this.store, this.key, this.asset, this.completer)
+      : generation = store._generation;
+  final int generation;
 
   final VideoFirstFrameStore store;
   final String key;
@@ -967,13 +1032,13 @@ final class _FirstFrameJob {
     }
     if (completer.isCompleted) return;
     if (frame != null && frame.isNotEmpty) {
-      store._successes[key] = Future.value(frame);
+      if (generation == store._generation) frame = store._retain(key, frame);
       store._attempts.remove(key);
       store._nextAllowedAt.remove(key);
       store._forceExtract.remove(key);
       completer.complete(frame);
     } else {
-      store._recordFailure(key);
+      if (generation == store._generation) store._recordFailure(key);
       completer.complete(null);
     }
     store._inFlight.remove(key);
@@ -981,7 +1046,11 @@ final class _FirstFrameJob {
 }
 
 /// 全局首帧协调器实例（进程内所有选图会话共享有界并发预算）。
-final videoFirstFrameStore = VideoFirstFrameStore();
+final videoFirstFrameStore = (() {
+  final store = VideoFirstFrameStore();
+  registerDecodedMediaCacheClearer(store.clearMemory);
+  return store;
+})();
 
 /// 兼容入口：一次性加载首页（供旧调用方过渡）；新代码请使用 [DeviceGalleryPager]。
 Future<List<GalleryPhoto>> loadDeviceGalleryPhotos({int limit = 600}) async {

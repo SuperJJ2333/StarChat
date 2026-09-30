@@ -233,3 +233,23 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
 - Optional event parsing does not invoke the Event constructor's stale-send
   self-heal lifecycle. Malformed optional cached data (format/type errors) falls
   back to a valid room snapshot; database I/O failures still propagate.
+
+2026-10-01 sustained-message memory retention:
+
+- `Box` bounds only the completed `box_events` memory memo to 512 entries and
+  4 MiB of estimated serialized UTF-8/key weight. Values over 256 KiB are read
+  from SQLite without retention. Account/key/state boxes retain their existing
+  policy. Transaction pending values remain authoritative until settlement;
+  full ordered iteration and durable event data are preserved.
+- `Timeline.trimLiveHistory` releases old event/aggregation references only
+  when the application follows the latest timeline. It keeps 1000 settled
+  events plus every pending/error send, skips paging and session decryption,
+  and allows older durable events to reload using a settled-event offset.
+- `MatrixSdkDatabase.getLocalTimelineEventCount` provides a lightweight count
+  of the existing durable fragment for identity routing, independently of
+  evictable decrypted UI previews. It creates no extra event-payload cache.
+- Real SQLite regressions: `sdk_event_box_memory_test.dart` and
+  `live_timeline_memory_test.dart`; identity/history invalidation regressions:
+  `preview_eviction_identity_test.dart`. The shared final suite passes 5204
+  tests with 9 skips. These bounds do not claim measured Android RSS or limit
+  all application/native memory.

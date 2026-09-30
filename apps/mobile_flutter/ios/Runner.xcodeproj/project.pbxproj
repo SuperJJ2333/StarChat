@@ -22,7 +22,9 @@
 		CF0353100000000000000004 /* IOSSecureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0353000000000000000004 /* IOSSecureSession.swift */; };
 		CF0353100000000000000005 /* IOSSecureSessionBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0353000000000000000005 /* IOSSecureSessionBridge.swift */; };
 		CF0353100000000000000006 /* IOSConversationNotificationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0353000000000000000006 /* IOSConversationNotificationState.swift */; };
+		CF0353100000000000000008 /* IOSBackgroundMediaDownload.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0353000000000000000008 /* IOSBackgroundMediaDownload.swift */; };
 		CF0353100000000000000007 /* IOSMessageNavigationGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0353000000000000000007 /* IOSMessageNavigationGateTests.swift */; };
+		CF0353100000000000000009 /* IOSBackgroundMediaPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0353000000000000000009 /* IOSBackgroundMediaPolicyTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,7 +74,9 @@
 		CF0353000000000000000004 /* IOSSecureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSecureSession.swift; sourceTree = "<group>"; };
 		CF0353000000000000000005 /* IOSSecureSessionBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSecureSessionBridge.swift; sourceTree = "<group>"; };
 		CF0353000000000000000006 /* IOSConversationNotificationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSConversationNotificationState.swift; sourceTree = "<group>"; };
+		CF0353000000000000000008 /* IOSBackgroundMediaDownload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackgroundMediaDownload.swift; sourceTree = "<group>"; };
 		CF0353000000000000000007 /* IOSMessageNavigationGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSMessageNavigationGateTests.swift; sourceTree = "<group>"; };
+		CF0353000000000000000009 /* IOSBackgroundMediaPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSBackgroundMediaPolicyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +96,7 @@
 			children = (
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
 				CF0353000000000000000007 /* IOSMessageNavigationGateTests.swift */,
+				CF0353000000000000000009 /* IOSBackgroundMediaPolicyTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -142,6 +147,7 @@
 				CF0353000000000000000004 /* IOSSecureSession.swift */,
 				CF0353000000000000000005 /* IOSSecureSessionBridge.swift */,
 				CF0353000000000000000006 /* IOSConversationNotificationState.swift */,
+				CF0353000000000000000008 /* IOSBackgroundMediaDownload.swift */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
@@ -297,6 +303,7 @@
 			files = (
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
 				CF0353100000000000000007 /* IOSMessageNavigationGateTests.swift in Sources */,
+				CF0353100000000000000009 /* IOSBackgroundMediaPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -310,6 +317,7 @@
 				CF0353100000000000000004 /* IOSSecureSession.swift in Sources */,
 				CF0353100000000000000005 /* IOSSecureSessionBridge.swift in Sources */,
 				CF0353100000000000000006 /* IOSConversationNotificationState.swift in Sources */,
+				CF0353100000000000000008 /* IOSBackgroundMediaDownload.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,

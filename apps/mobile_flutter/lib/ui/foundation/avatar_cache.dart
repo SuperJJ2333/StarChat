@@ -107,11 +107,18 @@ abstract final class AvatarCache {
 
   /// Retains the last painted custom avatar while a replacement image decodes.
   static void rememberSuccessful(String userId, ImageProvider provider) {
+    _lastSuccessfulByUser.remove(userId);
     _lastSuccessfulByUser[userId] = provider;
+    while (_lastSuccessfulByUser.length > maximumMemoryEntries) {
+      _lastSuccessfulByUser.remove(_lastSuccessfulByUser.keys.first);
+    }
   }
 
-  static ImageProvider? lastSuccessful(String userId) =>
-      _lastSuccessfulByUser[userId];
+  static ImageProvider? lastSuccessful(String userId) {
+    final provider = _lastSuccessfulByUser.remove(userId);
+    if (provider != null) _lastSuccessfulByUser[userId] = provider;
+    return provider;
+  }
 
   /// Release signed URL providers when an account's identity projection ends.
   /// Disk entries remain account-keyed for a later authorized cold start.

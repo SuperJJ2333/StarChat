@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart';
 
-/// Grants a bounded number of media animations to eligible owners.
+/// Runs every eligible animation by default; callers may explicitly cap work.
 final class MediaAnimationBudget {
-  MediaAnimationBudget({this.maxActive = 2}) {
-    if (maxActive <= 0) throw ArgumentError.value(maxActive, 'maxActive');
+  MediaAnimationBudget({this.maxActive}) {
+    if (maxActive != null && maxActive! <= 0) {
+      throw ArgumentError.value(maxActive, 'maxActive');
+    }
   }
 
-  final int maxActive;
+  final int? maxActive;
   final _entries = <_MediaActivityToken>[];
   var _nextSequence = 0;
   var _recomputing = false;
@@ -41,7 +43,8 @@ final class MediaAnimationBudget {
                 final p = b._priority.compareTo(a._priority);
                 return p != 0 ? p : a._sequence.compareTo(b._sequence);
               });
-        final winners = active.take(maxActive).toSet();
+        final winners =
+            (maxActive == null ? active : active.take(maxActive!)).toSet();
         for (final entry in snapshot) {
           if (!winners.contains(entry)) entry._setGranted(false);
         }

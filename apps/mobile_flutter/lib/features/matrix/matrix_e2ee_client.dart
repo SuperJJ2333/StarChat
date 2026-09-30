@@ -11,6 +11,8 @@ import 'call_diagnostics.dart';
 import 'call_wakeup_client.dart';
 import 'matrix_sync_watchdog.dart';
 import 'matrix_notification_event_source.dart';
+import 'incoming_media_prefetch.dart';
+import 'matrix_sdk_incoming_media_source.dart';
 import '../push/matrix_pusher_service.dart';
 import '../contacts/user_display_name_resolver.dart';
 import '../../core/notification/badge_service.dart';
@@ -80,6 +82,7 @@ import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
 import 'message_interaction_service.dart';
 import 'message_timeline_cache.dart';
+import 'decrypted_preview_cache.dart';
 import 'nudge_service.dart';
 import 'room_timeline_controller.dart';
 import '../search/local_message_search_repository.dart';
@@ -284,7 +287,8 @@ abstract interface class MatrixAppHomeCapability {
   Future<MatrixMessageReminderBackend> openMessageReminderBackend();
 }
 
-final class _SdkAppHomeCapability implements MatrixAppHomeCapability {
+final class _SdkAppHomeCapability
+    implements MatrixAppHomeCapability, MatrixIncomingMediaCapability {
   _SdkAppHomeCapability(this._owner, this._client);
   final MatrixSdkE2eeClient _owner;
   final Client _client;
@@ -367,6 +371,13 @@ final class _SdkAppHomeCapability implements MatrixAppHomeCapability {
   UnreadSnapshotSource createUnreadSnapshotSource() {
     _ensureActive();
     return _ManagedUnreadSource(this);
+  }
+
+  @override
+  IncomingMediaSource createIncomingMediaSource() {
+    _ensureActive();
+    return MatrixSdkIncomingMediaSource(
+        client: _client, ensureActive: _ensureActive);
   }
 
   @override
@@ -844,6 +855,7 @@ final class MatrixConversationCapability {
         if (registry != null && selfUserId != null) {
           await registry.rememberLocalIdentities(selfUserId, observed);
         }
+        await _owner._refreshLocalMessageCounts(client);
         if (client.userID != snapshotAccount) {
           throw StateError('Conversation snapshot account changed');
         }
@@ -2191,6 +2203,7 @@ final class MatrixRoomLease
         final me = client.userID;
         final registry = owner._duplicateRooms;
         if (me != null && registry != null) await registry.ensureLoaded(me);
+        await owner._refreshLocalMessageCounts(client);
         return resolveIdentityRepresentatives<MatrixForwardDestinationSnapshot>(
           destinations,
           selfUserId: me,
@@ -2947,6 +2960,11 @@ final class _SdkRoomTimelineCapability
   }
 
   void _refreshWindowSource() {
+    if (_contextTimeline == null &&
+        (_viewport?.followsLatest ?? false) &&
+        _lease._activeRoom.client.database != null) {
+      _liveTimeline.trimLiveHistory(maximumEvents: 1000);
+    }
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
     final entries = <Object>[];
     final pending = <Event>[];
@@ -4651,11 +4669,14 @@ final class _SdkGroupChatInfoGateway
   final _preferenceOverlay = GroupPreferenceOverlay();
   Future<void> _preferenceWrites = Future.value();
 
-  Map<String, Object?> get _settings => _preferenceOverlay.read(
-        room.roomAccountData[conversationPreferenceType]?.content ??
-            room.roomAccountData[groupChatAccountDataType]?.content ??
-            const <String, Object?>{},
-      );
+  Map<String, Object?> get _settings => {
+        ..._preferenceOverlay.read(
+          room.roomAccountData[conversationPreferenceType]?.content ??
+              room.roomAccountData[groupChatAccountDataType]?.content ??
+              const <String, Object?>{},
+        ),
+        ...preferenceForRoom(room).toContent(),
+      };
 
   String _preview = '';
   Future<void> _previewReads = Future.value();
@@ -5005,22 +5026,60 @@ final class _SdkGroupChatInfoGateway
       });
 
   @override
+  Future<void> setNotificationMode({
+    required bool muted,
+    required bool attention,
+  }) =>
+      _writeSettings({
+        'muted': muted,
+        'attention': attention && !muted,
+        if (muted) ...{
+          'mute_exceptions_explicit': false,
+          'notify_mention_me': false,
+          'notify_mention_all': false,
+          'notify_announcement': false,
+          'followed_member_ids': <String>[],
+        },
+      });
+
+  @override
   Future<void> setFollowedMemberIds(List<String> matrixUserIds) =>
-      _writeSetting('followed_member_ids', matrixUserIds.take(4).toList());
+      _writeSettings({
+        'followed_member_ids': matrixUserIds.take(4).toList(),
+        'mute_exceptions_explicit': true,
+      });
 
   @override
   Future<void> setRemark(String remark) => _writeSetting('remark', remark);
 
-  Future<void> _writeSetting(String key, Object value) =>
+  Future<void> _writeSetting(String key, Object value) => _writeSettings({
+        key: value,
+        if ({
+          'notify_mention_me',
+          'notify_mention_all',
+          'notify_announcement',
+        }.contains(key))
+          'mute_exceptions_explicit': true,
+      });
+
+  Future<void> _writeSettings(Map<String, Object> values) =>
       _withOperation(() async {
         final operation = _preferenceWrites.then((_) async {
           final userId = room.client.userID;
           if (userId == null) throw StateError('Matrix 账号尚未登录');
-          final next = {..._settings, key: value};
+          final next = {..._settings, ...values};
           final baseline = _preferenceOverlay.remoteIdentity;
-          await room.client.setAccountDataPerRoom(
-              userId, room.id, conversationPreferenceType, next);
-          _preferenceOverlay.wrote(key, value, baseline: baseline);
+          await saveLocalConversationPreference(
+              room, ConversationPreference.fromContent(next));
+          for (final entry in values.entries) {
+            _preferenceOverlay.wrote(entry.key, entry.value,
+                baseline: baseline);
+          }
+          unawaited(flushConversationPreferences(room.client,
+              shouldContinue: () =>
+                  !_lease.canceled &&
+                  !_lease.owner._accessRevoked &&
+                  identical(_lease.owner._client, room.client)));
         });
         _preferenceWrites = operation.catchError((Object _) {});
         return operation;
@@ -6067,10 +6126,30 @@ final class MatrixSdkE2eeClient
   Future<void> _accountSelectionQueue = Future<void>.value();
   final Uri homeserver;
   final StreamController<void> _syncEvents = StreamController.broadcast();
+  Timer? _syncProjectionTimer;
+
+  // Consumers project the newest client snapshot. Keep event/decryption and
+  // outgoing-ack streams lossless, while sharing one UI refresh per burst.
+  void _scheduleSyncProjection() {
+    if (!_syncEvents.hasListener) return;
+    _syncProjectionTimer ??= Timer(const Duration(milliseconds: 16), () {
+      _syncProjectionTimer = null;
+      if (!_accessRevoked) _syncEvents.add(null);
+    });
+  }
+
+  void _cancelSyncProjection() {
+    _syncProjectionTimer?.cancel();
+    _syncProjectionTimer = null;
+  }
+
   final StreamController<MatrixDecryptionUpdate> _decryptionUpdates =
       StreamController.broadcast();
-  final Map<(String?, String, String), Map<String, dynamic>>
-      _decryptedTimelineEvents = {};
+  final _decryptedTimelineEvents = DecryptedPreviewCache();
+  final _localMessageCounts = <String, (String?, int)>{};
+  final _localCountRevisions = <String, Object>{};
+  Object _localCountSession = Object();
+  String? _localMessageCountAccount;
   MatrixClientContinuityMetadata? _decryptionCacheContinuity;
   StreamSubscription<EventUpdate>? _decryptionSubscription;
   StreamSubscription<EventUpdate>? _outgoingEchoSubscription;
@@ -6080,11 +6159,74 @@ final class MatrixSdkE2eeClient
       MatrixConversationCapability._(this);
   @visibleForTesting
   int get debugDecryptedPreviewCount => _decryptedTimelineEvents.length;
+  @visibleForTesting
+  int get debugDecryptedPreviewWeight =>
+      _decryptedTimelineEvents.retainedWeight;
 
-  /// 规则二数据源：本会话已解密消息缓存条数（"本地消息数量"的保守代理）。
-  /// 只读内存映射，零 SDK 副作用；仅在同一身份出现多个候选房间时参与比较。
+  /// Canonical selection uses durable history counts, never evictable previews.
   int _decryptedEventCount(String roomId) =>
-      _decryptedTimelineEvents.keys.where((key) => key.$2 == roomId).length;
+      _localMessageCounts[roomId]?.$2 ?? 0;
+
+  Future<void> _refreshLocalMessageCounts(Client client) async {
+    final account = client.userID;
+    if (_localMessageCountAccount != account) {
+      _localMessageCounts.clear();
+      _localCountRevisions.clear();
+      _localCountSession = Object();
+      _localMessageCountAccount = account;
+    }
+    final groups = <String, List<Room>>{};
+    for (final room in client.rooms) {
+      if (room.membership != Membership.join) continue;
+      final peer = _duplicateRooms?.peerIdForRoom(account ?? '', room.id) ??
+          room.directChatMatrixID;
+      if (peer != null) (groups[peer] ??= []).add(room);
+    }
+    final candidates = [
+      for (final rooms in groups.values)
+        if (rooms.length > 1) ...rooms
+    ];
+    final ids = {for (final room in candidates) room.id};
+    _localMessageCounts.removeWhere((id, _) => !ids.contains(id));
+    _localCountRevisions.removeWhere((id, _) => !ids.contains(id));
+    for (final id in ids) {
+      _localCountRevisions.putIfAbsent(id, Object.new);
+    }
+    final session = _localCountSession;
+    final database = client.database;
+    if (database == null) {
+      _localMessageCounts.clear();
+      return;
+    }
+    for (final room in candidates) {
+      if (_localMessageCounts[room.id]?.$1 == room.lastEvent?.eventId &&
+          _localMessageCounts.containsKey(room.id)) {
+        continue;
+      }
+      while (true) {
+        final head = room.lastEvent?.eventId;
+        final revision = _localCountRevisions[room.id];
+        if (revision == null) {
+          return;
+        }
+        final count = database is MatrixSdkDatabase
+            ? await database.getLocalTimelineEventCount(room)
+            : (await database.getEventIdList(room)).length;
+        if (_accessRevoked ||
+            !identical(client, _client) ||
+            client.userID != account ||
+            !identical(session, _localCountSession)) {
+          return;
+        }
+        if (!identical(revision, _localCountRevisions[room.id]) ||
+            head != room.lastEvent?.eventId) {
+          continue;
+        }
+        _localMessageCounts[room.id] = (head, count);
+        break;
+      }
+    }
+  }
 
   /// 逻辑会话归并出口（缺陷 0919 项 3）：roomId 是登记在案的重复房间时
   /// 返回其 primary 房间号，否则 null。内存同步查询（登记簿由收敛路径
@@ -6094,6 +6236,7 @@ final class MatrixSdkE2eeClient
         if (registry != null) {
           await loadDirectRoomAssociations(client, registry);
         }
+        await _refreshLocalMessageCounts(client);
       });
 
   String? logicalPrimaryRoomIdSync(String roomId) {
@@ -7138,6 +7281,9 @@ final class MatrixSdkE2eeClient
     final previous = _decryptionCacheContinuity;
     if (previous != null && !previous.hasSameContinuity(next)) {
       _decryptedTimelineEvents.clear();
+      _localMessageCounts.clear();
+      _localCountRevisions.clear();
+      _localCountSession = Object();
       _lastRecoveryKey = null;
     }
     _decryptionCacheContinuity = next;
@@ -7152,6 +7298,12 @@ final class MatrixSdkE2eeClient
       final eventId = update.content['event_id']?.toString();
       if (eventId == null || eventId.isEmpty) return;
       final type = update.content['type']?.toString();
+      if (update.type == EventUpdateType.history) {
+        _localMessageCounts.remove(update.roomID);
+        if (_localCountRevisions.containsKey(update.roomID)) {
+          _localCountRevisions[update.roomID] = Object();
+        }
+      }
       final cacheKey = (client.userID, update.roomID, eventId);
       if (type == EventTypes.Redaction) {
         final content = update.content['content'];
@@ -7175,8 +7327,9 @@ final class MatrixSdkE2eeClient
           type != EventTypes.Redaction &&
           !isRedacted &&
           !isRecalledHead) {
-        _decryptedTimelineEvents[cacheKey] =
-            Map<String, dynamic>.from(update.content);
+        _decryptedTimelineEvents.remember(
+            cacheKey, Map<String, dynamic>.from(update.content),
+            headEventId: lastEvent?.eventId);
       }
       final state = type != EventTypes.Encrypted
           ? MessageDecryptionState.decrypted
@@ -7184,7 +7337,7 @@ final class MatrixSdkE2eeClient
               ? MessageDecryptionState.missingKey
               : MessageDecryptionState.decrypting);
       _decryptionUpdates.add(MatrixDecryptionUpdate(eventId, state));
-      _syncEvents.add(null);
+      _scheduleSyncProjection();
     });
   }
 
@@ -7301,7 +7454,7 @@ final class MatrixSdkE2eeClient
       await active.sync();
       await active.encryption?.keyManager
           .uploadInboundGroupSessions(skipIfInProgress: true);
-      _syncEvents.add(null);
+      _scheduleSyncProjection();
     } on MatrixException catch (error) {
       if (error.errcode == 'M_UNKNOWN_TOKEN' ||
           error.errcode == 'M_FORBIDDEN') {
@@ -7371,6 +7524,7 @@ final class MatrixSdkE2eeClient
 
   /// 同步撤销对外能力。必须在进入串行区之前完成，避免等待期间被继续使用。
   void _beginSuspensionRevocation() {
+    _cancelSyncProjection();
     _accessRevoked = true;
     _outgoingWork.revoke('Matrix session suspended');
     _revokeManagedResources();
@@ -7665,6 +7819,7 @@ final class MatrixSdkE2eeClient
   /// Only a separately confirmed local-clear flow may call it.
   @override
   Future<void> clearLocalChatData() {
+    _cancelSyncProjection();
     _accessRevoked = true;
     _outgoingWork.revoke('Matrix local data cleared');
     _decryptedTimelineEvents.clear();

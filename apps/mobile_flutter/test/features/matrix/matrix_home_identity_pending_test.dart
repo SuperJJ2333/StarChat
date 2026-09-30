@@ -17,6 +17,48 @@ import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 
 void main() {
+  testWidgets('five messages per second do not restart directory recovery',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _HeldSyncClient('@self:matrix.example');
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://matrix.example'));
+    var calls = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://business.example'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        client: MockClient((request) async {
+          if (request.url.path.contains('/associations')) calls++;
+          return http.Response('{}', 503);
+        }));
+    final identities = _identities();
+    await identities.preload();
+    await tester.pumpWidget(_home(
+        matrix: matrix,
+        api: api,
+        identityCache: identities,
+        previewOnly: false,
+        snapshotLoader: () async => _snapshot('local')));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    for (var i = 0; i < 5; i++) {
+      client.onEvent.add(EventUpdate(
+          roomID: '!local:test',
+          type: EventUpdateType.decryptedTimelineQueue,
+          content: {
+            'event_id': 'incoming-$i',
+            'type': EventTypes.Message,
+            'content': {'msgtype': MessageTypes.Text, 'body': 'synthetic'},
+          }));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+    }
+    expect(calls, 1, reason: 'ordinary messages do not change peer authority');
+    await tester.pumpWidget(const SizedBox());
+    client.completeSync();
+    await tester.pump();
+    identities.dispose();
+  });
   testWidgets('retry reacts to restored connectivity, not online weak noise',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

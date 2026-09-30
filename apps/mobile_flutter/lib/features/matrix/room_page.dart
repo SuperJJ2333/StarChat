@@ -695,7 +695,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   void _scheduleMediaPreviewPaint() {
     _mediaPreviewPaintTimer ??= Timer(const Duration(milliseconds: 16), () {
       _mediaPreviewPaintTimer = null;
-      if (mounted && !_disposing) setState(() {});
+      if (mounted && !_disposing) {
+        _rowCache.removeWhere((_, entry) =>
+            entry.$1.kind == RoomMessageKind.image ||
+            entry.$1.kind == RoomMessageKind.video);
+        _timelineRevision.value++;
+      }
     });
   }
 
@@ -1252,6 +1257,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       final refreshed = await widget.roomLease.refreshRoomInfo();
       if (!mounted) return;
       roomInfo = refreshed;
+      _rowPresentationRevision++;
       final count = _joinedMembers.length;
       if (mounted) setState(() => joinedMemberCount = count);
     } catch (_) {
@@ -1271,6 +1277,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final count =
         redPacketJoinedMemberCount(refreshed.members, refreshed.currentUserId);
     roomInfo = refreshed;
+    _rowPresentationRevision++;
     if (mounted) setState(() => joinedMemberCount = count);
     return count;
   }
@@ -1288,6 +1295,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       throw StateError('群成员状态已失效');
     }
     roomInfo = refreshed;
+    _rowPresentationRevision++;
     final identity = _identityCache;
     return [
       for (final member in refreshed.members)
@@ -1327,6 +1335,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (!mounted) return;
     final mapped = _identityCache.contactsByMatrixId;
     setState(() {
+      _rowPresentationRevision++;
       contactsByMatrixId = mapped;
       ownProfile = _identityCache.profile ?? ownProfile;
       final peerId = roomInfo.directPeerId;
@@ -1884,7 +1893,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         }
       }
       roomInfo = next;
-      if (changed) setState(() => joinedMemberCount = _joinedMembers.length);
+      if (changed) {
+        setState(() {
+          _rowPresentationRevision++;
+          joinedMemberCount = _joinedMembers.length;
+        });
+      }
     });
   }
 
@@ -2206,9 +2220,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // （「后台生成 poster → 生成后更新缓存」）。
     if (!mounted || message.kind != RoomMessageKind.video) return;
     if (!_posterMissing.contains(message.id)) return;
-    setState(() {
-      _posterRevisions[message.id] = (_posterRevisions[message.id] ?? 0) + 1;
-    });
+    _posterRevisions[message.id] = (_posterRevisions[message.id] ?? 0) + 1;
+    _rowCache.remove(message.stableId);
+    _timelineRevision.value++;
   }
 
   /// First-frame cache hits still need a key for recall eviction.
@@ -3765,7 +3779,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           onDestroyed: () {
             // 带上房间维度：将来「某房间本地历史被永久清除」时可以只清该房间。
             store.markViewed(message.id, roomId: roomInfo.id);
-            if (mounted) setState(() {});
+            if (mounted) setState(() => _rowPresentationRevision++);
           },
         ),
       ),
@@ -5511,6 +5525,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   final _timelineRevision = ValueNotifier<int>(0);
+  int _rowPresentationRevision = 0;
+  Object? _rowPresentationStamp;
 
   /// 引用原消息的加载状态机（单飞 + 3 秒超时 + 终局缓存 + 点击重试）。
   ///
@@ -5722,9 +5738,26 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    // Non-timeline state (identity, selection, theme, highlighting) refreshes
-    // row presentation. SDK updates rebuild only the local timeline subtree.
-    _rowCache.clear();
+    // Composer/keyboard/toast updates retain message widgets and their image
+    // streams. Invalidate only when row presentation actually changes.
+    final selected = selection.selectedIds.toList()..sort();
+    final stamp = (
+      _rowPresentationRevision,
+      contactsByMatrixId,
+      ownProfile,
+      peer,
+      CupertinoTheme.of(context),
+      MediaQuery.textScalerOf(context),
+      selection.active,
+      Object.hashAll(selected),
+      highlightedMessageId,
+      _flashViewed,
+      Object.hashAll(recalledDrafts.entries.map((e) => (e.key, e.value))),
+    );
+    if (stamp != _rowPresentationStamp) {
+      _rowPresentationStamp = stamp;
+      _rowCache.clear();
+    }
     final allMessages = controller?.messages ?? const <RoomMessageViewModel>[];
     final messages = hiddenEvents?.visibleItems(
           roomInfo.id,

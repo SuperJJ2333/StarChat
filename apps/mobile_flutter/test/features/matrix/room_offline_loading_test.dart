@@ -20,6 +20,7 @@ import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
 
@@ -199,6 +200,62 @@ void _newEvent(_OfflineRoom room) {
 void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
+  testWidgets(
+      'returning from video retries its missing poster without rebuilding text',
+      (tester) async {
+    final client = _OfflineClient();
+    final room = client.localRoom;
+    room.localTimeline.events.insert(
+        0,
+        Event(
+          room: room,
+          eventId: 'missing-poster-video',
+          senderId: '@peer:offline.test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 9, 11),
+          content: {
+            'msgtype': 'm.video',
+            'body': 'offline video',
+            'info': {'duration': 1000, 'mimetype': 'video/mp4'}
+          },
+        ));
+    final lease = await _mount(tester, client);
+    final textBefore = tester.widget(find.text('cached offline message'));
+    final before =
+        tester.widget<VideoMessageCard>(find.byType(VideoMessageCard));
+    var resolved = false;
+    Object? resolvedPoster;
+    unawaited(before.posterLoader!().then((poster) {
+      resolvedPoster = poster;
+      resolved = true;
+    }));
+    // The card may already own a probe created in the fake-clock zone. Drain
+    // filesystem callbacks and its bounded timeout instead of awaiting that
+    // fake-clock future from runAsync.
+    for (var i = 0; i < 10 && !resolved; i++) {
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump(const Duration(seconds: 1));
+    }
+    expect(resolved, isTrue);
+    expect(resolvedPoster, isNull);
+    before.onOpen();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    Navigator.of(tester.element(find.byType(VideoViewerPage))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    final after =
+        tester.widget<VideoMessageCard>(find.byType(VideoMessageCard));
+    expect(after.posterRevision, before.posterRevision + 1);
+    expect(
+        tester.widget(find.text('cached offline message')), same(textBefore));
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+    // The offline viewer owns a bounded playback-file timeout; expire it
+    // after disposal so the fixture leaves no fake-clock timer behind.
+    await tester.pump(const Duration(seconds: 121));
+  });
   testWidgets('sync bursts preserve composing range, selection and focus',
       (tester) async {
     final client = _OfflineClient();
@@ -380,6 +437,40 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('keyboard transitions retain unchanged message widgets',
+      (tester) async {
+    final client = _OfflineClient();
+    final lease = await _mount(tester, client);
+    final prior = tester.widget(find.text('cached offline message'));
+    await tester.tap(find.byType(EditableText));
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pump();
+    expect(tester.widget(find.text('cached offline message')), same(prior));
+    tester.view.resetViewInsets();
+    await tester.pump();
+    expect(tester.widget(find.text('cached offline message')), same(prior));
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+  });
+
+  testWidgets('preview completion preserves ordinary rows and the composer',
+      (tester) async {
+    final client = _OfflineClient();
+    final lease = await _mount(tester, client);
+    final prior = tester.widget(find.text('cached offline message'));
+    final composer = tester.widget<EditableText>(find.byType(EditableText));
+    final dynamic state = tester.state(find.byType(RoomPage));
+    state.debugScheduleMediaPreviewPaint();
+    await tester.pump(const Duration(milliseconds: 32));
+    expect(tester.widget(find.text('cached offline message')), same(prior));
+    expect(
+        tester.widget<EditableText>(find.byType(EditableText)), same(composer));
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
   });
 
   testWidgets('room mounts bounded projection and moves to older local history',

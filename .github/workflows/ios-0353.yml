@@ -72,16 +72,17 @@ jobs:
           xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
             -destination "id=$simulator" \
             -only-testing:RunnerTests/IOSMessageNavigationGateTests \
-            -resultBundlePath "$RUNNER_TEMP/message-navigation.xcresult" \
-            2>&1 | tee "$RUNNER_TEMP/message-navigation.log"
-      - name: Preserve native navigation evidence
+            -only-testing:RunnerTests/IOSBackgroundMediaPolicyTests \
+            -resultBundlePath "$RUNNER_TEMP/navigation-background-media.xcresult" \
+            2>&1 | tee "$RUNNER_TEMP/navigation-background-media.log"
+      - name: Preserve native navigation and background media evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-message-navigation-${{ github.run_id }}
+          name: ios-navigation-background-media-${{ github.run_id }}
           path: |
-            ${{ runner.temp }}/message-navigation.log
-            ${{ runner.temp }}/message-navigation.xcresult
+            ${{ runner.temp }}/navigation-background-media.log
+            ${{ runner.temp }}/navigation-background-media.xcresult
           if-no-files-found: warn
   build:
     if: ${{ github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main' }}

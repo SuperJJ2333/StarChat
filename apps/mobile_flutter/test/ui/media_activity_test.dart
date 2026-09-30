@@ -3,8 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/media_activity.dart';
 
 void main() {
-  test('caps grants at two and transfers on cancellation', () {
+  test('default grants every visible GIF and pauses ineligible GIFs', () {
     final budget = MediaAnimationBudget();
+    final tokens = List.generate(6, (_) => budget.register(priority: 1));
+    expect(tokens.map((token) => token.granted.value), everyElement(isTrue));
+    tokens[2].update(eligible: false);
+    expect(tokens[2].granted.value, isFalse);
+    expect(tokens.where((token) => token.granted.value).length, 5);
+    tokens[2].update(eligible: true);
+    expect(tokens.map((token) => token.granted.value), everyElement(isTrue));
+    for (final token in tokens) {
+      token.dispose();
+    }
+  });
+  test('caps grants at two and transfers on cancellation', () {
+    final budget = MediaAnimationBudget(maxActive: 2);
     final a = budget.register(priority: 1),
         b = budget.register(priority: 1),
         c = budget.register(priority: 1);

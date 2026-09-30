@@ -10,6 +10,24 @@ import 'package:liuhetong_mobile/features/matrix/video_poster_session_cache.dart
 void main() {
   Uint8List poster(String tag) => Uint8List.fromList(tag.codeUnits);
 
+  test('memory clear drops historical revisions and still fences old loads',
+      () async {
+    final cache = VideoPosterSessionCache();
+    final gate = Completer<Uint8List?>();
+    final pending = cache.load('pending', () => gate.future);
+    for (var i = 0; i < 500; i++) {
+      await cache.evict('old-$i');
+    }
+    expect(cache.invalidationRevisionCount, 500);
+    cache.clearMemory();
+    expect(cache.invalidationRevisionCount, 0);
+    gate.complete(poster('obsolete'));
+    expect((await pending).stale, isTrue);
+    expect(cache.peek('pending'), isNull);
+    expect((await cache.load('pending', () async => poster('new'))).stale,
+        isFalse);
+  });
+
   test('completed small poster paints on same-account room reentry', () async {
     addTearDown(clearMediaMemoryCaches);
     final source = poster('first frame');

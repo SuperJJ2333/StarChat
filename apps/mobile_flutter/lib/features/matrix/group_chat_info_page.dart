@@ -344,22 +344,14 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     onTap: widget.onSearchHistory,
                   ),
                   // PRD §44：会话通知三态（默认 / 静音 / 特别关注）。
-                  // 两次偏好写入必须串行：控制器在 saving 状态会丢弃并发保存。
+                  // 原子保存通知三态；连续点击由控制器串行追上最终选择。
                   ConversationNotificationSection(
                     muted: snapshot.muted,
                     attention: snapshot.attention,
-                    onChanged: (mode) {
-                      Future<void>(() async {
-                        await widget.controller.setPreference(
-                          GroupChatPreference.muted,
-                          mode == ConversationNotificationMode.muted,
-                        );
-                        await widget.controller.setPreference(
-                          GroupChatPreference.attention,
-                          mode == ConversationNotificationMode.attention,
-                        );
-                      });
-                    },
+                    onChanged: (mode) => widget.controller.setNotificationMode(
+                      muted: mode == ConversationNotificationMode.muted,
+                      attention: mode == ConversationNotificationMode.attention,
+                    ),
                     // 微信层级：折叠/仍通知嵌套在「静音」之下（缩进子行）。
                     mutedChildren: [
                       Padding(
@@ -375,7 +367,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                           ),
                           WeChatListTile(
                             title: const Text('以下消息仍通知'),
-                            subtitle: const Text('@我、@所有人和群公告'),
+                            subtitle: const Text('可单独开启@我、@所有人和群公告'),
                             trailing: const CupertinoListTileChevron(),
                             onTap: () => Navigator.push(
                               context,
@@ -493,6 +485,13 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
           middle: Text('以下消息仍通知')),
       child: SafeArea(
         child: ListView(children: [
+          const Padding(
+            padding: EdgeInsets.all(WeChatSpacing.md),
+            child: Text(
+              '仅在应用运行并收到消息时提醒；后台或锁屏不保证提醒。',
+              style: TextStyle(color: WeChatColors.textSecondary),
+            ),
+          ),
           _preferenceTile(
             '＠我',
             snapshot.notifyMentionMe,

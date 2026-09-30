@@ -71,6 +71,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        com.liuhetong.mobile.media.BackgroundMediaDownloads.setUp(
+            applicationContext, flutterEngine.dartExecutor.binaryMessenger,
+        )
         // 原生推送桥。
         com.liuhetong.mobile.push.NativePushBridge.setUp(
             flutterEngine.dartExecutor.binaryMessenger,

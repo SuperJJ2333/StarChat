@@ -14,6 +14,7 @@ import '../../features/matrix/video_poster_pipeline.dart'
 import '../../features/matrix/video_poster_extractor.dart';
 import '../../features/matrix/media_load_scheduler.dart';
 import '../../core/performance_trace.dart';
+import '../../core/native_media_download.dart';
 import '../foundation/retained_image_cache_manager.dart';
 
 /// Shared by feed thumbnails and the full-screen viewer. Flutter retains decoded
@@ -311,6 +312,22 @@ abstract final class MomentMediaCache {
         accountId: source.accountKey);
     source.ensureCurrent();
     if (cached != null) return cached;
+    final pending = NativeMediaDownloadSession.joinPending(
+        source.accountKey,
+        MediaCacheKey(
+                accountId: source.accountKey,
+                roomId: 'moments',
+                eventId: source.cacheKey)
+            .identity);
+    if (pending != null) {
+      final bytes = await pending;
+      source.ensureCurrent();
+      final file = await MediaCache.store('moments', source.cacheKey, bytes,
+          accountId: source.accountKey,
+          expectedAccountGeneration: source.generation);
+      source.ensureCurrent();
+      return file;
+    }
     final client = suppliedClient ?? http.Client();
     try {
       final response = await client
@@ -549,6 +566,24 @@ final class _MomentMediaCacheManager extends RetainedImageCacheManager {
       bool withProgress,
       _MomentMediaSource source,
       {bool allowLegacyCache = true}) async* {
+    final pending = NativeMediaDownloadSession.joinPending(
+        source.accountKey,
+        MediaCacheKey(
+                accountId: source.accountKey,
+                roomId: 'moments',
+                eventId: source.cacheKey)
+            .identity);
+    if (pending != null) {
+      final bytes = await pending;
+      source.ensureCurrent();
+      final file = await MediaCache.store('moments', source.cacheKey, bytes,
+          accountId: source.accountKey,
+          expectedAccountGeneration: source.generation);
+      source.ensureCurrent();
+      yield FileInfo(_files.file(file.path), FileSource.Cache,
+          DateTime.now().add(MomentMediaCache.diskTtl), url);
+      return;
+    }
     await for (final response in super.getFileStream(url,
         key: effectiveKey, headers: headers, withProgress: withProgress)) {
       if (response is! FileInfo) {

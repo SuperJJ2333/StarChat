@@ -472,6 +472,77 @@ void main() {
   });
 
   group('VideoFirstFrameStore（并发/重试/缓存策略）', () {
+    test(
+        'memory clear fences late frames and oversized frames are not retained',
+        () async {
+      final gate = Completer<Uint8List?>();
+      final store =
+          VideoFirstFrameStore(maxCacheBytes: 2, loader: (_) => gate.future);
+      final pending = store.load(_StubAsset('late'));
+      store.clearMemory();
+      gate.complete(Uint8List(1));
+      expect(await pending, isNotNull);
+      expect(store.cachedBytes, 0);
+      final large = VideoFirstFrameStore(
+          maxCacheBytes: 2, loader: (_) async => Uint8List(3));
+      expect(await large.load(_StubAsset('large')), hasLength(3));
+      expect(large.cachedBytes, 0);
+    });
+    test(
+        'completed first frames have byte and LRU limits and evicted assets reload',
+        () async {
+      final calls = <String, int>{};
+      final store = VideoFirstFrameStore(
+          maxCacheBytes: 8,
+          maxCacheEntries: 2,
+          loader: (asset) async {
+            calls[asset.id] = (calls[asset.id] ?? 0) + 1;
+            return Uint8List(4);
+          });
+      await store.load(_StubAsset('a'));
+      await store.load(_StubAsset('b'));
+      await store.load(_StubAsset('a'));
+      await store.load(_StubAsset('c'));
+      expect(store.cachedEntries, 2);
+      expect(store.cachedBytes, 8);
+      await store.load(_StubAsset('a'));
+      expect(calls['a'], 1);
+      await store.load(_StubAsset('b'));
+      expect(calls['b'], 2);
+      store.clearMemory();
+      expect(store.cachedBytes, 0);
+      expect(store.cachedEntries, 0);
+    });
+    test(
+        'queued admission drops obsolete waiting work and failure metadata stays bounded',
+        () async {
+      final gate = Completer<Uint8List?>();
+      final started = <String>[];
+      final store = VideoFirstFrameStore(
+          maxConcurrent: 1,
+          maxQueued: 2,
+          maxFailureEntries: 2,
+          loader: (asset) {
+            started.add(asset.id);
+            return asset.id == 'active' ? gate.future : Future.value(null);
+          });
+      final active = store.load(_StubAsset('active'));
+      final obsolete = store.load(_StubAsset('old'));
+      final newer = store.load(_StubAsset('new'));
+      final newest = store.load(_StubAsset('newest'));
+      expect(store.queuedExtractions, 2);
+      expect(await obsolete, isNull);
+      gate.complete(Uint8List(1));
+      await Future.wait([active, newer, newest]);
+      expect(started, ['active', 'new', 'newest']);
+      for (var i = 0; i < 20; i++) {
+        await store.load(_StubAsset('failed-$i'));
+      }
+      expect(store.failureEntries, 2);
+      await store.load(_StubAsset('failed-0'));
+      expect(started.where((id) => id == 'failed-0'), hasLength(2));
+    });
+
     test('验证13：抽帧实际并发受上限约束，排队任务按 FIFO 补位', () async {
       var inFlight = 0;
       var peak = 0;
@@ -645,8 +716,8 @@ void main() {
     });
 
     test('缓存命中不再抽帧；空缓存对象重新抽帧（损坏失效）', () async {
-      final scratch =
-          (await _galleryFixtureDirectory('vff-corrupt')).createTempSync('vff-');
+      final scratch = (await _galleryFixtureDirectory('vff-corrupt'))
+          .createTempSync('vff-');
       PathProviderPlatform.instance = _VffPaths(scratch.path);
       addTearDown(() {
         MediaCache.clearPinsForTest();
@@ -669,8 +740,8 @@ void main() {
 
       // 把缓存对象写空（模拟写入中断/磁盘损坏）→ 不得把空字节当命中。
       final eventId = await videoFirstFrameCacheEventId(asset);
-      final cached = await MediaCache.probeCachedObject(
-          videoFirstFrameRoomId, eventId);
+      final cached =
+          await MediaCache.probeCachedObject(videoFirstFrameRoomId, eventId);
       await cached!.writeAsBytes(const [], flush: true);
       expect(await loadVideoFirstFrame(asset, fetch: fetch), isNotNull);
       expect(extractions, 2, reason: '空缓存对象被重新抽帧覆盖，不永远占坑');

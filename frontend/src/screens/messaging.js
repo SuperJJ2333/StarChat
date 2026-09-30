@@ -569,6 +569,7 @@ function groupInfo(definition) {
   row.append(element("span", "c-group-name-row__label", "群聊名称"), name, count);
   content.append(row,
     component("app-list-tile", { title: "群公告", trailing: "查看", leading: "speaker", action: "open:chat-announcement-notice" }),
+    component("app-list-tile", { title: "消息通知", trailing: "静音", subtitle: "仅在应用运行并收到消息时提醒；后台或锁屏不保证提醒。" }),
     component("app-list-tile", { title: "群管理", trailing: "›", leading: "group", action: "open:chat-group-management-owner" }));
   root.append(content);
   return root;

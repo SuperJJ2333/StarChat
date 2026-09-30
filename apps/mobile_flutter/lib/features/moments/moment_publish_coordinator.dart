@@ -183,6 +183,8 @@ final class MomentPublishCoordinator extends ChangeNotifier {
   final int _mediaGeneration;
   final _jobs = <MomentPublishJob>[];
   final _preprocessors = <String, MomentImagePreprocessor>{};
+  final _preparations = <String, Future<void>>{};
+  final _cancellations = <String, Future<void>>{};
   bool _revoked = false, _working = false, _admitting = false;
   Future<void> _writes = Future<void>.value();
   int publishedRevision = 0;
@@ -347,7 +349,10 @@ final class MomentPublishCoordinator extends ChangeNotifier {
   }
 
   Future<void> _persist(MomentPublishJob job) {
+    if (job.state == MomentPublishState.cancelled) return Future.value();
     final write = _writes.then((_) async {
+      // A late HTTP failure/continuation cannot recreate a cancelled journal.
+      if (job.state == MomentPublishState.cancelled) return;
       final path = '${root.path}/${job.id}/job.json';
       final file = File('$path.tmp');
       await file.writeAsString(
@@ -452,8 +457,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
               originalFailure = error;
               _guardJob(job);
               if (failureStage == ChatDiagnosticStage.momentPosterExtract) {
-                throw const MomentImageException(
-                    '视频封面生成失败，内容已保留，请重试');
+                throw const MomentImageException('视频封面生成失败，内容已保留，请重试');
               }
               throw const MomentImageException('视频封面暂不可用，请稍后重试');
             }
@@ -601,6 +605,19 @@ final class MomentPublishCoordinator extends ChangeNotifier {
 
   Future<File> _prepare(MomentPublishJob job, int i, PerformanceTrace trace,
       {void Function(ChatDiagnosticStage)? onStage}) async {
+    final finished = Completer<void>();
+    _preparations[job.id] = finished.future;
+    try {
+      return await _prepareSource(job, i, trace, onStage: onStage);
+    } finally {
+      _preparations.remove(job.id);
+      finished.complete();
+    }
+  }
+
+  Future<File> _prepareSource(
+      MomentPublishJob job, int i, PerformanceTrace trace,
+      {void Function(ChatDiagnosticStage)? onStage}) async {
     final media = job.media[i];
     final directory = '${root.path}/${job.id}';
     final source = File('$directory/${media['file']}');
@@ -615,6 +632,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     if (media['video'] == true) {
       final rendition = await transcodeForChat(source, performanceTrace: trace);
       try {
+        _guardJob(job);
         final encodedSize = await rendition.file.length();
         trace.setMedia(size: _momentSizeBucket(encodedSize));
         validateGroupVideoSize(encodedSize);
@@ -632,6 +650,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
         onStage?.call(ChatDiagnosticStage.momentPosterExtract);
         final small =
             await prepareMomentVideoPoster(rendition.file, source: poster);
+        _guardJob(job);
         if (small == null) {
           throw const MomentImageException('视频封面生成失败，内容已保留，请重试');
         }
@@ -655,6 +674,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
           ? bytes
           : await (_preprocessors[job.id] ?? MomentImagePreprocessor())
               .process(bytes);
+      _guardJob(job);
       if (processed.isEmpty || processed.length > 20 * 1024 * 1024) {
         throw const MomentImageException('图片大小不能超过20MB');
       }
@@ -818,12 +838,30 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     resume();
   }
 
-  Future<void> cancel(String id) async {
+  Future<void> cancel(String id) {
+    final pending = _cancellations[id];
+    if (pending != null) return pending;
     final job = _jobs.firstWhere((j) => j.id == id);
-    if (job.state == MomentPublishState.succeeded) return;
+    if (job.state == MomentPublishState.succeeded) return Future.value();
+    final finished = Completer<void>();
+    _cancellations[id] = finished.future;
     job.state = MomentPublishState.cancelled;
     notifyListeners();
-    // In-flight HTTP may finish; its guard prevents every subsequent operation.
+    unawaited(_releaseCancelledSource(id).then((_) {
+      _cancellations.remove(id);
+      finished.complete();
+    }, onError: (Object error, StackTrace stack) {
+      _cancellations.remove(id);
+      finished.completeError(error, stack);
+    }));
+    return finished.future;
+  }
+
+  Future<void> _releaseCancelledSource(String id) async {
+    // Source preparation owns ready/poster files as well as its journal. It
+    // must settle before directory deletion. HTTP can finish independently;
+    // cancellation guards stop its continuation without waiting for the wire.
+    await _preparations[id];
     await _writes;
     final directory = Directory('${root.path}/$id');
     if (await directory.exists()) await directory.delete(recursive: true);

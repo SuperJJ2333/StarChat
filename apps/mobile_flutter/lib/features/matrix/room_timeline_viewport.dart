@@ -24,6 +24,7 @@ final class RoomTimelineViewport<T> {
   bool get hasEarlier => _start > 0;
   bool get hasLater => _start + _count < total;
   int get retainedModels => _models.length;
+  bool get followsLatest => _latest;
 
   void update(List<T> source) {
     var firstChanged = 0;

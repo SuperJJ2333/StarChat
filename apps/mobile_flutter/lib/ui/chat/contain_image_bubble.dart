@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 import '../../features/matrix/image_contain_layout.dart';
+import '../../core/media_resource_policy.dart';
 import '../../features/matrix/media_cache.dart';
 import '../../features/matrix/media_consumer_scope.dart';
 
@@ -24,8 +25,7 @@ ImageProvider boundedChatImageProvider(Uint8List bytes, {int maxEdge = 720}) {
     // Keep caller-owned original bytes intact for download/forwarding.
     displayBytes = _unavailableImagePixel;
   }
-  return ResizeImage(MemoryImage(displayBytes),
-      width: maxEdge, height: maxEdge, policy: ResizeImagePolicy.fit);
+  return EncodedBudgetResizeImage(displayBytes, maxEdge: maxEdge);
 }
 
 void _clearDecodedChatImages() {

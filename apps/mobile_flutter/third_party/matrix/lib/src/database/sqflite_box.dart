@@ -124,6 +124,61 @@ class Box<V> {
   final String name;
   final BoxCollection boxCollection;
   final Map<String, V?> _cache = {};
+  static const eventCacheMaxEntries = 512;
+  static const eventCacheMaxBytes = 4 * 1024 * 1024;
+  static const eventCacheMaxEntryBytes = 256 * 1024;
+  bool get _boundedEvents => name == 'box_events';
+  final _cacheWeights = <String, int>{};
+  int _cacheBytes = 0;
+  int get cachedEntryCount => _cache.length;
+
+  /// Serialized UTF-8 payload/key bytes plus a fixed per-entry allowance.
+  /// This is an admission weight, not a measurement of Dart heap or RSS.
+  int get cachedEstimatedBytes => _boundedEvents
+      ? _cacheBytes
+      : _cache.entries.fold(
+          0,
+          (total, entry) =>
+              total +
+              utf8.encode(entry.key).length +
+              utf8.encode(_toString(entry.value) ?? '').length +
+              64);
+
+  Map<String, Object?>? get _pending => boxCollection._activeBatch == null
+      ? null
+      : boxCollection._pendingBoxValues[name];
+  bool get _pendingClear =>
+      boxCollection._activeBatch != null &&
+      boxCollection._pendingClearedBoxes.contains(name);
+
+  V? _cached(String key) {
+    if (!_boundedEvents) return _cache[key];
+    final value = _cache.remove(key);
+    _cache[key] = value;
+    return value;
+  }
+
+  void _remember(String key, V? value, {String? serialized}) {
+    if (!_boundedEvents) {
+      _cache[key] = value;
+      return;
+    }
+    _cache.remove(key);
+    _cacheBytes -= _cacheWeights.remove(key) ?? 0;
+    final weight = utf8.encode(key).length +
+        utf8.encode(serialized ?? _toString(value) ?? '').length +
+        64;
+    if (weight > eventCacheMaxEntryBytes) return;
+    _cache[key] = value;
+    _cacheWeights[key] = weight;
+    _cacheBytes += weight;
+    while (_cache.length > eventCacheMaxEntries ||
+        _cacheBytes > eventCacheMaxBytes) {
+      final oldest = _cache.keys.first;
+      _cache.remove(oldest);
+      _cacheBytes -= _cacheWeights.remove(oldest)!;
+    }
+  }
 
   /// _cachedKeys is only used to make sure that if you fetch all keys from a
   /// box, you do not need to have an expensive read operation twice. There is
@@ -152,6 +207,8 @@ class Box<V> {
 
   void _invalidateCache() {
     _cache.clear();
+    _cacheWeights.clear();
+    _cacheBytes = 0;
     _cachedKeys = null;
   }
 
@@ -194,12 +251,13 @@ class Box<V> {
   }
 
   Future<List<String>> getAllKeys([Transaction? txn]) async {
-    if (_keysCached) return _cachedKeys!.toList();
+    if (!_boundedEvents && _keysCached) return _cachedKeys!.toList();
 
     final executor = txn ?? boxCollection._db;
 
     final timeline = name == BoxCollection._timelineFragmentsBoxName;
-    final result = timeline && boxCollection._timelineCleared
+    final result = (timeline && boxCollection._timelineCleared) ||
+            (_boundedEvents && _pendingClear)
         ? const <Map<String, Object?>>[]
         : await executor.query(name, columns: ['k']);
     final keys = result.map((row) => row['k'] as String).toList();
@@ -211,6 +269,18 @@ class Box<V> {
       }
     }
 
+    if (_boundedEvents) {
+      final combined = keys.toSet();
+      for (final entry in (_pending ?? const <String, Object?>{}).entries) {
+        if (entry.value == null) {
+          combined.remove(entry.key);
+        } else {
+          combined.add(entry.key);
+        }
+      }
+      return combined.toList();
+    }
+
     _cachedKeys = keys.toSet();
     return keys;
   }
@@ -219,7 +289,8 @@ class Box<V> {
     final executor = txn ?? boxCollection._db;
 
     final timeline = name == BoxCollection._timelineFragmentsBoxName;
-    final result = timeline && boxCollection._timelineCleared
+    final result = (timeline && boxCollection._timelineCleared) ||
+            (_boundedEvents && _pendingClear)
         ? const <Map<String, Object?>>[]
         : await executor.query(name);
     final values = Map<String, V>.fromEntries(
@@ -238,11 +309,25 @@ class Box<V> {
         values[key] = boxCollection._pendingTimelineValues[key] as V;
       }
     }
+    if (_boundedEvents) {
+      for (final entry in (_pending ?? const <String, Object?>{}).entries) {
+        if (entry.value == null) {
+          values.remove(entry.key);
+        } else {
+          values[entry.key] = entry.value as V;
+        }
+      }
+    }
     return values;
   }
 
   Future<V?> get(String key, [Transaction? txn]) async {
-    if (_cache.containsKey(key)) return _cache[key];
+    if (_boundedEvents) {
+      final pending = _pending;
+      if (pending?.containsKey(key) ?? false) return pending![key] as V?;
+      if (_pendingClear) return null;
+    }
+    if (_cache.containsKey(key)) return _cached(key);
     if (name == BoxCollection._timelineFragmentsBoxName &&
         (boxCollection._timelineCleared ||
             boxCollection._pendingTimelineDeletes.contains(key))) {
@@ -259,12 +344,27 @@ class Box<V> {
     );
 
     final value = result.isEmpty ? null : _fromString(result.single['v']);
-    _cache[key] = value;
+    _remember(key, value,
+        serialized: result.isEmpty ? null : result.single['v'] as String?);
     return value;
   }
 
   Future<List<V?>> getAll(List<String> keys, [Transaction? txn]) async {
-    if (!keys.any((key) => !_cache.containsKey(key))) {
+    if (keys.isEmpty) return [];
+    if (_boundedEvents) {
+      final pending = _pending;
+      if (keys.every((key) =>
+          (pending?.containsKey(key) ?? false) ||
+          _pendingClear ||
+          _cache.containsKey(key))) {
+        return keys.map((key) {
+          if (pending?.containsKey(key) ?? false) return pending![key] as V?;
+          if (_pendingClear) return null;
+          return _cached(key);
+        }).toList();
+      }
+    }
+    if (!_boundedEvents && !keys.any((key) => !_cache.containsKey(key))) {
       return keys.map((key) => _cache[key]).toList();
     }
 
@@ -274,8 +374,8 @@ class Box<V> {
     if (keys.length > getAllMax) {
       final half = keys.length ~/ 2;
       return [
-        ...(await getAll(keys.sublist(0, half))),
-        ...(await getAll(keys.sublist(half))),
+        ...(await getAll(keys.sublist(0, half), txn)),
+        ...(await getAll(keys.sublist(half), txn)),
       ];
     }
 
@@ -284,7 +384,8 @@ class Box<V> {
     final list = <V?>[];
 
     final timeline = name == BoxCollection._timelineFragmentsBoxName;
-    final result = timeline && boxCollection._timelineCleared
+    final result = (timeline && boxCollection._timelineCleared) ||
+            (_boundedEvents && _pendingClear)
         ? const <Map<String, Object?>>[]
         : await executor.query(
             name,
@@ -304,13 +405,27 @@ class Box<V> {
         }
       }
     }
+    if (_boundedEvents) {
+      final pending = _pending;
+      for (final key in keys) {
+        if (pending?.containsKey(key) ?? false) {
+          resultMap[key] = pending![key] as V?;
+        }
+      }
+    }
 
     // We want to make sure that they values are returnd in the exact same
     // order than the given keys. That's why we do this instead of just return
     // `resultMap.values`.
     list.addAll(keys.map((key) => resultMap[key]));
 
-    _cache.addAll(resultMap);
+    if (_boundedEvents) {
+      for (final key in keys) {
+        _remember(key, resultMap[key]);
+      }
+    } else {
+      _cache.addAll(resultMap);
+    }
 
     return list;
   }
@@ -382,7 +497,7 @@ class Box<V> {
       );
     }
 
-    _cache[key] = val;
+    _remember(key, val, serialized: params['v']);
     if (txn != null) {
       boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = val;
     }
@@ -392,7 +507,8 @@ class Box<V> {
 
   Future<void> delete(String key, [Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
-    if (identical(txn, boxCollection._activeBatch) &&
+    if (txn != null &&
+        identical(txn, boxCollection._activeBatch) &&
         name == BoxCollection._timelineFragmentsBoxName) {
       boxCollection._pendingTimelinePuts.remove(key);
       boxCollection._pendingTimelineValues.remove(key);
@@ -407,8 +523,8 @@ class Box<V> {
 
     // Set to null instead remove() so that inside of transactions null is
     // returned.
-    _cache[key] = null;
-    if (identical(txn, boxCollection._activeBatch)) {
+    _remember(key, null);
+    if (txn != null && identical(txn, boxCollection._activeBatch)) {
       boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = null;
     }
     _cachedKeys?.remove(key);
@@ -417,7 +533,8 @@ class Box<V> {
 
   Future<void> deleteAll(List<String> keys, [Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
-    if (identical(txn, boxCollection._activeBatch) &&
+    if (txn != null &&
+        identical(txn, boxCollection._activeBatch) &&
         name == BoxCollection._timelineFragmentsBoxName) {
       for (final key in keys) {
         boxCollection._pendingTimelinePuts.remove(key);
@@ -442,8 +559,8 @@ class Box<V> {
     }
 
     for (final key in keys) {
-      _cache[key] = null;
-      if (identical(txn, boxCollection._activeBatch)) {
+      _remember(key, null);
+      if (txn != null && identical(txn, boxCollection._activeBatch)) {
         boxCollection._pendingBoxValues.putIfAbsent(name, () => {})[key] = null;
       }
       _cachedKeys?.removeAll(keys);
@@ -453,7 +570,8 @@ class Box<V> {
 
   Future<void> clear([Batch? txn]) async {
     txn ??= boxCollection._activeBatch;
-    if (identical(txn, boxCollection._activeBatch) &&
+    if (txn != null &&
+        identical(txn, boxCollection._activeBatch) &&
         name == BoxCollection._timelineFragmentsBoxName) {
       boxCollection._pendingTimelinePuts.clear();
       boxCollection._pendingTimelineValues.clear();
@@ -467,8 +585,8 @@ class Box<V> {
       txn.delete(name);
     }
 
-    _cache.clear();
-    if (identical(txn, boxCollection._activeBatch)) {
+    _invalidateCache();
+    if (txn != null && identical(txn, boxCollection._activeBatch)) {
       boxCollection._pendingClearedBoxes.add(name);
       boxCollection._pendingBoxValues.remove(name);
     }

@@ -185,6 +185,8 @@ abstract interface class GroupChatInfoGateway {
   Future<void> setAnnouncement(String announcement);
   Future<void> setRemark(String remark);
   Future<void> setPreference(GroupChatPreference preference, bool value);
+  Future<void> setNotificationMode(
+      {required bool muted, required bool attention});
   Future<void> setFollowedMemberIds(List<String> matrixUserIds);
   Future<void> invite(String matrixUserId);
 
@@ -349,6 +351,10 @@ final class GroupChatInfoController extends ChangeNotifier {
   StreamSubscription<GroupChatInfoSnapshot>? _announcementSubscription;
   bool _disposed = false;
   Future<void>? _loading;
+  Future<void>? _notificationModeWrite;
+  int _notificationModeVersion = 0;
+  bool _desiredMuted = false;
+  bool _desiredAttention = false;
 
   GroupChatInfoSnapshot _withTransferOwner(GroupChatInfoSnapshot snapshot) =>
       ownershipTransferPending
@@ -489,6 +495,70 @@ final class GroupChatInfoController extends ChangeNotifier {
             snapshot.copyWith(notifyAnnouncement: value),
         },
       );
+
+  /// Serialize whole modes; taps during a network write replace the desired
+  /// mode, so the final server write always matches the last selection.
+  Future<void> setNotificationMode(
+      {required bool muted, required bool attention}) {
+    final snapshot = state.snapshot;
+    if (snapshot == null) return Future.value();
+    _desiredMuted = muted;
+    _desiredAttention = attention && !muted;
+    _notificationModeVersion++;
+    _set(GroupChatInfoState(
+      status: GroupChatInfoStatus.saving,
+      snapshot: snapshot.copyWith(
+        muted: _desiredMuted,
+        attention: _desiredAttention,
+        notifyMentionMe: muted ? false : snapshot.notifyMentionMe,
+        notifyMentionAll: muted ? false : snapshot.notifyMentionAll,
+        notifyAnnouncement: muted ? false : snapshot.notifyAnnouncement,
+        followedMemberIds: muted ? const [] : snapshot.followedMemberIds,
+      ),
+    ));
+    return _notificationModeWrite ??= _flushNotificationMode();
+  }
+
+  Future<void> _flushNotificationMode() async {
+    try {
+      while (true) {
+        final version = _notificationModeVersion;
+        final muted = _desiredMuted;
+        final attention = _desiredAttention;
+        try {
+          await gateway.setNotificationMode(muted: muted, attention: attention);
+        } catch (_) {
+          if (version != _notificationModeVersion) continue;
+          rethrow;
+        }
+        if (version != _notificationModeVersion) continue;
+        final current = state.snapshot;
+        var refreshed = current;
+        if (gateway is GroupChatInfoReloadGateway) {
+          try {
+            refreshed = await gateway.load();
+          } catch (_) {
+            // The preference write succeeded. Retain its optimistic snapshot
+            // when an optional participant refresh fails offline.
+          }
+        }
+        if (version != _notificationModeVersion) continue;
+        _set(GroupChatInfoState(
+          status: GroupChatInfoStatus.ready,
+          snapshot: refreshed,
+        ));
+        break;
+      }
+    } catch (_) {
+      _set(GroupChatInfoState(
+        status: GroupChatInfoStatus.failed,
+        snapshot: state.snapshot,
+        message: '保存失败，请检查权限和网络',
+      ));
+    } finally {
+      _notificationModeWrite = null;
+    }
+  }
 
   Future<void> setFollowedMemberIds(List<String> matrixUserIds) => _save(
         () => gateway.setFollowedMemberIds(matrixUserIds),

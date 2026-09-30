@@ -60,6 +60,27 @@ void main() {
     await client.dispose();
   });
 
+  test('4500 decrypted arrivals retain a bounded recent preview window',
+      () async {
+    for (var i = 0; i < 4500; i++) {
+      final event = {...decrypted(), 'event_id': '\$burst-$i'};
+      room.snapshotEvent = Event.fromJson({
+        ...event,
+        'type': EventTypes.Encrypted,
+        'content': {
+          'algorithm': 'm.megolm.v1.aes-sha2',
+          'ciphertext': 'synthetic'
+        },
+      }, room);
+      await emit(event, EventUpdateType.decryptedTimelineQueue);
+    }
+    expect(matrix.debugDecryptedPreviewCount, lessThanOrEqualTo(32));
+    final preview =
+        (await matrix.conversations.snapshot()).rooms.single.lastEvent!;
+    expect(preview.eventId, '\$burst-4499');
+    expect(preview.body, 'synthetic cached text');
+  });
+
   test('authoritative recall overrides an older decrypted preview cache',
       () async {
     room.snapshotEvent!.setRedactionEvent(redaction());
@@ -69,6 +90,19 @@ void main() {
     expect(event.content, isEmpty);
     expect(event.decryptionState, MessageDecryptionState.decrypted,
         reason: 'a known recall needs no key and must render consistently');
+  });
+
+  test('late decryption of old history cannot evict the current room head',
+      () async {
+    for (var i = 0; i < 100; i++) {
+      await emit(
+          {...decrypted(), 'event_id': '\$old-$i', 'origin_server_ts': i - 100},
+          EventUpdateType.decryptedTimelineQueue);
+    }
+    final preview =
+        (await matrix.conversations.snapshot()).rooms.single.lastEvent!;
+    expect(preview.body, 'synthetic cached text');
+    expect(matrix.debugDecryptedPreviewCount, lessThanOrEqualTo(32));
   });
 
   for (final contentTarget in [false, true]) {

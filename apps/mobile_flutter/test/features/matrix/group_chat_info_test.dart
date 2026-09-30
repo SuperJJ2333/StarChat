@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_error.dart';
@@ -12,6 +13,9 @@ import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 import 'profile_repository_test.dart' show MemoryProfileStore;
+
+// Muted encrypted-room exceptions are evaluated after client-side decryption.
+const _muteScopeCopy = '仅在应用运行并收到消息时提醒；后台或锁屏不保证提醒。';
 
 final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   @override
@@ -72,6 +76,19 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   }
 
   @override
+  Future<void> setNotificationMode(
+      {required bool muted, required bool attention}) async {
+    snapshot = snapshot.copyWith(
+      muted: muted,
+      attention: attention,
+      notifyMentionMe: muted ? false : snapshot.notifyMentionMe,
+      notifyMentionAll: muted ? false : snapshot.notifyMentionAll,
+      notifyAnnouncement: muted ? false : snapshot.notifyAnnouncement,
+      followedMemberIds: muted ? const [] : snapshot.followedMemberIds,
+    );
+  }
+
+  @override
   Future<void> setFollowedMemberIds(List<String> matrixUserIds) async {
     snapshot =
         snapshot.copyWith(followedMemberIds: matrixUserIds.take(4).toList());
@@ -100,7 +117,65 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   Future<void> setGroupSetting(String key, Object value) async {}
 }
 
+final class _ReloadingModeGateway extends FakeGroupChatInfoGateway
+    implements GroupChatInfoReloadGateway {
+  final reloadEntered = Completer<void>();
+  final failedReload = Completer<GroupChatInfoSnapshot>();
+  final modes = <(bool, bool)>[];
+  @override
+  Future<GroupChatInfoSnapshot> load() async {
+    if (modes.length == 1) {
+      if (!reloadEntered.isCompleted) reloadEntered.complete();
+      return failedReload.future;
+    }
+    return snapshot;
+  }
+
+  @override
+  Future<void> setNotificationMode(
+      {required bool muted, required bool attention}) async {
+    modes.add((muted, attention));
+    await super.setNotificationMode(muted: muted, attention: attention);
+  }
+}
+
 void main() {
+  testWidgets('mute exceptions explain foreground and lock-screen scope',
+      (tester) async {
+    final controller = GroupChatInfoController(FakeGroupChatInfoGateway());
+    await controller.load();
+    await tester.pumpWidget(CupertinoApp(
+      home: MuteExceptionSettingsPage(controller: controller),
+    ));
+    expect(find.text(_muteScopeCopy), findsOneWidget);
+  });
+  test('a failed old reload still writes the newest notification mode',
+      () async {
+    final gateway = _ReloadingModeGateway();
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+    final mute = controller.setNotificationMode(muted: true, attention: false);
+    await gateway.reloadEntered.future;
+    final attention =
+        controller.setNotificationMode(muted: false, attention: true);
+    gateway.failedReload.completeError(StateError('synthetic offline reload'));
+    await Future.wait([mute, attention]);
+    expect(gateway.modes, [(true, false), (false, true)]);
+    expect(gateway.snapshot.attention, isTrue);
+    expect(controller.state.status, GroupChatInfoStatus.ready);
+  });
+  test('notification mode finishes at attention after a rapid mute switch',
+      () async {
+    final gateway = FakeGroupChatInfoGateway();
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+    final mute = controller.setNotificationMode(muted: true, attention: false);
+    final attention =
+        controller.setNotificationMode(muted: false, attention: true);
+    await Future.wait([mute, attention]);
+    expect(controller.state.snapshot!.attention, isTrue);
+    expect(controller.state.snapshot!.muted, isFalse);
+  });
   testWidgets('group name editor is one line with a 12 character limit',
       (tester) async {
     final controller = GroupChatInfoController(FakeGroupChatInfoGateway());

@@ -130,7 +130,7 @@ void main() {
     }
   });
 
-  testWidgets('default budget caps three animated images at two',
+  testWidgets('default budget plays all three visible animated images',
       (tester) async {
     final provider = MemoryImage(_png());
     try {
@@ -152,7 +152,7 @@ void main() {
               .evaluate()
               .where((e) => TickerMode.valuesOf(e).enabled)
               .length,
-          2);
+          3);
     } finally {
       await tester.pumpWidget(const SizedBox());
     }

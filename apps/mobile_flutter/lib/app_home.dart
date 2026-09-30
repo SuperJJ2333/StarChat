@@ -57,6 +57,8 @@ import 'features/contacts/user_display_name_resolver.dart';
 import 'features/discovery/discovery_page.dart';
 import 'features/moments/personal_moments_page.dart';
 import 'features/moments/moments_unread_controller.dart';
+import 'features/moments/moments_media_prefetch.dart';
+import 'features/matrix/incoming_media_prefetch.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
@@ -509,6 +511,63 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   ProfileRepository? _chatIdentityCache;
   MomentsUnreadController? _momentsUnread;
+  IncomingMediaPrefetchService? _incomingMediaPrefetch;
+  IncomingMediaPrefetchService? _momentsMediaPrefetch;
+  MomentsMediaPrefetchSource? _momentsMediaSource;
+
+  Future<void> _startMediaPrefetch() async {
+    final generation = _startup.generation;
+    if (_disposed || !_currentStartup(generation)) return;
+    final capability = _matrixHomeCapability;
+    if (capability is MatrixIncomingMediaCapability) {
+      final mediaCapability = capability as MatrixIncomingMediaCapability;
+      final service = IncomingMediaPrefetchService(
+          mediaCapability.createIncomingMediaSource());
+      _incomingMediaPrefetch = service;
+      try {
+        await service.start();
+      } catch (_) {/* Resume retries available source work. */}
+      if (_disposed || !_currentStartup(generation)) {
+        if (identical(_incomingMediaPrefetch, service)) {
+          _incomingMediaPrefetch = null;
+        }
+        await service.dispose();
+        return;
+      }
+    }
+    if (_disposed || !_currentStartup(generation)) return;
+    final account = widget.matrix.userId;
+    if (account == null || account.isEmpty) return;
+    final source = MomentsMediaPrefetchSource(
+        accountId: account,
+        trustedOrigin: widget.api.baseUri.origin,
+        load: () => widget.api.momentsFeed(mode: 'latest'));
+    final service = IncomingMediaPrefetchService(source, maxPending: 64);
+    _momentsMediaSource = source;
+    _momentsMediaPrefetch = service;
+    try {
+      await service.start();
+    } catch (_) {/* Feed/network failures retry on refresh. */}
+    if (_disposed || !_currentStartup(generation)) {
+      if (identical(_momentsMediaPrefetch, service)) {
+        _momentsMediaPrefetch = null;
+        _momentsMediaSource = null;
+      }
+      await service.dispose();
+    }
+  }
+
+  Future<void> _closeMediaPrefetch() async {
+    final incoming = _incomingMediaPrefetch;
+    final moments = _momentsMediaPrefetch;
+    _incomingMediaPrefetch = null;
+    _momentsMediaPrefetch = null;
+    _momentsMediaSource = null;
+    await Future.wait([
+      if (incoming != null) incoming.dispose(),
+      if (moments != null) moments.dispose()
+    ]);
+  }
 
   Future<void> _initializeMomentsUnread() =>
       _runStartup(_initializeMomentsUnreadFor);
@@ -656,6 +715,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   void _startHomeResources() {
     final generation = _startup.generation;
+    unawaited(_startMediaPrefetch());
     unawaited(_initializeMomentsUnread().catchError((_) {}));
     // 钱包进入态本地快照：启动时装一次，之后页面的 read 都是同步命中。
     // 这是「断网也能看到余额与已绑定钱包、并且进得去充值/提现页」的前提；
@@ -1116,6 +1176,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       unawaited(widget.api.supportIdentities.refreshKnown());
       unawaited(_momentsUnread?.refresh());
+      _incomingMediaPrefetch?.retry();
+      _momentsMediaPrefetch?.retry();
+      unawaited(_momentsMediaSource?.refresh());
       // 规格§四（后台恢复）：收到电话后回前台（点图标/切回）→ 立即
       // 进入通话页——不再"只响铃无页面"。
       final phase = calls.state.phase;
@@ -2705,6 +2768,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(_closeMediaPrefetch());
     ChatDiagnostics.instance.setFrameTab(ChatDiagnosticTab.unknown);
     _profileEntryRevision.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -2729,6 +2793,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _closeHomeResources() async {
     if (!_matrixReady) return;
     _matrixReady = false;
+    // Cancel before awaiting other resource shutdown: late native/Dart work
+    // cannot repopulate this account while the session is closing.
+    await _closeMediaPrefetch();
     await _startup.close();
     Future<void> stop(FutureOr<void> Function() operation) async {
       try {

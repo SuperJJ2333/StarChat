@@ -357,6 +357,8 @@ final class FlutterLocalSystemNotificationPresenter
       _ => InterruptionLevel.active,
     };
     return DarwinNotificationDetails(
+      presentAlert: channel != SystemNotificationChannel.silent,
+      presentSound: channel != SystemNotificationChannel.silent,
       presentBanner: channel != SystemNotificationChannel.silent,
       presentList: true,
       interruptionLevel: interruption,

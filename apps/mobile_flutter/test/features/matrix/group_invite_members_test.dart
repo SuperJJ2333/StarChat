@@ -118,8 +118,7 @@ void main() {
     expect(outcome.hasFailures, isTrue);
   });
 
-  test('BUG-24 补齐：封禁成员失败桶被识别（GROUP_INVITEE_UNAVAILABLE）',
-      () {
+  test('BUG-24 补齐：封禁成员失败桶被识别（GROUP_INVITEE_UNAVAILABLE）', () {
     final outcome = GroupAutoJoinOutcome.fromJson({
       'failed': [
         {'user_id': 'u7', 'code': 'GROUP_INVITEE_UNAVAILABLE'},
@@ -129,8 +128,7 @@ void main() {
         reason: '被限制账号必须能被单独识别，给出如实文案');
   });
 
-  test('BUG-24 补齐：拉黑/封禁成员邀请失败时给出如实文案并撤回邀请',
-      () async {
+  test('BUG-24 补齐：拉黑/封禁成员邀请失败时给出如实文案并撤回邀请', () async {
     final gateway = _RecordingGateway();
     final controller = GroupChatInfoController(
       gateway,
@@ -206,6 +204,10 @@ final class _RecordingGateway implements GroupChatInfoGateway {
   @override
   Future<void> setPreference(
       GroupChatPreference preference, bool value) async {}
+
+  @override
+  Future<void> setNotificationMode(
+      {required bool muted, required bool attention}) async {}
 
   @override
   Future<void> setFollowedMemberIds(List<String> matrixUserIds) async {}

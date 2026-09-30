@@ -137,6 +137,7 @@ final class VideoPosterSessionCache {
   int get memoryBytes => _memoryBytes;
   int get memoryEntries => _memory.length;
   int get inFlightCount => _inFlight.length;
+  int get invalidationRevisionCount => _keyRevisions.length;
   int diskHits = 0;
   int diskWrites = 0;
 
@@ -359,6 +360,8 @@ final class VideoPosterSessionCache {
     _sessionGeneration++;
     _inFlight.clear();
     _evictedKeys.clear();
+    // The generation fences every older load/write before revision reuse.
+    _keyRevisions.clear();
     _memory.clear();
     _memoryBytes = 0;
   }

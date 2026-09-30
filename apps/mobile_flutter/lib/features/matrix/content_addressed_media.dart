@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 import 'package:flutter/foundation.dart' show compute;
 import '../../core/app_config.dart';
+import '../../core/native_media_download.dart';
+import 'media_cache.dart' show MediaCacheKey, matrixMediaSourceIdentity;
 
 /// Verify disk content without allocating an entire video as one byte array.
 Future<void> verifyMediaContentStream(
@@ -17,16 +19,37 @@ Future<void> verifyMediaContentStream(
   }
 }
 
+/// Ciphertext flights use the complete encrypted descriptor. Equal plaintext
+/// hashes may refer to independently encrypted uploads with different keys/IVs.
+String matrixMediaTransferIdentity(Event event, {bool thumbnail = false}) =>
+    MediaCacheKey(
+            accountId: event.room.client.userID ?? '',
+            roomId: event.room.id,
+            eventId: thumbnail ? 'thumb:${event.eventId}' : event.eventId,
+            sourceIdentity:
+                matrixMediaSourceIdentity(event.content, thumbnail: thumbnail))
+        .identity;
+
 /// Cold loader only: a declared content hash cannot opt out of attachment E2EE.
 /// Hash-authoritative cache hits bypass this loader entirely.
 Future<Uint8List> downloadMediaContent(Event event,
-    {bool thumbnail = false}) async {
+    {bool thumbnail = false,
+    Future<Uint8List> Function(Uri)? downloadCallback}) async {
   final hashes = TrustedMediaHashes.fromEvent(event);
   if (hashes != null &&
       !(thumbnail ? event.isThumbnailEncrypted : event.isAttachmentEncrypted)) {
     throw const FormatException('Missing encrypted media descriptor');
   }
-  return (await event.downloadAndDecryptAttachment(getThumbnail: thumbnail))
+  // If AppHome already registered a native ciphertext transfer, a visible
+  // bubble joins it instead of issuing a duplicate Dart HTTP request.
+  if (downloadCallback == null) {
+    final pending = NativeMediaDownloadSession.joinPending(
+        event.room.client.userID ?? '',
+        matrixMediaTransferIdentity(event, thumbnail: thumbnail));
+    if (pending != null) downloadCallback = (_) => pending;
+  }
+  return (await event.downloadAndDecryptAttachment(
+          getThumbnail: thumbnail, downloadCallback: downloadCallback))
       .bytes;
 }
 

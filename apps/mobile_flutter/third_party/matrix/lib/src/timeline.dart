@@ -77,6 +77,8 @@ class Timeline {
 
   // We confirmed, that there are no more events to load from the database.
   bool _fetchedAllDatabaseEvents = false;
+  bool _trimmedLiveHistory = false;
+  int _sessionDecryptionInFlight = 0;
 
   bool get canRequestHistory {
     if (isFragmentedTimeline) {
@@ -133,7 +135,11 @@ class Timeline {
           ? null
           : await room.client.database?.getEventList(
               room,
-              start: events.length,
+              start: _trimmedLiveHistory
+                  ? events
+                      .where((e) => !e.status.isSending && !e.status.isError)
+                      .length
+                  : events.length,
               limit: historyCount,
             );
 
@@ -373,7 +379,44 @@ class Timeline {
     cancelSendEventSub?.cancel();
   }
 
+  /// Release only a live presentation buffer; persisted events are unchanged.
+  /// Callers must keep anchored history windows intact. Paging can reload the
+  /// discarded suffix from the same local fragment, starting at events.length.
+  void trimLiveHistory({required int maximumEvents}) {
+    if (maximumEvents <= 0) throw ArgumentError.value(maximumEvents);
+    if (room.client.database == null ||
+        isFragmentedTimeline ||
+        isRequestingHistory ||
+        isRequestingFuture ||
+        _sessionDecryptionInFlight > 0 ||
+        events.length <= maximumEvents) return;
+    final removed = <Event>[];
+    final kept = <Event>[];
+    var settledCount = 0;
+    for (var i = 0; i < events.length; i++) {
+      final event = events[i];
+      // Unsettled local sends remain owned by the sender, including retries.
+      final pending = event.status.isSending || event.status.isError;
+      if (pending || settledCount++ < maximumEvents) {
+        kept.add(event);
+      } else {
+        removed.add(event);
+      }
+    }
+    if (removed.isEmpty) return;
+    events
+      ..clear()
+      ..addAll(kept);
+    for (final event in removed) {
+      removeAggregatedEvent(event);
+      _eventCache.remove(event.eventId);
+    }
+    _fetchedAllDatabaseEvents = false;
+    _trimmedLiveHistory = true;
+  }
+
   void _sessionKeyReceived(String sessionId) async {
+    _sessionDecryptionInFlight++;
     var decryptAtLeastOneEvent = false;
     Future<void> decryptFn() async {
       final encryption = room.client.encryption;
@@ -399,10 +442,14 @@ class Timeline {
       }
     }
 
-    if (room.client.database != null) {
-      await room.client.database?.transaction(decryptFn);
-    } else {
-      await decryptFn();
+    try {
+      if (room.client.database != null) {
+        await room.client.database?.transaction(decryptFn);
+      } else {
+        await decryptFn();
+      }
+    } finally {
+      _sessionDecryptionInFlight--;
     }
     if (decryptAtLeastOneEvent) onUpdate?.call();
   }

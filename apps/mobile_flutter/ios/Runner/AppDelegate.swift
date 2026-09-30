@@ -17,6 +17,7 @@ enum IOSMessageNavigationGate {
 @objc class AppDelegate: FlutterAppDelegate {
   let iosCalls = IOSCallsBridge()
   private let secureSession = IOSSecureSessionBridge()
+  private let backgroundMedia = IOSBackgroundMediaDownload()
   private var sharedEngine: FlutterEngine?
   private var apnsChannel: FlutterMethodChannel?
   private var apnsToken: String?
@@ -33,6 +34,15 @@ enum IOSMessageNavigationGate {
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  override func application(_ application: UIApplication,
+                            handleEventsForBackgroundURLSession identifier: String,
+                            completionHandler: @escaping () -> Void) {
+    if !backgroundMedia.handleBackgroundEvents(identifier: identifier, completion: completionHandler) {
+      super.application(application, handleEventsForBackgroundURLSession: identifier,
+                        completionHandler: completionHandler)
+    }
+  }
+
   func startSharedEngine() -> FlutterEngine {
     if let engine = sharedEngine { return engine }
     let engine = FlutterEngine(name: "chatflow.shared", project: nil, allowHeadlessExecution: true)
@@ -44,6 +54,7 @@ enum IOSMessageNavigationGate {
   }
 
   private func configureChannels(messenger: FlutterBinaryMessenger) {
+    backgroundMedia.attach(messenger: messenger)
     iosCalls.attach(messenger: messenger)
     secureSession.attach(messenger: messenger)
     configureScreenCaptureChannels(messenger: messenger)

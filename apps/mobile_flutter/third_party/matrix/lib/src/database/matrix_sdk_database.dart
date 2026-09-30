@@ -1915,6 +1915,12 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
         return eventIds;
       });
 
+  /// Count the existing durable fragment without materializing event payloads
+  /// or retaining another ID list in an application presentation cache.
+  Future<int> getLocalTimelineEventCount(Room room) async =>
+      (await _timelineFragmentsBox.get(TupleKey(room.id, '').toString()) ?? [])
+          .length;
+
   Future<T> _searchRead<T>(Future<T> Function() operation) async {
     late T result;
     await _collection.zoneTransaction(() async {
