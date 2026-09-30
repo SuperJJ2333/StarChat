@@ -103,16 +103,21 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const fxBody = element("div", "recharge-fx");
   const refreshFx = async () => {
     fxBody.setAttribute("aria-busy","true");
-    let rate = null, valuation = null;
+    let rate = null, valuation = null, valuationError = null;
     rate = await loadReference();
-    try { valuation = await api.getReserveValuation(); } catch { valuation = null; }
+    try { valuation = await api.getReserveValuation(); } catch (error) { valuationError = error; }
     fxBody.replaceChildren();
     const quote=element('div','recharge-quote');
     if(rate){quote.append(fieldRow('1 USDT ≈ 点钻',rate.rate),element('p','admin-audit-note',`${rate.stale?'已过期 · 仅供参考':'参考汇率'} · ${formatBeijingTime(rate.fetched_at)}`));}
     else quote.append(element('p','admin-load-error','汇率暂不可用，请稍后刷新'));
     fxBody.append(quote);
-    if(valuation){fxBody.append(fieldRow('点钻账面总量',valuation.caibi_face),fieldRow('参考 USDT 估值',valuation.caibi_reference_usdt),fieldRow('USDT 应付总额',valuation.usdt_obligation));}
-    else fxBody.append(element('p','admin-load-error','储备信息暂不可用，请重试；未显示不代表余额为零。'));
+    if(valuation){fxBody.append(fieldRow('点钻账面总量',valuation.caibi_face),fieldRow('参考 USDT 估值',valuation.caibi_reference_usdt??'暂无参考估值'),fieldRow('USDT 应付总额',valuation.usdt_obligation));}
+    else {
+      const message=valuationError?.status===401?'登录已失效，请重新登录后查看结算参考。'
+        :valuationError?.status===403?'需要财务客服或管理员权限；请核对账号角色及首次开通状态。'
+        :'储备信息读取失败：网络或服务异常，请重试；未显示不代表余额为零。';
+      fxBody.append(element('p','admin-load-error',message));
+    }
     fxBody.append(element('p','admin-audit-note recharge-fx-disclaimer',rate?.disclaimer||'参考估算，最终以客服结算为准'));
     fxBody.setAttribute("aria-busy","false");
   };

@@ -27,6 +27,24 @@ const FX={rate:'7.120000',fetched_at:'2026-09-21T12:00:00+00:00',stale:false,dis
 const VALUATION={caibi_face:'100.00',caibi_reference_usdt:'14.044944',usdt_obligation:'12.000000',
   valuation_rate:'7.120000',approved_unpaid_usdt:'0.000000'};
 
+for(const [status,message] of [[401,'登录已失效'],[403,'需要财务客服或管理员权限'],[503,'网络或服务异常']]){
+  test(`reference loading reports actual failure category ${status}`,async()=>{
+    install();const api=makeApi([]);
+    api.getReserveValuation=async()=>{throw {status};};
+    const panel=rechargePanel(api);await settle();await settle();
+    assert.ok(panel.find('p').some(p=>p.textContent.includes(message)));
+    assert.equal(panel.find('span').some(p=>p.textContent==='100.00'),false);
+  });
+}
+test('missing reference estimate remains unavailable while other aggregates render',async()=>{
+  install();const api=makeApi([]);
+  api.getReserveValuation=async()=>({...VALUATION,caibi_reference_usdt:null});
+  const panel=rechargePanel(api);await settle();await settle();
+  assert.ok(panel.find('span').some(p=>p.textContent==='暂无参考估值'));
+  assert.ok(panel.find('span').some(p=>p.textContent==='100.00'));
+  assert.ok(panel.find('span').some(p=>p.textContent==='12.000000'));
+});
+
 async function claimedPanel(api){
   const panel=rechargePanel(api,{actor:{id:'staff'}});await settle();await settle();
   panel.find('button').find(b=>b.textContent==='处理请求')?.handlers.click();await settle();await settle();return panel;
