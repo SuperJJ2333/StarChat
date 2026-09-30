@@ -100,3 +100,33 @@ test('disposed pending status cannot create access UI, and a network recheck rem
   active=module.walletAccessPanel({getWalletAccess:async()=>{if(network)throw {code:'NETWORK_ERROR'};return panelStatus();}},{actor:{id:'a'},renderContent:()=>{const content=new PanelElement('article');content.textContent='SENSITIVE-BALANCE';return content;}});dom.app.append(active);await settle();await settle();network=true;await active.refresh();assert.equal(active.find('article').some(node=>node.textContent==='SENSITIVE-BALANCE'),false);assert.ok(dom.body.find('dialog')[0]?.open);
  } finally { root?.dispose();active?.dispose();dom.restore(); }
 });
+
+test('unverified wallet can read administrator payout list, detail and reference FX without executing commands',async()=>{
+ const dom=installPanelDocument();let root,guarded,reads=0,writes=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getSupportPayouts:async()=>{reads++;return {items:[]};},getSupportPayout:async()=>{reads++;return {id:'p1'};},getFxRate:async()=>{reads++;return {rate:'7'};},supportPayoutCommand:async()=>{writes++;}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();assert.ok(guarded);
+  await Promise.all([guarded.getSupportPayouts(),guarded.getSupportPayout('p1'),guarded.getFxRate()]);
+  assert.equal(reads,3);assert.equal(writes,0);assert.equal(dom.body.find('dialog').length,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('explicit payout command requests wallet verification and never executes or replays until resubmitted',async()=>{
+ const dom=installPanelDocument();let root,guarded,writes=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),verifyWalletAccess:async()=>panelStatus(),supportPayoutCommand:async()=>{writes++;return {status:'CLAIMED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await assert.rejects(guarded.supportPayoutCommand('p1','claim'),{code:'WALLET_ACCESS_REQUIRED'});
+  assert.equal(writes,0);const dialog=dom.body.find('dialog')[0];assert.ok(dialog?.open);
+  const input=dialog.find('input')[0];input.value='test-proof';await dialog.find('form')[0].handlers.submit({preventDefault(){}});
+  assert.equal(writes,0);assert.equal(input.value,'');await guarded.supportPayoutCommand('p1','claim');assert.equal(writes,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+test('real payout panel loads through wallet access wrapper before operation verification',async()=>{
+ const {supportPayoutPanel}=await import('../src/admin-support-payout-panel.js');const dom=installPanelDocument();let root,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getSupportPayouts:async()=>{reads++;return {items:[{id:'payout-read-integration',status:'REQUESTED',processing_stage:'REQUESTED',amount:'70.00',final_receive:'10.000000',can_claim:true}]};},getFxRate:async()=>({rate:'7'})},{actor:{id:'a'},renderContent:api=>supportPayoutPanel(api,{actor:{id:'a'},canOperate:true})});
+  await settle();await settle();await settle();assert.equal(reads,1);assert.ok(root.find('button').some(x=>x.textContent==='处理请求'));
+  assert.equal(root.find('p').some(x=>x.textContent.startsWith('提现列表加载失败')),false);
+ }finally{root?.dispose();dom.restore();}
+});

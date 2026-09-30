@@ -1,6 +1,7 @@
 // The server owns authorization. This clock only hides stale private UI earlier.
 const failure=code=>Object.assign(Error('钱包验证状态已变化，请重新验证并查询当前状态。'),{code,status:403});
 const WALLET_READ_METHODS=new Set([
+  'getSupportPayouts','getSupportPayout','getFxRate',
   'getDepositRepairCandidates','getManualDepositCaseContext','getManualDepositCase','getManualDepositCaseOperation',
   'getWalletRepair','getOwnerTransfer','getManualWalletDiagnostics','getWalletIncidents','getWalletIncident',
   'getWalletMonitorStatus','getManualWalletControl','getWalletHandover','getManualPayouts','getManualPayout',
@@ -139,6 +140,10 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
       const result=await invoke();gate.lock();channel?.postMessage('changed');await gate.check();return result;
     }
     if(pollPending)throw failure('WALLET_ACCESS_REQUIRED');
+    if(!gate.allowed()){
+      await accessController.requestWriteGrant();
+      throw failure('WALLET_ACCESS_REQUIRED');
+    }
     return gate.guard(invoke);
   };}});
   const recheck=()=>{if(disposed||document.hidden)return Promise.resolve(false);if(pendingRecheck)return pendingRecheck;if(pollPending){pollPending=false;++pollToken;}gate.lock();pendingRecheck=gate.check().finally(()=>{pendingRecheck=null;});return pendingRecheck;};
