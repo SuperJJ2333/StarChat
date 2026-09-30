@@ -37,6 +37,39 @@ def issue(env):
     return env[3].request(username='staff', password='correct password 123')
 
 
+def test_worker_delivers_current_api_v2_email_identity_snapshot(env):
+    import json
+    from hashlib import sha256
+    from types import SimpleNamespace
+    from app.modules.identity.staff_activation import StaffActivationChallenge, utc
+    from app.core.outbox import OutboxEvent
+    from tasks.identity import IdentityEmailVerificationTask
+    factory, clock, _, service = env
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        user.email_normalized = user.email = 'fixture@example.test'
+        user.email_verified_at = clock[0]
+    issued = service.request(username='staff', password='correct password 123', channel='email')
+    with factory.begin() as session:
+        user = session.get(User, 'staff')
+        roles = session.scalars(select(UserRole).where(UserRole.user_id == user.id).order_by(UserRole.id)).all()
+        snapshot = ['staff-identity-v2', user.id, 'email',
+            [user.email_normalized, utc(user.email_verified_at).isoformat()],
+            [user.phone_normalized, utc(user.phone_verified_at).isoformat()],
+            [[role.id, role.role_code.value, utc(role.assigned_at).isoformat()] for role in roles]]
+        session.get(StaffActivationChallenge, issued['activation_id']).identity_digest = sha256(
+            json.dumps(snapshot, separators=(',', ':')).encode()).hexdigest()
+        event = session.scalar(select(OutboxEvent).where(OutboxEvent.event_type == 'identity.email.otp.requested'))
+        message = SimpleNamespace(event_type=event.event_type, aggregate_id=event.aggregate_id, payload=event.payload)
+    sent = []
+    task = IdentityEmailVerificationTask(factory,
+        token_codec=SimpleNamespace(verification_code=lambda _: '846291'), public_base_url='https://fixture.test',
+        email_sender=SimpleNamespace(send_email_otp=lambda **values: sent.append(values)), now_factory=lambda: clock[0])
+    task(message)
+    assert len(sent) == 1
+    assert sent[0]['purpose'] == 'staff_activation_email'
+
+
 def test_activation_feature_exists():
     import app.modules.identity as identity
     import importlib.util

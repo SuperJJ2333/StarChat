@@ -44,7 +44,7 @@ def denied(code='STAFF_ACTIVATION_INVALID', status=403):
     raise AppError(code=code, message='客服身份或验证状态无效，请核对账号后重试', status_code=status)
 
 
-def staff_identity(session, user, channel=None):
+def staff_identity(session, user, channel=None, *, legacy=False):
     if user is None or user.status != AccountStatus.ACTIVE:
         denied()
     roles = session.scalars(select(UserRole).where(UserRole.user_id == user.id,
@@ -54,7 +54,7 @@ def staff_identity(session, user, channel=None):
         denied()
     if channel not in (None, 'phone', 'email'):
         denied('STAFF_CONTACT_UNVERIFIED')
-    if channel == 'phone' or (channel is None and user.phone_normalized):
+    if channel == 'phone' or (channel is None and user.phone_normalized and user.phone_verified_at):
         if not user.phone_normalized or not user.phone_verified_at:
             denied('STAFF_CONTACT_UNVERIFIED')
         channel, target, verified = 'phone', user.phone_normalized, user.phone_verified_at
@@ -62,9 +62,36 @@ def staff_identity(session, user, channel=None):
         channel, target, verified = 'email', user.email_normalized, user.email_verified_at
     else:
         denied('STAFF_CONTACT_UNVERIFIED')
-    snapshot = [user.id, channel, target, utc(verified).isoformat(),
-        [[role.id, role.role_code.value, utc(role.assigned_at).isoformat()] for role in roles]]
+    role_snapshot = [[role.id, role.role_code.value, utc(role.assigned_at).isoformat()] for role in roles]
+    if legacy:
+        snapshot = [user.id, channel, target, utc(verified).isoformat(), role_snapshot]
+    else:
+        # Include both contact states even though the OTP is sent to one channel.
+        # The version tag prevents a prior one-contact digest from matching.
+        snapshot = ['staff-identity-v2', user.id, channel,
+            [user.email_normalized, utc(user.email_verified_at).isoformat()
+                if user.email_verified_at else None],
+            [user.phone_normalized, utc(user.phone_verified_at).isoformat()
+                if user.phone_verified_at else None], role_snapshot]
     return channel, target, sha256(json.dumps(snapshot, separators=(',', ':')).encode()).hexdigest()
+
+
+def _activation_matches(session, user, active, channel, digest, *, migrate):
+    if active is None:
+        return False
+    if active.identity_digest == digest:
+        return True
+    # Supported contact writes advance User.updated_at. The old digest still
+    # proves the selected contact and roles; this epoch proves no later contact
+    # write occurred, including when a second verified channel was present.
+    if utc(user.updated_at) > utc(active.activated_at):
+        return False
+    _, _, old_digest = staff_identity(session, user, channel, legacy=True)
+    if active.identity_digest != old_digest:
+        return False
+    if migrate:
+        active.identity_digest = digest
+    return True
 
 
 def require_staff_admin_access(session, user, *, staff_only=False):
@@ -81,14 +108,13 @@ def require_staff_admin_access(session, user, *, staff_only=False):
     if not staff_only and is_superadmin:
         return
     active = session.get(StaffActivation, user.id, populate_existing=True)
-    # The digest already includes its channel. Match verified contacts explicitly
-    # to preserve old phone-first records without adding a nullable schema field.
+    # Match the activation channel explicitly; both contacts are in each digest.
     for channel in ('phone', 'email'):
         try:
             _, _, digest = staff_identity(session, user, channel)
         except AppError:
             continue
-        if active is not None and active.identity_digest == digest:
+        if _activation_matches(session, user, active, channel, digest, migrate=True):
             return
     raise AppError(code='STAFF_ACTIVATION_REQUIRED', message='请先完成客服后台首次开通', status_code=403)
 
@@ -150,7 +176,7 @@ class StaffActivationService:
                 denied('CREDENTIALS_INVALID', 401)
             channel, target, digest = staff_identity(session, user, channel)
             existing = session.get(StaffActivation, user.id)
-            if existing is not None and existing.identity_digest == digest:
+            if _activation_matches(session, user, existing, channel, digest, migrate=False):
                 denied('STAFF_ALREADY_ACTIVATED', 409)
             session.add(StaffActivationChallenge(id=activation_id, user_id=user.id,
                 identity_digest=digest, channel=channel, expires_at=now + timedelta(seconds=300)))
