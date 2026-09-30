@@ -37,3 +37,9 @@
 `5988f219`：TOTP 验证返回不可变 credential identity/digest/step/time，当次动作终检拒绝凭据替换；充值接管响应 no-store，精确已完成重放先返回仍有效旧收据；能力投影经公开只读接口验证 receipt 归属/金额/txid/未消费。真实凭据替换测试 RED→GREEN，接管 replay RED403→GREEN200。隔离 PG enabled 聚合 47 passed/45.99s：fresh-owner-proof、workflow、support-order-postgres、support-recharge-receipts、rbac-totp、binding-adapters。独立 scoped review 进行中。
 
 完整 verify 实际运行 exit1：三个 policy/template gate 通过，render-only 缺 `.env` 停止。Docker Desktop 恢复并启动既有专用 PG，非生产数据库。2026-09-30 再次只读生产镜像 API fadabb52/Worker3c9e4、running/0 restart。尚无本轮生产发布。
+
+## Tasks7–9 / 前端返工
+
+`c03737b0` payout discovery/selection/final attribution/takeover 完成。269 focused passed，后续20 discovery/takeover及16 discovery passed；隔离PG12 passed58.89s、变更增量4 passed17.55s。独立 scoped spec/domain then quality/security PASS，无P0–P2；最终 backend integration review 进行中。
+
+`64305b86` 前端复审五项P1统一修复，额外未知候选不可选择及真实 evidence_token 响应断言；先6个失败，后79 focused/source tests PASS。前端 scoped re-review 进行中，候选尚未部署。
