@@ -49,3 +49,11 @@
 - 生产备份位置、恢复操作、漂移检查、可重试阶段：本轮尚无生产写入或备份。按批准计划切换前再次冻结实时镜像、静态、schema、Compose 与私有备份；不对现有已开始订单直接回滚资金。
 - 运行中 CI/命令/自己创建的隧道（无凭据）：本地专用 `starchat-support-recovery-pg` PostgreSQL 容器运行中；无 CI、构建或本任务创建的 SSH 隧道。独立子代理负责链上 reader、迁移和现网只读核查，主代理负责整合。
 - 下次恢复先检查的事实：用户实施授权已记录；重新核对生产 API/静态和 0092 后继变更，再按计划继续红灯/绿灯及受控发布。D 盘脏工作区不得直接用于生产发布。
+
+## 2026-09-30 实施恢复记录
+
+- 已实施提交：`41200e1e` 0093 扩展迁移；`45acdc2e` bounded TronGrid discovery；`7b7b32d5`/`a575c53a` 精确释放及冲正；`8a76ad29` 暂存汇率与原子开始；`17fcb2bd`/`67ac473a` 拒绝与租约终检；`f72ef2de` 单独审计完整地址；`a3d18d30` 充值接管；`5988f219` 当次凭据绑定、安全重放、只读收据能力核对；`42c888ae` 提现/充值前端修复。链上选择及提现接管仍由 payout_finish 完成，尚未冻结候选。
+- 最新 proof/identity/充值/公开 receipt 隔离 PG 聚合：47 passed，45.99s，无跳过；此前 TOTP credential replacement RED→GREEN，接管重放 RED→GREEN。前端专项及 source contract 75 passed；全前端 416 passed/5 untouched UI drift failures。
+- 完整 `verify.ps1` 实际 exit 1：Repository/Deployment/Template PASS；render-only 缺 `.env` 停止。未声称全仓通过；Flutter 不在 PATH。
+- 2026-09-30 本轮恢复时生产只读镜像核对：API `fadabb52…`/Worker `3c9e4bbf…`，running，restart 0，与冻结一致；本任务仍未切换生产。
+- 下一步：完成 Task7–9、前端独立规格/安全复核，导出 OpenAPI；Task14 新发布工件在准备，基于现网镜像最小覆盖，冻结源码后执行迁移克隆、候选/回退双角色门禁与受控切换。真实后台会话/安全资金测试单未提供，产品会话验收保留待办；历史已开始单不自动退款。

@@ -196,6 +196,26 @@
         "title": "AdScheduleBody",
         "type": "object"
       },
+      "AddressReadBody": {
+        "additionalProperties": false,
+        "properties": {
+          "claim_token": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claim Token"
+          }
+        },
+        "title": "AddressReadBody",
+        "type": "object"
+      },
       "AdjustmentRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -1028,6 +1048,18 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Expected Digest",
             "type": "string"
+          },
+          "expected_preparation_version": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Preparation Version"
           }
         },
         "required": [
@@ -8164,6 +8196,18 @@
             "title": "Claim Token",
             "type": "string"
           },
+          "expected_preparation_version": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Preparation Version"
+          },
           "new_rate": {
             "pattern": "^(0|[1-9][0-9]{0,3})(\\.[0-9]{1,6})?$",
             "title": "New Rate",
@@ -8539,6 +8583,35 @@
         "title": "RechargeSubmitBody",
         "type": "object"
       },
+      "RechargeTakeoverBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_claim_version": {
+            "minimum": 0.0,
+            "title": "Expected Claim Version",
+            "type": "integer"
+          },
+          "proof": {
+            "$ref": "#/components/schemas/AdminWalletProofBody"
+          },
+          "reason_code": {
+            "enum": [
+              "RECHARGE_STAFF_UNAVAILABLE",
+              "RECHARGE_SHIFT_HANDOFF",
+              "RECHARGE_INCIDENT_REVIEW"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_claim_version",
+          "reason_code",
+          "proof"
+        ],
+        "title": "RechargeTakeoverBody",
+        "type": "object"
+      },
       "RechargeVerifyBody": {
         "additionalProperties": false,
         "properties": {
@@ -8810,6 +8883,42 @@
           "registration_session"
         ],
         "title": "RegistrationSessionRequest",
+        "type": "object"
+      },
+      "RejectBody": {
+        "additionalProperties": false,
+        "properties": {
+          "claim_token": {
+            "maxLength": 64,
+            "minLength": 32,
+            "title": "Claim Token",
+            "type": "string"
+          },
+          "proof": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminWalletProofBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_code": {
+            "enum": [
+              "PAYOUT_ADDRESS_INVALID",
+              "PAYOUT_DETAILS_MISMATCH",
+              "PAYOUT_POLICY_INELIGIBLE"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim_token",
+          "reason_code"
+        ],
+        "title": "RejectBody",
         "type": "object"
       },
       "RepairExecuteBody": {
@@ -9341,6 +9450,40 @@
         "title": "SearchUsersBody",
         "type": "object"
       },
+      "SelectionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "claim_token": {
+            "maxLength": 64,
+            "minLength": 32,
+            "title": "Claim Token",
+            "type": "string"
+          },
+          "expected_claim_version": {
+            "minimum": 0.0,
+            "title": "Expected Claim Version",
+            "type": "integer"
+          },
+          "log_index": {
+            "minimum": 0.0,
+            "title": "Log Index",
+            "type": "integer"
+          },
+          "txid": {
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "title": "Txid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim_token",
+          "txid",
+          "log_index",
+          "expected_claim_version"
+        ],
+        "title": "SelectionBody",
+        "type": "object"
+      },
       "SetCover": {
         "additionalProperties": false,
         "properties": {
@@ -9791,6 +9934,37 @@
           "name"
         ],
         "title": "TagPatchBody",
+        "type": "object"
+      },
+      "TakeoverBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_claim_version": {
+            "minimum": 0.0,
+            "title": "Expected Claim Version",
+            "type": "integer"
+          },
+          "proof": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminWalletProofBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,79}$",
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason_code",
+          "expected_claim_version"
+        ],
+        "title": "TakeoverBody",
         "type": "object"
       },
       "TokenResponse": {
@@ -13523,6 +13697,89 @@
         ]
       }
     },
+    "/api/v1/admin/support-orders/payouts/{order_id}/discover": {
+      "get": {
+        "operationId": "discover_api_v1_admin_support_orders_payouts__order_id__discover_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Support-Claim-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Support-Claim-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Discover",
+        "tags": [
+          "support-payout"
+        ]
+      }
+    },
     "/api/v1/admin/support-orders/payouts/{order_id}/heartbeat": {
       "post": {
         "operationId": "heartbeat_api_v1_admin_support_orders_payouts__order_id__heartbeat_post",
@@ -13593,6 +13850,81 @@
           }
         ],
         "summary": "Heartbeat",
+        "tags": [
+          "support-payout"
+        ]
+      }
+    },
+    "/api/v1/admin/support-orders/payouts/{order_id}/payment-address/read": {
+      "post": {
+        "operationId": "payment_address_api_v1_admin_support_orders_payouts__order_id__payment_address_read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddressReadBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Payment Address",
         "tags": [
           "support-payout"
         ]
@@ -13684,6 +14016,92 @@
         ]
       }
     },
+    "/api/v1/admin/support-orders/payouts/{order_id}/reject": {
+      "post": {
+        "operationId": "reject_api_v1_admin_support_orders_payouts__order_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reject",
+        "tags": [
+          "support-payout"
+        ]
+      }
+    },
     "/api/v1/admin/support-orders/payouts/{order_id}/review-claim": {
       "post": {
         "operationId": "review_api_v1_admin_support_orders_payouts__order_id__review_claim_post",
@@ -13765,6 +14183,178 @@
           }
         ],
         "summary": "Review",
+        "tags": [
+          "support-payout"
+        ]
+      }
+    },
+    "/api/v1/admin/support-orders/payouts/{order_id}/select-discovered": {
+      "post": {
+        "operationId": "select_discovered_api_v1_admin_support_orders_payouts__order_id__select_discovered_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Select Discovered",
+        "tags": [
+          "support-payout"
+        ]
+      }
+    },
+    "/api/v1/admin/support-orders/payouts/{order_id}/takeover": {
+      "post": {
+        "operationId": "takeover_api_v1_admin_support_orders_payouts__order_id__takeover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoverBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Takeover",
         "tags": [
           "support-payout"
         ]
@@ -34423,6 +35013,92 @@
           }
         ],
         "summary": "Review",
+        "tags": [
+          "recharge"
+        ]
+      }
+    },
+    "/api/v1/recharge/admin/requests/{request_id}/takeover": {
+      "post": {
+        "operationId": "takeover_api_v1_recharge_admin_requests__request_id__takeover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RechargeTakeoverBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Takeover",
         "tags": [
           "recharge"
         ]

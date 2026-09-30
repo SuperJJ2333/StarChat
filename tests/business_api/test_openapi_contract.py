@@ -137,3 +137,19 @@ def test_contract_describes_bearer_auth_and_binary_avatar_upload() -> None:
 
 
 
+
+
+def test_support_finance_recovery_contract_preserves_controlled_commands():
+    document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    paths = document["paths"]
+    prefix = "/api/v1/admin/support-orders/payouts/{order_id}"
+    for suffix in ("/reject", "/payment-address/read", "/takeover", "/select-discovered"):
+        operation = paths[prefix + suffix]["post"]
+        assert operation["security"] == [{"bearerAuth": []}]
+    assert "get" in paths[prefix + "/discover"]
+    assert "post" in paths["/api/v1/recharge/admin/requests/{request_id}/takeover"]
+    schemas = document["components"]["schemas"]
+    assert "expected_preparation_version" in schemas["RateBody"]["properties"]
+    assert "expected_preparation_version" in schemas["BeginBody"]["properties"]
+    assert "expected_claim_version" in schemas["SelectionBody"]["properties"]
+    assert "proof" in schemas["RechargeTakeoverBody"]["properties"]
