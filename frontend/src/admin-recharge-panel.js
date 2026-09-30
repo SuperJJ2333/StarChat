@@ -210,7 +210,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
           if(needsReview && reviewReason.value.trim().length<3){orderAlert('请填写核对受理原因（至少3字符）');return;}
           if(!authorized() || !currentItems.includes(item)||busyOrders.has(item.id)||item.can_claim!==true)return;busyOrders.add(item.id);renderCases();
           try {const result=await api.claimRecharge(item.id,{idempotencyKey:key(`claim:${item.id}`)},needsReview?{review:true,reason:reviewReason.value.trim()}:{});
-            if(!disposed && result.claim_token && result.claimed_by===actorId){claims.set(item.id,result.claim_token);orderAlert(result.payment_verified?'已接手该请求，到账已核验，请确认结算金额。':'已接手该请求，请等待系统确认到账后继续结算。');}
+            if(authorized() && currentItems.includes(item) && result.claim_token && result.claimed_by===actorId){claims.set(item.id,result.claim_token);orderAlert(result.payment_verified?'已接手该请求，到账已核验，请确认结算金额。':'已接手该请求，请等待系统确认到账后继续结算。');}
           }catch(error){claims.delete(item.id);orderAlert(`接手失败：${error.message ?? '案件已被认领'}`);}
           finally{busyOrders.delete(item.id);if(!disposed){await loadCases();await loadReview();}}
         };addButton(needsReview?'处理待核对请求':'接手处理',claimAction);if(needsReview)claimAction=null;}
@@ -229,7 +229,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
                 const credential=proof.value;proof.value='';const body={expected_claim_version:item.claim_version,reason_code:reason.value,proof:{[security.auth_mode==='operation_password'?'operation_password':'mfa_proof']:credential}};
                 busyOrders.add(item.id);renderCases();
                 try{const result=await api.takeoverRecharge(item.id,body,{idempotencyKey:key(`takeover:${item.id}`)});
-                  if(authorized()&&result.claim_token&&result.can_process===true){claims.set(item.id,result.claim_token);orderAlert('已接管，继续沿用原到账凭证和结算绑定；尚未因此入账。');}
+                  if(authorized()&&currentItems.includes(item)&&result.claim_token&&result.claimed_by===actorId){claims.set(item.id,result.claim_token);orderAlert('已接管，继续沿用原到账凭证和结算绑定；尚未因此入账。');}
                 }catch(error){claims.delete(item.id);drafts.delete(item.id);orderAlert(`接管未确认，请刷新核对权威状态：${error.message??'请重试'}`);}
                 finally{busyOrders.delete(item.id);if(authorized())await loadCases();}
               },true);
@@ -279,6 +279,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
             return command(async claim_token=>{
               const prepared=await api.prepareRechargeSettlement(item.id,{claim_token,final_rate:finalRate},{idempotencyKey:`prepare:${item.id}:${finalRate}`});
               if(prepared.status==='CREDITED')return prepared;
+              if(!authorized()||!currentItems.includes(item)||!owned(item)||claims.get(item.id)!==claim_token)throw Error('处理资格已失效，请刷新核对已保存的结算');
               return api.executeRechargeSettlement(item.id,{claim_token},{idempotencyKey:`execute:${item.id}`});
             });
           },!received);

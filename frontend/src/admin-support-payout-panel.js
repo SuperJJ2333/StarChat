@@ -94,6 +94,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     }catch(error){if(authorized()&&current()===item){revoke(item);renderList();notify(item,`详情读取失败：${error.message??'请刷新'}`,true);}}
   }
   function revoke(item){tokens.delete(item.id);drafts.delete(item.id);address=null;discovery=null;confirmation=null;securityMode=null;copyFeedback='';for(const cap of capabilities)item[cap]=false;}
+  function revokeRead(item,error){if(current()!==item)return false;if([401,403,409].includes(error?.status)){revoke(item);renderList();return true;}return false;}
   async function requestProof(item,kind){confirmation=kind;securityMode=null;renderDialog();
     try{const state=await api.getWalletOperationSecurity();if(authorized()&&current()===item&&confirmation===kind){securityMode=state?.auth_mode;renderDialog();}}
     catch(error){if(authorized()&&activeOrder===item.id)notify(item,`操作验证方式读取失败：${error.message??'请重试'}`,true);}
@@ -173,8 +174,9 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
       if(typeof result?.target_address!=='string'||!result.target_address)throw Error('地址响应无效');
       address={target_address:result.target_address,network:result.network};renderDialog();
     }catch(error){
+      if(!authorized()||current()!==item)return;
       address=null;
-      if(error?.status===401||error?.status===403||error?.status===409){tokens.delete(item.id);item.can_evidence=false;discovery=null;drafts.delete(item.id);}
+      revokeRead(item,error);
       if(authorized()&&activeOrder===item.id)notify(item,`完整地址读取失败：${error?.message??'请重新授权'}`,true);
     }
   }
@@ -189,8 +191,8 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     discovery={status:'LOADING',candidates:[]};renderDialog();
     try{const result=await api.discoverSupportPayout(item.id,tokenFor(item));
       if(!authorized()||current()!==item||!has(item,'can_evidence'))return;
-      discovery={status:result?.status,candidates:Array.isArray(result?.candidates)?result.candidates:[]};renderDialog();
-    }catch(error){if(authorized()&&activeOrder===item.id){discovery={status:'ERROR',candidates:[]};notify(item,`链上发现失败：${error?.message??'请手动输入哈希'}`,true);}}
+      discovery={status:result?.status,claim_version:result?.claim_version,evidence_version:result?.evidence_version,candidates:Array.isArray(result?.candidates)?result.candidates:[]};renderDialog();
+    }catch(error){if(authorized()&&current()===item){if(!revokeRead(item,error))discovery={status:'ERROR',candidates:[]};notify(item,`链上发现失败：${error?.message??'请手动输入哈希'}`,true);}}
   }
   function renderDiscovery(item){
     if(!discovery)return;
@@ -202,9 +204,9 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
       const row=make('div','admin-payout-candidate');dialogBody.append(row);
       const timestamp=Number.isSafeInteger(candidate.timestamp_ms)?new Date(candidate.timestamp_ms).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}):'时间待核对';
       row.append(make('p',null,`${shortHash(candidate.txid)} · ${candidate.amount??'金额待核对'} USDT · ${candidate.masked_target_address??'地址已脱敏'} · ${timestamp} · ${candidate.evidence_status??'证据待核对'}`));
-      const conflicting=['CONFLICT','AMBIGUOUS','STALE','UNAVAILABLE'].includes(candidate.evidence_status);
-      if(conflicting)row.append(make('p','admin-load-error','归属或证据存在冲突，须人工调查。'));
-      else button(row,'选择此交易',()=>void execute(item,'select-discovered',key=>api.selectSupportPayoutCandidate(item.id,{claim_token:tokenFor(item),txid:candidate.txid},{idempotencyKey:key})));
+      const selectable=candidate.evidence_status==='VERIFIED'&&Number.isSafeInteger(candidate.log_index)&&candidate.log_index>=0&&Number.isSafeInteger(discovery.claim_version)&&discovery.claim_version===item.claim_version;
+      if(!selectable)row.append(make('p','admin-load-error','归属或证据存在冲突，须人工调查。'));
+      else button(row,'选择此交易',()=>void execute(item,'select-discovered',key=>api.selectSupportPayoutCandidate(item.id,{claim_token:tokenFor(item),txid:candidate.txid,log_index:candidate.log_index,expected_claim_version:discovery.claim_version},{idempotencyKey:key})));
     }
   }
   function renderEvidence(item){
@@ -228,9 +230,9 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
     if(!['operation_password','totp'].includes(securityMode)){dialogBody.append(make('p','admin-load-error','正在核对当前验证方式…'));return;}
     const reason=reasonSelect([[item.execution_started_at?'SUPPORT_PAYOUT_EVIDENCE_TAKEOVER':'SUPPORT_PAYOUT_OWNER_TAKEOVER',item.execution_started_at?'接管链上证据核对':'接管未开始出款订单']]);
     const proof=input(securityMode==='operation_password'?'操作密码':'当前六位验证码','','password');
-    action(item,'确认接管',()=>{if(!Number.isSafeInteger(item.version)||!proof.value){notify(item,'订单版本或当次证明缺失，请刷新',true);return;}
+    action(item,'确认接管',()=>{if(!Number.isSafeInteger(item.claim_version)||!proof.value){notify(item,'订单版本或当次证明缺失，请刷新',true);return;}
       const credential=proof.value;proof.value='';confirmation=null;const field=securityMode==='operation_password'?'operation_password':'mfa_proof';securityMode=null;
-      void execute(item,'takeover',key=>api.takeoverSupportPayout(item.id,{expected_claim_version:item.version,reason_code:reason.value,proof:{[field]:credential}},{idempotencyKey:key}));});
+      void execute(item,'takeover',key=>api.takeoverSupportPayout(item.id,{expected_claim_version:item.claim_version,reason_code:reason.value,proof:{[field]:credential}},{idempotencyKey:key}));});
   }
   function renderDialog(){
     if(!activeOrder)return;

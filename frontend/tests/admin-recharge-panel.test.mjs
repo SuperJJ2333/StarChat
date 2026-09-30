@@ -552,7 +552,7 @@ test('owner opens read-only recharge facts then separately confirms reason and f
   install();let sent;let item={...PENDING.items[0],expires_at:new Date(Date.now()+3600000).toISOString(),claimed_by:'other',claim_version:4,
     can_claim:false,can_process:false,can_takeover:true,takeover_review_required:true,payment_verified:true,actual_received_usdt:'50.000000',binding_adjustment_id:'retained-binding',binding_final_rate:'7.000000',binding_final_caibi_amount:'350.00'};
   const api={...makeApi([]),getRechargePending:async()=>({items:[item]}),getWalletOperationSecurity:async()=>({auth_mode:'operation_password'}),
-    takeoverRecharge:async(id,body,options)=>{sent={id,body,options};item={...item,can_takeover:false,can_process:true,claimed_by:'owner',claim_version:5};return {...item,claim_token:'new-token'};}};
+    takeoverRecharge:async(id,body,options)=>{sent={id,body,options};item={...item,can_takeover:false,can_process:true,claimed_by:'owner',claim_version:5};const {can_claim,can_takeover,can_process,takeover_review_required,...response}=item;return {...response,claim_token:'new-token'};}};
   const panel=rechargePanel(api,{actor:{id:'owner'}});await settle();
   const view=panel.find('button').find(node=>node.textContent==='查看订单');assert.ok(view);view.handlers.click();
   assert.equal(sent,undefined);assert.equal(panel.find('button').some(node=>node.textContent==='继续下发点钻'),false);
@@ -587,4 +587,15 @@ test('refresh rejection clears an open takeover proof and invalidates its detach
   const submit=panel.find('button').find(node=>node.textContent==='确认接管');
   await panel.refreshOrders();assert.equal(proof.value,'');submit.handlers.click();await settle();assert.equal(writes,0);
   assert.equal(panel.find('button').some(node=>['确认接管','接手处理','继续下发点钻'].includes(node.textContent)),false);panel.dispose();
+});
+
+test('session revocation during preparation blocks the dependent execute HTTP command',async()=>{
+  const callbacks=new Map();const oldAdd=globalThis.addEventListener,oldRemove=globalThis.removeEventListener;
+  globalThis.addEventListener=(name,fn)=>callbacks.set(name,fn);globalThis.removeEventListener=(name)=>callbacks.delete(name);
+  let prepared;let executions=0;
+  try{const {panel}=await settlementPanel({}, {prepareRechargeSettlement:()=>new Promise(resolve=>{prepared=resolve;}),executeRechargeSettlement:async()=>{executions++;return {status:'CREDITED'};}});
+    panel.find('button').find(node=>node.textContent==='确认下发点钻').handlers.click();await settle();
+    callbacks.get('admin-session-expired')();prepared({status:'BOUND',binding_adjustment_id:'retained'});await settle();await settle();
+    assert.equal(executions,0);panel.dispose();
+  }finally{globalThis.addEventListener=oldAdd;globalThis.removeEventListener=oldRemove;}
 });

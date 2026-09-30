@@ -115,10 +115,10 @@ test('another staff lease is genuinely disabled by server capability and sends n
 test('owner opens read-only detail and uses separate confirmed takeover with fresh selected proof',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const calls=[];
-  const order={id:'owned',status:'REQUESTED',claimed_by:'other',claim_expires_at:future,version:4,amount:'10.000000',...caps({can_takeover:true})};
+  const order={id:'owned',status:'REQUESTED',claimed_by:'other',claim_expires_at:future,claim_version:4,amount:'10.000000',...caps({can_takeover:true})};
   const api={getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
     getWalletOperationSecurity:async()=>({auth_mode:'operation_password'}),
-    takeoverSupportPayout:async(id,body,options)=>{calls.push({id,body,options});return {...order,version:5,claimed_by:'owner',claim_token:'new-lease',...caps({can_begin:true})};}};
+    takeoverSupportPayout:async(id,body,options)=>{calls.push({id,body,options});return {...order,claim_version:5,claimed_by:'owner',claim_token:'new-lease',...caps({can_begin:true})};}};
   const panel=supportPayoutPanel(api,{actor:{id:'owner'}});await flush();
   assert.equal(button(panel,'处理请求'),undefined);
   button(panel,'查看订单').handlers.click();await flush();
@@ -202,7 +202,7 @@ test('completed payment reveals full address for explicit copy and identity loss
 test('discovery distinguishes incomplete and conflict, and selection never automatically reconciles',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const calls=[];let discovery={status:'EMPTY',candidates:[]};
-  const order={id:'discovery',status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
+  const order={id:'discovery',claim_version:7,status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
   const api={getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
     readSupportPayoutAddress:async()=>({target_address:'Tprivate-address',network:'TRON'}),
     discoverSupportPayout:async()=>discovery,
@@ -216,9 +216,9 @@ test('discovery distinguishes incomplete and conflict, and selection never autom
   assert.match(visibleText(panel),/不能排除已付款/u);
   discovery={status:'UNAVAILABLE',candidates:[]};button(panel,'查找链上出款').handlers.click();await flush();
   assert.match(visibleText(panel),/链上服务不可用/u);
-  discovery={status:'COMPLETE',candidates:[
-    {txid:'conflicting-transaction-hash',amount:'10.000000',evidence_status:'CONFLICT',masked_target_address:'T••abc'},
-    {txid:'verified-transaction-hash',amount:'10.000000',evidence_status:'VERIFIED',masked_target_address:'T••abc'}]};
+  discovery={status:'COMPLETE',claim_version:7,evidence_version:0,candidates:[
+    {txid:'conflicting-transaction-hash',log_index:0,amount:'10.000000',evidence_status:'CONFLICT',masked_target_address:'T••abc'},
+    {txid:'verified-transaction-hash',log_index:2,amount:'10.000000',evidence_status:'VERIFIED',masked_target_address:'T••abc'}]};
   button(panel,'查找链上出款').handlers.click();await flush();
   assert.match(visibleText(panel),/发现 2 笔候选/u);
   assert.match(visibleText(panel),/须人工调查/u);
@@ -226,7 +226,7 @@ test('discovery distinguishes incomplete and conflict, and selection never autom
   assert.deepEqual(calls,[]);
   button(panel,'选择此交易').handlers.click();await flush();await flush();
   assert.equal(calls.length,1);
-  assert.equal(calls[0].body.txid,'verified-transaction-hash');
+  assert.deepEqual(calls[0].body,{claim_token:'lease',txid:'verified-transaction-hash',log_index:2,expected_claim_version:7});
   assert.ok(calls[0].options.idempotencyKey);
   assert.ok(button(panel,'核验已选交易'));
   panel.dispose();
@@ -375,4 +375,39 @@ test('configured owner rejection collects a fresh selected proof rather than a c
   proof.value='123456';proof.handlers.input();button(panel,'确认拒绝提现').handlers.click();await flush();
   assert.deepEqual(writes,[{claim_token:'lease',reason_code:'PAYOUT_ADDRESS_INVALID',proof:{mfa_proof:'123456'}}]);
   assert.equal(proof.value,'');panel.dispose();
+});
+
+test('forbidden discovery immediately scrubs the full address and all evidence commands',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};
+  const order={id:'discovery-revoked',status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_version:1,claim_token:'lease',...caps({can_evidence:true})};
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
+    readSupportPayoutAddress:async()=>({target_address:'Tprivate-revoked-address'}),discoverSupportPayout:async()=>{throw {status:403};}},{actor:{id:'staff'}});
+  await flush();button(panel,'处理请求').handlers.click();await flush();await flush();assert.match(visibleText(panel),/Tprivate-revoked-address/u);
+  button(panel,'查找链上出款').handlers.click();await flush();
+  assert.doesNotMatch(visibleText(panel),/Tprivate-revoked-address/u);
+  assert.equal(button(panel,'提交出款交易凭证'),undefined);assert.equal(button(panel,'查找链上出款'),undefined);panel.dispose();
+});
+
+test('unknown discovery evidence status is never selectable',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};
+  const order={id:'unknown-candidate',status:'UNKNOWN',claim_version:3,execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,readSupportPayoutAddress:async()=>({target_address:'Tsynthetic'}),
+    discoverSupportPayout:async()=>({status:'COMPLETE',claim_version:3,evidence_version:0,candidates:[{txid:'unknown-status-transaction',log_index:0,evidence_status:'FUTURE_UNKNOWN'}]})},{actor:{id:'staff'}});
+  await flush();button(panel,'处理请求').handlers.click();await flush();button(panel,'查找链上出款').handlers.click();await flush();
+  assert.equal(button(panel,'选择此交易'),undefined);panel.dispose();
+});
+
+test('started takeover uses evidence token and discovery versions for candidate selection',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};const sent=[];
+  const order={id:'evidence-takeover',status:'UNKNOWN',claim_version:4,evidence_version:0,claimed_by:'payer',execution_started_at:'2020-01-01T00:00:00Z',...caps({can_takeover:true})};
+  const transferred={...order,claim_version:5,evidence_version:1,evidence_actor_id:'owner',evidence_token:'evidence-lease',...caps({can_evidence:true})};
+  const api={getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,getWalletOperationSecurity:async()=>({auth_mode:'totp'}),
+    takeoverSupportPayout:async(id,body)=>{sent.push(['takeover',body]);return transferred;},
+    discoverSupportPayout:async(id,token)=>{sent.push(['discover',token]);return {status:'COMPLETE',claim_version:5,evidence_version:1,candidates:[{txid:'verified-evidence-transaction',log_index:6,evidence_status:'VERIFIED'}]};},
+    selectSupportPayoutCandidate:async(id,body)=>{sent.push(['select',body]);return {...transferred,candidate_txid:body.txid};}};
+  const panel=supportPayoutPanel(api,{actor:{id:'owner'}});await flush();button(panel,'查看订单').handlers.click();await flush();button(panel,'申请接管').handlers.click();await flush();
+  panel.find('input').find(node=>node.placeholder==='当前六位验证码').value='123456';button(panel,'确认接管').handlers.click();await flush();
+  assert.equal(button(panel,'确认开始出款'),undefined);button(panel,'查找链上出款').handlers.click();await flush();button(panel,'选择此交易').handlers.click();await flush();
+  assert.deepEqual(sent[0],['takeover',{expected_claim_version:4,reason_code:'SUPPORT_PAYOUT_EVIDENCE_TAKEOVER',proof:{mfa_proof:'123456'}}]);
+  assert.deepEqual(sent[1],['discover','evidence-lease']);assert.deepEqual(sent[2],['select',{claim_token:'evidence-lease',txid:'verified-evidence-transaction',log_index:6,expected_claim_version:5}]);panel.dispose();
 });
