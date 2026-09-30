@@ -767,7 +767,7 @@ class ManualPayoutService:
             self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: None
             fresh()
-            if row.claimed_by != admin_id:
+            if row.claimed_by != admin_id and session.get(ManualPayoutQuote,row.quote_id).snapshot.get('approval_policy')!='SUPPORT_MANUAL_V1':
                 _fail('WALLET_PAYOUT_CLAIM_UNAVAILABLE', 403)
             replay = self._replay(session, admin_id, 'SUBMIT_TXID', idempotency_key, payload)
             if replay:
@@ -781,6 +781,9 @@ class ManualPayoutService:
                     reason_code='INITIAL_LOCATOR', created_at=self._now()))
             row.candidate_txid, row.status, row.updated_at = txid, 'UNKNOWN', now
             result = self._record(session, admin_id, 'SUBMIT_TXID', idempotency_key, payload, self._result(row), now)
+            OutboxPublisher.enqueue(session,topic='wallet',event_type='wallet.manual_payout_locator_submitted',
+                aggregate_type='manual_payout_order',aggregate_id=row.id,
+                payload=dict(order_id=row.id,actor_id=admin_id,reason_code='INITIAL_LOCATOR'),now=now)
             fresh()
             return result
 
@@ -806,7 +809,7 @@ class ManualPayoutService:
             self._financial_actor(session,row,admin_id,authorize)
             fresh = authorize(session) if authorize is not None else lambda: self._fresh_mfa(verified_at)
             fresh()
-            if row.claimed_by != admin_id:
+            if row.claimed_by != admin_id and session.get(ManualPayoutQuote,row.quote_id).snapshot.get('approval_policy')!='SUPPORT_MANUAL_V1':
                 _fail('WALLET_PAYOUT_OWNER_REQUIRED', 403)
             replay = self._replay(session, admin_id, 'CORRECT_CANDIDATE', idempotency_key, payload)
             if replay:
@@ -824,6 +827,9 @@ class ManualPayoutService:
                 reason_code=reason_code, created_at=now))
             result = self._record(session, admin_id, 'CORRECT_CANDIDATE', idempotency_key, payload, self._result(row), now,
                 reason_code=reason_code)
+            OutboxPublisher.enqueue(session,topic='wallet',event_type='wallet.manual_payout_locator_corrected',
+                aggregate_type='manual_payout_order',aggregate_id=row.id,
+                payload=dict(order_id=row.id,actor_id=admin_id,reason_code=reason_code),now=now)
             fresh()
             return result
 
@@ -843,6 +849,28 @@ class ManualPayoutService:
             and transfer.block_number == evidence.block_number and transfer.block_id == evidence.block_id
             and type(transfer.log_index) is int and transfer.log_index >= 0]
 
+    @staticmethod
+    def matching_payout_transfers(evidence, row, quote, txid):
+        """Public exact receipt filter shared by settlement and read-only discovery."""
+        return ManualPayoutService._matches(evidence, row, quote, txid)
+
+    def _require_unambiguous_owner(self, session, row, quote, transfer):
+        # The caller holds the global reserve lock, also held by request/begin.
+        # Include other users and legacy OWNER orders; event ownership is global.
+        from sqlalchemy import cast, Numeric
+        event_at = datetime.fromtimestamp(transfer.timestamp_ms // 1000, timezone.utc) + timedelta(
+            milliseconds=transfer.timestamp_ms % 1000)
+        ids = session.scalars(select(ManualPayoutOrder.id).join(ManualPayoutQuote,
+            ManualPayoutQuote.id == ManualPayoutOrder.quote_id).where(
+            ManualPayoutOrder.status.in_(('CLAIMED', 'UNKNOWN')),
+            ManualPayoutOrder.claimed_at <= event_at,
+            ManualPayoutQuote.snapshot['official_address'].as_string() == transfer.from_address,
+            ManualPayoutQuote.snapshot['target_address'].as_string() == transfer.to_address,
+            func.coalesce(ManualPayoutOrder.final_receive,
+                cast(ManualPayoutQuote.snapshot['receive'].as_string(), Numeric(30, 6))) ==
+                Decimal(transfer.amount_units) / Decimal(1000000)).limit(2)).all()
+        return ids == [row.id]
+
     @_precise
     def reconcile(self, *, order_id, authorize=None):
         with self.factory() as session:
@@ -852,6 +880,8 @@ class ManualPayoutService:
             if row.status in {'SETTLED', 'CANCELLED', 'REQUESTED'} or row.review_reason == 'MULTIPLE_MATCHING_PAYOUT_EVENTS':
                 return self._result(row)
             candidates = self._candidates(session, row)
+            if not candidates:
+                return self._result(row)
         # Every locator/audit is durable before network I/O; never hold DB locks here.
         evidence_by_txid = {}
         for txid in candidates[:10]:
@@ -882,10 +912,12 @@ class ManualPayoutService:
                 used = session.scalar(select(ManualPayoutEvent.id).where(ManualPayoutEvent.network == NETWORK,
                     ManualPayoutEvent.contract == USDT_CONTRACT, ManualPayoutEvent.txid == txid,
                     ManualPayoutEvent.log_index == transfer.log_index))
-            if transfer is None or used:
+            ambiguous = transfer is not None and not self._require_unambiguous_owner(session, row, quote, transfer)
+            if transfer is None or used or ambiguous:
                 reason = ('MULTIPLE_MATCHING_PAYOUT_EVENTS' if len(matches) > 1 else
                     'CANDIDATE_LIMIT_EXCEEDED' if len(candidates) > 10 else
-                    'EVENT_ALREADY_ALLOCATED' if used else 'EVIDENCE_UNAVAILABLE_OR_MISMATCH')
+                    'EVENT_ALREADY_ALLOCATED' if used else
+                    'ORDER_ATTRIBUTION_AMBIGUOUS' if ambiguous else 'EVIDENCE_UNAVAILABLE_OR_MISMATCH')
                 if row.status != 'UNKNOWN' or row.review_reason != reason:
                     row.status, row.review_reason, row.updated_at = 'UNKNOWN', reason, now
                     audit_write(session, 'manual-payout-reconciler', row.id, 'wallet.manual_payout_review', reason)

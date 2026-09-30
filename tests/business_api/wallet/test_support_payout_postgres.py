@@ -17,6 +17,62 @@ import test_manual_payouts as original
 from test_support_payout import caibi_order, prepare, scoped
 
 
+def test_postgres_unallocated_receipt_refuses_cross_user_ambiguity(scoped):
+    from test_support_payout_discovery import test_final_receipt_rejects_unallocated_event_with_overlapping_order
+    test_final_receipt_rejects_unallocated_event_with_overlapping_order(scoped,'manual')
+
+
+def test_postgres_evidence_takeover_preserves_original_payer_and_revokes_token(scoped):
+    from test_support_payout_takeover import test_started_takeover_only_evidence_revokes_old_token_and_preserves_payment
+    test_started_takeover_only_evidence_revokes_old_token_and_preserves_payment(scoped)
+
+
+def test_postgres_selection_uses_durable_candidate_and_settlement(scoped,monkeypatch):
+    from test_support_payout_discovery import test_selection_rechecks_discovery_version_then_uses_common_settlement
+    test_selection_rechecks_discovery_version_then_uses_common_settlement(scoped,monkeypatch)
+
+
+def _takeover_worker(raw_url,now_text,official,claims,order_id,key,barrier):
+    from app.core.database import create_session_factory
+    from app.core.errors import AppError
+    from app.modules.wallet.funding import OfficialFundingConfig
+    from app.modules.wallet.manual_payouts import ManualPayoutPolicy,ManualPayoutService
+    from app.modules.wallet.support_payout import SupportPayoutService
+    engine=create_engine(raw_url)
+    now=datetime.fromisoformat(now_text)
+    payout=ManualPayoutService(create_session_factory(engine),official_config=OfficialFundingConfig(official,'official-v1'),
+        policy=ManualPayoutPolicy('test-v1',timedelta(minutes=5),Decimal('100'),Decimal('200'),Decimal('500')),
+        owner_admin_id='owner',mfa_verifier=lambda **kw:False,finality=None,clock=lambda:now)
+    service=SupportPayoutService(payout,SimpleNamespace(wallet_admin_auth_mode='operation_password',
+        wallet_manual_owner_admin_id='owner',wallet_real_mode='manual_tron',wallet_access_grant_enabled=True))
+    barrier.wait(timeout=30)
+    try:
+        result=service.takeover(claims=claims,order_id=order_id,expected_claim_version=1,
+            reason_code='SUPPORT_OWNER_RECOVERY',idempotency_key=key,owner_authorize=lambda session:lambda:None)
+        return {'claim_version':result['claim_version'],'pid':os.getpid()}
+    except AppError as error:
+        return {'error':error.code,'pid':os.getpid()}
+    finally:
+        engine.dispose()
+
+
+def test_independent_owner_takeovers_have_single_version_winner(scoped):
+    from test_manual_payouts import request
+    core,service,claims=scoped
+    order=request(core)
+    service.claim(claims=claims['bob'],order_id=order['id'],idempotency_key='race-old')
+    context=multiprocessing.get_context('spawn')
+    with context.Manager() as manager:
+        barrier=manager.Barrier(2)
+        with ProcessPoolExecutor(max_workers=2,mp_context=context) as executor:
+            tasks=[executor.submit(_takeover_worker,core[0].pg_test_url,core[2][0].isoformat(),core[4],
+                claims['owner'],order['id'],'owner-race-'+str(index),barrier) for index in range(2)]
+            results=[task.result(timeout=60) for task in tasks]
+    assert len({result['pid'] for result in results})==2
+    assert sum(result.get('claim_version')==2 for result in results)==1,results
+    assert [result['error'] for result in results if 'error' in result]==['SUPPORT_PAYOUT_CLAIM_VERSION_CONFLICT']
+
+
 @pytest.fixture
 def legacy_schema(monkeypatch):
     """A 0092 database with old rows, upgraded only after those rows exist."""

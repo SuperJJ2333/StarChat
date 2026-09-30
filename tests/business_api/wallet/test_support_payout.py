@@ -690,6 +690,12 @@ async def test_reject_http_totp_owner_and_staff_use_selected_proof_boundary(scop
     from app.modules.identity.tokens import TokenService
     core, service, claims = scoped
     service.settings.wallet_admin_auth_mode = 'totp'
+    from app.modules.identity.totp import TotpService, FernetSecretProtector
+    from app.modules.wallet.binding_adapters import WalletTotpVerifier
+    totp = TotpService(core[1], protector=FernetSecretProtector.generate(), now_factory=lambda:core[2][0])
+    enrolled = totp.enroll('owner')
+    owner_code = totp.code_at(enrolled.secret, core[2][0])
+    totp.enable('owner', owner_code)
     settings = Settings(_env_file=None, environment='test',
         jwt_secret='test-jwt-secret-at-least-thirty-two-bytes').model_copy(update=vars(service.settings))
     tokens = TokenService(core[1], jwt_secret=settings.jwt_secret,
@@ -704,6 +710,8 @@ async def test_reject_http_totp_owner_and_staff_use_selected_proof_boundary(scop
         order_id=owner_order['id'], idempotency_key='totp-owner-lease')
     staff_lease = service.claim(claims=tokens.decode_access_token(bob_pair.access_token),
         order_id=staff_order['id'], idempotency_key='totp-staff-lease')
+    core[0].mfa_verifier = WalletTotpVerifier(totp, SimpleNamespace(hit=lambda *args, **kwargs:None),
+        clock=lambda:core[2][0])
     app = FastAPI(); install_error_handlers(app)
     app.include_router(create_support_payout_router(settings, core[1], runtime=SimpleNamespace(
         payouts=core[0], payout_execution_enabled=True)), prefix='/api/v1')
@@ -715,7 +723,7 @@ async def test_reject_http_totp_owner_and_staff_use_selected_proof_boundary(scop
             json=owner_body | {'proof': {'operation_password': 'operation-password-123'}})
         assert wrong.status_code == 403, wrong.text
         owner_rejected = await client.post(path+owner_order['id']+'/reject', headers=owner_headers,
-            json=owner_body | {'proof': {'mfa_proof': '123456'}})
+            json=owner_body | {'proof': {'mfa_proof': owner_code}})
         assert owner_rejected.status_code == 200 and owner_rejected.json()['processing_stage'] == 'REJECTED'
         staff_headers = {'Authorization': 'Bearer '+bob_pair.access_token, 'Idempotency-Key': 'totp-staff-reject'}
         staff_body = {'claim_token': staff_lease['claim_token'], 'reason_code': 'PAYOUT_POLICY_INELIGIBLE'}

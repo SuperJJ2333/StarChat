@@ -50,6 +50,16 @@ class ReviewBody(EmptyBody):
     reason_code: str=Field(pattern=r'^[A-Z][A-Z0-9_]{2,79}$')
 
 
+class TakeoverBody(ReviewBody):
+    expected_claim_version: int=Field(ge=0,strict=True)
+    proof: AdminWalletProofBody|None=Field(default=None,repr=False)
+
+
+class SelectionBody(TxidBody):
+    log_index: int=Field(ge=0,strict=True)
+    expected_claim_version: int=Field(ge=0,strict=True)
+
+
 def create_support_payout_router(settings,factory,*,runtime=None):
     router=APIRouter(prefix='/admin/support-orders/payouts',tags=['support-payout'])
     tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',
@@ -107,6 +117,31 @@ def create_support_payout_router(settings,factory,*,runtime=None):
     def payment_address(order_id:str,body:AddressReadBody,claims=Depends(actor)):
         return service().read_payment_address(claims=claims,order_id=order_id,
             claim_token=body.claim_token)
+    @router.post('/{order_id}/takeover')
+    def takeover(order_id:str,body:TakeoverBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key',min_length=1,max_length=128)],claims=Depends(actor)):
+        payout_service=service()
+        args=dict(claims=claims,order_id=order_id,expected_claim_version=body.expected_claim_version,
+            reason_code=body.reason_code,idempotency_key=idempotency_key)
+        replay=payout_service.takeover_receipt(**args)
+        if replay is not None:
+            return replay
+        owner_authorize=fresh_owner_proof_authorization(settings,factory,runtime.payouts.clock,
+            claims,body.proof,mfa_verifier=runtime.payouts.mfa_verifier)
+        return payout_service.takeover(**args,owner_authorize=owner_authorize)
+    @router.post('/{order_id}/select-discovered')
+    def select_discovered(order_id:str,body:SelectionBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key',min_length=1,max_length=128)],claims=Depends(actor)):
+        payout_service=service()
+        payout_service.discovery_reader_factory=runtime.new_discovery_reader
+        return payout_service.select_discovered(claims=claims,order_id=order_id,
+            idempotency_key=idempotency_key,**body.model_dump())
+    @router.get('/{order_id}/discover')
+    def discover(order_id:str,claims=Depends(actor),
+                 claim_token:Annotated[str|None,Header(alias='X-Support-Claim-Token',min_length=32,max_length=64)]=None):
+        if runtime is None:
+            raise AppError(code='WALLET_MANUAL_NOT_READY',message='提现处理服务尚未就绪',status_code=503)
+        payout_service=SupportPayoutService(runtime.payouts,settings,
+            discovery_reader_factory=runtime.new_discovery_reader)
+        return payout_service.discover(claims=claims,order_id=order_id,claim_token=claim_token)
     @router.post('/{order_id}/txid')
     def txid(order_id:str,body:TxidBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key',min_length=1,max_length=128)],claims=Depends(actor)):
         return service().submit_txid(claims=claims,order_id=order_id,idempotency_key=idempotency_key,**body.model_dump())

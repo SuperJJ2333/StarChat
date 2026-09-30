@@ -622,7 +622,7 @@ def test_candidate_correction_audits_operator_reason(core):
 
 def test_candidate_correction_requires_existing_initial_locator(core):
     o = claim(core)
-    assert core[0].reconcile(order_id=o['id'])['status'] == 'UNKNOWN'
+    assert core[0].reconcile(order_id=o['id'])['status'] == 'CLAIMED'
     with pytest.raises(AppError, match='CORRECTION_UNAVAILABLE'):
         correct(core, o)
 
