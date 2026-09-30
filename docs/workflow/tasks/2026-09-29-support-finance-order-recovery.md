@@ -98,3 +98,10 @@ Ruling: 受控切换使用 fenced API bridge，由已验证的兼容镜像启动
 - 072dd62f修订角色派生配置仅含所属服务，其他顶层/服务配置严格保留；65tests/独立审查PASS。两文件SHA门禁patch3375483b…；resume-build以三个固定ID完整重验Config、库存、sourceintent，归档旧派生文件并保留contexts/logs，候选及兼容回退双角色guard与兼容归档PASS，attempt `resume-build-c1915b96b9894cc99daf0e921af50f9d`。
 - restorePASS：ownedclone `admin-entry-restore-39148463f671`，network none/no publishedports，从同一私有备份恢复真实0093。probe-clone已在隔离库扩展0094，但模拟UNKNOWN订单缺claimed_by/claimed_at，并共用quote，违反真实constraints。未形成clonecompatibilityproof，production切换继续阻止。
 - 下一步：TDD补完整真实PG合法fixture、独立审查只改probeSHA的版本化manifest绑定，以及只清理exactownedclone/anonymousvolume后重建同备份克隆。不得用已0094库伪造beforefingerprint，不修改生产订单。本次尚无API/Worker/schema/静态生产切换。
+
+## 再次真实生产漂移：保留已发布客服邮件修复
+
+- c315c4f5探针fixture真实PG RED→GREEN1/5.31s含actualASGI ready200/写503/匿名401403；623382f3恢复11负例/字段结构tests及独立领域/安全PASS，三个工具文件SHA门禁替换。amend-probe在check_prepared安全停止，尚未改manifest/baseline或清理克隆。
+- 原因：另一授权staff-mail任务07:43:49 UTC切换Worker至 `sha256:00c0e10972c97f18d5aae435032da642ad2a7752265dd66cfe4712ec3268c5b7`，API902/schema0093不变。用户已确认正式开通邮件收件。root全Pythoninventory证明只改staff_activation.py两副本69cf→4b5ebc44，与API-v2同源；镜像Config完全相同，容器Env值完全同但排序变化。当前WorkerCompose guarded-xocl5j_i。该邮件修复不得被旧7a候选覆盖。
+- Ruling：v1保留所有备份/镜像/失败证据，因生产漂移作废；严格验证exactownedclone9bffed…及匿名卷b4b77e…后只清理该隔离资源（独立审查新cleanup-only路径），不修改原v1绑定。v2从新Worker00c+API902重新冻结snapshot/私有备份/候选，产品sourcec204及14Workeroverlay不变、继承base中的邮件修复；重跑实际镜像/克隆发布门禁，不重复不变产品源码门禁。尚无本次生产切换。
+- root临时jumperloopbackSOCKS端口18948，execsession87150，本任务创建，公开验证后必须关闭；不改变全局代理。
