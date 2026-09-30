@@ -23,6 +23,12 @@ def test_cleanup_accepts_exact_owned_clone_binding():
     restored,inspect,image,volume=owned()
     assert q.validate_owned_clone(restored,inspect,image,volume)==volume
 
+def test_actual_worker_completion_marker_blocks_recovery(monkeypatch,tmp_path):
+    monkeypatch.setattr(q.c,'PRIVATE',tmp_path)
+    (tmp_path/'worker-probe-result.json').write_text('{}')
+    with pytest.raises(ValueError,match='completed proof'):
+        q.reject_production_or_completed_probe()
+
 def test_probe_amendment_changes_only_probe_and_baseline_manifest_binding():
     old=json.dumps({'wallet_probe_sha256':'a'*64,'payload':{'x':'unchanged'},'other_proof':'fixed'}).encode()
     baseline=json.dumps({'manifest_sha256':q.sha_bytes(old),'backup_sha256':'b'*64,'containers':{'x':'unchanged'}}).encode()

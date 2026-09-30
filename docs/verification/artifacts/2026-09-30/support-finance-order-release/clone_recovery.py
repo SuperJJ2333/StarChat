@@ -44,7 +44,7 @@ def atomic_bytes(path,data):
     os.chmod(temp,0o600);os.replace(temp,path)
 
 def reject_production_or_completed_probe():
-    if any((c.PRIVATE/name).exists() for name in ('clone-compatibility.json','worker-probe.json','restore.json','bridge-attempt.json','worker-bridge-result.json','deployed.json')):
+    if any((c.PRIVATE/name).exists() for name in ('clone-compatibility.json','worker-probe-result.json','restore.json','bridge-attempt.json','worker-bridge-result.json','deployed.json')):
         raise ValueError('completed proof or production attempt blocks failed-clone recovery')
 
 def amend_probe(old_manifest_sha,old_baseline_sha,old_probe,new_probe,old_probe_file):
