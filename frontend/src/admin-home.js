@@ -8,7 +8,7 @@ import { userPanel } from "./admin-user-panel.js";
 import { ledgerPanel } from './admin-ledger-panel.js';
 import { statusLabel } from "./admin-formatters.js";
 import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260930-payout-modal";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260930-payout-assets";
 import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
 import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
 import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';

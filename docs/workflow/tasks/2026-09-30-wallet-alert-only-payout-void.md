@@ -46,3 +46,11 @@
 - 规格/领域 PASS；质量/安全发现 P2：登录恢复按钮在原生弹窗背后。已将既有登录恢复节点移入弹窗，关闭后恢复主页面；新增 RECENT_LOGIN_REQUIRED/401 测试，真实浏览器验证后质量/安全复核 PASS。
 - 14:35:28 精确发布 admin.html/admin-home.js/admin-manual-wallet-panel.js，版本20260930-payout-modal；基于最新生产源码保留前次导航入口及既有工作区。哈希前置断言、回退备份、全部容器未变；服务器 HTTPS 三文件与工作站 HTTPS 面板哈希一致。证据 artifacts/2026-09-30/modal-deployment-proof.json、payout-modal-browser-dom.html、payout-modal-green.log、frontend-modal-unit.log。阶段主动起始时间未可靠记录；浏览器专项自身执行约1s，未重复长后端/移动构建门禁。
 - V6/V7仍未执行；下一步用户强制刷新后查看出款并完成独立操作验证，收到结果后核对真实账本与事故状态。
+
+## 出款资产校验修正：2026-09-30 14:50 +08
+
+- 用户看到详情金额校验失败。目标详情 GET 最近30分钟19次均200；只读公共财务投影核对 UNKNOWN/version1，funding_asset=CAIBI、funding_amount=200.00、snapshot.amount=200.000000，订单原 USDT amount=29.754820，与 snapshot.hold/receive 相同；final_receive=10.000000，digest有效。投影通过实际 ManualPayoutDetail 模型验证；没有导出地址、用户身份、凭证。
+- 根因是旧前端把 CAIBI 申请本金当作 USDT 与订单金额比较。改为校验 CAIBI 两位本金与六位快照字符串精确对应，原 hold/receive 与 USDT 原订单一致；保留 USDT 等额规则、摘要与六位最终应付校验，错配继续关闭。显示申请本金资产、原冻结/到账和最终应付；“复制精确金额”使用最终应付，不使用点钻申请本金。
+- 新增合成同金额组合测试先因撤销表单被拦截失败，修正后专项54 passed，全部 tests/*.test.mjs 324 passed/0 failed、1.52s。真实 Chromium 同金额 fixture 验证金额显示、READY撤销表单、刷新、关闭与重新验证 PASS。规格/领域、质量/安全依次 PASS；未重复不受影响的长后端/移动门禁。
+- 14:50:45 精确发布三静态文件，版本20260930-payout-assets；前置hash与回退备份、所有容器不变；服务器 HTTPS 三文件与工作站面板hash一致。证据 artifacts/2026-09-30/payout-view-diagnosis.json、payout-asset-red.log、payout-asset-green.log、frontend-payout-asset-unit.log、asset-deployment-proof.json。调查开始准确时刻未记录，未按文件时间推算。
+- 生产原单仍 UNKNOWN，实际撤销、结案和独立恢复没有执行。下一步用户强制刷新后查看出款并完成未签名/未广播确认与独立操作验证。

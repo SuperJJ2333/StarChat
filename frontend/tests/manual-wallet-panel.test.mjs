@@ -16,6 +16,23 @@ class Element {
 }
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('CAIBI funded adjusted payout validates original USDT quote and copies final payable',async()=>{
+ const values=[];const funded={...order,status:'UNKNOWN',version:1,claimed_by:'owner',amount:'29.754820',final_receive:'10.000000',snapshot:{...order.snapshot,funding_asset:'CAIBI',funding_amount:'200.00',amount:'200.000000',hold:'29.754820',receive:'29.754820'}};
+ const panel=setup({getManualPayout:async()=>funded,getVoidUnbroadcastPreview:async()=>({status:'READY',evidence:{observation_id:'fixture',checkpoint:1790748000000}})},{clipboard:{writeText:async value=>values.push(value)}});
+ await settle();await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+ assert.ok(modal.find('form').some(x=>x.name==='void-unbroadcast'));
+ assert.ok(modal.find('dt').some(x=>x.textContent==='申请本金 点钻'));
+ assert.ok(modal.find('dd').some(x=>x.textContent==='200.00'));
+ await modal.find('button').find(x=>x.textContent==='复制精确金额').handlers.click();assert.deepEqual(values,['10.000000']);panel.dispose();
+});
+
+test('CAIBI quote mismatch keeps payout actions closed',async()=>{
+ const funded={...order,status:'UNKNOWN',version:1,claimed_by:'owner',amount:'29.754820',snapshot:{...order.snapshot,funding_asset:'CAIBI',funding_amount:'200.00',amount:'201.000000',hold:'29.754820',receive:'29.754820'}};
+ const panel=setup({getManualPayout:async()=>funded});await settle();await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');assert.equal(modal.find('form').length,0);assert.ok(modal.find('p').some(x=>x.textContent?.includes('金额校验失败')));panel.dispose();
+});
+
 test('view payout opens modal immediately and exposes failed read there',async()=>{
  let rejectRead;const panel=setup({getManualPayout:()=>new Promise((_,reject)=>{rejectRead=reject;})});
  await settle();const pending=panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();

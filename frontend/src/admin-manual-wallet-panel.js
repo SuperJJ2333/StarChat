@@ -296,9 +296,14 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const item=await api.getManualPayout(id); if(generation!==detailGeneration) return;
       const s=item.snapshot;
       for(const name of ['amount','fee','hold','receive']) exactUsdt(s[name]);
-      if(s.fee!=='0.000000'||s.amount!==item.amount||! /^[a-f0-9]{64}$/.test(item.digest)) throw new Error('Invalid snapshot');
+      const asset=s.funding_asset??'USDT',payable=exactUsdt(item.final_receive??s.receive);
+      const fundingAmount=asset==='CAIBI'?s.funding_amount:s.amount;
+      const fundingValid=asset==='CAIBI'
+        ?typeof fundingAmount==='string'&&/^(0|[1-9][0-9]*)\.[0-9]{2}$/.test(fundingAmount)&&s.amount===`${fundingAmount}0000`
+        :asset==='USDT'&&s.amount===item.amount;
+      if(s.fee!=='0.000000'||!fundingValid||s.hold!==item.amount||s.receive!==item.amount||! /^[a-f0-9]{64}$/.test(item.digest)) throw new Error('Invalid snapshot');
       detail.replaceChildren(node('h4',`出款 ${item.id}`),node('p',statusLabel(item.status)),...refreshAction('刷新此出款',()=>showOrder(id)));
-      describe(detail,[['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['原到账 USDT',s.receive],['最终应付 USDT',exactUsdt(item.final_receive??s.receive)],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选哈希',item.candidate_txid],['结算哈希',item.settlement_txid],['复核原因',item.review_reason]]);
+      describe(detail,[['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],[`申请本金 ${asset==='CAIBI'?'点钻':'USDT'}`,fundingAmount],['服务费 USDT',s.fee],['原冻结 USDT',s.hold],['原到账 USDT',s.receive],['最终应付 USDT',payable],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选哈希',item.candidate_txid],['结算哈希',item.settlement_txid],['复核原因',item.review_reason]]);
       for(const candidate of item.candidates ?? []) describe(detail,[['候选历史',candidate.txid],['操作者',candidate.actor_id],['原因',candidate.reason_code],['时间',formatBeijingTime(candidate.created_at)]]);
       if(actor?.id!==s.owner_admin_id) { detail.append(node('p','当前账号不是官方钱包拥有者，仅可查看。')); return; }
       if(item.status==='REQUESTED') {
@@ -333,7 +338,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
           return;
         }
         const copyState=node('p'); copyState.setAttribute('role','status');
-        for(const [label,value] of [['复制收款地址',s.target_address],['复制精确金额',s.amount]]) detail.append(action(label,async()=>{
+        for(const [label,value] of [['复制收款地址',s.target_address],['复制精确金额',payable]]) detail.append(action(label,async()=>{
           try { if(!clipboard) throw new Error('Clipboard unavailable'); await clipboard.writeText(value); copyState.textContent='已复制原始精确值'; }
           catch { copyState.textContent='复制不可用，请从上方完整字段手动复制并核对。'; }
         }));
