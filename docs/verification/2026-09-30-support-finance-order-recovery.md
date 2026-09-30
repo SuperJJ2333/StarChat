@@ -51,3 +51,10 @@
 生产新基线API902eaefc/Worker90d7fb74/schema0093_void已按不可变源码完整核对并保留；0094扩展不替换0093。最终archiveSHA9f4ba401…、manifestSHA42ad9a8e…，sourcec204；06:51:05 UTC实时snapshot+服务器preflightPASS。prepare私有备份PASS，备份SHA d76ea343…，其余28容器冻结。数据备份留服务器0700目录未下载。
 
 build在构建前因actualAPI启动直接uvicorn（无alembic）安全停止。尚未构建候选或切换服务/迁移生产schema。修订工具将先切真实fencedAPI再单次dockerexec扩展，保持Cmd/Compose，补红绿与独立审查后按SHA原子替换工具再恢复执行。真实管理员会话及金融实际操作验收仍待，历史已开始单不自动退款。
+
+## V2 准备与源 Compose 门禁（2026-09-30）
+
+- 46e38c8d 独立审查PASS；只替换clone_recovery.py，SHA b740ad0c701887e00818888a73ea02010ad5e20d25e39d5ce4ebce8116bd308a。cleanup-only成功删除记录中的隔离clone9bffed…及匿名卷b4b77e…，保留v1私有失败日志/原manifest与baseline；无restore、无生产改动。
+- V2 source仍c204d415；manifestSHA c32fe3b6b8de5c8ee1937e00167418db43da3f8a835e61cdd4554f3fc7847d12，archiveSHA 9b8861c879bcc7275f207f41816d06d79fa55ae4f445d4b69f2d1fbf248bafd0；上传严格校验PASS。
+- V2 preflight在prepare之前拒绝：API源Compose含旧Workerpeer，而当前Worker已单独发布00c。没有创建私有备份、构建、迁移或切换。本轮前述072dd仅修派生candidate/rollback，源baseline读取仍错误地要求两个历史源中的peer相同。
+- Ruling：每个实际容器标签绑定的源Compose只以所属service为权威，精确SHA与所属live镜像/Env继续核对；完整合并baseline由两个所属角色派生并严格核对，不把旧peer当现状。必须TDD/独立领域及安全审查，通过后只SHA门禁替换工具；产品manifest/payload不变。成本是多一轮发布工具修订，不能牺牲实际配置检查绕过门禁。

@@ -105,3 +105,10 @@ Ruling: 受控切换使用 fenced API bridge，由已验证的兼容镜像启动
 - 原因：另一授权staff-mail任务07:43:49 UTC切换Worker至 `sha256:00c0e10972c97f18d5aae435032da642ad2a7752265dd66cfe4712ec3268c5b7`，API902/schema0093不变。用户已确认正式开通邮件收件。root全Pythoninventory证明只改staff_activation.py两副本69cf→4b5ebc44，与API-v2同源；镜像Config完全相同，容器Env值完全同但排序变化。当前WorkerCompose guarded-xocl5j_i。该邮件修复不得被旧7a候选覆盖。
 - Ruling：v1保留所有备份/镜像/失败证据，因生产漂移作废；严格验证exactownedclone9bffed…及匿名卷b4b77e…后只清理该隔离资源（独立审查新cleanup-only路径），不修改原v1绑定。v2从新Worker00c+API902重新冻结snapshot/私有备份/候选，产品sourcec204及14Workeroverlay不变、继承base中的邮件修复；重跑实际镜像/克隆发布门禁，不重复不变产品源码门禁。尚无本次生产切换。
 - root临时jumperloopbackSOCKS端口18948，execsession87150，本任务创建，公开验证后必须关闭；不改变全局代理。
+
+## V2 准备与源 Compose 门禁（2026-09-30）
+
+- 46e38c8d 独立审查PASS；只替换clone_recovery.py，SHA b740ad0c701887e00818888a73ea02010ad5e20d25e39d5ce4ebce8116bd308a。cleanup-only成功删除记录中的隔离clone9bffed…及匿名卷b4b77e…，保留v1私有失败日志/原manifest与baseline；无restore、无生产改动。
+- V2 source仍c204d415；manifestSHA c32fe3b6b8de5c8ee1937e00167418db43da3f8a835e61cdd4554f3fc7847d12，archiveSHA 9b8861c879bcc7275f207f41816d06d79fa55ae4f445d4b69f2d1fbf248bafd0；上传严格校验PASS。
+- V2 preflight在prepare之前拒绝：API源Compose含旧Workerpeer，而当前Worker已单独发布00c。没有创建私有备份、构建、迁移或切换。本轮前述072dd仅修派生candidate/rollback，源baseline读取仍错误地要求两个历史源中的peer相同。
+- Ruling：每个实际容器标签绑定的源Compose只以所属service为权威，精确SHA与所属live镜像/Env继续核对；完整合并baseline由两个所属角色派生并严格核对，不把旧peer当现状。必须TDD/独立领域及安全审查，通过后只SHA门禁替换工具；产品manifest/payload不变。成本是多一轮发布工具修订，不能牺牲实际配置检查绕过门禁。
