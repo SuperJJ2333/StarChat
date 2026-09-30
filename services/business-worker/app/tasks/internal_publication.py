@@ -323,7 +323,8 @@ for _state in ("REGISTERED", "NEEDS_REVIEW", "FAILED"):
 _add(
     "recharge",
     """recharge.review_claimed recharge.claimed recharge.evidence_submitted
-     recharge.payment_verified recharge.settlement_submitted recharge.settlement_executed recharge.expired""",
+     recharge.payment_verified recharge.settlement_submitted recharge.settlement_executed recharge.expired
+     recharge.owner_taken_over""",
     "recharge_request",
     {
         "request_id": _text,
@@ -345,6 +346,38 @@ _add(
 
 # These and only these actions flow through wallet.safety.audit_write, whose
 # payload is exactly id/reason_code. Domain-specific publishers below differ.
+_payout_reason = lambda value: isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,79}", value) is not None
+_payout_rejection = _one("PAYOUT_ADDRESS_INVALID", "PAYOUT_DETAILS_MISMATCH", "PAYOUT_POLICY_INELIGIBLE")
+# Internal receipts do not deliver notifications. Exact fields and empty headers
+# exclude addresses, claim tokens and recipient routing from these envelopes.
+for _action, _validator in (
+    ("support_payout_address_read", _one("SUPPORT_PAYOUT_ADDRESS_READ")),
+    ("support_payout_discovery_read", _one("SUPPORT_PAYOUT_DISCOVERY_READ")),
+    ("support_payout_discovery_ambiguous", _one("ORDER_ATTRIBUTION_AMBIGUOUS")),
+    ("manual_payout_prepare_rate", _one("MANUAL_PAYOUT_RATE_PREPARED")),
+    ("manual_payout_support_claim", _one("MANUAL_PAYOUT_SUPPORT_CLAIM")),
+    ("manual_payout_support_review_claim", _payout_reason),
+    ("manual_payout_support_takeover", _payout_reason),
+    ("manual_payout_support_select", _one("DISCOVERED_LOCATOR_SELECTED")),
+    ("manual_payout_support_reject", _payout_rejection),
+    ("manual_payout_void_unbroadcast", _payout_reason),
+    ("manual_payout_claim", _one("MANUAL_PAYOUT_CLAIM")),
+    ("manual_payout_submit_txid", _one("MANUAL_PAYOUT_SUBMIT_TXID")),
+    ("manual_payout_correct_candidate", _payout_reason),
+    ("manual_payout_adjust_rate", _one("MANUAL_PAYOUT_RATE_ADJUSTED")),
+):
+    _add("wallet", "wallet." + _action, "wallet", {"id": _text, "reason_code": _validator}, "id")
+_add("wallet", "wallet.manual_payout_rate_prepared", "manual_payout_order",
+    {"order_id": _text, "preparation_version": _positive}, "order_id")
+_add("wallet", "wallet.support_payout_taken_over", "manual_payout_order",
+    {"order_id": _text, "actor_id": _text, "previous_actor_id": _nullable(_text),
+        "reason_code": _payout_reason, "evidence_only": _boolean}, "order_id")
+_add("wallet", "wallet.support_payout_rejected", "manual_payout_order",
+    {"order_id": _text, "actor_id": _text, "reason_code": _payout_rejection}, "order_id")
+_add("wallet", "wallet.manual_payout_locator_submitted", "manual_payout_order",
+    {"order_id": _text, "actor_id": _text, "reason_code": _one("INITIAL_LOCATOR")}, "order_id")
+_add("wallet", "wallet.manual_payout_locator_corrected", "manual_payout_order",
+    {"order_id": _text, "actor_id": _text, "reason_code": _payout_reason}, "order_id")
 _add(
     "wallet",
     """wallet.binding_register wallet.binding_challenge wallet.binding_confirm wallet.binding_activated

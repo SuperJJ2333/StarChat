@@ -155,6 +155,61 @@ def message(
     )
 
 
+_RECOVERY_PUBLICATIONS = [
+    ('recharge', 'recharge.owner_taken_over', 'recharge_request',
+        {'request_id': 'order', 'status': 'SUBMITTED', 'processing_stage': 'PAYMENT_VERIFIED'}),
+    ('wallet', 'wallet.manual_payout_rate_prepared', 'manual_payout_order',
+        {'order_id': 'order', 'preparation_version': 1}),
+    ('wallet', 'wallet.support_payout_taken_over', 'manual_payout_order',
+        {'order_id': 'order', 'actor_id': 'owner', 'previous_actor_id': 'support',
+            'reason_code': 'SHIFT_HANDOFF', 'evidence_only': True}),
+    ('wallet', 'wallet.support_payout_rejected', 'manual_payout_order',
+        {'order_id': 'order', 'actor_id': 'support', 'reason_code': 'PAYOUT_ADDRESS_INVALID'}),
+    ('wallet', 'wallet.manual_payout_locator_submitted', 'manual_payout_order',
+        {'order_id': 'order', 'actor_id': 'support', 'reason_code': 'INITIAL_LOCATOR'}),
+    ('wallet', 'wallet.manual_payout_locator_corrected', 'manual_payout_order',
+        {'order_id': 'order', 'actor_id': 'support', 'reason_code': 'DISCOVERED_LOCATOR_SELECTED'}),
+]
+for _event, _reason in [
+    ('support_payout_address_read', 'SUPPORT_PAYOUT_ADDRESS_READ'),
+    ('support_payout_discovery_read', 'SUPPORT_PAYOUT_DISCOVERY_READ'),
+    ('support_payout_discovery_ambiguous', 'ORDER_ATTRIBUTION_AMBIGUOUS'),
+    ('manual_payout_prepare_rate', 'MANUAL_PAYOUT_RATE_PREPARED'),
+    ('manual_payout_support_claim', 'MANUAL_PAYOUT_SUPPORT_CLAIM'),
+    ('manual_payout_support_review_claim', 'SHIFT_HANDOFF'),
+    ('manual_payout_support_takeover', 'SHIFT_HANDOFF'),
+    ('manual_payout_support_select', 'DISCOVERED_LOCATOR_SELECTED'),
+    ('manual_payout_support_reject', 'PAYOUT_ADDRESS_INVALID'),
+    ('manual_payout_void_unbroadcast', 'INCIDENT_REVIEW'),
+    ('manual_payout_claim', 'MANUAL_PAYOUT_CLAIM'),
+    ('manual_payout_submit_txid', 'MANUAL_PAYOUT_SUBMIT_TXID'),
+    ('manual_payout_correct_candidate', 'DISCOVERED_LOCATOR_SELECTED'),
+    ('manual_payout_adjust_rate', 'MANUAL_PAYOUT_RATE_ADJUSTED'),
+]:
+    _RECOVERY_PUBLICATIONS.append(('wallet', 'wallet.' + _event, 'wallet',
+        {'id': 'order', 'reason_code': _reason}))
+
+
+@pytest.mark.parametrize('topic,event,aggregate,payload', _RECOVERY_PUBLICATIONS)
+def test_recovery_publications_accept_exact_contract_and_reject_sensitive_fields(
+        topic, event, aggregate, payload):
+    from tasks.internal_publication import InternalPublicationTask
+    published = []
+    task = InternalPublicationTask(SimpleNamespace(record_internal_publication=lambda **kw: published.append(kw)))
+    item = message(topic, event, aggregate, 'order', payload)
+    task(item)
+    assert len(published) == 1 and 'envelope_sha256' in published[0]
+    assert set(published[0]) == {'event_id', 'topic', 'event_type', 'envelope_sha256'}
+    for field in ('full_address', 'claim_token', 'recipient_id'):
+        with pytest.raises(ValueError, match='INVALID_INTERNAL_PUBLICATION'):
+            task(replace(item, payload=dict(payload, **{field: 'secret'})))
+    with pytest.raises(ValueError, match='INVALID_INTERNAL_PUBLICATION'):
+        task(replace(item, aggregate_id='another-order'))
+    with pytest.raises(ValueError, match='INVALID_INTERNAL_PUBLICATION'):
+        task(replace(item, headers={'recipient_id': 'owner'}))
+    assert len(published) == 1
+
+
 @pytest.mark.parametrize(
     "topic,event_type,aggregate,payload",
     [

@@ -164,6 +164,9 @@ class SupportOrderWorkflow:
             row.claim_version = (row.claim_version or 0) + 1
             if review:
                 row.review_authorized_at = now
+                # Keep immutable receipt and binding facts, but an explicit review
+                # claim requires the receipt to be verified again before settlement.
+                row.payment_verified_at = None
                 if not row.receipt_id and not row.evidence_txid:
                     row.processing_stage = 'REVIEWING'
             elif row.processing_stage == 'WAITING_PAYMENT':

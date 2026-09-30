@@ -299,12 +299,13 @@ def test_same_claimant_can_enter_expired_receipt_review_without_erasing_proof(fl
          SimpleNamespace(state='RESERVED')))
     renewed=service.claim_order(request_id=order['id'],actor_id='cs1',
         idempotency_key='review-own-proof',review=True,reason='继续核对已到账凭证')
-    assert renewed['payment_verified'] is True
+    assert renewed['payment_verified'] is False
     assert renewed['claim_version']==initial['claim_version']+1
     service.heartbeat_order(request_id=order['id'],actor_id='cs1',claim_token=renewed['claim_token'])
     with factory() as session:
         row=session.get(RechargeRequest,order['id'])
-        assert row.receipt_id=='receipt-old' and row.payment_verified_at is not None
+        assert row.receipt_id=='receipt-old' and row.payment_verified_at is None
+        assert row.actual_received_usdt==Decimal('10') and row.evidence_txid=='a'*64
 
 def test_unverified_order_cannot_bind_and_deadline_becomes_review(flow):
     service,clock,_=flow;order=submit(service)

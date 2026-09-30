@@ -28,6 +28,26 @@ def test_review_claim_requires_new_payment_verification_before_execution(core):
     assert service.ledger.balance('alice') == 0
 
 
+def test_review_claim_preserves_receipt_amount_and_unexecuted_binding(core):
+    from sqlalchemy import select
+    from app.modules.recharge.models import RechargeRequest, RechargeCreditBinding
+    service, order_id, _ = approved_order(core)
+    with core[1]() as session:
+        row = session.get(RechargeRequest, order_id)
+        receipt, amount, txid = row.receipt_id, row.actual_received_usdt, row.evidence_txid
+        binding = session.scalar(select(RechargeCreditBinding).where(
+            RechargeCreditBinding.request_id == order_id))
+        binding_id, adjustment_id, state = binding.id, binding.adjustment_id, binding.state
+    service.claim_order(request_id=order_id, actor_id='cs', review=True,
+        reason='independent review', idempotency_key='review-preserve-facts')
+    with core[1]() as session:
+        row = session.get(RechargeRequest, order_id)
+        binding = session.get(RechargeCreditBinding, binding_id)
+        assert row.payment_verified_at is None
+        assert (row.receipt_id, row.actual_received_usdt, row.evidence_txid) == (receipt, amount, txid)
+        assert (binding.adjustment_id, binding.state, binding.state_active) == (adjustment_id, state, '1')
+
+
 def test_committed_execution_registration_failure_recovers_with_worker(core, monkeypatch):
     service, order_id, token = approved_order(core)
     def unavailable(**kwargs):
