@@ -1,6 +1,6 @@
 # 0.4.25/2194 性能、静音与后台媒体
 
-状态：Android 0.4.26/2195已生产发布；iOS同源候选预检超时后修复工作流，等待新CI及企业回签。用户授权实施、自主计划/ADR 和 Android 更新发布，后台下载包括后台与锁屏。
+状态：Android 0.4.26/2195已生产发布；iOS 0.4.26/2195同源候选CI已通过，原始IPA已交付待企业回签。用户授权实施、自主计划/ADR 和 Android 更新发布，后台下载包括后台与锁屏；iOS挂起新媒体发现链仍未实现。
 规格/计划：../../superpowers/specs/2026-09-30-mobile-perf-mute-media.md；../../superpowers/plans/2026-09-30-mobile-perf-mute-media.md。
 
 输入：main 8e173178；已发布移动 0.4.25/2194，源码05c05793；iOS回签分发552a07a4已另案完成。主诉Android Redmi K80、5条/秒，没有具体时间。用户补充连续使用约15分钟后渐进卡顿，杀死重启好转；无法提供MB，按4500事件及反复切换进行回归。未取得K80真机测量。
@@ -35,5 +35,11 @@ iOS首轮CI`36756076089`源码88bd：simulator-preflight 18:05:39–18:42:52 UTC
 
 Android CI`36756076135`的Flutter analyze/test及debug native build通过；infra失败与基线`36727389885`逐字同一`test_singapore_edge.py::test_render_uses_file_secret_and_blocks_internal_peer_networks` owner-only fixture错误，相关infra/services/CI inputs无改动，不称整体CI通过、不降低秘密权限检查。
 
-下一步：提交iOS工作流及已发布下载元数据/台账，触发新同源iOS CI；通过后下载原始候选IPA交企业回签，旧2194例外不可复用。K80持续15分钟/后台与锁屏真实RSS及动画验收待用户更新后反馈。
+已发布download.html/registry及契约回填；回填后原固定2194测试3项失败（保留516pass/3fail日志），更新精确已发布2195身份断言且保留iOS2194警示/签名断言后，前端519/519通过，10.26秒，UI契约33组件/518屏PASS。工作流及台账`e1758bca6aec41d155dd2c4603fe627f285d5679`已合入main/push，新iOS CI **36762746785** 自动启动；Android实际包仍源88bd，移动运行源码未改。根主工作区current-state仅插入本任务索引，原后台WIP段落/索引未暂存保留。
+
+iOS重试预检：CI`36762746785`/job`110049172077`于2026-09-30 19:01:39–19:27:10 UTC（2026-10-01 03:01:39–03:27:10 +08）成功，SQLCipher4、Keychain1、通知1及原生导航2/后台媒体策略2均通过。日志SHA`988578223eb88358853a6ebd6eb47cabfef33c1f2f232a4299120495fec81972`；原始xcresult/log artifact`11120811231`、ZIP SHA`207f4f507efd659ce956350568417162d5f27e216ba584ab1c90343fe0586b89`已保存。这证明Mac模拟器边界，不是锁屏新事件发现或真机验收。
+
+iOS signed build job`110059397115`于19:27:17–19:37:02 UTC（03:27:17–03:37:02 +08）成功；Swift原生31/31，CI深度严格codesign、生产APNs、iPad、资源SHA与SQLCipher加载顺序通过。CI artifact`11120579195`，原始ZIP SHA`5492cfbd6c9c9210508e12e0dbc0316103887f1327b5a09a69ff999c2ad9d6e7`；下载后独立解析包内版本、Bundle ID及资源吻合。**待企业回签IPA**：`D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-30/mobile-perf-mute-media/ios-candidate/ChatFlow-0.4.26-build2195-enterprise-resign-candidate.ipa`，61,474,982字节，SHA`5699c3d7ed9ef6fe45c93a876c246a08b379059b4c19c64ddde2de368b42041d`，Bundle ID `com.liuhetong.liuhetongMobile`，来源e1758bca；原包字节保留，未企业签名、未上传分发，生产iOS仍2194。输入/日志/证据与APK均已逐SHA保存在主工作区本任务artifact目录，未复制可丢弃build树。
+
+下一步：用户企业回签后，先按release-metadata.md绑定新2195具体SHA与签名/权益/内容差异，再发布iOS；旧2194例外不可复用。K80持续15分钟/后台与锁屏真实RSS及动画验收待用户更新后反馈。iOS挂起新媒体发现链属于未完成范围，不能用候选CI通过替代。
 限制：无真机；iOS系统后台调度和企业回签只阻塞对应平台验证/发布，不阻塞Android代码修复。

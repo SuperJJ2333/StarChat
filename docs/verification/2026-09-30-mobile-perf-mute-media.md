@@ -1,6 +1,6 @@
 # 2194 性能、静音与媒体修复验证（Android2195已发布）
 
-授权、恢复步骤与独立范围见[任务记录](../workflow/tasks/2026-09-30-mobile-perf-mute-media.md)、[规格](../superpowers/specs/2026-09-30-mobile-perf-mute-media.md)、[计划](../superpowers/plans/2026-09-30-mobile-perf-mute-media.md)。工作树基线 main `8e173178`。截至2026-10-01 02:53 +08，Android `0.4.26+2195` 已生产发布，iOS仍2194；首轮iOS原生CI超时，无新IPA，工作流修复已通过增量审查。
+授权、恢复步骤与独立范围见[任务记录](../workflow/tasks/2026-09-30-mobile-perf-mute-media.md)、[规格](../superpowers/specs/2026-09-30-mobile-perf-mute-media.md)、[计划](../superpowers/plans/2026-09-30-mobile-perf-mute-media.md)。工作树基线 main `8e173178`。Android `0.4.26+2195` 已生产发布；iOS新候选CI于2026-10-01 03:37:02 +08完成，原始IPA已保存待企业回签，生产仍2194。
 
 ## 日志证据与归因边界
 
@@ -15,7 +15,7 @@ Matrix send330次样本p95约165ms，history3274次p95约105ms，media74次p95�
 - UI快照按16ms合并，逐个解密事件和发送确认不合并。缩略图完成只失效媒体行；键盘、无关父刷新保留消息行/输入组件。默认所有可见GIF可同时动画，显式预算与离屏/后台暂停仍保留。Task2聚焦65/65、analyze0。
 - 静音同时写本地账号偏好与自有Matrix `dont_notify` 规则，离线耐久重试、取消静音与旧偏好迁移。快速连续选择保留最终意图；可选成员刷新失败不会反转已保存选择；iOS silent显式关闭alert/sound。Task1初始94/94；独立审查新增四个红用例后61/61；范围文案回归42/42。
 - 未进入页面也发现逐个已解密图片/GIF/视频及Moments最新媒体；原生传输只处理密文/受控业务媒体，Matrix解密与摘要校验仍在SDK本机。账号撤销取消任务，闪照排除，交互保留调度槽。Task3最终Android编译/4原生测试通过；独立审查发现的预览命名空间、同内容事件别名、密文身份、永久失败退役、生命周期、账号lease释放与重启孤儿文件限额均已关闭；视频poster首帧与重入聚焦48/48及35/35相关回归通过。
-- HTML全量519通过；移动边界329通过、1跳过（内存输入最终重跑中）；UI契约33组件/518屏PASS；候选升版三项契约PASS。完整analyze最终无问题。早期完整Flutter在2275通过/9跳过/14失败时主动取消，真实exit1：新增source未登记架构清单、Moments退出定时器竞争、旧目录回调字符串断言；保留日志，不称完整通过。最终第一轮5201通过/9跳过/1失败，朋友圈取消上传本地writer与目录释放竞争；新增两个真实文件RED回归后修复，相关59/59及分析通过，独立复审无新P0–P2。修复后完整共享门禁运行中。
+- HTML全量519通过；最终移动边界329通过、1跳过；UI契约33组件/518屏PASS；候选升版三项契约PASS。完整analyze最终无问题。早期完整Flutter在2275通过/9跳过/14失败时主动取消，真实exit1：新增source未登记架构清单、Moments退出定时器竞争、旧目录回调字符串断言；保留日志，不称完整通过。最终第一轮5201通过/9跳过/1失败，朋友圈取消上传本地writer与目录释放竞争；新增两个真实文件RED回归后修复，相关59/59及分析通过，独立复审无新P0–P2。修复后完整共享门禁5204通过/9跳过、exit0。
 - 完整 `verify.ps1` 预检在缺少本地 `.env` 时exit1；未导入生产配置制造通过。Repository/Deployment policy与模板步骤已执行，API/Worker源码无改动，依赖同输入门禁；此报告不称全仓脚本通过。
 
 Windows PowerShell7、Flutter3.44.9/Dart3.12.2、Gradle9.1.0；pubspec锁SHA256 `314504b9bf3917b30a6e12b3262eca23f774a43e4b23a88a801ae35bbea76bf3`。原锁恢复后PUB_HOSTED_URL=pub.dev且pub get --enforce-lockfile，未升级依赖。全部原始日志在本任务 `artifacts/2026-09-30/mobile-perf-mute-media/`。
@@ -40,7 +40,7 @@ Figma已退役：本次仅更新HTML demo `frontend/index.html?screen=chat-group
 
 ## 未完成验收与平台边界
 
-Android源代码保持既有foreground服务存活时Matrix sync/source运行，可发现锁屏新收件；没有实际K80锁屏、厂商强杀或系统限额验证。iOS系统后台URLSession只保证已登记任务在允许调度时继续；挂起后才新收到媒体的唤醒→sync→解密→登记链路未实现，Moments挂起新帖亦不能保证即时发现。本轮不添加NSE、不迁移密钥、不放宽E2EE。iOS macOS编译/XCTest、候选IPA、企业回签及真机尚未完成，2194精确回签差异授权不得复用给2195。
+Android源代码保持既有foreground服务存活时Matrix sync/source运行，可发现锁屏新收件；没有实际K80锁屏、厂商强杀或系统限额验证。iOS系统后台URLSession只保证已登记任务在允许调度时继续；挂起后才新收到媒体的唤醒→sync→解密→登记链路未实现，Moments挂起新帖亦不能保证即时发现。本轮不添加NSE、不迁移密钥、不放宽E2EE。iOS模拟器预检、导航/后台媒体XCTest、正式签名编译和候选IPA已完成，企业回签及真机尚待完成，2194精确回签差异授权不得复用给2195。
 
 最终共享门禁：2026-10-01 02:00 +08前，`flutter-full-memory-final-green.txt` **5204通过/9跳过，exit0，3分24秒**；`analyze-release-final.txt` **No issues，exit0，8.9秒**；`mobile-contracts-memory-final.txt` **329通过/1跳过，exit0，30.06秒**。Moments取消与计数并发增量审查已关闭全部确认P0–P2。02:00:35 +08只读生产核对仍两端2194、min支持3；main/origin仍8e173178。
 
@@ -54,4 +54,6 @@ Android源代码保持既有foreground服务存活时Matrix sync/source运行，
 
 Android CI`36756076135`移动分析/测试/native debug通过，infra整体失败已对比基线`36727389885`相同owner-only secret fixture错误且对应输入未变；日志`infra-ci-2195.log`/`infra-ci-baseline.log`，不称整体CI通过。
 
-iOS原始CI`36756076089`35分钟预检取消、build skipped，原生SQLCipher4/Keychain1/通知1已通过，raw XCTest结果缺失。工作流7行补丁仅复用当前sim架构/BUILD_DIR并45分钟预算，保留全部gates；4合同红绿、YAML/bash与独立复核通过。日志/证据`ios-preflight-diagnostic/`。Mac新CI、候选IPA、企业回签及锁屏新收件链仍待办，不复用2194单包例外。下一步提交此有界工作流修复并等待真实Mac结果。
+iOS原始CI`36756076089`35分钟预检取消、build skipped，原生SQLCipher4/Keychain1/通知1已通过，raw XCTest结果缺失。工作流7行补丁仅复用当前sim架构/BUILD_DIR并45分钟预算，保留全部gates；4合同红绿、YAML/bash与独立复核通过。日志/证据`ios-preflight-diagnostic/`。已发布元数据及契约回填后519/519、UI契约PASS；main `e1758bca`已推送。新CI `36762746785`的预检job`110049172077`于19:27:10 UTC成功：SQLCipher4、Keychain1、通知1、导航2及后台媒体策略2；日志及原始xcresult artifact`11120811231`已留存，身份见`ios-preflight-2195-retry-summary.json`。signed build job`110059397115`于19:37:02 UTC通过，Swift31/31、严格codesign/APNs/iPad/资源/SQLCipher门禁通过。
+
+[iOS待企业回签候选IPA](artifacts/2026-09-30/mobile-perf-mute-media/ios-candidate/ChatFlow-0.4.26-build2195-enterprise-resign-candidate.ipa)：0.4.26/2195，61,474,982字节，SHA`5699c3d7ed9ef6fe45c93a876c246a08b379059b4c19c64ddde2de368b42041d`，Bundle ID `com.liuhetong.liuhetongMobile`。原始CI artifact`11120579195`的ZIP SHA及来源e1758bca见`ios-candidate/candidate-identity.json`；本地再次解析版本与资源，IPA字节未改。尚未企业签名或发布；生产iOS仍2194，旧单包例外不复用。iOS挂起新收件发现链仍未实现，CI通过不覆盖该缺口。
