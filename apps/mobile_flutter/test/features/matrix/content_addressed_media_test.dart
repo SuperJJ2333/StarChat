@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../media/media_test_fixtures.dart';
+import 'package:liuhetong_mobile/features/media/image_compression_policy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -304,6 +306,70 @@ void main() {
     final scratch = await root.createTemp('case-');
     PathProviderPlatform.instance = _Paths(scratch.absolute.path);
     addTearDown(() => scratch.delete(recursive: true));
+  });
+  for (final fromLease in [false, true]) {
+    test(
+        'image intake precedes thumbnail and final-byte cache (lease $fromLease)',
+        () async {
+      final original = largeMediaTestGif();
+      final finalBytes = await ImageCompressionPolicy.prepare(original);
+      final finalHash = sha256.convert(finalBytes).toString();
+      final client = _UploadClient();
+      final room = _UploadRoom(client);
+      client.room = room;
+      Uint8List? thumbnailSource;
+      client.customImageResizer = (args) async {
+        thumbnailSource = args.bytes;
+        return MatrixImageFileResizedResponse(
+            bytes: mediaTestPng(width: 1, height: 1),
+            width: 1,
+            height: 1,
+            originalWidth: 192,
+            originalHeight: 192);
+      };
+      final owner =
+          MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+      if (fromLease) {
+        final lease = await owner.openRoomLease(room.id);
+        await lease.sendEncryptedAttachment(
+            bytes: original, name: 'disguised.jpg', mimeType: 'image/jpeg');
+        await lease.cancel();
+      } else {
+        await owner.sendEncryptedMedia(room.id, original, 'image/jpeg',
+            filename: 'disguised.jpg');
+      }
+      expect(thumbnailSource, isNull,
+          reason: 'GIF sends use their original animation');
+      expect(room.sent!['chatflow_media']['content_sha256'], finalHash);
+      expect(room.sent!['info']['mimetype'], 'image/gif');
+      expect(client.uploads.first,
+          (await MediaEnvelope.forBytes(finalBytes)).encrypted.data);
+      final cached = await MediaCache.cached(room.id, 'outgoing:$finalHash',
+          accountId: client.userID!, contentSha256: finalHash);
+      expect(cached, isNotNull);
+      expect(await cached!.readAsBytes(), finalBytes);
+    });
+  }
+  test('static thumbnail is generated from final compressed pixels', () async {
+    final original = mediaTestPng(width: 1200, height: 800);
+    final finalBytes = await ImageCompressionPolicy.prepare(original);
+    final client = _UploadClient();
+    final room = _UploadRoom(client);
+    client.room = room;
+    Uint8List? thumbnailSource;
+    client.customImageResizer = (args) async {
+      thumbnailSource = args.bytes;
+      return null;
+    };
+    await MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'))
+        .sendEncryptedMedia(room.id, original, 'image/png',
+            filename: 'large.png',
+            extraContent: {
+          'info': {'w': 1200, 'h': 800}
+        });
+    expect(thumbnailSource, finalBytes);
+    expect(room.sent!['info']['w'], 1080);
+    expect(room.sent!['info']['h'], 720);
   });
   test('bounded encrypted download authenticates and stops after its byte cap',
       () async {
@@ -629,6 +695,7 @@ void main() {
   }
   test('prepared images skip SDK post-encryption resizing and retain thumbnail',
       () async {
+    final bytes = mediaTestPng();
     final client = _UploadClient();
     final room = _UploadRoom(client);
     client.room = room;
@@ -651,6 +718,8 @@ void main() {
   test(
       'image automatic thumbnail preprocessing happens before content derivation',
       () async {
+    final bytes = mediaTestPng();
+    final hash = sha256.convert(bytes).toString();
     final client = _UploadClient();
     final room = _UploadRoom(client);
     client.room = room;

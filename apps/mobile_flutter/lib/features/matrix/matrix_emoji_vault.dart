@@ -3,7 +3,7 @@ import 'dart:async';
 
 import 'emoji_vault.dart';
 import 'emoji_preview_cache.dart';
-import 'content_addressed_media.dart';
+import '../media/media_asset_gateway.dart';
 
 const emojiVaultAccountDataType = 'com.changliao.emoji.vault';
 
@@ -141,12 +141,17 @@ final class MatrixEmojiVault {
 
   Future<Uint8List> loadBytes(EmojiVaultItem item) async {
     final backend = _backend;
-    if (backend is MatrixEmojiVaultContentLoader) {
-      return (backend as MatrixEmojiVaultContentLoader)
-          .loadContent(roomId, item);
-    }
-    final bytes = await backend.downloadAndDecrypt(roomId, item.encryptedFile);
-    verifyMediaContent(bytes, item.sha256);
+    _revision; // The SDK backend verifies the current account session here.
+    final bytes = await MediaAssetGateway.readOriginal(
+      () => backend is MatrixEmojiVaultContentLoader
+          ? (backend as MatrixEmojiVaultContentLoader).loadContent(roomId, item)
+          : backend.downloadAndDecrypt(roomId, item.encryptedFile),
+      // The SDK cache loader already verifies this digest; other loaders need
+      // the shared verification, including legacy random encrypted envelopes.
+      expectedSha256:
+          backend is MatrixEmojiVaultContentLoader ? null : item.sha256,
+    );
+    _revision; // Verification yields; revoked accounts cannot receive bytes.
     return bytes;
   }
 

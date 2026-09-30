@@ -1,6 +1,6 @@
 # Unified media and GIF original fidelity
 
-Status: investigating/design approved by standing user authorization; no new product code or publication yet.
+Status: reviewed implementation and final shared gates PASS; source freeze/build/publication next. User confirmed 500KB (500*1024 bytes) for initial image/GIF compression.
 Spec: ../../superpowers/specs/2026-10-01-unified-media-gif-design.md
 Plan: ../../superpowers/plans/2026-10-01-unified-media-gif.md
 Worktree: C:/Users/Administrator/.codex/worktrees/unified-media-gif-20261001/StarChat
@@ -13,5 +13,12 @@ Evidence before this task: server chatflow_media_dedup_enabled=true and deployed
 Ruling: unify client policy/identity/read/export interfaces, retain protocol and privacy domains — accepted prior answer and frozen architecture disallow migrating chat ciphertext into business storage or global plaintext dedup — if user intended a single cross-domain public URL, that would need a separate privacy/permissions architecture rather than silently exposing chat.
 Ruling: skill approval pauses overridden by user's explicit standing autonomy authorization; still write spec/plan and perform independent domain/security review before frozen candidate. One child implementer at a time; root owns independent files only.
 
-Next: Task1 red/green and collection deterministic adapter; root audits the remaining upload/read/export boundaries. No server writes planned for client unification.
+Ruling: supersede GIF-wide compression bypass with first-intake bounded animated compression. User has now explicitly selected the recommended500KB option (implementation cap500*1024 bytes). Reuse compliant compressed bytes on later operations — user explicitly requires KB-sized images — consequence: very complex animations may need reduced resolution or an explicit size-error rather than uploading a huge file; never silently flatten animation.
+Task1 frozen: image policy/core/collection focused92 PASS, scoped analyze13 files clean, independent specification/domain and quality/security review PASS. Real oversized eight-frame GIF1,621,301→249,795 bytes, timing/loops/transparency retained. Task2 focused104 PASS before review; two P2 findings (validation/session race and legacy prepared queue) are under test-first repair. No new candidate published.
+
+2026-10-01 05:22–05:25 +08 delivery preflight: fresh production SettingService snapshot Android0.4.26/2195, iOS0.4.25/2194, both min3; artifact live-release-preflight.json. GitHub recent runs show successful previous iOS candidate36762746785 from ios-0353.yml/e1758bca, no newly running mobile candidate. Initial ios-testflight.yml query returned an older unrelated workflow history, so it is not used to establish candidate status. GitHub CLI unavailable; authenticated read uses existing Git credential in memory, never emitted. Selected source version0.4.27+2196; paired bump script/version contract3 PASS, artifact version-bump.log. Signing identity files present; no signing or publication performed. Refresh live baseline again before build/publication.
+
+2026-10-01 05:59:14 +08 final gates: Flutter analyze exit0/no issues (8.7s); full Flutter5265 PASS/9skip/0fail (4m06s); mobile contracts329 PASS/1skip/0fail (30.28s). Final Flutter command interval05:54:51–05:59:14 +08, logs final-analyze-release.log/final-flutter-release.log and final-flutter-release-gates.json. Whole-branch review followed by focused final-fix review PASS; two integration P2 findings closed. Two subsequent test-only brace-format edits remove analyzer infos, without runtime/expectation changes. Publisher preparation independent specification/platform/domain and quality/security review PASS;29 offline and6 real isolated PostgreSQL tests PASS. verify.ps1 previously exit1 due to missing local .env; policy/template gates passed; no production secrets imported.
+
+Next: commit reviewed final source0.4.27+2196, freeze inputs, conventional APK build and ios-0353 native candidate. Android publication is authorized; final artifact/source/signing/CDN/settings gates remain pending. No backend application source change. Preserve all prior iOS settings and2195 artifacts.
 Outstanding inherited gap: iOS fully suspended new-event wake/sync/decrypt discovery remains unimplemented; no K80 endurance/device performance measurement.

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import '../media/media_test_fixtures.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/emoji_vault.dart';
@@ -29,7 +30,7 @@ void main() {
       () async {
     final transport = FakeEmojiVaultTransport();
     final vault = EmojiVault(transport: transport);
-    final bytes = Uint8List.fromList([1, 2, 3, 4]);
+    final bytes = mediaTestGif();
 
     final first = await vault.add(bytes, mimeType: 'image/gif');
     final second = await vault.add(bytes, mimeType: 'image/gif');
@@ -99,7 +100,7 @@ void main() {
     final transport = FakeEmojiVaultTransport();
     final vault = EmojiVault(transport: transport);
     final item = await vault.add(
-      Uint8List.fromList([1, 2, 3]),
+      mediaTestPng(),
       mimeType: 'image/png',
     );
 

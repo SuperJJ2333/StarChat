@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import '../media/media_test_fixtures.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/emoji_vault.dart';
@@ -179,7 +180,7 @@ void main() {
     final session = await MatrixEmojiVault.open(backend);
 
     await session.vault.add(
-      Uint8List.fromList([1, 2, 3]),
+      mediaTestGif(),
       mimeType: 'image/gif',
     );
 
@@ -190,10 +191,10 @@ void main() {
     final backend = FakeMatrixEmojiVaultBackend();
     final session = await MatrixEmojiVault.open(backend);
     final item = await session.vault.add(
-      Uint8List.fromList([1, 2, 3]),
+      mediaTestGif(),
       mimeType: 'image/gif',
     );
 
-    expect(await session.loadBytes(item), [1, 2, 3]);
+    expect(await session.loadBytes(item), mediaTestGif());
   });
 }

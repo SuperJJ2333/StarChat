@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'dart:typed_data';
@@ -251,6 +252,59 @@ void main() {
     PathProviderPlatform.instance = ForwardPaths(dir.absolute.path);
     addTearDown(() => dir.delete(recursive: true));
   });
+  for (final queued in [false, true]) {
+    test(
+        'generic GIF retains file type and encrypted identity on forward queued=$queued',
+        () async {
+      final bytes = base64Decode(
+          'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+      final envelope = await MediaEnvelope.forBytes(bytes);
+      final client = ForwardClient(
+          httpClient: MockClient(
+              (_) async => http.Response.bytes(envelope.encrypted.data, 200)));
+      final source = ForwardRoom(id: '!generic-source:test', client: client);
+      final target = ForwardRoom(id: '!generic-target:test', client: client);
+      client.destinations.addAll({source.id: source, target.id: target});
+      final event = AuthenticatedForwardVideo._(
+        room: source,
+        id: r'$generic',
+        envelope: envelope,
+        contentBytes: bytes.length,
+        messageType: MessageTypes.File,
+        mimeType: 'image/gif',
+      );
+      source.timeline = ForwardTimeline([event]);
+      final owner = forwardOwner(client);
+      final lease = await owner.openRoomLease(source.id);
+      await lease.openRoomTimeline(onUpdate: () {});
+      for (var round = 0; round < 2; round++) {
+        MatrixOutgoingForwardMedia? snapshot;
+        if (queued) {
+          snapshot = lease.snapshotForwardSource(event.eventId)
+              as MatrixOutgoingForwardMedia;
+          final jobs = await lease.enqueueForward(
+              batchId: 'generic-file-$round',
+              messages: [snapshot],
+              targetRoomIds: [target.id]);
+          await owner.outgoingWork.drain();
+          expect(jobs.single.items.single.state, MatrixOutgoingWorkState.sent);
+        } else {
+          await lease.forwardEncryptedCopy(source.id, target.id, event.eventId);
+        }
+        expect(target.sent!.msgType, MessageTypes.File);
+        expect(target.sent!.mimeType, 'image/gif');
+        expect(target.sent!.name, endsWith('.gif'));
+        expect(target.sent!.bytes, bytes);
+        expect(target.sent!.size, bytes.length);
+        expect(target.sent!.preEncrypted!.data, envelope.encrypted.data);
+        if (snapshot != null) {
+          expect(
+              snapshot.presentationKind, MatrixOutgoingPresentationKind.file);
+        }
+      }
+      await lease.cancel();
+    });
+  }
   test('ten 20MiB media descriptors queue without reserving all payloads',
       () async {
     final envelope =

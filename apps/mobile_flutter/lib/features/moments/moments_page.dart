@@ -13,6 +13,7 @@ import '../../ui/moments/moment_warning_banner.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import '../matrix/image_picker_page.dart';
+import '../matrix/gallery_media_payload.dart';
 import 'moment_comment_composer.dart' show MomentGallerySelection;
 
 import '../../ui/components/wechat_scaffold.dart';
@@ -1271,15 +1272,19 @@ final class _MomentsPageState extends State<MomentsPage> {
     }
     final image = selected.photos.single;
     if (epoch != _accountEpoch) return null;
-    final bytes = await image.originalBytes();
+    final prepared = await prepareGalleryMedia(image, original: true);
+    if (!mounted || epoch != _accountEpoch || !await _stillSameAccount()) {
+      return null;
+    }
+    final bytes = prepared.bytes;
     onPreview(bytes);
-    final mimeType = image.mimeType;
+    final mimeType = prepared.mimeType;
     // BUG-38：四步链路（begin→put→complete→set）整体最多重试一次，
     // 失败给出友好提示而非原始报错；中途失败不再向查看器裸抛异常。
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final begun = await api.beginMomentCoverUpload(
-          fileName: 'moment-cover',
+          fileName: prepared.fileName,
           mimeType: mimeType,
           byteSize: bytes.length,
         );

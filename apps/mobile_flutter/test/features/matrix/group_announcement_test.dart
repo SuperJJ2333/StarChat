@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/group_room_authority.dart';
 import 'package:liuhetong_mobile/features/matrix/group_announcement_service.dart';
+import '../media/media_test_fixtures.dart';
 
 void main() {
   final previousPaths = PathProviderPlatform.instance;
@@ -61,7 +62,7 @@ void main() {
       expect(
           await MatrixGroupAnnouncementService(room)
               .loadImage(room.document!.eventId),
-          [1, 2, 3]);
+          mediaTestPng());
     });
   }
   test('ordinary plaintext image cannot be treated as announcement image',
@@ -346,7 +347,7 @@ class _ImageEvent extends Event {
           {bool getThumbnail = false,
           Future<Uint8List> Function(Uri)? downloadCallback,
           bool fromLocalStoreOnly = false}) async =>
-      MatrixFile(bytes: Uint8List.fromList([1, 2, 3]), name: 'image.png');
+      MatrixFile(bytes: mediaTestPng(), name: 'image.png');
 }
 
 class _Paths extends PathProviderPlatform {

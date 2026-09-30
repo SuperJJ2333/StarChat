@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use subagent-driven-development task-by-task; one implementation child at a time, root may own independent integration files. User has preapproved plans/ADRs/autonomous execution. Temporary skill artifacts are placed in docs/verification/artifacts/2026-10-01/unified-media/, overriding .superpowers defaults.
 
-**Goal:** One shared media policy for ingestion, preserved originals, verified reads and format-correct exports; unchanged GIFs remain identical across collection/re-send/forward/save/Moments.
+**Goal:** One shared media policy for size-bounded initial image compression, verified reads and format-correct exports; compressed GIFs remain identical across collection/re-send/forward/save/Moments.
 **Architecture:** Shared client MediaAssetGateway with existing Matrix and business transport/cache adapters. Keep encrypted chat and business media storage and authorization domains separate.
 **Tech Stack:** Flutter3.44.9/Dart3.12.2, vendored Matrix, existing Android/iOS gallery APIs and business API.
 **Spec:** ../specs/2026-10-01-unified-media-gif-design.md
@@ -17,30 +17,30 @@ Disguised GIF headers; corrupt/truncated animation; export of loaded thumbnail i
 
 ### Task 1: Shared original policy and encrypted collection
 
-Owner child: create lib/features/media/media_asset_gateway.dart and relevant tests; matrix_e2ee_client.dart ONLY uploadEncrypted vault method/import; content_addressed_media.dart as required for real shared Matrix prepared exit; matrix_emoji_vault/emoji_vault tests. No other regions of matrix_e2ee_client or Moments/UI files.
+Owner child image_budget after unified_media_core handoff: create lib/features/media/media_asset_gateway.dart, image_compression_policy.dart and relevant tests; matrix_e2ee_client.dart vault uploadEncrypted, _sendMedia before sizing/thumbnail/cache and lease sendEncryptedAttachment routing; content_addressed_media.dart as required for real shared Matrix prepared exit; matrix_emoji_vault/emoji_vault tests and pinned image dependency. Root does not edit matrix_e2ee_client while child owns it. No Moments/UI files.
 
-Interfaces: expose MediaAssetGateway.inspect(Uint8List bytes,{required String mimeType,required String filename}) returning bytes/mimeType/filename and isGif; prepareImage(bytes,{required Future<Uint8List> Function(Uint8List) transform}) returns original validated GIF without transform and delegates other input; readOriginal(loader,{String? expectedSha256}) verifies supplied trusted digest without permanent caching. Expose an export filename helper preserving truthful detected format. Refine API in report before dependent tasks; root uses these exact public methods.
+Interfaces: expose MediaAssetGateway.inspect(Uint8List bytes,{required String mimeType,required String filename}) returning bytes/mimeType/filename and isGif; prepareImage(bytes,{required Future<Uint8List> Function(Uint8List) transform}) uses shared bounded compression: compliant GIFs reuse bytes, larger GIFs retain animation while shrinking, static output is checked against budget. ImageCompressionPolicy.prepare(bytes,{transform?}) supplies shared default processing. readOriginal(loader,{String? expectedSha256}) verifies supplied trusted digest without permanent caching. readFile(loader,{ensureCurrent?}) verifies file availability without whole-file allocation and retains caller authorization. Expose an export filename helper preserving truthful detected format.
 
-- [ ] Write and run failing tests: disguised .jpg GIF remains image/gif/.gif; malformed GIF rejects; GIF transform0 and bytes identical; wrong trusted digest rejects; nonGIF processing works; real SDK encrypted vault ciphertext differs before fix and matches ADR-0060 prepared chat envelope after fix; existing collection duplicates upload once.
-- [ ] Implement minimal shared policy and route collection through existing prepared encryption, keeping metadata E2EE and upload=mime octet-stream. Compatibility tests for old random vault reads.
-- [ ] Focus tests/analyze, record commands/inputs/red-green under artifact task-1-report.md, commit owned files only; specification then security/quality review.
+- [x] Write and run failing tests: disguised .jpg GIF remains image/gif/.gif; malformed GIF rejects; budget-compliant GIF transform0 and bytes identical, oversize animated GIF shrinks without flattening; wrong trusted digest rejects; static oversize output fails closed; real SDK encrypted vault ciphertext differs before fix and matches ADR-0060 prepared chat envelope after fix; existing collection duplicates upload once.
+- [x] Implement minimal shared policy and route collection through existing prepared encryption, keeping metadata E2EE and upload=mime octet-stream. Compatibility tests for old random vault reads.
+- [x] Focus tests/analyze, record commands/inputs/red-green under artifact task-1-report.md, commit owned files only; specification then security/quality review.
 
 ### Task 2: Integrate all client upload/read/export boundaries
 
-Owner root: business_api_client.dart, device_gallery_source.dart, moment_image_preprocessor.dart, moment_composer_page.dart, moment_publish_coordinator.dart, ui/chat/encrypted_media_view.dart and wechat_image_editor.dart, relevant tests; cache/protocol base readers only where needed for shared verified reads. One later child may own a declared independent subset after Task1 finishes.
+Owner root: business_api_client.dart, gallery_media_payload.dart, group_announcement_service.dart, moment_image_preprocessor.dart, moment_composer_page.dart, moment_publish_coordinator.dart, moments_page.dart, avatar_source.dart, gallery_media_export.dart, encrypted_media_view.dart/wechat_image_editor.dart/wechat_video_message.dart, wallet_qr_exporter.dart/invite_code_page.dart, relevant tests; MomentMediaCache/RetainedImageCacheManager only for shared verified reads. DeviceGallerySource keeps original file selection; downstream shared preparation enforces upload budget. No matrix_e2ee_client/core policy edits while child owns them.
 
-- [ ] Audit complete upload/read/export inventory into artifact coverage.md before claiming completeness; use existing aggregate transport methods so ordinary files/voice/videos and avatar/cover/comment/poster are covered.
-- [ ] RED for GIF preprocessor direct call and disguised export; integrate shared image policy to avoid bypass through old standalone Moments routes; truthful export filename and shared original loader. Add byte/MIME validation at business PUT boundaries without changing session declaration or authorizations.
-- [ ] Shared read verification wraps existing authorized/cache loaders; it must not initiate unauthenticated requests or treat mxc hashes as authorization. Verify original-versus-preview precedence, account revoke and old cache behavior.
-- [ ] Run focused regressions, update coverage checklist and owned report; commit; independent specification and quality/security review.
+- [x] Audit complete upload/read/export inventory into artifact coverage.md before claiming completeness; use existing aggregate transport methods so ordinary files/voice/videos and avatar/cover/comment/poster are covered.
+- [x] RED for GIF preprocessor direct call and disguised export; integrate shared image policy to avoid bypass through old standalone Moments routes; truthful export filename and shared original loader. Add byte/MIME validation at business PUT boundaries without changing session declaration or authorizations.
+- [x] Shared read verification wraps existing authorized/cache loaders; it must not initiate unauthenticated requests or treat mxc hashes as authorization. Verify original-versus-preview precedence, account revoke and old cache behavior.
+- [x] Run focused regressions, update coverage checklist and owned report; commit; independent specification and quality/security review.
 
 ### Task 3: End-to-end identity and whole candidate gates
 
 Owner root/tests/docs. No runtime change without new focused red/green.
 
-- [ ] C→vault→chatA→chatB→export→Moments byte identity test; zero GIF original codec calls, one deterministic ciphertext identity, distinct business domain retained. NonGIF intentional transformation gets new identity.
-- [ ] Complete focused tests, flutter analyze, final shared Flutter full tests and mobile contracts; preflight verify.ps1 and record actual missing environment rather than copy production secrets. No repeat on unchanged inputs.
-- [ ] Whole-branch domain/spec then quality/security review; update task/verification evidence. Source freeze only after gates/reviews.
+- [x] Initial GIF→compression→vault→chatA→chatB→export→Moments byte identity test; output meets agreed KB budget, subsequent GIF codec calls0, one deterministic ciphertext identity, distinct business domain retained. NonGIF intentional transformation gets new identity.
+- [x] Complete focused tests, flutter analyze, final shared Flutter full tests and mobile contracts; preflight verify.ps1 and record actual missing environment rather than copy production secrets. No repeat on unchanged inputs.
+- [x] Whole-branch domain/spec then quality/security review; update task/verification evidence. Source freeze only after gates/reviews.
 
 ### Task 4: Delivery
 

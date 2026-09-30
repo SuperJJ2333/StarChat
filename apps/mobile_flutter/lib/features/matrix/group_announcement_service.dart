@@ -7,6 +7,8 @@ import 'group_room_authority.dart';
 import 'gif_image_policy.dart';
 import 'content_addressed_media.dart';
 import 'media_cache.dart';
+import '../media/media_asset_gateway.dart';
+import '../media/image_compression_policy.dart';
 
 const maxAnnouncementBlocks = 100;
 const maxAnnouncementImageBytes = 20 * 1024 * 1024;
@@ -407,7 +409,13 @@ final class MatrixGroupAnnouncementService
   Future<String> uploadImage(Uint8List bytes, String name) async {
     validateAnnouncementImage(bytes);
     _requireEncryptedManager();
-    final file = MatrixImageFile(bytes: bytes, name: name);
+    final compressed = await ImageCompressionPolicy.prepare(bytes);
+    _requireEncryptedManager();
+    final asset = await MediaAssetGateway.inspect(compressed,
+        mimeType: 'image/jpeg', filename: name);
+    _requireEncryptedManager();
+    final file = MatrixImageFile(
+        bytes: asset.bytes, name: asset.filename, mimeType: asset.mimeType);
     MatrixImageFile? thumbnail;
     try {
       thumbnail = await file.generateThumbnail(
@@ -446,9 +454,8 @@ final class MatrixGroupAnnouncementService
             roomId: room.id,
             eventId: eventId,
             sourceIdentity: matrixMediaSourceIdentity(event.content),
-            contentSha256: hashes?.contentSha256), () async {
-      return (await event.downloadAndDecryptAttachment()).bytes;
-    });
+            contentSha256: hashes?.contentSha256),
+        () => downloadMediaContent(event));
     _requireMember();
     validateAnnouncementImage(bytes);
     return bytes;

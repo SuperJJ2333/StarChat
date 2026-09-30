@@ -11,7 +11,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/image_picker_page.dart';
-import '../matrix/gif_image_policy.dart';
+import '../media/media_asset_gateway.dart';
 import '../matrix/video_transcode.dart';
 import '../matrix/media_cache.dart';
 import '../../ui/moments/moment_media_cache.dart';
@@ -413,12 +413,6 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         session, _payload(), widget.api.newIdempotencyKey());
   }
 
-  String _jpegFileName(String original) {
-    final base = original.replaceAll(RegExp(r'\.[^.]+$'), '');
-    final safe = base.isEmpty ? 'moment' : base;
-    return '$safe.jpg';
-  }
-
   Future<List<String>> _uploadPendingImages(MomentPublishSession lease) async {
     final preprocessor = widget.imagePreprocessor ?? MomentImagePreprocessor();
     while (images.isNotEmpty) {
@@ -439,28 +433,20 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       } catch (_) {
         throw const MomentImageException('读取媒体失败，请重新选择');
       }
-      final gif = isGifBytes(bytes);
-      if (gif) {
-        try {
-          validateGifStructureForSend(bytes);
-        } on FormatException catch (error) {
-          throw MomentImageException(error.message);
-        }
+      final processed = await preprocessor.process(bytes);
+      if (processed.isEmpty || processed.length > maxMomentImageBytes) {
+        throw const MomentImageException('图片压缩后仍超过体积上限，请重试');
       }
-      final processed = gif ? bytes : await preprocessor.process(bytes);
-      if (processed.isEmpty || processed.length > 20 * 1024 * 1024) {
-        throw const MomentImageException('媒体大小不能超过20MB');
-      }
-      final mimeType = gif ? 'image/gif' : 'image/jpeg';
       // XFile.fromData ignores name on native platforms. Keep upload metadata
       // separately; never send its empty native name to BeginUpload.
-      final suffix = gif ? 'gif' : 'jpg';
-      final fileName = _fileNames[image] ?? 'moment.$suffix';
+      final asset = await MediaAssetGateway.inspect(processed,
+          mimeType: 'image/jpeg', filename: _fileNames[image] ?? 'moment.jpg');
+      final mimeType = asset.mimeType;
       final begun = await widget.api.postMomentTask(
           lease,
           '/moments/media/uploads',
           {
-            'file_name': gif ? 'moment.gif' : _jpegFileName(fileName),
+            'file_name': asset.filename,
             'mime_type': mimeType,
             'byte_size': processed.lengthInBytes,
           },
@@ -768,16 +754,15 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         // than its original bytes, is measured against the shared 20MiB limit.
         final videoFile =
             photo.isVideo ? await photo.localVideoFile?.call() : null;
-        final gif = !photo.isVideo && photo.mimeType == 'image/gif';
-        if (gif &&
+        if (!photo.isVideo &&
             (await photo.originalSizeBytes?.call() ?? 0) > 20 * 1024 * 1024) {
           throw const MomentImageException('图片大小不能超过20MB');
         }
         final bytes = videoFile != null
             ? Uint8List(0)
-            : gif
-                ? await photo.originalBytes()
-                : await photo.compressedBytes();
+            : photo.isVideo
+                ? await photo.compressedBytes()
+                : await photo.originalBytes();
         if (!mounted) return;
         if (videoFile == null &&
             photo.isVideo &&

@@ -629,6 +629,8 @@ void main() {
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
     Map<String, dynamic> draft = {};
     final begins = <Map<String, dynamic>>[];
+    var staticOriginalReads = 0;
+    var staticCompressedReads = 0;
     final requests = <Map<String, dynamic>>[];
     Map<String, dynamic>? published;
     final api = BusinessApiClient(
@@ -697,8 +699,14 @@ void main() {
                     GalleryPhoto(
                         id: '456',
                         thumbnail: png,
-                        originalBytes: () async => png,
-                        compressedBytes: () async => png)
+                        originalBytes: () async {
+                          staticOriginalReads++;
+                          return png;
+                        },
+                        compressedBytes: () async {
+                          staticCompressedReads++;
+                          return png;
+                        })
                   ],
                   original: true,
                   flash: false
@@ -706,6 +714,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-pick-images')));
     await tester.pumpAndSettle();
+    expect(staticOriginalReads, 1);
+    expect(staticCompressedReads, 0,
+        reason:
+            'saved compliant static bytes must reach the unified policy unchanged');
     await tester.tap(find.byKey(const Key('moment-compose-cancel')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存草稿'));

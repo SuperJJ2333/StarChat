@@ -18,8 +18,8 @@
   {
     "schema": "BeginUpload",
     "body": {
-      "file_name": "moment-1.jpg",
-      "mime_type": "image/jpeg",
+      "file_name": "moment-1.png",
+      "mime_type": "image/png",
       "byte_size": 68
     }
   },

@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 
 import 'device_gallery_source.dart';
-import 'gif_image_policy.dart';
+import '../media/media_asset_gateway.dart';
+import '../media/image_compression_policy.dart';
 import 'video_transcode.dart';
 
 /// Shared local preparation only. Each domain retains its own upload gateway.
@@ -22,42 +23,18 @@ Future<GalleryMediaPayload> prepareGalleryMedia(GalleryPhoto photo,
     validateGroupVideoSize(bytes.length);
     return GalleryMediaPayload(bytes, 'video/mp4', 'video.mp4');
   }
-  if (!photo.isVideo &&
-      original &&
-      (await photo.originalSizeBytes?.call() ?? 0) > maxGalleryImageBytes) {
+  if ((await photo.originalSizeBytes?.call() ?? 0) > maxGalleryImageBytes) {
     throw const FormatException('图片过大，请选择不超过 20MB 的图片');
   }
-  final bytes =
-      await (original ? photo.originalBytes() : photo.compressedBytes());
+  // The unified policy is the sole encoder. Native gallery thumbnails must
+  // not replace a saved compliant original before identity is established.
+  final bytes = await photo.originalBytes();
   if (bytes.isEmpty) throw const FormatException('图片为空，请重新选择');
   if (!photo.isVideo && bytes.length > maxGalleryImageBytes) {
     throw const FormatException('图片过大，请选择不超过 20MB 的图片');
   }
-  validateGifStructureForSend(bytes);
-  var mime = photo.mimeType;
-  if (isGifBytes(bytes)) {
-    mime = 'image/gif';
-  } else if (bytes.length >= 3 &&
-      bytes[0] == 255 &&
-      bytes[1] == 216 &&
-      bytes[2] == 255) {
-    mime = 'image/jpeg';
-  } else if (bytes.length >= 8 &&
-      bytes[0] == 137 &&
-      bytes[1] == 80 &&
-      bytes[2] == 78 &&
-      bytes[3] == 71) {
-    mime = 'image/png';
-  } else if (bytes.length >= 12 &&
-      String.fromCharCodes(bytes.sublist(0, 4)) == 'RIFF' &&
-      String.fromCharCodes(bytes.sublist(8, 12)) == 'WEBP') {
-    mime = 'image/webp';
-  }
-  const extensions = {
-    'image/gif': 'gif',
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/webp': 'webp'
-  };
-  return GalleryMediaPayload(bytes, mime, 'image.${extensions[mime] ?? 'bin'}');
+  final processed = await ImageCompressionPolicy.prepare(bytes);
+  final asset = await MediaAssetGateway.inspect(processed,
+      mimeType: photo.mimeType, filename: 'image');
+  return GalleryMediaPayload(asset.bytes, asset.mimeType, asset.filename);
 }

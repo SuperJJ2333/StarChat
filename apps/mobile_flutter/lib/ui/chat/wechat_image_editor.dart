@@ -4,9 +4,9 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/cupertino.dart';
-import 'package:photo_manager/photo_manager.dart';
 
 import '../../core/gallery_save_access.dart';
+import '../../core/gallery_media_export.dart';
 import '../components/wechat_scaffold.dart';
 import '../foundation/wechat_tokens.dart';
 import 'image_crop_geometry.dart';
@@ -814,8 +814,11 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
         } else if (action == 'favorite') {
           await widget.onFavorite!(bytes);
         } else {
-          await ensureGallerySaveAccess();
-          final saved = await PhotoManager.editor.saveImage(bytes,
+          final saved = await GalleryMediaExport.saveImage(
+              loadOriginal: () async => bytes,
+              ensureCurrent: () {
+                if (!mounted) throw StateError('Editor closed');
+              },
               filename:
                   'ChatFlow-edited-${DateTime.now().millisecondsSinceEpoch}.png');
           if (saved.id.isEmpty) throw StateError('Save failed');

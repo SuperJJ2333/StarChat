@@ -20,6 +20,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../media/media_test_fixtures.dart';
 
 class LocalFirstInitClient extends Client {
   LocalFirstInitClient() : super('local-first-init');
@@ -2442,13 +2443,15 @@ void main() {
         MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
     final lease = await matrix.openRoomLease(room.id);
     final bytes = Uint8List.fromList([1, 2, 3]);
-    final thumbnail = Uint8List.fromList([4, 5]);
+    final thumbnail = mediaTestPng();
     await lease.sendEncryptedMedia(room.id, bytes, 'video/mp4',
         thumbnailBytes: thumbnail);
     expect(identical(room.sentFile!.bytes, bytes), isTrue);
     expect(identical(room.sentThumbnail!.bytes, thumbnail), isTrue);
-    await matrix.sendEncryptedMedia(room.id, bytes, 'image/gif');
-    expect(identical(room.sentFile!.bytes, bytes), isTrue);
+    final gif = base64Decode(
+        'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+    await matrix.sendEncryptedMedia(room.id, gif, 'image/gif');
+    expect(identical(room.sentFile!.bytes, gif), isTrue);
   });
 
   test('core sync leaves group invites pending for business preference gate',
@@ -2665,11 +2668,12 @@ void main() {
     );
     final lease = await matrix.openRoomLease(room.id);
 
+    final png = mediaTestPng();
     expect(
-      await lease.sendEncryptedMedia(room.id, [1, 2, 3], 'image/png'),
+      await lease.sendEncryptedMedia(room.id, png, 'image/png'),
       r'$event',
     );
-    expect(room.sentFile?.bytes, [1, 2, 3]);
+    expect(room.sentFile?.bytes, png);
     expect(room.sentFile?.mimeType, 'image/png');
 
     await matrix.suspend();

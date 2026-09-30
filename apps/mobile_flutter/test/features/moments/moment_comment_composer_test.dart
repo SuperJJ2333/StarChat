@@ -36,6 +36,23 @@ Future<BusinessApiClient> momentsApi(
       client: MockClient(handler));
 }
 
+/// Real codec/isolate work cannot complete while pumpAndSettle advances only
+/// the widget binding's fake clock. Wait for an observable UI/network result.
+Future<void> settleMediaWork(
+    WidgetTester tester, bool Function() complete) async {
+  await tester.runAsync(() async {
+    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    while (!complete()) {
+      if (DateTime.now().isAfter(deadline)) {
+        fail('Media operation did not complete');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await tester.pump();
+    }
+  });
+  await tester.pump();
+}
+
 void main() {
   for (final dpr in [2.0, 5.0]) {
     testWidgets('comment original preview bounds both decoded axes at DPR $dpr',
@@ -65,7 +82,8 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('moment-comment-gallery')));
-      await tester.pumpAndSettle();
+      await settleMediaWork(
+          tester, () => find.text('移除').evaluate().isNotEmpty);
       final preview = tester.widget<Image>(find.byType(Image).first);
       expect(preview.image, isA<ResizeImage>(),
           reason: '48px preview must not decode the full original');
@@ -122,7 +140,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-comment-gallery')));
-    await tester.pumpAndSettle();
+    await settleMediaWork(tester, () => find.text('移除').evaluate().isNotEmpty);
     await tester.tap(find.text('移除'));
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(CupertinoIcons.smiley));
@@ -186,11 +204,13 @@ void main() {
     await tester.enterText(
         find.byKey(const Key('moment-comment-input')), 'draft');
     await tester.tap(find.byKey(const Key('moment-comment-gallery')));
-    await tester.pumpAndSettle();
+    await settleMediaWork(tester, () => find.text('移除').evaluate().isNotEmpty);
     await tester.tap(find.byKey(const Key('moment-comment-submit')));
+    await settleMediaWork(tester, () => attempts == 1);
     await tester.pumpAndSettle();
     expect(find.text('draft'), findsOneWidget);
     await tester.tap(find.byKey(const Key('moment-comment-submit')));
+    await settleMediaWork(tester, () => attempts == 2);
     await tester.pumpAndSettle();
     expect(originals, 1);
     final begin = requests.singleWhere((r) => r.url.path.endsWith('/uploads'));

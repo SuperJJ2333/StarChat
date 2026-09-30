@@ -13,7 +13,7 @@ import 'package:path/path.dart' as paths;
 import '../../core/business_api_client.dart';
 import '../../core/chat_diagnostics.dart';
 import '../../core/performance_trace.dart';
-import '../matrix/gif_image_policy.dart';
+import '../media/media_asset_gateway.dart';
 import '../matrix/video_poster_extractor.dart';
 import '../matrix/video_transcode.dart';
 import '../matrix/media_cache.dart';
@@ -125,7 +125,10 @@ Future<Uint8List?> _encodeMomentPoster(Uint8List bytes) async {
             minHeight: target.height,
             quality: 80,
             format: CompressFormat.jpeg);
-        return small.isNotEmpty && small.length <= 512 * 1024 ? small : null;
+        if (small.isEmpty || small.length > maxMomentImageBytes) return null;
+        final asset = await MediaAssetGateway.inspect(small,
+            mimeType: 'image/jpeg', filename: 'poster.jpg');
+        return asset.mimeType == 'image/jpeg' ? asset.bytes : null;
       } finally {
         descriptor.dispose();
       }
@@ -236,7 +239,7 @@ final class MomentPublishCoordinator extends ChangeNotifier {
             .map((m) => Map<String, dynamic>.from(m as Map))
             .toList();
         if (media.length > 9 ||
-            media.any((m) => !RegExp(r'^media-[0-8](?:\.ready)?$')
+            media.any((m) => !RegExp(r'^media-[0-8](?:\.ready(?:-v2)?)?$')
                 .hasMatch('${m['file']}'))) {
           continue;
         }
@@ -603,6 +606,17 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     }
   }
 
+  static const _legacyImageReselect =
+      MomentImageException('旧图片上传无法按当前体积或格式要求继续，内容已保留，请取消该任务并重新选择图片');
+
+  Future<void> _guardPreparedJob(MomentPublishJob job) async {
+    _guardJob(job);
+    if (!await api.isMomentPublishSessionCurrent(session)) {
+      throw const MomentImageException('账号已切换，发送任务已暂停');
+    }
+    _guardJob(job);
+  }
+
   Future<File> _prepare(MomentPublishJob job, int i, PerformanceTrace trace,
       {void Function(ChatDiagnosticStage)? onStage}) async {
     final finished = Completer<void>();
@@ -621,8 +635,54 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     final media = job.media[i];
     final directory = '${root.path}/${job.id}';
     final source = File('$directory/${media['file']}');
-    if (media['prepared'] == true) return source;
-    final output = File('$directory/media-$i.ready');
+    _guardJob(job);
+    Uint8List? preparedBytes;
+    if (media['prepared'] == true) {
+      if (media['video'] == true ||
+          media['result'] is Map ||
+          media['put'] == true) {
+        // Historical confirmed media is an immutable reference, not new intake.
+        return source;
+      }
+      if (await source.length() > 20 * 1024 * 1024) {
+        if (media['upload'] != null) throw _legacyImageReselect;
+        throw const MomentImageException('图片大小不能超过20MB');
+      }
+      await _guardPreparedJob(job);
+      final bytes = await MediaAssetGateway.readOriginal(source.readAsBytes);
+      preparedBytes = bytes;
+      await _guardPreparedJob(job);
+      final MediaAsset asset;
+      try {
+        asset = await MediaAssetGateway.inspect(bytes,
+            mimeType: media['mime'] as String, filename: 'moment.jpg');
+      } on FormatException {
+        if (media['upload'] != null) throw _legacyImageReselect;
+        rethrow;
+      }
+      await _guardPreparedJob(job);
+      if (media['upload'] != null) {
+        // An interrupted PUT may have reached the server. Its begin declaration
+        // and idempotency identity cannot be changed or silently restarted.
+        if (bytes.length > maxMomentImageBytes ||
+            asset.mimeType != media['mime']) {
+          throw _legacyImageReselect;
+        }
+        return source;
+      }
+      if (bytes.length <= maxMomentImageBytes) {
+        media['mime'] = asset.mimeType;
+        await _persist(job);
+        await _guardPreparedJob(job);
+        return source;
+      }
+    }
+    // Old prepared input may itself be media-i.ready. Persist a distinct
+    // replacement before releasing the obsolete copied source.
+    final outputName = paths.basename(source.path) == 'media-$i.ready'
+        ? 'media-$i.ready-v2'
+        : 'media-$i.ready';
+    final output = File('$directory/$outputName');
     trace.mark(PerformanceStage.videoPrepareStarted);
     trace.setMedia(
         type: media['video'] == true
@@ -667,29 +727,32 @@ final class MomentPublishCoordinator extends ChangeNotifier {
       if (await source.length() > 20 * 1024 * 1024) {
         throw const MomentImageException('图片大小不能超过20MB');
       }
-      bytes = await source.readAsBytes();
-      final gif = isGifBytes(bytes);
-      if (gif) validateGifStructureForSend(bytes);
-      final processed = gif
-          ? bytes
-          : await (_preprocessors[job.id] ?? MomentImagePreprocessor())
+      bytes = preparedBytes ??
+          await MediaAssetGateway.readOriginal(source.readAsBytes);
+      final processed =
+          await (_preprocessors[job.id] ?? MomentImagePreprocessor())
               .process(bytes);
-      _guardJob(job);
-      if (processed.isEmpty || processed.length > 20 * 1024 * 1024) {
-        throw const MomentImageException('图片大小不能超过20MB');
+      await _guardPreparedJob(job);
+      if (processed.isEmpty || processed.length > maxMomentImageBytes) {
+        throw const MomentImageException('图片压缩后仍超过体积上限，请重试');
       }
       trace.setMedia(size: _momentSizeBucket(processed.length));
+      final asset = await MediaAssetGateway.inspect(processed,
+          mimeType: 'image/jpeg', filename: 'moment.jpg');
+      await _guardPreparedJob(job);
       await output.writeAsBytes(processed, flush: true);
-      media['mime'] = gif ? 'image/gif' : 'image/jpeg';
+      await _guardPreparedJob(job);
+      media['mime'] = asset.mimeType;
     }
     _guardJob(job);
-    media['file'] = 'media-$i.ready';
+    media['file'] = outputName;
     media['prepared'] = true;
     trace.mark(PerformanceStage.videoPrepareDone);
     await _persist(job);
+    if (media['video'] != true) await _guardPreparedJob(job);
     // Replace only our copied source, never the user's album file.
     try {
-      await source.delete();
+      if (!paths.equals(source.path, output.path)) await source.delete();
     } catch (_) {}
     return output;
   }
@@ -711,6 +774,13 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     } on BusinessApiException catch (error) {
       if (error.code == 'MOMENT_MEDIA_EXPIRED' ||
           error.code == 'MEDIA_UPLOAD_EXPIRED') {
+        // Oversized historical references cannot become a new ingestion after
+        // expiry. Keep their old declaration/reference for explicit user action.
+        if (mime.startsWith('image/') &&
+            await file.length() > maxMomentImageBytes) {
+          _guardJob(job);
+          throw _legacyImageReselect;
+        }
         media[generationKey] = generation + 1;
         media.remove(poster ? 'poster_upload' : 'upload');
         media.remove(poster ? 'poster_put' : 'put');
@@ -760,6 +830,9 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     if (media[idKey] == null) {
       final byteSize = await file.length();
       _guardJob(job);
+      if (mime.startsWith('image/') && byteSize > maxMomentImageBytes) {
+        throw _legacyImageReselect;
+      }
       onStage?.call(poster
           ? ChatDiagnosticStage.momentPosterBegin
           : ChatDiagnosticStage.momentVideoBegin);
@@ -773,7 +846,11 @@ final class MomentPublishCoordinator extends ChangeNotifier {
                     ? 'video.mp4'
                     : mime == 'image/gif'
                         ? 'image.gif'
-                        : 'image.jpg',
+                        : mime == 'image/png'
+                            ? 'image.png'
+                            : mime == 'image/webp'
+                                ? 'image.webp'
+                                : 'image.jpg',
             'mime_type': mime,
             'byte_size': byteSize
           },
@@ -787,7 +864,10 @@ final class MomentPublishCoordinator extends ChangeNotifier {
     final putKey = poster ? 'poster_put' : 'put';
     if (media[putKey] != true) {
       final bytes = await file.readAsBytes();
-      if (bytes.length > (poster ? 512 * 1024 : 20 * 1024 * 1024)) {
+      if (bytes.length >
+          (mime.startsWith('image/')
+              ? maxMomentImageBytes
+              : 20 * 1024 * 1024)) {
         throw const MomentImageException('媒体大小超过限制');
       }
       _guardJob(job);

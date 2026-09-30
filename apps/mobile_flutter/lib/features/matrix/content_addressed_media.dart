@@ -5,6 +5,9 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 import 'package:flutter/foundation.dart' show compute;
+import '../media/media_asset_gateway.dart';
+import '../media/image_compression_policy.dart';
+import 'gif_image_policy.dart' show gifDimensions;
 import '../../core/app_config.dart';
 import '../../core/native_media_download.dart';
 import 'media_cache.dart' show MediaCacheKey, matrixMediaSourceIdentity;
@@ -48,9 +51,13 @@ Future<Uint8List> downloadMediaContent(Event event,
         matrixMediaTransferIdentity(event, thumbnail: thumbnail));
     if (pending != null) downloadCallback = (_) => pending;
   }
-  return (await event.downloadAndDecryptAttachment(
-          getThumbnail: thumbnail, downloadCallback: downloadCallback))
-      .bytes;
+  // The cache caller verifies authoritative plaintext hashes. This wrapper
+  // keeps its existing SDK decryption/authorization loader without hashing a
+  // second time or imposing new-send GIF limits on legacy attachments.
+  return MediaAssetGateway.readOriginal(() async =>
+      (await event.downloadAndDecryptAttachment(
+              getThumbnail: thumbnail, downloadCallback: downloadCallback))
+          .bytes);
 }
 
 /// Cold forwarding loader with an encrypted-download byte budget. The legacy
@@ -65,19 +72,21 @@ Future<Uint8List> downloadMediaContentBounded(
       !(thumbnail ? event.isThumbnailEncrypted : event.isAttachmentEncrypted)) {
     throw const FormatException('Missing encrypted media descriptor');
   }
-  final file = await event.downloadAndDecryptAttachment(
-    getThumbnail: thumbnail,
-    downloadCallback: (url) => _downloadBounded(
-      event.room.client.httpClient,
-      event.room.client.accessToken,
-      url,
-      maxDownloadBytes,
-    ),
-  );
-  if (file.bytes.lengthInBytes > maxDownloadBytes) {
-    throw const MediaContentLimitException();
-  }
-  return file.bytes;
+  return MediaAssetGateway.readOriginal(() async {
+    final file = await event.downloadAndDecryptAttachment(
+      getThumbnail: thumbnail,
+      downloadCallback: (url) => _downloadBounded(
+        event.room.client.httpClient,
+        event.room.client.accessToken,
+        url,
+        maxDownloadBytes,
+      ),
+    );
+    if (file.bytes.lengthInBytes > maxDownloadBytes) {
+      throw const MediaContentLimitException();
+    }
+    return file.bytes;
+  });
 }
 
 Future<Uint8List> _downloadBounded(
@@ -199,22 +208,29 @@ final class MediaEnvelope {
 
 /// Retains concrete SDK media types and metadata and reuses the prepared
 /// envelope through retries. Original bytes have already been processed.
-MatrixFile _preparedFile(MatrixFile file, EncryptedFile encrypted) {
+MatrixFile _preparedFile(MatrixFile file, EncryptedFile? encrypted,
+    {MediaAsset? original, (int, int)? dimensions}) {
+  final bytes = original?.bytes ?? file.bytes;
+  final name = original?.filename ?? file.name;
+  final mimeType = original?.mimeType ?? file.mimeType;
+  if (encrypted == null && identical(bytes, file.bytes)) {
+    encrypted = file.preEncrypted;
+  }
   if (file is MatrixImageFile) {
     return MatrixImageFile(
-        bytes: file.bytes,
-        name: file.name,
-        mimeType: file.mimeType,
-        width: file.width,
-        height: file.height,
-        blurhash: file.blurhash,
+        bytes: bytes,
+        name: name,
+        mimeType: mimeType,
+        width: dimensions?.$1 ?? gifDimensions(bytes)?.$1 ?? file.width,
+        height: dimensions?.$2 ?? gifDimensions(bytes)?.$2 ?? file.height,
+        blurhash: identical(bytes, file.bytes) ? file.blurhash : null,
         preEncrypted: encrypted);
   }
   if (file is MatrixVideoFile) {
     return MatrixVideoFile(
-        bytes: file.bytes,
-        name: file.name,
-        mimeType: file.mimeType,
+        bytes: bytes,
+        name: name,
+        mimeType: mimeType,
         width: file.width,
         height: file.height,
         duration: file.duration,
@@ -222,17 +238,34 @@ MatrixFile _preparedFile(MatrixFile file, EncryptedFile encrypted) {
   }
   if (file is MatrixAudioFile) {
     return MatrixAudioFile(
-        bytes: file.bytes,
-        name: file.name,
-        mimeType: file.mimeType,
+        bytes: bytes,
+        name: name,
+        mimeType: mimeType,
         duration: file.duration,
         preEncrypted: encrypted);
   }
-  return MatrixFile(
-      bytes: file.bytes,
-      name: file.name,
-      mimeType: file.mimeType,
-      preEncrypted: encrypted);
+  return _PreparedGenericFile(
+      bytes: bytes,
+      name: name,
+      mimeType: mimeType,
+      preEncrypted: encrypted,
+      messageType: file.msgType);
+}
+
+/// SDK MatrixFile derives msgType from MIME. Truthful image metadata must not
+/// promote an attachment explicitly sent as m.file into an m.image message.
+final class _PreparedGenericFile extends MatrixFile {
+  _PreparedGenericFile({
+    required super.bytes,
+    required super.name,
+    required super.mimeType,
+    super.preEncrypted,
+    required String messageType,
+  }) : _messageType = messageType;
+
+  final String _messageType;
+  @override
+  String get msgType => _messageType;
 }
 
 Future<
@@ -246,17 +279,39 @@ Future<
   Map<String, dynamic>? extraContent,
   bool deterministic = AppConfig.deterministicMediaEncryption,
 }) async {
+  final source = await MediaAssetGateway.inspect(file.bytes,
+      mimeType: file.mimeType, filename: file.name);
+  final isImage =
+      file is MatrixImageFile || source.mimeType.startsWith('image/');
+  final preparedBytes =
+      isImage ? await ImageCompressionPolicy.prepare(file.bytes) : file.bytes;
+  final original = identical(preparedBytes, file.bytes)
+      ? source
+      : await MediaAssetGateway.inspect(preparedBytes,
+          mimeType: source.mimeType, filename: source.filename);
+  final dimensions =
+      file is MatrixImageFile && !identical(preparedBytes, file.bytes)
+          ? await ImageCompressionPolicy.dimensions(preparedBytes)
+          : null;
+  final thumbOriginal = thumbnail == null
+      ? null
+      : await MediaAssetGateway.inspect(thumbnail.bytes,
+          mimeType: thumbnail.mimeType, filename: thumbnail.name);
   final extra = Map<String, dynamic>.of(extraContent ?? {})
     ..remove('chatflow_media')
     ..remove('info');
   if (!deterministic) {
     return (
-      file: file,
-      thumbnail: thumbnail,
+      file:
+          _preparedFile(file, null, original: original, dimensions: dimensions),
+      thumbnail: thumbnail == null
+          ? null
+          : _preparedFile(thumbnail, null, original: thumbOriginal)
+              as MatrixImageFile,
       extraContent: extra.isEmpty ? null : extra
     );
   }
-  final envelope = await MediaEnvelope.forBytes(file.bytes);
+  final envelope = await MediaEnvelope.forBytes(original.bytes);
   final thumbEnvelope =
       thumbnail == null ? null : await MediaEnvelope.forBytes(thumbnail.bytes);
   extra['chatflow_media'] = {
@@ -265,10 +320,12 @@ Future<
     if (thumbEnvelope != null) 'thumbnail_sha256': thumbEnvelope.contentSha256,
   };
   return (
-    file: _preparedFile(file, envelope.encrypted),
+    file: _preparedFile(file, envelope.encrypted,
+        original: original, dimensions: dimensions),
     thumbnail: thumbnail == null
         ? null
-        : _preparedFile(thumbnail, thumbEnvelope!.encrypted) as MatrixImageFile,
+        : _preparedFile(thumbnail, thumbEnvelope!.encrypted,
+            original: thumbOriginal) as MatrixImageFile,
     extraContent: extra
   );
 }

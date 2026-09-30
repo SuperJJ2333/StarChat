@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:image/image.dart' as img;
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/chat_diagnostics.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
@@ -485,7 +486,7 @@ void main() {
             (_) async => Uint8List(20 * 1024 * 1024 + 1)));
     await waitFor(() => job.state == MomentPublishState.failed);
     expect(requests, 0);
-    expect(job.message, contains('20MB'));
+    expect(job.message, contains('500KB'));
     queue.revoke();
   });
   test('expired upload starts a new stable session on explicit retry',
@@ -961,8 +962,7 @@ void main() {
             'video-begin' => 'moment_video_begin',
             'video-read' => 'moment_prepare',
             'video-put' => 'moment_video_put',
-            'video-put-persist' || 'video-complete-persist' =>
-              'moment_prepare',
+            'video-put-persist' || 'video-complete-persist' => 'moment_prepare',
             'poster-begin' => 'moment_poster_begin',
             'poster-read' => 'moment_poster_extract',
             'poster-put' => 'moment_poster_put',
@@ -1000,9 +1000,9 @@ void main() {
               ? '视频准备失败，内容已保留，请重试'
               : failedPhase == 'poster-read'
                   ? '视频封面生成失败，内容已保留，请重试'
-              : failedPhase.startsWith('video-')
-                  ? '视频上传失败，内容已保留，请重试'
-                  : '视频封面暂不可用，请稍后重试');
+                  : failedPhase.startsWith('video-')
+                      ? '视频上传失败，内容已保留，请重试'
+                      : '视频封面暂不可用，请稍后重试');
       expect(publishes, 0);
       queue.revoke();
     });
@@ -1114,7 +1114,7 @@ final class _PosterCompressor extends FlutterImageCompressPlatform {
     expect(minWidth, lessThanOrEqualTo(480));
     expect(minHeight, lessThanOrEqualTo(480));
     expect(format, CompressFormat.jpeg);
-    return output;
+    return img.encodeJpg(img.decodeImage(output)!);
   }
 
   @override

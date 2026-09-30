@@ -3,8 +3,34 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
 import 'package:liuhetong_mobile/features/matrix/gallery_media_payload.dart';
+import '../media/media_test_fixtures.dart';
 
 void main() {
+  test('default gallery reselect reuses compliant canonical static bytes',
+      () async {
+    final canonical = mediaTestPng();
+    var compressedCalls = 0;
+    var originalCalls = 0;
+    final photo = GalleryPhoto(
+      id: 'saved-image',
+      thumbnail: canonical,
+      mimeType: 'image/png',
+      originalSizeBytes: () async => canonical.length,
+      originalBytes: () async {
+        originalCalls++;
+        return canonical;
+      },
+      compressedBytes: () async {
+        compressedCalls++;
+        return mediaTestPng(width: 1, height: 1);
+      },
+    );
+    final prepared = await prepareGalleryMedia(photo, original: false);
+    expect(prepared.bytes, same(canonical));
+    expect(prepared.mimeType, 'image/png');
+    expect(originalCalls, 1);
+    expect(compressedCalls, 0);
+  });
   for (final original in [false, true]) {
     for (final size in [
       20 * 1024 * 1024 - 1,
@@ -71,7 +97,8 @@ void main() {
     await expectLater(
         prepareGalleryMedia(photo, original: false), throwsFormatException);
   });
-  test('shared gallery preparation preserves GIF and honors original selection',
+  test(
+      'shared gallery preparation preserves GIF source in both selection modes',
       () async {
     final gif = base64Decode(
         'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
@@ -93,10 +120,10 @@ void main() {
     expect(result.bytes, same(gif));
     expect(result.mimeType, 'image/gif');
     expect(result.fileName, endsWith('.gif'));
-    expect(compressed, 1);
-    expect(original, 0);
-    await prepareGalleryMedia(photo, original: true);
+    expect(compressed, 0);
     expect(original, 1);
+    await prepareGalleryMedia(photo, original: true);
+    expect(original, 2);
   });
   test('shared GIF limit rejects oversized canvas', () async {
     final gif = Uint8List.fromList(

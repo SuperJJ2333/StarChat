@@ -1,11 +1,17 @@
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:file/file.dart' show File;
+import 'package:file/memory.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/foundation/retained_image_cache_manager.dart';
 
 class CachedImage extends Fake implements FileInfo {
-  CachedImage(this.validTill);
+  CachedImage(this.validTill, {bool empty = false})
+      : file = MemoryFileSystem().file('/cached-image')
+          ..writeAsBytesSync(empty ? [] : [1]);
   @override
   final DateTime validTill;
+  @override
+  final File file;
 }
 
 class UnusedFileSystem extends Fake implements FileSystem {}
@@ -49,6 +55,12 @@ class TestCache extends RetainedImageCacheManager {
 }
 
 void main() {
+  test('empty cached file is not served as a usable retained image', () async {
+    final cache = TestCache(CachedImage(DateTime(2099), empty: true));
+    addTearDown(cache.dispose);
+    await expectLater(cache.getFileStream('https://example.test/missing'),
+        emitsError(isA<HttpExceptionWithStatus>()));
+  });
   test('expired signed URL preserves an already cached image across entries',
       () async {
     final old = CachedImage(DateTime(2020));

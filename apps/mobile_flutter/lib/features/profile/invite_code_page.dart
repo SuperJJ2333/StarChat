@@ -4,13 +4,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
-import 'package:photo_manager/photo_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'invite_controller.dart';
+import '../../core/gallery_media_export.dart';
 
 /// 邀请码页（“我”→ 邀请码）：
 /// - 展示当前用户的固定个人注册邀请码（统一邀请码体系，不轮换）；
@@ -86,8 +86,11 @@ final class _InviteCodePageState extends State<InviteCodePage> {
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
       if (data == null) throw StateError('share image capture failed');
-      final result = await PhotoManager.editor.saveImage(
-        data.buffer.asUint8List(),
+      final result = await GalleryMediaExport.saveImage(
+        loadOriginal: () async => data.buffer.asUint8List(),
+        ensureCurrent: () {
+          if (!mounted) throw StateError('Invite page closed');
+        },
         filename:
             'changliao-invite-${DateTime.now().millisecondsSinceEpoch}.png',
       );
@@ -361,7 +364,8 @@ final class _InviteCodePageState extends State<InviteCodePage> {
                           fontSize: 13, color: WeChatColors.textSecondary)),
                   CupertinoButton(
                     key: const Key('invite-history-retry'),
-                    onPressed: () => widget.controller.loadHistory(refresh: true),
+                    onPressed: () =>
+                        widget.controller.loadHistory(refresh: true),
                     child: const Text('重试',
                         style: TextStyle(color: WeChatColors.brandPrimary)),
                   ),
@@ -375,8 +379,7 @@ final class _InviteCodePageState extends State<InviteCodePage> {
                     key: Key('invite-history-empty'),
                     child: Text('暂无邀请记录',
                         style: TextStyle(
-                            fontSize: 13,
-                            color: WeChatColors.textSecondary))),
+                            fontSize: 13, color: WeChatColors.textSecondary))),
               ]
             : [
                 for (final item in state.history)

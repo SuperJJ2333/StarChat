@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:photo_manager/photo_manager.dart';
 import 'encrypted_media_view.dart';
 import '../../core/gallery_save_access.dart';
+import '../../core/gallery_media_export.dart';
 
 import '../foundation/wechat_tokens.dart';
 import 'video_playback_lease_coordinator.dart';
@@ -525,10 +525,16 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
 
   Future<void> _download() async {
     if (_saving || _videoFile == null) return;
+    final original = _videoFile!;
     setState(() => _saving = true);
     try {
-      await ensureGallerySaveAccess();
-      final asset = await PhotoManager.editor.saveVideo(_videoFile!,
+      final asset = await GalleryMediaExport.saveVideo(
+          original: original,
+          ensureCurrent: () {
+            if (!mounted || _videoFile != original) {
+              throw StateError('Video source changed');
+            }
+          },
           title: 'ChatFlow-${DateTime.now().millisecondsSinceEpoch}.mp4');
       if (mounted) {
         setState(() => _hint = asset.id.isNotEmpty ? '已保存到相册' : '保存失败，请稍后重试');

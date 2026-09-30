@@ -15,6 +15,7 @@ import 'package:matrix/matrix.dart';
   required Uint8List bytes,
   required String name,
   required String mimeType,
+  bool asFile = false,
   Map<String, dynamic>? extraContent,
 }) {
   final remaining = Map<String, dynamic>.of(extraContent ?? {});
@@ -23,7 +24,9 @@ import 'package:matrix/matrix.dart';
   int? intKey(String key) => info[key] is int ? info[key] as int : null;
 
   final MatrixFile file;
-  if (mimeType.startsWith('video/')) {
+  if (asFile) {
+    file = _GenericAttachmentFile(bytes: bytes, name: name, mimeType: mimeType);
+  } else if (mimeType.startsWith('video/')) {
     file = MatrixVideoFile(
       bytes: bytes,
       name: name,
@@ -51,6 +54,14 @@ import 'package:matrix/matrix.dart';
     file = MatrixFile(bytes: bytes, name: name, mimeType: mimeType);
   }
   return (file: file, extraContent: remaining.isEmpty ? null : remaining);
+}
+
+/// An explicitly forwarded file keeps its message kind independently of MIME.
+final class _GenericAttachmentFile extends MatrixFile {
+  _GenericAttachmentFile(
+      {required super.bytes, required super.name, required super.mimeType});
+  @override
+  String get msgType => MessageTypes.File;
 }
 
 /// BUG-28：补齐图片信封的顶层宽高（info.w/h）。

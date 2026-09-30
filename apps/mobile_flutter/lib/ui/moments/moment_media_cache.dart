@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file/local.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import '../../features/matrix/media_cache.dart';
+import '../../features/media/media_asset_gateway.dart';
 import '../../features/matrix/media_index.dart';
 import '../../features/matrix/video_poster_pipeline.dart'
     show videoPosterCacheRefId;
@@ -225,7 +226,7 @@ abstract final class MomentMediaCache {
         accountId: source.accountKey);
     source.ensureCurrent();
     if (file == null) return null;
-    final bytes = await file.readAsBytes();
+    final bytes = await MediaAssetGateway.readOriginal(file.readAsBytes);
     source.ensureCurrent();
     return bytes;
   }
@@ -294,8 +295,13 @@ abstract final class MomentMediaCache {
       source.ensureCurrent();
     }
     final pending = _videoLoads[flightKey];
-    if (pending != null) return pending;
-    final load = _loadVideo(url, source, client);
+    if (pending != null) {
+      return MediaAssetGateway.readFile(() => pending,
+          ensureCurrent: source.ensureCurrent);
+    }
+    final load = MediaAssetGateway.readFile(
+        () => _loadVideo(url, source, client),
+        ensureCurrent: source.ensureCurrent);
     _videoLoads[flightKey] = load;
     try {
       return await load;
@@ -320,7 +326,7 @@ abstract final class MomentMediaCache {
                 eventId: source.cacheKey)
             .identity);
     if (pending != null) {
-      final bytes = await pending;
+      final bytes = await MediaAssetGateway.readOriginal(() => pending);
       source.ensureCurrent();
       final file = await MediaCache.store('moments', source.cacheKey, bytes,
           accountId: source.accountKey,
@@ -574,7 +580,7 @@ final class _MomentMediaCacheManager extends RetainedImageCacheManager {
                 eventId: source.cacheKey)
             .identity);
     if (pending != null) {
-      final bytes = await pending;
+      final bytes = await MediaAssetGateway.readOriginal(() => pending);
       source.ensureCurrent();
       final file = await MediaCache.store('moments', source.cacheKey, bytes,
           accountId: source.accountKey,
@@ -616,7 +622,8 @@ final class _MomentMediaCacheManager extends RetainedImageCacheManager {
         source.ensureCurrent();
         return null;
       }
-      final bytes = await response.file.readAsBytes();
+      final bytes =
+          await MediaAssetGateway.readOriginal(response.file.readAsBytes);
       source.ensureCurrent();
       final object = await MediaCache.store('moments', source.cacheKey, bytes,
           accountId: source.accountKey,

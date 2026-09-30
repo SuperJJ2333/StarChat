@@ -23,6 +23,8 @@ import '../features/redpacket/red_packet_controller.dart';
 import '../features/moments/moments_privacy_changes.dart';
 import 'permissions/blocked_contacts.dart';
 import 'support_identity_repository.dart';
+import '../features/media/media_asset_gateway.dart';
+import '../features/media/image_compression_policy.dart';
 
 export 'business_api_error.dart';
 part 'business_session_refresh.dart';
@@ -695,7 +697,9 @@ final class BusinessApiClient
     AvatarUploadSession session,
     AvatarCandidate candidate,
   ) async {
-    final response = await _authorized(
+    final response = await _authorizedMediaPut(
+      candidate.bytes,
+      candidate.mimeType,
       (headers) => _client.put(
         baseUri.resolve(session.uploadUrl),
         headers: {...headers, 'Content-Type': candidate.mimeType},
@@ -1201,9 +1205,9 @@ final class BusinessApiClient
     );
   }
 
-  /// OTP mutations are single attempts with a fixed session identity. In
-  /// particular a failed authenticated attempt cannot fall back to recovery
-  /// anonymously, refresh credentials, or automatically send a second code.
+  /// Trusted refresh lineage for operations bound to their originating token.
+  /// OTP mutations remain single attempts: they cannot fall back to anonymous
+  /// recovery, refresh credentials, or automatically send a second code.
   final _credentialsRequestSessions = <_CredentialsRequestSession>{};
 
   void _acceptCredentialsRefresh(
@@ -1979,6 +1983,7 @@ final class BusinessApiClient
     if (!RegExp(r'^[a-zA-Z0-9-]+$').hasMatch(uploadId)) {
       throw ArgumentError('Invalid upload reference');
     }
+    await _validateMediaPut(bytes, mimeType);
     final mediaTimeout = momentMediaPutTimeout(bytes.length);
     final response = await _authorized(
         (headers) => _client.put(
@@ -2098,7 +2103,9 @@ final class BusinessApiClient
     List<int> bytes,
     String mimeType,
   ) async {
-    final response = await _authorized(
+    final response = await _authorizedMediaPut(
+      bytes,
+      mimeType,
       (headers) => _client.put(
         _uri('/moments/media/uploads/$uploadId/content'),
         headers: {...headers, 'Content-Type': mimeType},
@@ -2132,7 +2139,9 @@ final class BusinessApiClient
     List<int> bytes,
     String mimeType,
   ) async {
-    final response = await _authorized(
+    final response = await _authorizedMediaPut(
+      bytes,
+      mimeType,
       (headers) => _client.put(
         _uri('/moments/cover/uploads/$uploadId/content'),
         headers: {...headers, 'Content-Type': mimeType},
@@ -2140,6 +2149,57 @@ final class BusinessApiClient
       ),
     );
     if (response.statusCode >= 400) _decode(response);
+  }
+
+  /// Media inspection can cross an isolate await. Keep the caller's epoch and
+  /// token lineage through it, including trusted refreshes, without requiring
+  /// a Matrix identity for business avatar authorization.
+  Future<http.Response> _authorizedMediaPut(List<int> bytes, String mimeType,
+      Future<http.Response> Function(Map<String, String>) operation) async {
+    final epoch = _sessionEpoch;
+    _CredentialsRequestSession? flight;
+    try {
+      // Start this read at invocation, before another actor can replace storage
+      // while queued session persistence or isolate inspection is awaited.
+      final stored = await sessionStore.session();
+      if (epoch != _sessionEpoch) throw _ended;
+      flight = _CredentialsRequestSession(epoch, stored?.accessToken);
+      _credentialsRequestSessions.add(flight);
+      await _validateMediaPut(bytes, mimeType);
+      if (epoch != _sessionEpoch) throw _ended;
+      await _writeCurrentSession(epoch, () async {
+        final current = await sessionStore.session();
+        if (epoch != _sessionEpoch ||
+            current?.accessToken != flight!.acceptedAccessToken) {
+          throw _ended;
+        }
+      });
+      return await _authorized((headers) {
+        final accepted = flight!.acceptedAccessToken;
+        if (epoch != _sessionEpoch ||
+            headers['Authorization'] !=
+                (accepted == null ? null : 'Bearer $accepted')) {
+          throw _ended;
+        }
+        return operation(headers);
+      });
+    } finally {
+      if (flight != null) _credentialsRequestSessions.remove(flight);
+    }
+  }
+
+  /// PUT validates the already-declared asset. Compression belongs before
+  /// begin; replacing bytes or MIME here would invalidate that upload session.
+  Future<void> _validateMediaPut(List<int> bytes, String mimeType) async {
+    final data = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final asset = await MediaAssetGateway.inspect(data,
+        mimeType: mimeType, filename: 'upload');
+    if (asset.mimeType != mimeType) {
+      throw const FormatException('媒体格式与上传声明不一致，请重新选择');
+    }
+    if (mimeType.startsWith('image/') && data.length > maxUnifiedImageBytes) {
+      throw const FormatException('图片超过压缩体积上限，请重新选择');
+    }
   }
 
   Future<Map<String, dynamic>> completeMomentCoverUpload(String uploadId) =>

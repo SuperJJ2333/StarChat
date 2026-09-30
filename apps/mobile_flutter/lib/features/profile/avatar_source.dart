@@ -5,6 +5,8 @@ import '../../ui/chat/wechat_image_editor.dart';
 import '../../ui/motion/motion_page_route.dart';
 import '../matrix/image_picker_page.dart';
 import '../matrix/gif_image_policy.dart';
+import '../media/media_asset_gateway.dart';
+import '../media/image_compression_policy.dart';
 import 'profile_controller.dart';
 
 const avatarMaxDimension = 1024;
@@ -53,6 +55,11 @@ final class GalleryAvatarSource implements AvatarSource {
       builder: (_) => WeChatImageEditorPage(bytes: bytes, avatarMode: true),
     ));
     if (!context.mounted || cropped == null) return null;
-    return AvatarCandidate(bytes: cropped, mimeType: 'image/png');
+    final prepared = await ImageCompressionPolicy.prepare(cropped);
+    if (!context.mounted || !navigator.mounted) return null;
+    final asset = await MediaAssetGateway.inspect(prepared,
+        mimeType: 'image/png', filename: 'avatar.png');
+    if (!context.mounted || !navigator.mounted) return null;
+    return AvatarCandidate(bytes: asset.bytes, mimeType: asset.mimeType);
   }
 }

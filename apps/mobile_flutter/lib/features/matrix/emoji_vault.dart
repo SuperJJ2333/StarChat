@@ -2,6 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show compute;
+
+import '../media/media_asset_gateway.dart';
+import '../media/image_compression_policy.dart';
 
 enum EmojiVaultEventType { add, remove, recent }
 
@@ -145,21 +149,25 @@ final class EmojiVault {
     if (!transport.isEncrypted) {
       throw StateError('Emoji vault room must be end-to-end encrypted');
     }
-    final digest = sha256.convert(bytes).toString();
+    final prepared = await ImageCompressionPolicy.prepare(bytes);
+    final asset = await MediaAssetGateway.inspect(prepared,
+        mimeType: mimeType, filename: 'emoji');
+    final digest = (await compute(sha256.convert, asset.bytes)).toString();
     for (final item in _items.values) {
       if (item.sha256 == digest) return item;
     }
     final now = DateTime.now().toUtc();
     final idSeed = utf8.encode('$digest:${now.microsecondsSinceEpoch}');
     final id = sha256.convert(idSeed).toString().substring(0, 32);
-    final encryptedFile = await transport.uploadEncrypted(bytes, mimeType);
+    final encryptedFile =
+        await transport.uploadEncrypted(asset.bytes, asset.mimeType);
     final item = EmojiVaultItem(
       id: id,
       sha256: digest,
-      mimeType: mimeType,
+      mimeType: asset.mimeType,
       encryptedFile: Map.unmodifiable(encryptedFile),
       createdAt: now,
-      isAnimated: mimeType.toLowerCase() == 'image/gif',
+      isAnimated: asset.isGif,
     );
     final event = EmojiVaultEvent.add(
       eventId: 'local-$id',

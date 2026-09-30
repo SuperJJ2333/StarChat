@@ -8,13 +8,13 @@ import 'media_visibility.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
-import 'package:photo_manager/photo_manager.dart';
 
 import '../foundation/wechat_tokens.dart';
 import '../components/wechat_scaffold.dart';
 import 'chat_forward_picker_page.dart';
 import 'wechat_image_editor.dart';
 import '../../core/gallery_save_access.dart';
+import '../../core/gallery_media_export.dart';
 import '../motion/motion_page_route.dart';
 
 /// 原图大小展示格式：≥1MB 用 MB（10MB 以上取整），否则用 KB。
@@ -423,14 +423,22 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
     final loadedOriginal = originalBytes;
     final scope = _saveScope =
         MediaConsumerScope(priority: MediaLoadPriority.interactive);
+    void ensureCurrent() {
+      if (!mounted || source != _sourceGeneration || !scope.isActive) {
+        throw StateError('Media export cancelled');
+      }
+    }
+
     try {
-      await ensureGallerySaveAccess();
-      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
-      final bytes = loadedOriginal ??
-          await scope.run(loader ?? () => Future<Uint8List>.value(preview));
-      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
-      final result = await PhotoManager.editor.saveImage(
-        bytes!,
+      final result = await GalleryMediaExport.saveImage(
+        loadOriginal: () async {
+          final bytes = loadedOriginal ??
+              await scope.run(loader ?? () => Future<Uint8List>.value(preview));
+          ensureCurrent();
+          if (bytes == null) throw StateError('Media export cancelled');
+          return bytes;
+        },
+        ensureCurrent: ensureCurrent,
         filename: 'changliao-${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
       if (!mounted || source != _sourceGeneration || !scope.isActive) return;
@@ -453,8 +461,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       if (widget.onForward != null) {
         await widget.onForward!();
       } else if (widget.forwardTo != null) {
-        await Navigator.of(context, rootNavigator: true)
-            .push(MotionPageRoute(
+        await Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
           builder: (_) => ChatForwardPickerPage(
             contentPreview: '[图片]',
             candidates: [

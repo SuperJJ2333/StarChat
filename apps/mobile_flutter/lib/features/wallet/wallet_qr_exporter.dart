@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:photo_manager/photo_manager.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/gallery_save_access.dart';
+import '../../core/gallery_media_export.dart';
 
 /// 二维码导出失败：`message` 是可直接展示给用户的可读原因（绝不静默失败）。
 final class WalletQrExportException implements Exception {
@@ -38,13 +38,8 @@ final class GalleryQrExporter implements WalletQrExporter {
 
   @override
   Future<void> saveQrCode(String data) async {
-    // 1) 权限：Android 9- 存储写 / iOS 仅新增照片；被拒抛 GallerySavePermissionDenied。
-    await ensureGallerySaveAccess();
-    // 2) 渲染：白底 + 静区，深色主题下也不会导出反色二维码。
-    final bytes = await renderQrPng(data);
-    // 3) 写入系统相册。
-    final entity = await PhotoManager.editor.saveImage(
-      bytes,
+    final entity = await GalleryMediaExport.saveImage(
+      loadOriginal: () => renderQrPng(data),
       filename:
           'changliao-wallet-qr-${DateTime.now().millisecondsSinceEpoch}.png',
     );
@@ -72,8 +67,7 @@ final class GalleryQrExporter implements WalletQrExporter {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     final quiet = size * quietZoneRatio;
-    canvas.drawRect(
-        ui.Rect.fromLTWH(0, 0, size, size),
+    canvas.drawRect(ui.Rect.fromLTWH(0, 0, size, size),
         ui.Paint()..color = const ui.Color(0xFFFFFFFF));
     canvas.translate(quiet, quiet);
     painter.paint(canvas, ui.Size(size - quiet * 2, size - quiet * 2));

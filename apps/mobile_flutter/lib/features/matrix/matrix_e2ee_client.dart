@@ -61,6 +61,8 @@ import 'matrix_direct_chat_adapter.dart';
 import 'matrix_group_chat_adapter.dart';
 import 'matrix_media_file.dart';
 import 'content_addressed_media.dart';
+import '../media/media_asset_gateway.dart';
+import '../media/image_compression_policy.dart';
 import 'outgoing_media_thumbnail_cache.dart';
 import 'room_mention_store.dart';
 import 'unread_mention_tracker.dart';
@@ -2332,14 +2334,10 @@ final class MatrixRoomLease
     required Uint8List bytes,
     required String name,
     required String mimeType,
-  }) =>
-      _withLeaseSend((room) => room.sendFileEvent(
-            MatrixFile.fromMimeType(
-              bytes: bytes,
-              name: name,
-              mimeType: mimeType,
-            ),
-          ));
+  }) async {
+    await owner._sendEncryptedMediaFromLease(this, bytes, mimeType,
+        filename: name);
+  }
 
   void setOnRevoked(FutureOr<void> Function() callback) =>
       _onRevoked = callback;
@@ -2572,6 +2570,7 @@ final class MatrixRoomLease
             }
           },
               filename: event.body,
+              asFile: event.messageType == MessageTypes.File,
               extraContent: {'info': Map<String, dynamic>.from(info)},
               thumbnailBytes: thumbnail,
               thumbnailWidth: (info['thumbnail_info'] is Map)
@@ -4459,11 +4458,22 @@ final class _SdkEmojiVaultBackend
         if (!room.encrypted) {
           throw StateError('Emoji media upload requires an encrypted room');
         }
-        final encrypted = await MatrixFile(
-          bytes: bytes,
-          name: '畅聊加密表情',
-          mimeType: mimeType,
-        ).encrypt();
+        final asset = await MediaAssetGateway.inspect(bytes,
+            mimeType: mimeType, filename: '畅聊加密表情');
+        final prepared = await prepareContentAddressedMedia(
+          file: MatrixFile(
+            bytes: asset.bytes,
+            name: asset.filename,
+            mimeType: asset.mimeType,
+          ),
+        );
+        final encrypted = await prepared.file.encrypt();
+        // Validation/encryption yields to isolates. Recheck the account and
+        // room before starting an upload after that asynchronous boundary.
+        _client;
+        if (!identical(client.getRoomById(roomId), room) || !room.encrypted) {
+          throw StateError('Emoji vault room changed before upload');
+        }
         final uri = await client.uploadContent(
           encrypted.data,
           filename: 'emoji.ciphertext',
@@ -4471,7 +4481,7 @@ final class _SdkEmojiVaultBackend
         );
         return {
           'url': uri.toString(),
-          'mimetype': mimeType,
+          'mimetype': prepared.file.mimeType,
           'v': 'v2',
           'key': {
             'alg': 'A256CTR',
@@ -5381,6 +5391,7 @@ final class MatrixOutgoingForwardMedia extends MatrixOutgoingForwardMessage {
       : const {};
 
   Map? get _info => _content['info'] is Map ? _content['info'] as Map : null;
+  bool get isFileAttachment => _content['msgtype'] == MessageTypes.File;
 
   int? get declaredContentBytes {
     final value = _info?['size'];
@@ -5433,8 +5444,9 @@ final class MatrixOutgoingForwardMedia extends MatrixOutgoingForwardMessage {
               .length *
           2 +
       2048;
-  MatrixOutgoingPresentationKind get presentationKind =>
-      mimeType.startsWith('video/')
+  MatrixOutgoingPresentationKind get presentationKind => isFileAttachment
+      ? MatrixOutgoingPresentationKind.file
+      : mimeType.startsWith('video/')
           ? MatrixOutgoingPresentationKind.video
           : mimeType.startsWith('image/')
               ? MatrixOutgoingPresentationKind.image
@@ -7022,6 +7034,7 @@ final class MatrixSdkE2eeClient
           extraContent: _mutableJsonMap(media.extraContent),
           txid: attempt.txid,
           filename: media.filename,
+          asFile: media.isFileAttachment,
           thumbnailBytes: snapshot.thumbnail,
           thumbnailWidth: media.thumbnailWidth,
           thumbnailHeight: media.thumbnailHeight,
@@ -8464,6 +8477,7 @@ final class MatrixSdkE2eeClient
     Map<String, dynamic>? extraContent,
     String? txid,
     String? filename,
+    bool asFile = false,
     Uint8List? thumbnailBytes,
     int? thumbnailWidth,
     int? thumbnailHeight,
@@ -8500,11 +8514,40 @@ final class MatrixSdkE2eeClient
         height: thumbnailHeight,
       );
     }
+    final sourceBytes =
+        plaintext is Uint8List ? plaintext : Uint8List.fromList(plaintext);
+    final imageInput = !asFile && mimeType.startsWith('image/');
+    final sourceAsset = await MediaAssetGateway.inspect(sourceBytes,
+        mimeType: mimeType, filename: filename ?? '畅聊附件');
+    final actualImage = sourceAsset.mimeType.startsWith('image/');
+    final finalBytes = actualImage
+        ? await ImageCompressionPolicy.prepare(sourceBytes)
+        : sourceBytes;
+    validateSendAccess();
+    final asset = actualImage
+        ? await MediaAssetGateway.inspect(finalBytes,
+            mimeType: sourceAsset.mimeType, filename: sourceAsset.filename)
+        : null;
+    Map<String, dynamic>? finalExtra = extraContent;
+    if (imageInput &&
+        !identical(finalBytes, sourceBytes) &&
+        extraContent != null) {
+      finalExtra = Map<String, dynamic>.of(extraContent);
+      final info = extraContent['info'];
+      if (info is Map) {
+        finalExtra['info'] = Map<String, dynamic>.from(info)
+          ..remove('w')
+          ..remove('h');
+      }
+    }
     final media = buildMediaFileForSend(
-      bytes: plaintext is Uint8List ? plaintext : Uint8List.fromList(plaintext),
-      name: filename ?? '畅聊附件',
-      mimeType: mimeType,
-      extraContent: extraContent,
+      bytes: finalBytes,
+      name: asset?.filename ?? filename ?? '畅聊附件',
+      // Retain m.file for generic attachment entry points, even when truthful
+      // image bytes need the same compression budget as m.image.
+      mimeType: imageInput || asFile ? asset?.mimeType ?? mimeType : mimeType,
+      asFile: asFile,
+      extraContent: finalExtra,
     );
     // BUG-28：自带缩略图的路径会跳过下面的缩略图生成，事件顶层可能缺
     // info.w/h——同一张图两次连发落入不同布局。在聚合点补齐解码尺寸。
