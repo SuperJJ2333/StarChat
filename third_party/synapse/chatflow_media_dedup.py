@@ -166,6 +166,21 @@ class ContentAddressedMedia:
         return await self.repo.store.db_pool.runInteraction(
             "chatflow_media_" + function.__name__, function, *args)
 
+    async def remove_storage(self, media_ids):
+        # Every caller already holds the shared lifecycle lock. Finish remote
+        # retirement before local/DB cleanup; errors preserve pending/retiring
+        # identities and local bytes for the existing retry/recovery path.
+        removed = []
+        for media_id in media_ids:
+            for wrapper in getattr(self.repo.media_storage, "storage_providers", ()):
+                backend = getattr(wrapper, "backend", wrapper)
+                delete = getattr(backend, "delete_local_media", None)
+                if delete is not None:
+                    await delete(media_id)
+            local_removed, _ = await self.repo._chatflow_remove_local_media_original([media_id])
+            removed.extend(local_removed)
+        return removed, len(removed)
+
     async def create(self, media_type, upload_name, content, content_length, auth_user):
         from synapse.api.errors import SynapseError
         from matrix_common.types.mxc_uri import MXCUri
@@ -176,7 +191,7 @@ class ContentAddressedMedia:
                 raise SynapseError(403, "Media is quarantined")
             abandoned = await self.transaction(pending, digest)
             if abandoned is not None:
-                removed, _ = await self.repo._chatflow_remove_local_media_original([abandoned])
+                removed, _ = await self.remove_storage([abandoned])
                 if abandoned not in removed:
                     raise SynapseError(503, "Unpublished media needs storage repair")
                 await self.transaction(forget, removed)
@@ -184,7 +199,7 @@ class ContentAddressedMedia:
                 old = await self.transaction(retiring, digest)
                 if old is not None:
                     # Complete a crashed collection before publishing this digest again.
-                    removed, _ = await self.repo._chatflow_remove_local_media_original([old])
+                    removed, _ = await self.remove_storage([old])
                     if old not in removed:
                         raise SynapseError(503, "Media collection needs storage repair")
                     await self.transaction(forget, removed)
@@ -227,7 +242,7 @@ class ContentAddressedMedia:
                     # an ID whose publication actually committed successfully.
                     try:
                         if await self.transaction(lookup, digest) != canonical:
-                            removed, _ = await self.repo._chatflow_remove_local_media_original([canonical])
+                            removed, _ = await self.remove_storage([canonical])
                             if canonical in removed:
                                 await self.transaction(forget, removed)
                             else:
@@ -263,7 +278,7 @@ class ContentAddressedMedia:
                         legacy.append(media_id)
             deleted = await self.transaction(logical_delete, shared, user_id,
                                              self.repo.clock.time_msec())
-            removed, _ = await self.repo._chatflow_remove_local_media_original(legacy)
+            removed, _ = await self.remove_storage(legacy)
             result = deleted + removed
             return result, len(result)
 
@@ -278,6 +293,6 @@ class ContentAddressedMedia:
             # Persist exclusion from lookup before unlink; retain this recovery
             # record across storage failures and process restarts.
             await self.transaction(retire, eligible)
-            removed, count = await self.repo._chatflow_remove_local_media_original(eligible)
+            removed, count = await self.remove_storage(eligible)
             await self.transaction(forget, removed)
             return removed, count

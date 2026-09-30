@@ -82,24 +82,24 @@ test('only the exact source read-budget T2 incident gets the non-pausing evidenc
   const summary=incidentSummary(item);
   assert.equal(summary.title,'链上数据暂不可用');
   assert.match(summary.explanation,/链上数据暂不可用.*本轮检查未完成/);
-  assert.match(summary.impact,/记录保留、不会因这条记录自动暂停/);
+  assert.match(summary.impact,/记录保留、邮件告警，不会因这条记录自动暂停/);
   assert.match(summary.impact,/新鲜链上证据.*仍须核验/);
   assert.match(summary.impact,/已有暂停.*单独处理/);
   assert.doesNotMatch(`${summary.explanation} ${summary.impact}`,/资金安全|资金已恢复|自动恢复/);
   for(const changed of [{severity:'P0'},{severity:'P1'},{code:'MANUAL_SOURCE_INVALID'},{fingerprint:'other'},{subject_id:'other'}]){
     const other=incidentSummary({...item,...changed});
-    assert.doesNotMatch(other.impact,/不会因这条记录自动暂停/);
-    assert.match(other.impact,/阻止恢复资金/);
+    assert.match(other.impact,/不会因这条记录自动暂停/);
+    assert.match(other.impact,/已有暂停须单独处理/);
   }
 });
-test('T2 incident processing keeps neutral control copy while P0 keeps existing pause copy',async()=>{
+test('T2 and P0 incident processing keep neutral control copy and never change fund control',async()=>{
   const item={code:'MANUAL_SOURCE_UNAVAILABLE',severity:'T2',fingerprint:'manual-reserve:MANUAL_SOURCE_UNAVAILABLE',subject_id:'global'};
   const t2=fixture(item),t2Progress=[];
   await processIncident({id:'incident',api:t2.api,journal:t2.journal,credentials:{operation_password:'synthetic-secret'},authMode:'operation_password',onProgress:text=>t2Progress.push(text)});
   assert.ok(t2Progress.some(text=>/结案.*不改变资金控制状态/.test(text)));
   const p0=fixture({...item,severity:'P0'}),p0Progress=[];
   await processIncident({id:'incident',api:p0.api,journal:p0.journal,credentials:{operation_password:'synthetic-secret'},authMode:'operation_password',onProgress:text=>p0Progress.push(text)});
-  assert.ok(p0Progress.some(text=>/结案并保留资金暂停/.test(text)));
+  assert.ok(p0Progress.some(text=>/结案.*不改变资金控制状态/.test(text)));
 });
 test('incident explanation describes its meaning without inventing an exact historical cause',()=>{
   const source=incidentSummary({code:'MANUAL_SOURCE_UNHEALTHY',status:'OPEN',condition_active:true});

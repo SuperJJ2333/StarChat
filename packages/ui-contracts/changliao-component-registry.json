@@ -25,9 +25,33 @@
         "apps/mobile_flutter/lib/features/moments/personal_moments_page.dart",
         "apps/mobile_flutter/lib/features/moments/moment_detail_page.dart"
       ],
-      "props": ["routeDepth", "nickname", "signature", "invitationHistory", "selfUserId", "interactionUnreadCount", "notificationId", "commentId"],
-      "states": ["tab-visible-only-on-primary", "grapheme-counting", "over-limit-dialog", "invitation-history-paged", "invitation-empty", "self-published-only", "interaction-unread", "interaction-paged", "interaction-unavailable"],
-      "tokens": ["WeChatColors.surface = --color-surface-primary", "WeChatColors.textSecondary = --color-text-secondary", "WeChatColors.brandPrimary = --color-brand-primary", "WeChatSpacing.md = --space-md"],
+      "props": [
+        "routeDepth",
+        "nickname",
+        "signature",
+        "invitationHistory",
+        "selfUserId",
+        "interactionUnreadCount",
+        "notificationId",
+        "commentId"
+      ],
+      "states": [
+        "tab-visible-only-on-primary",
+        "grapheme-counting",
+        "over-limit-dialog",
+        "invitation-history-paged",
+        "invitation-empty",
+        "self-published-only",
+        "interaction-unread",
+        "interaction-paged",
+        "interaction-unavailable"
+      ],
+      "tokens": [
+        "WeChatColors.surface = --color-surface-primary",
+        "WeChatColors.textSecondary = --color-text-secondary",
+        "WeChatColors.brandPrimary = --color-brand-primary",
+        "WeChatSpacing.md = --space-md"
+      ],
       "behavior": "All Me secondary routes cover the primary Tab and return to it on pop; profile input counts Unicode graphemes and rejects overflow. Invitation history shows real paged registrations. Me opens only published own Moments with a separate interaction badge and inbox; a notification target is revalidated before detail, while inaccessible history remains generic."
     },
     "2026-09-24-group-moments-wallet-debug": {
@@ -516,6 +540,329 @@
         "admin-table",
         "admin-audit-note"
       ]
+    },
+    "2026-09-26-account-credentials": {
+      "flutter": [
+        "apps/mobile_flutter/lib/features/profile/profile_page.dart",
+        "apps/mobile_flutter/lib/features/profile/account_settings_pages.dart",
+        "apps/mobile_flutter/lib/features/auth/password_change_page.dart",
+        "apps/mobile_flutter/lib/features/auth/email_rebind_page.dart"
+      ],
+      "html": "frontend/src/screens/account-credentials.js",
+      "demo": "account-password-code",
+      "components": [
+        "WeChatLabeledInputRow",
+        "PasswordChangePage",
+        "EmailRebindPage",
+        "AccountSecurityPage",
+        "ChatSettingsPage",
+        "AuthTextField",
+        "ModernActionButton",
+        "WeChatGradientDivider"
+      ],
+      "props": [
+        "label",
+        "controller",
+        "placeholder",
+        "enabled",
+        "maxLength",
+        "gateway",
+        "onCompleted",
+        "authenticated",
+        "security",
+        "api",
+        "onPasswordChanged",
+        "onBindingsChanged"
+      ],
+      "states": [
+        "empty",
+        "filled",
+        "editing",
+        "disabled",
+        "code",
+        "phone",
+        "unbound",
+        "verifying",
+        "code-error",
+        "expired",
+        "network-error",
+        "password",
+        "password-mismatch",
+        "submitting",
+        "success",
+        "cooldown",
+        "phone-only",
+        "email-only",
+        "bound-phone",
+        "bound-email"
+      ],
+      "tokens": [
+        "WeChatColors.elevatedSurface",
+        "WeChatColors.resolveTextPrimary",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md",
+        "WeChatSpacing.lg",
+        "WeChatDimensions.contactTileHeight",
+        "WeChatTypography.callout",
+        "WeChatGradientDivider"
+      ],
+      "behavior": "Fixed left profile labels without counters; account/general settings groups; login and security use one password renderer. Verified bound email/phone OTP must produce proof before password submission; email change proves the existing channel before verifying the new email. HTML is a clearly labeled local demo with no network or sensitive persistence. Flutter uses the public account credentials gateway.",
+      "publicPages": {
+        "PasswordChangePage": {
+          "flutter": "apps/mobile_flutter/lib/features/auth/password_change_page.dart",
+          "htmlCatalog": "account-password-code",
+          "props": [
+            "gateway",
+            "onCompleted",
+            "authenticated",
+            "security"
+          ]
+        },
+        "EmailRebindPage": {
+          "flutter": "apps/mobile_flutter/lib/features/auth/email_rebind_page.dart",
+          "htmlCatalog": "account-email-old",
+          "props": [
+            "gateway"
+          ]
+        },
+        "AccountSecurityPage": {
+          "flutter": "apps/mobile_flutter/lib/features/profile/account_settings_pages.dart",
+          "htmlCatalog": "account-security-default",
+          "props": [
+            "api",
+            "onPasswordChanged",
+            "onBindingsChanged"
+          ]
+        },
+        "ChatSettingsPage": {
+          "flutter": "apps/mobile_flutter/lib/features/profile/account_settings_pages.dart",
+          "htmlCatalog": "account-chat-default",
+          "props": [
+            "api"
+          ]
+        }
+      }
+    },
+    "2026-09-26-account-profile-followup": {
+      "states": [
+        "default",
+        "empty",
+        "save-failed",
+        "cooldown",
+        "cached",
+        "refreshing",
+        "checking",
+        "available",
+        "taken",
+        "saving",
+        "success"
+      ],
+      "props": [
+        "controller",
+        "accountApi",
+        "onUsername",
+        "gateway",
+        "api",
+        "onBindingsChanged"
+      ],
+      "behavior": "Seven ordered right-aligned actionable values; field editing; direct validated bindings; 5m session cache, refresh/no OTP persistence; server-authoritative 365d unique username change keeping Matrix identity.",
+      "components": [
+        "ProfileExperiencePage",
+        "ProfileDetailsPage",
+        "UsernameChangePage",
+        "AccountSecurityPage",
+        "ChatSettingsPage",
+        "WeChatListTile",
+        "WeChatLabeledInputRow",
+        "UserAvatar"
+      ],
+      "tokens": [
+        "WeChatTypography.body",
+        "WeChatSpacing.sm",
+        "WeChatSpacing.md",
+        "WeChatColors.textSecondary"
+      ],
+      "flutter": [
+        "apps/mobile_flutter/lib/features/profile/profile_page.dart",
+        "apps/mobile_flutter/lib/features/profile/account_settings_pages.dart",
+        "apps/mobile_flutter/lib/features/profile/username_change_page.dart"
+      ],
+      "html": "frontend/src/screens/profile.js",
+      "demo": "profile-details-default"
+    },
+    "2026-09-27-friend-video-followup": {
+      "states": [
+        "default",
+        "invalid",
+        "checking",
+        "available",
+        "taken",
+        "failed",
+        "loading",
+        "empty",
+        "cooldown"
+      ],
+      "props": [
+        "gateway",
+        "controller",
+        "loadRendition",
+        "loadOriginalFile",
+        "query",
+        "loadTracedRendition",
+        "traceFactory"
+      ],
+      "behavior": "Username blur validation; exact email and phone search; username compares all except final two characters with candidate length query..query+2; original video preview before transcode; inline loading without top capsules.",
+      "components": [
+        "UsernameChangePage",
+        "AddFriendPage",
+        "GalleryVideoPreviewPage",
+        "WeChatVideoMessage"
+      ],
+      "tokens": [
+        "WeChatTypography.body",
+        "WeChatTypography.subhead",
+        "WeChatSpacing.sm",
+        "WeChatSpacing.md",
+        "WeChatSpacing.lg",
+        "WeChatColors.textSecondary",
+        "WeChatColors.mediaViewerBackground"
+      ],
+      "flutter": [
+        "apps/mobile_flutter/lib/features/profile/username_change_page.dart",
+        "apps/mobile_flutter/lib/features/contacts/contacts_page.dart",
+        "apps/mobile_flutter/lib/features/matrix/gallery_video_preview.dart",
+        "apps/mobile_flutter/lib/ui/chat/wechat_video_message.dart"
+      ],
+      "html": [
+        "frontend/src/screens/username-change.js",
+        "frontend/src/screens/contacts.js",
+        "frontend/src/screens/media-video-preview.js"
+      ],
+      "demo": [
+        "profile-username-default",
+        "contacts-add-default",
+        "chat-gallery-video-loading",
+        "chat-video-preview-loading",
+        "moments-video-preview-loading"
+      ]
+    },
+    "2026-09-28-local-history": {
+      "flutter": "apps/mobile_flutter/lib/ui/chat/chat_search_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-history-calendar",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "present",
+        "empty",
+        "paging",
+        "retry"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "Only local complete snapshot message dates are selectable; normal continuation is scroll-driven without a more button."
+    },
+    "2026-09-28-message-multi-select": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-multi-select-active",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "selected",
+        "unselected"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "A selected message retains the same divider-color full-row background as quote navigation until deselected."
+    },
+    "2026-09-28-announcement-admin": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/group_announcement_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-announcement-unavailable-admin",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "unavailable",
+        "editing",
+        "delete-confirmation"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "An authorized administrator may rewrite or clear a missing historical document; clearing needs confirmation and never exposes plaintext."
+    },
+    "2026-09-28-moment-publish": {
+      "flutter": "apps/mobile_flutter/lib/features/moments/moments_page.dart",
+      "html": "frontend/src/screens/moments.js",
+      "demo": "moments-timeline-background-upload",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "queued",
+        "uploading",
+        "failed",
+        "cancelled",
+        "published"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "Per-account durable publication continues after leaving compose. Failure keeps retry/cancel; process suspension resumes at next launch."
+    },
+    "2026-09-28-moment-video-poster": {
+      "flutter": "apps/mobile_flutter/lib/ui/moments/moment_video_tile.dart",
+      "html": "frontend/src/screens/moments.js",
+      "demo": "moments-media-video-poster",
+      "components": [
+        "WeChatPageScaffold",
+        "CupertinoButton"
+      ],
+      "props": [
+        "state"
+      ],
+      "states": [
+        "poster",
+        "local-fallback",
+        "no-poster",
+        "failed"
+      ],
+      "tokens": [
+        "WeChatColors.divider",
+        "WeChatColors.textSecondary",
+        "WeChatSpacing.md"
+      ],
+      "behavior": "New videos load bounded viewer-authorized small posters; older videos never download in full just to obtain a cover."
     }
   },
   "tokenMappings": {
@@ -1662,6 +2009,45 @@
         "spacing",
         "typography"
       ]
+    },
+    {
+      "id": "labeled-input-row",
+      "flutter": {
+        "name": "WeChatLabeledInputRow",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_labeled_input_row.dart",
+        "props": [
+          "label",
+          "controller",
+          "placeholder",
+          "enabled",
+          "maxLength"
+        ],
+        "variants": {
+          "theme": [
+            "light",
+            "dark"
+          ]
+        },
+        "states": [
+          "empty",
+          "filled",
+          "editing",
+          "disabled"
+        ]
+      },
+      "html": {
+        "tag": "app-labeled-input-row"
+      },
+      "tokens": [
+        "elevatedSurface",
+        "resolveTextPrimary",
+        "textSecondary",
+        "md",
+        "lg",
+        "contactTileHeight",
+        "callout",
+        "divider"
+      ]
     }
   ],
   "tokenParity": [
@@ -2001,7 +2387,7 @@
     }
   },
   "screens": {
-    "expectedCount": 438
+    "expectedCount": 518
   },
   "adminCompletion20260910": {
     "html": [

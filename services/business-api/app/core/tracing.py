@@ -247,11 +247,14 @@ class _PerformanceRequestMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope)
-        request_id = valid_request_id(request.headers.get('X-ChatFlow-Request-Id'))
+        request_id = (None if scope.get('path') == '/api/v1/startup-diagnostics'
+                      else valid_request_id(request.headers.get('X-ChatFlow-Request-Id')))
         # A request-scoped random ID is separate from all business/audit state.
         timeline_active = request_id is not None and self.timeline_sink is not None
         server_started_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z') if timeline_active else None
-        candidate = request.headers.get("X-Trace-Id", "")
+        # Anonymous startup metadata never reflects caller-supplied labels.
+        candidate = ('' if scope.get('path') == '/api/v1/startup-diagnostics'
+                     else request.headers.get("X-Trace-Id", ""))
         trace_id = candidate if _TRACE_ID_PATTERN.fullmatch(candidate) else uuid4().hex
         request.state.trace_id = trace_id
         performance_id = request.headers.get("X-ChatFlow-Performance-Id")

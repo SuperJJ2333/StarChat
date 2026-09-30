@@ -16,6 +16,20 @@ class Element {
 }
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('void preview expired login offers modal authentication without a write',async()=>{
+ let writes=0;
+ const panel=setup({
+  getManualPayout:async()=>({...order,status:'UNKNOWN',version:1,claimed_by:'owner'}),
+  getVoidUnbroadcastPreview:async()=>{throw {status:401,code:'RECENT_LOGIN_REQUIRED'};},
+  voidUnbroadcastPayout:async()=>{writes++;}
+ },{onReauthenticate:async()=>true});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ const dialogs=globalThis.document.body.find('dialog').filter(n=>n.open);
+ assert.equal(dialogs.length,1);
+ assert.ok(dialogs[0].find('button').some(n=>n.textContent==='重新登录'));
+ assert.equal(writes,0);
+});
+
 test('server wallet grant omits repeated proof while keeping confirmation and original pending key',async()=>{
  const calls=[],store=storage();
  const panel=setup({getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'ACTIVE',restriction_scopes:[],unresolved_incidents:0}),manualWalletControlAction:async(kind,body,options)=>{calls.push({body,options});throw {code:'NETWORK_ERROR'};}},{walletAccess:true,storage:store});
@@ -138,7 +152,7 @@ test('T2 is a literal incident filter and detail level while an independent paus
   severity.value='T2';await form.find('button').find(n=>n.textContent==='查询').handlers.click();
   assert.equal(requests.at(-1).severity,'T2');
   assert.ok(panel.find('td').some(n=>n.textContent==='T2'));
-  assert.ok(panel.find('td').some(n=>n.textContent?.includes('记录保留、不会因这条记录自动暂停')));
+  assert.ok(panel.find('td').some(n=>n.textContent?.includes('记录保留、邮件告警，不会因这条记录自动暂停')));
   assert.ok(panel.find('p').some(n=>n.textContent?.includes('资金已暂停')));
   await panel.find('button').find(n=>n.textContent==='查看事故').handlers.click();
   assert.ok(document.body.find('dd').some(n=>n.textContent==='T2'));
@@ -815,8 +829,8 @@ test('access suspension during refresh cannot restore a detached payout draft or
  assert.equal(replacement.find('input').find(input=>input.name==='operation_password').value,'');
  releaseControl();await pending;
  const after=panel.find('form').find(item=>item.name==='txid');
- assert.equal(after.find('input').find(input=>input.name==='txid').value,'');
- assert.equal(after.find('input').find(input=>input.name==='operation_password').value,'');
+ assert.equal(after,undefined);
+ assert.equal(document.body.find('dialog').filter(item=>item.open).length,0);
  assert.equal(form.find('input').find(input=>input.name==='operation_password').value,'');
  assert.equal(readFilter.value,'T2');
 });

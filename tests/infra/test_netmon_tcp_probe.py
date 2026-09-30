@@ -207,3 +207,54 @@ def test_record_rejects_arbitrary_payload_before_writing(tmp_path):
     with pytest.raises(ValueError):
         module.record(tmp_path, result, '2026-09-26T00:00:00Z')
     assert not list(tmp_path.iterdir())
+
+
+def test_secondary_ssh_target_is_fixed_bounded_and_has_one_attempt():
+    module = load()
+    connection = Connection(socket.timeout('private identity'))
+    ticks = iter([0, 0, 3_000_500_000, 3_000_500_000])
+    results = module.probe_window(module.SECONDARY_IP, 'origin_server',
+                                  target='secondary_ssh22',
+                                  socket_factory=lambda *_: connection,
+                                  clock=lambda: next(ticks))
+    assert len(results) == 1
+    assert connection.calls[0:2] == [('timeout', 3.0), ('connect', (module.SECONDARY_IP, 22))]
+    assert results[0]['tcp_connect_ms'] is None
+    assert results[0]['attempt_elapsed_ms'] == 3000.5
+    assert results[0]['error'] == 'connect_timeout'
+    assert module.SECONDARY_IP not in json.dumps(results)
+
+
+def test_secondary_cannot_use_wrong_ip_observer_or_more_than_one_attempt():
+    module = load()
+    for ip, observer, count in [(module.ORIGIN_IP, 'origin_server', 1),
+                                (module.SECONDARY_IP, 'mainland_observer', 1),
+                                (module.SECONDARY_IP, 'origin_server', 2)]:
+        with pytest.raises(ValueError):
+            module.probe_window(ip, observer, target='secondary_ssh22', attempts=count,
+                                socket_factory=lambda *_: pytest.fail('no network'))
+
+
+def test_secondary_state_does_not_mix_origin_history(tmp_path):
+    module, _, result = measure()
+    module.record(tmp_path, result, '2026-09-26T00:00:00Z')
+    secondary = {**result, 'target': 'secondary_ssh22', 'observer': 'origin_server'}
+    report = module.record(tmp_path, secondary, '2026-09-26T00:01:00Z')
+    assert report['state_reset'] is True
+    assert report['window']['attempts'] == 1
+    saved = json.loads((tmp_path / 'state.json').read_text())
+    assert saved['target'] == 'secondary_ssh22'
+
+
+def test_missing_minutes_are_separate_from_failed_attempts():
+    module, _, result = measure()
+    records = [{'timestamp': '2026-09-26T00:00:00Z', **result},
+               {'timestamp': '2026-09-26T00:02:00Z', **result,
+                'success': False, 'tcp_connect_ms': None, 'error': 'connect_timeout'}]
+    report = module.coverage_summary(records, '2026-09-26T00:00:00Z',
+                                     '2026-09-26T00:02:59Z', attempts_per_minute=1)
+    assert report['expected_minutes'] == 3
+    assert report['missing_minutes'] == 1
+    assert report['attempts'] == 2 and report['failures'] == 1
+    assert report['success_rate_percent'] == 50.0
+    assert report['duration_ms']['p99'] == 123.457

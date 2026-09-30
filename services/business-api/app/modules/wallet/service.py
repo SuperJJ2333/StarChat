@@ -381,7 +381,6 @@ class WalletService(WalletSafetyMixin):
                 reserve = session.get(RedeemabilityReserve, 'global', with_for_update=True)
                 if reserve is not None:
                     refresh_valuation(session, reserve)
-        if not matched: self.pause_on_reconciliation_mismatch(f"{mode}: custody={actual} internal={expected}")
         return ReconciliationResult(mode=mode, expected=expected, actual=actual, matched=matched,
             caibi_face=valuation["caibi_face"], valuation_rate=valuation["valuation_rate"],
             caibi_reference_usdt=valuation["caibi_reference_usdt"],

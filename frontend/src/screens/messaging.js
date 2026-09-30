@@ -2,6 +2,7 @@ import { fixtures } from "../catalog/fixtures.js";
 import { button, element } from "../components/base.js";
 import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
+import { renderMediaVideoPreview } from "./media-video-preview.js";
 
 function conversationTile(conversation, options = {}) {
   const tile = element("article", "c-conversation-row");
@@ -436,7 +437,33 @@ function announcementScreen(definition) {
       element("p", "", "欢迎加入畅聊，请查看以下图片。"), image,
       element("p", "", "图片后的公告文字保持顺序显示。"));
   }
-  if (definition.state === "decrypting") {
+  if (definition.state === "unavailable-admin") {
+    content.append(element("p", "", "公告暂时无法解密"));
+    const edit = button("c-button", "更改公告");
+    edit.textContent = "更改公告";
+    edit.addEventListener("click", () => {
+      const draft = element("textarea", "c-moment-composer-field__input");
+      draft.placeholder = "请输入新的群公告";
+      const save = button("c-button", "发布新公告");
+      save.textContent = "发布新公告";
+      save.addEventListener("click", () => {
+        if (draft.value.trim()) content.replaceChildren(element("p", "", draft.value));
+      });
+      content.replaceChildren(draft, save);
+    });
+    const remove = button("c-button", "删除公告");
+    remove.textContent = "删除公告";
+    remove.addEventListener("click", () => {
+      const confirmation = element("section");
+      const cancel = button("c-button", "取消"); cancel.textContent = "取消";
+      const confirm = button("c-button", "确认删除"); confirm.textContent = "确认删除";
+      cancel.addEventListener("click", () => confirmation.remove());
+      confirm.addEventListener("click", () => content.replaceChildren(element("p", "", "暂无群公告")));
+      confirmation.append(element("p", "", "删除当前群公告？"), cancel, confirm);
+      content.append(confirmation);
+    });
+    content.append(edit, remove);
+  } else if (definition.state === "decrypting") {
     const retry = button("c-button", "公告正在解密，点击重试");
     retry.textContent = "公告正在解密，点击重试";
     retry.addEventListener("click", showDocument);
@@ -567,9 +594,83 @@ function groupManagement(definition) {
   return root;
 }
 
+function localHistoryScreen(definition) {
+  const root = pageRoot(definition, [navigation("查找聊天记录", { leading: "返回" })]);
+  root.dataset.demoSource = "local-fixture";
+  const content = element("div", "p-messages-inbox__content");
+  content.style.padding = "var(--space-lg)";
+  if (definition.state === "calendar") {
+    const heading = element("h2", "", "2026 年 9 月");
+    heading.style.fontSize = "18px";
+    heading.style.marginBottom = "var(--space-lg)";
+    content.append(heading);
+    const grid = element("div");
+    grid.style.display = "grid"; grid.style.gridTemplateColumns = "repeat(7, 1fr)";
+    grid.style.gap = "var(--space-sm)";
+    for (const day of ["一", "二", "三", "四", "五", "六", "日"]) grid.append(element("span", "", day));
+    grid.append(element("span", ""));
+    const selected = element("p", "c-system-message", "选择有消息的日期");
+    for (let day = 1; day <= 30; day++) {
+      const hasMessages = [15, 16, 28].includes(day);
+      const item = button("c-button", `${day} 日${hasMessages ? "有消息" : "没有消息"}`);
+      item.textContent = `${day}${hasMessages ? " ·" : ""}`;
+      item.disabled = !hasMessages;
+      item.style.color = hasMessages ? "var(--color-text-primary)" : "var(--color-text-secondary)";
+      item.dataset.messageState = hasMessages ? "present" : "empty";
+      item.addEventListener("click", () => { selected.textContent = `9 月 ${day} 日 · 已定位本机消息`; });
+      grid.append(item);
+    }
+    content.append(grid, selected);
+  } else {
+    const query = element("input", "c-search-field__input");
+    query.placeholder = "搜索聊天记录"; query.value = "周末";
+    query.setAttribute("aria-label", "搜索聊天记录");
+    const list = element("div");
+    list.style.maxHeight = "60vh"; list.style.overflowY = "auto";
+    let loaded = 0;
+    function appendPage() {
+      const end = Math.min(loaded + 6, 24);
+      while (loaded < end) {
+        list.append(component("app-list-tile", { title: "周然", subtitle: `周末一起去海边走走 · 本机记录 ${++loaded}`, trailing: loaded > 12 ? "9月15日" : "9月28日" }));
+      }
+    }
+    appendPage();
+    list.addEventListener("scroll", () => {
+      if (list.scrollHeight - list.scrollTop - list.clientHeight < 120) appendPage();
+    });
+    query.addEventListener("input", () => { loaded = 0; list.replaceChildren(); if (query.value.trim()) appendPage(); });
+    content.append(query, list);
+  }
+  root.append(content); return root;
+}
+
+function multiSelectScreen(definition) {
+  const root = pageRoot(definition, [navigation("多选", { leading: "取消", action: "完成" })]);
+  const content = element("div", "p-chat-room__messages");
+  for (const [index, text] of ["明天上午九点见", "海边日落.mp4 · 00:18", "周末合照.jpg"].entries()) {
+    const row = element("label");
+    row.style.display = "flex"; row.style.alignItems = "center";
+    row.style.gap = "var(--space-md)"; row.style.padding = "var(--space-md)";
+    const check = element("input"); check.type = "checkbox"; check.checked = index === 1;
+    check.setAttribute("aria-label", `选择${text}`);
+    const update = () => { row.style.background = check.checked ? "var(--color-divider)" : "transparent"; };
+    check.addEventListener("change", update); update();
+    row.append(check, component("app-message-bubble", { content: text, direction: "incoming" }));
+    content.append(row);
+  }
+  root.append(content, component("app-action-button", { label: "转发", icon: "forward", action: "open:chat-forward-background" }));
+  return root;
+}
+
 export function renderScreen(definition) {
   let root;
-  if (definition.page === "search") {
+  if (definition.module === "chat" && ["gallery-video", "video-preview"].includes(definition.page)) {
+    root = renderMediaVideoPreview(definition);
+  } else if (definition.page === "history") {
+    root = localHistoryScreen(definition);
+  } else if (definition.page === "multi-select") {
+    root = multiSelectScreen(definition);
+  } else if (definition.page === "search") {
     root = searchResults(definition);
   } else if (definition.page === "announcement") {
     root = ["notice", "dismissed", "new-notice"].includes(definition.state)

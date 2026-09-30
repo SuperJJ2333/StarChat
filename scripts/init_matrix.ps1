@@ -152,7 +152,15 @@ if (-not $RenderOnly -and (-not (Test-Path $homeserverConfig) -or -not (Test-Pat
     }
 }
 
+# Use the Python deployment renderer's reviewed whitelist; no second validator.
+$additionalTurn = @(& py -3.12 (Join-Path $projectRoot 'infra/render_config.py') --env $envFile --print-additional-turn-uris)
+if ($LASTEXITCODE -ne 0) { throw 'Additional TURN URI validation failed.' }
+$storageProvider = @(& py -3.12 (Join-Path $projectRoot 'infra/render_config.py') --env $envFile --print-synapse-storage-provider)
+if ($LASTEXITCODE -ne 0) { throw 'Synapse storage provider validation failed.' }
+
 $variables = @{
+    TURN_ADDITIONAL_URIS_YAML = $additionalTurn -join "`n"
+    MEDIA_STORAGE_PROVIDERS_YAML = $storageProvider -join "`n"
     POSTGRES_DB = $env:POSTGRES_DB
     POSTGRES_USER = $env:POSTGRES_USER
     POSTGRES_PASSWORD = $env:POSTGRES_PASSWORD

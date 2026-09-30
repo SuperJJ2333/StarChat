@@ -1,6 +1,7 @@
 import { fixtures } from "../catalog/fixtures.js";
 import { element } from "../components/base.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
+import { usernameEditor } from "./username-change.js";
 
 const visibleCharacters = value => [...new Intl.Segmenter("zh", { granularity: "grapheme" }).segment(value)].map(item => item.segment);
 
@@ -75,6 +76,7 @@ function profileHome(definition) {
 
 function profileDetails(definition) {
   const root = pageRoot(definition);
+  if (!["edit", "nickname-limit", "signature-limit"].includes(definition.state)) return accountProfileDetails(definition);
   const editing = ["edit", "nickname-limit", "signature-limit"].includes(definition.state);
   root.append(navigation(editing ? "编辑资料" : "个人资料", { leading: "返回", action: editing ? "保存" : "编辑" }));
   const content = element("div", "p-profile-details__content");
@@ -114,7 +116,7 @@ function profileDetails(definition) {
   return root;
 }
 
-function invitation(definition) {
+function invitationHistory(definition) {
   const root = pageRoot(definition);
   root.append(navigation("邀请码", { leading: "返回" }));
   const content = element("div", "p-profile-invitation__content");
@@ -137,6 +139,60 @@ function invitation(definition) {
   return root;
 }
 
+function accountProfileDetails(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("个人信息", { leading: "返回" }));
+  const content = element("div", "p-profile-details__content");
+  let saved = { name: fixtures.currentUser.name, signature: fixtures.currentUser.signature, username: fixtures.currentUser.username, nudge: "未设置" };
+  try { saved = { ...saved, ...JSON.parse(globalThis.localStorage?.getItem("chatflow-account-profile-demo") ?? "{}") }; } catch { /* Optional demo storage can be unavailable. */ }
+  const empty = definition.state === "empty";
+  for (const [title, trailing, action] of [
+    ["头像", "", "open:profile-avatar-picker"],
+    ["畅聊号", saved.username, "open:profile-username-default"],
+    ["邮箱", "d***@example.invalid", "open:account-email-old"],
+    ["手机号", "+86****0001", "open:phone-rebind-old"],
+    ["昵称", empty ? "未设置" : saved.name, "open:profile-nickname-default"],
+    ["个性签名", empty ? "未设置" : saved.signature || "未设置", "open:profile-signature-default"],
+    ["拍一拍", saved.nudge, "open:profile-nudge-default"]
+  ]) content.append(component("app-list-tile", { title, trailing, leading: "none", action, "avatar-name": title === "头像" ? saved.name : undefined }));
+  content.append(element("div", "p-profile-details__secondary", "邀请好友"), component("app-list-tile", { title: "邀请码", trailing: "查看邀请信息", leading: "none", action: "open:profile-invitation-default" }));
+  root.append(content);
+  return root;
+}
+
+function profileFieldEditor(definition) {
+  const config = { nickname: ["昵称", "name", 12], signature: ["个性签名", "signature", 20], nudge: ["拍一拍", "nudge", 10] }[definition.page];
+  const [label, key, limit] = config;
+  const root = pageRoot(definition);
+  root.append(navigation(`修改${label}`, { leading: "返回" }));
+  const content = element("div", "p-profile-details__content");
+  let saved = { name: fixtures.currentUser.name, signature: fixtures.currentUser.signature, nudge: "" };
+  try { saved = { ...saved, ...JSON.parse(globalThis.localStorage?.getItem("chatflow-account-profile-demo") ?? "{}") }; } catch {}
+  let draft = definition.state === "empty" ? "" : saved[key];
+  let failOnce = definition.state === "save-failed", busy = false, status = "";
+  function draw() {
+    const field = component("app-labeled-input-row", { label, value: draft, placeholder: `填写${label}`, enabled: String(!busy) });
+    const save = component("app-action-button", { label: "保存资料", icon: "check", loading: busy });
+    save.addEventListener("click", async () => {
+      if (busy) return;
+      draft = (field.value ?? field.getAttribute?.("value") ?? draft).trim();
+      if (key === "name" && !draft) { status = "请输入昵称，草稿已保留"; draw(); return; }
+      if (draft !== saved[key] && [...new Intl.Segmenter("zh", { granularity: "grapheme" }).segment(draft)].length > limit) { status = `${label}最多支持${limit}个字符，草稿已保留`; draw(); return; }
+      busy = true; draw(); await Promise.resolve(); busy = false;
+      if (failOnce) { failOnce = false; status = "保存失败，草稿已保留，请重试"; }
+      else {
+        saved[key] = draft; status = "资料已保存（演示）";
+        try { globalThis.localStorage?.setItem("chatflow-account-profile-demo", JSON.stringify(saved)); } catch { status = "当前浏览器无法保存演示资料，请重试"; }
+      }
+      draw();
+    });
+    content.replaceChildren(field, save);
+    if (status) { const message = element("p", status.includes("失败") || status.includes("请输入") ? "c-form-error" : "c-form-help", status); message.setAttribute("role", status.includes("失败") || status.includes("请输入") ? "alert" : "status"); content.append(message); }
+    content.append(component("app-action-button", { label: "返回个人信息", kind: "secondary", icon: "close", action: "open:profile-details-default" }));
+  }
+  draw(); root.append(content); return root;
+}
+
 function avatar(definition) {
   const root = pageRoot(definition);
   if (definition.state === "crop") {
@@ -156,11 +212,25 @@ function avatar(definition) {
   return root;
 }
 
+function invitation(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("邀请码", { leading: "返回" }));
+  const host = element("div", "p-profile-details__content");
+  host.append(element("p", "c-form-help", "DEMO2026 · 剩余可用次数：20（演示）"));
+  const copy = component("app-action-button", { label: "复制邀请码", icon: "copy" });
+  copy.addEventListener("click", async () => {
+    try { await globalThis.navigator.clipboard.writeText("DEMO2026"); host.append(element("p", "c-form-help", "复制成功")); }
+    catch { host.append(element("p", "c-form-error", "复制失败，请重试")); }
+  });
+  host.append(copy); root.append(host); return root;
+}
+
 function settings(definition) {
   const root = pageRoot(definition);
-  root.append(navigation(definition.state === "privacy" ? "账号与隐私" : "设置", { leading: "返回" }));
+  root.append(navigation("设置", { leading: "返回" }));
   const content = element("div", "p-profile-settings__content");
-  for (const [title, trailing] of [["账号与隐私", ""], ["消息通知", "已开启"], ["减少动态效果", "跟随系统"], ["关于畅聊", "1.1"]]) content.append(component("app-list-tile", { title, trailing, leading: "info" }));
+  content.append(element("h2", "p-account__group", "账号"), component("app-list-tile", { title: "账号安全", leading: "info", action: "open:account-security-default" }), component("app-gradient-divider"), element("h2", "p-account__group", "通用"));
+  for (const [title, trailing, action] of [["聊天", "", "open:account-chat-default"], ["消息通知", "已开启", null], ["减少动态效果", "跟随系统", null], ["关于畅聊", "1.1", null]]) content.append(component("app-list-tile", { title, trailing, leading: "info", action }), component("app-gradient-divider"));
   content.append(component("app-action-button", { kind: "danger", icon: "close", label: definition.state === "logout-loading" ? "正在退出…" : "退出登录", loading: definition.state === "logout-loading", action: "profile:logout" }));
   root.append(content);
   if (definition.state === "logout-confirm") root.append(component("app-dialog", { kind: "danger", title: "退出登录", message: "退出后将清除本设备的登录状态。", cancel: "取消", confirm: "退出登录" }));
@@ -173,7 +243,9 @@ export function renderScreen(definition) {
   let root;
   if (definition.page === "home") root = profileHome(definition);
   else if (definition.page === "details") root = profileDetails(definition);
-  else if (definition.page === "invitation") root = invitation(definition);
+  else if (definition.page === "username") root = usernameEditor(definition);
+  else if (definition.page === "invitation") root = ["history", "more", "empty", "loading", "error"].includes(definition.state) ? invitationHistory(definition) : invitation(definition);
+  else if (["nickname", "signature", "nudge"].includes(definition.page)) root = profileFieldEditor(definition);
   else if (definition.page === "avatar") root = avatar(definition);
   else root = settings(definition);
   return createDeviceScreen(definition, root);

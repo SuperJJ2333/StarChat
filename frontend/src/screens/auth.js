@@ -59,7 +59,13 @@ function loginForm(definition) {
     icon: "add",
     kind: "secondary",
     action: "auth:registration"
-  }));
+  }), component("app-action-button", { label: "忘记密码", icon: "info", kind: "secondary", action: "open:account-password-code" }));
+  const modes = element("div", "p-account__channels");
+  modes.append(element("span", "c-form-help", "用户名 / 邮箱登录"), component("app-action-button", { label: "手机登录", icon: "me", kind: "secondary", action: "open:phone-login-phone-default" }));
+  const consent = element("label", "c-form-help");
+  const checkbox = element("input"); checkbox.type = "checkbox"; checkbox.setAttribute("aria-label", "同意用户协议和隐私政策");
+  consent.append(checkbox, element("span", "", " 我已阅读并同意用户协议和隐私政策"));
+  form.append(modes, consent);
   return form;
 }
 

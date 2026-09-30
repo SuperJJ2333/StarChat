@@ -39,7 +39,7 @@ def build_document() -> dict:
             ]
             if authorization:
                 operation["parameters"] = [item for item in parameters if item not in authorization]
-                operation["security"] = [{"bearerAuth": []}]
+                operation.setdefault("security", [{"bearerAuth": []}])
     avatar_upload = document["paths"][
         "/api/v1/profile/avatar/uploads/{upload_id}/content"
     ]["put"]

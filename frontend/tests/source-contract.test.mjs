@@ -4,6 +4,24 @@ import { readdir, readFile } from "node:fs/promises";
 
 const sourceRoot = new URL("../src/", import.meta.url);
 
+function checkedInstallerSource(source) {
+  const direct="const DIRECT = 'https://www.liuhetong888.com';";
+  const cdn='`https://${cdnHost}${path}`';
+  assert.equal(source.split(direct).length-1,1,'expected one fixed direct origin declaration');
+  assert.equal(source.split(cdn).length-1,1,'expected one validated pinned CDN expression');
+  return source.replace(direct,'').replace(cdn,'');
+}
+
+test('installer URL exception cannot hide a host suffix or credential redirect',()=>{
+  for (const url of ['https://www.liuhetong888.com.evil.invalid',
+    'https://www.liuhetong888.com@evil.invalid']) {
+    const source="const DIRECT = 'https://www.liuhetong888.com';\n"
+      + 'value.cdn_url !== `https://${cdnHost}${path}`;\n'
+      + `const foreign = '${url}';`;
+    assert.match(checkedInstallerSource(source),/https?:\/\//u);
+  }
+});
+
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const nested = await Promise.all(entries.map(async (entry) => {
@@ -23,17 +41,16 @@ test("source uses no private styling or shadow DOM escape hatches", async () => 
     assert.doesNotMatch(source, /attachShadow/u, `${file.pathname} uses Shadow DOM`);
     assert.doesNotMatch(source, /style\s*=/u, `${file.pathname} uses inline styles`);
     // SVG's standard namespace is an identifier, never a network resource.
-    // Enterprise OTA and the verified Android registry require these exact HTTPS
-    // literals. Keep the general ban for every other source and destination.
+    // Enterprise OTA requires an absolute HTTPS manifest on our own download host.
+    // Allow only this exact first-party manifest in the download router.
     let checkedSource = file.pathname.endsWith('/download-redirect.js')
       ? source.replaceAll('https://www.liuhetong888.com/downloads/ios/manifest.plist', '')
       : source;
-    if (file.pathname.endsWith('/download-network.js')) {
-      for (const approved of ["'https://www.liuhetong888.com'", '`https://${cdnHost}${path}`']) {
-        assert.equal(source.split(approved).length, 2, `${file.pathname} must contain one approved route expression`);
-        checkedSource = checkedSource.replace(approved, '');
-      }
-    }
+    // Installer routes require absolute URLs. The bootstrap binds both to the
+    // published version and one exact page-pinned CDN host; its rejection tests
+    // cover credentials, other hosts, mutable aliases and mismatched versions.
+    // Keep every other external URL forbidden, including in this same file.
+    if (file.pathname.endsWith('/download-network.js')) checkedSource=checkedInstallerSource(checkedSource);
     assert.doesNotMatch(checkedSource.replaceAll('http://www.w3.org/2000/svg',''), /https?:\/\//u, `${file.pathname} uses an external URL`);
     if (!file.pathname.endsWith("/tokens.css")) {
       assert.doesNotMatch(source, /#[0-9a-f]{3,8}\b/iu, `${file.pathname} hard-codes a color`);

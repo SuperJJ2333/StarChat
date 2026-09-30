@@ -871,8 +871,9 @@ final class _MessageHitRow extends StatelessWidget {
       );
 
   Uri? get _senderAvatar {
-    if (room?.isDirect == true && room?.directPeerId == hit.senderId)
+    if (room?.isDirect == true && room?.directPeerId == hit.senderId) {
       return room?.matrixAvatarUri;
+    }
     for (final member
         in room?.avatarMembers ?? const <GlobalSearchAvatarMember>[]) {
       if (member.userId == hit.senderId) return member.matrixAvatarUri;
@@ -895,7 +896,7 @@ String _searchConversationName(
     }
   }
   final fallback =
-      room.displayName.startsWith('!') || room.displayName.startsWith('@')
+      room.displayName == room.roomId || room.displayName == peer
           ? (room.isDirect ? '聊天' : '群聊')
           : room.displayName;
   if (room.isDirect && peer != null) {

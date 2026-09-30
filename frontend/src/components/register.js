@@ -11,8 +11,10 @@ import { AppMomentCoverViewer, AppMomentGrid, AppMomentReactions, AppMomentTile,
 import { AppEmojiInputDecoration, AppMessageSelectionSession } from "./selection.js";
 import { AppOfficialName } from "./official-name.js";
 import { AppDivider } from "./divider.js";
+import { AppLabeledInputRow } from "./labeled-input-row.js";
 
 const implementations = new Map([
+  ["app-labeled-input-row", AppLabeledInputRow],
   ["app-image-editor", AppImageEditor],
   ["app-room-image-gallery", AppRoomImageGallery],
   ["app-anchored-action-menu", AppAnchoredActionMenu],

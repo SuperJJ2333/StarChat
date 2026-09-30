@@ -158,6 +158,8 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
       if (cursor != null && cursor !== "") query.set("cursor", cursor);
       return request(`/api/v1/admin/wallet/manual/payouts?${query}`, {cache: "no-store"});
     },
+    voidUnbroadcastPayout: async (id, body, options) => command(`/api/v1/admin/wallet/manual/operations/payouts/${encodeURIComponent(id)}/void-unbroadcast`, body, options),
+    getVoidUnbroadcastPreview: async id => request(`/api/v1/admin/wallet/manual/operations/payouts/${encodeURIComponent(id)}/void-unbroadcast/preview`, {cache:'no-store'}),
     getManualPayout: async id => request(`/api/v1/admin/wallet/manual/payouts/${encodeURIComponent(id)}`, {cache: "no-store"}),
     claimManualPayout: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/claim`, body, options),
     submitManualPayoutTxid: async (id, body, options) => command(`/api/v1/wallet/manual/payouts/${encodeURIComponent(id)}/txid`, body, options),

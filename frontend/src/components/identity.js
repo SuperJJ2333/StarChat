@@ -22,18 +22,29 @@ export class AppAvatar extends StrictElement {
 export class AppListTile extends StrictElement {
   render() {
     const root = element("article", "c-list-tile");
-    root.dataset.disabled = String(this.boolAttr("disabled"));
+    const disabled = this.boolAttr("disabled");
+    root.dataset.disabled = String(disabled);
+    root.setAttribute("aria-disabled", String(disabled));
     const leading = element("div", "c-list-tile__leading");
-    leading.append(icon(this.attr("leading", "info"), "c-list-tile__icon"));
+    if (this.attr("leading") !== "none") leading.append(icon(this.attr("leading", "info"), "c-list-tile__icon"));
     const body = element("div", "c-list-tile__body");
     body.append(element("h3", "c-list-tile__title", this.attr("title", "列表项目")));
     if (this.attr("subtitle")) body.append(element("p", "c-list-tile__subtitle", this.attr("subtitle")));
     const trailing = element("div", "c-list-tile__trailing");
-    trailing.append(element("span", "c-list-tile__trailing-label", this.attr("trailing")), icon("chevron", "c-list-tile__chevron"));
+    if (this.attr("avatar-name")) {
+      const avatar = document.createElement("app-avatar");
+      avatar.setAttribute("name", this.attr("avatar-name"));
+      avatar.setAttribute("size", "detail");
+      trailing.append(avatar);
+    } else trailing.append(element("span", "c-list-tile__trailing-label", this.attr("trailing")));
+    trailing.append(icon("chevron", "c-list-tile__chevron"));
     if (this.attr("action")) {
-      root.tabIndex = 0;
-      root.dataset.action = this.attr("action");
+      root.tabIndex = disabled ? -1 : 0;
+      if (!disabled) root.dataset.action = this.attr("action");
       root.setAttribute("role", "button");
+      root.addEventListener("keydown", event => {
+        if (!disabled && ["Enter", " "].includes(event.key)) { event.preventDefault(); root.click(); }
+      });
     }
     root.append(leading, body, trailing);
     return root;

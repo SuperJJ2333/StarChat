@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "purpose": "Evidence for one audited wallet incident severity correction",
+  "target": {
+    "incident_id": "05cc1e53-41d7-4a24-863a-4c81109cafa7",
+    "fingerprint": "manual-reserve:MANUAL_SOURCE_UNAVAILABLE",
+    "code": "MANUAL_SOURCE_UNAVAILABLE",
+    "subject_id": "global",
+    "generation": 1,
+    "opened_at_utc": "2026-09-27T20:02:31.665468Z",
+    "opening_audit_id": "86e80d77-8870-4694-9709-6e4b35db13a2",
+    "opening_audit_version": 1
+  },
+  "diagnostic": {
+    "timestamp_utc": "2026-09-27T20:02:31.136882Z",
+    "service": "business-worker",
+    "component": "manual_monitor",
+    "event": "source_read_failed",
+    "trace_id": "4356f4b86bb44a30a0b0fde24190c9cd",
+    "reason_code": "MANUAL_SOURCE_UNAVAILABLE",
+    "stack": [
+      "manual_reserve_monitor.py:_run:336",
+      "manual_source_resample.py:read_fresh_cut:15",
+      "funding_source.py:read_reserve_sample:110",
+      "funding_source.py:read_batch:241",
+      "funding_source.py:remaining:127"
+    ]
+  },
+  "linked_commit": {
+    "timestamp_utc": "2026-09-27T20:02:33.508513Z",
+    "service": "business-worker",
+    "event": "incident_committed",
+    "trace_id": "4356f4b86bb44a30a0b0fde24190c9cd",
+    "incident_id": "05cc1e53-41d7-4a24-863a-4c81109cafa7",
+    "event_id": "76ca5dbd-8d97-4811-9777-f49f918426b6",
+    "generation": 1,
+    "action": "opened"
+  },
+  "production_source": {
+    "path": "/opt/business-api/app/integrations/tron/funding_source.py",
+    "sha256": "df4dbf788facb3cbe01a7a9a5ce0b17e95e4dd755c275aa913f7857a7b49a10e",
+    "line_127": "raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')",
+    "line_241": "remaining() in the fallback exception handler"
+  },
+  "limits": "The read budget expired. The original SQLite, OS, or data-format cause is not established by this diagnostic."
+}

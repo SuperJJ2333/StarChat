@@ -1,6 +1,9 @@
 FROM matrixdotorg/synapse:v1.132.0@sha256:3036ec25dfb5fcc5120942465788c1e1f2bb3671e28b04d7b3a1db4400ac84f4
 
-COPY apply_patch.py chatflow_media_dedup.py 99_chatflow_media.sql upstream-manifest.json /opt/chatflow-media/
+RUN python -m pip install --no-cache-dir boto3==1.40.40 botocore==1.40.40 s3transfer==0.14.0 jmespath==1.0.1 python-dateutil==2.9.0.post0 six==1.17.0 urllib3==2.8.0 \
+    && python -m pip check
+
+COPY apply_patch.py chatflow_media_dedup.py chatflow_s3_storage.py chatflow_s3_backfill.py 99_chatflow_media.sql upstream-manifest.json /opt/chatflow-media/
 COPY patches/ /opt/chatflow-media/patches/
 RUN python /opt/chatflow-media/apply_patch.py
 

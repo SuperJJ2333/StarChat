@@ -26,6 +26,7 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlsplit
 
 TOKEN_RE = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
 
@@ -54,11 +55,61 @@ def parse_env(path):
     return values
 
 
+def additional_turn_uris(values):
+    """Only the reviewed SG endpoints may be appended; never accept raw YAML."""
+    try:
+        uris = json.loads(values.get("TURN_ADDITIONAL_URIS_JSON", "[]"))
+    except (TypeError, ValueError):
+        raise SystemExit("render_config: TURN_ADDITIONAL_URIS_JSON 必须为JSON数组") from None
+    allowed = {
+        "turn:sg.liuhetong888.com:3478?transport=udp",
+        "turn:sg.liuhetong888.com:3478?transport=tcp",
+    }
+    if (not isinstance(uris, list) or len(uris) > 2
+            or any(not isinstance(uri, str) or uri not in allowed for uri in uris)
+            or len(set(uris)) != len(uris)):
+        raise SystemExit("render_config: 附加TURN URI不在已评审清单或重复")
+    return "\n".join("  - " + json.dumps(uri) for uri in uris)
+
+
+def synapse_storage_provider(values):
+    mode = values.get("SYNAPSE_MEDIA_BLOB_BACKEND", "local")
+    if mode == "local":
+        return ""
+    bucket = values.get("SYNAPSE_MEDIA_S3_BUCKET", "")
+    region = values.get("SYNAPSE_MEDIA_S3_REGION", "")
+    prefix = values.get("SYNAPSE_MEDIA_S3_PREFIX", "synapse")
+    if (mode not in ("s3", "local_s3_read")
+            or not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket)
+            or region not in ("ap-southeast-1", "ap-east-1") or prefix != "synapse"):
+        raise SystemExit("render_config: Synapse S3配置不符合已评审区域/命名空间")
+    config = {"bucket": bucket, "region": region, "prefix": prefix,
+              "write_enabled": mode == "s3", "max_object_bytes": 157286400}
+    endpoint = values.get("SYNAPSE_MEDIA_S3_ENDPOINT", "")
+    if endpoint:
+        try:
+            parsed = urlsplit(endpoint)
+            if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
+                    or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+                raise ValueError()
+        except ValueError:
+            raise SystemExit("render_config: S3 endpoint必须为无凭据的HTTPS入口") from None
+        config["endpoint_url"] = endpoint
+    provider = {"module": "synapse.media.chatflow_s3_storage.ChatFlowS3StorageProvider",
+                "store_local": True, "store_remote": False, "store_synchronous": True,
+                "config": config}
+    return "media_storage_providers: " + json.dumps([provider], separators=(",", ":"))
+
+
 def render(template, values):
+    values = dict(values)
+    values["TURN_ADDITIONAL_URIS_YAML"] = additional_turn_uris(values)
+    values["MEDIA_STORAGE_PROVIDERS_YAML"] = synapse_storage_provider(values)
+
     def replace(match):
         token = match.group(0)
         name = token[2:-2]
-        if name not in values or values[name] == "":
+        if name not in values or (values[name] == "" and name not in ("TURN_ADDITIONAL_URIS_YAML", "MEDIA_STORAGE_PROVIDERS_YAML")):
             raise SystemExit(f"render_config: 未提供模板变量 {name}")
         return values[name]
 
@@ -118,10 +169,18 @@ def main():
     parser.add_argument("--root", default=".", help="部署根目录（默认 .）")
     parser.add_argument("--check", action="store_true", help="只比对不写；漂移 exit 1")
     parser.add_argument("--require-production", action="store_true", help="启用生产占位值守卫")
+    parser.add_argument("--print-additional-turn-uris", action="store_true", help="仅输出已验证的附加TURN列表，供PowerShell同源渲染")
+    parser.add_argument("--print-synapse-storage-provider", action="store_true", help="仅输出已验证的S3 provider配置，供PowerShell同源渲染")
     args = parser.parse_args()
 
     root = os.path.abspath(args.root)
     values = parse_env(os.path.abspath(args.env))
+    if args.print_additional_turn_uris:
+        print(additional_turn_uris(values))
+        return
+    if args.print_synapse_storage_provider:
+        print(synapse_storage_provider(values))
+        return
     if args.require_production:
         check_production_guards(values)
 

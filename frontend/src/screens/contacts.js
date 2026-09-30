@@ -58,6 +58,42 @@ function contactCollection(definition) {
   return root;
 }
 
+function addFriend(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("添加朋友", { leading: "返回" }));
+  const content = element("div", "p-contacts-collection__content");
+  const field = element("label", "c-search-field");
+  const input = element("input", "c-search-field__input");
+  input.setAttribute("aria-label", "邮箱、畅聊号或手机号");
+  input.placeholder = "邮箱、畅聊号或手机号";
+  input.maxLength = 320; input.autocomplete = "off"; input.spellcheck = false;
+  field.append(input);
+  const results = element("div", "p-add-friend__results");
+  const search = component("app-action-button", { label: "搜索", icon: "search" });
+  const example = { username: "a1111123", email: "friend@example.invalid", phone: "13800000001" };
+  input.addEventListener("input", () => results.replaceChildren());
+  search.addEventListener("click", () => {
+    const query = input.value.trim().toLowerCase();
+    const compactPhone = query.replace(/[\s()-]/g, "");
+    const phone = compactPhone.replace(/^\+86/, "").replace(/^86(?=1[3-9]\d{9}$)/, "");
+    const length = example.username.length;
+    const match = query.includes("@") ? query === example.email
+      : /^\+?[0-9]+$/.test(compactPhone) ? phone === example.phone
+      : /^[a-z][a-z0-9_-]{1,63}$/.test(query) && query.length >= length - 2 && query.length <= length &&
+        query.slice(0, length - 2) === example.username.slice(0, length - 2);
+    results.replaceChildren(match
+      ? component("app-list-tile", { title: "演示朋友", trailing: example.username, leading: "none", action: "open:friend-profile-user" })
+      : component("app-empty-state", { title: "没有找到用户", message: "请核对后重新搜索" }));
+  });
+  content.append(field, search, element("p", "c-form-help", "邮箱、手机号需完整输入；畅聊号除末尾两位外须完全一致。"), results);
+  if (definition.state === "loading") results.append(component("app-empty-state", { title: "正在搜索", message: "请稍候" }));
+  else if (definition.state === "failed") results.append(component("app-empty-state", { kind: "network", title: "搜索失败", message: "请检查网络后重试" }));
+  else if (definition.state === "no-result") results.append(component("app-empty-state", { title: "没有找到用户", message: "请核对后重新搜索" }));
+  else if (definition.state === "results") { input.value = "a11111"; search.dispatchEvent?.(new Event("click")); }
+  root.append(content);
+  return root;
+}
+
 function friendProfile(definition) {
   const isUser = definition.state === "user";
   const root = pageRoot(definition);
@@ -140,7 +176,7 @@ function friendRequestReview(definition) {
 
 export function renderScreen(definition) {
   let root;
-  if (definition.module === "contacts") root = definition.page === "index" ? contactIndex(definition) : definition.page === "verify" ? friendRequestReview(definition) : contactCollection(definition);
+  if (definition.module === "contacts") root = definition.page === "index" ? contactIndex(definition) : definition.page === "add" ? addFriend(definition) : definition.page === "verify" ? friendRequestReview(definition) : contactCollection(definition);
   else if (definition.page === "profile") root = friendProfile(definition);
   else if (definition.page === "message") {
     root = pageRoot(definition, [navigation("打开加密会话", { leading: "返回" }), element("div", "p-feedback-center")]);

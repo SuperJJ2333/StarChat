@@ -8,13 +8,13 @@ import { component, createDeviceScreen, navigation, pageRoot } from "./shared.js
 // 服务端权威为唯一状态来源：提交成功 ≠ 已到账；转让未 COMPLETED ≠ 已换主；
 // 汇率过期仅为参考展示；验证码冷却仅为本地演示，不发送真实短信。
 
-const otpField = () => {
+const otpField = (label = "畅聊 ChatFlow 短信验证码") => {
   const input = element("input", "c-form-field__input");
   input.placeholder = "6 位验证码";
   input.inputMode = "numeric";
   input.maxLength = 6;
   const wrapper = element("label", "c-form-field");
-  wrapper.append(element("span", "c-form-field__label", "畅聊 ChatFlow 短信验证码"), input);
+  wrapper.append(element("span", "c-form-field__label", label), input);
   return { wrapper, input };
 };
 const field = (labelText, placeholder = "", value = "") => {
@@ -286,16 +286,17 @@ function buildPhoneRegistration(state) {
 // ---------------------------------------------------------------- 两步换绑
 function buildRebind(state) {
   const nodes = [];
+  if (state === "unbound") return [hint("没有可用的已验证联系方式，请联系客服帮助。"), primaryButton("验证当前联系方式", { disabled: true })];
   const steps = element("ol", "c-phone-flows__steps");
   steps.append(element("li",
-    state === "old" ? "c-phone-flows__step" : "c-phone-flows__step c-phone-flows__step--done",
+    ["old", "email"].includes(state) ? "c-phone-flows__step" : "c-phone-flows__step c-phone-flows__step--done",
     "验证当前身份"));
   steps.append(element("li",
     state === "success" ? "c-phone-flows__step c-phone-flows__step--done" : "c-phone-flows__step",
     "绑定新手机号"));
   nodes.push(steps);
-  if (state === "old") {
-    nodes.push(otpField().wrapper, primaryButton("验证当前手机号"));
+  if (["old", "email"].includes(state)) {
+    nodes.push(otpField(state === "email" ? "当前已绑定邮箱验证码" : "畅聊 ChatFlow 短信验证码").wrapper, primaryButton(state === "email" ? "验证当前邮箱" : "验证当前手机号"));
     nodes.push(hint("为保障安全，必须先验证当前手机号；仅未绑定手机的邮箱账号走邮箱验证。"));
   } else if (state === "success") {
     nodes.push(hint("手机号已更新，下次请使用新手机号登录。"));

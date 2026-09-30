@@ -188,6 +188,20 @@ Future<void> _search(WidgetTester tester, String query) async {
 }
 
 void main() {
+  for (final name in ['!重要群', '@研发']) {
+    testWidgets('search preserves named group $name', (tester) async {
+      final api = await _api();
+      final index = GlobalSearchIndex()..recordRoom(
+        roomId: '!group:test', roomName: '!group:test', isGroup: true,
+        messages: [_record(r'$prefix', '项目消息')]);
+      await tester.pumpWidget(_page(api: api, index: index, contacts: const [],
+        rooms: [GlobalSearchRoomResult(roomId: '!group:test',
+          displayName: name, isDirect: false)]));
+      await _search(tester, '项目');
+      expect(find.text(name), findsOneWidget);
+      expect(find.text('群聊'), findsNothing);
+    });
+  }
   testWidgets(
       'search records resolve current room and sender remark and avatar',
       (tester) async {

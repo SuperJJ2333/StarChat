@@ -2,7 +2,7 @@ name: iOS signed compatibility candidate
 on:
   workflow_dispatch:
   push:
-    branches: [main, codex/ios-0353-testflight, codex/mobile-parity-20260909, codex/online-room-refresh]
+    branches: [main, codex/ios-0353-testflight, codex/mobile-parity-20260909, codex/online-room-refresh, codex/ios-media-room-followup]
     paths:
       - apps/mobile_flutter/**
       - .github/workflows/ios-0353.yml
@@ -48,6 +48,41 @@ jobs:
           xcrun simctl bootstatus "$simulator" -b
           flutter test --no-pub integration_test/sqlcipher_readonly_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
           flutter test --no-pub integration_test/ios_keychain_archive_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
+          flutter test --no-pub integration_test/ios_conversation_notification_native_test.dart -d "$simulator" --timeout=2m --reporter expanded
+          # Keep the XCTest host entrypoint alive after flutter test removes its
+          # listener. The simulator harness excludes the scanner-only MLKit pod;
+          # the independent production compile and IPA retain the full app.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          host = Path(os.environ['RUNNER_TEMP']) / 'native-navigation-host.dart'
+          host.write_text("import 'package:flutter/widgets.dart';\nvoid main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const SizedBox.shrink()); }\n")
+          PY
+          flutter build ios --config-only --simulator --debug --no-codesign --no-pub --target="$RUNNER_TEMP/native-navigation-host.dart"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          target = str(Path(os.environ['RUNNER_TEMP']) / 'native-navigation-host.dart')
+          for relative in ['ios/Flutter/Generated.xcconfig', 'ios/Flutter/flutter_export_environment.sh']:
+              text = Path(relative).read_text()
+              assert 'flutter_test_listener' not in text, relative
+              assert f'FLUTTER_TARGET={target}' in text, relative
+          PY
+          set -o pipefail
+          xcodebuild test -workspace ios/Runner.xcworkspace -scheme Runner \
+            -destination "id=$simulator" \
+            -only-testing:RunnerTests/IOSMessageNavigationGateTests \
+            -resultBundlePath "$RUNNER_TEMP/message-navigation.xcresult" \
+            2>&1 | tee "$RUNNER_TEMP/message-navigation.log"
+      - name: Preserve native navigation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-message-navigation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/message-navigation.log
+            ${{ runner.temp }}/message-navigation.xcresult
+          if-no-files-found: warn
   build:
     if: ${{ github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
     needs: simulator-preflight
@@ -69,7 +104,7 @@ jobs:
           pod --version
       - name: Resolve Flutter dependencies
         working-directory: apps/mobile_flutter
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
       - name: Record candidate source identity
         run: |
           python3 <<'PY'
@@ -97,7 +132,7 @@ jobs:
           source.mkdir(parents=True)
           tests.mkdir(parents=True)
           ios = pathlib.Path('apps/mobile_flutter/ios')
-          for name in ['IOSCallState.swift', 'IOSSecureSession.swift']:
+          for name in ['IOSCallState.swift', 'IOSSecureSession.swift', 'IOSConversationNotificationState.swift']:
               (source / name).write_bytes((ios / 'Runner' / name).read_bytes())
           (tests / 'NativeCoreTests.swift').write_text((ios / 'RunnerTests/RunnerTests.swift').read_text().replace('@testable import Runner', '@testable import NativeCore'))
           (root / 'Package.swift').write_text('// swift-tools-version: 5.9\nimport PackageDescription\nlet package = Package(name: "NativeCore", platforms: [.macOS(.v13)], targets: [.target(name: "NativeCore"), .testTarget(name: "NativeCoreTests", dependencies: ["NativeCore"])])\n')
@@ -150,7 +185,7 @@ jobs:
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter build ipa --release  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=true --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+          flutter build ipa --release  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=CHATFLOW_PERFORMANCE_METRICS=true --dart-define=LIUHETONG_IN_APP_UPDATE=true --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
       - name: Verify signed IPA
         working-directory: apps/mobile_flutter
         run: |

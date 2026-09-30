@@ -64,7 +64,7 @@ function describe(parent, pairs) {
   for (const [label, value] of pairs) dl.append(node('dt', label), node('dd', value ?? '—'));
   parent.append(dl);
 }
-const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消'}[status] ?? '状态未知');
+const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消', VOIDED:'已撤销（确认未广播）'}[status] ?? '状态未知');
 
 export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, accessController, securityOnly = false, onSecurityChanged} = {}) {
   const root = node('section'); root.className = 'admin-card admin-manual-wallet-panel';
@@ -79,7 +79,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   const credentialPayload=values=>walletAccess?{}:authMode==='operation_password'?{operation_password:values.operation_password}:{mfa_proof:values.mfa_proof};
   const secretInputs = new Set(); let disposed = false, refreshing = false, writing = false, reading = 0, reauthenticating = false;
   const descendants = el => [el, ...Array.from(el.children ?? []).flatMap(descendants)];
-  const forms = () => [...descendants(root), ...(incidentModal ? descendants(incidentDetail) : [])].filter(el => el.tagName === 'FORM' || el.tag === 'form');
+  const forms = () => [...new Set([...descendants(root), ...(incidentModal ? descendants(incidentDetail) : []), ...(payoutModal ? descendants(detail) : [])])].filter(el => el.tagName === 'FORM' || el.tag === 'form');
   const inputsOf = el => descendants(el).filter(el => el.tagName === 'INPUT' || el.tag === 'input');
   const rawApi=api;
   api=new Proxy(rawApi,{get(target,key){const value=target[key];
@@ -122,6 +122,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       for (const input of secretInputs) input.value = '';
       secretInputs.clear(); root.replaceChildren();
     }));
+    if(payoutModal)detail.append(authentication);
   }
   let journal;
   try { journal = operationJournal(storage ?? globalThis.localStorage, actor?.id); } catch { root.append(node('p', '无法保存管理员请求恢复记录，写操作已关闭。')); }
@@ -286,6 +287,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     });
   }
   const orders = node('section'), detail = node('section'); detail.setAttribute('aria-live','polite');
+  let payoutModal;
   const listState = node('p'); listState.setAttribute('role','status');
   const queue=node('section');queue.id='wallet-payout';queue.className='wallet-surface wallet-queue';orders.className='wallet-orders';detail.className='wallet-detail';
   queue.append(node('h4','用户提现申请 · 人工出款队列'),node('p','此队列来自用户提现申请。核对锁定信息，领取后在 imToken 完成签名；人工出款订单编号与链上交易哈希分别核对。'),...refreshAction('刷新出款队列',()=>loadOrders()),listState,orders,detail);primary.append(queue);
@@ -309,13 +311,25 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   async function showOrder(id) {
     if (disposed) return;
     const generation=++detailGeneration; selectedOrder=id;
+    detail.replaceChildren(node('p','正在加载出款详情…'));
+    if(!payoutModal)payoutModal=detailDialog('出款详情',detail,{onClose:()=>{
+      payoutModal=null;selectedOrder=undefined;++detailGeneration;
+      for(const input of inputsOf(detail))if(input.type==='password'){input.value='';secretInputs.delete(input);}
+      if(root.insertBefore)root.insertBefore(authentication,workspace);else root.append(authentication);
+      detail.replaceChildren();
+    }});
     try {
       const item=await api.getManualPayout(id); if(generation!==detailGeneration) return;
       const s=item.snapshot;
       for(const name of ['amount','fee','hold','receive']) exactUsdt(s[name]);
-      if(s.fee!=='0.000000'||s.amount!==item.amount||! /^[a-f0-9]{64}$/.test(item.digest)) throw new Error('Invalid snapshot');
+      const asset=s.funding_asset??'USDT',payable=exactUsdt(item.final_receive??s.receive);
+      const fundingAmount=asset==='CAIBI'?s.funding_amount:s.amount;
+      const fundingValid=asset==='CAIBI'
+        ?typeof fundingAmount==='string'&&/^(0|[1-9][0-9]*)\.[0-9]{2}$/.test(fundingAmount)&&s.amount===`${fundingAmount}0000`
+        :asset==='USDT'&&s.amount===item.amount;
+      if(s.fee!=='0.000000'||!fundingValid||s.hold!==item.amount||s.receive!==item.amount||! /^[a-f0-9]{64}$/.test(item.digest)) throw new Error('Invalid snapshot');
       detail.replaceChildren(node('h4',`用户提现申请 · 人工出款订单 ${item.id}`),node('p',statusLabel(item.status)),...refreshAction('刷新此出款',()=>showOrder(id)));
-      describe(detail,[['来源','用户提现申请'],['人工出款订单编号',item.id],['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['到账 USDT',s.receive],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选链上交易哈希',item.candidate_txid],['结算链上交易哈希',item.settlement_txid],['复核原因',item.review_reason]]);
+      describe(detail,[['来源','用户提现申请'],['人工出款订单编号',item.id],['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],[`申请本金 ${asset==='CAIBI'?'点钻':'USDT'}`,fundingAmount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['原到账 USDT',s.receive],['最终应付 USDT',payable],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选链上交易哈希',item.candidate_txid],['结算链上交易哈希',item.settlement_txid],['复核原因',item.review_reason]]);
       for(const candidate of item.candidates ?? []) describe(detail,[['候选历史链上交易哈希',candidate.txid],['操作者',candidate.actor_id],['原因',candidate.reason_code],['时间',formatBeijingTime(candidate.created_at)]]);
       if(actor?.id!==s.owner_admin_id) { detail.append(node('p','当前账号不是官方钱包拥有者，仅可查看。')); return; }
       if(item.status==='REQUESTED') {
@@ -327,12 +341,42 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       }
       if(['CLAIMED','UNKNOWN'].includes(item.status)) {
         detail.append(node('p','已领取或结果未知：禁止重复付款。先查询原交易与本订单；资金继续冻结，回填哈希不代表已结算。'));
+        if(item.status==='UNKNOWN'&&!item.candidate_txid&&Number.isSafeInteger(item.version)&&item.version>0){
+          detail.append(node('p','仅在确认此单从未签名、从未广播且最新链上复核通过后，才能撤销。撤销会冲回本单冻结及原兑换；不会自动恢复资金。'));
+          let preview,needsGrant=accessController?.canWrite()===false;
+          if(!needsGrant)try { preview=await api.getVoidUnbroadcastPreview?.(id); } catch(error) {
+            authFailure(error);
+            needsGrant=error?.code==='WALLET_ACCESS_REQUIRED';
+            preview={status:'UNAVAILABLE'};
+          }
+          if(generation!==detailGeneration)return;
+          const evidence=preview?.evidence;
+          const ready=preview?.status==='READY'&&typeof evidence?.observation_id==='string'&&Number.isSafeInteger(evidence?.checkpoint);
+          if(needsGrant){
+            const notice=node('p','撤销预检需要钱包操作权限验证；这不表示链上观察故障。完成验证后，请再次点击下面按钮重新核验。');
+            detail.append(notice,action('验证钱包操作权限并重新核验',async()=>{
+              if(disposed||generation!==detailGeneration)return;
+              if(await accessController?.requestWriteGrant()){
+                if(!disposed&&generation===detailGeneration)await showOrder(id);
+              }else notice.textContent='请完成钱包操作权限验证，再点击此按钮重新核验；系统不会自动撤销。';
+            }));
+          }else if(ready){
+            detail.append(node('p',`链上观察已覆盖领取时段 · 观察编号 ${evidence.observation_id} · 检查点 ${formatBeijingTime(evidence.checkpoint)}。这是单源观察，仍需本人确认未签名、未广播。`));
+            commandForm(detail,'void-unbroadcast','确认未广播并撤销',[field('reason_code','撤销原因代码',{pattern:'[A-Z][A-Z0-9_]{2,79}'}),checkbox('never_signed','我确认此单从未签名'),checkbox('never_broadcast','我确认此单从未广播'),credentialField()],async values=>{
+              const metadata={expected_version:item.version,reason_code:values.reason_code};
+              const proof=authMode==='operation_password'?{operation_password:values.operation_password}:{mfa_proof:values.mfa_proof};
+              const body={...metadata,never_signed:true,never_broadcast:true,...proof};
+              await mutate(`${id}:void-unbroadcast`,metadata,options=>api.voidUnbroadcastPayout(id,body,options));
+              if(generation===detailGeneration)await showOrder(id);
+            },`${id}:void-unbroadcast`);
+          }else detail.append(node('p',preview?.status==='INELIGIBLE'?'链上观察或订单状态不满足撤销条件，请核对原交易与订单。':'链上观察暂不可用，撤销操作已关闭；请稍后刷新核验。'));
+        }
         if (item.claimed_by !== actor.id) {
           detail.append(node('p','此订单未由当前管理员领取，仅可核查记录；不提供付款指令或哈希提交。'));
           return;
         }
         const copyState=node('p'); copyState.setAttribute('role','status');
-        for(const [label,value] of [['复制收款地址',s.target_address],['复制精确金额',s.amount]]) detail.append(action(label,async()=>{
+        for(const [label,value] of [['复制收款地址',s.target_address],['复制精确金额',payable]]) detail.append(action(label,async()=>{
           try { if(!clipboard) throw new Error('Clipboard unavailable'); await clipboard.writeText(value); copyState.textContent='已复制原始精确值'; }
           catch { copyState.textContent='复制不可用，请从上方完整字段手动复制并核对。'; }
         }));
@@ -678,7 +722,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     ++accessCheckGeneration;
     const writeForms=new Set([...forms(),...(refreshInitialForms??[])].filter(form=>form.className==='admin-command-form'));
     ++detailGeneration;++incidentSelection;++ownerPreviewGeneration;
-    incidentModal?.close();ownerConfirmModal?.close();ownerConfirmModal=null;ownerPreviewed=null;ownerCandidate=null;ownerPendingQueried=false;
+    payoutModal?.close();incidentModal?.close();ownerConfirmModal?.close();ownerConfirmModal=null;ownerPreviewed=null;ownerCandidate=null;ownerPendingQueried=false;
     for(const form of writeForms)for(const input of descendants(form)){
       if(input.tagName!=='INPUT'&&input.tag!=='input'&&input.tagName!=='SELECT'&&input.tag!=='select'&&
           input.tagName!=='TEXTAREA'&&input.tag!=='textarea')continue;
@@ -690,7 +734,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   };
   root.dispose = () => {
     disposed=true;++mfaGeneration;++listGeneration;++detailGeneration;++incidentGeneration;++incidentSelection;++controlGeneration;++handoverGeneration;++ownerPreviewGeneration;
-    incidentModal?.close();ownerConfirmModal?.close();ownerConfirmModal=null;ownerPreviewed=null;ownerCandidate=null;
+    payoutModal?.close();incidentModal?.close();ownerConfirmModal?.close();ownerConfirmModal=null;ownerPreviewed=null;ownerCandidate=null;
     if(queuedRefresh){queuedRefresh.resolve(false);queuedRefresh=null;}
     for(const input of secretInputs)input.value='';secretInputs.clear();
   };

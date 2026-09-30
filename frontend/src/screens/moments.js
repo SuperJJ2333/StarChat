@@ -2,6 +2,7 @@ import { fixtures } from "../catalog/fixtures.js";
 import { button, element } from "../components/base.js";
 import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
+import { renderMediaVideoPreview } from "./media-video-preview.js";
 
 function momentWarning(message) {
   const warning = element("div", "c-moments-warning");
@@ -64,6 +65,21 @@ function timeline(definition) {
   const root = pageRoot(definition);
   root.append(navigation("畅聊朋友圈", { leading: "返回", action: "发布" }));
   const content = element("div", "p-moments-timeline__content");
+  if (["background-upload", "background-failed"].includes(definition.state)) {
+    const pending = element("section", "c-moment-card");
+    pending.style.padding = "var(--space-md)";
+    pending.append(element("p", "", "今天的海风很舒服。"));
+    const state = element("p", "c-system-message",
+      definition.state === "background-failed" ? "动态发送失败，点击重试" : "动态正在后台发送");
+    if (definition.state === "background-failed") {
+      const retry = element("button", "c-button", "重试"); retry.type = "button";
+      retry.addEventListener("click", () => { state.textContent = "动态正在后台发送"; retry.disabled = true; });
+      pending.append(retry);
+    }
+    const cancel = element("button", "c-button", "取消"); cancel.type = "button";
+    cancel.addEventListener("click", () => pending.remove());
+    pending.append(state, cancel); content.append(pending);
+  }
   const offline = ["cached-offline", "no-cache-offline", "explicit-retry"].includes(definition.state);
   if (offline) content.append(component("app-network-capsule", { state: "offline" }));
   if (definition.state === "empty") content.append(component("app-empty-state", { title: "还没有朋友圈内容", message: "好友发布的内容会出现在这里" }));
@@ -74,7 +90,7 @@ function timeline(definition) {
     }));
     content.append(component("app-action-button", { icon: "retry", label: "刷新朋友圈", action: "moments:refresh" }));
   }
-  else if (definition.state.includes("failed")) content.append(component("app-empty-state", { kind: "network", title: "加载失败", message: definition.title, action: "重试" }));
+  else if (definition.state.includes("failed") && definition.state !== "background-failed") content.append(component("app-empty-state", { kind: "network", title: "加载失败", message: definition.title, action: "重试" }));
   else {
     const cover = element("section", "c-moments-cover");
     cover.append(element("div", "c-moments-cover__art", "畅聊朋友圈"), component("app-avatar", { name: fixtures.currentUser.name, size: "detail" }), element("h2", "c-moments-cover__name", fixtures.currentUser.name));
@@ -102,9 +118,25 @@ function media(definition) {
   const counts = { text: 0, single: 1, two: 2, four: 4, nine: 9 };
   const root = pageRoot(definition);
   root.append(navigation("动态媒体", { leading: "返回" }), element("div", "p-moments-media__content"));
-  const content = root.querySelector(".p-moments-media__content");
-  content.append(momentCard(definition, counts[definition.state] ?? 0));
-  if (["gif", "video"].includes(definition.state)) content.append(motionPreview(definition.state));
+  if (definition.state === "video-poster") {
+    const tile = element("button", "c-moment-card"); tile.type = "button";
+    tile.setAttribute("aria-label", "查看海边日落视频封面");
+    const cover = element("img"); cover.src = "/assets/moment-video-poster.svg";
+    cover.alt = "海边日落视频封面"; cover.style.width = "100%";
+    tile.append(cover, element("span", "", "▷ 00:18"));
+    tile.addEventListener("click", () => {
+      const preview = element("section", "c-moment-card");
+      preview.setAttribute("role", "dialog");
+      preview.setAttribute("aria-label", "视频封面预览");
+      preview.append(cover.cloneNode(true));
+      const close = button("c-button", "关闭封面预览");
+      close.textContent = "关闭";
+      close.addEventListener("click", () => preview.remove());
+      preview.append(close);
+      root.querySelector(".p-moments-media__content").append(preview);
+    });
+    root.querySelector(".p-moments-media__content").append(tile);
+  } else root.querySelector(".p-moments-media__content").append(momentCard(definition, counts[definition.state] ?? 3));
   return root;
 }
 
@@ -246,7 +278,8 @@ function genericMoment(definition) {
 
 export function renderScreen(definition) {
   let root;
-  if (definition.module === "discovery") root = discovery(definition);
+  if (definition.module === "moments" && definition.page === "video-preview") root = renderMediaVideoPreview(definition);
+  else if (definition.module === "discovery") root = discovery(definition);
   else if (definition.page === "timeline") root = timeline(definition);
   else if (definition.page === "personal") root = personal(definition);
   else if (definition.page === "interactions") root = interactions(definition);

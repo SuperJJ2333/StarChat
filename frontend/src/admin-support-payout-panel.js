@@ -2,14 +2,14 @@ import {refreshIcon} from './admin-dashboard.js';
 
 const make=(tag,cls,text)=>{const node=document.createElement(tag);node.className=cls??'';if(text!==undefined)node.textContent=String(text);return node;};
 const capabilities=['can_claim','can_takeover','can_begin','can_evidence'];
-const labels={REQUESTED:'等待处理',CLAIMED:'处理中',REVIEWING:'核对中',NEEDS_REVIEW:'需核对',UNKNOWN:'出款结果待核对',SETTLED:'已完成',CANCELLED:'已取消',REJECTED:'已拒绝'};
-const terminal=item=>['SETTLED','CANCELLED','REJECTED'].includes(item.status);
+const labels={REQUESTED:'等待处理',CLAIMED:'处理中',REVIEWING:'核对中',NEEDS_REVIEW:'需核对',UNKNOWN:'出款结果待核对',SETTLED:'已完成',CANCELLED:'已取消',REJECTED:'已拒绝',VOIDED:'已撤销（确认未广播）'};
+const terminal=item=>['SETTLED','CANCELLED','REJECTED','VOIDED'].includes(item.status);
 const rejected=item=>item.status==='REJECTED'||item.processing_stage==='REJECTED';
 const payable=item=>item.execution_started_at?item.final_receive:item.prepared_receive??item.final_receive;
 const has=(item,capability)=>item?.[capability]===true;
 const shortHash=value=>typeof value==='string'&&value.length>=16?`${value.slice(0,8)}…${value.slice(-8)}`:'交易哈希待核对';
 
-export function supportPayoutPanel(api,{actor={},onBack}={}) {
+export function supportPayoutPanel(api,{actor={},onBack,onOpenWallet}={}) {
   const actorId=actor.id??actor.user_id;
   const panel=make('section','admin-card admin-recharge-panel admin-support-payout-panel');
   const status=make('p','admin-audit-note');status.setAttribute('role','status');
@@ -59,6 +59,7 @@ export function supportPayoutPanel(api,{actor={},onBack}={}) {
   const close=button(heading,'×',()=>dialog.close?.(),false,'admin-dialog-close');close.setAttribute('aria-label','关闭处理窗口');
   const dialogBody=make('div','admin-proof-body');dialog.append(heading,dialogBody);dialog.addEventListener('close',finishClose);
   if(onBack)button(panel,'← 充值请求',onBack);
+  if(onOpenWallet)button(panel,'前往钱包核对未广播出款',()=>onOpenWallet());
   const filters=make('div','recharge-filter-tabs');filters.setAttribute('role','group');filters.setAttribute('aria-label','提现请求范围');
   const filterButtons=new Map();
   for(const [value,label] of [['all','待处理请求'],['mine','我正在处理'],['review','需核对'],['history','已完成与取消']])filterButtons.set(value,button(filters,label,()=>{filter=value;updateTabs();renderList();}));

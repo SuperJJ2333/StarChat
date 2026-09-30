@@ -1,7 +1,7 @@
 // This workflow never changes fund controls. Every transition uses the public API.
 const REASONS={ack:'OWNER_INCIDENT_ACCEPTED',review:'OWNER_INCIDENT_CHECKED',resolve:'OWNER_INCIDENT_RESOLVED'};
 const STEPS=['ack','review','resolve'];
-const STEP_LABEL={ack:'确认接手事故',review:'实时核验当前证据',resolve:'结案并保留资金暂停'};
+const STEP_LABEL={ack:'确认接手事故',review:'实时核验当前证据',resolve:'结案，不改变资金控制状态'};
 const isReadBudgetT2=item=>item?.fingerprint==='manual-reserve:MANUAL_SOURCE_UNAVAILABLE'
   &&item.code==='MANUAL_SOURCE_UNAVAILABLE'&&item.subject_id==='global'&&item.severity==='T2';
 const reasonText={
@@ -73,7 +73,7 @@ export function incidentSummary(item, policy) {
   const temporarySource=isReadBudgetT2(item);
   const titles={MANUAL_SOURCE_UNHEALTHY:'链上数据源曾出现异常',MANUAL_RESERVE_STALE:'储备证据曾过期',MANUAL_BACKING_DEFICIT:'储备覆盖提醒',MANUAL_COVERAGE_PENDING:'业务流水同步未完成'};
   const explanations={
-    MANUAL_SOURCE_UNHEALTHY:'当时链上数据未满足健康要求，可能是结果过期或对账未完成，系统因此保护性暂停；具体历史触发条件以记录为准。',
+    MANUAL_SOURCE_UNHEALTHY:'当时链上数据未满足健康要求，可能是结果过期或对账未完成；具体历史触发条件以记录为准。',
     MANUAL_RESERVE_STALE:'当时用于核验钱包储备的证据已过期，无法据此确认可用资金，需要取得新的证据再核验。',
     MANUAL_BACKING_DEFICIT:'当时核验的储备未覆盖账面负债。这是一项储备覆盖记录，是否阻止恢复取决于当前资金策略；请核对储备与账目。',
     MANUAL_COVERAGE_PENDING:'当时业务流水扫描尚未追平链上记录，两边还不能在同一检查范围内完成核对。',
@@ -90,7 +90,7 @@ export function incidentSummary(item, policy) {
   return {advisory,temporarySource,title:temporarySource?'链上数据暂不可用':titles[item.code]??'钱包监控异常记录',
     explanation,
     status:{OPEN:'待处理',ACKNOWLEDGED:'已接手 · 待检查或结案',RESOLVED:'已结案'}[item.status]??'状态待核实',
-    impact:temporarySource?`${item.status==='RESOLVED'?'已结案；':''}记录保留、不会因这条记录自动暂停；需要新鲜链上证据的入账和出款结算仍须核验；已有暂停须单独处理`:advisory?'提示记录，不阻止恢复资金':item.status==='RESOLVED'?'事故已结案，资金恢复仍需单独核验':'阻止恢复资金，需要检查并处理',
+    impact:advisory?'提示记录，不阻止恢复资金':`${item.status==='RESOLVED'?'已结案；':''}记录保留、邮件告警，不会因这条记录自动暂停；需要新鲜链上证据的操作仍须核验；已有暂停须单独处理`,
     condition:item.condition_active===false?'最近记录显示异常已消失；仍需实时核验':item.condition_active===true?'这起事故尚未通过异常消除复核；请检查并处理事故':'当前异常状态尚未核实',
   };
 }
@@ -128,7 +128,7 @@ export async function processIncident({id,api,journal,credentials,authMode,onPro
       const operation=journal.pending(slot(kind))?slot(kind):journal.pending(legacySlot(kind))?legacySlot(kind):slot(kind), saved=journal.pending(operation);
       const metadata=saved?.metadata??{expected_version:current.version,reason_code:REASONS[kind],...(kind==='resolve'?{clearance_digest:current.clearance_digest}:{})};
       const entry=journal.begin(operation,metadata);
-      onProgress(`${kind==='resolve'&&isReadBudgetT2(current)?'结案，不改变资金控制状态':STEP_LABEL[kind]}…${saved?'正在核实上次请求。':''}`);
+      onProgress(`${STEP_LABEL[kind]}…${saved?'正在核实上次请求。':''}`);
       let result;
       try {
         result=valid(await api.manualWalletIncidentAction(id,kind,{...metadata,...credentials},{idempotencyKey:entry.key}),id);

@@ -1,0 +1,56 @@
+# Stateless Singapore TURN. Authentication secret is injected only on the host.
+listening-port=3478
+listening-ip={{PRIVATE_IP}}
+relay-ip={{PRIVATE_IP}}
+# One IPv4 relay behind AWS NAT: advertise only its public address.
+# PUBLIC/PRIVATE syntax auto-whitelists the private host before peer denials.
+external-ip={{PUBLIC_IP}}
+realm={{REALM}}
+fingerprint
+use-auth-secret
+static-auth-secret={{AUTH_SECRET}}
+# Ephemeral database only; static REST credentials do not use dynamic DB inputs.
+userdb=/tmp/turn-runtime.db
+no-auth-pings
+no-dynamic-ip-list
+no-dynamic-realms
+min-port=49160
+max-port=49200
+user-quota=8
+total-quota=40
+# Bytes/second, for each direction. Reservation budget fits all 40 allocations.
+# Initial per-allocation ceiling 8 Mbit/s; aggregate reservation 320 Mbit/s.
+max-bps=1000000
+bps-capacity=40000000
+no-cli
+no-tls
+no-dtls
+no-tcp-relay
+no-multicast-peers
+no-software-attribute
+log-file=stdout
+no-stdout-log
+simple-log
+pidfile=/var/run/turnserver.pid
+# Block metadata, private networks, loopback, reserved and multicast peers.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.0.2.0-192.0.2.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+denied-peer-ip=198.51.100.0-198.51.100.255
+denied-peer-ip=203.0.113.0-203.0.113.255
+denied-peer-ip=224.0.0.0-255.255.255.255
+# Never use the unspecified IPv6 address as a denied-peer-ip range.
+# coturn treats that range as every peer in both address families.
+# Native unspecified peers are rejected by coturn's built-in peer checks.
+denied-peer-ip=::1
+denied-peer-ip=::ffff:0:0-::ffff:ffff:ffff
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=ff00::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff

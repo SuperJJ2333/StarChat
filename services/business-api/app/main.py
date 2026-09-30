@@ -6,6 +6,7 @@ from app.integrations.tron import diagnostics as wallet_diagnostics
 
 from app.api.health import create_health_router
 from app.api.client_diagnostics import create_client_diagnostics_router
+from app.api.startup_diagnostics import create_startup_diagnostics_router
 from app.api.performance_diagnostics import create_performance_diagnostics_router
 from app.api.identity import create_identity_router
 from app.api.support import create_support_router
@@ -36,6 +37,7 @@ from app.core.database import create_engine, create_session_factory
 from app.core.errors import ErrorEnvelope, install_error_handlers
 from app.core.tracing import install_trace_middleware
 from app.core.rate_limits import NoopRateLimiter, RedisRateLimiter
+from app.core.startup_diagnostics_admission import RedisStartupDiagnosticsAdmission
 from app.integrations.matrix_admin import SynapseMatrixAdminGateway
 from app.integrations.private_storage import LocalPrivateObjectStorage
 from app.integrations.media_blob_storage import build_blob_backend
@@ -47,6 +49,7 @@ def create_app(
     rate_limiter=None,
     matrix_gateway=None,
     avatar_storage=None,
+    startup_diagnostics_admission=None,
 ) -> FastAPI:
     wallet_diagnostics.configure('business-api')
     wallet_diagnostics.emit('INFO', 'service_starting', component='api')
@@ -73,6 +76,11 @@ def create_app(
         )
     app.state.rate_limiter = rate_limiter
     app.include_router(create_client_diagnostics_router(settings, session_factory, rate_limiter), prefix="/api/v1")
+    if startup_diagnostics_admission is None:
+        startup_diagnostics_admission = RedisStartupDiagnosticsAdmission.from_url(settings.redis_url)
+        app.router.on_shutdown.append(startup_diagnostics_admission.close)
+    app.state.startup_diagnostics_admission = startup_diagnostics_admission
+    app.include_router(create_startup_diagnostics_router(startup_diagnostics_admission), prefix="/api/v1")
     manual_wallet_runtime = create_manual_wallet_runtime(settings, session_factory, rate_limiter)
     app.state.manual_wallet_runtime = manual_wallet_runtime
     if manual_wallet_runtime is not None:

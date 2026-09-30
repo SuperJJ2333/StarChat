@@ -76,6 +76,12 @@ test("dark frames are restricted to foundations, components, and approved key sc
     "messages-inbox-default-dark",
     "moments-timeline-default-dark",
     "profile-home-default-dark",
+    "profile-details-default-dark",
+    "profile-settings-default-dark",
+    "account-security-default-dark",
+    "account-chat-default-dark",
+    "account-password-code-dark",
+    "account-email-old-dark",
     "wallet-home-default-dark"
   ].sort());
 });

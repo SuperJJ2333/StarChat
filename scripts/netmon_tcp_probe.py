@@ -1,4 +1,4 @@
-"""Bounded NETMON extension: actual TCP443 connect, no DNS/TLS/HTTP claims."""
+"""Bounded NETMON TCP measurements; no DNS/TLS/HTTP claims."""
 import argparse
 from datetime import datetime, timedelta, timezone
 import errno
@@ -15,6 +15,9 @@ import time
 # DNS was checked from both observers before this candidate was prepared.
 # An origin migration requires an explicit reviewed change to this allowlist.
 ORIGIN_IP = '207.56.8.8'
+SECONDARY_IP = '13.229.60.153'
+TARGETS = {'origin_tcp443': (ORIGIN_IP, 443, 3),
+           'secondary_ssh22': (SECONDARY_IP, 22, 1)}
 OBSERVERS = frozenset({'origin_server', 'mainland_observer'})
 ERRORS = frozenset({'connect_timeout', 'connection_refused', 'unreachable',
                     'permission_denied', 'socket_failure'})
@@ -27,8 +30,10 @@ RESULT_FIELDS = frozenset({'target', 'observer', 'success', 'tcp_connect_ms',
                            'attempt_elapsed_ms', 'error', 'attempt_count'})
 
 
-def _validate_options(origin_ip, observer, timeout_seconds):
-    if origin_ip != ORIGIN_IP or observer not in OBSERVERS:
+def _validate_options(origin_ip, observer, timeout_seconds, target='origin_tcp443'):
+    if (target not in TARGETS or origin_ip != TARGETS[target][0]
+            or observer not in OBSERVERS
+            or (target == 'secondary_ssh22' and observer != 'origin_server')):
         raise ValueError('Only verified origin and fixed observer labels are allowed')
     if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
             or not 0 < timeout_seconds <= 3):
@@ -48,8 +53,9 @@ def _error(exc):
 
 
 def connect_once(origin_ip, observer, *, timeout_seconds=3.0,
-                 socket_factory=socket.socket, clock=time.perf_counter_ns):
-    _validate_options(origin_ip, observer, timeout_seconds)
+                 socket_factory=socket.socket, clock=time.perf_counter_ns,
+                 target='origin_tcp443'):
+    _validate_options(origin_ip, observer, timeout_seconds, target)
     started = clock()
     error = None
     connected_elapsed = None
@@ -59,7 +65,7 @@ def connect_once(origin_ip, observer, *, timeout_seconds=3.0,
             connection.settimeout(timeout_seconds)
             connect_started = clock()
             try:
-                connection.connect((origin_ip, 443))
+                connection.connect((origin_ip, TARGETS[target][1]))
             finally:
                 connected_elapsed = clock() - connect_started
     except OSError as exc:
@@ -68,15 +74,18 @@ def connect_once(origin_ip, observer, *, timeout_seconds=3.0,
     if elapsed < 0 or (connected_elapsed is not None and connected_elapsed < 0):
         raise ValueError('Monotonic elapsed time cannot be negative')
     elapsed_ms = round(elapsed / 1_000_000, 3)
-    return {'target': 'origin_tcp443', 'observer': observer, 'success': error is None,
+    return {'target': target, 'observer': observer, 'success': error is None,
             'tcp_connect_ms': round(connected_elapsed / 1_000_000, 3) if error is None else None,
             'attempt_elapsed_ms': elapsed_ms, 'error': error, 'attempt_count': 1}
 
 
-def probe_window(origin_ip, observer, *, attempts=ATTEMPTS_PER_MINUTE, **options):
-    if type(attempts) is not int or not 1 <= attempts <= ATTEMPTS_PER_MINUTE:
+def probe_window(origin_ip, observer, *, attempts=None, target='origin_tcp443', **options):
+    _validate_options(origin_ip, observer, options.get('timeout_seconds', 3.0), target)
+    maximum = TARGETS[target][2]
+    attempts = maximum if attempts is None else attempts
+    if type(attempts) is not int or not 1 <= attempts <= maximum:
         raise ValueError('At most three attempts may run per scheduled invocation')
-    return [connect_once(origin_ip, observer, **options) for _ in range(attempts)]
+    return [connect_once(origin_ip, observer, target=target, **options) for _ in range(attempts)]
 
 
 def summarize(history):
@@ -90,7 +99,8 @@ def summarize(history):
 def _validate_result(result):
     if not isinstance(result, dict) or set(result) != RESULT_FIELDS:
         raise ValueError('Only closed TCP result fields are accepted')
-    if (result['target'] != 'origin_tcp443' or result['observer'] not in OBSERVERS
+    if (result['target'] not in TARGETS or result['observer'] not in OBSERVERS
+            or (result['target'] == 'secondary_ssh22' and result['observer'] != 'origin_server')
             or type(result['success']) is not bool or type(result['attempt_count']) is not int
             or result['attempt_count'] != 1):
         raise ValueError('Invalid fixed result labels')
@@ -112,7 +122,7 @@ def _no_link(path):
         raise ValueError('Monitor paths must not be symbolic links')
 
 
-def _read_history(path, observer):
+def _read_history(path, observer, target='origin_tcp443'):
     _no_link(path)
     if not path.exists():
         return [], False
@@ -120,8 +130,11 @@ def _read_history(path, observer):
         if path.stat().st_size > MAX_STATE_BYTES:
             return [], True
         value = json.loads(path.read_text(encoding='utf-8'))
-        if (not isinstance(value, dict) or set(value) != {'schema', 'observer', 'history'}
-                or value['schema'] != 1 or value['observer'] != observer
+        expected = {'schema', 'observer', 'history'} if target == 'origin_tcp443' else {'schema', 'target', 'observer', 'history'}
+        schema = 1 if target == 'origin_tcp443' else 2
+        if (not isinstance(value, dict) or set(value) != expected
+                or value['schema'] != schema or value['observer'] != observer
+                or (schema == 2 and value['target'] != target)
                 or not isinstance(value['history'], list)):
             return [], True
         summarize(value['history'])
@@ -172,11 +185,14 @@ def record(directory, result, timestamp):
     _no_link(directory)
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     state = directory / 'state.json'
-    history, reset = _read_history(state, result['observer'])
+    history, reset = _read_history(state, result['observer'], result['target'])
     history = (history + [result['success']])[-WINDOW_ATTEMPTS:]
     report = {'schema': 1, 'timestamp': timestamp, **result,
               'window': summarize(history), 'state_reset': reset, 'log_capped': False}
-    _save_state(state, {'schema': 1, 'observer': result['observer'], 'history': history})
+    saved = {'schema': 1, 'observer': result['observer'], 'history': history}
+    if result['target'] != 'origin_tcp443':
+        saved.update(schema=2, target=result['target'])
+    _save_state(state, saved)
     path = directory / f'tcp-{observed_at:%Y-%m-%d}.jsonl'
     _no_link(path)
     line = json.dumps(report, separators=(',', ':'), allow_nan=False) + '\n'
@@ -191,19 +207,66 @@ def record(directory, result, timestamp):
     return report
 
 
+def percentiles(values):
+    if not values:
+        return {'p50': None, 'p95': None, 'p99': None, 'max': None}
+    ordered = sorted(values)
+    return {**{f'p{q}': ordered[math.ceil(len(ordered) * q / 100) - 1]
+               for q in (50, 95, 99)}, 'max': ordered[-1]}
+
+
+def minute_coverage(timestamps, start, end, attempts_per_minute):
+    begin = datetime.strptime(start, '%Y-%m-%dT%H:%M:%SZ').replace(second=0)
+    finish = datetime.strptime(end, '%Y-%m-%dT%H:%M:%SZ').replace(second=0)
+    minutes = int((finish - begin).total_seconds() / 60) + 1
+    if not 1 <= minutes <= 7 * 24 * 60 or attempts_per_minute not in (1, 3):
+        raise ValueError('Coverage interval must be bounded to seven days')
+    counts = {}
+    for timestamp in timestamps:
+        minute = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%SZ').replace(second=0)
+        if begin <= minute <= finish:
+            counts[minute] = counts.get(minute, 0) + 1
+    return {'expected_minutes': minutes, 'observed_minutes': len(counts),
+            'missing_minutes': minutes - len(counts),
+            'partial_minutes': sum(count < attempts_per_minute for count in counts.values()),
+            'missing_attempts_in_observed_minutes': sum(max(0, attempts_per_minute - count) for count in counts.values()),
+            'extra_attempt_minutes': sum(count > attempts_per_minute for count in counts.values())}
+
+
+def coverage_summary(records, start, end, *, attempts_per_minute=3):
+    if len(records) > 7 * 24 * 60 * 3:
+        raise ValueError('Too many records')
+    selected = [row for row in records if start <= row['timestamp'] <= end]
+    for row in selected:
+        _validate_result({name: row[name] for name in RESULT_FIELDS})
+    if len({(row['target'], row['observer']) for row in selected}) > 1:
+        raise ValueError('Coverage must be for one target and observer')
+    summary = summarize_unbounded([row['success'] for row in selected])
+    return {**minute_coverage([row['timestamp'] for row in selected], start, end, attempts_per_minute),
+            **summary, 'failures': summary['attempts'] - summary['successes'],
+            'duration_ms': percentiles([row['tcp_connect_ms'] for row in selected if row['success']])}
+
+
+def summarize_unbounded(history):
+    successes = sum(history)
+    return {'attempts': len(history), 'successes': successes,
+            'success_rate_percent': round(successes * 100 / len(history), 3) if history else None}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--origin-ip', required=True, choices=[ORIGIN_IP])
+    parser.add_argument('--origin-ip', required=True, choices=[ORIGIN_IP, SECONDARY_IP])
+    parser.add_argument('--target', choices=sorted(TARGETS), default='origin_tcp443')
     parser.add_argument('--observer', required=True, choices=sorted(OBSERVERS))
     parser.add_argument('--state-dir', required=True, type=Path)
     args = parser.parse_args()
     try:
-        results = probe_window(args.origin_ip, args.observer)
+        results = probe_window(args.origin_ip, args.observer, target=args.target)
         report = None
         for result in results:
             timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
             report = record(args.state_dir, result, timestamp)
-        print(json.dumps({'schema': 1, 'target': 'origin_tcp443', 'observer': args.observer,
+        print(json.dumps({'schema': 1, 'target': args.target, 'observer': args.observer,
                           'probe_window': summarize([value['success'] for value in results]),
                           'attempts': results, 'rolling_window': report['window'],
                           'state_reset': report['state_reset'], 'log_capped': report['log_capped']},

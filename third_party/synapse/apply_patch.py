@@ -66,6 +66,8 @@ def apply(root):
     for relative, content in results.items():
         (root / relative).write_text(content, encoding="utf-8", newline="\n")
     shutil.copyfile(HERE / "chatflow_media_dedup.py", root / "synapse/media/chatflow_media_dedup.py")
+    shutil.copyfile(HERE / "chatflow_s3_storage.py", root / "synapse/media/chatflow_s3_storage.py")
+    shutil.copyfile(HERE / "chatflow_s3_backfill.py", root / "synapse/media/chatflow_s3_backfill.py")
     shutil.copyfile(HERE / "99_chatflow_media.sql", root / "synapse/storage/schema/main/delta/92/99_chatflow_media.sql")
 
 

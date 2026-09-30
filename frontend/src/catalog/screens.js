@@ -3,6 +3,7 @@ const definitions = [];
 const rendererFiles = Object.freeze({
   foundation: "feedback",
   auth: "auth",
+  account: "account-credentials",
   messages: "messaging",
   chat: "messaging",
   calls: "calls",
@@ -168,6 +169,10 @@ register("contacts", "groups", [["default", "群聊 / 列表"], ["empty", "群�
 register("contacts", "tags", [["default", "标签 / 列表"], ["empty", "标签 / 空"]]);
 register("contacts", "official", [["default", "公众号与官方客服 / 列表"], ["empty", "公众号与官方客服 / 空"]]);
 register("contacts", "search", [["default", "通讯录搜索 / 默认"], ["results", "通讯录搜索 / 结果"], ["no-result", "通讯录搜索 / 无结果"]]);
+register("contacts", "add", [["default", "添加朋友 / 默认"], ["loading", "添加朋友 / 搜索中"], ["results", "添加朋友 / 结果"], ["no-result", "添加朋友 / 无结果"], ["failed", "添加朋友 / 搜索失败"]]);
+register("chat", "gallery-video", [["loading", "相册视频 / 加载中"], ["playing", "相册视频 / 播放"], ["failed", "相册视频 / 准备失败"]]);
+register("chat", "video-preview", [["loading", "会话视频 / 加载中"], ["playing", "会话视频 / 播放"], ["failed", "会话视频 / 加载失败"]]);
+register("moments", "video-preview", [["loading", "朋友圈视频 / 加载中"], ["playing", "朋友圈视频 / 播放"], ["failed", "朋友圈视频 / 加载失败"]]);
 register("contacts", "state", [["loading", "通讯录 / 加载"], ["empty", "通讯录 / 空状态"], ["error-network", "通讯录 / 网络错误"]]);
 
 register("friend", "profile", [["default", "好友主页 / 默认"], ["support", "好友主页 / 官方客服"], ["user", "用户资料 / 添加到通讯录"]], { height: 980 });
@@ -202,6 +207,22 @@ register("profile", "details", [["default", "个人资料 / 默认"], ["edit", "
 register("profile", "invitation", [["history", "邀请码 / 邀请历史"], ["empty", "邀请码 / 无邀请记录"], ["loading", "邀请码 / 历史加载中"], ["error", "邀请码 / 历史加载失败"], ["more", "邀请码 / 加载更多"]], { height: 980 });
 register("profile", "avatar", [["picker", "头像 / 相册选择"], ["permission-denied", "头像 / 权限拒绝"], ["crop", "头像 / 裁剪"], ["preview", "头像 / 预览"], ["uploading", "头像 / 上传中"], ["upload-failed", "头像 / 上传失败"], ["restore-confirm", "头像 / 恢复默认确认"], ["fallback", "头像 / 加载失败回退"]]);
 register("profile", "settings", [["default", "设置 / 默认"], ["privacy", "设置 / 账号与隐私"], ["logout-confirm", "设置 / 退出确认"], ["logout-loading", "设置 / 退出中"], ["logout-failed", "设置 / 退出失败"]]);
+register("profile", "details", [["empty", "个人信息 / 空值"], ["saved", "个人信息 / 已保存"], ["save-failed", "个人信息 / 保存失败"]]);
+register("profile", "nickname", [["default", "昵称 / 编辑"], ["save-failed", "昵称 / 保存失败"], ["empty", "昵称 / 空值"]]);
+register("profile", "signature", [["default", "个性签名 / 编辑"], ["save-failed", "个性签名 / 保存失败"], ["empty", "个性签名 / 空值"]]);
+register("profile", "nudge", [["default", "拍一拍 / 编辑"]]);
+register("profile", "invitation", [["default", "邀请码 / 邀请信息"]]);
+register("profile", "username", [["default", "畅聊号 / 修改"], ["cooldown", "畅聊号 / 冷却中"], ["failed", "畅聊号 / 保存失败"]]);
+register("account", "security", [["cached", "账号安全 / 热缓存"], ["refreshing", "账号安全 / 后台刷新"]]);
+register("account", "chat", [["cached", "聊天 / 热缓存"], ["refreshing", "聊天 / 后台刷新"]]);
+register("account", "security", [["default", "账号安全 / 已绑定"], ["unbound", "账号安全 / 未绑定"], ["loading", "账号安全 / 加载中"], ["failed", "账号安全 / 加载失败"]]);
+register("account", "chat", [["default", "聊天 / 自动加入开启"], ["off", "聊天 / 自动加入关闭"], ["saving", "聊天 / 保存中"], ["failed", "聊天 / 保存失败"]]);
+register("account", "password", [["code", "更换密码 / 邮箱验证码"], ["phone", "更换密码 / 手机验证码"], ["unbound", "更换密码 / 未绑定"], ["verifying", "更换密码 / 验证中"], ["code-error", "更换密码 / 验证码错误"], ["expired", "更换密码 / 验证码过期"], ["network-error", "更换密码 / 网络错误"], ["password", "更换密码 / 新密码"], ["password-mismatch", "更换密码 / 密码不一致"], ["submitting", "更换密码 / 提交中"], ["success", "更换密码 / 完成"]]);
+register("account", "email", [["old", "邮箱 / 验证当前邮箱"], ["phone", "邮箱 / 验证已绑定手机"], ["unbound", "邮箱 / 无可用渠道"], ["new", "邮箱 / 验证新邮箱"], ["verifying", "邮箱 / 验证中"], ["code-error", "邮箱 / 验证码错误"], ["expired", "邮箱 / 验证码过期"], ["network-error", "邮箱 / 网络错误"], ["success", "邮箱 / 更新完成"]]);
+register("account", "password", [["cooldown", "更换密码 / 重发冷却"]]);
+register("account", "security", [["phone-only", "账号安全 / 仅手机号"], ["email-only", "账号安全 / 仅邮箱"]]);
+register("account", "password", [["bound-phone", "更换密码 / 仅已绑定手机"], ["bound-email", "更换密码 / 仅已绑定邮箱"]]);
+register("phone", "rebind", [["email", "绑定手机 / 验证已绑定邮箱"], ["unbound", "绑定手机 / 无可用渠道"]]);
 
 register("caibi", "home", [["default", "点钻 / 默认"]]);
 register("caibi", "history", [["all", "点钻记录 / 全部"], ["credit", "点钻记录 / 上分"], ["debit", "点钻记录 / 下分"], ["transfer", "点钻记录 / 转账"], ["redpacket", "点钻记录 / 红包"]], { height: 980 });
@@ -235,6 +256,12 @@ register("chat", "image-editor", [["ready", "图片编辑 / 六种工具"], ["co
 register("chat", "image-gallery", [["ready", "聊天图片 / 左右浏览"]]);
 register("moments", "detail", [["own-comment", "朋友圈 / 自己评论短按与长按"]]);
 
+register("chat", "history", [["calendar", "聊天记录 / 本机消息日期"], ["results", "聊天记录 / 自动续页"]]);
+register("chat", "multi-select", [["active", "聊天 / 多条消息选中"]]);
+register("chat", "announcement", [["unavailable-admin", "群公告 / 无法解密时管理"]]);
+register("moments", "timeline", [["background-upload", "朋友圈 / 后台发表"], ["background-failed", "朋友圈 / 后台发表失败"]]);
+register("moments", "media", [["video-poster", "朋友圈 / 视频封面"]]);
+
 const darkKeys = [
   ["foundation-tokens-overview", "foundation-tokens-overview-dark"],
   ["foundation-components-catalog", "foundation-components-catalog-dark"],
@@ -248,6 +275,12 @@ const darkKeys = [
   ["contacts-index-default", "contacts-index-default-dark"],
   ["moments-timeline-default", "moments-timeline-default-dark"],
   ["profile-home-default", "profile-home-default-dark"],
+  ["profile-details-default", "profile-details-default-dark"],
+  ["profile-settings-default", "profile-settings-default-dark"],
+  ["account-security-default", "account-security-default-dark"],
+  ["account-chat-default", "account-chat-default-dark"],
+  ["account-password-code", "account-password-code-dark"],
+  ["account-email-old", "account-email-old-dark"],
   ["wallet-home-default", "wallet-home-default-dark"]
 ];
 

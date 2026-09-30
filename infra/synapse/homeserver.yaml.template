@@ -48,9 +48,6 @@ media_store_path: /data/media_store
 signing_key_path: "/data/{{MATRIX_SERVER_NAME}}.signing.key"
 
 enable_registration: false
-modules:
-  - module: chatflow_mobile_login.MobileLoginModule
-    config: {}
 enable_registration_without_verification: false
 registration_shared_secret: "{{SYNAPSE_REGISTRATION_SHARED_SECRET}}"
 
@@ -63,6 +60,7 @@ turn_uris:
   - "{{TURN_URI_UDP}}"
   - "{{TURN_URI_TCP}}"
   - "{{TURN_URI_TLS}}"
+{{TURN_ADDITIONAL_URIS_YAML}}
 turn_shared_secret: "{{TURN_SHARED_SECRET}}"
 turn_user_lifetime: 1h
 turn_allow_guests: false
@@ -85,4 +83,10 @@ suppress_key_server_warning: true
 # format=event_id_only（apps/mobile_flutter/lib/features/push/）。
 push:
   include_content: false
+
+
+{{MEDIA_STORAGE_PROVIDERS_YAML}}
+modules:
+  - module: chatflow_mobile_login.MobileLoginModule
+    config: {}
 

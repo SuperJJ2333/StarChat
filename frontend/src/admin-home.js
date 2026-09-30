@@ -92,7 +92,7 @@ function modulePanel(key, title, context) {
 function supportOrderContent(api,context){
   const container=element('section');let child;
   const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),canManage:can(context,'*'),onOpenPayout:showPayout});container.replaceChildren(child);};
-  const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onBack:showRecharge});container.replaceChildren(child);};
+  const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onOpenWallet:can(context,'*')?context.onOpenPayout:null,onBack:showRecharge});container.replaceChildren(child);};
   container.refresh=()=>child?.refresh?.();container.refreshOrders=()=>child?.refreshOrders?.();container.dispose=()=>child?.dispose?.();
   showRecharge();return container;
 }
