@@ -2025,6 +2025,18 @@
             "title": "Status",
             "type": "string"
           },
+          "terminal_status": {
+            "anyOf": [
+              {
+                "const": "VOIDED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Status"
+          },
           "user_id": {
             "title": "User Id",
             "type": "string"
@@ -4974,6 +4986,17 @@
             "title": "Digest",
             "type": "string"
           },
+          "final_receive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Receive"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -5013,7 +5036,8 @@
               "CLAIMED",
               "UNKNOWN",
               "SETTLED",
-              "CANCELLED"
+              "CANCELLED",
+              "VOIDED"
             ],
             "title": "Status",
             "type": "string"
@@ -5021,6 +5045,10 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -5029,6 +5057,8 @@
           "quote_id",
           "amount",
           "status",
+          "version",
+          "final_receive",
           "digest",
           "candidate_txid",
           "settlement_txid",
@@ -5332,6 +5362,17 @@
             "title": "Digest",
             "type": "string"
           },
+          "final_receive": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Receive"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -5368,7 +5409,8 @@
               "CLAIMED",
               "UNKNOWN",
               "SETTLED",
-              "CANCELLED"
+              "CANCELLED",
+              "VOIDED"
             ],
             "title": "Status",
             "type": "string"
@@ -5376,6 +5418,10 @@
           "user_id": {
             "title": "User Id",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -5384,6 +5430,8 @@
           "quote_id",
           "amount",
           "status",
+          "version",
+          "final_receive",
           "digest",
           "candidate_txid",
           "settlement_txid",
@@ -6759,6 +6807,18 @@
             "title": "Status",
             "type": "string"
           },
+          "terminal_status": {
+            "anyOf": [
+              {
+                "const": "VOIDED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Status"
+          },
           "user_id": {
             "title": "User Id",
             "type": "string"
@@ -6775,6 +6835,159 @@
           "review_reason"
         ],
         "title": "PayoutView",
+        "type": "object"
+      },
+      "PayoutVoidBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "mfa_proof": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 6,
+                "minLength": 6,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Proof"
+          },
+          "never_broadcast": {
+            "const": true,
+            "title": "Never Broadcast",
+            "type": "boolean"
+          },
+          "never_signed": {
+            "const": true,
+            "title": "Never Signed",
+            "type": "boolean"
+          },
+          "operation_password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 128,
+                "minLength": 12,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Password"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,79}$",
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_version",
+          "reason_code",
+          "never_signed",
+          "never_broadcast"
+        ],
+        "title": "PayoutVoidBody",
+        "type": "object"
+      },
+      "PayoutVoidEvidenceView": {
+        "properties": {
+          "checkpoint": {
+            "title": "Checkpoint",
+            "type": "integer"
+          },
+          "fresh_until_ms": {
+            "title": "Fresh Until Ms",
+            "type": "integer"
+          },
+          "matching_outflows": {
+            "title": "Matching Outflows",
+            "type": "integer"
+          },
+          "observation_id": {
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "scanned_from": {
+            "title": "Scanned From",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "suspicious_outflows": {
+            "title": "Suspicious Outflows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "observation_id",
+          "checkpoint",
+          "scanned_from",
+          "fresh_until_ms",
+          "observed_at",
+          "matching_outflows",
+          "suspicious_outflows"
+        ],
+        "title": "PayoutVoidEvidenceView",
+        "type": "object"
+      },
+      "PayoutVoidPreviewView": {
+        "properties": {
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PayoutVoidEvidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "status": {
+            "enum": [
+              "READY",
+              "UNAVAILABLE",
+              "INELIGIBLE"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason_code",
+          "evidence"
+        ],
+        "title": "PayoutVoidPreviewView",
         "type": "object"
       },
       "PerformanceSnapshot": {
@@ -17517,6 +17730,161 @@
         ]
       }
     },
+    "/api/v1/admin/wallet/manual/operations/payouts/{order_id}/void-unbroadcast": {
+      "post": {
+        "operationId": "void_unbroadcast_api_v1_admin_wallet_manual_operations_payouts__order_id__void_unbroadcast_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutVoidBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Void Unbroadcast",
+        "tags": [
+          "admin",
+          "manual-wallet-operations"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/operations/payouts/{order_id}/void-unbroadcast/preview": {
+      "get": {
+        "operationId": "void_unbroadcast_preview_api_v1_admin_wallet_manual_operations_payouts__order_id__void_unbroadcast_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutVoidPreviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Void Unbroadcast Preview",
+        "tags": [
+          "admin",
+          "manual-wallet-operations"
+        ]
+      }
+    },
     "/api/v1/admin/wallet/manual/owner-transfers": {
       "post": {
         "operationId": "execute_api_v1_admin_wallet_manual_owner_transfers_post",
@@ -21995,7 +22363,9 @@
                             "cancelled",
                             "incomplete",
                             "unknown",
-                            "recovered"
+                            "recovered",
+                            "size",
+                            "format"
                           ],
                           "title": "Error",
                           "type": "string"
@@ -22052,7 +22422,16 @@
                             "terminal_invalidated",
                             "result_superseded",
                             "matrix_sync_soft_kick",
-                            "matrix_sync_hard_restart"
+                            "matrix_sync_hard_restart",
+                            "moment_prepare",
+                            "moment_video_begin",
+                            "moment_video_put",
+                            "moment_video_complete",
+                            "moment_poster_extract",
+                            "moment_poster_begin",
+                            "moment_poster_put",
+                            "moment_poster_complete",
+                            "moment_publish"
                           ],
                           "title": "Stage",
                           "type": "string"
@@ -22738,6 +23117,23 @@
                               ],
                               "title": "Cache Source"
                             },
+                            "cancel_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "new_query",
+                                    "route_closed",
+                                    "account_changed",
+                                    "visibility_revoked"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cancel Reason"
+                            },
                             "candidate_protocol": {
                               "anyOf": [
                                 {
@@ -22754,6 +23150,19 @@
                                 }
                               ],
                               "title": "Candidate Protocol"
+                            },
+                            "clock_uncertainty_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 2000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Clock Uncertainty Ms"
                             },
                             "database_operation": {
                               "anyOf": [
@@ -22772,6 +23181,19 @@
                                 }
                               ],
                               "title": "Database Operation"
+                            },
+                            "ended_at_utc": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 32,
+                                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Ended At Utc"
                             },
                             "endpoint_category": {
                               "anyOf": [
@@ -22797,6 +23219,19 @@
                               ],
                               "title": "Endpoint Category"
                             },
+                            "first_hit_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "First Hit Ms"
+                            },
                             "frame_attribution_complete": {
                               "anyOf": [
                                 {
@@ -22808,6 +23243,19 @@
                               ],
                               "description": "Omit slow-frame counts when false; legacy records omit this field and include all counts.",
                               "title": "Frame Attribution Complete"
+                            },
+                            "full_coverage_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Full Coverage Ms"
                             },
                             "hard_restart_count": {
                               "anyOf": [
@@ -22834,6 +23282,21 @@
                                 }
                               ],
                               "title": "Jitter Ms"
+                            },
+                            "keyboard_direction": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "show",
+                                    "hide"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Keyboard Direction"
                             },
                             "last_healthy_sync_age_ms": {
                               "anyOf": [
@@ -22998,7 +23461,10 @@
                                 "call_setup",
                                 "call_active",
                                 "profile_load",
-                                "chat_list_load"
+                                "chat_list_load",
+                                "history_search",
+                                "keyboard_transition",
+                                "room_local_frame"
                               ],
                               "title": "Operation",
                               "type": "string"
@@ -23051,6 +23517,22 @@
                               ],
                               "title": "Relay Protocol"
                             },
+                            "restart_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "query_changed",
+                                    "manual_refresh",
+                                    "safety_invalidation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Restart Reason"
+                            },
                             "result": {
                               "enum": [
                                 "success",
@@ -23094,6 +23576,21 @@
                               ],
                               "title": "Retry Count"
                             },
+                            "room_route_phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "enter",
+                                    "leave"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Room Route Phase"
+                            },
                             "row_count_bucket": {
                               "anyOf": [
                                 {
@@ -23124,6 +23621,32 @@
                                 }
                               ],
                               "title": "Rtt Ms"
+                            },
+                            "scan_page_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Page Count"
+                            },
+                            "scan_row_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 10000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Row Count"
                             },
                             "scheduler_active": {
                               "anyOf": [
@@ -23325,7 +23848,17 @@
                                       "remote_search_started",
                                       "remote_search_done",
                                       "render_results",
-                                      "request_finished"
+                                      "request_finished",
+                                      "search_scan_started",
+                                      "search_first_hit",
+                                      "search_coverage_complete",
+                                      "keyboard_requested",
+                                      "keyboard_stable_frame",
+                                      "room_local_first_frame",
+                                      "route_exit_requested",
+                                      "route_exit_frame",
+                                      "fragment_write_started",
+                                      "fragment_write_done"
                                     ],
                                     "title": "Stage",
                                     "type": "string"
@@ -23341,6 +23874,19 @@
                               "maxItems": 64,
                               "title": "Stages",
                               "type": "array"
+                            },
+                            "started_at_utc": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 32,
+                                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Started At Utc"
                             },
                             "status_code": {
                               "anyOf": [
@@ -23367,6 +23913,32 @@
                                 }
                               ],
                               "title": "Sync Error Count"
+                            },
+                            "time_anchor_age_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 300000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Time Anchor Age Ms"
+                            },
+                            "timeline_event_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeline Event Count"
                             },
                             "total_ms": {
                               "maximum": 3600000,
@@ -23523,6 +24095,23 @@
                               ],
                               "title": "Cache Source"
                             },
+                            "cancel_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "new_query",
+                                    "route_closed",
+                                    "account_changed",
+                                    "visibility_revoked"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Cancel Reason"
+                            },
                             "candidate_protocol": {
                               "anyOf": [
                                 {
@@ -23582,10 +24171,36 @@
                               ],
                               "title": "Endpoint Category"
                             },
+                            "first_hit_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "First Hit Ms"
+                            },
                             "frame_attribution_complete": {
                               "const": false,
                               "title": "Frame Attribution Complete",
                               "type": "boolean"
+                            },
+                            "full_coverage_ms": {
+                              "anyOf": [
+                                {
+                                  "maximum": 3600000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Full Coverage Ms"
                             },
                             "hard_restart_count": {
                               "anyOf": [
@@ -23612,6 +24227,21 @@
                                 }
                               ],
                               "title": "Jitter Ms"
+                            },
+                            "keyboard_direction": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "show",
+                                    "hide"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Keyboard Direction"
                             },
                             "last_healthy_sync_age_ms": {
                               "anyOf": [
@@ -23784,7 +24414,10 @@
                                 "call_setup",
                                 "call_active",
                                 "profile_load",
-                                "chat_list_load"
+                                "chat_list_load",
+                                "history_search",
+                                "keyboard_transition",
+                                "room_local_frame"
                               ],
                               "title": "Operation",
                               "type": "string"
@@ -23837,6 +24470,22 @@
                               ],
                               "title": "Relay Protocol"
                             },
+                            "restart_reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "query_changed",
+                                    "manual_refresh",
+                                    "safety_invalidation"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Restart Reason"
+                            },
                             "result_count_bucket": {
                               "anyOf": [
                                 {
@@ -23868,6 +24517,21 @@
                               ],
                               "title": "Retry Count"
                             },
+                            "room_route_phase": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "enter",
+                                    "leave"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Room Route Phase"
+                            },
                             "row_count_bucket": {
                               "anyOf": [
                                 {
@@ -23898,6 +24562,32 @@
                                 }
                               ],
                               "title": "Rtt Ms"
+                            },
+                            "scan_page_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Page Count"
+                            },
+                            "scan_row_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 10000000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Scan Row Count"
                             },
                             "scheduler_active": {
                               "anyOf": [
@@ -24060,7 +24750,17 @@
                                       "remote_search_started",
                                       "remote_search_done",
                                       "render_results",
-                                      "request_finished"
+                                      "request_finished",
+                                      "search_scan_started",
+                                      "search_first_hit",
+                                      "search_coverage_complete",
+                                      "keyboard_requested",
+                                      "keyboard_stable_frame",
+                                      "room_local_first_frame",
+                                      "route_exit_requested",
+                                      "route_exit_frame",
+                                      "fragment_write_started",
+                                      "fragment_write_done"
                                     ],
                                     "title": "Stage",
                                     "type": "string"
@@ -24102,6 +24802,19 @@
                                 }
                               ],
                               "title": "Sync Error Count"
+                            },
+                            "timeline_event_count": {
+                              "anyOf": [
+                                {
+                                  "maximum": 100000,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Timeline Event Count"
                             },
                             "transport_available": {
                               "anyOf": [
@@ -35548,6 +36261,9 @@
               }
             },
             "description": "Application error"
+          },
+          "409": {
+            "description": "WALLET_BINDING_REQUIRED, WALLET_BINDING_PENDING, WALLET_BINDING_VERSION_CONFLICT, or idempotency/evidence conflict"
           },
           "422": {
             "content": {

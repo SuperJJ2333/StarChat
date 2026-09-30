@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/1"
     jwt_issuer: str = "liuhetong"
     jwt_secret: str | None = None
+    diagnostic_identity_secret: SecretStr | None = None
+    diagnostic_identity_previous_secret: SecretStr | None = None
     # Compatibility rollout only: configured accounts always require a PIN.
     payment_pin_require_all: bool = False
     totp_issuer: str | None = None
@@ -271,6 +273,24 @@ class Settings(BaseSettings):
     def validate_production_secrets(self) -> "Settings":
         if self.environment != "production":
             return self
+        diagnostic_secret = (self.diagnostic_identity_secret.get_secret_value()
+                             if self.diagnostic_identity_secret else None)
+        previous_diagnostic_secret = (
+            self.diagnostic_identity_previous_secret.get_secret_value()
+            if self.diagnostic_identity_previous_secret else None
+        )
+        unsafe_prefixes = ("change-this", "development-")
+        if (diagnostic_secret is None
+                or len(diagnostic_secret.encode('utf-8')) < 32
+                or diagnostic_secret.strip().casefold().startswith(unsafe_prefixes)
+                or diagnostic_secret == self.jwt_secret
+                or (previous_diagnostic_secret is not None
+                    and (len(previous_diagnostic_secret.encode('utf-8')) < 32
+                         or previous_diagnostic_secret.strip().casefold().startswith(unsafe_prefixes)
+                         or previous_diagnostic_secret == diagnostic_secret
+                         or previous_diagnostic_secret == self.jwt_secret))):
+            raise ValueError('production requires BUSINESS_DIAGNOSTIC_IDENTITY_SECRET '
+                             'and a distinct optional BUSINESS_DIAGNOSTIC_IDENTITY_PREVIOUS_SECRET')
         secret_values = (
             self.jwt_secret,
             self.email_verification_secret,

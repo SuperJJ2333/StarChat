@@ -31,7 +31,9 @@ from app.modules.ledger.wallet_obligations import invalidate_wallet_reserve
 from app.modules.wallet.funding_coverage_models import WalletFundingCoverageEvent as Coverage
 from app.modules.wallet.funding_scan_models import WalletFundingScanItem, WalletFundingScanState
 from app.modules.wallet.incidents import WalletIncidentService
-from app.modules.wallet.manual_control import apply_manual_pause, owns_manual_pause
+# Preserve the module export used by the deployed Worker runtime probe.
+# Monitoring itself never calls this explicit administrator control.
+from app.modules.wallet.manual_control import apply_manual_pause as apply_manual_pause, owns_manual_pause
 from app.modules.wallet.ledger_integrity import WalletLedgerIntegrityService
 from app.modules.wallet.reporting import ReportDataError
 from app.modules.wallet.manual_payout_models import ManualPayoutEvent, ManualPayoutOrder, ManualPayoutQuote
@@ -119,8 +121,8 @@ class ManualReserveMonitor:
         if code is None:
             row.last_success_at = now
 
-    # Stale observations remain P1 advisory. Only a proven source read-budget
-    # expiry is T2; malformed, regressed and unknown source faults stay P0.
+    # Monitoring records the signal but cannot change global financial controls.
+    # Stale observations remain P1; a proven source read-budget expiry is T2.
     _advisory_block_codes = frozenset({'MANUAL_SOURCE_UNHEALTHY'})
 
     @staticmethod
@@ -138,8 +140,6 @@ class ManualReserveMonitor:
             self._heartbeat(session, now, code)
             return dict(complete=False, status='BLOCKED', codes=[code])
         diag.emit('ERROR', 'monitor_block_requested', component='manual_monitor', reason_code=code)
-        apply_manual_pause(session, ledger=LedgerService(self.factory), actor_id=ACTOR,
-            reason_code=code, now=now)
         self.incidents.observe_in_session(session, [dict(fingerprint='manual-reserve:'+code,
             code=code, severity='P0', subject_id='global')], actor_id=ACTOR, complete=False)
         self._heartbeat(session, now, code)

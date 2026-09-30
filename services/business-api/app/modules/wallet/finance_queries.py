@@ -53,7 +53,9 @@ class WalletFinanceQuery:
     def _order(session, row):
         settlement = session.scalar(select(ManualPayoutEvent.txid).where(ManualPayoutEvent.order_id == row.id))
         return dict(id=row.id, user_id=row.user_id, quote_id=row.quote_id, amount=format(row.amount, '.6f'),
-            status=row.status, digest=row.digest, candidate_txid=row.candidate_txid, settlement_txid=settlement,
+            status=row.status, version=row.version,
+            final_receive=format(row.final_receive, '.6f') if row.final_receive is not None else None,
+            digest=row.digest, candidate_txid=row.candidate_txid, settlement_txid=settlement,
             review_reason=row.review_reason, claimed_by=row.claimed_by,
             claimed_at=_iso(row.claimed_at) if row.claimed_at else None, created_at=_iso(row.created_at))
 

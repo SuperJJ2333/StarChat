@@ -2,10 +2,13 @@
 from datetime import datetime, timezone
 import hashlib
 from typing import Annotated, Literal
+from decimal import Decimal
+
+from sqlalchemy import select
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.wallet_operations import WalletIncidentView
 from app.api.admin_wallet_auth import AdminWalletProofBody, selected_password_authorization, wallet_grant_service
@@ -19,6 +22,10 @@ from app.modules.ledger.reserve import lock_budget
 from app.modules.wallet.incidents import WalletIncidentService
 from app.modules.wallet.models import WalletControl
 from app.modules.wallet.manual_control import ManualWalletControl
+from app.modules.wallet.manual_payout_models import (ManualPayoutCandidate, ManualPayoutEvent,
+    ManualPayoutOrder, ManualPayoutQuote)
+from app.modules.wallet.manual_payouts import ManualPayoutService
+from app.integrations.tron.admin_query import ChainWatchUnavailable, PayoutVoidEvidence
 
 
 class ManualReviewBody(AdminWalletProofBody):
@@ -36,6 +43,31 @@ class ManualControlBody(AdminWalletProofBody):
     expected_epoch: int = Field(ge=0, strict=True)
     snapshot_digest: str = Field(pattern=r'^[a-f0-9]{64}$')
     reason_code: str = Field(pattern=r'^[A-Z][A-Z0-9_]{2,99}$')
+
+
+class PayoutVoidBody(AdminWalletProofBody):
+    model_config = ConfigDict(extra='forbid')
+    expected_version: int = Field(ge=1, strict=True)
+    reason_code: str = Field(pattern=r'^[A-Z][A-Z0-9_]{2,79}$')
+    never_signed: Literal[True]
+    never_broadcast: Literal[True]
+
+
+class PayoutVoidEvidenceView(BaseModel):
+    source_id: str
+    observation_id: str
+    checkpoint: int
+    scanned_from: int
+    fresh_until_ms: int
+    observed_at: datetime
+    matching_outflows: int
+    suspicious_outflows: int
+
+
+class PayoutVoidPreviewView(BaseModel):
+    status: Literal['READY', 'UNAVAILABLE', 'INELIGIBLE']
+    reason_code: str | None
+    evidence: PayoutVoidEvidenceView | None
 
 
 class ManualControlView(BaseModel):
@@ -60,12 +92,14 @@ class ManualDiagnosticView(BaseModel):
     reserve_policy: Literal['manual_liquidity', 'full_backing']
 
 
-def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, mfa_verifier=None, activation_monitor=None):
+def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, mfa_verifier=None,
+                                           activation_monitor=None, runtime=None):
     router = APIRouter(prefix='/wallet/manual/operations', tags=['manual-wallet-operations'])
     tokens = TokenService(factory, jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',
         jwt_issuer=settings.jwt_issuer, require_session_claims=True)
     incidents = WalletIncidentService(factory)
-    clock = lambda: datetime.now(timezone.utc)
+    def clock():
+        return datetime.now(timezone.utc)
 
     def fail(code, message, status=409):
         raise AppError(code=code, message=message, status_code=status)
@@ -91,8 +125,8 @@ def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, 
             tokens.require_recent_login(authorization[7:])
         return claims
 
-    def verify(identity, body, request):
-        authorization = selected_password_authorization(settings, factory, clock, identity, body)
+    def verify(identity, body, request, *, independent=False):
+        authorization = selected_password_authorization(settings, factory, clock, identity, body, independent=independent)
         if authorization is not None:
             return authorization
         proof = body.mfa_proof
@@ -267,5 +301,101 @@ def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, 
         if replay is not None:
             return response(replay)
         return response(review(lambda session: incidents.resolve_manual(session=session, **arguments), incident_id=id))
+
+    @router.post('/payouts/{order_id}/void-unbroadcast')
+    def void_unbroadcast(order_id: str, body: PayoutVoidBody, request: Request,
+            idempotency_key: Annotated[str, Header(alias='Idempotency-Key', min_length=1, max_length=128)],
+            identity=Depends(actor)):
+        if runtime is None:
+            fail('MANUAL_OPERATIONS_UNAVAILABLE', '人工钱包复核尚未配置', 503)
+        verified = verify(identity, body, request, independent=True)
+        step_up = guard(identity, verified)
+        grant = (wallet_grant_service(settings, factory, clock).authorization(claims=identity)
+            if getattr(settings, 'wallet_access_grant_enabled', False) else None)
+        def void_authorize(session):
+            proof_fresh = step_up(session)
+            grant_fresh = grant(session) if grant is not None else lambda: None
+            def fresh():
+                proof_fresh()
+                grant_fresh()
+            fresh()
+            return fresh
+        with factory() as session:
+            row = session.get(ManualPayoutOrder, order_id)
+            if row is None:
+                fail('WALLET_PAYOUT_NOT_FOUND', '提现订单不存在', 404)
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            if quote is None:
+                fail('WALLET_PAYOUT_NOT_FOUND', '提现订单不存在', 404)
+            replay = row.status == 'VOIDED'
+            if (not replay and
+                    quote.snapshot['official_address'] != settings.wallet_official_address.get_secret_value()):
+                fail('WALLET_PAYOUT_VOID_EVIDENCE_UNAVAILABLE', '链上观察证据不可用', 503)
+            claimed_at, target = row.claimed_at, quote.snapshot['target_address']
+            official = quote.snapshot['official_address']
+            payable = ManualPayoutService._payable(row, quote)
+        observer = PayoutVoidEvidence(settings.tron_observer_database_path,
+            official_address=settings.wallet_official_address.get_secret_value())
+        try:
+            evidence = {} if replay else observer.observe(claimed_at=claimed_at, target_address=target,
+                amount_units=int(payable * Decimal('1000000')))
+        except ChainWatchUnavailable:
+            fail('WALLET_PAYOUT_VOID_EVIDENCE_UNAVAILABLE', '链上观察证据不可用', 503)
+        def verify_evidence(session, candidate):
+            current = session.get(ManualPayoutOrder, order_id)
+            if current is None or current.claimed_at != claimed_at or current.version != body.expected_version:
+                return False
+            terms = session.get(ManualPayoutQuote, current.quote_id)
+            return bool(terms is not None and terms.snapshot['official_address'] == official
+                and terms.snapshot['target_address'] == target
+                and ManualPayoutService._payable(current, terms) == payable
+                and observer.verify(candidate))
+        result = runtime.payouts.void_unbroadcast(admin_id=identity['sub'], order_id=order_id,
+            expected_version=body.expected_version, reason_code=body.reason_code,
+            never_signed=body.never_signed, never_broadcast=body.never_broadcast,
+            idempotency_key=idempotency_key, evidence=evidence, authorize=void_authorize,
+            verify_evidence=verify_evidence)
+        return response(result)
+
+    @router.get('/payouts/{order_id}/void-unbroadcast/preview', response_model=PayoutVoidPreviewView)
+    def void_unbroadcast_preview(order_id: str, identity=Depends(actor)):
+        if runtime is None:
+            fail('MANUAL_OPERATIONS_UNAVAILABLE', '人工钱包复核尚未配置', 503)
+        with factory() as session:
+            row = session.get(ManualPayoutOrder, order_id)
+            if row is None:
+                fail('WALLET_PAYOUT_NOT_FOUND', '提现订单不存在', 404)
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            if quote is None:
+                fail('WALLET_PAYOUT_NOT_FOUND', '提现订单不存在', 404)
+            if quote.snapshot.get('owner_admin_id') != identity['sub']:
+                fail('WALLET_PAYOUT_OWNER_REQUIRED', '仅官方钱包管理员可查看', 403)
+            if (row.status != 'UNKNOWN' or row.candidate_txid is not None
+                    or session.scalar(select(ManualPayoutCandidate.id).where(
+                        ManualPayoutCandidate.order_id == order_id).limit(1)) is not None
+                    or session.scalar(select(ManualPayoutEvent.id).where(
+                        ManualPayoutEvent.order_id == order_id).limit(1)) is not None):
+                return response(dict(status='INELIGIBLE', reason_code='WALLET_PAYOUT_VOID_UNAVAILABLE',
+                    evidence=None))
+            if quote.snapshot['official_address'] != settings.wallet_official_address.get_secret_value():
+                return response(dict(status='UNAVAILABLE', reason_code='WALLET_PAYOUT_SOURCE_CHANGED',
+                    evidence=None))
+            claimed_at, target = row.claimed_at, quote.snapshot['target_address']
+            payable = ManualPayoutService._payable(row, quote)
+        observer = PayoutVoidEvidence(settings.tron_observer_database_path,
+            official_address=settings.wallet_official_address.get_secret_value())
+        try:
+            evidence = observer.observe(claimed_at=claimed_at, target_address=target,
+                amount_units=int(payable * Decimal('1000000')))
+        except ChainWatchUnavailable:
+            return response(dict(status='UNAVAILABLE', reason_code='WALLET_PAYOUT_VOID_EVIDENCE_UNAVAILABLE',
+                evidence=None))
+        safe = {key: evidence[key] for key in ('source_id', 'observation_id', 'checkpoint',
+            'scanned_from', 'fresh_until_ms', 'matching_outflows', 'suspicious_outflows')}
+        safe['observed_at'] = evidence['observed_at'].isoformat()
+        if evidence['matching_outflows'] or evidence['suspicious_outflows']:
+            return response(dict(status='INELIGIBLE', reason_code='WALLET_PAYOUT_OUTFLOW_OBSERVED',
+                evidence=safe))
+        return response(dict(status='READY', reason_code=None, evidence=safe))
 
     return router

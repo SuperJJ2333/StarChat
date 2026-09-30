@@ -1,6 +1,7 @@
 """Bounded, authenticated client reliability metadata; never accept free text."""
 import hashlib
 import json
+import secrets
 import sys
 from datetime import datetime
 from typing import Annotated, Literal
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings
+from app.core.diagnostic_identity import diagnostic_ref
 from app.core.errors import AppError
 from app.core.rate_limits import RateLimiter
 from app.core.network_request_timeline import NetworkRequestDiagnostic
@@ -25,8 +27,12 @@ class DiagnosticEvent(BaseModel):
                    'dateMonth', 'dateLocate', 'scrollAnchor', 'framework', 'network_request',
                    'pending_write_failed', 'request_uncertain', 'result_write_failed',
                    'retry_recovered', 'terminal_invalidated', 'result_superseded',
-                   'matrix_sync_soft_kick', 'matrix_sync_hard_restart']
-    error: Literal['slow', 'network', 'timeout', 'rejected', 'cancelled', 'incomplete', 'unknown', 'recovered']
+                   'matrix_sync_soft_kick', 'matrix_sync_hard_restart',
+                   'moment_prepare', 'moment_video_begin', 'moment_video_put', 'moment_video_complete',
+                   'moment_poster_extract', 'moment_poster_begin', 'moment_poster_put',
+                   'moment_poster_complete', 'moment_publish']
+    error: Literal['slow', 'network', 'timeout', 'rejected', 'cancelled', 'incomplete', 'unknown', 'recovered',
+                   'size', 'format']
     elapsed_ms: int = Field(ge=0, le=3600000)
     count: int = Field(ge=1, le=1000000)
     status: int | None = Field(default=None, ge=100, le=599)
@@ -34,11 +40,17 @@ class DiagnosticEvent(BaseModel):
     lifecycle: Literal['foreground', 'background', 'unknown'] | None = None
 
     @model_validator(mode='after')
-    def consistent_watchdog_stage(self):
+    def consistent_stage_outcome(self):
         if self.stage in ('matrix_sync_soft_kick', 'matrix_sync_hard_restart') and self.error not in (
             'slow', 'timeout', 'unknown', 'recovered'
         ):
             raise ValueError('Unsupported watchdog diagnostic outcome')
+        if self.stage in (
+            'moment_prepare', 'moment_video_begin', 'moment_video_put', 'moment_video_complete',
+            'moment_poster_extract', 'moment_poster_begin', 'moment_poster_put',
+            'moment_poster_complete', 'moment_publish',
+        ) and self.error not in ('timeout', 'network', 'rejected', 'size', 'format', 'unknown'):
+            raise ValueError('Unsupported Moment diagnostic outcome')
         return self
 
 
@@ -113,7 +125,8 @@ OperationWire = Literal[
     'matrix_sync', 'media_load', 'recent_pictures_load', 'video_prepare', 'video_poster',
     'search', 'search_page_open', 'contacts_load', 'moments_load',
     'wallet_load', 'api_request', 'call_setup', 'call_active',
-    'profile_load', 'chat_list_load',
+    'profile_load', 'chat_list_load', 'history_search',
+    'keyboard_transition', 'room_local_frame',
 ]
 
 PerformanceStageWire = Literal[
@@ -130,6 +143,10 @@ PerformanceStageWire = Literal[
     'sync_finished', 'conversation_ready', 'local_search_started',
     'local_search_done', 'database_search_started', 'database_search_done', 'remote_search_started', 'remote_search_done',
     'render_results', 'request_finished',
+    'search_scan_started', 'search_first_hit', 'search_coverage_complete',
+    'keyboard_requested', 'keyboard_stable_frame', 'room_local_first_frame',
+    'route_exit_requested', 'route_exit_frame',
+    'fragment_write_started', 'fragment_write_done',
 ]
 
 PerformanceResultWire = Literal[
@@ -281,6 +298,15 @@ class _PerformanceMetadata(BaseModel):
     uses_turn: bool | None = None
     relay_protocol: RelayProtocolWire | None = None
     candidate_protocol: RelayProtocolWire | None = None
+    restart_reason: Literal['query_changed', 'manual_refresh', 'safety_invalidation'] | None = None
+    cancel_reason: Literal['new_query', 'route_closed', 'account_changed', 'visibility_revoked'] | None = None
+    keyboard_direction: Literal['show', 'hide'] | None = None
+    room_route_phase: Literal['enter', 'leave'] | None = None
+    scan_page_count: int | None = Field(default=None, ge=0, le=100000)
+    scan_row_count: int | None = Field(default=None, ge=0, le=10000000)
+    first_hit_ms: int | None = Field(default=None, ge=0, le=3600000)
+    full_coverage_ms: int | None = Field(default=None, ge=0, le=3600000)
+    timeline_event_count: int | None = Field(default=None, ge=0, le=100000)
 
     @model_validator(mode='after')
     def consistent_span_indices(self):
@@ -292,6 +318,22 @@ class _PerformanceMetadata(BaseModel):
                 raise ValueError('Window index requires an active call')
         if self.attempt_index is not None and self.window_index is not None:
             raise ValueError('Attempt and window indices are mutually exclusive')
+        search_fields = {'restart_reason', 'cancel_reason', 'scan_page_count',
+                         'scan_row_count', 'first_hit_ms', 'full_coverage_ms'}
+        if self.operation != 'history_search' and self.model_fields_set & search_fields:
+            raise ValueError('Search metadata requires history search')
+        if self.operation == 'keyboard_transition':
+            if self.keyboard_direction is None:
+                raise ValueError('Keyboard transition requires direction')
+        elif 'keyboard_direction' in self.model_fields_set:
+            raise ValueError('Keyboard direction requires keyboard transition')
+        if self.operation == 'room_local_frame':
+            if self.room_route_phase is None:
+                raise ValueError('Room frame requires route phase')
+        elif 'room_route_phase' in self.model_fields_set:
+            raise ValueError('Route phase requires room frame')
+        if self.operation != 'matrix_sync' and 'timeline_event_count' in self.model_fields_set:
+            raise ValueError('Timeline event count requires Matrix sync')
         return self
 
 
@@ -320,6 +362,10 @@ class PerformanceOperation(_PerformanceMetadata):
         default=None,
         description='Omit slow-frame counts when false; legacy records omit this field and include all counts.',
     )
+    started_at_utc: str | None = Field(default=None, max_length=32, pattern=_UTC_TIME)
+    ended_at_utc: str | None = Field(default=None, max_length=32, pattern=_UTC_TIME)
+    clock_uncertainty_ms: int | None = Field(default=None, ge=0, le=2000)
+    time_anchor_age_ms: int | None = Field(default=None, ge=0, le=300000)
 
     @model_validator(mode='after')
     def consistent_stages_and_frames(self):
@@ -334,6 +380,22 @@ class PerformanceOperation(_PerformanceMetadata):
                     <= self.slow_build_count + self.slow_raster_count):
                 raise ValueError('Inconsistent operation frame counts')
         _validate_stages(self.stages, self.total_ms)
+        fields = ('started_at_utc', 'ended_at_utc',
+                  'clock_uncertainty_ms', 'time_anchor_age_ms')
+        supplied = [name in self.model_fields_set for name in fields]
+        if any(supplied):
+            if not all(supplied) or any(getattr(self, name) is None for name in fields):
+                raise ValueError('Incomplete calibrated time window')
+            start = datetime.fromisoformat(self.started_at_utc.replace('Z', '+00:00'))
+            end = datetime.fromisoformat(self.ended_at_utc.replace('Z', '+00:00'))
+            wall_ms = (end - start).total_seconds() * 1000
+            if wall_ms < 0 or abs(wall_ms - self.total_ms) > self.clock_uncertainty_ms + 1000:
+                raise ValueError('Inconsistent calibrated duration')
+        if (self.first_hit_ms is not None and self.first_hit_ms > self.total_ms
+                or self.full_coverage_ms is not None and self.full_coverage_ms > self.total_ms
+                or self.first_hit_ms is not None and self.full_coverage_ms is not None
+                and self.first_hit_ms > self.full_coverage_ms):
+            raise ValueError('Inconsistent search milestones')
         return self
 
 
@@ -471,14 +533,24 @@ def _request_schema():
 
 def create_client_diagnostics_router(settings: Settings, session_factory, rate_limiter: RateLimiter) -> APIRouter:
     router = APIRouter(tags=['client-diagnostics'])
+    configured_secret = settings.diagnostic_identity_secret
+    if (settings.environment != 'production' and configured_secret is not None
+            and not configured_secret.get_secret_value().strip()):
+        configured_secret = None
+    if settings.environment == 'production' and configured_secret is None:
+        raise ValueError('BUSINESS_DIAGNOSTIC_IDENTITY_SECRET is required')
+    identity_key = (configured_secret.get_secret_value().encode('utf-8')
+                    if configured_secret is not None else secrets.token_bytes(32))
+    if len(identity_key) < 32:
+        raise ValueError('BUSINESS_DIAGNOSTIC_IDENTITY_SECRET is too short')
     tokens = TokenService(session_factory,
         jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',
         jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != 'test')
 
-    def actor(authorization: Annotated[str | None, Header()] = None) -> str:
+    def actor(authorization: Annotated[str | None, Header()] = None) -> dict:
         if not authorization or not authorization.startswith('Bearer '):
             raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
-        return str(tokens.decode_access_token(authorization[7:])['sub'])
+        return tokens.decode_access_token(authorization[7:])
 
     @router.post('/client-diagnostics', status_code=202, response_model=DiagnosticReceipt,
         responses={401: {'description': 'Authentication required'},
@@ -487,9 +559,10 @@ def create_client_diagnostics_router(settings: Settings, session_factory, rate_l
                    429: {'description': 'Account or source limit reached'}},
         openapi_extra={'requestBody': {'required': True, 'content': {
             'application/json': {'schema': _request_schema()}}}})
-    async def ingest(request: Request, user_id: str = Depends(actor)):
+    async def ingest(request: Request, claims: dict = Depends(actor)):
         # Hash only for limiter storage; identifiers/IP never enter the log.
         # Ignore attacker-controlled forwarded headers.
+        user_id = str(claims['sub'])
         source = request.client.host if request.client else 'unknown'
         for dimension, value, limit in [('account', user_id, 1), ('ip', source, 30)]:
             digest = hashlib.sha256(value.encode()).hexdigest()
@@ -502,6 +575,9 @@ def create_client_diagnostics_router(settings: Settings, session_factory, rate_l
             # Do not echo input, arbitrary field names or validation contexts.
             raise AppError(code='DIAGNOSTICS_INVALID', message='诊断格式无效', status_code=422) from None
         safe = {'event': 'client_diagnostics', **batch.model_dump(mode='json', exclude_unset=True)}
+        safe['subject_ref'] = diagnostic_ref(identity_key, 'subject', user_id)
+        if claims.get('device_id'):
+            safe['device_ref'] = diagnostic_ref(identity_key, 'device', str(claims['device_id']))
         # Container stdout uses the deployment's bounded log rotation. Never
         # write credentials, account/room IDs, bodies or arbitrary exceptions.
         line = (json.dumps(safe, ensure_ascii=True, separators=(',', ':')) + '\n').encode('ascii')

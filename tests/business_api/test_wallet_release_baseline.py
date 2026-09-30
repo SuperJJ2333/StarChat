@@ -20,11 +20,12 @@ def test_wallet_and_moments_production_branches_have_one_shared_head():
     assert set(merge.down_revision) == {
         '0055_admin_sessions', '0040_moment_comment_images'}
     # The published 0091 chain remains intact beneath the admin-only 0092 expansion.
-    assert scripts.get_heads() == ['0092_admin_session_entry_mode']
+    assert scripts.get_heads() == ['0094_support_finance_order_recovery']
     assert {'0088_profile_grapheme_limits', '0089_username_claims',
             '0090_friend_discovery_index', '0091_moment_video_posters'} <= ancestors
     assert scripts.get_revision('0091_moment_video_posters').down_revision == '0090_friend_discovery_index'
     assert scripts.get_revision('0092_admin_session_entry_mode').down_revision == '0091_moment_video_posters'
+    assert scripts.get_revision('0094_support_finance_order_recovery').down_revision == '0093_unbroadcast_payout_void'
     assert set(scripts.get_revision('0083_phone_wallet_refresh_merge').down_revision) == {
         '0080_refresh_recovery', '0082_deposit_intent_cancel'}
     assert scripts.get_revision('0080_refresh_recovery').down_revision == '0071_direct_room_generations'

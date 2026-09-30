@@ -49,5 +49,6 @@ def test_existing_schema_migration_chain_has_one_current_head():
     config.set_main_option("path_separator", "os")
     config.set_main_option("script_location", str(project / "migrations"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0092_admin_session_entry_mode"]
+    assert scripts.get_heads() == ["0094_support_finance_order_recovery"]
     assert scripts.get_revision("0092_admin_session_entry_mode").down_revision == "0091_moment_video_posters"
+    assert scripts.get_revision("0094_support_finance_order_recovery").down_revision == "0093_unbroadcast_payout_void"

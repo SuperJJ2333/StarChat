@@ -4,8 +4,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = '0093_support_finance_order_recovery'
-down_revision = '0092_admin_session_entry_mode'
+revision = '0094_support_finance_order_recovery'
+down_revision = '0093_unbroadcast_payout_void'
 branch_labels = None
 depends_on = None
 

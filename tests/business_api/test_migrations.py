@@ -37,7 +37,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_support_finance_recovery_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0093_support_finance_order_recovery (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0094_support_finance_order_recovery (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history
@@ -52,12 +52,13 @@ def test_support_finance_recovery_is_the_only_head() -> None:
     assert "0087_support_payout_workflow -> 0088_profile_grapheme_limits" in history
     assert "0088_profile_grapheme_limits -> 0089_username_claims" in history
     assert "0089_username_claims -> 0090_friend_discovery_index" in history
-    assert "0092_admin_session_entry_mode -> 0093_support_finance_order_recovery" in history
+    assert "0092_admin_session_entry_mode -> 0093_unbroadcast_payout_void" in history
+    assert "0093_unbroadcast_payout_void -> 0094_support_finance_order_recovery" in history
 
 
 def test_support_finance_recovery_migration_only_expands_history() -> None:
     sql = _normalized_sql(_alembic(
-        "upgrade", "0092_admin_session_entry_mode:0093_support_finance_order_recovery", "--sql"
+        "upgrade", "0093_unbroadcast_payout_void:0094_support_finance_order_recovery", "--sql"
     ))
     for column in (
         "prepared_rate numeric(20, 6)",
@@ -86,7 +87,7 @@ def test_support_finance_recovery_downgrade_refuses_history_loss() -> None:
     import importlib.util
     import pytest
 
-    path = BUSINESS_API_ROOT / "migrations" / "versions" / "0093_support_finance_order_recovery.py"
+    path = BUSINESS_API_ROOT / "migrations" / "versions" / "0094_support_finance_order_recovery.py"
     spec = importlib.util.spec_from_file_location("support_finance_recovery_migration", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
