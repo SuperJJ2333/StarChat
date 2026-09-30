@@ -1,12 +1,92 @@
 from pathlib import Path
 from contextlib import nullcontext
 import sys,json
+import copy
 import pytest
 HERE=Path(__file__).resolve().parent
 sys.path.insert(0,str(HERE))
 import server_release as s
 import public_verify as p
 import release_prep as r
+
+def shared_compose():
+    return {'name':'starchat','networks':{'business':{'external':True,'name':'business'}},'volumes':{'data':{'external':True}},
+        'services':{'business-api':{'image':'sha256:'+'a'*64,'command':['uvicorn'],'environment':{'VALUE':'literal$secret'},'networks':['business']},
+                    'business-worker':{'image':'sha256:'+'b'*64,'command':['python','worker.py'],'depends_on':[],'networks':['business']}}}
+
+def test_derived_role_compose_keeps_only_own_service_and_all_top_sections():
+    original=shared_compose();before=copy.deepcopy(original)
+    api=s.compose_with_image(original,'business-api','sha256:'+'c'*64)
+    worker=s.compose_with_image(original,'business-worker','sha256:'+'d'*64)
+    assert set(api['services'])=={'business-api'}
+    assert set(worker['services'])=={'business-worker'}
+    assert api['networks']==original['networks'] and api['volumes']==original['volumes']
+    assert api['services']['business-api']['environment']['VALUE']=='literal$$secret'
+    assert original==before
+
+def test_role_roundtrip_and_merged_configuration_are_exact(monkeypatch,tmp_path):
+    baseline=shared_compose();records={role+'-rendered-compose.json':copy.deepcopy(baseline) for role in ('api','worker')}
+    records['merged-baseline-compose.json']=copy.deepcopy(baseline)
+    monkeypatch.setattr(s.c,'PRIVATE',tmp_path)
+    monkeypatch.setattr(s.c,'read_private',lambda name:copy.deepcopy(records[name]))
+    def write(name,data):records[name]=copy.deepcopy(data);return tmp_path/name
+    monkeypatch.setattr(s.c,'write_private',write)
+    def unescape(value):
+        if isinstance(value,str):return value.replace('$$','$')
+        if isinstance(value,list):return [unescape(x) for x in value]
+        if isinstance(value,dict):return {k:unescape(v) for k,v in value.items()}
+        return value
+    def render(*args,**kw):
+        paths=[Path(args[i+1]).name for i,a in enumerate(args) if a=='-f'];merged={}
+        for path in paths:
+            config=unescape(records[path]);services=merged.get('services',{})|config['services'];merged.update(config);merged['services']=services
+        return json.dumps(merged)
+    monkeypatch.setattr(s.c,'run',render)
+    for version in ('candidate','rollback'):
+        images={'api':'sha256:'+'c'*64,'worker':'sha256:'+'d'*64}
+        for role,service in s.ROLE_SERVICE.items():s.c._render_compose(role,version,s.compose_with_image(baseline,service,images[role]),images[role])
+        s.c._check_frozen_compose(version,images)
+        s.c.check_merged_compose(version,images)
+        records['worker-'+version+'.json']['services']['business-worker']['command']=['unreviewed-entry']
+        with pytest.raises(ValueError):s.c._check_frozen_compose(version,images)
+        with pytest.raises(ValueError):s.c.check_merged_compose(version,images)
+
+def test_reused_image_rejects_runtime_configuration_drift(monkeypatch,tmp_path):
+    original={'Cmd':ACTUAL_CMD,'Entrypoint':None,'Env':['SAFE=value'],'User':'','WorkingDir':'/opt/business-api'}
+    changed=copy.deepcopy(original);changed['Cmd']=['unreviewed-entry']
+    monkeypatch.setattr(s.c,'docker_inspect',lambda image:{'Id':image,'Config':original if image=='base' else changed})
+    monkeypatch.setattr(s.c,'image_inventory',lambda *args:{})
+    with pytest.raises(ValueError,match='runtime Config'):
+        s.verify_existing_overlay('api','base','candidate',[])
+
+@pytest.mark.parametrize('drift',[False,True])
+def test_resume_revalidates_ids_and_preserves_existing_build_evidence(monkeypatch,tmp_path,drift):
+    ids={'api':'sha256:'+'c'*64,'worker':'sha256:'+'d'*64,'rollback_api':'sha256:'+'e'*64};checked=[]
+    monkeypatch.setattr(s.c,'PRIVATE',tmp_path)
+    manifest_path=tmp_path/'manifest';manifest_path.write_text('frozen');monkeypatch.setattr(s,'MANIFEST',manifest_path)
+    monkeypatch.setattr(s.c,'check_prepared',lambda m:None)
+    monkeypatch.setattr(s.c,'read_private',lambda name:{'Config':{'Cmd':ACTUAL_CMD,'Entrypoint':None}})
+    def inspect(tag):
+        key='rollback_api' if tag.endswith('rollback-api-fenced') else 'worker' if tag.endswith('candidate-worker') else 'api'
+        return {'Id':'sha256:'+'f'*64 if drift else ids[key]}
+    monkeypatch.setattr(s.c,'docker_inspect',inspect)
+    monkeypatch.setattr(s,'verify_existing_overlay',lambda role,base,image,files:checked.append((role,image)))
+    monkeypatch.setattr(s,'frozen_rollback_sources',lambda m:[])
+    monkeypatch.setattr(s,'finalize_built_images',lambda m,images,back:{'built':True,'images':images,'rollback_images':back})
+    context=tmp_path/'build'/'candidate-api';context.mkdir(parents=True);(context/'evidence').write_bytes(b'keep-context')
+    for role in ('api','worker'):
+        for version in ('candidate','rollback'):(tmp_path/(role+'-'+version+'.json')).write_bytes(b'old-derived')
+    m={'roles':{role:{'base_image':'base-'+role,'files':[]} for role in ('api','worker')}}
+    if drift:
+        with pytest.raises(ValueError,match='tag differs'):s.resume_build(m,ids)
+        assert not checked and (tmp_path/'api-candidate.json').read_bytes()==b'old-derived'
+    else:
+        result=s.resume_build(m,ids);attempt=tmp_path/result['attempt']
+        assert len(checked)==3 and result['resumed_existing_images'] is True
+        assert len(list(attempt.glob('*-candidate.json')))==2
+        assert (attempt/'api-rollback.json').read_bytes()==b'old-derived'
+        assert (attempt/'result.json').exists()
+    assert (context/'evidence').read_bytes()==b'keep-context'
 
 ACTUAL_CMD=['uvicorn','app.main:create_default_app','--factory','--host','0.0.0.0','--port','8082','--workers','2']
 

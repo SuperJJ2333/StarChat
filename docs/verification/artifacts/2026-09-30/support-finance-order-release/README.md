@@ -1,6 +1,6 @@
 # Controlled support finance release tooling
 
-Status: the product manifest and payload were frozen from reviewed c204 sources by the release operator. Private backups were prepared on the server. The first build stopped before creating an image/context because an assumed Alembic startup did not match actual Uvicorn. This tooling revision preserves the payload and private backups. No production service or schema change has occurred at this checkpoint. Baseline is API `902eaefc…`, Worker `90d7fb74…`, schema `0093_unbroadcast_payout_void`.
+Status: the product manifest and payload were frozen from reviewed c204 sources by the release operator. Private backups were prepared on the server. The first build stopped before creating an image/context because an assumed Alembic startup did not match actual Uvicorn. This tooling revision preserves the payload and private backups. The second build created three immutable images and passed Python inventory checks, then stopped at exact merged Compose validation because both original role files contained both services. No images.json or production service/schema switch was created. Existing images, contexts and private evidence are retained. Baseline is API `902eaefc…`, Worker `90d7fb74…`, schema `0093_unbroadcast_payout_void`.
 
 The exact allowlist contains 20 API Python targets including migration 0094; six reviewed domain modules in both Worker package mirrors, migration 0094 and `tasks/internal_publication.py`, totaling 14 Worker targets; and four existing admin static files. Manual wallet task code stays unchanged. Existing unbroadcast void behavior and schema must be retained. The Worker publication task overlay adds missing financial event contracts and must be SHA-bound by the installed probe. Already published recharge gates must remain exact.
 
@@ -30,6 +30,16 @@ python3 server_release.py deploy
 python3 server_release.py verify
 python3 public_verify.py
 ```
+
+Derived role Compose now contains only its own service and all original top-level sections. Own-service roundtrip/frozen comparison is exact against that role's frozen slice. The existing merged comparison remains exact against both candidate images and the unchanged full baseline. Bridge and rollback use the same role slicing.
+
+For the already built images, replace the `build` step with the reviewed immutable reuse command:
+
+```
+python3 server_release.py resume-build --candidate-api sha256:27028fd50a570aae2ad8022119d4df04318be101692610b499ef95c00aab7b41 --candidate-worker sha256:7a0046de5404a0711532ec156433a04ef2d88b685fab8b580e6d578830d72e9f --rollback-api sha256:913e6b79acb564d441a81bec15f8b4741161d226339518a75c3cc158715b33a6
+```
+
+Resume requires the unchanged prepared baseline and absence of image-finalization or production-attempt records. It binds deterministic build tags to those explicit IDs, rechecks complete Python inventories and every image runtime Config field against the frozen base, checks payload hashes, and reconstructs the fenced factory intent from the immutable base. It never rebuilds or deletes contexts. Original derived Compose files are moved into a unique private 0700 attempt directory with their SHA evidence. Fresh role slices must pass exact merged checks, then both role guards and compatible image archive complete. Attempt/result/failure records remain private; an interrupted later finalization needs separately reviewed recovery.
 
 `prepare` privately backs up static bytes, actual Compose and container configuration, the database and original images. `build` overlays only allowlisted files, validates complete Python inventories and builds a fenced compatibility API. Rollback retains the candidate's safety Worker. A separate offline archive preserves those compatible images. Candidate and rollback images must pass both roles of the installed refresh guard.
 

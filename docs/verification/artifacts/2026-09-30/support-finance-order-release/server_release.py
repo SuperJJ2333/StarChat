@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import shutil
+import copy
 from contextlib import contextmanager
 from uuid import uuid4
 import server_r3 as c
@@ -18,6 +19,46 @@ from finance_write_fence import FACTORY_SUFFIX
 ORIGINAL_BUILD=c.build
 ORIGINAL_ROLLBACK=c.rollback
 ORIGINAL_DEPLOY=c.deploy
+ORIGINAL_COMPOSE_WITH_IMAGE=compose_with_image
+
+def role_compose(config,service):
+    services=config.get('services',{})
+    if service not in ROLE_SERVICE.values() or service not in services or not set(services)<=set(ROLE_SERVICE.values()):
+        raise ValueError('unexpected Compose service scope')
+    result=copy.deepcopy(config);result['services']={service:result['services'][service]}
+    return result
+
+def compose_with_image(config,service,image):
+    return ORIGINAL_COMPOSE_WITH_IMAGE(role_compose(config,service),service,image)
+
+def render_role_compose(role,name,config,expected_image):
+    path=c.write_private(role+'-'+name+'.json',config)
+    rendered=json.loads(c.run('docker','compose','-p','starchat','-f',str(path),'config','--format','json'))
+    expected=role_compose(c.read_private(role+'-rendered-compose.json'),ROLE_SERVICE[role])
+    expected['services'][ROLE_SERVICE[role]]['image']=expected_image
+    if rendered!=expected:raise ValueError('role Compose changed beyond its own image')
+
+def check_frozen_role_compose(version,images):
+    if version not in ('candidate','rollback') or set(images)!={'api','worker'}:raise ValueError('frozen Compose roles/version required')
+    for role,service in ROLE_SERVICE.items():
+        path=c.PRIVATE/(role+'-'+version+'.json')
+        rendered=json.loads(c.run('docker','compose','-p','starchat','-f',str(path),'config','--format','json'))
+        expected=role_compose(c.read_private(role+'-rendered-compose.json'),service)
+        expected['services'][service]['image']=images[role]
+        if rendered!=expected:raise ValueError('frozen role Compose configuration drift')
+
+c._render_compose=render_role_compose
+c._check_frozen_compose=check_frozen_role_compose
+
+def verify_existing_overlay(role,base,image,files):
+    # Config includes Cmd/Entrypoint/Env/User/WorkingDir and all other image runtime fields.
+    if c.docker_inspect(base)['Config']!=c.docker_inspect(image)['Config']:
+        raise ValueError('reused image runtime Config differs from frozen base')
+    before=c.image_inventory(base,role)
+    for item in files:
+        if before.get(item['dest'])!=item['before_sha256'] or sha_file(Path(item['payload']))!=item['after_sha256']:
+            raise ValueError('reused overlay source or base SHA drift')
+    assert_exact_inventory_delta(before,c.image_inventory(image,role),{item['dest']:item['after_sha256'] for item in files})
 
 ACTUAL_API_CMD=['uvicorn','app.main:create_default_app','--factory','--host','0.0.0.0','--port','8082','--workers','2']
 
@@ -114,6 +155,9 @@ def build(m):
       {**migration,'payload':str(PACKAGE/'payload'/migration['source'])}]
     back['api']=overlay('api',base,inventory,rollback_files,'rollback-api-fenced')
     c.write_private('rollback-overlay.json',rollback_files)
+    return finalize_built_images(m,images,back)
+
+def finalize_built_images(m,images,back):
     for role in ('api','worker'):
         original=c.read_private(role+'-rendered-compose.json')
         c._render_compose(role,'candidate',compose_with_image(original,ROLE_SERVICE[role],images[role]),images[role])
@@ -124,6 +168,58 @@ def build(m):
     c.run('docker','save',images['api'],images['worker'],back['api'],output_file=c.PRIVATE/'compatible-images.tar')
     c.write_private('compatible-archive.json',{'sha256':sha_file(c.PRIVATE/'compatible-images.tar')})
     return {'built':True,'images':images,'rollback_images':back,'worker_safety_retained':True,'rollback_api_write_fenced':True}
+
+def frozen_rollback_sources(m):
+    base=m['roles']['api']['base_image'];inventory=c.image_inventory(base,'api')
+    main_dest='/opt/business-api/app/main.py'
+    code=c.run('docker','run','--rm','--pull','never','--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--entrypoint','python',base,'-c',"from pathlib import Path; import base64; print(base64.b64encode(Path('/opt/business-api/app/main.py').read_bytes()).decode())")
+    import base64
+    original=base64.b64decode(code)
+    if sha_bytes(original)!=inventory.get(main_dest):raise ValueError('original rollback factory changed')
+    generated=c.PRIVATE/'rollback-generated'/'main.py'
+    if generated.is_symlink() or generated.read_bytes()!=original+FACTORY_SUFFIX.encode():raise ValueError('generated rollback factory differs from frozen intent')
+    fence=PACKAGE/'finance_write_fence.py'
+    if sha_file(fence)!=m['rollback_fence_sha256']:raise ValueError('rollback fence source differs from manifest')
+    migration=next(x for x in m['roles']['api']['files'] if x['source'].endswith('0094_support_finance_order_recovery.py'))
+    expected=[{'dest':main_dest,'before_sha256':inventory[main_dest],'after_sha256':sha_file(generated),'payload':str(generated)},
+      {'dest':'/opt/business-api/app/release_finance_write_fence.py','before_sha256':None,'after_sha256':sha_file(fence),'payload':str(fence)},
+      {**migration,'payload':str(PACKAGE/'payload'/migration['source'])}]
+    if c.read_private('rollback-overlay.json')!=expected:raise ValueError('saved rollback source intent drift')
+    return expected
+
+def resume_build(m,expected):
+    c.check_prepared(m)
+    validate_actual_startup(c.read_private('api-container-inspect.json')['Config'])
+    if set(expected)!={'api','worker','rollback_api'}:raise ValueError('three explicit immutable resume IDs required')
+    for image in expected.values():c._image(image)
+    blocked=['images.json','rollback-images.json','build-protocol-proofs.json','compatible-images.tar','compatible-archive.json','bridge-attempt.json','worker-bridge-result.json','deployed.json']
+    if any((c.PRIVATE/name).exists() for name in blocked):raise ValueError('build already finalized or production phase attempted; reviewed recovery required')
+    labels={'api':'candidate-api','worker':'candidate-worker','rollback_api':'rollback-api-fenced'}
+    for key,label in labels.items():
+        tag='starchat-'+RELEASE_ID+'-'+label
+        if c.docker_inspect(tag)['Id']!=expected[key]:raise ValueError('existing build tag differs from explicit frozen image ID')
+    images={role:expected[role] for role in ('api','worker')};back={'api':expected['rollback_api'],'worker':expected['worker']}
+    for role in ('api','worker'):
+        verify_existing_overlay(role,m['roles'][role]['base_image'],images[role],role_payload(m['roles'][role]))
+    verify_existing_overlay('api',m['roles']['api']['base_image'],back['api'],frozen_rollback_sources(m))
+    # Keep contexts/generated sources untouched. Preserve only old derived files
+    # under a unique0700 attempt directory before writing role-only replacements.
+    attempt='resume-build-'+uuid4().hex;directory=c.PRIVATE/attempt;directory.mkdir(mode=0o700)
+    evidence={'started_utc':utc(),'manifest_sha256':sha_file(MANIFEST),'images':images,'rollback_images':back,'preserved_derived':{},'contexts_retained':True}
+    for role in ('api','worker'):
+        for version in ('candidate','rollback'):
+            name=role+'-'+version+'.json';path=c.PRIVATE/name
+            if path.exists():
+                if path.is_symlink() or not path.is_file():raise ValueError('unsafe old derived Compose path')
+                evidence['preserved_derived'][name]=sha_file(path);path.rename(directory/name)
+    c.write_private(attempt+'/attempt.json',evidence)
+    try:
+        result=finalize_built_images(m,images,back)
+        c.write_private(attempt+'/result.json',{'completed_utc':utc(),'images':images,'rollback_images':back,'fresh_role_compose':True,'guard_check_and_archive':True})
+        return {**result,'resumed_existing_images':True,'attempt':attempt}
+    except Exception:
+        c.write_private(attempt+'/failure.json',{'failed_utc':utc(),'recovery':'preserve contexts and this attempt; inspect phase artifacts before a separately reviewed retry'})
+        raise
 
 def fingerprint(clone):
     # Normalize expansion-only columns so migration proves existing facts intact.
@@ -331,9 +427,12 @@ def verify(m):
     return {'verified':True,'roles':2,'schema':TARGET_SCHEMA,'public_tls':'separate required'}
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('operation',choices=['preflight','prepare','build','restore','probe-clone','probe-worker','restore-finalize','bridge-expand','activate-safe-worker','deploy','rollback','verify']);args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('operation',choices=['preflight','prepare','build','resume-build','restore','probe-clone','probe-worker','restore-finalize','bridge-expand','activate-safe-worker','deploy','rollback','verify'])
+    p.add_argument('--candidate-api');p.add_argument('--candidate-worker');p.add_argument('--rollback-api');args=p.parse_args()
+    if args.operation=='resume-build' and not all((args.candidate_api,args.candidate_worker,args.rollback_api)):p.error('resume-build requires all three immutable image IDs')
+    if args.operation!='resume-build' and any((args.candidate_api,args.candidate_worker,args.rollback_api)):p.error('immutable resume IDs apply only to resume-build')
     if PACKAGE!=c.RELEASE_ROOT:raise SystemExit('dedicated server release directory required')
     m=validate_manifest(json.loads(MANIFEST.read_text(encoding='utf-8')))
-    operations={'preflight':lambda:{'schema':c.preflight(m)['schema']},'prepare':lambda:c.prepare(m),'build':lambda:build(m),'restore':lambda:c.restore(m),'probe-clone':lambda:probe_clone(m),'probe-worker':lambda:probe_worker(m),'restore-finalize':lambda:restore_finalize(m),'bridge-expand':lambda:bridge_expand(m),'activate-safe-worker':lambda:activate_safe_worker(m),'deploy':lambda:deploy(m),'rollback':lambda:rollback(m),'verify':lambda:verify(m)}
+    operations={'preflight':lambda:{'schema':c.preflight(m)['schema']},'prepare':lambda:c.prepare(m),'build':lambda:build(m),'resume-build':lambda:resume_build(m,{'api':args.candidate_api,'worker':args.candidate_worker,'rollback_api':args.rollback_api}),'restore':lambda:c.restore(m),'probe-clone':lambda:probe_clone(m),'probe-worker':lambda:probe_worker(m),'restore-finalize':lambda:restore_finalize(m),'bridge-expand':lambda:bridge_expand(m),'activate-safe-worker':lambda:activate_safe_worker(m),'deploy':lambda:deploy(m),'rollback':lambda:rollback(m),'verify':lambda:verify(m)}
     print(json.dumps(operations[args.operation](),ensure_ascii=False),flush=True)
 if __name__=='__main__':main()
