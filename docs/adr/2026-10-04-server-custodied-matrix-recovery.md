@@ -75,3 +75,11 @@ Q1：wrapping key采用逐key状态机 `primary_inactive → independent_protect
 实际隔离RED/GREEN注入DPAPI保存前、保存后ack前、active切换前、重包中途失败；完成后模拟主机及primary credential全部丢失，只从独立provider+含旧新key混合信封的DB备份恢复相同私钥。每key独立确认不是一次旧key演练可代替，秘密stdout/argv/异常/日志捕获须通过。
 
 鉴权解释：拒绝staff/admin的console/service session种类，而非仅凭Business User角色拒绝。拥有staff角色的用户使用有效current mobile family与自己的非admin、非impersonated Matrix device时可恢复自己的记录；业务身份核验依据session_scope/AdminSession.family_id/current mobile binding，仍无跨用户能力。
+
+## 真实路由修订 R1（2026-10-04）
+
+实际固定Synapse1.132.0的client JsonResource是leaf；ModuleApi注册在`/_matrix/client/unstable/...`的更深节点虽然进入resource tree，却会被现有client leaf截断。隔离真实HTTP初次GET/status为核心404，不能用mock挂载成功作可达证据；证据task-3a-native-http-gate.log及固定app/rest/resource-tree源hash manifest。
+
+保持客户端PUBLIC BASE `/_matrix/client/unstable/com.starchat.recovery/v1`及全部wire、双bearer、owner/version、CAS、密码/provider契约。主进程模块仅注册可达PRIVATE BASE `/_synapse/client/chatflow/recovery/v1`，专用Nginx精确public-prefix规则将路径映射到这个private-prefix，仍发送主Synapse；不覆盖`/_matrix/client`/`/_matrix/`，不修改/monkeypatch核心类、原生备份或现有客户端router。模块在私有实际request.path下进行同等严格路径/方法检查，公网的既有`/_synapse/client/`拒绝保持，publicprefix外不产生新增代理能力。
+
+Vault public-prefix关闭access_log/body tracing/cache，避免被拒query token写入requestline；保留TLS及无重定向双bearer验证。真实隔离Nginx+Synapse HTTP必须证明public映射、private公网403拒绝、query-token拒绝、no-store/error/size限制以及原Matrix versions/login/whoami/nativebackup等关键路径仍走原处理。实际主UID991凭据RO读取、worker无凭据/earlyreturn验收保持。此路由细化需独立领域/规格→质量/安全定向设计复核通过后实施。

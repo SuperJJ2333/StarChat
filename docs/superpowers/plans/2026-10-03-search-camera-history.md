@@ -59,6 +59,7 @@
 - [ ] RED真实PG并发、crypto/authority/migration/rollback/secret-provider failure gates；最低修复实现main-only模块、唯一owner集合信封、保留session候选、严格当前family/device授权、no-store/no-secret-logs；支持响应丢失重试。
 - [ ] GREEN专项Python/nativeSynapse/真实PG及helper Linux/Windows synthetic interop/恢复演练；准确报告实际输入hash与环境/未验生产事实。输出公开协议固定JSON schema供3B消费。
 - [ ] 每个新wrapping key先primary-inactive→独立DPAPI保存/读回确认，之后才active-write/rewrap；失败/丢ack/混合旧新信封主机丢失的真实隔离restore用例，旧active/旧key保留。Staff业务角色本身不排除本人合法mobile session。
+- [ ] R1真实client leaf遮蔽修订：public BASE不变，main ModuleAPI仅挂private `/_synapse/client/chatflow/recovery/v1`，精确Nginx public-prefix映射且公网private拒绝，namespace access_log/body tracing/cache关闭。无需core/router全局替换；独立定向设计复核PASS后实际Nginx+Synapse证明public路由及原Matrix关键路由保持。
 - [ ] 独立领域/规格再质量安全实现审查；explicit source/tests/schema/runbook提交并释放工具文件。
 
 #### Task 3B: Mobile vault migration, recovery and 72h ciphertext hydration
