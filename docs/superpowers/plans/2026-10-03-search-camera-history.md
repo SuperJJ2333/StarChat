@@ -46,7 +46,8 @@
 - [ ] Independent domain/spec then quality/security review.
 
 ### Task 4: Final validation and debug delivery
-**Files:** root shared task/index/report/pubspec/AppConfig/paired version tests/build helpers only after candidate review.
+**Files:** root shared task/index/report/pubspec/AppConfig/paired version tests/build helpers only after candidate review; frontend/src/screens/messaging.js、frontend/src/catalog/screens.js、packages/ui-contracts/changliao-component-registry.json及聚焦HTML测试在Task3释放相应所有权后同步搜索进度/旧事件定位/真实失败文案状态。
 - [ ] Whole candidate independent review; full Flutter/analyze, relevant Python/frontend/native/platform checks, preflight verify.ps1 and record limits.
+- [ ] 搜索HTML示例和registry同步已有Flutter的稳定进度、旧消息定位与可重试错误状态；恢复页面的HTML/registry由Task3先交付，root不得同时编辑共享registry。合并后验证屏幕计数、token与行为一致。
 - [ ] Re-read live version/CI and emulator; freeze next version/source. Build conventional rebuilt stable-signed x86_64 debug; preserve-data install and launch smoke, same-source iOS native validation.
 - [ ] Integrate/push reviewed changes preserving unrelated WIP, primary artifact/evidence, cleanup only own branch/worktree. Report physical Honor/K80 and new-device key acceptance limits separately.
