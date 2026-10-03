@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
@@ -18,6 +18,27 @@ const maxFileSendBytes = 100 * 1024 * 1024;
 
 /// 附件发送并发预算（M01）：同时在途的加密上传任务上限。
 const mediaSendConcurrency = 3;
+
+enum SystemCameraFailure { denied, restricted, unavailable, busy, failed }
+
+/// Safe feedback for a system camera failure. Native details may contain local
+/// paths; retain only the classified reason, never the platform error payload.
+final class SystemCameraException implements Exception {
+  const SystemCameraException(this.reason);
+
+  final SystemCameraFailure reason;
+
+  String get userMessage => switch (reason) {
+        SystemCameraFailure.denied => '相机权限未开启，请在系统设置中允许相机权限',
+        SystemCameraFailure.restricted => '相机使用受系统限制，请检查系统设置',
+        SystemCameraFailure.unavailable => '未找到可用的系统相机',
+        SystemCameraFailure.busy => '相机或相册正在使用，请完成后再试',
+        SystemCameraFailure.failed => '系统相机拍摄失败，请重试',
+      };
+
+  @override
+  String toString() => userMessage;
+}
 
 /// 附件超限异常（UI 呈现明确文案，不静默失败）。
 final class MediaTooLargeException implements Exception {
@@ -130,23 +151,31 @@ final class MediaMessageService implements RoomPickedMediaSender {
 
   /// 「拍摄」入口：拍摄到临时文件并返回路径（取消返回 null），
   /// 由调用方立即自动加密发送。
-  Future<String?> captureToFile() async {
-    final image = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: 2160,
-      imageQuality: 92,
-    );
-    if (image == null) return null;
-    return image.path;
-  }
+  Future<String?> captureToFile() => _capture(() => _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 2160,
+        imageQuality: 92,
+      ));
 
   /// 「拍摄」长按：调起**系统相机录像界面**（需求 2），
   /// 拍摄完成返回视频临时文件路径（取消返回 null）。
   /// 后续压缩/确认发送由调用方处理。
-  Future<String?> captureVideoToFile() async {
-    final video = await _imagePicker.pickVideo(source: ImageSource.camera);
-    if (video == null) return null;
-    return video.path;
+  Future<String?> captureVideoToFile() =>
+      _capture(() => _imagePicker.pickVideo(source: ImageSource.camera));
+
+  Future<String?> _capture(Future<XFile?> Function() pick) async {
+    try {
+      return (await pick())?.path;
+    } on PlatformException catch (error, stack) {
+      final reason = switch (error.code) {
+        'camera_access_denied' => SystemCameraFailure.denied,
+        'camera_access_restricted' => SystemCameraFailure.restricted,
+        'no_available_camera' => SystemCameraFailure.unavailable,
+        'already_active' => SystemCameraFailure.busy,
+        _ => SystemCameraFailure.failed,
+      };
+      Error.throwWithStackTrace(SystemCameraException(reason), stack);
+    }
   }
 
   /// 「拍摄」自动发送的暂存缩略图：优先解码 200px 小图先展示，

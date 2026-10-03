@@ -2050,8 +2050,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                         thumbnailWidth: thumbnail?.width,
                         thumbnailHeight: thumbnail?.height));
               }));
+    } on SystemCameraException catch (error) {
+      if (mounted &&
+          !_disposing &&
+          identical(widget.roomLease, matrix) &&
+          !matrix.canceled) {
+        _showMediaMessage(error.userMessage);
+      }
     } catch (_) {
-      if (mounted) _showMediaMessage('拍摄失败，请重试');
+      if (mounted &&
+          !_disposing &&
+          identical(widget.roomLease, matrix) &&
+          !matrix.canceled) {
+        _showMediaMessage('拍摄失败，请重试');
+      }
     } finally {
       await service.dispose();
     }
@@ -2760,15 +2772,37 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
         _showMediaMessage('正在发送');
       }
+    } on SystemCameraException catch (error) {
+      if (mounted &&
+          !_disposing &&
+          identical(widget.roomLease, matrix) &&
+          !matrix.canceled) {
+        _showMediaMessage(error.userMessage);
+      }
     } on GroupVideoTooLargeException catch (error) {
       videoTrace?.finish(result: PerformanceResult.rejected);
-      if (mounted && !_disposing) _showMediaMessage(error.toString());
+      if (mounted &&
+          !_disposing &&
+          identical(widget.roomLease, matrix) &&
+          !matrix.canceled) {
+        _showMediaMessage(error.toString());
+      }
     } on VideoCompressionException catch (error) {
       videoTrace?.finish(result: PerformanceResult.failed);
-      if (mounted && !_disposing) _showMediaMessage(error.toString());
+      if (mounted &&
+          !_disposing &&
+          identical(widget.roomLease, matrix) &&
+          !matrix.canceled) {
+        _showMediaMessage(error.toString());
+      }
     } catch (_) {
       videoTrace?.finish(result: PerformanceResult.failed);
-      if (mounted && !_disposing) _showMediaMessage('视频准备失败，请重试');
+      if (mounted &&
+          !_disposing &&
+          identical(widget.roomLease, matrix) &&
+          !matrix.canceled) {
+        _showMediaMessage('视频准备失败，请重试');
+      }
     } finally {
       if (!admitted && videoTrace != null && !videoTrace.isFinished) {
         videoTrace.finish(result: PerformanceResult.cancelled);

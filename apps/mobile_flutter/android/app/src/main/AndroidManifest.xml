@@ -150,11 +150,20 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- image_picker grants its FileProvider output URI to the activities
+             returned by queryIntentActivities. Android 11+ visibility must
+             include both system camera actions before photo/video launch. -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- 个推 SDK 包可见性（官方建议；唯一放开的可见性，不查询应用列表）。 -->
+        <!-- 个推 SDK 包可见性（官方建议；按动作查询，不查询应用列表）。 -->
         <intent>
             <action android:name="com.getui.sdk.action" />
         </intent>
