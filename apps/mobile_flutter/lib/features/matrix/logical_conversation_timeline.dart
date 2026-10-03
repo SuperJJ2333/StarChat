@@ -6,6 +6,7 @@ import 'incremental_timeline_merge.dart';
 
 import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
+import 'room_event_context_capability.dart';
 import 'room_timeline_controller.dart';
 import 'room_timeline_viewport.dart';
 
@@ -32,7 +33,8 @@ final class LogicalConversationTimelineCapability
         RoomEventSourceCapability,
         RoomWindowedTimelineSource,
         RoomNewestFirstTimelineSource,
-        RoomHistoryDateCapability {
+        RoomHistoryDateCapability,
+        RoomEventContextCapability {
   LogicalConversationTimelineCapability({
     required this.primaryRoomId,
     required RoomTimelineCapability primary,
@@ -49,6 +51,7 @@ final class LogicalConversationTimelineCapability
   final Map<String, RoomTimelineCapability> _sources;
   final void Function()? _onDispose;
   final Map<String, String> _eventSources = {};
+  final Map<String, String> _sourceHints = {};
   bool _sourceIndexReady = false;
   final _merger = IncrementalTimelineMerge<RoomMessageViewModel>(
     idOf: (event) => event.id,
@@ -58,10 +61,44 @@ final class LogicalConversationTimelineCapability
     },
   );
   bool _disposed = false;
-  int _dateGeneration = 0, _monthGeneration = 0;
+  int _dateGeneration = 0, _monthGeneration = 0, _eventGeneration = 0;
   Completer<void>? _dateCancellation, _monthCancellation;
   static const _queryBudget = Duration(seconds: 13);
   RoomTimelineCapability get _primary => _sources[primaryRoomId]!;
+
+  @override
+  bool get supportsEventContext => _sources.values.any((source) =>
+      source is RoomEventContextCapability &&
+      (source as RoomEventContextCapability).supportsEventContext);
+
+  @override
+  void cancelPendingEventLookup() {
+    _eventGeneration++;
+    for (final source
+        in _sources.values.whereType<RoomEventContextCapability>()) {
+      source.cancelPendingEventLookup();
+    }
+  }
+
+  @override
+  Future<bool> locateEvent(String eventId) async {
+    _checkActive();
+    cancelPendingEventLookup();
+    final generation = _eventGeneration;
+    final roomId = sourceRoomId(eventId) ?? primaryRoomId;
+    final source = _sources[roomId];
+    if (source is! RoomEventContextCapability ||
+        !(source as RoomEventContextCapability).supportsEventContext) {
+      return false;
+    }
+    final found =
+        await (source as RoomEventContextCapability).locateEvent(eventId);
+    if (_disposed || generation != _eventGeneration || !found) return false;
+    _eventSources[eventId] = roomId;
+    snapshot();
+    return selectAnchor(eventId) || !_windowEnabled;
+  }
+
   bool _windowEnabled = false;
   RoomTimelineViewport<RoomMessageViewModel>? _mergedWindow;
   RoomWindowedTimelineSource? get _singleWindow => _windowEnabled &&
@@ -182,6 +219,13 @@ final class LogicalConversationTimelineCapability
       throw StateError('Conflicting event source');
     }
     _eventSources[eventId] = roomId;
+    _sourceHints.remove(eventId);
+    _sourceHints[eventId] = roomId;
+    while (_sourceHints.length > 256) {
+      final oldest = _sourceHints.keys.first;
+      _sourceHints.remove(oldest);
+      _eventSources.remove(oldest);
+    }
   }
 
   void _checkActive() {
@@ -193,6 +237,9 @@ final class LogicalConversationTimelineCapability
     _checkActive();
     if (_singleWindow != null) {
       final rows = _primary.snapshot();
+      _eventSources
+        ..clear()
+        ..addAll(_sourceHints);
       for (final row in rows) {
         _eventSources[row.id] = primaryRoomId;
       }
@@ -208,6 +255,9 @@ final class LogicalConversationTimelineCapability
 
   List<RoomMessageViewModel> _mergedSnapshot() {
     _checkActive();
+    _eventSources
+      ..clear()
+      ..addAll(_sourceHints);
     final events = <String, RoomMessageViewModel>{};
     for (final entry in _sources.entries) {
       if (_windowEnabled && entry.value is RoomWindowedTimelineSource) {
@@ -534,6 +584,7 @@ final class LogicalConversationTimelineCapability
   @override
   void selectLatest() {
     _checkActive();
+    cancelPendingEventLookup();
     cancelPendingDateLookup();
     for (final source in _dates) {
       source.selectLatest();

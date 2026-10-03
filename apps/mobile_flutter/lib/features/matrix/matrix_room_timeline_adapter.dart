@@ -3,6 +3,7 @@ import '../../core/performance_trace.dart';
 
 import 'room_timeline_controller.dart';
 import 'room_history_date_capability.dart';
+import 'room_event_context_capability.dart';
 import 'room_timeline_viewport.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
@@ -82,12 +83,28 @@ final class MatrixRoomTimelineAdapter
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
+        RoomEventContextCapability,
         RoomMessageLookupSource,
         RoomWindowedTimelineSource,
         RoomNewestFirstTimelineSource {
   MatrixRoomTimelineAdapter(this._capability);
 
   final RoomTimelineCapability _capability;
+
+  @override
+  bool get supportsEventContext =>
+      _capability is RoomEventContextCapability &&
+      (_capability as RoomEventContextCapability).supportsEventContext;
+  @override
+  Future<bool> locateEvent(String eventId) => supportsEventContext
+      ? (_capability as RoomEventContextCapability).locateEvent(eventId)
+      : Future.value(false);
+  @override
+  void cancelPendingEventLookup() {
+    if (_capability is RoomEventContextCapability) {
+      (_capability as RoomEventContextCapability).cancelPendingEventLookup();
+    }
+  }
 
   @override
   List<RoomMessageViewModel> snapshot() {

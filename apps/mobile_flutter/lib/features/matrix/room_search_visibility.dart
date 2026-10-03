@@ -27,6 +27,8 @@ final class LocalSearchResultVisibility {
     _sources[row.eventId] = (roomId: sourceRoomId, timestamp: row.timestamp);
   }
 
+  String? sourceRoomId(String eventId) => _sources[eventId]?.roomId;
+
   bool isVisible(
     String eventId, {
     required bool Function(String roomId, String eventId, DateTime timestamp)

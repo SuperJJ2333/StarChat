@@ -5,8 +5,8 @@ import 'package:matrix/matrix.dart';
 enum LocalSearchEventEffect { none, append, invalidate }
 
 /// Classifies Matrix room updates for an in-progress local search. Ordinary
-/// heads can wait for user refresh; withdrawals and changes to old plaintext
-/// must revoke the visible results immediately.
+/// heads, hydration and newly decrypted rows can wait for user refresh;
+/// withdrawals and replacements revoke visible results immediately.
 final class LocalSearchEventPolicy {
   final Queue<String> _recentOrder = Queue<String>();
   final Set<String> _recentIds = <String>{};
@@ -19,7 +19,6 @@ final class LocalSearchEventPolicy {
       case EventUpdateType.inviteState:
         return LocalSearchEventEffect.none;
       case EventUpdateType.history:
-        return LocalSearchEventEffect.invalidate;
       case EventUpdateType.timeline:
       case EventUpdateType.decryptedTimelineQueue:
         break;
@@ -29,10 +28,12 @@ final class LocalSearchEventPolicy {
     if (id is! String || id.isEmpty || _isSecurityChange(event)) {
       return LocalSearchEventEffect.invalidate;
     }
-    if (update.type == EventUpdateType.decryptedTimelineQueue) {
-      return _recentIds.contains(id)
-          ? LocalSearchEventEffect.append
-          : LocalSearchEventEffect.invalidate;
+    // Pagination and decryption add accessible evidence to a frozen query.
+    // They do not withdraw existing plaintext. Check security changes first,
+    // including redacted rows arriving in a history page.
+    if (update.type == EventUpdateType.history ||
+        update.type == EventUpdateType.decryptedTimelineQueue) {
+      return LocalSearchEventEffect.append;
     }
     if (!_recentIds.add(id)) return LocalSearchEventEffect.invalidate;
     _recentOrder.addLast(id);
@@ -43,6 +44,8 @@ final class LocalSearchEventPolicy {
   }
 
   static bool _isSecurityChange(Map<String, dynamic> event) {
+    final unsigned = event['unsigned'];
+    if (unsigned is Map && unsigned['redacted_because'] != null) return true;
     if (event['type'] == 'm.room.redaction' || event['redacts'] != null) {
       return true;
     }

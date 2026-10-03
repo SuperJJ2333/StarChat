@@ -3577,8 +3577,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 (controller?.findMessage(eventId)?.isRecalled ?? false)) {
               return;
             }
+            final sourceRoomId = searchResultVisibility.sourceRoomId(eventId);
+            if (sourceRoomId == null) return;
             returnToRoom();
-            unawaited(_scrollToMessage(eventId));
+            unawaited(_scrollToMessage(eventId, sourceRoomId: sourceRoomId));
           },
           onJumpToDate: (date) {
             final location = resolvedDateLocation;
@@ -3656,17 +3658,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
-  Future<bool> _scrollToMessage(String eventId) async {
+  Future<bool> _scrollToMessage(String eventId, {String? sourceRoomId}) async {
     if (_locatingMessage) return false;
     _cancelPendingTimelineWindowShift();
     final generation = _timelineScrollGeneration;
     _locatingMessage = true;
     var found = false;
     try {
+      if (sourceRoomId != null) {
+        await widget.roomLease.hintLogicalEventSource(eventId, sourceRoomId);
+        if (!mounted || generation != _timelineScrollGeneration) return false;
+      }
       while (mounted) {
         if (await controller?.openAnchor(eventId) ?? false) {
           break;
         }
+        // A direct event lookup already resolved the server context. Do not
+        // turn an absent/hidden target into a year-long newest-first scan.
+        if (controller?.supportsEventContext ?? false) break;
         final oldest = widget.roomLease.oldestTimelineEventId;
         final token = widget.roomLease.historyToken;
         await _loadEarlier();
@@ -3680,7 +3689,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           break;
         }
       }
-      if (!mounted) return false;
+      if (!mounted || generation != _timelineScrollGeneration) return false;
       await WidgetsBinding.instance.endOfFrame;
       final all = controller?.messages ?? const <RoomMessageViewModel>[];
       final visible = hiddenEvents?.visibleItems(
@@ -3701,6 +3710,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             generation == _timelineScrollGeneration &&
             !_scrollInteractionActive(),
       );
+    } catch (_) {
+      // A denied or temporarily unavailable context remains retryable from
+      // the existing locator feedback; never start a sequential history scan.
+      found = false;
     } finally {
       _locatingMessage = false;
     }
@@ -5323,6 +5336,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _cancelPendingTimelineWindowShift({bool clearDirection = true}) {
+    controller?.cancelPendingEventLookup();
     _pendingEarlierWindow = null;
     if (clearDirection) _timelineScrollTowardEarlier = null;
     _timelineScrollGeneration++;

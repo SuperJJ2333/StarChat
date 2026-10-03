@@ -40,6 +40,7 @@ final class _AnchorRoom extends Room {
   _AnchorRoom(Client client, String roomId) : super(id: roomId, client: client);
   Completer<void>? timelineGate;
   final timelines = <_AnchorTimeline>[];
+  final contextRequests = <String>[];
 
   @override
   bool get isDirectChat => false;
@@ -54,19 +55,27 @@ final class _AnchorRoom extends Room {
     String? eventContextId,
   }) async {
     if (timelineGate != null) await timelineGate!.future;
-    final timeline = _AnchorTimeline(this);
+    if (eventContextId != null) contextRequests.add(eventContextId);
+    final timeline = _AnchorTimeline(this, eventContextId: eventContextId);
     timelines.add(timeline);
     return timeline;
   }
 }
 
 final class _AnchorTimeline extends Fake implements Timeline {
-  _AnchorTimeline(Room room)
+  _AnchorTimeline(Room room, {String? eventContextId})
       : events = [
-          for (var index = 1; index <= 3; index++)
+          for (var index = 1;
+              index <=
+                  (eventContextId == null
+                      ? 3
+                      : eventContextId == r'$cold-old'
+                          ? 1
+                          : 0);
+              index++)
             Event(
               room: room,
-              eventId: r'$m' '$index',
+              eventId: eventContextId ?? r'$m' '$index',
               senderId: '@peer:test',
               type: EventTypes.Message,
               originServerTs: DateTime.utc(2026, 9, 10 + index),
@@ -191,6 +200,17 @@ Future<void> _disposeRoom(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('cold old-event route opens context and highlights exact bubble',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late _AnchorClient client;
+    await _pumpRoom(tester, r'$cold-old',
+        roomId: '!cold-anchor:test', onClient: (value) => client = value);
+    expect(client.room.contextRequests, [r'$cold-old']);
+    expect(_pulseFor(tester, r'$cold-old'), isNotNull);
+    expect(tester.takeException(), isNull);
+    await _disposeRoom(tester);
+  });
   testWidgets(
       'composer panels retain timeline projection while viewport resizes',
       (tester) async {

@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
 import 'package:liuhetong_mobile/features/matrix/room_history_date_capability.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/room_event_context_capability.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 final class _DateTimeline extends Fake implements Timeline {
   @override
@@ -31,9 +34,13 @@ final class _DateTimeline extends Fake implements Timeline {
 }
 
 final class _DateClient extends Client {
-  _DateClient() : super('history-date-test');
+  _DateClient({http.Client? httpClient})
+      : super('history-date-test', httpClient: httpClient);
 
   late Room room;
+  DatabaseApi? localStore;
+  @override
+  DatabaseApi? get database => localStore ?? super.database;
   final timestampCalls =
       <(String roomId, int timestamp, Direction direction)>[];
   Completer<GetEventByTimestampResponse>? pendingTimestamp;
@@ -67,6 +74,7 @@ final class _DateRoom extends Room {
   final live = _DateTimeline();
   _DateTimeline? context;
   Completer<Timeline>? pendingContext;
+  Object? contextError;
   final contextEventIds = <String>[];
   void Function()? contextOnUpdate;
 
@@ -82,6 +90,7 @@ final class _DateRoom extends Room {
     if (eventContextId == null) return Future.value(live);
     contextEventIds.add(eventContextId);
     contextOnUpdate = onUpdate;
+    if (contextError != null) return Future.error(contextError!);
     final pending = pendingContext;
     if (pending != null) return pending.future;
     return Future.value(context!);
@@ -119,6 +128,272 @@ Future<(MatrixRoomLease, RoomHistoryDateCapability)> _openCapability(
 }
 
 void main() {
+  test(
+      'loaded window anchor revalidates a newly hidden target before selection',
+      () async {
+    final client = _DateClient();
+    final room = _DateRoom(client);
+    room.live.events.add(_message(room, r'$loaded', DateTime(2025)));
+    final (lease, capability) = await _openCapability(room);
+    final controller = RoomTimelineController(
+        MatrixRoomTimelineAdapter(capability as RoomTimelineCapability),
+        windowed: true);
+    controller.setHiddenFilter((id, _) => id == r'$loaded');
+    expect(await controller.openAnchor(r'$loaded'), isFalse);
+    expect(room.contextEventIds, isEmpty);
+    controller.dispose();
+    await lease.cancel();
+  });
+  test('year-old persisted event opens offline before remote context lookup',
+      () async {
+    sqfliteFfiInit();
+    final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final db = MatrixSdkDatabase(inMemoryDatabasePath,
+        database: raw, sqfliteFactory: databaseFactoryFfi);
+    await db.open();
+    var requests = 0;
+    final client = _DateClient(httpClient: MockClient((_) async {
+      requests++;
+      throw StateError('synthetic offline');
+    }))
+      ..localStore = db
+      ..homeserver = Uri.parse('https://matrix.invalid')
+      ..accessToken = 'synthetic-token';
+    final room = client.room = Room(id: '!offline:synthetic', client: client);
+    for (var i = 0; i < 40; i++) {
+      await db.storeEventUpdate(
+          EventUpdate(
+              roomID: room.id,
+              type: EventUpdateType.timeline,
+              content: {
+                'event_id': 'local-$i',
+                'sender': '@synthetic:test',
+                'type': EventTypes.Message,
+                'origin_server_ts':
+                    DateTime(2025, 9, 1 + i).millisecondsSinceEpoch,
+                'content': {'msgtype': MessageTypes.Text, 'body': 'synthetic'}
+              }),
+          client);
+    }
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://matrix.invalid'),
+        readContinuityMetadata: _continuity);
+    final lease = await owner.openRoomLease(room.id);
+    final capability = await lease.openRoomTimeline(onUpdate: () {});
+    final controller = RoomTimelineController(
+        MatrixRoomTimelineAdapter(capability),
+        windowed: true);
+    expect(controller.indexOf('local-0'), isNull);
+    expect(await controller.openAnchor('local-0'), isTrue);
+    expect(controller.messages.single.id, 'local-0');
+    expect(requests, 0);
+    expect(controller.newestMessage?.id, 'local-39');
+    await controller.showLatest();
+    expect(controller.messages.last.id, 'local-39');
+    controller.dispose();
+    await lease.cancel();
+    await db.close();
+    await client.dispose();
+  });
+  test('old explicit event opens SDK context without scanning recent history',
+      () async {
+    final client = _DateClient();
+    final room = _DateRoom(client);
+    final old = _message(room, r'$year-old', DateTime(2025, 9, 1));
+    room.context = _DateTimeline()..events.add(old);
+    final (lease, capability) = await _openCapability(room);
+    final controller = RoomTimelineController(
+        MatrixRoomTimelineAdapter(capability as RoomTimelineCapability),
+        windowed: true);
+    await controller.refresh();
+    expect(await controller.openAnchor(old.eventId), isTrue);
+    expect(controller.indexOf(old.eventId), isNotNull);
+    expect(room.contextEventIds, [old.eventId]);
+    expect(client.timestampCalls, isEmpty);
+    controller.dispose();
+    await lease.cancel();
+  });
+
+  test(
+      'explicit anchor uses the real SDK context endpoint and retains live tail',
+      () async {
+    final paths = <String>[];
+    final client = _DateClient(httpClient: MockClient((request) async {
+      paths.add(request.url.path);
+      expect(request.url.path, contains('/context/'));
+      return http.Response(
+          r'{"start":"older","end":"","event":{"event_id":"$remote-old","type":"m.room.message","sender":"@synthetic:test","origin_server_ts":1,"content":{"msgtype":"m.text","body":"synthetic"}},"events_before":[],"events_after":[]}',
+          200);
+    }));
+    client.homeserver = Uri.parse('https://matrix.invalid');
+    client.accessToken = 'synthetic-token';
+    final room =
+        client.room = Room(id: '!real-context:synthetic', client: client);
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: client.homeserver!, readContinuityMetadata: _continuity);
+    final lease = await owner.openRoomLease(room.id);
+    final capability = await lease.openRoomTimeline(onUpdate: () {});
+    final controller = RoomTimelineController(
+        MatrixRoomTimelineAdapter(capability),
+        windowed: true);
+    expect(await controller.openAnchor(r'$remote-old'), isTrue);
+    expect(controller.messages.single.id, r'$remote-old');
+    expect(paths, hasLength(1));
+    await controller.showLatest();
+    expect(controller.messages, isEmpty);
+    controller.dispose();
+    await lease.cancel();
+    await client.dispose();
+  });
+
+  test(
+      'canceled direct context returns promptly and releases a late SDK timeline',
+      () async {
+    final client = _DateClient();
+    final room = _DateRoom(client)..pendingContext = Completer<Timeline>();
+    final (lease, capability) = await _openCapability(room);
+    final eventContext = capability as RoomEventContextCapability;
+    final locating = eventContext.locateEvent(r'$late');
+    await Future<void>.delayed(Duration.zero);
+    eventContext.cancelPendingEventLookup();
+    expect(await locating.timeout(const Duration(milliseconds: 100)), isFalse);
+    final late = _DateTimeline()
+      ..events.add(_message(room, r'$late', DateTime(2025)));
+    room.pendingContext!.complete(late);
+    await Future<void>.delayed(Duration.zero);
+    expect(late.subscriptionCancels, 1);
+    expect(capability.isViewingHistoryContext, isFalse);
+    await lease.cancel();
+  });
+
+  testWidgets(
+      'context timeout releases late SDK subscription and leaves latest intact',
+      (tester) async {
+    final client = _DateClient();
+    final room = _DateRoom(client)..pendingContext = Completer<Timeline>();
+    final (lease, capability) = await _openCapability(room);
+    final expected = expectLater(
+        (capability as RoomEventContextCapability).locateEvent(r'$late'),
+        throwsA(isA<TimeoutException>()));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 13));
+    await expected;
+    final late = _DateTimeline()
+      ..events.add(_message(room, r'$late', DateTime(2025)));
+    room.pendingContext!.complete(late);
+    await tester.pump();
+    expect(late.subscriptionCancels, 1);
+    expect(capability.isViewingHistoryContext, isFalse);
+    await lease.cancel();
+  });
+
+  test('visibility is checked again after the context network wait', () async {
+    final client = _DateClient();
+    final room = _DateRoom(client)..pendingContext = Completer<Timeline>();
+    final (lease, capability) = await _openCapability(room);
+    final source = capability as RoomWindowedTimelineSource;
+    source.enableWindow();
+    var hidden = false;
+    source.setHiddenFilter((_, __) => hidden);
+    final locating =
+        (capability as RoomEventContextCapability).locateEvent(r'$target');
+    await Future<void>.delayed(Duration.zero);
+    hidden = true;
+    final late = _DateTimeline()
+      ..events.add(_message(room, r'$target', DateTime(2025)));
+    room.pendingContext!.complete(late);
+    expect(await locating, isFalse);
+    expect(late.subscriptionCancels, 1);
+    expect(capability.isViewingHistoryContext, isFalse);
+    await lease.cancel();
+  });
+
+  test(
+      'absent contexts return false; denied and transient failures allow a later retry',
+      () async {
+    for (final code in [
+      'M_NOT_FOUND',
+      'M_FORBIDDEN',
+      'M_UNAUTHORIZED',
+      'M_UNKNOWN'
+    ]) {
+      final client = _DateClient();
+      final room = _DateRoom(client)
+        ..contextError = MatrixException(http.Response(
+            '{"errcode":"$code","error":"synthetic"}',
+            code == 'M_NOT_FOUND' ? 404 : 403));
+      final (lease, capability) = await _openCapability(room);
+      final events = capability as RoomEventContextCapability;
+      if (code == 'M_NOT_FOUND') {
+        expect(await events.locateEvent(r'$target'), isFalse);
+      } else {
+        await expectLater(
+            events.locateEvent(r'$target'), throwsA(isA<MatrixException>()));
+      }
+      expect(capability.isViewingHistoryContext, isFalse);
+      room.contextError = null;
+      room.context = _DateTimeline()
+        ..events.add(_message(room, r'$target', DateTime(2025)));
+      expect(await events.locateEvent(r'$target'), isTrue);
+      await lease.cancel();
+    }
+  });
+
+  test(
+      'revoked direct context cannot publish late events or retain subscriptions',
+      () async {
+    final client = _DateClient();
+    final room = _DateRoom(client)..pendingContext = Completer<Timeline>();
+    final (lease, capability) = await _openCapability(room);
+    final locating =
+        (capability as RoomEventContextCapability).locateEvent(r'$late');
+    await Future<void>.delayed(Duration.zero);
+    await lease.cancel();
+    expect(await locating.timeout(const Duration(milliseconds: 100)), isFalse);
+    final late = _DateTimeline()
+      ..events.add(_message(room, r'$late', DateTime(2025)));
+    room.pendingContext!.complete(late);
+    await Future<void>.delayed(Duration.zero);
+    expect(late.subscriptionCancels, 1);
+  });
+
+  test('context rejects wrong event, recall, encrypted and hidden targets',
+      () async {
+    for (final variant in ['wrong', 'recall', 'encrypted', 'hidden']) {
+      final client = _DateClient();
+      final room = _DateRoom(client);
+      final event = _message(
+          room, variant == 'wrong' ? r'$other' : r'$target', DateTime(2025));
+      if (variant == 'recall') {
+        event.unsigned = {
+          'redacted_because': {
+            'event_id': 'recall',
+            'type': EventTypes.Redaction,
+            'sender': '@synthetic:test',
+            'origin_server_ts': 1,
+            'content': <String, dynamic>{},
+          }
+        };
+      }
+      if (variant == 'encrypted') event.type = EventTypes.Encrypted;
+      final context = room.context = _DateTimeline()..events.add(event);
+      final (lease, capability) = await _openCapability(room);
+      final source = capability as RoomWindowedTimelineSource;
+      source.enableWindow();
+      if (variant == 'hidden') {
+        source.setHiddenFilter((id, _) => id == r'$target');
+      }
+      expect(
+          await (capability as RoomEventContextCapability)
+              .locateEvent(r'$target'),
+          isFalse,
+          reason: variant);
+      expect(capability.isViewingHistoryContext, isFalse);
+      expect(context.subscriptionCancels, 1);
+      await lease.cancel();
+    }
+  });
+
   test('date cancellation does not wait for timestamp network completion',
       () async {
     final client = _DateClient()

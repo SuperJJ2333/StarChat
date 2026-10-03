@@ -71,6 +71,7 @@ import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
+import 'room_event_context_capability.dart';
 import 'room_history_day_index.dart';
 import 'local_room_history_snapshot.dart';
 import 'local_search_event_policy.dart';
@@ -2869,6 +2870,7 @@ final class _SdkRoomTimelineCapability
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
+        RoomEventContextCapability,
         RoomMessageLookupSource,
         RoomWindowedTimelineSource,
         RoomNewestFirstTimelineSource {
@@ -3729,6 +3731,137 @@ final class _SdkRoomTimelineCapability
 
   @override
   bool get isViewingHistoryContext => _contextTimeline != null;
+
+  @override
+  bool get supportsEventContext => true;
+
+  @override
+  void cancelPendingEventLookup() => cancelPendingDateLookup();
+
+  @override
+  Future<bool> locateEvent(String eventId) async {
+    _ensureActive();
+    if (eventId.isEmpty) return false;
+    cancelPendingDateLookup();
+    final generation = _contextGeneration;
+    final cancellation = _dateCancellation = Completer<void>();
+    try {
+      return await Future.any<bool>([
+        _locateEvent(eventId, generation),
+        cancellation.future.then((_) => false),
+      ]).timeout(const Duration(seconds: 13), onTimeout: () {
+        if (generation == _contextGeneration) cancelPendingEventLookup();
+        throw TimeoutException('Matrix event context lookup timed out');
+      });
+    } finally {
+      if (identical(_dateCancellation, cancellation)) _dateCancellation = null;
+    }
+  }
+
+  bool _visibleAnchor(Event event) {
+    final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+    return !event.redacted && _visibleDateEvent(event, hidden);
+  }
+
+  Future<bool> _locateEvent(String eventId, int generation) async {
+    final cancellation = _dateCancellation!.future;
+    final loaded = eventById(eventId);
+    if (loaded != null) {
+      if (!_visibleAnchor(loaded)) return false;
+      if (_contextTimeline != null &&
+          _liveTimeline.events.any((event) => event.eventId == eventId)) {
+        _contextTimeline?.cancelSubscriptions();
+        _contextTimeline = null;
+        _messageCache.clear();
+      }
+      _refreshAnchorWindow(eventId);
+      return true;
+    }
+    return _withOperation(() async {
+      if (_disposed || generation != _contextGeneration) return false;
+      final room = _lease._activeRoom;
+      final local = await Future.any<Event?>([
+        room.client.database?.getEventById(eventId, room) ?? Future.value(null),
+        cancellation.then((_) => null),
+      ]).timeout(const Duration(seconds: 5));
+      if (_disposed || generation != _contextGeneration) return false;
+      _ensureActive();
+      if (local != null) {
+        if (local.room.id != room.id || !_visibleAnchor(local)) return false;
+        // Offline minimum: one persisted anchor, never invented server tokens
+        // or a claim that neighboring history is fully covered.
+        late final Timeline localContext;
+        localContext = Timeline(
+            room: room,
+            chunk: TimelineChunk(events: [local], isFragment: true),
+            onUpdate: () {
+              if (!_disposed && identical(_contextTimeline, localContext)) {
+                _onUpdate();
+              }
+            });
+        _contextTimeline?.cancelSubscriptions();
+        _contextTimeline = localContext;
+        _messageCache.clear();
+        _refreshAnchorWindow(eventId);
+        _onUpdate();
+        return true;
+      }
+      var adopted = false;
+      Timeline? resolved;
+      // Race cancellation as well as the observation timeout. A late SDK
+      // context still owns subscriptions and must be explicitly released.
+      final future = _lease._activeRoom.getTimeline(
+          eventContextId: eventId,
+          onUpdate: () {
+            if (adopted &&
+                !_disposed &&
+                identical(_contextTimeline, resolved)) {
+              _onUpdate();
+            }
+          });
+      var abandoned = false;
+      unawaited(future.then((late) {
+        if (abandoned) late.cancelSubscriptions();
+      }).catchError((_) {}));
+      try {
+        resolved = await Future.any<Timeline?>([
+          future,
+          cancellation.then((_) => null),
+        ]).timeout(const Duration(seconds: 12));
+        if (resolved == null) {
+          abandoned = true;
+          return false;
+        }
+        if (_disposed || generation != _contextGeneration) return false;
+        _ensureActive();
+        final anchor = resolved.events
+            .where((event) => event.eventId == eventId)
+            .firstOrNull;
+        if (anchor == null || !_visibleAnchor(anchor)) return false;
+        _contextTimeline?.cancelSubscriptions();
+        _contextTimeline = resolved;
+        adopted = true;
+        _messageCache.clear();
+        _refreshAnchorWindow(eventId);
+        _onUpdate();
+        return true;
+      } on MatrixException catch (error) {
+        if (error.errcode == 'M_NOT_FOUND') return false;
+        rethrow;
+      } finally {
+        if (!adopted) {
+          abandoned = true;
+          resolved?.cancelSubscriptions();
+        }
+      }
+    });
+  }
+
+  void _refreshAnchorWindow(String eventId) {
+    if (_viewport == null) return;
+    _refreshWindowSource();
+    _viewport!.anchor(eventId);
+  }
 
   @override
   void cancelPendingDateLookup() {

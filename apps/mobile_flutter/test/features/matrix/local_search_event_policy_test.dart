@@ -32,7 +32,8 @@ void main() {
         LocalSearchEventEffect.none);
   });
 
-  test('withdrawal, replacement, old decryption and unknown updates invalidate',
+  test(
+      'withdrawal, replacement and unknown updates invalidate; history progresses',
       () {
     final policy = LocalSearchEventPolicy();
     expect(
@@ -45,10 +46,10 @@ void main() {
         })),
         LocalSearchEventEffect.invalidate);
     expect(policy.classify(update(EventUpdateType.history, 'older')),
-        LocalSearchEventEffect.invalidate);
+        LocalSearchEventEffect.append);
     expect(
         policy.classify(update(EventUpdateType.decryptedTimelineQueue, 'old')),
-        LocalSearchEventEffect.invalidate);
+        LocalSearchEventEffect.append);
     expect(policy.classify(update(EventUpdateType.timeline, '')),
         LocalSearchEventEffect.invalidate);
     expect(policy.classify(update(EventUpdateType.timeline, 'new')),
@@ -58,6 +59,27 @@ void main() {
     policy.clear();
     expect(
         policy.classify(update(EventUpdateType.decryptedTimelineQueue, 'new')),
-        LocalSearchEventEffect.invalidate);
+        LocalSearchEventEffect.append);
+  });
+
+  test('historical redacted rows revoke even during pagination or decryption',
+      () {
+    for (final type in [
+      EventUpdateType.history,
+      EventUpdateType.decryptedTimelineQueue
+    ]) {
+      final policy = LocalSearchEventPolicy();
+      expect(
+          policy.classify(
+              EventUpdate(roomID: '!synthetic:test', type: type, content: {
+            'event_id': 'redacted',
+            'type': EventTypes.Message,
+            'unsigned': {
+              'redacted_because': {'event_id': 'recall'}
+            },
+            'content': <String, dynamic>{}
+          })),
+          LocalSearchEventEffect.invalidate);
+    }
   });
 }

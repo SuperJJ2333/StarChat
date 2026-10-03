@@ -5,6 +5,7 @@ import 'package:liuhetong_mobile/features/matrix/logical_conversation_timeline.d
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/room_history_date_capability.dart';
+import 'package:liuhetong_mobile/features/matrix/room_event_context_capability.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_viewport.dart';
 
 class WindowSource extends Source
@@ -158,6 +159,24 @@ class VisibleSource extends Source implements RoomVisibleReadCapability {
   }
 }
 
+class EventSource extends Source implements RoomEventContextCapability {
+  EventSource() : super([]);
+  final contexts = <String>[];
+  @override
+  bool get supportsEventContext => true;
+  @override
+  Future<bool> locateEvent(String id) async {
+    contexts.add(id);
+    messages
+      ..clear()
+      ..add(message(id, 0));
+    return true;
+  }
+
+  @override
+  void cancelPendingEventLookup() {}
+}
+
 class DateSource extends Source implements RoomHistoryDateCapability {
   DateSource(super.messages, this.monthDays);
   RoomHistoryMonthDays monthDays;
@@ -212,6 +231,38 @@ class DeferredDateSource extends DateSource {
 }
 
 void main() {
+  test(
+      'explicit context routes cold hint to old room and publishes exact anchor',
+      () async {
+    final primary = EventSource();
+    final old = EventSource();
+    final logical = LogicalConversationTimelineCapability(
+        primaryRoomId: 'primary', primary: primary, sources: {'old': old});
+    final controller = RoomTimelineController(
+        MatrixRoomTimelineAdapter(logical),
+        windowed: true);
+    logical.hintSource('cold-old', 'old');
+    expect(await controller.openAnchor('cold-old'), isTrue);
+    expect(controller.messages.single.id, 'cold-old');
+    expect(old.contexts, ['cold-old']);
+    expect(primary.contexts, isEmpty);
+    expect(old.pages + primary.pages, 0);
+    expect(() => logical.hintSource('foreign', 'unknown'), throwsStateError);
+    controller.dispose();
+  });
+
+  test(
+      'replaced context index releases departed events rather than growing forever',
+      () async {
+    final primary = EventSource();
+    final logical = LogicalConversationTimelineCapability(
+        primaryRoomId: 'primary', primary: primary, sources: {});
+    await logical.locateEvent('first');
+    await logical.locateEvent('second');
+    expect(logical.sourceRoomId('first'), isNull);
+    expect(logical.sourceRoomId('second'), 'primary');
+    logical.dispose();
+  });
   test('single source logical room projects bounded viewport of 10000 events',
       () {
     final primary = WindowSource();

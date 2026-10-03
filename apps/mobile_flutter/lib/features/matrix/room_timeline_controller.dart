@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'room_history_date_capability.dart';
+import 'room_event_context_capability.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import '../../core/network_state_manager.dart';
@@ -591,12 +592,42 @@ final class RoomTimelineController extends ChangeNotifier {
   void setHiddenFilter(bool Function(String id, DateTime? timestamp)? hidden) =>
       _windowSource?.setHiddenFilter(hidden);
   Future<bool> openAnchor(String id) async {
-    final found = _windowSource?.selectAnchor(id) ?? indexOf(id) != null;
+    if (_disposed) return false;
+    final generation = _eventLookupGeneration;
+    bool found;
+    if (supportsEventContext) {
+      // Even a loaded row may have just been hidden/recalled. The source
+      // revalidates visibility before any window selection.
+      found = await (adapter as RoomEventContextCapability).locateEvent(id);
+      if (_disposed || generation != _eventLookupGeneration) return false;
+      if (found && _windowSource != null) {
+        found = _windowSource!.selectAnchor(id);
+        if (!found) {
+          // Legacy capability wrappers may need to adopt their source rows
+          // into a fallback viewport. Publish only once after anchoring.
+          adapter.snapshot();
+          found = _windowSource!.selectAnchor(id);
+        }
+      }
+    } else {
+      found = _windowSource?.selectAnchor(id) ?? indexOf(id) != null;
+    }
     if (found) {
       _echoRevision++;
       await refresh();
     }
-    return found;
+    return found && indexOf(id) != null;
+  }
+
+  bool get supportsEventContext =>
+      adapter is RoomEventContextCapability &&
+      (adapter as RoomEventContextCapability).supportsEventContext;
+
+  void cancelPendingEventLookup() {
+    _eventLookupGeneration++;
+    if (adapter is RoomEventContextCapability) {
+      (adapter as RoomEventContextCapability).cancelPendingEventLookup();
+    }
   }
 
   Future<void> showLatest() async {
@@ -605,6 +636,7 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   void _restoreLatest() {
+    cancelPendingEventLookup();
     _timelineOperationGeneration++;
     _activeHistoryRequest = null;
     _historyLoadingOwner = null;
@@ -1043,6 +1075,7 @@ final class RoomTimelineController extends ChangeNotifier {
   bool get historyLoading => _historyLoadingOwner != null;
   bool historyExhausted = false;
   int _timelineOperationGeneration = 0;
+  int _eventLookupGeneration = 0;
 
   int? _refreshFrame;
   Timer? _refreshDeadline;
