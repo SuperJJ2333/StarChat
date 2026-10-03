@@ -195,4 +195,45 @@ class NativeMessageNotificationsTest {
             assertNull(owner.takeTap())
         }
     }
+    @Test fun newAccountStartsItsOwnRevisionAfterHighRevisionRevocation() {
+        val oldScope = scope
+        owner.invalidate(scope, 40)
+        owner.revoke()
+        scope = owner.bind("d".repeat(64))
+        val snapshot = mapOf("scope" to scope, "revision" to 1L,
+            "enabled" to true, "sound" to true, "vibration" to true,
+            "dnd" to false, "start" to 0, "end" to 0, "rooms" to mapOf(room to false))
+        assertTrue(owner.install(snapshot))
+        assertFalse(owner.install(snapshot + ("scope" to oldScope) + ("revision" to 100L)))
+        receive()
+        assertEquals(1, notifications().size)
+    }
+    @Test fun expiredForegroundClaimCannotPresentAfterNativeTakeover() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        app.openOrCreateDatabase("native_messages.db",0,null).use {
+            it.execSQL("UPDATE claims SET at=?",arrayOf(System.currentTimeMillis()-6000))
+        }
+        owner.foreground = false
+        owner.retryPending()
+        assertEquals(1, notifications().size)
+        owner.foreground = true
+        assertFalse(owner.beginForeground(scope,event))
+    }
+    @Test fun activeForegroundPresentationKeepsOwnershipAndAbandonmentRestoresFallback() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        assertTrue(owner.beginForeground(scope,event))
+        app.openOrCreateDatabase("native_messages.db",0,null).use {
+            it.execSQL("UPDATE claims SET at=?",arrayOf(System.currentTimeMillis()-6000))
+        }
+        owner.foreground = false
+        owner.retryPending()
+        assertTrue(notifications().isEmpty())
+        owner.finishForeground(scope,event,false)
+        assertEquals(1, notifications().size)
+        owner.finishForeground(scope,event,true)
+        owner.retryPending()
+        assertEquals(1, notifications().size)
+    }
 }

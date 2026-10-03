@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
+import 'package:liuhetong_mobile/features/push/native_message_policy.dart';
 import 'package:liuhetong_mobile/app_home.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/app_connection_status.dart';
@@ -78,6 +80,83 @@ final class _OnlineTransport implements MatrixTransportMonitor {
 }
 
 void main() {
+  testWidgets('native revoke failure still drains AppHome resources',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final pluginChannels = <String>{
+      'native_call',
+      'chatflow/call',
+      'FlutterWebRTC.Event',
+      'xyz.luan/audioplayers.global/events',
+      'xyz.luan/audioplayers.global',
+      'xyz.luan/audioplayers',
+    };
+    for (final name in pluginChannels.toList()) {
+      messenger.setMockMethodCallHandler(MethodChannel(name), (call) async {
+        if (name == 'xyz.luan/audioplayers' && call.method == 'create') {
+          final eventChannel =
+              'xyz.luan/audioplayers/events/${(call.arguments as Map)['playerId']}';
+          pluginChannels.add(eventChannel);
+          messenger.setMockMethodCallHandler(
+              MethodChannel(eventChannel), (_) async => null);
+        }
+        return null;
+      });
+    }
+    addTearDown(() {
+      for (final name in pluginChannels) {
+        messenger.setMockMethodCallHandler(MethodChannel(name), null);
+      }
+      messenger.setMockMethodCallHandler(NativeMessagePolicy.channel, null);
+    });
+    var revokeCalls = 0;
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel,
+        (call) async {
+      if (call.method == 'revoke') {
+        revokeCalls++;
+        throw PlatformException(code: 'NATIVE_MESSAGE_STATE');
+      }
+      return true;
+    });
+    final matrix = MatrixSdkE2eeClient(Client('app-home-revoke-failure'),
+        homeserver: Uri.parse('https://matrix.test'));
+    final target = _WatchdogTarget();
+    await tester.pumpWidget(CupertinoApp(
+        home: AppHome(
+            api: BusinessApiClient(
+                baseUri: Uri.parse('https://business.test'),
+                sessionStore: SecureSessionStore()),
+            matrix: matrix,
+            onLogout: () async {},
+            themeController: ThemeController(store: _ThemeStore()),
+            syncWatchdogFactory: (_) => MatrixSyncWatchdog(target: target))));
+    await tester.pump();
+    await tester.pump();
+    expect(target._statuses.hasListener, true);
+    final dynamic homeState = tester.state(find.byType(AppHome));
+    final MatrixManagedResource resource = homeState.matrixResources;
+    var closed = false;
+    final closing = resource.cancel().then((_) => closed = true);
+    for (var i = 0; i < 12 && !closed; i++) {
+      await tester.pump();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    }
+    expect(closed, true,
+        reason: 'cleanup drains both Flutter and root-zone futures');
+    await closing;
+    expect(revokeCalls, 1);
+    expect(NativeMessagePolicy.shared.registration, isNull);
+    expect(target._statuses.hasListener, false,
+        reason:
+            'revoke errors must not skip watchdog/call/push/notification cleanup');
+    await resource.cancel();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await target._statuses.close();
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel, null);
+  });
   test('suspend drains delayed initialization before next session handler',
       () async {
     final scope = AppHomeStartupScope();
@@ -146,7 +225,8 @@ void main() {
     expect(matrix.debugManagedResourceCount, 0);
   });
 
-  testWidgets('warm Matrix setup renders the shell instead of a blocking spinner',
+  testWidgets(
+      'warm Matrix setup renders the shell instead of a blocking spinner',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final matrix = MatrixSdkE2eeClient(

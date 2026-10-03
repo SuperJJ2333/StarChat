@@ -204,6 +204,20 @@ final class NativeMessagePolicy {
         'complete', {'scope': _scope, 'event_key': key(eventId)});
   }
 
+  Future<bool> beginForeground(String eventId) async {
+    if (!_ready || _scope == null) return false;
+    final epoch = _epoch;
+    final ok = await channel.invokeMethod<bool>(
+        'beginForeground', {'scope': _scope, 'event_key': key(eventId)});
+    return epoch == _epoch && _ready && ok == true;
+  }
+
+  Future<void> finishForeground(String eventId, {required bool handled}) async {
+    if (!_ready || _scope == null) return;
+    await channel.invokeMethod<void>('finishForeground',
+        {'scope': _scope, 'event_key': key(eventId), 'handled': handled});
+  }
+
   Future<void> suspend() async {
     _ready = false;
     if (_scope != null) {

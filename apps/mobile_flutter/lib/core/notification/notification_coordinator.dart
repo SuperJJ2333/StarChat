@@ -243,8 +243,7 @@ final class NotificationCoordinator {
       if (decision.updateBadge) await refreshLauncherBadge();
       return;
     }
-    await _execute(decision, event);
-    if (nativeClaim == true) await nativePolicy?.complete(event.eventId);
+    await _execute(decision, event, nativeClaimed: nativeClaim == true);
   }
 
   /// 策略结果诊断：说明事件是否被抑制、被什么抑制（不含正文）。
@@ -291,56 +290,84 @@ final class NotificationCoordinator {
 
   Future<void> _execute(
     NotificationDecision decision,
-    NotificationEvent event,
-  ) async {
+    NotificationEvent event, {
+    bool nativeClaimed = false,
+  }) async {
+    final epoch = _epoch;
     final roomRevision = _roomRevisions[event.conversationId] ?? 0;
+    bool foregroundCurrent() =>
+        _isCurrent(epoch) &&
+        appState.isForeground &&
+        !appState.callActive &&
+        !readState.isRoomOpen(event.conversationId) &&
+        (_roomRevisions[event.conversationId] ?? 0) == roomRevision;
     if (decision.updateBadge) {
       await refreshLauncherBadge();
     }
-    if (decision.showInAppBanner) {
-      unawaited(usageRecorder.count(NotificationUsageEvents.displayed));
-      banners.present(
-        InAppBannerItem(
-          id: event.eventId,
-          conversationId: event.conversationId,
-          title: decision.previewTitle,
-          body: decision.previewBody,
-          avatarUrl: null,
-          timestamp: event.timestamp,
-        ),
-      );
+    if (nativeClaimed &&
+        (!foregroundCurrent() ||
+            !await nativePolicy!.beginForeground(event.eventId))) {
+      return;
     }
-    if (decision.playSound && decision.soundType != null) {
-      // PRD §41：声音冷却（同一会话 2s / 全局 600ms）。
-      if (cooldownGate.shouldPlaySound(event.conversationId)) {
-        await soundService.play(decision.soundType!);
-      }
-    }
-    if (decision.haptic != HapticFeedbackKind.none) {
-      await hapticService.trigger(decision.haptic);
-    }
-    if (decision.showSystemNotification) {
-      unawaited(usageRecorder.count(NotificationUsageEvents.displayed));
-      final unreadCount = await _unreadForRoom(event.conversationId);
-      await _writeRoom(event.conversationId, (epoch) async {
-        if (readState.isRoomOpen(event.conversationId) ||
-            (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
-          return;
-        }
-        await systemNotifications.showConversationMessage(
-          notificationId: notificationIdForConversation(event.conversationId),
-          title: decision.previewTitle,
-          body: decision.previewBody,
-          channel: decision.systemChannel,
-          roomIdPayload: event.conversationId,
-          avatarUrl: event.avatarUrl,
-          unreadCount: unreadCount,
+    var handled = !decision.showInAppBanner &&
+        !decision.playSound &&
+        decision.haptic == HapticFeedbackKind.none &&
+        !decision.showSystemNotification;
+    try {
+      if (decision.showInAppBanner && foregroundCurrent()) {
+        unawaited(usageRecorder.count(NotificationUsageEvents.displayed));
+        banners.present(
+          InAppBannerItem(
+            id: event.eventId,
+            conversationId: event.conversationId,
+            title: decision.previewTitle,
+            body: decision.previewBody,
+            avatarUrl: null,
+            timestamp: event.timestamp,
+          ),
         );
-        if (readState.isRoomOpen(event.conversationId) ||
-            (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
-          await _cancelRoom(event.conversationId, epoch);
+        handled = true;
+      }
+      if (decision.playSound &&
+          decision.soundType != null &&
+          foregroundCurrent()) {
+        // PRD §41：声音冷却（同一会话 2s / 全局 600ms）。
+        if (cooldownGate.shouldPlaySound(event.conversationId)) {
+          await soundService.play(decision.soundType!);
+          handled = true;
         }
-      });
+      }
+      if (decision.haptic != HapticFeedbackKind.none && foregroundCurrent()) {
+        await hapticService.trigger(decision.haptic);
+        handled = true;
+      }
+      if (decision.showSystemNotification) {
+        unawaited(usageRecorder.count(NotificationUsageEvents.displayed));
+        final unreadCount = await _unreadForRoom(event.conversationId);
+        await _writeRoom(event.conversationId, (epoch) async {
+          if (readState.isRoomOpen(event.conversationId) ||
+              (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
+            return;
+          }
+          await systemNotifications.showConversationMessage(
+            notificationId: notificationIdForConversation(event.conversationId),
+            title: decision.previewTitle,
+            body: decision.previewBody,
+            channel: decision.systemChannel,
+            roomIdPayload: event.conversationId,
+            avatarUrl: event.avatarUrl,
+            unreadCount: unreadCount,
+          );
+          if (readState.isRoomOpen(event.conversationId) ||
+              (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
+            await _cancelRoom(event.conversationId, epoch);
+          }
+        });
+      }
+    } finally {
+      if (nativeClaimed) {
+        await nativePolicy!.finishForeground(event.eventId, handled: handled);
+      }
     }
   }
 

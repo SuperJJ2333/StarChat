@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/push/native_message_policy.dart';
 import 'package:liuhetong_mobile/core/notification/app_state_manager.dart';
 import 'package:liuhetong_mobile/core/notification/badge_service.dart';
 import 'package:liuhetong_mobile/core/notification/foreground_sound_service.dart';
@@ -186,6 +187,7 @@ NotificationCoordinator _buildCoordinator({
   required AppStateManager appState,
   InAppBannerController? banners,
   SoundCooldownGate? cooldownGate,
+  NativeMessagePolicy? nativePolicy,
 }) =>
     NotificationCoordinator(
       preferenceStore: prefs,
@@ -198,6 +200,7 @@ NotificationCoordinator _buildCoordinator({
       eventSource: source,
       unreadSource: unread,
       cooldownGate: cooldownGate,
+      nativePolicy: nativePolicy,
     );
 
 /// 等待广播流事件与未 await 的 handleEvent 微任务完成。
@@ -230,6 +233,80 @@ Future<void> _disposeWidgetCoordinator(
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  for (final takeover in [true, false]) {
+    test(
+        'delayed foreground badge respects native ownership takeover=$takeover',
+        () async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      var nativeDisplayed = false;
+      var claimActive = false;
+      messenger.setMockMethodCallHandler(NativeMessagePolicy.channel,
+          (call) async {
+        if (call.method == 'bind') return {'scope': 'a' * 64, 'revision': 0};
+        if (call.method == 'claim') {
+          claimActive = true;
+          return true;
+        }
+        if (call.method == 'beginForeground') {
+          if (!claimActive || nativeDisplayed) return false;
+          claimActive = false;
+          return true;
+        }
+        return true;
+      });
+      final policy = NativeMessagePolicy(enabled: true);
+      await policy.prepare('account', const NotificationPreferenceValues());
+      final release = Completer<List<ConversationUnreadSnapshot>>();
+      final entered = Completer<void>();
+      final unread = _FakeUnreadSource()
+        ..onLoad = () {
+          if (!entered.isCompleted) entered.complete();
+          return release.future;
+        };
+      final engine = _RecordingSoundEngine();
+      final haptics = _RecordingHapticDriver();
+      final badge = _RecordingBadgeGateway();
+      final banners = InAppBannerController();
+      final state = AppStateManager();
+      final source = _StreamEventSource();
+      final coordinator = _buildCoordinator(
+          engine: engine,
+          haptics: haptics,
+          badge: badge,
+          presenter: _FakeSystemPresenter(),
+          source: source,
+          prefs: _FakePreferenceStore(),
+          unread: unread,
+          appState: state,
+          banners: banners,
+          nativePolicy: policy);
+      await coordinator.start();
+      final handling = coordinator.handleEvent(_incoming());
+      await entered.future;
+      expect(claimActive, true);
+      if (takeover) {
+        // Native expired reservation then displayed while Flutter awaited badge.
+        state.updateLifecycle(AppRunState.background);
+        claimActive = false;
+        nativeDisplayed = true;
+        // Returning foreground does not restore the expired event's ownership.
+        state.updateLifecycle(AppRunState.foreground);
+      }
+      release.complete(const [
+        ConversationUnreadSnapshot(roomId: '!room1', unread: 1, isMuted: false)
+      ]);
+      await handling;
+      expect(badge.lastCount, 1);
+      expect(banners.current == null, takeover);
+      expect(engine.plays.isEmpty, takeover);
+      expect(haptics.triggers.isEmpty, takeover);
+      await coordinator.dispose();
+      await source.close();
+      messenger.setMockMethodCallHandler(NativeMessagePolicy.channel, null);
+    });
+  }
   test('account switch stops a delayed native notification cancellation',
       () async {
     final reads = ConversationReadState.shared()..resetForTest();

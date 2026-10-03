@@ -111,7 +111,7 @@ internal class NativeMessageOwner(private val context: Context) {
         transaction {
             for (table in listOf("state", "rooms", "claims", "tap")) db.execSQL("DELETE FROM $table")
         }
-        scope = ""; revision = 0; policy = JSONObject()
+        scope = ""; revision = 0; minimumRevision = 0; policy = JSONObject()
     }
     private fun prune() {
         val now = System.currentTimeMillis()
@@ -141,6 +141,18 @@ internal class NativeMessageOwner(private val context: Context) {
     fun complete(value: String, event: String) {
         if (!valid(value) || status(event) != 1) return
         db.execSQL("UPDATE claims SET status=2 WHERE key=?", arrayOf(event))
+    }
+    fun beginForeground(value: String, event: String): Boolean {
+        if (!valid(value) || !foreground || callActive() || status(event) != 1) return false
+        // Transfer the still-live reservation to active presentation atomically.
+        // Fallback cannot take it during later Dart sound/haptic awaits.
+        db.execSQL("UPDATE claims SET status=4 WHERE key=?", arrayOf(event))
+        return true
+    }
+    fun finishForeground(value: String, event: String, handled: Boolean) {
+        if (!valid(value) || status(event) != 4) return
+        db.execSQL("UPDATE claims SET status=? WHERE key=?", arrayOf<Any>(if (handled) 2 else 0, event))
+        if (!handled) retryPending()
     }
     fun resolve(value: String, room: String, event: String, show: Boolean, silent: Boolean,
                 title: String = "畅聊", body: String = "您有一条新消息"): Boolean {
@@ -295,6 +307,8 @@ object NativeMessageNotifications {
                             worker.schedule({ runCatching { o.retryPending() } }, 5, TimeUnit.SECONDS)
                         }
                         "complete" -> { o.complete(scope,event); true }
+                        "beginForeground" -> o.beginForeground(scope,event)
+                        "finishForeground" -> { o.finishForeground(scope,event,a["handled"] == true); true }
                         "resolve" -> o.resolve(scope, room, event, a["show"] == true, a["silent"] == true,
                             a["title"] as? String ?: "畅聊", a["body"] as? String ?: "您有一条新消息")
                         "cancelRoom" -> { if (o.valid(scope)) o.cancelRoom(room); true }

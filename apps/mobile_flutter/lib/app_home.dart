@@ -2814,11 +2814,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _closeHomeResources() async {
     if (!_matrixReady) return;
     _matrixReady = false;
-    await NativeMessagePolicy.shared.revoke();
-    // Cancel before awaiting other resource shutdown: late native/Dart work
-    // cannot repopulate this account while the session is closing.
-    await _closeMediaPrefetch();
-    await _startup.close();
     Future<void> stop(FutureOr<void> Function() operation) async {
       try {
         await operation();
@@ -2830,6 +2825,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         );
       }
     }
+
+    // Revoke clears Dart readiness synchronously and native eligibility before
+    // persistence. A platform/storage error is recorded but cannot strand all
+    // remaining resources behind _matrixReady=false.
+    await stop(NativeMessagePolicy.shared.revoke);
+    await stop(_closeMediaPrefetch);
+    await stop(_startup.close);
 
     _momentsUnread?.dispose();
     _momentsUnread = null;
