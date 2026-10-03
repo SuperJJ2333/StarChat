@@ -20,35 +20,45 @@ class CidRateLimiter:
             call_min_interval_ms if call_min_interval_ms is not None else 500
         )
         # {(cid, kind): last_sent_monotonic}
-        self._last_sent: dict[tuple[str, str], float] = {}
+        self._last_sent: dict[tuple[str, str], tuple[float, int]] = {}
+        self._revision = 0
         self._lock = threading.Lock()
 
     def allow(self, cid: str, kind: str = "message") -> bool:
         """同 (cid, kind) 在窗口内的后续推送丢弃（返回 False）。"""
+        return self.reserve(cid, kind) is not None
+
+    def reserve(self, cid: str, kind: str = "message") -> int | None:
+        """Return a bounded-table reservation token for concurrency-safe release."""
         interval_ms = (
             self._call_min_interval_ms
             if kind == "call"
             else self._min_interval_ms
         )
-        if interval_ms <= 0:
-            return True
         key = (cid, kind)
         now = time.monotonic()
         with self._lock:
             last = self._last_sent.get(key)
-            if last is not None and (now - last) * 1000 < interval_ms:
-                return False
-            self._last_sent[key] = now
+            if last is not None and (now - last[0]) * 1000 < interval_ms:
+                return None
+            self._revision += 1
+            reservation = self._revision
+            self._last_sent[key] = (now, reservation)
             self._prune_locked(now)
-            return True
+            return reservation
 
-    def release(self, cid: str, kind: str = "message") -> None:
+    def release(self, cid: str, kind: str = "message", *, reservation: int | None = None) -> None:
         """P01：本次发送实际失败时回滚窗口标记，允许协议重试真正重发。
 
-        成功的设备不调用 release——重试风暴仍被窗口收敛（不重复提醒）。
+        Concurrent delivery must provide its reserve() token: an older failed
+        request cannot remove a newer successful window. Omitted tokens retain
+        the original synchronous compatibility API, not used by async delivery.
         """
         with self._lock:
-            self._last_sent.pop((cid, kind), None)
+            key = (cid, kind)
+            current = self._last_sent.get(key)
+            if current is not None and (reservation is None or current[1] == reservation):
+                self._last_sent.pop(key, None)
 
     def _prune_locked(self, now: float) -> None:
         # 防止字典无限增长：粗裁剪（调用方已持锁）。
@@ -58,5 +68,5 @@ class CidRateLimiter:
             )
             cutoff = now - (max_interval_ms / 1000.0)
             self._last_sent = {
-                key: at for key, at in self._last_sent.items() if at > cutoff
+                key: entry for key, entry in self._last_sent.items() if entry[0] > cutoff
             }

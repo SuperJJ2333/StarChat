@@ -3,6 +3,48 @@ import pytest
 from fastapi.testclient import TestClient
 import httpx
 
+
+def test_older_failed_delivery_cannot_release_newer_successful_window(settings, monkeypatch):
+    """A slow request failure cannot clear a later same-device successful cooldown."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, Lock
+    from types import SimpleNamespace
+    import app.rate_limit as rate_limit
+
+    clock = [100.0]
+    monkeypatch.setattr(rate_limit, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    started, fail_first = Event(), Event()
+    guard = Lock()
+    pushes = []
+
+    def provider(request):
+        if request.url.path.endswith("/auth"):
+            return httpx.Response(200, json={"code": 0, "data": {
+                "token": "fixture-token", "expire_time": 9999999999999}})
+        with guard:
+            pushes.append(request)
+            index = len(pushes)
+        if index == 1:
+            started.set()
+            assert fail_first.wait(5), "first request was not released"
+            raise httpx.ConnectTimeout("fixture timeout")
+        return httpx.Response(200, json={"code": 0, "data": {"status": "successed_online"}})
+
+    target = TestClient(create_app(settings,
+        http_client=httpx.Client(transport=httpx.MockTransport(provider))))
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(target.post, "/_matrix/push/v1/notify", json=matrix_notify(cid="same-fixture"))
+        try:
+            assert started.wait(5), "first provider request did not start"
+            clock[0] = 101.6
+            assert target.post("/_matrix/push/v1/notify", json=matrix_notify(cid="same-fixture")).status_code == 200
+        finally:
+            fail_first.set()
+        assert first.result(timeout=5).status_code == 503
+    clock[0] = 101.7
+    assert target.post("/_matrix/push/v1/notify", json=matrix_notify(cid="same-fixture")).status_code == 200
+    assert len(pushes) == 2, "older failure erased newer success and sent a duplicate"
+
 from app.config import BridgeSettings
 from app.main import create_app
 from app.getui_client import GetuiPushError, GetuiTransientError

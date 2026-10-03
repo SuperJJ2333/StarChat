@@ -68,7 +68,8 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
         # 约束。结果：True=供应商已受理；False=临时失败（限频资格已回滚，
         # 由 503 触发协议重试）；None=限频窗口内收敛跳过（风暴去重）。
         async def _deliver_one(cid: str, semaphore: asyncio.Semaphore) -> bool | None:
-            if not limiter.allow(cid, sanitized.kind):
+            reservation = limiter.reserve(cid, sanitized.kind)
+            if reservation is None:
                 # 窗口内重复风暴：静默收敛（不视为设备失效，也不重试）。
                 return None
             try:
@@ -88,7 +89,7 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
                     )
                     raise _PermanentRejection(cid) from error
                 # 临时业务错误：回滚限频资格，交给协议重试。
-                limiter.release(cid, sanitized.kind)
+                limiter.release(cid, sanitized.kind, reservation=reservation)
                 logger.warning(
                     "push transient (non-permanent) kind=%s code=%s",
                     sanitized.kind,
@@ -98,11 +99,11 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
             except GetuiTransientError as error:
                 # 网络/超时/5xx：绝不进 rejected；回滚限频资格后由 503
                 # 触发 Synapse 重试（一次服务器故障不能让用户收不到推送）。
-                limiter.release(cid, sanitized.kind)
+                limiter.release(cid, sanitized.kind, reservation=reservation)
                 logger.warning("push transport error kind=%s err=%s", sanitized.kind, error)
                 return False
             except Exception as error:  # noqa: BLE001 —— 未预期异常同临时处理
-                limiter.release(cid, sanitized.kind)
+                limiter.release(cid, sanitized.kind, reservation=reservation)
                 logger.warning(
                     "push unexpected error kind=%s err_type=%s",
                     sanitized.kind,
