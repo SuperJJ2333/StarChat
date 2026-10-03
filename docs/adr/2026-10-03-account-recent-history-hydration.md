@@ -4,6 +4,8 @@
 
 ## 已观测问题
 
+2026-10-04覆盖：用户后续直接要求服务器托管密钥。本文已审的历史独立游标/内存/生命周期契约仍有效；client-only恢复与用户手工密钥入口由[服务器托管ADR](2026-10-04-server-custodied-matrix-recovery.md)取代，新托管保护源码需要该方案自己的有序审查。本文原有禁止服务器托管恢复材料不能覆盖用户最新直接指令。
+
 当前_syncActiveClient仅执行active.sync和uploadInboundGroupSessions，未覆盖所有已加入群聊/私聊最近72小时分页；main在bootstrap之后的后台恢复只调用已有store recovery及syncIfActive。已有用户自有密钥恢复途径不能被替代。SDK Room.requestHistory在resp.end=null且chunk非空时loadFn直接返回，可能漏末页，须行为复现后按任务归属修正，不把此观察当已修复。
 
 ## 决策

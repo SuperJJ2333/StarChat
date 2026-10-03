@@ -1,5 +1,11 @@
 # 移动交付恢复索引
 
+## 2026-10-04 搜索、荣耀相机与历史恢复：源码/托管设计进行中
+
+任务工作树codex/search-camera-history-20261003（managed path见任务）。搜索源码6df1fc37及取消/错误反馈修复0cdc678d经过有序复审，224相关测试与115修复回归通过；荣耀系统相机源码41c49c74的71 Dart/8 pinned-plugin native/analyze0通过，独立复核中，实际荣耀Android14尚未验收。未构建或安装这三项的新包；2197不含本轮新修复。
+
+用户最新直接要求服务器托管聊天恢复密钥、登录后自动恢复，覆盖之前client-only恢复限制；新的Matrix独立加密session归档/私钥信封及当前账号双凭证授权方案正在独立设计审查，保护源码/迁移/服务启用尚未执行。原生备份/SSSS/S3/Getui和财务边界保持；彻底丢失且未备份的历史密钥不能重建。已有72h独立游标/账号drain设计继续沿用。精确状态、授权及下一步见[本轮任务](tasks/2026-10-03-search-camera-history.md)、[新ADR](../adr/2026-10-04-server-custodied-matrix-recovery.md)和[实施计划](../superpowers/plans/2026-10-03-search-camera-history.md)。
+
 ## 2026-10-03 UI、媒体与推送修复：2197 debug已安装模拟器
 
 七项回归修复源码2d3303d9已合入并推送main（21:35:02+08远端读回一致）。减少消息投影/输入法重建，命中缩略图首帧与已下载原图复用，大图操作底部横排，普通后台接收不启动APP；冷通知/静音/注册与去重竞态修复。完整Flutter5301PASS/9skip、analyze0、原生31PASS、移动Python307PASS/23skip；同源iOS37124579562全部3job成功。
@@ -1138,3 +1144,6 @@ Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-histor
 ## 2026-09-30 iOS2194精确回签包已分发
 
 iOS0.4.25/2194于21:54 +08发布，最终SHA552a07a4；用户对当前包三项签名服务差异明确确认后执行，普通严格失败保留。官网/OTA/四键审计与更新说明、服务器/工作站小元数据、实际平台endpoint投影及匿名401通过；Android2194与最低build3保持。前端519通过；真机覆盖/登录/历史/后台通知待反馈，安装警示保留。[任务](tasks/2026-09-30-ios2194-distribution.md) · [验收](../verification/2026-09-30-ios2194-distribution.md)。主任务此前分支合并已完成；并行后台后续活动分支保持，本次未新建分支。
+
+## 2026-10-04 搜索、荣耀拍摄及服务器托管恢复（实施中）
+Task1搜索旧消息定位与稳定加载、Task2窄系统相机queries/安全反馈源码和独立双审完成；Task3用户明确要求服务器存储恢复密钥，正常登录自动恢复，新ADR经领域→安全设计复审PASS，尚未实施/上线。保留旧备份、本机历史及财务边界，缺失从未备份的旧keys不能重建。下一步Task3A服务端→3B移动端72h→完整候选debug模拟器；正式Android2196/iOS2194仍为观察基线。见[任务](tasks/2026-10-03-search-camera-history.md)及[新ADR](../adr/2026-10-04-server-custodied-matrix-recovery.md)。

@@ -12,7 +12,7 @@
 - 工作树C:/Users/Administrator/.codex/worktrees/search-camera-history-20261003/StarChat；显式文件提交，主工作区WIP保持。
 - 500*1024图片预算、E2EE、账号撤销、本机清空/隐藏/闪图和财务边界保持。缺密钥不能伪造解密。
 - Evidence only docs/verification/artifacts/2026-10-03/search-camera-history；root owns shared docs/versions/build/platform CI/integration.
-- User standing autonomy resolves approval pauses; implementers cannot spawn further agents or change versions/root docs. One implementer and one independent reviewer max; Flutter/Gradle exclusive window.
+- User standing autonomy resolves approval pauses; implementers cannot spawn further agents or change versions/root docs. One implementer max; Flutter/Gradle exclusive window. Task2 frozen source review and Task3 new custody design review may run concurrently as read-only independent scopes; no concurrent source writes/tests and protected implementation waits for its own ordered design PASS.
 
 ## Review Focus
 - Search own pagination/decryption vs security invalidation, continual sync and route closure.
@@ -44,6 +44,33 @@
 - [ ] RED actual login/new-device/account-switch missing history and recovered-key retry, then implement bounded pagination with encrypted database persistence and account fencing.
 - [ ] GREEN room/time/no-progress/retry/missing-key/revoke tests, SDK integration, auth/recovery regressions and analyze; report and explicit commit.
 - [ ] Independent domain/spec then quality/security review.
+
+### Task 3 override: Server-custodied automatic recovery (2026-10-04 user instruction)
+
+以上Task3的client-only/手工恢复入口由本节和[新ADR](../../adr/2026-10-04-server-custodied-matrix-recovery.md)覆盖；原有独立游标/内存/账号drain验收保持。正常用户无需恢复密钥/SAS。具体固定提案server-recovery-custody-proposal.md SHA76b44279a2f45a79ed8001702a41b7e2a54ec04cb8d7f9882c6caf9a2978684a已纳入ADR，先独立领域/规格再质量安全设计审查。无源码保护改动可复用旧client-only批准。
+
+#### Task 3A: Matrix custody service and current-account authorization
+
+**Files:** 新third_party/synapse/chatflow_recovery_vault.py及必要窄crypto/store/versioned migration、Dockerfile/README；services/business-api/app/api/identity.py及独立identity recovery authority/service、OpenAPI和对应测试（implementer先核实实际路径）；infra/synapse/homeserver.yaml.template、render_config、专用Compose overlay/nginx命名空间、systemd凭据配置、专用provision/rotation/DR helpers及runbook。root共享ADR/规格/任务/版本/生产操作不交给源码implementer。不得修改SDK/Flutter相机、金融规则或原生备份SSSS。
+
+**Public interfaces:** 专用`/_matrix/client/unstable/com.starchat.recovery/v1` status/enrollment/material/session PUT/query，与仅身份元数据的`/api/v1/auth/matrix-recovery-authorize`；具体UUID幂等/CAS/双bearer/分页/error契约见新ADR及固定提案§3。独立namespaced module migration ledger，不改Synapse核心schema92/现有媒体delta。OS生产secret provider + 独立DPAPI DR provider按ADR、POSIX和实际隔离restore证明。
+
+- [ ] 整体托管ADR/规格/本计划领域审查再安全审查PASS；冻结公共wire/数据契约和provider计划。
+- [ ] RED真实PG并发、crypto/authority/migration/rollback/secret-provider failure gates；最低修复实现main-only模块、唯一owner集合信封、保留session候选、严格当前family/device授权、no-store/no-secret-logs；支持响应丢失重试。
+- [ ] GREEN专项Python/nativeSynapse/真实PG及helper Linux/Windows synthetic interop/恢复演练；准确报告实际输入hash与环境/未验生产事实。输出公开协议固定JSON schema供3B消费。
+- [ ] 每个新wrapping key先primary-inactive→独立DPAPI保存/读回确认，之后才active-write/rewrap；失败/丢ack/混合旧新信封主机丢失的真实隔离restore用例，旧active/旧key保留。Staff业务角色本身不排除本人合法mobile session。
+- [ ] 独立领域/规格再质量安全实现审查；explicit source/tests/schema/runbook提交并释放工具文件。
+
+#### Task 3B: Mobile vault migration, recovery and 72h ciphertext hydration
+
+**Files:** 复用原Task3声明source，增加narrow matrix_recovery_vault.dart、core/session_store.dart专用account scoped journal；SDK key_manager及DB分页export/receipt/awaited import接口；auth/bootstrap若真实测试需要才声明。恢复UI改为“聊天记录同步”自动状态页；frontend catalog/renderer和registry对应同步。所有前述H1实际SDK/生命周期测试保留；与3A仅通过已冻结公开接口联动，不直接写域外表。
+
+- [ ] RED真实可用local session（包含原生备份锁定）自动归档→新设备全新隔离store登录→解密72h fixture，正常UI无手工key/SAS；本机旧SQLCipher保留并证明同账号来源。
+- [ ] 实现paged≤80session导出/保护receipt、按需≤64session恢复、实际Olm sessionId/sender验证/最早index merge、counted import与bounded ciphertext replay；不改SSSS/nativeuploaded/信任flag，A→B所有held边界不串号。
+- [ ] 真实标准backup payload无加密room_id/session_id也可互操作，外层标签不是密码证明；共用SDK解密在构造Event/索引写入前核验实际payload.room_id。追踪原discarded-index-write Future/runInRoot实际写，hold边界证明owner revoke/drain，不仅await周边replay。
+- [ ] 实现原H1独立80event页面/timestamp顺序锚/checkpoint CAS、terminal/state/empty/cycle、limitedsync/new-login gap；真实DB/key-write完整drain，deadline不冒充完成，有界working set。
+- [ ] Registry/HTML自动状态先于或伴随Flutter；高级旧backup迁移若材料不可用真实partial，服务器enrollment成功不等于全部消息恢复。
+- [ ] GREEN专项SDK/storage/account/crypto互操作与UI/frontend/contract门禁，独立领域/规格再安全实现审查；explicit source提交/报告及所有权释放。
 
 ### Task 4: Final validation and debug delivery
 **Files:** root shared task/index/report/pubspec/AppConfig/paired version tests/build helpers only after candidate review; frontend/src/screens/messaging.js、frontend/src/catalog/screens.js、packages/ui-contracts/changliao-component-registry.json及聚焦HTML测试在Task3释放相应所有权后同步搜索进度/旧事件定位/真实失败文案状态。
