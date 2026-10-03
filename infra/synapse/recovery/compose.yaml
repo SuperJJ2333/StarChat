@@ -1,0 +1,10 @@
+# Explicit opt-in only. Merge with the frozen active deployment after isolated gates.
+# No worker/business/database-backup secret volume. UID991 verified on production main.
+services:
+  synapse:
+    volumes:
+      - /run/chatflow-recovery:/run/chatflow-recovery:ro
+    ulimits:
+      core: 0
+    security_opt:
+      - no-new-privileges:true

@@ -25,6 +25,7 @@ from app.modules.identity.invitations import (
 )
 from app.modules.identity.matrix_login import MatrixLoginTokenService
 from app.modules.identity.matrix_sessions import MatrixSessionService
+from app.modules.identity.matrix_recovery import MatrixRecoveryAuthority
 from app.modules.identity.models import User, Device
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.profile_text import MAX_PROFILE_RAW_CODEPOINTS
@@ -128,6 +129,18 @@ class MatrixSessionRequest(StrictModel):
 
 class MatrixSessionResponse(StrictModel):
     status: str
+
+
+class MatrixRecoveryAuthorizeRequest(StrictModel):
+    matrix_user_id: str = Field(min_length=4, max_length=255, pattern=r'^@[^\s:]+:[^\s]+$')
+    matrix_device_id: str = Field(min_length=1, max_length=255, pattern=r'^[^\x00-\x20\x7f]+$')
+
+
+class MatrixRecoveryAuthorizeResponse(StrictModel):
+    matrix_user_id: str
+    matrix_device_id: str
+    family_id: str
+    generation: int
 
 
 class AdminLoginRequest(LoginRequest):
@@ -894,6 +907,17 @@ def create_identity_router(
             if device is not None:
                 device.last_seen_at = now
         return Response(status_code=204)
+
+    @router.post('/auth/matrix-recovery-authorize', response_model=MatrixRecoveryAuthorizeResponse)
+    def matrix_recovery_authorize(
+        body: MatrixRecoveryAuthorizeRequest,
+        response: Response,
+        claims: Annotated[dict, Depends(current_claims)],
+    ):
+        response.headers['Cache-Control'] = 'no-store'
+        rate_limiter.hit(f"auth:matrix-recovery:{claims['sub']}", limit=240, window_seconds=60)
+        return MatrixRecoveryAuthority(session_factory).authorize(claims,
+            matrix_user_id=body.matrix_user_id, matrix_device_id=body.matrix_device_id)
 
     @router.post(
         "/auth/matrix-login-token",

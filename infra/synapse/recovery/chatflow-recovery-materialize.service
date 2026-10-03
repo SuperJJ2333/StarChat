@@ -1,0 +1,25 @@
+[Unit]
+Description=Materialize encrypted StarChat recovery credential for Synapse main
+After=local-fs.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+LoadCredentialEncrypted=chatflow-recovery-keyring:/etc/credstore.encrypted/chatflow-recovery-keyring.cred
+RuntimeDirectory=chatflow-recovery
+RuntimeDirectoryMode=0711
+RuntimeDirectoryPreserve=yes
+ExecStart=/opt/chatflow-recovery/venv/bin/python /opt/chatflow-recovery/chatflow_recovery_provider.py materialize
+RemainAfterExit=yes
+UMask=0077
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/chatflow-recovery
+
+[Install]
+WantedBy=multi-user.target

@@ -72,3 +72,13 @@ additive; dropping it or using an old cleanup tool is not a supported rollback.
 Store and adapter tests use real SQLite transactions and files with framework
 types mocked. They do not substitute for the isolated PostgreSQL/Synapse/Redis
 container tests and load scenario described in the capacity runbook.
+
+## Optional server-custodied communication recovery
+
+The separate `chatflow_recovery_vault.RecoveryVaultModule` is disabled by default.
+It requires an explicit independent PostgreSQL module migration, dual current
+Matrix/Business authorization, and systemd plus independent Windows DPAPI providers.
+See [the recovery runbook](../../docs/runbooks/server-recovery-vault.md) and frozen
+`recovery-v1.schema.json`. It does not replace native backups, change mobile login,
+SSSS/cross-signing or media patches. Worker inheritance exits before secret/schema
+access. Never enable enrollment before the native crypto/DR/permissions gates pass.

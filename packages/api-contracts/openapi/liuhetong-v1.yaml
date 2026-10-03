@@ -5579,6 +5579,60 @@
         "title": "MatrixLoginTokenResponse",
         "type": "object"
       },
+      "MatrixRecoveryAuthorizeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "matrix_device_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x20\\x7f]+$",
+            "title": "Matrix Device Id",
+            "type": "string"
+          },
+          "matrix_user_id": {
+            "maxLength": 255,
+            "minLength": 4,
+            "pattern": "^@[^\\s:]+:[^\\s]+$",
+            "title": "Matrix User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matrix_user_id",
+          "matrix_device_id"
+        ],
+        "title": "MatrixRecoveryAuthorizeRequest",
+        "type": "object"
+      },
+      "MatrixRecoveryAuthorizeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "family_id": {
+            "title": "Family Id",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "matrix_device_id": {
+            "title": "Matrix Device Id",
+            "type": "string"
+          },
+          "matrix_user_id": {
+            "title": "Matrix User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matrix_user_id",
+          "matrix_device_id",
+          "family_id",
+          "generation"
+        ],
+        "title": "MatrixRecoveryAuthorizeResponse",
+        "type": "object"
+      },
       "MatrixSessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -20197,6 +20251,73 @@
           }
         ],
         "summary": "Matrix Login Token",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/matrix-recovery-authorize": {
+      "post": {
+        "operationId": "matrix_recovery_authorize_api_v1_auth_matrix_recovery_authorize_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatrixRecoveryAuthorizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixRecoveryAuthorizeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Matrix Recovery Authorize",
         "tags": [
           "identity"
         ]

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:starchat:recovery:v1",
+  "title": "StarChat Recovery Vault v1 frozen wire contract",
+  "description": "Schemas are selected by $defs name. Every route requires Authorization: Bearer Matrix-token and X-StarChat-Session: Bearer Business-token. All dispatched API responses no-store. No query parameters. R2 exception: unsupported TRACE is rejected by Nginx before API dispatch with fixed input-independent 405 HTML, no namespace headers, no upstream call; all log secrecy still applies. HEAD has no response body by HTTP semantics.",
+  "x-base-path": "/_matrix/client/unstable/com.starchat.recovery/v1",
+  "x-routes": {
+    "GET /status": {"response": "Status", "status": [200]},
+    "PUT /enrollments/{operation_id}": {"request": "Enrollment", "response": "Descriptor", "maxBytes": 1024, "status": [201, 200], "headers": ["Idempotency-Key equal canonical UUID operation_id", "If-None-Match: *"]},
+    "POST /material": {"request": "MaterialRequest", "response": "Material", "maxBytes": 1024, "maxResponseBytes": 4096},
+    "PUT /sessions/{version}/{operation_id}": {"request": "Upload", "response": "UploadReceipt", "maxBytes": 1048576, "headers": ["Idempotency-Key equal canonical UUID operation_id"]},
+    "POST /sessions/query": {"request": "Query", "response": "QueryResult", "maxBytes": 32768, "maxResponseBytes": 1048576}
+  },
+  "x-errors": {
+    "400": ["M_INVALID_PARAM", "M_BAD_JSON", "M_UNSUPPORTED_BACKUP_ALGORITHM", "M_INVALID_CONTINUATION"],
+    "401": ["M_UNAUTHORIZED"], "403": ["M_FORBIDDEN"], "404": ["M_NOT_FOUND"],
+    "405": ["M_UNRECOGNIZED"],
+    "409": ["M_VAULT_EXISTS", "M_IDEMPOTENCY_CONFLICT", "M_REVISION_CONFLICT", "M_VAULT_BINDING_MISMATCH", "M_QUERY_CHANGED"],
+    "413": ["M_TOO_LARGE"], "428": ["M_PRECONDITION_REQUIRED"], "429": ["M_LIMIT_EXCEEDED"],
+    "503": ["M_VAULT_UNAVAILABLE"], "507": ["M_VAULT_QUOTA_EXCEEDED"]
+  },
+  "x-semantics": {
+    "revisions": "Enrollment receipts and material describe the immutable enrollment with revision 1. Status collection.revision, UploadReceipt.revision and QueryResult.revision are the current collection revision (incremented once per upload that appends candidates). Nested candidate/receipt revision is the current room/session append count; only that value is a valid expected_revision. Immutable binding is version+algorithm+public_key+public_fingerprint, never revision.",
+    "idempotency": "Owner+operation UUID unique across enrollment/upload. Canonical JSON SHA256 includes operation kind and upload version. Same parsed payload replays committed receipt. Different payload conflicts. Private material never journalled.",
+    "cas": "expected_revision 0 for absent session; revision is append count for that room/session. Entire batch rejects atomically with conflicts[] current room_id/session_id/revision on stale input. Same operation replay is checked before CAS. Identical scoped candidate deduped; new operation still requires current CAS.",
+    "head": "Lowest declared first_message_index, then forwarded_count, then scoped digest. These are untrusted hints, never proof. Every historical candidate retained.",
+    "query": "At most16 total candidates/page ordered per requested pair and candidate rank. missing includes ONLY fully examined absent pairs. Omitted pairs are not missing. Repeat exact version/pairs with opaque continuation; token bound owner/version/query/revision and expires900s. Account revision change returns M_QUERY_CHANGED: restart query, never infer missing.",
+    "quota": "512MiB serialized candidate storage,100000 candidates and100000 committed operations/owner. Explicit507, no eviction; existing operation replay remains available. Rate120 vault requests/minute/owner; authority240/minute/owner.",
+    "private-key": "32 raw Curve25519 private bytes encoded canonical unpadded standard base64; public key32bytes same encoding; fingerprint SHA256 public rawbytes lowercase hex.",
+    "authority": "Revalidated Matrix bearer plus current Business mobile family/device before commit and release. Distributed revocation decision point, not retroactive bytes revocation.",
+    "absence": "Status absent describes only dedicated vault collection. Unknown/notowned version404 identical. Corrupt schema/envelope/keyring503, never replacement. Existing native backups/SSSS unchanged."
+  },
+  "$defs": {
+    "Error": {"type": "object", "additionalProperties": false, "required": ["errcode", "error"], "properties": {"errcode": {"enum": ["M_INVALID_PARAM", "M_BAD_JSON", "M_UNSUPPORTED_BACKUP_ALGORITHM", "M_INVALID_CONTINUATION", "M_UNAUTHORIZED", "M_FORBIDDEN", "M_NOT_FOUND", "M_UNRECOGNIZED", "M_VAULT_EXISTS", "M_IDEMPOTENCY_CONFLICT", "M_REVISION_CONFLICT", "M_VAULT_BINDING_MISMATCH", "M_QUERY_CHANGED", "M_TOO_LARGE", "M_PRECONDITION_REQUIRED", "M_LIMIT_EXCEEDED", "M_VAULT_UNAVAILABLE", "M_VAULT_QUOTA_EXCEEDED"]}, "error": {"type": "string", "maxLength": 128}, "retry_after_ms": {"type": "integer", "minimum": 0}, "conflicts": {"type": "array", "maxItems": 80, "items": {"type": "object", "additionalProperties": false, "required": ["room_id", "session_id", "revision"], "properties": {"room_id": {"$ref": "#/$defs/Id"}, "session_id": {"$ref": "#/$defs/Id"}, "revision": {"$ref": "#/$defs/Revision"}}}}}},
+    "Id": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\u0000-\\u0020\\u007f]+$"},
+    "Uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "Revision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+    "Algorithm": {"const": "m.megolm_backup.v1.curve25519-aes-sha2"},
+    "PublicKey": {"type": "string", "pattern": "^[A-Za-z0-9+/]{43}$"},
+    "Fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "Pair": {"type": "object", "additionalProperties": false, "required": ["room_id", "session_id"], "properties": {"room_id": {"allOf": [{"$ref": "#/$defs/Id"}, {"pattern": "^!"}]}, "session_id": {"$ref": "#/$defs/Id"}}},
+    "Enrollment": {"type": "object", "additionalProperties": false, "required": ["algorithm"], "properties": {"algorithm": {"$ref": "#/$defs/Algorithm"}}},
+    "Descriptor": {"type": "object", "additionalProperties": false, "required": ["version", "algorithm", "public_key", "public_fingerprint", "revision"], "properties": {"version": {"$ref": "#/$defs/Uuid"}, "algorithm": {"$ref": "#/$defs/Algorithm"}, "public_key": {"$ref": "#/$defs/PublicKey"}, "public_fingerprint": {"$ref": "#/$defs/Fingerprint"}, "revision": {"$ref": "#/$defs/Revision"}}},
+    "Status": {"oneOf": [{"type": "object", "additionalProperties": false, "required": ["state", "collection"], "properties": {"state": {"const": "absent"}, "collection": {"type": "null"}}}, {"type": "object", "additionalProperties": false, "required": ["state", "collection"], "properties": {"state": {"const": "available"}, "collection": {"$ref": "#/$defs/Descriptor"}}}]},
+    "MaterialRequest": {"type": "object", "additionalProperties": false, "required": ["version"], "properties": {"version": {"$ref": "#/$defs/Uuid"}}},
+    "Material": {"type": "object", "additionalProperties": false, "required": ["version", "algorithm", "public_key", "public_fingerprint", "revision", "server", "owner", "private_key"], "properties": {"version": {"$ref": "#/$defs/Uuid"}, "algorithm": {"$ref": "#/$defs/Algorithm"}, "public_key": {"$ref": "#/$defs/PublicKey"}, "public_fingerprint": {"$ref": "#/$defs/Fingerprint"}, "revision": {"$ref": "#/$defs/Revision"}, "server": {"$ref": "#/$defs/Id"}, "owner": {"$ref": "#/$defs/Id"}, "private_key": {"$ref": "#/$defs/PublicKey"}}},
+    "SessionData": {"type": "object", "additionalProperties": false, "required": ["ephemeral", "mac", "ciphertext"], "properties": {"ephemeral": {"$ref": "#/$defs/PublicKey"}, "mac": {"type": "string", "pattern": "^[A-Za-z0-9+/]{11}$"}, "ciphertext": {"type": "string", "minLength": 1, "maxLength": 16000, "pattern": "^[A-Za-z0-9+/]+$"}}},
+    "Candidate": {"type": "object", "additionalProperties": false, "required": ["room_id", "session_id", "expected_revision", "first_message_index", "forwarded_count", "is_verified", "session_data"], "properties": {"room_id": {"$ref": "#/$defs/Id"}, "session_id": {"$ref": "#/$defs/Id"}, "expected_revision": {"$ref": "#/$defs/Revision"}, "first_message_index": {"type": "integer", "minimum": 0, "maximum": 4294967295}, "forwarded_count": {"type": "integer", "minimum": 0, "maximum": 64}, "is_verified": {"type": "boolean"}, "session_data": {"$ref": "#/$defs/SessionData"}}, "x-maxBytes": 16384},
+    "Upload": {"type": "object", "additionalProperties": false, "required": ["algorithm", "public_key", "sessions"], "properties": {"algorithm": {"$ref": "#/$defs/Algorithm"}, "public_key": {"$ref": "#/$defs/PublicKey"}, "sessions": {"type": "array", "minItems": 1, "maxItems": 80, "items": {"$ref": "#/$defs/Candidate"}}}},
+    "Receipt": {"type": "object", "additionalProperties": false, "required": ["room_id", "session_id", "revision", "candidate_revision", "digest"], "properties": {"room_id": {"$ref": "#/$defs/Id"}, "session_id": {"$ref": "#/$defs/Id"}, "revision": {"$ref": "#/$defs/Revision"}, "candidate_revision": {"$ref": "#/$defs/Revision"}, "digest": {"$ref": "#/$defs/Fingerprint"}}},
+    "UploadReceipt": {"type": "object", "additionalProperties": false, "required": ["version", "revision", "receipts"], "properties": {"version": {"$ref": "#/$defs/Uuid"}, "revision": {"$ref": "#/$defs/Revision"}, "receipts": {"type": "array", "maxItems": 80, "items": {"$ref": "#/$defs/Receipt"}}}},
+    "Query": {"type": "object", "additionalProperties": false, "required": ["version", "pairs"], "properties": {"version": {"$ref": "#/$defs/Uuid"}, "pairs": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/Pair"}}, "continuation": {"type": "string", "minLength": 1, "maxLength": 2048}}},
+    "ReturnedCandidate": {"type": "object", "additionalProperties": false, "required": ["room_id", "session_id", "first_message_index", "forwarded_count", "is_verified", "session_data", "revision", "candidate_revision", "digest"], "properties": {"room_id": {"$ref": "#/$defs/Id"}, "session_id": {"$ref": "#/$defs/Id"}, "first_message_index": {"type": "integer", "minimum": 0, "maximum": 4294967295}, "forwarded_count": {"type": "integer", "minimum": 0, "maximum": 64}, "is_verified": {"type": "boolean"}, "session_data": {"$ref": "#/$defs/SessionData"}, "revision": {"$ref": "#/$defs/Revision"}, "candidate_revision": {"$ref": "#/$defs/Revision"}, "digest": {"$ref": "#/$defs/Fingerprint"}}},
+    "QueryResult": {"type": "object", "additionalProperties": false, "required": ["version", "revision", "candidates", "missing", "continuation"], "properties": {"version": {"$ref": "#/$defs/Uuid"}, "revision": {"$ref": "#/$defs/Revision"}, "candidates": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/ReturnedCandidate"}}, "missing": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/Pair"}}, "continuation": {"type": ["string", "null"], "maxLength": 2048}}}
+  }
+}

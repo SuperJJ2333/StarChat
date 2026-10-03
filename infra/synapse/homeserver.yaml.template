@@ -89,4 +89,8 @@ push:
 modules:
   - module: chatflow_mobile_login.MobileLoginModule
     config: {}
+  - module: chatflow_recovery_vault.RecoveryVaultModule
+    config:
+      enabled: false
+      keyring_path: /run/chatflow-recovery/keyring.json
 
