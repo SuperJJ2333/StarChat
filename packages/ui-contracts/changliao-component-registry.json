@@ -1,6 +1,16 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-10-03-image-viewer-actions": {
+      "flutter": "apps/mobile_flutter/lib/ui/chat/encrypted_media_view.dart",
+      "html": "frontend/src/components/image-editor.js",
+      "demo": "chat-image-gallery-ready",
+      "components": ["ImageViewerPage", "ViewerRoundAction"],
+      "props": ["peekOriginal", "readCachedOriginal", "loadOriginal", "onForward"],
+      "states": ["preview", "cached-original", "loading", "error", "saving", "forwarding", "editing"],
+      "tokens": ["WeChatSpacing.sm = --space-sm", "WeChatSpacing.lg = --space-lg", "WeChatRadius.networkCapsule = --radius-media-action", "WeChatTypography.caption = --type-caption-size", "WeChatColors.darkElevated = --color-media-action-surface"],
+      "behavior": "Authorized local originals reopen without network; bottom horizontal capsule actions contain both icon and label, with a separate original control above and a safe-area inset."
+    },
     "2026-09-30-mute-exception-scope": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
       "html": "frontend/src/screens/messaging.js",
@@ -1915,13 +1925,16 @@
           "onForwardEdited",
           "onFavorite"
         ],
-        "variants": {},
+        "variants": {"actions": ["bottom-horizontal-capsules"]},
         "states": [
           "ready",
           "loading",
           "error",
           "paging",
-          "editing"
+          "editing",
+          "cached-original",
+          "saving",
+          "forwarding"
         ]
       },
       "html": {

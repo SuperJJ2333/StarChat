@@ -43,7 +43,7 @@ globalThis.document = {
   createElementNS: (_namespace, tag) => new Node(tag),
 };
 
-const { AppImageEditor } = await import("../src/components/image-editor.js");
+const { AppImageEditor, AppRoomImageGallery } = await import("../src/components/image-editor.js");
 const all = (root) => [root, ...root.children.filter((child) => child instanceof Node).flatMap(all)];
 
 test("image editor demo exposes distinct eraser and centered fixed emoji controls", () => {
@@ -67,4 +67,18 @@ test("image editor demo exposes distinct eraser and centered fixed emoji control
 
   const eraser = nodes.find((node) => node.getAttribute("aria-label") === "橡皮擦");
   assert.equal(eraser.children[0].dataset.icon, "eraser", "eraser uses its own vector icon");
+});
+
+
+test("room image gallery has horizontal internal-label actions and original control", () => {
+  const nodes = all(new AppRoomImageGallery().render());
+  const actions = nodes.find((node) => node.className === "c-room-image-gallery__actions");
+  assert.ok(actions);
+  assert.deepEqual(actions.children.map((node) => node.getAttribute("aria-label")), ["编辑", "下载", "转发"]);
+  assert.ok(actions.children.every((node) => all(node).some((part) => (part.textContent ?? "").length > 2)));
+  const original = nodes.find((node) => node.getAttribute("aria-label") === "查看原图");
+  assert.ok(original);
+  original.listeners.click();
+  assert.equal(original.textContent, "已展示原图");
+  assert.equal(original.disabled, true);
 });

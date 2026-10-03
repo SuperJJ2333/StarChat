@@ -2337,8 +2337,35 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             !_isAnimatedImage(message) && hashes?.thumbnailSha256 != null);
   }
 
+  Uint8List? _cachedOriginal(RoomMessageViewModel message, Object identity) {
+    _mediaPolicyFor(message)
+        .assertOrdinaryMediaAllowed('gallery.cachedOriginal');
+    if (widget.roomLease.canceled) return null;
+    final key = _mediaKey(message.id);
+    if (key.identity != identity) return null;
+    return contentMediaMemoryCache.get(key.cacheId) ??
+        imageMemoryCache.get(key.cacheId);
+  }
+
+  Future<Uint8List?> _readCachedOriginal(
+      RoomMessageViewModel message, Object identity) async {
+    final warm = _cachedOriginal(message, identity);
+    if (warm != null) return warm;
+    if (widget.roomLease.canceled) return null;
+    final key = _mediaKey(message.id);
+    if (key.identity != identity) return null;
+    return readCachedImageOriginal(
+      key: key,
+      isCurrent: () =>
+          mounted &&
+          !widget.roomLease.canceled &&
+          _mediaKey(message.id).identity == identity,
+    );
+  }
+
   Uint8List? _cachedImagePreview(RoomMessageViewModel message) {
     try {
+      if (widget.roomLease.canceled) return null;
       if (_mediaHashes(message.id) == null) {
         return roomImagePreviewCache.get(message.stableId);
       }
@@ -3841,28 +3868,32 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       // 安全不变量（含历史分页与预取）：闪照永远不进入普通 Gallery，
       // 投影规则集中在 ordinaryGalleryMessages。
       for (final message in ordinaryGalleryMessages(visible))
-        RoomGalleryImage(
-          id: message.id,
-          sourceIdentity: _previewKey(message).identity,
-          loadPreview: () {
-            _mediaPolicyFor(message)
-                .assertOrdinaryMediaAllowed('gallery.preview');
-            return _loadImagePreview(message);
-          },
-          loadOriginal: () {
-            _mediaPolicyFor(message)
-                .assertOrdinaryMediaAllowed('gallery.original');
-            return withMediaLoadPriority(MediaLoadPriority.interactive,
-                () => controller!.loadAttachment(message.id));
-          },
-          originalSize: message.attachmentSize,
-          onForward: () {
-            _mediaPolicyFor(message)
-                .assertOrdinaryMediaAllowed('gallery.forward');
-            return _forwardMessages([message]);
-          },
-        ),
+        _galleryImage(message),
     ];
+  }
+
+  RoomGalleryImage _galleryImage(RoomMessageViewModel message) {
+    final originalIdentity = _mediaKey(message.id).identity;
+    return RoomGalleryImage(
+      id: message.id,
+      sourceIdentity: (_previewKey(message).identity, originalIdentity),
+      loadPreview: () {
+        _mediaPolicyFor(message).assertOrdinaryMediaAllowed('gallery.preview');
+        return _loadImagePreview(message);
+      },
+      loadOriginal: () {
+        _mediaPolicyFor(message).assertOrdinaryMediaAllowed('gallery.original');
+        return withMediaLoadPriority(MediaLoadPriority.interactive,
+            () => controller!.loadAttachment(message.id));
+      },
+      peekOriginal: () => _cachedOriginal(message, originalIdentity),
+      readCachedOriginal: () => _readCachedOriginal(message, originalIdentity),
+      originalSize: message.attachmentSize,
+      onForward: () {
+        _mediaPolicyFor(message).assertOrdinaryMediaAllowed('gallery.forward');
+        return _forwardMessages([message]);
+      },
+    );
   }
 
   Future<List<RoomGalleryImage>> _earlierGalleryImages() async {

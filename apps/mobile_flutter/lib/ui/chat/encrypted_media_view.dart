@@ -150,7 +150,7 @@ final class _EncryptedImageMessageState extends State<EncryptedImageMessage> {
 /// - 占位阶段只渲染缩略图/预览字节；左下角「查看原图 xxK/M」按钮，
 ///   大小按每次加载到的原图字节数动态计算，点击后**异步**加载原图，
 ///   加载完成渲染原图并显示实际像素尺寸；
-/// - 右下角「下载」「转发」圆形操作按钮：深灰（#555555）背景、白色图标；
+/// - 底部「编辑」「下载」「转发」横排胶囊，图标与小字位于按钮内；
 ///   下载保存到系统相册，转发调起会话选择并加密转发；
 /// - 双击/捏合缩放、点击图片区域关闭。
 final class ImageViewerPage extends StatefulWidget {
@@ -159,6 +159,8 @@ final class ImageViewerPage extends StatefulWidget {
     required this.previewBytes,
     this.originalSizeHint,
     this.loadOriginal,
+    this.peekOriginal,
+    this.readCachedOriginal,
     this.forwardTargets = const [],
     this.forwardTo,
     this.onForward,
@@ -180,6 +182,12 @@ final class ImageViewerPage extends StatefulWidget {
 
   /// 原图异步加载器；缺省时预览字节即原图，隐藏“查看原图”入口。
   final Future<Uint8List> Function()? loadOriginal;
+
+  /// Authorized, completed bytes only; no IO and no retained global originals.
+  final Uint8List? Function()? peekOriginal;
+
+  /// Authorized local-only read. A miss must never fall through to network.
+  final Future<Uint8List?> Function()? readCachedOriginal;
 
   /// 可转发的目标会话（房间 id → 展示名）。
   final List<({String roomId, String title})> forwardTargets;
@@ -226,6 +234,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   void initState() {
     super.initState();
     _transform.addListener(_zoomChanged);
+    originalBytes = widget.peekOriginal?.call();
   }
 
   Future<void> _edit() async {
@@ -286,6 +295,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
     super.dispose();
   }
 
+  bool _probedOriginal = false;
   Uint8List? originalBytes;
   bool loadingOriginal = false;
   bool originalFailed = false;
@@ -306,7 +316,8 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       _originalScope = null;
       _saveScope?.cancel();
       _saveScope = null;
-      originalBytes = null;
+      originalBytes = widget.peekOriginal?.call();
+      _probedOriginal = false;
       dimensions = null;
       hint = null;
       originalFailed = false;
@@ -318,7 +329,9 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       _editGeneration++;
       _editing = false;
     }
+    if (_eligible) _restoreOriginal();
     if (!_eligible) {
+      if (loadingOriginal) _probedOriginal = false;
       _requestGeneration++;
       _originalScope?.cancel();
       _originalScope = null;
@@ -331,7 +344,9 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   void _visibilityChanged(bool visible) {
     if (_visible == visible) return;
     setState(() => _visible = visible);
+    if (_eligible) _restoreOriginal();
     if (!_eligible) {
+      if (loadingOriginal) _probedOriginal = false;
       _requestGeneration++;
       _originalScope?.cancel();
       _originalScope = null;
@@ -339,6 +354,16 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       _editGeneration++;
       _editing = false;
     }
+  }
+
+  void _restoreOriginal() {
+    if (_probedOriginal ||
+        originalBytes != null ||
+        widget.readCachedOriginal == null) {
+      return;
+    }
+    _probedOriginal = true;
+    _loadOriginal(cachedOnly: true);
   }
 
   /// 原图大小按本次实际字节动态计算；未加载时以提示值/预览字节兜底。
@@ -350,8 +375,9 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
     return widget.previewBytes.lengthInBytes;
   }
 
-  Future<bool> _loadOriginal() async {
-    final loader = widget.loadOriginal;
+  Future<bool> _loadOriginal({bool cachedOnly = false}) async {
+    final Future<Uint8List?> Function()? loader =
+        cachedOnly ? widget.readCachedOriginal : widget.loadOriginal;
     if (!_eligible ||
         loader == null ||
         loadingOriginal ||
@@ -373,6 +399,10 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
           request != _requestGeneration ||
           !scope.isActive ||
           !_eligible) {
+        return false;
+      }
+      if (bytes == null) {
+        setState(() => loadingOriginal = false);
         return false;
       }
       ({int width, int height})? decoded;
@@ -403,8 +433,8 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       }
       setState(() {
         loadingOriginal = false;
-        originalFailed = true;
-        hint = '原图加载失败，点击「查看原图」重试';
+        originalFailed = !cachedOnly;
+        if (!cachedOnly) hint = '原图加载失败，点击「查看原图」重试';
       });
       return false;
     } finally {
@@ -429,6 +459,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       }
     }
 
+    setState(() {});
     try {
       final result = await GalleryMediaExport.saveImage(
         loadOriginal: () async {
@@ -449,7 +480,10 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       if (!mounted || source != _sourceGeneration || !scope.isActive) return;
       setState(() => hint = gallerySaveErrorMessage(error));
     } finally {
-      if (identical(_saveScope, scope)) _saveScope = null;
+      if (identical(_saveScope, scope)) {
+        _saveScope = null;
+        if (mounted) setState(() {});
+      }
       scope.cancel();
     }
   }
@@ -546,6 +580,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
                       panEnabled: _zoomed,
                       maxScale: 4,
                       child: BudgetedMediaImage(
+                        paintCachedFirstFrame: widget.active,
                         key: ValueKey(_sourceToken(widget)),
                         width: size.width,
                         height: size.height,
@@ -566,57 +601,60 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
             ),
             if (loadingOriginal)
               const Center(child: CupertinoActivityIndicator()),
-            if (widget.loadOriginal != null)
-              Positioned(
-                left: 16,
-                bottom: 24,
-                child: CupertinoButton(
-                  key: const Key('viewer-view-original'),
-                  color: CupertinoColors.systemGrey5.withValues(alpha: .28),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  onPressed: originalBytes == null ? _loadOriginal : null,
-                  child: Text(
-                    _originalLabel,
-                    style: const TextStyle(
-                        fontSize: 13, color: CupertinoColors.white),
-                  ),
-                ),
-              ),
             Positioned(
-              right: 16,
-              bottom: 24,
-              child: Column(
-                children: [
-                  ViewerRoundAction(
+              left: WeChatSpacing.lg,
+              right: WeChatSpacing.lg,
+              bottom: WeChatSpacing.xl,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                if (widget.loadOriginal != null) ...[
+                  CupertinoButton(
+                    key: const Key('viewer-view-original'),
+                    padding: const EdgeInsets.all(WeChatSpacing.sm),
+                    onPressed: originalBytes == null && !loadingOriginal
+                        ? _loadOriginal
+                        : null,
+                    child: Text(_originalLabel,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: WeChatTypography.caption,
+                            color: CupertinoColors.white)),
+                  ),
+                  const SizedBox(height: WeChatSpacing.sm),
+                ],
+                Row(children: [
+                  Expanded(
+                      child: ViewerRoundAction(
                     key: const Key('viewer-edit'),
                     icon: CupertinoIcons.pencil,
                     label: '编辑',
                     onPressed: loadingOriginal || _editing ? null : _edit,
-                  ),
-                  const SizedBox(height: 14),
-                  ViewerRoundAction(
+                  )),
+                  const SizedBox(width: WeChatSpacing.sm),
+                  Expanded(
+                      child: ViewerRoundAction(
                     key: const Key('viewer-download'),
                     icon: CupertinoIcons.cloud_download,
-                    label: '下载',
-                    onPressed: _download,
-                  ),
-                  const SizedBox(height: 14),
-                  if (widget.forwardTo != null || widget.onForward != null)
-                    ViewerRoundAction(
+                    label: _saveScope != null ? '保存中' : '下载',
+                    onPressed: _saveScope != null ? null : _download,
+                  )),
+                  if (widget.forwardTo != null || widget.onForward != null) ...[
+                    const SizedBox(width: WeChatSpacing.sm),
+                    Expanded(
+                        child: ViewerRoundAction(
                       key: const Key('viewer-forward'),
                       icon: CupertinoIcons.paperplane,
-                      label: '转发',
+                      label: forwarding ? '转发中' : '转发',
                       onPressed: forwarding ? null : _forward,
-                    ),
-                ],
-              ),
+                    )),
+                  ],
+                ]),
+              ]),
             ),
             if (hint != null)
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: 96,
+                bottom: 160,
                 child: ViewerStatusHint(message: hint!),
               ),
           ],
@@ -626,7 +664,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   }
 }
 
-/// 右下角圆形操作按钮：深灰（#555555）背景 + 白色图标（产品规格色）。
+/// 相册风格横排操作：深色胶囊内同时呈现图标和小字。
 final class ViewerRoundAction extends StatelessWidget {
   const ViewerRoundAction({
     super.key,
@@ -640,27 +678,33 @@ final class ViewerRoundAction extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: onPressed,
-            child: Container(
-              width: 46,
-              height: 46,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFF555555),
-              ),
-              child: Icon(icon, size: 20, color: CupertinoColors.white),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, color: CupertinoColors.white),
-          ),
-        ],
+  Widget build(BuildContext context) => CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+        child: Container(
+          constraints: const BoxConstraints(
+              minHeight: WeChatDimensions.minimumTouchTarget),
+          padding: const EdgeInsets.symmetric(
+              horizontal: WeChatSpacing.sm, vertical: WeChatSpacing.sm),
+          decoration: BoxDecoration(
+              color: WeChatColors.darkElevated,
+              borderRadius: BorderRadius.circular(WeChatRadius.networkCapsule)),
+          child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: WeChatTypography.subhead,
+                    color: CupertinoColors.white),
+                const SizedBox(width: WeChatSpacing.xs),
+                Flexible(
+                    child: Text(label,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: WeChatTypography.caption,
+                            color: CupertinoColors.white))),
+              ]),
+        ),
       );
 }
 

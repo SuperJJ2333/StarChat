@@ -477,9 +477,19 @@ export class AppRoomImageGallery extends StrictElement {
     header.append(control("上一张", () => move(-1), "‹"), counter, control("下一张", () => move(1), "›"));
     const edit = control("编辑", () => {
       const editor = document.createElement("app-image-editor"); editor.sourceCanvas = pictures[index];
-      const exit = () => { root.replaceChildren(header, track, edit); requestAnimationFrame(() => { track.scrollLeft = index * track.clientWidth; }); };
+      const exit = () => { root.replaceChildren(header, track, footer); requestAnimationFrame(() => { track.scrollLeft = index * track.clientWidth; }); };
       editor.addEventListener("image-cancel", exit, { once: true }); root.replaceChildren(editor);
     }, "编辑");
-    root.append(header, track, edit); return root;
+    const footer = element("footer", "c-room-image-gallery__footer");
+    const status = element("p", "c-room-image-gallery__status", ""); status.setAttribute("role", "status");
+    const original = control("查看原图", () => { original.textContent = "已展示原图"; original.disabled = true; }, "查看原图 358K");
+    const actions = element("div", "c-room-image-gallery__actions");
+    const download = control("下载", () => {
+      const link = document.createElement("a"); link.href = pictures[index].toDataURL("image/png"); link.download = "chat-image.png"; link.click(); status.textContent = "已下载图片";
+    }, "↓ 下载");
+    const forward = control("转发", () => { this.dispatchEvent(new CustomEvent("image-forward", { bubbles: true, detail: { index } })); status.textContent = "已选择当前图片转发"; }, "↗ 转发");
+    edit.textContent = "✎ 编辑";
+    actions.append(edit, download, forward); footer.append(original, actions, status);
+    root.append(header, track, footer); return root;
   }
 }

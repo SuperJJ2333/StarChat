@@ -2,9 +2,37 @@ import 'dart:typed_data';
 import 'dart:convert';
 import 'emoji_preview_cache.dart';
 import 'media_cache.dart';
+import 'content_addressed_media.dart' show verifyMediaContent;
+import 'media_consumer_scope.dart';
 import 'media_memory_budget.dart';
 
 const int roomImagePrewarmMaxBytes = 512 * 1024;
+
+/// A local-only original probe. The caller owns event/lease authorization;
+/// cache presence alone is never an authorization grant. No network fallback,
+/// retained original map, or in-flight map is created by this reader.
+Future<Uint8List?> readCachedImageOriginal({
+  required MediaCacheKey key,
+  required bool Function() isCurrent,
+}) async {
+  final scope = MediaConsumerScope.current;
+  final generation = MediaCache.accountGeneration(key.accountId);
+  bool current() =>
+      isCurrent() &&
+      (scope == null || scope.isActive) &&
+      generation == MediaCache.accountGeneration(key.accountId);
+  if (!current()) return null;
+  final file = await MediaCache.cached(key.roomId, key.eventId,
+      accountId: key.accountId, contentSha256: key.contentSha256);
+  if (file == null || !current()) return null;
+  final bytes = await file.readAsBytes();
+  if (!current()) return null;
+  // Verify the actual read, including legacy objects whose hash is in the
+  // content-addressed filename rather than the event metadata.
+  verifyMediaContent(
+      bytes, key.contentSha256 ?? file.uri.pathSegments.last.split('.').first);
+  return bytes;
+}
 
 /// A legacy preview key may contain the full original. Only a declared,
 /// static thumbnail may be probed ahead of the visible bubble, and its local

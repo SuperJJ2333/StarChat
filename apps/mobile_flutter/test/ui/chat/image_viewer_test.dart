@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/encrypted_media_view.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 /// 1×1 合法 PNG（尺寸解码可得 1×1）。
 Uint8List pngBytes() => Uint8List.fromList(const [
@@ -135,7 +136,7 @@ void main() {
     expect(find.byKey(const Key('viewer-download')), findsOneWidget);
     expect(find.byKey(const Key('viewer-forward')), findsOneWidget);
 
-    // 下载/转发按钮：深灰 #555555 圆形背景 + 白色图标。
+    // 相册风格胶囊：图标和小字同在按钮内部。
     for (final key in const [
       Key('viewer-download'),
       Key('viewer-forward'),
@@ -147,9 +148,11 @@ void main() {
         ),
       );
       final decoration = container.decoration! as BoxDecoration;
-      expect(decoration.color, const Color(0xFF555555), reason: '$key 深灰背景');
-      expect(decoration.shape, BoxShape.circle);
-      final icon = container.child! as Icon;
+      expect(decoration.color, WeChatColors.darkElevated);
+      expect(decoration.borderRadius,
+          BorderRadius.circular(WeChatRadius.networkCapsule));
+      final icon = tester.widget<Icon>(
+          find.descendant(of: find.byKey(key), matching: find.byType(Icon)));
       expect(icon.color, CupertinoColors.white, reason: '$key 白色图标');
     }
   });

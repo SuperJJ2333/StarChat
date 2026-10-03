@@ -1,4 +1,6 @@
 :root {
+  --color-media-action-surface: #232323;
+  --radius-media-action: 22px;
   --image-editor-landscape-0-sky: #b8d5dd;
   --image-editor-landscape-0-ridge: #537d83;
   --image-editor-landscape-0-foreground: #d5c7af;

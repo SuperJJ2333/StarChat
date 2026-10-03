@@ -246,6 +246,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
               ? GestureDetector(
                   onTap: widget.onTap,
                   child: BudgetedMediaImage(
+                    paintCachedFirstFrame: true,
                     provider: _provider!,
                     isAnimated: isGifBytes(_bytes!),
                     visible: _visible,

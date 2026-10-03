@@ -11,6 +11,7 @@ final class BudgetedMediaImage extends StatefulWidget {
       required this.visible,
       required this.priority,
       this.budget,
+      this.paintCachedFirstFrame = false,
       this.width,
       this.height,
       this.fit,
@@ -21,6 +22,7 @@ final class BudgetedMediaImage extends StatefulWidget {
   final bool isAnimated, visible;
   final int priority;
   final MediaAnimationBudget? budget;
+  final bool paintCachedFirstFrame;
   final double? width, height;
   final BoxFit? fit;
   final Alignment alignment;
@@ -35,6 +37,29 @@ final class _BudgetedMediaImageState extends State<BudgetedMediaImage> {
   bool _hasBeenVisible = false;
   bool _grant = true;
   bool _scheduled = false;
+
+  // Only a completed decoded frame can bypass the initial visibility probe.
+  // No resolve/load/precache occurs here, so cold and animated media retain
+  // their existing offscreen decode and ticker budgets.
+  bool _hasSynchronousCachedFrame() {
+    if (!widget.paintCachedFirstFrame || widget.isAnimated) return false;
+    var synchronous = true;
+    var cached = false;
+    try {
+      widget.provider.obtainKey(ImageConfiguration.empty).then<void>((key) {
+        if (synchronous) {
+          cached =
+              PaintingBinding.instance.imageCache.statusForKey(key).keepAlive;
+        }
+      }, onError: (Object _, StackTrace __) {});
+    } catch (_) {
+      // The normal visible Image path owns provider errors; this probe does
+      // not start loading or expose a separate asynchronous error channel.
+    }
+    synchronous = false;
+    return cached;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -89,7 +114,7 @@ final class _BudgetedMediaImageState extends State<BudgetedMediaImage> {
   @override
   Widget build(BuildContext context) {
     if (widget.visible) _hasBeenVisible = true;
-    if (!widget.visible && !_hasBeenVisible) {
+    if (!widget.visible && !_hasBeenVisible && !_hasSynchronousCachedFrame()) {
       return SizedBox(width: widget.width, height: widget.height);
     }
     return TickerMode(

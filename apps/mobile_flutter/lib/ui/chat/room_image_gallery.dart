@@ -16,12 +16,16 @@ class RoomGalleryImage {
     required this.onForward,
     Object? sourceIdentity,
     this.originalSize,
+    this.peekOriginal,
+    this.readCachedOriginal,
   }) : sourceIdentity = sourceIdentity ?? id;
   final String id;
   final Object sourceIdentity;
   final Future<Uint8List> Function() loadPreview, loadOriginal;
   final Future<void> Function() onForward;
   final int? originalSize;
+  final Uint8List? Function()? peekOriginal;
+  final Future<Uint8List?> Function()? readCachedOriginal;
 }
 
 /// Room-scoped chronological gallery. History loads metadata, never eagerly
@@ -497,6 +501,9 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
                                           active: _visible && index == _index,
                                           previewBytes: snapshot.data!,
                                           loadOriginal: image.loadOriginal,
+                                          peekOriginal: image.peekOriginal,
+                                          readCachedOriginal:
+                                              image.readCachedOriginal,
                                           originalSizeHint: image.originalSize,
                                           onForward: image.onForward,
                                           onForwardEdited:
