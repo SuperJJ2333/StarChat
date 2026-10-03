@@ -1,10 +1,10 @@
 # 移动交付恢复索引
 
-## 2026-10-04 搜索、荣耀相机与历史恢复：源码/托管设计进行中
+## 2026-10-04 搜索、荣耀相机与历史恢复：托管服务实现/真实验证进行中
 
-任务工作树codex/search-camera-history-20261003（managed path见任务）。搜索源码6df1fc37及取消/错误反馈修复0cdc678d经过有序复审，224相关测试与115修复回归通过；荣耀系统相机源码41c49c74的71 Dart/8 pinned-plugin native/analyze0通过，独立复核中，实际荣耀Android14尚未验收。未构建或安装这三项的新包；2197不含本轮新修复。
+任务工作树codex/search-camera-history-20261003。搜索源码6df1fc37/0cdc678d和荣耀系统相机源码41c49c74均经过有序独立复审；224相关+115搜索修复回归、71 Dart/8相机native/analyze0通过。实际荣耀Android14尚未验收，未构建或安装这三项的新包；2197不含本轮新修复。
 
-用户最新直接要求服务器托管聊天恢复密钥、登录后自动恢复，覆盖之前client-only恢复限制；新的Matrix独立加密session归档/私钥信封及当前账号双凭证授权方案正在独立设计审查，保护源码/迁移/服务启用尚未执行。原生备份/SSSS/S3/Getui和财务边界保持；彻底丢失且未备份的历史密钥不能重建。已有72h独立游标/账号drain设计继续沿用。精确状态、授权及下一步见[本轮任务](tasks/2026-10-03-search-camera-history.md)、[新ADR](../adr/2026-10-04-server-custodied-matrix-recovery.md)和[实施计划](../superpowers/plans/2026-10-03-search-camera-history.md)。
+用户最新直接要求服务器托管聊天恢复密钥、登录后自动恢复，正常不处理恢复密钥/SAS。Task3A保护设计及R1/R2路由/前置日志追加均有序独立PASS；服务源码、身份双凭证和系统凭据provider实施中。真实标准Dart/Olm互通、WindowsDPAPI/Linuxsystemd先独立备份后激活、完整pg_dump/主密钥及主机credential丢失/仅独立DPAPIsealed恢复/新数据库恢复/3份原SDK加密归档解密均PASS。真实接口transport包括中途logout撤销PASS；TRACE原生405父级URL查询日志泄漏已复现，R2方法级安全元数据日志修复与完整接口门禁待完成，尚未生产启用。Task3B自动客户端归档/恢复与72h加载未启动，3A实现双审通过后转交。原生备份/SSSS/S3/Getui及财务边界保持；彻底丢失且未备份的历史密钥无法重建。详情见[任务](tasks/2026-10-03-search-camera-history.md)、[托管ADR](../adr/2026-10-04-server-custodied-matrix-recovery.md)和[计划](../superpowers/plans/2026-10-03-search-camera-history.md)。
 
 ## 2026-10-03 UI、媒体与推送修复：2197 debug已安装模拟器
 

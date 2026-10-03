@@ -83,3 +83,13 @@ Q1：wrapping key采用逐key状态机 `primary_inactive → independent_protect
 保持客户端PUBLIC BASE `/_matrix/client/unstable/com.starchat.recovery/v1`及全部wire、双bearer、owner/version、CAS、密码/provider契约。主进程模块仅注册可达PRIVATE BASE `/_synapse/client/chatflow/recovery/v1`，专用Nginx精确public-prefix规则将路径映射到这个private-prefix，仍发送主Synapse；不覆盖`/_matrix/client`/`/_matrix/`，不修改/monkeypatch核心类、原生备份或现有客户端router。模块在私有实际request.path下进行同等严格路径/方法检查，公网的既有`/_synapse/client/`拒绝保持，publicprefix外不产生新增代理能力。
 
 Vault public-prefix关闭access_log/body tracing/cache，避免被拒query token写入requestline；保留TLS及无重定向双bearer验证。真实隔离Nginx+Synapse HTTP必须证明public映射、private公网403拒绝、query-token拒绝、no-store/error/size限制以及原Matrix versions/login/whoami/nativebackup等关键路径仍走原处理。实际主UID991凭据RO读取、worker无凭据/earlyreturn验收保持。此路由细化需独立领域/规格→质量/安全定向设计复核通过后实施。
+
+## R2：TRACE协议边界与前置安全访问日志（2026-10-04）
+
+有序独立领域/规格与质量安全设计审查server-custody-design-review.md §7–8通过；真实TRACE405先于location，query合成sentinel进入父级访问日志，实施P1在真实复测之前保持未关闭。站立自主ADR/计划授权适用，无需再询问用户。
+
+R1 JSON/no-store错误契约适用于进入recovery location/module的API请求。Nginx在location选择前直接拒绝TRACE，这是不支持的HTTP协议边界；允许固定、不回显URI/headers/body的405 HTML响应，无需namespace JSON/no-store头。TRACE不得进入Synapse/Business或执行密钥读写，不重定向、不反射凭证。普通GET/POST/PUT、进入location的其他方法、private拒绝、错误/size响应仍保持原JSON/no-store；HEAD只豁免HTTP规范要求的空body。此例外绝不豁免任何层凭据/正文日志保密。
+
+HTTP上下文新增仅按$request_method的互补map（TRACE独立），与仅time/method常量TRACE/status/bytes/自动生成$request_id的安全log_format。现有Matrix listener/server内将有效access_log替换为两个条件分支：非TRACE逐一保留实际原目的地、format、options与其他原条件；TRACE在对应目的地仅安全元数据。不使用URI正则，不增加server-wide405重写，不关闭无关方法审计，不保留重复继承的rawTRACE日志。恢复location的access_log off维持。生产真实freeze为/var/log/nginx/access.log main；唯一已有/ios-call/location日志off维持。生产error_log /var/log/nginx/error.log notice维持，禁止DEBUG/bodytrace；不能根据隔离fixture的warn降低真实配置。最终部署需再冻结实际配置。
+
+真实canonical/encoded/normalized/double-slash公共与私有TRACE独立query/Authorization/X-StarChat-Session/body sentinel，固定405无反射/跳转/上游或状态变更；逐一捕获实际access/error所有目的地并验证无sentinel、TRACE仅安全元数据；普通非TRACE控制保持原format目的地且API/no-store/normal405路由不回归。location内logoff及transport-onlyPASS不能替代此门禁。新http-context include与server directive在隔离语法/渲染/真实NGINX后验收；日志query泄漏未关闭之前不发布。
