@@ -12,6 +12,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/room_navigation_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/room_route_frame_probe.dart';
 import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
@@ -39,6 +40,9 @@ final class _AnchorClient extends Client {
 final class _AnchorRoom extends Room {
   _AnchorRoom(Client client, String roomId) : super(id: roomId, client: client);
   Completer<void>? timelineGate;
+  Completer<Timeline>? contextGate;
+  Object? contextError;
+  int liveMessageCount = 3;
   final timelines = <_AnchorTimeline>[];
   final contextRequests = <String>[];
 
@@ -55,20 +59,50 @@ final class _AnchorRoom extends Room {
     String? eventContextId,
   }) async {
     if (timelineGate != null) await timelineGate!.future;
-    if (eventContextId != null) contextRequests.add(eventContextId);
-    final timeline = _AnchorTimeline(this, eventContextId: eventContextId);
+    if (eventContextId != null) {
+      contextRequests.add(eventContextId);
+      if (contextError != null) throw contextError!;
+      if (contextGate != null) return contextGate!.future;
+    }
+    final timeline = _AnchorTimeline(this,
+        eventContextId: eventContextId, liveMessageCount: liveMessageCount);
     timelines.add(timeline);
     return timeline;
   }
 }
 
+final class _TrackedContextTimeline extends Timeline {
+  _TrackedContextTimeline(Room room)
+      : super(
+            room: room,
+            chunk: TimelineChunk(isFragment: true, events: [
+              Event(
+                room: room,
+                eventId: r'$cold-old',
+                senderId: '@synthetic:test',
+                type: EventTypes.Message,
+                originServerTs: DateTime.utc(2025, 9, 1),
+                content: {
+                  'msgtype': MessageTypes.Text,
+                  'body': 'synthetic context'
+                },
+              )
+            ]));
+  int subscriptionCancels = 0;
+  @override
+  void cancelSubscriptions() {
+    subscriptionCancels++;
+    super.cancelSubscriptions();
+  }
+}
+
 final class _AnchorTimeline extends Fake implements Timeline {
-  _AnchorTimeline(Room room, {String? eventContextId})
+  _AnchorTimeline(Room room, {String? eventContextId, int liveMessageCount = 3})
       : events = [
           for (var index = 1;
               index <=
                   (eventContextId == null
-                      ? 3
+                      ? liveMessageCount
                       : eventContextId == r'$cold-old'
                           ? 1
                           : 0);
@@ -137,6 +171,7 @@ Future<void> _pumpRoom(WidgetTester tester, String? anchorEventId,
     Stream<SyncStatusUpdate>? remoteSyncStatus,
     bool remoteSyncAlreadyReady = false,
     Completer<void>? timelineGate,
+    ValueNotifier<RoomOpenRequest>? navigationRequests,
     String roomId = '!anchor:test',
     VoidCallback? onPerformanceContentReady,
     RoomRouteFrameProbe? roomRouteProbe,
@@ -174,6 +209,7 @@ Future<void> _pumpRoom(WidgetTester tester, String? anchorEventId,
       roomName: 'Anchor room',
       initialIdentityCache: identities,
       initialAnchorEventId: anchorEventId,
+      navigationRequests: navigationRequests,
       onCreateGroup: () {},
     ),
   ));
@@ -200,6 +236,104 @@ Future<void> _disposeRoom(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+      'starting a user drag cancels delayed context before it can replace current rows',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final gate = Completer<Timeline>();
+    final navigation = ValueNotifier(const RoomOpenRequest(
+        roomId: '!drag-cancel-context:test', roomName: 'synthetic'));
+    late _AnchorClient client;
+    await _pumpRoom(tester, null,
+        roomId: '!drag-cancel-context:test',
+        navigationRequests: navigation, onClient: (value) {
+      client = value;
+      client.room.contextGate = gate;
+      client.room.liveMessageCount = 100;
+    });
+    navigation.value = const RoomOpenRequest(
+        roomId: '!drag-cancel-context:test',
+        roomName: 'synthetic',
+        anchorEventId: r'$cold-old');
+    for (var i = 0; i < 20 && client.room.contextRequests.isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(client.room.contextRequests, [r'$cold-old']);
+    final before = tester
+        .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList))
+        .eventIds
+        .toList();
+    final gesture = await tester
+        .startGesture(tester.getCenter(find.byType(AnchoredTimelineList)));
+    // DragStartBehavior.start enters DragScrollActivity without a direction
+    // update: source cancellation must happen at the start itself.
+    await gesture.moveBy(const Offset(0, 24));
+    await tester.pump();
+    final scrollable = tester.state<ScrollableState>(find
+        .descendant(
+            of: find.byType(AnchoredTimelineList),
+            matching: find.byType(Scrollable))
+        .first);
+    expect(scrollable.position.activity, isA<DragScrollActivity>());
+    final late = _TrackedContextTimeline(client.room);
+    gate.complete(late);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(
+        tester
+            .widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList))
+            .eventIds,
+        before);
+    expect(late.subscriptionCancels, 1);
+    expect(find.byKey(const ValueKey(r'$cold-old')), findsNothing);
+    expect(find.text('未找到该消息，请稍后重试'), findsNothing);
+    await gesture.up();
+    await _disposeRoom(tester);
+    navigation.dispose();
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final variant in [
+    'denied',
+    'unauthorized',
+    'unavailable',
+    'timeout',
+    'missing'
+  ]) {
+    testWidgets('context $variant shows an accurate safe locator message',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final error = variant == 'timeout'
+          ? TimeoutException('synthetic context wait')
+          : MatrixException(http.Response(
+              switch (variant) {
+                'denied' => '{"errcode":"M_FORBIDDEN","error":"synthetic"}',
+                'unauthorized' =>
+                  '{"errcode":"M_UNAUTHORIZED","error":"synthetic"}',
+                'missing' => '{"errcode":"M_NOT_FOUND","error":"synthetic"}',
+                _ => '{"errcode":"M_UNKNOWN","error":"synthetic"}',
+              },
+              variant == 'unavailable'
+                  ? 503
+                  : variant == 'missing'
+                      ? 404
+                      : 403));
+      await _pumpRoom(tester, r'$cold-old',
+          roomId: '!locator-feedback-$variant:test',
+          onClient: (client) => client.room.contextError = error);
+      expect(
+          find.text(switch (variant) {
+            'denied' || 'unauthorized' => '无权限查看该消息',
+            'missing' => '未找到该消息，请稍后重试',
+            _ => '消息暂时无法定位，请稍后重试',
+          }),
+          findsOneWidget);
+      if (variant != 'missing') expect(find.text('未找到该消息，请稍后重试'), findsNothing);
+      expect(find.text('synthetic'), findsNothing);
+      await _disposeRoom(tester);
+      expect(tester.takeException(), isNull);
+    });
+  }
   testWidgets('cold old-event route opens context and highlights exact bubble',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

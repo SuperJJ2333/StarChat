@@ -19,7 +19,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:matrix/matrix.dart'
-    show MatrixSearchSnapshotBudget, SyncStatus, SyncStatusUpdate;
+    show
+        MatrixException,
+        MatrixSearchSnapshotBudget,
+        SyncStatus,
+        SyncStatusUpdate;
 
 import 'room_draft_store.dart';
 import 'media_load_scheduler.dart';
@@ -3664,6 +3668,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final generation = _timelineScrollGeneration;
     _locatingMessage = true;
     var found = false;
+    Object? lookupFailure;
     try {
       if (sourceRoomId != null) {
         await widget.roomLease.hintLogicalEventSource(eventId, sourceRoomId);
@@ -3710,9 +3715,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             generation == _timelineScrollGeneration &&
             !_scrollInteractionActive(),
       );
-    } catch (_) {
-      // A denied or temporarily unavailable context remains retryable from
-      // the existing locator feedback; never start a sequential history scan.
+    } catch (error) {
+      lookupFailure = error;
       found = false;
     } finally {
       _locatingMessage = false;
@@ -3725,7 +3729,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           _scrollInteractionActive()) {
         return false;
       }
-      if (mounted) _showMediaMessage('未找到该消息，请稍后重试');
+      final denied = lookupFailure is MatrixException &&
+          const {'M_FORBIDDEN', 'M_UNAUTHORIZED'}
+              .contains(lookupFailure.errcode);
+      _showMediaMessage(denied
+          ? '无权限查看该消息'
+          : lookupFailure != null
+              ? '消息暂时无法定位，请稍后重试'
+              : '未找到该消息，请稍后重试');
       return false;
     }
     if (!mounted) return false;
@@ -5538,7 +5549,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (notification.dragDetails != null) {
         _observeMessageScrollActivityIfAttached();
         _userTimelineDragActive = true;
-        _timelineScrollGeneration++;
+        _cancelPendingTimelineWindowShift();
       }
     }
     if (notification is ScrollUpdateNotification &&
@@ -5546,7 +5557,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _observeMessageScrollActivityIfAttached();
       if (!_userTimelineDragActive) {
         _userTimelineDragActive = true;
-        _timelineScrollGeneration++;
+        _cancelPendingTimelineWindowShift();
       }
       _requestWindowForUserScrollDelta(notification.dragDetails!.delta.dy);
     }
@@ -5555,7 +5566,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _observeMessageScrollActivityIfAttached();
       if (!_userTimelineDragActive) {
         _userTimelineDragActive = true;
-        _timelineScrollGeneration++;
+        _cancelPendingTimelineWindowShift();
       }
       _requestWindowForUserScrollDelta(notification.dragDetails!.delta.dy);
     }
