@@ -319,4 +319,35 @@ class NativeMessageNotificationsTest {
             assertTrue(notifications().all { it.notification.channelId == "chatflow_silent" })
         }
     }
+    @Test fun dismissedNewerRoomNotificationPermanentlyRetiresOlderUncertainRecovery() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        val lease = assertNotNull(owner.beginForeground(scope,event))
+        app.openOrCreateDatabase("native_messages.db",0,null).use {
+            it.execSQL("UPDATE presentations SET at=?",arrayOf(System.currentTimeMillis()-6000))
+        }
+        owner.foreground = false
+        receive("d".repeat(64))
+        assertEquals("d".repeat(64),notifications().single().notification.extras.getString("native_event"))
+        app.getSystemService(NotificationManager::class.java).cancelAll()
+        owner.retryPending()
+        assertTrue(notifications().isEmpty(), "older uncertain event must not replace a dismissed newer item")
+        owner.close(); owner = NativeMessageOwner(app)
+        owner.finishForeground(scope,event,lease,false)
+        receive(); owner.retryPending()
+        assertTrue(notifications().isEmpty(), "retirement must survive restart, old lease and provider retry")
+    }
+    @Test fun newerDismissalAlsoFencesLeaseRecoveredOnlyAfterRestart() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        assertNotNull(owner.beginForeground(scope,event))
+        owner.foreground = false
+        receive("d".repeat(64))
+        app.getSystemService(NotificationManager::class.java).cancelAll()
+        // The older lease was still active when B displayed. Restart converts
+        // it to uncertain recovery; durable B ordering must still suppress it.
+        owner.close(); owner = NativeMessageOwner(app)
+        owner.retryPending(); receive()
+        assertTrue(notifications().isEmpty())
+    }
 }

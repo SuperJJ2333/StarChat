@@ -33,6 +33,7 @@ internal class NativeMessageOwner(private val context: Context) {
         db.execSQL("CREATE TABLE IF NOT EXISTS rooms (key TEXT PRIMARY KEY, muted INTEGER)")
         db.execSQL("CREATE TABLE IF NOT EXISTS claims (key TEXT PRIMARY KEY, room TEXT, at INTEGER, status INTEGER)")
         db.execSQL("CREATE INDEX IF NOT EXISTS claims_at ON claims(at)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS claims_room_status_at ON claims(room,status,at)")
         db.execSQL("CREATE TABLE IF NOT EXISTS tap (id INTEGER PRIMARY KEY, scope TEXT, room TEXT, event TEXT, at INTEGER)")
         db.execSQL("CREATE TABLE IF NOT EXISTS presentations (key TEXT PRIMARY KEY, lease TEXT, at INTEGER)")
         db.rawQuery("SELECT scope, revision, valid, policy FROM state WHERE id=1", null).use {
@@ -126,6 +127,9 @@ internal class NativeMessageOwner(private val context: Context) {
         db.execSQL("UPDATE claims SET status=6 WHERE status=4 AND key NOT IN (SELECT key FROM presentations WHERE at>? AND at<=?)", arrayOf(now - 5000, now))
         db.execSQL("DELETE FROM presentations WHERE at<=? OR at>? OR key NOT IN (SELECT key FROM claims WHERE status=4)", arrayOf(now - 5000, now))
         db.execSQL("DELETE FROM claims WHERE at<? OR at>?", arrayOf(now - 600_000, now + 30_000))
+        // Displayed claims outlive pending recovery. Persistently retire an
+        // older uncertain item even after the newer system item was dismissed.
+        db.execSQL("UPDATE claims SET status=2 WHERE status=6 AND EXISTS (SELECT 1 FROM claims AS newer WHERE newer.room=claims.room AND newer.key<>claims.key AND newer.status=3 AND newer.at>=claims.at)")
         db.execSQL("UPDATE claims SET status=2 WHERE status=6 AND at<?", arrayOf(now - 300_000))
         db.execSQL("DELETE FROM claims WHERE status IN (0,1) AND at<?", arrayOf(now - 300_000))
         trimPending()
