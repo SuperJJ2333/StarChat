@@ -65,6 +65,11 @@ register("chat", "announcement", [
 register("chat", "group-info", [["default", "聊天信息 / 12 字群聊名称"]]);
 register("chat", "group-management", [["owner", "群管理 / 群主"], ["transfer-confirm", "群管理 / 群主转让确认"], ["dissolve-confirm", "群管理 / 解散确认"]]);
 register("chat", "search", [["history-results", "查找聊天记录 / 结果"], ["global-results", "全局搜索 / 群聊与聊天记录"]]);
+register("account", "recovery", [
+  ["downloading", "聊天记录同步 / 正在恢复"], ["ready", "聊天记录同步 / 可用记录"],
+  ["partial", "聊天记录同步 / 缺少历史密钥"], ["retrying", "聊天记录同步 / 自动重试"],
+  ["unavailable", "聊天记录同步 / 服务暂不可用"], ["revoked", "聊天记录同步 / 已退出"],
+]);
 register("chat", "group-management", [["transfer-members", "转让群主 / 搜索成员"], ["transfer-pending", "转让群主 / 待核对"], ["transfer-completed", "群聊信息 / 转让完成"]]);
 
 register("foundation", "tokens", [

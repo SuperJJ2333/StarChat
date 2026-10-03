@@ -202,6 +202,26 @@ function chat(definition) {
   draw(); return root;
 }
 export function renderScreen(definition) {
-  const renderer = { password, email, security, chat }[definition.page];
+  const renderer = { password, email, security, chat, recovery }[definition.page];
   return createDeviceScreen(definition, renderer(definition));
+}
+
+function recovery(definition) {
+  const { root, host } = shell(definition, "聊天记录同步");
+  const messages = {
+    downloading: "正在恢复聊天记录", ready: "已恢复可用记录",
+    partial: "部分旧记录缺少历史密钥", retrying: "网络暂不可用，稍后自动重试",
+    unavailable: "恢复服务暂不可用，稍后自动重试", revoked: "已退出当前账号，同步已停止",
+  };
+  host.append(notice(messages[definition.state]),
+    help("登录后自动同步最近 72 小时可访问的聊天记录。没有备份的旧密钥无法重建。"));
+  for (const [title, value] of [["已下载密文", "80"], ["已托管密钥", "12"], ["已解密记录", "76"], ["缺少密钥", definition.state === "partial" ? "4" : "0"]]) {
+    host.append(component("app-list-tile", { title, trailing: definition.state === "revoked" ? "—" : value }));
+  }
+  host.append(help("恢复材料由服务器加密托管，消息在设备上解密。"), help("本页数据仅用于界面演示，不连接真实恢复服务。"));
+  if (["retrying", "unavailable", "partial"].includes(definition.state)) {
+    host.append(component("app-action-button", { label: "重试同步", icon: "retry", action: "open:account-recovery-downloading" }));
+  }
+  host.append(component("app-action-button", { label: "返回设置", kind: "secondary", action: "open:profile-settings-default" }));
+  return root;
 }

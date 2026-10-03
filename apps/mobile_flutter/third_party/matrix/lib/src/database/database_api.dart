@@ -133,6 +133,36 @@ abstract class DatabaseApi {
 
   Future<List<StoredInboundGroupSession>> getAllInboundGroupSessions();
 
+  Future<List<StoredInboundGroupSession>> getInboundGroupSessionsPage(
+      {String? afterSessionId, int limit = 80}) =>
+      throw UnsupportedError('Bounded session export unavailable');
+
+  Future<Map<String, dynamic>?> getRecoveryCheckpoint(String key) =>
+      throw UnsupportedError('Recovery checkpoints unavailable');
+
+  Future<void> storeRecoveryRecord(String key, Map<String, dynamic> value) =>
+      throw UnsupportedError('Recovery records unavailable');
+
+  Future<int> recoveryProtectedCount(String version) =>
+      throw UnsupportedError('Recovery receipt counts unavailable');
+
+  Future<List<String>> getRecoveryEventIds(Room room, {int start = 0, int limit = 80}) =>
+      throw UnsupportedError('Bounded recovery replay unavailable');
+
+  Future<bool> hasRecoveryCursor(String key, String cursor) =>
+      throw UnsupportedError('Recovery cursors unavailable');
+
+  Future<void> storeRecoveryDecryptedEvent(Event event) =>
+      throw UnsupportedError('Recovery projection unavailable');
+
+  Future<({int downloaded, int decrypted, int missing})> recoveryRoomCounts(
+      Room room, int windowStart) => throw UnsupportedError('Recovery counts unavailable');
+
+  Future<bool> commitRecoveryHistoryPage(Room room, String key,
+      int expectedRevision, List<Map<String, dynamic>> events,
+      Map<String, dynamic> checkpoint) =>
+      throw UnsupportedError('Independent history unavailable');
+
   Future<StoredInboundGroupSession?> getInboundGroupSession(
     String roomId,
     String sessionId,

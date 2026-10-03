@@ -39,6 +39,7 @@ import 'media_thumbnail.dart' show decodeImageDimensions;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:matrix/matrix.dart';
+import 'package:matrix/encryption/utils/stored_inbound_group_session.dart';
 import 'package:matrix/encryption/utils/key_verification.dart';
 import 'package:flutter/foundation.dart';
 import '../auth/login_controller.dart' hide LoginState;
@@ -80,6 +81,9 @@ import 'bounded_history_search.dart';
 import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
+import 'matrix_recovery_vault.dart';
+import 'recent_history_coordinator.dart';
+import '../../core/session_store.dart';
 import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
@@ -6059,6 +6063,9 @@ final class MatrixSdkE2eeClient
         outgoingWorkFactory,
     PerformanceTraceRecorder? performanceRecorder,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
+    this.secureSessionStore,
+    this.migrateRecoveryArchives,
+    this.refreshRecoveryBusinessSession,
     DateTime Function()? memberRefreshNow,
     Duration memberRefreshTtl = const Duration(minutes: 10),
     Duration memberRefreshRetryDelay = const Duration(seconds: 15),
@@ -6088,11 +6095,149 @@ final class MatrixSdkE2eeClient
         securityLogger = securityLogger ??
             MatrixSecurityLogger.create(sink: (line) => debugPrint(line)) {
     _outgoingWork = _newOutgoingWork(client.userID ?? '');
+    _bindRecoveryWrites(client);
     _attachOutgoingEchoListener(client);
     _attachDecryptionListener(client);
     _attachMemberRefreshListener(client);
   }
   Client? _client;
+  final SecureSessionStore? secureSessionStore;
+  final Future<void> Function(
+          Client,
+          RecoveryOperationOwner,
+          Future<void> Function(
+              Future<List<StoredInboundGroupSession>> Function(String?)))?
+      migrateRecoveryArchives;
+  final VaultSyncStatus historySyncStatus = VaultSyncStatus();
+  final Future<void> Function()? refreshRecoveryBusinessSession;
+  RecentHistoryCoordinator? _recentHistory;
+  RecoveryOperationOwner? _recentHistoryOwner;
+
+  void retryHistorySync() {
+    final active = _client;
+    if (_accessRevoked || active?.recoveryOwner?.active != true) return;
+    final history = _recentHistory;
+    if (history != null) {
+      history.retryNow();
+      return;
+    }
+    historySyncStatus.setPhase(VaultSyncPhase.downloading);
+    _startRecentHistory(active!);
+  }
+
+  void _startRecentHistory(Client active) {
+    final store = secureSessionStore;
+    final owner = active.recoveryOwner;
+    if (store == null ||
+        owner == null ||
+        !owner.active ||
+        active.userID == null ||
+        active.deviceID == null ||
+        active.database == null ||
+        identical(_recentHistoryOwner, owner)) {
+      return;
+    }
+    _recentHistoryOwner = owner;
+    unawaited(() async {
+      try {
+        final metadata =
+            await owner.write(() => _readContinuityMetadata(active));
+        owner.check();
+        final vault = MatrixRecoveryVault(
+            client: active,
+            owner: owner,
+            store: store,
+            status: historySyncStatus,
+            refreshBusinessSession: refreshRecoveryBusinessSession);
+        final history = RecentHistoryCoordinator(
+            client: active,
+            owner: owner,
+            databaseGeneration: metadata.databaseGeneration,
+            status: historySyncStatus,
+            vault: vault,
+            migrateArchives: () async => migrateRecoveryArchives?.call(
+                active,
+                owner,
+                (reader) => vault.archiveAvailable(readSessions: reader)),
+            foregroundRoom: () => _managedResources
+                .whereType<MatrixRoomLease>()
+                .where((r) => !r.canceled)
+                .firstOrNull
+                ?.roomId,
+            onChanged: _scheduleSyncProjection);
+        _recentHistory = history;
+        history.start();
+      } catch (_) {
+        if (owner.active) {
+          _recentHistoryOwner = null;
+          historySyncStatus.setPhase(VaultSyncPhase.retrying);
+        }
+      }
+    }());
+  }
+
+  int _recoveryAuthorizationGeneration = 0;
+
+  void _bindRecoveryWrites(Client client) {
+    client.onRecoveryIdentityAdopted = () async {
+      if (_accessRevoked || !identical(_client, client)) {
+        throw StateError('E2EE_RECOVERY_OWNER_REVOKED');
+      }
+      final previous = client.recoveryOwner;
+      if (previous?.active == true) return;
+      previous?.revoke();
+      if (previous != null) {
+        await previous.drain().timeout(lifecycleDrainTimeout);
+      }
+      if (_accessRevoked || !identical(_client, client)) {
+        throw StateError('E2EE_RECOVERY_OWNER_REVOKED');
+      }
+      _bindRecoveryWrites(client);
+    };
+    client.recoveryOwner?.revoke();
+    _recentHistory?.revoke();
+    _recentHistory = null;
+    _recentHistoryOwner = null;
+    historySyncStatus.downloaded = historySyncStatus.protected =
+        historySyncStatus.decrypted = historySyncStatus.missing = 0;
+    historySyncStatus.setPhase(VaultSyncPhase.downloading);
+    final user = client.userID;
+    final device = client.deviceID;
+    final database = client.database;
+    final endpoint = client.homeserver;
+    final databaseGeneration = _decryptionCacheContinuity?.databaseGeneration;
+    final generation = ++_recoveryAuthorizationGeneration;
+    final businessGeneration =
+        secureSessionStore?.businessAuthorizationGeneration;
+    final businessFamily = secureSessionStore?.businessIdentity;
+    client.recoveryOwner = RecoveryOperationOwner(
+      identity: (
+        client,
+        endpoint,
+        user,
+        device,
+        database,
+        databaseGeneration,
+        generation,
+        businessGeneration,
+        businessFamily
+      ),
+      isCurrent: () =>
+          !_accessRevoked &&
+          identical(_client, client) &&
+          client.userID == user &&
+          client.deviceID == device &&
+          client.homeserver == endpoint &&
+          identical(client.database, database) &&
+          _decryptionCacheContinuity?.databaseGeneration ==
+              databaseGeneration &&
+          secureSessionStore?.businessAuthorizationGeneration ==
+              businessGeneration &&
+          secureSessionStore?.businessIdentity == businessFamily &&
+          _recoveryAuthorizationGeneration == generation,
+    );
+  }
+
   final PerformanceTraceRecorder _performanceRecorder;
 
   Future<bool> Function(String accountId, String roomId, String? peerId)?
@@ -7417,6 +7562,8 @@ final class MatrixSdkE2eeClient
     _bindDecryptionCache(await _readContinuityMetadata(active));
     _ensureOutgoingWorkIdentity(active);
     _activeContinuityValidated = true;
+    await active.recoveryOwner?.drain();
+    _bindRecoveryWrites(active);
   }
 
   Stream<void> get syncEvents => _syncEvents.stream;
@@ -7598,6 +7745,7 @@ final class MatrixSdkE2eeClient
   Future<void> _syncActiveClient(Client active) async {
     try {
       await active.sync();
+      _startRecentHistory(active);
       await active.encryption?.keyManager
           .uploadInboundGroupSessions(skipIfInProgress: true);
       _scheduleSyncProjection();
@@ -7644,7 +7792,7 @@ final class MatrixSdkE2eeClient
   Future<bool> backupKeyMatchesCurrentVersion() => _withClient((active) async {
         final encryption = active.encryption;
         if (encryption == null) return false;
-        return encryption.keyManager.isCached();
+        return encryption.keyManager.cachedBackupKeyMatchesCurrentVersion();
       });
 
   @override
@@ -7670,23 +7818,17 @@ final class MatrixSdkE2eeClient
 
   /// 同步撤销对外能力。必须在进入串行区之前完成，避免等待期间被继续使用。
   void _beginSuspensionRevocation() {
+    _recentHistory?.revoke();
+    _client?.recoveryOwner?.revoke();
     _cancelSyncProjection();
     _accessRevoked = true;
     _outgoingWork.revoke('Matrix session suspended');
     _revokeManagedResources();
   }
 
-  /// 挂起是一次安全关闭，必须必达。
-  ///
-  /// 顺序固定为：撤销访问 → 尽力 drain → 尽力读取 continuity（失败只记录）
-  /// → detach → dispose → 清空 [_client] → 记录观察到的身份与连续性判定。
-  ///
-  /// 只有底层 client 自己的 dispose 失败才允许中断关闭；诊断与可选的 continuity
-  /// 读取都不得阻止它。此前 continuity 读取失败会让整个 suspend 抛错，留下
-  /// 「`_accessRevoked=true` 而 client 未关闭、数据库仍打开」的半挂起态，之后
-  /// 每一次 selectAccount 都再次失败，表现为 account_storage 阶段 L07。
-  /// 关闭安全与连续性信任必须分开：关闭失败 → 抛错保留句柄以便重试；
-  /// continuity 读取失败 → 记录为 [MatrixSuspendedContinuity.unknown]，绝不假装已验证。
+  /// Revoke admission, await actual writes, then close the retained store.
+  /// A drain deadline leaves handles alive for retry until the real work settles.
+  /// Optional continuity diagnostics cannot prevent an otherwise safe close.
   Future<void> _suspendWithinLifecycle() async {
     final active = _client;
     if (active == null) return;
@@ -7704,12 +7846,14 @@ final class MatrixSdkE2eeClient
         outcome: MatrixSecurityOutcome.timeout,
         eventCode: MatrixSecurityCode.lifecycleSuspendDrainTimeout,
       );
+      rethrow;
     } catch (_) {
       securityLogger.record(
         stage: MatrixSecurityStage.lifecycle,
         outcome: MatrixSecurityOutcome.failure,
         eventCode: MatrixSecurityCode.lifecycleDrainTimeout,
       );
+      rethrow;
     }
     // Reopening the retained store can restore the old token from disk.
     // Keep its invalid status after the SDK object and stream are disposed.
@@ -7815,6 +7959,7 @@ final class MatrixSdkE2eeClient
   Future<void> _queueAccountSelection(
       String matrixUserId, Uri selectedHomeserver,
       {Future<void> Function()? beforeSelect}) {
+    _beginSuspensionRevocation();
     final operation = _accountSelectionQueue.then((_) => _selectAccount(
         matrixUserId, selectedHomeserver,
         beforeSelect: beforeSelect));
@@ -7965,6 +8110,8 @@ final class MatrixSdkE2eeClient
   /// Only a separately confirmed local-clear flow may call it.
   @override
   Future<void> clearLocalChatData() {
+    _recentHistory?.revoke();
+    _client?.recoveryOwner?.revoke();
     _cancelSyncProjection();
     _accessRevoked = true;
     _outgoingWork.revoke('Matrix local data cleared');
@@ -8043,6 +8190,13 @@ final class MatrixSdkE2eeClient
       }
       if (authorizeAccess) _accessRevoked = false;
       active = await _resumeWithinLifecycle(freshLogin: freshLogin);
+      if (authorizeAccess && active.recoveryOwner?.active != true) {
+        final previous = active.recoveryOwner;
+        if (previous != null) {
+          await previous.drain().timeout(lifecycleDrainTimeout);
+        }
+        _bindRecoveryWrites(active);
+      }
       _beginClientOperation();
     });
     try {
@@ -8066,6 +8220,7 @@ final class MatrixSdkE2eeClient
   }
 
   Future<void> _waitForClientOperationsToDrain() async {
+    await _client?.recoveryOwner?.drain().timeout(lifecycleDrainTimeout);
     final drained = _clientOperationsDrained;
     if (drained == null) return;
     try {

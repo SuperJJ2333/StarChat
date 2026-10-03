@@ -33,7 +33,6 @@ import 'package:matrix/encryption.dart';
 import 'package:matrix/matrix.dart';
 import 'package:matrix/matrix_api_lite/generated/fixed_model.dart';
 import 'package:matrix/msc_extensions/msc_unpublished_custom_refresh_token_lifetime/msc_unpublished_custom_refresh_token_lifetime.dart';
-import 'package:matrix/src/models/timeline_chunk.dart';
 import 'package:matrix/src/utils/cached_stream_controller.dart';
 import 'package:matrix/src/utils/client_init_exception.dart';
 import 'package:matrix/src/utils/compute_callback.dart';
@@ -74,6 +73,11 @@ class Client extends MatrixApi {
   DatabaseApi? get database => _database;
 
   Encryption? get encryption => _encryption;
+  /// Installed by the application for a captured authorized DB lifetime.
+  RecoveryOperationOwner? recoveryOwner;
+  /// Application lifecycle barrier after authorized credentials are adopted,
+  /// before encryption initialization, durable credentials, or initial sync.
+  Future<void> Function()? onRecoveryIdentityAdopted;
   Encryption? _encryption;
 
   Set<KeyVerificationMethod> verificationMethods;
@@ -136,8 +140,19 @@ class Client extends MatrixApi {
   @override
   set homeserver(Uri? homeserver) {
     if (homeserver?.host != this.homeserver?.host) {
+      final capturedDatabase = database;
+      final owner = recoveryOwner;
+      // Admit the actual cache write before changing the captured endpoint.
+      // The setter is synchronous, but disposal must drain its real future.
+      if (capturedDatabase != null) {
+        final write = owner == null
+            ? capturedDatabase.storeWellKnown(null)
+            : owner.write(() => capturedDatabase.storeWellKnown(null));
+        unawaited(write.catchError((Object _) {
+          Logs().e('Unable to persist discovery cache invalidation');
+        }));
+      }
       _wellKnown = null;
-      unawaited(database?.storeWellKnown(null));
     }
     super.homeserver = homeserver;
   }
@@ -1904,6 +1919,7 @@ class Client extends MatrixApi {
     String? olmAccount;
     String? accessToken;
     String? userID;
+    final previousHomeserver = homeserver;
     try {
       Logs().i('Initialize client $clientName');
       if (onLoginStateChanged.value == LoginState.loggedIn) {
@@ -1937,7 +1953,7 @@ class Client extends MatrixApi {
           account['user_id'] != null &&
           account['token'] != null) {
         _id = account['client_id'];
-        homeserver = Uri.parse(account['homeserver_url']);
+        super.homeserver = Uri.parse(account['homeserver_url']);
         accessToken = this.accessToken = account['token'];
         final tokenExpiresAtMs =
             int.tryParse(account.tryGet<String>('token_expires_at') ?? '');
@@ -1954,7 +1970,7 @@ class Client extends MatrixApi {
       if (newToken != null) {
         accessToken = this.accessToken = newToken;
         _accessTokenExpiresAt = newTokenExpiresAt;
-        homeserver = newHomeserver;
+        super.homeserver = newHomeserver;
         userID = _userID = newUserID;
         _deviceID = newDeviceID;
         _deviceName = newDeviceName;
@@ -1962,11 +1978,28 @@ class Client extends MatrixApi {
       } else {
         accessToken = this.accessToken = newToken ?? accessToken;
         _accessTokenExpiresAt = newTokenExpiresAt ?? accessTokenExpiresAt;
-        homeserver = newHomeserver ?? homeserver;
+        super.homeserver = newHomeserver ?? homeserver;
         userID = _userID = newUserID ?? userID;
         _deviceID = newDeviceID ?? _deviceID;
         _deviceName = newDeviceName ?? _deviceName;
         olmAccount = newOlmAccount ?? olmAccount;
+      }
+
+      await onRecoveryIdentityAdopted?.call();
+
+      // Initialization adopts database and identity together. Persist endpoint
+      // cache invalidation only after the application admits that new owner.
+      if (previousHomeserver?.host != homeserver?.host) {
+        _wellKnown = null;
+        final adoptedDatabase = this.database;
+        if (adoptedDatabase != null) {
+          final owner = recoveryOwner;
+          if (owner == null) {
+            await adoptedDatabase.storeWellKnown(null);
+          } else {
+            await owner.write(() => adoptedDatabase.storeWellKnown(null));
+          }
+        }
       }
 
       // If we are refreshing the session, we are done here:
@@ -2174,9 +2207,11 @@ class Client extends MatrixApi {
     currentSync =
         _innerSync(timeout: timeout, generation: generation).whenComplete(() {
       if (!identical(_currentSync, currentSync) ||
-          generation != _syncGeneration) return;
+          generation != _syncGeneration) {
+        return;
+      }
       _currentSync = null;
-      if (_backgroundSync && isLogged() && !_disposed) _sync();
+      if (_backgroundSync && isLogged() && !_disposed) { unawaited(_sync()); }
     });
     return _currentSync = currentSync;
   }
@@ -2512,7 +2547,9 @@ class Client extends MatrixApi {
         for (final event in _eventsPendingDecryption) {
           if (event.event.roomID != roomId) continue;
           if (!sessionIds.contains(
-              event.event.content['content']?['session_id'])) continue;
+              event.event.content['content']?['session_id'])) {
+            continue;
+          }
 
           final decryptedEvent = await event.event.decrypt(room);
           if (decryptedEvent.content.tryGet<String>('type') !=

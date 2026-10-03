@@ -312,6 +312,29 @@ final class SecureSessionStore {
             _AccountScopedSecureStore(storage ?? FlutterSecureKeyValueStore());
 
   final _AccountScopedSecureStore _storage;
+  String? _businessIdentity;
+  int _businessAuthorizationGeneration = 0;
+  String? get businessIdentity => _businessIdentity;
+  int get businessAuthorizationGeneration => _businessAuthorizationGeneration;
+  static String? _tokenIdentity(String token) {
+    try {
+      final claims = jsonDecode(utf8.decode(
+          base64Url.decode(base64Url.normalize(token.split('.')[1])))) as Map;
+      if (claims['family_id'] is! String ||
+          (claims['family_id'] as String).isEmpty) {
+        return null;
+      }
+      return '${claims['sub']}:${claims['family_id']}:${claims['device_id']}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Pins storage addressing before any asynchronous secure-store operation.
+  /// Vault enrollment and exact retry payload survive a local device rotation.
+  VaultSecureStorage vaultStorage(String homeserver, String userId) =>
+      VaultSecureStorage(_storage.raw,
+          'liuhetong.recovery_vault.v1.${_AccountScopedSecureStore.identity(homeserver, userId)}');
   Future<void> _matrixIdentityOperations = Future<void>.value();
 
   static const _sessionKey = 'liuhetong.business_session.v1';
@@ -350,6 +373,33 @@ final class SecureSessionStore {
 
   Future<String> matrixStorageScope() =>
       _runMatrixIdentityOperation(_storage.scope);
+
+  Future<List<MatrixStoredIdentitySnapshot>> retainedRecoverySources(
+          String homeserver, String userId) =>
+      _runMatrixIdentityOperation(() async {
+        final account = _AccountScopedSecureStore.identity(homeserver, userId);
+        final active = await _storage.scope();
+        final entries = await _archiveEntriesUnlocked();
+        final sources = <MatrixStoredIdentitySnapshot>[];
+        for (final scope in entries
+            .where((e) => e.accountHash == account)
+            .map((e) => e.oldScope)
+            .where((s) => s != active)
+            .toSet()) {
+          final source = await _peekIdentityAtScopeUnlocked(scope);
+          final binding = source.binding;
+          if (binding == null ||
+              source.databaseKey == null ||
+              binding.homeserver != homeserver ||
+              binding.matrixUserId != userId ||
+              binding.databaseGeneration.isEmpty ||
+              binding.ed25519Fingerprint == null) {
+            throw StateError('Recovery archive provenance unavailable');
+          }
+          sources.add(source);
+        }
+        return sources;
+      });
 
   /// Read-only Keychain snapshot for inspection before Matrix SDK init.
   Future<MatrixStoredIdentitySnapshot> peekActiveMatrixIdentity() =>
@@ -960,21 +1010,28 @@ final class SecureSessionStore {
     String? matrixUserId,
     String? deviceKey,
     String? pendingRefreshOperation,
-  }) =>
-      _storage.write(
-        _sessionKey,
-        jsonEncode({
-          'version': 1,
-          'access_token': accessToken,
-          'refresh_token': refreshToken,
-          if (matrixUserId != null) 'matrix_user_id': matrixUserId,
-          if (deviceKey != null) 'device_key': deviceKey,
-          if (pendingRefreshOperation != null)
-            'pending_refresh_operation': pendingRefreshOperation,
-        }),
-      );
+  }) {
+    final identity = _tokenIdentity(accessToken);
+    if (_businessIdentity != identity) {
+      _businessAuthorizationGeneration++;
+      _businessIdentity = identity;
+    }
+    return _storage.write(
+      _sessionKey,
+      jsonEncode({
+        'version': 1,
+        'access_token': accessToken,
+        'refresh_token': refreshToken,
+        if (matrixUserId != null) 'matrix_user_id': matrixUserId,
+        if (deviceKey != null) 'device_key': deviceKey,
+        if (pendingRefreshOperation != null)
+          'pending_refresh_operation': pendingRefreshOperation,
+      }),
+    );
+  }
 
   Future<StoredBusinessSession?> session() async {
+    final generation = _businessAuthorizationGeneration;
     final encoded = await _storage.read(_sessionKey);
     if (encoded != null) {
       final value = jsonDecode(encoded);
@@ -985,6 +1042,9 @@ final class SecureSessionStore {
           (value['pending_refresh_operation'] != null &&
               !_validRefreshOperation(value['pending_refresh_operation']))) {
         throw const FormatException('Invalid stored business session');
+      }
+      if (generation == _businessAuthorizationGeneration) {
+        _businessIdentity ??= _tokenIdentity(value['access_token'] as String);
       }
       return StoredBusinessSession(
         version: 1,
@@ -1037,7 +1097,11 @@ final class SecureSessionStore {
   Future<String?> accessToken() async => (await session())?.accessToken;
   Future<String?> refreshToken() async => (await session())?.refreshToken;
 
-  Future<void> clearBusinessSession() => _storage.delete(_sessionKey);
+  Future<void> clearBusinessSession() {
+    _businessAuthorizationGeneration++;
+    _businessIdentity = null;
+    return _storage.delete(_sessionKey);
+  }
 
   Future<T> _runMatrixIdentityOperation<T>(Future<T> Function() operation,
       {bool skipArchiveRecovery = false}) {
@@ -1271,6 +1335,28 @@ final class SecureSessionStore {
   Future<void> _clearMatrixIdentityUnlocked() async {
     Object? firstError;
     StackTrace? firstStackTrace;
+    MatrixLocalBinding? binding;
+    try {
+      binding = await _matrixBindingUnlocked();
+    } on FormatException {
+      /* Explicit local clear also repairs corrupt metadata. */
+    }
+    if (binding != null) {
+      final vault = vaultStorage(binding.homeserver, binding.matrixUserId);
+      for (final name in ['material', 'pending', 'enrollment']) {
+        try {
+          await vault.delete(name);
+        } catch (error, stackTrace) {
+          firstError ??= error;
+          firstStackTrace ??= stackTrace;
+        }
+      }
+      // Preserve the addressing metadata so an interrupted protected-material
+      // deletion remains retryable; the DB file was already removed by caller.
+      if (firstError != null) {
+        Error.throwWithStackTrace(firstError, firstStackTrace!);
+      }
+    }
 
     Future<void> attemptDelete(String key) async {
       try {
@@ -1312,6 +1398,11 @@ final class SecureSessionStore {
     }
 
     for (final suffix in await _installationSlotSuffixes()) {
+      if (suffix.isNotEmpty) {
+        for (final name in ['material', 'pending', 'enrollment']) {
+          await attemptDelete('liuhetong.recovery_vault.v1.$suffix.$name');
+        }
+      }
       for (final name in _scopedKeyNames) {
         await attemptDelete(suffix.isEmpty ? name : '$name.$suffix');
       }
@@ -1369,6 +1460,16 @@ final class SecureSessionStore {
     await _storage.delete(_legacyAccessKey);
     await _storage.delete(_legacyRefreshKey);
   }
+}
+
+final class VaultSecureStorage {
+  VaultSecureStorage(this._storage, this._prefix);
+  final SecureKeyValueStore _storage;
+  final String _prefix;
+  Future<String?> read(String name) => _storage.read('$_prefix.$name');
+  Future<void> write(String name, String value) =>
+      _storage.write('$_prefix.$name', value);
+  Future<void> delete(String name) => _storage.delete('$_prefix.$name');
 }
 
 /// Matrix material is scoped; the single current business session is not.

@@ -5,6 +5,7 @@ import 'ui/components/wechat_scaffold.dart';
 import 'features/contacts/contact_actions.dart';
 import 'features/contacts/friend_acceptance_greeting_ledger.dart';
 import 'features/matrix/direct_chat_failure.dart';
+import 'features/matrix/matrix_security_page.dart';
 import 'features/contacts/group_address_list_page.dart';
 import 'dart:async';
 
@@ -3121,6 +3122,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                     identityCache: _chatIdentityCache,
                   ),
                 _ => ProfileTabPage(
+                    matrix: widget.matrix,
                     contactActions: ContactActions(
                       onMessage: _openMessage,
                       onVoice: (contact) =>
@@ -3270,8 +3272,10 @@ final class ProfileTabPage extends StatefulWidget {
     this.identityCache,
     this.contactActions,
     this.refreshSignal,
+    this.matrix,
   });
   final BusinessApiClient api;
+  final MatrixSdkE2eeClient? matrix;
   final ContactActions? contactActions;
   final Future<void> Function() onLogout;
   final ProfileRepository? identityCache;
@@ -3499,7 +3503,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage>
             builder: (_) => MyQrCodePage(
                 profile: profile, avatarCacheKey: controller.avatarCacheKey)));
       },
-      onSettings: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(builder: (_) => SettingsPage(api: widget.api, onLogout: widget.onLogout, onClearLocalChatData: widget.onClearLocalChatData, onProfileUpdated: controller.load))));
+      onSettings: () => Navigator.of(context, rootNavigator: true).push(MotionPageRoute(builder: (_) => SettingsPage(api: widget.api, matrix: widget.matrix, onLogout: widget.onLogout, onClearLocalChatData: widget.onClearLocalChatData, onProfileUpdated: controller.load))));
 }
 
 final class ProfilePage extends StatelessWidget {
@@ -3570,9 +3574,11 @@ final class SettingsPage extends StatefulWidget {
       required this.api,
       required this.onLogout,
       this.onClearLocalChatData,
+      this.matrix,
       this.onProfileUpdated});
 
   final BusinessApiClient api;
+  final MatrixSdkE2eeClient? matrix;
   final Future<void> Function() onLogout;
   final Future<void> Function()? onClearLocalChatData;
   final Future<void> Function()? onProfileUpdated;
@@ -3727,6 +3733,16 @@ final class _SettingsPageState extends State<SettingsPage> {
                       context,
                       MotionPageRoute(
                           builder: (_) => ChatSettingsPage(api: widget.api)))),
+              if (widget.matrix != null)
+                _SettingsTile(
+                    icon: CupertinoIcons.arrow_2_circlepath,
+                    label: '聊天记录同步',
+                    detail: '自动',
+                    onTap: () => Navigator.push(
+                        context,
+                        MotionPageRoute(
+                            builder: (_) =>
+                                MatrixSecurityPage(matrix: widget.matrix!)))),
               _SettingsTile(
                 icon: CupertinoIcons.bell,
                 label: '消息通知',

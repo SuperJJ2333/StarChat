@@ -230,7 +230,7 @@ function settings(definition) {
   root.append(navigation("设置", { leading: "返回" }));
   const content = element("div", "p-profile-settings__content");
   content.append(element("h2", "p-account__group", "账号"), component("app-list-tile", { title: "账号安全", leading: "info", action: "open:account-security-default" }), component("app-gradient-divider"), element("h2", "p-account__group", "通用"));
-  for (const [title, trailing, action] of [["聊天", "", "open:account-chat-default"], ["消息通知", "已开启", null], ["减少动态效果", "跟随系统", null], ["关于畅聊", "1.1", null]]) content.append(component("app-list-tile", { title, trailing, leading: "info", action }), component("app-gradient-divider"));
+  for (const [title, trailing, action] of [["聊天", "", "open:account-chat-default"], ["聊天记录同步", "自动", "open:account-recovery-downloading"], ["消息通知", "已开启", null], ["减少动态效果", "跟随系统", null], ["关于畅聊", "1.1", null]]) content.append(component("app-list-tile", { title, trailing, leading: "info", action }), component("app-gradient-divider"));
   content.append(component("app-action-button", { kind: "danger", icon: "close", label: definition.state === "logout-loading" ? "正在退出…" : "退出登录", loading: definition.state === "logout-loading", action: "profile:logout" }));
   root.append(content);
   if (definition.state === "logout-confirm") root.append(component("app-dialog", { kind: "danger", title: "退出登录", message: "退出后将清除本设备的登录状态。", cancel: "取消", confirm: "退出登录" }));

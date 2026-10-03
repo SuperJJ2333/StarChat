@@ -95,6 +95,8 @@ class BoxCollection with ZoneTransactionMixin {
 }
 
 class Box<V> {
+  Future<void> appendUnique(String key, List<String> values) =>
+      throw UnsupportedError('Independent native history requires SQLite JSON1');
   final String name;
   final BoxCollection boxCollection;
   final Map<String, V?> _cache = {};
@@ -109,6 +111,19 @@ class Box<V> {
   bool get _keysCached => _cachedKeys != null;
 
   Box(this.name, this.boxCollection);
+
+  Future<Map<String, V>> getPage({String? after, int limit = 80}) async {
+    if (limit < 1 || limit > 80) throw RangeError.range(limit, 1, 80);
+    final txn = boxCollection._db.transaction(name, 'readonly');
+    final values = <String, V>{};
+    await for (final cursor in txn.objectStore(name).openCursor(
+        range: after == null ? null : KeyRange.lowerBound(after, true),
+        autoAdvance: true)) {
+      values[cursor.key as String] = _fromValue(cursor.value) as V;
+      if (values.length == limit) break;
+    }
+    return values;
+  }
 
   Future<List<String>> getAllKeys([Transaction? txn]) async {
     if (_keysCached) return _cachedKeys!.toList();

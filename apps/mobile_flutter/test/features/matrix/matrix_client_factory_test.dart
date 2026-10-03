@@ -1795,12 +1795,11 @@ void main() {
     final operation = issued.handle.accept();
     await operationStarted.future;
 
-    // 挂起超时也必须完成关闭：此前 drain 超时会让 suspend 抛错留下
-    // “半挂起”态，后续任何账号的 selectAccount 再次超时 → L07。新语义：
-    // 未完成的操作作废（后续访问一律 ACCESS_REVOKED），数据库原样保留。
-    await matrix.suspend();
-    expect(suspendedClients, [oldClient]);
-    expect(matrix.debugHasActiveClient, isFalse);
+    // A deadline cannot cancel a genuine outstanding database/key write.
+    // Keep the revoked client until that operation actually settles.
+    await expectLater(matrix.suspend(), throwsStateError);
+    expect(suspendedClients, isEmpty);
+    expect(matrix.debugHasActiveClient, isTrue);
 
     allowOperation.complete();
     await operation;

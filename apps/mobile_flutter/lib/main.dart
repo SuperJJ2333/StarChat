@@ -39,7 +39,6 @@ import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_home_page.dart';
 import 'ui/foundation/changliao_icons.dart';
-import 'features/matrix/matrix_recovery_service.dart';
 import 'session_gate.dart';
 import 'ui/motion/motion_preferences.dart';
 import 'features/settings/voice_auto_play_preferences.dart';
@@ -163,6 +162,11 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
     final sdkClient = startupClient.client;
     final matrix = MatrixSdkE2eeClient(
       sdkClient,
+      secureSessionStore: store,
+      migrateRecoveryArchives: matrixFactory.migrateRecoveryArchives,
+      refreshRecoveryBusinessSession: () async {
+        await api.refreshSession();
+      },
       homeserver: Uri.parse(AppConfig.matrixHomeserver),
       suspendClient: matrixFactory.suspend,
       resumeClient: matrixFactory.create,
@@ -198,7 +202,6 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
         await login.restoreAuthenticatedSession(identity);
       },
     );
-    final recovery = MatrixRecoveryService(matrix);
     login = DualDomainLoginService(
       prepareLocalLogin: () =>
           validateLocalLoginStorageForAuthentication(store),
@@ -312,7 +315,7 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
       try {
         await bootstrap;
         await session.runAuthenticatedBackground(
-          prepare: () => recovery.restoreFromLocalSecureStorage(store),
+          prepare: () async => true,
           complete: matrix.syncIfActive,
         );
       } catch (error) {

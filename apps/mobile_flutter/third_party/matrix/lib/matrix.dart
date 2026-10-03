@@ -18,6 +18,7 @@
 
 /// Matrix SDK written in pure Dart.
 library;
+export 'src/utils/recovery_operation_owner.dart';
 
 export 'matrix_api_lite.dart';
 

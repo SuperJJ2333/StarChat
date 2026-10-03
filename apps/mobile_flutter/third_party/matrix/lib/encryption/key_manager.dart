@@ -87,10 +87,25 @@ class KeyManager {
 
   /// clear all cached inbound group sessions. useful for testing
   void clearInboundGroupSessions() {
+    for (final room in _inboundGroupSessions.values) {
+      for (final session in room.values) { session.dispose(); }
+    }
     _inboundGroupSessions.clear();
   }
 
   Future<void> setInboundGroupSession(
+    String roomId, String sessionId, String senderKey, Map<String, dynamic> content, {
+    bool forwarded = false, Map<String, String>? senderClaimedKeys,
+    bool uploaded = false, Map<String, Map<String, int>>? allowedAtIndex,
+  }) {
+    final owner = client.recoveryOwner;
+    Future<void> action() => _setInboundGroupSession(roomId, sessionId, senderKey, content,
+        forwarded: forwarded, senderClaimedKeys: senderClaimedKeys,
+        uploaded: uploaded, allowedAtIndex: allowedAtIndex);
+    return owner == null ? action() : owner.write(action);
+  }
+
+  Future<void> _setInboundGroupSession(
     String roomId,
     String sessionId,
     String senderKey,
@@ -150,23 +165,22 @@ class KeyManager {
         (oldFirstIndex == newFirstIndex &&
             newSession.forwardingCurve25519KeyChain.length <
                 oldSession.forwardingCurve25519KeyChain.length)) {
-      // use new session
-      oldSession?.dispose();
+      // Commit before replacing a usable in-memory session.
     } else {
       // we are gonna keep our old session
       newSession.dispose();
       return;
     }
 
-    final roomInboundGroupSessions =
-        _inboundGroupSessions[roomId] ??= <String, SessionKey>{};
-    roomInboundGroupSessions[sessionId] = newSession;
     if (!client.isLogged() || client.encryption == null) {
+      oldSession?.dispose();
+      (_inboundGroupSessions[roomId] ??= {})[sessionId] = newSession;
       return;
     }
 
-    final storeFuture = client.database
-        ?.storeInboundGroupSession(
+    try {
+      client.recoveryOwner?.check();
+      await client.database?.storeInboundGroupSession(
       roomId,
       sessionId,
       inboundGroupSession.pickle(userId),
@@ -175,8 +189,8 @@ class KeyManager {
       json.encode(allowedAtIndex_),
       senderKey,
       json.encode(senderClaimedKeys_),
-    )
-        .then((_) async {
+    );
+      client.recoveryOwner?.check();
       if (!client.isLogged() || client.encryption == null) {
         return;
       }
@@ -184,7 +198,9 @@ class KeyManager {
         await client.database
             ?.markInboundGroupSessionAsUploaded(roomId, sessionId);
       }
-    });
+    } catch (_) { newSession.dispose(); rethrow; }
+    oldSession?.dispose();
+    (_inboundGroupSessions[roomId] ??= {})[sessionId] = newSession;
     final room = client.getRoomById(roomId);
     if (room != null) {
       // attempt to decrypt the last event
@@ -222,7 +238,7 @@ class KeyManager {
       room.onSessionKeyReceived.add(sessionId);
     }
 
-    return storeFuture ?? Future.value();
+    return;
   }
 
   SessionKey? getInboundGroupSession(String roomId, String sessionId) {
@@ -234,6 +250,68 @@ class KeyManager {
       return sess;
     }
     return null;
+  }
+
+  /// Import an authenticated backup candidate without manufacturing live sync.
+  /// The caller supplies the sender key from the target encrypted event.
+  Future<bool> importRecoverySession(String roomId, String sessionId,
+      String expectedSenderKey, Map<String, dynamic> payload) async {
+    final owner = client.recoveryOwner;
+    Future<bool> import() async {
+      owner?.check();
+      final database = client.database;
+      final user = client.userID;
+      if (database == null || user == null ||
+          payload['algorithm'] != AlgorithmTypes.megolmV1AesSha2 ||
+          payload['sender_key'] != expectedSenderKey ||
+          (payload['room_id'] != null && payload['room_id'] != roomId) ||
+          (payload['session_id'] != null && payload['session_id'] != sessionId)) {
+        return false;
+      }
+      final native = olm.InboundGroupSession();
+      var retained = false;
+      try {
+        native.import_session(payload['session_key'] as String);
+        if (native.session_id() != sessionId) return false;
+        // The legacy SDK table is keyed by session ID. A relabelled candidate
+        // must never overwrite a valid row belonging to a different room.
+        final stored = await database.getInboundGroupSession(roomId, sessionId);
+        owner?.check();
+        if (stored != null && (stored.roomId != roomId || stored.senderKey != expectedSenderKey)) return false;
+        final old = await loadInboundGroupSession(roomId, sessionId);
+        owner?.check();
+        if (old != null && old.senderKey != expectedSenderKey) return false;
+        final chain = List<String>.from(payload['forwarding_curve25519_key_chain'] as List);
+        if (chain.length > 64) return false;
+        final oldIndex = old?.inboundGroupSession?.first_known_index();
+        if (oldIndex != null && (oldIndex < native.first_known_index() ||
+            (oldIndex == native.first_known_index() && old!.forwardingCurve25519KeyChain.length <= chain.length))) {
+          return true;
+        }
+        final claimed = old?.senderClaimedKeys ?? Map<String, String>.from(payload['sender_claimed_keys'] as Map);
+        final indexes = old?.indexes ?? <String, String>{};
+        final allowed = old?.allowedAtIndex ?? <String, Map<String, int>>{};
+        final content = Map<String, dynamic>.from(payload);
+        await database.transaction(() async {
+          owner?.check();
+          await database.storeInboundGroupSession(roomId, sessionId,
+              native.pickle(user), json.encode(content), json.encode(indexes),
+              json.encode(allowed), expectedSenderKey, json.encode(claimed));
+        });
+        owner?.check();
+        final session = SessionKey(content: content, inboundGroupSession: native,
+            key: user, indexes: indexes, allowedAtIndex: allowed, roomId: roomId,
+            sessionId: sessionId, senderKey: expectedSenderKey, senderClaimedKeys: claimed);
+        (_inboundGroupSessions[roomId] ??= {})[sessionId] = session;
+        retained = true;
+        old?.dispose();
+        client.getRoomById(roomId)?.onSessionKeyReceived.add(sessionId);
+        return true;
+      } on StateError { rethrow; }
+      catch (_) { return false; }
+      finally { if (!retained) native.free(); }
+    }
+    return owner == null ? import() : owner.write(import);
   }
 
   /// Attempt auto-request for a key
@@ -265,6 +343,8 @@ class KeyManager {
   /// Loads an inbound group session
   Future<SessionKey?> loadInboundGroupSession(
       String roomId, String sessionId) async {
+    final owner = client.recoveryOwner;
+    owner?.check();
     final sess = _inboundGroupSessions[roomId]?[sessionId];
     if (sess != null) {
       if (sess.sessionId != sessionId && sess.sessionId.isNotEmpty) {
@@ -274,6 +354,7 @@ class KeyManager {
     }
     final session =
         await client.database?.getInboundGroupSession(roomId, sessionId);
+    owner?.check();
     if (session == null) return null;
     final userID = client.userID;
     if (userID == null) return null;
@@ -281,12 +362,15 @@ class KeyManager {
     final roomInboundGroupSessions =
         _inboundGroupSessions[roomId] ??= <String, SessionKey>{};
     if (!dbSess.isValid ||
+        dbSess.roomId != roomId ||
         dbSess.sessionId.isEmpty ||
-        dbSess.sessionId != sessionId) {
+        dbSess.sessionId != sessionId ||
+        dbSess.inboundGroupSession!.session_id() != sessionId) {
+      dbSess.dispose();
       return null;
     }
     roomInboundGroupSessions[sessionId] = dbSess;
-    return sess;
+    return dbSess;
   }
 
   Map<String, Map<String, bool>> _getDeviceKeyIdMap(
@@ -626,6 +710,18 @@ class KeyManager {
     return _roomKeysVersionCache!;
   }
 
+  Future<bool> cachedBackupKeyMatchesCurrentVersion() async {
+    if (!await isCached()) return false;
+    final secret = await encryption.ssss.getCached(megolmKey);
+    if (secret == null) return false;
+    final native = olm.PkDecryption();
+    try {
+      final info = await getRoomKeysBackupInfo(false);
+      return info.algorithm == BackupAlgorithm.mMegolmBackupV1Curve25519AesSha2 &&
+          info.authData['public_key'] == native.init_with_private_key(base64decodeUnpadded(secret));
+    } finally { native.free(); }
+  }
+
   Future<void> loadFromResponse(RoomKeys keys) async {
     if (!(await isCached())) {
       return;
@@ -784,8 +880,10 @@ class KeyManager {
   Future<void>? _uploadingFuture;
 
   void startAutoUploadKeys() {
-    _uploadKeysOnSync = encryption.client.onSync.stream.listen(
-        (_) async => uploadInboundGroupSessions(skipIfInProgress: true));
+    _uploadKeysOnSync = encryption.client.onSync.stream.listen((_) {
+      if (client.recoveryOwner?.active == false) return;
+      runInRoot(() => uploadInboundGroupSessions(skipIfInProgress: true));
+    });
   }
 
   /// This task should be performed after sync processing but should not block
@@ -794,6 +892,8 @@ class KeyManager {
   /// to `false` to await the pending upload task instead.
   Future<void> uploadInboundGroupSessions(
       {bool skipIfInProgress = false}) async {
+    final owner = client.recoveryOwner;
+    owner?.check();
     final database = client.database;
     final userID = client.userID;
     if (database == null || userID == null) {
@@ -814,6 +914,7 @@ class KeyManager {
     Future<void> uploadInternal() async {
       try {
         await client.userDeviceKeysLoading;
+        owner?.check();
 
         if (!(await isCached())) {
           return; // we can't backup anyways
@@ -834,7 +935,6 @@ class KeyManager {
           if (info.algorithm !=
                   BackupAlgorithm.mMegolmBackupV1Curve25519AesSha2 ||
               info.authData['public_key'] != backupPubKey) {
-            decryption.free();
             return;
           }
           final args = GenerateUploadKeysArgs(
@@ -864,9 +964,11 @@ class KeyManager {
           Logs().i('[Key Manager] Uploading ${dbSessions.length} room keys...');
           // upload the payload...
           await client.putRoomKeys(info.version, roomKeys);
+          owner?.check();
           // and now finally mark all the keys as uploaded
           // no need to optimze this, as we only run it so seldomly and almost never with many keys at once
           for (final dbSession in dbSessions) {
+            owner?.check();
             await database.markInboundGroupSessionAsUploaded(
                 dbSession.roomId, dbSession.sessionId);
           }
@@ -878,7 +980,7 @@ class KeyManager {
       }
     }
 
-    _uploadingFuture = uploadInternal();
+    _uploadingFuture = owner == null ? uploadInternal() : owner.write(uploadInternal);
     try {
       await _uploadingFuture;
     } finally {
@@ -1168,14 +1270,16 @@ class RoomKeyRequest extends ToDeviceEvent {
 
 /// you would likely want to use [NativeImplementations] and
 /// [Client.nativeImplementations] instead
-RoomKeys generateUploadKeysImplementation(GenerateUploadKeysArgs args) {
+RoomKeys generateUploadKeysImplementation(GenerateUploadKeysArgs args,
+    {SessionKey Function(StoredInboundGroupSession, String)? sessionFromDb}) {
   final enc = olm.PkEncryption();
   try {
     enc.set_recipient_key(args.pubkey);
     // first we generate the payload to upload all the session keys in this chunk
     final roomKeys = RoomKeys(rooms: {});
     for (final dbSession in args.dbSessions) {
-      final sess = SessionKey.fromDb(dbSession.dbSession, args.userId);
+      final sess = (sessionFromDb ?? SessionKey.fromDb)(dbSession.dbSession, args.userId);
+      try {
       if (!sess.isValid) {
         continue;
       }
@@ -1206,6 +1310,9 @@ RoomKeys generateUploadKeysImplementation(GenerateUploadKeysArgs args) {
           'mac': encrypted.mac,
         },
       );
+      } finally {
+        sess.dispose();
+      }
     }
     enc.free();
     return roomKeys;

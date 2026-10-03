@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'package:matrix/matrix.dart';
+import 'package:matrix/encryption/utils/stored_inbound_group_session.dart';
 import 'package:matrix/encryption/utils/key_verification.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -837,6 +838,84 @@ final class MatrixClientFactory {
       client.prevBatch,
       client.encryption?.pickledOlmAccount,
     );
+  }
+
+  Future<void> migrateRecoveryArchives(
+      Client authorized,
+      RecoveryOperationOwner owner,
+      Future<void> Function(
+              Future<List<StoredInboundGroupSession>> Function(String?))
+          archive) async {
+    owner.check();
+    final user = authorized.userID;
+    if (user == null || authorized.homeserver != homeserver) {
+      throw StateError('Recovery archive owner unavailable');
+    }
+    final sources = await owner.write(() =>
+        sessionStore.retainedRecoverySources(homeserver.toString(), user));
+    owner.check();
+    final directory = await owner.read(supportDirectoryPath);
+    for (final source in sources) {
+      owner.check();
+      final path = _databasePathForScope(directory, source.scope);
+      Future<void> verifyRecord(MatrixLocalIdentityRecord record) async {
+        if (!record.hasRetainedData ||
+            record.requiresAuthenticatedMigration ||
+            record.matrixUserId != user ||
+            record.deviceId != source.binding!.deviceId) {
+          throw StateError('Recovery archive provenance unavailable');
+        }
+        // A damaged original Olm account is why this authorized archive may
+        // exist. Its absence does not destroy independently stored Megolm keys.
+        // When present, its fingerprint must still agree with secure provenance.
+        if (record.olmAccount != null &&
+            await localIdentityPreflight.fingerprintReader(
+                    user, record.olmAccount!) !=
+                source.binding!.ed25519Fingerprint) {
+          throw StateError('Recovery archive fingerprint changed');
+        }
+        owner.check();
+      }
+
+      await owner.write(() async {
+        if (!await localIdentityPreflight.reader.exists(path)) {
+          throw StateError('Recovery archive missing');
+        }
+        await verifyRecord(await localIdentityPreflight.reader
+            .read(path, source.databaseKey!));
+      });
+      // Keep the complete handle lifetime admitted, including failures and late
+      // crypto/network completions; no old Client/token is ever initialized.
+      await owner.write(() async {
+        owner.check();
+        final factory =
+            createDatabaseFactoryFfi(ffiInit: SQfLiteEncryptionHelper.ffiInit);
+        final encryption = SQfLiteEncryptionHelper(
+            factory: factory, path: path, cipher: source.databaseKey!);
+        final sql = await factory.openDatabase(path,
+            options:
+                OpenDatabaseOptions(readOnly: true, singleInstance: false));
+        try {
+          owner.check();
+          // sqflite deliberately skips onConfigure for readOnly connections.
+          // Apply the key explicitly, and recheck the identity on THIS handle.
+          if ((await sql.rawQuery('PRAGMA cipher_version')).isEmpty) {
+            throw StateError('Recovery archive requires SQLCipher');
+          }
+          await encryption.applyPragmaKey(sql);
+          owner.check();
+          final record = await readMatrixIdentityTables(sql);
+          await verifyRecord(record);
+          owner.check();
+          await archive((cursor) => owner.read(() =>
+              MatrixSdkDatabase.readRetainedSessionsPage(sql,
+                  afterSessionId: cursor)));
+        } finally {
+          await sql.close();
+        }
+      });
+      owner.check();
+    }
   }
 
   static Future<Client> _openPersistentClient({

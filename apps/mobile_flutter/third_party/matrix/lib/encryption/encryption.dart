@@ -106,7 +106,7 @@ class Encryption {
 
   void handleDeviceOneTimeKeysCount(
       Map<String, int>? countJson, List<String>? unusedFallbackKeyTypes) {
-    runInRoot(() async => olmManager.handleDeviceOneTimeKeysCount(
+    _runOwnedInRoot(() async => olmManager.handleDeviceOneTimeKeysCount(
         countJson, unusedFallbackKeyTypes));
   }
 
@@ -125,26 +125,26 @@ class Encryption {
         .contains(event.type)) {
       // "just" room key request things. We don't need these asap, so we handle
       // them in the background
-      runInRoot(() => keyManager.handleToDeviceEvent(event));
+      _runOwnedInRoot(() => keyManager.handleToDeviceEvent(event));
     }
     if (event.type == EventTypes.Dummy) {
       // the previous device just had to create a new olm session, due to olm session
       // corruption. We want to try to send it the last message we just sent it, if possible
-      runInRoot(() => olmManager.handleToDeviceEvent(event));
+      _runOwnedInRoot(() => olmManager.handleToDeviceEvent(event));
     }
     if (event.type.startsWith('m.key.verification.')) {
       // some key verification event. No need to handle it now, we can easily
       // do this in the background
 
-      runInRoot(() => keyVerificationManager.handleToDeviceEvent(event));
+      _runOwnedInRoot(() => keyVerificationManager.handleToDeviceEvent(event));
     }
     if (event.type.startsWith('m.secret.')) {
       // some ssss thing. We can do this in the background
-      runInRoot(() => ssss.handleToDeviceEvent(event));
+      _runOwnedInRoot(() => ssss.handleToDeviceEvent(event));
     }
     if (event.sender == client.userID) {
       // maybe we need to re-try SSSS secrets
-      runInRoot(() => ssss.periodicallyRequestMissingCache());
+      _runOwnedInRoot(() => ssss.periodicallyRequestMissingCache());
     }
   }
 
@@ -159,12 +159,12 @@ class Encryption {
             update.content['content']['msgtype']
                 .startsWith('m.key.verification.'))) {
       // "just" key verification, no need to do this in sync
-      runInRoot(() => keyVerificationManager.handleEventUpdate(update));
+      _runOwnedInRoot(() => keyVerificationManager.handleEventUpdate(update));
     }
     if (update.content['sender'] == client.userID &&
         update.content['unsigned']?['transaction_id'] == null) {
       // maybe we need to re-try SSSS secrets
-      runInRoot(() => ssss.periodicallyRequestMissingCache());
+      _runOwnedInRoot(() => ssss.periodicallyRequestMissingCache());
     }
   }
 
@@ -186,6 +186,14 @@ class Encryption {
     }
   }
 
+  void _runOwnedInRoot(Future<void> Function() action) {
+    final owner = client.recoveryOwner;
+    if (owner == null) { runInRoot(action); return; }
+    if (!owner.active) return;
+    final admitted = owner.write(action);
+    runInRoot(() => admitted);
+  }
+
   Event decryptRoomEventSync(String roomId, Event event) {
     if (event.type != EventTypes.Encrypted || event.redacted) {
       return event;
@@ -198,6 +206,7 @@ class Encryption {
     Map<String, dynamic> decryptedPayload;
     var canRequestSession = false;
     try {
+      client.recoveryOwner?.check();
       if (content.algorithm != AlgorithmTypes.megolmV1AesSha2) {
         throw DecryptException(DecryptException.unknownAlgorithm);
       }
@@ -220,6 +229,13 @@ class Encryption {
           .decrypt(content.ciphertextMegolm!);
       canRequestSession = false;
 
+      decryptedPayload = json.decode(decryptResult.plaintext);
+      // Outer backup labels are not a room authentication proof. The actual
+      // encrypted room binding must precede all plaintext/index projection.
+      if (decryptedPayload['room_id'] != roomId || event.room.id != roomId) {
+        throw DecryptException(DecryptException.channelCorrupted);
+      }
+
       // we can't have the key be an int, else json-serializing will fail, thus we need it to be a string
       final messageIndexKey = 'key-${decryptResult.message_index}';
       final messageIndexValue =
@@ -238,14 +254,16 @@ class Encryption {
         // the entry should always exist. In the case it doesn't, the following
         // line *could* throw an error. As that is a future, though, and we call
         // it un-awaited here, nothing happens, which is exactly the result we want
-        client.database
-            // ignore: discarded_futures
-            ?.updateInboundGroupSessionIndexes(
-                json.encode(inboundGroupSession.indexes), roomId, sessionId)
-            // ignore: discarded_futures
-            .onError((e, _) => Logs().e('Ignoring error for updating indexes'));
+        final database = client.database;
+        if (database != null) {
+          Future<void> writeIndex() async =>
+              database.updateInboundGroupSessionIndexes(
+                  json.encode(inboundGroupSession.indexes), roomId, sessionId);
+          final owner = client.recoveryOwner;
+          unawaited((owner == null ? writeIndex() : owner.write(writeIndex))
+              .catchError((Object _) {}));
+        }
       }
-      decryptedPayload = json.decode(decryptResult.plaintext);
     } catch (exception) {
       // alright, if this was actually by our own outbound group session, we might as well clear it
       if (exception.toString() != DecryptException.unknownSession &&
@@ -255,8 +273,14 @@ class Encryption {
                       ?.session_id() ??
                   '') ==
               content.sessionId) {
-        runInRoot(() async =>
-            keyManager.clearOrUseOutboundGroupSession(roomId, wipe: true));
+        final owner = client.recoveryOwner;
+        Future<void> clearOutbound() async =>
+            keyManager.clearOrUseOutboundGroupSession(roomId, wipe: true);
+        if (owner == null) {
+          runInRoot(clearOutbound);
+        } else if (owner.active) {
+          unawaited(owner.write(clearOutbound).catchError((Object _) {}));
+        }
       }
       if (canRequestSession) {
         decryptedPayload = {
