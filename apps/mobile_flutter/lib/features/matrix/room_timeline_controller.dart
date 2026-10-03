@@ -1093,6 +1093,17 @@ final class RoomTimelineController extends ChangeNotifier {
 
   Future<void> refresh() async {
     if (_disposed) return;
+    // A direct operation (send acknowledgment, history or navigation) consumes
+    // the same latest source as a queued SDK burst. Do not project it again on
+    // the next frame; events arriving after this synchronous read can schedule
+    // a fresh refresh normally.
+    _refreshDeadline?.cancel();
+    _refreshDeadline = null;
+    final frame = _refreshFrame;
+    _refreshFrame = null;
+    if (frame != null) {
+      SchedulerBinding.instance.cancelFrameCallbackWithId(frame);
+    }
     final watch =
         PerformanceMetrics.instance.enabled ? (Stopwatch()..start()) : null;
     final next = _snapshot();

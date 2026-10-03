@@ -11,6 +11,7 @@ class FakeTimelineAdapter implements RoomTimelineAdapter {
   int marks = 0;
   final redPackets = <String>[];
   int retries = 0;
+  int snapshotReads = 0;
   Object? sendFailure;
   @override
   Future<Uint8List> loadAttachment(String eventId) async =>
@@ -80,13 +81,16 @@ class FakeTimelineAdapter implements RoomTimelineAdapter {
     String? receiverMatrixId,
   }) async {
     transfers.add('$transferId:$amount:$note');
-    transferTargets
-        .add('${receiverId ?? ''}|${receiverMatrixId ?? ''}');
+    transferTargets.add('${receiverId ?? ''}|${receiverMatrixId ?? ''}');
     return 'event-transfer';
   }
 
   @override
-  List<RoomMessageViewModel> snapshot() => List.of(items);
+  List<RoomMessageViewModel> snapshot() {
+    snapshotReads++;
+    return List.of(items);
+  }
+
   @override
   void dispose() => disposed++;
 }
@@ -173,6 +177,74 @@ final class DeferredHistoryTimelineAdapter extends FakeTimelineAdapter
 }
 
 void main() {
+  test('scheduled refresh still publishes without a delivered frame', () async {
+    final adapter = FakeTimelineAdapter();
+    final controller = RoomTimelineController(adapter);
+    addTearDown(controller.dispose);
+    adapter.items.add(RoomMessageViewModel(
+        id: 'background',
+        senderId: 'peer',
+        text: 'fixture',
+        isOwn: false,
+        deliveryState: RoomDeliveryState.sent,
+        timestamp: DateTime.utc(2026)));
+    controller.scheduleRefresh();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect(controller.messages.single.id, 'background');
+  });
+
+  testWidgets('disposal cancels a queued burst without reading its source',
+      (tester) async {
+    final adapter = FakeTimelineAdapter();
+    final controller = RoomTimelineController(adapter);
+    controller.scheduleRefresh();
+    final reads = adapter.snapshotReads;
+    controller.dispose();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(adapter.snapshotReads, reads);
+    expect(adapter.disposed, 1);
+  });
+
+  testWidgets(
+      'direct refresh consumes queued burst projection but later events publish',
+      (tester) async {
+    final adapter = FakeTimelineAdapter();
+    var sourceRefreshes = 0;
+    final controller = RoomTimelineController(adapter,
+        onSourceRefreshed: () => sourceRefreshes++);
+    addTearDown(controller.dispose);
+    for (var i = 0; i < 100; i++) {
+      adapter.items.add(RoomMessageViewModel(
+          id: 'burst-$i',
+          senderId: 'peer',
+          text: 'fixture',
+          isOwn: false,
+          deliveryState: RoomDeliveryState.sent,
+          timestamp: DateTime.utc(2026).add(Duration(seconds: i))));
+      controller.scheduleRefresh();
+    }
+    await controller.refresh();
+    final reads = adapter.snapshotReads;
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(adapter.snapshotReads, reads,
+        reason:
+            'the direct refresh already consumed all queued source changes');
+    expect(sourceRefreshes, 1);
+    expect(controller.messages.map((m) => m.id),
+        List.generate(100, (i) => 'burst-$i'));
+    adapter.items.add(RoomMessageViewModel(
+        id: 'later',
+        senderId: 'peer',
+        text: 'later fixture',
+        isOwn: false,
+        deliveryState: RoomDeliveryState.sent,
+        timestamp: DateTime.utc(2026).add(const Duration(seconds: 100))));
+    controller.scheduleRefresh();
+    await tester.pump();
+    expect(controller.messages.last.id, 'later');
+    expect(sourceRefreshes, 2);
+  });
+
   testWidgets('SDK burst publishes once per frame and local echo is immediate',
       (tester) async {
     final adapter = FakeTimelineAdapter();

@@ -5676,7 +5676,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     return row;
   }
 
+  Object? _timelineBuildStamp;
+  Widget? _retainedTimeline;
+
   Widget _buildTimeline() {
+    // Keep only the current bounded timeline subtree. Composer/IME changes can
+    // relayout it through normal constraints without filtering, reindexing or
+    // rebuilding its sliver delegates. Content and presentation still invalidate.
+    final stamp = (
+      _timelineRevision.value,
+      _rowPresentationStamp,
+      errorMessage,
+      quoteReturnMessageId,
+      _shiftingWindow,
+    );
+    if (stamp == _timelineBuildStamp && _retainedTimeline != null) {
+      return _retainedTimeline!;
+    }
+    _timelineBuildStamp = stamp;
     final messages = _visibleMessages();
     final list = GestureDetector(
       key: _timelineViewportKey,
@@ -5710,7 +5727,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   ),
                 ),
     );
-    return Stack(children: [
+    return _retainedTimeline = Stack(children: [
       Positioned.fill(child: list),
       // 规格 #4：“回到引用位置”弹窗——屏幕右下方、输入框之上，
       // 样式与 @提醒弹窗（MentionBannerButton）完全一致。
@@ -5759,13 +5776,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _rowCache.clear();
     }
     final allMessages = controller?.messages ?? const <RoomMessageViewModel>[];
-    final messages = hiddenEvents?.visibleItems(
-          roomInfo.id,
-          allMessages,
-          eventId: (message) => message.id,
-          eventTimestamp: (message) => message.timestamp,
-        ) ??
-        allMessages;
+    final messages = selection.active
+        ? (hiddenEvents?.visibleItems(
+              roomInfo.id,
+              allMessages,
+              eventId: (message) => message.id,
+              eventTimestamp: (message) => message.timestamp,
+            ) ??
+            allMessages)
+        : const <RoomMessageViewModel>[];
     return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.pageBackground(context),
       navigationBar: CupertinoNavigationBar(

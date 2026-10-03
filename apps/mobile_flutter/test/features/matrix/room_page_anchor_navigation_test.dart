@@ -13,6 +13,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/features/matrix/room_route_frame_probe.dart';
+import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/ui/chat/message_highlight_pulse.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
@@ -38,6 +39,7 @@ final class _AnchorClient extends Client {
 final class _AnchorRoom extends Room {
   _AnchorRoom(Client client, String roomId) : super(id: roomId, client: client);
   Completer<void>? timelineGate;
+  final timelines = <_AnchorTimeline>[];
 
   @override
   bool get isDirectChat => false;
@@ -52,7 +54,9 @@ final class _AnchorRoom extends Room {
     String? eventContextId,
   }) async {
     if (timelineGate != null) await timelineGate!.future;
-    return _AnchorTimeline(this);
+    final timeline = _AnchorTimeline(this);
+    timelines.add(timeline);
+    return timeline;
   }
 }
 
@@ -78,6 +82,9 @@ final class _AnchorTimeline extends Fake implements Timeline {
 
   @override
   bool get canRequestHistory => false;
+
+  @override
+  bool get canRequestFuture => false;
 
   @override
   Future<void> setReadMarker({String? eventId, bool? public}) async {}
@@ -125,8 +132,10 @@ Future<void> _pumpRoom(WidgetTester tester, String? anchorEventId,
     VoidCallback? onPerformanceContentReady,
     RoomRouteFrameProbe? roomRouteProbe,
     PerformanceTraceRecorder? interactionRecorder,
-    void Function()? afterFirstFrame}) async {
+    void Function()? afterFirstFrame,
+    void Function(_AnchorClient)? onClient}) async {
   final client = _AnchorClient(roomId: roomId);
+  onClient?.call(client);
   client.room.timelineGate = timelineGate;
   final identities = ProfileRepository.forTesting(
     accountKey: 'matrix:@anchor-user:test',
@@ -182,6 +191,83 @@ Future<void> _disposeRoom(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+      'composer panels retain timeline projection while viewport resizes',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    late _AnchorClient client;
+    addTearDown(tester.view.resetViewInsets);
+    await _pumpRoom(tester, null,
+        roomId: '!composer-projection:test',
+        onClient: (value) => client = value);
+    final list =
+        tester.widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList));
+    final beforeHeight =
+        tester.getSize(find.byType(AnchoredTimelineList)).height;
+    await tester.tap(find.byKey(const Key('composer-more')));
+    await tester.pump(const Duration(milliseconds: 60));
+    final after =
+        tester.widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList));
+    expect(identical(after.eventIds, list.eventIds), isTrue,
+        reason: 'composer state must not allocate a fresh timeline projection');
+    expect(identical(after, list), isTrue,
+        reason:
+            'retaining the child skips timeline filtering/indexing/build work');
+    expect(tester.getSize(find.byType(AnchoredTimelineList)).height,
+        lessThan(beforeHeight));
+    await tester.tap(find.byKey(const Key('composer-more')));
+    await tester.pump();
+    final input = tester
+        .widget<CupertinoTextField>(find.byType(CupertinoTextField).first);
+    input.focusNode!.requestFocus();
+    await tester.pump();
+    for (final inset in [40.0, 80.0, 120.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+          identical(
+              tester.widget<AnchoredTimelineList>(
+                  find.byType(AnchoredTimelineList)),
+              list),
+          isTrue);
+    }
+    for (var i = 0; i < 20; i++) {
+      for (final timeline in client.room.timelines) {
+        timeline.events.insert(
+            0,
+            Event(
+                room: client.room,
+                eventId: 'incoming-$i',
+                senderId: '@peer:test',
+                type: EventTypes.Message,
+                originServerTs:
+                    DateTime.utc(2026, 10, 3).add(Duration(seconds: i)),
+                content: {'msgtype': 'm.text', 'body': 'incoming fixture $i'}));
+      }
+      client.onEvent.add(EventUpdate(
+          roomID: client.room.id,
+          type: EventUpdateType.decryptedTimelineQueue,
+          content: {
+            'event_id': 'incoming-$i',
+            'type': EventTypes.Message,
+            'content': {'msgtype': 'm.text', 'body': 'incoming fixture $i'}
+          }));
+    }
+    await tester.pump();
+    await tester.pump();
+    final updated =
+        tester.widget<AnchoredTimelineList>(find.byType(AnchoredTimelineList));
+    expect(updated.eventIds, hasLength(23));
+    expect(updated.eventIds.first, 'incoming-19');
+    expect(identical(updated, list), isFalse,
+        reason: 'incoming messages must invalidate the retained timeline');
+    input.focusNode!.unfocus();
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await _disposeRoom(tester);
+  });
+
   testWidgets('room first frame completes local route span before sync',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
