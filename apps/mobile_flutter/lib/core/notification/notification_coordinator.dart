@@ -22,6 +22,7 @@ import 'system_notification_presenter.dart';
 
 import '../../features/matrix/mute_exception_policy.dart';
 import '../../features/matrix/conversation_read_state.dart';
+import '../../features/push/native_message_policy.dart';
 
 /// Matrix 同步侧预计算后的入站通知事实。
 final class IncomingNotification {
@@ -66,6 +67,7 @@ final class NotificationCoordinator {
     NotificationDiagnostics? diagnostics,
     ConversationReadState? readState,
     DateTime Function()? now,
+    this.nativePolicy,
   })  : deduplicator = deduplicator ?? NotificationDeduplicator(),
         cooldownGate = cooldownGate ?? SoundCooldownGate(),
         usageRecorder =
@@ -89,6 +91,7 @@ final class NotificationCoordinator {
   final NotificationDiagnostics diagnostics;
   final DateTime Function() now;
   final ConversationReadState readState;
+  final NativeMessagePolicy? nativePolicy;
 
   NotificationPreferenceValues _prefs = const NotificationPreferenceValues();
 
@@ -150,6 +153,7 @@ final class NotificationCoordinator {
     if (!_isCurrent(epoch)) return;
     await systemNotifications
         .cancelConversation(notificationIdForConversation(roomId));
+    await nativePolicy?.cancelRoom(roomId);
     if (!_isCurrent(epoch)) return;
     final presenter = systemNotifications;
     if (presenter is DeliveredConversationNotificationPresenter) {
@@ -179,8 +183,14 @@ final class NotificationCoordinator {
 
   /// 设置页更新偏好后同步内存快照（PRD §38 即时生效）。
   Future<void> updatePreferences(NotificationPreferenceValues values) async {
+    await nativePolicy?.updatePreferences(values);
+    try {
+      await preferenceStore.save(values);
+    } catch (_) {
+      await nativePolicy?.suspend();
+      rethrow;
+    }
     _prefs = values;
-    await preferenceStore.save(values);
     if (values.badgeEnabled) {
       await refreshLauncherBadge();
     } else {
@@ -190,9 +200,6 @@ final class NotificationCoordinator {
 
   Future<void> handleEvent(IncomingNotification notification) async {
     if (!notification.isOwnMessage) await cancelPushWakeNotification();
-    debugPrint('[PUSH] received event room='
-        '${notification.event.conversationId} kind='
-        '${notification.event.messageKind.name}');
     // PRD §25/§66：同一 eventId 双通道只处理一次。
     if (!deduplicator.tryProcess(notification.event.eventId)) {
       diagnostics.record(NotificationDiagStage.suppressed, 'duplicate',
@@ -218,7 +225,26 @@ final class NotificationCoordinator {
       ),
     );
     _diagnoseDecision(decision, notification);
+    if (!appState.isForeground) {
+      final nativeResult = await nativePolicy?.handleBackground(
+          event.conversationId, event.eventId,
+          show: decision.showSystemNotification,
+          silent: decision.systemChannel == SystemNotificationChannel.silent,
+          title: decision.previewTitle,
+          body: decision.previewBody);
+      if (nativeResult != null) {
+        if (decision.updateBadge) await refreshLauncherBadge();
+        return;
+      }
+    }
+    final nativeClaim =
+        await nativePolicy?.claim(event.conversationId, event.eventId);
+    if (nativeClaim == false) {
+      if (decision.updateBadge) await refreshLauncherBadge();
+      return;
+    }
     await _execute(decision, event);
+    if (nativeClaim == true) await nativePolicy?.complete(event.eventId);
   }
 
   /// 策略结果诊断：说明事件是否被抑制、被什么抑制（不含正文）。

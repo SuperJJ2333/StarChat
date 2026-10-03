@@ -70,6 +70,22 @@ class NativePushBridgeTest {
         assertEquals(1, messenger.sent.size)
     }
 
+    @Test fun ordinaryReceiveNeverStartsLauncherActivity() {
+        val launch = android.content.Intent(android.content.Intent.ACTION_MAIN)
+            .addCategory(android.content.Intent.CATEGORY_INFO).setPackage(app.packageName)
+        val info = android.content.pm.ResolveInfo().apply {
+            activityInfo = android.content.pm.ActivityInfo().apply {
+                packageName = app.packageName
+                name = "com.liuhetong.mobile.MainActivity"
+            }
+        }
+        shadowOf(app.packageManager).addResolveInfoForIntent(launch, info)
+        NativePushBridge.notifyFlutter(app, NativePushBridge.eventPushMessage)
+        idle()
+        kotlin.test.assertNull(shadowOf(app).nextStartedActivity,
+            "ordinary receive must not launch the UI before an explicit tap")
+    }
+
     @Test fun failedDeliveryAndEngineReplacementRetainWake() {
         NativePushBridge.notifyFlutter(app, "pushMessage")
         idle()

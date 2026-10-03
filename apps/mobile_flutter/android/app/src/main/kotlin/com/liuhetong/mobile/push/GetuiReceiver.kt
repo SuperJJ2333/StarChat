@@ -20,8 +20,11 @@ object GetuiReceiver {
     const val typeCall = "call"
 
     fun onTransmit(context: Context, payloadJson: String) {
+        if (payloadJson.toByteArray(Charsets.UTF_8).size > 4096) return
         val type = try {
-            JSONObject(payloadJson).optString("type")
+            val payload = JSONObject(payloadJson)
+            if (payload.optString("type") == typeMessage) NativeMessageNotifications.receive(context, payload)
+            payload.optString("type")
         } catch (_: Exception) {
             return
         }

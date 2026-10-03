@@ -107,6 +107,7 @@ import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/message_reminder_service.dart';
 import 'features/push/firebase_push_token_provider.dart';
 import 'features/push/native_apns_push_token_provider.dart';
+import 'features/push/native_message_policy.dart';
 import 'core/privacy_consent.dart';
 import 'features/push/firebase_push_wiring.dart';
 import 'features/push/getui_push_token_provider.dart';
@@ -784,6 +785,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
     _nativePushBridge = NativePushBridge(
+      isReady: () =>
+          _currentStartup(generation) &&
+          NotificationSystemHandle.coordinator != null,
       onPushMessage: () async {
         if (!_currentStartup(generation)) return;
         // Resolve opaque encrypted wakes locally before choosing a message or
@@ -794,10 +798,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             .catchError((Object error) {
           debugPrint('[push] wake sync deferred: ${error.runtimeType}');
         }));
-        final coordinator = NotificationSystemHandle.coordinator;
-        if (coordinator != null) {
-          await coordinator.showPushWakeNotification();
-        }
       },
       onFriendRequest: () async {
         if (!_currentStartup(generation)) return;
@@ -806,7 +806,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         if (mounted) await _pollFriendRequests();
       },
     );
-    unawaited(_runStartup((_) => _nativePushBridge!.install()));
     // chatflow/call 通道：仅保留 Flutter→原生 dismiss（收起原生前台服务/
     // 通知层）。接听/拒绝动作统一走 native_call 事件（单一通道，避免
     // 双通道重复触发接听）。
@@ -865,6 +864,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
     final ready = await bootstrapper.ensureStarted();
     if (!ready || !_currentStartup(generation)) return;
+    await _nativePushBridge?.install();
     // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
     await syncKeepAlive.ensureStarted();
     if (!_currentStartup(generation)) return;
@@ -941,6 +941,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           appId: MatrixPusherService.appIdGetui,
           gatewayUrl: MatrixPusherService.getuiGatewayUrl(getuiGateway),
           deviceDisplayName: 'ChatFlow Android',
+          nativeMetadata: () => NativeMessagePolicy.shared.registration,
         ));
       }
     }
@@ -983,6 +984,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
     }
     _pusherServices.addAll(pushers);
+    NativeMessagePolicy.shared.onRegistrationChanged = () async {
+      if (!_currentStartup(generation)) return;
+      for (final pusher in _pusherServices) {
+        await pusher.recheck();
+      }
+    };
     // 诊断页读取：登记全部通道（登出统一 clear）。
     for (final pusher in pushers) {
       PushStatusRegistry.shared.register(pusher);
@@ -996,6 +1003,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
     // 推送点击路由就绪：通知系统已装配、主页面已挂载。
     router.markReady();
+    NativeMessagePolicy.shared.onTapAvailable = () => NativeMessagePolicy.shared
+        .routePendingTap(_openConversationFromNotification);
+    await NativeMessagePolicy.shared
+        .routePendingTap(_openConversationFromNotification);
   }
 
   Future<void> _assembleNotificationSystem(int generation) async {
@@ -1024,12 +1035,18 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       eventSource: eventSource,
       unreadSource: _matrixHomeCapability!.createUnreadSnapshotSource(),
       deduplicator: deduplicator,
+      nativePolicy: NativeMessagePolicy.shared,
     );
     _notificationEventSource = eventSource;
     _notificationCoordinator = coordinator;
-    await eventSource.start();
-    if (!_currentStartup(generation)) return;
     await coordinator.start();
+    if (!_currentStartup(generation)) return;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await NativeMessagePolicy.shared
+          .prepare(widget.matrix.userId!, coordinator.preferences);
+      if (!_currentStartup(generation)) return;
+    }
+    await eventSource.start();
     if (!_currentStartup(generation)) return;
     await coordinator.refreshLauncherBadge();
   }
@@ -1159,6 +1176,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _pushTapRouter?.setForeground(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
+      unawaited(NativeMessagePolicy.shared
+          .routePendingTap(_openConversationFromNotification));
       unawaited(_resumeMomentUploads());
       _retryFailedRoomLeaseCancels();
     }
@@ -1197,6 +1216,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
     );
     if (appResumed) {
+      unawaited(
+          NativeMessagePolicy.shared.retryPending().catchError((Object _) {}));
       syncWatchdog.onAppResumed();
       // 通知系统启动失败的重试（此前 catch 注释承诺了重试但不存在）。
       if (_notificationBootstrapper?.needsRetry ?? false) {
@@ -2793,6 +2814,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _closeHomeResources() async {
     if (!_matrixReady) return;
     _matrixReady = false;
+    await NativeMessagePolicy.shared.revoke();
     // Cancel before awaiting other resource shutdown: late native/Dart work
     // cannot repopulate this account while the session is closing.
     await _closeMediaPrefetch();

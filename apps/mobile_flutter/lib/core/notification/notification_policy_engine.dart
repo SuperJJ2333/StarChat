@@ -158,7 +158,13 @@ NotificationDecision decideNotification(NotificationPolicyContext context) {
   // PRD §29/§30：静音与勿扰在后台仍保留通知中心（静默渠道）。
   final effectiveChannel = (mutedSuppressed || dndSilenced)
       ? SystemNotificationChannel.silent
-      : channel;
+      : !prefs.soundEnabled && !prefs.vibrationEnabled
+          ? SystemNotificationChannel.quiet
+          : !prefs.soundEnabled
+              ? SystemNotificationChannel.vibrateOnly
+              : !prefs.vibrationEnabled
+                  ? SystemNotificationChannel.soundOnly
+                  : channel;
 
   // PRD §35：静音会话是否计入角标由设置控制。
   final updateBadge = prefs.badgeEnabled &&

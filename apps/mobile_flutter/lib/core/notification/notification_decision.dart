@@ -47,6 +47,9 @@ enum SystemNotificationChannel {
 
   /// 静默同步（静音会话/勿扰期间保留通知中心），IMPORTANCE_LOW。
   silent,
+  soundOnly,
+  vibrateOnly,
+  quiet,
 }
 
 /// 策略引擎输出（PRD §50）。

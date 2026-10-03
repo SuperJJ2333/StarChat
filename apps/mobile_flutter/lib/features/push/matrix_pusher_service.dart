@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:matrix/matrix.dart';
 
@@ -25,6 +26,43 @@ final class ClientMatrixPusherGateway implements MatrixPusherGateway {
   Future<void> delete(PusherId id) => client.deletePusher(id);
 }
 
+// Matrix's default append=false moves an app/token binding between accounts.
+// Serialize that remote resource across gateways, including compensating writes.
+// Entries exist only while a service/operation leases them; cap exceptional churn.
+final class _PusherBinding {
+  static final _active = <(String, String), _PusherBinding>{};
+  static int nextOwner = 0;
+  static _PusherBinding acquire(String app, String token) {
+    final key = (app, token);
+    var binding = _active[key];
+    if (binding == null) {
+      if (_active.length >= 64) throw StateError('pusher binding capacity');
+      binding = _PusherBinding(key);
+      _active[key] = binding;
+    }
+    // A service has at most one in-flight write. Limit leases for one shared
+    // token as well as distinct tokens so overload cannot grow its queue.
+    if (binding.references >= 64) throw StateError('pusher owner capacity');
+    binding.references++;
+    return binding;
+  }
+
+  _PusherBinding(this.key);
+  final (String, String) key;
+  int references = 0;
+  int owner = 0;
+  Future<void> _tail = Future.value();
+  Future<T> write<T>(Future<T> Function() operation) {
+    final result = _tail.then((_) => operation());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  void release() {
+    if (--references == 0) _active.remove(key);
+  }
+}
+
 /// Matrix Pusher 注册（kind=http，指向 Sygnal 推送网关）。
 ///
 /// 载荷规范（E2EE 边界）：`format: event_id_only`——推送只含
@@ -38,6 +76,7 @@ final class MatrixPusherService {
     required this.appId,
     required this.gatewayUrl,
     this.deviceDisplayName = 'ChatFlow',
+    this.nativeMetadata,
     NotificationDiagnostics? diagnostics,
   }) : diagnostics = diagnostics ?? NotificationDiagnostics.shared;
 
@@ -62,9 +101,15 @@ final class MatrixPusherService {
   final String appId;
   final Uri? gatewayUrl;
   final String deviceDisplayName;
+  final Map<String, Object>? Function()? nativeMetadata;
   final NotificationDiagnostics diagnostics;
 
   String? _registeredToken;
+  String? _registeredIdentity;
+  final int _owner = ++_PusherBinding.nextOwner;
+  _PusherBinding? _binding;
+  bool _disposed = false;
+  bool _dirty = false;
   StreamSubscription<String?>? _tokenSub;
   bool _unregistering = false;
 
@@ -100,10 +145,14 @@ final class MatrixPusherService {
   /// token 与已注册值一致 → 幂等跳过；变化 → 重注册。
   /// 失败后有限指数退避自动重试；并发守卫防重复注册。
   Future<bool> ensureRegistered() async {
-    if (_registering) return false;
+    if (_unregistering || _disposed) return false;
+    if (_registering) {
+      _dirty = true;
+      return _registrationInFlight!;
+    }
     _registering = true;
     final generation = _generation;
-    final future = _doRegister(generation);
+    final future = _converge(generation);
     _registrationInFlight = future;
     try {
       return await future;
@@ -113,6 +162,25 @@ final class MatrixPusherService {
         _registrationInFlight = null;
       }
     }
+  }
+
+  Future<bool> _converge(int generation) async {
+    var result = false;
+    do {
+      _dirty = false;
+      result = await _doRegister(generation);
+    } while (
+        _dirty && generation == _generation && !_disposed && !_unregistering);
+    return result;
+  }
+
+  _PusherBinding _lease(String token) {
+    if (_binding?.key != (appId, token)) {
+      final next = _PusherBinding.acquire(appId, token);
+      _binding?.release();
+      _binding = next;
+    }
+    return _binding!;
   }
 
   Future<bool> _doRegister(int generation) async {
@@ -133,51 +201,62 @@ final class MatrixPusherService {
       if (generation == _generation) _scheduleRetry();
       return false;
     }
-    if (token == _registeredToken) return true;
+    final metadata = nativeMetadata?.call();
+    if (nativeMetadata != null && metadata == null) return false;
+    final identity = jsonEncode([token, metadata]);
     try {
-      await gateway.create(
-        Pusher(
-          appId: appId,
-          pushkey: token,
-          kind: 'http',
-          appDisplayName: 'ChatFlow',
-          deviceDisplayName: deviceDisplayName,
-          lang: 'zh-CN',
-          data: PusherData(
-            format: _pushFormat,
-            url: url,
-            additionalProperties: appId == appIdIOS
-                ? const {
-                    'default_payload': {
-                      'aps': {
-                        'alert': {
-                          'title': '畅聊 ChatFlow',
-                          'body': '您有一条新消息',
+      final binding = _lease(token);
+      if (binding.owner > _owner) return false;
+      binding.owner = _owner;
+      return await binding.write(() async {
+        if (generation != _generation || binding.owner != _owner) return false;
+        if (identity == _registeredIdentity) return true;
+        await gateway.create(
+          Pusher(
+            appId: appId,
+            pushkey: token,
+            kind: 'http',
+            appDisplayName: 'ChatFlow',
+            deviceDisplayName: deviceDisplayName,
+            lang: 'zh-CN',
+            data: PusherData(
+              format: _pushFormat,
+              url: url,
+              additionalProperties: appId == appIdIOS
+                  ? const {
+                      'default_payload': {
+                        'aps': {
+                          'alert': {
+                            'title': '畅聊 ChatFlow',
+                            'body': '您有一条新消息',
+                          },
+                          'sound': 'default',
                         },
-                        'sound': 'default',
                       },
-                    },
-                  }
-                : const {},
+                    }
+                  : metadata ?? const {},
+            ),
           ),
-        ),
-      );
-      if (generation != _generation) {
-        // 注册完成时会话已注销/切换：服务端已存在该 pusher → 立即补偿
-        // 删除，不把旧账号推送绑定留下来。
-        try {
-          await gateway.delete(PusherId(appId: appId, pushkey: token));
-        } catch (_) {}
-        return false;
-      }
-      _registeredToken = token;
-      _lastSuccessAt = DateTime.now();
-      _lastFailureKind = '';
-      _retryCount = 0;
-      _cancelRetry();
-      diagnostics.record(NotificationDiagStage.push,
-          'pusher registered (format=$_pushFormat)');
-      return true;
+        );
+        if (generation != _generation) {
+          // 注册完成时会话已注销/切换：服务端已存在该 pusher → 立即补偿
+          // 删除，不把旧账号推送绑定留下来。
+          try {
+            await gateway.delete(PusherId(appId: appId, pushkey: token));
+          } catch (_) {}
+          return false;
+        }
+        if (binding.owner != _owner) return false;
+        _registeredToken = token;
+        _registeredIdentity = identity;
+        _lastSuccessAt = DateTime.now();
+        _lastFailureKind = '';
+        _retryCount = 0;
+        _cancelRetry();
+        diagnostics.record(NotificationDiagStage.push,
+            'pusher registered (format=$_pushFormat)');
+        return true;
+      });
     } catch (error) {
       if (generation != _generation) return false;
       _lastFailureKind = error.runtimeType.toString();
@@ -255,22 +334,39 @@ final class MatrixPusherService {
         return;
       }
       try {
-        await gateway.delete(PusherId(appId: appId, pushkey: token));
-        diagnostics.record(NotificationDiagStage.push, 'pusher deleted');
+        final binding = _lease(token);
+        await binding.write(() async {
+          // A replacement's create supersedes this account's append=false
+          // binding. An old logout must not delete that new same-account write.
+          if (binding.owner > _owner) return;
+          await gateway.delete(PusherId(appId: appId, pushkey: token));
+          diagnostics.record(NotificationDiagStage.push, 'pusher deleted');
+        });
       } catch (error) {
         diagnostics.record(
             NotificationDiagStage.push, 'delete failed: ${error.runtimeType}');
       }
       _registeredToken = null;
+      _registeredIdentity = null;
     } finally {
       _unregistering = false;
+      _binding?.release();
+      _binding = null;
     }
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     _generation++;
     _cancelRetry();
     await _tokenSub?.cancel();
     _tokenSub = null;
+    final pending = _registrationInFlight;
+    if (pending != null) await pending;
+    if (!_unregistering) {
+      _binding?.release();
+      _binding = null;
+    }
   }
 }

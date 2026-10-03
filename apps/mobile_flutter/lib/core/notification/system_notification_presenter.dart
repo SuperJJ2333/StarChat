@@ -100,6 +100,13 @@ const _channelSpecs = <ChannelSpec>[
       vibrationEnabled: true),
   ChannelSpec(
       'chatflow_silent', '后台服务', '消息同步、通话保活与静默通知', Importance.low, null),
+  ChannelSpec('chatflow_messages_sound_v1', '消息通知（仅声音）', '遵循应用声音设置',
+      Importance.high, 'chatflow_message'),
+  ChannelSpec('chatflow_messages_vibrate_v1', '消息通知（仅震动）', '遵循应用震动设置',
+      Importance.high, null,
+      vibrationEnabled: true),
+  ChannelSpec('chatflow_messages_quiet_v1', '消息通知（无声无震动）', '保留消息通知',
+      Importance.high, null),
 ];
 
 /// 全部渠道规格（含 legacy：老安装保留、新安装不创建）。
@@ -112,10 +119,13 @@ final List<ChannelSpec> activeChannelSpecs = [
 ];
 
 /// 枚举渠道 → 渠道 ID。
-String _channelIdFor(SystemNotificationChannel channel) =>
-    channel == SystemNotificationChannel.silent
-        ? 'chatflow_silent'
-        : messagesChannelIdV2;
+String _channelIdFor(SystemNotificationChannel channel) => switch (channel) {
+      SystemNotificationChannel.silent => 'chatflow_silent',
+      SystemNotificationChannel.soundOnly => 'chatflow_messages_sound_v1',
+      SystemNotificationChannel.vibrateOnly => 'chatflow_messages_vibrate_v1',
+      SystemNotificationChannel.quiet => 'chatflow_messages_quiet_v1',
+      _ => messagesChannelIdV2,
+    };
 
 ChannelSpec channelSpecFor(SystemNotificationChannel channel) =>
     activeChannelSpecs.firstWhere(
@@ -338,7 +348,7 @@ final class FlutterLocalSystemNotificationPresenter
       sound: spec.soundResource == null
           ? null
           : RawResourceAndroidNotificationSound(spec.soundResource!),
-      enableVibration: spec.soundResource != null,
+      enableVibration: spec.vibrationEnabled,
       // 规格#1：好友头像大图标 + 未读数角标（有缓存才带，不发起下载）。
       largeIcon: avatarIcon,
       number: unreadCount,
@@ -358,7 +368,7 @@ final class FlutterLocalSystemNotificationPresenter
     };
     return DarwinNotificationDetails(
       presentAlert: channel != SystemNotificationChannel.silent,
-      presentSound: channel != SystemNotificationChannel.silent,
+      presentSound: channelSpecFor(channel).soundResource != null,
       presentBanner: channel != SystemNotificationChannel.silent,
       presentList: true,
       interruptionLevel: interruption,

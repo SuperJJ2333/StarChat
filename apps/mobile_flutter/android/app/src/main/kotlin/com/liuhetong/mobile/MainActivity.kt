@@ -71,6 +71,8 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        com.liuhetong.mobile.push.NativeMessageNotifications.attach(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
+        com.liuhetong.mobile.push.NativeMessageNotifications.acceptIntent(applicationContext, intent)
         com.liuhetong.mobile.media.BackgroundMediaDownloads.setUp(
             applicationContext, flutterEngine.dartExecutor.binaryMessenger,
         )
@@ -459,6 +461,21 @@ class MainActivity : FlutterActivity() {
     override fun popSystemNavigator(): Boolean {
         moveTaskToBack(true)
         return true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.liuhetong.mobile.push.NativeMessageNotifications.lifecycle(applicationContext, true)
+    }
+
+    override fun onPause() {
+        com.liuhetong.mobile.push.NativeMessageNotifications.lifecycle(applicationContext, false)
+        super.onPause()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        com.liuhetong.mobile.push.NativeMessageNotifications.acceptIntent(applicationContext, intent)
     }
 
     override fun onDestroy() {

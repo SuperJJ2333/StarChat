@@ -12,6 +12,7 @@ final class NativePushBridge {
   NativePushBridge({
     required this.onPushMessage,
     required this.onFriendRequest,
+    this.isReady,
   });
 
   /// pushMessage 事件（消息唤醒：通知协调器显示通用通知）。
@@ -19,6 +20,7 @@ final class NativePushBridge {
 
   /// friendRequest 事件（角标 + 好友红点）。
   final Future<void> Function() onFriendRequest;
+  final bool Function()? isReady;
 
   static const channel = MethodChannel('chatflow/push');
 
@@ -30,6 +32,7 @@ final class NativePushBridge {
     _installed = channel;
     _owner = this;
     channel.setMethodCallHandler((call) async {
+      if (isReady?.call() == false) return false;
       switch (call.method) {
         case 'pushMessage':
           await onPushMessage();

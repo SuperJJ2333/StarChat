@@ -3,6 +3,7 @@ import 'package:liuhetong_mobile/core/notification/notification_decision.dart';
 import 'package:liuhetong_mobile/core/notification/notification_event.dart';
 import 'package:liuhetong_mobile/core/notification/notification_policy_engine.dart';
 import 'package:liuhetong_mobile/core/notification/notification_preferences.dart';
+import 'package:liuhetong_mobile/core/notification/system_notification_presenter.dart';
 import 'package:liuhetong_mobile/core/notification/sound_type.dart';
 import 'package:liuhetong_mobile/features/matrix/mute_exception_policy.dart';
 
@@ -52,6 +53,20 @@ NotificationPolicyContext _context({
 }
 
 void main() {
+  test('background respects independent sound and vibration preferences', () {
+    final noSound = channelSpecFor(decideNotification(_context(
+            appForeground: false,
+            prefs: const NotificationPreferenceValues(soundEnabled: false)))
+        .systemChannel);
+    expect(noSound.soundResource, isNull);
+    expect(noSound.vibrationEnabled, isTrue);
+    final noVibration = channelSpecFor(decideNotification(_context(
+            appForeground: false,
+            prefs: const NotificationPreferenceValues(vibrationEnabled: false)))
+        .systemChannel);
+    expect(noVibration.vibrationEnabled, isFalse);
+    expect(noVibration.soundResource, isNotNull);
+  });
   group('PRD §26/§52 自己发送的消息', () {
     test('不产生通知、声音、震动与角标', () {
       final decision = decideNotification(_context(isOwnMessage: true));

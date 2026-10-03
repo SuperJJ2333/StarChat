@@ -24,13 +24,22 @@ void main() {
   });
 
   test('重要提醒与系统消息合并到消息渠道，另保留静默后台服务', () {
-    for (final channel in [SystemNotificationChannel.mentions,
-        SystemNotificationChannel.attention, SystemNotificationChannel.system]) {
+    for (final channel in [
+      SystemNotificationChannel.mentions,
+      SystemNotificationChannel.attention,
+      SystemNotificationChannel.system
+    ]) {
       expect(channelSpecFor(channel).id, messagesChannelIdV2);
       expect(channelSpecFor(channel).importance, Importance.high);
     }
-    expect(activeChannelSpecs.map((s) => s.id).toSet(),
-        {messagesChannelIdV2, 'chatflow_silent', 'calls_ring'});
+    expect(activeChannelSpecs.map((s) => s.id).toSet(), {
+      messagesChannelIdV2,
+      'chatflow_silent',
+      'calls_ring',
+      'chatflow_messages_sound_v1',
+      'chatflow_messages_vibrate_v1',
+      'chatflow_messages_quiet_v1'
+    });
   });
 
   test('v2 渠道 ID 常量与设置页深链一致', () {

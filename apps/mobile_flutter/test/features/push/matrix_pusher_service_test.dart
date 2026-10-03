@@ -39,18 +39,212 @@ void main() {
         'https://sygnal.example.test/_matrix/push/v1/notify');
   });
 
+  test(
+      'same CID reconciles scope/revision and waits for acknowledged native policy',
+      () async {
+    Map<String, Object>? metadata;
+    final pusher = MatrixPusherService(
+        gateway: gateway,
+        tokenProvider: tokens,
+        appId: MatrixPusherService.appIdGetui,
+        gatewayUrl: Uri.parse('https://push.test/_matrix/push/v1/notify'),
+        nativeMetadata: () => metadata,
+        diagnostics: diagnostics);
+    expect(await pusher.ensureRegistered(), false);
+    expect(gateway.created, isEmpty);
+    metadata = {
+      'chatflow_push_v': 1,
+      'chatflow_push_scope': 'a' * 64,
+      'chatflow_push_revision': 1
+    };
+    expect(await pusher.ensureRegistered(), true);
+    await pusher.ensureRegistered();
+    expect(gateway.created, hasLength(1));
+    metadata = {...metadata, 'chatflow_push_revision': 2};
+    await pusher.recheck();
+    expect(gateway.created, hasLength(2));
+    expect(gateway.created.last.data.toJson()['chatflow_push_revision'], 2);
+    await pusher.dispose();
+  });
+
   test('E2EE 边界：pusher 数据只含 format/url，不含任何内容字段', () async {
     await service().ensureRegistered();
     final data = gateway.created.single.data.toJson();
     expect(data.keys.toSet(), {'format', 'url'}, reason: '推送配置不得携带正文/密钥类字段');
   });
 
-  test('iOS APNs event-id-only pushes include a generic visible alert', () async {
+  test(
+      'metadata changes during registration coalesce to newest same-CID identity',
+      () async {
+    final gate = _GatedPusherGateway();
+    gate.gateCreate = Completer<void>();
+    final entered = Completer<void>();
+    gate.onCreateEntered = () {
+      if (!entered.isCompleted) entered.complete();
+    };
+    var revision = 1;
+    final pusher = MatrixPusherService(
+        gateway: gate,
+        tokenProvider: tokens,
+        appId: MatrixPusherService.appIdGetui,
+        gatewayUrl: Uri.parse('https://push.test/_matrix/push/v1/notify'),
+        diagnostics: diagnostics,
+        nativeMetadata: () => {
+              'chatflow_push_v': 1,
+              'chatflow_push_scope': 'a' * 64,
+              'chatflow_push_revision': revision,
+            });
+    final first = pusher.ensureRegistered();
+    await entered.future;
+    revision = 2;
+    var converged = false;
+    final recheck = pusher.recheck().then((_) => converged = true);
+    final initialWrite = gate.gateCreate!;
+    final latestWrite = Completer<void>();
+    gate.gateCreate = latestWrite;
+    initialWrite.complete();
+    await Future<void>.delayed(Duration.zero);
+    final returnedBeforeLatestWrite = converged;
+    latestWrite.complete();
+    await first;
+    await recheck;
+    expect(returnedBeforeLatestWrite, false,
+        reason:
+            'recheck must await remote convergence, not a discarded trigger');
+    expect(gate.created, hasLength(2));
+    expect(gate.current?.data.toJson()['chatflow_push_revision'], 2);
+    expect(gate.created.last.data.toJson()['chatflow_push_revision'], 2);
+    await pusher.dispose();
+  });
+
+  for (final logout in [false, true]) {
+    test(
+        'late old ${logout ? 'logout' : 'dispose'} preserves replacement binding',
+        () async {
+      final gate = _GatedPusherGateway()..gateCreate = Completer<void>();
+      final entered = Completer<void>();
+      gate.onCreateEntered = () {
+        if (!entered.isCompleted) entered.complete();
+      };
+      MatrixPusherService instance(String scope) => MatrixPusherService(
+            gateway: gate,
+            tokenProvider: tokens,
+            appId: MatrixPusherService.appIdGetui,
+            gatewayUrl: Uri.parse('https://push.test/_matrix/push/v1/notify'),
+            nativeMetadata: () => {
+              'chatflow_push_v': 1,
+              'chatflow_push_scope': scope * 64,
+              'chatflow_push_revision': 1,
+            },
+          );
+      final old = instance('a');
+      final replacement = instance('b');
+      final oldWrite = old.ensureRegistered();
+      await entered.future;
+      final release = gate.gateCreate!;
+      gate.gateCreate = null;
+      final oldEnd = logout ? old.unregister() : old.dispose();
+      final newWrite = replacement.ensureRegistered();
+      await Future<void>.delayed(Duration.zero);
+      release.complete();
+      await Future.wait([oldWrite, oldEnd, newWrite]);
+      expect(gate.current?.data.toJson()['chatflow_push_scope'], 'b' * 64,
+          reason: 'remote final binding must belong to replacement service');
+      expect(replacement.isRegistered, true);
+      await old.dispose();
+      await replacement.unregister();
+      expect(gate.current, isNull, reason: 'genuine logout must still unbind');
+      await replacement.dispose();
+    });
+  }
+
+  test('different accounts serialize the shared token remote binding',
+      () async {
+    final remote = _RemoteBinding();
+    final oldGateway = _AccountGateway(remote, 'old')..gate = Completer<void>();
+    final newGateway = _AccountGateway(remote, 'new');
+    MatrixPusherService instance(MatrixPusherGateway gateway) =>
+        MatrixPusherService(
+            gateway: gateway,
+            tokenProvider: _FakeTokenProvider('account-shared-token'),
+            appId: MatrixPusherService.appIdGetui,
+            gatewayUrl: Uri.parse('https://push.test/_matrix/push/v1/notify'));
+    final old = instance(oldGateway);
+    final replacement = instance(newGateway);
+    final oldWrite = old.ensureRegistered();
+    await oldGateway.entered.future;
+    final logout = old.unregister();
+    final newWrite = replacement.ensureRegistered();
+    await Future<void>.delayed(Duration.zero);
+    oldGateway.gate!.complete();
+    await Future.wait([oldWrite, logout, newWrite]);
+    expect(remote.account, 'new');
+    await old.dispose();
+    await replacement.unregister();
+    expect(remote.account, isNull);
+    await replacement.dispose();
+  });
+
+  test('disposed bindings release capacity across sequential token churn',
+      () async {
+    for (var i = 0; i < 80; i++) {
+      final pusher = MatrixPusherService(
+          gateway: gateway,
+          tokenProvider: _FakeTokenProvider('churn-$i'),
+          appId: MatrixPusherService.appIdGetui,
+          gatewayUrl: Uri.parse('https://push.test/_matrix/push/v1/notify'));
+      expect(await pusher.ensureRegistered(), true);
+      await pusher.dispose();
+    }
+  });
+
+  test('same-token concurrent services have a finite pending write budget',
+      () async {
+    final gate = _GatedPusherGateway()..gateCreate = Completer<void>();
+    final entered = Completer<void>();
+    gate.onCreateEntered = () {
+      if (!entered.isCompleted) entered.complete();
+    };
+    final instances = <MatrixPusherService>[];
+    MatrixPusherService instance() {
+      final pusher = MatrixPusherService(
+          gateway: gate,
+          tokenProvider: _FakeTokenProvider('bounded-shared-token'),
+          appId: MatrixPusherService.appIdGetui,
+          gatewayUrl: Uri.parse('https://push.test/_matrix/push/v1/notify'));
+      instances.add(pusher);
+      return pusher;
+    }
+
+    final first = instance().ensureRegistered();
+    await entered.future;
+    var rejected = 0;
+    final pending = List.generate(
+        70,
+        (_) => instance().ensureRegistered().then((ok) {
+              if (!ok) rejected++;
+              return ok;
+            }));
+    await Future<void>.delayed(Duration.zero);
+    final rejectedBeforeRelease = rejected;
+    gate.gateCreate!.complete();
+    await Future.wait([first, ...pending]);
+    for (final pusher in instances) {
+      await pusher.dispose();
+    }
+    expect(rejectedBeforeRelease, greaterThan(0),
+        reason:
+            'overload must fail closed rather than retain unbounded queued writes');
+  });
+
+  test('iOS APNs event-id-only pushes include a generic visible alert',
+      () async {
     final pusher = MatrixPusherService(
       gateway: gateway,
       tokenProvider: tokens,
       appId: MatrixPusherService.appIdIOS,
-      gatewayUrl: Uri.parse('https://sygnal.example.test/_matrix/push/v1/notify'),
+      gatewayUrl:
+          Uri.parse('https://sygnal.example.test/_matrix/push/v1/notify'),
       diagnostics: diagnostics,
     );
     expect(await pusher.ensureRegistered(), isTrue);
@@ -247,6 +441,7 @@ final class _GatedPusherGateway implements MatrixPusherGateway {
   final deleted = <PusherId>[];
   Completer<void>? gateCreate;
   void Function()? onCreateEntered;
+  Pusher? current;
 
   @override
   Future<void> create(Pusher pusher) async {
@@ -254,8 +449,36 @@ final class _GatedPusherGateway implements MatrixPusherGateway {
     final gate = gateCreate;
     if (gate != null) await gate.future;
     created.add(pusher);
+    current = pusher;
   }
 
   @override
-  Future<void> delete(PusherId id) async => deleted.add(id);
+  Future<void> delete(PusherId id) async {
+    deleted.add(id);
+    current = null;
+  }
+}
+
+final class _RemoteBinding {
+  String? account;
+}
+
+final class _AccountGateway implements MatrixPusherGateway {
+  _AccountGateway(this.remote, this.account);
+  final _RemoteBinding remote;
+  final String account;
+  final entered = Completer<void>();
+  Completer<void>? gate;
+  @override
+  Future<void> create(Pusher pusher) async {
+    if (!entered.isCompleted) entered.complete();
+    await gate?.future;
+    // append=false removes another account's existing app/token binding.
+    remote.account = account;
+  }
+
+  @override
+  Future<void> delete(PusherId id) async {
+    if (remote.account == account) remote.account = null;
+  }
 }

@@ -64,4 +64,25 @@ void main() {
     expect(await deliver('unknown'), false);
     await current.uninstall();
   });
+
+  test('unready coordinator refuses wake ownership until consumer is ready',
+      () async {
+    var ready = false;
+    var wakes = 0;
+    messenger.setMockMethodCallHandler(
+        NativePushBridge.channel, (_) async => true);
+    final bridge = NativePushBridge(
+        isReady: () => ready,
+        onPushMessage: () async {
+          wakes++;
+        },
+        onFriendRequest: () async {});
+    await bridge.install();
+    expect(await deliver('pushMessage'), false);
+    expect(wakes, 0);
+    ready = true;
+    expect(await deliver('pushMessage'), true);
+    expect(wakes, 1);
+    await bridge.uninstall();
+  });
 }

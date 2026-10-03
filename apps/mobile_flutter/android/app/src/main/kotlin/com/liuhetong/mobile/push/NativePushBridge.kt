@@ -60,7 +60,6 @@ object NativePushBridge {
             val previous = prefs.getLong(event, 0)
             val revision = if (previous in now..(now + ttlMs)) previous + 1 else now
             prefs.edit().putLong(event, revision).apply()
-            if (channel == null) launchApp(app)
             drain()
         }
     }
@@ -98,16 +97,6 @@ object NativePushBridge {
                     }
                 }
             })
-        }
-    }
-
-    private fun launchApp(context: Context) {
-        try {
-            context.packageManager.getLaunchIntentForPackage(context.packageName)
-                ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                ?.let { context.startActivity(it) }
-        } catch (_: RuntimeException) {
-            // Background launch restrictions must not crash the SDK callback.
         }
     }
 

@@ -1,4 +1,5 @@
 import 'conversation_read_state.dart';
+import '../push/native_message_policy.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -331,6 +332,12 @@ Future<void> loadConversationPreferences(Client client) async {
   var migrated = false;
   for (final room in client.rooms) {
     final effective = store.pending[room.id] ?? remotePreferenceForRoom(room);
+    // Existing reconciliation loop: unchanged values perform no platform work.
+    if (!NativeMessagePolicy.shared
+        .hasRoomObservation(userId, room.id, effective.muted)) {
+      await NativeMessagePolicy.shared
+          .observeRoom(userId, room.id, effective.muted);
+    }
     if (effective.muted &&
         !store.pushApplied.contains(room.id) &&
         store.pushPending[room.id] != true) {
@@ -402,6 +409,8 @@ Future<void> saveLocalConversationPreference(
   final store = _localPreferences[room.client];
   if (store == null) throw StateError('Matrix 账号尚未登录');
   final previous = store.pending[room.id] ?? remotePreferenceForRoom(room);
+  await NativeMessagePolicy.shared
+      .observeRoom(room.client.userID!, room.id, preference.muted);
   store.pending[room.id] = preference;
   if (preference.muted != previous.muted ||
       (preference.muted && !store.pushApplied.contains(room.id))) {

@@ -164,23 +164,23 @@ final class SharedPreferencesNotificationPreferenceStore
   @override
   Future<void> save(NotificationPreferenceValues values) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(
-        '${_prefix}message_enabled', values.messageNotificationEnabled);
-    await prefs.setString(
-        '${_prefix}preview_privacy', values.previewPrivacy.name);
-    await prefs.setBool('${_prefix}sound_enabled', values.soundEnabled);
-    await prefs.setBool('${_prefix}vibration_enabled', values.vibrationEnabled);
-    await prefs.setBool('${_prefix}badge_enabled', values.badgeEnabled);
-    await prefs.setBool('${_prefix}attention_enabled', values.attentionEnabled);
-    await prefs.setBool('${_prefix}mention_enabled', values.mentionEnabled);
-    await prefs.setBool(
-        '${_prefix}call_enabled', values.callNotificationEnabled);
-    await prefs.setBool('${_prefix}dnd_enabled', values.dndEnabled);
-    await prefs.setInt('${_prefix}dnd_start_minutes', values.dndStartMinutes);
-    await prefs.setInt('${_prefix}dnd_end_minutes', values.dndEndMinutes);
-    await prefs.setBool(
-        '${_prefix}dnd_allow_attention', values.dndAllowAttention);
-    await prefs.setBool(
-        '${_prefix}muted_in_badge', values.mutedConversationsInBadge);
+    final saved = await Future.wait([
+      prefs.setBool(
+          '${_prefix}message_enabled', values.messageNotificationEnabled),
+      prefs.setString('${_prefix}preview_privacy', values.previewPrivacy.name),
+      prefs.setBool('${_prefix}sound_enabled', values.soundEnabled),
+      prefs.setBool('${_prefix}vibration_enabled', values.vibrationEnabled),
+      prefs.setBool('${_prefix}badge_enabled', values.badgeEnabled),
+      prefs.setBool('${_prefix}attention_enabled', values.attentionEnabled),
+      prefs.setBool('${_prefix}mention_enabled', values.mentionEnabled),
+      prefs.setBool('${_prefix}call_enabled', values.callNotificationEnabled),
+      prefs.setBool('${_prefix}dnd_enabled', values.dndEnabled),
+      prefs.setInt('${_prefix}dnd_start_minutes', values.dndStartMinutes),
+      prefs.setInt('${_prefix}dnd_end_minutes', values.dndEndMinutes),
+      prefs.setBool('${_prefix}dnd_allow_attention', values.dndAllowAttention),
+      prefs.setBool(
+          '${_prefix}muted_in_badge', values.mutedConversationsInBadge),
+    ]);
+    if (saved.any((ok) => !ok)) throw StateError('无法保存通知设置');
   }
 }
