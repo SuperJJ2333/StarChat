@@ -201,3 +201,120 @@ def test_operation_journal_quota_rolls_back_entire_upload(database):
     with database() as conn:
         assert conn.execute('SELECT count(*) FROM chatflow_recovery_sessions').fetchone()[0] == 0
         assert conn.execute('SELECT count(*) FROM chatflow_recovery_audit').fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('route', ('material', 'enrollment', 'upload'))
+@pytest.mark.parametrize('fault', ('revoked', 'owner', 'device', None))
+async def test_final_business_response_rechecks_matrix_before_release_or_commit(database, monkeypatch, tmp_path, route, fault):
+    """Actual verify/handler/crypto/PG; controlled native-auth and HTTP boundaries.
+
+    The second Business response changes Matrix state, after the preceding native
+    check. Real HTTP/native logout is an additional isolated Linux acceptance gate.
+    Assertions report booleans/counts only, never material or credential values.
+    """
+    import io
+    from types import ModuleType, SimpleNamespace
+    from chatflow_recovery_crypto import canonical, encode
+    from chatflow_recovery_vault import Authority, RecoveryVaultModule, PRIVATE_BASE
+
+    # Supply only the imported transport interfaces; actual Authority.verify runs.
+    class Deferred:
+        called = False
+        value = None
+        error = None
+        def callback(self, value): self.called, self.value = True, value
+        def errback(self, error): self.called, self.error = True, error
+        def addTimeout(self, *args): return self
+        def __await__(self):
+            async def completed():
+                assert self.called
+                if self.error: raise self.error
+                return self.value
+            return completed().__await__()
+    def resolved(value):
+        pending = Deferred(); pending.callback(value); return pending
+    for name in ('synapse', 'synapse.logging', 'synapse.logging.context', 'twisted',
+                 'twisted.internet', 'twisted.internet.defer', 'twisted.internet.protocol',
+                 'twisted.web', 'twisted.web.client', 'twisted.web.http_headers'):
+        module = ModuleType(name); module.__path__ = []
+        monkeypatch.setitem(sys.modules, name, module)
+    sys.modules['synapse.logging.context'].make_deferred_yieldable = lambda value: value
+    sys.modules['twisted.internet.defer'].Deferred = Deferred
+    sys.modules['twisted.internet.protocol'].Protocol = object
+    sys.modules['twisted.web.client'].FileBodyProducer = lambda value: value
+    sys.modules['twisted.web.client'].ResponseDone = type('ResponseDone', (), {})
+    sys.modules['twisted.web.http_headers'].Headers = lambda value: value
+    owner, device = '@a:matrix.test', 'DEVICE'
+    metadata = {'matrix_user_id': owner, 'matrix_device_id': device, 'family_id': 'F', 'generation': 7}
+    state = {'business_calls': 0, 'matrix_calls': 0, 'changed': False}
+    class NativeAuthError(Exception):
+        code = 401
+    authority = object.__new__(Authority)
+    authority.reactor = object()
+    async def matrix(request):
+        state['matrix_calls'] += 1
+        if state['changed'] and fault == 'revoked': raise NativeAuthError()
+        current_owner = '@other:matrix.test' if state['changed'] and fault == 'owner' else owner
+        current_device = 'OTHER' if state['changed'] and fault == 'device' else device
+        return current_owner, current_device, b'Bearer synthetic'
+    authority.matrix = matrix
+    class Response:
+        code = 200
+        def deliverBody(self, reader):
+            state['business_calls'] += 1
+            if state['business_calls'] == 2: state['changed'] = True
+            reader.dataReceived(canonical(metadata))
+            reader.connectionLost(SimpleNamespace(check=lambda _: True))
+    authority.agent = SimpleNamespace(request=lambda *args: resolved(Response()))
+
+    key = os.urandom(32)
+    ring = tmp_path/'synthetic-keyring.json'
+    ring.write_bytes(canonical({'format': 1, 'active': 'k', 'keys': {
+        'k': {'key': encode(key), 'state': 'active_for_writes', 'confirmation': 'a'*64}}}))
+    ring.chmod(0o600)
+    envelope = generate_envelope('matrix.test', owner, str(uuid.uuid4()), 'k', key)
+    store = VaultStore()
+    if route != 'enrollment':
+        execute(database, store.enroll, owner, device, 7, str(uuid.uuid4()), 'initial', envelope)
+    def snapshot():
+        with database() as conn:
+            counts = tuple(conn.execute('SELECT count(*) FROM chatflow_recovery_'+table).fetchone()[0]
+                for table in ('accounts', 'versions', 'heads', 'sessions', 'operations', 'audit'))
+            accounts = conn.execute('SELECT revision,stored_bytes,candidate_count FROM chatflow_recovery_accounts').fetchall()
+        return counts, accounts
+    before = snapshot()
+    operation = str(uuid.uuid4())
+    body = ({'version': envelope['version']} if route == 'material' else
+            {'algorithm': ALGORITHM} if route == 'enrollment' else upload_body(envelope['public_key']))
+    suffix = '/material' if route == 'material' else '/enrollments/'+operation if route == 'enrollment' else '/sessions/'+envelope['version']+'/'+operation
+    class Request:
+        path = (PRIVATE_BASE+suffix).encode()
+        method = b'POST' if route == 'material' else b'PUT'
+        content = io.BytesIO(canonical(body))
+        headers = {}
+        requestHeaders = SimpleNamespace(getRawHeaders=lambda name, default:
+            [operation.encode()] if name == b'Idempotency-Key' else [b'*'] if name == b'If-None-Match' else default)
+        def setHeader(self, key, value): self.headers[key] = value
+    class Api:
+        server_name = 'matrix.test'
+        async def run_db_interaction(self, name, fn, *args): return execute(database, fn, *args)
+    module = object.__new__(RecoveryVaultModule)
+    module.config = {'enabled': True, 'keyring_path': str(ring)}
+    module.api, module.store, module.authority, module.buckets = Api(), store, authority, {}
+    request = Request()
+    status, response = await module.handle(request)
+    after = snapshot()
+    released_private = 'private_key' in response
+    rows_unchanged = before == after
+    assert request.headers[b'Cache-Control'] == b'no-store'
+    if fault is not None:
+        assert not released_private
+        assert rows_unchanged
+        assert status == (401 if fault == 'revoked' else 403)
+        assert state['business_calls'] == 2
+    else:
+        assert status == (201 if route == 'enrollment' else 200)
+        assert released_private == (route == 'material')
+        assert rows_unchanged == (route == 'material')
+        assert state['business_calls'] == (2 if route == 'material' else 3)

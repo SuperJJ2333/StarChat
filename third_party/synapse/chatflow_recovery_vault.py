@@ -254,11 +254,19 @@ class Authority:
             identifier(metadata['family_id'], 128); integer(metadata['generation'])
             if metadata['generation'] < 1: raise ValueError()
             if expected is not None and metadata != expected: raise VaultError(403, 'M_FORBIDDEN')
-            return metadata
         except VaultError:
             raise
         except Exception:
             raise VaultError(503, 'M_VAULT_UNAVAILABLE') from None
+        # Business may finish after a native token/account revocation. End this
+        # finite decision with fresh native checks, outside the network exception
+        # mapping so native 401/403 reaches the resource unchanged. The handler's
+        # pre-commit verify therefore rejects before any enrollment/upload write.
+        current_owner, current_device, _ = await self.matrix(request)
+        if (current_owner != metadata['matrix_user_id']
+                or current_device != metadata['matrix_device_id']):
+            raise VaultError(403, 'M_FORBIDDEN')
+        return metadata
 
 
 class RecoveryVaultModule:
