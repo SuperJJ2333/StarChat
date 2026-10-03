@@ -177,6 +177,7 @@ void main() {
     Widget image(bool animated) => CupertinoApp(
         home: BudgetedMediaImage(
             provider: provider,
+            paintCachedFirstFrame: true,
             isAnimated: animated,
             visible: false,
             priority: 0));
