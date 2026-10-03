@@ -6,6 +6,7 @@
 """
 import asyncio
 import logging
+import json
 from typing import Any
 
 import anyio.to_thread
@@ -52,12 +53,20 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
     @app.post("/_matrix/push/v1/getui/notify")
     async def notify(request: Request) -> JSONResponse:
         try:
-            body = await request.json()
+            raw = bytearray()
+            async for chunk in request.stream():
+                raw.extend(chunk)
+                if len(raw) > 256 * 1024:
+                    return JSONResponse({'error': 'body limit'}, status_code=413)
+            body = json.loads(raw)
         except Exception:
             return JSONResponse({"error": "invalid body"}, status_code=400)
         if not isinstance(body, dict):
             return JSONResponse({"error": "invalid body"}, status_code=400)
-        sanitized = sanitize_notification(body, config.matrix_app_id)
+        try:
+            sanitized = sanitize_notification(body, config.matrix_app_id)
+        except (ValueError, UnicodeError):
+            return JSONResponse({'error': 'invalid notification'}, status_code=400)
         if sanitized is None:
             # 无目标设备/app_id 不匹配/结构非法：按网关协议 200 空回。
             if "notification" not in body:
@@ -75,7 +84,8 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
             try:
                 async with semaphore:
                     await anyio.to_thread.run_sync(
-                        lambda cid=cid: client.push_cid(cid, sanitized.kind, config.notify_ttl_ms)
+                        lambda cid=cid: client.push_cid(cid, sanitized.kind, config.notify_ttl_ms,
+                            **({'envelope': sanitized.envelopes[cid]} if cid in sanitized.envelopes else {}))
                     )
                 return True
             except GetuiPushError as error:

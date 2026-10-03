@@ -93,7 +93,8 @@ class TestSanitize:
             'kind': spec.kind,
             'cids': spec.cids,
         }  # dataclass 仅有 kind/cids 两字段（下方逐项断言值）
-        assert dataclasses.asdict(spec).keys() == {"kind", "cids"}, "出站规格只允许 kind/cids"
+        assert dataclasses.asdict(spec).keys() == {"kind", "cids", "envelopes"}
+        assert spec.envelopes == {}
         assert spec.kind == "message"
         assert spec.cids == ["cid-1"]
         # 反序列化演示：业务字段必须全部丢失

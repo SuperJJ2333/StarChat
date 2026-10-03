@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 import httpx
+from .notify import NativeEnvelope
 
 
 def compute_sign(appkey: str, timestamp: str, secret: str) -> str:
@@ -24,11 +25,12 @@ GENERIC_TITLE = "畅聊"
 GENERIC_BODY = {"message": "您有一条新消息", "call": "您有一个来电"}
 
 
-def build_push_body(cid: str, kind: str, ttl_ms: int) -> dict[str, Any]:
+def build_push_body(cid: str, kind: str, ttl_ms: int, envelope: NativeEnvelope | None = None) -> dict[str, Any]:
     """构造出站请求体——E2EE 边界出站白名单（测试逐键断言）。
 
-    保留的信息恰好是任务允许的四类：设备映射（audience.cid）、
-    随机通知 ID（notify_id）、消息类型（通用文案二选一）、有效期（ttl）。
+    Legacy/calls keep CID, generic category/text, notify ID and TTL. Reviewed
+    v1 ordinary messages use scoped digest transmission only, without vendor
+    OS display that would bypass the device's current policy.
     """
     notify_id = secrets.randbelow(2_147_483_647)
     body = GENERIC_BODY.get(kind, GENERIC_BODY["message"])
@@ -43,6 +45,9 @@ def build_push_body(cid: str, kind: str, ttl_ms: int) -> dict[str, Any]:
         "settings": {"ttl": ttl_ms},
         "audience": {"cid": [cid]},
     }
+    if kind == 'message' and envelope is not None:
+        body['push_message'] = {'transmission': json.dumps(envelope.payload(), ensure_ascii=False)}
+        return body
     # 透传唤醒指令（PushEventDispatcher 按 type 分发；载荷仅 type 类别，
     # 无任何业务内容——E2EE 红线：正文/发送者/房间永不出现在推送里）。
     # call → 原生 CallStyle 全屏来电；message → Flutter 通知协调器。
@@ -166,7 +171,7 @@ class GetuiRestClient:
         """带缓存的 token 获取（未过期复用；供测试注入当前时间）。"""
         return self._current_token(now_ms)
 
-    def push_cid(self, cid: str, kind: str, ttl_ms: int) -> str:
+    def push_cid(self, cid: str, kind: str, ttl_ms: int, envelope: NativeEnvelope | None = None) -> str:
         """单 CID 推送；返回个推 status（successed_online/offline/…）。
 
         P02：统一解析 HTTP 状态与业务码——token 失效（code 10001，可能
@@ -174,7 +179,7 @@ class GetuiRestClient:
         （request_id/body 不变）；鉴权类失败绝不判为 CID 永久失效。
         网络/5xx/超时 → GetuiTransientError（绝不进 Matrix rejected）。
         """
-        body = build_push_body(cid, kind, ttl_ms)
+        body = build_push_body(cid, kind, ttl_ms, envelope)
         for attempt in (1, 2):
             token = self._current_token(int(time.time() * 1000))
             try:
