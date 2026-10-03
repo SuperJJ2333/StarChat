@@ -8,4 +8,12 @@
 
 验收ID S1搜索/旧anchor，C1系统拍摄，H1三天历史+密钥恢复，D1相关最终门禁与实际debug安装。每项分别记录实现/测试/发布/物理验证。E2EE保护ADR设计及双审必做；无用户密钥不能保证历史解密，保持缺密钥状态。
 
-下一步Task1 sole implementer根因/RED/GREEN；root制作Task3 ADR与独立设计复核，准备固定工具链和平台证据。root不编辑转交源码、不并发Flutter/Gradle。
+下一步Task1独立规格/领域、质量/安全复核，修正重要发现后转交Task2相机；Task3 ADR设计已通过有序复审，源码尚未启动。root不编辑转交源码、不并发Flutter/Gradle。
+
+## 调查更新
+
+用户明确新设备“没有恢复步骤或尚未完成”；现有MatrixSecurityPage无实际导航引用，恢复按钮只unlock/maybeCacheAll而未loadAllKeys。Task3范围增加可达且完整的用户密钥恢复入口、真实匹配备份版本和恢复后重试，SAS现有不完整UI不得当作已可用转移。ADR设计正在独立审查。Task1实际SDK/Widget RED证明3次查询而应1次、旧事件anchor返回false；同组原有日期20case通过，task-1-red.log实际exit1。
+
+2026-10-03 23:45:34+08：Task1源码提交6df1fc376c54e413a168ec6a96097bf1e5673df4，25文件聚焦224PASS、14改动文件analyze零问题；最终输入hash和实际失败迭代保留task-1-report.md。23:51+08进入独立审查，尚未称真机修复或构建新包。Task1释放Flutter/Gradle和源码所有权。
+
+Task3设计ADR SHA256 9e831d5f7767b1ad773f108456bf2c4887e1ed44e2b49504ec57f74170d090c4 已通过领域/规格再质量安全审查。recent-history-design-review.md §6记录另一个既有问题：创建按钮仅创建秘密存储，首次在线房间密钥备份不完整。无现成密钥时不能声称恢复完成；新备份/SAS额外路径需先补具体保护设计并审查，不能替换未知或已存在备份。旧手机/现有恢复材料的可选问题保持待答，不阻塞Task1/2或既批密文补齐与真实密钥导入工作。
