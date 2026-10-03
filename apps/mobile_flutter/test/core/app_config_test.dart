@@ -73,7 +73,8 @@ void main() {
   });
 
   test('Android unrelated four-digit code remains intact', () async {
-    expect(await loadAndroidBuild(3197), 3197);
+    final unrelated = AppConfig.compiledBuildNumber + 1;
+    expect(await loadAndroidBuild(unrelated), unrelated);
   });
 
   testWidgets('About detail displays the full Android build', (tester) async {
@@ -108,7 +109,8 @@ void main() {
     expect(AppConfig.normalizeBuildNumber(compiled + 1000), compiled,
         reason: 'arm32 包');
     expect(AppConfig.normalizeBuildNumber(2184), 2184, reason: '普通四位包');
-    expect(AppConfig.normalizeBuildNumber(3197), 3197, reason: '未知四位包');
+    expect(AppConfig.normalizeBuildNumber(compiled + 1), compiled + 1,
+        reason: '未知四位包');
     expect(AppConfig.normalizeBuildNumber(20), 20, reason: '旧三位内构建号');
     expect(AppConfig.normalizeBuildNumber(6), 6);
   });

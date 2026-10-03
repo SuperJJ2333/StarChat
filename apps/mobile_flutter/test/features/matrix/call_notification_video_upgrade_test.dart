@@ -18,7 +18,8 @@ void main() {
         channelSpecFor(SystemNotificationChannel.messages).id);
     expect(channelSpecFor(SystemNotificationChannel.system).id,
         channelSpecFor(SystemNotificationChannel.messages).id);
-    expect(activeChannelSpecs.length, lessThanOrEqualTo(3));
+    expect(activeChannelSpecs, hasLength(6),
+        reason: '消息类型仍合并，独立声音与震动配置使用固定的额外渠道');
     expect(
         channelSpecFor(SystemNotificationChannel.silent).soundResource, isNull);
   });
