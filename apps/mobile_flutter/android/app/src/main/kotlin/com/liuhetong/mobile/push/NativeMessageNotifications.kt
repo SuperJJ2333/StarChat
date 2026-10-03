@@ -34,11 +34,18 @@ internal class NativeMessageOwner(private val context: Context) {
         db.execSQL("CREATE TABLE IF NOT EXISTS claims (key TEXT PRIMARY KEY, room TEXT, at INTEGER, status INTEGER)")
         db.execSQL("CREATE INDEX IF NOT EXISTS claims_at ON claims(at)")
         db.execSQL("CREATE TABLE IF NOT EXISTS tap (id INTEGER PRIMARY KEY, scope TEXT, room TEXT, event TEXT, at INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS presentations (key TEXT PRIMARY KEY, lease TEXT, at INTEGER)")
         db.rawQuery("SELECT scope, revision, valid, policy FROM state WHERE id=1", null).use {
             if (it.moveToFirst()) {
                 scope = it.getString(0); revision = it.getLong(1); unsafe = it.getInt(2) != 1
                 policy = runCatching { JSONObject(it.getString(3)) }.getOrDefault(JSONObject())
             }
+        }
+        // A previous engine may have shown a banner before losing its ACK.
+        // Recover visibility without making a second disruptive alert.
+        transaction {
+            db.execSQL("UPDATE claims SET status=6 WHERE status=4")
+            db.execSQL("DELETE FROM presentations")
         }
         prune()
     }
@@ -88,6 +95,7 @@ internal class NativeMessageOwner(private val context: Context) {
             db.execSQL("UPDATE state SET revision=?, valid=1, policy=? WHERE id=1", arrayOf<Any>(next, nextPolicy.toString()))
         }
         policy = nextPolicy; revision = next; unsafe = false
+        retryPending()
         return true
     }
     fun room(value: String, key: String, muted: Boolean, next: Long): Boolean {
@@ -109,15 +117,25 @@ internal class NativeMessageOwner(private val context: Context) {
     fun revoke() {
         unsafe = true; cancelAll()
         transaction {
-            for (table in listOf("state", "rooms", "claims", "tap")) db.execSQL("DELETE FROM $table")
+            for (table in listOf("state", "rooms", "claims", "tap", "presentations")) db.execSQL("DELETE FROM $table")
         }
         scope = ""; revision = 0; minimumRevision = 0; policy = JSONObject()
     }
     private fun prune() {
         val now = System.currentTimeMillis()
+        db.execSQL("UPDATE claims SET status=6 WHERE status=4 AND key NOT IN (SELECT key FROM presentations WHERE at>? AND at<=?)", arrayOf(now - 5000, now))
+        db.execSQL("DELETE FROM presentations WHERE at<=? OR at>? OR key NOT IN (SELECT key FROM claims WHERE status=4)", arrayOf(now - 5000, now))
         db.execSQL("DELETE FROM claims WHERE at<? OR at>?", arrayOf(now - 600_000, now + 30_000))
+        db.execSQL("UPDATE claims SET status=2 WHERE status=6 AND at<?", arrayOf(now - 300_000))
         db.execSQL("DELETE FROM claims WHERE status IN (0,1) AND at<?", arrayOf(now - 300_000))
+        trimPending()
         db.execSQL("DELETE FROM tap WHERE at<? OR at>?", arrayOf(now - 300_000, now + 30_000))
+    }
+    private fun trimPending() {
+        // Keep uncertainty as a handled tombstone on overflow, never turn a
+        // retried uncertain event back into a fresh audible delivery.
+        db.execSQL("UPDATE claims SET status=2 WHERE status=6 AND key NOT IN (SELECT key FROM claims WHERE status IN (0,6) ORDER BY at DESC LIMIT 32)")
+        db.execSQL("DELETE FROM claims WHERE status=0 AND key NOT IN (SELECT key FROM claims WHERE status IN (0,6) ORDER BY at DESC LIMIT 32)")
     }
     private fun status(key: String): Int? = db.rawQuery("SELECT status,at FROM claims WHERE key=?", arrayOf(key)).use {
         if (!it.moveToFirst()) null
@@ -129,7 +147,7 @@ internal class NativeMessageOwner(private val context: Context) {
         if (count >= 4096 && this.status(key) == null) return false
         db.execSQL("INSERT OR REPLACE INTO claims VALUES(?,?,?,?)", arrayOf<Any>(key, room, System.currentTimeMillis(), status))
         // Pending-only queue cap; overflow never turns an already handled claim into audible default.
-        db.execSQL("DELETE FROM claims WHERE status=0 AND (at<? OR key NOT IN (SELECT key FROM claims WHERE status=0 ORDER BY at DESC LIMIT 32))", arrayOf(System.currentTimeMillis() - 300_000))
+        trimPending()
         return true
     }
     fun claim(value: String, room: String, event: String): Boolean {
@@ -142,16 +160,25 @@ internal class NativeMessageOwner(private val context: Context) {
         if (!valid(value) || status(event) != 1) return
         db.execSQL("UPDATE claims SET status=2 WHERE key=?", arrayOf(event))
     }
-    fun beginForeground(value: String, event: String): Boolean {
-        if (!valid(value) || !foreground || callActive() || status(event) != 1) return false
-        // Transfer the still-live reservation to active presentation atomically.
-        // Fallback cannot take it during later Dart sound/haptic awaits.
-        db.execSQL("UPDATE claims SET status=4 WHERE key=?", arrayOf(event))
-        return true
+    fun beginForeground(value: String, event: String): String? {
+        if (!valid(value) || !foreground || callActive() || status(event) != 1) return null
+        val lease = java.util.UUID.randomUUID().toString()
+        transaction {
+            db.execSQL("INSERT OR REPLACE INTO presentations VALUES(?,?,?)", arrayOf<Any>(event,lease,System.currentTimeMillis()))
+            db.execSQL("UPDATE claims SET status=4 WHERE key=?", arrayOf(event))
+        }
+        return lease
     }
-    fun finishForeground(value: String, event: String, handled: Boolean) {
-        if (!valid(value) || status(event) != 4) return
-        db.execSQL("UPDATE claims SET status=? WHERE key=?", arrayOf<Any>(if (handled) 2 else 0, event))
+    fun finishForeground(value: String, event: String, lease: String, handled: Boolean) {
+        // A known abort must release even during restrictive policy installation.
+        // Scope and attempt identity remain authoritative while valid=false.
+        if (!hex(value) || value != scope || !hex(event)) return
+        val matches = db.rawQuery("SELECT 1 FROM presentations WHERE key=? AND lease=?",arrayOf(event,lease)).use { it.moveToFirst() }
+        if (!matches || status(event) != 4) return
+        transaction {
+            db.execSQL("UPDATE claims SET status=? WHERE key=?", arrayOf<Any>(if (handled) 2 else 0, event))
+            db.execSQL("DELETE FROM presentations WHERE key=? AND lease=?",arrayOf(event,lease))
+        }
         if (!handled) retryPending()
     }
     fun resolve(value: String, room: String, event: String, show: Boolean, silent: Boolean,
@@ -172,16 +199,21 @@ internal class NativeMessageOwner(private val context: Context) {
     fun receive(value: String, room: String, event: String) {
         if (!valid(value) || !hex(room) || !hex(event)) return
         prune()
-        if ((status(event) ?: 0) != 0) return
-        if (!record(event, room, 0)) return
+        val uncertain = status(event) == 6
+        if ((status(event) ?: 0) != 0 && !uncertain) return
+        if (!record(event, room, if (uncertain) 6 else 0)) return
         if (foreground || callActive()) return
-        present(value, room, event)
+        if (uncertain && manager.activeNotifications.any { it.tag == "native_message" && it.id == id(room) && it.notification.extras.getString("native_event") != event }) {
+            db.execSQL("UPDATE claims SET status=2 WHERE key=?",arrayOf(event))
+            return
+        }
+        present(value, room, event, forceQuiet = uncertain)
     }
     fun retryPending() {
         prune()
         if (foreground || callActive() || unsafe) return
         val pending = mutableListOf<Pair<String,String>>()
-        db.rawQuery("SELECT key,room FROM claims WHERE status=0 OR (status=1 AND at<?) LIMIT 32", arrayOf((System.currentTimeMillis() - 5000).toString())).use {
+        db.rawQuery("SELECT key,room FROM claims WHERE status IN (0,6) OR (status=1 AND at<?) LIMIT 32", arrayOf((System.currentTimeMillis() - 5000).toString())).use {
             while (it.moveToNext()) pending.add(it.getString(0) to it.getString(1))
         }
         for ((event, room) in pending) receive(scope, room, event)
@@ -307,8 +339,10 @@ object NativeMessageNotifications {
                             worker.schedule({ runCatching { o.retryPending() } }, 5, TimeUnit.SECONDS)
                         }
                         "complete" -> { o.complete(scope,event); true }
-                        "beginForeground" -> o.beginForeground(scope,event)
-                        "finishForeground" -> { o.finishForeground(scope,event,a["handled"] == true); true }
+                        "beginForeground" -> o.beginForeground(scope,event).also {
+                            worker.schedule({ runCatching { o.retryPending() } }, 5, TimeUnit.SECONDS)
+                        }
+                        "finishForeground" -> { o.finishForeground(scope,event,a["lease"] as? String ?: "",a["handled"] == true); true }
                         "resolve" -> o.resolve(scope, room, event, a["show"] == true, a["silent"] == true,
                             a["title"] as? String ?: "畅聊", a["body"] as? String ?: "您有一条新消息")
                         "cancelRoom" -> { if (o.valid(scope)) o.cancelRoom(room); true }

@@ -5,6 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../../core/notification/notification_preferences.dart';
 
+final class NativeForegroundLease {
+  NativeForegroundLease(this.scope, this.eventKey, this.attempt, this.epoch,
+      this.revision, this.elapsed);
+  final String scope, eventKey, attempt;
+  final int epoch, revision;
+  final Stopwatch elapsed;
+}
+
 /// Device-private association/policy adapter. No decrypted content crosses it.
 /// Room observations arrive from the existing preference reconciliation pass;
 /// unchanged rooms do no hashing, disk work or platform call.
@@ -204,18 +212,44 @@ final class NativeMessagePolicy {
         'complete', {'scope': _scope, 'event_key': key(eventId)});
   }
 
-  Future<bool> beginForeground(String eventId) async {
-    if (!_ready || _scope == null) return false;
+  bool isForegroundLeaseCurrent(NativeForegroundLease lease) =>
+      _ready &&
+      _scope == lease.scope &&
+      _epoch == lease.epoch &&
+      _revision == lease.revision &&
+      lease.elapsed.elapsed < const Duration(seconds: 5);
+
+  Future<NativeForegroundLease?> beginForeground(String eventId) async {
+    if (!_ready || _scope == null) return null;
     final epoch = _epoch;
-    final ok = await channel.invokeMethod<bool>(
-        'beginForeground', {'scope': _scope, 'event_key': key(eventId)});
-    return epoch == _epoch && _ready && ok == true;
+    final scope = _scope!;
+    final revision = _revision;
+    final eventKey = key(eventId);
+    // Start before the platform call: this is conservatively earlier than the
+    // native grant, so a delayed reply cannot extend Dart's presentation lease.
+    final elapsed = Stopwatch()..start();
+    final attempt = await channel.invokeMethod<String>(
+        'beginForeground', {'scope': scope, 'event_key': eventKey});
+    if (attempt == null || attempt.isEmpty) return null;
+    final lease = NativeForegroundLease(
+        scope, eventKey, attempt, epoch, revision, elapsed);
+    if (!isForegroundLeaseCurrent(lease)) {
+      await finishForeground(lease, handled: false);
+      return null;
+    }
+    return lease;
   }
 
-  Future<void> finishForeground(String eventId, {required bool handled}) async {
-    if (!_ready || _scope == null) return;
-    await channel.invokeMethod<void>('finishForeground',
-        {'scope': _scope, 'event_key': key(eventId), 'handled': handled});
+  Future<void> finishForeground(NativeForegroundLease lease,
+      {required bool handled}) async {
+    // Captured identity is usable while readiness changes; native verifies
+    // both current scope and exact attempt, never a newly derived event key.
+    await channel.invokeMethod<void>('finishForeground', {
+      'scope': lease.scope,
+      'event_key': lease.eventKey,
+      'lease': lease.attempt,
+      'handled': handled
+    });
   }
 
   Future<void> suspend() async {

@@ -218,22 +218,105 @@ class NativeMessageNotificationsTest {
         owner.retryPending()
         assertEquals(1, notifications().size)
         owner.foreground = true
-        assertFalse(owner.beginForeground(scope,event))
+        assertNull(owner.beginForeground(scope,event))
     }
     @Test fun activeForegroundPresentationKeepsOwnershipAndAbandonmentRestoresFallback() {
         owner.foreground = true
         assertTrue(owner.claim(scope,room,event))
-        assertTrue(owner.beginForeground(scope,event))
+        val lease = assertNotNull(owner.beginForeground(scope,event))
         app.openOrCreateDatabase("native_messages.db",0,null).use {
             it.execSQL("UPDATE claims SET at=?",arrayOf(System.currentTimeMillis()-6000))
         }
         owner.foreground = false
         owner.retryPending()
         assertTrue(notifications().isEmpty())
-        owner.finishForeground(scope,event,false)
+        owner.finishForeground(scope,event,lease,false)
         assertEquals(1, notifications().size)
-        owner.finishForeground(scope,event,true)
+        owner.finishForeground(scope,event,lease,true)
         owner.retryPending()
         assertEquals(1, notifications().size)
+    }
+    @Test fun lostForegroundConsumerRecoversVisibleQuietFallbackAfterRestart() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        assertNotNull(owner.beginForeground(scope,event))
+        owner.close(); owner = NativeMessageOwner(app)
+        owner.retryPending()
+        assertEquals(1, notifications().size)
+        assertEquals("chatflow_silent", notifications().single().notification.channelId)
+    }
+    @Test fun expiredLeaseStaysQuietThroughPermissionFailureRetryAndDismissal() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        assertNotNull(owner.beginForeground(scope,event))
+        app.openOrCreateDatabase("native_messages.db",0,null).use {
+            it.execSQL("UPDATE presentations SET at=?",arrayOf(System.currentTimeMillis()-6000))
+        }
+        owner.foreground = false
+        shadowOf(app.getSystemService(NotificationManager::class.java)).setNotificationsEnabled(false)
+        owner.retryPending(); receive()
+        assertTrue(notifications().isEmpty())
+        owner.close(); owner = NativeMessageOwner(app)
+        shadowOf(app.getSystemService(NotificationManager::class.java)).setNotificationsEnabled(true)
+        receive()
+        assertEquals("chatflow_silent", notifications().single().notification.channelId)
+        app.getSystemService(NotificationManager::class.java).cancelAll()
+        receive(); owner.retryPending()
+        assertTrue(notifications().isEmpty())
+    }
+    @Test fun abandonedAttemptCannotReleaseNewLeaseAndUncertainRecoveryCannotReplaceNewerEvent() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        val old = assertNotNull(owner.beginForeground(scope,event))
+        owner.finishForeground(scope,event,old,false)
+        assertTrue(owner.claim(scope,room,event))
+        val current = assertNotNull(owner.beginForeground(scope,event))
+        assertNotEquals(old,current)
+        owner.finishForeground(scope,event,old,true)
+        app.openOrCreateDatabase("native_messages.db",0,null).use {
+            assertEquals(4,it.rawQuery("SELECT status FROM claims WHERE key=?",arrayOf(event)).use { c -> c.moveToFirst(); c.getInt(0) })
+            it.execSQL("UPDATE presentations SET at=?",arrayOf(System.currentTimeMillis()-6000))
+        }
+        owner.foreground = false
+        receive("d".repeat(64))
+        owner.retryPending()
+        assertEquals("d".repeat(64),notifications().single().notification.extras.getString("native_event"))
+    }
+    @Test fun knownAbortWhilePolicyInvalidWaitsForSafeInstallThenRecovers() {
+        owner.foreground = true
+        assertTrue(owner.claim(scope,room,event))
+        val lease = assertNotNull(owner.beginForeground(scope,event))
+        owner.invalidate(scope,2)
+        owner.finishForeground(scope,event,lease,false)
+        owner.foreground = false
+        owner.retryPending()
+        assertTrue(notifications().isEmpty())
+        assertTrue(owner.install(mapOf("scope" to scope,"revision" to 2L,
+            "enabled" to true,"sound" to true,"vibration" to true,
+            "dnd" to false,"start" to 0,"end" to 0,"rooms" to mapOf(room to false))))
+        assertEquals("chatflow_messages_v2", notifications().single().notification.channelId)
+    }
+    @Test fun uncertainLeaseOverflowCannotReturnAsAudibleOnProviderRetry() {
+        owner.foreground = true
+        repeat(40) { n ->
+            val key = n.toString(16).padStart(64,'0')
+            assertTrue(owner.claim(scope,room,key))
+            assertNotNull(owner.beginForeground(scope,key))
+        }
+        app.openOrCreateDatabase("native_messages.db",0,null).use {
+            it.execSQL("UPDATE presentations SET at=?",arrayOf(System.currentTimeMillis()-6000))
+        }
+        owner.foreground = false
+        shadowOf(app.getSystemService(NotificationManager::class.java)).setNotificationsEnabled(false)
+        owner.retryPending()
+        app.openOrCreateDatabase("native_messages.db",0,null).use {
+            assertEquals(32,it.rawQuery("SELECT COUNT(*) FROM claims WHERE status=6",null).use { c -> c.moveToFirst(); c.getInt(0) })
+            assertEquals(0,it.rawQuery("SELECT COUNT(*) FROM presentations",null).use { c -> c.moveToFirst(); c.getInt(0) })
+        }
+        shadowOf(app.getSystemService(NotificationManager::class.java)).setNotificationsEnabled(true)
+        repeat(40) { n ->
+            owner.receive(scope,room,n.toString(16).padStart(64,'0'))
+            assertTrue(notifications().all { it.notification.channelId == "chatflow_silent" })
+        }
     }
 }

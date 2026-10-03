@@ -234,6 +234,68 @@ Future<void> _disposeWidgetCoordinator(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('held native ACK across policy change cannot leak foreground effects',
+      () async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final beginReply = Completer<String>();
+    final beginEntered = Completer<void>();
+    final installReply = Completer<bool>();
+    final installEntered = Completer<void>();
+    var changingPolicy = false;
+    var abandoned = false;
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel,
+        (call) async {
+      if (call.method == 'bind') return {'scope': 'a' * 64, 'revision': 0};
+      if (call.method == 'beginForeground') {
+        beginEntered.complete();
+        return beginReply.future;
+      }
+      if (call.method == 'install' && changingPolicy) {
+        installEntered.complete();
+        return installReply.future;
+      }
+      if (call.method == 'finishForeground') {
+        abandoned = (call.arguments as Map)['handled'] == false;
+      }
+      return true;
+    });
+    final policy = NativeMessagePolicy(enabled: true);
+    await policy.prepare('account', const NotificationPreferenceValues());
+    final engine = _RecordingSoundEngine();
+    final haptics = _RecordingHapticDriver();
+    final banners = InAppBannerController();
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+        engine: engine,
+        haptics: haptics,
+        badge: _RecordingBadgeGateway(),
+        presenter: _FakeSystemPresenter(),
+        source: source,
+        prefs: _FakePreferenceStore(),
+        unread: _FakeUnreadSource(),
+        appState: AppStateManager(),
+        banners: banners,
+        nativePolicy: policy);
+    await coordinator.start();
+    final handling = coordinator.handleEvent(_incoming());
+    await beginEntered.future;
+    changingPolicy = true;
+    final updating = policy.updatePreferences(
+        const NotificationPreferenceValues(soundEnabled: false));
+    await installEntered.future;
+    beginReply.complete('attempt-1');
+    await handling;
+    expect(abandoned, true);
+    expect(banners.current, isNull);
+    expect(engine.plays, isEmpty);
+    expect(haptics.triggers, isEmpty);
+    installReply.complete(true);
+    await updating;
+    await coordinator.dispose();
+    await source.close();
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel, null);
+  });
   for (final takeover in [true, false]) {
     test(
         'delayed foreground badge respects native ownership takeover=$takeover',
@@ -250,9 +312,9 @@ void main() {
           return true;
         }
         if (call.method == 'beginForeground') {
-          if (!claimActive || nativeDisplayed) return false;
+          if (!claimActive || nativeDisplayed) return null;
           claimActive = false;
-          return true;
+          return 'lease-1';
         }
         return true;
       });

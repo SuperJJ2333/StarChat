@@ -295,19 +295,21 @@ final class NotificationCoordinator {
   }) async {
     final epoch = _epoch;
     final roomRevision = _roomRevisions[event.conversationId] ?? 0;
+    NativeForegroundLease? lease;
     bool foregroundCurrent() =>
         _isCurrent(epoch) &&
         appState.isForeground &&
         !appState.callActive &&
         !readState.isRoomOpen(event.conversationId) &&
-        (_roomRevisions[event.conversationId] ?? 0) == roomRevision;
+        (_roomRevisions[event.conversationId] ?? 0) == roomRevision &&
+        (lease == null || nativePolicy!.isForegroundLeaseCurrent(lease));
     if (decision.updateBadge) {
       await refreshLauncherBadge();
     }
-    if (nativeClaimed &&
-        (!foregroundCurrent() ||
-            !await nativePolicy!.beginForeground(event.eventId))) {
-      return;
+    if (nativeClaimed) {
+      if (!foregroundCurrent()) return;
+      lease = await nativePolicy!.beginForeground(event.eventId);
+      if (lease == null) return;
     }
     var handled = !decision.showInAppBanner &&
         !decision.playSound &&
@@ -327,6 +329,11 @@ final class NotificationCoordinator {
           ),
         );
         handled = true;
+        // Record the synchronous visible banner before slow audio/haptic work.
+        // Lost replies can only recover silently, never issue another alert.
+        if (lease != null) {
+          await nativePolicy!.finishForeground(lease, handled: true);
+        }
       }
       if (decision.playSound &&
           decision.soundType != null &&
@@ -365,8 +372,8 @@ final class NotificationCoordinator {
         });
       }
     } finally {
-      if (nativeClaimed) {
-        await nativePolicy!.finishForeground(event.eventId, handled: handled);
+      if (lease != null) {
+        await nativePolicy!.finishForeground(lease, handled: handled);
       }
     }
   }

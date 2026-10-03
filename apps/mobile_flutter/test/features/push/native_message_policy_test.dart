@@ -21,6 +21,62 @@ void main() {
   });
   tearDown(() =>
       messenger.setMockMethodCallHandler(NativeMessagePolicy.channel, null));
+  test('lost foreground ACK during policy update releases captured ownership',
+      () async {
+    final policy = NativeMessagePolicy(enabled: true);
+    await policy.prepare('account', const NotificationPreferenceValues());
+    final beginReply = Completer<Object?>();
+    final beginEntered = Completer<void>();
+    final installReply = Completer<Object?>();
+    final installEntered = Completer<void>();
+    var abandoned = false;
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel,
+        (call) async {
+      if (call.method == 'beginForeground') {
+        beginEntered.complete();
+        return beginReply.future;
+      }
+      if (call.method == 'install') {
+        installEntered.complete();
+        return installReply.future;
+      }
+      if (call.method == 'finishForeground') {
+        abandoned = (call.arguments as Map)['handled'] == false;
+      }
+      return true;
+    });
+    final begin = policy.beginForeground('event');
+    await beginEntered.future;
+    final updating = policy.updatePreferences(
+        const NotificationPreferenceValues(soundEnabled: false));
+    await installEntered.future;
+    beginReply.complete('lease-1');
+    await begin;
+    installReply.complete(true);
+    await updating;
+    expect(abandoned, true,
+        reason:
+            'a rejected success ACK must release native ownership even while policy is unready');
+  });
+  test('expired foreground ACK is fenced and releases its original attempt',
+      () async {
+    final policy = NativeMessagePolicy(enabled: true);
+    await policy.prepare('account', const NotificationPreferenceValues());
+    Map? released;
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel,
+        (call) async {
+      if (call.method == 'beginForeground') {
+        await Future<void>.delayed(const Duration(milliseconds: 5100));
+        return 'expired-attempt';
+      }
+      if (call.method == 'finishForeground') released = call.arguments as Map;
+      return true;
+    });
+    expect(await policy.beginForeground('event'), isNull);
+    expect(released?['lease'], 'expired-attempt');
+    expect(released?['scope'], scope);
+    expect(released?['handled'], false);
+  });
   test(
       'preparation waits for durable policy ACK and emits only scoped pusher metadata',
       () async {
