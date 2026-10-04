@@ -9,6 +9,7 @@ import 'room_route_frame_probe.dart';
 import 'room_keyboard_transition_probe.dart';
 import 'local_room_history_search.dart';
 import 'room_search_visibility.dart';
+import 'search_media_resolver.dart';
 import '../../core/chat_diagnostics.dart';
 import '../../core/chat_diagnostic_operation.dart';
 import 'nudge_rate_limiter.dart';
@@ -2199,19 +2200,27 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _openVideoViewer(RoomMessageViewModel message) async {
+  Future<void> _openVideoViewer(RoomMessageViewModel message,
+      {bool Function()? searchAccess}) async {
+    if (searchAccess != null && !searchAccess()) return;
     final localSent = SentVideoLocalRegistry.shared
         .findByTransactionId(message.transactionId);
     // Phase 2：播放期间 pin 本地播放文件——配额淘汰与 GC 都不得删除
     // 正在播放的对象；路由返回后统一释放。
     final pins = <MediaCachePin>[];
     Future<File> loadPlaybackFile() async {
+      if (searchAccess != null && !searchAccess()) {
+        throw StateError('Search media unavailable');
+      }
       final file = localSent ??
           await resolveCachedVideoFile(
             loaderCachesContent: true,
             key: _mediaKey(message.id),
             decrypt: () => _downloadMedia(message.id),
           );
+      if (searchAccess != null && !searchAccess()) {
+        throw StateError('Search media unavailable');
+      }
       pins.add(MediaCache.pinPath(file.path));
       return file;
     }
@@ -2223,7 +2232,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           builder: (_) => VideoViewerPage(
             loadFile: loadPlaybackFile,
             initialDuration: message.videoDuration,
-            onForward: () => _forwardMessages([message]),
+            onForward: () {
+              if (searchAccess != null && !searchAccess()) {
+                return Future<void>.value();
+              }
+              return _forwardMessages([message]);
+            },
           ),
         ),
       );
@@ -3448,17 +3462,49 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         hiddenEvents?.isEventHidden(sourceRoomId, eventId,
             eventTimestamp: timestamp) ??
         false;
-    RoomMessageViewModel? currentSearchMessage(String id) {
-      // A retained iterator may outlive a recall or source refresh. Resolve the
-      // current indexed row before exposing its text, never a stale snapshot.
-      if (!searchResultVisibility.isVisible(id, isHidden: searchResultHidden)) {
+    final mediaResolver = SearchMediaResolver(
+      sourceOf: searchResultVisibility.sourceRoomId,
+      isActive: () => mounted && searchOpen && !widget.roomLease.canceled,
+      isVisible: (id) =>
+          searchResultVisibility.isVisible(id, isHidden: searchResultHidden) &&
+          !(controller?.findMessage(id)?.isRecalled ?? false),
+      hintSource: widget.roomLease.hintLogicalEventSource,
+      lookup: (id) async => controller?.lookupReplyMessage(id),
+    );
+    Future<Uint8List?> loadSearchPreview(
+        String id, bool Function() cellActive) async {
+      final generation = mediaResolver.generation;
+      final message = await mediaResolver.resolve(id);
+      if (message == null || !cellActive()) return null;
+      final bytes = message.kind == RoomMessageKind.video
+          ? await _loadVideoPoster(id)
+          : await _loadImagePreview(message);
+      if (generation != mediaResolver.generation ||
+          !cellActive() ||
+          !mediaResolver.allows(id)) {
         return null;
       }
-      final message = controller?.findMessage(id);
-      if (message == null || message.isRecalled) {
-        return null;
+      return bytes;
+    }
+
+    Future<void> openSearchMedia(String id) async {
+      final generation = mediaResolver.generation;
+      final source = searchResultVisibility.sourceRoomId(id);
+      bool access() =>
+          generation == mediaResolver.generation &&
+          source == searchResultVisibility.sourceRoomId(id) &&
+          mediaResolver.allows(id);
+      try {
+        final message = await mediaResolver.resolve(id);
+        if (message == null || !access()) return;
+        if (message.kind == RoomMessageKind.video) {
+          await _openVideoViewer(message, searchAccess: access);
+        } else {
+          await _openImageViewerWithForward(message, searchAccess: access);
+        }
+      } catch (_) {
+        if (access()) _showMediaMessage('媒体加载失败，请重试');
       }
-      return message;
     }
 
     final searchBudget = MatrixSearchSnapshotBudget();
@@ -3543,6 +3589,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           onCancelCalendarMonthLookup: () => controller?.cancelMonthLookup(),
           onCalendarClosed: () => controller?.cancelPendingDateLookup(),
           onSearchInvalidated: () {
+            mediaResolver.invalidate();
             searchResultVisibility.clear();
             historySearch.cancel();
           },
@@ -3572,43 +3619,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               throw StateError(
                   'Flash photo must not use ordinary search media grid');
             }
-            final current = currentSearchMessage(message.eventId);
-            return FutureBuilder<Uint8List?>(
-              future: current == null
-                  ? Future<Uint8List?>.value()
-                  : message.isVideo
-                      ? _loadVideoPoster(message.eventId)
-                      : _loadImagePreview(current),
-              builder: (context, snapshot) {
-                final bytes = snapshot.data;
-                if (bytes != null) {
-                  return Image(
-                    image: boundedChatImageProvider(bytes, maxEdge: 360),
-                    fit: BoxFit.contain,
-                  );
-                }
-                return Center(
-                  child: snapshot.connectionState == ConnectionState.waiting
-                      ? const CupertinoActivityIndicator()
-                      : const Icon(
-                          CupertinoIcons.photo,
-                          color: WeChatColors.textTertiary,
-                        ),
-                );
-              },
+            return _SearchMediaThumbnail(
+              key: ValueKey((mediaResolver.generation, message.eventId)),
+              load: (active) => loadSearchPreview(message.eventId, active),
+              allowed: () => mediaResolver.allows(message.eventId),
             );
           },
-          onOpenMedia: (eventId) {
-            final message = currentSearchMessage(eventId);
-            if (message == null) return;
-            if (message.kind == RoomMessageKind.video ||
-                message.mimeType?.startsWith('video/') == true) {
-              unawaited(_openVideoViewer(message));
-            } else {
-              unawaited(
-                  _trackAction(() => _openImageViewerWithForward(message)));
-            }
-          },
+          onOpenMedia: (eventId) => unawaited(openSearchMedia(eventId)),
           onJumpToMessage: (eventId) {
             if (!searchResultVisibility.isVisible(eventId,
                     isHidden: searchResultHidden) ||
@@ -3656,6 +3673,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ),
     ).whenComplete(() {
       searchOpen = false;
+      mediaResolver.invalidate();
       controller?.cancelPendingDateLookup();
       historySearch.cancel();
       searchResultVisibility.clear();
@@ -3872,7 +3890,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   /// R7：打开全屏图片查看器（含转发/下载操作）。
-  Future<void> _openImageViewerWithForward(RoomMessageViewModel message) async {
+  Future<void> _openImageViewerWithForward(RoomMessageViewModel message,
+      {bool Function()? searchAccess}) async {
     // 第二层保护：即使将来搜索/气泡过滤回归，闪照也绝不能进入普通查看器
     // 或普通原图 loader（只允许专用安全查看器 FlashPhotoViewerPage）。
     if (!_mediaPolicyFor(message).canUseOrdinaryViewer) {
@@ -3880,8 +3899,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       return;
     }
     try {
-      final images = _galleryImages();
-      if (!mounted || !images.any((image) => image.id == message.id)) return;
+      if (!mounted || (searchAccess != null && !searchAccess())) return;
+      final images = _galleryImages(access: searchAccess);
+      final searchSeed = searchAccess != null &&
+          !images.any((image) => image.id == message.id);
+      if (searchSeed) {
+        images
+          ..clear()
+          ..add(_galleryImage(message, access: searchAccess));
+      }
+      if (!images.any((image) => image.id == message.id)) return;
       await Navigator.of(context, rootNavigator: true).push(
         MotionPageRoute(
           builder: (_) => RoomImageGalleryPage(
@@ -3892,9 +3919,26 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               roomInfo.currentUserId,
               roomInfo.id,
             ),
-            loadEarlier: _earlierGalleryImages,
-            onForwardEdited: _forwardEditedImage,
-            onFavorite: _favoriteEditedImage,
+            loadEarlier: searchSeed
+                ? () async => const []
+                : () => _earlierGalleryImages(access: searchAccess),
+            onForwardEdited: (export) async {
+              if (searchAccess != null && !searchAccess()) return false;
+              return _forwardEditedImage(() async {
+                if (searchAccess != null && !searchAccess()) {
+                  throw StateError('Search media unavailable');
+                }
+                final bytes = await export();
+                if (searchAccess != null && !searchAccess()) {
+                  throw StateError('Search media unavailable');
+                }
+                return bytes;
+              });
+            },
+            onFavorite: (bytes) async {
+              if (searchAccess != null && !searchAccess()) return;
+              await _favoriteEditedImage(bytes);
+            },
           ),
         ),
       );
@@ -3913,7 +3957,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   MediaMessageAccessPolicy _mediaPolicyFor(RoomMessageViewModel message) =>
       MediaMessageAccessPolicy.forMessage(isFlashPhoto: message.isFlashPhoto);
 
-  List<RoomGalleryImage> _galleryImages() {
+  List<RoomGalleryImage> _galleryImages({bool Function()? access}) {
     final all = controller?.allMessages ?? const <RoomMessageViewModel>[];
     final visible = hiddenEvents?.visibleItems(
           roomInfo.id,
@@ -3926,36 +3970,58 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       // 安全不变量（含历史分页与预取）：闪照永远不进入普通 Gallery，
       // 投影规则集中在 ordinaryGalleryMessages。
       for (final message in ordinaryGalleryMessages(visible))
-        _galleryImage(message),
+        _galleryImage(message, access: access),
     ];
   }
 
-  RoomGalleryImage _galleryImage(RoomMessageViewModel message) {
+  RoomGalleryImage _galleryImage(RoomMessageViewModel message,
+      {bool Function()? access}) {
+    Future<Uint8List> guarded(Future<Uint8List> Function() load) async {
+      if (access != null && !access()) {
+        throw StateError('Search media unavailable');
+      }
+      final bytes = await load();
+      if (access != null && !access()) {
+        throw StateError('Search media unavailable');
+      }
+      return bytes;
+    }
+
     final originalIdentity = _mediaKey(message.id).identity;
     return RoomGalleryImage(
       id: message.id,
       sourceIdentity: (_previewKey(message).identity, originalIdentity),
       loadPreview: () {
         _mediaPolicyFor(message).assertOrdinaryMediaAllowed('gallery.preview');
-        return _loadImagePreview(message);
+        return guarded(() => _loadImagePreview(message));
       },
       loadOriginal: () {
         _mediaPolicyFor(message).assertOrdinaryMediaAllowed('gallery.original');
-        return withMediaLoadPriority(MediaLoadPriority.interactive,
-            () => controller!.loadAttachment(message.id));
+        return guarded(() => withMediaLoadPriority(
+            MediaLoadPriority.interactive,
+            () => controller!.loadAttachment(message.id)));
       },
-      peekOriginal: () => _cachedOriginal(message, originalIdentity),
-      readCachedOriginal: () => _readCachedOriginal(message, originalIdentity),
+      peekOriginal: () => access != null && !access()
+          ? null
+          : _cachedOriginal(message, originalIdentity),
+      readCachedOriginal: () async {
+        if (access != null && !access()) return null;
+        final bytes = await _readCachedOriginal(message, originalIdentity);
+        return access != null && !access() ? null : bytes;
+      },
       originalSize: message.attachmentSize,
       onForward: () {
+        if (access != null && !access()) return Future<void>.value();
         _mediaPolicyFor(message).assertOrdinaryMediaAllowed('gallery.forward');
         return _forwardMessages([message]);
       },
     );
   }
 
-  Future<List<RoomGalleryImage>> _earlierGalleryImages() async {
-    final initial = _galleryImages();
+  Future<List<RoomGalleryImage>> _earlierGalleryImages(
+      {bool Function()? access}) async {
+    if (access != null && !access()) return const [];
+    final initial = _galleryImages(access: access);
     final boundary = initial.firstOrNull?.id;
     final known = initial.map((image) => image.id).toSet();
     while (mounted && !(controller?.historyExhausted ?? true)) {
@@ -3963,7 +4029,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       final oldest = widget.roomLease.oldestTimelineEventId;
       await _loadEarlier();
       if (!mounted) return const [];
-      final added = _galleryImages()
+      if (access != null && !access()) return const [];
+      final added = _galleryImages(access: access)
           .takeWhile((image) => image.id != boundary)
           .where((image) => !known.contains(image.id))
           .toList();
@@ -6219,4 +6286,43 @@ final class _RoomOutboxSender implements OutboxSender {
     }
     return eventId;
   }
+}
+
+/// One future per mounted grid cell; rebuilding must not restart downloads.
+final class _SearchMediaThumbnail extends StatefulWidget {
+  const _SearchMediaThumbnail(
+      {super.key, required this.load, required this.allowed});
+  final Future<Uint8List?> Function(bool Function()) load;
+  final bool Function() allowed;
+  @override
+  State<_SearchMediaThumbnail> createState() => _SearchMediaThumbnailState();
+}
+
+final class _SearchMediaThumbnailState extends State<_SearchMediaThumbnail> {
+  late Future<Uint8List?> _pending = widget.load(() => mounted);
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Uint8List?>(
+        future: _pending,
+        builder: (context, snapshot) {
+          final bytes = widget.allowed() ? snapshot.data : null;
+          if (bytes != null) {
+            return Image(
+                image: boundedChatImageProvider(bytes, maxEdge: 360),
+                fit: BoxFit.contain);
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CupertinoActivityIndicator());
+          }
+          return Center(
+              child: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: !widget.allowed()
+                      ? null
+                      : () => setState(() {
+                            _pending = widget.load(() => mounted);
+                          }),
+                  child: const Icon(CupertinoIcons.arrow_clockwise,
+                      color: WeChatColors.textTertiary)));
+        },
+      );
 }
