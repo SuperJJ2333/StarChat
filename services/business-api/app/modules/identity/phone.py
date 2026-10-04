@@ -3,7 +3,7 @@
 红线：
 - OTP 按用途（registration/login/phone_rebind_old/phone_rebind_new/
   email_rebind_old）严格区分，绑定目标与归属（user/registration session），
-  限时 5 分钟、尝试 ≤5 次、单次消费（条件更新原子置位）、防重放；
+  短信限时15分钟、邮箱用途仍5分钟；尝试≤5次、单次消费、防重放；
 - 发送限频：同目标 10 分钟 ≤3 条、1 小时 ≤5 条；
 - 日志/错误绝不携带验证码或完整手机号（脱敏 +86****xxxx）；
 - 生产未配置短信供应商时 fail closed（SMS_NOT_CONFIGURED），
@@ -26,6 +26,7 @@ from app.core.errors import AppError
 
 PHONE_CANONICAL = re.compile(r"^1[3-9][0-9]{9}$")
 OTP_TTL_SECONDS = 300
+SMS_OTP_TTL_SECONDS = 900
 OTP_MAX_ATTEMPTS = 5
 INVITATION_PROOF_TTL_SECONDS = 300
 INVITATION_PROOF_MAX_ATTEMPTS = 5
@@ -176,7 +177,7 @@ class PhoneOtpService:
             session.add(OtpChallenge(id=challenge_id, purpose=purpose, target=target,
                 user_id=user_id, registration_session=registration_session,
                 code_hash=self.hash_code(code_deriver(challenge_id)),
-                expires_at=now + timedelta(seconds=OTP_TTL_SECONDS),
+                expires_at=now + timedelta(seconds=SMS_OTP_TTL_SECONDS if purpose in self.SMS_PURPOSES else OTP_TTL_SECONDS),
                 attempts_left=0 if topic == "identity.password_phone" or purpose in self.QUEUED_EMAIL_PURPOSES else OTP_MAX_ATTEMPTS, created_at=now))
             OutboxPublisher.enqueue(session, topic=topic, event_type="identity.phone.otp.requested" if topic == "identity.password_phone" else "identity.email.otp.requested",
                 aggregate_type="otp_challenge", aggregate_id=challenge_id, payload={"otp_id": challenge_id}, now=now)
@@ -253,7 +254,7 @@ class PhoneOtpService:
                 OtpChallenge.target == phone, OtpChallenge.consumed_at.is_(None)).values(invalidated_at=now))
             session.add(OtpChallenge(id=challenge_id, purpose=purpose, target=phone,
                 user_id=user_id, registration_session=registration_session,
-                code_hash=code_hash, expires_at=now + timedelta(seconds=OTP_TTL_SECONDS),
+                code_hash=code_hash, expires_at=now + timedelta(seconds=SMS_OTP_TTL_SECONDS if purpose in self.SMS_PURPOSES else OTP_TTL_SECONDS),
                 attempts_left=0, created_at=now))
         # Reserve quota durably, but never authenticate a pending/failed delivery.
         try:

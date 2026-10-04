@@ -109,7 +109,7 @@ def test_provider_crossing_utc_expiry_cannot_consume_or_decrement(env, matched):
     api = service(env)
     api.request_password_code(channel='phone', target='13800000001')
     code = deliver_phone(env)
-    env[5][0] += timedelta(seconds=299)
+    env[5][0] += timedelta(seconds=899)
     def provider(*args):
         env[5][0] += timedelta(seconds=2)
         return matched

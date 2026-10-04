@@ -61,7 +61,7 @@ class AliyunDypnsSmsSender(SmsSender):
         sign_name: str,
         template_code: str,
         region: str = "ap-southeast-1",
-        code_valid_minutes: int = 5,
+        code_valid_minutes: int = 15,
         client_factory: Callable[[], Any] | None = None,
         request_factory: Callable[[str, dict], Any] | None = None,
         timeout_seconds: float = 6.0,
@@ -70,8 +70,8 @@ class AliyunDypnsSmsSender(SmsSender):
             raise ValueError("aliyun sms credentials required")
         if not sign_name or not template_code:
             raise ValueError("aliyun sms sign/template required")
-        if not 1 <= int(code_valid_minutes) <= 10:
-            raise ValueError("aliyun sms code validity must be 1-10 minutes")
+        if type(code_valid_minutes) is not int or code_valid_minutes != 15:
+            raise ValueError("aliyun sms code validity must be 15 minutes")
         self._access_key_id = access_key_id
         self._access_key_secret = access_key_secret
         self._sign_name = sign_name

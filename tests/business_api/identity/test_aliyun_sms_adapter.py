@@ -75,7 +75,7 @@ def make_sender(client, **kw):
     return AliyunDypnsSmsSender(
         access_key_id="LTAI-test-id", access_key_secret="test-secret",
         sign_name="恒创联众", template_code="100001",
-        region="ap-southeast-1", code_valid_minutes=5,
+        region="ap-southeast-1", code_valid_minutes=15,
         client_factory=lambda: client, request_factory=request_factory, **kw)
 
 
@@ -87,7 +87,7 @@ def test_send_sends_provider_generated_template_with_placeholder():
     sent = client.send_requests[0]
     assert sent["phone_number"] == "13800000001"  # 大陆 11 位裸号
     assert sent["sign_name"] == "恒创联众" and sent["template_code"] == "100001"
-    assert '"##code##"' in sent["template_param"] and '"min":"5"' in sent["template_param"]
+    assert '"##code##"' in sent["template_param"] and '"min":"15"' in sent["template_param"]
 
 
 def test_send_provider_failure_maps_to_stable_error_without_credentials():
@@ -236,7 +236,7 @@ def test_settings_aliyun_provider_requires_full_configuration():
     Settings(_env_file=None, environment="test", sms_provider="aliyun_dypns",
         sms_aliyun_access_key_id="LTAI-x", sms_aliyun_access_key_secret="s",
         sms_aliyun_sign_name="恒创联众", sms_aliyun_template_code="100001",
-        sms_aliyun_region="ap-southeast-1", sms_aliyun_code_valid_minutes=5)
+        sms_aliyun_region="ap-southeast-1", sms_aliyun_code_valid_minutes=15)
 
 
 def test_settings_production_phone_auth_requires_aliyun_and_secret():

@@ -1,4 +1,5 @@
 """Verified-phone onboarding preserves invitations, OTP and Matrix boundaries."""
+from datetime import timedelta
 from sqlalchemy import select
 import pytest
 import app.modules.audit.models  # noqa: F401
@@ -51,6 +52,28 @@ def test_unknown_phone_is_created_only_after_proof_and_invitation(env):
                    for row in session.scalars(select(OtpChallenge)))
     with pytest.raises(AppError):
         auth.login(**args)
+
+
+@pytest.mark.parametrize('seconds,valid', [(299, True), (300, False)])
+def test_high_entropy_invitation_proof_retains_five_minute_boundary(env, seconds, valid):
+    auth, args = onboard(env, invitation_code='')
+    ticket = auth.login(**args, allow_invitation_continuation=True)['invitation_ticket']
+    assert len(ticket) >= 32
+    with env[0]() as session:
+        proof = session.scalar(select(OtpChallenge).where(OtpChallenge.purpose == 'login_invitation'))
+        assert proof.expires_at - proof.created_at == timedelta(seconds=300)
+    env[5].advance(seconds=seconds)
+    correction = dict(invitation_ticket=ticket, phone=args['phone'], device_key=args['device_key'],
+                      device_name=args['device_name'], invitation_code='WELCOME-1', terms_accepted=True, tokens=None)
+    if valid:
+        assert auth.complete_invitation(**correction)['status'] == 'PENDING_MATRIX'
+        with env[0]() as session:
+            proof = session.scalar(select(OtpChallenge).where(OtpChallenge.purpose == 'login_resume'))
+            assert proof.expires_at - proof.created_at == timedelta(seconds=300)
+    else:
+        with pytest.raises(AppError) as error:
+            auth.complete_invitation(**correction)
+        assert error.value.code == 'INVITATION_TICKET_INVALID'
 
 
 def test_verified_invitation_continuation_never_rechecks_provider(env):

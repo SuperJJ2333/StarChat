@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     sms_aliyun_sign_name: str | None = None
     sms_aliyun_template_code: str | None = None
     sms_aliyun_region: str = "ap-southeast-1"
-    sms_aliyun_code_valid_minutes: int = 5
+    sms_aliyun_code_valid_minutes: int = 15
     wallet_funding_baseline_at: datetime | None = None
     wallet_funding_baseline_height: int | None = None
     wallet_alert_recipient: SecretStr | None = None
@@ -243,8 +243,8 @@ class Settings(BaseSettings):
     @field_validator("sms_aliyun_code_valid_minutes")
     @classmethod
     def validate_aliyun_code_minutes(cls, value):
-        if not 1 <= value <= 10:
-            raise ValueError("aliyun sms code validity must be 1-10 minutes")
+        if value != 15:
+            raise ValueError("aliyun sms code validity must be 15 minutes")
         return value
 
     @model_validator(mode="after")

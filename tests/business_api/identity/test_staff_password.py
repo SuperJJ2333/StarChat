@@ -173,7 +173,7 @@ def test_user_bound_otp_rechecks_expiry_after_user_lock(env):
     otp = PhoneOtpService(factory, sender=sender, secret='otp-expiry-test', now=lambda: clock[0])
     otp.issue(purpose='staff_activation_phone', phone='+8613800000000', user_id='staff')
     submitted_at = clock[0]
-    after_lock = submitted_at + timedelta(minutes=6)
+    after_lock = submitted_at + timedelta(seconds=900)
     read_times = [submitted_at, after_lock]
 
     def advancing_clock():
