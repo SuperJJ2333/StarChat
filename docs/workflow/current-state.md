@@ -1,5 +1,15 @@
 # 移动交付恢复索引
 
+## 2026-10-04 历史消息与旧媒体：2199 debug已安装，iOS恢复连续性双端原生通过
+
+用户反馈模拟器2198/真机2196五天前搜索命中无法定位、旧图片视频占位，并要求预防iOS L04/L07。源码df617187（0.4.30+2199）统一持久/网络单事件会话验证及解密、按需加载窗口外旧媒体；修复首次continuity owner失效、持久化前采纳失败凭据/异常context回滚及同用户保留Olm设备标签轮换，保留原库/密钥/指纹与拒绝边界。
+
+245专项PASS、最终Flutter5419PASS/9skip、analyze0、mobilePython307PASS/23skip；首次全量5417PASS/2FAIL的公告替身接口遗漏已修复并保留真实RED，最终源码与APK有序双审接受，无P0–P2。同源iOS native run37196458099三个job全部success，含完整production原生编译、iOS18/26首次及同app重启保留Keychain/SQLCipher/原指纹/旧加密历史验证。
+
+2199 x86_64 debug最终APK135721187bytes，SHAe3923bc0…，固定75b31…签名；独立验包后18:59 install-r安装emulator-5556，UID10090/首次安装保持，157秒smoke/crash0。没有正式Android/IPA发布或生产服务变更；18:37只读正式Android2196/iOS2194。真实账号五天前气泡/媒体及真机覆盖升级待反馈，模拟器/合成native测试不替代真机。整库verify缺.env/local.env未执行。自动审批拒绝synthetic目录清理/链接切换，保留ignored残留与原buildcache，仅复制明确公共文件。
+
+见[任务](tasks/2026-10-04-history-anchor-media-ios.md)、[验证及APK](../verification/2026-10-04-history-anchor-media-ios.md)与[计划](../superpowers/plans/2026-10-04-history-anchor-media-ios.md)。主分支集成收尾；下方是历史任务各自当时快照。
+
 ## 2026-10-04 搜索、荣耀相机与历史恢复：2198 debug已交付，恢复服务已启用
 
 搜索稳定进度/一年旧事件定位、荣耀系统相机与自动托管恢复/72h密文补齐已通过有序独立审查。最终源码7e7e9a2a（0.4.29+2198），整套Flutter5393PASS/9skip、analyze0、移动Python307PASS/23skip；前端522PASS/33组件528屏契约通过。真实公共wire归档→新broker设备→fresh store Megolm解密与篡改负例、实际SQLCipher4.10.0保留旧加密库两例通过；Business网络authority为synthetic，未冒充真实生产账户恢复。
