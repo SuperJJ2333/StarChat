@@ -1942,7 +1942,12 @@ final class MatrixRoomLease
 
   MediaCacheKey mediaCacheKey(String eventId, {bool thumbnail = false}) {
     final event = _loadedMediaEvent(eventId);
-    final hashes = mediaHashes(eventId);
+    return _mediaCacheKey(eventId, event, thumbnail: thumbnail);
+  }
+
+  MediaCacheKey _mediaCacheKey(String eventId, Event? event,
+      {bool thumbnail = false}) {
+    final hashes = event == null ? null : TrustedMediaHashes.fromEvent(event);
     return MediaCacheKey(
         accountId: _activeRoom.client.userID ?? '',
         roomId: roomId,
@@ -2885,6 +2890,24 @@ final class _SdkRoomTimelineCapability
     };
     _outgoingWork = _lease.owner.outgoingWork;
     _outgoingWork.addListener(_outgoingListener);
+    _eventOwner = (
+      _lease._activeRoom.client.userID,
+      _lease._activeRoom.client.deviceID,
+      _lease._activeRoom.client.homeserver
+    );
+    _resolvedEventUpdates =
+        _lease._activeRoom.client.onEvent.stream.listen((update) {
+      if (update.roomID != _lease.roomId) return;
+      final id = update.content['event_id'];
+      _resolvedEvents.remove(id);
+      _resolvedMessages.remove(id);
+      _eventLookups.remove(id);
+      final redacts = update.content['redacts'] ??
+          (update.content['content'] as Map?)?['redacts'];
+      _resolvedEvents.remove(redacts);
+      _resolvedMessages.remove(redacts);
+      _eventLookups.remove(redacts);
+    });
     // 日期索引 metadata 预热：日历打开时即可读到本地覆盖证据（无网络）。
     unawaited(_ensureDayIndex());
   }
@@ -2899,6 +2922,10 @@ final class _SdkRoomTimelineCapability
   late final VoidCallback _outgoingListener;
   late final MatrixOutgoingWorkCoordinator _outgoingWork;
   final Set<String> _retrying = {};
+  late final StreamSubscription<EventUpdate> _resolvedEventUpdates;
+  final _resolvedEvents = <String, Event>{};
+  final _eventLookups = <String, Future<Event?>>{};
+  late final (String?, String?, Uri?) _eventOwner;
   final List<MatrixOutgoingWorkEcho> _pendingEchoAcknowledgements = [];
   bool _echoAcknowledgementScheduled = false;
   bool _disposed = false;
@@ -3086,17 +3113,11 @@ final class _SdkRoomTimelineCapability
     _ensureActive();
     if (eventId.isEmpty) return null;
     final accountId = _lease.owner._client?.userID ?? '';
-    final cached = _resolvedMessages[eventId] ??
-        MessageTimelineCache.shared.lookup(accountId, _lease.roomId, eventId);
-    if (cached != null) {
-      _resolvedMessages[eventId] = cached;
-      return cached;
-    }
     final event = await _withOperation(() async {
       try {
         // SDK 语义：本 timeline 事件 → timeline 内缓存 → 本地加密库
         // （`Room.getEventById`）→ 服务器单事件查询 + 解密。
-        return await _timeline.getEventById(eventId);
+        return await _resolveEvent(eventId);
       } on MatrixException catch (error) {
         if (error.errcode == 'M_FORBIDDEN' ||
             error.errcode == 'M_UNAUTHORIZED') {
@@ -3109,9 +3130,13 @@ final class _SdkRoomTimelineCapability
         throw ReplyMessageLookupUnavailable(error.message);
       }
     });
-    if (event == null) return null;
+    _ensureActive();
+    if (event == null || !_visibleAnchor(event)) return null;
     final message = _cachedMessage(event);
     _resolvedMessages[eventId] = message;
+    while (_resolvedMessages.length > 64) {
+      _resolvedMessages.remove(_resolvedMessages.keys.first);
+    }
     MessageTimelineCache.shared.remember(accountId, _lease.roomId, message);
     return message;
   }
@@ -3151,7 +3176,56 @@ final class _SdkRoomTimelineCapability
 
   void _ensureActive() {
     if (_disposed) throw StateError('Matrix timeline capability is disposed');
+    if (_lease.canceled || _lease.owner._accessRevoked) {
+      throw StateError('Matrix timeline capability is revoked');
+    }
     _lease._activeRoom;
+    final client = _lease._activeRoom.client;
+    if ((client.userID, client.deviceID, client.homeserver) != _eventOwner) {
+      throw StateError('Matrix timeline owner changed');
+    }
+  }
+
+  Future<Event?> _resolveEvent(String eventId) async {
+    _ensureActive();
+    final room = _lease._activeRoom;
+    final owner = room.client.recoveryOwner;
+    final loaded = eventById(eventId);
+    if (loaded != null && loaded.type != EventTypes.Encrypted) {
+      if (loaded.originalSource?.type == EventTypes.Encrypted) owner?.check();
+      return _visibleAnchor(loaded) ? loaded : null;
+    }
+    final existing = _eventLookups[eventId];
+    if (existing != null) return existing;
+    late final Future<Event?> flight;
+    flight = (() async {
+      final event = await room.getEventById(eventId);
+      _ensureActive();
+      owner?.check();
+      if (!identical(_eventLookups[eventId], flight) ||
+          !identical(room, _lease._activeRoom) ||
+          event == null ||
+          event.eventId != eventId ||
+          !identical(event.room, room) ||
+          event.type == EventTypes.Encrypted) {
+        return null;
+      }
+      if (!_visibleAnchor(event)) return null;
+      _resolvedEvents.remove(eventId);
+      _resolvedEvents[eventId] = event;
+      while (_resolvedEvents.length > 64) {
+        _resolvedEvents.remove(_resolvedEvents.keys.first);
+      }
+      return event;
+    })();
+    _eventLookups[eventId] = flight;
+    try {
+      return await flight;
+    } finally {
+      if (identical(_eventLookups[eventId], flight)) {
+        _eventLookups.remove(eventId);
+      }
+    }
   }
 
   Future<T> _withOperation<T>(Future<T> Function() operation) =>
@@ -3178,7 +3252,7 @@ final class _SdkRoomTimelineCapability
         if (event.eventId == eventId) return event;
       }
     }
-    return null;
+    return _resolvedEvents[eventId];
   }
 
   @override
@@ -3589,14 +3663,33 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<Uint8List?> loadThumbnail(String eventId) => _withOperation(() async {
-        final event = eventById(eventId) ??
+        final event = await _resolveEvent(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
+        if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
         final hashes = TrustedMediaHashes.fromEvent(event);
         if (hashes?.thumbnailSha256 == null && !event.hasThumbnail) return null;
-        return loadMediaWithCache(
-            _lease.mediaCacheKey(eventId, thumbnail: true),
-            () => downloadMediaContent(event, thumbnail: true));
+        final bytes = await loadMediaWithCache(
+            _lease._mediaCacheKey(eventId, event, thumbnail: true),
+            () => _downloadActiveMedia(event, thumbnail: true));
+        _ensureActive();
+        if (!identical(eventById(eventId), event)) {
+          throw StateError('Matrix event changed');
+        }
+        _lease._activeRoom.client.recoveryOwner?.check();
+        if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
+        return bytes;
       });
+
+  Future<Uint8List> _downloadActiveMedia(Event event,
+      {bool thumbnail = false}) async {
+    final bytes = await downloadMediaContent(event, thumbnail: thumbnail);
+    _ensureActive();
+    _lease._activeRoom.client.recoveryOwner?.check();
+    if (!identical(eventById(event.eventId), event) || !_visibleAnchor(event)) {
+      throw StateError('Matrix event changed');
+    }
+    return bytes;
+  }
 
   @override
   Future<String> sendRedPacketReference(String packetId, String greeting,
@@ -3618,10 +3711,19 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<Uint8List> loadAttachment(String eventId) => _withOperation(() async {
-        final event = eventById(eventId) ??
+        final event = await _resolveEvent(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
-        return loadMediaWithCache(
-            _lease.mediaCacheKey(eventId), () => downloadMediaContent(event));
+        if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
+        final bytes = await loadMediaWithCache(
+            _lease._mediaCacheKey(eventId, event),
+            () => _downloadActiveMedia(event));
+        _ensureActive();
+        if (!identical(eventById(eventId), event)) {
+          throw StateError('Matrix event changed');
+        }
+        _lease._activeRoom.client.recoveryOwner?.check();
+        if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
+        return bytes;
       });
 
   @override
@@ -3770,7 +3872,9 @@ final class _SdkRoomTimelineCapability
   Future<bool> _locateEvent(String eventId, int generation) async {
     final cancellation = _dateCancellation!.future;
     final loaded = eventById(eventId);
-    if (loaded != null) {
+    if (loaded != null &&
+        loaded.type != EventTypes.Encrypted &&
+        !_resolvedEvents.containsKey(eventId)) {
       if (!_visibleAnchor(loaded)) return false;
       if (_contextTimeline != null &&
           _liveTimeline.events.any((event) => event.eventId == eventId)) {
@@ -3785,7 +3889,12 @@ final class _SdkRoomTimelineCapability
       if (_disposed || generation != _contextGeneration) return false;
       final room = _lease._activeRoom;
       final local = await Future.any<Event?>([
-        room.client.database?.getEventById(eventId, room) ?? Future.value(null),
+        room.getLocalEventById(eventId,
+            shouldContinue: () =>
+                !_disposed &&
+                !_lease.canceled &&
+                !_lease.owner._accessRevoked &&
+                generation == _contextGeneration),
         cancellation.then((_) => null),
       ]).timeout(const Duration(seconds: 5));
       if (_disposed || generation != _contextGeneration) return false;
@@ -4413,6 +4522,9 @@ final class _SdkRoomTimelineCapability
     cancelPendingDateLookup();
     _disposed = true;
     _outgoingWork.removeListener(_outgoingListener);
+    unawaited(_resolvedEventUpdates.cancel());
+    _resolvedEvents.clear();
+    _resolvedMessages.clear();
     _liveTimeline.cancelSubscriptions();
     _contextTimeline?.cancelSubscriptions();
     _lease._timelines.remove(this);

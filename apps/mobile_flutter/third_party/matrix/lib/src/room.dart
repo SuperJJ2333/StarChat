@@ -507,7 +507,9 @@ class Room {
     // There is no known event or the last event is only a state fallback event,
     // we assume there is no new messages.
     if (lastEvent == null ||
-        !client.roomPreviewLastEvents.contains(lastEvent.type)) { return false; }
+        !client.roomPreviewLastEvents.contains(lastEvent.type)) {
+      return false;
+    }
 
     // Read marker is on the last event so no new messages.
     if (lastEvent.receipts
@@ -1832,22 +1834,54 @@ class Room {
     }
   }
 
-  /// Searches for the event in the local cache and then on the server if not
-  /// found. Returns null if not found anywhere.
+  /// Resolves and decrypts a persisted event without making a network request.
+  /// Canceled context requests must not begin decryption after a late read.
+  Future<Event?> getLocalEventById(String eventID,
+      {bool Function()? shouldContinue}) async {
+    if (shouldContinue?.call() == false) return null;
+    final event = await client.database?.getEventById(eventID, this);
+    if (shouldContinue?.call() == false) return null;
+    return event == null ? null : _decryptRequestedEvent(eventID, event);
+  }
+
+  Future<Event?> _decryptRequestedEvent(String eventID, Event event) async {
+    if (event.eventId != eventID || event.room.id != id) return null;
+    if (event.type == EventTypes.Encrypted && client.encryptionEnabled) {
+      final encryption = client.encryption!;
+      final owner = client.recoveryOwner;
+      owner?.check();
+      final sessionId = event.parsedRoomEncryptedContent.sessionId;
+      if (!event.redacted && sessionId != null) {
+        final manager = encryption.keyManager;
+        if (manager.getInboundGroupSession(id, sessionId)?.isValid != true) {
+          await manager.loadInboundGroupSession(id, sessionId);
+        }
+        owner?.check();
+        final session = manager.getInboundGroupSession(id, sessionId);
+        if (session?.isValid == true &&
+            (session!.senderKey != event.parsedRoomEncryptedContent.senderKey ||
+                session.roomId != id ||
+                session.inboundGroupSession!.session_id() != sessionId)) {
+          return event;
+        }
+      }
+      return await client.encryption?.decryptRoomEvent(id, event);
+    }
+    return event;
+  }
+
+  /// Searches locally first, then on the server, decrypting either result.
   Future<Event?> getEventById(String eventID) async {
     try {
       final dbEvent = await client.database?.getEventById(eventID, this);
-      if (dbEvent != null) return dbEvent;
-      final matrixEvent = await client.getOneRoomEvent(id, eventID);
-      final event = Event.fromMatrixEvent(matrixEvent, this);
-      if (event.type == EventTypes.Encrypted && client.encryptionEnabled) {
-        // attempt decryption
-        return await client.encryption?.decryptRoomEvent(
-          id,
-          event,
-        );
+      Event? event = dbEvent;
+      if (event == null) {
+        final response = await client.getOneRoomEvent(id, eventID);
+        if (response.roomId != null && response.roomId != id) return null;
+        event = Event.fromMatrixEvent(response, this);
       }
-      return event;
+      // Local and network ciphertext use the same asynchronous key/index path.
+      return await _decryptRequestedEvent(eventID, event);
     } on MatrixException catch (err) {
       if (err.errcode == 'M_NOT_FOUND') {
         return null;
