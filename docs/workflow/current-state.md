@@ -1,10 +1,12 @@
 # 移动交付恢复索引
 
-## 2026-10-04 搜索、荣耀相机与历史恢复：托管服务实现/真实验证进行中
+## 2026-10-04 搜索、荣耀相机与历史恢复：2198 debug已交付，恢复服务已启用
 
-任务工作树codex/search-camera-history-20261003。搜索源码6df1fc37/0cdc678d和荣耀系统相机源码41c49c74均经过有序独立复审；224相关+115搜索修复回归、71 Dart/8相机native/analyze0通过。实际荣耀Android14尚未验收，未构建或安装这三项的新包；2197不含本轮新修复。
+搜索稳定进度/一年旧事件定位、荣耀系统相机与自动托管恢复/72h密文补齐已通过有序独立审查。最终源码7e7e9a2a（0.4.29+2198），整套Flutter5393PASS/9skip、analyze0、移动Python307PASS/23skip；前端522PASS/33组件528屏契约通过。真实公共wire归档→新broker设备→fresh store Megolm解密与篡改负例、实际SQLCipher4.10.0保留旧加密库两例通过；Business网络authority为synthetic，未冒充真实生产账户恢复。
 
-用户最新直接要求服务器托管聊天恢复密钥、登录后自动恢复，正常不处理恢复密钥/SAS。Task3A保护设计及R1/R2路由/前置日志追加均有序独立PASS；服务源码、身份双凭证和系统凭据provider实施中。真实标准Dart/Olm互通、WindowsDPAPI/Linuxsystemd先独立备份后激活、完整pg_dump/主密钥及主机credential丢失/仅独立DPAPIsealed恢复/新数据库恢复/3份原SDK加密归档解密均PASS。真实完整native R2接口、TRACE安全日志和主/worker装配已通过；实现独立双审发现最终Business等待后Matrix鉴权失效P1，真实RED后修复候选三路GREEN（拒绝密钥读取及登记/上传、零落库），原接口复测PASS，正等待源码提交和定向独立复审，尚未生产启用。Task3B自动客户端归档/恢复与72h加载未启动，3A实现双审通过后转交。原生备份/SSSS/S3/Getui及财务边界保持；彻底丢失且未备份的历史密钥无法重建。详情见[任务](tasks/2026-10-03-search-camera-history.md)、[托管ADR](../adr/2026-10-04-server-custodied-matrix-recovery.md)和[计划](../superpowers/plans/2026-10-03-search-camera-history.md)。
+2198 x86_64 debug经过常规DEX/资源/manifest重建、对齐及稳定75b31…签名，最终APK SHA6fa18013…ddbe6；独立验包通过。2026-10-04 15:54:48+08以adb install -r安装emulator-5556，UID10090及首次安装时间保持，启动及超过120秒smoke通过。同源iOS native CI37183887834全部三个job成功，含完整原生编译和iOS18/iOS26。线上移动发布版本仍Android2196/iOS2194，本轮无正式移动发布或IPA。
+
+生产恢复扩展表、独立灾备与系统凭据provider已验收；部署helper实际配置完整等价、Nginx真实语法/故意错误控制及独立复审通过。16:03+08关闭状态验收通过，随后启用；首轮启动时versions502已保留，后续完整verify及稳定deploy通过，两次身份/0restart一致，工作站严格TLS ready200/恢复401 no-store/private403通过。业务worker/Getui及其他冻结容器保持。实际荣耀、新手机用户恢复和K80长时性能仍待反馈，彻底丢失且未备份的历史密钥无法重建。托管模式使服务器具备恢复历史密钥能力。详情见[任务](tasks/2026-10-03-search-camera-history.md)、[托管ADR](../adr/2026-10-04-server-custodied-matrix-recovery.md)和[计划](../superpowers/plans/2026-10-03-search-camera-history.md)。
 
 ## 2026-10-03 UI、媒体与推送修复：2197 debug已安装模拟器
 
