@@ -42,8 +42,8 @@ final class AppConfig {
   /// Release identity of this build. Keep in sync with `version:` in
   /// pubspec.yaml; tests/mobile/test_app_build_contract.py asserts the match.
   /// 运行时由 [loadRuntimeVersion] 用安装包真实版本覆盖（见 main）。
-  static String appVersionName = '0.4.32';
-  static const int compiledBuildNumber = 2201;
+  static String appVersionName = '0.4.33';
+  static const int compiledBuildNumber = 2202;
   static int appBuildNumber = compiledBuildNumber;
 
   /// 从安装包清单读取真实版本，保证「关于畅聊」与更新判断使用实际值。

@@ -1,5 +1,11 @@
 # 移动交付恢复索引
 
+## 2026-10-05 全局搜索与验证码：修复进行中
+
+用户新反馈：全局搜索命中跳最新消息；手机验证码延迟/有效期需15分钟；未勾协议需toast；邮件/手机离页重进60秒冷却丢失。独立[任务](tasks/2026-10-05-global-search-otp.md)和[计划](../superpowers/plans/2026-10-05-global-search-otp.md)，branch codex/global-search-otp-20261005/e3f10d6f基线。全局cached timeline无listener通知导致初始anchor未启动已真实页面RED/GREEN；auth四项RED确认，最小修复进行中。短信15minADR设计domain接受/源码TDD进行，生产只读当前5min、未部署，尚无新移动包。
+
+真实日志/PG聚合暂未见短信错误码/锁等待或OTP队列积压，不能替代运营商收件延迟排查；手机号末4位/时间可缩小查证。模拟器实际仍2201。各actor代码/命令串行所有权见任务；主区无关WIP不碰。
+
 ## 2026-10-05 2201旧日期及上下文：技术验收通过，模拟器已保留数据安装
 
 旧日期取消竞态、关键词单条context及双向分页/实际滚动修复，源码e665/0.4.32+2201。全量5437PASS/9skip/0FAIL、analyze0、有序规格/质量和成品审查接受；Android标准重建/固定75b31签名，成品SHA0c74d632…dceb1，01:02保留UID10090/首次安装，实际base.apk SHA相同。01:23同PID持续1263.7秒/匹配Java crash0，仅启动观察。iOS37217656064同源完整生产编译、18/26首次seed及新app进程保留Keychain/SQLCipher/旧历史均SUCCESS。

@@ -21,3 +21,7 @@
 ## 阶段与边界
 
 生产只读观察03:53前后：business-api image2fd052541347、worker3efd5924f343健康；隔离recovery worker显示unhealthy需另行判断，不能冒称生产短信worker阻塞。无发送/账号修改/秘密读取或生产写入。整库verify环境仍需本轮预检。上轮1372无关WIP保全快照可作为本轮起点再次核对。
+
+2026-10-05T03:55:15+08 L1只读聚合：48h API222514/gateway154101/worker6020日志行未命中列举SMS错误码；不代表未记录的运营商延迟不存在。OTP路由202/200可见，email-rebind429一例符合限流；PG当前无Lock waiters/阻塞PID，identity.email6事件全PUBLISHED/max2.548745s，identity.password_phone无48h事件，OTP无待发送活跃挑战。API及worker实际供应商配置5min；真实挑战期限300秒。没有日志request_time指标，不能推断API完整延迟分位数。原始日志只在远端RAM，落地仅计数/状态/期限。
+
+03:56运行来源：API2fd052541347…/opt/business-api/app，worker3efd5924f343…site-packages/app；config/phone内容两角色不同，禁止全repo覆盖运行worker。短信期限rootdomain设计接受，邮箱注册10min/其他EMAIL5min及非OTP证明保持；候选必须应用实际base最小变换、保留所有非短信差异。SDD新serveragent因threadlimit无法创建，复用已完成prepare_recovery_deployment新边界，不重新执行旧任务。
