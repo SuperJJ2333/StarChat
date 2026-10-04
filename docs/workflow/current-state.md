@@ -1,5 +1,11 @@
 # 移动交付恢复索引
 
+## 2026-10-04 2200旧媒体已确认恢复；日期与上下文继续修复
+
+0.4.31+2200已保留数据安装emulator-5556，用户确认历史图片/视频缩略图和点击正常。最终移动源码29236bd3，Flutter5435PASS/9skip、analyze0、有序源码/质量和Android成品审查通过；成品SHA035f3fb1…cf84。workflow-only574ef30的iOS run37209352829完整生产编译与iOS18/26 seed、新进程保留历史/Keychain连续性全部SUCCESS。无正式移动发布，生产版本仍按前序只读观察Android2196/iOS2194。
+
+用户随后报告十天前日期定位未找到、关键词跳转只有单条无上下文/不能滚动；独立[跟进任务](tasks/2026-10-04-search-date-context-followup.md)与[计划](../superpowers/plans/2026-10-04-search-date-context-followup.md)正在调查/测试，不视为2200已包含新修复。已确认local-hit构造单条无token fragment；日期搜索退出取消竞态待实际RED。前序[媒体任务](tasks/2026-10-04-search-media-grid-followup.md)与[报告](../verification/2026-10-04-search-media-grid-followup.md)保留原失败及最终证据。下方为各任务历史快照。
+
 ## 2026-10-04 历史消息与旧媒体：2199 debug已安装，iOS恢复连续性双端原生通过
 
 用户反馈模拟器2198/真机2196五天前搜索命中无法定位、旧图片视频占位，并要求预防iOS L04/L07。源码df617187（0.4.30+2199）统一持久/网络单事件会话验证及解密、按需加载窗口外旧媒体；修复首次continuity owner失效、持久化前采纳失败凭据/异常context回滚及同用户保留Olm设备标签轮换，保留原库/密钥/指纹与拒绝边界。
