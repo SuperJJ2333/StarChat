@@ -162,7 +162,7 @@ abstract class DatabaseApi {
       throw UnsupportedError('Recovery projection unavailable');
 
   Future<({int downloaded, int decrypted, int missing})> recoveryRoomCounts(
-      Room room, int windowStart) => throw UnsupportedError('Recovery counts unavailable');
+      Room room, int windowStart, int windowEnd) => throw UnsupportedError('Recovery counts unavailable');
 
   Future<bool> commitRecoveryHistoryPage(Room room, String key,
       int expectedRevision, List<Map<String, dynamic>> events,

@@ -362,8 +362,8 @@ final class RecentHistoryCoordinator {
       }
     }
     if (missing.isNotEmpty) await _restore(room, missing);
-    _counts[room.id] =
-        await owner.read(() => database.recoveryRoomCounts(room, window.$1));
+    _counts[room.id] = await owner
+        .read(() => database.recoveryRoomCounts(room, window.$1, window.$2));
     owner.check();
     status.downloaded = _counts.values.fold(0, (n, c) => n + c.downloaded);
     status.decrypted = _counts.values.fold(0, (n, c) => n + c.decrypted);

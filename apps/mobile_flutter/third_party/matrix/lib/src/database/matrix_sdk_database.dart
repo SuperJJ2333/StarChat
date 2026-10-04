@@ -1819,7 +1819,7 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
 
   @override
   Future<({int downloaded, int decrypted, int missing})> recoveryRoomCounts(
-      Room room, int windowStart) async {
+      Room room, int windowStart, int windowEnd) async {
     final sql = database;
     if (sql == null) throw UnsupportedError('Recovery counts require SQLite');
     final rows = await sql.rawQuery('''
@@ -1831,8 +1831,9 @@ SELECT SUM(CASE WHEN json_extract(v, '\$.type') = 'm.room.encrypted'
  THEN json_extract(v, '\$.content.session_id') END) missing
 FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
  AND json_extract(v, '\$.origin_server_ts') >= ?
+ AND json_extract(v, '\$.origin_server_ts') <= ?
  AND json_extract(v, '\$.unsigned.redacted_because') IS NULL
-''', ['${room.id}|', windowStart]);
+''', ['${room.id}|', windowStart, windowEnd]);
     final row = rows.single;
     return (downloaded: (row['downloaded'] as num?)?.toInt() ?? 0,
         decrypted: (row['decrypted'] as num?)?.toInt() ?? 0,

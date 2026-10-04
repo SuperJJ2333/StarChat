@@ -353,6 +353,7 @@ void main() {
     'mismatch',
     'revoked',
     'revoked-metadata',
+    'held-second-metadata',
     'wrong-sender',
     'wrong-session',
     'tamper'
@@ -420,6 +421,12 @@ void main() {
 
       if (mode == 'revoked') server.beforeNative = holdNative;
       if (mode == 'revoked-metadata') server.beforeNativeInfo = holdNative;
+      var metadataCalls = 0;
+      if (mode == 'held-second-metadata') {
+        server.beforeNativeInfo = () async {
+          if (++metadataCalls == 2) await holdNative();
+        };
+      }
       server.history = {
         'event_id': r'$native-needed',
         'sender': client.userID,
@@ -455,7 +462,31 @@ void main() {
           vault: vault,
           now: DateTime.fromMillisecondsSinceEpoch(10000000));
       try {
-        if (mode.startsWith('revoked')) {
+        if (mode == 'held-second-metadata') {
+          final retry = Completer<void>();
+          status.addListener(() {
+            if (status.phase == VaultSyncPhase.retrying && !retry.isCompleted) {
+              retry.complete();
+            }
+          });
+          coordinator.start();
+          await nativeEntered.future;
+          await retry.future.timeout(const Duration(milliseconds: 8500),
+              onTimeout: () =>
+                  throw StateError('second_native_metadata_deadline_missing'));
+          expect(status.phase, VaultSyncPhase.retrying);
+          expect(server.nativeKeyReads, 0);
+          expect(await client.database!.getInboundGroupSession(room.id, id),
+              isNull);
+          client.recoveryOwner!.revoke();
+          client.recoveryOwner =
+              RecoveryOperationOwner(identity: Object(), isCurrent: () => true);
+          coordinator.revoke();
+          nativeRelease.complete();
+          await Future<void>.delayed(Duration.zero);
+          expect(await client.database!.getInboundGroupSession(room.id, id),
+              isNull);
+        } else if (mode.startsWith('revoked')) {
           final run = coordinator.runOnce();
           final failure = expectLater(run, throwsStateError);
           await nativeEntered.future;
@@ -474,6 +505,10 @@ void main() {
           if (mode == 'match') expect(server.candidate, isNotNull);
         }
       } finally {
+        if (mode == 'held-second-metadata') {
+          client.recoveryOwner!.revoke();
+          if (!nativeRelease.isCompleted) nativeRelease.complete();
+        }
         coordinator.revoke();
         await client.recoveryOwner!.drain();
         client.crypto.keyManager.clearInboundGroupSessions();

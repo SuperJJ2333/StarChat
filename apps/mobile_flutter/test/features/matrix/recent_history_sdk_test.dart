@@ -169,4 +169,37 @@ void main() {
       await client.dispose();
     }
   });
+  test('recovery counts exclude ciphertext after the admitted window end',
+      () async {
+    final sql = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final db = MatrixSdkDatabase('bounded-counts',
+        database: sql, sqfliteFactory: databaseFactoryFfi);
+    await db.open();
+    final client = Client('bounded-counts', databaseBuilder: (_) => db);
+    await client.init();
+    final room = Room(id: '!counts:example.test', client: client);
+    client.rooms.add(room);
+    Map<String, dynamic> encrypted(String id, int ts) => {
+          'event_id': id,
+          'type': EventTypes.Encrypted,
+          'sender': '@synthetic:example.test',
+          'origin_server_ts': ts,
+          'content': {'session_id': id, 'sender_key': 'sender'}
+        };
+    try {
+      await db.commitRecoveryHistoryPage(room, 'seed', 0, [
+        encrypted(r'$past', 1),
+        encrypted(r'$recent', 1000),
+        encrypted(r'$future', 3000)
+      ], {
+        'revision': 1
+      });
+      final dynamic api = db;
+      final bounded = await api.recoveryRoomCounts(room, 500, 2000);
+      expect(
+          (bounded.downloaded, bounded.decrypted, bounded.missing), (1, 0, 1));
+    } finally {
+      await client.dispose();
+    }
+  });
 }

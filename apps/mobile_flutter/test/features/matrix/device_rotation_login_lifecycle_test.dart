@@ -159,6 +159,10 @@ final class FakeMatrixClient extends LogoutTrackingClient {
     bool waitUntilLoadCompletedLoaded = true,
     void Function()? onMigration,
   }) async {
+    // The real SDK adopts _userID/_deviceID before its owner/crypto callbacks.
+    // This fixture overrides their public getters, so adopt those fields here.
+    matrixUserId = newUserID ?? matrixUserId;
+    matrixDeviceId = newDeviceID ?? matrixDeviceId;
     await super.init(
       newToken: newToken,
       newTokenExpiresAt: newTokenExpiresAt,
@@ -727,7 +731,7 @@ void main() {
   });
 
   test(
-      'suspend closes the client on drain timeout combined with a metadata error',
+      'suspend retains the client until a held operation settles despite metadata error',
       () async {
     final database = FakeMatrixDatabase(
         userId: '@a:test', deviceId: 'device-OLD', loggedIn: true);
@@ -768,12 +772,20 @@ void main() {
     final operation = handle.accept();
     await Future<void>.delayed(Duration.zero);
 
-    await matrix.suspend();
+    await expectLater(
+        matrix.suspend(),
+        throwsA(isA<StateError>().having((failure) => failure.message, 'code',
+            'E2EE_LIFECYCLE_DRAIN_TIMEOUT')));
 
-    expect(database.disposals, 1);
-    expect(matrix.debugHasActiveClient, isFalse);
+    expect(database.disposals, 0,
+        reason: 'An unsettled admitted operation retains the handle');
+    expect(matrix.debugHasActiveClient, isTrue);
     hold.complete();
     await operation.then<void>((_) {}, onError: (Object _) {});
+    await matrix.suspend();
+    expect(database.disposals, 1,
+        reason: 'Safe retry closes only after the real operation settles');
+    expect(matrix.debugHasActiveClient, isFalse);
     await source.close();
   });
 

@@ -27,6 +27,18 @@ void main() {
     expect((await service.load()).preview, 'recovered historical announcement');
   });
 
+  test(
+      'recovered announcement with a foreign encrypted room binding stays unavailable',
+      () async {
+    final client = _Client();
+    final room = _Room(client);
+    client.crypto.keyManager.recover(room, payloadRoomId: '!other:test');
+    await expectLater(MatrixGroupAnnouncementService(room).load(),
+        throwsA(isA<AnnouncementDecryptionUnavailable>()));
+    expect(client.crypto.keyManager.recovered!.indexes, isEmpty);
+    expect(client.requests, isEmpty);
+  });
+
   test('unsupported encrypted announcement is not waiting for a key', () async {
     final client = _Client()..algorithm = 'unsupported.algorithm';
     final room = _Room(client);
@@ -188,10 +200,11 @@ class _Keys extends KeyManager {
   @override
   SessionKey? getInboundGroupSession(String roomId, String sessionId) =>
       recovered;
-  void recover(Room room, {bool failOldIndex = false}) {
+  void recover(Room room, {bool failOldIndex = false, String? payloadRoomId}) {
     recovered = SessionKey(
         content: {},
-        inboundGroupSession: _NativeSession(failOldIndex: failOldIndex),
+        inboundGroupSession: _NativeSession(
+            roomId: payloadRoomId ?? room.id, failOldIndex: failOldIndex),
         key: '@member:test',
         roomId: room.id,
         sessionId: 'historical-session',
@@ -202,13 +215,14 @@ class _Keys extends KeyManager {
 }
 
 class _NativeSession implements olm.InboundGroupSession {
-  _NativeSession({this.failOldIndex = false});
+  _NativeSession({required this.roomId, this.failOldIndex = false});
+  final String roomId;
   final bool failOldIndex;
   @override
   olm.DecryptResult decrypt(String message) {
     expect(message, 'native-ciphertext-fixture');
     if (failOldIndex) throw Exception('UNKNOWN_MESSAGE_INDEX');
-    return _Result();
+    return _Result(roomId);
   }
 
   @override
@@ -216,12 +230,15 @@ class _NativeSession implements olm.InboundGroupSession {
 }
 
 class _Result implements olm.DecryptResult {
+  _Result(this.roomId);
+  final String roomId;
   @override
   // Native libolm's interface uses this exact field name.
   // ignore: non_constant_identifier_names
   int message_index = 0;
   @override
-  String plaintext = jsonEncode({
+  late String plaintext = jsonEncode({
+    'room_id': roomId,
     'type': EventTypes.Message,
     'content': const GroupAnnouncement(
             [AnnouncementBlock.text('recovered historical announcement')])

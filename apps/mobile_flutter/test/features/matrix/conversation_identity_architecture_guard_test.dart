@@ -36,6 +36,8 @@ void main() {
       'global_search_models.dart': '搜索结果模型字段，非 client 枚举',
       'group_address_list_page.dart': '消费去重后的 snapshot.rooms（通讯录群聊页）',
       // —— 纯内部控制（非展示） ——
+      'matrix_recovery_vault.dart': '账号内密钥信号与本机密钥保护调度，不生成用户可见会话选择入口',
+      'recent_history_coordinator.dart': '账号内已加入房间的独立历史游标和近期密文重放调度，不生成会话展示入口',
       'conversation_preferences.dart': '偏好 reconcile/ack 清理',
       'direct_invitation_auto_join.dart': '好友私聊邀请自动加入',
       'group_announcement_service.dart': '群公告 sync 事件解析',
@@ -77,12 +79,15 @@ void main() {
         File('lib/features/matrix/matrix_e2ee_client.dart').readAsStringSync());
     expect(e2ee, contains('resolveConversationIdentitiesDetailed('),
         reason: '消息列表数据源出口（snapshot）必须接入身份解析（含落选分组，供未读并入主行）');
-    expect(e2ee, contains('resolveIdentityRepresentatives<MatrixForwardDestinationSnapshot>('),
+    expect(
+        e2ee,
+        contains(
+            'resolveIdentityRepresentatives<MatrixForwardDestinationSnapshot>('),
         reason: '转发/分享/群发目标（forwardingDestinations）必须接入身份解析');
     // 身份解析规则本体必须存在且暴露 primary 规则注入点。
-    final resolver = _stripComments(File(
-            'lib/features/matrix/conversation_identity_resolver.dart')
-        .readAsStringSync());
+    final resolver = _stripComments(
+        File('lib/features/matrix/conversation_identity_resolver.dart')
+            .readAsStringSync());
     expect(resolver, contains('primaryRoomIdOf'));
     expect(resolver, contains('localMessageCountOf'));
   });

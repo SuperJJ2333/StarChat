@@ -728,7 +728,7 @@ class KeyManager {
     if (missing.length > 64) { throw ArgumentError('Oversize native key query'); }
     if (!identical(client.recoveryOwner, owner)) throw StateError('E2EE_RECOVERY_OWNER_REVOKED');
     if (!await owner.read(cachedBackupKeyMatchesCurrentVersion).timeout(const Duration(seconds: 8))) return 0;
-    final info = await owner.read(() => getRoomKeysBackupInfo(false));
+    final info = await owner.read(() => getRoomKeysBackupInfo(false)).timeout(const Duration(seconds: 8));
     final secret = await owner.read(() => encryption.ssss.getCached(megolmKey));
     if (secret == null) return 0;
     final native = olm.PkDecryption();
