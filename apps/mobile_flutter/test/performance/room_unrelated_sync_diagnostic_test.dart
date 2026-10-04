@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart';
-import 'package:matrix/src/models/timeline_chunk.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/matrix/matrix_client_factory_test.dart'
