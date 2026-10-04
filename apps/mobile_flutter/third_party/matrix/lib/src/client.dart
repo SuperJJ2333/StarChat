@@ -1920,6 +1920,18 @@ class Client extends MatrixApi {
     String? accessToken;
     String? userID;
     final previousHomeserver = homeserver;
+    final previousIdentity = (
+      token: this.accessToken,
+      expiresAt: _accessTokenExpiresAt,
+      user: _userID,
+      device: _deviceID,
+      name: _deviceName,
+      id: _id,
+      filter: _syncFilterId,
+      batch: _prevBatch,
+      groupCallSession: _groupCallSessionId,
+    );
+    var identityAdoptionFailed = false;
     try {
       Logs().i('Initialize client $clientName');
       if (onLoginStateChanged.value == LoginState.loggedIn) {
@@ -1985,7 +1997,28 @@ class Client extends MatrixApi {
         olmAccount = newOlmAccount ?? olmAccount;
       }
 
-      await onRecoveryIdentityAdopted?.call();
+      try {
+        await onRecoveryIdentityAdopted?.call();
+      } catch (_) {
+        // Adoption precedes credential persistence and Olm replacement.
+        // A rejected/unfinished old-owner drain must leave the retained
+        // credentials intact so this same object can retry against its real
+        // durable identity. Keep the owner revoked and its actual writes tracked.
+        identityAdoptionFailed = true;
+        recoveryOwner?.revoke();
+        super.homeserver = previousHomeserver;
+        accessToken = this.accessToken = previousIdentity.token;
+        _accessTokenExpiresAt = previousIdentity.expiresAt;
+        userID = _userID = previousIdentity.user;
+        _deviceID = previousIdentity.device;
+        _deviceName = previousIdentity.name;
+        _id = previousIdentity.id;
+        _syncFilterId = previousIdentity.filter;
+        _prevBatch = previousIdentity.batch;
+        _groupCallSessionId = previousIdentity.groupCallSession;
+        olmAccount = encryption?.pickledOlmAccount;
+        rethrow;
+      }
 
       // Initialization adopts database and identity together. Persist endpoint
       // cache invalidation only after the application admits that new owner.
@@ -2019,6 +2052,14 @@ class Client extends MatrixApi {
                 olmAccount ??
                 account?.tryGet<String>('olm_account'),
           );
+          // A same-account server device rotation keeps this Olm account.
+          // Once durable credentials are committed, sign/upload its retained
+          // keys under the adopted device rather than treating it as dehydrated.
+          final olmManager = encryption?.olmManager;
+          if (previousIdentity.user == userID &&
+              olmManager?.ourDeviceId == previousIdentity.device) {
+            olmManager?.ourDeviceId = _deviceID;
+          }
         }
         onLoginStateChanged.add(LoginState.loggedIn);
         return;
@@ -2128,6 +2169,11 @@ class Client extends MatrixApi {
         deviceName: deviceName,
         olmAccount: olmAccount,
       );
+      if (identityAdoptionFailed) {
+        // Credential persistence has not started. In particular, do not
+        // clear the retained store or erase the restored token on this path.
+        throw clientInitException;
+      }
       if (preserveStoreOnInvalidToken) {
         // A failed credential write or store initialization must not destroy
         // recoverable identity/key material. Fail closed until reauthentication.

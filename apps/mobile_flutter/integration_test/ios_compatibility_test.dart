@@ -19,6 +19,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_compress/video_compress.dart';
 
+import '../test/support/retained_recovery_identity_fixture.dart';
+
 // Fixtures contain only generated, four-second media in assets/diagnostics/.
 // Run seed, terminate the app process, then run verify on the same simulator
 // without uninstalling the app or clearing its container/Keychain.
@@ -175,6 +177,114 @@ void main() {
     expect(expected['aDigest'] == expected['bDigest'], isFalse);
     if (_phase == 'seed') {
       await marker.writeAsString(jsonEncode(expected), flush: true);
+    }
+  });
+
+  testWidgets(
+      'retained SDK rotation and retry survive native restart ($_phase)',
+      (_) async {
+    final storage = FlutterSecureKeyValueStore();
+    final sessions = SecureSessionStore(storage);
+    final directory = (await getApplicationSupportDirectory()).path;
+    final marker = File(p.join(directory, 'retained_sdk_identity.json'));
+    final databasePath = p.join(directory, 'retained_sdk_identity.sqlite');
+    final restoreScope = await storage.peek('liuhetong.active_matrix_scope.v1');
+    late RetainedRecoveryIdentityFixture fixture;
+    var opened = false;
+    try {
+      final Map<String, dynamic> expected;
+      String? retainedKey;
+      if (_phase == 'verify') {
+        expect(await marker.exists(), isTrue);
+        expected =
+            jsonDecode(await marker.readAsString()) as Map<String, dynamic>;
+        // Inspect retained native key before account selection or any getter
+        // that could create a key; the original process must have left it here.
+        retainedKey = await storage.peek('$_databaseKey.${expected['scope']}');
+        expect(retainedKey != null && retainedKey.isNotEmpty, isTrue);
+        expect(await File(databasePath).exists(), isTrue);
+        expect(
+            sha256.convert(utf8.encode(retainedKey!)).toString() ==
+                expected['keyDigest'],
+            isTrue);
+      } else {
+        expect(await marker.exists(), isFalse);
+        expect(await File(databasePath).exists(), isFalse);
+        expected = {};
+      }
+      await sessions.selectMatrixAccount(
+          RetainedRecoveryIdentityFixture.endpoint.toString(),
+          RetainedRecoveryIdentityFixture.user);
+      final scope = await sessions.matrixStorageScope();
+      if (_phase == 'verify') expect(scope, expected['scope']);
+      final key = retainedKey ?? await sessions.matrixDatabaseKey();
+      fixture = RetainedRecoveryIdentityFixture(databasePath, key, sessions);
+      await fixture.openClient(seed: _phase == 'seed');
+      opened = true;
+      if (_phase == 'seed') {
+        await fixture.seedHistory();
+        expected['scope'] = scope;
+        expected['keyDigest'] = sha256.convert(utf8.encode(key)).toString();
+        expected['fingerprintDigest'] = sha256
+            .convert(utf8.encode(fixture.client.fingerprintKey))
+            .toString();
+        await fixture.client.dispose();
+        await fixture.openClient();
+      } else {
+        expect(fixture.client.deviceID, 'ROTATED');
+        expect(
+            (await fixture.database.getClient(
+                RetainedRecoveryIdentityFixture.clientName))?['device_id'],
+            'ROTATED');
+        expect((await sessions.matrixBinding())?.deviceId, 'ROTATED');
+        expect(
+            sha256
+                    .convert(utf8.encode(fixture.client.fingerprintKey))
+                    .toString() ==
+                expected['fingerprintDigest'],
+            isTrue);
+      }
+      fixture.wrap();
+      await fixture.expectHistory();
+      if (_phase == 'seed') {
+        await fixture.rotateAfterHeldWrite();
+        await marker.writeAsString(jsonEncode(expected), flush: true);
+      } else {
+        fixture.responseDevice = 'ROTATED';
+        await fixture.renew();
+      }
+      await fixture.matrix.suspend();
+      await fixture.renew();
+      await fixture.expectHistory();
+      await fixture.matrix.selectAccount(RetainedRecoveryIdentityFixture.user,
+          RetainedRecoveryIdentityFixture.endpoint);
+      await fixture.renew();
+      await fixture.expectHistory();
+      expect(
+          sha256
+                  .convert(utf8.encode(fixture.client.fingerprintKey))
+                  .toString() ==
+              expected['fingerprintDigest'],
+          isTrue);
+    } finally {
+      if (opened) {
+        await fixture.client.recoveryOwner?.drain();
+        await fixture.client.dispose();
+      }
+      // The existing account-scopes test expects A on the next verify launch.
+      await sessions.selectMatrixAccount(
+          'https://synthetic.example.test', '@a:synthetic.example.test');
+      expect(
+          await storage.peek('liuhetong.active_matrix_scope.v1'), restoreScope);
+    }
+    final header = await File(databasePath).open();
+    try {
+      expect(
+          ascii.decode(await header.read(16), allowInvalid: true) ==
+              'SQLite format 3\u0000',
+          isFalse);
+    } finally {
+      await header.close();
     }
   });
 

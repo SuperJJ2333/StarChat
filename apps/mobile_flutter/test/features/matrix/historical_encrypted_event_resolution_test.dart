@@ -265,7 +265,6 @@ void main() {
               ed25519Fingerprint: 'synthetic',
               databaseGeneration: 'synthetic'));
       final lease = await matrix.openRoomLease(room.id);
-      await client.onRecoveryIdentityAdopted?.call();
       final capability = await lease.openRoomTimeline(onUpdate: () {});
       // The historical row exists only in the retained encrypted store.
       final eventId = json['event_id'] as String;

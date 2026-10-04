@@ -8606,6 +8606,13 @@ final class MatrixSdkE2eeClient
     if (active != null) {
       if (!_activeContinuityValidated) {
         _bindDecryptionCache(await _readContinuityMetadata(active));
+        // The factory initializes the SDK before constructing this wrapper.
+        // Its first validated database generation replaces the provisional
+        // constructor owner, but only after that owner's real writes settle.
+        final previous = active.recoveryOwner;
+        previous?.revoke();
+        await previous?.drain().timeout(lifecycleDrainTimeout);
+        _bindRecoveryWrites(active);
         _activeContinuityValidated = true;
       }
       return active;
