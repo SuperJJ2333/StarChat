@@ -1146,6 +1146,3 @@ Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-histor
 ## 2026-09-30 iOS2194精确回签包已分发
 
 iOS0.4.25/2194于21:54 +08发布，最终SHA552a07a4；用户对当前包三项签名服务差异明确确认后执行，普通严格失败保留。官网/OTA/四键审计与更新说明、服务器/工作站小元数据、实际平台endpoint投影及匿名401通过；Android2194与最低build3保持。前端519通过；真机覆盖/登录/历史/后台通知待反馈，安装警示保留。[任务](tasks/2026-09-30-ios2194-distribution.md) · [验收](../verification/2026-09-30-ios2194-distribution.md)。主任务此前分支合并已完成；并行后台后续活动分支保持，本次未新建分支。
-
-## 2026-10-04 搜索、荣耀拍摄及服务器托管恢复（实施中）
-Task1搜索旧消息定位与稳定加载、Task2窄系统相机queries/安全反馈源码和独立双审完成；Task3用户明确要求服务器存储恢复密钥，正常登录自动恢复，新ADR经领域→安全设计复审PASS，尚未实施/上线。保留旧备份、本机历史及财务边界，缺失从未备份的旧keys不能重建。下一步Task3A服务端→3B移动端72h→完整候选debug模拟器；正式Android2196/iOS2194仍为观察基线。见[任务](tasks/2026-10-03-search-camera-history.md)及[新ADR](../adr/2026-10-04-server-custodied-matrix-recovery.md)。

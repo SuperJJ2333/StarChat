@@ -91,3 +91,7 @@ SQLCipher4.10.0缺DLL由独立fixture builder解决，使用package固定amalgam
 - root拥有的synthetic wire-authority已按精确name/image/tasklabel核验删除，不移除真实credential/provider/DPAPI/database备份。主分支合入前公开最终报告docs/verification/2026-10-04-search-camera-history.md；最终执行复审正在完成，随后保留主目录WIP合入推送，确切push身份见task-4-main-integration.json。
 
 生产最终执行独立规格/领域→质量安全PASS，报告task-4-production-final-review.md SHA8994ca18390e2ab02e2e5ac6ca97c36b38011132c19b8b15f407f622e21d635b。公开APK和462项根层证据已复制主目录，final.apk实际读回SHA一致；operator secrets未复制。继续main整合，当前任务无可归档app attachment，原managed工作树留存证据。
+
+### Task4 main整合收尾（2026-10-04 16:14+08）
+
+4f1bf173已快进合入本地main；只有current-state旧尾部条目与stashed iOS回签记录冲突，保留iOS原记录并清除重复旧进度。1372个无关trackedWIP哈希复核一致。当前补充三项文档及仅自身旧进度删除，源码与已审7e7e9a2a输入保持，长门禁按影响复用。最后可执行步骤：提交本轮文档→git push origin main→远端SHA一致→删除已合并自身branch、关闭自身SSH；准确最终结果绑定task-4-main-integration.json，不把原后台活动分支纳入清理。

@@ -78,6 +78,6 @@
 - [x] Whole candidate independent review; full Flutter/analyze, relevant Python/frontend/native/platform checks, preflight verify.ps1 and record limits.
 - [x] 搜索HTML示例和registry同步已有Flutter的稳定进度、旧消息定位与可重试错误状态；恢复页面的HTML/registry由Task3先交付，root不得同时编辑共享registry。合并后验证屏幕计数、token与行为一致。
 - [x] Re-read live version/CI and emulator; freeze next version/source. Build conventional rebuilt stable-signed x86_64 debug; preserve-data install and launch smoke, same-source iOS native validation.
-- [ ] Integrate/push reviewed changes preserving unrelated WIP, primary artifact/evidence, cleanup only own branch/worktree. Report physical Honor/K80 and new-device key acceptance limits separately.
+- [x] Integrate/push reviewed changes preserving unrelated WIP, primary artifact/evidence, cleanup only own branch/worktree. Report physical Honor/K80 and new-device key acceptance limits separately.
 
 R2追加执行：采纳server-custody-design-review.md §7–8已批TRACE协议边界+方法级互补map/安全TRACE元数据format/现有access条件分支，见托管ADR R2。仅API处理范围JSON/no-store不变；TRACE单独固定405非反射规范。真实日志sentinel泄漏P1必须关闭，普通方法日志及生产noticeerrorlevel保持，再转3A实现双审/3B。独立设计审查对真实notice的事实校正进行中，不改批准方法或保护边界。
