@@ -1,10 +1,17 @@
 # 移动交付恢复索引
 
+## 2026-10-05 2201旧日期及上下文：技术验收通过，模拟器已保留数据安装
+
+旧日期取消竞态、关键词单条context及双向分页/实际滚动修复，源码e665/0.4.32+2201。全量5437PASS/9skip/0FAIL、analyze0、有序规格/质量和成品审查接受；Android标准重建/固定75b31签名，成品SHA0c74d632…dceb1，01:02保留UID10090/首次安装，实际base.apk SHA相同。01:23同PID持续1263.7秒/匹配Java crash0，仅启动观察。iOS37217656064同源完整生产编译、18/26首次seed及新app进程保留Keychain/SQLCipher/旧历史均SUCCESS。
+
+真实账号十天前日期及关键词上下文反馈待用户；没有正式移动发布/IPA或iPhone实际覆盖升级，整库verify缺.env/local.env未执行。前序2200媒体已用户确认正常。见[任务](tasks/2026-10-04-search-date-context-followup.md)、[报告与APK](../verification/2026-10-04-search-date-context-followup.md)和[计划](../superpowers/plans/2026-10-04-search-date-context-followup.md)。主分支集成收尾；下文为历史快照。
+
+
 ## 2026-10-04 2200旧媒体已确认恢复；日期与上下文继续修复
 
 0.4.31+2200已保留数据安装emulator-5556，用户确认历史图片/视频缩略图和点击正常。最终移动源码29236bd3，Flutter5435PASS/9skip、analyze0、有序源码/质量和Android成品审查通过；成品SHA035f3fb1…cf84。workflow-only574ef30的iOS run37209352829完整生产编译与iOS18/26 seed、新进程保留历史/Keychain连续性全部SUCCESS。无正式移动发布，生产版本仍按前序只读观察Android2196/iOS2194。
 
-用户随后报告十天前日期定位未找到、关键词跳转只有单条无上下文/不能滚动；独立[跟进任务](tasks/2026-10-04-search-date-context-followup.md)与[计划](../superpowers/plans/2026-10-04-search-date-context-followup.md)正在调查/测试，不视为2200已包含新修复。已确认local-hit构造单条无token fragment；日期搜索退出取消竞态待实际RED。前序[媒体任务](tasks/2026-10-04-search-media-grid-followup.md)与[报告](../verification/2026-10-04-search-media-grid-followup.md)保留原失败及最终证据。下方为各任务历史快照。
+用户随后报告十天前日期定位未找到、关键词跳转只有单条无上下文/不能滚动；独立[跟进任务](tasks/2026-10-04-search-date-context-followup.md)与[计划](../superpowers/plans/2026-10-04-search-date-context-followup.md)实现72c1188e、候选0.4.32+2201/76df11ea验证中，不视为2200已包含新修复。实际旧日期/关键词/双向drag GREEN，53覆盖PASS/analyze0；最终全量5437PASS/9skip/0FAIL与有序双审接受；Android构建及同源iOS37217656064验证进行中，尚未安装2201。前序[媒体任务](tasks/2026-10-04-search-media-grid-followup.md)与[报告](../verification/2026-10-04-search-media-grid-followup.md)保留原失败及最终证据。下方为各任务历史快照。
 
 ## 2026-10-04 历史消息与旧媒体：2199 debug已安装，iOS恢复连续性双端原生通过
 
