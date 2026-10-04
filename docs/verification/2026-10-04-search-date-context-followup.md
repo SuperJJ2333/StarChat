@@ -16,4 +16,4 @@ Android源码构建、Apktool2.12.1常规DEX/资源/manifest重建、zipalign36-
 
 同源[iOS run37217656064](https://github.com/SuperJJ2333/StarChat/actions/runs/37217656064)绑定e665，全部三job **SUCCESS**：完整生产原生编译，iOS18/26 host媒体/日期/context/反向拖动门禁及native seed、新app进程保留Keychain/SQLCipher/原指纹/旧加密历史验证。不能据此承诺所有设备永不L04/L07；没有IPA/正式移动发布、iPhone实际覆盖升级或物理视频播放验收。原模拟器scanner排除限制不变，完整生产编译保留正常依赖。
 
-整库verify预检缺.env/local.env，未执行；未引入秘密。生产版本最后00:49只读观察仍Android2196/iOS2194，本轮未变更生产。前序2200媒体缩略图/点击用户已确认；新D1/C1真实反馈待确认。临时合成夹具/旧受拒清理目录保留ignored，不复制数据库/密钥/中间包。主分支集成及WIP保全读回另记任务；已安装2201不依赖后续文档提交重新构建。
+整库verify预检缺.env/local.env，未执行；未引入秘密。生产版本最后00:49只读观察仍Android2196/iOS2194，本轮未变更生产。前序2200媒体缩略图/点击用户已确认；新D1/C1真实反馈待确认。临时合成夹具/旧受拒清理目录保留ignored，不复制数据库/密钥/中间包。主分支4ca4e8fb已快进/推送，1372无关WIP及原索引正文保全读回见main-integration.json；公开证据与成品已归档primary并核SHA。已安装2201不依赖后续文档提交重新构建。
