@@ -57,3 +57,7 @@ Android2199最终包已独立双审、保留UID/首次安装时间覆盖安装�
 最终debug/native双审final-delivery-review.md接受，hash71d34a23fb660d605cc843c21052070db304d7192367c11fdb955a80484a2816。初次本地main fastforward到7016ea91；仅current-state的自有stash61dde020已apply --index成功无冲突，主目录1372既有trackedWIP内容hash全部保持、原index为空仍保持。原状态文档修改恢复，未提交他人改动。公共工件最终53文件加inventory按显式清单核对，无数据库/key目录。
 
 本轮技术scope完成；真实账号/实体设备/正式发布缺口如上。远端main推送、精确readback和仅本轮branch清理由integration-result.json绑定；docs-only收尾与df617187的mobile/workflow差异必须为空，复用已通过全量与原生门禁，不重复CI。下一步为真机/真实用户历史验收，正式Android/IPA发布需单独指定。
+
+### 用户实测H2重开（2026-10-04T20:08:11.1732358+08:00）
+
+用户报告2199查找聊天记录→图片与视频旧缩略图仍占位且点击无响应，实际安装APK已精确核对e3923bc0…。原SDK/API和157秒进程smoke证据不代表真实RoomPage媒体网格验收，上一轮覆盖缺口已确认：currentSearchMessage live-window gate使SDK按需loader根本不调用，图片viewer又限制live图库项。H2端到端尚未完成，续修见[实际页面补充任务](2026-10-04-search-media-grid-followup.md)与其计划，保留原失败/成功证据及旧成品。

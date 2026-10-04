@@ -130,7 +130,7 @@ jobs:
           flutter build ios --simulator --debug --config-only --no-codesign -t integration_test/ios_compatibility_test.dart --dart-define=COMPAT_PHASE=seed
       - name: Test corrected media and direct-room paths
         working-directory: apps/mobile_flutter
-        run: flutter test --no-pub test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart test/features/matrix/direct_chat_sync_failure_test.dart test/features/matrix/canonical_direct_chat_test.dart test/features/matrix/video_playback_extension_test.dart test/features/matrix/video_viewer_cache_test.dart test/features/matrix/group_announcement_sdk_recovery_test.dart
+        run: flutter test --no-pub test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart test/features/matrix/direct_chat_sync_failure_test.dart test/features/matrix/canonical_direct_chat_test.dart test/features/matrix/video_playback_extension_test.dart test/features/matrix/video_viewer_cache_test.dart test/features/matrix/group_announcement_sdk_recovery_test.dart test/features/matrix/search_media_resolver_test.dart test/features/matrix/room_search_media_grid_test.dart
       - name: Native media and seed encrypted history
         id: seed
         timeout-minutes: 22
