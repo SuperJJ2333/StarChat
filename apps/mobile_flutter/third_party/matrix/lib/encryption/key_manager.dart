@@ -722,6 +722,48 @@ class KeyManager {
     } finally { native.free(); }
   }
 
+  /// Only needed pairs; cached native material is never unlocked or replaced.
+  Future<int> restoreNeededNativeBackup(Map<(String, String), String> missing,
+      RecoveryOperationOwner owner) async {
+    if (missing.length > 64) { throw ArgumentError('Oversize native key query'); }
+    if (!identical(client.recoveryOwner, owner)) throw StateError('E2EE_RECOVERY_OWNER_REVOKED');
+    if (!await owner.read(cachedBackupKeyMatchesCurrentVersion).timeout(const Duration(seconds: 8))) return 0;
+    final info = await owner.read(() => getRoomKeysBackupInfo(false));
+    final secret = await owner.read(() => encryption.ssss.getCached(megolmKey));
+    if (secret == null) return 0;
+    final native = olm.PkDecryption();
+    try {
+      final public = native.init_with_private_key(base64decodeUnpadded(secret));
+      if (info.algorithm != BackupAlgorithm.mMegolmBackupV1Curve25519AesSha2 ||
+          info.authData['public_key'] != public) { return 0; }
+      var imported = 0;
+      for (final entry in missing.entries) {
+        owner.check();
+        KeyBackupData response;
+        try {
+          response = await owner.read(() => client.getRoomKeyBySessionId(
+              entry.key.$1, entry.key.$2, info.version)).timeout(const Duration(seconds: 8));
+        } on MatrixException catch (failure) {
+          if (failure.errcode == 'M_NOT_FOUND') continue;
+          rethrow;
+        }
+        owner.check();
+        Map<String, dynamic> payload;
+        try {
+          final data = response.sessionData;
+          payload = Map<String, dynamic>.from(jsonDecode(native.decrypt(
+              data['ephemeral'] as String, data['mac'] as String,
+              data['ciphertext'] as String)));
+        } catch (_) { continue; }
+        owner.check();
+        if (!identical(client.recoveryOwner, owner)) throw StateError('E2EE_RECOVERY_OWNER_REVOKED');
+        if (await importRecoverySession(entry.key.$1, entry.key.$2, entry.value, payload)) imported++;
+        owner.check();
+      }
+      return imported;
+    } finally { native.free(); }
+  }
+
   Future<void> loadFromResponse(RoomKeys keys) async {
     if (!(await isCached())) {
       return;

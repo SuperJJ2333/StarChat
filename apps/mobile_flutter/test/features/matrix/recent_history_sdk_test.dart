@@ -115,4 +115,58 @@ void main() {
       await sql.close();
     }
   });
+  test('recent pending replay cursor excludes years-old and decoded rows',
+      () async {
+    final sql = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final db = MatrixSdkDatabase('recent-pending',
+        database: sql, sqfliteFactory: databaseFactoryFfi);
+    await db.open();
+    final client = Client('recent-pending', databaseBuilder: (_) => db);
+    await client.init();
+    final room = Room(id: '!synthetic:example.test', client: client);
+    client.rooms.add(room);
+    Map<String, dynamic> raw(String id, int ts, String type) => {
+          'event_id': id,
+          'type': type,
+          'sender': '@synthetic:example.test',
+          'origin_server_ts': ts,
+          'content': {
+            'session_id': 'session',
+            'sender_key': 'sender',
+            'msgtype': 'm.text',
+            'body': 'synthetic'
+          }
+        };
+    try {
+      for (var page = 0; page < 20; page++) {
+        await db.commitRecoveryHistoryPage(room, 'seed', page, [
+          for (var i = 0; i < 80; i++)
+            raw('\$old-${page * 80 + i}', 1, EventTypes.Encrypted)
+        ], {
+          'revision': page + 1
+        });
+      }
+      await db.commitRecoveryHistoryPage(room, 'seed', 20, [
+        raw(r'$recent-a', 1000, EventTypes.Encrypted),
+        raw(r'$recent-b', 1001, EventTypes.Encrypted),
+        raw(r'$decoded', 1000, EventTypes.Message)
+      ], {
+        'revision': 21
+      });
+      final dynamic api = db;
+      expect(
+          await api.getRecoveryPendingEventIds(room,
+              windowStart: 500, windowEnd: 2000, limit: 1),
+          [r'$recent-a']);
+      expect(
+          await api.getRecoveryPendingEventIds(room,
+              windowStart: 500,
+              windowEnd: 2000,
+              afterEventId: r'$recent-a',
+              limit: 1),
+          [r'$recent-b']);
+    } finally {
+      await client.dispose();
+    }
+  });
 }

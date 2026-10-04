@@ -25,7 +25,6 @@ import 'package:collection/collection.dart';
 import 'package:html_unescape/html_unescape.dart';
 
 import 'package:matrix/matrix.dart';
-import 'package:matrix/src/models/timeline_chunk.dart';
 import 'package:matrix/src/utils/cached_stream_controller.dart';
 import 'package:matrix/src/utils/file_send_request_credentials.dart';
 import 'package:matrix/src/utils/markdown.dart';
@@ -508,7 +507,7 @@ class Room {
     // There is no known event or the last event is only a state fallback event,
     // we assume there is no new messages.
     if (lastEvent == null ||
-        !client.roomPreviewLastEvents.contains(lastEvent.type)) return false;
+        !client.roomPreviewLastEvents.contains(lastEvent.type)) { return false; }
 
     // Read marker is on the last event so no new messages.
     if (lastEvent.receipts
@@ -1270,7 +1269,7 @@ class Room {
     this.prev_batch = resp.end;
 
     Future<void> loadFn() async {
-      if (!((resp.chunk.isNotEmpty) && resp.end != null)) return;
+      if (resp.chunk.isEmpty) return;
 
       await client.handleSync(
           SyncUpdate(

@@ -347,6 +347,239 @@ void main() {
       server.decoder.free();
     }
   });
+
+  for (final mode in [
+    'match',
+    'mismatch',
+    'revoked',
+    'revoked-metadata',
+    'wrong-sender',
+    'wrong-session',
+    'tamper'
+  ]) {
+    test('automatic needed native backup $mode uses validated SDK import',
+        () async {
+      final server = _VaultServer();
+      final client = await _open(server);
+      final native = olm.OutboundGroupSession()..create();
+      final inbound = olm.InboundGroupSession()..create(native.session_key());
+      final room = Room(
+          id: '!native:example.test',
+          client: client,
+          membership: Membership.join);
+      client.rooms.add(room);
+      final id = native.session_id();
+      final wrongNative = olm.OutboundGroupSession()..create();
+      final wrongInbound = olm.InboundGroupSession()
+        ..create(wrongNative.session_key());
+      final pk = olm.PkEncryption()..set_recipient_key(server.public);
+      final encrypted = pk.encrypt(jsonEncode({
+        'algorithm': AlgorithmTypes.megolmV1AesSha2,
+        'sender_key': mode == 'wrong-sender' ? 'wrong-sender' : 'sender',
+        'sender_claimed_keys': <String, String>{},
+        'forwarding_curve25519_key_chain': <String>[],
+        'session_key': mode == 'wrong-session'
+            ? wrongInbound.export_session(0)
+            : inbound.export_session(0)
+      }));
+      pk.free();
+      inbound.free();
+      wrongInbound.free();
+      wrongNative.free();
+      server.nativeSession = {
+        'first_message_index': 0,
+        'forwarded_count': 0,
+        'is_verified': false,
+        'session_data': {
+          'ephemeral': encrypted.ephemeral,
+          'mac': encrypted.mac,
+          'ciphertext': encrypted.ciphertext
+        }
+      };
+      if (mode == 'tamper') {
+        (server.nativeSession!['session_data'] as Map)['mac'] = 'invalid';
+      }
+      client.accountData[EventTypes.MegolmBackup] =
+          BasicEvent(type: EventTypes.MegolmBackup, content: {
+        'encrypted': {
+          'cached': {'ciphertext': 'synthetic-cache'}
+        }
+      });
+      await client.database!.storeSSSSCache(
+          EventTypes.MegolmBackup,
+          'cached',
+          'synthetic-cache',
+          base64.encode(server.decoder.get_private_key()).replaceAll('=', ''));
+      if (mode == 'mismatch') server.nativePublic = 'different';
+      final nativeEntered = Completer<void>(),
+          nativeRelease = Completer<void>();
+      Future<void> holdNative() async {
+        nativeEntered.complete();
+        await nativeRelease.future;
+      }
+
+      if (mode == 'revoked') server.beforeNative = holdNative;
+      if (mode == 'revoked-metadata') server.beforeNativeInfo = holdNative;
+      server.history = {
+        'event_id': r'$native-needed',
+        'sender': client.userID,
+        'origin_server_ts': 1000,
+        'type': EventTypes.Encrypted,
+        'content': {
+          'algorithm': AlgorithmTypes.megolmV1AesSha2,
+          'session_id': id,
+          'sender_key': 'sender',
+          'ciphertext': native.encrypt(jsonEncode({
+            'room_id': room.id,
+            'type': EventTypes.Message,
+            'content': {'msgtype': MessageTypes.Text, 'body': 'synthetic'}
+          }))
+        }
+      };
+      final store = SecureSessionStore(_Secrets());
+      await store.saveSession(
+          accessToken: _token,
+          refreshToken: 'synthetic',
+          matrixUserId: client.userID);
+      final status = VaultSyncStatus(),
+          vault = MatrixRecoveryVault(
+              client: client,
+              owner: client.recoveryOwner!,
+              store: store,
+              status: VaultSyncStatus());
+      final coordinator = RecentHistoryCoordinator(
+          client: client,
+          owner: client.recoveryOwner!,
+          databaseGeneration: 'native',
+          status: status,
+          vault: vault,
+          now: DateTime.fromMillisecondsSinceEpoch(10000000));
+      try {
+        if (mode.startsWith('revoked')) {
+          final run = coordinator.runOnce();
+          final failure = expectLater(run, throwsStateError);
+          await nativeEntered.future;
+          final captured = client.recoveryOwner!;
+          captured.revoke();
+          client.recoveryOwner =
+              RecoveryOperationOwner(identity: Object(), isCurrent: () => true);
+          nativeRelease.complete();
+          await failure;
+          expect(await client.database!.getInboundGroupSession(room.id, id),
+              isNull);
+        } else {
+          await coordinator.runOnce();
+          expect(status.decrypted, mode == 'match' ? 1 : 0);
+          expect(server.nativeKeyReads, mode == 'mismatch' ? 0 : 1);
+          if (mode == 'match') expect(server.candidate, isNotNull);
+        }
+      } finally {
+        coordinator.revoke();
+        await client.recoveryOwner!.drain();
+        client.crypto.keyManager.clearInboundGroupSessions();
+        native.free();
+        await client.dispose();
+        server.decoder.free();
+      }
+    });
+  }
+  test(
+      'failed actual replay index leaves ciphertext durable and retries after cache restart',
+      () async {
+    final server = _VaultServer();
+    final client = await _open(server, held: true);
+    final db = client.database! as _HeldDatabase;
+    final native = olm.OutboundGroupSession()..create();
+    final room = Room(
+        id: '!failed-index:example.test',
+        client: client,
+        membership: Membership.join);
+    client.rooms.add(room);
+    final id = native.session_id();
+    await client.crypto.keyManager.setInboundGroupSession(
+        room.id, id, 'sender', {
+      'algorithm': AlgorithmTypes.megolmV1AesSha2,
+      'session_key': native.session_key()
+    });
+    server.history = {
+      'event_id': r'$failed-index',
+      'sender': client.userID,
+      'origin_server_ts': 1000,
+      'type': EventTypes.Encrypted,
+      'content': {
+        'algorithm': AlgorithmTypes.megolmV1AesSha2,
+        'session_id': id,
+        'sender_key': 'sender',
+        'ciphertext': native.encrypt(jsonEncode({
+          'room_id': room.id,
+          'type': EventTypes.Message,
+          'content': {'msgtype': MessageTypes.Text, 'body': 'synthetic'}
+        }))
+      }
+    };
+    for (var page = 0; page < 20; page++) {
+      await db.commitRecoveryHistoryPage(room, 'old-seed', page, [
+        for (var i = 0; i < 80; i++)
+          {
+            'event_id': '\$old-${page * 80 + i}',
+            'type': EventTypes.Encrypted,
+            'sender': client.userID,
+            'origin_server_ts': -40000000000,
+            'content': {
+              'session_id': 'old-session-${page * 80 + i}',
+              'sender_key': 'old-sender'
+            }
+          }
+      ], {
+        'revision': page + 1
+      });
+    }
+    db.eventReads.clear();
+    db.failIndexes = true;
+    final errors = <SdkError>[];
+    final errorSubscription =
+        client.onEncryptionError.stream.listen(errors.add);
+    final failedForeground = await client.crypto.decryptRoomEvent(
+        room.id, Event.fromJson(server.history!, room),
+        store: true, updateType: EventUpdateType.history);
+    expect(failedForeground.type, EventTypes.Encrypted);
+    final coordinator = RecentHistoryCoordinator(
+        client: client,
+        owner: client.recoveryOwner!,
+        databaseGeneration: 'failed-index',
+        status: VaultSyncStatus(),
+        now: DateTime.fromMillisecondsSinceEpoch(10000000));
+    try {
+      await expectLater(coordinator.runOnce(), throwsA(isA<StateError>()));
+      expect((await db.getEventById(r'$failed-index', room))!.type,
+          EventTypes.Encrypted);
+      expect(
+          client.crypto.keyManager.getInboundGroupSession(room.id, id)!.indexes,
+          isEmpty);
+      db.failIndexes = false;
+      client.crypto.keyManager.clearInboundGroupSessions();
+      await coordinator.runOnce();
+      expect((await db.getEventById(r'$failed-index', room))!.type,
+          EventTypes.Message);
+      expect(db.eventReads.any((id) => id.startsWith(r'$old-')), isFalse);
+      expect(errors.map((error) => error.exception.toString()),
+          everyElement(contains('E2EE_RECOVERY_INDEX_STORAGE_FAILED')));
+      expect(errors, isNotEmpty);
+      client.crypto.keyManager.clearInboundGroupSessions();
+      expect(
+          (await client.crypto.keyManager.loadInboundGroupSession(room.id, id))!
+              .indexes,
+          isNotEmpty);
+    } finally {
+      await errorSubscription.cancel();
+      coordinator.revoke();
+      await client.recoveryOwner!.drain();
+      native.free();
+      client.crypto.keyManager.clearInboundGroupSessions();
+      await client.dispose();
+      server.decoder.free();
+    }
+  });
   test(
       'CAS reconciliation protects a new operation while preserving exact ciphertext',
       () async {
@@ -838,6 +1071,14 @@ class _HeldDatabase extends MatrixSdkDatabase {
   _HeldDatabase(Database sql)
       : super('vault', database: sql, sqfliteFactory: databaseFactoryFfi);
   String? boundary;
+  bool failIndexes = false;
+  final eventReads = <String>[];
+  @override
+  Future<Event?> getEventById(String id, Room room) {
+    eventReads.add(id);
+    return super.getEventById(id, room);
+  }
+
   final entered = Completer<void>(), release = Completer<void>();
   @override
   Future<bool> commitRecoveryHistoryPage(
@@ -884,6 +1125,7 @@ class _HeldDatabase extends MatrixSdkDatabase {
   Future<void> updateInboundGroupSessionIndexes(
       String indexes, String room, String session) async {
     await hold('index');
+    if (failIndexes) throw StateError('synthetic storage failure');
     await super.updateInboundGroupSessionIndexes(indexes, room, session);
   }
 
@@ -911,6 +1153,11 @@ class _VaultServer {
       unavailable = false;
   String materialOwner = '@synthetic:example.test';
   int nativeRequests = 0, queryCount = 0;
+  int nativeKeyReads = 0;
+  String? nativePublic;
+  Map<String, dynamic>? nativeSession;
+  Future<void> Function()? beforeNative;
+  Future<void> Function()? beforeNativeInfo;
   int historyRequests = 0;
   Map<String, dynamic>? history;
   Future<void> Function()? beforeQuery;
@@ -931,6 +1178,23 @@ class _VaultServer {
             'chunk': [history]
           }),
           200);
+    }
+    if (nativeSession != null && path.contains('/room_keys/')) {
+      if (path.endsWith('/version')) {
+        await beforeNativeInfo?.call();
+        return http.Response(
+            jsonEncode({
+              'version': 'native-v1',
+              'algorithm': MatrixRecoveryVault.algorithm,
+              'auth_data': {'public_key': nativePublic ?? public},
+              'count': 1,
+              'etag': 'synthetic'
+            }),
+            200);
+      }
+      nativeKeyReads++;
+      await beforeNative?.call();
+      return http.Response(jsonEncode(nativeSession), 200);
     }
     expect(request.headers['X-StarChat-Session'], isNotNull);
     if (unavailable) {

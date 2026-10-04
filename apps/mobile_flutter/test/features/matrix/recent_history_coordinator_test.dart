@@ -12,8 +12,9 @@ class _HistoryClient extends Client {
   _HistoryClient(DatabaseApi database, http.Client transport)
       : super('history-integration',
             databaseBuilder: (_) => database, httpClient: transport);
+  String historyHead = 'login-head';
   @override
-  String? get prevBatch => 'login-head';
+  String? get prevBatch => historyHead;
 }
 
 Map<String, dynamic> _event(String id, int timestamp, {bool state = false}) => {
@@ -299,5 +300,122 @@ void main() {
     expect(await db.getEventById(r'$late', room), isNull);
     expect(owner.pendingWrites, 0);
     await client.dispose();
+  });
+  test('reconstructed coordinator resumes persisted partial cursor and window',
+      () async {
+    final seen = <String?>[];
+    var failNext = true;
+    final (client, db) = await _open((request) async {
+      if (request.url.path.endsWith('timestamp_to_event')) {
+        return http.Response('{"errcode":"M_UNRECOGNIZED"}', 404);
+      }
+      final token = request.url.queryParameters['from'];
+      seen.add(token);
+      if (token == 'saved' && failNext) {
+        failNext = false;
+        return http.Response('{"errcode":"M_UNKNOWN"}', 500);
+      }
+      return http.Response(
+          jsonEncode({
+            'start': token,
+            if (token == 'login-head') 'end': 'saved',
+            'chunk': [_event('\$resume-$token', 100000000)]
+          }),
+          200);
+    });
+    final room = Room(
+        id: '!synthetic:example.test',
+        client: client,
+        membership: Membership.join)
+      ..prev_batch = 'live';
+    client.rooms.add(room);
+    RecentHistoryCoordinator make(int now) => RecentHistoryCoordinator(
+        client: client,
+        owner: RecoveryOperationOwner(identity: client, isCurrent: () => true),
+        databaseGeneration: 'generation',
+        status: VaultSyncStatus(),
+        now: DateTime.fromMillisecondsSinceEpoch(now));
+    try {
+      await expectLater(make(100000000).runOnce(), throwsException);
+      await make(100001000).runOnce();
+      expect(seen, ['login-head', 'saved', 'saved']);
+      await make(100002000).runOnce();
+      expect(seen, ['login-head', 'saved', 'saved']);
+      expect(room.prev_batch, 'live');
+      expect(await db.getEventById(r'$resume-saved', room), isNotNull);
+    } finally {
+      await client.dispose();
+    }
+  });
+  test('foreground SDK stores a nonempty terminal page before exhaustion',
+      () async {
+    final (client, db) = await _open((request) async => http.Response(
+        jsonEncode({
+          'start': 'live',
+          'chunk': [_event(r'$foreground-terminal', 100000000)]
+        }),
+        200));
+    final room = Room(
+        id: '!synthetic:example.test',
+        client: client,
+        membership: Membership.join)
+      ..prev_batch = 'live';
+    client.rooms.add(room);
+    try {
+      expect(await room.requestHistory(), 1);
+      expect(await db.getEventById(r'$foreground-terminal', room), isNotNull);
+      expect(room.prev_batch, isNull);
+    } finally {
+      await client.dispose();
+    }
+  });
+
+  test('new login head bridges two pages into proven complete coverage',
+      () async {
+    final seen = <String?>[];
+    final (client, db) = await _open((request) async {
+      if (request.url.path.endsWith('timestamp_to_event')) {
+        return http.Response('{"errcode":"M_UNRECOGNIZED"}', 404);
+      }
+      final token = request.url.queryParameters['from'];
+      seen.add(token);
+      return http.Response(
+          jsonEncode({
+            'start': token,
+            if (token == 'new-head') 'end': 'gap-page',
+            if (token == 'gap-page') 'end': 'old-tail',
+            'chunk': [
+              _event(
+                  token == 'gap-page' || token == 'login-head'
+                      ? r'$old-head'
+                      : '\$event-$token',
+                  100000000)
+            ]
+          }),
+          200);
+    });
+    final room = Room(
+        id: '!synthetic:example.test',
+        client: client,
+        membership: Membership.join)
+      ..prev_batch = 'live';
+    client.rooms.add(room);
+    RecentHistoryCoordinator make(int now) => RecentHistoryCoordinator(
+        client: client,
+        owner: RecoveryOperationOwner(identity: client, isCurrent: () => true),
+        databaseGeneration: 'generation',
+        status: VaultSyncStatus(),
+        now: DateTime.fromMillisecondsSinceEpoch(now));
+    try {
+      // First returned event is the saved server-order head, not a sparse DB row.
+      await make(100000000).runOnce();
+      client.historyHead = 'new-head';
+      await make(100001000).runOnce();
+      expect(seen, ['login-head', 'new-head', 'gap-page']);
+      expect(room.prev_batch, 'live');
+      expect(await db.getEventById(r'$event-new-head', room), isNotNull);
+    } finally {
+      await client.dispose();
+    }
   });
 }

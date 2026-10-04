@@ -146,6 +146,12 @@ abstract class DatabaseApi {
   Future<int> recoveryProtectedCount(String version) =>
       throw UnsupportedError('Recovery receipt counts unavailable');
 
+  /// Keyset page of undecrypted ciphertext within the admitted history window.
+  Future<List<String>> getRecoveryPendingEventIds(Room room,
+      {required int windowStart, required int windowEnd,
+      String? afterEventId, int limit = 80}) =>
+      throw UnsupportedError('Recovery replay requires SQLite');
+
   Future<List<String>> getRecoveryEventIds(Room room, {int start = 0, int limit = 80}) =>
       throw UnsupportedError('Bounded recovery replay unavailable');
 

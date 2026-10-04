@@ -194,6 +194,19 @@ class Encryption {
     runInRoot(() => admitted);
   }
 
+  final Map<String, Future<Object?>> _recoveryIndexWrites = {};
+
+  /// Recovery projections must wait for the actual replay-index commit.
+  Future<void> awaitRecoveryIndexPersistence(String eventId) async {
+    final pending = _recoveryIndexWrites[eventId];
+    if (pending == null) return;
+    final failure = await pending;
+    if (identical(_recoveryIndexWrites[eventId], pending)) {
+      _recoveryIndexWrites.removeWhere((key, value) => key == eventId && identical(value, pending));
+    }
+    if (failure != null) throw failure;
+  }
+
   Event decryptRoomEventSync(String roomId, Event event) {
     if (event.type != EventTypes.Encrypted || event.redacted) {
       return event;
@@ -250,18 +263,34 @@ class Encryption {
 
       inboundGroupSession.indexes[messageIndexKey] = messageIndexValue;
       if (!haveIndex) {
-        // now we persist the udpated indexes into the database.
-        // the entry should always exist. In the case it doesn't, the following
-        // line *could* throw an error. As that is a future, though, and we call
-        // it un-awaited here, nothing happens, which is exactly the result we want
+        // Register the actual index write before invocation. Recovery waits
+        // for persistence; an anonymous failure invalidates the in-memory proof.
         final database = client.database;
         if (database != null) {
           Future<void> writeIndex() async =>
               database.updateInboundGroupSessionIndexes(
                   json.encode(inboundGroupSession.indexes), roomId, sessionId);
           final owner = client.recoveryOwner;
-          unawaited((owner == null ? writeIndex() : owner.write(writeIndex))
-              .catchError((Object _) {}));
+          final indexWrite = owner == null ? writeIndex() : owner.write(writeIndex);
+          final write = indexWrite.then<Object?>((_) => null, onError: (Object _, StackTrace __) {
+            // Failed persistence must not leave a false in-memory replay proof.
+            if (inboundGroupSession.indexes[messageIndexKey] == messageIndexValue) {
+              inboundGroupSession.indexes.remove(messageIndexKey);
+            }
+            final failure = StateError('E2EE_RECOVERY_INDEX_STORAGE_FAILED');
+            if (owner == null || owner.active) {
+              client.onEncryptionError.add(SdkError(exception: failure));
+            }
+            return failure;
+          });
+          if (owner != null) {
+            _recoveryIndexWrites[event.eventId] = write;
+            unawaited(write.then((failure) {
+              if (failure == null && identical(_recoveryIndexWrites[event.eventId], write)) {
+                _recoveryIndexWrites.removeWhere((key, value) => key == event.eventId && identical(value, write));
+              }
+            }));
+          }
         }
       }
     } catch (exception) {
@@ -325,9 +354,12 @@ class Encryption {
     if (event.type != EventTypes.Encrypted || event.redacted) {
       return event;
     }
+    final originalEvent = event;
+    final owner = client.recoveryOwner;
     final content = event.parsedRoomEncryptedContent;
     final sessionId = content.sessionId;
     try {
+      owner?.check();
       if (client.database != null &&
           sessionId != null &&
           !(keyManager
@@ -342,7 +374,10 @@ class Encryption {
           sessionId,
         );
       }
+      owner?.check();
       event = decryptRoomEventSync(roomId, event);
+      await awaitRecoveryIndexPersistence(event.eventId);
+      owner?.check();
       if (event.type == EventTypes.Encrypted &&
           event.content['can_request_session'] == true &&
           sessionId != null) {
@@ -367,6 +402,10 @@ class Encryption {
       }
       return event;
     } catch (e, s) {
+      if (e is StateError && {'E2EE_RECOVERY_INDEX_STORAGE_FAILED',
+          'E2EE_RECOVERY_OWNER_REVOKED'}.contains(e.message)) {
+        return originalEvent;
+      }
       Logs().e('[Decrypt] Could not decrpyt event', e, s);
       return event;
     }

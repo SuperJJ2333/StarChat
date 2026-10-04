@@ -1772,6 +1772,25 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   }
 
   @override
+  Future<List<String>> getRecoveryPendingEventIds(Room room,
+      {required int windowStart, required int windowEnd,
+      String? afterEventId, int limit = 80}) async {
+    if (limit < 1 || limit > 80) throw ArgumentError('Invalid recovery page');
+    final sql = database;
+    if (sql == null) throw UnsupportedError('Recovery replay requires SQLite');
+    final rows = await sql.rawQuery('''SELECT json_extract(v, '\$.event_id') AS id
+FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
+ AND json_extract(v, '\$.type') = 'm.room.encrypted'
+ AND json_extract(v, '\$.origin_server_ts') >= ?
+ AND json_extract(v, '\$.origin_server_ts') <= ?
+ AND json_extract(v, '\$.unsigned.redacted_because') IS NULL
+ AND json_extract(v, '\$.event_id') > ?
+ ORDER BY json_extract(v, '\$.event_id') LIMIT ?''',
+        ['${room.id}|', windowStart, windowEnd, afterEventId ?? '', limit]);
+    return rows.map((row) => row['id'] as String).toList();
+  }
+
+  @override
   Future<List<String>> getRecoveryEventIds(Room room, {int start = 0, int limit = 80}) async {
     if (start < 0 || limit < 1 || limit > 80) throw ArgumentError('Invalid recovery page');
     final sql = database;
@@ -1871,7 +1890,7 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
       await _clientBox.put('recovery.v1:$key', jsonEncode(checkpoint));
       final cursor = checkpoint['cursor'];
       if (cursor is String) {
-        await _clientBox.put('recovery.cursor:$key:${checkpoint['head']}:$cursor', '1');
+        await _clientBox.put('recovery.cursor:$key:${checkpoint['walk'] ?? checkpoint['head']}:$cursor', '1');
       }
       committed = true;
     });

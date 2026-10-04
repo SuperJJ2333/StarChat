@@ -41,6 +41,7 @@ final class RecentHistoryCoordinator {
   final Set<String> _replay = {};
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final Map<String, int> _roomEpochs = {};
+  final Map<String, (int, int)> _roomWindows = {};
   Object? _vaultFailure;
   final _counts = <String, ({int downloaded, int decrypted, int missing})>{};
 
@@ -55,6 +56,15 @@ final class RecentHistoryCoordinator {
           }
         }
         wake();
+      }));
+      _subscriptions.add(client.onEncryptionError.stream.listen((failure) {
+        if (owner.active &&
+            failure.exception is StateError &&
+            (failure.exception as StateError).message ==
+                'E2EE_RECOVERY_INDEX_STORAGE_FAILED') {
+          status.setPhase(VaultSyncPhase.retrying);
+          wake();
+        }
       }));
       for (final room in client.rooms) {
         _subscriptions.add(room.onSessionKeyReceived.stream.listen((_) {
@@ -198,9 +208,24 @@ final class RecentHistoryCoordinator {
     final epoch = _roomEpochs[room.id] ?? 0;
     // A new login/head must bridge the actual offline gap. Never treat old
     // coverage or a sparse context row as coverage of a new head.
-    final sameWindow = checkpoint?['head'] == head &&
-        checkpoint?['windowStart'] == windowStart &&
-        checkpoint?['epoch'] == epoch;
+    final sameWindow =
+        checkpoint?['head'] == head && checkpoint?['epoch'] == epoch;
+    final activeStart =
+        sameWindow ? checkpoint!['windowStart'] as int : windowStart;
+    final activeEnd = sameWindow ? checkpoint!['windowEnd'] as int : windowEnd;
+    _roomWindows[room.id] = (activeStart, activeEnd);
+    final walk = sameWindow
+        ? (checkpoint!['walk'] ?? head)
+        : '$head:${checkpoint?['revision'] ?? 0}';
+    final bridge = sameWindow
+        ? (checkpoint?['bridge'] as String?)
+        : checkpoint?['complete'] == true &&
+                (checkpoint?['windowStart'] as int? ?? windowStart + 1) <=
+                    windowStart
+            ? (checkpoint?['headEvent'] as String?)
+            : null;
+    String? headEvent =
+        sameWindow ? (checkpoint?['headEvent'] as String?) : null;
     if (sameWindow && checkpoint?['complete'] == true) {
       // Coverage and decryption are independent. A committed ciphertext page
       // must retry missing keys even when its history cursor is complete.
@@ -219,7 +244,7 @@ final class RecentHistoryCoordinator {
       try {
         final result = await owner
             .read(() =>
-                client.getEventByTimestamp(room.id, windowStart, Direction.b))
+                client.getEventByTimestamp(room.id, activeStart, Direction.b))
             .timeout(const Duration(seconds: 8));
         final event = await owner
             .read(() => client.getOneRoomEvent(room.id, result.eventId))
@@ -259,16 +284,21 @@ final class RecentHistoryCoordinator {
       try {
         final complete = page.end == null ||
             page.end == '' ||
-            (anchor != null && page.chunk.any((e) => e.eventId == anchor));
+            (anchor != null && page.chunk.any((e) => e.eventId == anchor)) ||
+            (bridge != null && page.chunk.any((e) => e.eventId == bridge));
+        headEvent ??= page.chunk.firstOrNull?.eventId;
         final stalled = !complete &&
             (page.end == cursor ||
                 await owner.read(
-                    () => database.hasRecoveryCursor('$key:$head', page.end!)));
+                    () => database.hasRecoveryCursor('$key:$walk', page.end!)));
         checkpoint = {
           'revision': revision + 1,
           'head': head,
-          'windowStart': windowStart,
-          'windowEnd': windowEnd,
+          'windowStart': activeStart,
+          'windowEnd': activeEnd,
+          'walk': walk,
+          'headEvent': headEvent,
+          'bridge': bridge,
           'epoch': epoch,
           'cursor': page.end,
           'anchor': anchor,
@@ -302,11 +332,14 @@ final class RecentHistoryCoordinator {
   Future<void> _recoverPage(Room room, List<String> ids) async {
     final database = client.database!;
     final missing = <(String, String), String>{};
+    final window = _roomWindows[room.id] ?? (windowStart, windowEnd);
     for (final id in ids) {
       final event = await owner.read(() => database.getEventById(id, room));
       if (event == null ||
           event.type != EventTypes.Encrypted ||
-          event.redacted) {
+          event.redacted ||
+          event.originServerTs.millisecondsSinceEpoch < window.$1 ||
+          event.originServerTs.millisecondsSinceEpoch > window.$2) {
         continue;
       }
       final session = event.content['session_id'],
@@ -316,6 +349,8 @@ final class RecentHistoryCoordinator {
           .loadInboundGroupSession(room.id, session));
       final decoded = client.encryption?.decryptRoomEventSync(room.id, event);
       if (decoded != null && decoded.type != EventTypes.Encrypted) {
+        await client.encryption!.awaitRecoveryIndexPersistence(event.eventId);
+        owner.check();
         await owner.write(() => database.storeRecoveryDecryptedEvent(decoded));
         owner.check();
       } else {
@@ -328,7 +363,7 @@ final class RecentHistoryCoordinator {
     }
     if (missing.isNotEmpty) await _restore(room, missing);
     _counts[room.id] =
-        await owner.read(() => database.recoveryRoomCounts(room, windowStart));
+        await owner.read(() => database.recoveryRoomCounts(room, window.$1));
     owner.check();
     status.downloaded = _counts.values.fold(0, (n, c) => n + c.downloaded);
     status.decrypted = _counts.values.fold(0, (n, c) => n + c.decrypted);
@@ -338,14 +373,23 @@ final class RecentHistoryCoordinator {
 
   Future<void> _restore(
       Room room, Map<(String, String), String> missing) async {
-    if (vault == null) return;
-    int count;
+    var count = 0;
     try {
-      count = await vault!.restoreMissing(missing);
+      count = await vault?.restoreMissing(missing) ?? 0;
     } catch (error) {
       owner.check();
       _vaultFailure = error;
-      return;
+    }
+    owner.check();
+    try {
+      count += await client.encryption?.keyManager
+              .restoreNeededNativeBackup(missing, owner) ??
+          0;
+      owner.check();
+      if (count > 0) await vault?.archiveAvailable();
+    } on MatrixException catch (error) {
+      owner.check();
+      if (!{'M_NOT_FOUND', 'M_UNRECOGNIZED'}.contains(error.errcode)) rethrow;
     }
     owner.check();
     if (count > 0) _replay.add(room.id);
@@ -354,13 +398,21 @@ final class RecentHistoryCoordinator {
   Future<void> _replayRoom(Room room) async {
     // Read from disk in bounded windows; never retain a Timeline or enqueue
     // all ciphertext in the SDK's global pending-decryption collection.
-    var offset = 0;
+    String? afterEventId;
+    final window = _roomWindows[room.id] ?? (windowStart, windowEnd);
     while (owner.active) {
-      final page = await owner.read(() =>
-          client.database!.getRecoveryEventIds(room, start: offset, limit: 80));
-      if (page.isEmpty) return;
+      final page = await owner.read(() => client.database!
+          .getRecoveryPendingEventIds(room,
+              windowStart: window.$1,
+              windowEnd: window.$2,
+              afterEventId: afterEventId,
+              limit: 80));
+      if (page.isEmpty) {
+        await _recoverPage(room, const []);
+        return;
+      }
       await _recoverPage(room, page);
-      offset += page.length;
+      afterEventId = page.last;
       await Future<void>.delayed(Duration.zero);
     }
   }
