@@ -95,3 +95,7 @@ SQLCipher4.10.0缺DLL由独立fixture builder解决，使用package固定amalgam
 ### Task4 main整合收尾（2026-10-04 16:14+08）
 
 4f1bf173已快进合入本地main；只有current-state旧尾部条目与stashed iOS回签记录冲突，保留iOS原记录并清除重复旧进度。1372个无关trackedWIP哈希复核一致。当前补充三项文档及仅自身旧进度删除，源码与已审7e7e9a2a输入保持，长门禁按影响复用。最后可执行步骤：提交本轮文档→git push origin main→远端SHA一致→删除已合并自身branch、关闭自身SSH；准确最终结果绑定task-4-main-integration.json，不把原后台活动分支纳入清理。
+
+### 已完成（2026-10-04 16:21+08）
+
+main 0038dd072fdd3cf5e50084d9a6543e01977cdfbb已推送，16:20:36远端SHA读回一致；客户端源输入仍7e7e9a2a，其后仅四项文档。本任务远端及本地临时branch已删除，原managed工作树detached保留验证材料（当前任务无归档attachment），两条自身SSH tunnel已关闭，synthetic authority已删除，真实provider/独立灾备保留。1372项WIP哈希及所有primary索引原段落均验证保留。交付2198 debug已安装/链接公开，iOS三个nativejob成功，生产恢复技术启用双审及现场门禁通过。最终主分支及清理证据分别为task-4-main-integration.json/task-4-final-cleanup.json；本次最后提交仅补充完成记录。当前授权交付完成，后续设备反馈单独记录：荣耀拍摄、新手机真实用户恢复、K80性能；没有本轮正式移动版本、弹窗或IPA发布。
