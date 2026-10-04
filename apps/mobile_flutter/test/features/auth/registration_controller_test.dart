@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_error.dart';
@@ -8,20 +9,25 @@ import 'package:liuhetong_mobile/features/auth/registration_controller.dart';
 final class FakeRegistrationGateway implements RegistrationGateway {
   bool invitationValid = true;
   int registerCalls = 0;
+  int invitationCalls = 0;
   int statusCalls = 0;
   Object? registerError;
   Object? verifyError;
+  Object? resendError;
+  int resendCalls = 0;
   final List<String> verifiedCodes = [];
   final List<String> verifiedTokens = [];
 
   @override
   Future<InvitationValidationResult> validateInvitation(
-          String invitationCode) async =>
-      invitationValid
-          ? const InvitationValidationResult(
-              InvitationValidationState.ready, '邀请码可用')
-          : const InvitationValidationResult(
-              InvitationValidationState.invalid, '邀请码无效');
+      String invitationCode) async {
+    invitationCalls++;
+    return invitationValid
+        ? const InvitationValidationResult(
+            InvitationValidationState.ready, '邀请码可用')
+        : const InvitationValidationResult(
+            InvitationValidationState.invalid, '邀请码无效');
+  }
 
   @override
   Future<RegistrationReceipt> register(
@@ -58,7 +64,11 @@ final class FakeRegistrationGateway implements RegistrationGateway {
   }
 
   @override
-  Future<int> resendVerification(String registrationSession) async => 60;
+  Future<int> resendVerification(String registrationSession) async {
+    resendCalls++;
+    if (resendError != null) throw resendError!;
+    return 60;
+  }
 
   String? changedTo;
   Object? changeFailure;
@@ -75,11 +85,87 @@ final class FakeRegistrationGateway implements RegistrationGateway {
 
 void main() {
   test(
+      'saved recreated registration destination publishes cooldown before another lookup',
+      () async {
+    final gateway = FakeRegistrationGateway()
+      ..registerError = TimeoutException('unknown delivery');
+    var now = DateTime.utc(2026, 10, 5);
+    final first = RegistrationController(gateway: gateway, now: () => now);
+    await first.register(
+        username: 'alice',
+        email: 'a@example.test',
+        password: 'correct horse battery staple',
+        invitationCode: 'INVITE');
+    expect(gateway.invitationCalls, 1);
+    first.dispose();
+    now = now.add(const Duration(seconds: 20));
+    final restored = RegistrationController(gateway: gateway, now: () => now);
+    restored.saveDraft(
+        nickname: 'Alice',
+        username: 'alice',
+        email: ' A@example.test ',
+        password: 'correct horse battery staple',
+        passwordConfirmation: '',
+        invitationCode: 'INVITE');
+    expect(restored.state.resendAfterSeconds, 40);
+    expect(restored.state.registrationSession, isNull);
+    expect(
+        await restored.register(
+            username: 'alice',
+            email: 'a@example.test',
+            password: 'correct horse battery staple',
+            invitationCode: 'INVITE'),
+        isFalse);
+    expect(gateway.invitationCalls, 1);
+    expect(gateway.registerCalls, 1);
+    restored.dispose();
+  });
+
+  test(
+      'rejected registration email change keeps authoritative original destination',
+      () async {
+    final gateway = FakeRegistrationGateway()
+      ..changeFailure = const BusinessApiException(
+          statusCode: 409, code: 'EMAIL_TAKEN', message: '已使用');
+    final controller = RegistrationController(gateway: gateway);
+    await controller.register(
+        username: 'alice',
+        email: 'original@example.test',
+        password: 'correct horse battery staple',
+        invitationCode: 'INVITE');
+    expect(await controller.changeEmail('taken@example.test'), isFalse);
+    expect(controller.draft.email, 'original@example.test');
+    expect(controller.state.resendAfterSeconds, 60);
+    controller.dispose();
+  });
+
+  test('email OTP timeout is not automatically resent and retains cooldown',
+      () async {
+    final gateway = FakeRegistrationGateway()
+      ..resendError = TimeoutException('unknown send');
+    var now = DateTime.utc(2026, 10, 5);
+    final controller = RegistrationController(
+        gateway: gateway, delay: (_) async {}, now: () => now);
+    controller.state = const RegistrationState(
+        RegistrationFlowStatus.awaitingVerification,
+        registrationSession: 'session-1');
+    try {
+      await controller.resend();
+    } catch (_) {}
+    expect(gateway.resendCalls, 1);
+    expect(controller.state.resendAfterSeconds, 60);
+    await controller.resend();
+    expect(gateway.resendCalls, 1);
+    controller.dispose();
+  });
+
+  test(
       'invitation is prevalidated before registration and starts 60 second countdown',
       () async {
     final gateway = FakeRegistrationGateway();
-    final controller =
-        RegistrationController(gateway: gateway, delay: (_) async {});
+    var now = DateTime.utc(2026, 10, 5);
+    final controller = RegistrationController(
+        gateway: gateway, delay: (_) async {}, now: () => now);
 
     expect(
         await controller.register(
@@ -92,6 +178,7 @@ void main() {
     expect(
         controller.state.status, RegistrationFlowStatus.awaitingVerification);
     expect(controller.state.resendAfterSeconds, 60);
+    now = now.add(const Duration(seconds: 1));
     controller.tickSecond();
     expect(controller.state.resendAfterSeconds, 59);
   });
@@ -240,26 +327,23 @@ void main() {
   });
 
   test(
-      'temporary network failures retry without losing entered registration values',
+      'unknown initial email delivery never retries and keeps entered registration values',
       () async {
-    final gateway = FakeRegistrationGateway();
-    var failures = 0;
-    gateway.registerError = const SocketException('offline');
-    final controller = RegistrationController(
-        gateway: gateway,
-        delay: (_) async {
-          failures++;
-          if (failures == 2) gateway.registerError = null;
-        });
-
+    final gateway = FakeRegistrationGateway()
+      ..registerError = const SocketException('offline');
+    final controller = RegistrationController(gateway: gateway);
     expect(
         await controller.register(
             username: 'alice',
             email: 'alice@example.test',
             password: 'correct horse battery staple',
             invitationCode: 'INVITE'),
-        isTrue);
-    expect(gateway.registerCalls, 3);
+        isFalse);
+    expect(gateway.registerCalls, 1);
+    expect(controller.state.resendAfterSeconds, 60);
+    expect(controller.draft.email, 'alice@example.test');
+    expect(controller.draft.password, 'correct horse battery staple');
+    controller.dispose();
   });
 
   // 统一邀请码（规格 §6.2）：注册只有一个邀请码字段；邀请关系由服务端

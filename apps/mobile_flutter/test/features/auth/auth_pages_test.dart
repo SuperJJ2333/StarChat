@@ -74,6 +74,39 @@ void useIPhone15Viewport(WidgetTester tester) {
 }
 
 void main() {
+  testWidgets(
+      'recreated registration page restores unknown-send cooldown immediately on target input',
+      (tester) async {
+    final gateway = PageGateway()
+      ..registerError = TimeoutException('unknown delivery');
+    final now = DateTime.utc(2026, 10, 5);
+    final first = RegistrationController(gateway: gateway, now: () => now);
+    await first.register(
+        username: 'alice',
+        email: 'a@example.test',
+        password: 'correct horse battery staple',
+        invitationCode: 'INVITE');
+    first.dispose();
+    final restored = RegistrationController(
+        gateway: gateway, now: () => now.add(const Duration(seconds: 20)));
+    await tester.pumpWidget(CupertinoApp(
+        home: RegistrationPage(
+            controller: restored, onVerification: (_) {}, onBack: () {})));
+    await tester.enterText(
+        find.byType(CupertinoTextField).at(5), 'A@example.test');
+    await tester.pump();
+    expect(restored.state.registrationSession, isNull);
+    expect(find.text('40s'), findsOneWidget);
+    expect(
+        tester
+            .widget<CupertinoButton>(
+                find.byKey(const Key('auth-registration-send-code')))
+            .onPressed,
+        isNull);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    restored.dispose();
+  });
+
   setUp(() {
     // 登录成功路径会写入隐私同意持久化（privacy.agreement_accepted.v1）。
     SharedPreferences.setMockInitialValues({});
@@ -216,7 +249,12 @@ void main() {
         );
 
     expect(find.byKey(const Key('auth-agreement-checkbox')), findsOneWidget);
-    expect(loginButton().onPressed, isNull);
+    expect(loginButton().onPressed, isNotNull);
+    loginButton().onPressed!();
+    await tester.pump();
+    expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
+    expect(submissions, 0);
+    await tester.pump(const Duration(seconds: 3));
 
     await tester.enterText(
       find.byKey(const Key('auth-login-identity')),
@@ -542,7 +580,8 @@ void main() {
     expect(animation.duration, Duration.zero);
     await gesture.up();
   });
-  testWidgets('unchecked agreement gives login a muted disabled treatment', (
+  testWidgets(
+      'unchecked agreement keeps login available for explanatory feedback', (
     tester,
   ) async {
     final api = BusinessApiClient(
@@ -561,8 +600,8 @@ void main() {
     final label = tester.widget<Text>(
       find.descendant(of: button, matching: find.text('登录')),
     );
-    expect(icon.color, WeChatColors.textTertiary);
-    expect(label.style?.color, WeChatColors.textTertiary);
+    expect(icon.color, WeChatColors.brandPrimary);
+    expect(label.style?.color, WeChatColors.lightTextPrimary);
   });
   testWidgets('registration follows the 10 Auth default frame structure', (
     tester,
@@ -589,7 +628,7 @@ void main() {
       find.byKey(const Key('auth-registration-send-email-action')),
       findsNothing,
     );
-    expect(find.byKey(const Key('auth-agreement-checkbox')), findsNothing);
+    expect(find.byKey(const Key('auth-agreement-checkbox')), findsOneWidget);
   });
   testWidgets(
     'registration keeps email sending as the single highlighted action',
@@ -694,6 +733,11 @@ void main() {
     await tester.enterText(fields.at(5), 'taken@example.test');
     tester
         .widget<CupertinoButton>(
+            find.byKey(const Key('auth-agreement-checkbox')))
+        .onPressed!();
+    await tester.pump();
+    tester
+        .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
         )
         .onPressed!();
@@ -777,6 +821,14 @@ void main() {
       );
 
       final send = find.byKey(const Key('auth-registration-send-code'));
+      if (!tester
+          .widget<AuthAgreementRow>(find.byType(AuthAgreementRow))
+          .value) {
+        final checkbox = tester.widget<CupertinoButton>(
+            find.byKey(const Key('auth-agreement-checkbox')));
+        checkbox.onPressed?.call();
+        await tester.pump();
+      }
       tester.widget<CupertinoButton>(send).onPressed!();
       await tester.pump();
 
@@ -849,6 +901,14 @@ void main() {
       await tester.pump();
 
       final action = find.byKey(const Key('auth-registration-send-code'));
+      if (!tester
+          .widget<AuthAgreementRow>(find.byType(AuthAgreementRow))
+          .value) {
+        final checkbox = tester.widget<CupertinoButton>(
+            find.byKey(const Key('auth-agreement-checkbox')));
+        checkbox.onPressed?.call();
+        await tester.pump();
+      }
       tester.widget<CupertinoButton>(action).onPressed!();
       await tester.pump();
       expect(controller.state.resendAfterSeconds, 60);
@@ -994,6 +1054,11 @@ void main() {
     await tester.enterText(fields.at(5), 'draft@example.test');
     tester
         .widget<CupertinoButton>(
+            find.byKey(const Key('auth-agreement-checkbox')))
+        .onPressed!();
+    await tester.pump();
+    tester
+        .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
         )
         .onPressed!();
@@ -1006,7 +1071,9 @@ void main() {
   testWidgets('verification countdown continues after changing email', (
     tester,
   ) async {
-    final controller = RegistrationController(gateway: PageGateway());
+    var now = DateTime.utc(2026, 10, 5);
+    final controller =
+        RegistrationController(gateway: PageGateway(), now: () => now);
     await tester.pumpWidget(
       CupertinoApp(
         home: RegistrationPage(
@@ -1025,6 +1092,11 @@ void main() {
     await tester.enterText(fields.at(5), 'countdown@example.test');
     tester
         .widget<CupertinoButton>(
+            find.byKey(const Key('auth-agreement-checkbox')))
+        .onPressed!();
+    await tester.pump();
+    tester
+        .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
         )
         .onPressed!();
@@ -1037,6 +1109,7 @@ void main() {
         ),
       ),
     );
+    now = now.add(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
 
     expect(controller.state.resendAfterSeconds, 59);

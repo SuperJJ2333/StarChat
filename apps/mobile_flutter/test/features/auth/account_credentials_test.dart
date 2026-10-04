@@ -74,6 +74,44 @@ Finder input(String key) => find.descendant(
     of: find.byKey(Key(key)), matching: find.byType(CupertinoTextField));
 void main() {
   testWidgets(
+      'password email recovery cooldown restores after reentering target',
+      (tester) async {
+    final gateway = CredentialsFake();
+    Widget page() => CupertinoApp(
+        home: PasswordChangePage(gateway: gateway, onCompleted: () async {}));
+    await tester.pumpWidget(page());
+    await tester.enterText(input('password-target'), 'a@example.test');
+    await tester.ensureVisible(find.text('获取验证码'));
+    await tester.tap(find.text('获取验证码'));
+    await tester.pump();
+    expect(gateway.calls, ['request:email:a@example.test:false']);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    await tester.pumpWidget(page());
+    await tester.enterText(input('password-target'), 'A@example.test');
+    await tester.pump();
+    expect(find.text('60s'), findsOneWidget);
+    expect(gateway.calls, hasLength(1));
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+  });
+
+  testWidgets('email rebind cooldown survives leaving and reentering page',
+      (tester) async {
+    final gateway = CredentialsFake();
+    await tester
+        .pumpWidget(CupertinoApp(home: EmailRebindPage(gateway: gateway)));
+    await tester.tap(find.text('获取验证码'));
+    await tester.pump();
+    expect(gateway.calls, ['old-request']);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    await tester
+        .pumpWidget(CupertinoApp(home: EmailRebindPage(gateway: gateway)));
+    await tester.pump();
+    expect(find.text('60s'), findsOneWidget);
+    expect(find.text('获取验证码'), findsNothing);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+  });
+
+  testWidgets(
       'expired old email proof returns to identity verification and keeps new-email draft',
       (tester) async {
     final gateway = CredentialsFake();

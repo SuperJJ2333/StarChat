@@ -12,6 +12,9 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../../core/business_auth_contracts.dart';
 import 'registration_controller.dart';
 import 'phone_number_format.dart';
+import '../../ui/components/wechat_toast.dart';
+import 'legal_documents.dart';
+import 'legal_document_page.dart';
 
 final class RegistrationPage extends StatefulWidget {
   const RegistrationPage({
@@ -27,7 +30,8 @@ final class RegistrationPage extends StatefulWidget {
   State<RegistrationPage> createState() => _RegistrationPageState();
 }
 
-final class _RegistrationPageState extends State<RegistrationPage> {
+final class _RegistrationPageState extends State<RegistrationPage>
+    with WidgetsBindingObserver {
   final nickname = TextEditingController();
   final username = TextEditingController();
   final password = TextEditingController();
@@ -36,6 +40,13 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   final email = TextEditingController();
   final phone = TextEditingController();
   bool _phoneMode = false;
+  bool _agreementAccepted = false;
+  bool _requireAgreement() {
+    if (_agreementAccepted) return true;
+    showWeChatToast(context, '请先阅读并同意用户协议和隐私政策');
+    return false;
+  }
+
   bool _passwordVisible = false;
   bool _confirmationVisible = false;
   bool _submittedAttempted = false;
@@ -49,6 +60,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.controller.tickSecond();
     _phoneMode = widget.controller.isPhoneRegistration;
     phone.text = widget.controller.registrationPhone ?? '';
     nickname.text = widget.controller.draft.nickname;
@@ -58,10 +71,17 @@ final class _RegistrationPageState extends State<RegistrationPage> {
     invitation.text = widget.controller.draft.invitationCode;
     email.text = widget.controller.draft.email;
     widget.controller.addListener(_changed);
+    _selectDestination();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) widget.controller.tickSecond();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _inviteDebounce?.cancel();
     widget.controller.removeListener(_changed);
     nickname.dispose();
@@ -216,9 +236,10 @@ final class _RegistrationPageState extends State<RegistrationPage> {
     return errors;
   }
 
-  bool get _resendCoolingDown =>
-      widget.controller.state.registrationSession != null &&
-      widget.controller.state.resendAfterSeconds > 0;
+  void _selectDestination() => widget.controller.selectDestination(
+      channel: _phoneMode ? 'phone' : 'email',
+      destination: _phoneMode ? phone.text : email.text);
+  bool get _resendCoolingDown => widget.controller.state.resendAfterSeconds > 0;
   Widget _fieldError(String key) {
     final serverMessage = widget.controller.state.fieldErrors[key];
     final message = serverMessage ?? _errors[key];
@@ -240,6 +261,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   }
 
   Future<void> _sendVerification() async {
+    if (!_requireAgreement()) return;
     if (_phoneMode) {
       final valid = _errors['phone'] == null;
       setState(() {
@@ -256,6 +278,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   }
 
   Future<void> submit() async {
+    if (!_requireAgreement()) return;
     if (_errors.isNotEmpty) {
       setState(() => _submittedAttempted = true);
       return;
@@ -323,8 +346,10 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                                   widget.controller.state.registrationSession !=
                                       null
                               ? (_) {}
-                              : (value) =>
-                                  setState(() => _phoneMode = value ?? false),
+                              : (value) => setState(() {
+                                    _phoneMode = value ?? false;
+                                    _selectDestination();
+                                  }),
                         ),
                         const SizedBox(height: WeChatSpacing.md),
                       ],
@@ -451,6 +476,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                             : TextInputType.emailAddress,
                         textInputAction: TextInputAction.done,
                         onChanged: (_) => setState(() {
+                          _selectDestination();
                           if (_phoneMode && _phoneFormatAttempted) {
                             _phoneFormatValidated =
                                 normalizeMainlandPhone(phone.text) != null;
@@ -468,6 +494,15 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                         ),
                       ),
                       _fieldError(_phoneMode ? 'phone' : 'email'),
+                      AuthAgreementRow(
+                          value: _agreementAccepted,
+                          enabled: !loading,
+                          onChanged: (value) =>
+                              setState(() => _agreementAccepted = value),
+                          onUserAgreement: () =>
+                              openLegalDocument(context, userAgreement),
+                          onPrivacyPolicy: () =>
+                              openLegalDocument(context, privacyPolicy)),
                       if (_phoneMode && _phoneFormatValidated)
                         const Padding(
                           padding: EdgeInsets.only(top: WeChatSpacing.xs),

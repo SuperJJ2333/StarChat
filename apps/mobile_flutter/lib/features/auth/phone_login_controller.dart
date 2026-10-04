@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/business_api_error.dart';
 import '../../core/business_phone_contracts.dart';
+import 'otp_cooldown.dart';
 
 /// ADR-0075：短信验证码登录状态机（UI 批次）。
 ///
@@ -55,7 +56,13 @@ final class PhoneLoginController extends ChangeNotifier {
 
   PhoneLoginState state = const PhoneLoginState(PhoneLoginStatus.idle);
   PhoneInvitationContinuationRequired? invitationContinuation;
-  DateTime? _cooldownUntil;
+  late final OtpCooldown _cooldown = OtpCooldown(gateway, now: _now);
+  void selectPhone(String phone) {
+    _cooldown.bind(purpose: 'login', channel: 'phone', target: phone);
+    _refreshCooldown();
+    _startCooldownTicker();
+  }
+
   Timer? _cooldownTimer;
   bool _disposed = false;
   @override
@@ -66,7 +73,7 @@ final class PhoneLoginController extends ChangeNotifier {
   bool get canRequestOtp =>
       state.status != PhoneLoginStatus.otpSending &&
       state.status != PhoneLoginStatus.verifying &&
-      (_cooldownUntil == null || !_now().isBefore(_cooldownUntil!));
+      _cooldown.remaining == 0;
 
   @override
   void dispose() {
@@ -78,19 +85,21 @@ final class PhoneLoginController extends ChangeNotifier {
   /// 请求验证码。超时/失败不改变"是否已发送"的事实——提示用户稍后重试，
   /// 由服务端限频兜底；本地不自动重发。
   Future<bool> requestOtp(String phone) async {
+    selectPhone(phone);
     invitationContinuation = null;
     if (state.status == PhoneLoginStatus.otpSending ||
         state.status == PhoneLoginStatus.verifying) {
       return false;
     }
-    if (_cooldownUntil != null && _now().isBefore(_cooldownUntil!)) {
-      final remain = _cooldownUntil!.difference(_now()).inSeconds.clamp(0, 60);
+    if (_cooldown.remaining > 0) {
+      final remain = _cooldown.remaining;
       state = PhoneLoginState(PhoneLoginStatus.otpSent,
           message: '请 $remain 秒后再请求验证码', resendAfterSeconds: remain);
       notifyListeners();
       return false;
     }
-    _cooldownUntil = _now().add(const Duration(seconds: 60));
+    _cooldown.reserve();
+    final requestedCooldown = _cooldown.snapshot();
     _startCooldownTicker();
     state = const PhoneLoginState(PhoneLoginStatus.otpSending,
         resendAfterSeconds: 60);
@@ -98,15 +107,17 @@ final class PhoneLoginController extends ChangeNotifier {
     try {
       await gateway.requestPhoneLoginOtp(phone);
     } on Exception catch (error) {
+      if (error is BusinessApiException && error.statusCode == 429) {
+        requestedCooldown.extend(error.retryAfterSeconds ?? 60);
+      }
       state = PhoneLoginState(PhoneLoginStatus.failed,
-          resendAfterSeconds: 60,
+          resendAfterSeconds: _cooldown.remaining,
           message: _messageFor(error, fallback: '短信发送结果待确认，请检查短信并稍后重试'));
       notifyListeners();
       return false;
     }
-    _cooldownUntil = _now().add(const Duration(seconds: 60));
-    state =
-        const PhoneLoginState(PhoneLoginStatus.otpSent, resendAfterSeconds: 60);
+    state = PhoneLoginState(PhoneLoginStatus.otpSent,
+        resendAfterSeconds: _cooldown.remaining);
     notifyListeners();
     _startCooldownTicker();
     return true;
@@ -162,23 +173,21 @@ final class PhoneLoginController extends ChangeNotifier {
     return true;
   }
 
+  void _refreshCooldown() {
+    state = PhoneLoginState(state.status,
+        message: state.message,
+        resendAfterSeconds: _cooldown.remaining,
+        loginRetryAfterSeconds: state.loginRetryAfterSeconds);
+    notifyListeners();
+  }
+
   void _startCooldownTicker() {
     if (_disposed) return;
     _cooldownTimer?.cancel();
+    if (_cooldown.remaining == 0) return;
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_cooldownUntil == null) {
-        timer.cancel();
-        return;
-      }
-      final remain = _cooldownUntil!.difference(_now()).inSeconds.clamp(0, 60);
-      if (state.status != PhoneLoginStatus.otpSending) {
-        state = PhoneLoginState(state.status,
-            message: state.message,
-            resendAfterSeconds: remain,
-            loginRetryAfterSeconds: state.loginRetryAfterSeconds);
-        notifyListeners();
-      }
-      if (remain == 0) timer.cancel();
+      _refreshCooldown();
+      if (_cooldown.remaining == 0) timer.cancel();
     });
   }
 

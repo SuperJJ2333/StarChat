@@ -14,7 +14,7 @@ final class EmailRebindPage extends StatefulWidget {
 }
 
 final class _EmailRebindPageState extends State<EmailRebindPage> {
-  final _operation = AccountCredentialsController();
+  late final _operation = AccountCredentialsController(owner: widget.gateway);
   final _email = TextEditingController(), _code = TextEditingController();
   bool _oldVerified = false, _done = false;
   String _destination = '当前已验证的邮箱或手机';
@@ -22,8 +22,15 @@ final class _EmailRebindPageState extends State<EmailRebindPage> {
   void initState() {
     super.initState();
     _operation.addListener(_changed);
+    _bindCooldown();
+    _email.addListener(_bindCooldown);
   }
 
+  void _bindCooldown() => _operation.bindCooldown(
+      purpose: _oldVerified ? 'email_rebind_new' : 'email_rebind_old',
+      channel: _oldVerified ? 'email' : 'current',
+      target: _oldVerified ? _email.text : 'current-binding',
+      authenticated: true);
   void _changed() {
     if (mounted) setState(() {});
   }
@@ -45,7 +52,8 @@ final class _EmailRebindPageState extends State<EmailRebindPage> {
       _operation.setMessage('请输入正确的新邮箱地址');
       return;
     }
-    _operation.startCooldown();
+    _bindCooldown();
+    if (!_operation.reserveCooldown()) return;
     await _operation.perform(() async {
       final generation = _operation.generation;
       if (_oldVerified) {
@@ -90,7 +98,7 @@ final class _EmailRebindPageState extends State<EmailRebindPage> {
         if (!mounted || !_operation.isCurrent(generation)) return;
         setState(() => _oldVerified = true);
         _code.clear();
-        _operation.clearCooldown();
+        _bindCooldown();
       }
     });
     _recoverExpiredProof();
@@ -103,7 +111,7 @@ final class _EmailRebindPageState extends State<EmailRebindPage> {
     }
     setState(() => _oldVerified = false);
     _code.clear();
-    _operation.clearCooldown();
+    _bindCooldown();
     _operation.setMessage('验证已过期，请重新验证当前身份');
   }
 

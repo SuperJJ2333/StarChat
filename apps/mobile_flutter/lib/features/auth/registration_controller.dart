@@ -2,11 +2,13 @@ import '../../core/business_phone_contracts.dart';
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
 import '../../core/business_api_error.dart';
 import '../../core/business_auth_contracts.dart';
+import 'otp_cooldown.dart';
+import 'account_credentials_controller.dart' show isRejectedCodeRequest;
 
 enum RegistrationFlowStatus {
   idle,
@@ -49,9 +51,27 @@ final class RegistrationDraft {
 
 final class RegistrationController extends ChangeNotifier {
   RegistrationController(
-      {required this.gateway, Future<void> Function(Duration)? delay})
-      : delay = delay ?? Future.delayed;
+      {required this.gateway,
+      Future<void> Function(Duration)? delay,
+      DateTime Function()? now})
+      : delay = delay ?? Future.delayed,
+        now = now ?? DateTime.now;
+
   final RegistrationGateway gateway;
+  final DateTime Function() now;
+  late final OtpCooldown _cooldown = OtpCooldown(gateway, now: now);
+  void _bindCooldown({String? email, String? phone}) => _cooldown.bind(
+      purpose: 'registration',
+      channel: phone != null || isPhoneRegistration ? 'phone' : 'email',
+      target: phone ?? registrationPhone ?? email ?? draft.email);
+  void selectDestination(
+      {required String channel, required String destination}) {
+    _cooldown.bind(
+        purpose: 'registration', channel: channel, target: destination);
+    tickSecond();
+    _startCooldown();
+  }
+
   final Future<void> Function(Duration) delay;
   Timer? _cooldownTimer;
   RegistrationState state =
@@ -78,6 +98,9 @@ final class RegistrationController extends ChangeNotifier {
       invitationCode: invitationCode,
       email: email,
     );
+    selectDestination(
+        channel: isPhoneRegistration ? 'phone' : 'email',
+        destination: registrationPhone ?? email);
   }
 
   @override
@@ -90,6 +113,7 @@ final class RegistrationController extends ChangeNotifier {
   void _startCooldown() {
     if (_disposed) return;
     _cooldownTimer?.cancel();
+    if (_cooldown.remaining == 0) return;
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       tickSecond();
       if (state.resendAfterSeconds <= 0) _cooldownTimer?.cancel();
@@ -169,6 +193,15 @@ final class RegistrationController extends ChangeNotifier {
       invitationCode: invitationCode,
       email: email,
     );
+    selectDestination(
+        channel: phone == null ? 'email' : 'phone',
+        destination: phone ?? email);
+    if (_cooldown.remaining > 0) {
+      _set(RegistrationState(RegistrationFlowStatus.failed,
+          registrationSession: state.registrationSession,
+          message: '请等待验证码冷却结束后再试'));
+      return false;
+    }
     _set(const RegistrationState(RegistrationFlowStatus.submitting));
     try {
       final invitationCheck =
@@ -192,18 +225,27 @@ final class RegistrationController extends ChangeNotifier {
         return true;
       }
       registrationPhone = null;
-      final receipt = await _retryNetwork(() => gateway.register(
+      _bindCooldown(email: email);
+      if (!_cooldown.reserve()) {
+        _set(RegistrationState(RegistrationFlowStatus.failed,
+            resendAfterSeconds: _cooldown.remaining, message: '请等待验证码冷却结束后再试'));
+        return false;
+      }
+      _startCooldown();
+      final receipt = await gateway.register(
           username: username,
           nickname: nickname,
           email: email,
           password: password,
-          invitationCode: invitationCode));
+          invitationCode: invitationCode);
+      _cooldown.extend(receipt.resendAfterSeconds);
       _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
           registrationSession: receipt.registrationSession,
           resendAfterSeconds: receipt.resendAfterSeconds));
       _startCooldown();
       return true;
     } on BusinessApiException catch (error) {
+      _handleSendFailure(error);
       _set(RegistrationState(RegistrationFlowStatus.failed,
           message: error.message,
           fieldErrors: error.fieldErrors.isNotEmpty
@@ -346,57 +388,95 @@ final class RegistrationController extends ChangeNotifier {
 
   Future<void> resend() async {
     final session = state.registrationSession;
-    if (session == null || state.resendAfterSeconds > 0) return;
-    if (isPhoneRegistration) {
-      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
-          registrationSession: session, resendAfterSeconds: 60));
-      _startCooldown();
-      try {
-        await (gateway as PhoneAuthGateway).requestRegistrationOtp(session);
-      } catch (_) {
-        _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
-            registrationSession: session,
-            resendAfterSeconds: state.resendAfterSeconds,
-            message: '短信发送结果待确认，请检查短信，冷却后可重试'));
-      }
+    if (session == null) return;
+    _bindCooldown();
+    if (!_cooldown.reserve()) {
+      tickSecond();
       return;
     }
-    final seconds =
-        await _retryNetwork(() => gateway.resendVerification(session));
     _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
-        registrationSession: session, resendAfterSeconds: seconds));
+        registrationSession: session, resendAfterSeconds: _cooldown.remaining));
     _startCooldown();
+    try {
+      if (isPhoneRegistration) {
+        await (gateway as PhoneAuthGateway).requestRegistrationOtp(session);
+      } else {
+        final seconds = await gateway.resendVerification(session);
+        _cooldown.extend(seconds);
+      }
+      tickSecond();
+    } catch (error) {
+      if (error is BusinessApiException) _handleSendFailure(error);
+      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+          registrationSession: session,
+          resendAfterSeconds: _cooldown.remaining,
+          message: '验证码发送结果待确认，请检查消息，冷却后可重试'));
+    }
   }
 
-  /// BUG-12：验证完成前更换注册邮箱。成功后服务端把验证码发到新邮箱，
-  /// 注册会话不变；失败返回 false 并把可读原因写进 state.message。
   Future<bool> changeEmail(String newEmail) async {
     final session = state.registrationSession;
     if (session == null || newEmail.trim().isEmpty) return false;
+    final originalDraft = draft;
+    _bindCooldown(email: newEmail);
+    if (!_cooldown.reserve()) {
+      tickSecond();
+      return false;
+    }
+    // The target may have changed even if the response is lost; do not resend.
+    draft = RegistrationDraft(
+        nickname: draft.nickname,
+        username: draft.username,
+        password: draft.password,
+        passwordConfirmation: draft.passwordConfirmation,
+        invitationCode: draft.invitationCode,
+        email: newEmail.trim());
+    _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+        registrationSession: session, resendAfterSeconds: _cooldown.remaining));
+    _startCooldown();
     try {
-      final seconds = await _retryNetwork(() => gateway.changeRegistrationEmail(
-          registrationSession: session, email: newEmail.trim()));
+      final seconds = await gateway.changeRegistrationEmail(
+          registrationSession: session, email: newEmail.trim());
+      _cooldown.extend(seconds);
       _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
           registrationSession: session,
-          resendAfterSeconds: seconds,
+          resendAfterSeconds: _cooldown.remaining,
           message: '验证邮件已发送至新邮箱'));
-      _startCooldown();
       return true;
     } on BusinessApiException catch (error) {
+      _handleSendFailure(error);
+      if (isRejectedCodeRequest(error)) {
+        draft = originalDraft;
+        _bindCooldown();
+        _startCooldown();
+      }
       _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
           registrationSession: session,
-          message: error.statusCode == 409
-              ? '该邮箱已被使用'
-              : (error.message.isEmpty ? '修改邮箱失败，请稍后重试' : error.message)));
+          resendAfterSeconds: _cooldown.remaining,
+          message: error.statusCode == 409 ? '该邮箱已被使用' : error.message));
+      return false;
+    } catch (_) {
+      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+          registrationSession: session,
+          resendAfterSeconds: _cooldown.remaining,
+          message: '验证码发送结果待确认，请检查消息，冷却后可重试'));
       return false;
     }
   }
 
+  void _handleSendFailure(BusinessApiException error) {
+    if (error.statusCode == 429) {
+      _cooldown.extend(error.retryAfterSeconds ?? 60);
+    } else if (isRejectedCodeRequest(error)) {
+      _cooldown.reject();
+      _cooldownTimer?.cancel();
+    }
+  }
+
   void tickSecond() {
-    if (state.resendAfterSeconds <= 0) return;
     _set(RegistrationState(state.status,
         registrationSession: state.registrationSession,
-        resendAfterSeconds: state.resendAfterSeconds - 1,
+        resendAfterSeconds: _cooldown.remaining,
         message: state.message,
         fieldErrors: state.fieldErrors));
   }
@@ -435,9 +515,15 @@ final class RegistrationController extends ChangeNotifier {
 
   void _networkFailure() =>
       _set(const RegistrationState(RegistrationFlowStatus.failed,
-          message: '网络连接不稳定，请重试'));
+          message: '网络请求结果待确认，请检查验证码，冷却后可重试'));
   void _set(RegistrationState next) {
-    state = next;
+    state = _cooldown.hasBoundTarget
+        ? RegistrationState(next.status,
+            registrationSession: next.registrationSession,
+            resendAfterSeconds: _cooldown.remaining,
+            message: next.message,
+            fieldErrors: next.fieldErrors)
+        : next;
     if (!_disposed) notifyListeners();
   }
 }

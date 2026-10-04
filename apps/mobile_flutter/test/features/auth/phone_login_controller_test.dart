@@ -79,6 +79,25 @@ void main() {
     controller.dispose();
   });
 
+  test('same target cooldown survives controller disposal and recreation',
+      () async {
+    await controller.requestOtp('13800000001');
+    controller.dispose();
+    now = fixedNow.add(const Duration(seconds: 20));
+    controller = PhoneLoginController(
+        gateway: gateway,
+        deviceKey: 'device-key-1',
+        deviceName: 'Mi 6',
+        now: () => now);
+    expect(await controller.requestOtp('+86 138 0000 0001'), isFalse);
+    expect(gateway.otpRequests, hasLength(1));
+    expect(controller.state.resendAfterSeconds, 40);
+    now = fixedNow.add(const Duration(seconds: 60));
+    expect(await controller.requestOtp('13800000001'), isTrue);
+    expect(gateway.otpRequests, hasLength(2));
+    controller.dispose();
+  });
+
   test('correct code succeeds and lands session via gateway', () async {
     await controller.requestOtp('+8613800000001');
     expect(await controller.submit('+8613800000001', '243697'), isTrue);

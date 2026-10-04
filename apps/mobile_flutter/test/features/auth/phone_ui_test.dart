@@ -14,6 +14,53 @@ import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 void main() {
   testWidgets(
+      'unchecked phone send action explains consent before field validation',
+      (tester) async {
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: SecureSessionStore(_MemoryStore()));
+    await tester.pumpWidget(CupertinoApp(home: LoginPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('手机号登录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('获取验证码'));
+    await tester.pump();
+    expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
+    expect(find.byKey(const Key('auth-login-phone-error')), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+  });
+
+  testWidgets('unchecked agreement login tap shows toast without request',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(393, 852);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues({});
+    var sends = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://example.invalid'),
+        sessionStore: SecureSessionStore(_MemoryStore()),
+        client: MockClient((_) async {
+          sends++;
+          return http.Response('{}', 202);
+        }));
+    await tester.pumpWidget(CupertinoApp(home: LoginPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('手机号登录'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('登录'));
+    await tester.tap(find.text('登录'));
+    await tester.pump();
+    expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
+    expect(sends, 0);
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('请先阅读并同意用户协议和隐私政策'), findsNothing);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+  });
+
+  testWidgets(
     'OTP action validates invalid phone beside its field before any request',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -30,6 +77,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('手机号登录'));
       await tester.pumpAndSettle();
+      tester
+          .widget<CupertinoButton>(
+              find.byKey(const Key('auth-agreement-checkbox')))
+          .onPressed!();
+      await tester.pump();
       final phone = find.byKey(const Key('auth-login-phone'));
       CupertinoButton button() => tester.widget<CupertinoButton>(
             find.widgetWithText(CupertinoButton, '获取验证码'),
@@ -60,6 +112,11 @@ void main() {
         tester.widget<Text>(find.text('获取验证码')).style?.color,
         WeChatColors.brandPrimary,
       );
+      tester
+          .widget<CupertinoButton>(
+              find.byKey(const Key('auth-agreement-checkbox')))
+          .onPressed!();
+      await tester.pump();
       await tester.tap(find.text('获取验证码'));
       await tester.pump();
       expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);

@@ -4,6 +4,7 @@ import 'phone_login_controller.dart';
 import 'password_change_page.dart';
 import 'phone_number_format.dart';
 import '../../core/privacy_consent.dart';
+import '../../ui/components/wechat_toast.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
@@ -80,6 +81,7 @@ final class _LoginPageState extends State<LoginPage>
     gateway: widget.api,
     deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}',
     deviceName: '畅聊移动端',
+    now: _now,
   )..addListener(_phoneChanged);
   void _phoneChanged() {
     if (mounted) setState(() {});
@@ -138,10 +140,20 @@ final class _LoginPageState extends State<LoginPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshLoginRetry();
+    if (state == AppLifecycleState.resumed) {
+      _refreshLoginRetry();
+      _phoneController.selectPhone(_normalizedPhone ?? _phone.text);
+    }
+  }
+
+  bool _requireAgreement() {
+    if (_agreementAccepted) return true;
+    showWeChatToast(context, '请先阅读并同意用户协议和隐私政策');
+    return false;
   }
 
   Future<void> _requestPhoneCode() async {
+    if (!_requireAgreement()) return;
     final requestedPhone = _normalizedPhone;
     if (requestedPhone == null) {
       setState(() {
@@ -155,10 +167,6 @@ final class _LoginPageState extends State<LoginPage>
       _phoneFormatError = null;
       _phoneFormatValidated = true;
     });
-    if (!_agreementAccepted) {
-      setState(() => _error = '请先阅读并同意用户协议和隐私政策');
-      return;
-    }
     setState(() {
       _invitationTicket = null;
       _invitationPhone = null;
@@ -233,6 +241,7 @@ final class _LoginPageState extends State<LoginPage>
   }
 
   Future<void> _submit() async {
+    if (!_requireAgreement()) return;
     final continuationTicket = _phoneMode ? _invitationTicket : null;
     final continuing = continuationTicket != null;
     if (_phoneMode && _requiresFreshPhoneCode) {
@@ -604,6 +613,8 @@ final class _LoginPageState extends State<LoginPage>
                   placeholder: '中国大陆 +86',
                   controller: _phone,
                   onChanged: (_) => setState(() {
+                    _phoneController
+                        .selectPhone(_normalizedPhone ?? _phone.text);
                     final showFormatFeedback =
                         _phoneFormatError != null || _phoneFormatValidated;
                     if (showFormatFeedback) {
@@ -783,14 +794,13 @@ final class _LoginPageState extends State<LoginPage>
                               ? '登录'
                               : '重试',
                   loading: _loading,
-                  onPressed:
-                      _loading || !_agreementAccepted || _loginRetrySeconds > 0
-                          ? null
-                          : _requiresFreshPhoneCode && _phoneMode
-                              ? _canRequestPhoneCode
-                                  ? _requestPhoneCode
-                                  : null
-                              : _submit,
+                  onPressed: _loading || _loginRetrySeconds > 0
+                      ? null
+                      : _requiresFreshPhoneCode && _phoneMode
+                          ? _canRequestPhoneCode
+                              ? _requestPhoneCode
+                              : null
+                          : _submit,
                 ),
               ),
               if (widget.onRegister != null) ...[

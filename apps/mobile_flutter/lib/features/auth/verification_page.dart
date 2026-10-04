@@ -23,7 +23,8 @@ final class VerificationPage extends StatefulWidget {
   State<VerificationPage> createState() => _VerificationPageState();
 }
 
-final class _VerificationPageState extends State<VerificationPage> {
+final class _VerificationPageState extends State<VerificationPage>
+    with WidgetsBindingObserver {
   final code = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -31,13 +32,21 @@ final class _VerificationPageState extends State<VerificationPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.controller.tickSecond();
     code.text = widget.controller.verificationCodeHint ?? '';
     code.addListener(_clearCodeError);
     widget.controller.addListener(_change);
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) widget.controller.tickSecond();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_change);
     code.removeListener(_clearCodeError);
     code.dispose();

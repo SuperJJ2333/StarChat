@@ -26,7 +26,7 @@ final class PasswordChangePage extends StatefulWidget {
 }
 
 final class _PasswordChangePageState extends State<PasswordChangePage> {
-  final _operation = AccountCredentialsController();
+  late final _operation = AccountCredentialsController(owner: widget.gateway);
   final _target = TextEditingController(), _code = TextEditingController();
   final _password = TextEditingController(),
       _confirmation = TextEditingController();
@@ -61,6 +61,8 @@ final class _PasswordChangePageState extends State<PasswordChangePage> {
       _channel = 'phone';
     }
     _operation.addListener(_changed);
+    _bindCooldown();
+    _target.addListener(_bindCooldown);
     final gateway = widget.gateway;
     if (widget.authenticated && gateway is BusinessSessionMonitor) {
       _invalidationSubscription = (gateway as BusinessSessionMonitor)
@@ -75,6 +77,11 @@ final class _PasswordChangePageState extends State<PasswordChangePage> {
     }
   }
 
+  void _bindCooldown() => _operation.bindCooldown(
+      purpose: 'password_recovery',
+      channel: _channel,
+      target: _normalizedTarget() ?? _target.text,
+      authenticated: widget.authenticated);
   void _changed() {
     if (mounted) setState(() {});
   }
@@ -121,7 +128,8 @@ final class _PasswordChangePageState extends State<PasswordChangePage> {
           .setMessage('请输入有效的已绑定${_channel == 'email' ? '邮箱' : '中国大陆手机号'}');
       return;
     }
-    _operation.startCooldown();
+    _bindCooldown();
+    if (!_operation.reserveCooldown()) return;
     await _operation.perform(() async {
       final generation = _operation.generation;
       final seconds = await widget.gateway.requestPasswordCode(
@@ -132,7 +140,7 @@ final class _PasswordChangePageState extends State<PasswordChangePage> {
       _operation.startCooldown(seconds > 60 ? seconds : 60);
       _operation
           .setMessage('验证码请求已受理，请查看已绑定的${_channel == 'email' ? '邮箱' : '手机'}');
-    });
+    }, sendingCode: true);
   }
 
   Future<void> _verify() async {

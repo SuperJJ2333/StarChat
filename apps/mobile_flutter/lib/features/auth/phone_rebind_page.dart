@@ -7,7 +7,7 @@ import '../../ui/components/auth_surface_card.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../wallet/manual_wallet_page.dart' show walletStepIndicator;
-import 'account_credentials_controller.dart' show isRejectedCodeRequest;
+import 'account_credentials_controller.dart';
 
 /// Two server-authorized stages. Opening the page never sends a message.
 final class PhoneRebindPage extends StatefulWidget {
@@ -21,15 +21,33 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
   final _phone = TextEditingController();
   final _code = TextEditingController();
   int _step = 0;
-  int _cooldown = 0;
-  Timer? _timer;
+  late final _operation = AccountCredentialsController(owner: widget.api);
+  int get _cooldown => _operation.cooldown;
+  @override
+  void initState() {
+    super.initState();
+    _operation.addListener(_changed);
+    _phone.addListener(_bindCooldown);
+    _bindCooldown();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  void _bindCooldown() => _operation.bindCooldown(
+      purpose: _step == 0 ? 'phone_rebind_old' : 'phone_rebind_new',
+      channel: _step == 0 ? 'current' : 'phone',
+      target: _step == 0 ? 'current-binding' : _phone.text,
+      authenticated: true);
   bool _busy = false;
   bool _done = false;
   String? _message;
   String _channel = '当前绑定的手机或邮箱';
   @override
   void dispose() {
-    _timer?.cancel();
+    _operation.removeListener(_changed);
+    _operation.dispose();
     _phone.dispose();
     _code.dispose();
     super.dispose();
@@ -46,8 +64,11 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
       await action();
     } on BusinessApiException catch (error) {
       if (mounted && sendingCode && isRejectedCodeRequest(error)) {
-        _timer?.cancel();
-        setState(() => _cooldown = 0);
+        // Explicit rejection releases only this captured send reservation.
+        _operation.rejectCooldown();
+      }
+      if (mounted && sendingCode && error.statusCode == 429) {
+        _operation.startCooldown(error.retryAfterSeconds ?? 60);
       }
       if (mounted) setState(() => _message = _failureMessage(error));
     } catch (_) {
@@ -81,19 +102,6 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
         : '验证请求未被接受，请稍后重试或联系客服';
   }
 
-  void _startCooldown() {
-    _cooldown = 60;
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() => _cooldown--);
-      if (_cooldown <= 0) timer.cancel();
-    });
-  }
-
   Future<void> _send() => _perform(() async {
         if (_cooldown > 0) return;
         if (_step == 1 &&
@@ -102,7 +110,8 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
           return;
         }
         // A lost response can still mean a message was sent. Keep the cooldown.
-        setState(_startCooldown);
+        _bindCooldown();
+        if (!_operation.reserveCooldown()) return;
         if (_step == 0) {
           final receipt = await widget.api
               .rebindOldRequest()
@@ -136,13 +145,13 @@ final class _PhoneRebindPageState extends State<PhoneRebindPage> {
               .rebindOldConfirm(code: _code.text.trim())
               .timeout(const Duration(seconds: 8));
           if (!mounted) return;
-          _timer?.cancel();
           setState(() {
             _step = 1;
-            _cooldown = 0;
+
             _code.clear();
             _channel = '新手机号';
           });
+          _bindCooldown();
         } else {
           await widget.api
               .rebindNewConfirm(

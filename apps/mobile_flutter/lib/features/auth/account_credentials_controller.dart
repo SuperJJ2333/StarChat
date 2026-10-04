@@ -1,13 +1,15 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import '../../core/business_api_error.dart';
+import 'otp_cooldown.dart';
 
 /// A rejected request cannot have delivered a code. Unknown results retain the
 /// send cooldown because retrying could send twice.
 bool isRejectedCodeRequest(BusinessApiException error) =>
     (error.statusCode >= 400 &&
         error.statusCode < 500 &&
-        error.statusCode != 408) ||
+        error.statusCode != 408 &&
+        error.statusCode != 429) ||
     const {
       'PHONE_AUTH_DISABLED',
       'SMS_NOT_CONFIGURED',
@@ -16,7 +18,57 @@ bool isRejectedCodeRequest(BusinessApiException error) =>
     }.contains(error.code);
 
 /// Shared bounded-operation feedback; cooldown begins before the send attempt.
-final class AccountCredentialsController extends ChangeNotifier {
+final class AccountCredentialsController extends ChangeNotifier
+    with WidgetsBindingObserver {
+  AccountCredentialsController({Object? owner})
+      : _cooldown = OtpCooldown(owner ?? Object()) {
+    WidgetsBinding.instance.addObserver(this);
+  }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _tick();
+  }
+
+  final OtpCooldown _cooldown;
+  void bindCooldown(
+      {required String purpose,
+      required String channel,
+      required String target,
+      bool authenticated = false}) {
+    _cooldown.bind(
+        purpose: purpose,
+        channel: channel,
+        target: target,
+        authenticated: authenticated);
+    _tick();
+    _startTicker();
+  }
+
+  bool reserveCooldown() {
+    final accepted = _cooldown.reserve();
+    _tick();
+    _startTicker();
+    return accepted;
+  }
+
+  void _tick() {
+    cooldown = _cooldown.remaining;
+    _notify();
+  }
+
+  void _startTicker() {
+    _timer?.cancel();
+    if (_cooldown.remaining == 0) return;
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_disposed) {
+        timer.cancel();
+        return;
+      }
+      _tick();
+      if (cooldown == 0) timer.cancel();
+    });
+  }
+
   bool busy = false;
   int cooldown = 0;
   String? message;
@@ -32,25 +84,22 @@ final class AccountCredentialsController extends ChangeNotifier {
     _notify();
   }
 
+  void rejectCooldown() {
+    _cooldown.reject();
+    _tick();
+  }
+
   void clearCooldown() {
-    _timer?.cancel();
+    // Stage changes select a different key; retain the old stage deadline.
     cooldown = 0;
+    _timer?.cancel();
     _notify();
   }
 
   void startCooldown([int seconds = 60]) {
-    _timer?.cancel();
-    cooldown = seconds;
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_disposed) {
-        timer.cancel();
-        return;
-      }
-      cooldown--;
-      if (cooldown <= 0) timer.cancel();
-      _notify();
-    });
-    _notify();
+    _cooldown.extend(seconds);
+    _tick();
+    _startTicker();
   }
 
   Future<bool> perform(Future<void> Function() action,
@@ -66,7 +115,11 @@ final class AccountCredentialsController extends ChangeNotifier {
       return !_disposed;
     } on BusinessApiException catch (error) {
       if (!_disposed && sendingCode && isRejectedCodeRequest(error)) {
-        clearCooldown();
+        _cooldown.reject();
+        _tick();
+      }
+      if (!_disposed && sendingCode && error.statusCode == 429) {
+        startCooldown(error.retryAfterSeconds ?? 60);
       }
       if (!_disposed) errorCode = error.code;
       if (!_disposed) {
@@ -93,6 +146,7 @@ final class AccountCredentialsController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }

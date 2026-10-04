@@ -1,4 +1,6 @@
+import 'package:liuhetong_mobile/ui/components/auth_surface_card.dart';
 import 'dart:async';
+import 'package:liuhetong_mobile/features/auth/otp_cooldown.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
@@ -54,6 +56,39 @@ class Gateway implements RegistrationGateway, PhoneAuthGateway {
 }
 
 void main() {
+  testWidgets(
+      'registration channel switch selects independent retained deadline',
+      (tester) async {
+    final gateway = Gateway();
+    final now = DateTime.utc(2026, 10, 5);
+    (OtpCooldown(gateway, now: () => now)
+          ..bind(
+              purpose: 'registration',
+              channel: 'email',
+              target: 'a@example.test'))
+        .reserve();
+    final controller = RegistrationController(gateway: gateway, now: () => now);
+    controller.saveDraft(
+        nickname: '',
+        username: '',
+        email: 'a@example.test',
+        password: '',
+        passwordConfirmation: '',
+        invitationCode: '');
+    await tester.pumpWidget(CupertinoApp(
+        home: RegistrationPage(
+            controller: controller, onVerification: (_) {}, onBack: () {})));
+    expect(controller.state.resendAfterSeconds, 60);
+    await tester.tap(find.text('手机号注册'));
+    await tester.pump();
+    expect(controller.state.resendAfterSeconds, 0);
+    await tester.tap(find.text('邮箱注册'));
+    await tester.pump();
+    expect(controller.state.resendAfterSeconds, 60);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    controller.dispose();
+  });
+
   testWidgets('phone registration request validates directly below phone', (
     tester,
   ) async {
@@ -85,6 +120,12 @@ void main() {
     await tester.pump();
     await tester.ensureVisible(action);
     await tester.pumpAndSettle();
+    if (!tester.widget<AuthAgreementRow>(find.byType(AuthAgreementRow)).value) {
+      final checkbox = tester.widget<CupertinoButton>(
+          find.byKey(const Key('auth-agreement-checkbox')));
+      checkbox.onPressed?.call();
+      await tester.pump();
+    }
     await tester.tap(action);
     await tester.pump();
     final error = find.byKey(const Key('auth-registration-error-phone'));
@@ -114,6 +155,12 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.ensureVisible(action);
     await tester.pumpAndSettle();
+    if (!tester.widget<AuthAgreementRow>(find.byType(AuthAgreementRow)).value) {
+      final checkbox = tester.widget<CupertinoButton>(
+          find.byKey(const Key('auth-agreement-checkbox')));
+      checkbox.onPressed?.call();
+      await tester.pump();
+    }
     await tester.tap(action);
     await tester.pump();
     expect(
@@ -167,6 +214,14 @@ void main() {
       final action = find.byKey(const Key('auth-registration-send-code'));
       await tester.ensureVisible(action);
       await tester.pumpAndSettle();
+      if (!tester
+          .widget<AuthAgreementRow>(find.byType(AuthAgreementRow))
+          .value) {
+        final checkbox = tester.widget<CupertinoButton>(
+            find.byKey(const Key('auth-agreement-checkbox')));
+        checkbox.onPressed?.call();
+        await tester.pump();
+      }
       await tester.tap(action);
       await tester.pump();
       expect(
@@ -186,7 +241,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     final gateway = Gateway();
-    final controller = RegistrationController(gateway: gateway);
+    var now = DateTime.utc(2026, 10, 5);
+    final controller = RegistrationController(gateway: gateway, now: () => now);
     expect(
       await controller.register(
         username: 'alice',
@@ -218,11 +274,17 @@ void main() {
     expect(input.readOnly, isTrue);
     final resend = find.byKey(const Key('auth-registration-send-code'));
     expect(gateway.sends, 1);
+    now = now.add(const Duration(seconds: 60));
     await tester.pump(const Duration(seconds: 60));
     await tester.pump();
     await tester.ensureVisible(resend);
     await tester.pumpAndSettle();
     expect(tester.widget<CupertinoButton>(resend).onPressed, isNotNull);
+    tester
+        .widget<CupertinoButton>(
+            find.byKey(const Key('auth-agreement-checkbox')))
+        .onPressed!();
+    await tester.pump();
     await tester.tap(resend);
     await tester.pump();
     expect(gateway.sends, 2);

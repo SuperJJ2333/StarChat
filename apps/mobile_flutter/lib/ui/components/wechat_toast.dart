@@ -18,6 +18,7 @@ void showWeChatToast(
 }) {
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay == null) return;
+  final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
   late final OverlayEntry entry;
   var removed = false;
   void remove() {
@@ -31,7 +32,7 @@ void showWeChatToast(
       message: message,
       semanticType: semanticType,
       duration: duration,
-      reduceMotion: MediaQuery.maybeDisableAnimationsOf(context) ?? false,
+      reduceMotion: reduceMotion,
       onFinished: remove,
     ),
   );

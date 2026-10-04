@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/ui/components/auth_surface_card.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -71,8 +72,7 @@ Future<void> _fillValidForm(WidgetTester tester) async {
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets(
-      'BUG-01 wrong invitation code shows exactly one error message',
+  testWidgets('BUG-01 wrong invitation code shows exactly one error message',
       (tester) async {
     final controller =
         RegistrationController(gateway: _InvalidInvitationGateway());
@@ -90,6 +90,12 @@ void main() {
     // 提交后 controller 也给出了 invitation_code 字段错误：
     // 内联状态行让位，仍然只有一条提示。
     final send = find.byKey(const Key('auth-registration-send-code'));
+    if (!tester.widget<AuthAgreementRow>(find.byType(AuthAgreementRow)).value) {
+      final checkbox = tester.widget<CupertinoButton>(
+          find.byKey(const Key('auth-agreement-checkbox')));
+      checkbox.onPressed?.call();
+      await tester.pump();
+    }
     tester.widget<CupertinoButton>(send).onPressed!();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
@@ -117,7 +123,8 @@ void main() {
       home: LoginPage(api: api, onLogin: (_, __) async {}),
     ));
 
-    await tester.ensureVisible(find.byKey(const Key('auth-user-agreement-link')));
+    await tester
+        .ensureVisible(find.byKey(const Key('auth-user-agreement-link')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('auth-user-agreement-link')));
     await tester.pumpAndSettle();
@@ -128,7 +135,8 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.byKey(const Key('auth-privacy-policy-link')));
+    await tester
+        .ensureVisible(find.byKey(const Key('auth-privacy-policy-link')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('auth-privacy-policy-link')));
     await tester.pumpAndSettle();

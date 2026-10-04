@@ -41,6 +41,21 @@ class PhoneGateway implements PhoneAuthGateway {
 }
 
 void main() {
+  testWidgets('phone rebind cooldown survives leaving and reentering',
+      (tester) async {
+    final gateway = PhoneGateway();
+    await tester.pumpWidget(CupertinoApp(home: PhoneRebindPage(api: gateway)));
+    await tester.tap(find.text('获取验证码'));
+    await tester.pump();
+    expect(gateway.calls, ['old-request']);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    await tester.pumpWidget(CupertinoApp(home: PhoneRebindPage(api: gateway)));
+    await tester.pump();
+    expect(find.text('60s'), findsOneWidget);
+    expect(find.text('获取验证码'), findsNothing);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+  });
+
   for (final entry in <(Object, String)>[
     (
       const BusinessApiException(
