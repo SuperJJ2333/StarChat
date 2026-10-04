@@ -471,7 +471,9 @@ void main() {
           await MediaIndex.shared.close();
           MediaIndex.overrideShared(null);
           await db.close();
-          await directory.delete(recursive: true);
+          // Retain synthetic media under the ignored verification directory.
+          // Awaiting app resources does not guarantee that all external file
+          // handles have closed; immediate deletion can fail on Windows.
         });
       }
     }
