@@ -219,6 +219,11 @@ class _NativeSession implements olm.InboundGroupSession {
   final String roomId;
   final bool failOldIndex;
   @override
+  // Native libolm's interface uses this exact method name.
+  // ignore: non_constant_identifier_names
+  String session_id() => 'historical-session';
+
+  @override
   olm.DecryptResult decrypt(String message) {
     expect(message, 'native-ciphertext-fixture');
     if (failOldIndex) throw Exception('UNKNOWN_MESSAGE_INDEX');
