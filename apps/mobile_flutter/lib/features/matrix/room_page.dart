@@ -3540,6 +3540,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               historySearch.search(filters, cursor: cursor, limit: limit));
     }
 
+    void closeSearch() {
+      if (!searchOpen) return;
+      searchOpen = false;
+      mediaResolver.invalidate();
+      controller?.cancelPendingDateLookup();
+      historySearch.cancel();
+      searchResultVisibility.clear();
+    }
+
     // 群聊成员目录（统一拼音排序/过滤服务——R5/R12）。
     List<MemberDirectoryEntry> memberEntries() => <MemberDirectoryEntry>[
           for (final member in _joinedMembers)
@@ -3634,6 +3643,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             }
             final sourceRoomId = searchResultVisibility.sourceRoomId(eventId);
             if (sourceRoomId == null) return;
+            closeSearch();
             returnToRoom();
             unawaited(_scrollToMessage(eventId, sourceRoomId: sourceRoomId));
           },
@@ -3651,8 +3661,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     false)) {
               return;
             }
+            closeSearch();
             returnToRoom();
-            unawaited(_scrollToMessage(location.eventId));
+            unawaited(
+                _scrollToMessage(location.eventId, sourceRoomId: sourceRoomId));
           },
           onDateLookup: (date) async {
             if (!mounted || !searchOpen) {
@@ -3671,13 +3683,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           },
         ),
       ),
-    ).whenComplete(() {
-      searchOpen = false;
-      mediaResolver.invalidate();
-      controller?.cancelPendingDateLookup();
-      historySearch.cancel();
-      searchResultVisibility.clear();
-    });
+    ).whenComplete(closeSearch);
   }
 
   /// 清空聊天记录（**软隐藏语义**）。
@@ -5456,8 +5462,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   void _setTimelineScrollDirection({required bool earlier}) {
     if (_timelineScrollTowardEarlier == earlier) return;
+    // The scroll listener can queue this direction before the matching drag
+    // notification. Preserve that queue while canceling opposite/stale work.
+    final matchingShift = _pendingEarlierWindow == earlier;
     _timelineScrollTowardEarlier = earlier;
     _cancelPendingTimelineWindowShift(clearDirection: false);
+    if (matchingShift) _pendingEarlierWindow = earlier;
   }
 
   Future<void> _applyPendingWindowShift() async {

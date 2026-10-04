@@ -86,7 +86,7 @@ class _Room extends Room {
       void Function()? onNewEvent,
       void Function()? onUpdate,
       String? eventContextId}) async {
-    if (eventContextId != null) throw StateError('Offline fixture');
+    if (eventContextId != null) throw const SocketException('Offline fixture');
     return Timeline(
         room: this, chunk: TimelineChunk(events: []), onUpdate: onUpdate);
   }

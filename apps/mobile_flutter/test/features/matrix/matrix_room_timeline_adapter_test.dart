@@ -17,6 +17,8 @@ final class NoticeClient extends RetryClient {
 
 class RetryTimeline extends Fake implements Timeline {
   @override
+  bool get canRequestHistory => false;
+  @override
   void cancelSubscriptions() {}
   @override
   final events = <Event>[];

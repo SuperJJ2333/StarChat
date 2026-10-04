@@ -2915,6 +2915,7 @@ final class _SdkRoomTimelineCapability
   final MatrixRoomLease _lease;
   final Timeline _liveTimeline;
   Timeline? _contextTimeline;
+  bool _localContextOnly = false;
   int _contextGeneration = 0;
   Completer<void>? _dateCancellation;
   Timeline get _timeline => _contextTimeline ?? _liveTimeline;
@@ -3166,6 +3167,7 @@ final class _SdkRoomTimelineCapability
     cancelPendingDateLookup();
     _contextTimeline?.cancelSubscriptions();
     _contextTimeline = null;
+    _localContextOnly = false;
     _messageCache.clear();
     _viewport?.latest();
     if (!_disposed) _onUpdate();
@@ -3874,12 +3876,14 @@ final class _SdkRoomTimelineCapability
     final loaded = eventById(eventId);
     if (loaded != null &&
         loaded.type != EventTypes.Encrypted &&
-        !_resolvedEvents.containsKey(eventId)) {
+        !_resolvedEvents.containsKey(eventId) &&
+        !(_contextTimeline != null && _localContextOnly)) {
       if (!_visibleAnchor(loaded)) return false;
       if (_contextTimeline != null &&
           _liveTimeline.events.any((event) => event.eventId == eventId)) {
         _contextTimeline?.cancelSubscriptions();
         _contextTimeline = null;
+        _localContextOnly = false;
         _messageCache.clear();
       }
       _refreshAnchorWindow(eventId);
@@ -3888,25 +3892,42 @@ final class _SdkRoomTimelineCapability
     return _withOperation(() async {
       if (_disposed || generation != _contextGeneration) return false;
       final room = _lease._activeRoom;
-      final local = await Future.any<Event?>([
-        room.getLocalEventById(eventId,
-            shouldContinue: () =>
-                !_disposed &&
-                !_lease.canceled &&
-                !_lease.owner._accessRevoked &&
-                generation == _contextGeneration),
-        cancellation.then((_) => null),
-      ]).timeout(const Duration(seconds: 5));
+      Future<Event?> readLocalAnchor() => Future.any<Event?>([
+            _withOperation(() => room.getLocalEventById(eventId,
+                shouldContinue: () =>
+                    !_disposed &&
+                    !_lease.canceled &&
+                    !_lease.owner._accessRevoked &&
+                    generation == _contextGeneration)),
+            cancellation.then((_) => null),
+          ]).timeout(const Duration(seconds: 3));
+      final local = await readLocalAnchor();
       if (_disposed || generation != _contextGeneration) return false;
       _ensureActive();
-      if (local != null) {
-        if (local.room.id != room.id || !_visibleAnchor(local)) return false;
+      if (local != null &&
+          (local.room.id != room.id || !_visibleAnchor(local))) {
+        return false;
+      }
+      Future<bool> adoptLocalFallback() async {
+        if (local == null || _disposed || generation != _contextGeneration) {
+          return false;
+        }
+        // A recall may update the persisted record while the context request
+        // is held. Never republish the pre-request decrypted snapshot.
+        final current = await readLocalAnchor();
+        if (_disposed || generation != _contextGeneration) return false;
+        _ensureActive();
+        if (current == null ||
+            !identical(current.room, room) ||
+            !_visibleAnchor(current)) {
+          return false;
+        }
         // Offline minimum: one persisted anchor, never invented server tokens
         // or a claim that neighboring history is fully covered.
         late final Timeline localContext;
         localContext = Timeline(
             room: room,
-            chunk: TimelineChunk(events: [local], isFragment: true),
+            chunk: TimelineChunk(events: [current], isFragment: true),
             onUpdate: () {
               if (!_disposed && identical(_contextTimeline, localContext)) {
                 _onUpdate();
@@ -3914,16 +3935,20 @@ final class _SdkRoomTimelineCapability
             });
         _contextTimeline?.cancelSubscriptions();
         _contextTimeline = localContext;
+        _localContextOnly = true;
         _messageCache.clear();
         _refreshAnchorWindow(eventId);
         _onUpdate();
         return true;
       }
+
       var adopted = false;
       Timeline? resolved;
       // Race cancellation as well as the observation timeout. A late SDK
       // context still owns subscriptions and must be explicitly released.
-      final future = _lease._activeRoom.getTimeline(
+      // Track the actual SDK future through lease ownership even when the UI
+      // deadline/cancellation stops waiting for it.
+      final future = _withOperation(() => room.getTimeline(
           eventContextId: eventId,
           onUpdate: () {
             if (adopted &&
@@ -3931,7 +3956,7 @@ final class _SdkRoomTimelineCapability
                 identical(_contextTimeline, resolved)) {
               _onUpdate();
             }
-          });
+          }));
       var abandoned = false;
       unawaited(future.then((late) {
         if (abandoned) late.cancelSubscriptions();
@@ -3940,27 +3965,46 @@ final class _SdkRoomTimelineCapability
         resolved = await Future.any<Timeline?>([
           future,
           cancellation.then((_) => null),
-        ]).timeout(const Duration(seconds: 12));
+        ]).timeout(Duration(seconds: local == null ? 12 : 3));
         if (resolved == null) {
           abandoned = true;
           return false;
         }
         if (_disposed || generation != _contextGeneration) return false;
         _ensureActive();
+        if (local != null) {
+          final current = await readLocalAnchor();
+          if (_disposed || generation != _contextGeneration) return false;
+          _ensureActive();
+          if (current == null ||
+              !identical(current.room, room) ||
+              !_visibleAnchor(current)) {
+            return false;
+          }
+        }
         final anchor = resolved.events
             .where((event) => event.eventId == eventId)
             .firstOrNull;
-        if (anchor == null || !_visibleAnchor(anchor)) return false;
+        if (anchor == null ||
+            !identical(anchor.room, room) ||
+            !_visibleAnchor(anchor)) {
+          return false;
+        }
         _contextTimeline?.cancelSubscriptions();
         _contextTimeline = resolved;
+        _localContextOnly = false;
         adopted = true;
         _messageCache.clear();
         _refreshAnchorWindow(eventId);
         _onUpdate();
         return true;
-      } on MatrixException catch (error) {
-        if (error.errcode == 'M_NOT_FOUND') return false;
-        rethrow;
+      } catch (error) {
+        if (error is MatrixException && error.errcode == 'M_NOT_FOUND') {
+          return false;
+        }
+        if (!defaultNetworkFailureClassifier(error)) rethrow;
+        if (local == null) rethrow;
+        return adoptLocalFallback();
       } finally {
         if (!adopted) {
           abandoned = true;
@@ -4147,6 +4191,7 @@ final class _SdkRoomTimelineCapability
     if (live != null) {
       _contextTimeline?.cancelSubscriptions();
       _contextTimeline = null;
+      _localContextOnly = false;
       _messageCache.clear();
       _onUpdate();
       return RoomHistoryDayLocation(eventId: live.eventId, day: day);
@@ -4246,6 +4291,7 @@ final class _SdkRoomTimelineCapability
         }
         _contextTimeline?.cancelSubscriptions();
         _contextTimeline = resolvedContext;
+        _localContextOnly = false;
         adopted = true;
         _messageCache.clear();
         _onUpdate();

@@ -613,6 +613,9 @@ final class RoomTimelineController extends ChangeNotifier {
       found = _windowSource?.selectAnchor(id) ?? indexOf(id) != null;
     }
     if (found) {
+      historyExhausted = adapter is RoomHistoryStatus
+          ? !(adapter as RoomHistoryStatus).canLoadHistory
+          : false;
       _echoRevision++;
       await refresh();
     }

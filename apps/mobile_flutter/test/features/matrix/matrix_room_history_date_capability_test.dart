@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -15,12 +16,16 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 final class _DateTimeline extends Fake implements Timeline {
   @override
   final events = <Event>[];
+  @override
+  void trimLiveHistory({int maximumEvents = 1000}) {}
   int subscriptionCancels = 0;
   int futureCalls = 0;
   bool future = false;
   Future<void> Function()? onFuture;
   @override
   bool get canRequestFuture => future;
+  @override
+  bool get canRequestHistory => false;
   @override
   Future<void> requestFuture({int historyCount = 20}) async {
     futureCalls++;
@@ -129,6 +134,168 @@ Future<(MatrixRoomLease, RoomHistoryDateCapability)> _openCapability(
 
 void main() {
   test(
+      'persisted context fallback distinguishes network failure from denial and invalid results',
+      () async {
+    sqfliteFfiInit();
+    for (final scenario in [
+      'offline',
+      'server',
+      'denied',
+      'unauthorized',
+      'absent',
+      'programmer',
+      'wrong-event',
+      'wrong-room',
+      'encrypted',
+      'late-hidden',
+      'late-recall',
+      'canceled',
+      'timeout'
+    ]) {
+      final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+      final db = MatrixSdkDatabase(inMemoryDatabasePath,
+          database: raw, sqfliteFactory: databaseFactoryFfi);
+      await db.open();
+      final client = _DateClient()..localStore = db;
+      final room = _DateRoom(client)..pendingContext = Completer<Timeline>();
+      await db.storeEventUpdate(
+          EventUpdate(
+              roomID: room.id,
+              type: EventUpdateType.timeline,
+              content: {
+                'event_id': r'$persisted',
+                'sender': '@synthetic:test',
+                'type': EventTypes.Message,
+                'origin_server_ts': DateTime(2025).millisecondsSinceEpoch,
+                'content': {
+                  'msgtype': MessageTypes.Text,
+                  'body': 'synthetic persisted'
+                },
+              }),
+          client);
+      final (lease, capability) = await _openCapability(room);
+      final events = capability as RoomEventContextCapability;
+      final window = capability as RoomWindowedTimelineSource;
+      window.enableWindow();
+      var hidden = false;
+      window.setHiddenFilter((_, __) => hidden);
+      final lookup = events.locateEvent(r'$persisted');
+      final bool denied =
+          ['denied', 'unauthorized', 'programmer'].contains(scenario);
+      final expected = denied
+          ? expectLater(
+              lookup,
+              throwsA(scenario == 'programmer'
+                  ? isA<StateError>()
+                  : isA<MatrixException>()))
+          : null;
+      for (var i = 0; i < 100 && room.contextEventIds.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(room.contextEventIds, [r'$persisted'], reason: scenario);
+      final late = _DateTimeline()
+        ..events.add(_message(room, r'$persisted', DateTime(2025)));
+      try {
+        if (scenario == 'timeout') {
+          expect(await lookup, isTrue);
+          expect((capability as RoomTimelineCapability).snapshot().single.id,
+              r'$persisted');
+          room.pendingContext!.complete(late);
+          await Future<void>.delayed(Duration.zero);
+          expect(late.subscriptionCancels, 1);
+        } else if (scenario == 'canceled') {
+          events.cancelPendingEventLookup();
+          expect(await lookup, isFalse);
+          room.pendingContext!.complete(late);
+          await Future<void>.delayed(Duration.zero);
+          expect(late.subscriptionCancels, 1);
+          expect(capability.isViewingHistoryContext, isFalse);
+        } else {
+          if (scenario == 'late-hidden') hidden = true;
+          if (scenario == 'late-recall') {
+            final stored = (await room.getLocalEventById(r'$persisted'))!;
+            await db.storeEventUpdate(
+                EventUpdate(
+                    roomID: room.id,
+                    type: EventUpdateType.timeline,
+                    content: {
+                      ...stored.toJson(),
+                      'unsigned': <String, dynamic>{
+                        'redacted_because': {
+                          'event_id': r'$redaction',
+                          'type': EventTypes.Redaction,
+                          'sender': '@synthetic:test',
+                          'origin_server_ts': 1,
+                          'content': <String, dynamic>{}
+                        }
+                      },
+                    }),
+                client);
+            expect((await room.getLocalEventById(r'$persisted'))!.redacted,
+                isTrue);
+          }
+          if (['offline', 'late-hidden', 'late-recall'].contains(scenario)) {
+            room.pendingContext!
+                .completeError(const SocketException('synthetic offline'));
+          } else if (['server', 'denied', 'unauthorized', 'absent']
+              .contains(scenario)) {
+            final status = switch (scenario) {
+              'server' => 503,
+              'denied' => 403,
+              'unauthorized' => 401,
+              _ => 404
+            };
+            final code = switch (scenario) {
+              'denied' => 'M_FORBIDDEN',
+              'unauthorized' => 'M_UNAUTHORIZED',
+              'absent' => 'M_NOT_FOUND',
+              _ => 'M_UNKNOWN'
+            };
+            room.pendingContext!.completeError(MatrixException(http.Response(
+                '{"errcode":"$code","error":"synthetic"}', status)));
+          } else if (scenario == 'programmer') {
+            room.pendingContext!
+                .completeError(StateError('synthetic programming defect'));
+          } else {
+            if (scenario == 'wrong-event') {
+              late.events[0] = _message(room, r'$other', DateTime(2025));
+            }
+            if (scenario == 'wrong-room') {
+              late.events[0] = Event.fromJson(late.events.single.toJson(),
+                  Room(id: '!foreign:test', client: client));
+            }
+            if (scenario == 'encrypted') {
+              late.events.single.type = EventTypes.Encrypted;
+            }
+            room.pendingContext!.complete(late);
+          }
+          if (expected != null) {
+            await expected;
+            expect(capability.isViewingHistoryContext, isFalse);
+          } else {
+            final fallback = ['offline', 'server'].contains(scenario);
+            expect(await lookup, fallback, reason: scenario);
+            expect(capability.isViewingHistoryContext, fallback,
+                reason: scenario);
+            if (fallback) {
+              expect(
+                  (capability as RoomTimelineCapability).snapshot().single.id,
+                  r'$persisted');
+              // A later explicit retry must enrich a previous local-only context.
+              room.pendingContext = Completer<Timeline>()..complete(late);
+              expect(await events.locateEvent(r'$persisted'), isTrue);
+              expect(room.contextEventIds.length, 2);
+            }
+          }
+        }
+      } finally {
+        await lease.cancel();
+        await db.close();
+        await client.dispose();
+      }
+    }
+  });
+  test(
       'loaded window anchor revalidates a newly hidden target before selection',
       () async {
     final client = _DateClient();
@@ -144,7 +311,7 @@ void main() {
     controller.dispose();
     await lease.cancel();
   });
-  test('year-old persisted event opens offline before remote context lookup',
+  test('year-old persisted event survives one bounded offline context attempt',
       () async {
     sqfliteFfiInit();
     final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
@@ -154,7 +321,7 @@ void main() {
     var requests = 0;
     final client = _DateClient(httpClient: MockClient((_) async {
       requests++;
-      throw StateError('synthetic offline');
+      throw const SocketException('synthetic offline');
     }))
       ..localStore = db
       ..homeserver = Uri.parse('https://matrix.invalid')
@@ -186,7 +353,7 @@ void main() {
     expect(controller.indexOf('local-0'), isNull);
     expect(await controller.openAnchor('local-0'), isTrue);
     expect(controller.messages.single.id, 'local-0');
-    expect(requests, 0);
+    expect(requests, 1);
     expect(controller.newestMessage?.id, 'local-39');
     await controller.showLatest();
     expect(controller.messages.last.id, 'local-39');
