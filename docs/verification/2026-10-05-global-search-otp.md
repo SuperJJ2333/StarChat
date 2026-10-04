@@ -21,4 +21,4 @@ Android按source build、常规DEX/resource/manifest重建、16KiB对齐、固�
 
 iOS CI [37233001043](https://github.com/SuperJJ2333/StarChat/actions/runs/37233001043)绑定b54cf6fa，05:11:49完整run成功：生产完整插件编译、iOS18与26 host测试、native媒体/加密历史seed、新进程保留Keychain/SQLCipher及历史均通过。未正式发布移动版本/IPA，未作真机或永不L04/L07承诺。整库verify.ps1必要本地.env/local.env配置缺失，未导入生产秘密执行；专用平台、认证、E2EE检查按实际证据完成。
 
-主分支集成和1372无关WIP保全验收待收尾；平台最终复审见[候选审查](artifacts/2026-10-05/global-search-otp/final-candidate-review.md)，各组件按规范先于质量审查接受，部署helper异常恢复保护独立复审接受。
+05:15主分支已快进集成40b261ff，1372无关WIP内容hash逐一保持、候选重叠为0、index为空，原current-state正文逐字节保留。[集成收据](artifacts/2026-10-05/global-search-otp/main-integration.json)记录源及移动tree等价；后续仅交付文档收尾，不重复同源平台门禁。最终推送记录见[主分支回读](artifacts/2026-10-05/global-search-otp/main-push.json)。平台最终复审见[候选审查](artifacts/2026-10-05/global-search-otp/final-candidate-review.md)，各组件按规范先于质量审查接受，部署helper异常恢复保护独立复审接受。
