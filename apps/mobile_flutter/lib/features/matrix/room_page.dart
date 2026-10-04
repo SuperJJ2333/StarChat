@@ -1443,6 +1443,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         onChanged: _replyResolutionChanged,
       );
       await controller!.refresh();
+      // A cached initial snapshot may not emit a controller change.
+      // Apply the route anchor once the first projection is ready.
+      _applyInitialAnchorIfNeeded();
       await _ingestMentions();
       if (!mounted) return;
       _markLocalTimelineReady();
