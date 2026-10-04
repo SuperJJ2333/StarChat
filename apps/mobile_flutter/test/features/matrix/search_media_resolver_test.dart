@@ -153,4 +153,116 @@ void main() {
     }
     expect(await Future.wait(running), everyElement(isNull));
   });
+  test(
+      'disposed queued tile releases promptly while shared tap and visible demand progress',
+      () async {
+    final gates = <String, Completer<RoomMessageViewModel?>>{};
+    var running = 0, maximum = 0;
+    final resolver = SearchMediaResolver(
+        sourceOf: (_) => '!retained:test',
+        isVisible: (_) => true,
+        isActive: () => true,
+        hintSource: (_, __) async {},
+        lookup: (id) async {
+          running++;
+          if (running > maximum) maximum = running;
+          try {
+            return await (gates[id] = Completer()).future;
+          } finally {
+            running--;
+          }
+        });
+    final held = [for (var i = 0; i < 4; i++) resolver.resolve('held-$i')];
+    await Future<void>.delayed(Duration.zero);
+    final abandonedDemand = SearchMediaDemand();
+    final tappedDemand = SearchMediaDemand();
+    final currentDemand = SearchMediaDemand();
+    final abandoned = resolver.resolve('abandoned', demand: abandonedDemand);
+    final tapped = resolver.resolve('tapped', demand: tappedDemand);
+    expect(identical(tapped, resolver.resolve('tapped')), isTrue);
+    final current = resolver.resolve('current', demand: currentDemand);
+    abandonedDemand.release();
+    tappedDemand.release();
+    expect(await abandoned, isNull);
+    expect(gates.keys, isNot(contains('abandoned')));
+    expect(gates.length, 4);
+    for (var i = 0; i < 4; i++) {
+      gates['held-$i']!.complete(media('held-$i'));
+    }
+    await Future.wait(held);
+    await Future<void>.delayed(Duration.zero);
+    expect(gates.keys, containsAll(['tapped', 'current']));
+    expect(gates.keys, isNot(contains('abandoned')));
+    gates['tapped']!.complete(media('tapped'));
+    gates['current']!.complete(media('current'));
+    expect((await tapped)?.id, 'tapped');
+    expect((await current)?.id, 'current');
+    expect(maximum, 4);
+    currentDemand.release();
+  });
+  test('scroll churn settles discarded queues without waiting for held reads',
+      () async {
+    final gates = <Completer<RoomMessageViewModel?>>[];
+    final resolver = SearchMediaResolver(
+        sourceOf: (_) => '!retained:test',
+        isVisible: (_) => true,
+        isActive: () => true,
+        hintSource: (_, __) async {},
+        lookup: (_) {
+          final gate = Completer<RoomMessageViewModel?>();
+          gates.add(gate);
+          return gate.future;
+        });
+    final running = [for (var i = 0; i < 4; i++) resolver.resolve('held-$i')];
+    await Future<void>.delayed(Duration.zero);
+    for (var i = 0; i < 500; i++) {
+      final demand = SearchMediaDemand();
+      final discarded = resolver.resolve('scrolled-$i', demand: demand);
+      demand.release();
+      expect(await discarded, isNull);
+    }
+    expect(gates.length, 4);
+    final oldDemand = SearchMediaDemand();
+    final old = resolver.resolve('reentered', demand: oldDemand);
+    oldDemand.release();
+    final fresh = resolver.resolve('reentered');
+    expect(identical(old, fresh), isFalse);
+    expect(await old, isNull);
+    for (final gate in gates.toList()) {
+      gate.complete(null);
+    }
+    await Future.wait(running);
+    await Future<void>.delayed(Duration.zero);
+    expect(gates.length, 5);
+    gates.last.complete(media('reentered'));
+    expect((await fresh)?.id, 'reentered');
+  });
+  test(
+      'releasing an admitted consumer keeps the real read unsettled and shareable',
+      () async {
+    final gate = Completer<RoomMessageViewModel?>();
+    var calls = 0, settled = false;
+    final resolver = SearchMediaResolver(
+        sourceOf: (_) => '!retained:test',
+        isVisible: (_) => true,
+        isActive: () => true,
+        hintSource: (_, __) async {},
+        lookup: (_) {
+          calls++;
+          return gate.future;
+        });
+    final demand = SearchMediaDemand();
+    final pending = resolver.resolve('event', demand: demand);
+    unawaited(pending.then((_) {
+      settled = true;
+    }));
+    await Future<void>.delayed(Duration.zero);
+    demand.release();
+    await Future<void>.delayed(Duration.zero);
+    expect(settled, isFalse);
+    expect(identical(pending, resolver.resolve('event')), isTrue);
+    gate.complete(media('event'));
+    expect((await pending)?.id, 'event');
+    expect(calls, 1);
+  });
 }

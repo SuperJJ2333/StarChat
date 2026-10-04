@@ -3472,15 +3472,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       lookup: (id) async => controller?.lookupReplyMessage(id),
     );
     Future<Uint8List?> loadSearchPreview(
-        String id, bool Function() cellActive) async {
+        String id, SearchMediaDemand demand) async {
       final generation = mediaResolver.generation;
-      final message = await mediaResolver.resolve(id);
-      if (message == null || !cellActive()) return null;
+      final message = await mediaResolver.resolve(id, demand: demand);
+      if (message == null || !demand.isActive) return null;
       final bytes = message.kind == RoomMessageKind.video
           ? await _loadVideoPoster(id)
           : await _loadImagePreview(message);
       if (generation != mediaResolver.generation ||
-          !cellActive() ||
+          !demand.isActive ||
           !mediaResolver.allows(id)) {
         return null;
       }
@@ -6292,14 +6292,22 @@ final class _RoomOutboxSender implements OutboxSender {
 final class _SearchMediaThumbnail extends StatefulWidget {
   const _SearchMediaThumbnail(
       {super.key, required this.load, required this.allowed});
-  final Future<Uint8List?> Function(bool Function()) load;
+  final Future<Uint8List?> Function(SearchMediaDemand) load;
   final bool Function() allowed;
   @override
   State<_SearchMediaThumbnail> createState() => _SearchMediaThumbnailState();
 }
 
 final class _SearchMediaThumbnailState extends State<_SearchMediaThumbnail> {
-  late Future<Uint8List?> _pending = widget.load(() => mounted);
+  final _demand = SearchMediaDemand();
+  late Future<Uint8List?> _pending = widget.load(_demand);
+
+  @override
+  void dispose() {
+    _demand.release();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => FutureBuilder<Uint8List?>(
         future: _pending,
@@ -6319,7 +6327,7 @@ final class _SearchMediaThumbnailState extends State<_SearchMediaThumbnail> {
                   onPressed: !widget.allowed()
                       ? null
                       : () => setState(() {
-                            _pending = widget.load(() => mounted);
+                            _pending = widget.load(_demand);
                           }),
                   child: const Icon(CupertinoIcons.arrow_clockwise,
                       color: WeChatColors.textTertiary)));

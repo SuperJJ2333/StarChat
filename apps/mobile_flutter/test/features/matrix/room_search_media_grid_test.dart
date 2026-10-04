@@ -313,23 +313,52 @@ void main() {
           continue;
         }
         if (scenario == 'visible grid') {
-          expect(client.room.lookupIds.length, inInclusiveRange(1, 4));
-          expect(
+          final grid = find.byKey(const Key('chat-search-media-grid'));
+          Finder tiles() => find.byWidgetPredicate((w) =>
+              w.key is ValueKey<String> &&
+              (w.key as ValueKey<String>).value.startsWith('category-media-'));
+          Set<String> tileIds() => tester
+              .widgetList(tiles())
+              .map((w) => (w.key as ValueKey<String>)
+                  .value
+                  .substring('category-media-'.length))
+              .toSet();
+          expect(client.room.lookupIds.length, 4);
+          final held = client.room.lookupIds.toSet();
+          final original = tileIds();
+          expect(original.length, lessThan(40));
+          // A tap is an independent consumer: its queued read must survive
+          // the originating tile being disposed by this same-open scroll.
+          final tapped = original.firstWhere((id) =>
+              !held.contains(id) &&
               find
-                  .byWidgetPredicate((w) =>
-                      w.key is ValueKey<String> &&
-                      (w.key as ValueKey<String>)
-                          .value
-                          .startsWith('category-media-'))
+                  .byKey(Key('category-media-$id'))
+                  .hitTestable()
                   .evaluate()
-                  .length,
-              lessThan(40));
-          tester
-              .state<NavigatorState>(find.byType(Navigator).first)
-              .popUntil((route) => route.isFirst);
+                  .isNotEmpty);
+          await tester.tap(find.byKey(Key('category-media-$tapped')));
+          await tester.pump();
+          await tester.drag(grid, const Offset(0, -2200));
+          await _settle(tester);
+          final current = tileIds();
+          final abandoned = original.difference(current).difference(held)
+            ..remove(tapped);
+          expect(abandoned, isNotEmpty);
+          expect(current.contains(tapped), isFalse);
+          expect(grid, findsOneWidget);
+          expect(lease.canceled, isFalse);
+          expect(client.room.lookupIds.length, 4);
           client.room.lookupGate!.complete();
           await _settle(tester);
-          expect(downloads, isEmpty);
+          expect(client.room.lookupIds.toSet().intersection(abandoned), isEmpty,
+              reason:
+                  'Disposed queued tiles must not start SDK reads while the search remains open');
+          expect(client.room.lookupIds.where((id) => id == tapped).length, 1,
+              reason:
+                  'The active tap retains exactly one shared metadata read');
+          expect(
+              client.room.lookupIds.toSet().intersection(current), isNotEmpty);
+          expect(find.byType(RoomImageGalleryPage), findsOneWidget);
           expect(client.room.live, isEmpty);
           continue;
         }
