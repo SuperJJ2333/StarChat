@@ -1,6 +1,16 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-10-04-stable-history-search": {
+      "flutter": "apps/mobile_flutter/lib/ui/chat/chat_search_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "demo": "chat-search-history-loading",
+      "components": ["ChatSearchPage", "RoomPage"],
+      "props": ["onOpenResult", "onLoadMore"],
+      "states": ["history-results", "history-loading", "history-locating", "history-locate-error", "history-located"],
+      "tokens": ["WeChatSpacing.sm = --space-sm", "WeChatSpacing.md = --space-md", "WeChatTypography.caption = --type-caption-size", "WeChatColors.textSecondary = --color-text-secondary"],
+      "behavior": "Own history updates preserve the current query and visible results. Explicit source room/event context locates year-old messages with owner and visibility fencing. Transport failures remain retryable instead of being labeled missing. HTML uses synthetic catalog fixtures and demonstrates result, inline progress, focus and retry routes."
+    },
     "2026-10-04-automatic-chat-recovery": {
       "flutter": "apps/mobile_flutter/lib/features/matrix/matrix_security_page.dart",
       "html": "frontend/src/screens/account-credentials.js",
@@ -2420,7 +2430,7 @@
     }
   },
   "screens": {
-    "expectedCount": 524
+    "expectedCount": 528
   },
   "adminCompletion20260910": {
     "html": [
@@ -2734,6 +2744,10 @@
       "wallet-home-unbound",
       "chat-search-history-results",
       "chat-search-global-results",
+      "chat-search-history-loading",
+      "chat-search-history-locating",
+      "chat-search-history-locate-error",
+      "chat-search-history-located",
       "chat-forward-background",
       "chat-group-management-transfer-members",
       "chat-group-management-transfer-pending",

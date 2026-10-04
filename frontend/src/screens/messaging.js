@@ -61,6 +61,17 @@ function demoAvatar(name, size = 40) {
 function searchResults(definition) {
   const global = definition.state === "global-results";
   const root = pageRoot(definition);
+  if (definition.state === "history-located") {
+    root.append(navigation("周然", { leading: "返回" }));
+    const content = element("div", "p-chat-search__content");
+    content.append(element("time", "c-chat-search__result-detail", "去年 7 月 10 日 09:41"));
+    const message = element("article", "c-chat-search__focused-message");
+    message.dataset.eventId = "demo-old-gathering";
+    message.append(demoAvatar("周然"), element("p", "c-chat-search__result-body", "集合地点已更新"));
+    content.append(message);
+    root.append(content);
+    return root;
+  }
   root.append(navigation(global ? "搜索" : "查找聊天记录", { leading: "返回" }));
   const content = element("div", "p-chat-search__content");
   const field = element("input", "c-chat-search__input");
@@ -69,6 +80,23 @@ function searchResults(definition) {
   field.placeholder = "搜索";
   field.setAttribute("aria-label", "搜索聊天记录");
   content.append(field);
+  const progress = {
+    "history-loading": "正在查询…",
+    "history-locating": "正在定位消息…",
+    "history-locate-error": "消息定位失败，请重试"
+  }[definition.state];
+  if (progress) {
+    const status = element("div", "c-chat-search__status");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.append(element("span", "c-chat-search__result-detail", progress));
+    if (definition.state === "history-locate-error") {
+      const retry = button("c-chat-search__retry", "重试", "open:chat-search-history-locating");
+      retry.textContent = "重试";
+      status.append(retry);
+    }
+    content.append(status);
+  }
   const results = global
     ? [
       ["周末徒步群", "群聊 · 12 人", "group"],
@@ -77,11 +105,12 @@ function searchResults(definition) {
     ]
     : [
       ["林晓", "昨天 09:41 · 明天集合", "history"],
-      ["周然", "9 月 20 日 · 集合地点已更新", "history"]
+      ["周然", "去年 7 月 10 日 · 集合地点已更新", "history"]
     ];
   for (const [name, detail, kind] of results) {
     const row = element("article", "c-chat-search__result");
     row.dataset.kind = kind;
+    if (kind === "history") row.dataset.action = "open:chat-search-history-located";
     row.append(demoAvatar(name), element("div", "c-chat-search__result-body"));
     row.children[1].append(
       element("strong", "c-chat-search__result-name", name),

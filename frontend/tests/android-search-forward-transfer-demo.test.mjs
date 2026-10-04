@@ -51,6 +51,26 @@ test("search and transfer visual states are registered", () => {
   ]) assert.equal(getScreen(id).id, id);
 });
 
+test("history query keeps results visible and an old result has locating, retry and focused demo states", async () => {
+  await withDemoDOM(render => {
+    for (const state of ["history-loading", "history-locating", "history-locate-error"]) {
+      const screen = render(`chat-search-${state}`);
+      assert.equal(byClass(screen, "c-chat-search__result").length, 2);
+      assert.equal(byClass(screen, "c-chat-search__status").length, 1);
+      assert.ok(descendants(screen).some(node => node.textContent?.includes("去年")));
+    }
+    const loading = render("chat-search-history-loading");
+    assert.ok(descendants(loading).some(node => node.textContent === "正在查询…"));
+    const retry = descendants(render("chat-search-history-locate-error"))
+      .find(node => node.dataset.action === "open:chat-search-history-locating");
+    assert.ok(retry);
+    const located = render("chat-search-history-located");
+    assert.equal(byClass(located, "c-chat-search__focused-message").length, 1);
+    assert.ok(descendants(located).some(node => node.textContent === "集合地点已更新"));
+    assert.equal(byClass(located, "c-chat-search__input").length, 0);
+  });
+});
+
 test("search result and transfer member avatars use 40px slots", async () => {
   await withDemoDOM(render => {
     for (const id of ["chat-search-global-results", "chat-group-management-transfer-members"]) {

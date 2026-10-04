@@ -64,7 +64,13 @@ register("chat", "announcement", [
 ]);
 register("chat", "group-info", [["default", "聊天信息 / 12 字群聊名称"]]);
 register("chat", "group-management", [["owner", "群管理 / 群主"], ["transfer-confirm", "群管理 / 群主转让确认"], ["dissolve-confirm", "群管理 / 解散确认"]]);
-register("chat", "search", [["history-results", "查找聊天记录 / 结果"], ["global-results", "全局搜索 / 群聊与聊天记录"]]);
+register("chat", "search", [
+  ["history-results", "查找聊天记录 / 结果"], ["global-results", "全局搜索 / 群聊与聊天记录"],
+  ["history-loading", "查找聊天记录 / 查询中保留结果"],
+  ["history-locating", "查找聊天记录 / 定位旧消息"],
+  ["history-locate-error", "查找聊天记录 / 定位失败重试"],
+  ["history-located", "聊天记录 / 已定位旧消息"]
+]);
 register("account", "recovery", [
   ["downloading", "聊天记录同步 / 正在恢复"], ["ready", "聊天记录同步 / 可用记录"],
   ["partial", "聊天记录同步 / 缺少历史密钥"], ["retrying", "聊天记录同步 / 自动重试"],

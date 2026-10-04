@@ -1478,6 +1478,8 @@ app-transfer-card {
 .c-chat-search__result-body { display: grid; gap: var(--space-xs); min-width: 0; }
 .c-chat-search__result-name { font-size: var(--type-body-size); }
 .c-chat-search__result-detail { color: var(--color-text-secondary); font-size: var(--type-caption-size); }
+.c-chat-search__status { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: var(--space-sm) 0; }
+.c-chat-search__focused-message { display: flex; align-items: center; gap: var(--space-md); padding: var(--space-md); background: var(--color-surface-elevated); border: 2px solid var(--color-brand-primary); border-radius: var(--radius-card); }
 .c-transfer-picker__members { overflow: hidden; border-radius: var(--radius-card); }
 .c-transfer-picker__member { cursor: pointer; }
 .c-transfer-picker__member[data-selected="true"] { color: var(--color-brand-primary); }
