@@ -35,3 +35,5 @@ Android：源码构建 → Apktool 2.12.1 → zipalign 36/P16 → 用户固定�
 本轮没有更改生产服务或正式更新设置。18:37 只读正式版本为 Android0.4.27+2196/iOS0.4.25+2194。
 
 自动审批拒绝失败 synthetic 目录清理及 build junction 切换，原因仅 `blocked by policy`，均未执行。保留忽略目录与原 junction，复用此前命名 disposable build cache，并将最终包/证据放入本轮新目录；不绕过删除，原正式/调试成品保持。
+
+本地main已快进集成，原current-state修改无冲突恢复，1372既有trackedWIP内容hash保持。最终远端身份、公共工件清单与本轮branch清理见工件integration-result.json；收尾仅文档，不改变df617187移动源码或已验APK。

@@ -4,7 +4,7 @@
 
 - 用户反馈：五天前聊天搜索点击显示“未找到该消息，请稍后重试”；图片/视频昨天及更早仅占位。用户确认模拟器2198和真机2196，要求预防iOS L04/L07而非报告当前iOS故障。
 - 授权：本会话直接修复请求，沿原任务自主实施与ADR决策；[计划](../../superpowers/plans/2026-10-04-history-anchor-media-ios.md)、[原托管ADR](../../adr/2026-10-04-server-custodied-matrix-recovery.md)。
-- 基线main3b9d7c24；新branch codex/history-anchor-media-ios-20261004，复用隔离工作树。主目录WIP不修改。当前状态：源码有序双审接受；最终Flutter5419PASS/9skip、analyze0；2199debug已保留数据安装/smoke通过；同源iOS三job全部success；主分支集成收尾。
+- 基线main3b9d7c24；新branch codex/history-anchor-media-ios-20261004，复用隔离工作树。主目录WIP不修改。当前状态：源码有序双审接受；最终Flutter5419PASS/9skip、analyze0；2199debug已保留数据安装/smoke通过；同源iOS三job全部success；已合入本地main，源码/平台门禁完成；远端交付与WIP保留结果见integration-result.json。
 - root拥有本记录/计划/索引/最终证据；独立ios_l04_l07_investigation仅只读调查，无源码或Flutter动作。Task1/Task2顺序独占源码和工具。
 - 记录时间2026-10-04 17:36+08，调查准确起始时间未知，不以文件mtime编造耗时。下一步Task1真实失败测试→最小修复；Task2真实SDK身份回归→定向修复；整批及平台交付。
 
@@ -51,3 +51,9 @@ Android构建18:49:15–18:51:33（2m18s），standardx64debug按源码→Apktoo
 run37196458099 head精确df617187，全部三个job success，iOS18/26 host、native seed、同app重启保留verify各success。完整原生编译含production插件组合；模拟器scanner已有架构限制保留。真实iPhone企业签名覆盖升级/真实用户历史与Android真机仍待反馈；本轮不构建IPA、不正式发布。全域脚本仍因缺.env未执行。
 
 Android2199最终包已独立双审、保留UID/首次安装时间覆盖安装，157秒smoke/crash0。公共工件按显式文件清单复制主目录，无数据库/key目录；原2198成品保持。main/originmain均3b9d7c24，无并发远端变化。下一步仅文档收尾提交→独立最终证据审查→保留primaryWIP的fastforwardmain/push/readback，本轮源码相关输入不再改动，不重复已覆盖门禁。
+
+### main集成执行（2026-10-04 19:19+08）
+
+最终debug/native双审final-delivery-review.md接受，hash71d34a23fb660d605cc843c21052070db304d7192367c11fdb955a80484a2816。初次本地main fastforward到7016ea91；仅current-state的自有stash61dde020已apply --index成功无冲突，主目录1372既有trackedWIP内容hash全部保持、原index为空仍保持。原状态文档修改恢复，未提交他人改动。公共工件最终53文件加inventory按显式清单核对，无数据库/key目录。
+
+本轮技术scope完成；真实账号/实体设备/正式发布缺口如上。远端main推送、精确readback和仅本轮branch清理由integration-result.json绑定；docs-only收尾与df617187的mobile/workflow差异必须为空，复用已通过全量与原生门禁，不重复CI。下一步为真机/真实用户历史验收，正式Android/IPA发布需单独指定。
