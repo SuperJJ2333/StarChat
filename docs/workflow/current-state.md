@@ -1,10 +1,12 @@
 # 移动交付恢复索引
 
-## 2026-10-05 全局搜索与验证码：修复进行中
+## 2026-10-05 2202全局搜索与验证码：技术验收通过，模拟器已安装
 
-用户新反馈：全局搜索命中跳最新消息；手机验证码延迟/有效期需15分钟；未勾协议需toast；邮件/手机离页重进60秒冷却丢失。独立[任务](tasks/2026-10-05-global-search-otp.md)和[计划](../superpowers/plans/2026-10-05-global-search-otp.md)，branch codex/global-search-otp-20261005/e3f10d6f基线。全局cached timeline无listener通知导致初始anchor未启动已真实页面RED/GREEN；auth四项RED确认，最小修复进行中。短信15minADR设计domain接受/源码TDD进行，生产只读当前5min、未部署，尚无新移动包。
+全局搜索首次缓存投影应用anchor、无协议toast及手机/邮件离页重进60秒冷却已修复。源b54cf6fa/0.4.33+2202，全量5455PASS/9skip/analyze0，组件规范/质量审查接受。05:09保留数据安装emulator-5556，UID10090/首次安装不变，读回成品SHA90564536…48b1b9；固定75b31单签v2/v3和标准重建验收通过。
 
-真实日志/PG聚合暂未见短信错误码/锁等待或OTP队列积压，不能替代运营商收件延迟排查；手机号末4位/时间可缩小查证。模拟器实际仍2201。各actor代码/命令串行所有权见任务；主区无关WIP不碰。
+05:02生产API/worker最小TTL覆盖已部署，实际900秒/供应商15min、健康/续期协议及其他容器保全通过。已有旧验证码期限保持，新发15分钟。两次只读聚合未见当前锁等待/OTP积压；云南用户登录/注册具体运营商延迟缺时间无法关联。iOS37233001043同源18/26host、native seed+新进程保留Keychain/SQLCipher历史、完整生产编译全部SUCCESS。不作真机或永不L04/L07保证。
+
+用户已明确反馈2202三项页面复测“三项均正常”；未正式移动发布/IPA，verify缺必要本地env未执行，PG环境skip非PASS。见[任务](tasks/2026-10-05-global-search-otp.md)、[报告与APK](../verification/2026-10-05-global-search-otp.md)和[计划](../superpowers/plans/2026-10-05-global-search-otp.md)。主分支集成收尾；1372无关WIP按hash保全，下文保留历史。
 
 ## 2026-10-05 2201旧日期及上下文：技术验收通过，模拟器已保留数据安装
 
