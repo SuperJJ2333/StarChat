@@ -44,3 +44,5 @@ iOS CI37301710017 19:43:07整体SUCCESS，三个job均成功；已读取实际18
 N1/N2/N3有序规格→质量及独立成品审查均接受，无P0–P2；五项实现与模拟器交付技术完成。真实提醒/头像、视频停止与恢复、声学和iPhone覆盖安装仍待用户，不承诺永不出现L04/L07；本轮未改消息密钥加载，不作额外密钥迁移。正式更新弹窗/ARM64发行/企业IPA未发布。源码集成回执见本任务artifacts/main-integration.json。
 
 耗时已知区间：19:13–19:19正确环境全量5:31，最终analyze35.4s；19:21–19:24:38源码/标准重建约3分38秒（source68.2s）；19:31 install-r/启动，19:34 smoke160.57秒；iOS19:14:55–19:43:07约28分12秒，与本地步骤并行，不能相加。18:08起本轮root恢复/审查/返工/归档区间有台账；更早实现主动时长未捕获，不能按mtime猜工时。
+
+19:48实际main快进集成完成（ebcf09fa文档候选），移动tree c347335a未变；1372无关WIP SHA及原current-state正文保全，index空，自己的临时stash已drop。最终文档commit/远端读回记于main-integration.json。继承的managed worktree与buildcache保留；本轮没有生产服务变更。

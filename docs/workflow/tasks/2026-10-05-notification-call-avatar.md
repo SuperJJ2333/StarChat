@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | N1 | 查看会话后桌面不重放旧提醒；新提醒与帐号隔离；消息头像 | RED/GREEN、原生31通知/最终全量PASS；有序审查接受 |
 | N2 | 通话头像连续、悬浮窗头像+时长+语音/视频、摄像头真实开关 | 身份/camera/缓存/终态专项及整体PASS；有序审查接受 |
-| N3 | 注册/demo/最终两端验证及模拟器 | 526 frontend/34组件535屏 PASS；有序审查接受；整体平台门禁待执行 |
+| N3 | 注册/demo/最终两端验证及模拟器 | 全部门禁/两端原生PASS；模拟器2203已保留数据安装；main快进集成 |
 
 根因证据：app_home.dart主叫首次CallPage传authoritative.avatarUrl，但CallController.start没有identity；CallUiManager恢复page读state.identity因此回退。banner coordinator明确avatarUrl:null、overlay仅Placeholder；Android CallOverlayService明确applicationInfo.icon，无时长。旧提醒后台重放仍需focused/native证据定因。
 
@@ -59,3 +59,7 @@ N1 R1排队竞态actual RED cancel2vs1→coordinator24PASS，后有序独立审�
 ## 2026-10-05 19:45 +08 两端技术完成
 
 iOS37301710017 exact86772b17 19:43:07全run/3job SUCCESS。18/26实际日志各seed23PASS及新app process verify4PASS/Retained seed database exists True；无签名生产分发。最终技术验收N1/N2/N3完成，用户实际五项交互复测待办；下一步执行明确owned-source47加本任务docs的main快进集成/远端读回，1372WIP SHA与原current-state正文保全，不将它们纳入commit。正式移动发布仍另授权，不再重做同输入长门禁。
+
+## 2026-10-05 19:48 +08 源码集成完成
+
+main已快进至ebcf09fa（文档候选，移动tree仍c347335a），main-integration.json实际回执：1372无关WIP逐文件SHA保持，candidate overlap0，原current-state正文作为后缀完整保持，primary index空，只删除本任务自己的临时stash OID。本项结束说明为文档-only，后续main仍同移动输入，不重建APK/IPA或重复全量。下一步远端main读回/只清理本任务已合并分支；真实账号和双设备五项复测待用户。保留继承的managed worktree、旧buildcache和历史产物。

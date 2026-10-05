@@ -51,4 +51,4 @@ Owned: packages/ui-contracts/changliao-component-registry.json、frontend/src/sc
 - [x] 注册状态/props/tokens并更新HTML demo，保留实际摄像头开关交互、悬浮窗、通知头像展示。
 - [x] demo RED/GREEN、UI contract、frontend、最终Flutter analyze/全量及平台相关门禁。verify环境预检，不引入生产secret。
 - [x] broad独立规格→质量审查，版本冻结后标准Android rebuild/固定签名、保留数据安装模拟器；iOS相关原生CI验证。
-- [ ] 证据身份/计时与当前状态更新；逐文件保护1372WIP，必要源码集成按已授权会话上下文。
+- [x] 证据身份/计时与当前状态更新；逐文件保护1372WIP，必要源码集成按已授权会话上下文。
