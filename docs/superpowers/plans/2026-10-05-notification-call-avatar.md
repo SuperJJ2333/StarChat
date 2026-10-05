@@ -30,25 +30,25 @@
 
 Owned: lib/core/notification/* affected classes、lib/features/matrix/matrix_notification_event_source.dart、conversation_read_state.dart、lib/ui/notification/in_app_banner_overlay.dart、Android push/NativeMessageNotifications.kt及对应focused tests。禁止编辑app_home.dart、MainActivity.kt、call files、registry/frontend。
 
-- [ ] 写并运行旧已读事件后台重放、真实新事件、账号隔离及私聊/群头像失败RED。
-- [ ] 沿原生claim/读状态追根因，最小抑制；头像经本地解析与缓存传入现有presenter和banner。
-- [ ] focused GREEN及实际native相关门禁；记录命令/退出码，不并发Flutter。
-- [ ] 规格符合性审查→质量审查，修复阻断项。
+- [x] 写并运行旧已读事件后台重放、真实新事件、账号隔离及私聊/群头像失败RED。
+- [x] 沿原生claim/读状态追根因，最小抑制；头像经本地解析与缓存传入现有presenter和banner。
+- [x] focused GREEN及实际native相关门禁；记录命令/退出码，不并发Flutter。
+- [x] 规格符合性审查→质量审查，修复阻断项。
 
 ## Task N2 通话身份、悬浮窗与摄像头
 
 Owned: call_controller.dart/call_page.dart/call_ui_manager.dart/matrix_call_adapter.dart/native_call_coordinator.dart/call_notifications.dart、app_home.dart限定call入口、Android call/*、MainActivity.kt限定call桥接及对应focused tests。禁止编辑notification/push、registry/frontend。
 
-- [ ] 写并运行主叫最小化再恢复头像、悬浮窗持续时长/媒体类型、camera停止/恢复/失败/终态RED。
-- [ ] 将权威identity保存至活动state，页面恢复复用；摄像头调用公开backend接口，真实track控制与状态保持。
-- [ ] Android桌面悬浮窗消费本地头像+连接时间/媒体类型；Flutter悬浮窗同义；安全失败、终态清理。
-- [ ] focused GREEN、native编译及有序双审。
+- [x] 写并运行主叫最小化再恢复头像、悬浮窗持续时长/媒体类型、camera停止/恢复/失败/终态RED。
+- [x] 将权威identity保存至活动state，页面恢复复用；摄像头调用公开backend接口，真实track控制与状态保持。
+- [x] Android桌面悬浮窗消费本地头像+连接时间/媒体类型；Flutter悬浮窗同义；安全失败、终态清理。
+- [x] focused GREEN、native编译及有序双审。
 
 ## Task N3 Demo/注册与整体交付（root）
 
 Owned: packages/ui-contracts/changliao-component-registry.json、frontend/src/screens/calls.js及相关通知demo/目录/tests，task/plan/current-state/report。
 
-- [ ] 注册状态/props/tokens并更新HTML demo，保留实际摄像头开关交互、悬浮窗、通知头像展示。
-- [ ] demo RED/GREEN、UI contract、frontend、最终Flutter analyze/全量及平台相关门禁。verify环境预检，不引入生产secret。
-- [ ] broad独立规格→质量审查，版本冻结后标准Android rebuild/固定签名、保留数据安装模拟器；iOS相关原生CI验证。
+- [x] 注册状态/props/tokens并更新HTML demo，保留实际摄像头开关交互、悬浮窗、通知头像展示。
+- [x] demo RED/GREEN、UI contract、frontend、最终Flutter analyze/全量及平台相关门禁。verify环境预检，不引入生产secret。
+- [x] broad独立规格→质量审查，版本冻结后标准Android rebuild/固定签名、保留数据安装模拟器；iOS相关原生CI验证。
 - [ ] 证据身份/计时与当前状态更新；逐文件保护1372WIP，必要源码集成按已授权会话上下文。

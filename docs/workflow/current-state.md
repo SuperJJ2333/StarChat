@@ -1,5 +1,16 @@
 # 移动交付恢复索引
 
+## 2026-10-05 2203通知与通话：模拟器交付，两端技术验收通过
+
+五项实现候选86772b17/0.4.34+2203：确切已查看事件持久抑制与前台有效查看、精确延迟读/排队取消保留新提醒；App内/Android通知头像、Flutter及Android通话悬浮窗头像/时长/媒体标记、权威身份恢复连续；摄像头await停止sender/track并video-only恢复，音频保全。未知opaque已读房间push先quiet pending，Matrix确认后旧取消/新正常升级，完全挂起时静默托盘不是零项保证；iOS系统通信头像未新增。既有已验证加密双人通话边界保持。
+
+完整Flutter5482PASS/9skip/0FAIL、analyze0、原生59PASS、Python相关14PASS、frontend526PASS/34组件535屏，有序源码/质量及实际成品审查接受。首次全量缺DLL/长路径及两个旧通话fixture失败已保留，修正环境/fixture后全量通过。verify缺本地env未执行。
+
+Android x86_64 debug常规重建/稳定75b31签名、源/包语义与1880输入冻结通过，成品122192594bytes/SHA64d43411…6bcb08。19:31install-r保留UID10090/首次安装，读回SHA一致；同PID15936持续160.57秒、对应Javafatal0，仅启动smoke。真实会话通知与双设备摄像头复测待用户。iOS37301710017 exact86772b17完整生产编译与18/26原生/新进程保留历史均SUCCESS，run19:43:07全部成功；无签名/正式移动发布。19:20只读正式Android2202/iOS2194。
+
+见[任务](tasks/2026-10-05-notification-call-avatar.md)、[验证与APK](../verification/2026-10-05-notification-call-avatar.md)、[计划](../superpowers/plans/2026-10-05-notification-call-avatar.md)。主区1372WIP按SHA保全。源码集成收尾，最终main回执见任务artifacts/main-integration.json；下一步用户真实五项场景复测，不重复未改变门禁；生产更新弹窗不因2202旧授权自动推断。
+
+
 ## 2026-10-05 Android2202正式更新已发布；iOS2202原包已交接
 
 Android0.4.33+2202正式ARM64重建/固定签名完成，05:52发布，15:20十键/真实路由及恰好3审计读回PASS。下载/alias/CDN Deployed双路HEAD200，最低build3与iOS2194、运行容器及网络静态保持。iOS同源CI37235412773两job SUCCESS；原始IPA61622830bytes/SHAe5ab6d45…6d2810已供企业重签，未iOS发布/TestFlight。frontend522PASS及有序审查，移动tree与已验收5455PASS/analyze0源一致。
