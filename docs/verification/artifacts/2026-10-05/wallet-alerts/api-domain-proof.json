@@ -1,0 +1,1 @@
+{"role": "api", "passed": true, "concurrent_failures": 6, "single_alert": true, "three_distinct_healthy": true, "control_preserved": true}

@@ -54,7 +54,7 @@ def test_failed_manual_review_does_not_clear_existing_condition(core, monitor):
 
 
 def test_review_source_budget_expiry_is_t2_without_releasing_existing_pause(core, monitor):
-    service, source, _ = monitor
+    service, source, clock = monitor
     with core[1].begin() as session:
         control = session.get(WalletControl, 'global')
         control.withdrawals_paused = True
@@ -64,6 +64,11 @@ def test_review_source_budget_expiry_is_t2_without_releasing_existing_pause(core
         raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')
 
     source.read_reserve_cut = timed_out
+    assert service.review_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
+    with core[1]() as session:
+        assert session.scalar(select(WalletIncident)) is None
+    from datetime import timedelta
+    clock[0] += timedelta(seconds=600)
     assert service.review_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
     with core[1]() as session:
         control = session.get(WalletControl, 'global')

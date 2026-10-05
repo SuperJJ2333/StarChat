@@ -22,7 +22,8 @@ def alert():
     WalletIncidentService(factory).observe([dict(fingerprint='FIXTURE:global',code='FIXTURE',severity='P0',subject_id='sensitive-subject')])
     with factory() as s:
         row = s.scalar(select(OutboxEvent).where(OutboxEvent.topic=='wallet.alert'))
-        event = OutboxMessage(row.id,row.topic,row.event_type,row.aggregate_type,row.aggregate_id,dict(row.payload),{},0)
+        event = OutboxMessage(row.id,row.topic,row.event_type,row.aggregate_type,row.aggregate_id,
+                              dict(row.payload),dict(row.event_headers),0)
     class Sender:
         calls = []
         failure = False
@@ -44,7 +45,10 @@ def test_delivery_records_smtp_only_after_send_and_retry_skips(alert):
     sender.send_wallet_alert = send
     handler(event); handler(event)
     assert len(sender.calls)==1
-    assert set(sender.calls[0]) == {'recipient','event_id','code','severity'}
+    assert set(sender.calls[0]) == {'recipient','event_id','code','severity',
+                                 'incident_id','occurred_at','diagnostics'}
+    assert sender.calls[0]['incident_id'] == event.aggregate_id
+    assert sender.calls[0]['diagnostics'] == {'failed_conditions':['UNKNOWN']}
     with factory() as s:
         receipt = s.get(WalletAlertReceipt,event.id)
         assert receipt.transport=='SMTP' and receipt.incident_id==event.aggregate_id

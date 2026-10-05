@@ -73,6 +73,11 @@ def test_read_budget_expiry_during_resample_is_t2_and_does_not_pause(core, monit
     result = service.run_once()
     assert result['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
     with core[1]() as session:
+        assert session.scalar(select(WalletIncident).where(
+            WalletIncident.fingerprint == 'manual-reserve:MANUAL_SOURCE_UNAVAILABLE')) is None
+    clock[0] += timedelta(seconds=600)
+    service._failed_source('MANUAL_SOURCE_UNAVAILABLE', source_read_timeout=True)
+    with core[1]() as session:
         incident = session.scalar(select(WalletIncident).where(
             WalletIncident.fingerprint == 'manual-reserve:MANUAL_SOURCE_UNAVAILABLE'))
         assert incident.severity == 'T2'

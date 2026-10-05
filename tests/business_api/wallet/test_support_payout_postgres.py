@@ -176,7 +176,7 @@ def test_0092_upgrade_retains_old_payout_and_recharge_rows(legacy_schema):
             SELECT count(*) FROM wallet_support_payout_rejections
             WHERE id = 'legacy-rejection'
         """)) == 1
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0094_support_finance_order_recovery'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0095_wallet_source_alerts'
 
 
 def test_preparation_and_rejection_history_reject_duplicates_and_mutation(scoped):

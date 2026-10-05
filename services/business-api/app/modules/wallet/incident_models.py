@@ -31,6 +31,18 @@ class WalletIncident(Base):
     last_escalation_slot: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class WalletSourceAlertState(Base):
+    """Notification continuity only; never authorizes a financial operation."""
+    __tablename__ = 'wallet_source_alert_states'
+    id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    failed_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    healthy_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_observation_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    notified_conditions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    first_context: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    latest_context: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
 class WalletIncidentCommand(Base):
     __tablename__ = 'wallet_incident_commands'
 

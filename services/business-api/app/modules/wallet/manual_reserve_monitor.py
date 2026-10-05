@@ -86,6 +86,7 @@ def _valid_cut(cut, identity):
 
 
 class ManualReserveMonitor:
+    source_alerts_enabled = True
     reserve_policy = 'full_backing'
     publish_backing_advisory = True
     discovery_sync = None
@@ -112,6 +113,8 @@ class ManualReserveMonitor:
         self.incidents = WalletIncidentService(factory, now_factory=clock)
 
     def _heartbeat(self, session, now, code=None):
+        if code is not None and self.source_alerts_enabled:
+            self.incidents.source_interrupted_in_session(session)
         row = session.get(WalletMonitorHeartbeat, 'global', with_for_update=True)
         if row is None:
             row = WalletMonitorHeartbeat(id='global', last_attempt_at=now)
@@ -129,29 +132,47 @@ class ManualReserveMonitor:
     def _is_source_read_budget_expired(exc):
         return isinstance(exc, FundingSourceError) and str(exc) == 'SOURCE_READ_BUDGET_EXPIRED'
 
-    def _block(self, session, code, now, *, source_read_timeout=False):
+    def _block(self, session, code, now, *, source_read_timeout=False, alert_context=None, since_ms=None):
         if source_read_timeout and code != 'MANUAL_SOURCE_UNAVAILABLE':
             raise ValueError('source read timeout requires source-unavailable incident')
         if code in self._advisory_block_codes or source_read_timeout:
             severity = 'T2' if source_read_timeout else 'P1'
             diag.emit('WARNING', 'monitor_block_requested', component='manual_monitor', reason_code=code)
-            self.incidents.observe_in_session(session, [dict(fingerprint='manual-reserve:'+code,
-                code=code, severity=severity, subject_id='global')], actor_id=ACTOR, complete=False)
+            signal = dict(fingerprint='manual-reserve:'+code, code=code, severity=severity, subject_id='global')
+            context = alert_context or (
+                dict(failed_conditions=['SOURCE_READ_BUDGET_EXPIRED']) if source_read_timeout
+                else dict(failed_conditions=['UNKNOWN']))
+            self.incidents.source_failure_in_session(session, signal, context, actor_id=ACTOR, since_ms=since_ms)
             self._heartbeat(session, now, code)
             return dict(complete=False, status='BLOCKED', codes=[code])
         diag.emit('ERROR', 'monitor_block_requested', component='manual_monitor', reason_code=code)
         self.incidents.observe_in_session(session, [dict(fingerprint='manual-reserve:'+code,
-            code=code, severity='P0', subject_id='global')], actor_id=ACTOR, complete=False)
+            code=code, severity='P0', subject_id='global')], actor_id=ACTOR, complete=False,
+            alert_context=alert_context)
         # A failed proof cannot leave the previous reserve usable. Invalidating
         # evidence does not acquire or mutate administrator pause ownership.
         invalidate_wallet_reserve(session)
         self._heartbeat(session, now, code)
         return dict(complete=False, status='BLOCKED', codes=[code])
 
-    def _failed_source(self, code, *, source_read_timeout=False):
+    def _failed_source(self, code, *, source_read_timeout=False, alert_context=None):
         with self.factory.begin() as session:
             return self._block(session, code, _aware(self.clock()),
-                               source_read_timeout=source_read_timeout)
+                               source_read_timeout=source_read_timeout, alert_context=alert_context)
+
+    def _read_source_cut(self):
+        read_sample = getattr(self.source, 'read_reserve_sample', None)
+        if callable(read_sample):
+            sample = read_sample()
+            self._source_alert_context = dict(
+                failed_conditions=list(sample.failed_conditions) or ['UNKNOWN'],
+                observation_id=sample.cut.observation_id)
+            return sample.cut
+        return self.source.read_reserve_cut()
+
+    def _source_healthy(self, session, cut):
+        if self.source_alerts_enabled:
+            self.incidents.source_healthy_in_session(session, cut.observation_id, actor_id=ACTOR)
 
     def _window_ms(self):
         """Observer freshness window in milliseconds; matches the source config."""
@@ -169,10 +190,17 @@ class ManualReserveMonitor:
                     or not 0 <= pending.since_ms <= now_ms <= pending.fresh_until_ms
                     <= now_ms+self._window_ms()):
                 return self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)
-            if now_ms-pending.since_ms >= 300000:
-                return self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)
+            context = dict(failed_conditions=list(pending.failed_conditions),
+                           observation_id=pending.observation_id)
+            notified = self.incidents.source_failure_in_session(session,
+                dict(fingerprint='manual-reserve:MANUAL_SOURCE_UNHEALTHY',
+                     code='MANUAL_SOURCE_UNHEALTHY', severity='P1', subject_id='global'),
+                context, actor_id=ACTOR, since_ms=pending.since_ms)
             # No source balance is accepted and no existing pause is removed.
             invalidate_wallet_reserve(session)
+            if notified:
+                self._heartbeat(session, now, 'MANUAL_SOURCE_UNHEALTHY')
+                return dict(complete=False, status='BLOCKED', codes=['MANUAL_SOURCE_UNHEALTHY'])
             self._heartbeat(session, now, 'MANUAL_SOURCE_PENDING')
             return dict(complete=False, status='WAITING', codes=['MANUAL_SOURCE_PENDING'])
 
@@ -331,6 +359,7 @@ class ManualReserveMonitor:
             return {'expected': reserve.version if reserve is not None else None}
 
     def _run(self, *, review_only=False, on_review=None, on_activate=None, wait_state=None):
+        self._source_alert_context = None
         # Both external reads happen outside the financial transaction. A
         # concurrent claim/settlement is detected again under the budget lock.
         with self.factory() as session:
@@ -347,7 +376,7 @@ class ManualReserveMonitor:
                     return sampled['result']
                 cut, expected = sampled['cut'], sampled['expected']
             else:
-                cut = self.source.read_reserve_cut()
+                cut = self._read_source_cut()
             if not _valid_cut(cut, self.source.source_identity):
                 return self._failed_source('MANUAL_SOURCE_INVALID')
             sample_ms = int(_aware(self.clock()).timestamp()*1000)
@@ -355,11 +384,11 @@ class ManualReserveMonitor:
                 # A just-committing observer snapshot can replace the expired
                 # sample. Resample once; never extend or accept its deadline.
                 time.sleep(0.2)
-                cut = self.source.read_reserve_cut()
+                cut = self._read_source_cut()
                 if not _valid_cut(cut, self.source.source_identity):
                     return self._failed_source('MANUAL_SOURCE_INVALID')
             second = (sampled['second'] if self.stale_resample_budget_seconds and not review_only
-                      and 'second' in sampled else self.source.read_reserve_cut())
+                      and 'second' in sampled else self._read_source_cut())
             if not _valid_cut(second, self.source.source_identity):
                 return self._failed_source('MANUAL_SOURCE_INVALID')
             if second != cut:
@@ -372,7 +401,10 @@ class ManualReserveMonitor:
             diag.emit('ERROR', 'source_read_failed', component='manual_monitor',
                       reason_code='MANUAL_SOURCE_UNAVAILABLE', **diag.exception_info(exc))
             return self._failed_source('MANUAL_SOURCE_UNAVAILABLE',
-                source_read_timeout=self._is_source_read_budget_expired(exc))
+                source_read_timeout=self._is_source_read_budget_expired(exc),
+                alert_context=dict(failed_conditions=[str(exc)]) if isinstance(exc, FundingSourceError)
+                    and str(exc) in ('SOURCE_MALFORMED', 'SOURCE_IDENTITY_MISMATCH', 'SOURCE_REGRESSION')
+                    else None)
         with self.factory.begin() as session:
             reserve = lock_budget(session)
             control = session.get(WalletControl, 'global', with_for_update=True)
@@ -395,7 +427,14 @@ class ManualReserveMonitor:
                           if not cut.heartbeat_ms <= now_ms <= cut.fresh_until_ms else 'BASELINE_NOT_REACHED',
                           observation_id=cut.observation_id, fresh_until_ms=cut.fresh_until_ms,
                           checkpoint_ms=cut.checkpoint_ms, solid_block=cut.solid_block)
-                return self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)
+                context = dict(self._source_alert_context or dict(failed_conditions=['UNKNOWN']))
+                conditions = list(context['failed_conditions'])
+                if cut.checkpoint_ms < int(self.baseline.timestamp()*1000) or cut.solid_block < self.baseline_height:
+                    conditions.append('BASELINE_NOT_REACHED')
+                if cut.heartbeat_ms > now_ms:
+                    conditions.append('CLOCK_AHEAD')
+                context['failed_conditions'] = list(dict.fromkeys(conditions))
+                return self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now, alert_context=context)
             state = session.get(WalletFundingScanState, 'global', with_for_update=True)
             if (state is None or state.source_identity != cut.source_identity
                     or state.cursor_rowid > cut.max_rowid or state.source_max_rowid > cut.max_rowid
@@ -446,6 +485,7 @@ class ManualReserveMonitor:
                 if any(value >= Decimal('1e24') for value in (liability, eligible)):
                     return self._block(session, 'MANUAL_RESERVE_OVERFLOW', now)
             if review_only:
+                self._source_healthy(session, cut)
                 if on_activate is not None:
                     if not self.external_delivery_configured:
                         raise _ReviewRejected(AppError(code='MANUAL_CONTROL_ALERTS_NOT_CONFIGURED',
@@ -491,6 +531,9 @@ class ManualReserveMonitor:
             now = _aware(self.clock())
             if not cut.heartbeat_ms <= int(now.timestamp()*1000) <= cut.fresh_until_ms:
                 return self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)
+            self._source_healthy(session, cut)
+            self.incidents.observe_in_session(session, [], actor_id=ACTOR,
+                complete=True, clear_prefix='manual-reserve:')
             if (last is not None and last.cut_digest == cut.digest and reserve is not None
                     and last.result_version == reserve.version and reserve.usdt_liability == liability):
                 self._heartbeat(session, now)
@@ -650,8 +693,9 @@ class _HandoverReserveReview(ManualReserveMonitor):
     Transactional failures raise so any proof-side writes roll back. This object
     is created per handover call; ordinary monitor instances retain escalation.
     """
+    source_alerts_enabled = False
 
-    def _block(self, session, code, now):
+    def _block(self, session, code, now, **kwargs):
         raise _HandoverProofRejected(code)
 
     def _heartbeat(self, session, now, code=None):
@@ -659,7 +703,7 @@ class _HandoverReserveReview(ManualReserveMonitor):
             raise _HandoverProofRejected(code)
         return super()._heartbeat(session, now, code)
 
-    def _failed_source(self, code, *, source_read_timeout=False):
+    def _failed_source(self, code, *, source_read_timeout=False, alert_context=None):
         return dict(complete=False, status='BLOCKED', codes=[code])
 
     def _pending_source(self, pending):

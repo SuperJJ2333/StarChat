@@ -21,6 +21,14 @@ class TronReadError(RuntimeError):
     """A complete, verified observation could not be obtained (safe to log)."""
 
 
+class TronTemporaryReadError(TronReadError):
+    def __init__(self, reason):
+        if reason not in ('SOURCE_NETWORK_ERROR', 'SOURCE_HTTP_UNAVAILABLE'):
+            raise ValueError('Invalid temporary source reason')
+        super().__init__('TRON request failed')
+        self.reason = reason
+
+
 def _checksum(raw: bytes) -> bytes:
     return hashlib.sha256(hashlib.sha256(raw).digest()).digest()[:4]
 
@@ -142,6 +150,10 @@ class TronReader:
                     attempt += 1
                     time.sleep(1.5 if reason == 'HTTP_RATE_LIMITED' else 0.5)
                     continue
+                if isinstance(exc, httpx.TransportError):
+                    raise TronTemporaryReadError('SOURCE_NETWORK_ERROR') from None
+                if isinstance(exc, httpx.HTTPStatusError) and (status == 429 or status >= 500):
+                    raise TronTemporaryReadError('SOURCE_HTTP_UNAVAILABLE') from None
                 raise TronReadError('TRON request failed') from None
             if self._deadline is not None and time.monotonic() >= self._deadline:
                 diag.emit('ERROR', 'request_failed', component='reader', reason_code='SCAN_DEADLINE', **context)

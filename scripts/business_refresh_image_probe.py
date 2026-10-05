@@ -192,6 +192,11 @@ def verify_worker(worker_root='/opt/business-worker/app',
     class IsolatedIncidentSink:
         def observe_in_session(self, _session, incidents, *, actor_id, complete):
             observed.append((incidents, actor_id, complete))
+        def source_failure_in_session(self, session, signal, context, *, actor_id, since_ms=None):
+            if context.get('failed_conditions') != ['SOURCE_READ_BUDGET_EXPIRED']:
+                raise AssertionError('T2 source diagnostic boundary')
+            self.observe_in_session(session, [signal], actor_id=actor_id, complete=False)
+            return True
 
     monitor = object.__new__(reserve_module.ManualReserveMonitor)
     monitor.incidents = IsolatedIncidentSink()
@@ -226,6 +231,40 @@ def verify_worker(worker_root='/opt/business-worker/app',
         Base.metadata.create_all(engine)
         factory = create_session_factory(engine)
         now = datetime.now(timezone.utc)
+        if getattr(reserve_module.ManualReserveMonitor, 'source_alerts_enabled', False):
+            from app.modules.wallet.incidents import WalletIncidentService
+            from app.modules.wallet.incident_models import WalletIncident
+            from app.modules.wallet.models import WalletControl
+            clock = [now]
+            current = object.__new__(reserve_module.ManualReserveMonitor)
+            current.factory = factory
+            current.clock = lambda: clock[0]
+            current.external_delivery_configured = False
+            current.incidents = WalletIncidentService(factory, now_factory=current.clock)
+            with factory.begin() as session:
+                session.add(WalletControl(id='global', withdrawals_paused=True,
+                                          pause_reason='ISOLATED_EXISTING_PAUSE'))
+            for elapsed in (0, 599, 600):
+                clock[0] = now + timedelta(seconds=elapsed)
+                with factory.begin() as session:
+                    current._block(session, 'MANUAL_SOURCE_UNAVAILABLE', clock[0], source_read_timeout=True)
+                with factory() as session:
+                    incident = session.scalar(select(WalletIncident))
+                    if elapsed < 600 and incident is not None:
+                        raise AssertionError('source alert before sustained ten minutes')
+                    if elapsed == 600 and (incident is None or incident.severity != 'T2'):
+                        raise AssertionError('source alert missing after sustained ten minutes')
+            for observation in (1, 1, 2, 3):
+                with factory.begin() as session:
+                    current.incidents.source_healthy_in_session(session, observation, actor_id='isolated')
+                    current.incidents.observe_in_session(session, [], complete=True, clear_prefix='manual-reserve:')
+                with factory() as session:
+                    incident = session.scalar(select(WalletIncident))
+                    if incident.condition_active != (observation != 3):
+                        raise AssertionError('three distinct healthy observations required')
+                    control = session.get(WalletControl, 'global')
+                    if not control.withdrawals_paused or control.pause_reason != 'ISOLATED_EXISTING_PAUSE':
+                        raise AssertionError('monitor changed existing administrator pause')
         with factory.begin() as session:
             session.add(User(id='isolated-user', username='isolated',
                 username_normalized='isolated', email='isolated@example.invalid',

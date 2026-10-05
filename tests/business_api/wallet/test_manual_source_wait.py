@@ -18,9 +18,11 @@ def test_brief_unverified_sampling_waits_without_permanent_pause(core, monitor):
         assert not session.get(WalletControl, 'global').withdrawals_paused
         assert session.get(RedeemabilityReserve, 'global').observed_at.year == 1970
     clock[0] += timedelta(minutes=5)
+    assert service.run_once()['status'] == 'WAITING'
+    clock[0] += timedelta(minutes=5)
     assert service.run_once()['status'] == 'BLOCKED'
     with core[1]() as session:
-        # T3: even the 5-minute pending budget must not pause the wallet.
+        # Alert maturity must not pause the wallet.
         assert not session.get(WalletControl, 'global').withdrawals_paused
 
 

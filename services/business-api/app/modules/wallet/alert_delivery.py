@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from app.core.outbox import OutboxEvent, OutboxMessage
 from app.modules.wallet.incident_models import WalletAlertReceipt, WalletIncident
+from app.modules.wallet.alert_context import validate_context
 
 
 class WalletAlertDeliveryError(RuntimeError):
@@ -19,6 +20,9 @@ class WalletAlertEnvelope:
     event_id: str
     code: str
     severity: str
+    incident_id: str
+    occurred_at: str
+    diagnostics: dict | None
 
 
 class WalletAlertDelivery:
@@ -32,8 +36,10 @@ class WalletAlertDelivery:
         persisted=session.get(OutboxEvent,event.id,with_for_update=lock)
         if (persisted is None or persisted.topic!='wallet.alert' or persisted.aggregate_type!='wallet_incident'
                 or persisted.event_type not in ('wallet.incident.opened','wallet.incident.reopened',
-                    'wallet.incident.severity_changed','wallet.incident.escalated')
-                or any(getattr(persisted,key)!=getattr(event,key) for key in ('topic','event_type','aggregate_type','aggregate_id','payload'))):
+                    'wallet.incident.severity_changed','wallet.incident.escalated',
+                    'wallet.incident.cause_changed')
+                or any(getattr(persisted,key)!=getattr(event,key) for key in ('topic','event_type','aggregate_type','aggregate_id','payload'))
+                or persisted.event_headers != event.headers):
             raise WalletAlertDeliveryError('WALLET_ALERT_EVENT_CONFLICT')
         payload=persisted.payload
         if (not isinstance(payload,dict) or set(payload)!={'incident_id','subject_id','code','severity'}
@@ -59,7 +65,13 @@ class WalletAlertDelivery:
         with self.factory() as session:
             persisted,existing=self._validate(session,event)
             if existing: return None
-            return WalletAlertEnvelope(persisted.id,persisted.payload['code'],persisted.payload['severity'])
+            context = persisted.event_headers.get('wallet_diagnostics')
+            if context is not None:
+                context = validate_context(context)
+            when = persisted.created_at
+            when = when.replace(tzinfo=timezone.utc) if when.tzinfo is None else when
+            return WalletAlertEnvelope(persisted.id,persisted.payload['code'],persisted.payload['severity'],
+                persisted.aggregate_id, when.isoformat(), context)
 
     def record_smtp_delivery(self,event):
         """Call only after SMTP acceptance; commit failure can cause a duplicate email."""
