@@ -16,7 +16,7 @@ test('homepage iOS link reaches the current installation page', () => {
 test('download page advertises the current IPA and retains OTA installation', () => {
   const source = readFileSync(new URL('../download.html', import.meta.url), 'utf8');
   assert.match(source, /0\.4\.25（2194）/);
-  assert.match(source, /href="\/downloads\/ios\/ChatFlow-0\.4\.25-2194-enterprise-552a07a4\.ipa" download/);
+  assert.match(source, /href="\/downloads\/ios\/ChatFlow-0\.4\.25-2194-enterprise-d532f913\.ipa" download/);
   assert.match(source, /itms-services:\/\//);
   assert.doesNotMatch(source, /0\.3\.96|2134/);
 });

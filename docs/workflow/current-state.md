@@ -1,5 +1,12 @@
 # 移动交付恢复索引
 
+## 2026-10-05 Android2202正式更新已发布；iOS2202原包已交接
+
+Android0.4.33+2202正式ARM64重建/固定签名完成，05:52发布，15:20十键/真实路由及恰好3审计读回PASS。下载/alias/CDN Deployed双路HEAD200，最低build3与iOS2194、运行容器及网络静态保持。iOS同源CI37235412773两job SUCCESS；原始IPA61622830bytes/SHAe5ab6d45…6d2810已供企业重签，未iOS发布/TestFlight。frontend522PASS及有序审查，移动tree与已验收5455PASS/analyze0源一致。
+
+见[发布任务](tasks/2026-10-05-mobile-2202-release.md)、[报告与IPA](../verification/2026-10-05-mobile-2202-release.md)和[计划](../superpowers/plans/2026-10-05-mobile-2202-release.md)。主区1372无关WIP含下载页面原字节保全；集成收据记录实际HEAD。下一步用户重签后另检最终包，下文保留历史。
+
+
 ## 2026-10-05 2202全局搜索与验证码：技术验收通过，模拟器已安装
 
 全局搜索首次缓存投影应用anchor、无协议toast及手机/邮件离页重进60秒冷却已修复。源b54cf6fa/0.4.33+2202，全量5455PASS/9skip/analyze0，组件规范/质量审查接受。05:09保留数据安装emulator-5556，UID10090/首次安装不变，读回成品SHA90564536…48b1b9；固定75b31单签v2/v3和标准重建验收通过。
