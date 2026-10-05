@@ -41,6 +41,14 @@ object CallManager {
     @Volatile var confirmed: Boolean = false
         private set
 
+    @Volatile var avatarBytes: ByteArray? = null
+        private set
+    @Volatile var fallbackSeed: String? = null
+        private set
+    @Volatile var connectedAtMs: Long? = null
+        private set
+    private var flutterSessionKey: String? = null
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 桥事件监听（NativeCallBridge 注册/移除，→Flutter）。 */
@@ -97,6 +105,10 @@ object CallManager {
         if (hasActiveCall()) return
         resetRunnable?.let { mainHandler.removeCallbacks(it) }
         resetRunnable = null
+        avatarBytes = null
+        connectedAtMs = null
+        fallbackSeed = null
+        flutterSessionKey = null
         this.callId = callId
         this.callerName = callerName
         this.video = video
@@ -127,8 +139,23 @@ object CallManager {
     /**
      * Flutter 状态回报（Matrix/WebRTC 事实）：只更新呈现，绝不发事件。
      */
-    fun updateFromFlutter(phase: String?, videoFlag: Boolean?, displayName: String? = null) {
+    fun updateFromFlutter(phase: String?, videoFlag: Boolean?, displayName: String? = null,
+        sessionKey: String? = null, avatar: ByteArray? = null,
+        seed: String? = null, connectedAt: Long? = null) {
         if (phase == null) return
+        val activePhase = phase in listOf("ringing", "requestingPermission", "connecting", "connected")
+        if (activePhase && sessionKey != null && sessionKey != flutterSessionKey) {
+            if (flutterSessionKey != null) {
+                callId = java.util.UUID.randomUUID().toString()
+                state = State.answering
+                confirmed = false
+            }
+            callerName = null
+            avatarBytes = null
+            connectedAtMs = null
+            fallbackSeed = null
+            flutterSessionKey = sessionKey
+        }
         // Flutter owns the actual session. Use a presentation-only opaque ID
         // for outgoing calls that have no push-created native presentation.
         if (!hasActiveCall() && phase in listOf("ringing", "requestingPermission", "connecting", "connected")) {
@@ -136,6 +163,11 @@ object CallManager {
             resetRunnable = null
             callId = java.util.UUID.randomUUID().toString()
             state = if (phase == "ringing") State.ringing else State.answering
+        }
+        if (activePhase && hasActiveCall()) {
+            avatarBytes = avatar?.takeIf { it.size <= 256 * 1024 }?.copyOf()
+            fallbackSeed = seed
+            if (phase == "connected" && connectedAtMs == null) connectedAtMs = connectedAt
         }
         if (displayName != null && hasActiveCall()) callerName = displayName
         if (videoFlag != null && hasActiveCall()) video = videoFlag
@@ -167,6 +199,7 @@ object CallManager {
                 if (state != State.idle) onEnded()
             }
         }
+        if (hasActiveCall()) notifyUi("presentationUpdated")
     }
 
     /**
@@ -181,6 +214,10 @@ object CallManager {
         }
         state = State.ended
         confirmed = false
+        avatarBytes = null
+        connectedAtMs = null
+        fallbackSeed = null
+        flutterSessionKey = null
         emit(eventEnded)
         notifyUi(eventEnded)
         cleanupCall()
@@ -232,6 +269,10 @@ object CallManager {
         resetRunnable?.let { mainHandler.removeCallbacks(it) }
         resetRunnable = null
         state = State.idle
+        avatarBytes = null
+        connectedAtMs = null
+        fallbackSeed = null
+        flutterSessionKey = null
         callId = null
         callerName = null
         confirmed = false

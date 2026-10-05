@@ -229,6 +229,11 @@ abstract interface class CallBackend {
   bool get hasActiveSession;
 }
 
+/// Optional local-video capability. Unsupported backends cannot claim success.
+abstract interface class CallCameraBackend {
+  Future<void> setCameraEnabled(bool enabled);
+}
+
 /// Optional diagnostic metadata only; no change to signaling or call state.
 abstract interface class CallPerformanceCorrelationBackend {
   void setPerformanceCorrelationContext(PerformanceCorrelationContext? context);
@@ -242,6 +247,8 @@ final class CallViewState {
     this.matrixUserId,
     this.muted = false,
     this.speaker = false,
+    this.cameraEnabled = true,
+    this.cameraChanging = false,
     this.message,
     this.connectedAt,
     this.identity,
@@ -252,6 +259,8 @@ final class CallViewState {
   final String? matrixUserId;
   final bool muted;
   final bool speaker;
+  final bool cameraEnabled;
+  final bool cameraChanging;
   final String? message;
 
   /// 接通时刻：页面据此实时展示通话时长。
@@ -264,6 +273,8 @@ final class CallViewState {
     CallPhase? phase,
     bool? muted,
     bool? speaker,
+    bool? cameraEnabled,
+    bool? cameraChanging,
     String? message,
     DateTime? connectedAt,
     CallIdentity? identity,
@@ -277,6 +288,8 @@ final class CallViewState {
         matrixUserId: matrixUserId,
         muted: muted ?? this.muted,
         speaker: speaker ?? this.speaker,
+        cameraEnabled: cameraEnabled ?? this.cameraEnabled,
+        cameraChanging: cameraChanging ?? this.cameraChanging,
         message: clearMessage ? null : (message ?? this.message),
         connectedAt:
             clearConnectedAt ? null : (connectedAt ?? this.connectedAt),
@@ -381,8 +394,12 @@ final class CallController extends ChangeNotifier {
     required String roomId,
     required String matrixUserId,
     required CallMediaType type,
+    CallIdentity? identity,
   }) async {
     if (_disposed) return;
+    if (identity != null && identity.matrixUserId != matrixUserId) {
+      throw ArgumentError('Call identity does not match verified recipient');
+    }
     _beginCallSetup();
     final generation = ++_callGeneration;
     _ringTimeoutTimer?.cancel();
@@ -390,11 +407,14 @@ final class CallController extends ChangeNotifier {
     audioRoute.reset();
     _muteDesired = false;
     _muteOperation = null;
+    _cameraDesired = true;
+    _cameraOperation = null;
     _set(CallViewState(
       CallPhase.requestingPermission,
       roomId: roomId,
       matrixUserId: matrixUserId,
       type: type,
+      identity: identity,
     ));
     diagnostics.mark(CallDiagStage.outgoingStart);
     // Task F：唯一一次安全验证，结果直接交给 startVerified 复用。
@@ -535,7 +555,11 @@ final class CallController extends ChangeNotifier {
       await accept();
       return;
     }
-    await start(roomId: roomId, matrixUserId: matrixUserId, type: type);
+    await start(
+        roomId: roomId,
+        matrixUserId: matrixUserId,
+        type: type,
+        identity: state.identity);
   }
 
   void _acceptFailed(String message) {
@@ -658,7 +682,50 @@ final class CallController extends ChangeNotifier {
     }
   }
 
-  Future<void> switchCamera() => backend.switchCamera();
+  int get sessionGeneration => _callGeneration;
+  bool get cameraSupported => backend is CallCameraBackend;
+  bool get _canChangeCamera =>
+      !_disposed &&
+      state.type == CallMediaType.video &&
+      {CallPhase.ringing, CallPhase.connecting, CallPhase.connected}
+          .contains(state.phase);
+  bool _cameraDesired = true;
+  Future<void>? _cameraOperation;
+
+  Future<void> toggleCamera() {
+    if (!_canChangeCamera || !cameraSupported) return Future<void>.value();
+    _cameraDesired = !_cameraDesired;
+    return _cameraOperation ??= _runCameraOperations(_callGeneration);
+  }
+
+  Future<void> _runCameraOperations(int generation) async {
+    _set(state.copyWith(cameraChanging: true, clearMessage: true));
+    try {
+      while (_isCurrent(generation) && _canChangeCamera) {
+        final desired = _cameraDesired;
+        try {
+          await (backend as CallCameraBackend).setCameraEnabled(desired);
+        } catch (_) {
+          if (!_isCurrent(generation) || !_canChangeCamera) return;
+          _cameraDesired = state.cameraEnabled;
+          _set(state.copyWith(message: '摄像头操作失败，请重试'));
+          return;
+        }
+        if (!_isCurrent(generation) || !_canChangeCamera) return;
+        _set(state.copyWith(cameraEnabled: desired));
+        if (_cameraDesired == desired) return;
+      }
+    } finally {
+      if (_isCurrent(generation)) {
+        _cameraOperation = null;
+        _set(state.copyWith(cameraChanging: false));
+      }
+    }
+  }
+
+  Future<void> switchCamera() => _canChangeCamera && state.cameraEnabled
+      ? backend.switchCamera()
+      : Future<void>.value();
 
   Future<void> _handleEvent(CallBackendEvent event) async {
     if (_disposed) return;
@@ -669,6 +736,8 @@ final class CallController extends ChangeNotifier {
         _incomingRinging = true;
         _muteDesired = false; // 新通话：静音意图以新会话的真实状态为起点
         _muteOperation = null;
+        _cameraDesired = true;
+        _cameraOperation = null;
         diagnostics.mark(CallDiagStage.incomingUiShown);
         _set(CallViewState(
           CallPhase.ringing,
@@ -701,7 +770,7 @@ final class CallController extends ChangeNotifier {
         // UI connection must not depend on a platform audio-route Future.
         _set(state.copyWith(
           phase: CallPhase.connected,
-          connectedAt: _now(),
+          connectedAt: state.connectedAt ?? _now(),
         ));
         _callSetupTrace?.mark(PerformanceStage.callConnected);
         _finishCallSetup(PerformanceResult.success);
@@ -739,6 +808,8 @@ final class CallController extends ChangeNotifier {
       });
       _releaseCallCorrelation();
       _callGeneration++;
+      _cameraOperation = null;
+      next = next.copyWith(cameraChanging: false);
       _ringTimeoutTimer?.cancel();
       _connectTimeoutTimer?.cancel();
     }

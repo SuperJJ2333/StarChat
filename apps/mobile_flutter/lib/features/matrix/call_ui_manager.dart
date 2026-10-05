@@ -9,7 +9,7 @@ import 'call_page.dart';
 import '../contacts/user_display_name_resolver.dart';
 import 'incoming_call_overlay_state.dart';
 import 'matrix_call_adapter.dart';
-import '../../ui/components/modern_action_button.dart';
+import '../../ui/components/call_return_card.dart';
 import '../../ui/motion/motion_page_route.dart';
 
 /// 全局根导航键（规格 §二）：由 main.dart 挂载到 CupertinoApp。
@@ -130,10 +130,12 @@ final class CallUiManager {
         builder: (context) => Positioned(
               top: MediaQuery.paddingOf(context).top + 52,
               right: 12,
-              child: ModernActionButton(
+              child: WeChatCallReturnCard(
                 key: const Key('return-to-call'),
-                icon: CupertinoIcons.phone_fill,
-                label: '返回通话',
+                identity: _controller?.state.identity,
+                type: _controller?.state.type ?? CallMediaType.audio,
+                connectedAt: _controller?.state.connectedAt,
+                now: _controller?.now ?? DateTime.now,
                 onPressed: restoreCall,
               ),
             ));
@@ -234,6 +236,7 @@ final class CallUiManager {
     if (_active && !_minimized) onRestored?.call();
     final controller = _controller;
     if (controller == null) return;
+    _returnEntry?.markNeedsBuild();
     final phase = controller.state.phase;
     if (phase == CallPhase.ringing ||
         phase == CallPhase.connecting ||
@@ -250,6 +253,7 @@ final class CallUiManager {
   void _handleCallState() {
     final controller = _controller;
     if (controller == null) return;
+    _returnEntry?.markNeedsBuild();
     final phase = controller.state.phase;
     _updateAudioActivity(phase);
     final previous = _lastPhase;

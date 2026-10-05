@@ -171,6 +171,9 @@ register("calls", "audio", [["calling", "语音通话 / 呼叫中"], ["incoming"
 register("calls", "video", [["calling", "视频通话 / 呼叫中"], ["incoming", "视频通话 / 来电"], ["connected", "视频通话 / 已连接"], ["camera-off", "视频通话 / 摄像头关闭"], ["microphone-off", "视频通话 / 麦克风关闭"], ["camera-switch", "视频通话 / 镜头切换"], ["permission-denied", "视频通话 / 权限拒绝"]]);
 register("calls", "permission", [["request", "通话 / 权限请求"], ["denied", "通话 / 权限拒绝"], ["settings", "通话 / 系统设置入口"]]);
 register("calls", "result", [["busy", "通话 / 对方忙线"], ["no-answer", "通话 / 无人接听"], ["connection-failed", "通话 / 连接失败"], ["disconnected", "通话 / 网络中断"], ["reconnecting", "通话 / 正在恢复"]]);
+register("calls", "audio", [["minimized", "语音通话 / 头像悬浮窗"], ["restored", "语音通话 / 返回保留头像"]]);
+register("calls", "video", [["minimized", "视频通话 / 头像悬浮窗"], ["restored", "视频通话 / 返回保留头像"]]);
+register("messages", "notification", [["direct", "消息提醒 / 好友头像"], ["group", "消息提醒 / 群聊头像"], ["viewed", "消息提醒 / 已查看不重放"]]);
 
 register("contacts", "index", [["default", "通讯录 / 默认"], ["grouped", "通讯录 / 拼音分组"], ["overlay", "通讯录 / 字母索引浮层"]], { height: 1040 });
 register("contacts", "friends", [["default", "新的朋友 / 列表"], ["empty", "新的朋友 / 空"], ["loading-failed", "新的朋友 / 加载失败"]]);

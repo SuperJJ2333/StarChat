@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -99,6 +100,167 @@ Future<void> pumpEventLoop() async {
 }
 
 void main() {
+  test('same peer and authenticated URL receive distinct owner cache keys', () {
+    final calls = CallController(
+        backend: FakeBackend(),
+        permissions: FakePermissions(),
+        alerts: NoopAlerts());
+    final first = NativeCallCoordinator(
+        calls: calls, channel: FakeNativeChannel(), onPresentIncoming: () {});
+    final second = NativeCallCoordinator(
+        calls: calls, channel: FakeNativeChannel(), onPresentIncoming: () {});
+    const identity = CallIdentity(
+        matrixUserId: '@alice:example.test',
+        displayName: 'Alice',
+        fallbackSeed: 'alice',
+        avatarUrl: 'https://example.test/authorized/avatar?v=1',
+        avatarHeaders: {'Authorization': 'credential'});
+    expect(first.avatarCacheKey(identity), first.avatarCacheKey(identity));
+    expect(
+        first.avatarCacheKey(identity), isNot(second.avatarCacheKey(identity)));
+    expect(first.avatarCacheKey(identity), isNot(contains('credential')));
+    calls.dispose();
+  });
+
+  test('disposed coordinator ignores queued actions and restore entry points',
+      () async {
+    final backend = FakeBackend();
+    final calls = CallController(
+        backend: backend, permissions: FakePermissions(), alerts: NoopAlerts());
+    final channel = FakeNativeChannel();
+    var present = 0;
+    var dismiss = 0;
+    final coordinator = NativeCallCoordinator(
+        calls: calls,
+        channel: channel,
+        onPresentIncoming: () => present++,
+        onDismissNativeLayer: () => dismiss++);
+    await coordinator.dispose();
+    final count = channel.invocations.length;
+    backend.ring();
+    await pumpEventLoop();
+    for (final action in [
+      'incomingCall',
+      'callAccepted',
+      'callRejected',
+      'callEnded'
+    ]) {
+      await coordinator.handleNativeMessage(action, {'callId': 'late'});
+    }
+    await coordinator.answerFromUser(null);
+    await coordinator.rejectFromUser();
+    await coordinator.restorePendingState();
+    expect(present, 0);
+    expect(dismiss, 0);
+    expect(backend.accepts, 0);
+    expect(backend.rejects, 0);
+    expect(backend.hangups, 0);
+    expect(channel.invocations.length, count);
+    calls.dispose();
+  });
+  test('disposing during answer permission wait blocks later presentation',
+      () async {
+    final backend = FakeBackend();
+    final permission = FakePermissions()..pending = Completer<bool>();
+    final calls = CallController(
+        backend: backend, permissions: permission, alerts: NoopAlerts());
+    var present = 0;
+    final coordinator = NativeCallCoordinator(
+        calls: calls,
+        channel: FakeNativeChannel(),
+        onPresentIncoming: () => present++);
+    backend.ring();
+    await pumpEventLoop();
+    final answer = coordinator.answerFromUser(null);
+    await coordinator.dispose();
+    permission.pending!.complete(false);
+    await answer;
+    expect(present, 0);
+    calls.dispose();
+  });
+
+  test('delayed native avatar cannot cross calls or account teardown',
+      () async {
+    final backend = FakeBackend();
+    final calls = CallController(
+        backend: backend, permissions: FakePermissions(), alerts: NoopAlerts());
+    final channel = FakeNativeChannel();
+    final pending = Completer<Uint8List?>();
+    final coordinator = NativeCallCoordinator(
+        calls: calls,
+        channel: channel,
+        avatarLoader: (_) => pending.future,
+        onPresentIncoming: () {});
+    const alice = CallIdentity(
+        matrixUserId: '@alice:example.test',
+        displayName: 'Alice',
+        fallbackSeed: 'alice');
+    const bob = CallIdentity(
+        matrixUserId: '@bob:example.test',
+        displayName: 'Bob',
+        fallbackSeed: 'bob');
+    await calls.start(
+        roomId: '!alice:example.test',
+        matrixUserId: alice.matrixUserId,
+        type: CallMediaType.audio,
+        identity: alice);
+    coordinator.onCallPhaseChanged();
+    await calls.hangup();
+    coordinator.onCallPhaseChanged();
+    await calls.start(
+        roomId: '!bob:example.test',
+        matrixUserId: bob.matrixUserId,
+        type: CallMediaType.video,
+        identity: bob);
+    coordinator.onCallPhaseChanged();
+    await coordinator.dispose();
+    final reports = channel.invocations.length;
+    pending.complete(Uint8List.fromList([1, 2, 3]));
+    await pumpEventLoop();
+    expect(channel.invocations.length, reports);
+    expect(
+        channel.invocations
+            .where((entry) => entry.$1 == 'reportCallState')
+            .every((entry) => (entry.$2 as Map)['avatarBytes'] == null),
+        isTrue);
+    calls.dispose();
+  });
+
+  test(
+      'native state carries peer name and stable connection origin without credentials',
+      () async {
+    final backend = FakeBackend();
+    final calls = CallController(
+        backend: backend, permissions: FakePermissions(), alerts: NoopAlerts());
+    final channel = FakeNativeChannel();
+    final coordinator = NativeCallCoordinator(
+        calls: calls,
+        channel: channel,
+        avatarLoader: (_) async => null,
+        onPresentIncoming: () {});
+    final origin = DateTime(2026, 10, 5);
+    calls.state = CallViewState(CallPhase.connected,
+        type: CallMediaType.video,
+        connectedAt: origin,
+        identity: const CallIdentity(
+            matrixUserId: '@alice:example.test',
+            displayName: 'Alice',
+            fallbackSeed: 'alice',
+            avatarUrl: 'https://example.test/alice',
+            avatarHeaders: {'Authorization': 'private'}));
+    coordinator.onCallPhaseChanged();
+    await pumpEventLoop();
+    final report = channel.invocations
+        .firstWhere((value) => value.$1 == 'reportCallState')
+        .$2 as Map;
+    expect(report['callerName'], 'Alice');
+    expect(report['connectedAtMs'], origin.millisecondsSinceEpoch);
+    expect(report.containsKey('avatarUrl'), isFalse);
+    expect(report.containsKey('avatarHeaders'), isFalse);
+    await coordinator.dispose();
+    calls.dispose();
+  });
+
   late FakeBackend backend;
   late CallController calls;
   late FakeNativeChannel channel;

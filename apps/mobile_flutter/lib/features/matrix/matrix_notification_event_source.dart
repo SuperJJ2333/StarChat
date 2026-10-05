@@ -2,6 +2,7 @@ import '../../core/permissions/blocked_contacts.dart';
 import 'dart:async';
 
 import 'package:matrix/matrix.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../core/notification/badge_service.dart'
     show ConversationUnreadSnapshot, UnreadSnapshotSource;
@@ -13,6 +14,7 @@ import 'conversation_preferences.dart';
 import 'group_announcement_service.dart';
 
 import 'conversation_presentation.dart';
+import 'avatar_url_resolver.dart';
 import 'conversation_read_state.dart';
 import 'matrix_room_timeline_adapter.dart'
     show
@@ -21,6 +23,15 @@ import 'matrix_room_timeline_adapter.dart'
         changliaoTransferMessageType;
 import 'mute_exception_policy.dart';
 import 'nudge_service.dart' show changliaoNudgeEventType;
+
+bool notificationSourceIsForeground() {
+  try {
+    final state = WidgetsBinding.instance.lifecycleState;
+    return state == null || state == AppLifecycleState.resumed;
+  } catch (_) {
+    return true;
+  } // Pure SDK source tests may have no UI binding.
+}
 
 // Only an already-decrypted document can enable the announcement exception.
 bool isGroupAnnouncementNotification(Event? event) =>
@@ -39,11 +50,13 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
     UserDisplayNameResolver? displayNameResolver,
     NotificationDiagnostics? diagnostics,
     DateTime Function()? now,
+    bool Function()? isForeground,
   })  : readState = readState ?? ConversationReadState.shared(),
         displayNameResolver = displayNameResolver ??
             ContactBackedUserDisplayNameResolver(contactFor: (_) => null),
         diagnostics = diagnostics ?? NotificationDiagnostics.shared,
-        now = now ?? DateTime.now;
+        now = now ?? DateTime.now,
+        isForeground = isForeground ?? notificationSourceIsForeground;
 
   final Client client;
   final ConversationReadState readState;
@@ -52,6 +65,7 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
   final UserDisplayNameResolver displayNameResolver;
   final NotificationDiagnostics diagnostics;
   final DateTime Function() now;
+  final bool Function() isForeground;
 
   final StreamController<IncomingNotification> _controller =
       StreamController<IncomingNotification>.broadcast();
@@ -80,6 +94,18 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
     if (!_controller.hasListener) return;
     if (!_sawFirstSync) {
       _sawFirstSync = true;
+      sync.rooms?.join?.forEach((roomId, update) {
+        readState.observeTimeline(
+            roomId,
+            (update.timeline?.events ?? <MatrixEvent>[])
+                .map((event) => event.eventId),
+            viewing: isForeground());
+        final marker = client.getRoomById(roomId)?.fullyRead;
+        if (marker != null && marker.isNotEmpty) {
+          readState.markCleared(roomId,
+              eventId: marker, updateUnreadMarker: false);
+        }
+      });
       return;
     }
     final joins = sync.rooms?.join;
@@ -93,8 +119,16 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
       if (events == null || events.isEmpty) return;
       // PRD §15/§42：同一会话一次同步聚合为一个通知，取最后一条
       // 他人消息事件。
+      readState.observeTimeline(roomId, events.map((event) => event.eventId),
+          viewing: isForeground());
+      final marker = client.getRoomById(roomId)?.fullyRead;
+      if (marker != null && marker.isNotEmpty) {
+        readState.markCleared(roomId,
+            eventId: marker, updateUnreadMarker: false);
+      }
       MatrixEvent? lastIncoming;
       for (final event in events) {
+        if (readState.wasViewed(roomId, event.eventId)) continue;
         if (event.senderId == currentUserId) continue;
         if (!_isNotifiableMessage(event, roomId)) continue;
         if (event.originServerTs.isBefore(cutoff)) continue;
@@ -174,6 +208,19 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
     );
     final senderName = resolvedName;
     final preview = _preview(room, decrypted, raw, senderName);
+    final avatarUri = room.isDirectChat
+        ? Uri.tryParse(displayNameResolver.avatarUrlFor(raw.senderId) ?? '') ??
+            user.avatarUrl
+        : room.avatar;
+    final avatar = MatrixAvatarUrlResolver.resolveImmediately(
+        avatarUri: avatarUri?.hasScheme == true
+            ? avatarUri
+            : (room.isDirectChat ? user.avatarUrl : room.avatar),
+        homeserver: client.homeserver,
+        accessToken: client.accessToken,
+        size: 96);
+    final avatarSeed =
+        'identity:${Uri.encodeComponent(currentUserId)}:${room.isDirectChat ? raw.senderId : roomId}';
 
     return IncomingNotification(
       event: NotificationEvent(
@@ -186,7 +233,9 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
         messageKind: _messageKind(decrypted, raw),
         messagePreview: preview,
         isMention: isMention,
-        avatarUrl: displayNameResolver.avatarUrlFor(raw.senderId),
+        avatarUrl: avatar?.url,
+        avatarHeaders: avatar?.headers ?? const {},
+        avatarSeed: avatarSeed,
         timestamp: raw.originServerTs,
       ),
       isOwnMessage: false,

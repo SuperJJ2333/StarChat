@@ -7,6 +7,8 @@ import 'call_backend_test_defaults.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/call_notifications.dart';
 import 'package:liuhetong_mobile/features/matrix/call_ui_manager.dart';
+import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
+import 'package:liuhetong_mobile/features/matrix/call_page.dart';
 
 /// 通知网关测试替身：记录调用，不碰插件。
 final class _RecordingCallNotifications implements CallNotificationGateway {
@@ -103,6 +105,44 @@ Future<void> _teardown(WidgetTester tester,
 }
 
 void main() {
+  testWidgets(
+      'outgoing minimized card retains peer avatar media and ticking duration',
+      (tester) async {
+    final key = GlobalKey<NavigatorState>();
+    final backend = _FakeCallBackend();
+    final controller =
+        CallController(backend: backend, permissions: _AllowedPermissions());
+    final manager = CallUiManager(
+        navigatorKey: key,
+        notifications: _RecordingCallNotifications(),
+        isAppResumed: () => true)
+      ..attach(controller)
+      ..registerOutgoingCall();
+    final origin = controller.now().subtract(const Duration(seconds: 25));
+    controller.state = CallViewState(CallPhase.connected,
+        type: CallMediaType.video,
+        connectedAt: origin,
+        identity: const CallIdentity(
+            matrixUserId: '@alice:example.test',
+            displayName: 'Alice',
+            fallbackSeed: 'alice'));
+    await tester
+        .pumpWidget(CupertinoApp(navigatorKey: key, home: const Text('home')));
+    manager.minimizeCall();
+    await tester.pump();
+    expect(find.byType(UserAvatar), findsOneWidget);
+    expect(find.text('00:25'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.video_camera_solid), findsOneWidget);
+    await tester.tap(find.byKey(const Key('return-to-call')));
+    await tester.pumpAndSettle();
+    expect(
+        tester.widget<CallPage>(find.byType(CallPage)).fallbackSeed, 'alice');
+    expect(controller.state.connectedAt, origin);
+    await manager.detach();
+    controller.dispose();
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
       'detach removes only its incoming route and clears both notifications',
       (tester) async {

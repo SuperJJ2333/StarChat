@@ -140,8 +140,8 @@ void main() {
       entry: _staleEntry,
     );
 
-    // CallPage 的 displayName/fallbackSeed/avatarUrl 直接取自该联系人，
-    // 因此这里断言的就是通话页实际展示的数据。
+    // 通话页与 controller 复用同一份 identity；解析器只接收权威 Matrix ID，
+    // 解析失败时 identity 的备注/昵称/头像仍来自该权威联系人。
     expect(target.contact.displayName, '我的备注', reason: '备注是本机展示名，优先于昵称');
     expect(target.contact.nickname, '艾丽丝', reason: '目录昵称，而非入口旧昵称');
     expect(target.contact.username, 'alice');
@@ -153,9 +153,27 @@ void main() {
         home.indexOf('builder: (pageContext) => CallPage('),
         home.indexOf(
             'unawaited(navigation.whenComplete(releasePresentation));'));
-    expect(callPage, contains('displayName: authoritative.displayName'));
-    expect(callPage, contains('fallbackSeed: authoritative.username'));
-    expect(callPage, contains('avatarUrl: authoritative.avatarUrl'));
+    final openCall = home.substring(home.indexOf('Future<void> _openCall('),
+        home.indexOf('Future<void> _openMessage('));
+    final identitySource = openCall.substring(
+        openCall.indexOf('final authoritative = target.contact;'),
+        openCall.indexOf('if (callUi.hasActiveCall)',
+            openCall.indexOf('final authoritative = target.contact;')));
+    expect(identitySource,
+        contains('matrixUserId = authoritative.matrixUserId.trim()'));
+    expect(identitySource, contains('identityResolver?.call(matrixUserId)'));
+    expect(identitySource,
+        contains('resolvedIdentity?.matrixUserId == matrixUserId'));
+    expect(identitySource, contains('displayName: authoritative.displayName'));
+    expect(identitySource, contains('fallbackSeed: authoritative.username'));
+    expect(identitySource, contains('avatarUrl: authoritative.avatarUrl'));
+    expect(callPage, contains('displayName: identity.displayName'));
+    expect(callPage, contains('fallbackSeed: identity.fallbackSeed'));
+    expect(callPage, contains('avatarUrl: identity.avatarUrl'));
+    expect(callPage, contains('avatarHeaders: identity.avatarHeaders'));
+    expect(openCall, contains('identity: identity'));
+    expect(identitySource, isNot(contains('displayName: contact.displayName')));
+    expect(identitySource, isNot(contains('avatarUrl: contact.avatarUrl')));
     expect(callPage, isNot(contains('contact.displayName')));
     expect(callPage, isNot(contains('contact.avatarUrl')));
     expect(home.contains('matrixUserId: authoritative.matrixUserId.trim()'),

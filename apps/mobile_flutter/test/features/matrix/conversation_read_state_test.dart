@@ -3,6 +3,57 @@ import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
 
 /// BUG 5 未读状态机的 8 个验收场景。
 void main() {
+  test('full viewed cap still emits late exact ID with unchanged marker',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    final changes = <ConversationReadChange>[];
+    final subscription = reads.changes.listen(changes.add);
+    reads.observeTimeline(
+        'room', [for (var i = 0; i < 511; i++) 'old$i', 'marker']);
+    reads.markCleared('room', eventId: 'marker');
+    expect(reads.viewedEvents('room'), hasLength(512));
+    reads.observeTimeline('room', ['late', 'marker']);
+    reads.markCleared('room', eventId: 'marker');
+    expect(reads.viewedEvents('room'), hasLength(512));
+    expect(reads.wasViewed('room', 'late'), isTrue);
+    expect(changes, hasLength(2),
+        reason: 'native must persist and cancel late ID even at unchanged cap');
+    await subscription.cancel();
+    reads.resetForTest();
+  });
+
+  test('delayed old segment cannot classify a later arrival as viewed', () {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.observeTimeline('room', ['new']);
+    reads.observeTimeline('room', ['old', 'marker']);
+    reads.markCleared('room', eventId: 'marker');
+    expect(reads.wasViewed('room', 'old'), isTrue);
+    expect(reads.wasViewed('room', 'new'), isFalse);
+    reads.resetForTest();
+  });
+  test('unchanged marker retires newly resolved exact earlier IDs', () {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.markCleared('room', eventId: 'marker');
+    reads.observeTimeline('room', ['old', 'marker', 'future']);
+    reads.markCleared('room', eventId: 'marker');
+    expect(reads.wasViewed('room', 'old'), isTrue);
+    expect(reads.wasViewed('room', 'future'), isFalse);
+    reads.resetForTest();
+  });
+
+  test('viewed prefix excludes a real later message and another account', () {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@first');
+    reads.observeTimeline('room', ['old', 'marker', 'new']);
+    reads.markCleared('room', eventId: 'marker');
+    expect(reads.wasViewed('room', 'old'), isTrue);
+    expect(reads.wasViewed('room', 'marker'), isTrue);
+    expect(reads.wasViewed('room', 'new'), isFalse);
+    reads.bindAccount('@second');
+    expect(reads.wasViewed('room', 'old'), isFalse);
+    reads.resetForTest();
+  });
+
   const me = '@me:test';
   const friend = '@friend:test';
 

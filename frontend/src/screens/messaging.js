@@ -3,6 +3,7 @@ import { button, element } from "../components/base.js";
 import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
 import { renderMediaVideoPreview } from "./media-video-preview.js";
+import { notificationAvatarDemo } from "./notification-avatar.js";
 
 function conversationTile(conversation, options = {}) {
   const tile = element("article", "c-conversation-row");
@@ -718,7 +719,8 @@ export function renderScreen(definition) {
   } else if (definition.page === "image-gallery") {
     root = pageRoot(definition, [component("app-room-image-gallery")]);
   } else if (definition.module === "messages") {
-    if (definition.page === "conversation") root = conversationVariant(definition);
+    if (definition.page === "notification") root = notificationAvatarDemo(definition);
+    else if (definition.page === "conversation") root = conversationVariant(definition);
     else if (definition.page === "network") {
       root = pageRoot(definition, [navigation("网络状态"), element("div", "p-feedback-center")]);
       root.querySelector(".p-feedback-center").append(component("app-network-capsule", { state: definition.state }));

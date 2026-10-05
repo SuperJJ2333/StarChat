@@ -105,7 +105,128 @@ base class FakeCallBackend with CallBackendTestDefaults implements CallBackend {
   Future<void> switchCamera() async => cameraSwitches++;
 }
 
+final class CameraBackend extends FakeCallBackend implements CallCameraBackend {
+  final cameraRequests = <bool>[];
+  bool cameraEnabled = true;
+  bool failCamera = false;
+  Completer<void>? cameraBarrier;
+  @override
+  Future<void> setCameraEnabled(bool enabled) async {
+    cameraRequests.add(enabled);
+    await cameraBarrier?.future;
+    if (failCamera) throw StateError('camera unavailable');
+    cameraEnabled = enabled;
+  }
+}
+
 void main() {
+  test('outgoing identity survives failure retry and rejects mismatched peer',
+      () async {
+    final backend = CameraBackend()..activeSession = false;
+    final calls = CallController(
+        backend: backend,
+        permissions: FakeCallPermissions(),
+        alerts: RecordingCallAlerts());
+    const identity = CallIdentity(
+        matrixUserId: '@alice:example.test',
+        displayName: 'Alice remark',
+        fallbackSeed: 'alice',
+        avatarUrl: 'https://example.test/alice');
+    await calls.start(
+        roomId: '!dm:example.test',
+        matrixUserId: identity.matrixUserId,
+        type: CallMediaType.video,
+        identity: identity);
+    expect(calls.state.identity, identity);
+    calls.state = calls.state.copyWith(phase: CallPhase.failed);
+    await calls.retryAfterFailure();
+    expect(calls.state.identity, identity);
+    await expectLater(
+        calls.start(
+            roomId: '!dm:example.test',
+            matrixUserId: '@bob:example.test',
+            type: CallMediaType.video,
+            identity: identity),
+        throwsArgumentError);
+    expect(calls.state.identity, identity);
+    calls.dispose();
+  });
+
+  test('camera quick taps converge while audio stays untouched', () async {
+    final backend = CameraBackend()..cameraBarrier = Completer<void>();
+    final calls = CallController(
+        backend: backend,
+        permissions: FakeCallPermissions(),
+        alerts: RecordingCallAlerts());
+    await calls.start(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.video);
+    final first = calls.toggleCamera();
+    final second = calls.toggleCamera();
+    expect(calls.state.cameraEnabled, isTrue);
+    backend.cameraBarrier!.complete();
+    await Future.wait([first, second]);
+    expect(backend.cameraRequests, [false, true]);
+    expect(calls.state.cameraEnabled, isTrue);
+    expect(calls.state.cameraChanging, isFalse);
+    expect(backend.muted, isNull);
+    calls.dispose();
+  });
+
+  test(
+      'camera failure keeps actual state and permits retry; end fences completion',
+      () async {
+    final backend = CameraBackend()..failCamera = true;
+    final calls = CallController(
+        backend: backend,
+        permissions: FakeCallPermissions(),
+        alerts: RecordingCallAlerts());
+    await calls.start(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.video);
+    await calls.toggleCamera();
+    expect(calls.state.cameraEnabled, isTrue);
+    expect(calls.state.message, contains('失败'));
+    backend.failCamera = false;
+    await calls.toggleCamera();
+    expect(calls.state.cameraEnabled, isFalse);
+    backend.cameraBarrier = Completer<void>();
+    final pending = calls.toggleCamera();
+    await calls.hangup();
+    backend.cameraBarrier!.complete();
+    await pending;
+    expect(calls.state.phase, CallPhase.ended);
+    expect(calls.state.cameraChanging, isFalse);
+    expect(calls.state.cameraEnabled, isFalse);
+    await calls.toggleCamera();
+    expect(backend.cameraRequests, [false, false, true]);
+    calls.dispose();
+  });
+
+  test('duplicate connected events keep the original duration origin',
+      () async {
+    final backend = FakeCallBackend();
+    var clock = DateTime(2026, 10, 5, 12);
+    final controller = CallController(
+        backend: backend,
+        permissions: FakeCallPermissions(),
+        alerts: RecordingCallAlerts(),
+        now: () => clock);
+    await controller.start(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.video);
+    backend.events.add(const CallBackendEvent.connected());
+    await Future<void>.delayed(Duration.zero);
+    final origin = controller.state.connectedAt;
+    clock = clock.add(const Duration(seconds: 25));
+    backend.events.add(const CallBackendEvent.connected());
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.state.connectedAt, origin);
+    controller.dispose();
+  });
   test('outgoing encrypted call transitions and controls media', () async {
     final backend = FakeCallBackend();
     final permissions = FakeCallPermissions();

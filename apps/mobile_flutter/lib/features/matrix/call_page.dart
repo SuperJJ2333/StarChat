@@ -136,8 +136,7 @@ final class _CallPageState extends State<CallPage> {
   /// （markRoomRead 幂等）。
   void _notifyEndedOnce() {
     final phase = widget.controller.state.phase;
-    final terminal =
-        phase == CallPhase.ended || phase == CallPhase.failed;
+    final terminal = phase == CallPhase.ended || phase == CallPhase.failed;
     if (!terminal) {
       _endedNotified = false;
       return;
@@ -337,10 +336,14 @@ final class _CallPageState extends State<CallPage> {
     return [
       const Spacer(),
       UserAvatar(
-        nickname: widget.displayName,
-        fallbackSeed: widget.fallbackSeed,
-        avatarUrl: widget.avatarUrl,
-        avatarHeaders: widget.avatarHeaders,
+        nickname:
+            widget.controller.state.identity?.displayName ?? widget.displayName,
+        fallbackSeed: widget.controller.state.identity?.fallbackSeed ??
+            widget.fallbackSeed,
+        avatarUrl:
+            widget.controller.state.identity?.avatarUrl ?? widget.avatarUrl,
+        avatarHeaders: widget.controller.state.identity?.avatarHeaders ??
+            widget.avatarHeaders,
         diagnosticSource: 'call-page',
         size: WeChatDimensions.callControl * 1.6,
       ),
@@ -376,6 +379,11 @@ final class _CallPageState extends State<CallPage> {
                 fontSize: WeChatTypography.subhead,
               ),
             ),
+            if (state.message != null && connected)
+              Text(state.message!,
+                  style: const TextStyle(
+                      color: WeChatColors.darkTextPrimary,
+                      fontSize: WeChatTypography.caption)),
             const Spacer(),
             if (widget.incoming && state.phase == CallPhase.ringing)
               _incomingControls()
@@ -400,14 +408,15 @@ final class _CallPageState extends State<CallPage> {
       fit: StackFit.expand,
       children: [
         const ColoredBox(color: CupertinoColors.black),
-        RTCVideoView(
-          // 等待期远端无画面：主叫等待显示本地镜像；接通后切远端。
-          connected ? _remoteRenderer : _localRenderer,
-          mirror: !connected,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-        ),
+        if (connected || state.cameraEnabled)
+          RTCVideoView(
+            // 等待期远端无画面：主叫等待显示本地镜像；接通后切远端。
+            connected ? _remoteRenderer : _localRenderer,
+            mirror: !connected,
+            objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+          ),
         // 本端画中画（仅接通后：微信位置=屏幕右上角，前置镜像）。
-        if (connected)
+        if (connected && state.cameraEnabled)
           Positioned(
             top: safeTop + 64,
             right: WeChatSpacing.lg,
@@ -568,8 +577,10 @@ final class _CallPageState extends State<CallPage> {
 
   /// 语音通话中：静音 / 挂断 / 免提。
   Widget _activeControls(CallViewState state, bool connected) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    return Wrap(
+      alignment: WrapAlignment.spaceEvenly,
+      spacing: WeChatSpacing.sm,
+      runSpacing: WeChatSpacing.sm,
       children: [
         CallControlButton(
           key: const Key('call-control-microphone'),
@@ -599,9 +610,20 @@ final class _CallPageState extends State<CallPage> {
         if (state.type == CallMediaType.video)
           CallControlButton(
             key: const Key('call-control-camera'),
+            icon: ChangliaoIcons.videoCall,
+            label: state.cameraEnabled ? '关闭摄像头' : '开启摄像头',
+            selected: !state.cameraEnabled,
+            onPressed: widget.controller.cameraSupported
+                ? widget.controller.toggleCamera
+                : null,
+          ),
+        if (state.type == CallMediaType.video)
+          CallControlButton(
+            key: const Key('call-control-camera-switch'),
             icon: ChangliaoIcons.switchCamera,
             label: '切换镜头',
-            onPressed: widget.controller.switchCamera,
+            onPressed:
+                state.cameraEnabled ? widget.controller.switchCamera : null,
           ),
       ],
     );
@@ -609,41 +631,60 @@ final class _CallPageState extends State<CallPage> {
 
   /// 视频通话中：切换镜头 / 静音 / 挂断 / 免提。
   Widget _videoControls(CallViewState state, bool connected) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        CallControlButton(
-          key: const Key('call-control-camera'),
-          icon: ChangliaoIcons.switchCamera,
-          label: '切换镜头',
-          onPressed: widget.controller.switchCamera,
-        ),
-        CallControlButton(
-          key: const Key('call-control-microphone'),
-          label: state.muted ? '取消静音' : '静音',
-          selected: state.muted,
-          onPressed: widget.controller.toggleMute,
-          icon: state.muted
-              ? ChangliaoIcons.microphoneOff
-              : ChangliaoIcons.microphone,
-        ),
-        CallControlButton(
-          key: const Key('call-control-hangup'),
-          icon: ChangliaoIcons.hangup,
-          label: '挂断',
-          kind: CallControlKind.danger,
-          onPressed: widget.controller.hangup,
-        ),
-        CallControlButton(
-          key: const Key('call-control-speaker'),
-          label: '免提',
-          selected: state.speaker,
-          onPressed: widget.controller.toggleSpeaker,
-          icon: state.speaker
-              ? ChangliaoIcons.speakerFilled
-              : ChangliaoIcons.speaker,
-        ),
-      ],
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      if (state.message != null)
+        Text(state.message!,
+            style: const TextStyle(
+                color: WeChatColors.darkTextPrimary,
+                fontSize: WeChatTypography.caption)),
+      Wrap(
+        alignment: WrapAlignment.spaceEvenly,
+        spacing: WeChatSpacing.sm,
+        runSpacing: WeChatSpacing.sm,
+        children: [
+          CallControlButton(
+            key: const Key('call-control-camera'),
+            icon: ChangliaoIcons.videoCall,
+            label: state.cameraEnabled ? '关闭摄像头' : '开启摄像头',
+            selected: !state.cameraEnabled,
+            onPressed: widget.controller.cameraSupported
+                ? widget.controller.toggleCamera
+                : null,
+          ),
+          CallControlButton(
+            key: const Key('call-control-camera-switch'),
+            icon: ChangliaoIcons.switchCamera,
+            label: '切换镜头',
+            onPressed:
+                state.cameraEnabled ? widget.controller.switchCamera : null,
+          ),
+          CallControlButton(
+            key: const Key('call-control-microphone'),
+            label: state.muted ? '取消静音' : '静音',
+            selected: state.muted,
+            onPressed: widget.controller.toggleMute,
+            icon: state.muted
+                ? ChangliaoIcons.microphoneOff
+                : ChangliaoIcons.microphone,
+          ),
+          CallControlButton(
+            key: const Key('call-control-hangup'),
+            icon: ChangliaoIcons.hangup,
+            label: '挂断',
+            kind: CallControlKind.danger,
+            onPressed: widget.controller.hangup,
+          ),
+          CallControlButton(
+            key: const Key('call-control-speaker'),
+            label: '免提',
+            selected: state.speaker,
+            onPressed: widget.controller.toggleSpeaker,
+            icon: state.speaker
+                ? ChangliaoIcons.speakerFilled
+                : ChangliaoIcons.speaker,
+          ),
+        ],
+      ),
+    ]);
   }
 }

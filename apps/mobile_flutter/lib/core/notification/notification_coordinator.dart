@@ -13,6 +13,7 @@ import 'notification_decision.dart';
 import 'notification_deduplicator.dart';
 import 'notification_diagnostics.dart';
 import 'notification_event.dart';
+import 'notification_avatar.dart';
 import 'notification_policy_engine.dart';
 import 'notification_preferences.dart';
 import 'notification_usage_recorder.dart';
@@ -108,6 +109,7 @@ final class NotificationCoordinator {
   int _badgeGeneration = 0;
   Future<void> _badgeWrites = Future<void>.value();
   final Map<String, int> _roomRevisions = {};
+  final Map<String, String> _presentedEventByRoom = {};
   final Map<String, Future<void>> _roomWrites = {};
 
   Future<void> start() async {
@@ -129,18 +131,40 @@ final class NotificationCoordinator {
   void _onReadChange(ConversationReadChange change) {
     if (!_started) return;
     if (change.accountId != _readAccount) {
+      banners.clear();
+      _presentedEventByRoom.clear();
       ++_epoch;
       ++_badgeGeneration;
       return;
     }
     final roomId = change.roomId;
-    // Viewing already suppresses alerts and unread counts. Receipt updates
-    // inside that room must not rescan all conversations for every message.
-    if (change.cleared && change.isOpen) return;
+    final effectiveOpen = change.isOpen && appState.isForeground;
     if (roomId != null) {
-      _roomRevisions[roomId] = (_roomRevisions[roomId] ?? 0) + 1;
-      if (change.isOpen || change.cleared) {
-        unawaited(_writeRoom(roomId, (epoch) => _cancelRoom(roomId, epoch)));
+      unawaited(nativePolicy?.readRoom(roomId,
+          open: effectiveOpen, events: readState.viewedEvents(roomId)));
+    }
+    if (change.cleared && effectiveOpen) return;
+    if (roomId != null) {
+      // Navigation changes invalidate room work. A delayed exact receipt does
+      // not invalidate another event's notification or its pending avatar.
+      if (!change.cleared) {
+        _roomRevisions[roomId] = (_roomRevisions[roomId] ?? 0) + 1;
+      }
+      final presented = _presentedEventByRoom[roomId];
+      final presentedWasViewed =
+          presented != null && readState.wasViewed(roomId, presented);
+      if (effectiveOpen || presentedWasViewed) {
+        unawaited(_writeRoom(roomId, (epoch) async {
+          // A newer show can precede this cancellation in the room queue.
+          // Re-evaluate the live presentation instead of retiring whichever
+          // notification happens to share the old event's room ID.
+          final current = _presentedEventByRoom[roomId];
+          final viewing = appState.isForeground && readState.isRoomOpen(roomId);
+          if (viewing ||
+              (current != null && readState.wasViewed(roomId, current))) {
+            await _cancelRoom(roomId, epoch);
+          }
+        }));
       }
     }
     unawaited(refreshLauncherBadge());
@@ -151,9 +175,9 @@ final class NotificationCoordinator {
 
   Future<void> _cancelRoom(String roomId, int epoch) async {
     if (!_isCurrent(epoch)) return;
+    _presentedEventByRoom.remove(roomId);
     await systemNotifications
         .cancelConversation(notificationIdForConversation(roomId));
-    await nativePolicy?.cancelRoom(roomId);
     if (!_isCurrent(epoch)) return;
     final presenter = systemNotifications;
     if (presenter is DeliveredConversationNotificationPresenter) {
@@ -199,7 +223,9 @@ final class NotificationCoordinator {
   }
 
   Future<void> handleEvent(IncomingNotification notification) async {
+    final deliveryEpoch = _epoch;
     if (!notification.isOwnMessage) await cancelPushWakeNotification();
+    if (!_isCurrent(deliveryEpoch)) return;
     // PRD §25/§66：同一 eventId 双通道只处理一次。
     if (!deduplicator.tryProcess(notification.event.eventId)) {
       diagnostics.record(NotificationDiagStage.suppressed, 'duplicate',
@@ -210,6 +236,13 @@ final class NotificationCoordinator {
     unawaited(usageRecorder.count(NotificationUsageEvents.received));
 
     final event = notification.event;
+    if (readState.wasViewed(event.conversationId, event.eventId) ||
+        (appState.isForeground && readState.isRoomOpen(event.conversationId))) {
+      await nativePolicy?.readRoom(event.conversationId,
+          open: readState.isRoomOpen(event.conversationId),
+          events: {event.eventId});
+      return;
+    }
     final decision = decideNotification(
       NotificationPolicyContext(
         appForeground: appState.isForeground,
@@ -233,12 +266,37 @@ final class NotificationCoordinator {
           title: decision.previewTitle,
           body: decision.previewBody);
       if (nativeResult != null) {
+        if (decision.showSystemNotification && event.avatarUrl != null) {
+          final epoch = _epoch;
+          unawaited(loadNotificationAvatar(event).then((bytes) async {
+            if (bytes == null ||
+                !_isCurrent(epoch) ||
+                appState.isForeground ||
+                (appState.isForeground &&
+                    readState.isRoomOpen(event.conversationId)) ||
+                readState.wasViewed(event.conversationId, event.eventId)) {
+              return;
+            }
+            await nativePolicy?.handleBackground(
+                event.conversationId, event.eventId,
+                show: true,
+                silent:
+                    decision.systemChannel == SystemNotificationChannel.silent,
+                title: decision.previewTitle,
+                body: decision.previewBody,
+                avatar: bytes);
+          }));
+        }
         if (decision.updateBadge) await refreshLauncherBadge();
         return;
       }
     }
     final nativeClaim =
         await nativePolicy?.claim(event.conversationId, event.eventId);
+    if (!_isCurrent(deliveryEpoch) ||
+        readState.wasViewed(event.conversationId, event.eventId)) {
+      return;
+    }
     if (nativeClaim == false) {
       if (decision.updateBadge) await refreshLauncherBadge();
       return;
@@ -301,6 +359,7 @@ final class NotificationCoordinator {
         appState.isForeground &&
         !appState.callActive &&
         !readState.isRoomOpen(event.conversationId) &&
+        !readState.wasViewed(event.conversationId, event.eventId) &&
         (_roomRevisions[event.conversationId] ?? 0) == roomRevision &&
         (lease == null || nativePolicy!.isForegroundLeaseCurrent(lease));
     if (decision.updateBadge) {
@@ -324,7 +383,9 @@ final class NotificationCoordinator {
             conversationId: event.conversationId,
             title: decision.previewTitle,
             body: decision.previewBody,
-            avatarUrl: null,
+            avatarUrl: event.avatarUrl,
+            avatarHeaders: event.avatarHeaders,
+            avatarSeed: event.avatarSeed,
             timestamp: event.timestamp,
           ),
         );
@@ -352,20 +413,51 @@ final class NotificationCoordinator {
         unawaited(usageRecorder.count(NotificationUsageEvents.displayed));
         final unreadCount = await _unreadForRoom(event.conversationId);
         await _writeRoom(event.conversationId, (epoch) async {
-          if (readState.isRoomOpen(event.conversationId) ||
+          if (readState.wasViewed(event.conversationId, event.eventId) ||
+              (appState.isForeground &&
+                  readState.isRoomOpen(event.conversationId)) ||
               (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
             return;
           }
-          await systemNotifications.showConversationMessage(
-            notificationId: notificationIdForConversation(event.conversationId),
-            title: decision.previewTitle,
-            body: decision.previewBody,
-            channel: decision.systemChannel,
-            roomIdPayload: event.conversationId,
-            avatarUrl: event.avatarUrl,
-            unreadCount: unreadCount,
-          );
-          if (readState.isRoomOpen(event.conversationId) ||
+          _presentedEventByRoom[event.conversationId] = event.eventId;
+          while (_presentedEventByRoom.length > 2048) {
+            _presentedEventByRoom.remove(_presentedEventByRoom.keys.first);
+          }
+          final avatarPresenter = systemNotifications;
+          if (avatarPresenter is NotificationAvatarPresenter) {
+            await (avatarPresenter as NotificationAvatarPresenter)
+                .showConversationWithAvatar(
+                    notificationId:
+                        notificationIdForConversation(event.conversationId),
+                    event: event,
+                    title: decision.previewTitle,
+                    body: decision.previewBody,
+                    channel: decision.systemChannel,
+                    unreadCount: unreadCount,
+                    canPresentAvatar: () =>
+                        _isCurrent(epoch) &&
+                        !appState.isForeground &&
+                        !(appState.isForeground &&
+                            readState.isRoomOpen(event.conversationId)) &&
+                        !readState.wasViewed(
+                            event.conversationId, event.eventId) &&
+                        (_roomRevisions[event.conversationId] ?? 0) ==
+                            roomRevision);
+          } else {
+            await systemNotifications.showConversationMessage(
+              notificationId:
+                  notificationIdForConversation(event.conversationId),
+              title: decision.previewTitle,
+              body: decision.previewBody,
+              channel: decision.systemChannel,
+              roomIdPayload: event.conversationId,
+              avatarUrl: event.avatarUrl,
+              unreadCount: unreadCount,
+            );
+          }
+          if (readState.wasViewed(event.conversationId, event.eventId) ||
+              (appState.isForeground &&
+                  readState.isRoomOpen(event.conversationId)) ||
               (_roomRevisions[event.conversationId] ?? 0) != roomRevision) {
             await _cancelRoom(event.conversationId, epoch);
           }

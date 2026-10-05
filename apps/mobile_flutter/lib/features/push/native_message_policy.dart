@@ -192,7 +192,8 @@ final class NativeMessagePolicy {
       {required bool show,
       required bool silent,
       required String title,
-      required String body}) async {
+      required String body,
+      Uint8List? avatar}) async {
     if (!enabled || _scope == null) return null;
     if (!_ready) return false;
     return channel.invokeMethod<bool>('resolve', {
@@ -203,6 +204,7 @@ final class NativeMessagePolicy {
       'silent': silent,
       'title': title,
       'body': body,
+      if (avatar != null) 'avatar': avatar,
     });
   }
 
@@ -257,6 +259,20 @@ final class NativeMessagePolicy {
     if (_scope != null) {
       await channel.invokeMethod<void>('invalidate', {'scope': _scope});
     }
+  }
+
+  Future<void> readRoom(String roomId,
+      {required bool open, required Iterable<String> events}) async {
+    if (!enabled || _scope == null) return;
+    final scope = _scope;
+    final roomKey = key(roomId);
+    final eventKeys = events.map(key).take(4096).toList(growable: false);
+    await channel.invokeMethod<void>('readRoom', {
+      'scope': scope,
+      'room_key': roomKey,
+      'open': open,
+      'events': eventKeys,
+    });
   }
 
   Future<void> cancelRoom(String roomId) async {

@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../ui/foundation/avatar_cache.dart';
 import 'notification_decision.dart';
+import 'notification_event.dart';
+import 'notification_avatar.dart';
 import 'notification_diagnostics.dart';
 
 /// 通知权限状态（PRD §34/§56 权限降级展示用）。
@@ -51,6 +54,17 @@ abstract interface class SystemNotificationPresenter {
     int? unreadCount,
   });
   Future<void> cancelConversation(int notificationId);
+}
+
+abstract interface class NotificationAvatarPresenter {
+  Future<void> showConversationWithAvatar(
+      {required int notificationId,
+      required NotificationEvent event,
+      required String title,
+      required String body,
+      required SystemNotificationChannel channel,
+      int? unreadCount,
+      required bool Function() canPresentAvatar});
 }
 
 /// Remote APNs alerts have platform request IDs rather than our local hash ID.
@@ -135,15 +149,19 @@ ChannelSpec channelSpecFor(SystemNotificationChannel channel) =>
 final class FlutterLocalSystemNotificationPresenter
     implements
         SystemNotificationPresenter,
+        NotificationAvatarPresenter,
         DeliveredConversationNotificationPresenter {
   FlutterLocalSystemNotificationPresenter({
     FlutterLocalNotificationsPlugin? plugin,
     this.onConversationTap,
     NotificationDiagnostics? diagnostics,
-  })  : plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+    Future<Uint8List?> Function(NotificationEvent)? avatarLoader,
+  })  : avatarLoader = avatarLoader ?? loadNotificationAvatar,
+        plugin = plugin ?? FlutterLocalNotificationsPlugin(),
         diagnostics = diagnostics ?? NotificationDiagnostics.shared;
 
   final FlutterLocalNotificationsPlugin plugin;
+  final Future<Uint8List?> Function(NotificationEvent) avatarLoader;
 
   /// 通知点击回调：payload 为会话 roomId（PRD §63 notification_opened）。
   final void Function(String roomId)? onConversationTap;
@@ -160,6 +178,75 @@ final class FlutterLocalSystemNotificationPresenter
     } on MissingPluginException {
       // Older native hosts still cancel their locally generated alerts.
     }
+  }
+
+  final Map<int, int> _avatarGenerations = {};
+  final Map<int, Future<void>> _presentationWrites = {};
+  Future<void> _writePresentation(int id, Future<void> Function() action) {
+    final previous = _presentationWrites[id] ?? Future<void>.value();
+    late final Future<void> task;
+    task = previous
+        .catchError((Object _) {})
+        .then((_) => action())
+        .whenComplete(() {
+      if (identical(_presentationWrites[id], task)) {
+        _presentationWrites.remove(id);
+      }
+    });
+    _presentationWrites[id] = task;
+    return task;
+  }
+
+  @override
+  Future<void> showConversationWithAvatar(
+      {required int notificationId,
+      required NotificationEvent event,
+      required String title,
+      required String body,
+      required SystemNotificationChannel channel,
+      int? unreadCount,
+      required bool Function() canPresentAvatar}) async {
+    final generation = (_avatarGenerations[notificationId] ?? 0) + 1;
+    _avatarGenerations[notificationId] = generation;
+    await showConversationMessage(
+        notificationId: notificationId,
+        title: title,
+        body: body,
+        channel: channel,
+        roomIdPayload: event.conversationId,
+        unreadCount: unreadCount);
+    // Only Android supports the supplied byte large-icon path. Reposting a
+    // normal Darwin notification would alert again without changing its icon.
+    if (defaultTargetPlatform != TargetPlatform.android ||
+        event.avatarUrl == null) {
+      return;
+    }
+    unawaited(avatarLoader(event).then((bytes) async {
+      if (bytes == null) return;
+      await _writePresentation(notificationId, () async {
+        if (!canPresentAvatar() ||
+            _avatarGenerations[notificationId] != generation) {
+          return;
+        }
+        await plugin.show(
+            notificationId,
+            title,
+            body,
+            NotificationDetails(
+                android: _androidDetails(channel,
+                    avatarBytes: bytes,
+                    unreadCount: unreadCount,
+                    onlyAlertOnce: true),
+                iOS: _iosDetails(channel)),
+            payload: event.conversationId);
+        // The same-id next show/cancel queues behind this write. Retiring a
+        // stale image here cannot cancel a newer conversation notification.
+        if (!canPresentAvatar() ||
+            _avatarGenerations[notificationId] != generation) {
+          await plugin.cancel(notificationId);
+        }
+      });
+    }).catchError((Object _) {}));
   }
 
   bool _initialized = false;
@@ -289,20 +376,22 @@ final class FlutterLocalSystemNotificationPresenter
           // 无缓存头像按默认图标。
         }
       }
-      await plugin.show(
-        notificationId,
-        title,
-        body,
-        NotificationDetails(
-          android: _androidDetails(
-            channel,
-            avatarBytes: avatarBytes,
-            unreadCount: unreadCount,
-          ),
-          iOS: _iosDetails(channel),
-        ),
-        payload: roomIdPayload,
-      );
+      await _writePresentation(
+          notificationId,
+          () => plugin.show(
+                notificationId,
+                title,
+                body,
+                NotificationDetails(
+                  android: _androidDetails(
+                    channel,
+                    avatarBytes: avatarBytes,
+                    unreadCount: unreadCount,
+                  ),
+                  iOS: _iosDetails(channel),
+                ),
+                payload: roomIdPayload,
+              ));
       diagnostics.record(NotificationDiagStage.systemShow,
           'ok id=$notificationId channel=${channelSpecFor(channel).id}',
           roomId: roomIdPayload);
@@ -316,14 +405,18 @@ final class FlutterLocalSystemNotificationPresenter
 
   @override
   Future<void> cancelConversation(int notificationId) async {
+    _avatarGenerations[notificationId] =
+        (_avatarGenerations[notificationId] ?? 0) + 1;
     await initialize();
-    await plugin.cancel(notificationId);
+    await _writePresentation(
+        notificationId, () => plugin.cancel(notificationId));
   }
 
   AndroidNotificationDetails _androidDetails(
     SystemNotificationChannel channel, {
     Uint8List? avatarBytes,
     int? unreadCount,
+    bool onlyAlertOnce = false,
   }) {
     final spec = channelSpecFor(channel);
     final avatarIcon = avatarBytes == null
@@ -351,6 +444,7 @@ final class FlutterLocalSystemNotificationPresenter
       enableVibration: spec.vibrationEnabled,
       // 规格#1：好友头像大图标 + 未读数角标（有缓存才带，不发起下载）。
       largeIcon: avatarIcon,
+      onlyAlertOnce: onlyAlertOnce,
       number: unreadCount,
       styleInformation: const DefaultStyleInformation(true, true),
     );

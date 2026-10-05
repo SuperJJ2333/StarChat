@@ -93,7 +93,10 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
 }
 
 final class MatrixCallBackend
-    implements CallBackend, CallPerformanceCorrelationBackend {
+    implements
+        CallBackend,
+        CallCameraBackend,
+        CallPerformanceCorrelationBackend {
   MatrixCallBackend._(this._client, this._voip, this._delegate,
       this.diagnostics, this._ensureActive);
 
@@ -325,6 +328,8 @@ final class MatrixCallBackend
   Future<void> _attach(CallSession call) async {
     if (_disposed || identical(_call, call)) return;
     _call = call;
+    _cameraCall = null;
+    _cameraBindings = [];
     _connectedEmitted = false;
     _signalingEmitted = false;
     unawaited(_fallback.stop());
@@ -501,6 +506,8 @@ final class MatrixCallBackend
     // Detach synchronously before cleanup awaits. A new call may arrive while
     // the old stream subscriptions or quality monitor are shutting down.
     _call = null;
+    _cameraCall = null;
+    _cameraBindings = [];
     final callStates = _callStates;
     _callStates = null;
     final quality = _quality;
@@ -627,6 +634,104 @@ final class MatrixCallBackend
       });
   @override
   Future<void> setSpeaker(bool value) => webrtc.Helper.setSpeakerphoneOn(value);
+
+  CallSession? _cameraCall;
+  List<(rtc_interface.RTCRtpSender, rtc_interface.MediaStreamTrack)>
+      _cameraBindings = [];
+
+  @override
+  Future<void> setCameraEnabled(bool enabled) => _execute(() async {
+        final call = _active;
+        if (call.callHasEnded || call.type != CallType.kVideo) {
+          throw StateError('No active local video call');
+        }
+        bool current() =>
+            !_disposed && identical(_call, call) && !call.callHasEnded;
+        final wrapped = call.localUserMediaStream;
+        final stream = wrapped?.stream;
+        final tracks = stream?.getVideoTracks() ?? [];
+        if (tracks.length != 1 || call.pc == null) {
+          throw StateError('Local camera track is unavailable');
+        }
+        var bindings = _cameraBindings;
+        if (!identical(_cameraCall, call) || bindings.isEmpty) {
+          final senders = await call.pc!.getSenders();
+          if (!current()) throw StateError('Local video call ended');
+          bindings = [
+            for (final sender in senders)
+              if (sender.track?.id == tracks.single.id) (sender, tracks.single)
+          ];
+          if (bindings.length != 1) {
+            throw StateError('Local camera sender is unavailable');
+          }
+          _cameraBindings = bindings;
+          _cameraCall = call;
+        }
+        final (sender, track) = bindings.single;
+        if (enabled && !wrapped!.isVideoMuted()) return;
+        if (!enabled && wrapped!.isVideoMuted()) return;
+        if (!enabled) {
+          // Detach RTP first, then await capture shutdown. Never touch audio.
+          await sender.replaceTrack(null);
+          try {
+            await track.stop();
+          } catch (_) {
+            await sender.replaceTrack(track);
+            rethrow;
+          }
+          if (!current()) return;
+          wrapped!.setVideoMuted(true);
+        } else {
+          // A stopped camera cannot be resumed. Acquire video only and replace
+          // the old camera in the existing audio+video stream.
+          final facing = track.getSettings()['facingMode'];
+          final camera = await webrtc.navigator.mediaDevices.getUserMedia({
+            'audio': false,
+            'video': {'facingMode': facing ?? 'user'},
+          });
+          final replacements = camera.getVideoTracks();
+          if (!current() ||
+              replacements.length != 1 ||
+              camera.getAudioTracks().isNotEmpty) {
+            for (final acquired in camera.getTracks()) {
+              await acquired.stop();
+            }
+            await camera.dispose();
+            if (current()) throw StateError('Camera acquisition failed');
+            return;
+          }
+          final replacement = replacements.single;
+          try {
+            await sender.replaceTrack(replacement);
+            if (!current()) {
+              await replacement.stop();
+              await camera.dispose();
+              return;
+            }
+            await stream!.removeTrack(track);
+            await stream.addTrack(replacement);
+            // Transfer track ownership before disposing the temporary stream;
+            // streamDispose would otherwise stop this camera on native Android.
+            await camera.removeTrack(replacement);
+            await camera.dispose();
+            if (!current()) {
+              await replacement.stop();
+              return;
+            }
+            _cameraBindings = [(sender, replacement)];
+            wrapped!.setVideoMuted(false);
+            wrapped.onStreamChanged.add(stream);
+          } catch (_) {
+            await sender.replaceTrack(null);
+            await replacement.stop();
+            await stream!.removeTrack(replacement);
+            await stream.addTrack(track);
+            await camera.dispose();
+            rethrow;
+          }
+        }
+        if (current()) _mediaStreamEvents.add(null);
+      });
 
   @override
   Future<void> switchCamera() => _execute(() async {

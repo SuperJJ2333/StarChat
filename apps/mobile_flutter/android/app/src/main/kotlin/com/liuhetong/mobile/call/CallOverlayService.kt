@@ -18,6 +18,47 @@ import android.view.WindowManager
 class CallOverlayService : android.app.Service() {
 
     private var ball: View? = null
+    private var avatar: android.widget.ImageView? = null
+    private var fallback: android.widget.TextView? = null
+    private var status: android.widget.TextView? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var displayedAvatar: ByteArray? = null
+    private val tick = object : Runnable {
+        override fun run() {
+            if (!CallManager.hasActiveCall()) { stopSelf(); return }
+            updatePresentation()
+            handler.postDelayed(this, 1_000)
+        }
+    }
+
+    private fun updatePresentation() {
+        val bytes = CallManager.avatarBytes
+        if (bytes !== displayedAvatar) {
+            displayedAvatar = bytes
+            val bitmap = bytes?.let { runCatching {
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size, bounds)
+                if (bounds.outWidth !in 1..256 || bounds.outHeight !in 1..256) null
+                else android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)
+            }.getOrNull() }
+            avatar?.setImageBitmap(bitmap)
+            avatar?.visibility = if (bitmap != null) View.VISIBLE else View.GONE
+            fallback?.visibility = if (bitmap == null) View.VISIBLE else View.GONE
+        }
+        fallback?.text = (CallManager.callerName ?: CallManager.fallbackSeed ?: "通话").take(1)
+        val origin = CallManager.connectedAtMs
+        val duration = if (origin == null || CallManager.state != CallManager.State.active) "等待接通"
+            else {
+                val seconds = ((System.currentTimeMillis() - origin) / 1000).coerceIn(0, 86400)
+                if (seconds >= 3600) String.format(java.util.Locale.ROOT, "%d:%02d:%02d", seconds / 3600, seconds % 3600 / 60, seconds % 60)
+                else String.format(java.util.Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60)
+            }
+        status?.text = duration
+        val icon = if (CallManager.video) android.R.drawable.presence_video_online
+            else android.R.drawable.sym_action_call
+        status?.setCompoundDrawablesWithIntrinsicBounds(icon, 0, 0, 0)
+        ball?.contentDescription = "返回通话 ${CallManager.callerName ?: ""} $duration"
+    }
 
     override fun onBind(intent: android.content.Intent?) = null
 
@@ -29,10 +70,33 @@ class CallOverlayService : android.app.Service() {
         }
         if (ball != null) return START_NOT_STICKY
         val density = resources.displayMetrics.density
-        val size = (density * 52).toInt()
-        ball = android.widget.ImageView(this).apply {
-            setImageResource(applicationInfo.icon)
-            setBackgroundColor(0xE607C160.toInt())
+        val size = (density * 88).toInt()
+        ball = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            val padding = (density * 8).toInt()
+            setPadding(padding, padding, padding, padding)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFFF7F7F7.toInt()); cornerRadius = density * 12
+            }
+            val avatarSize = (density * 48).toInt()
+            val frame = android.widget.FrameLayout(this@CallOverlayService)
+            avatar = android.widget.ImageView(this@CallOverlayService).apply {
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                visibility = View.GONE
+            }
+            fallback = android.widget.TextView(this@CallOverlayService).apply {
+                gravity = Gravity.CENTER; textSize = 20f; setTextColor(0xFF191919.toInt())
+                setBackgroundColor(0xFFDFF2E4.toInt())
+            }
+            frame.addView(fallback, android.widget.FrameLayout.LayoutParams(avatarSize, avatarSize))
+            frame.addView(avatar, android.widget.FrameLayout.LayoutParams(avatarSize, avatarSize))
+            addView(frame, android.widget.LinearLayout.LayoutParams(avatarSize, avatarSize))
+            status = android.widget.TextView(this@CallOverlayService).apply {
+                gravity = Gravity.CENTER; textSize = 12f; setTextColor(0xFF07C160.toInt())
+                compoundDrawablePadding = (density * 4).toInt()
+            }
+            addView(status, android.widget.LinearLayout.LayoutParams(-2, -2))
             alpha = 0.92f
             setOnTouchListener(object : View.OnTouchListener {
                 var downX = 0f; var downY = 0f; var startX = 0f; var startY = 0f
@@ -70,16 +134,17 @@ class CallOverlayService : android.app.Service() {
         }
         // 通话结束自动移除（引用持有，onDestroy 时注销防泄漏）。
         val listener: (String) -> Unit = { event ->
-            if (event == CallManager.eventEnded) stopSelf()
+            if (event == CallManager.eventEnded) stopSelf() else updatePresentation()
         }
         overlayListener = listener
-        CallManager.addListener(listener)
+        CallManager.addUiListener(listener)
+        handler.post(tick)
         return START_NOT_STICKY
     }
 
     private var overlayListener: ((String) -> Unit)? = null
 
-    private fun layoutParamsOf(x: Int, y: Int, size: Int = (resources.displayMetrics.density * 52).toInt()) =
+    private fun layoutParamsOf(x: Int, y: Int, size: Int = (resources.displayMetrics.density * 88).toInt()) =
         WindowManager.LayoutParams(
             if (Build.VERSION.SDK_INT >= 26)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -94,11 +159,16 @@ class CallOverlayService : android.app.Service() {
         }
 
     override fun onDestroy() {
-        overlayListener?.let { CallManager.removeListener(it) }
+        overlayListener?.let { CallManager.removeUiListener(it) }
         overlayListener = null
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         ball?.let { runCatching { wm.removeView(it) } }
         ball = null
+        handler.removeCallbacks(tick)
+        displayedAvatar = null
+        avatar = null
+        fallback = null
+        status = null
         super.onDestroy()
     }
 

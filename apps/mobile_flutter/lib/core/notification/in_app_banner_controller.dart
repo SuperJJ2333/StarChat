@@ -9,6 +9,8 @@ final class InAppBannerItem {
     required this.body,
     required this.timestamp,
     this.avatarUrl,
+    this.avatarHeaders = const {},
+    this.avatarSeed,
   });
 
   final String id;
@@ -18,6 +20,8 @@ final class InAppBannerItem {
 
   /// Matrix mxc:// 头像地址（未缓存时 UI 先用占位头像，PRD §23/§48）。
   final String? avatarUrl;
+  final Map<String, String> avatarHeaders;
+  final String? avatarSeed;
   final DateTime timestamp;
 }
 

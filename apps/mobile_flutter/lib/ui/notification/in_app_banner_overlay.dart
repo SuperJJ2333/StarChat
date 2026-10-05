@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../core/notification/in_app_banner_controller.dart';
 import '../foundation/wechat_tokens.dart';
+import '../components/user_avatar.dart';
 
 /// 应用内顶部通知横幅（PRD §7）。
 ///
@@ -112,7 +113,12 @@ final class _InAppBannerOverlayState extends State<InAppBannerOverlay> {
         ),
         child: Row(
           children: [
-            _AvatarPlaceholder(name: item.title),
+            UserAvatar(
+                nickname: item.title,
+                fallbackSeed: item.avatarSeed ?? item.conversationId,
+                avatarUrl: item.avatarUrl,
+                avatarHeaders: item.avatarHeaders,
+                size: 38),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -156,36 +162,6 @@ final class _InAppBannerOverlayState extends State<InAppBannerOverlay> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 占位头像：头像未缓存时先以首字符呈现，缓存就绪后由调用方无感替换
-/// （PRD §23：不得为等头像延迟通知显示）。
-final class _AvatarPlaceholder extends StatelessWidget {
-  const _AvatarPlaceholder({required this.name});
-
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final initial = name.trim().characters.firstOrNull ?? '聊';
-    return Container(
-      width: 38,
-      height: 38,
-      decoration: const BoxDecoration(
-        color: WeChatColors.brandPrimary,
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: const TextStyle(
-          color: CupertinoColors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
         ),
       ),
     );

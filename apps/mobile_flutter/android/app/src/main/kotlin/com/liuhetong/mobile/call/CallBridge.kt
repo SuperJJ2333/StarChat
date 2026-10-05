@@ -117,6 +117,10 @@ object NativeCallBridge {
                         call.argument<String>("phase"),
                         call.argument<Boolean>("video") ?: call.argument<String>("type")?.let { it == "video" },
                         call.argument<String>("callerName"),
+                        call.argument<String>("sessionKey"),
+                        call.argument<ByteArray>("avatarBytes"),
+                        call.argument<String>("fallbackSeed"),
+                        call.argument<Number>("connectedAtMs")?.toLong(),
                     )
                     result.success(true)
                 }

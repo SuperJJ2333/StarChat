@@ -17,6 +17,7 @@ function defineContract({
 }
 
 export const componentContracts = Object.freeze([
+  defineContract({ tagName: "app-call-return", rootClass: "c-call-return", allowedAttributes: ["name", "image", "video", "duration", "waiting"], allowedStates: ["audio", "video", "waiting"], domSignature: [".c-call-return", ".c-call-return>app-avatar", ".c-call-return>.c-call-return__caption"] }),
   defineContract({ tagName: "app-labeled-input-row", rootClass: "c-labeled-input-row", allowedAttributes: ["label", "value", "placeholder", "enabled", "maxlength"], allowedStates: ["empty", "filled", "editing", "disabled"], domSignature: [".c-labeled-input-row", ".c-labeled-input-row>.c-labeled-input-row__label", ".c-labeled-input-row>.c-labeled-input-row__input"] }),
   defineContract({ tagName: "app-image-editor", rootClass: "c-image-editor", allowedAttributes: ["state", "picture", "avatar-mode"], allowedStates: ["ready", "complete-sheet", "loading", "error"], domSignature: [".c-image-editor", ".c-image-editor>.c-image-editor__header", ".c-image-editor>.c-image-editor__viewport", ".c-image-editor>.c-image-editor__footer"] }),
   defineContract({ tagName: "app-room-image-gallery", rootClass: "c-room-image-gallery", allowedAttributes: [], allowedStates: ["ready"], domSignature: [".c-room-image-gallery", ".c-room-image-gallery>.c-room-image-gallery__track"] }),

@@ -25,6 +25,7 @@ IncomingNotification _incoming({
   MuteNotificationDecision muteDecision = MuteNotificationDecision.normal,
   bool isAttention = false,
   String preview = '晚上一起吃饭吗？',
+  String? avatarUrl,
 }) =>
     IncomingNotification(
       event: NotificationEvent(
@@ -34,6 +35,7 @@ IncomingNotification _incoming({
         senderName: '张三',
         conversationName: '张三',
         messagePreview: preview,
+        avatarUrl: avatarUrl,
         timestamp: DateTime(2026, 9, 3, 12),
       ),
       isOwnMessage: isOwnMessage,
@@ -234,6 +236,201 @@ Future<void> _disposeWidgetCoordinator(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('queued exact old read rechecks current presented ID after newer show',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@queued');
+    final oldEntered = Completer<void>();
+    final oldRelease = Completer<void>();
+    var showCount = 0;
+    final presenter = _FakeSystemPresenter()
+      ..beforeShow = () async {
+        if (++showCount == 1) {
+          oldEntered.complete();
+          await oldRelease.future;
+        }
+      };
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+        engine: _RecordingSoundEngine(),
+        haptics: _RecordingHapticDriver(),
+        badge: _RecordingBadgeGateway(),
+        presenter: presenter,
+        source: source,
+        prefs: _FakePreferenceStore(),
+        unread: _FakeUnreadSource(),
+        appState: AppStateManager()..updateLifecycle(AppRunState.background));
+    await coordinator.start();
+    final oldShow =
+        coordinator.handleEvent(_incoming(roomId: 'A', eventId: 'old'));
+    await oldEntered.future;
+    final newShow =
+        coordinator.handleEvent(_incoming(roomId: 'A', eventId: 'new'));
+    await _drain(); // The newer show queues before the exact old-read cancellation.
+    reads.markCleared('A', eventId: 'old');
+    oldRelease.complete();
+    await oldShow;
+    await newShow;
+    await _drain();
+    expect(presenter.shows, hasLength(2));
+    expect(
+        presenter.cancellations
+            .where((id) => id == notificationIdForConversation('A')),
+        hasLength(1),
+        reason:
+            'retire in-flight old show only; queued cancellation must preserve new show');
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
+  test('delivered new notification survives unrelated delayed old read',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@mixed');
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+        engine: _RecordingSoundEngine(),
+        haptics: _RecordingHapticDriver(),
+        badge: _RecordingBadgeGateway(),
+        presenter: presenter,
+        source: source,
+        prefs: _FakePreferenceStore(),
+        unread: _FakeUnreadSource(),
+        appState: AppStateManager()..updateLifecycle(AppRunState.background));
+    await coordinator.start();
+    await coordinator.handleEvent(_incoming(roomId: 'A', eventId: 'new'));
+    reads.observeTimeline('A', ['old'], viewing: false);
+    reads.markCleared('A', eventId: 'old', updateUnreadMarker: false);
+    await _drain();
+    expect(presenter.shows, hasLength(1));
+    expect(presenter.cancellations,
+        isNot(contains(notificationIdForConversation('A'))),
+        reason: 'exact old receipt must not cancel displayed new event');
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
+  test('background mounted room late exact read never bridges open viewing',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@mixed');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final bridgeReads = <Map>[];
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel,
+        (call) async {
+      if (call.method == 'bind') {
+        return {'scope': 'a'.padRight(64, 'a'), 'revision': 0};
+      }
+      if (call.method == 'readRoom') bridgeReads.add(call.arguments as Map);
+      return true;
+    });
+    final policy = NativeMessagePolicy(enabled: true);
+    await policy.prepare('@mixed', const NotificationPreferenceValues());
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+        engine: _RecordingSoundEngine(),
+        haptics: _RecordingHapticDriver(),
+        badge: _RecordingBadgeGateway(),
+        presenter: _FakeSystemPresenter(),
+        source: source,
+        prefs: _FakePreferenceStore(),
+        unread: _FakeUnreadSource(),
+        nativePolicy: policy,
+        appState: AppStateManager()..updateLifecycle(AppRunState.background));
+    await coordinator.start();
+    reads.setRoomOpen('A', open: true);
+    reads.markCleared('A', eventId: 'old');
+    await _drain();
+    expect(bridgeReads, isNotEmpty);
+    expect(bridgeReads.last['open'], isFalse,
+        reason: 'background old read cannot bulk retire pending future push');
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+    messenger.setMockMethodCallHandler(NativeMessagePolicy.channel, null);
+  });
+  test('new background event still notifies when chat page remains mounted',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@background');
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final state = AppStateManager();
+    final coordinator = _buildCoordinator(
+        engine: _RecordingSoundEngine(),
+        haptics: _RecordingHapticDriver(),
+        badge: _RecordingBadgeGateway(),
+        presenter: presenter,
+        source: source,
+        prefs: _FakePreferenceStore(),
+        unread: _FakeUnreadSource(),
+        appState: state);
+    await coordinator.start();
+    reads.setRoomOpen('A', open: true);
+    reads.markCleared('A', eventId: 'old');
+    await _drain();
+    state.updateLifecycle(AppRunState.background);
+    await coordinator.handleEvent(
+        _incoming(roomId: 'A', eventId: 'new', isCurrentConversation: true));
+    expect(presenter.shows, hasLength(1));
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
+  test('viewed event never replays after leaving room but new event notifies',
+      () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    reads.bindAccount('@read-test');
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager()..updateLifecycle(AppRunState.background),
+    );
+    await coordinator.start();
+    reads.setRoomOpen('A', open: true);
+    reads.markCleared('A', eventId: 'old');
+    reads.setRoomOpen('A', open: false);
+    await coordinator.handleEvent(_incoming(roomId: 'A', eventId: 'old'));
+    expect(presenter.shows, isEmpty);
+    await coordinator.handleEvent(_incoming(roomId: 'A', eventId: 'new'));
+    expect(presenter.shows, hasLength(1));
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
+  test('foreground banner carries conversation avatar', () async {
+    final reads = ConversationReadState.shared()..resetForTest();
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final banners = InAppBannerController();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager(),
+      banners: banners,
+    );
+    await coordinator.start();
+    await coordinator
+        .handleEvent(_incoming(avatarUrl: 'https://example.test/avatar'));
+    expect(banners.current?.avatarUrl, 'https://example.test/avatar');
+    await coordinator.dispose();
+    await source.close();
+    reads.resetForTest();
+  });
   test('held native ACK across policy change cannot leak foreground effects',
       () async {
     final messenger =

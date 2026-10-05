@@ -1,6 +1,16 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-10-05-notification-call-avatar": {
+      "flutter": "apps/mobile_flutter/lib/features/matrix/call_page.dart",
+      "html": "frontend/src/screens/calls.js",
+      "demo": "calls-video-minimized",
+      "components": ["CallPage", "UserAvatar", "CallControlButton", "InAppBannerOverlay"],
+      "props": ["avatarUrl", "avatarHeaders", "onMinimize", "controller"],
+      "states": ["connected", "minimized", "restored", "camera-off", "direct-avatar", "group-avatar", "viewed"],
+      "tokens": ["WeChatSpacing.sm = --space-sm", "WeChatSpacing.md = --space-md", "WeChatTypography.caption = --type-caption-size", "WeChatRadius.dialog = --radius-dialog"],
+      "behavior": "Read conversation events are suppressed across desktop/background transitions without suppressing genuinely new messages. Direct and group reminders use locally resolved avatars. Minimized calls retain peer identity, elapsed connection time and media type. Camera off stops local video transmission while audio continues, and restoration preserves the off state. HTML fixtures model these transitions without contacting real accounts."
+    },
     "2026-10-04-stable-history-search": {
       "flutter": "apps/mobile_flutter/lib/ui/chat/chat_search_page.dart",
       "html": "frontend/src/screens/messaging.js",
@@ -948,6 +958,18 @@
     ]
   },
   "components": [
+    {
+      "id": "call-return-card",
+      "flutter": {
+        "name": "WeChatCallReturnCard",
+        "file": "apps/mobile_flutter/lib/ui/components/call_return_card.dart",
+        "props": ["identity", "type", "connectedAt", "now", "onPressed"],
+        "variants": {"media": ["audio", "video"]},
+        "states": ["waiting", "connected", "avatar-fallback"]
+      },
+      "html": {"tag": "app-call-return"},
+      "tokens": ["sm", "xs", "dialog", "caption", "brandPrimary"]
+    },
     {
       "id": "action-button",
       "flutter": {
@@ -2430,7 +2452,7 @@
     }
   },
   "screens": {
-    "expectedCount": 528
+    "expectedCount": 535
   },
   "adminCompletion20260910": {
     "html": [

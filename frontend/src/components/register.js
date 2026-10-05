@@ -12,8 +12,10 @@ import { AppEmojiInputDecoration, AppMessageSelectionSession } from "./selection
 import { AppOfficialName } from "./official-name.js";
 import { AppDivider } from "./divider.js";
 import { AppLabeledInputRow } from "./labeled-input-row.js";
+import { AppCallReturn } from "./call-return.js";
 
 const implementations = new Map([
+  ["app-call-return", AppCallReturn],
   ["app-labeled-input-row", AppLabeledInputRow],
   ["app-image-editor", AppImageEditor],
   ["app-room-image-gallery", AppRoomImageGallery],

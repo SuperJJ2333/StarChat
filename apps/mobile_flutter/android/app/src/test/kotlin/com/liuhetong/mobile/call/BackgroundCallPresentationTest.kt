@@ -31,23 +31,34 @@ class BackgroundCallPresentationTest {
         CallManager.reset()
         CallManager.appContext = null
         val uiEvents = mutableListOf<String>()
+        val bridgeEvents = mutableListOf<String>()
         val listener: (String) -> Unit = { uiEvents.add(it) }
+        val bridgeListener: (String) -> Unit = { bridgeEvents.add(it) }
         CallManager.addUiListener(listener)
+        CallManager.addListener(bridgeListener)
         try {
             CallManager.onIncoming("test-call", "Test caller", true)
             CallManager.updateFromFlutter("requestingPermission", true)
             assertEquals(CallManager.State.answering, CallManager.state)
             shadowOf(android.os.Looper.getMainLooper()).idle()
             uiEvents.clear()
-            CallManager.updateFromFlutter("ringing", true)
+            bridgeEvents.clear()
+            CallManager.updateFromFlutter("ringing", true, "Retry caller")
             shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals(CallManager.State.ringing, CallManager.state)
-            assertEquals(listOf(CallManager.eventIncoming), uiEvents)
+            // Re-ring plus the new peer/overlay metadata refresh are UI-only.
+            assertEquals(listOf(CallManager.eventIncoming, "presentationUpdated"), uiEvents)
+            assertTrue(bridgeEvents.isEmpty(), "presentation refresh must not replay a native action")
+            assertEquals("Retry caller", CallManager.callerName)
+            assertEquals(null, CallManager.connectedAtMs, "permission denial is not a connected call")
             assertEquals("test-call", CallManager.callId)
             CallManager.updateFromFlutter("requestingPermission", true)
             assertEquals(CallManager.State.answering, CallManager.state)
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue(bridgeEvents.isEmpty(), "retry state report must not request another answer")
         } finally {
             CallManager.removeUiListener(listener)
+            CallManager.removeListener(bridgeListener)
             CallManager.reset()
         }
     }

@@ -34,6 +34,8 @@ final class NotificationEvent {
     this.messagePreview = '',
     this.isMention = false,
     this.avatarUrl,
+    this.avatarHeaders = const {},
+    this.avatarSeed,
     this.unreadCount,
     this.isSystem = false,
   });
@@ -62,6 +64,8 @@ final class NotificationEvent {
 
   /// 发送者头像（业务头像 URL；系统通知大图标，缺省占位）。
   final String? avatarUrl;
+  final Map<String, String> avatarHeaders;
+  final String? avatarSeed;
 
   /// 该会话当前未读数（含本条；系统通知 number 角标）。
   final int? unreadCount;

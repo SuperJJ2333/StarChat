@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:flutter/painting.dart';
+import '../../ui/foundation/avatar_cache.dart';
 
 import 'package:flutter/services.dart';
 
@@ -155,11 +158,31 @@ final class NativeCallCoordinator {
     NativeCallArbiter? arbiter,
     this.pendingActionMaxAge = const Duration(seconds: 30),
     DateTime Function()? clock,
+    Future<Uint8List?> Function(CallIdentity identity)? avatarLoader,
   })  : channel = channel ?? const MethodChannelNativeCallChannel(),
         arbiter = arbiter ?? NativeCallArbiter(),
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now {
+    this.avatarLoader = avatarLoader ??
+        (identity) =>
+            loadNativeCallAvatar(identity, cacheKey: avatarCacheKey(identity));
+  }
 
   final CallController calls;
+  late final Future<Uint8List?> Function(CallIdentity identity) avatarLoader;
+  static int _instanceCounter = 0;
+  final String _instanceId =
+      '${DateTime.now().microsecondsSinceEpoch}:${++_instanceCounter}';
+  // Keep authenticated pixels isolated even when a peer's URL is unchanged
+  // across account transitions. Each coordinator belongs to one account owner.
+  String avatarCacheKey(CallIdentity identity) => AvatarCache.cacheKey(
+      userId: 'native-call:$_instanceId:${identity.matrixUserId}',
+      avatarUrl: identity.avatarUrl ?? '');
+
+  bool _disposed = false;
+  int? _avatarGeneration;
+  CallIdentity? _avatarIdentity;
+  Uint8List? _avatarBytes;
+  Future<void> _reportTail = Future<void>.value();
 
   /// 呈现来电页（CallUiManager.showIncomingCall）。
   final void Function() onPresentIncoming;
@@ -180,6 +203,7 @@ final class NativeCallCoordinator {
 
   /// 原生 → Flutter 消息入口（MethodCallHandler 转发到这里）。
   Future<Object?> handleNativeMessage(String method, Object? arguments) async {
+    if (_disposed) return true;
     final callId = arguments is Map && arguments['callId'] is String
         ? arguments['callId'] as String?
         : null;
@@ -206,6 +230,7 @@ final class NativeCallCoordinator {
   /// 用户明确接听：只对当前响铃通话执行一次 accept；响铃未同步到则
   /// 登记绑定式待接听（[NativeCallArbiter]；有期限与取消条件）。
   Future<void> answerFromUser(String? nativeCallId) async {
+    if (_disposed) return;
     if (!arbiter.matchesPresentation(nativeCallId)) return;
     switch (calls.state.phase) {
       case CallPhase.ringing:
@@ -230,6 +255,8 @@ final class NativeCallCoordinator {
       case CallPhase.permissionDenied:
         arbiter.requestAnswer(nativeCallId);
     }
+    await _reportTail;
+    if (_disposed) return;
     onPresentIncoming();
     if (calls.state.phase != CallPhase.ringing) {
       onDismissNativeLayer?.call();
@@ -238,6 +265,7 @@ final class NativeCallCoordinator {
 
   /// 用户明确结束：响铃时拒接，正在连接或已连接时挂断。
   Future<void> rejectFromUser() async {
+    if (_disposed) return;
     if (calls.state.phase == CallPhase.ringing) {
       await calls.reject();
     } else if (calls.state.phase == CallPhase.requestingPermission ||
@@ -245,6 +273,7 @@ final class NativeCallCoordinator {
         calls.state.phase == CallPhase.connected) {
       await calls.hangup();
     }
+    if (_disposed) return;
     arbiter.clear();
     onDismissNativeLayer?.call();
   }
@@ -252,12 +281,15 @@ final class NativeCallCoordinator {
   /// CallController 相位变化钩子（由 calls 监听器转发）：
   /// 待接听匹配消费 + 状态回报 + 终态请求作废。
   void onCallPhaseChanged() {
+    if (_disposed) return;
     final phase = calls.state.phase;
     if (phase == CallPhase.ringing && arbiter.consumePendingAnswer()) {
       // 用户已在原生层请求接听，Matrix 响铃到达即接听一次；
       // microtask 避免 notifyListeners 重入期内同步改状态。
       scheduleMicrotask(() {
-        if (calls.state.phase != CallPhase.ringing || _accepting) return;
+        if (_disposed || calls.state.phase != CallPhase.ringing || _accepting) {
+          return;
+        }
         _accepting = true;
         calls.accept().whenComplete(() => _accepting = false);
       });
@@ -266,18 +298,69 @@ final class NativeCallCoordinator {
       // 通话取消/接听失败：旧接听请求必须失效。
       arbiter.clear();
     }
-    unawaited(_reportState(phase));
+    final state = calls.state;
+    if (_disposed) return;
+    final active = {
+      CallPhase.ringing,
+      CallPhase.requestingPermission,
+      CallPhase.connecting,
+      CallPhase.connected
+    }.contains(state.phase);
+    if (!active) {
+      _avatarGeneration = null;
+      _avatarIdentity = null;
+      _avatarBytes = null;
+    } else if (_avatarGeneration != calls.sessionGeneration ||
+        _avatarIdentity != state.identity) {
+      _avatarGeneration = calls.sessionGeneration;
+      _avatarIdentity = state.identity;
+      _avatarBytes = null;
+      final identity = state.identity;
+      if (identity != null) {
+        unawaited(_loadAvatar(identity, calls.sessionGeneration));
+      }
+    }
+    unawaited(_reportState());
   }
 
-  Future<void> _reportState(CallPhase phase) async {
+  Future<void> _loadAvatar(CallIdentity identity, int generation) async {
+    Uint8List? bytes;
     try {
-      await channel.invoke('reportCallState', {
-        'phase': phase.name,
-        'video': calls.state.type == CallMediaType.video,
-      });
+      bytes = await avatarLoader(identity);
     } catch (_) {
-      // 原生层未就绪/非 Android：状态回报尽力而为，不影响通话。
+      return;
     }
+    if (_disposed ||
+        generation != calls.sessionGeneration ||
+        _avatarGeneration != generation ||
+        _avatarIdentity != identity) {
+      return;
+    }
+    if (bytes == null || bytes.length > 256 * 1024) return;
+    _avatarBytes = bytes;
+    await _reportState();
+  }
+
+  Future<void> _reportState() {
+    final state = calls.state;
+    final generation = calls.sessionGeneration;
+    final bytes = _avatarBytes;
+    final payload = <String, Object?>{
+      'phase': state.phase.name,
+      'video': state.type == CallMediaType.video,
+      'sessionKey': '$_instanceId:$generation',
+      'callerName': state.identity?.displayName,
+      'fallbackSeed': state.identity?.fallbackSeed,
+      'connectedAtMs': state.connectedAt?.millisecondsSinceEpoch,
+      'avatarBytes': bytes,
+    };
+    // Ordering and generation fence include delayed avatar loads and account teardown.
+    return _reportTail = _reportTail.then((_) async {
+      if (_disposed || generation != calls.sessionGeneration) return;
+      try {
+        await channel.invoke('reportCallState', payload);
+      } catch (_) {}
+    });
   }
 
   /// 冷启动恢复：Flutter 就绪握手。
@@ -287,13 +370,16 @@ final class NativeCallCoordinator {
   ///    校验一次后丢弃）；
   /// ② getActiveCall 权威查询核对原生呈现状态（接口的真实业务调用方）。
   Future<void> restorePendingState() async {
+    if (_disposed) return;
     try {
       final result = await channel.invoke('ready');
+      if (_disposed) return;
       _applyPendingActions(result is Map ? result['actions'] : null);
     } catch (_) {
       // 原生层不可用（iOS/桌面/引擎异常）：冷启动恢复跳过。
     }
     try {
+      if (_disposed) return;
       await channel.invoke('getActiveCall');
     } catch (_) {
       // 查询失败不阻塞恢复。
@@ -301,6 +387,7 @@ final class NativeCallCoordinator {
   }
 
   void _applyPendingActions(Object? actions) {
+    if (_disposed) return;
     if (actions is! List) return;
     final now = _clock();
     for (final action in actions) {
@@ -327,6 +414,11 @@ final class NativeCallCoordinator {
 
   /// 会话结束（登出/账号变化）：作废待接听并尽力通知原生清理呈现。
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    _avatarBytes = null;
+    _avatarIdentity = null;
+    await _reportTail;
     arbiter.clear();
     _accepting = false;
     try {
@@ -334,5 +426,45 @@ final class NativeCallCoordinator {
     } catch (_) {
       // 原生层不可用时静默。
     }
+  }
+}
+
+/// Decode locally with authenticated image provider; send only bounded PNG pixels.
+/// No remote URL or credentials cross the native bridge.
+Future<Uint8List?> loadNativeCallAvatar(CallIdentity identity,
+    {required String cacheKey}) async {
+  final url = identity.avatarUrl;
+  if (url == null || url.isEmpty) return null;
+  final uri = Uri.tryParse(url);
+  if (uri == null || !{'https', 'http'}.contains(uri.scheme)) return null;
+  final provider = ResizeImage(
+      AvatarCacheImageProvider(url,
+          cacheKey: cacheKey,
+          cacheManager: AvatarCache.manager,
+          headers: identity.avatarHeaders),
+      width: 96,
+      height: 96);
+  final stream = provider.resolve(ImageConfiguration.empty);
+  final result = Completer<Uint8List?>();
+  late ImageStreamListener listener;
+  listener = ImageStreamListener((info, _) async {
+    try {
+      final pixels =
+          await info.image.toByteData(format: ui.ImageByteFormat.png);
+      if (!result.isCompleted) result.complete(pixels?.buffer.asUint8List());
+    } catch (_) {
+      if (!result.isCompleted) result.complete(null);
+    } finally {
+      info.dispose();
+    }
+  }, onError: (error, stackTrace) {
+    if (!result.isCompleted) result.complete(null);
+  });
+  stream.addListener(listener);
+  try {
+    return await result.future
+        .timeout(const Duration(seconds: 4), onTimeout: () => null);
+  } finally {
+    stream.removeListener(listener);
   }
 }

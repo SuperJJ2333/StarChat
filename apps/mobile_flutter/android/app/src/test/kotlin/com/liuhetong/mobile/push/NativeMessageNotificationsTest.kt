@@ -33,6 +33,98 @@ class NativeMessageNotificationsTest {
     private fun receive(key: String = event) = owner.receive(scope, room, key)
     private fun notifications() = app.getSystemService(NotificationManager::class.java).activeNotifications
 
+    @Test fun delayedExactOldReadInBackgroundMountedRoomPreservesPendingNewPush() {
+        owner.foreground = true
+        assertTrue(owner.readRoom(scope, room, true, listOf(event)))
+        owner.foreground = false
+        val fresh = "d".repeat(64)
+        receive(fresh)
+        assertEquals("chatflow_silent", notifications().single().notification.channelId)
+        assertTrue(owner.readRoom(scope, room, true, listOf(event)))
+        assertEquals(1, notifications().size, "exact old read cannot cancel future quiet pending")
+        owner.resolve(scope, room, fresh, true, false)
+        assertEquals("chatflow_messages_v2", notifications().single().notification.channelId)
+        assertFalse(owner.claim(scope, room, event))
+    }
+    @Test fun backgroundChatStillMountedAllowsNewVerifiedEvent() {
+        owner.foreground = true
+        assertTrue(owner.readRoom(scope, room, true, listOf(event)))
+        owner.foreground = false
+        val fresh = "d".repeat(64)
+        receive(fresh)
+        assertEquals("chatflow_silent", notifications().single().notification.channelId)
+        owner.resolve(scope, room, fresh, true, false)
+        assertEquals("chatflow_messages_v2", notifications().single().notification.channelId)
+    }
+    @Test fun localAvatarBytesUpdateSilentlySurviveColdRestartAndClearOnAccountSwitch() {
+        receive()
+        val bitmap = android.graphics.Bitmap.createBitmap(2, 2, android.graphics.Bitmap.Config.ARGB_8888)
+        val output = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
+        owner.resolve(scope, room, event, true, false, "Peer", "Local", output.toByteArray())
+        assertNotNull(notifications().single().notification.getLargeIcon())
+        assertTrue(notifications().single().notification.flags and android.app.Notification.FLAG_ONLY_ALERT_ONCE != 0)
+        owner.close(); owner = NativeMessageOwner(app)
+        receive("d".repeat(64))
+        assertNotNull(notifications().single().notification.getLargeIcon())
+        owner.bind("f".repeat(64))
+        app.openOrCreateDatabase("native_messages.db", 0, null).use { db ->
+            db.rawQuery("SELECT COUNT(*) FROM avatars", null).use { rows ->
+                rows.moveToFirst(); assertEquals(0, rows.getInt(0))
+            }
+        }
+    }
+    @Test fun unknownPushAfterReadIsQuietUntilVerifiedNewThenAlertsOnlyOnce() {
+        assertTrue(owner.readRoom(scope, room, true, listOf(event)))
+        assertTrue(owner.readRoom(scope, room, false, emptyList()))
+        val fresh = "d".repeat(64)
+        receive(fresh)
+        assertEquals("chatflow_silent", notifications().single().notification.channelId)
+        assertTrue(notifications().single().notification.extras.getBoolean("native_awaiting_read"))
+        owner.resolve(scope, room, fresh, true, false, "Peer", "New")
+        assertEquals("chatflow_messages_v2", notifications().single().notification.channelId)
+        assertEquals(0, notifications().single().notification.flags and android.app.Notification.FLAG_ONLY_ALERT_ONCE)
+        owner.resolve(scope, room, fresh, true, false, "Peer", "New")
+        assertTrue(notifications().single().notification.flags and android.app.Notification.FLAG_ONLY_ALERT_ONCE != 0)
+    }
+    @Test fun exactReadResolutionCancelsUnknownQuietPendingWithoutRetiringFuture() {
+        assertTrue(owner.readRoom(scope, room, true, listOf(event)))
+        assertTrue(owner.readRoom(scope, room, false, emptyList()))
+        val late = "d".repeat(64); val fresh = "e".repeat(64)
+        receive(late)
+        assertTrue(owner.readRoom(scope, room, false, listOf(late)))
+        assertTrue(notifications().isEmpty())
+        receive(fresh)
+        owner.resolve(scope, room, fresh, true, false)
+        assertEquals("chatflow_messages_v2", notifications().single().notification.channelId)
+    }
+    @Test fun viewedTombstoneSurvivesRestartAndClaimExpiryButNewEventNotifies() {
+        owner.foreground = true
+        receive()
+        assertTrue(owner.readRoom(scope, room, true, listOf(event)))
+        assertTrue(owner.readRoom(scope, room, false, emptyList()))
+        app.openOrCreateDatabase("native_messages.db", 0, null).use {
+            it.execSQL("DELETE FROM claims")
+        }
+        owner.close(); owner = NativeMessageOwner(app)
+        receive()
+        assertTrue(notifications().isEmpty())
+        assertFalse(owner.claim(scope, room, event))
+        receive("d".repeat(64))
+        assertEquals(1, notifications().size)
+    }
+    @Test fun viewingLatePushIsRetiredAndAccountTransitionRejectsOldRead() {
+        owner.foreground = true
+        assertTrue(owner.readRoom(scope, room, true, emptyList()))
+        receive()
+        assertTrue(owner.readRoom(scope, room, false, emptyList()))
+        owner.foreground = false
+        receive()
+        assertTrue(notifications().isEmpty())
+        val nextScope = owner.bind("f".repeat(64))
+        assertFalse(owner.readRoom(scope, room, true, listOf("d".repeat(64))))
+        assertNotEquals(scope, nextScope)
+    }
     @Test fun coldReceivePostsGenericWithoutStartingActivityAndDeduplicates() {
         receive(); receive()
         assertEquals(1, notifications().size)

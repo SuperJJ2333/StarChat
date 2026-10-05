@@ -1,5 +1,7 @@
-import { element } from "../components/base.js";
+import { element, button } from "../components/base.js";
+import { icon } from "../icons/icons.js";
 import { component, createDeviceScreen, pageRoot } from "./shared.js";
+import { peerAvatar } from "./notification-avatar.js";
 
 const callCopy = Object.freeze({
   calling: "正在等待对方接听…",
@@ -23,15 +25,54 @@ const callCopy = Object.freeze({
 export function renderScreen(definition) {
   const root = pageRoot(definition);
   root.classList.add("p-call");
+  const video = definition.page === "video";
+  const active = ["connected", "restored", "minimized", "camera-off", "microphone-off", "camera-switch", "weak-network"].includes(definition.state);
+  let cameraEnabled = definition.state !== "camera-off";
+  let minimized = definition.state === "minimized";
   const hero = element("section", "p-call__hero");
-  hero.append(component("app-avatar", { name: "周然", size: "detail" }), element("h1", "p-call__title", definition.page === "video" ? "周然 · 视频通话" : "周然 · 语音通话"), element("p", "p-call__status", callCopy[definition.state] ?? definition.title));
+  hero.append(component("app-avatar", { name: "周然", size: "detail", image: peerAvatar }), element("h1", "p-call__title", video ? "周然 · 视频通话" : "周然 · 语音通话"), element("p", "p-call__status", active ? "00:42 · 端到端加密" : callCopy[definition.state] ?? definition.title));
+  const preview = element("div", "p-call__local-video", "本人摄像头画面 · 示例");
+  preview.dataset.control = "local-video";
+  preview.hidden = !video || !cameraEnabled;
+  if (video && active) hero.append(preview);
   const controls = element("div", "p-call__controls");
   controls.append(
     component("app-action-button", { kind: "navigation", icon: "microphone", label: "麦克风", action: "call:microphone" }),
     component("app-action-button", { kind: "danger", icon: "close", label: definition.state === "incoming" ? "拒绝" : "挂断", action: "call:end" }),
-    component("app-action-button", { kind: "navigation", icon: definition.page === "video" ? "camera" : "call", label: definition.page === "video" ? "摄像头" : "扬声器", action: "call:media" })
+    component("app-action-button", { kind: "navigation", icon: video ? "camera" : "call", label: video ? "切换镜头" : "扬声器", action: "call:media" })
   );
+  if (video && active) {
+    const toggle = button("p-call__camera-toggle", "关闭摄像头");
+    toggle.dataset.control = "camera-toggle";
+    const updateCamera = () => {
+      const label = cameraEnabled ? "关闭摄像头" : "开启摄像头";
+      toggle.setAttribute("aria-label", label);
+      toggle.setAttribute("aria-pressed", String(!cameraEnabled));
+      toggle.replaceChildren(icon("video"), element("span", "", label));
+      preview.hidden = !cameraEnabled;
+      root.dataset.cameraEnabled = String(cameraEnabled);
+    };
+    toggle.addEventListener("click", () => { cameraEnabled = !cameraEnabled; updateCamera(); });
+    updateCamera();
+    controls.append(toggle);
+  }
   root.append(hero, controls);
+  if (active) {
+    const minimize = button("p-call__minimize", "最小化通话");
+    minimize.dataset.control = "minimize";
+    minimize.textContent = "最小化";
+    const mini = component("app-call-return", {name: "周然", image: peerAvatar, video: String(video), duration: "00:42"});
+    mini.className = "p-call__return";
+    mini.dataset.control = "return-call";
+    const updateMinimized = () => {
+      hero.hidden = controls.hidden = minimize.hidden = minimized;
+      mini.hidden = !minimized;
+    };
+    minimize.addEventListener("click", () => { minimized = true; updateMinimized(); });
+    mini.addEventListener("click", () => { minimized = false; updateMinimized(); });
+    root.append(minimize, mini);
+    updateMinimized();
+  }
   if (definition.state === "incoming") root.append(component("app-action-button", { icon: "call", label: "接听", action: "call:answer" }));
   if (definition.state === "permission-denied" || definition.state === "denied") {
     root.append(component("app-dialog", { kind: "error", title: "无法使用通话权限", message: "请在系统设置中允许畅聊访问相机和麦克风。", cancel: "取消", confirm: "系统设置" }));

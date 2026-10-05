@@ -66,6 +66,22 @@ Future<void> _emit(
 }
 
 void main() {
+  testWidgets('video call offers stop and resume camera transmission',
+      (tester) async {
+    final backend = _FakeCallBackend();
+    final controller =
+        CallController(backend: backend, permissions: _AllowedPermissions());
+    controller.state =
+        const CallViewState(CallPhase.connected, type: CallMediaType.video);
+    await tester.pumpWidget(CupertinoApp(
+        home: CallPage(
+            controller: controller,
+            displayName: 'Alice',
+            fallbackSeed: 'alice')));
+    expect(find.text('关闭摄像头'), findsOneWidget);
+    controller.dispose();
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('incoming encrypted call exposes answer and reject actions',
       (tester) async {
     final backend = _FakeCallBackend();
@@ -146,8 +162,7 @@ void main() {
     await backend.events.close();
   });
 
-  testWidgets('BUG-23 通话结束自动关闭时回调 onEnded(roomId) 且仅一次',
-      (tester) async {
+  testWidgets('BUG-23 通话结束自动关闭时回调 onEnded(roomId) 且仅一次', (tester) async {
     final backend = _FakeCallBackend();
     final controller = CallController(
       backend: backend,
@@ -191,8 +206,7 @@ void main() {
     await backend.events.close();
   });
 
-  testWidgets('BUG-23 回归：来电页不自动关闭时终态仍触发 onEnded 一次',
-      (tester) async {
+  testWidgets('BUG-23 回归：来电页不自动关闭时终态仍触发 onEnded 一次', (tester) async {
     final backend = _FakeCallBackend();
     final controller = CallController(
       backend: backend,
@@ -232,8 +246,7 @@ void main() {
     await backend.events.close();
   });
 
-  testWidgets('BUG-23 抖动恢复后再次终态会再次通知（幂等推进已读）',
-      (tester) async {
+  testWidgets('BUG-23 抖动恢复后再次终态会再次通知（幂等推进已读）', (tester) async {
     final backend = _FakeCallBackend();
     final controller = CallController(
       backend: backend,
@@ -354,7 +367,7 @@ void main() {
 
     expect(find.text('周然 视频通话'), findsOneWidget);
     expect(find.byIcon(ChangliaoIcons.switchCamera), findsOneWidget);
-    await tester.tap(find.byKey(const Key('call-control-camera')));
+    await tester.tap(find.byKey(const Key('call-control-camera-switch')));
     expect(backend.cameraSwitches, 1);
 
     await tester.pumpWidget(const SizedBox());
@@ -362,8 +375,7 @@ void main() {
     await backend.events.close();
   });
 
-  testWidgets('hasConnectedOnce：接通后短暂 ended 不立即退出，抖动恢复取消退出',
-      (tester) async {
+  testWidgets('hasConnectedOnce：接通后短暂 ended 不立即退出，抖动恢复取消退出', (tester) async {
     final backend = _FakeCallBackend();
     final controller = CallController(
       backend: backend,
@@ -381,15 +393,15 @@ void main() {
 
     await tester.pumpWidget(const CupertinoApp(home: Placeholder()));
     tester.state<NavigatorState>(find.byType(Navigator)).push(
-      CupertinoPageRoute<void>(
-        builder: (_) => CallPage(
-          controller: controller,
-          displayName: '周然',
-          fallbackSeed: 'alice',
-          autoCloseOnEnd: true,
-        ),
-      ),
-    );
+          CupertinoPageRoute<void>(
+            builder: (_) => CallPage(
+              controller: controller,
+              displayName: '周然',
+              fallbackSeed: 'alice',
+              autoCloseOnEnd: true,
+            ),
+          ),
+        );
     await tester.pumpAndSettle();
     await _emit(tester, backend, const CallBackendEvent.connected());
     await tester.pump();
@@ -428,15 +440,15 @@ void main() {
     );
     await tester.pumpWidget(const CupertinoApp(home: Placeholder()));
     tester.state<NavigatorState>(find.byType(Navigator)).push(
-      CupertinoPageRoute<void>(
-        builder: (_) => CallPage(
-          controller: controller,
-          displayName: '周然',
-          fallbackSeed: 'alice',
-          autoCloseOnEnd: true,
-        ),
-      ),
-    );
+          CupertinoPageRoute<void>(
+            builder: (_) => CallPage(
+              controller: controller,
+              displayName: '周然',
+              fallbackSeed: 'alice',
+              autoCloseOnEnd: true,
+            ),
+          ),
+        );
     await tester.pumpAndSettle();
     await _emit(tester, backend, const CallBackendEvent.connected());
     await tester.pump();
@@ -468,21 +480,20 @@ void main() {
     );
     await tester.pumpWidget(const CupertinoApp(home: Placeholder()));
     tester.state<NavigatorState>(find.byType(Navigator)).push(
-      CupertinoPageRoute<void>(
-        builder: (_) => CallPage(
-          controller: controller,
-          displayName: '周然',
-          fallbackSeed: 'alice',
-          autoCloseOnEnd: true,
-        ),
-      ),
-    );
+          CupertinoPageRoute<void>(
+            builder: (_) => CallPage(
+              controller: controller,
+              displayName: '周然',
+              fallbackSeed: 'alice',
+              autoCloseOnEnd: true,
+            ),
+          ),
+        );
     await tester.pumpAndSettle();
     await _emit(tester, backend, const CallBackendEvent.ended());
     await tester.pump();
     await tester.pumpAndSettle();
-    expect(find.text('通话已结束'), findsNothing,
-        reason: '从未接通（拒接/取消）时立即退出，不保留结束页');
+    expect(find.text('通话已结束'), findsNothing, reason: '从未接通（拒接/取消）时立即退出，不保留结束页');
     controller.dispose();
     await backend.events.close();
   });

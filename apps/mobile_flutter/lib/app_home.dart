@@ -2116,6 +2116,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openCall(ContactDetails contact, CallMediaType type) async {
+    final account = widget.matrix.sendPreparationIdentity;
+    final apiEpoch = widget.api.sessionEpoch;
+    bool ownerCurrent() => mounted && !_disposed &&
+        account == widget.matrix.sendPreparationIdentity && apiEpoch == widget.api.sessionEpoch;
     if (callUi.hasActiveCall) {
       callUi.restoreCall();
       return;
@@ -2135,7 +2139,21 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       final target = await resolveCallTarget(
           cache: cache, directChats: directChats, entry: contact);
       final authoritative = target.contact;
-      if (!mounted) return;
+      if (!ownerCurrent()) return;
+      final matrixUserId = authoritative.matrixUserId.trim();
+      CallIdentity? resolvedIdentity;
+      try {
+        resolvedIdentity = await callBackend.identityResolver?.call(matrixUserId);
+      } catch (_) {
+        // Identity lookup must not block a verified outgoing call.
+      }
+      if (!ownerCurrent()) return;
+      final identity = resolvedIdentity?.matrixUserId == matrixUserId ? resolvedIdentity! : CallIdentity(
+          matrixUserId: matrixUserId,
+          displayName: authoritative.displayName,
+          fallbackSeed: authoritative.username,
+          avatarUrl: authoritative.avatarUrl);
+      if (!ownerCurrent()) return;
       if (callUi.hasActiveCall) {
         callUi.restoreCall();
         return;
@@ -2145,6 +2163,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       _outgoingCallActive = true;
       callSummarySent = false;
       callUi.registerOutgoingCall();
+      if (!mounted) return;
       final navigation = Navigator.push(
         context,
         MotionPageRoute(
@@ -2152,9 +2171,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             controller: calls,
             // 通话页展示信息同样取自权威联系人：不允许「房间用新身份、
             // 页面显示旧资料」。
-            displayName: authoritative.displayName,
-            fallbackSeed: authoritative.username,
-            avatarUrl: authoritative.avatarUrl,
+            displayName: identity.displayName,
+            fallbackSeed: identity.fallbackSeed,
+            avatarUrl: identity.avatarUrl,
+            avatarHeaders: identity.avatarHeaders,
             mediaBackend: callBackend,
             autoCloseOnEnd: true,
             // BUG-23：通话结束后推进该会话已读（消除虚增未读）。
@@ -2173,6 +2193,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         roomId: target.roomId,
         matrixUserId: authoritative.matrixUserId.trim(),
         type: type,
+        identity: identity,
       );
       await navigation;
     } catch (_) {

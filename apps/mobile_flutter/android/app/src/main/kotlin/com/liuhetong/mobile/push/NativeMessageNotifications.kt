@@ -3,6 +3,7 @@ package com.liuhetong.mobile.push
 import android.app.*
 import android.content.*
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.*
 import androidx.core.app.NotificationCompat
@@ -21,6 +22,7 @@ import java.util.concurrent.TimeUnit
 internal class NativeMessageOwner(private val context: Context) {
     private val db = context.openOrCreateDatabase("native_messages.db", 0, null)
     private val manager = context.getSystemService(NotificationManager::class.java)
+    private val viewing = mutableSetOf<String>()
     var foreground = false
     var callActive: () -> Boolean = { CallManager.hasActiveCall() }
     private var unsafe = false
@@ -35,6 +37,9 @@ internal class NativeMessageOwner(private val context: Context) {
         db.execSQL("CREATE INDEX IF NOT EXISTS claims_at ON claims(at)")
         db.execSQL("CREATE INDEX IF NOT EXISTS claims_room_status_at ON claims(room,status,at)")
         db.execSQL("CREATE TABLE IF NOT EXISTS tap (id INTEGER PRIMARY KEY, scope TEXT, room TEXT, event TEXT, at INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS read_rooms (room TEXT PRIMARY KEY, at INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS avatars (room TEXT PRIMARY KEY, bytes BLOB, at INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS viewed (key TEXT PRIMARY KEY, room TEXT, at INTEGER)")
         db.execSQL("CREATE TABLE IF NOT EXISTS presentations (key TEXT PRIMARY KEY, lease TEXT, at INTEGER)")
         db.rawQuery("SELECT scope, revision, valid, policy FROM state WHERE id=1", null).use {
             if (it.moveToFirst()) {
@@ -118,8 +123,9 @@ internal class NativeMessageOwner(private val context: Context) {
     fun revoke() {
         unsafe = true; cancelAll()
         transaction {
-            for (table in listOf("state", "rooms", "claims", "tap", "presentations")) db.execSQL("DELETE FROM $table")
+            for (table in listOf("state", "rooms", "claims", "tap", "presentations", "viewed", "avatars", "read_rooms")) db.execSQL("DELETE FROM $table")
         }
+        viewing.clear()
         scope = ""; revision = 0; minimumRevision = 0; policy = JSONObject()
     }
     private fun prune() {
@@ -154,9 +160,30 @@ internal class NativeMessageOwner(private val context: Context) {
         trimPending()
         return true
     }
+    private fun wasViewed(event: String) = db.rawQuery("SELECT 1 FROM viewed WHERE key=?", arrayOf(event)).use { it.moveToFirst() }
+    fun readRoom(value: String, room: String, open: Boolean, events: List<String>): Boolean {
+        if (value != scope || !hex(value) || !hex(room) || events.size > 4096 || events.any { !hex(it) }) return false
+        if (open) viewing.add(room) else viewing.remove(room)
+        val effectiveOpen = open && foreground
+        transaction {
+            for (event in events) db.execSQL("INSERT OR REPLACE INTO viewed VALUES(?,?,?)", arrayOf<Any>(event, room, System.currentTimeMillis()))
+            // Pending pushes were received while this conversation was viewed.
+            // Exact tombstones survive claim expiry, engine death and late push.
+            db.execSQL("INSERT OR REPLACE INTO read_rooms VALUES(?,?)", arrayOf<Any>(room, System.currentTimeMillis()))
+            db.execSQL("DELETE FROM read_rooms WHERE room NOT IN (SELECT room FROM read_rooms ORDER BY at DESC LIMIT 2048)")
+            if (effectiveOpen) db.execSQL("INSERT OR REPLACE INTO viewed SELECT key,room,at FROM claims WHERE room=?", arrayOf(room))
+            db.execSQL("DELETE FROM presentations WHERE key IN (SELECT key FROM viewed)")
+            db.execSQL("UPDATE claims SET status=2 WHERE key IN (SELECT key FROM viewed)")
+            db.execSQL("DELETE FROM viewed WHERE key NOT IN (SELECT key FROM viewed ORDER BY at DESC LIMIT 16384)")
+        }
+        val delivered = manager.activeNotifications.firstOrNull { it.tag == "native_message" && it.id == id(room) }
+        if (effectiveOpen || delivered?.notification?.extras?.getString("native_event")?.let { wasViewed(it) } == true) cancelRoom(room)
+        return true
+    }
     fun claim(value: String, room: String, event: String): Boolean {
         if (!valid(value) || !hex(room) || !hex(event)) return false
         prune()
+        if (wasViewed(event) || (foreground && room in viewing)) return false
         if ((status(event) ?: 0) != 0) return false
         return record(event, room, 1)
     }
@@ -186,23 +213,34 @@ internal class NativeMessageOwner(private val context: Context) {
         if (!handled) retryPending()
     }
     fun resolve(value: String, room: String, event: String, show: Boolean, silent: Boolean,
-                title: String = "畅聊", body: String = "您有一条新消息"): Boolean {
+                title: String = "畅聊", body: String = "您有一条新消息", avatar: ByteArray? = null): Boolean {
         if (!valid(value) || !hex(room) || !hex(event)) return false
         prune()
+        if (wasViewed(event) || (foreground && room in viewing)) return false
         if (status(event) == 3) {
             val visible = manager.activeNotifications.any { it.tag == "native_message" && it.id == id(room) &&
                 it.notification.extras.getString("native_event") == event }
-            if (visible && show && !foreground) present(value, room, event, silent, title, body, true)
+            if (visible && show && !foreground) {
+                val previous = manager.activeNotifications.firstOrNull { it.tag == "native_message" && it.id == id(room) }?.notification?.extras
+                val updating = previous?.getBoolean("native_awaiting_read", false) != true ||
+                    previous?.getBoolean("native_verified", false) == true
+                present(value, room, event, silent, title, body, updating, avatar, true)
+            }
             return false
         }
         if ((status(event) ?: 0) != 0) return false
         if (!record(event, room, if (show) 0 else 2)) return false
-        if (show && !foreground) present(value, room, event, silent, title, body)
+        if (show && !foreground) present(value, room, event, silent, title, body, avatar = avatar, verified = true)
         return status(event) == 3 || !show
     }
     fun receive(value: String, room: String, event: String) {
         if (!valid(value) || !hex(room) || !hex(event)) return
         prune()
+        if (wasViewed(event)) return
+        if (foreground && room in viewing) {
+            readRoom(value, room, true, listOf(event))
+            return
+        }
         val uncertain = status(event) == 6
         if ((status(event) ?: 0) != 0 && !uncertain) return
         if (!record(event, room, if (uncertain) 6 else 0)) return
@@ -211,7 +249,8 @@ internal class NativeMessageOwner(private val context: Context) {
             db.execSQL("UPDATE claims SET status=2 WHERE key=?",arrayOf(event))
             return
         }
-        present(value, room, event, forceQuiet = uncertain)
+        val awaitingReadResolution = db.rawQuery("SELECT 1 FROM read_rooms WHERE room=?", arrayOf(room)).use { it.moveToFirst() }
+        present(value, room, event, forceQuiet = uncertain || awaitingReadResolution, awaitingRead = awaitingReadResolution && !uncertain)
     }
     fun retryPending() {
         prune()
@@ -223,8 +262,8 @@ internal class NativeMessageOwner(private val context: Context) {
         for ((event, room) in pending) receive(scope, room, event)
     }
     private fun present(value: String, room: String, event: String, forceQuiet: Boolean = false,
-                        title: String = "畅聊", body: String = "您有一条新消息", updating: Boolean = false) {
-        if (!valid(value) || callActive()) return
+                        title: String = "畅聊", body: String = "您有一条新消息", updating: Boolean = false, avatar: ByteArray? = null, verified: Boolean = false, awaitingRead: Boolean = false) {
+        if (!valid(value) || callActive() || wasViewed(event) || (foreground && room in viewing)) return
         if (!policy.optBoolean("enabled")) {
             db.execSQL("UPDATE claims SET status=2 WHERE key=?", arrayOf(event))
             return
@@ -257,13 +296,26 @@ internal class NativeMessageOwner(private val context: Context) {
         }
         val pending = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val icon = context.resources.getIdentifier("ic_launcher", "mipmap", context.packageName)
+        val localAvatar = avatar?.takeIf { it.size <= 512 * 1024 } ?: db.rawQuery(
+            "SELECT bytes FROM avatars WHERE room=?", arrayOf(room)).use { if (it.moveToFirst()) it.getBlob(0) else null }
+        val bitmap = localAvatar?.let { bytes -> runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth !in 1..512 || bounds.outHeight !in 1..512) null
+            else BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }.getOrNull() }
+        if (bitmap != null && avatar != null) {
+            db.execSQL("INSERT OR REPLACE INTO avatars VALUES(?,?,?)", arrayOf<Any>(room, avatar, System.currentTimeMillis()))
+            db.execSQL("DELETE FROM avatars WHERE room NOT IN (SELECT room FROM avatars ORDER BY at DESC LIMIT 128)")
+        }
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(if (icon != 0) icon else android.R.drawable.sym_action_chat)
             // These already privacy-filtered previews arrive only from the local decrypted client.
             // They are never stored in SQLite or forwarded to the provider.
             .setContentTitle(title.take(256)).setContentText(body.take(2048))
+            .setLargeIcon(bitmap)
             .setOnlyAlertOnce(updating)
-            .addExtras(Bundle().apply { putString("native_event", event) })
+            .addExtras(Bundle().apply { putString("native_event", event); putBoolean("native_verified", verified); putBoolean("native_awaiting_read", awaitingRead) })
             .setCategory(NotificationCompat.CATEGORY_MESSAGE).setAutoCancel(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPriority(if (quiet) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_HIGH)
@@ -348,7 +400,8 @@ object NativeMessageNotifications {
                         }
                         "finishForeground" -> { o.finishForeground(scope,event,a["lease"] as? String ?: "",a["handled"] == true); true }
                         "resolve" -> o.resolve(scope, room, event, a["show"] == true, a["silent"] == true,
-                            a["title"] as? String ?: "畅聊", a["body"] as? String ?: "您有一条新消息")
+                            a["title"] as? String ?: "畅聊", a["body"] as? String ?: "您有一条新消息", a["avatar"] as? ByteArray)
+                        "readRoom" -> o.readRoom(scope, room, a["open"] == true, (a["events"] as? List<*>)?.filterIsInstance<String>() ?: emptyList())
                         "cancelRoom" -> { if (o.valid(scope)) o.cancelRoom(room); true }
                         "takeTap" -> if (foreground && o.valid(scope)) o.takeTap() else null
                         "validate" -> o.valid(scope)

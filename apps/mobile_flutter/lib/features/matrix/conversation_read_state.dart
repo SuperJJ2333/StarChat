@@ -52,6 +52,8 @@ final class ConversationReadState {
     _accountId = accountId;
     _openRooms.clear();
     _clearedEventByRoom.clear();
+    _observed.clear();
+    _viewed.clear();
     _changes.add(ConversationReadChange(accountId: accountId));
   }
 
@@ -60,6 +62,8 @@ final class ConversationReadState {
     _accountId = null;
     _openRooms.clear();
     _clearedEventByRoom.clear();
+    _observed.clear();
+    _viewed.clear();
   }
 
   /// 正在查看（聊天页处于栈顶）的房间。
@@ -67,6 +71,30 @@ final class ConversationReadState {
 
   /// 本地"已清零"位点：退出聊天页/自己发送时推进到的 eventId。
   final Map<String, String?> _clearedEventByRoom = {};
+  final Map<String, Set<String>> _observed = {};
+  final Map<String, Set<String>> _viewed = {};
+  Set<String> viewedEvents(String roomId) =>
+      Set.unmodifiable(_viewed[roomId] ?? <String>{});
+  bool wasViewed(String roomId, String eventId) =>
+      _viewed[roomId]?.contains(eventId) == true;
+
+  // Capture SDK timeline order per sync segment. Arrival order across segments
+  // cannot prove read ordering (a delayed sync may replay an older segment).
+  void observeTimeline(String roomId, Iterable<String> eventIds,
+      {bool viewing = true}) {
+    final events =
+        eventIds.toList().reversed.take(512).toList().reversed.toSet();
+    _observed[roomId] = events;
+    while (_observed.length > 128 ||
+        _observed.values.fold<int>(0, (sum, ids) => sum + ids.length) > 16384) {
+      _observed.remove(_observed.keys.first);
+    }
+    if (viewing && isRoomOpen(roomId)) {
+      for (final eventId in events) {
+        markCleared(roomId, eventId: eventId);
+      }
+    }
+  }
 
   void setRoomOpen(String roomId, {required bool open}) {
     final changed = open ? _openRooms.add(roomId) : _openRooms.remove(roomId);
@@ -79,12 +107,38 @@ final class ConversationReadState {
   bool isRoomOpen(String roomId) => _openRooms.contains(roomId);
 
   /// 推进本地"已清零"位点（打开页面/查看中收到新消息/自己发送成功）。
-  void markCleared(String roomId, {required String? eventId}) {
-    if (_clearedEventByRoom.containsKey(roomId) &&
-        _clearedEventByRoom[roomId] == eventId) {
-      return;
+  void markCleared(String roomId,
+      {required String? eventId, bool updateUnreadMarker = true}) {
+    final unchangedMarker = _clearedEventByRoom.containsKey(roomId) &&
+        _clearedEventByRoom[roomId] == eventId;
+    var membershipChanged = false;
+    if (updateUnreadMarker || !_clearedEventByRoom.containsKey(roomId)) {
+      _clearedEventByRoom[roomId] = eventId;
     }
-    _clearedEventByRoom[roomId] = eventId;
+    final viewed = _viewed.putIfAbsent(roomId, () => <String>{});
+    while (_viewed.length > 128) {
+      _viewed.remove(_viewed.keys.first);
+    }
+    // The observed stream is in timeline order. Only retire the prefix through
+    // the actual viewed marker, not a concurrently received future event.
+    for (final observed in (_observed[roomId]?.contains(eventId) == true
+        ? _observed[roomId]!
+        : <String>{})) {
+      membershipChanged = viewed.add(observed) || membershipChanged;
+      if (observed == eventId) break;
+    }
+    if (eventId != null) {
+      membershipChanged = viewed.add(eventId) || membershipChanged;
+    }
+    while (viewed.length > 512) {
+      viewed.remove(viewed.first);
+    }
+
+    if (unchangedMarker && !membershipChanged) return;
+    while (
+        _viewed.values.fold<int>(0, (sum, ids) => sum + ids.length) > 16384) {
+      _viewed.remove(_viewed.keys.first);
+    }
     _changes.add(ConversationReadChange(
         accountId: _accountId,
         roomId: roomId,
