@@ -1,13 +1,14 @@
 import 'bounded_history_search.dart';
 import 'chat_search_query_controller.dart';
 import 'room_history_day_index.dart';
+import 'local_search_id_snapshot.dart';
 
 /// Preserve raw fragment positions when the SDK omits missing event rows.
 /// Missing local records are not displayable and cannot establish text coverage.
 List<ChatSearchMessage> completeLocalHistoryPage(
     List<String> eventIds, Iterable<ChatSearchMessage> messages) {
   final byId = {for (final row in messages) row.eventId: row};
-  return [
+  final rows = [
     for (final id in eventIds)
       byId[id] ??
           ChatSearchMessage(
@@ -20,6 +21,12 @@ List<ChatSearchMessage> completeLocalHistoryPage(
               isDisplayable: false,
               isUndecrypted: true)
   ];
+  return eventIds is LocalHistoryPage<String>
+      ? LocalHistoryPage(rows,
+          nextOffset: eventIds.nextOffset,
+          hasMore: eventIds.hasMore,
+          rawCount: eventIds.rawCount)
+      : rows;
 }
 
 /// Rebuildable, lease/account-scoped plaintext projection cache. Nothing is
@@ -166,7 +173,7 @@ final class LocalRoomHistorySnapshot {
                   r.senderId.length +
                   r.senderDisplayName.length));
   int _weight(Object key, List<ChatSearchMessage> rows) =>
-      _size(rows) + (key is _IdPageKey ? key.bytes : 0);
+      128 + _size(rows) + (key is _IdPageKey ? key.bytes : 0);
 
   void _cache(Object key, List<ChatSearchMessage> rows) {
     final weight = _weight(key, rows);
@@ -184,8 +191,10 @@ final class LocalRoomHistorySnapshot {
 
   Future<List<ChatSearchMessage>> _read(
       (String, int) key, int generation, int mutableGeneration) async {
-    final rows = List<ChatSearchMessage>.unmodifiable(
-        await readPage(key.$1, key.$2, pageSize));
+    final page = await readPage(key.$1, key.$2, pageSize);
+    final rows = page is LocalHistoryPage<ChatSearchMessage>
+        ? page
+        : List<ChatSearchMessage>.unmodifiable(page);
     _check(generation);
     if (mutableGeneration != _mutableGeneration) {
       throw const HistorySearchCancelled();
@@ -295,8 +304,17 @@ final class LocalRoomHistorySnapshot {
             _check(generation);
           }
         }
-        offset += rows.length;
-        if (rows.length < pageSize) break;
+        if (rows is LocalHistoryPage<ChatSearchMessage>) {
+          if (!rows.hasMore) break;
+          if (rows.nextOffset <= offset) {
+            throw StateError('History cursor did not advance');
+          }
+          offset = rows.nextOffset;
+          await Future<void>.delayed(Duration.zero);
+        } else {
+          offset += rows.length;
+          if (rows.length < pageSize) break;
+        }
       }
     }
     _check(generation);

@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'fixtures/delegating_sqlite_database.dart';
+
 const _roomId = '!cold-preview:test';
 
 class _SyncCountingClient extends Client {
@@ -17,22 +19,9 @@ class _SyncCountingClient extends Client {
   }
 }
 
-class _ReadRecordingDatabase extends Fake implements Database {
-  _ReadRecordingDatabase(this.delegate, this.eventReads);
-  final Database delegate;
+class _ReadRecordingDatabase extends DelegatingSqliteDatabase {
+  _ReadRecordingDatabase(super.delegate, this.eventReads);
   final List<List<Object?>?> eventReads;
-  @override
-  Batch batch() => delegate.batch();
-  @override
-  Future<void> close() => delegate.close();
-  @override
-  Future<int> insert(String table, Map<String, Object?> values,
-          {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm}) =>
-      delegate.insert(table, values,
-          nullColumnHack: nullColumnHack, conflictAlgorithm: conflictAlgorithm);
-  @override
-  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) =>
-      delegate.delete(table, where: where, whereArgs: whereArgs);
   @override
   Future<List<Map<String, Object?>>> query(String table,
       {bool? distinct,
@@ -101,19 +90,21 @@ void main() {
   }
 
   Future<void> sync(List<Map<String, dynamic>> events,
-          {Direction? direction}) =>
-      database.transaction(() => client.handleSync(
-          SyncUpdate.fromJson({
-            'next_batch': '',
-            'rooms': {
-              'join': {
-                _roomId: {
-                  'timeline': {'events': events, 'limited': false},
-                },
+      {Direction? direction}) async {
+    await database.prepareTimelineStorage([_roomId]);
+    await database.transaction(() => client.handleSync(
+        SyncUpdate.fromJson({
+          'next_batch': '',
+          'rooms': {
+            'join': {
+              _roomId: {
+                'timeline': {'events': events, 'limited': false},
               },
             },
-          }),
-          direction: direction));
+          },
+        }),
+        direction: direction));
+  }
 
   Future<Room> reopen() async {
     await client.dispose();
@@ -144,7 +135,7 @@ void main() {
 
   setUp(() async {
     final root = Directory(
-        '../../docs/verification/artifacts/2026-09-24/cold-start-cache');
+        '../../docs/verification/artifacts/2026-10-08/history-interaction-fix/storage/fixtures/cold-preview');
     await root.create(recursive: true);
     directory = await root.createTemp('preview-');
     path = '${directory.path}/matrix.sqlite';

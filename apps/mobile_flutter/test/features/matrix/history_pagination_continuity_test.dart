@@ -80,7 +80,8 @@ class _HeldStore extends MatrixSdkDatabase {
   @override
   Future<Event?> getEventById(String eventId, Room room) async {
     final event = await super.getEventById(eventId, room);
-    if (heldEventId == eventId) {
+    if (holdPage || heldEventId == eventId) {
+      holdPage = false;
       heldEventId = null;
       entered.complete();
       await release.future;

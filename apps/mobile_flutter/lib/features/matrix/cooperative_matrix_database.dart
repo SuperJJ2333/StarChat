@@ -12,6 +12,8 @@ class CooperativeMatrixDatabase extends MatrixSdkDatabase {
     super.name, {
     super.database,
     super.sqfliteFactory,
+    super.timelineMigrationReader,
+    super.timelineSearchMigrationReader,
   });
 
   static const _workBudget = Duration(milliseconds: 8);

@@ -5,6 +5,7 @@ import 'room_timeline_controller.dart';
 import 'room_history_date_capability.dart';
 import 'room_event_context_capability.dart';
 import 'room_timeline_viewport.dart';
+import 'room_paged_history_source.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
 
@@ -86,10 +87,42 @@ final class MatrixRoomTimelineAdapter
         RoomEventContextCapability,
         RoomMessageLookupSource,
         RoomWindowedTimelineSource,
-        RoomNewestFirstTimelineSource {
+        RoomNewestFirstTimelineSource,
+        RoomPagedHistorySource,
+        RoomPresentationRevisionSource {
   MatrixRoomTimelineAdapter(this._capability);
 
   final RoomTimelineCapability _capability;
+
+  @override
+  Object get presentationRevision =>
+      _capability is RoomPresentationRevisionSource
+          ? (_capability as RoomPresentationRevisionSource).presentationRevision
+          : Object();
+
+  @override
+  bool get supportsPagedHistory =>
+      _capability is RoomPagedHistorySource &&
+      (_capability as RoomPagedHistorySource).supportsPagedHistory;
+
+  @override
+  Future<RoomHistoryMessagePage> readHistoryPage({
+    RoomHistoryReadCursor? cursor,
+    String? anchorEventId,
+    String? sourceRoomId,
+    required RoomHistoryDirection direction,
+    int rawLimit = 64,
+  }) {
+    if (!supportsPagedHistory) {
+      throw UnsupportedError('Read-only history paging unavailable');
+    }
+    return (_capability as RoomPagedHistorySource).readHistoryPage(
+        cursor: cursor,
+        anchorEventId: anchorEventId,
+        sourceRoomId: sourceRoomId,
+        direction: direction,
+        rawLimit: rawLimit);
+  }
 
   @override
   bool get supportsEventContext =>

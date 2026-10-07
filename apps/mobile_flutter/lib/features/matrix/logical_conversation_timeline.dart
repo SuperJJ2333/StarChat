@@ -9,6 +9,38 @@ import 'room_history_date_capability.dart';
 import 'room_event_context_capability.dart';
 import 'room_timeline_controller.dart';
 import 'room_timeline_viewport.dart';
+import 'room_paged_history_source.dart';
+
+final class _HistoryFrontier {
+  _HistoryFrontier(this.source, this.anchor);
+  final RoomPagedHistorySource source;
+  final String? anchor;
+  RoomHistoryReadCursor? cursor;
+  RoomMessageViewModel? head;
+  bool opened = false, exhausted = false;
+}
+
+final class _LogicalHistoryCursor implements RoomHistoryReadCursor {
+  _LogicalHistoryCursor(
+      this.owner, this.direction, this.frontiers, this.cutoff, this.generation);
+  final LogicalConversationTimelineCapability owner;
+  final RoomHistoryDirection direction;
+  final Map<String, _HistoryFrontier> frontiers;
+  final DateTime? cutoff;
+  final int generation;
+  bool disposed = false, reading = false;
+  bool gap = false;
+  @override
+  void dispose() {
+    if (disposed) return;
+    disposed = true;
+    for (final frontier in frontiers.values) {
+      frontier.cursor?.dispose();
+    }
+    frontiers.clear();
+    owner._historyReaders.remove(this);
+  }
+}
 
 /// Receipts are bounded by events actually displayed by the conversation UI.
 abstract interface class RoomVisibleReadCapability {
@@ -34,7 +66,9 @@ final class LogicalConversationTimelineCapability
         RoomWindowedTimelineSource,
         RoomNewestFirstTimelineSource,
         RoomHistoryDateCapability,
-        RoomEventContextCapability {
+        RoomEventContextCapability,
+        RoomPagedHistorySource,
+        RoomPresentationRevisionSource {
   LogicalConversationTimelineCapability({
     required this.primaryRoomId,
     required RoomTimelineCapability primary,
@@ -52,6 +86,188 @@ final class LogicalConversationTimelineCapability
   final void Function()? _onDispose;
   final Map<String, String> _eventSources = {};
   final Map<String, String> _sourceHints = {};
+  final _historyReaders = <_LogicalHistoryCursor>{};
+  int _historyGeneration = 0;
+  int _windowRevision = 0;
+  List<Object>? _sourceRevisions;
+  int _sourceRevision = 0;
+  Object? _publishedStamp;
+  List<RoomMessageViewModel> _publishedRows = const [];
+  @override
+  Object get presentationRevision {
+    final revisions = <Object>[
+      for (final source in _sources.values)
+        source is RoomPresentationRevisionSource
+            ? (source as RoomPresentationRevisionSource).presentationRevision
+            : Object(),
+    ];
+    final previous = _sourceRevisions;
+    if (previous == null ||
+        previous.length != revisions.length ||
+        Iterable<int>.generate(revisions.length)
+            .any((i) => previous[i] != revisions[i])) {
+      _sourceRevisions = revisions;
+      _sourceRevision++;
+    }
+    return (_sourceRevision, _windowRevision);
+  }
+
+  @override
+  bool get supportsPagedHistory => _sources.values.every((source) =>
+      source is RoomPagedHistorySource &&
+      (source as RoomPagedHistorySource).supportsPagedHistory);
+
+  @override
+  Future<RoomHistoryMessagePage> readHistoryPage({
+    RoomHistoryReadCursor? cursor,
+    String? anchorEventId,
+    String? sourceRoomId,
+    required RoomHistoryDirection direction,
+    int rawLimit = 64,
+  }) async {
+    _checkActive();
+    if (rawLimit < 1 || rawLimit > 256) {
+      throw RangeError.range(rawLimit, 1, 256);
+    }
+    if (!supportsPagedHistory) {
+      throw UnsupportedError('History paging unavailable');
+    }
+    _LogicalHistoryCursor current;
+    if (cursor == null) {
+      final anchorRoom = sourceRoomId ??
+          (anchorEventId == null ? null : this.sourceRoomId(anchorEventId)) ??
+          primaryRoomId;
+      if (!_sources.containsKey(anchorRoom)) {
+        throw ArgumentError('Unknown history source');
+      }
+      DateTime? cutoff;
+      if (anchorEventId != null &&
+          sourceRoomId == null &&
+          _sources.length > 1) {
+        final anchorSource = _sources[anchorRoom]!;
+        if (anchorSource is RoomMessageLookupSource) {
+          cutoff = (await (anchorSource as RoomMessageLookupSource)
+                  .lookupMessage(anchorEventId))
+              ?.timestamp;
+          _checkActive();
+        }
+      }
+      current = _LogicalHistoryCursor(
+          this,
+          direction,
+          {
+            for (final entry in _sources.entries)
+              if (sourceRoomId == null || entry.key == sourceRoomId)
+                entry.key: _HistoryFrontier(
+                    entry.value as RoomPagedHistorySource,
+                    entry.key == anchorRoom ? anchorEventId : null),
+          },
+          cutoff,
+          ++_historyGeneration);
+      _historyReaders.add(current);
+    } else {
+      if (cursor is! _LogicalHistoryCursor ||
+          !identical(cursor.owner, this) ||
+          cursor.direction != direction ||
+          cursor.disposed ||
+          cursor.reading) {
+        throw StateError('Invalid logical history cursor');
+      }
+      current = cursor;
+    }
+    current.reading = true;
+    var rawWork = 0;
+    final messages = <RoomMessageViewModel>[];
+    final ownership = <String, String>{};
+    try {
+      while (messages.length < rawLimit) {
+        var allReady = true;
+        for (final entry in current.frontiers.entries) {
+          final frontier = entry.value;
+          if (frontier.head != null || frontier.exhausted) continue;
+          if (rawWork >= rawLimit) {
+            allReady = false;
+            break;
+          }
+          final page = await frontier.source.readHistoryPage(
+              cursor: frontier.cursor,
+              anchorEventId: frontier.opened ? null : frontier.anchor,
+              direction: direction,
+              rawLimit: 1);
+          if (_disposed || current.disposed) {
+            page.nextCursor?.dispose();
+            throw StateError('Logical history cursor disposed');
+          }
+          frontier.opened = true;
+          if (!identical(frontier.cursor, page.nextCursor)) {
+            frontier.cursor?.dispose();
+          }
+          frontier.cursor = page.nextCursor;
+          rawWork += page.rawCount;
+          frontier.exhausted = page.exhausted || page.gap;
+          current.gap = current.gap || page.gap;
+          if (!frontier.exhausted && frontier.cursor == null) {
+            throw StateError('History continuation missing');
+          }
+          final candidate = page.messages.firstOrNull;
+          final cutoff = current.cutoff;
+          if (candidate != null &&
+              (cutoff == null ||
+                  frontier.anchor != null ||
+                  (direction == RoomHistoryDirection.older
+                      ? !candidate.timestamp.isAfter(cutoff)
+                      : candidate.timestamp.isAfter(cutoff)))) {
+            frontier.head = candidate;
+          }
+          if (frontier.head == null && !frontier.exhausted) allReady = false;
+        }
+        if (!allReady) break; // Filtered pages advance without moving the UI.
+        MapEntry<String, _HistoryFrontier>? best;
+        for (final entry in current.frontiers.entries) {
+          final candidate = entry.value.head;
+          if (candidate == null) continue;
+          if (best == null) {
+            best = entry;
+            continue;
+          }
+          final other = best.value.head!;
+          var comparison = candidate.timestamp.compareTo(other.timestamp);
+          if (comparison == 0) comparison = candidate.id.compareTo(other.id);
+          if (direction == RoomHistoryDirection.older
+              ? comparison > 0
+              : comparison < 0) {
+            best = entry;
+          }
+        }
+        if (best == null) break;
+        final message = best.value.head!;
+        best.value.head = null;
+        if (!ownership.containsKey(message.id)) {
+          messages.add(message);
+          ownership[message.id] = best.key;
+          hintSource(message.id, best.key);
+        }
+      }
+      final exhausted =
+          current.frontiers.values.every((f) => f.exhausted && f.head == null);
+      final result = RoomHistoryMessagePage(
+          messages: messages,
+          exhausted: exhausted,
+          nextCursor: exhausted ? null : current,
+          gap: current.gap,
+          fragmentGeneration: current.generation,
+          rawCount: rawWork,
+          sourceRoomIds: ownership);
+      if (exhausted) current.dispose();
+      return result;
+    } catch (_) {
+      if (cursor == null) current.dispose();
+      rethrow;
+    } finally {
+      current.reading = false;
+    }
+  }
+
   bool _sourceIndexReady = false;
   final _merger = IncrementalTimelineMerge<RoomMessageViewModel>(
     idOf: (event) => event.id,
@@ -109,6 +325,7 @@ final class LogicalConversationTimelineCapability
 
   @override
   void enableWindow() {
+    _windowRevision++;
     _windowEnabled = true;
     for (final source
         in _sources.values.whereType<RoomWindowedTimelineSource>()) {
@@ -122,6 +339,7 @@ final class LogicalConversationTimelineCapability
 
   @override
   void setHiddenFilter(bool Function(String, DateTime?)? hidden) {
+    _windowRevision++;
     for (final source
         in _sources.values.whereType<RoomWindowedTimelineSource>()) {
       source.setHiddenFilter(hidden);
@@ -153,10 +371,16 @@ final class LogicalConversationTimelineCapability
       _singleWindow?.previousTimestamp(id) ??
       _mergedWindow?.previousTimestamp(id);
   @override
-  bool selectAnchor(String id) =>
-      _singleWindow?.selectAnchor(id) ?? _mergedWindow?.anchor(id) ?? false;
+  bool selectAnchor(String id) {
+    _windowRevision++;
+    return _singleWindow?.selectAnchor(id) ??
+        _mergedWindow?.anchor(id) ??
+        false;
+  }
+
   @override
   void selectEarlier() {
+    _windowRevision++;
     if (_singleWindow != null) {
       _singleWindow!.selectEarlier();
     } else {
@@ -166,6 +390,7 @@ final class LogicalConversationTimelineCapability
 
   @override
   void selectLater() {
+    _windowRevision++;
     if (_singleWindow != null) {
       _singleWindow!.selectLater();
     } else {
@@ -175,6 +400,7 @@ final class LogicalConversationTimelineCapability
 
   @override
   void pinWindow() {
+    _windowRevision++;
     _singleWindow?.pinWindow();
     _mergedWindow?.pin();
   }
@@ -235,6 +461,8 @@ final class LogicalConversationTimelineCapability
   @override
   List<RoomMessageViewModel> snapshot() {
     _checkActive();
+    final stamp = presentationRevision;
+    if (_publishedStamp == stamp) return _publishedRows;
     if (_singleWindow != null) {
       final rows = _primary.snapshot();
       _eventSources
@@ -244,13 +472,18 @@ final class LogicalConversationTimelineCapability
         _eventSources[row.id] = primaryRoomId;
       }
       _sourceIndexReady = true;
-      return rows;
+      _publishedStamp = stamp;
+      return _publishedRows = rows;
     }
     final rows = _mergedSnapshot();
     final window = _mergedWindow;
-    if (window == null) return rows;
+    if (window == null) {
+      _publishedStamp = stamp;
+      return _publishedRows = rows;
+    }
     window.update(rows);
-    return window.snapshot();
+    _publishedStamp = stamp;
+    return _publishedRows = window.snapshot();
   }
 
   List<RoomMessageViewModel> _mergedSnapshot() {
@@ -583,6 +816,7 @@ final class LogicalConversationTimelineCapability
 
   @override
   void selectLatest() {
+    _windowRevision++;
     _checkActive();
     cancelPendingEventLookup();
     cancelPendingDateLookup();
@@ -714,6 +948,9 @@ final class LogicalConversationTimelineCapability
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    for (final reader in _historyReaders.toList()) {
+      reader.dispose();
+    }
     _dateGeneration++;
     _monthGeneration++;
     _dateCancellation?.complete();

@@ -194,7 +194,8 @@ final class VoicePlaybackController extends ChangeNotifier {
     VoiceAudioEngine? engine,
     bool Function()? canPlay,
     bool Function()? autoPlayNextVoiceEnabled,
-    RoomMessageViewModel? Function(String currentId)? nextAutoPlayVoice,
+    FutureOr<RoomMessageViewModel?> Function(String currentId)?
+        nextAutoPlayVoice,
   })  : _loadAttachment = loadAttachment,
         _canPlay = canPlay ?? _alwaysAllowPlayback,
         _autoPlayNextVoiceEnabled = autoPlayNextVoiceEnabled,
@@ -222,7 +223,8 @@ final class VoicePlaybackController extends ChangeNotifier {
   /// BUG-40（D7 已拍板：默认开启）：自然播完后自动连播同会话下一条
   /// 未读语音。开关与下一条来源由页面注入；null 供应商=没有下一条。
   final bool Function()? _autoPlayNextVoiceEnabled;
-  final RoomMessageViewModel? Function(String currentId)? _nextAutoPlayVoice;
+  final FutureOr<RoomMessageViewModel?> Function(String currentId)?
+      _nextAutoPlayVoice;
   final Set<String> _playedIds = <String>{};
   bool isPlayed(String eventId) => _playedIds.contains(eventId);
 
@@ -248,6 +250,9 @@ final class VoicePlaybackController extends ChangeNotifier {
   /// 不得触发 play 或 notifyListeners。
   int _generation = 0;
   bool _disposed = false;
+
+  /// Lets a paged successor supplier abandon work after a newer user intent.
+  int get playbackGeneration => _generation;
 
   Set<String> get playingIds => Set.unmodifiable(_playingIds);
   bool isPlaying(String eventId) => _playingIds.contains(eventId);
@@ -277,15 +282,32 @@ final class VoicePlaybackController extends ChangeNotifier {
     _positions.clear();
     notifyListeners();
     // BUG-40：只有**自然播完**才连播；暂停/手动停止不在此路径。
-    _maybeAutoAdvanceAfter(completedId);
+    unawaited(_maybeAutoAdvanceAfter(completedId));
   }
 
-  void _maybeAutoAdvanceAfter(String? completedId) {
+  Future<void> _maybeAutoAdvanceAfter(String? completedId) async {
     if (_disposed || completedId == null) return;
     if (!(_autoPlayNextVoiceEnabled?.call() ?? true)) return;
-    final next = _nextAutoPlayVoice?.call(completedId);
+    final generation = _generation;
+    RoomMessageViewModel? next;
+    try {
+      next = await _nextAutoPlayVoice?.call(completedId);
+    } catch (_) {
+      // A unavailable/cancelled history page ends autoplay. The user may still
+      // play a known message; never log decrypted history or media here.
+      return;
+    }
+    if (_disposed ||
+        generation != _generation ||
+        _loadingId != null ||
+        _playingIds.isNotEmpty ||
+        _pausedIds.isNotEmpty ||
+        !_canPlay() ||
+        !(_autoPlayNextVoiceEnabled?.call() ?? true)) {
+      return;
+    }
     if (next == null || next.id == completedId) return;
-    unawaited(toggle(next));
+    await toggle(next);
   }
 
   void _handlePlaybackError(Object error, StackTrace stackTrace) {

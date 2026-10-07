@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/rendering.dart' show RenderPadding;
 import 'logical_conversation_timeline.dart';
 import 'room_navigation_coordinator.dart';
 import '../settings/voice_auto_play_preferences.dart';
@@ -146,6 +147,7 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
+import 'room_paged_history_source.dart';
 import 'sent_video_local_registry.dart';
 import 'room_history_date_capability.dart';
 import '../../ui/chat/room_image_gallery.dart';
@@ -615,18 +617,40 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
 
   /// BUG-40：同会话内 [eventId] 之后最近的一条**未播过**的非本人语音。
-  RoomMessageViewModel? _nextUnreadVoiceAfter(String eventId) {
+  Future<RoomMessageViewModel?> _nextUnreadVoiceAfter(String eventId) async {
     final timeline = controller;
     if (timeline == null) return null;
     final current = timeline.findMessage(eventId);
     if (current == null) return null;
+    final playback = voicePlayback;
+    final generation = playback.playbackGeneration;
+    bool active() =>
+        mounted &&
+        !_disposing &&
+        identical(controller, timeline) &&
+        identical(_voicePlayback, playback) &&
+        playback.playbackGeneration == generation &&
+        voiceAutoPlayPreferences.autoPlayNext &&
+        _canPlayVoice;
     RoomMessageViewModel? best;
-    for (final message in timeline.allMessages) {
-      if (message.isOwn || message.kind != RoomMessageKind.voice) continue;
-      if (voicePlayback.isPlayed(message.id)) continue;
-      if (!message.timestamp.isAfter(current.timestamp)) continue;
-      if (best == null || message.timestamp.isBefore(best.timestamp)) {
+    void consider(RoomMessageViewModel message) {
+      if (message.isOwn || message.kind != RoomMessageKind.voice) return;
+      if (playback.isPlayed(message.id)) return;
+      if (!message.timestamp.isAfter(current.timestamp)) return;
+      if (best == null || message.timestamp.isBefore(best!.timestamp)) {
         best = message;
+      }
+    }
+
+    if (timeline.supportsPagedHistory) {
+      return nextUnreadVoiceFromHistory(
+          source: timeline,
+          completed: current,
+          isActive: active,
+          isPlayed: playback.isPlayed);
+    } else {
+      for (final message in timeline.allMessages) {
+        consider(message);
       }
     }
     return best;
@@ -797,6 +821,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   RoomSearchIndexPump? _searchIndexPump;
   final Set<String> _acknowledgedVisibleIds = {};
   bool _immediateVisibleReceipt = false;
+
+  Rect? _messageBodyBounds(RenderObject? rendered) {
+    // The anchor key measures the whole padded row. Read/mention visibility
+    // continues to measure only its message body, as before that key moved.
+    final body = rendered is RenderPadding ? rendered.child : rendered;
+    if (body is! RenderBox || !body.hasSize) return null;
+    return body.localToGlobal(Offset.zero) & body.size;
+  }
+
   void _observeVisibleReadReceipts() {
     // E1：滑动加载历史时元素会经历 deactivated 窗口，此时任何
     // findRenderObject/ModalRoute.of 都会抛断言（debug 红框）。整体跳过。
@@ -820,9 +853,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       } catch (_) {
         continue; // 元素正处于 deactivate/activate 过渡，跳过本轮。
       }
-      final box = ro;
-      if (box is! RenderBox || !box.hasSize) continue;
-      final rect = box.localToGlobal(Offset.zero) & box.size;
+      final rect = _messageBodyBounds(ro);
+      if (rect == null) continue;
       if (!_acknowledgedVisibleIds.contains(entry.key) &&
           rect.overlaps(bounds) &&
           !rect.intersect(bounds).isEmpty) {
@@ -857,12 +889,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final now = DateTime.now();
     var changed = false;
     for (final id in state.pendingEventIdsNewestFirst()) {
-      final box = messageKeys[id]?.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.hasSize) {
+      final rect = _messageBodyBounds(
+          messageKeys[id]?.currentContext?.findRenderObject());
+      if (rect == null) {
         _mentionVisibleSince.remove(id);
         continue;
       }
-      final rect = box.localToGlobal(Offset.zero) & box.size;
       final intersection = rect.intersect(bounds);
       final visible = !intersection.isEmpty &&
           rect.height > 0 &&
@@ -1447,7 +1479,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             controller?.lookupReplyMessage(eventId) ?? Future.value(null),
         onChanged: _replyResolutionChanged,
       );
+      final revisionBeforeInitialRefresh = _timelineRevision.value;
       await controller!.refresh();
+      if (!mounted || _disposing) return;
+      // The constructor already owns its initial snapshot. An unchanged first
+      // refresh need not publish, but the page must replace its empty subtree.
+      if (_timelineRevision.value == revisionBeforeInitialRefresh) {
+        _timelineRevision.value++;
+      }
       // A cached initial snapshot may not emit a controller change.
       // Apply the route anchor once the first projection is ready.
       _applyInitialAnchorIfNeeded();
@@ -5185,6 +5224,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final epoch = repository.accountEpoch;
     _searchIndexPump ??= RoomSearchIndexPump(
       source: () => controller?.newestFirstMessages ?? const [],
+      pagedSource: timeline.supportsPagedHistory ? timeline : null,
       isActive: () =>
           mounted &&
           !_disposing &&
@@ -5799,12 +5839,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         sameReply) {
       return cached.$5;
     }
-    final row = Padding(
+    final row = KeyedSubtree(
         key: ValueKey(message.stableId),
-        padding: const EdgeInsets.only(bottom: WeChatSpacing.sm),
-        child: KeyedSubtree(
+        child: Padding(
             key: messageKeys[message.id] =
                 _stableMessageKeys.putIfAbsent(message.stableId, GlobalKey.new),
+            padding: const EdgeInsets.only(bottom: WeChatSpacing.sm),
             child: Stack(clipBehavior: Clip.none, children: [
               if (selection.active &&
                   selection.selectedIds.contains(message.id))

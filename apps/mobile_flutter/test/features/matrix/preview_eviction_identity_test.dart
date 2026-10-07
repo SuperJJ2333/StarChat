@@ -10,19 +10,23 @@ import 'direct_room_identity_integration_test.dart' show IdentityFlowRoom;
 class _CountStore extends Fake implements DatabaseApi {
   final ids = <String, List<String>>{};
   String? heldRoom;
-  Completer<List<String>>? heldRead;
+  Completer<int>? heldRead;
   Completer<void>? entered;
   @override
-  Future<List<String>> getEventIdList(Room room,
-      {int start = 0, bool includeSending = false, int? limit}) async {
+  Future<int> getTimelineEventCount(Room room) async {
     if (room.id == heldRoom && heldRead != null) {
       final read = heldRead!;
       heldRead = null;
       entered!.complete();
       return read.future;
     }
-    return ids[room.id] ?? [];
+    return ids[room.id]?.length ?? 0;
   }
+
+  @override
+  Future<List<String>> getEventIdList(Room room,
+          {int start = 0, bool includeSending = false, int? limit}) =>
+      throw StateError('Count lookup must not enumerate whole room IDs');
 }
 
 class _CountClient extends SnapshotClient {
@@ -85,7 +89,7 @@ void main() {
       history('\$resize');
       await Future<void>.delayed(Duration.zero);
       expect((await matrix.conversations.snapshot()).rooms.single.id, newer.id);
-      final staleRead = Completer<List<String>>();
+      final staleRead = Completer<int>();
       client.store
         ..heldRoom = old.id
         ..heldRead = staleRead
@@ -97,7 +101,7 @@ void main() {
       client.store.ids[old.id] = List.generate(120, (i) => '\$expanded-$i');
       history('\$second-history');
       await Future<void>.delayed(Duration.zero);
-      staleRead.complete(List.generate(20, (i) => '\$stale-$i'));
+      staleRead.complete(20);
       expect((await snapshot).rooms.single.id, old.id,
           reason:
               'a stale count read cannot undo same-head history invalidation');

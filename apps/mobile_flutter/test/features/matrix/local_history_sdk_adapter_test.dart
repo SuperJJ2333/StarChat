@@ -8,6 +8,8 @@ import 'package:liuhetong_mobile/features/matrix/local_room_history_search.dart'
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/room_history_day_index.dart';
 
+import 'fixtures/delegating_sqlite_database.dart';
+
 class LocalClient extends Client {
   LocalClient(this.store) : super('synthetic-local-adapter');
   final MatrixSdkDatabase store;
@@ -18,71 +20,71 @@ class LocalClient extends Client {
   Room? getRoomById(String id) => id == room.id ? room : null;
 }
 
-class _PageGateDatabase extends Fake implements Database {
-  _PageGateDatabase(this.delegate);
-  final Database delegate;
-  final sizeRead = Completer<void>();
+class _PageGateDatabase extends DelegatingSqliteDatabase {
+  _PageGateDatabase(super.delegate);
+  final pageRead = Completer<void>();
   final releasePage = Completer<void>();
   bool gateNextPage = false;
   bool disableJson = false;
   bool disableJsonEach = false;
+  bool failNextIndexedPage = false;
+  int jsonCalls = 0;
 
-  @override
-  Batch batch() => delegate.batch();
-  @override
-  Future<void> close() => delegate.close();
-  @override
-  Future<int> insert(String table, Map<String, Object?> values,
-          {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm}) =>
-      delegate.insert(table, values,
-          nullColumnHack: nullColumnHack, conflictAlgorithm: conflictAlgorithm);
-  @override
-  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) =>
-      delegate.delete(table, where: where, whereArgs: whereArgs);
-  @override
-  Future<List<Map<String, Object?>>> query(String table,
-          {bool? distinct,
-          List<String>? columns,
-          String? where,
-          List<Object?>? whereArgs,
-          String? groupBy,
-          String? having,
-          String? orderBy,
-          int? limit,
-          int? offset}) =>
-      delegate.query(table,
-          distinct: distinct,
-          columns: columns,
-          where: where,
-          whereArgs: whereArgs,
-          groupBy: groupBy,
-          having: having,
-          orderBy: orderBy,
-          limit: limit,
-          offset: offset);
   @override
   Future<List<Map<String, Object?>>> rawQuery(String sql,
       [List<Object?>? arguments]) async {
     if (disableJson && sql.contains('json_array_length')) {
-      throw Exception('no such function: json_array_length');
+      jsonCalls++;
+      throw StateError('no such function: json_array_length');
     }
     if (disableJsonEach && sql.contains('json_each')) {
-      throw Exception('no such table: json_each');
+      jsonCalls++;
+      throw StateError('no such table: json_each');
+    }
+    final indexedPage =
+        sql.startsWith('SELECT * FROM matrix_retained_search_rows ');
+    if (indexedPage && failNextIndexedPage) {
+      failNextIndexedPage = false;
+      throw StateError('Synthetic indexed storage unavailable');
     }
     final rows = await delegate.rawQuery(sql, arguments);
-    if (gateNextPage && sql.contains('AS item_count\nFROM')) {
+    if (gateNextPage && indexedPage) {
       gateNextPage = false;
-      sizeRead.complete();
+      pageRead.complete();
       await releasePage.future;
     }
     return rows;
   }
 }
 
+Future<void> _store(MatrixSdkDatabase db, Client client, Room room, String id,
+        int timestamp) =>
+    db.storeEventUpdate(
+        EventUpdate(roomID: room.id, type: EventUpdateType.timeline, content: {
+          'event_id': id,
+          'sender': '@synthetic:local',
+          'type': EventTypes.Message,
+          'origin_server_ts': timestamp,
+          'content': {'msgtype': MessageTypes.Text, 'body': 'needle $id'}
+        }),
+        client);
+
+Future<List<String>> _remaining(MatrixSearchEventIds ids,
+    {int pageSize = 2}) async {
+  final result = <String>[];
+  while (ids.hasMore) {
+    final offset = ids.nextOffset;
+    result.addAll(await ids.page(offset, pageSize));
+    expect(ids.lastRawCount, lessThanOrEqualTo(pageSize));
+    if (ids.hasMore) expect(ids.nextOffset, greaterThan(offset));
+  }
+  return result;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(sqfliteFfiInit);
-  test('frozen ID pages ignore new heads and batch reads retain holes',
+  test('frozen ID pages survive source changes and batch reads retain holes',
       () async {
     final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     final db = MatrixSdkDatabase(inMemoryDatabasePath,
@@ -91,94 +93,54 @@ void main() {
     final client = LocalClient(db);
     final room =
         client.room = Room(id: '!search-snapshot:local', client: client);
-    Future<void> store(int i) => db.storeEventUpdate(
-        EventUpdate(roomID: room.id, type: EventUpdateType.timeline, content: {
-          'event_id': 'e$i',
-          'sender': '@synthetic:local',
-          'type': EventTypes.Message,
-          'origin_server_ts':
-              DateTime.utc(2026, 9, i + 1).millisecondsSinceEpoch,
-          'content': {'msgtype': MessageTypes.Text, 'body': 'needle $i'}
-        }),
-        client);
     try {
       for (var i = 0; i < 4; i++) {
-        await store(i);
+        await _store(db, client, room, 'e$i', (i + 1) * 100);
       }
       final ids = await db.openSearchEventIds(room, maxBytes: 8);
+      MatrixSearchEventIds? saved;
       try {
         expect(await ids.page(0, 2), ['e3', 'e2']);
-        await store(4);
-        expect(await ids.page(2, 2), ['e1', 'e0']);
-        final originalFragment = (await raw.query('box_timeline_fragments'))
-            .singleWhere((row) =>
-                (jsonDecode(row['v'] as String) as List).contains('e2'));
-        final originalIds =
-            (jsonDecode(originalFragment['v'] as String) as List)
-                .cast<String>();
-        Future<void> replaceFragment(List<String> values) async {
-          await raw.update('box_timeline_fragments', {'v': jsonEncode(values)},
-              where: 'k = ?', whereArgs: [originalFragment['k']]);
-          await db.open();
-        }
-
-        final inserted = await db.openSearchEventIds(room, maxBytes: 8);
+        saved = await ids.checkpoint();
+        await _store(db, client, room, 'e4', 500);
+        await _store(db, client, room, 'interior-insert', 250);
+        await _store(db, client, room, 'e1', 210);
+        await db.removeEvent('e2', room.id);
+        // A persisted payload hole is different from removing its search ID.
+        await raw.delete('box_events',
+            where: 'k = ?', whereArgs: [TupleKey(room.id, 'e0').toString()]);
+        expect(
+            (await db.getSearchEventsByIds(room, ['e3', 'e0']))
+                .map((event) => event?.eventId),
+            ['e3', null]);
+        expect(await _remaining(ids), ['e1', 'e0']);
+        expect(await _remaining(saved), ['e1', 'e0'],
+            reason:
+                'checkpoint keeps its captured revision across edits/deletes');
+        final current = await db.openSearchEventIds(room, maxBytes: 8);
         try {
-          expect(await inserted.page(0, 2), ['e4', 'e3']);
-          await replaceFragment([
-            ...originalIds.take(3),
-            'interior-insert',
-            ...originalIds.skip(3)
-          ]);
-          await expectLater(inserted.page(2, 2),
-              throwsA(isA<MatrixSearchSnapshotInvalidated>()));
+          expect(await _remaining(current),
+              ['e4', 'e3', 'interior-insert', 'e1', 'e0']);
+          await expectLater(current.page(0, 2),
+              throwsA(isA<MatrixSearchSnapshotInvalidated>()),
+              reason:
+                  'an unsupported rewind must fail rather than change snapshots');
         } finally {
-          inserted.dispose();
-          await replaceFragment(originalIds);
+          current.dispose();
         }
-
-        final deleted = await db.openSearchEventIds(room, maxBytes: 8);
-        try {
-          expect(await deleted.page(0, 2), ['e4', 'e3']);
-          await replaceFragment(originalIds.where((id) => id != 'e1').toList());
-          await expectLater(deleted.page(2, 2),
-              throwsA(isA<MatrixSearchSnapshotInvalidated>()));
-        } finally {
-          deleted.dispose();
-          await replaceFragment(originalIds);
-        }
-        final stored = await raw.query('box_events');
-        final missing = stored.singleWhere(
-            (r) => (jsonDecode(r['v'] as String) as Map)['event_id'] == 'e2');
-        await raw
-            .delete('box_events', where: 'k = ?', whereArgs: [missing['k']]);
-        await db.open();
-        final rows = await db.getSearchEventsByIds(room, ['e3', 'e2']);
-        expect(rows.map((e) => e?.eventId), ['e3', null]);
-        expect(await ids.page(2, 2), ['e1', 'e0'],
-            reason: 'event-row holes must not shift frozen timeline IDs');
-        final fragments = await raw.query('box_timeline_fragments');
-        final fragment = fragments.singleWhere(
-            (row) => (jsonDecode(row['v'] as String) as List).contains('e2'));
-        final changedIds = (jsonDecode(fragment['v'] as String) as List)
-            .where((id) => id != 'e2')
-            .toList();
-        await raw.update(
-            'box_timeline_fragments', {'v': jsonEncode(changedIds)},
-            where: 'k = ?', whereArgs: [fragment['k']]);
-        await db.open();
-        await expectLater(
-            ids.page(2, 2), throwsA(isA<MatrixSearchSnapshotInvalidated>()),
-            reason: 'a vanished checkpoint must invalidate low-memory paging');
       } finally {
+        saved?.dispose();
         ids.dispose();
       }
+      await expectLater(ids.page(0, 2), throwsStateError);
     } finally {
       await db.close();
       await client.dispose();
     }
   });
-  test('one search budget bounds room snapshots and sees SQL fragment changes',
+
+  test(
+      'two native readers retain metadata while revisions change independently',
       () async {
     final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     final db = MatrixSdkDatabase(inMemoryDatabasePath,
@@ -188,46 +150,28 @@ void main() {
     final firstRoom =
         client.room = Room(id: '!first-search:local', client: client);
     final secondRoom = Room(id: '!second-search:local', client: client);
-    Future<void> store(int i) => db.storeEventUpdate(
-        EventUpdate(
-            roomID: firstRoom.id,
-            type: EventUpdateType.timeline,
-            content: {
-              'event_id': 'a$i',
-              'sender': '@synthetic:local',
-              'type': EventTypes.Message,
-              'origin_server_ts':
-                  DateTime.utc(2026, 9, i + 1).millisecondsSinceEpoch,
-              'content': {'msgtype': MessageTypes.Text, 'body': 'fixture'}
-            }),
-        client);
     try {
       for (var i = 0; i < 4; i++) {
-        await store(i);
+        await _store(db, client, firstRoom, 'a$i', i + 1);
+        await _store(db, client, secondRoom, 'b$i', i + 1);
       }
-      final secondKey = TupleKey(secondRoom.id, '').toString();
-      await raw.insert('box_timeline_fragments', {
-        'k': secondKey,
-        'v': jsonEncode(['b3', 'b2', 'b1', 'b0'])
-      });
-      await db.open();
-      final budget = MatrixSearchSnapshotBudget(maxBytes: 90);
+      final budget = MatrixSearchSnapshotBudget(maxBytes: 1);
       final first = await db.openSearchEventIds(firstRoom, budget: budget);
       final second = await db.openSearchEventIds(secondRoom, budget: budget);
       try {
-        expect(budget.retainedBytes, greaterThan(0));
-        expect(budget.retainedBytes, lessThanOrEqualTo(90));
+        expect(budget.retainedBytes, 0,
+            reason: 'indexed handles do not copy room-sized ID arrays');
         expect(await first.page(0, 2), ['a3', 'a2']);
-        await raw.update(
-            'box_timeline_fragments',
-            {
-              'v': jsonEncode(['b3', 'b2', 'inserted', 'b1', 'b0'])
-            },
-            where: 'k = ?',
-            whereArgs: [secondKey]);
-        await expectLater(
-            second.page(0, 2), throwsA(isA<MatrixSearchSnapshotInvalidated>()),
-            reason: 'fallback must read encrypted SQL, not a stale Box cache');
+        await _store(db, client, secondRoom, 'inserted', 5);
+        await db.removeEvent('b1', secondRoom.id);
+        expect(await _remaining(second), ['b3', 'b2', 'b1', 'b0']);
+        expect(await _remaining(first), ['a1', 'a0']);
+        final fresh = await db.openSearchEventIds(secondRoom, budget: budget);
+        try {
+          expect(await _remaining(fresh), ['inserted', 'b3', 'b2', 'b0']);
+        } finally {
+          fresh.dispose();
+        }
       } finally {
         first.dispose();
         second.dispose();
@@ -238,7 +182,8 @@ void main() {
       await client.dispose();
     }
   });
-  test('native search opens the committed fragment during a receive batch',
+
+  test('prepared native search captures committed IDs during a receive batch',
       () async {
     final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     final db = MatrixSdkDatabase(inMemoryDatabasePath,
@@ -247,30 +192,24 @@ void main() {
     final client = LocalClient(db);
     final room =
         client.room = Room(id: '!pending-search:local', client: client);
-    Future<void> store(String id) => db.storeEventUpdate(
-        EventUpdate(roomID: room.id, type: EventUpdateType.timeline, content: {
-          'event_id': id,
-          'sender': '@synthetic:local',
-          'type': EventTypes.Message,
-          'origin_server_ts': 1,
-          'content': {'msgtype': MessageTypes.Text, 'body': 'fixture'}
-        }),
-        client);
     try {
-      await store('committed');
+      await _store(db, client, room, 'committed', 1);
+      // Lazy backfill belongs outside the atomic receive transaction.
+      final prepared = await db.openSearchEventIds(room);
+      prepared.dispose();
       await db.transaction(() async {
-        await store('pending');
+        await _store(db, client, room, 'pending', 2);
         final snapshot = await db.openSearchEventIds(room);
         try {
-          expect(await snapshot.page(0, 5), ['committed'],
-              reason: 'metadata and fixed IDs must share committed SQL state');
+          expect(await _remaining(snapshot), ['committed'],
+              reason: 'immutable search metadata captures committed SQL state');
         } finally {
           snapshot.dispose();
         }
       });
       final afterCommit = await db.openSearchEventIds(room);
       try {
-        expect(await afterCommit.page(0, 5), ['pending', 'committed']);
+        expect(await _remaining(afterCommit), ['pending', 'committed']);
       } finally {
         afterCommit.dispose();
       }
@@ -279,7 +218,8 @@ void main() {
       await client.dispose();
     }
   });
-  test('head append cannot split the two SQL reads of one search page',
+
+  test('head append cannot interleave with a native search page gate',
       () async {
     final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     final gated = _PageGateDatabase(raw);
@@ -288,84 +228,72 @@ void main() {
     await db.open();
     final client = LocalClient(db);
     final room = client.room = Room(id: '!gated-page:local', client: client);
-    Future<void> store(String id) => db.storeEventUpdate(
-        EventUpdate(roomID: room.id, type: EventUpdateType.timeline, content: {
-          'event_id': id,
-          'sender': '@synthetic:local',
-          'type': EventTypes.Message,
-          'origin_server_ts': 1,
-          'content': {'msgtype': MessageTypes.Text, 'body': 'fixture'}
-        }),
-        client);
     try {
       for (var i = 0; i < 4; i++) {
-        await store('e$i');
+        await _store(db, client, room, 'e$i', i + 1);
       }
       final snapshot = await db.openSearchEventIds(room, maxBytes: 1);
+      final peer = await db.openSearchEventIds(room, maxBytes: 1);
       try {
         gated.gateNextPage = true;
         final page = snapshot.page(0, 2);
-        await gated.sizeRead.future;
-        var appendDone = false;
-        final append = db.transaction(() => store('e4')).then((_) {
+        await gated.pageRead.future.timeout(const Duration(seconds: 2));
+        var peerDone = false, appendDone = false;
+        final peerPage = peer.page(0, 2).then((value) {
+          peerDone = true;
+          return value;
+        });
+        final append =
+            db.transaction(() => _store(db, client, room, 'e4', 5)).then((_) {
           appendDone = true;
         });
         await Future<void>.delayed(const Duration(milliseconds: 10));
-        final appendFinishedInsidePage = appendDone;
+        expect(peerDone, isFalse);
+        expect(appendDone, isFalse);
         gated.releasePage.complete();
         expect(await page, ['e3', 'e2']);
+        expect(await peerPage, ['e3', 'e2']);
         await append;
-        expect(appendFinishedInsidePage, isFalse,
-            reason: 'the page SQL reads must share the SDK transaction gate');
-        expect(await snapshot.page(2, 2), ['e1', 'e0']);
+        expect(await _remaining(snapshot), ['e1', 'e0']);
+        expect(await _remaining(peer), ['e1', 'e0']);
       } finally {
         if (!gated.releasePage.isCompleted) gated.releasePage.complete();
         snapshot.dispose();
+        peer.dispose();
       }
     } finally {
       await db.close();
       await client.dispose();
     }
   });
-  test('missing JSON1 uses bounded fixed IDs and fails closed when oversized',
+
+  test(
+      'native search ignores missing JSON1 and propagates indexed read failures',
       () async {
     final raw = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
-    final gated = _PageGateDatabase(raw);
+    final gated = _PageGateDatabase(raw)
+      ..disableJson = true
+      ..disableJsonEach = true;
     final db = MatrixSdkDatabase(inMemoryDatabasePath,
         database: gated, sqfliteFactory: databaseFactoryFfi);
     await db.open();
     final client = LocalClient(db);
     final room = client.room = Room(id: '!no-json1:local', client: client);
     try {
-      await db.storeEventUpdate(
-          EventUpdate(
-              roomID: room.id,
-              type: EventUpdateType.timeline,
-              content: {
-                'event_id': 'e0',
-                'sender': '@synthetic:local',
-                'type': EventTypes.Message,
-                'origin_server_ts': 1,
-                'content': {'msgtype': MessageTypes.Text, 'body': 'fixture'}
-              }),
-          client);
-      gated.disableJson = true;
-      final small = await db.openSearchEventIds(room);
+      await _store(db, client, room, 'e0', 1);
+      final ids = await db.openSearchEventIds(room, maxBytes: 1);
       try {
-        expect(await small.page(0, 5), ['e0']);
+        gated.failNextIndexedPage = true;
+        await expectLater(ids.page(0, 1), throwsStateError);
+        expect(ids.nextOffset, 0,
+            reason:
+                'failed I/O must not silently advance or report empty history');
+        expect(await ids.page(0, 1), ['e0']);
+        expect(ids.hasMore, isFalse);
+        expect(gated.jsonCalls, 0,
+            reason: 'native indexed reads have no JSON1 fallback dependency');
       } finally {
-        small.dispose();
-      }
-      await expectLater(db.openSearchEventIds(room, maxBytes: 1),
-          throwsA(isA<MatrixSearchBackendUnavailable>()));
-      gated.disableJson = false;
-      final oversized = await db.openSearchEventIds(room, maxBytes: 1);
-      gated.disableJsonEach = true;
-      try {
-        await expectLater(oversized.page(0, 1),
-            throwsA(isA<MatrixSearchBackendUnavailable>()));
-      } finally {
-        oversized.dispose();
+        ids.dispose();
       }
     } finally {
       await db.close();
@@ -422,7 +350,8 @@ void main() {
       final budget = MatrixSearchSnapshotBudget(maxBytes: 100);
       final frozen = await lease.openLocalSearchIds(room.id, budget: budget);
       try {
-        expect(budget.retainedBytes, greaterThan(0));
+        expect(budget.retainedBytes, 0,
+            reason: 'native snapshots retain metadata, not a whole ID list');
         expect(await frozen.page(0, 2), ids.take(2).toList());
         final keyed =
             await lease.readLocalSearchByIds(room.id, ids.take(2).toList());
@@ -442,9 +371,18 @@ void main() {
           sourceRevision: () => lease!.localHistorySearchRevision,
           snapshot: lease.localHistorySnapshot,
           project: (_, row) => row.visibleText.isEmpty ? null : row);
-      final result =
-          await search.search(const ChatSearchFilters(keyword: 'needle'));
-      expect(result.items, hasLength(3));
+      const filters = ChatSearchFilters(keyword: 'needle');
+      var result = await search.search(filters);
+      final matches = [...result.items];
+      // A verified hit is returned before another disk page is read. Exhaust
+      // the explicit continuation rather than treating the first slice as EOF.
+      while (result.nextCursor != null) {
+        result = await search.search(filters, cursor: result.nextCursor);
+        matches.addAll(result.items);
+      }
+      expect(matches, hasLength(3));
+      expect(matches.map((row) => row.eventId).toSet(),
+          ids.where((id) => id != first).toSet());
       expect(result.coverageIncomplete, isTrue);
       final month =
           await lease.loadLocalHistoryMonthDays(const CalendarMonth(2026, 9));

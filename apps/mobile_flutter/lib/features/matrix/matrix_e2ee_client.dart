@@ -11,6 +11,7 @@ import 'call_diagnostics.dart';
 import 'call_wakeup_client.dart';
 import 'matrix_sync_watchdog.dart';
 import 'matrix_notification_event_source.dart';
+import 'room_paged_history_source.dart';
 import 'incoming_media_prefetch.dart';
 import 'matrix_sdk_incoming_media_source.dart';
 import '../push/matrix_pusher_service.dart';
@@ -1533,14 +1534,19 @@ final class _RoomHistoryChangeSignal extends ChangeNotifier {
   void publish() => notifyListeners();
 }
 
-final class _MatrixLocalSearchIds implements LocalSearchIdSnapshot {
+final class _MatrixLocalSearchIds
+    implements LocalSearchIdSnapshot, LocalSearchIdSnapshotCheckpoint {
   _MatrixLocalSearchIds(this.source);
   final MatrixSearchEventIds source;
 
   @override
   Future<List<String>> page(int offset, int limit) async {
     try {
-      return await source.page(offset, limit);
+      final rows = await source.page(offset, limit);
+      return LocalHistoryPage(rows,
+          nextOffset: source.nextOffset,
+          hasMore: source.hasMore,
+          rawCount: source.lastRawCount);
     } on MatrixSearchSnapshotInvalidated {
       throw const HistorySearchCancelled();
     }
@@ -1548,6 +1554,15 @@ final class _MatrixLocalSearchIds implements LocalSearchIdSnapshot {
 
   @override
   void dispose() => source.dispose();
+
+  @override
+  Future<LocalSearchIdSnapshot> checkpoint() async {
+    try {
+      return _MatrixLocalSearchIds(await source.checkpoint());
+    } on MatrixSearchSnapshotInvalidated {
+      throw const HistorySearchCancelled();
+    }
+  }
 }
 
 final class MatrixRoomLease
@@ -1584,7 +1599,7 @@ final class MatrixRoomLease
   Listenable get localHistoryCalendarChanges => _localHistoryCalendarChanges;
   bool _historyChangeQueued = false;
   bool _appendChangeQueued = false, _calendarChangeQueued = false;
-  final _localSearchEventIds = <String, List<String>>{};
+  final _localSearchEventIds = <String, MatrixSearchEventIds>{};
   final _localSearchCutoffs = <String, DateTime?>{};
   int _localSearchIdsRevision = -1;
   LocalRoomHistorySnapshot? _localHistorySnapshot;
@@ -1602,6 +1617,9 @@ final class MatrixRoomLease
   void invalidateLocalHistorySearch() {
     _localHistorySearchRevision++;
     _localSearchEventPolicy.clear();
+    for (final ids in _localSearchEventIds.values) {
+      ids.dispose();
+    }
     _localSearchEventIds.clear();
     _localHistorySnapshot?.clear();
     _notifyCalendarChange();
@@ -1626,6 +1644,9 @@ final class MatrixRoomLease
   }
 
   void _recordLocalHistoryAppend() {
+    for (final ids in _localSearchEventIds.values) {
+      ids.dispose();
+    }
     _localSearchEventIds.clear();
     _localHistorySnapshot?.invalidateMutablePages();
     _notifyCalendarChange();
@@ -1782,16 +1803,27 @@ final class MatrixRoomLease
         try {
           final revision = localHistorySearchRevision;
           if (_localSearchIdsRevision != revision) {
+            for (final ids in _localSearchEventIds.values) {
+              ids.dispose();
+            }
             _localSearchEventIds.clear();
             _localSearchIdsRevision = revision;
           }
           final cachedIds = _localSearchEventIds[sourceRoomId];
-          final ids = cachedIds ?? await database.getEventIdList(source);
-          if (revision != localHistorySearchRevision) {
+          final ids = cachedIds ?? await database.openSearchEventIds(source);
+          if (canceled ||
+              owner._accessRevoked ||
+              !identical(owner._client, source.client) ||
+              revision != localHistorySearchRevision) {
+            if (cachedIds == null) ids.dispose();
             throw const HistorySearchCancelled();
           }
           _localSearchEventIds[sourceRoomId] = ids;
-          pageIds = ids.skip(offset).take(limit).toList(growable: false);
+          final rows = await ids.page(offset, limit);
+          pageIds = LocalHistoryPage(rows,
+              nextOffset: ids.nextOffset,
+              hasMore: ids.hasMore,
+              rawCount: ids.lastRawCount);
           events = pageIds.isEmpty
               ? const <Event?>[]
               : await database.getSearchEventsByIds(source, pageIds);
@@ -1974,6 +2006,15 @@ final class MatrixRoomLease
   }) =>
       _withLeaseOperation((room) async {
         final timeline = await room.getTimeline(onUpdate: onUpdate);
+        try {
+          await _enableSdkResidentWindow(timeline);
+          if (canceled || owner._accessRevoked) {
+            throw StateError('Matrix timeline lease revoked during hydration');
+          }
+        } catch (_) {
+          timeline.cancelSubscriptions();
+          rethrow;
+        }
         final capability = _SdkRoomTimelineCapability(this, timeline, onUpdate);
         _timelines.add(capability);
         return capability;
@@ -2871,6 +2912,34 @@ final class _LeaseAnnouncementService
       _lease.uploadAnnouncementImage(bytes, name);
 }
 
+Future<void> _enableSdkResidentWindow(Timeline timeline) async {
+  try {
+    timeline.presentationRevision;
+  } on NoSuchMethodError {
+    return;
+  } on UnimplementedError {
+    return;
+  } // Legacy injected timelines only.
+  await timeline.enableResidentWindow();
+}
+
+final class _SdkHistoryCursor implements RoomHistoryReadCursor {
+  _SdkHistoryCursor(this.owner, this.handle, this.direction, this.generation);
+  final _SdkRoomTimelineCapability owner;
+  final TimelineIdSnapshot handle;
+  final RoomHistoryDirection direction;
+  final int generation;
+  bool disposed = false;
+  bool reading = false;
+  @override
+  void dispose() {
+    if (disposed) return;
+    disposed = true;
+    handle.dispose();
+    owner._historyCursors.remove(this);
+  }
+}
+
 final class _SdkRoomTimelineCapability
     implements
         RoomVisibleReadCapability,
@@ -2882,10 +2951,13 @@ final class _SdkRoomTimelineCapability
         RoomEventContextCapability,
         RoomMessageLookupSource,
         RoomWindowedTimelineSource,
-        RoomNewestFirstTimelineSource {
+        RoomNewestFirstTimelineSource,
+        RoomPagedHistorySource,
+        RoomPresentationRevisionSource {
   _SdkRoomTimelineCapability(this._lease, Timeline timeline, this._onUpdate)
       : _liveTimeline = timeline {
     _outgoingListener = () {
+      _outgoingRevision++;
       if (!_disposed) _onUpdate();
     };
     _outgoingWork = _lease.owner.outgoingWork;
@@ -2908,6 +2980,15 @@ final class _SdkRoomTimelineCapability
       _resolvedMessages.remove(redacts);
       _eventLookups.remove(redacts);
     });
+    _memberUpdates =
+        _lease._activeRoom.client.onRoomState.stream.listen((update) {
+      if (update.roomId != _lease.roomId ||
+          update.state.type != EventTypes.RoomMember) {
+        return;
+      }
+      _memberRevision++;
+      if (!_disposed) _onUpdate();
+    });
     // 日期索引 metadata 预热：日历打开时即可读到本地覆盖证据（无网络）。
     unawaited(_ensureDayIndex());
   }
@@ -2924,6 +3005,37 @@ final class _SdkRoomTimelineCapability
   late final MatrixOutgoingWorkCoordinator _outgoingWork;
   final Set<String> _retrying = {};
   late final StreamSubscription<EventUpdate> _resolvedEventUpdates;
+  late final StreamSubscription<({String roomId, StrippedStateEvent state})>
+      _memberUpdates;
+  int _outgoingRevision = 0,
+      _memberRevision = 0,
+      _hiddenRevision = 0,
+      _windowRevision = 0;
+  Object? _sourceStamp, _snapshotStamp, _newestStamp;
+  List<RoomMessageViewModel> _windowSnapshot = const [];
+  RoomMessageViewModel? _newestCached;
+
+  Object _revisionOf(Timeline timeline) {
+    // Legacy injected Fake timelines predate revision support. Their tiny
+    // mutable fixtures retain polling semantics; the real SDK never falls back.
+    try {
+      return timeline.presentationRevision;
+    } on NoSuchMethodError {
+      return Object();
+    } on UnimplementedError {
+      return Object();
+    }
+  }
+
+  Object get _visibilityStamp => (
+        _hiddenRevision,
+        _lease.owner._localHistoryStore?.visibilityRevision(_lease.roomId) ?? 0
+      );
+  Object get _currentSourceStamp =>
+      (_timeline, _revisionOf(_timeline), _visibilityStamp, _memberRevision);
+  @override
+  Object get presentationRevision =>
+      (_currentSourceStamp, _windowRevision, _outgoingRevision);
   final _resolvedEvents = <String, Event>{};
   final _eventLookups = <String, Future<Event?>>{};
   late final (String?, String?, Uri?) _eventOwner;
@@ -2938,6 +3050,113 @@ final class _SdkRoomTimelineCapability
   List<RoomMessageViewModel> _withNotices = const [];
   List<RoomMessageViewModel> _visibleMessages = const [];
   List<GroupJoinNotice> _lastNotices = const [];
+  final _historyCursors = <_SdkHistoryCursor>{};
+
+  @override
+  bool get supportsPagedHistory => _lease._activeRoom.client.database != null;
+
+  @override
+  Future<RoomHistoryMessagePage> readHistoryPage({
+    RoomHistoryReadCursor? cursor,
+    String? anchorEventId,
+    String? sourceRoomId,
+    required RoomHistoryDirection direction,
+    int rawLimit = 64,
+  }) async {
+    _ensureActive();
+    if (rawLimit < 1 || rawLimit > 256) {
+      throw RangeError.range(rawLimit, 1, 256);
+    }
+    if (sourceRoomId != null && sourceRoomId != _lease.roomId) {
+      throw ArgumentError('History source room mismatch');
+    }
+    final room = _lease._activeRoom;
+    _SdkHistoryCursor current;
+    if (cursor == null) {
+      final database = room.client.database;
+      if (database == null) {
+        throw UnsupportedError('Persisted history unavailable');
+      }
+      try {
+        final handle = await database.openTimelineIdSnapshot(room,
+            afterEventId: anchorEventId,
+            direction: direction == RoomHistoryDirection.older
+                ? TimelineIdDirection.older
+                : TimelineIdDirection.newer);
+        try {
+          _ensureActive();
+        } catch (_) {
+          handle.dispose();
+          rethrow;
+        }
+        current =
+            _SdkHistoryCursor(this, handle, direction, room.historyGeneration);
+        _historyCursors.add(current);
+      } on TimelineAnchorUnavailable {
+        _ensureActive();
+        return RoomHistoryMessagePage(
+            messages: const [],
+            exhausted: false,
+            gap: true,
+            fragmentGeneration: room.historyGeneration,
+            rawCount: 0);
+      }
+    } else {
+      if (cursor is! _SdkHistoryCursor ||
+          !identical(cursor.owner, this) ||
+          cursor.disposed ||
+          cursor.direction != direction ||
+          cursor.reading) {
+        throw StateError('Invalid or busy history cursor');
+      }
+      current = cursor;
+    }
+    current.reading = true;
+    try {
+      final page = await current.handle.next(limit: rawLimit);
+      _ensureActive();
+      if (current.disposed) throw StateError('History cursor disposed');
+      final messages = <RoomMessageViewModel>[];
+      final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+      for (final id in page.ids) {
+        final event = await room.getLocalEventById(id);
+        _ensureActive();
+        if (current.disposed) throw StateError('History cursor disposed');
+        if (event == null) {
+          throw StateError('Retained history event unavailable');
+        }
+        if ((event.type == EventTypes.Message ||
+                (event.type == EventTypes.Encrypted && event.redacted) ||
+                event.type == changliaoNudgeEventType ||
+                event.type == changliaoFriendAcceptedEventType ||
+                (event.type == changliaoRedPacketClaimedEventType &&
+                    isRedPacketClaimNoticeParty(event))) &&
+            event.messageType != groupAnnouncementMessageType &&
+            !(hidden?.call(event.eventId, event.originServerTs) ?? false) &&
+            !(_windowHiddenFilter?.call(event.eventId, event.originServerTs) ??
+                false)) {
+          // A read-only history scan must not retain raw events in the visible
+          // projection cache, including callers that never enable a UI window.
+          messages.add(_message(event));
+        }
+      }
+      current.handle.accept(page);
+      final result = RoomHistoryMessagePage(
+          messages: messages,
+          exhausted: !page.hasMore,
+          nextCursor: page.hasMore ? current : null,
+          fragmentGeneration: current.generation,
+          rawCount: page.rawCount,
+          sourceRoomIds: {for (final message in messages) message.id: room.id});
+      if (!page.hasMore) current.dispose();
+      return result;
+    } catch (_) {
+      if (cursor == null) current.dispose();
+      rethrow;
+    } finally {
+      current.reading = false;
+    }
+  }
 
   RoomMessageViewModel _cachedMessage(Event event) {
     final cached = _messageCache[event.eventId];
@@ -2967,12 +3186,15 @@ final class _SdkRoomTimelineCapability
   @override
   void setHiddenFilter(bool Function(String, DateTime?)? hidden) {
     _windowHiddenFilter = hidden;
+    _hiddenRevision++;
   }
 
   RoomTimelineViewport<Object>? _viewport;
   @override
   void enableWindow() {
     _ensureActive();
+    _sourceStamp = _snapshotStamp = null;
+    _windowRevision++;
     _messageCache.clear();
     _serverMessages = _projectedMessages =
         _pendingMessages = _withNotices = _visibleMessages = const [];
@@ -2993,11 +3215,9 @@ final class _SdkRoomTimelineCapability
   }
 
   void _refreshWindowSource() {
-    if (_contextTimeline == null &&
-        (_viewport?.followsLatest ?? false) &&
-        _lease._activeRoom.client.database != null) {
-      _liveTimeline.trimLiveHistory(maximumEvents: 1000);
-    }
+    final stamp = _currentSourceStamp;
+    if (_sourceStamp == stamp) return;
+    _sourceStamp = stamp;
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
     final entries = <Object>[];
     final pending = <Event>[];
@@ -3026,10 +3246,7 @@ final class _SdkRoomTimelineCapability
       entries.insert(at < 0 ? entries.length : at, event);
     }
     if (!_lease._activeRoom.isDirectChat) {
-      final notices = deriveGroupJoinNotices([
-        for (final event in _timeline.events)
-          if (event.type == EventTypes.RoomMember) projectMemberEvent(event)
-      ],
+      final notices = deriveGroupJoinNotices(_membershipFacts(_timeline),
           resolveName: (id) => _lease._activeRoom
               .unsafeGetUserFromMemoryOrFallback(id)
               .calcDisplayname());
@@ -3066,6 +3283,29 @@ final class _SdkRoomTimelineCapability
       }
     }
     _viewport!.update(entries);
+  }
+
+  Iterable<MembershipEventFacts> _membershipFacts(Timeline timeline) sync* {
+    Map<String, ({String eventId, String senderId, DateTime timestamp})>
+        retained;
+    try {
+      retained = timeline.retainedMembershipInvites;
+    } on NoSuchMethodError {
+      retained = const {};
+    } on UnimplementedError {
+      retained = const {};
+    }
+    for (final entry in retained.entries) {
+      yield MembershipEventFacts(
+          eventId: entry.value.eventId,
+          stateKey: entry.key,
+          senderId: entry.value.senderId,
+          membership: 'invite',
+          timestamp: entry.value.timestamp);
+    }
+    for (final event in timeline.events) {
+      if (event.type == EventTypes.RoomMember) yield projectMemberEvent(event);
+    }
   }
 
   @override
@@ -3144,26 +3384,45 @@ final class _SdkRoomTimelineCapability
 
   @override
   RoomMessageViewModel? get newestMessage {
+    _ensureActive();
+    final stamp = (_liveTimeline, _revisionOf(_liveTimeline), _visibilityStamp);
+    if (_newestStamp == stamp) return _newestCached;
+    _newestStamp = stamp;
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
     // SDK timelines keep the newest event at the head. Context paging must not
     // make a controller refresh scan the complete live history just to retain
     // this one tail projection.
     for (final event in _liveTimeline.events) {
-      if (_visibleDateEvent(event, hidden)) return _cachedMessage(event);
+      if (_visibleDateEvent(event, hidden)) {
+        return _newestCached = _cachedMessage(event);
+      }
     }
-    return null;
+    return _newestCached = null;
   }
 
   @override
   DateTime? previousTimestamp(String id) => _viewport?.previousTimestamp(id);
   @override
-  bool selectAnchor(String id) => _viewport?.anchor(id) ?? false;
+  bool selectAnchor(String id) {
+    _windowRevision++;
+    return _viewport?.anchor(id) ?? false;
+  }
+
   @override
-  void selectEarlier() => _viewport?.earlier();
+  void selectEarlier() {
+    _windowRevision++;
+    _viewport?.earlier();
+  }
+
   @override
-  void selectLater() => _viewport?.later();
+  void selectLater() {
+    _windowRevision++;
+    _viewport?.later();
+  }
+
   @override
   void selectLatest() {
+    _windowRevision++;
     cancelPendingDateLookup();
     _contextTimeline?.cancelSubscriptions();
     _contextTimeline = null;
@@ -3175,6 +3434,7 @@ final class _SdkRoomTimelineCapability
 
   @override
   void pinWindow() {
+    _windowRevision++;
     _viewport?.pin();
     if (_contextTimeline != null || _disposed) return;
     late final Timeline pinned;
@@ -3274,10 +3534,14 @@ final class _SdkRoomTimelineCapability
     _ensureActive();
     if (_viewport != null) {
       _refreshWindowSource();
+      final stamp = (_sourceStamp, _windowRevision, _outgoingRevision);
+      if (_snapshotStamp == stamp) return _windowSnapshot;
       // A background item belongs to the newest conversation state. It must
       // not appear in the middle of an anchored older history window.
-      return _mergeAccountOutgoingWork(_viewport!.snapshot(),
+      _windowSnapshot = _mergeAccountOutgoingWork(_viewport!.snapshot(),
           includePending: !_viewport!.hasLater && !isViewingHistoryContext);
+      _snapshotStamp = stamp;
+      return _windowSnapshot;
     }
     List<RoomMessageViewModel>? changed;
     var index = 0;
@@ -3332,11 +3596,7 @@ final class _SdkRoomTimelineCapability
     final notices = _lease._activeRoom.isDirectChat
         ? const <GroupJoinNotice>[]
         : deriveGroupJoinNotices(
-            [
-              for (final event in _timeline.events)
-                if (event.type == EventTypes.RoomMember)
-                  projectMemberEvent(event)
-            ],
+            _membershipFacts(_timeline),
             resolveName: (matrixUserId) => _lease._activeRoom
                 .unsafeGetUserFromMemoryOrFallback(matrixUserId)
                 .calcDisplayname(),
@@ -4017,6 +4277,7 @@ final class _SdkRoomTimelineCapability
           abandoned = true;
           return false;
         }
+        await _enableSdkResidentWindow(resolved);
         if (_disposed || generation != _contextGeneration) return false;
         _ensureActive();
         if (local != null) {
@@ -4063,6 +4324,7 @@ final class _SdkRoomTimelineCapability
 
   void _refreshAnchorWindow(String eventId) {
     if (_viewport == null) return;
+    _windowRevision++;
     _refreshWindowSource();
     _viewport!.anchor(eventId);
   }
@@ -4294,6 +4556,7 @@ final class _SdkRoomTimelineCapability
       });
       context = resolvedContext;
       try {
+        await _enableSdkResidentWindow(resolvedContext);
         if (_disposed || generation != _contextGeneration) {
           return null;
         }
@@ -4614,8 +4877,12 @@ final class _SdkRoomTimelineCapability
     cancelMonthLookup();
     cancelPendingDateLookup();
     _disposed = true;
+    for (final cursor in _historyCursors.toList()) {
+      cursor.dispose();
+    }
     _outgoingWork.removeListener(_outgoingListener);
     unawaited(_resolvedEventUpdates.cancel());
+    unawaited(_memberUpdates.cancel());
     _resolvedEvents.clear();
     _resolvedMessages.clear();
     _liveTimeline.cancelSubscriptions();
@@ -6704,9 +6971,7 @@ final class MatrixSdkE2eeClient
         if (revision == null) {
           return;
         }
-        final count = database is MatrixSdkDatabase
-            ? await database.getLocalTimelineEventCount(room)
-            : (await database.getEventIdList(room)).length;
+        final count = await database.getTimelineEventCount(room);
         if (_accessRevoked ||
             !identical(client, _client) ||
             client.userID != account ||

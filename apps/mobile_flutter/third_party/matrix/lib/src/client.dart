@@ -73,8 +73,10 @@ class Client extends MatrixApi {
   DatabaseApi? get database => _database;
 
   Encryption? get encryption => _encryption;
+
   /// Installed by the application for a captured authorized DB lifetime.
   RecoveryOperationOwner? recoveryOwner;
+
   /// Application lifecycle barrier after authorized credentials are adopted,
   /// before encryption initialization, durable credentials, or initial sync.
   Future<void> Function()? onRecoveryIdentityAdopted;
@@ -1851,6 +1853,7 @@ class Client extends MatrixApi {
     }
 
     if (storeInDatabase) {
+      await database?.prepareTimelineStorage([roomId]);
       await database?.transaction(() async {
         await database.storeEventUpdate(
             EventUpdate(
@@ -2257,7 +2260,9 @@ class Client extends MatrixApi {
         return;
       }
       _currentSync = null;
-      if (_backgroundSync && isLogged() && !_disposed) { unawaited(_sync()); }
+      if (_backgroundSync && isLogged() && !_disposed) {
+        unawaited(_sync());
+      }
     });
     return _currentSync = currentSync;
   }
@@ -2386,6 +2391,12 @@ class Client extends MatrixApi {
         await roomsLoading;
         await _accountDataLoading;
         if (!ownsLoop() || _disposed || _aborted) return;
+        await database.prepareTimelineStorage({
+          ...?syncResp.rooms?.join?.keys,
+          ...?syncResp.rooms?.leave?.keys,
+          ...?syncResp.rooms?.invite?.keys,
+          ..._eventsPendingDecryption.map((e) => e.event.roomID),
+        });
         _currentTransaction = database.transaction(() async {
           // An abort before this queued transaction starts must leave the
           // replacement loop's cache untouched. Once _handleSync has begun,
@@ -2470,6 +2481,12 @@ class Client extends MatrixApi {
     sync.deviceOneTimeKeysCount ??= {
       'signed_curve25519': encryption?.olmManager.maxNumberOfOneTimeKeys ?? 100,
     };
+    await database?.prepareTimelineStorage({
+      ...?sync.rooms?.join?.keys,
+      ...?sync.rooms?.leave?.keys,
+      ...?sync.rooms?.invite?.keys,
+      ..._eventsPendingDecryption.map((e) => e.event.roomID),
+    });
     await _handleSync(sync, direction: direction);
   }
 
@@ -2592,8 +2609,8 @@ class Client extends MatrixApi {
         final List<BasicEvent> events = [];
         for (final event in _eventsPendingDecryption) {
           if (event.event.roomID != roomId) continue;
-          if (!sessionIds.contains(
-              event.event.content['content']?['session_id'])) {
+          if (!sessionIds
+              .contains(event.event.content['content']?['session_id'])) {
             continue;
           }
 

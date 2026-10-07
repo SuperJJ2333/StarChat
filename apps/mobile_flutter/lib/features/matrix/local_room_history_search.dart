@@ -87,6 +87,7 @@ final class LocalRoomHistorySearch {
       for (final entry in _sources.entries) entry.key: entry.value.copy()
     };
     final beforeCoverage = _coverageIncomplete;
+    final checkpoints = <LocalSearchIdSnapshot>{};
     final added = <String>[], evicted = <String>[];
     void check() {
       if (generation != _generation ||
@@ -97,12 +98,14 @@ final class LocalRoomHistorySearch {
     }
 
     var visited = 0;
+    var rawVisited = 0;
     var scannedPages = 0;
     final found = <ChatSearchMessage>[];
     final sliceClock = Stopwatch()..start();
     bool sliceFull() =>
         visited >= 1024 ||
-        (visited > 0 &&
+        rawVisited >= 1024 ||
+        ((visited > 0 || rawVisited > 0) &&
             sliceClock.elapsed >= const Duration(milliseconds: 100));
     Future<void> prepareHead(String roomId, _LocalSourceCursor state) async {
       while (state.head == null && !state.done) {
@@ -143,13 +146,27 @@ final class LocalRoomHistorySearch {
           }
           check();
           scannedPages++;
-          state.offset += page.length;
+          if (page is LocalHistoryPage<ChatSearchMessage>) {
+            if (page.hasMore && page.nextOffset <= state.offset) {
+              throw StateError('History cursor did not advance');
+            }
+            state.offset = page.nextOffset;
+            state.lastPage = !page.hasMore;
+            rawVisited += page.rawCount;
+          } else {
+            state.offset += page.length;
+            state.lastPage = page.length < pageSize;
+          }
           state.buffer = page;
           state.index = 0;
-          state.lastPage = page.length < pageSize;
           if (page.isEmpty) {
-            state.done = true;
-            break;
+            if (state.lastPage) {
+              state.done = true;
+              break;
+            }
+            await Future<void>.delayed(Duration.zero);
+            check();
+            continue;
           }
         }
         final raw = state.buffer[state.index++];
@@ -170,6 +187,16 @@ final class LocalRoomHistorySearch {
     }
 
     try {
+      for (final source in beforeSources.values) {
+        final ids = source.ids;
+        if (ids is LocalSearchIdSnapshotCheckpoint) {
+          final saved =
+              await (ids as LocalSearchIdSnapshotCheckpoint).checkpoint();
+          source.ids = saved;
+          checkpoints.add(saved);
+          check();
+        }
+      }
       while (found.length < limit) {
         for (final entry in _sources.entries.toList(growable: false)) {
           await prepareHead(entry.key, entry.value);
@@ -211,7 +238,7 @@ final class LocalRoomHistorySearch {
           items: found,
           coverageIncomplete: _coverageIncomplete,
           scannedPages: scannedPages,
-          scannedRows: visited,
+          scannedRows: rawVisited > visited ? rawVisited : visited,
           nextCursor: _sources.values.every((s) => s.done && s.head == null)
               ? null
               : ChatSearchCursor(order: _page, eventId: 'local:$_generation'));
@@ -224,6 +251,9 @@ final class LocalRoomHistorySearch {
         _sources
           ..clear()
           ..addAll(beforeSources);
+        for (final source in beforeSources.values) {
+          checkpoints.remove(source.ids);
+        }
         _coverageIncomplete = beforeCoverage;
         _seen.removeAll(added);
         _seen.addAll(evicted);
@@ -241,6 +271,10 @@ final class LocalRoomHistorySearch {
         }
       }
       rethrow;
+    } finally {
+      for (final saved in checkpoints) {
+        saved.dispose();
+      }
     }
   }
 }

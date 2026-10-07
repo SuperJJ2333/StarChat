@@ -47,6 +47,19 @@ class BoxCollection with ZoneTransactionMixin {
     return box;
   }
 
+  /// Native timeline participant; staged metadata is discarded on either
+  /// commit or rollback and never escapes the original atomic event batch.
+  Zone? _activeBatchZone;
+  bool get timelineOwnsTransaction {
+    for (Zone? zone = Zone.current; zone != null; zone = zone.parent) {
+      if (identical(zone, _activeBatchZone)) return true;
+    }
+    return false;
+  }
+
+  Batch? get timelineBatch => timelineOwnsTransaction ? _activeBatch : null;
+  Database get timelineDatabase => _db;
+  final Map<String, Object> timelineOverlay = {};
   Batch? _activeBatch;
   bool _batchPoisoned = false;
   final _cacheInvalidators = <void Function()>[];
@@ -74,6 +87,7 @@ class BoxCollection with ZoneTransactionMixin {
         }
         final batch = _db.batch();
         _activeBatch = batch;
+        _activeBatchZone = Zone.current;
         try {
           await action();
           if (_batchPoisoned) {
@@ -89,7 +103,9 @@ class BoxCollection with ZoneTransactionMixin {
           }
           rethrow;
         } finally {
+          timelineOverlay.clear();
           _activeBatch = null;
+          _activeBatchZone = null;
           _batchPoisoned = false;
           _pendingBoxValues.clear();
           _pendingClearedBoxes.clear();
@@ -220,9 +236,11 @@ class Box<V> {
     final batch = boxCollection._activeBatch;
     if (batch == null) throw StateError('appendUnique requires a transaction');
     _invalidateCache();
-    batch.rawInsert('INSERT OR IGNORE INTO "$name" (k,v) VALUES (?, ?)', [key, '[]']);
+    batch.rawInsert(
+        'INSERT OR IGNORE INTO "$name" (k,v) VALUES (?, ?)', [key, '[]']);
     for (final value in values) {
-      batch.rawUpdate('UPDATE "$name" SET v = json_insert(v, \'\$[#]\', ?) '
+      batch.rawUpdate(
+          'UPDATE "$name" SET v = json_insert(v, \'\$[#]\', ?) '
           'WHERE k = ? AND NOT EXISTS (SELECT 1 FROM json_each(v) WHERE value = ?)',
           [value, key, value]);
     }
@@ -303,13 +321,18 @@ class Box<V> {
 
   /// Keyset page, deliberately bypassing the long-lived value/key caches.
   Future<Map<String, V>> getPage({String? after, int limit = 80}) async {
-    late Map<String,V> page;
+    late Map<String, V> page;
     await boxCollection.zoneTransaction(() async {
-    if (limit < 1 || limit > 80) throw RangeError.range(limit, 1, 80);
-    final rows = await boxCollection._db.query(name,
-        where: after == null ? null : 'k > ?',
-        whereArgs: after == null ? null : [after], orderBy: 'k', limit: limit);
-    page = {for (final row in rows) row['k'] as String: _fromString(row['v'] as String?) as V};
+      if (limit < 1 || limit > 80) throw RangeError.range(limit, 1, 80);
+      final rows = await boxCollection._db.query(name,
+          where: after == null ? null : 'k > ?',
+          whereArgs: after == null ? null : [after],
+          orderBy: 'k',
+          limit: limit);
+      page = {
+        for (final row in rows)
+          row['k'] as String: _fromString(row['v'] as String?) as V
+      };
     });
     return page;
   }
@@ -351,7 +374,8 @@ class Box<V> {
   }
 
   Future<V?> get(String key, [Transaction? txn]) async {
-    if (_boundedEvents || (name == 'box_client' && key.startsWith('recovery.'))) {
+    if (_boundedEvents ||
+        (name == 'box_client' && key.startsWith('recovery.'))) {
       final pending = _pending;
       if (pending?.containsKey(key) ?? false) return pending![key] as V?;
       if (_pendingClear) return null;

@@ -151,8 +151,9 @@ void main() {
       expect(order(controller), before);
       expect(controller.messages.first.timestamp, originalTimestamp);
     } finally {
-      if (!adapter.secondAttempt.isCompleted)
+      if (!adapter.secondAttempt.isCompleted) {
         adapter.secondAttempt.complete(serverId);
+      }
       await Future<void>.delayed(Duration.zero);
       controller.dispose();
       network.dispose();
@@ -189,8 +190,9 @@ void main() {
       adapter.secondAttempt.complete(serverId);
       await retry;
     } finally {
-      if (!adapter.secondAttempt.isCompleted)
+      if (!adapter.secondAttempt.isCompleted) {
         adapter.secondAttempt.complete(serverId);
+      }
       await Future<void>.delayed(Duration.zero);
       controller.dispose();
       network.dispose();
@@ -233,8 +235,9 @@ void main() {
       expect(controller.indexOf(transaction), controller.indexOf(serverId));
       expect(adapter.transactions, [transaction, transaction]);
     } finally {
-      if (!adapter.secondAttempt.isCompleted)
+      if (!adapter.secondAttempt.isCompleted) {
         adapter.secondAttempt.complete(serverId);
+      }
       controller.dispose();
       network.dispose();
     }

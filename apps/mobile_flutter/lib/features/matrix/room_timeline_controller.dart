@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'room_paged_history_source.dart';
 import 'dart:io';
 
 import 'room_history_date_capability.dart';
@@ -405,7 +406,8 @@ abstract interface class RoomWindowedTimelineSource {
   void pinWindow();
 }
 
-final class RoomTimelineController extends ChangeNotifier {
+final class RoomTimelineController extends ChangeNotifier
+    implements RoomPagedHistorySource {
   RoomTimelineController(this.adapter,
       {this.canSendNow,
       this.outboxRoomId,
@@ -435,6 +437,37 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   final RoomTimelineAdapter adapter;
+
+  @override
+  bool get supportsPagedHistory =>
+      adapter is RoomPagedHistorySource &&
+      (adapter as RoomPagedHistorySource).supportsPagedHistory;
+
+  @override
+  Future<RoomHistoryMessagePage> readHistoryPage({
+    RoomHistoryReadCursor? cursor,
+    String? anchorEventId,
+    String? sourceRoomId,
+    required RoomHistoryDirection direction,
+    int rawLimit = 64,
+  }) async {
+    if (_disposed) throw StateError('Timeline controller disposed');
+    if (!supportsPagedHistory) {
+      throw UnsupportedError('Read-only history paging unavailable');
+    }
+    final page = await (adapter as RoomPagedHistorySource).readHistoryPage(
+        cursor: cursor,
+        anchorEventId: anchorEventId,
+        sourceRoomId: sourceRoomId,
+        direction: direction,
+        rawLimit: rawLimit);
+    if (_disposed) {
+      page.nextCursor?.dispose();
+      throw StateError('Timeline controller disposed');
+    }
+    return page;
+  }
+
   final void Function()? onSourceRefreshed;
   final PerformanceTraceRecorder _performanceRecorder;
   final void Function(String localId, PerformanceCorrelationContext context)?

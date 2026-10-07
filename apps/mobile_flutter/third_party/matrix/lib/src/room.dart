@@ -1324,6 +1324,7 @@ class Room {
     }
 
     if (client.database != null) {
+      await client.database?.prepareTimelineStorage([id]);
       await client.database?.transaction(() async {
         if (generation != historyGeneration) return;
         if (storeInDatabase) {
@@ -1540,6 +1541,7 @@ class Room {
             );
           } else if (client.database != null) {
             // else, we need the database
+            await client.database?.prepareTimelineStorage([id]);
             await client.database?.transaction(() async {
               for (var i = 0; i < chunk.events.length; i++) {
                 if (chunk.events[i].content['can_request_session'] == true) {
@@ -1704,6 +1706,7 @@ class Room {
       );
 
       // Store user in database:
+      await client.database?.prepareTimelineStorage([id]);
       await client.database?.transaction(() async {
         await client.database?.storeEventUpdate(
           EventUpdate(
@@ -2324,6 +2327,7 @@ class Room {
   Future<void> _handleFakeSync(SyncUpdate syncUpdate,
       {Direction? direction}) async {
     if (client.database != null) {
+      await client.database?.prepareTimelineStorage([id]);
       await client.database?.transaction(() async {
         await client.handleSync(syncUpdate, direction: direction);
       });
