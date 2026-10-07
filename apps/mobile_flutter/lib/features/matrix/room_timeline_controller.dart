@@ -1211,9 +1211,10 @@ final class RoomTimelineController extends ChangeNotifier {
     PerformanceResult? adapterRetryFailure;
     try {
       if (tx != null) {
-        final fresh = _localEchoes[tx]!.copyWith(
-            timestamp: _nextLocalTimestamp(),
-            deliveryState: RoomDeliveryState.sending);
+        // A retry is another attempt of the same pending message. Keep its
+        // insertion time; dispatch diagnostics track attempt timing separately.
+        final fresh = _localEchoes[tx]!
+            .copyWith(deliveryState: RoomDeliveryState.sending);
         _echoRevision++;
         _localEchoes[tx] = fresh;
         messages = _snapshot();
