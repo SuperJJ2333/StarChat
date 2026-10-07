@@ -1,4 +1,14 @@
-# 移动交付恢复索引
+# 当前工作状态
+
+## 2026-10-08 大历史交互与弱网顺序：源码修复完成，待真机与正式交付
+
+用户要求修复大历史房间、持续快滑跳转、弱网新气泡换位，以及键盘/房间切换。候选分支codex/history-interaction-fix，源码3c37b52960ab79b46566fb16d84fab280b34a7c2；包含ORDER 4d086187和FLING d9abd7ba。原生顺序索引/SQLCipher分块迁移、SDK1000已确认常驻/界面40–200、revision缓存及双向分页已实现，历史正文保留。就绪房间普通操作不再扫描全历史；恢复记录保持独立连续性边界。
+
+最终全量Flutter5632PASS/9既有诊断skip，1424输入零漂移；格式44零变、app/vendor0问题、移动Python354PASS/1既有Ruby skip、UI34组件535页PASS。真实RoomPage覆盖1k/10k/100k预算、键盘/selection、A→B→A迟到页、drag/ballistic、padding-only已读控制；SDK4500完整正文/ID及重开通过，迁移专项250k通过。首轮46FAIL及真实事务/恢复缺口返工保留；最终当前源码全量通过。独立SPEC→QUALITY及38项证据审计接受，提交后源码SHA匹配。
+
+Android ARM64 profile编译exit0/1476输入稳定，新库六个SQLCipher key/blob符号存在；仅编译中间包，未按正式固定签名重建/分发。正式Android仍0.4.35+2204、源3a620495，未发布新包/弹窗，未合并main或推送；primary产品WIP保留。ADB无设备，用户暂时无法USB，手机帧耗时待测；没有iOS/Mac，Ruby hook skip；全仓verify.ps1缺.env未执行，相关移动门禁单独完成。编译现有插件KGP/Java提示明确记录。
+
+恢复先读[任务](tasks/2026-10-08-history-interaction-fix.md)、[交付报告](../verification/2026-10-08-history-interaction-fix.md)、[计划](../superpowers/plans/2026-10-08-history-interaction-fix.md)与[规格](../superpowers/specs/2026-10-08-history-interaction-fix.md)。下一步按新version/build及固定APK流程准备正式交付，设备可用时补真机profile；不要把旧2204或profile中间包当本次正式成品，也不要重启等价已完成源码门禁。
 
 ## 2026-10-08 Android2204新消息上下换位：自动恢复重试会提前改位置
 
