@@ -1,5 +1,11 @@
 # 移动交付恢复索引
 
+## 2026-10-07 2204会话红屏：生命周期断言调查中，尚未修复
+
+用户反馈进入会话或上滑历史出现framework.dart6268 _dependents.isEmpty；实际模拟器仍0.4.35+2204。保留日志证实detached气泡坐标与同controller多positions，可能是此前树停用失败的后果，首异常栈未取得，不能归因debug本身或宣称release无问题。真实RoomPage/SDK延迟同步/群公告与首页缓存模式诊断暂未复现；尚无有效RED，未改生产源码/SDK，未构建或发布新包。前任务启动smoke和既有资源/历史/服务器证据保留原覆盖，不替代本次真实交互验收。
+
+复用managed worktree并从2d2e9da5开codex/room-lifecycle-assertion；2204原分支/包保留，main/原WIP不变。见[新任务](tasks/2026-10-07-room-lifecycle-assertion.md)及[调查计划](../superpowers/plans/2026-10-07-room-lifecycle-assertion.md)。下一步保留断言并取得实际进入/上滑时最早的安全静态调用栈，再建立真实RED/最小修复。
+
 ## 2026-10-05 2203通知与通话：模拟器交付，两端技术验收通过
 
 五项实现候选86772b17/0.4.34+2203：确切已查看事件持久抑制与前台有效查看、精确延迟读/排队取消保留新提醒；App内/Android通知头像、Flutter及Android通话悬浮窗头像/时长/媒体标记、权威身份恢复连续；摄像头await停止sender/track并video-only恢复，音频保全。未知opaque已读房间push先quiet pending，Matrix确认后旧取消/新正常升级，完全挂起时静默托盘不是零项保证；iOS系统通信头像未新增。既有已验证加密双人通话边界保持。
