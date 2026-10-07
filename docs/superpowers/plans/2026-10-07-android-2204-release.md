@@ -52,4 +52,8 @@
 - [x] 本记录已分开报告实际APK源3a620495、成品已构建与Android已上线；手机不卸载覆盖/历史登录保留及弱网快滑反馈作为后续设备验收，红屏独立调查继续，不阻断已完成发布。仅本任务证据分支最终review/提交由root收尾。
 - [ ] 若文件门禁失败，仅恢复本次写入且未再漂移的文件；DB结果不明先完整现值/trace审计读回，不盲目重放或覆盖后续版本。alias与DB分别确认恢复，保留旧包和历史审计。
 
-最后更新：2026-10-07T20:47:19.832+08:00。Android0.4.35+2204已上线，R1–R5及普通提示配置/后验通过，R6源回填/索引/WIP保全完成，仅最终review/证据分支提交收尾；真机提示/覆盖和红屏根因修复未验收。root自建ssh PID32776/loopback18947已关闭，exec session45565的-1为有意终止。
+最后更新：2026-10-07T20:47:19.832+08:00。Android0.4.35+2204已上线，R1–R5及普通提示配置/后验通过，R6源回填/索引/WIP保全完成，最终有序review与证据分支提交已完成；真机提示/覆盖和红屏根因修复未验收。root自建ssh PID32776/loopback18947已关闭，exec session45565的-1为有意终止。
+
+## 最终收尾回执
+
+2026-10-07T20:56:41.847538+08:00：R1–R6发布交付完成。最终SPEC20:53:36.116→QUALITY20:53:36.143+08接受；源码及初始台账提交`eda262aea4354aab1e218ac7493af57c1b5fde61`（codex/android-2204-release），main未merge/push。详见[提交回执](../../verification/artifacts/2026-10-07/android-2204-release/commit-receipt.json)和[最终审查](../../verification/artifacts/2026-10-07/android-2204-release/preflight-review/closeout-acceptance-metadata.json)。本段只闭合发布记录；真机弹窗/覆盖与红屏修复仍按上述独立缺口继续。

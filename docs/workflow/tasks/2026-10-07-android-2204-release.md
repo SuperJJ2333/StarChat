@@ -5,11 +5,11 @@
 - 用户授权：在已说明2204会话debug红屏尚未修复后，用户明确要求“发布Android的最新版本，并且推送更新弹窗”。本任务发布已验收的正式ARM64 release成品0.4.35+2204，并启用既有App版本检查的普通更新提示；可跳过，最低支持build按当次线上值保持。不把“弹窗”解释为新增OS push或发送其他消息。
 - 授权边界：仅Android包分发、对应下载入口与更新设置；没有iOS发布、main合并/推送、业务/Matrix服务部署或金融操作授权。常规发布与更新弹窗已获直接授权，不再重复申请。
 - [计划](../../superpowers/plans/2026-10-07-android-2204-release.md)、[移动交付工作流](../../runbooks/mobile-delivery-workflow.md)、[轻量发布门禁](../../runbooks/release-metadata.md)、[前修复任务](2026-10-07-history-icons-performance.md)、[独立红屏调查](2026-10-07-room-lifecycle-assertion.md)。前任务“无正式发布”的表述是当时快照；本次新授权与发布单独记录，不覆盖历史证据。
-- 当前状态：**Android0.4.35+2204已正式上线，普通可跳过更新提示已配置；R1–R5通过，R6源回填/索引/WIP保全已完成，仅最终review与证据分支提交收尾**。20:43:09–17发布PUBLISH_PASS，20:43:24–30四项当次后验全部exit0；真机收到提示/覆盖升级和原弱网快滑场景仍未验收。前态与后态分别记录，不以历史2202或18:51资源指标替代。
+- 当前状态：**Android0.4.35+2204已正式上线，普通可跳过更新提示已配置；R1–R6通过；源码、台账与索引已在本次证据分支提交，未merge/push main**。20:43:09–17发布PUBLISH_PASS，20:43:24–30四项当次后验全部exit0；真机收到提示/覆盖升级和原弱网快滑场景仍未验收。前态与后态分别记录，不以历史2202或18:51资源指标替代。
 - 负责人/文件所有权：root负责当次生产基线、发布记录、受控上传/切换、读回与索引前插；lifecycle_record仅拥有本新任务和本新计划两个文档。主区`D:/pythonProject/outsource/StarChat`原1373项WIP保留，不从整份脏源码发布。现成成品源码为`3a620495ae048d3e4141f099e1926ecedc8669cd`，不是主区main的未提交内容。
 - 已知限制：用户会话红屏`framework.dart:6268 _dependents.isEmpty`首因仍未确认，尚无有效缺陷RED或生产修复；debug会显示断言，release不显示红屏不能证明缺陷已修复。此正式包包含前任务图标/历史/同步计时修复，不能宣称包含随后红屏的根因修复。
 - 最后更新时间：2026-10-07T20:47:19.832+08:00；各项生产观察时间另列。
-- 下一步：root完成最终有序review、证据复制及`codex/android-2204-release`本分支提交，记录其实际回执；当前managed基线`3b77b00ef20422f173311c81c70263b6a0939b85`尚未提交本任务，实际APK源仍3a620495。不重复已完成上线/包门禁，不merge/push main。最终说明为“修复表情与图标加载；改善弱网历史记录连续性与快速上滑定位；优化同步状态统计。”，两端最低支持build保持3。旧版客户端下一启动或前台版本检查按现有源码机制评估2204普通提示；尚无实际用户设备弹窗/覆盖安装证据。
+- 下一步：本次发布无需重复；继续独立红屏首异常调查，并分别收集真机弹窗、覆盖保留数据及弱网快滑反馈。实际用户设备验收未执行，不把release隐藏断言当修复。
 
 ## 验收台账
 
@@ -20,7 +20,7 @@
 | R3 | 不可变APK可下载，实际双路/别名/站点入口一致，旧包可回退 | 完成：公共immutable、仅新HK-origin CDN路由/Deployed、latest-arm64切2204、页面/registry上线 | execution16–20各exit0；工作站严格TLS direct/CDN/latest HEAD200/82848798/MIME及CDN CORS通过；372byte registry/8354byte页面SHA匹配，旧immutable/旧7routes保留 | 已正式分发 | HEAD/小元数据不证明手机安装或源码已解决后续红屏 |
 | R4 | 既有App更新检查提示2204，自动弹窗和手动检查使用相同Android路由；普通可跳过 | 完成：20:43:09–17事务CAS三键/审计PUBLISH_PASS；仅version/build/notes变更 | 预审SPEC→QUALITY接受；runtime route.endpoint+SettingService读回Android2204/iOS2194/无platform默认Android、exact3audits；公开HTTP三platform401；min3/bridge/iOS五键保持 | 提示已配置 | 源码在下一启动/前台检查评估新版本；authenticated real-user HTTP、设备收到提示/覆盖安装NOT_EXECUTED；无新增OS push |
 | R5 | iOS设置/版本/包/强更策略、业务/Matrix容器和非本次静态内容保持 | 完成：后态与当次前态精确比较 | HK exact十键、iOS五键/min3/schema0095、5保留静态及other ABI alias保持；所有35容器id/image/restart/start完全相同；SG exact8routes/旧7保全/策略不变/Deployed | Android范围隔离通过 | 无iOS发布；共享下载页的Android两字段变化不称整个共享页面字节未动 |
-| R6 | 证据/新任务/索引有身份且可恢复，原WIP保全 | 当次发布/后验归档；源回填/索引/1373原WIP保全证明完成；仅最终review/证据分支提交待回执 | primary Node57/managed Node54/managed Python32 GREEN；10份before/inverse逐字节PASS；两区索引各前插1434byte原tail完全保持；main不merge/push | Android已上线，分支收尾中 | 手机真实覆盖/弱网快滑/图标/卡顿及红屏根因调查仍缺，不因发布关闭 |
+| R6 | 证据/新任务/索引有身份且可恢复，原WIP保全 | 当次发布/后验归档；源回填/索引/1373原WIP保全证明完成；最终有序review及证据分支提交已完成 | primary Node57/managed Node54/managed Python32 GREEN；10份before/inverse逐字节PASS；两区索引各前插1434byte原tail完全保持；main不merge/push | Android发布与源/记录交付完成 | 手机真实覆盖/弱网快滑/图标/卡顿及红屏根因调查仍缺，不因发布关闭 |
 
 ## 版本与证据
 
@@ -74,9 +74,9 @@
 | 四项后验 | 2026-10-07T20:43:24.868712+08:00起 | HK27.827356/route27.718631/HTTPS27.861300/SG30.570328（20:43+08） | 并行工具 | HK / SG / route / HTTPS | 四exit0；完整区间并集约5.702s，不相加 | 源回填/索引已完成；仅最终review/分支提交 |
 | 源回填Node专项 | primary20:40:34.2541254/managed20:40:34.2570752+08 | primary20:40:43.4632358/managed20:40:43.4634988+08 | 并行工具 | source backfill | primary57/managed54 PASS、exit0；先RED4/3 | managed Python后续通过 |
 | managed Python/源逆变换审计 | Python20:42:27.6288269+08 | Python20:42:28.3919957；审计20:44:49.729995+08 | 工具 | source backfill | Python32PASS/exit0；10份before/inverse PASS | 原WIP全局保全20:46完成 |
-| 自建隧道关闭/索引保全 | 关闭20:44:26.6504261+08 | 关闭20:44:28.6254907；索引检查20:46:01.431343+08 | 工具/主动 | root closeout | listener0；两区1434byte前插tail保持、原1373逆变换证明 | 最终review/本分支提交待回执 |
+| 自建隧道关闭/索引保全 | 关闭20:44:26.6504261+08 | 关闭20:44:28.6254907；索引检查20:46:01.431343+08 | 工具/主动 | root closeout | listener0；两区1434byte前插tail保持、原1373逆变换证明 | 最终有序review及本分支提交已完成 |
 
-总墙钟：任务进行中，精确授权/恢复起点未知，暂不计算。前任务构建和测试耗时只作复用证据，不重复计为本次执行时间；并行区间不累加。
+总墙钟：本次发布和源/记录交付完成；精确授权/恢复起点未知，不估算总墙钟。前任务构建和测试耗时只作复用证据，不重复计为本次执行时间；并行区间不累加。
 
 ## 交接与回退
 
@@ -84,6 +84,10 @@
 - 发布次序：先受控落不可变文件并确认下载可用，再切相应别名/页面，最后通过公共SettingService事务CAS及审计仅更Android`app_latest_version`/`app_latest_build`/`app_update_notes`三键。`app_apk_url`既有bridge、`app_min_supported_build=3`及iOS五键保持；文件与DB不是跨域事务，分别确认与恢复。
 - 回退：以本次宿主机0700前态备份及原immutable文件为准。文件门禁失败仅恢复本任务写入且未再漂移的文件；DB结果不明时先读回完整现值/trace审计，不盲目重放或覆盖后续发布。Android latest别名与设置分开记录恢复；不删除原包、历史审计或扩展表。
 - 当次Android/iOS最低支持build均3，Android bridge URL按本次前态保持；Android已仅version/build/notes三键切换，说明为本记录恢复入口的NEW_NOTES，不声称红屏已修复或全部卡顿消失。iOS五键、35running容器与schema0095按本次前态保持。内部真实route.endpoint/SettingService投影与公开HTTP401/HEAD是服务端证据，不等于真实用户鉴权HTTP或设备弹窗/覆盖升级验收。
-- 源静态回填/索引/WIP：各自页面两Android字段、registry六身份与对应fixtures已受控回填，原不同UI保持；10份逆变换与原1373保全证明通过；两区索引前插已完成。最终有序review/证据分支提交待root实际回执，不merge/push main。
-- 运行中命令/CI/自建隧道：公开执行、后验和源专项均已exit0；ssh PID32776/loopback18947于20:44:28关闭、listener0，exec session45565的-1是有意终止。无仍运行的本任务上传、测试、构建、CI或自建隧道；仅最后review/证据复制/分支提交收尾，文档代理无发布命令或隧道。
+- 源静态回填/索引/WIP：各自页面两Android字段、registry六身份与对应fixtures已受控回填，原不同UI保持；10份逆变换与原1373保全证明通过；两区索引前插已完成。最终有序review及分支提交已完成，不merge/push main。
+- 运行中命令/CI/自建隧道：公开执行、后验和源专项均已exit0；ssh PID32776/loopback18947于20:44:28关闭、listener0，exec session45565的-1是有意终止。无仍运行的本任务上传、测试、构建、CI或自建隧道；归档与证据分支提交已完成，文档代理无发布命令或隧道。
 - 恢复先读本记录的新授权，核对当前发布阶段、actual文件SHA、当次live设置/审计/静态前后状态及备份，再选择可恢复下一步。没有main合并/推送或iOS发布授权。
+
+## 最终收尾回执
+
+2026-10-07T20:56:41.847538+08:00：R1–R6发布交付完成。最终SPEC20:53:36.116→QUALITY20:53:36.143+08接受；源码及初始台账提交`eda262aea4354aab1e218ac7493af57c1b5fde61`（codex/android-2204-release），main未merge/push。详见[提交回执](../../verification/artifacts/2026-10-07/android-2204-release/commit-receipt.json)和[最终审查](../../verification/artifacts/2026-10-07/android-2204-release/preflight-review/closeout-acceptance-metadata.json)。本段只闭合发布记录；真机弹窗/覆盖与红屏修复仍按上述独立缺口继续。
