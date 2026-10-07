@@ -1,4 +1,10 @@
 # 移动交付恢复索引
+## 2026-10-07 Android 0.4.35+2204正式发布，更新弹窗已启用
+
+用户明确授权发布最新Android并提示更新；20:43:17+08当次PUBLISH_PASS，正式ARM64成品82848798bytes/SHA a2d100be…fcf835e5、固定75b31签名，源码3a620495，复用已受验成品未重建。香港/CDN/latest下载200、源站与工作站严格TLS HEAD大小/MIME及页面/registry SHA一致；CDN Deployed、旧7路由及策略保全。实际运行版本路由Android0.4.35+2204、iOS0.4.25+2194、无platform默认Android，exact3条SettingService审计；仅Androidversion/build/notes更新，两min3/URL和iOS五键保持，35容器id/image/restart/start及schema0095保持。普通可跳过弹窗已配置，真机收到/覆盖保留数据尚未实测，不能称已验证所有设备。
+
+官网与源码仅Android链接/脚本版本/registry及对应测试期望回填，primary保留既有Orbit布局，managed保留其旧布局；原WIP的其余字节保全并留有限逆变换证明，main未合并或推送。离线30、隔离PG6、primaryNode57/managedNode54及managedPython32通过；20:40有序预审接受，证据见[发布任务](tasks/2026-10-07-android-2204-release.md)及[计划](../superpowers/plans/2026-10-07-android-2204-release.md)。会话debug红屏首因仍未确认，本包不含该根因修复；下一步继续独立[红屏调查](tasks/2026-10-07-room-lifecycle-assertion.md)并取得真机升级反馈。
+
 
 ## 2026-10-07 2204会话红屏：生命周期断言调查中，尚未修复
 

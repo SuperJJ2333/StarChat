@@ -28,7 +28,7 @@ test('iOS install query shows the signing warning and waits for an explicit tap'
   assert.equal(assignments, 0);
   assert.match(status.textContent, /更换企业签名团队/);
   const page = readFileSync(new URL('../download.html', import.meta.url), 'utf8');
-  assert.match(page, /download-redirect\.js\?v=2202-network/);
+  assert.match(page, /download-redirect\.js\?v=2204-network/);
 });
 test('blocked Android browser launch keeps the page and manual fallback usable', () => {
   const status = {textContent:''};
