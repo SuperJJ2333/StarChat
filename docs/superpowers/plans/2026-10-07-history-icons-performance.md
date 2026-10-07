@@ -8,7 +8,7 @@
 
 **Tech Stack:** Flutter 3.44.9/Dart 3.12.2、vendored Matrix SDK、现有 SQLCipher DatabaseApi、Python、Apktool 2.12.1、Android build-tools 36.0.0。
 
-**Spec:** `docs/superpowers/specs/2026-08-12-starchat-product-modernization-design.md`；延续 `2026-10-03-mobile-ui-push-2196.md`、`2026-10-04-search-date-context-followup.md` 已批准历史行为与 `docs/runbooks/android-apk-rebuild.md`。范围来源为用户 2026-10-07 四项缺陷反馈及服务器排查要求；不增加新产品功能。SSH 加固另列具体配置并等待用户选择，不归入移动源代码。
+**Spec:** `docs/superpowers/specs/2026-08-12-starchat-product-modernization-design.md`；延续 `2026-10-03-mobile-ui-push-2196.md`、`2026-10-04-search-date-context-followup.md` 已批准历史行为与 `docs/runbooks/android-apk-rebuild.md`。范围来源为用户 2026-10-07 四项缺陷反馈及服务器排查要求；不增加新产品功能。SSH 加固由用户单独批准，最终新公钥连接已独立验证，不归入移动源代码。
 
 ## Global Constraints
 
@@ -34,8 +34,8 @@
 - [x] 用实际旧 2203 APK 证明 FontManifest/AssetManifest/emoji/font 缺失；对完整合成 bundle、缺失字体/emoji、错误 manifest/目录引用、源字节漂移写失败行为用例。
 - [x] 最小实现：解析 AssetManifest.bin/FontManifest.json，要求 Material/Cupertino 字体与全部声明的资源成员非空、emoji catalog 与源 SHA 一致。
 - [x] 22 项资源门禁与 5 项相邻发行测试转绿；实际 2203 source/final 仍 exit1。保留真实 RED。
-- [ ] root 新候选构建只使用本工作树同一种路径与独立缓存，在 source、final 两处调用门禁；标准重建/对齐/固定签名与原有语义门禁全部通过。
-- [x] 资源门禁已先独立规格审查、再质量/安全审查接受；实际新 APK 仍需现物审查。
+- [x] root 新候选构建只使用本工作树同一种路径与独立缓存，在 source、final 两处调用门禁；标准重建/对齐/固定签名与原有语义门禁全部通过。
+- [x] 资源门禁和实际新APK均已先独立规格审查、再质量/安全审查接受。
 
 ## Task 2: 片段请求所有权与固定历史浏览
 
@@ -54,5 +54,12 @@
 - [x] 用户确认未部署 xmrig；已复核进程身份后保留 root-only 取证，stop/disable exit0，业务容器身份/重启数保持，对比资源压力下降。
 - [x] 核对真实同步阶段与假同步：历史/本地发送 handleSync 的 processing(progress 非空) 会污染 watchdog/房间开页的实际响应标记，把长轮询残余计入 processing；真实无网络 SDK probe 已证明。
 - [x] `matrix_sync_watchdog.dart` 与 `room_page.dart` 的窄性能计时入口只采纳真实 processing(progress=null)；watchdog 在真实 processing 边界之后继续接收活跃处理进度心跳，等待 HTTP 时的假进度不能延迟卡死判断。`matrix_sync_watchdog_test.dart` 和现有 `room_page_anchor_navigation_test.dart` 先证明污染与健康/卡死判断，再转绿；原 UI progress 流保留。82 项 focused PASS，独立 SPEC/QUALITY 接受。
-- [ ] 冻结候选版本/源码/依赖输入，适用门禁和独立整体现物 review；标准 APK 保留数据安装、版本/包 SHA 读回与图标/弱网列表交互验收。
-- [ ] 更新本任务台账/证据和当前状态索引；记录已止损、移动候选、正式发布与真机反馈的不同状态。
+- [x] 冻结候选0.4.35+2204/源码3a620495/1881输入，analyze与Flutter5501PASS/9skip、Python354PASS/1skip及独立实际APK SPEC→QUALITY接受；标准重建APK保留数据安装，实际版本/UID/首装/包SHA读回一致，129秒启动聚合错误0。
+- [ ] 用户逐页图标显示与真机弱网/连续快速上滑/卡顿场景复测；同源ARM64 release候选已独立验收，待真机覆盖安装反馈。
+- [x] 更新本任务台账/证据和当前状态索引；记录已止损、移动候选、正式发布与真机反馈的不同状态。
+
+## 最终技术交付
+
+0.4.35+2204于2026-10-07 18:36+08保留数据安装emulator-5556，最终SHA221aca2d…a353b5c；主源码commit3a620495，后续仅文档闭环。同源ARM64 release本地候选SHAa2d100be…fcf835e5/82848798bytes已常规重建与独立双审接受，未真机安装。正式Android仍2202，未合并/推送main或发布更新；新iOS未构建。用户图标视觉/弱网快速滚动及卡顿复测仍单独记录。
+
+ARM64首轮失败/旧helper路径错误已留失败和恢复证据；使用候选路径限定、唯一dev注册/其余byte保全的本任务helper，5项focused及实际clean SHA/源冻结通过。SDK/移动源/锁未修改，不复用硬编码S脚本。
