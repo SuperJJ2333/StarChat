@@ -80,7 +80,36 @@ class Timeline {
   bool _trimmedLiveHistory = false;
   int _sessionDecryptionInFlight = 0;
 
+  int? _pinnedGeneration;
+  String? _pinnedPrevBatch;
+  List<String>? _pinnedEventIds;
+  int _pinnedCursor = 0;
+  bool _pinnedNeedsContext = false;
+  Set<String>? _pinnedPageIds;
+  final Map<String, Event> _pinnedPageRedactions = {};
+
+  /// Retain the current reading fragment separately from the live head. The
+  /// local identifier cursor is captured lazily; it never keeps extra models.
+  /// A changed live fragment requires a real context token at the old edge.
+  static Timeline forkHistory(
+      {required Timeline source,
+      required Room room,
+      void Function()? onUpdate}) {
+    return Timeline(
+        room: room,
+        chunk: TimelineChunk(events: List.of(source.events), isFragment: true),
+        onUpdate: onUpdate)
+      .._pinnedGeneration = room.historyGeneration
+      .._pinnedPrevBatch = room.prev_batch;
+  }
+
   bool get canRequestHistory {
+    if (_pinnedGeneration != null) {
+      return _pinnedEventIds == null ||
+          _pinnedNeedsContext ||
+          _pinnedCursor < _pinnedEventIds!.length ||
+          chunk.prevBatch.isNotEmpty;
+    }
     if (isFragmentedTimeline) {
       return chunk.prevBatch.isNotEmpty &&
           events.lastOrNull?.type != EventTypes.RoomCreate;
@@ -107,6 +136,81 @@ class Timeline {
     }
   }
 
+  Future<void> _requestPinnedEvents(int count) async {
+    if (_pinnedEventIds == null) {
+      final database = room.client.database;
+      final oldest = events.lastWhereOrNull(
+          (event) => !event.status.isSending && !event.status.isError);
+      if (database != null && room.historyGeneration == _pinnedGeneration) {
+        final ids = await database.getEventIdList(room);
+        final index = oldest == null ? -1 : ids.indexOf(oldest.eventId);
+        if (room.historyGeneration == _pinnedGeneration && index >= 0) {
+          _pinnedEventIds = List.unmodifiable(ids);
+          _pinnedCursor = index + 1;
+          chunk.prevBatch = _pinnedPrevBatch ?? '';
+        }
+      }
+      if (_pinnedEventIds == null) {
+        _pinnedEventIds = const [];
+        _pinnedNeedsContext = oldest != null;
+      }
+    }
+    final ids = _pinnedEventIds!;
+    if (_pinnedCursor < ids.length) {
+      final end = (_pinnedCursor + count).clamp(0, ids.length);
+      final page = <Event>[];
+      _pinnedPageIds = ids.getRange(_pinnedCursor, end).toSet();
+      try {
+        for (final id in ids.getRange(_pinnedCursor, end)) {
+          final event = await room.getLocalEventById(id);
+          if (event == null) {
+            throw StateError('Retained history event is unavailable');
+          }
+          page.add(event);
+        }
+        _appendPinnedEvents(page);
+        _pinnedCursor = end;
+      } finally {
+        _pinnedPageIds = null;
+        _pinnedPageRedactions.clear();
+      }
+      return;
+    }
+    if (_pinnedNeedsContext) {
+      final oldest = events.lastWhereOrNull(
+          (event) => !event.status.isSending && !event.status.isError);
+      if (oldest == null) return;
+      final context = await room.getEventContext(oldest.eventId);
+      final index = context?.events
+              .indexWhere((event) => event.eventId == oldest.eventId) ??
+          -1;
+      if (context == null || index < 0) {
+        throw StateError('Retained history context is unavailable');
+      }
+      // Its forward token belongs to the oldest-row context, not our retained
+      // newest edge. Returning to the current live head uses selectLatest.
+      _appendPinnedEvents(context.events.skip(index + 1));
+      chunk.prevBatch = context.prevBatch;
+      _pinnedNeedsContext = false;
+      return;
+    }
+    if (chunk.prevBatch.isNotEmpty) {
+      await getRoomEvents(historyCount: count, direction: Direction.b);
+    }
+  }
+
+  void _appendPinnedEvents(Iterable<Event> page) {
+    final ids = events.map((event) => event.eventId).toSet();
+    for (final event in page) {
+      if (!ids.add(event.eventId)) continue;
+      final redaction = _pinnedPageRedactions[event.eventId];
+      if (redaction != null) event.setRedactionEvent(redaction);
+      events.add(event);
+      addAggregatedEvent(event);
+      onInsert?.call(events.length - 1);
+    }
+  }
+
   bool get canRequestFuture => !allowNewEvent && chunk.nextBatch.isNotEmpty;
 
   Future<void> requestFuture(
@@ -127,9 +231,14 @@ class Timeline {
   Future<void> _requestEvents(
       {int historyCount = Room.defaultHistoryCount,
       required Direction direction}) async {
+    final generation = room.historyGeneration;
     onUpdate?.call();
 
     try {
+      if (_pinnedGeneration != null && direction == Direction.b) {
+        await _requestPinnedEvents(historyCount);
+        return;
+      }
       // Look up for events in the database first. With fragmented view, we should delete the database cache
       final eventsFromStore = isFragmentedTimeline
           ? null
@@ -143,6 +252,8 @@ class Timeline {
               limit: historyCount,
             );
 
+      if (!isFragmentedTimeline && generation != room.historyGeneration) return;
+
       if (eventsFromStore != null && eventsFromStore.isNotEmpty) {
         // Fetch all users from database we have got here.
         for (final event in events) {
@@ -153,6 +264,9 @@ class Timeline {
               await room.client.database?.getUser(event.senderId, room);
           if (dbUser != null) room.setState(dbUser);
         }
+
+        if (!isFragmentedTimeline && generation != room.historyGeneration)
+          return;
 
         if (direction == Direction.b) {
           events.addAll(eventsFromStore);
@@ -579,6 +693,13 @@ class Timeline {
                   ? redactionContent['redacts'] as String?
                   : null)
           : null;
+      if (redactionTarget != null &&
+          _pinnedPageIds?.contains(redactionTarget) == true) {
+        // A cached row can already be read while another row still awaits
+        // the store. Replay authoritative recalls before publishing the page.
+        _pinnedPageRedactions[redactionTarget] =
+            Event.fromJson(eventUpdate.content, room);
+      }
       final updatesLoadedEvent = i < events.length ||
           redactionTarget != null &&
               _findEvent(event_id: redactionTarget) < events.length;

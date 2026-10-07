@@ -253,3 +253,25 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
   `preview_eviction_identity_test.dart`. The shared final suite passes 5204
   tests with 9 skips. These bounds do not claim measured Android RSS or limit
   all application/native memory.
+
+2026-10-07 limited-sync history continuity:
+
+- `Room.historyGeneration` invalidates an older backward request before a
+  limited sync replaces the live fragment. HTTP, cached-page and member-await
+  boundaries reject stale publication and token updates; ordinary nonlimited
+  sync still admits valid backward pagination.
+- `Timeline.forkHistory` retains loaded rows independently of the live head.
+  A frozen local event-ID cursor reads unloaded durable rows before consuming
+  the backward network token. If the live fragment changed before that cursor
+  could be captured, a real context request at the retained oldest row supplies
+  the valid backward token. Its forward token does not represent the retained
+  newest edge; returning to latest remains an explicit application operation.
+- The pending local page remembers only its bounded event-ID set and applicable
+  authoritative redactions, then replays them before publishing the page. This
+  preserves recalls arriving while another cached row is still being read.
+- Synthetic room work continues to emit SDK UI progress. Application timing
+  consumers distinguish progress from the actual sync-response boundary; the
+  watchdog retains heartbeats after that real processing boundary.
+- Regressions live in `history_pagination_continuity_test.dart`, existing SDK
+  fragment/adapter/memory tests, and actual RoomPage scroll tests. Cryptography,
+  key recovery, storage schema and Matrix network contracts remain unchanged.

@@ -1062,6 +1062,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     if (!_performanceRemoteSeen) {
       _performanceSyncSubscription = widget.remoteSyncStatus?.listen((update) {
+        // Synthetic history/local echo room work publishes progress on this
+        // same stream. It does not establish a received /sync response.
+        if (update.status == SyncStatus.processing && update.progress != null) {
+          return;
+        }
         _observePerformanceSyncPhase(update.status);
         if (update.status == SyncStatus.finished) {
           _performanceRemoteSeen = true;

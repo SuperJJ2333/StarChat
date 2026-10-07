@@ -58,6 +58,13 @@ class Room {
   /// A token that can be supplied to the from parameter of the rooms/{roomId}/messages endpoint.
   String? prev_batch;
 
+  int _historyGeneration = 0;
+  int get historyGeneration => _historyGeneration;
+
+  /// A limited sync starts a different live fragment. Requests from the old
+  /// fragment may finish, but cannot publish into or move the new fragment.
+  void invalidateHistoryFragment() => _historyGeneration++;
+
   RoomSummary summary;
 
   /// The room states are a key value store of the key (`type`,`state_key`) => State(event).
@@ -1253,6 +1260,7 @@ class Room {
       void Function()? onHistoryReceived,
       direction = Direction.b}) async {
     final prev_batch = this.prev_batch;
+    final generation = historyGeneration;
 
     final storeInDatabase = !isArchived;
 
@@ -1267,10 +1275,12 @@ class Room {
       filter: jsonEncode(StateFilter(lazyLoadMembers: true).toJson()),
     );
 
+    if (generation != historyGeneration) return 0;
     if (onHistoryReceived != null) onHistoryReceived();
     this.prev_batch = resp.end;
 
     Future<void> loadFn() async {
+      if (generation != historyGeneration) return;
       if (resp.chunk.isEmpty) return;
 
       await client.handleSync(
@@ -1315,6 +1325,7 @@ class Room {
 
     if (client.database != null) {
       await client.database?.transaction(() async {
+        if (generation != historyGeneration) return;
         if (storeInDatabase) {
           await client.database?.setRoomPrevBatch(resp.end, id, client);
         }

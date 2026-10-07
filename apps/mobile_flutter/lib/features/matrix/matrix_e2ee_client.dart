@@ -3174,7 +3174,19 @@ final class _SdkRoomTimelineCapability
   }
 
   @override
-  void pinWindow() => _viewport?.pin();
+  void pinWindow() {
+    _viewport?.pin();
+    if (_contextTimeline != null || _disposed) return;
+    late final Timeline pinned;
+    pinned = Timeline.forkHistory(
+        source: _liveTimeline,
+        room: _lease._activeRoom,
+        onUpdate: () {
+          if (!_disposed && identical(_contextTimeline, pinned)) _onUpdate();
+        });
+    _contextTimeline = pinned;
+    _localContextOnly = false;
+  }
 
   void _ensureActive() {
     if (_disposed) throw StateError('Matrix timeline capability is disposed');
