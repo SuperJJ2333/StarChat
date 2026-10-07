@@ -3680,28 +3680,65 @@ final class _SdkRoomTimelineCapability
         final event = await _resolveEvent(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
         if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
+        final authority = _mediaAuthoritySnapshot(event);
         final hashes = TrustedMediaHashes.fromEvent(event);
         if (hashes?.thumbnailSha256 == null && !event.hasThumbnail) return null;
         final bytes = await loadMediaWithCache(
             _lease._mediaCacheKey(eventId, event, thumbnail: true),
-            () => _downloadActiveMedia(event, thumbnail: true));
+            () => _downloadActiveMedia(event,
+                thumbnail: true, authority: authority));
         _ensureActive();
-        if (!identical(eventById(eventId), event)) {
-          throw StateError('Matrix event changed');
-        }
         _lease._activeRoom.client.recoveryOwner?.check();
-        if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
+        _checkMediaAuthority(event, authority);
         return bytes;
       });
 
+  // Event instances are replaced by legitimate sync/history/decryption updates.
+  // Keep the complete device-only authority before any await instead of making
+  // Dart object identity a playback requirement. Unsigned age/status may change;
+  // content, sender, timestamp and the original encrypted envelope may not.
+  String _mediaAuthoritySnapshot(Event event) {
+    Object? canonical(Object? value) {
+      if (value is Map) {
+        final keys = value.keys.cast<String>().toList()..sort();
+        return {for (final key in keys) key: canonical(value[key])};
+      }
+      if (value is List) return value.map(canonical).toList();
+      return value;
+    }
+
+    return jsonEncode(canonical([
+      event.eventId,
+      event.senderId,
+      event.type,
+      event.originServerTs.millisecondsSinceEpoch,
+      event.content,
+      event.originalSource?.type,
+      event.originalSource?.content,
+      event.originalSource?.eventId,
+      event.originalSource?.senderId,
+      event.originalSource?.roomId,
+      event.originalSource?.originServerTs.millisecondsSinceEpoch,
+    ]));
+  }
+
+  void _checkMediaAuthority(Event event, String authority) {
+    final current = eventById(event.eventId);
+    if (current == null ||
+        !identical(current.room, event.room) ||
+        !_visibleAnchor(current) ||
+        _mediaAuthoritySnapshot(current) != authority) {
+      throw StateError('Matrix event changed');
+    }
+  }
+
   Future<Uint8List> _downloadActiveMedia(Event event,
-      {bool thumbnail = false}) async {
+      {bool thumbnail = false, required String authority}) async {
+    _checkMediaAuthority(event, authority);
     final bytes = await downloadMediaContent(event, thumbnail: thumbnail);
     _ensureActive();
     _lease._activeRoom.client.recoveryOwner?.check();
-    if (!identical(eventById(event.eventId), event) || !_visibleAnchor(event)) {
-      throw StateError('Matrix event changed');
-    }
+    _checkMediaAuthority(event, authority);
     return bytes;
   }
 
@@ -3728,15 +3765,13 @@ final class _SdkRoomTimelineCapability
         final event = await _resolveEvent(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
         if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
+        final authority = _mediaAuthoritySnapshot(event);
         final bytes = await loadMediaWithCache(
             _lease._mediaCacheKey(eventId, event),
-            () => _downloadActiveMedia(event));
+            () => _downloadActiveMedia(event, authority: authority));
         _ensureActive();
-        if (!identical(eventById(eventId), event)) {
-          throw StateError('Matrix event changed');
-        }
         _lease._activeRoom.client.recoveryOwner?.check();
-        if (!_visibleAnchor(event)) throw StateError('Matrix event is hidden');
+        _checkMediaAuthority(event, authority);
         return bytes;
       });
 

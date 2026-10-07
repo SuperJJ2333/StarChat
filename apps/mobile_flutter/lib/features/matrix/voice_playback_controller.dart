@@ -292,8 +292,17 @@ final class VoicePlaybackController extends ChangeNotifier {
     // Native event errors are separate from the play() Future. Consume them
     // here without logging a source that may contain decrypted audio bytes.
     if (_disposed || _loadingId != null) return;
-    _failedId = _playingIds.firstOrNull ?? _pausedIds.firstOrNull;
-    _handleCompleted();
+    final failedId = _playingIds.firstOrNull ?? _pausedIds.firstOrNull;
+    if (failedId == null) return;
+    _generation++;
+    _failedId = failedId;
+    _playingIds.clear();
+    _pausedIds.clear();
+    _positions.clear();
+    // An error is not natural completion: retain retry and do not mark heard
+    // or advance. Queue cleanup before a listener can request the next source.
+    unawaited(_serialize(engine.stop).catchError((Object _) {}));
+    notifyListeners();
   }
 
   Future<void> toggle(RoomMessageViewModel message) async {

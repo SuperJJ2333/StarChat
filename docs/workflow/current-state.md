@@ -1,4 +1,11 @@
 # 移动交付恢复索引
+
+## 2026-10-07 Android2204语音/网络：源码修复与双审通过，尚未发布新包
+
+用户场景是真机正式2204、新语音首次失败/重试正常。真实SDK同内容Event刷新导致媒体冷加载/缓存误拒和native错误误当自然完成均已RED→GREEN；新37+历史17专项54PASS，完整Flutter5547PASS/9既有skip、移动Python354PASS/1既有skip、完整分析0、格式0变，四输入/锁稳定；SPEC22:36:53后QUALITY22:45:21有序接受。候选在managed codex/voice-network-2204，main未合并/推送，正式2204仍是3a620495旧成品，本次未打包或发布。21:20媒体下载10/10 HTTP200/max14ms与客户端竞态相容，但用户单次未实证归因。
+
+CloudFront当次Enabled/Deployed/8路由、SG缓存Hit，网页双路线择优；媒体仍Matrix。Synapse两个完整日1792已完成send请求全部200（记录到的服务端HTTP异常日均0）；客户端日志仅部分两日14条失败测量/2等待、采样丢弃，不能全站最终失败日均；大陆TCP5日55timeout观测均11/日并缺15次，不等于消息失败。全仓verify缺.env未执行，未导入生产秘密。见[任务](tasks/2026-10-07-voice-network-2204.md)、[报告](../verification/2026-10-07-voice-network-2204.md)、[计划](../superpowers/plans/2026-10-07-voice-network-2204.md)。下一步先核对独立新版本/build占用，再按固定Android打包流程交付，真机复测首次新语音；不要覆盖2204不可变文件。
+
 ## 2026-10-07 Android 0.4.35+2204正式发布，更新弹窗已启用
 
 用户明确授权发布最新Android并提示更新；20:43:17+08当次PUBLISH_PASS，正式ARM64成品82848798bytes/SHA a2d100be…fcf835e5、固定75b31签名，源码3a620495，复用已受验成品未重建。香港/CDN/latest下载200、源站与工作站严格TLS HEAD大小/MIME及页面/registry SHA一致；CDN Deployed、旧7路由及策略保全。实际运行版本路由Android0.4.35+2204、iOS0.4.25+2194、无platform默认Android，exact3条SettingService审计；仅Androidversion/build/notes更新，两min3/URL和iOS五键保持，35容器id/image/restart/start及schema0095保持。普通可跳过弹窗已配置，真机收到/覆盖保留数据尚未实测，不能称已验证所有设备。
