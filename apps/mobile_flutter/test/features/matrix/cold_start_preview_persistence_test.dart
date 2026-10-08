@@ -22,6 +22,10 @@ class _ReadRecordingDatabase extends Fake implements Database {
   final Database delegate;
   final List<List<Object?>?> eventReads;
   @override
+  Future<List<Map<String, Object?>>> rawQuery(String sql,
+          [List<Object?>? arguments]) =>
+      delegate.rawQuery(sql, arguments);
+  @override
   Batch batch() => delegate.batch();
   @override
   Future<void> close() => delegate.close();

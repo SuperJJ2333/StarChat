@@ -367,6 +367,7 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
       idbFactory: idbFactory,
       version: version,
     );
+    await _restore2205LegacyTimelineIndexes();
     _clientBox = _collection.openBox<String>(
       _clientBoxName,
     );
@@ -443,6 +444,48 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     }
 
     return;
+  }
+
+  Future<void> _restore2205LegacyTimelineIndexes() async {
+    final sql = database;
+    if (sql == null) return;
+    final tables = await sql.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+      "('matrix_timeline_fragment_state','matrix_timeline_fragment_ids')",
+    );
+    if (tables.length != 2) return;
+    const marker = 'android_2206_legacy_rollback_complete';
+    await sql.transaction((transaction) async {
+      final done = await transaction.query(
+        _clientBoxName,
+        columns: ['k'],
+        where: 'k=?',
+        whereArgs: [marker],
+      );
+      if (done.isNotEmpty) return;
+      // 2205 retained the legacy index but subsequently wrote only the new
+      // index. Restore completed fragments before any legacy Box caches read
+      // them. SQLite builds JSON internally, avoiding a Dart copy of every ID.
+      // Copying fragments keep their original source; retired epochs/rows do
+      // not reappear. Bodies, encryption keys and the sync token are untouched.
+      await transaction.execute(
+        'INSERT INTO $_timelineFragmentsBoxName(k,v) '
+        'SELECT s.fragment_key, '
+        '(SELECT json_group_array(event_id) FROM '
+        '(SELECT event_id FROM matrix_timeline_fragment_ids '
+        'WHERE fragment_key=s.fragment_key AND epoch=s.current_epoch '
+        'AND valid_to IS NULL ORDER BY seq ASC)) '
+        'FROM matrix_timeline_fragment_state s '
+        "WHERE s.migration_state='ready' "
+        'ON CONFLICT(k) DO UPDATE SET v=excluded.v',
+      );
+      // Same transaction: retries are safe after interruption, and future
+      // opens never overwrite messages subsequently written by the old SDK.
+      await transaction.insert(_clientBoxName, {
+        'k': marker,
+        'v': jsonEncode('complete'),
+      });
+    });
   }
 
   Future<void> _migrateFromVersion(int currentVersion) async {
@@ -1735,21 +1778,30 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   @override
   Future<List<StoredInboundGroupSession>> getInboundGroupSessionsPage(
       {String? afterSessionId, int limit = 80}) async {
-    final page = await _inboundGroupSessionsBox.getPage(after: afterSessionId, limit: limit);
-    return page.values.map((raw) => StoredInboundGroupSession.fromJson(copyMap(raw))).toList();
+    final page = await _inboundGroupSessionsBox.getPage(
+        after: afterSessionId, limit: limit);
+    return page.values
+        .map((raw) => StoredInboundGroupSession.fromJson(copyMap(raw)))
+        .toList();
   }
 
   /// A verified retained SQLCipher store can be read without SDK initialization,
   /// migrations, old credentials, or allocating a full session collection.
   static Future<List<StoredInboundGroupSession>> readRetainedSessionsPage(
-      Database database, {String? afterSessionId, int limit = 80}) async {
+      Database database,
+      {String? afterSessionId,
+      int limit = 80}) async {
     if (limit < 1 || limit > 80) throw RangeError.range(limit, 1, 80);
     final rows = await database.query(_inboundGroupSessionsBoxName,
-        columns: ['v'], where: afterSessionId == null ? null : 'k > ?',
+        columns: ['v'],
+        where: afterSessionId == null ? null : 'k > ?',
         whereArgs: afterSessionId == null ? null : [afterSessionId],
-        orderBy: 'k', limit: limit);
-    return rows.map((r) => StoredInboundGroupSession.fromJson(
-        Map<String, dynamic>.from(jsonDecode(r['v'] as String)))).toList();
+        orderBy: 'k',
+        limit: limit);
+    return rows
+        .map((r) => StoredInboundGroupSession.fromJson(
+            Map<String, dynamic>.from(jsonDecode(r['v'] as String))))
+        .toList();
   }
 
   @override
@@ -1766,19 +1818,24 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   Future<int> recoveryProtectedCount(String version) async {
     final sql = database;
     if (sql == null) throw UnsupportedError('Native recovery requires SQLite');
-    final rows = await sql.rawQuery('SELECT COUNT(*) AS n FROM "$_clientBoxName" '
-        'WHERE k LIKE \'recovery.v1:receipt.%\' AND json_extract(v, \'\$.version\') = ?', [version]);
+    final rows = await sql.rawQuery(
+        'SELECT COUNT(*) AS n FROM "$_clientBoxName" '
+        'WHERE k LIKE \'recovery.v1:receipt.%\' AND json_extract(v, \'\$.version\') = ?',
+        [version]);
     return (rows.single['n'] as num).toInt();
   }
 
   @override
   Future<List<String>> getRecoveryPendingEventIds(Room room,
-      {required int windowStart, required int windowEnd,
-      String? afterEventId, int limit = 80}) async {
+      {required int windowStart,
+      required int windowEnd,
+      String? afterEventId,
+      int limit = 80}) async {
     if (limit < 1 || limit > 80) throw ArgumentError('Invalid recovery page');
     final sql = database;
     if (sql == null) throw UnsupportedError('Recovery replay requires SQLite');
-    final rows = await sql.rawQuery('''SELECT json_extract(v, '\$.event_id') AS id
+    final rows = await sql.rawQuery(
+        '''SELECT json_extract(v, '\$.event_id') AS id
 FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
  AND json_extract(v, '\$.type') = 'm.room.encrypted'
  AND json_extract(v, '\$.origin_server_ts') >= ?
@@ -1791,12 +1848,15 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
   }
 
   @override
-  Future<List<String>> getRecoveryEventIds(Room room, {int start = 0, int limit = 80}) async {
-    if (start < 0 || limit < 1 || limit > 80) throw ArgumentError('Invalid recovery page');
+  Future<List<String>> getRecoveryEventIds(Room room,
+      {int start = 0, int limit = 80}) async {
+    if (start < 0 || limit < 1 || limit > 80)
+      throw ArgumentError('Invalid recovery page');
     final sql = database;
     if (sql == null) throw UnsupportedError('Native recovery requires SQLite');
     return _searchRead(() async {
-      final rows = await sql.rawQuery('SELECT j.value AS id FROM "$_timelineFragmentsBoxName" t, '
+      final rows = await sql.rawQuery(
+          'SELECT j.value AS id FROM "$_timelineFragmentsBoxName" t, '
           'json_each(t.v) j WHERE t.k = ? AND j.key >= ? AND j.key < ? ORDER BY j.key',
           [TupleKey(room.id, '').toString(), start, start + limit]);
       return rows.map((r) => r['id'] as String).toList();
@@ -1808,14 +1868,15 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
       await _clientBox.get('recovery.cursor:$key:$cursor') != null;
 
   @override
-  Future<void> storeRecoveryDecryptedEvent(Event event) => transaction(() async {
-    final key = TupleKey(event.room.id, event.eventId).toString();
-    final prior = await _eventsBox.get(key);
-    if (prior == null) return;
-    final stored = Event.fromJson(copyMap(prior), event.room);
-    if (stored.redacted || stored.type != EventTypes.Encrypted) return;
-    await _eventsBox.put(key, event.toJson());
-  });
+  Future<void> storeRecoveryDecryptedEvent(Event event) =>
+      transaction(() async {
+        final key = TupleKey(event.room.id, event.eventId).toString();
+        final prior = await _eventsBox.get(key);
+        if (prior == null) return;
+        final stored = Event.fromJson(copyMap(prior), event.room);
+        if (stored.redacted || stored.type != EventTypes.Encrypted) return;
+        await _eventsBox.put(key, event.toJson());
+      });
 
   @override
   Future<({int downloaded, int decrypted, int missing})> recoveryRoomCounts(
@@ -1835,14 +1896,19 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
  AND json_extract(v, '\$.unsigned.redacted_because') IS NULL
 ''', ['${room.id}|', windowStart, windowEnd]);
     final row = rows.single;
-    return (downloaded: (row['downloaded'] as num?)?.toInt() ?? 0,
-        decrypted: (row['decrypted'] as num?)?.toInt() ?? 0,
-        missing: (row['missing'] as num?)?.toInt() ?? 0);
+    return (
+      downloaded: (row['downloaded'] as num?)?.toInt() ?? 0,
+      decrypted: (row['decrypted'] as num?)?.toInt() ?? 0,
+      missing: (row['missing'] as num?)?.toInt() ?? 0
+    );
   }
 
   @override
-  Future<bool> commitRecoveryHistoryPage(Room room, String key,
-      int expectedRevision, List<Map<String, dynamic>> events,
+  Future<bool> commitRecoveryHistoryPage(
+      Room room,
+      String key,
+      int expectedRevision,
+      List<Map<String, dynamic>> events,
       Map<String, dynamic> checkpoint) async {
     if (events.length > 80 || checkpoint['revision'] != expectedRevision + 1) {
       throw ArgumentError('Invalid recovery page');
@@ -1855,7 +1921,8 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
       final ids = <String>[];
       for (final raw in events) {
         final id = raw['event_id'];
-        if (id is! String || (raw['room_id'] != null && raw['room_id'] != room.id)) {
+        if (id is! String ||
+            (raw['room_id'] != null && raw['room_id'] != room.id)) {
           throw FormatException('Invalid recovery event binding');
         }
         final eventKey = TupleKey(room.id, id).toString();
@@ -1863,12 +1930,14 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
         // Existing decrypted/redacted rows and local metadata win over old
         // ciphertext. Restoring a fragment never reverses a tombstone.
         if (existing == null) {
-          final tombstone = await _clientBox.get('recovery.redaction:$eventKey');
+          final tombstone =
+              await _clientBox.get('recovery.redaction:$eventKey');
           if (tombstone == null) {
             await _eventsBox.put(eventKey, copyMap(raw));
           } else {
-            final event = Event.fromJson(copyMap(raw), room)..setRedactionEvent(
-                Event.fromJson(Map<String,dynamic>.from(jsonDecode(tombstone)), room));
+            final event = Event.fromJson(copyMap(raw), room)
+              ..setRedactionEvent(Event.fromJson(
+                  Map<String, dynamic>.from(jsonDecode(tombstone)), room));
             await _eventsBox.put(eventKey, event.toJson());
           }
         }
@@ -1878,10 +1947,12 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
           final target = raw['redacts'] ?? redaction.content['redacts'];
           if (target is String) {
             final targetKey = TupleKey(room.id, target).toString();
-            await _clientBox.put('recovery.redaction:$targetKey', jsonEncode(raw));
+            await _clientBox.put(
+                'recovery.redaction:$targetKey', jsonEncode(raw));
             final targetRaw = await _eventsBox.get(targetKey);
             if (targetRaw != null) {
-              final event = Event.fromJson(copyMap(targetRaw), room)..setRedactionEvent(redaction);
+              final event = Event.fromJson(copyMap(targetRaw), room)
+                ..setRedactionEvent(redaction);
               await _eventsBox.put(targetKey, event.toJson());
             }
           }
@@ -1891,7 +1962,9 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
       await _clientBox.put('recovery.v1:$key', jsonEncode(checkpoint));
       final cursor = checkpoint['cursor'];
       if (cursor is String) {
-        await _clientBox.put('recovery.cursor:$key:${checkpoint['walk'] ?? checkpoint['head']}:$cursor', '1');
+        await _clientBox.put(
+            'recovery.cursor:$key:${checkpoint['walk'] ?? checkpoint['head']}:$cursor',
+            '1');
       }
       committed = true;
     });
