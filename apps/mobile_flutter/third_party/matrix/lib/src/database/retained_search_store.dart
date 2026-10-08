@@ -60,7 +60,7 @@ class RetainedSearchStore {
     final batch = collection.timelineDatabase.batch();
     batch.execute('CREATE TABLE IF NOT EXISTS $states '
         '(room_id TEXT PRIMARY KEY,revision INTEGER NOT NULL,item_count INTEGER NOT NULL,'
-        'ready INTEGER NOT NULL,after_id TEXT)');
+        'ready INTEGER NOT NULL,after_id TEXT,legacy_revision INTEGER)');
     batch.execute('CREATE TABLE IF NOT EXISTS $rows '
         '(row_id INTEGER PRIMARY KEY AUTOINCREMENT,room_id TEXT NOT NULL,event_id TEXT NOT NULL,'
         'bucket INTEGER NOT NULL,sort_ts INTEGER NOT NULL,valid_from INTEGER NOT NULL,'
@@ -75,7 +75,18 @@ class RetainedSearchStore {
     batch
         .execute('CREATE INDEX IF NOT EXISTS matrix_retained_search_membership '
             'ON $rows(room_id,event_id,valid_from,valid_to)');
+    batch.execute('CREATE INDEX IF NOT EXISTS matrix_retained_search_reconcile '
+        'ON $rows(room_id,valid_from,row_id) '
+        'WHERE valid_to IS NULL AND deleted=0');
     await batch.commit(noResult: true);
+    final columns = await collection.timelineDatabase
+        .rawQuery('PRAGMA table_info($states)');
+    if (!columns.any((row) => row['name'] == 'legacy_revision')) {
+      final migration = collection.timelineDatabase.batch();
+      migration
+          .execute('ALTER TABLE $states ADD COLUMN legacy_revision INTEGER');
+      await migration.commit(noResult: true);
+    }
   }
 
   Future<void> upsert(String room, TimelineSearchEntry entry,
@@ -157,6 +168,39 @@ class RetainedSearchStore {
       _ready.add(room);
       return;
     }
+    final legacyRevision =
+        initial.isEmpty ? null : initial.single['legacy_revision'] as int?;
+    if (legacyRevision != null) {
+      // The rollback SDK owned writes while these rows were stale. Retire only
+      // that captured generation, in bounded pages, keeping explicit deletion
+      // tombstones and newer native writes. Rebuild from durable legacy/bodies.
+      while (true) {
+        check();
+        final stale = await _gate(() => collection.timelineDatabase.rawQuery(
+            'SELECT row_id FROM $rows WHERE room_id=? AND valid_to IS NULL '
+            'AND deleted=0 AND valid_from<=? '
+            'ORDER BY valid_from,row_id LIMIT 256',
+            [room, legacyRevision]));
+        if (stale.isEmpty) break;
+        await collection.transaction(() async {
+          check();
+          final batch = collection.timelineBatch!;
+          batch.rawUpdate(
+              'UPDATE $states SET revision=revision+1 WHERE room_id=?', [room]);
+          for (final row in stale) {
+            batch.rawUpdate(
+                'UPDATE $rows SET valid_to=(SELECT revision FROM $states WHERE room_id=?) '
+                'WHERE row_id=? AND valid_to IS NULL AND deleted=0 AND valid_from<=?',
+                [room, row['row_id'], legacyRevision]);
+            batch.rawUpdate(
+                'UPDATE $states SET item_count=item_count-changes() '
+                'WHERE room_id=?',
+                [room]);
+          }
+        });
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
     // Missing payloads remain represented and retryable. Body backfill below
     // covers all other retained epochs and independently recovered events.
     final seed = await current();
@@ -184,8 +228,10 @@ class RetainedSearchStore {
         check();
         final page = await _gate(() => collection.timelineDatabase.rawQuery(
                 'SELECT epoch,seq,event_id FROM matrix_timeline_fragment_ids WHERE fragment_key=? '
+                'AND epoch >= (SELECT legacy_epoch_floor FROM matrix_timeline_fragment_state WHERE fragment_key=?) '
                 '${epoch == null ? '' : 'AND (epoch,seq)>(?,?) '}ORDER BY epoch,seq LIMIT 256',
                 [
+                  fragment,
                   fragment,
                   if (epoch != null) ...[epoch, seq]
                 ]));
@@ -195,8 +241,9 @@ class RetainedSearchStore {
         final epochs = page.map((row) => row['epoch'] as int).toSet().toList();
         final complete = await _gate(() => collection.timelineDatabase.rawQuery(
             'SELECT epoch FROM matrix_timeline_complete_epochs WHERE fragment_key=? '
+            'AND epoch >= (SELECT legacy_epoch_floor FROM matrix_timeline_fragment_state WHERE fragment_key=?) '
             'AND epoch IN (${List.filled(epochs.length, '?').join(',')})',
-            [fragment, ...epochs]));
+            [fragment, fragment, ...epochs]));
         final eligible = complete.map((row) => row['epoch']).toSet();
         await collection.transaction(() async {
           check();
@@ -236,7 +283,9 @@ class RetainedSearchStore {
       batch.rawInsert(
           'INSERT OR IGNORE INTO $states(room_id,revision,item_count,ready) VALUES (?,0,0,0)',
           [room]);
-      batch.rawUpdate('UPDATE $states SET ready=1 WHERE room_id=?', [room]);
+      batch.rawUpdate(
+          'UPDATE $states SET ready=1,legacy_revision=NULL WHERE room_id=?',
+          [room]);
     });
     _ready.add(room);
   }

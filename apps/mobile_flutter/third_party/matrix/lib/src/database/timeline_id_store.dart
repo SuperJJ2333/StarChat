@@ -52,7 +52,8 @@ class TimelineIdStore {
         'fragment_key TEXT PRIMARY KEY, current_epoch INTEGER NOT NULL, '
         'head_seq INTEGER NOT NULL, tail_seq INTEGER NOT NULL, item_count INTEGER NOT NULL, '
         'revision INTEGER NOT NULL, migration_state TEXT NOT NULL, '
-        'migration_next INTEGER NOT NULL, source_identity TEXT)');
+        'migration_next INTEGER NOT NULL, source_identity TEXT, '
+        'legacy_epoch_floor INTEGER NOT NULL DEFAULT 0)');
     batch.execute('CREATE TABLE IF NOT EXISTS $idTable ('
         'fragment_key TEXT NOT NULL, epoch INTEGER NOT NULL, seq INTEGER NOT NULL, '
         'event_id TEXT NOT NULL, valid_from INTEGER NOT NULL, valid_to INTEGER, '
@@ -77,6 +78,13 @@ class TimelineIdStore {
           'ON CONFLICT(fragment_key) DO UPDATE SET revision=revision+1; END');
     }
     await batch.commit(noResult: true);
+    final columns = await sql.rawQuery('PRAGMA table_info($stateTable)');
+    if (!columns.any((row) => row['name'] == 'legacy_epoch_floor')) {
+      final migration = sql.batch();
+      migration.execute('ALTER TABLE $stateTable ADD COLUMN '
+          'legacy_epoch_floor INTEGER NOT NULL DEFAULT 0');
+      await migration.commit(noResult: true);
+    }
   }
 
   Future<T> _gate<T>(Future<T> Function() action) async {

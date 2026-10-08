@@ -44,3 +44,12 @@
 Android source ARM64 release/AOT编译重试exit0/65.9s，产物仍0.4.36+2205原版本，仅验证中间物，未做发行重建/签名/上传。首轮126.4s失败根因 GeneratedPluginRegistrant误引用测试integration_test插件；原--no-pub沿用测试生成文件，按runbook正常pub/生成流程修复。锁文件未变，既有KGP/旧API警告留档，不是产品修复范围。初版真实账号夹具未种Olm pickle，错误地走新设备key-upload并失败；现以合成保留Olm pickle验证真正覆盖升级，不修改实际加密/鉴权。
 
 ROOT状态：已证明源码三处等待/竞态，不宣称是手机唯一根因或OOM。FIX状态：有界源码候选已验证，生产2206未改；2206旧SDK写入后ready索引freshness回升兼容、Android运行/实际手机故障验收仍待完成。没有可用adb/AVD。下次恢复先读此候选工作树，不回到有其他iOS改动的history树重做；下一条执行步骤：写2205→2206旧格式新消息→候选回升RED，证明ready ordering/search新鲜度再保数据修复；随后平台运行验证/包交付门禁。不得直接发布当前仍2205版本的源APK。
+## 2026-10-09 00:43+08 回退后再升级兼容修复
+
+所有权追加：SDK matrix_sdk_database/timeline_id_store/retained_search_store与新legacy_rollback_rollforward_test。真实SQLCipher夹具复现2205 ready索引→2206旧格式新增/修改/移除消息→候选再升级：旧timeline漏新ID，旧search保留已移除记录；rollforward-red.log退出1。兼容修复仅添加本地元数据列和索引，在Box缓存开启前原子消费2206回退完成标记，旧epoch失效；记录按需分批准备，搜索按捕获revision退休旧索引，保留随后新增项与删除标记。不改消息正文、旧JSON、账号和密钥。4条升级用例包含ready、copying、事务中断与重试，真实SQLCipher全部PASS。
+
+00:34专项重跑65PASS/exit0，覆盖原同步/索引与新增回升。前一轮64PASS/1FAIL是测试ObservedSql适配器无直接execute；将新表列包含于CREATE、旧表ALTER使用已有batch接口后通过，未删除/弱化分页测试。全量最终00:42完成5644PASS/9skip/exit0（6m24s），移动边界364PASS/23skip/exit0（62.34s），analyze无问题/exit0（13.5s）。证据：rollforward-focused-retry.log、flutter-full-rollforward.log、mobile-boundary-rollforward.log、analyze-rollforward.log。规格审查随后质量审查PASS，最终marker-absent/批DDL补审PASS。
+
+回升兼容源码门禁已闭合；Android最终源编译进行中。仍没有连接设备或AVD，不能以Windows SQLCipher测试/ARM64编译替代实际Android运行和用户数据覆盖升级。稳定2206生产分发未改；不发布当前2205源中间包。
+
+2026-10-09 00:45+08：最终兼容候选 Android ARM64 release/AOT编译exit0，Gradle71.8s。源包仍2205，仅中间物未分发。下一步准备独立递增版本的固定签名候选，保留稳定2206渠道；实际手机覆盖升级/首次sync/空列表和入房验收仍未执行。

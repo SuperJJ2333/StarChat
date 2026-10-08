@@ -480,6 +480,7 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
       _retainedSearch =
           RetainedSearchStore(_collection, timelineSearchMigrationReader);
       await _retainedSearch!.open();
+      await _adoptLegacyRollbackAuthority();
     }
     _clientBox = _collection.openBox<String>(
       _clientBoxName,
@@ -557,6 +558,46 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     }
 
     return;
+  }
+
+  /// The released 2206 SDK writes the retained legacy format after its bridge.
+  /// Invalidate only additive index metadata before any Box caches are opened;
+  /// migrate histories/search lazily. Credentials, bodies and keys stay intact.
+  Future<void> _adoptLegacyRollbackAuthority() async {
+    final sql = database;
+    if (sql == null) return;
+    const marker = 'android_2206_legacy_rollback_complete';
+    // Ordinary opens do not need a write transaction. Recheck under the atomic
+    // adoption transaction when the released bridge marker actually exists.
+    if ((await sql.query(_clientBoxName,
+            columns: ['k'], where: 'k=?', whereArgs: [marker]))
+        .isEmpty) return;
+    await sql.transaction((transaction) async {
+      final legacy = await transaction.query(_clientBoxName,
+          columns: ['v'], where: 'k=?', whereArgs: [marker]);
+      if (legacy.isEmpty) return;
+      if (legacy.single['v'] != jsonEncode('complete')) {
+        throw StateError('Legacy rollback marker is invalid');
+      }
+      await transaction.execute('UPDATE matrix_timeline_fragment_state SET '
+          'legacy_epoch_floor=current_epoch+1,current_epoch=current_epoch+1,'
+          'head_seq=0,tail_seq=-1,item_count=0,revision=0,migration_next=0,'
+          "migration_state=CASE WHEN EXISTS (SELECT 1 FROM $_timelineFragmentsBoxName t WHERE t.k=fragment_key) THEN 'copying' ELSE 'ready' END,"
+          'source_identity=(SELECT CAST(t.rowid AS TEXT)||\':\'||COALESCE(r.revision,0) '
+          'FROM $_timelineFragmentsBoxName t LEFT JOIN matrix_timeline_legacy_revision r '
+          'ON r.fragment_key=t.k WHERE t.k=matrix_timeline_fragment_state.fragment_key)');
+      await transaction.execute(
+          'INSERT OR IGNORE INTO matrix_retained_search_state '
+          '(room_id,revision,item_count,ready,legacy_revision) '
+          'SELECT DISTINCT substr(fragment_key,1,instr(fragment_key,\'|\')-1),0,0,0,0 '
+          'FROM matrix_timeline_fragment_state WHERE instr(fragment_key,\'|\')>0');
+      await transaction.execute('UPDATE matrix_retained_search_state SET '
+          'ready=0,after_id=NULL,legacy_revision=revision');
+      // Atomically consume the old bridge marker. A later rollback must export
+      // any new indexed writes again instead of treating its first bridge as done.
+      await transaction
+          .delete(_clientBoxName, where: 'k=?', whereArgs: [marker]);
+    });
   }
 
   Future<void> _migrateFromVersion(int currentVersion) async {
