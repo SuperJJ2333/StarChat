@@ -1,0 +1,353 @@
+name: Unsigned iOS enterprise signing handoff
+
+on:
+  push:
+    branches: ['codex/ios-history-ipa-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PUB_HOSTED_URL: https://pub.dev
+  FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  device:
+    name: Complete unsigned arm64 device IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Capture exact candidate and toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/device-evidence" "$RUNNER_TEMP/unsigned-ios"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git status --porcelain > "$RUNNER_TEMP/device-evidence/checkout-status.txt"
+          xcodebuild -version | tee "$RUNNER_TEMP/device-evidence/toolchain.txt"
+          flutter --version >> "$RUNNER_TEMP/device-evidence/toolchain.txt"
+          python3 --version >> "$RUNNER_TEMP/device-evidence/toolchain.txt"
+          ruby --version >> "$RUNNER_TEMP/device-evidence/toolchain.txt"
+          pod --version >> "$RUNNER_TEMP/device-evidence/toolchain.txt"
+          python3 -m pip install pytest==8.4.2
+          python3 -m pytest --version >> "$RUNNER_TEMP/device-evidence/toolchain.txt"
+          python3 <<'PY'
+          import json, os, pathlib, shutil
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'device-evidence'
+          text = (folder / 'toolchain.txt').read_text()
+          assert 'Xcode 26.3' in text and 'Flutter 3.44.9' in text
+          assert shutil.which('ruby'), 'Ruby hook execution is mandatory; no skip allowed'
+          identity = {key: os.environ[key] for key in (
+              'GITHUB_SHA', 'GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
+          (folder / 'source-identity.json').write_text(json.dumps(identity, indent=2) + '\n')
+          PY
+          cp apps/mobile_flutter/pubspec.lock "$RUNNER_TEMP/device-evidence/pubspec.lock.before"
+          shasum -a 256 apps/mobile_flutter/pubspec.yaml apps/mobile_flutter/pubspec.lock \
+            apps/mobile_flutter/ios/Podfile apps/mobile_flutter/ios/Runner/Runner.entitlements \
+            apps/mobile_flutter/assets/html/statistics_tools_combined_v2.html \
+            > "$RUNNER_TEMP/device-evidence/source-input-sha256.txt"
+      - name: Execute actual Ruby permission hook without skips
+        run: |
+          set -euo pipefail
+          python3 -m pytest tests/mobile/test_ios_permission_capabilities.py -q \
+            --junitxml="$RUNNER_TEMP/device-evidence/permission-hook.xml" \
+            2>&1 | tee "$RUNNER_TEMP/device-evidence/permission-hook.log"
+          python3 <<'PY'
+          import os, pathlib, xml.etree.ElementTree as ET
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'device-evidence/permission-hook.xml'
+          suites = list(ET.parse(path).getroot().iter('testsuite'))
+          assert sum(int(s.attrib['tests']) for s in suites) == 2
+          assert all(int(s.attrib.get(field, '0')) == 0
+                     for s in suites for field in ('skipped', 'failures', 'errors'))
+          print('Both permission capability tests executed: 2 PASS / 0 SKIP')
+          PY
+      - name: Restore all production plugins with the committed lock
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          flutter config --no-enable-swift-package-manager
+          mkdir -p build/ios/SourcePackages
+          flutter pub get --enforce-lockfile 2>&1 | tee "$RUNNER_TEMP/device-evidence/pub-get.log"
+          cmp pubspec.lock "$RUNNER_TEMP/device-evidence/pubspec.lock.before"
+          cp pubspec.lock "$RUNNER_TEMP/device-evidence/pubspec.lock.after-restore"
+          cp .flutter-plugins-dependencies "$RUNNER_TEMP/device-evidence/plugins.after-restore.json"
+      - name: Compile complete release Runner for iPhoneOS without signing
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          flutter build ios --release --no-codesign --no-pub \
+            --build-name=0.4.36 --build-number=2205 --no-tree-shake-icons \
+            --dart-define=CHATFLOW_PERFORMANCE_METRICS=true \
+            --dart-define=LIUHETONG_IN_APP_UPDATE=true \
+            --dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com \
+            --dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com \
+            --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com \
+            2>&1 | tee "$RUNNER_TEMP/device-evidence/device-build.log"
+          cmp pubspec.lock "$RUNNER_TEMP/device-evidence/pubspec.lock.before"
+      - name: Inspect actual native permission implementations
+        run: |
+          set -euo pipefail
+          python3 scripts/check_ios_permission_binary.py \
+            apps/mobile_flutter/build/ios/iphoneos/Runner.app/Runner \
+            2>&1 | tee "$RUNNER_TEMP/device-evidence/permission-binary.log"
+          python3 <<'PY'
+          import json, os, pathlib, plistlib
+          root = pathlib.Path('apps/mobile_flutter')
+          source = plistlib.loads((root / 'ios/Runner/Info.plist').read_bytes())
+          built = plistlib.loads((root / 'build/ios/iphoneos/Runner.app/Info.plist').read_bytes())
+          keys = ('NSCameraUsageDescription', 'NSMicrophoneUsageDescription',
+                  'NSPhotoLibraryUsageDescription', 'NSPhotoLibraryAddUsageDescription',
+                  'NSSpeechRecognitionUsageDescription')
+          for key in keys:
+              assert isinstance(source.get(key), str) and source[key].strip(), key + ' source absent'
+              assert built.get(key) == source[key], key + ' changed or absent in device app'
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'device-evidence/permission-usage.json'
+          target.write_text(json.dumps({key: built[key] for key in keys}, ensure_ascii=False, indent=2) + '\n')
+          print('Built device permission usage descriptions match source: 5 PASS')
+          PY
+      - name: Package complete Payload and verify unsigned handoff
+        run: |
+          set -euo pipefail
+          stage="$(mktemp -d "$RUNNER_TEMP/unsigned-payload.XXXXXX")"
+          mkdir "$stage/Payload"
+          ditto --norsrc --noextattr apps/mobile_flutter/build/ios/iphoneos/Runner.app "$stage/Payload/Runner.app"
+          export COPYFILE_DISABLE=1
+          ditto -c -k --keepParent --norsrc --noextattr "$stage/Payload" \
+            "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.36-build2205-unsigned.ipa"
+          python3 scripts/prepare_ios_unsigned_ipa.py \
+            --app apps/mobile_flutter/build/ios/iphoneos/Runner.app \
+            --ipa "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.36-build2205-unsigned.ipa" \
+            --source-root apps/mobile_flutter \
+            --output-dir "$RUNNER_TEMP/unsigned-ios" \
+            --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" \
+            --version 0.4.36 --build 2205 \
+            --toolchain-report "$RUNNER_TEMP/device-evidence/toolchain.txt" \
+            2>&1 | tee "$RUNNER_TEMP/device-evidence/unsigned-package-gate.log"
+          shasum -a 256 "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.36-build2205-unsigned.ipa" \
+            > "$RUNNER_TEMP/device-evidence/ipa-sha256.txt"
+      - name: Capture generated device inputs even on failure
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/device-evidence"
+          python3 <<'PY'
+          import hashlib, json, os, pathlib, shutil
+          root = pathlib.Path('apps/mobile_flutter')
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'device-evidence'
+          paths = ['pubspec.yaml', 'pubspec.lock', 'ios/Podfile.lock',
+                   'ios/Runner/GeneratedPluginRegistrant.m', '.flutter-plugins-dependencies']
+          hashes = {}
+          for name in paths:
+              source = root / name
+              if source.is_file():
+                  hashes[name] = hashlib.sha256(source.read_bytes()).hexdigest()
+                  shutil.copy2(source, target / name.replace('/', '__'))
+          (target / 'generated-input-sha256.json').write_text(json.dumps(hashes, indent=2) + '\n')
+          PY
+          git diff -- apps/mobile_flutter > "$RUNNER_TEMP/device-evidence/generated-source.diff"
+      - name: Preserve device build and gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/device-evidence/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload verified unsigned IPA and signing handoff
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatFlow-0.4.36-build2205-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/unsigned-ios/
+          if-no-files-found: error
+          retention-days: 14
+
+  simulator:
+    name: iPhone 15 iOS 26 native storage gates
+    runs-on: macos-15
+    timeout-minutes: 65
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      IOS_MAJOR: '26'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Select exact iOS 26 runtime and fresh iPhone 15
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/simulator-evidence"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          xcodebuild -version | tee "$RUNNER_TEMP/simulator-evidence/toolchain.txt"
+          flutter --version >> "$RUNNER_TEMP/simulator-evidence/toolchain.txt"
+          python3 --version >> "$RUNNER_TEMP/simulator-evidence/toolchain.txt"
+          xcrun simctl list runtimes -j > "$RUNNER_TEMP/simulator-evidence/runtimes.json"
+          python3 <<'PY'
+          import json, os, pathlib, subprocess
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'simulator-evidence'
+          tools = (folder / 'toolchain.txt').read_text()
+          assert 'Xcode 26.3' in tools and 'Flutter 3.44.9' in tools
+          runtimes = json.loads((folder / 'runtimes.json').read_text())['runtimes']
+          candidates = [r for r in runtimes if r.get('isAvailable') and r['name'].startswith('iOS ')
+                        and r['version'].split('.')[0] == os.environ['IOS_MAJOR']]
+          assert candidates, 'iOS 26 runtime unavailable; no silent substitution'
+          runtime = max(candidates, key=lambda r: tuple(map(int, r['version'].split('.'))))
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devicetypes', '-j']))['devicetypes']
+          device = next(d for d in devices if d['name'] == 'iPhone 15')
+          udid = subprocess.check_output(['xcrun', 'simctl', 'create', 'ChatFlow unsigned storage gate',
+                                         device['identifier'], runtime['identifier']], text=True).strip()
+          identity = {key: os.environ[key] for key in (
+              'GITHUB_SHA', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
+          identity.update(runtime=runtime, device=device['name'], simulator_id=udid)
+          (folder / 'selected-source.json').write_text(json.dumps(identity, indent=2) + '\n')
+          with open(os.environ['GITHUB_ENV'], 'a') as handle:
+              handle.write('SIMULATOR_ID=' + udid + '\n')
+          subprocess.run(['xcrun', 'simctl', 'boot', udid], check=True)
+          subprocess.run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], check=True)
+          PY
+      - name: Restore locked dependencies and configure diagnostic simulator host
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          cp pubspec.lock "$RUNNER_TEMP/simulator-evidence/pubspec.lock.production"
+          flutter config --no-enable-swift-package-manager
+          mkdir -p build/ios/SourcePackages
+          flutter pub get --enforce-lockfile 2>&1 | tee "$RUNNER_TEMP/simulator-evidence/production-pub-get.log"
+          cmp pubspec.lock "$RUNNER_TEMP/simulator-evidence/pubspec.lock.production"
+          python3 <<'PY'
+          import os, pathlib
+          path = pathlib.Path('pubspec.yaml')
+          text = path.read_text()
+          assert text.count('  mobile_scanner: 6.0.11\n') == 1
+          path.write_text(text.replace('  mobile_scanner: 6.0.11\n', ''))
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'simulator-evidence'
+          (folder / 'limitations.txt').write_text(
+              'Synthetic iPhone 15 / iOS 26 storage harness only. Excludes only mobile_scanner '
+              '6.0.11 because MLKit has no arm64 simulator slice. The separate device job retains '
+              'every production plugin. No enterprise signing or physical-device upgrade proof.\n')
+          PY
+          flutter pub get 2>&1 | tee "$RUNNER_TEMP/simulator-evidence/diagnostic-pub-get.log"
+          cp pubspec.lock "$RUNNER_TEMP/simulator-evidence/pubspec.lock.diagnostic"
+          flutter build ios --simulator --debug --config-only --no-codesign --no-pub \
+            -t integration_test/ios_timeline_storage_migration_native_test.dart \
+            2>&1 | tee "$RUNNER_TEMP/simulator-evidence/config-only.log"
+      - name: Execute three real native integration targets with bounded attachment
+        timeout-minutes: 50
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json, os, pathlib, signal, subprocess, sys, time
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'simulator-evidence'
+          targets = [
+              'integration_test/ios_timeline_storage_migration_native_test.dart',
+              'integration_test/sqlcipher_readonly_native_test.dart',
+              'integration_test/ios_keychain_archive_native_test.dart',
+          ]
+          for target in targets:
+              for attempt in range(1, 4):
+                  log = folder / (pathlib.Path(target).stem + f'-attempt-{attempt}.log')
+                  command = ['flutter', 'test', '--no-pub', target, '-d', os.environ['SIMULATOR_ID'],
+                             '--timeout=6m', '--reporter', 'expanded', '--verbose']
+                  print('Native command: ' + ' '.join(command), flush=True)
+                  stalled = False
+                  hard_timeout = False
+                  marked = None
+                  started = time.monotonic()
+                  with log.open('w') as output:
+                      process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
+                                                 start_new_session=True)
+                      while process.poll() is None:
+                          text = log.read_text(errors='replace')
+                          if 'Waiting for VM Service port to be available' in text and marked is None:
+                              marked = time.monotonic()
+                          attached = 'VM Service URL on device' in text
+                          stalled = marked is not None and not attached and time.monotonic() - marked >= 60
+                          hard_timeout = time.monotonic() - started >= 20 * 60
+                          if stalled or hard_timeout:
+                              try:
+                                  os.killpg(process.pid, signal.SIGTERM)
+                              except ProcessLookupError:
+                                  pass
+                              try:
+                                  process.wait(timeout=5)
+                              except subprocess.TimeoutExpired:
+                                  try:
+                                      os.killpg(process.pid, signal.SIGKILL)
+                                  except ProcessLookupError:
+                                      pass
+                              break
+                          time.sleep(5)
+                      result = process.wait()
+                  print(log.read_text(errors='replace'), flush=True)
+                  record = {'target': target, 'attempt': attempt, 'exit_code': result,
+                            'vm_service_stall': stalled, 'hard_timeout': hard_timeout,
+                            'elapsed_seconds': round(time.monotonic() - started, 2), 'command': command}
+                  with (folder / 'native-exits.jsonl').open('a') as output:
+                      output.write(json.dumps(record) + '\n')
+                  if result == 0 and not stalled and not hard_timeout:
+                      break
+                  if hard_timeout or not stalled:
+                      print('Native test failed; real failures are not retried.', flush=True)
+                      sys.exit(result if result > 0 else 1)
+                  if attempt == 3:
+                      sys.exit('All bounded VM service attachment attempts stalled')
+                  print('Retrying only the known VM service attachment stall.', flush=True)
+                  subprocess.run(['xcrun', 'simctl', 'terminate', os.environ['SIMULATOR_ID'],
+                                  'com.liuhetong.liuhetongMobile'], check=False)
+                  time.sleep(3)
+          PY
+      - name: Capture simulator generated inputs and launch diagnostics
+        if: always()
+        timeout-minutes: 3
+        run: |
+          mkdir -p "$RUNNER_TEMP/simulator-evidence"
+          python3 <<'PY'
+          import hashlib, json, os, pathlib, shutil
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'simulator-evidence'
+          root = pathlib.Path('apps/mobile_flutter')
+          hashes = {}
+          for name in ('pubspec.yaml', 'pubspec.lock', 'ios/Podfile.lock', '.flutter-plugins-dependencies'):
+              source = root / name
+              if source.is_file():
+                  hashes[name] = hashlib.sha256(source.read_bytes()).hexdigest()
+                  shutil.copy2(source, target / name.replace('/', '__'))
+          (target / 'generated-input-sha256.json').write_text(json.dumps(hashes, indent=2) + '\n')
+          reports = pathlib.Path.home() / 'Library/Logs/DiagnosticReports'
+          for path in reports.glob('Runner*'):
+              if path.is_file():
+                  shutil.copy2(path, target / path.name)
+          PY
+          git diff -- apps/mobile_flutter > "$RUNNER_TEMP/simulator-evidence/diagnostic-source.diff"
+          if [ -n "${SIMULATOR_ID:-}" ]; then
+            xcrun simctl spawn "$SIMULATOR_ID" log show --last 45m --style compact \
+              --predicate 'process == "Runner"' > "$RUNNER_TEMP/simulator-evidence/runner-console.log" 2>&1 || true
+            xcrun simctl shutdown "$SIMULATOR_ID" || true
+          fi
+      - name: Preserve synthetic simulator evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios26-native-storage-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/simulator-evidence/
+          if-no-files-found: error
+          retention-days: 14

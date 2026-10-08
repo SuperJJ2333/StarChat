@@ -1,5 +1,11 @@
 # 当前工作状态
 
+## 2026-10-08 iOS最新修复IPA：0.4.36+2205构建准备
+
+用户要求打包IPA并自行企业签名。新候选codex/ios-history-ipa-2205复用历史/弱网/语音修复3c37b529；成对版本0.4.36+2205、Bundle ID保留com.liuhetong.liuhetongMobile。版本Python23PASS、Flutter33PASS，1446输入冻结，仅两版本文件区别。Windows共享全量5632PASS/9既有skip按未改变行为复用；本次iOS完整设备编译与新数据库worker原生运行尚未通过，不能以旧main CI或Android门禁替代。
+
+GitHub macOS/Xcode路径已真实确认可用；unsigned完整插件候选与单独模拟器运行门禁准备中。交付为待企业重签IPA，源entitlements独立交接；最终签名Team/App ID/Keychain及真机保留数据升级待用户回签验证。本次不发布官网/弹窗/TestFlight或合并main，primary产品WIP保留。恢复读[独立任务](tasks/2026-10-08-ios-history-ipa.md)、[计划](../superpowers/plans/2026-10-08-ios-history-ipa.md)、[规格](../superpowers/specs/2026-10-08-ios-history-ipa.md)，下一步审查unsigned pipeline后只推候选branch并执行CI。
+
 ## 2026-10-08 大历史交互与弱网顺序：源码修复完成，待真机与正式交付
 
 用户要求修复大历史房间、持续快滑跳转、弱网新气泡换位，以及键盘/房间切换。候选分支codex/history-interaction-fix，源码3c37b52960ab79b46566fb16d84fab280b34a7c2；包含ORDER 4d086187和FLING d9abd7ba。原生顺序索引/SQLCipher分块迁移、SDK1000已确认常驻/界面40–200、revision缓存及双向分页已实现，历史正文保留。就绪房间普通操作不再扫描全历史；恢复记录保持独立连续性边界。
