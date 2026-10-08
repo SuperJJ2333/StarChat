@@ -152,6 +152,17 @@ typedef TimelineMigrationReader = Stream<List<String>> Function(
 abstract class DatabaseApi {
   Future<void> prepareTimelineStorage(Iterable<String> roomIds) async {}
 
+  /// Preflight only the ordering metadata that this response can mutate.
+  /// Backends without an incremental store retain their existing behavior.
+  Future<void> prepareSyncTimelineStorage(
+          SyncUpdate sync, Iterable<String> pendingDecryptionRooms) =>
+      prepareTimelineStorage({
+        ...?sync.rooms?.join?.keys,
+        ...?sync.rooms?.leave?.keys,
+        ...?sync.rooms?.invite?.keys,
+        ...pendingDecryptionRooms,
+      });
+
   Future<TimelineIdSnapshot> openTimelineIdSnapshot(Room room,
       {String? afterEventId,
       bool includeSending = false,

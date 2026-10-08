@@ -8,7 +8,8 @@ class RetainedSearchStore {
       {bool deleted = false, bool migration = false}) async {}
   Future<void> remove(String room, String id) async {}
   Future<void> prepare(
-      String room, Future<TimelineIdSnapshot> Function() current) async {}
+      String room, Future<TimelineIdSnapshot> Function() current,
+      {Stream<List<String>> Function()? legacy}) async {}
   Future<TimelineIdSnapshot> snapshot(String room) async =>
       ListTimelineIdSnapshot([]);
   void scheduleGarbage(String room) {}

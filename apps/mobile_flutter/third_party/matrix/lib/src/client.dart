@@ -2391,12 +2391,8 @@ class Client extends MatrixApi {
         await roomsLoading;
         await _accountDataLoading;
         if (!ownsLoop() || _disposed || _aborted) return;
-        await database.prepareTimelineStorage({
-          ...?syncResp.rooms?.join?.keys,
-          ...?syncResp.rooms?.leave?.keys,
-          ...?syncResp.rooms?.invite?.keys,
-          ..._eventsPendingDecryption.map((e) => e.event.roomID),
-        });
+        await database.prepareSyncTimelineStorage(syncResp,
+            _eventsPendingDecryption.map((e) => e.event.roomID));
         _currentTransaction = database.transaction(() async {
           // An abort before this queued transaction starts must leave the
           // replacement loop's cache untouched. Once _handleSync has begun,
@@ -2481,12 +2477,8 @@ class Client extends MatrixApi {
     sync.deviceOneTimeKeysCount ??= {
       'signed_curve25519': encryption?.olmManager.maxNumberOfOneTimeKeys ?? 100,
     };
-    await database?.prepareTimelineStorage({
-      ...?sync.rooms?.join?.keys,
-      ...?sync.rooms?.leave?.keys,
-      ...?sync.rooms?.invite?.keys,
-      ..._eventsPendingDecryption.map((e) => e.event.roomID),
-    });
+    await database?.prepareSyncTimelineStorage(
+        sync, _eventsPendingDecryption.map((e) => e.event.roomID));
     await _handleSync(sync, direction: direction);
   }
 

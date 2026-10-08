@@ -5,6 +5,7 @@ class TimelineIdStore {
   TimelineIdStore(Object collection, TimelineMigrationReader? reader);
   Future<void> open() async {}
   Future<void> prepare(String key) async {}
+  Stream<List<String>> retainedLegacyIds(String key) => const Stream.empty();
   Future<void> add(String key, String id,
       {bool tail = false, bool move = false}) async {}
   Future<void> remove(String key, String id) async {}

@@ -642,6 +642,30 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   }
 
   @override
+  Future<void> prepareSyncTimelineStorage(
+      SyncUpdate sync, Iterable<String> pendingDecryptionRooms) async {
+    final order = _timelineOrder;
+    if (order == null) return;
+    final joins = sync.rooms?.join;
+    final rooms = <String>{
+      ...pendingDecryptionRooms,
+      for (final entry
+          in joins?.entries ?? <MapEntry<String, JoinedRoomUpdate>>[])
+        if (entry.value.timeline?.events?.isNotEmpty == true) entry.key,
+    };
+    for (final id in rooms) {
+      // _handleRooms resets limited main fragments inside the same sync batch.
+      // Migrating the obsolete fragment first can hold every room behind a
+      // whole-history copy. Pending echoes/recovery remain independently kept.
+      if (joins?[id]?.timeline?.limited != true) {
+        await order.prepare(TupleKey(id, '').toString());
+      }
+      await order.prepare(TupleKey(id, 'SENDING').toString());
+      await order.prepare(TupleKey(id, 'RECOVERY').toString());
+    }
+  }
+
+  @override
   Future<TimelineIdSnapshot> openTimelineIdSnapshot(Room room,
       {String? afterEventId,
       bool includeSending = false,
@@ -2462,7 +2486,9 @@ SELECT v FROM "$_timelineFragmentsBoxName" WHERE k = ?
       MatrixSearchSnapshotBudget? budget}) async {
     final retained = _retainedSearch;
     if (retained != null) {
-      await retained.prepare(room.id, () => openTimelineIdSnapshot(room));
+      await retained.prepare(room.id, () => openTimelineIdSnapshot(room),
+          legacy: () => _timelineOrder!
+              .retainedLegacyIds(TupleKey(room.id, '').toString()));
       _timelineOrder!.scheduleGarbage(TupleKey(room.id, '').toString());
       _timelineOrder!.scheduleGarbage(TupleKey(room.id, 'SENDING').toString());
       retained.scheduleGarbage(room.id);

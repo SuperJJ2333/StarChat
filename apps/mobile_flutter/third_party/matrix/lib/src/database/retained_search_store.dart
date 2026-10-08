@@ -122,7 +122,8 @@ class RetainedSearchStore {
   Future<void> remove(String room, String id) =>
       upsert(room, TimelineSearchEntry(id, null), deleted: true);
   Future<void> prepare(
-      String room, Future<TimelineIdSnapshot> Function() current) {
+      String room, Future<TimelineIdSnapshot> Function() current,
+      {Stream<List<String>> Function()? legacy}) {
     _check();
     _reportMaintenanceFailure();
     if (_ready.contains(room)) return Future.value();
@@ -132,13 +133,15 @@ class RetainedSearchStore {
     }
     return _preparing.putIfAbsent(
         room,
-        () => _prepare(room, current).whenComplete(() {
+        () => _prepare(room, current, legacy).whenComplete(() {
               unawaited(_preparing.remove(room));
             }));
   }
 
   Future<void> _prepare(
-      String room, Future<TimelineIdSnapshot> Function() current) async {
+      String room,
+      Future<TimelineIdSnapshot> Function() current,
+      Stream<List<String>> Function()? legacy) async {
     final generation = _generation, roomGeneration = _roomGeneration[room] ?? 0;
     void check() {
       _check();
@@ -158,6 +161,21 @@ class RetainedSearchStore {
     // covers all other retained epochs and independently recovered events.
     final seed = await current();
     seed.dispose();
+    // Limited sync can replace an unmigrated fragment before first search.
+    // Keep its missing-payload IDs retryable without making sync wait for the
+    // whole legacy copy. Body backfill below enriches these placeholders.
+    if (legacy != null) {
+      await for (final page in legacy()) {
+        check();
+        await collection.transaction(() async {
+          check();
+          for (final id in page) {
+            await upsert(room, TimelineSearchEntry(id, null), migration: true);
+          }
+        });
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
     // Archived epochs can contain temporarily unavailable payloads. Preserve
     // their IDs before allowing timeline metadata GC; deletion tombstones win.
     for (final fragment in ['$room|']) {

@@ -97,10 +97,31 @@ class TimelineIdStore {
   Future<void> prepare(String key) {
     _check();
     _reportMaintenanceFailure();
+    // A limited sync has staged an atomic replacement. The committed legacy
+    // source is no longer the batch's ordering authority, even before commit.
+    // Consult only the owning batch overlay, never cache readiness prematurely.
+    if (collection.timelineOwnsTransaction &&
+        (collection.timelineOverlay['timeline:$key'] as _BatchOrder?)?.reset ==
+            true) {
+      return Future.value();
+    }
     if (_ready.contains(key)) return Future.value();
     if (collection.timelineOwnsTransaction && _preparing.containsKey(key)) {
       throw StateError(
           'Legacy timeline requires preflight outside transaction');
+    }
+    final pending = _preparing[key];
+    if (pending != null) {
+      // A concurrent limited sync can atomically supersede this migration.
+      // Readers must use the committed replacement instead of waiting for the
+      // obsolete worker to finish. That worker still drains under close().
+      return _gate(() => _state(key)).then<void>((state) async {
+        if (state?['migration_state'] == 'ready') {
+          _ready.add(key);
+          return;
+        }
+        await pending;
+      });
     }
     return _preparing.putIfAbsent(
         key,
@@ -253,6 +274,26 @@ class TimelineIdStore {
     }
     for (final page in parser.finish()) {
       yield page;
+    }
+  }
+
+  /// Deferred search backfill includes unresolved legacy IDs displaced by a
+  /// limited sync. It does not publish or mutate the active timeline epoch.
+  Stream<List<String>> retainedLegacyIds(String key) async* {
+    final source = await _gate(() => _sourceIdentity(key));
+    if (source == null) return;
+    await for (final page in reader?.call(key) ?? _boundedLegacy(key)) {
+      _check();
+      if (page.isEmpty || page.length > 256) {
+        throw StateError('Invalid retained legacy page');
+      }
+      if (await _gate(() => _sourceIdentity(key)) != source) {
+        throw StateError('Legacy timeline source changed');
+      }
+      yield page;
+    }
+    if (await _gate(() => _sourceIdentity(key)) != source) {
+      throw StateError('Legacy timeline source changed');
     }
   }
 
