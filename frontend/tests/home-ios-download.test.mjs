@@ -15,8 +15,14 @@ test('homepage iOS link reaches the current installation page', () => {
 
 test('download page advertises the current IPA and retains OTA installation', () => {
   const source = readFileSync(new URL('../download.html', import.meta.url), 'utf8');
-  assert.match(source, /0\.4\.25（2194）/);
-  assert.match(source, /href="\/downloads\/ios\/ChatFlow-0\.4\.25-2194-enterprise-d532f913\.ipa" download/);
+  const manifest = readFileSync(new URL('../downloads/ios/manifest.plist', import.meta.url), 'utf8');
+  const packageUrl = manifest.match(/<key>url<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
+  assert.ok(packageUrl, 'installation manifest must contain a package URL');
+  const packagePath = new URL(packageUrl).pathname;
+  const release = packagePath.match(/ChatFlow-([\d.]+)-(\d+)-enterprise-[a-f\d]+\.ipa$/);
+  assert.ok(release, 'package filename must identify its release');
+  assert.ok(source.includes(`${release[1]}（${release[2]}）`));
+  assert.ok(source.includes(`href="${packagePath}" download`));
   assert.match(source, /itms-services:\/\//);
   assert.doesNotMatch(source, /0\.3\.96|2134/);
 });
@@ -29,10 +35,8 @@ test('download page warns existing users about the new signing team', () => {
   const install = source.indexOf('>安装 iOS 正式版</a>');
   assert.ok(warning >= 0 && warning < install, 'warning must precede the install action');
   assert.match(source, /aria-describedby="ios-signing-warning"/);
-  assert.match(source, /download\.css\?v=20260928-ios13/);
-  const css = readFileSync(new URL('../src/styles/download.css', import.meta.url), 'utf8');
-  const rule = css.match(/\.download-caution \{([^}]*)\}/)?.[1] ?? '';
-  assert.match(rule, /color: var\(--admin-ink\)/);
-  assert.match(rule, /background:/);
-  assert.match(rule, /font-weight: 600/);
+  assert.match(source, /\/site\/orbit-20261005-v1\/orbit\.css/);
+  const css = readFileSync(new URL('../site/orbit-20261005-v1/orbit.css', import.meta.url), 'utf8');
+  assert.match(css, /\.ios-warning\{[^}]*color:[^;}]+;[^}]*background:/);
+  assert.match(css, /\.ios-warning\{[^}]*border:/);
 });

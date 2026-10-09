@@ -1,2 +1,0 @@
-clearAll after LRU: disk keys (a); EXPECT empty
-clearAll during diskWrite: disk keys (x), stale=false; EXPECT empty and stale=true

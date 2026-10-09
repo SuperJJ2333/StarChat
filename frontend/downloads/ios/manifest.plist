@@ -11,7 +11,7 @@
 					<key>kind</key>
 					<string>software-package</string>
 					<key>url</key>
-					<string>https://www.liuhetong888.com/downloads/ios/ChatFlow-0.4.25-2194-enterprise-552a07a4.ipa</string>
+					<string>https://www.liuhetong888.com/downloads/ios/ChatFlow-0.4.36-2205-enterprise-a122af83.ipa</string>
 				</dict>
 			</array>
 			<key>metadata</key>
@@ -19,7 +19,7 @@
 				<key>bundle-identifier</key>
 				<string>com.liuhetong.liuhetongMobile</string>
 				<key>bundle-version</key>
-				<string>2194</string>
+				<string>2205</string>
 				<key>kind</key>
 				<string>software</string>
 				<key>title</key>

@@ -169,9 +169,9 @@ function platformButtons() {
   actions.append(row);
   const ios = element("a", "land-btn land-btn-primary");
   ios.href = "/download";
-  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.25（2194）");
+  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.36（2205）");
   const iosLabel = element("span", "land-platform-chip", "iOS 版下载");
-  iosLabel.append(element("span", "land-platform-status", "0.4.25（2194）· 企业正式版"));
+  iosLabel.append(element("span", "land-platform-status", "0.4.36（2205）· 企业正式版"));
   ios.append(iosLabel);
   actions.append(ios);
   return actions;
