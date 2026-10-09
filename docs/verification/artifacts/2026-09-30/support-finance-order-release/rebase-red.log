@@ -1,1 +1,0 @@
-Observed test-first failures: Worker phase health tests 3 failed (unexpected frozen argument); published void fence 1 failed (HTTP200 expected503). After implementation, full isolated tooling suite55passed in0.27s. No production writes.

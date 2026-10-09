@@ -647,6 +647,18 @@ test('external payment purpose is fixed and controlled chain candidate supplies 
  assert.equal(ownerConfirm(),undefined);
 });
 
+test('scoped owner route retains its initial candidate without an automatic preview or write',async()=>{
+ const previews=[],writes=[];
+ const candidate={txid:ownerTxid,log_index:7,amount:'100000000000000001.000001',to_address:'fixture-recipient',timestamp_ms:1780000000000};
+ const panel=setup({previewOwnerTransfer:async body=>{previews.push(body);return ownerPreview();},executeOwnerTransfer:async body=>writes.push(body)},{walletAccess:true,view:'owner',ownerCandidate:candidate});
+ await settle();assert.equal(previews.length,0);assert.equal(writes.length,0);
+ const form=panel.find('form').find(item=>item.name==='owner-transfer');assert.ok(form);
+ assert.equal(form.find('input').find(input=>input.name==='txid').value,ownerTxid);
+ ownerPurpose(form).value='payment';form.find('input').find(input=>input.name==='ownership_attested').checked=true;
+ await form.handlers.submit({preventDefault(){}});
+ assert.equal(previews.length,1);assert.equal(previews[0].log_index,7);assert.equal(writes.length,0);
+});
+
 test('ambiguous or absent owner outflow stops at preview with actionable guidance',async()=>{
  for(const [code,text] of [['TRANSFER_SELECTION_REQUIRED','链上流水'],['TRANSFER_NOT_FOUND','没有可申报']]){
   let writes=0;

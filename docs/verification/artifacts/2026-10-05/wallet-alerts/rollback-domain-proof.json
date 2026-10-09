@@ -1,1 +1,0 @@
-[{"role": "producer", "passed": true, "cause_changed_compatible": true, "receipt_replay_compatible": true}, {"role": "api", "passed": true, "cause_changed_compatible": true, "receipt_replay_compatible": true}, {"role": "worker", "passed": true, "cause_changed_compatible": true, "receipt_replay_compatible": true}]

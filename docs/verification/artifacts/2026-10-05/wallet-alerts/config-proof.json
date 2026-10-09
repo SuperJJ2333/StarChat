@@ -1,1 +1,0 @@
-{"business_roles_preserved": true, "watch_project": "starchat-tron-watch", "watch_service": "tron-watch", "watch_only_source_changed": true, "rollback_images": {"api": "sha256:b95d985a7b7dc3756c32d6817f7fa121cefc7964c11127f53410f15e5abc99d5", "worker": "sha256:419be8060d5222065d3c5a060b120aead15de473b25bb5a51eefe2e32997bc5d"}}

@@ -6,5 +6,7 @@ User explicitly selected local integration into main and a clean Git state on 20
 2. Commit the primary website/release documentation and the verified Android 0.4.44+2213 source from its existing worktree. Remove missing historical generated artifacts from the index; do not restore runtime databases or package dumps.
 3. Review divergent admin/wallet/iOS/rollback branches. Merge their unique commits using three-way integration, retaining the latest published mobile source and distribution metadata where older release branches conflict. Preserve unrelated detached pending work without replaying obsolete snapshots.
 4. Run affected merged-source tests, policy checks and appropriate verification. Independently review specification compliance before quality/security. Record environment limitations and exact evidence reuse.
-5. Only after successful integration checks, delete merged local branch refs and archive this chat's completed managed worktrees after preserving needed ignored files. Prune missing registrations. Leave other tasks' dirty worktrees intact.
+5. Only after successful integration checks, delete merged local branch refs and detach completed named worktrees at the same commits, preserving all ignored build/evidence files. Prune missing registrations. Leave other tasks' dirty worktrees intact.
 6. Record final main commit, ancestry coverage, clean primary status and retained worktrees. Keep local recovery archives ignored and recoverable.
+
+Completed: all six stages. Worktree directories retained because ignored release builds and native test DLLs remain needed; safe detachment replaces archival. No remote mutations. Final evidence: docs/verification/2026-10-09-git-main-integration.md.

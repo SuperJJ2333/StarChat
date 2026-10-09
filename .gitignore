@@ -96,3 +96,6 @@ codegraph.json
 # Local agent plans and generated Gradle caches.
 .zcode/
 **/.gradle/
+
+# Local build, verification and recovery evidence.
+/docs/verification/artifacts/

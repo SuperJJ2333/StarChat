@@ -9,6 +9,16 @@ m = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(m)
 
 
+def ios_panel(page):
+    # Orbit's iOS tab ends at the surrounding device section. Preserve the
+    # whole block, including installation instructions and enterprise warning.
+    marker = b'<div id="ios-panel"'
+    assert page.count(marker) == 1
+    panel = page.split(marker, 1)[1]
+    assert b'</section>' in panel
+    return marker + panel.split(b'</section>', 1)[0]
+
+
 def release(**changes):
     import hashlib
     names=('download-redirect.js','download-network.js','download-network-selector.js')
@@ -123,7 +133,7 @@ def test_network_render_keeps_ios_and_business_ui_and_is_repeatable():
     assert set(staged)=={'download.html','src/admin-home.js','downloads/android-release.json'}
     assert b'data-cdn-host="dexamplenetwork.cloudfront.net"' in staged['download.html']
     assert staged['download.html'].count(b'id="android-direct-download"')==1
-    assert staged['download.html'].split(b'aria-labelledby="ios-title"')[1].split(b'<div class="download-side">')[0] == page.split(b'aria-labelledby="ios-title"')[1].split(b'<div class="download-side">')[0]
+    assert ios_panel(staged['download.html']) == ios_panel(page)
     assert staged['src/admin-home.js'].split(b'function androidApkPath')[0]==home.split(b'function androidApkPath')[0]
     registry=json.loads(staged['downloads/android-release.json'])
     assert registry['cdn_url']==record['cdn_url']
@@ -162,7 +172,7 @@ def test_next_regular_android_release_disables_old_selector_and_refreshes_backup
     assert b'dexamplenetwork.cloudfront.net' not in new_page
     assert b'id="android-direct-download" href="/downloads/ChatFlow-0.4.20-build2189-arm64.apk"' in new_page
     assert b'href="/downloads/latest-arm64.apk" download>\xe4\xb8\x8b\xe8\xbd\xbd Android' in new_page
-    assert new_page.split(b'aria-labelledby="ios-title"')[1].split(b'<div class="download-side">')[0] == active['download.html'].split(b'aria-labelledby="ios-title"')[1].split(b'<div class="download-side">')[0]
+    assert ios_panel(new_page) == ios_panel(active['download.html'])
     assert '/download?platform=android&install=1' in active['src/admin-home.js'].decode()
     newer=next_release|{'version':'0.4.21','build':2190,
         'artifact_url':m.BASE+'/downloads/ChatFlow-0.4.21-build2190-arm64.apk'}

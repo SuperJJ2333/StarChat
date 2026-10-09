@@ -14,8 +14,9 @@ from app.core.config import Settings
 from app.core.database import Base, create_session_factory
 from app.core.errors import install_error_handlers
 from app.modules.audit.models import AuditEvent
-from app.modules.identity.enums import RoleCode
-from app.modules.identity.models import UserRole
+from app.modules.identity.enums import AccountStatus, RoleCode
+from app.modules.identity.models import User, UserRole
+from app.modules.identity.staff_activation import StaffActivation, staff_identity
 from app.modules.wallet.service import WalletLedger
 
 
@@ -27,18 +28,30 @@ def reports_http():
     factory = create_session_factory(engine)
     settings = Settings(_env_file=None, environment='test', jwt_secret='test-' * 8)
     with factory.begin() as session:
+        now = datetime.now(timezone.utc)
+        user = User(id='finance', username='finance', username_normalized='finance',
+            email='finance@example.test', email_normalized='finance@example.test',
+            email_verified_at=now, password_hash='fixture', status=AccountStatus.ACTIVE,
+            created_at=now, updated_at=now)
+        session.add(user)
+        session.add(User(id='ordinary-user', username='ordinary', username_normalized='ordinary',
+            email='ordinary@example.test', email_normalized='ordinary@example.test',
+            password_hash='fixture', status=AccountStatus.ACTIVE, created_at=now, updated_at=now))
         session.add(UserRole(id='finance-role', user_id='finance', role_code=RoleCode.FINANCE_SUPPORT,
-            assigned_by='fixture', assigned_at=datetime.now(timezone.utc)))
+            assigned_by='fixture', assigned_at=now))
+        session.flush()
+        _, _, digest = staff_identity(session, user)
+        session.add(StaffActivation(user_id=user.id, identity_digest=digest, activated_at=now))
     WalletLedger(factory).post(entries={'report-user': Decimal('12.345678'),
         'PLATFORM_CUSTODY': Decimal('-12.345678')}, actor_id='fixture',
         reason_code='REPORT_TEST', scope='report-test', idempotency_key='seed')
     app = FastAPI()
     install_error_handlers(app)
     app.include_router(create_admin_router(settings, factory), prefix='/api/v1')
-    def headers(user):
+    def headers(user, scope='admin'):
         now = datetime.now(timezone.utc)
         token = jwt.encode({'sub': user, 'iss': settings.jwt_issuer,
-            'iat': now, 'exp': now + timedelta(minutes=5)}, settings.jwt_secret, algorithm='HS256')
+            'iat': now, 'exp': now + timedelta(minutes=5), 'session_scope': scope}, settings.jwt_secret, algorithm='HS256')
         return {'Authorization': 'Bearer ' + token}
     yield TestClient(app), headers, factory
     engine.dispose()
@@ -71,6 +84,16 @@ def test_report_has_decimal_evidence_and_audit(reports_http):
         audit = session.scalar(select(AuditEvent).where(AuditEvent.action == 'wallet.report.viewed'))
         assert audit is not None and audit.actor_id == 'finance'
         assert audit.after_data['digest'] == report['digest']
+
+
+def test_reports_reject_app_session_and_revoked_activation(reports_http):
+    client, headers, factory = reports_http
+    assert client.get(day_query(), headers=headers('finance', scope='app')).status_code == 403
+    with factory.begin() as session:
+        session.delete(session.get(StaffActivation, 'finance'))
+    assert client.get(day_query(), headers=headers('finance')).status_code == 403
+    with factory() as session:
+        assert session.scalar(select(AuditEvent).where(AuditEvent.action == 'wallet.report.viewed')) is None
 
 
 def test_csv_export_is_audited_attachment(reports_http):

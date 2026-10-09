@@ -1,1 +1,0 @@
-Recovery tests RED missingmodule; GREEN10passed0.18s. Eight negative ownership cases: production-like name, ID,image,network,bind,publishedport,volume,extramount. Positive exactbinding and structural singlefield manifest/baseline amendment assertions. Actual PostgreSQLfixture red-green is separate c315 evidence. No production/helper operations executed by implementer.

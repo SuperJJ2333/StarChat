@@ -9,6 +9,10 @@
 
 # Preserve SDK provenance hashes.
 apps/mobile_flutter/third_party/matrix/** -text
+# Resource licensing evidence is hashed as downloaded bytes on every platform.
+apps/mobile_flutter/assets/emoji/ANIMATED_SOURCE_LICENSE.txt -text whitespace=cr-at-eol
+apps/mobile_flutter/assets/emoji/NOTICE.txt -text whitespace=cr-at-eol
+apps/mobile_flutter/assets/emoji_vector/LICENSE.txt -text whitespace=cr-at-eol
 # Keep the published embedded statistics resource byte-identical on macOS/Windows.
 apps/mobile_flutter/assets/html/statistics_tools_combined_v2.html -text whitespace=cr-at-eol
 docs/verification/artifacts/2026-08-26/e2ee-session-capability-boundary/DIFF_FILE.patch -whitespace

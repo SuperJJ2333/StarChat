@@ -44,7 +44,21 @@ def components():
         with engine.connect() as connection:
             assert connection.scalar(text('SELECT current_schema()')) == schema
         importlib.import_module('app.main')  # Register all mapped models before schema creation.
-        Base.metadata.create_all(engine)
+        # This identity race fixture needs identity, administration, support,
+        # audit and Outbox tables.
+        # Unrelated financial models use migration-specific PostgreSQL DDL;
+        # creating their SQLite-oriented metadata here masks the race itself.
+        tables = {mapper.local_table for mapper in Base.registry.mappers
+                  if mapper.class_.__module__.startswith(('app.modules.identity', 'app.modules.admin', 'app.modules.support'))}
+        tables.update((AuditEvent.__table__, OutboxEvent.__table__))
+        pending = list(tables)
+        while pending:
+            for foreign_key in pending.pop().foreign_keys:
+                dependency = foreign_key.column.table
+                if dependency not in tables:
+                    tables.add(dependency)
+                    pending.append(dependency)
+        Base.metadata.create_all(engine, tables=list(tables))
         factory = create_session_factory(engine)
         now = datetime.now(timezone.utc)
         hasher = PasswordHasher()

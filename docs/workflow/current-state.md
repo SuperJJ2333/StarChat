@@ -1,4 +1,8 @@
 # 当前工作状态
+## 2026-10-09 本地 Git 分支已合入 main
+
+12 个原分支及 Android2213 源码检查点均可由 main 追溯；合并分支引用已安全删除，5 个工作树原位 detached、2 个失效登记清理，其他任务未提交文件及构建证据保留。Flutter5758/9、前端562、边界373/23、后台四分组加修复夹具完整覆盖3930/130、真实PG4、SPEC→QUALITY通过；串行verify中止后用等价分组门禁完成，未称原脚本exit0。正式Android2213/iOS2205渠道保持，未推送远端或部署。见[报告](../verification/2026-10-09-git-main-integration.md)、[任务](tasks/2026-10-09-git-main-integration.md)。
+
 ## 2026-10-09 Android0.4.44+2213正式发布，返回最新门槛已提高
 
 17:17:44+08 PUBLISH_PASS，Android2211→2213官网/CloudFront/普通更新弹窗已启用；max(600逻辑px,一屏)门槛、明确定位返回入口，并首次正式包含debug2212缓存优先/连续快滑/静态最近16修复。5758/9条件skip、377/23、analyze0、native17、18发布契约与SPEC→QUALITY通过，ARM64固定75b31常规重建28门禁。成品73139489bytes/SHA08a74481…8f15271，CF14→15原路径/策略保持，actual平台/legacy路由+三审计+HTTPS四后验通过。iOS2205/min3/candidate2209/schema0095/35服务保持；primary54/managed51源码渠道回填通过，自建SOCKS已关，未合Git。真机覆盖/实际弹窗/profile与原百万陌生ID/提及scanner边界仍缺口。见[报告](../verification/2026-10-09-android2213-release.md)、[任务](tasks/2026-10-09-android2213-return-latest-release.md)。

@@ -1,1 +1,0 @@
-Role slicing/merged/reuse tests initially3failed15passed: other service leaked, exact merged images mismatched, no runtime Config reuse gate. Final isolated tooling suite65passed0.34s. Tests assert exact candidate/rollback nonimage config, runtime Config drift rejection, explicit ID drift rejection, retained prior Compose/context evidence. No product payload or production writes.
