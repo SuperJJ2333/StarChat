@@ -1,4 +1,8 @@
 # 当前工作状态
+## 2026-10-09 iOS0.4.44+2213普通更新弹窗已启用
+
+用户最新授权启用弹窗，22:04+08 IOS_POPUP_PUBLISH_PASS/ROUTE_AND_AUDIT_READBACK_PASS；仅iOS version/build2205→2213，两条事务CAS审计，min3/说明/安装页/Android五设置/静态/容器身份保持。77契约、SPEC→QUALITY、两端及legacy实际route函数投影、公网三路401与IPA HEAD通过。仍为官网指定SHA9e5d3582…bc8a21包，签名/真机覆盖缺口不变；实际旧版手机弹窗待反馈，无APNs推送或强制升级。见[报告](../verification/2026-10-09-ios2213-update-popup.md)、[任务](tasks/2026-10-09-ios2213-update-popup.md)。
+
 ## 2026-10-09 iOS0.4.44+2213指定回签包仅官网已分发
 
 21:42:40+08 STATIC_IOS_DISTRIBUTION_PASS；37966033bytes/SHA9e5d3582…bc8a21。官网下载/首页iOS标签/OTA清单已更新，十项应用更新设置及容器身份保持，未启用2213弹窗；iOS应用内配置仍2205、Android2213。真实RED→五专项GREEN、SPEC→QUALITY及双端HTTPS后验通过。严格身份/原包比较FAIL已留证，按同会话用户直接分发偏好发布精确回签文件；未称真机安装或纯重签通过。main回填仅iOS标签，保留既有提现cacheEpoch鉴权。见[报告](../verification/2026-10-09-ios2213-static-distribution.md)、[任务](tasks/2026-10-09-ios2213-static-distribution.md)。
