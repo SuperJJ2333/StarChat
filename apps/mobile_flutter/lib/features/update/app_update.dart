@@ -15,6 +15,7 @@ final class AppUpdateInfo {
     required this.minSupportedBuild,
     required this.notes,
     required this.apkUrl,
+    this.androidDelta,
   });
 
   factory AppUpdateInfo.fromMap(Map<String, dynamic> map) => AppUpdateInfo(
@@ -25,6 +26,7 @@ final class AppUpdateInfo {
         notes: map['notes']?.toString() ?? '',
         apkUrl:
             map['download_url']?.toString() ?? map['apk_url']?.toString() ?? '',
+        androidDelta: AndroidDeltaEnvelope.parse(map['android_delta']),
       );
 
   final String latestVersion;
@@ -32,12 +34,38 @@ final class AppUpdateInfo {
   final int minSupportedBuild;
   final String notes;
   final String apkUrl;
+  final AndroidDeltaEnvelope? androidDelta;
 
   /// Platform-specific release destination. Keep apkUrl as a compatibility alias
   /// for existing callers; an iOS destination is an enterprise download page.
   String get downloadUrl => apkUrl;
 
   bool get isConfigured => latestBuild > 0;
+}
+
+/// An envelope is only a candidate. Native code authenticates it against the
+/// installed APK certificate before trusting a URL, size, digest or build.
+final class AndroidDeltaEnvelope {
+  const AndroidDeltaEnvelope(this.signedPayload, this.signature);
+  final String signedPayload;
+  final String signature;
+  static AndroidDeltaEnvelope? parse(Object? value) {
+    if (value is! Map) return null;
+    final payload = value['signed_payload'];
+    final signature = value['signature'];
+    if (payload is! String ||
+        signature is! String ||
+        payload.isEmpty ||
+        payload.length > 16384 ||
+        signature.isEmpty ||
+        signature.length > 2048) {
+      return null;
+    }
+    return AndroidDeltaEnvelope(payload, signature);
+  }
+
+  Map<String, String> toMap() =>
+      {'signed_payload': signedPayload, 'signature': signature};
 }
 
 /// Parses the API payload; returns null when the server has no release

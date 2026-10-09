@@ -1,8 +1,19 @@
+import 'dart:async';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:liuhetong_mobile/ui/chat/emoji_resource_glyph.dart';
+import 'package:liuhetong_mobile/ui/chat/emoji_text.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/emoji/fluent_emoji_catalog.dart';
 import 'package:liuhetong_mobile/ui/chat/super_emoji_message.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
+
+final class _PendingSupportPaths extends PathProviderPlatform {
+  final pending = Completer<String?>();
+  @override
+  Future<String?> getApplicationSupportPath() => pending.future;
+}
 
 FluentEmoji _emoji(String name) =>
     FluentEmoji(char: '😀', name: name, asset: 'assets/emoji/$name.webp');
@@ -14,6 +25,37 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
+  // Run before any other animated glyph initializes the process-wide store.
+  testWidgets(
+      'single super emoji keeps 96px neutral startup and offline vector fallback',
+      (tester) async {
+    final previous = PathProviderPlatform.instance;
+    final paths = _PendingSupportPaths();
+    PathProviderPlatform.instance = paths;
+    addTearDown(() => PathProviderPlatform.instance = previous);
+    await _pump(
+        tester,
+        SuperEmojiMessage(
+          emojis: [_emoji('smile')],
+          direction: MessageDirection.incoming,
+        ));
+    final glyph = find.byType(EmojiResourceGlyph);
+    expect(tester.widget<EmojiResourceGlyph>(glyph).size, 96);
+    expect(tester.getSize(glyph), const Size(96, 96));
+    expect(find.byType(SvgPicture), findsNothing);
+    expect(find.byType(Image), findsNothing);
+
+    paths.pending.completeError(StateError('support directory offline'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(SvgPicture), findsOneWidget);
+    final vector = tester.widget<SvgPicture>(find.byType(SvgPicture));
+    expect(vector.width, 96);
+    expect(vector.height, 96);
+    expect(tester.getSize(glyph), const Size(96, 96));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('four super emojis stay inside a narrow message row',
       (tester) async {
     tester.view.physicalSize = const Size(360, 800);
@@ -29,45 +71,32 @@ void main() {
           senderName: 'Test sender',
         ));
     expect(tester.takeException(), isNull);
+    expect(find.byType(EmojiVectorGlyph), findsNWidgets(4));
     final rects = find
-        .byType(Image)
+        .byType(EmojiVectorGlyph)
         .evaluate()
         .map((element) => tester.getRect(find.byWidget(element.widget)))
         .toList();
     expect(rects.every((rect) => rect.left >= 0 && rect.right <= 360), isTrue);
   });
-  testWidgets('single super emoji renders 96px with high quality filter',
+
+  testWidgets(
+      'legacy multiple super emojis remain static and retain row metadata',
       (tester) async {
-    await _pump(
-      tester,
-      SuperEmojiMessage(
-        emojis: [_emoji('smile')],
-        direction: MessageDirection.incoming,
-      ),
-    );
-
-    final image = tester.widget<Image>(find.byType(Image));
-    expect(image.width, 96);
-    expect(image.height, 96);
-    expect(image.filterQuality, FilterQuality.high);
-    expect(image.gaplessPlayback, isTrue);
-  });
-
-  testWidgets('multiple super emojis render at 64px', (tester) async {
     await _pump(
       tester,
       SuperEmojiMessage(
         emojis: [_emoji('smile'), _emoji('joy')],
         direction: MessageDirection.incoming,
+        avatar: const SizedBox(width: 40, height: 40),
+        senderName: 'Legacy sender',
       ),
     );
 
-    final images = tester.widgetList<Image>(find.byType(Image)).toList();
-    expect(images, hasLength(2));
-    for (final image in images) {
-      expect(image.width, 64);
-      expect(image.height, 64);
-    }
+    expect(find.byType(EmojiResourceGlyph), findsNothing);
+    expect(find.byType(SvgPicture), findsNWidgets(2));
+    expect(find.byKey(const Key('message-avatar-slot')), findsOneWidget);
+    expect(find.text('Legacy sender'), findsOneWidget);
   });
 
   testWidgets('incoming super emoji shows avatar slot and sender name',
@@ -129,7 +158,7 @@ void main() {
       ),
     );
 
-    await tester.longPress(find.byType(Image));
+    await tester.longPress(find.byType(EmojiResourceGlyph));
     // 动画图像持续调度帧，不能 pumpAndSettle，用固定时长等待手势完成。
     await tester.pump(const Duration(milliseconds: 300));
     expect(longPressed, isTrue);

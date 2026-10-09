@@ -34,12 +34,73 @@ def _asset_name(value: object, *, allow_directory: bool = False) -> str:
     return value
 
 
+def _remote_emoji_assets(root: Path) -> dict[str, dict]:
+    """Accept exclusions only when APK-compiled trust anchor binds exact sources."""
+    path = root / "lib/features/emoji/emoji_resource_manifest.dart"
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    anchor = re.search(r"emojiManifestDigest\s*=\s*'([a-f0-9]{64})'", text)
+    encoded = re.search(r"emojiManifestJson\s*=\s*r'''(.*?)'''", text, re.DOTALL)
+    if not anchor or not encoded:
+        raise ValueError("missing trusted remote emoji manifest anchor")
+    data = encoded.group(1).encode("utf-8")
+    if len(data) > 65536 or hashlib.sha256(data).hexdigest() != anchor.group(1):
+        raise ValueError("trusted remote emoji manifest digest mismatch")
+    try:
+        manifest = json.loads(data)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError("invalid trusted remote emoji manifest JSON") from error
+    if not isinstance(manifest, dict) or manifest.get("version") != 1:
+        raise ValueError("unsupported remote emoji manifest")
+    rows = manifest.get("entries")
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 56:
+        raise ValueError("invalid remote emoji manifest count")
+    revision = hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
+    if manifest.get("revision") != revision:
+        raise ValueError("remote emoji manifest revision mismatch")
+    result = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("invalid remote emoji entry")
+        identifier, name, size, digest = (row.get(key) for key in ("id", "path", "bytes", "sha256"))
+        if (not isinstance(identifier, str) or not re.fullmatch(r"[a-z0-9-]{1,64}", identifier)
+                or name != identifier + ".webp" or type(size) is not int or not 12 <= size <= 1048576
+                or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
+                or row.get("type") != "image/webp"):
+            raise ValueError("invalid remote emoji path/size/type/hash")
+        asset = "assets/emoji/" + name
+        if asset in result:
+            raise ValueError("duplicate remote emoji resource")
+        source = root / asset
+        source.resolve(strict=True).relative_to(root)
+        if not source.is_file() or source.stat().st_size != size:
+            raise ValueError(f"remote emoji source size mismatch: {asset}")
+        with source.open("rb") as stream:
+            header = stream.read(12)
+            stream.seek(0)
+            actual = hashlib.file_digest(stream, "sha256").hexdigest()
+        if header[:4] != b"RIFF" or header[8:12] != b"WEBP":
+            raise ValueError(f"remote emoji source WebP mismatch: {asset}")
+        if actual != digest:
+            raise ValueError(f"remote emoji source SHA256 mismatch: {asset}")
+        result[asset] = row
+    return result
+
+
+def _excluded_asset(name: str) -> bool:
+    return (name.startswith("assets/diagnostics/") or
+            (name.startswith("assets/emoji/") and name not in {"assets/emoji/NOTICE.txt", "assets/emoji/ANIMATED_SOURCE_LICENSE.txt"}) or
+            (name.startswith("assets/branding/") and name != "assets/branding/liuhetong_logo.svg"))
+
+
 def _source_assets(mobile_root: Path, flavor: str) -> dict[str, Path]:
     root = mobile_root.resolve(strict=True)
     pubspec = yaml.safe_load((root / "pubspec.yaml").read_text(encoding="utf-8"))
     declarations = pubspec.get("flutter", {}).get("assets", [])
     if not isinstance(declarations, list) or not declarations:
         raise ValueError("pubspec has no declared Flutter assets")
+    remote = _remote_emoji_assets(root)
     assets = {}
     for declaration in declarations:
         if isinstance(declaration, dict):
@@ -62,13 +123,24 @@ def _source_assets(mobile_root: Path, flavor: str) -> dict[str, Path]:
                 raise ValueError(f"missing or empty declared source asset: {name}")
             path.resolve(strict=True).relative_to(root)
             assets[path.relative_to(root).as_posix()] = path
+    if remote:
+        if "assets/emoji/NOTICE.txt" not in assets:
+            raise ValueError("offline emoji attribution notice is not declared")
+        for name in assets:
+            if _excluded_asset(name):
+                raise ValueError(f"forbidden release source asset: {name}")
     for filename in CATALOGS:
         text = (root / "lib/features/emoji" / filename).read_text(encoding="utf-8")
         references = re.findall(r"\basset\s*:\s*['\"]([^'\"]+)['\"]", text)
         if not references:
             raise ValueError(f"empty emoji catalog: {filename}")
+        if filename == "fluent_emoji_catalog.dart" and remote:
+            if set(references) != set(remote) or len(references) != len(remote):
+                raise ValueError("remote emoji manifest/catalog identity mapping mismatch")
         for name in references:
             _asset_name(name)
+            if name in remote and filename == "fluent_emoji_catalog.dart":
+                continue
             if name not in assets:
                 raise ValueError(f"emoji catalog asset not declared by pubspec: {name}")
     return assets
@@ -145,6 +217,11 @@ def validate_apk(path: Path, mobile_root: Path, flavor: str = "standard") -> dic
                 raise ValueError(f"ZIP directory cannot be a {description} file: {name}")
             return archive.read(entry)
 
+        remote = _remote_emoji_assets(mobile_root.resolve(strict=True))
+        if remote:
+            for name in names:
+                if name.startswith(PREFIX) and _excluded_asset(name[len(PREFIX):]):
+                    raise ValueError(f"excluded resource present in release bundle: {name}")
         manifest = _decode_asset_manifest(read("AssetManifest.bin", "AssetManifest.bin"))
         try:
             families = json.loads(read("FontManifest.json", "FontManifest.json"))
@@ -203,6 +280,7 @@ def validate_apk(path: Path, mobile_root: Path, flavor: str = "standard") -> dic
         "sha256": digest,
         "source_asset_count": len(source_assets),
         "emoji_webp_count": sum(name.startswith("assets/emoji/") and name.endswith(".webp") for name in source_assets),
+        "remote_emoji_count": len(remote),
         "emoji_svg_count": sum(name.startswith("assets/emoji_vector/") and name.endswith(".svg") for name in source_assets),
         "font_count": len(set().union(*font_membership.values())),
         "flavor": flavor,

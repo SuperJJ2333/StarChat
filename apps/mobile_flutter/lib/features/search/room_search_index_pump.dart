@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../../core/maintenance_activity.dart';
 
 import '../matrix/room_timeline_controller.dart';
 import '../matrix/room_paged_history_source.dart';
@@ -16,16 +17,20 @@ final class RoomSearchIndexPump {
     required this.upsert,
     required this.remove,
     this.pagedSource,
+    MaintenanceActivity? maintenance,
     this.batchSize = 64,
     this.maxTrackedIds = 60000,
     this.maxPendingIds = 2048,
-  }) : assert(batchSize > 0 && maxTrackedIds > 0 && maxPendingIds > 0);
+  })  : maintenance = maintenance ?? MaintenanceActivity.instance,
+        assert(batchSize > 0 && maxTrackedIds > 0 && maxPendingIds > 0);
 
   /// Must replay the current authoritative loaded history, including updates
   /// queued through request. This is not a durable sink for arbitrary streams.
   /// Unloaded history continues to be recovered by the encrypted DB backfill.
   final Iterable<RoomMessageViewModel> Function() source;
   final RoomPagedHistorySource? pagedSource;
+  final MaintenanceActivity maintenance;
+  final _stopped = Completer<void>();
   final bool Function() isActive;
   final void Function(List<RoomMessageViewModel>) upsert;
   final void Function(List<String>) remove;
@@ -38,6 +43,7 @@ final class RoomSearchIndexPump {
   Iterator<RoomMessageViewModel>? _history;
   List<RoomMessageViewModel> _retry = const [];
   Timer? _timer;
+  bool _drainWaiting = false;
   bool _dirty = false;
   bool _disposed = false;
   bool _waitingForHistory = false;
@@ -106,11 +112,36 @@ final class RoomSearchIndexPump {
 
   void _schedule(Duration delay) {
     // Fixed deadline: sustained traffic must not keep cancelling pending work.
-    _timer ??= Timer(delay, _drain);
+    if (_disposed || _drainWaiting) return;
+    _timer ??= Timer(delay, () => unawaited(_runDrain()));
+  }
+
+  Future<void> _runDrain() async {
+    _drainWaiting = true;
+    // Keep one pending drain while waiting; request() cannot create parallel workers.
+    final lease = await maintenance.acquireHeavy(
+        cancelled: () => _disposed || !isActive(),
+        cancellation: _stopped.future);
+    _timer = null;
+    _drainWaiting = false;
+    if (lease == null) {
+      if (!_disposed) dispose();
+      return;
+    }
+    try {
+      if (!_disposed && isActive()) {
+        if (maintenance.canMaintain) {
+          _drain();
+        } else {
+          _schedule(const Duration(milliseconds: 4));
+        }
+      }
+    } finally {
+      lease.release();
+    }
   }
 
   void _drain() {
-    _timer = null;
     _waitingForHistory = false;
     if (_disposed) return;
     if (!isActive()) {
@@ -226,12 +257,35 @@ final class RoomSearchIndexPump {
   Future<void> _loadHistoryPage() async {
     final generation = _pageGeneration;
     _pageLoading = true;
+    MaintenanceLease? lease;
+    final pressure = maintenance.pressureEpoch;
+    bool cancelled() =>
+        _disposed || generation != _pageGeneration || !isActive();
+    Future<void> checkpoint() async {
+      if (cancelled() ||
+          !maintenance.canMaintain ||
+          pressure != maintenance.pressureEpoch) {
+        throw const _IndexReadInterrupted();
+      }
+    }
+
     try {
+      lease = await maintenance.acquireHeavy(
+          cancelled: cancelled, cancellation: _stopped.future);
+      if (lease == null) return;
+      await checkpoint();
       final page = await pagedSource!.readHistoryPage(
         cursor: _historyCursor,
         direction: RoomHistoryDirection.older,
-        rawLimit: batchSize.clamp(1, 256),
+        rawLimit: batchSize.clamp(1, 64),
+        beforeRead: checkpoint,
       );
+      try {
+        await checkpoint();
+      } catch (_) {
+        page.nextCursor?.dispose();
+        rethrow;
+      }
       if (_disposed || generation != _pageGeneration || !isActive()) {
         page.nextCursor?.dispose();
         if (!_disposed && !isActive()) dispose();
@@ -257,6 +311,7 @@ final class RoomSearchIndexPump {
       _dirty = true;
       _schedule(const Duration(seconds: 1));
     } finally {
+      lease?.release();
       if (generation == _pageGeneration) _pageLoading = false;
     }
   }
@@ -272,6 +327,7 @@ final class RoomSearchIndexPump {
 
   void dispose() {
     _disposed = true;
+    if (!_stopped.isCompleted) _stopped.complete();
     _resetPages();
     _timer?.cancel();
     _timer = null;
@@ -294,3 +350,7 @@ _SearchVersion _version(RoomMessageViewModel row) => (
           !row.isSdkLocalEcho &&
           row.text.trim().isNotEmpty,
     );
+
+final class _IndexReadInterrupted implements Exception {
+  const _IndexReadInterrupted();
+}

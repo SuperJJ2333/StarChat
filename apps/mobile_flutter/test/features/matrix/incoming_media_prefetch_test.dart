@@ -294,7 +294,11 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
     source.controller.add(item('r3', 'three'));
-    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final completionDeadline = DateTime.now().add(const Duration(seconds: 5));
+    while (service.completedCount < 3 &&
+        DateTime.now().isBefore(completionDeadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     for (final pair in [('r1', 'one'), ('r2', 'two'), ('r3', 'three')]) {
       final page = RoomImagePreviewCache.forRoomSession(
           accountId: 'https://matrix.test|alice',

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart' show RenderPadding;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -21,6 +23,11 @@ import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 import 'package:liuhetong_mobile/features/search/local_message_search_repository.dart';
 
 import 'profile_repository_test.dart' show MemoryProfileStore;
+
+// Native integration uses the application's bundled SQLCipher factory.
+// Host unit tests retain their existing generic SQLite fixture.
+DatabaseFactory? historyInteractionDatabaseFactory;
+bool runNativeHistoryKeyboardInteractions = false;
 
 // Transparent observation of the real SDK source. It does not implement any
 // windowing, projection, paging or mutation policy of its own.
@@ -71,7 +78,11 @@ class _ObservedStore extends MatrixSdkDatabase {
       {required super.database, required super.sqfliteFactory});
   int pageRows = 0;
   int individualReads = 0;
+  int _readEpoch = 0;
+  bool diagnoseReads = false;
+  String? lastReadStack;
   _Gate? nextPage;
+  Object? nextPageOperation;
   _Gate? pendingSync;
   @override
   Future<void> storeEventUpdate(EventUpdate update, Client client) async {
@@ -86,27 +97,43 @@ class _ObservedStore extends MatrixSdkDatabase {
   @override
   Future<List<Event>> getEventList(Room room,
       {int start = 0, bool onlySending = false, int? limit}) async {
+    final epoch = _readEpoch;
+    final stack = diagnoseReads ? StackTrace.current.toString() : null;
     final rows = await super.getEventList(room,
         start: start, onlySending: onlySending, limit: limit);
-    pageRows += rows.length;
+    if (epoch == _readEpoch) {
+      pageRows += rows.length;
+      if (stack != null) lastReadStack = stack;
+    } else if (diagnoseReads) {
+      debugPrint('PRIOR_QUERY_COMPLETION rows=${rows.length}');
+    }
     return rows;
   }
 
   @override
   Future<Event?> getEventById(String eventId, Room room) async {
     individualReads++;
+    if (diagnoseReads) lastReadStack = StackTrace.current.toString();
     final row = await super.getEventById(eventId, room);
     // Resident keyset pagination reads payloads by ID, rather than using the
     // old offset-list path. Hold the real payload read without altering it.
     final gate = nextPage;
-    nextPage = null;
-    if (gate != null) await gate.wait();
+    if (gate != null &&
+        (nextPageOperation == null ||
+            identical(
+                Zone.current[#historyPayloadOperation], nextPageOperation))) {
+      nextPage = null;
+      nextPageOperation = null;
+      await gate.wait();
+    }
     return row;
   }
 
   void resetCounts() {
+    _readEpoch++;
     pageRows = 0;
     individualReads = 0;
+    lastReadStack = null;
   }
 }
 
@@ -266,9 +293,10 @@ class _Fixture {
 
   static Future<_Fixture> create(int persistedCount,
       {String? visibilityTargetId}) async {
-    final sql = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+    final factory = historyInteractionDatabaseFactory ?? databaseFactoryFfi;
+    final sql = await factory.openDatabase(inMemoryDatabasePath);
     final store = _ObservedStore('history-interaction',
-        database: sql, sqfliteFactory: databaseFactoryFfi);
+        database: sql, sqfliteFactory: factory);
     await store.open();
     final receipts = <String>[];
     final client = _InteractionClient(store, receipts, <String>[], <String>[])
@@ -432,6 +460,83 @@ void main() {
     LocalMessageSearchRepository.shared.clear();
   });
 
+  if (runNativeHistoryKeyboardInteractions) {
+    testWidgets(
+        'native keyboard opens and closes while actual RoomPage stays usable',
+        (tester) async {
+      final fixture = (await tester.runAsync(() => _Fixture.create(10000)))!;
+      try {
+        await fixture.mount(tester, fixture.a);
+        final state = tester.state(find.byType(RoomPage)) as dynamic;
+        final input = state.input as TextEditingController;
+        final focus = state.inputFocusNode as FocusNode;
+        expect(tester.binding.testTextInput.isRegistered, isFalse,
+            reason: 'native keyboard verification must not use mock input');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMessageHandler(SystemChannels.textInput.name, (data) {
+          final call = SystemChannels.textInput.codec.decodeMethodCall(data!);
+          if (call.method == 'TextInput.setClient') {
+            final config = (call.arguments as List)[1] as Map;
+            debugPrint(
+                'NATIVE_IME_CHANNEL ${call.method} type=${config['inputType']}');
+          } else if (call.method == 'TextInput.show' ||
+              call.method == 'TextInput.hide' ||
+              call.method == 'TextInput.clearClient') {
+            debugPrint('NATIVE_IME_CHANNEL ${call.method}');
+          }
+          return messenger.delegate.send(SystemChannels.textInput.name, data);
+        });
+        addTearDown(() => messenger.setMockMessageHandler(
+            SystemChannels.textInput.name, null));
+        Future<void> waitForKeyboard(bool shown) async {
+          for (var attempt = 0; attempt < 100; attempt++) {
+            await tester.runAsync(
+                () => Future<void>.delayed(const Duration(milliseconds: 50)));
+            await tester.pump();
+            final bottom =
+                ui.PlatformDispatcher.instance.views.single.viewInsets.bottom;
+            if ((bottom > 0) == shown) return;
+          }
+          debugPrint(
+              'NATIVE_IME_DIAGNOSTIC lifecycle=${tester.binding.lifecycleState} '
+              'focus=${focus.hasFocus} canRequest=${focus.canRequestFocus} '
+              'rawBottom=${ui.PlatformDispatcher.instance.views.single.viewInsets.bottom} '
+              'testBottom=${tester.view.viewInsets.bottom}');
+          fail('Native IME did not reach expected visibility: $shown');
+        }
+
+        final before = _list(tester).eventIds.toList();
+        for (var cycle = 0; cycle < 50; cycle++) {
+          await tester.tap(find.byKey(const Key('composer-input')));
+          await tester.pump();
+          expect(focus.hasFocus, isTrue,
+              reason: 'actual composer must own focus');
+          tester
+              .state<EditableTextState>(find.byType(EditableText))
+              .requestKeyboard();
+          await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 100)));
+          await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+          await waitForKeyboard(true);
+          input.value = const TextEditingValue(
+              text: 'synthetic unsent draft',
+              selection: TextSelection.collapsed(offset: 3));
+          await tester.pump();
+          expect(input.selection.baseOffset, 3);
+          expect(_controller(tester).messages.length, lessThanOrEqualTo(200));
+          expect(_list(tester).eventIds, before);
+          focus.unfocus();
+          await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+          await waitForKeyboard(false);
+          expect(tester.takeException(), isNull);
+        }
+      } finally {
+        await fixture.dispose(tester);
+      }
+    });
+  }
+
   testWidgets('RoomPage padding alone never sends a read marker for its body',
       (tester) async {
     const targetId = 'A-970';
@@ -577,12 +682,18 @@ void main() {
       await fixture.mount(tester, fixture.a);
       await tester.pump(const Duration(milliseconds: 300));
       final controller = _controller(tester);
+      fixture.store.diagnoseReads = runNativeHistoryKeyboardInteractions;
       fixture.store.nextPage = page;
+      final historyOperation = Object();
+      fixture.store.nextPageOperation = historyOperation;
       late Future<void> pending;
       await _withBothClocks(tester, () async {
-        pending = controller.loadHistory();
+        pending = runZoned(() => controller.loadHistory(),
+            zoneValues: {#historyPayloadOperation: historyOperation});
         await page.entered.future;
       }, phase: 'held page entered');
+      expect(controller.historyLoading, isTrue,
+          reason: 'the held read must belong to this history operation');
       fixture.store.pendingSync = sync;
       late Future<void> syncPending;
       await _withBothClocks(tester, () async {
@@ -633,6 +744,11 @@ void main() {
         expect(identical(controller.messages, modelsBefore), isTrue,
             reason:
                 'typing and selection do not publish replacement presentation models');
+        if (fixture.store.pageRows + fixture.store.individualReads > 0 &&
+            runNativeHistoryKeyboardInteractions) {
+          debugPrint('HELD_READ_DIAGNOSTIC pageRows=${fixture.store.pageRows} '
+              'individualReads=${fixture.store.individualReads}\n${fixture.store.lastReadStack}');
+        }
         expect(fixture.store.pageRows + fixture.store.individualReads, 0);
         expect(_list(tester).controller.positions.length, 1);
         expect(tester.takeException(), isNull);
@@ -815,15 +931,77 @@ void main() {
       expect(keys[anchor.eventId]?.currentContext, isNotNull);
       expect(anchorY(), closeTo(before, 1));
       var previous = before;
+      var previousPixels = scroll.position.pixels;
+      var previousTime = tester.binding.clock.now();
       for (var tick = 0; tick < 3; tick++) {
+        // On a live binding more than 16 ms can pass between pumps. Track a
+        // center-visible bubble per frame, so lazy offscreen recycling does
+        // not invalidate the geometric sample as the original anchor leaves.
+        var sampledKey = keys[anchor.eventId]!;
+        if (runNativeHistoryKeyboardInteractions) {
+          final viewportBox =
+              viewport.currentContext!.findRenderObject()! as RenderBox;
+          final centerY = viewportBox
+              .localToGlobal(Offset(0, viewportBox.size.height / 2))
+              .dy;
+          final rendered = keys.values.where((key) {
+            final box = key.currentContext?.findRenderObject();
+            return box is RenderBox && box.attached && box.hasSize;
+          }).toList();
+          expect(rendered, isNotEmpty);
+          rendered.sort((a, b) {
+            double distance(GlobalKey key) {
+              final box = key.currentContext!.findRenderObject()! as RenderBox;
+              return (box.localToGlobal(Offset(0, box.size.height / 2)).dy -
+                      centerY)
+                  .abs();
+            }
+
+            return distance(a).compareTo(distance(b));
+          });
+          sampledKey = rendered.first;
+        }
+        double sampleY() =>
+            (sampledKey.currentContext!.findRenderObject()! as RenderBox)
+                .localToGlobal(Offset.zero)
+                .dy;
+        previous = sampleY();
         await tester.pump(const Duration(milliseconds: 16));
-        final current = anchorY();
-        expect((current - previous).abs(), lessThan(100),
+        expect(sampledKey.currentContext, isNotNull,
+            reason: 'center-visible sample must remain mounted across a frame');
+        final current = sampleY();
+        final now = tester.binding.clock.now();
+        final elapsedUs = now.difference(previousTime).inMicroseconds;
+        if (runNativeHistoryKeyboardInteractions) {
+          // Direct print avoids throttled debug output hiding native failures.
+          // Synthetic geometry only; no message content or identifiers.
+          // ignore: avoid_print
+          print(
+              'BALLISTIC_GEOMETRY tick=$tick delta=${current - previous} pixels=${scroll.position.pixels - previousPixels} activity=${scroll.position.activity.runtimeType}');
+        }
+        final pixelDelta = scroll.position.pixels - previousPixels;
+        final expectedMotion = scroll.position.axisDirection == AxisDirection.up
+            ? pixelDelta
+            : -pixelDelta;
+        expect(current - previous, closeTo(expectedMotion, 2),
+            reason:
+                'bubble motion must follow physical scrolling without a position jump');
+        expect(
+            (current - previous).abs(),
+            lessThan(runNativeHistoryKeyboardInteractions
+                ? scroll.position.viewportDimension
+                : 100.0),
             reason: 'actual bubble must remain continuous on ballistic ticks');
+        if (runNativeHistoryKeyboardInteractions) {
+          debugPrint(
+              'NATIVE_BALLISTIC elapsedUs=$elapsedUs displacement=${(current - previous).abs()}');
+        }
         expect(scroll.position.activity, isA<BallisticScrollActivity>());
         expect(scroll.positions.length, 1);
         expect(controller.messages.length, lessThanOrEqualTo(200));
         previous = current;
+        previousPixels = scroll.position.pixels;
+        previousTime = now;
       }
       expect(tester.takeException(), isNull);
     } finally {

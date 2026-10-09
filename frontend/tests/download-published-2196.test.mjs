@@ -5,22 +5,22 @@ import {startDownload} from '../src/download-redirect.js';
 
 const source = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
-test('Android release registry names the published 2204 artifact on both exact routes', () => {
+test('Android release registry names the published 2213 artifact on both exact routes', () => {
   const release = JSON.parse(source('../downloads/android-release.json'));
   assert.deepEqual(release, {
-    platform: 'android', version: '0.4.35', build: 2204,
-    artifact_bytes: 82848798,
-    sha256: 'a2d100be2e0273107d231dfd82fee316c89d3c1cb37ff976ba36d8f2fcf835e5',
-    cdn_url: 'https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.35-build2204-arm64.apk',
-    direct_url: 'https://www.liuhetong888.com/downloads/ChatFlow-0.4.35-build2204-arm64.apk',
+    platform: 'android', version: '0.4.44', build: 2213,
+    artifact_bytes: 73139489,
+    sha256: '08a7448114ad5d768b534b81b61668e03a71a2c26f95e894297e098838f15271',
+    cdn_url: 'https://d12fjr06o6tga5.cloudfront.net/downloads/ChatFlow-0.4.44-build2213-arm64.apk',
+    direct_url: 'https://www.liuhetong888.com/downloads/ChatFlow-0.4.44-build2213-arm64.apk',
   });
 });
 
-test('download page offers the 2204 direct fallback and the published network selector', () => {
+test('download page offers the 2213 direct fallback and the published network selector', () => {
   const html = source('../download.html');
   assert.match(html, /id="android-network-download"[^>]*data-cdn-host="d12fjr06o6tga5\.cloudfront\.net"/);
-  assert.match(html, /id="android-direct-download" href="\/downloads\/ChatFlow-0\.4\.35-build2204-arm64\.apk"/);
-  assert.match(html, /\/src\/download-redirect\.js\?v=2204-network/);
+  assert.match(html, /id="android-direct-download" href="\/downloads\/ChatFlow-0\.4\.44-build2213-arm64\.apk"/);
+  assert.match(html, /\/src\/download-redirect\.js\?v=2213-network/);
   assert.match(source('../src/download-redirect.js'), /installAndroidNetworkDownload/);
 });
 

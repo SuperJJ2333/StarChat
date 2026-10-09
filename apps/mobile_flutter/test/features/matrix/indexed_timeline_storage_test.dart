@@ -645,6 +645,8 @@ void main() {
     try {
       await sql.insert(
           'box_timeline_fragments', {'k': '${room.id}|', 'v': '["abandoned"]'});
+      // Exact counting remains an explicit maintenance barrier. Foreground
+      // snapshots expose unknown coverage until the worker completes.
       await expectLater(db.getTimelineEventCount(room), throwsStateError);
       expect(await db.getEventIdList(room), ['kept']);
       final search = await db.openSearchEventIds(room);

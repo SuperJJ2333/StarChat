@@ -1,0 +1,16 @@
+Animated emoji source: Tarikul-Islam-Anik/Animated-Fluent-Emojis.
+Verified upstream LICENSE: Personal Use Only License, commit
+55e1dceff489121c3f7c7a7ec4f4d401d2cbd53e.
+https://github.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/blob/55e1dceff489121c3f7c7a7ec4f4d401d2cbd53e/LICENSE
+LICENSE SHA256: 03aaf19c01575ca63371ac1ff80926f0e655138009f7d108dae593337a9824b0
+The existing animated downloader used unpinned master; the original downloaded commit is not established.
+The user stated personal use on 2026-10-09. These sources and generated resource
+files remain private/local debug fixtures; public distribution rights have not
+been established. They must not be published to a public CDN or official channel.
+This notice does not claim that the animated source is MIT licensed.
+
+Static Microsoft fluentui-emoji: MIT License. Full copyright and permission
+notice is preserved offline in assets/emoji_vector/LICENSE.txt.
+Verified LICENSE commit: 1ffb34c752ecf5d402f04cfb4b392c77f57c54bc.
+https://github.com/microsoft/fluentui-emoji/blob/1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/LICENSE
+LICENSE SHA256: c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383

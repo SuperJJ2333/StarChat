@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/voice_playback_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/room_paged_history_source.dart';
@@ -44,6 +45,7 @@ class _PagedSource extends Source implements RoomPagedHistorySource {
     String? sourceRoomId,
     required RoomHistoryDirection direction,
     int rawLimit = 64,
+    Future<void> Function()? beforeRead,
   }) async {
     final anchorIndex = anchorEventId == null
         ? null
@@ -62,6 +64,7 @@ class _PagedSource extends Source implements RoomPagedHistorySource {
     final end = (start + rawLimit).clamp(0, current.rows.length);
     pagedReads += end - start;
     await gate?.future;
+    await beforeRead?.call();
     current.index = end;
     return RoomHistoryMessagePage(
         messages: current.rows
@@ -94,6 +97,7 @@ RoomMessageViewModel _voice(String id, {int time = 100}) =>
     );
 
 void main() {
+  setUp(() => MaintenanceActivity.instance.resetForTesting());
   test('paged voice excludes canonically older rows with future timestamps',
       () async {
     final completed = _voice('completed', time: 100);

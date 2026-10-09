@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
+import 'maintenance_activity.dart';
 
 /// Application-level decoded-image limits. Live images, codecs, native video
 /// buffers and GPU memory still require separate measurement and lifecycle limits.
@@ -12,6 +13,7 @@ final class MediaResourcePolicy with WidgetsBindingObserver {
   void install() {
     if (_installed) return;
     _installed = true;
+    MaintenanceActivity.instance.install();
     PaintingBinding.instance.imageCache
       ..maximumSize = 512
       ..maximumSizeBytes = 64 * 1024 * 1024;
@@ -21,9 +23,7 @@ final class MediaResourcePolicy with WidgetsBindingObserver {
   @override
   void didHaveMemoryPressure() {
     clearEncoded();
-    PaintingBinding.instance.imageCache
-      ..clear()
-      ..clearLiveImages();
+    PaintingBinding.instance.imageCache.clear();
   }
 
   void dispose() {

@@ -13,6 +13,9 @@ class CooperativeMatrixDatabase extends MatrixSdkDatabase {
     super.database,
     super.sqfliteFactory,
     super.timelineMigrationReader,
+    super.timelineMaintenanceWait,
+    super.timelineMaintenanceLease,
+    super.timelineLegacyPageReader,
     super.timelineSearchMigrationReader,
   });
 

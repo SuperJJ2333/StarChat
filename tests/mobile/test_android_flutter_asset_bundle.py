@@ -227,3 +227,63 @@ def test_rejects_nonempty_zip_directory_as_referenced_font_file(bundle):
     bundle[1][PREFIX + directory] = b"nonempty-directory-payload"
     with pytest.raises(ValueError, match="directory|invalid Flutter asset path"):
         check(bundle)
+import hashlib
+
+
+def remote_bundle(bundle):
+    mobile, entries, _ = bundle
+    payload = b'RIFF' + b'\x00' * 4 + b'WEBP' + b'valid-test-resource'
+    (mobile / 'assets/emoji/smile.webp').write_bytes(payload)
+    rows = [{'id': 'smile', 'path': 'smile.webp', 'sha256': hashlib.sha256(payload).hexdigest(),
+             'bytes': len(payload), 'type': 'image/webp'}]
+    revision = hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()[:24]
+    data = json.dumps({'version': 1, 'revision': revision, 'entries': rows}, sort_keys=True, separators=(',', ':'))
+    (mobile / 'lib/features/emoji/emoji_resource_manifest.dart').write_text(
+        "const emojiManifestDigest = '" + hashlib.sha256(data.encode()).hexdigest() + "';\n"
+        "const emojiManifestJson = r'''" + data + "''';\n", encoding='utf-8')
+    logo = mobile / 'assets/branding/liuhetong_logo.svg'
+    logo.write_bytes(b'<svg>brand</svg>')
+    (mobile / 'assets/branding/logo.png').unlink()
+    del entries[PREFIX + 'assets/branding/logo.png']
+    entries[PREFIX + 'assets/branding/liuhetong_logo.svg'] = logo.read_bytes()
+    notice = mobile / 'assets/emoji/NOTICE.txt'
+    notice.write_bytes(b'Existing generated copyright attribution')
+    entries[PREFIX + 'assets/emoji/NOTICE.txt'] = notice.read_bytes()
+    pubspec = mobile / 'pubspec.yaml'
+    pubspec.write_text(pubspec.read_text(encoding='utf-8').replace('    - assets/emoji/\n',
+        '    - assets/emoji/NOTICE.txt\n'), encoding='utf-8')
+    del entries[PREFIX + 'assets/emoji/smile.webp']
+    entries[PREFIX + 'AssetManifest.bin'] = codec({name.removeprefix(PREFIX): [{'asset': name.removeprefix(PREFIX)}]
+        for name in entries if name.startswith(PREFIX + 'assets/')})
+    return bundle
+
+
+def test_trusted_remote_manifest_allows_external_animation_but_keeps_offline_svg(bundle):
+    result = check(remote_bundle(bundle))
+    assert result['emoji_webp_count'] == 0
+    assert result['emoji_svg_count'] == 1
+    assert result['remote_emoji_count'] == 1
+
+
+def test_remote_resource_source_corruption_is_rejected(bundle):
+    remote_bundle(bundle)
+    (bundle[0] / 'assets/emoji/smile.webp').write_bytes(b'corrupt')
+    with pytest.raises(ValueError, match='remote.*(SHA256|size|WebP)'):
+        check(bundle)
+
+
+def test_remote_manifest_tampering_without_anchor_is_rejected(bundle):
+    remote_bundle(bundle)
+    manifest = bundle[0] / 'lib/features/emoji/emoji_resource_manifest.dart'
+    manifest.write_text(manifest.read_text(encoding='utf-8').replace('image/webp', 'text/plain'), encoding='utf-8')
+    with pytest.raises(ValueError, match='trusted.*manifest|manifest.*digest'):
+        check(bundle)
+
+
+@pytest.mark.parametrize('name', ['assets/emoji/smile.webp', 'assets/diagnostics/test.bin',
+    'assets/branding/app_icon~1.png', 'assets/branding/app_icon~2.png', 'assets/branding/LOGO.png'])
+def test_remote_release_rejects_excluded_files_even_outside_asset_manifest(bundle, name):
+    remote_bundle(bundle)
+    bundle[1][PREFIX + name] = b'undesired-extra-resource'
+    with pytest.raises(ValueError, match='excluded|forbidden'):
+        check(bundle)

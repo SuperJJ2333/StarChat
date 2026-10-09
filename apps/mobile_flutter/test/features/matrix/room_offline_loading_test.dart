@@ -557,6 +557,78 @@ void main() {
   });
 
   testWidgets(
+      'RoomPage twelve fast flings preserve visible pagination boundary',
+      (tester) async {
+    final client = _OfflineClient();
+    final room = client.localRoom;
+    room.localTimeline.events
+      ..clear()
+      ..addAll(List.generate(1000, (i) {
+        final id = 999 - i;
+        return Event(
+            room: room,
+            eventId: 'fast-$id',
+            senderId: '@peer:offline.test',
+            type: EventTypes.Message,
+            originServerTs: DateTime.utc(2026).add(Duration(hours: id)),
+            content: {
+              'msgtype': 'm.text',
+              'body':
+                  List.filled(id % 100 == 0 ? 200 : 1 + id % 4, 'synthetic row')
+                      .join('\n')
+            });
+      }));
+    await _mount(tester, client,
+        scrollBehavior: const _ClampingScrollBehavior());
+    final listFinder = find.byType(AnchoredTimelineList).first;
+    final scroll = tester.widget<AnchoredTimelineList>(listFinder).controller;
+    final timeline = (tester.state(find.byType(RoomPage)) as dynamic).controller
+        as RoomTimelineController;
+    var shifts = 0;
+    void observeShift() {
+      final old = tester.widget<AnchoredTimelineList>(listFinder);
+      if (old.eventIds.firstOrNull == timeline.messages.lastOrNull?.stableId) {
+        return;
+      }
+      final viewport = find
+          .ancestor(
+              of: listFinder,
+              matching: find.byWidgetPredicate(
+                  (w) => w is GestureDetector && w.key is GlobalKey))
+          .first;
+      final viewportKey =
+          tester.widget<GestureDetector>(viewport).key! as GlobalKey;
+      final retained = TimelineScrollAnchor.visibleBoundaryEventId(
+          old.messageKeys, viewportKey, old.eventIds,
+          earlier: true);
+      expect(retained, isNotNull);
+      final before =
+          tester.getTopLeft(find.byKey(old.messageKeys[retained]!)).dy;
+      expect(timeline.messages.any((m) => m.stableId == retained), isTrue,
+          reason: 'the actual RoomPage must protect its visible outer row');
+      shifts++;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        expect(tester.getTopLeft(find.byKey(old.messageKeys[retained]!)).dy,
+            closeTo(before, 1),
+            reason: 'page admission must not jump days');
+      });
+    }
+
+    timeline.addListener(observeShift);
+    for (var burst = 0; burst < 12; burst++) {
+      await tester.fling(listFinder, const Offset(0, 350), 10000);
+      await tester.pumpAndSettle();
+      expect(timeline.messages.length, lessThanOrEqualTo(200));
+      expect(scroll.positions.length, 1);
+      expect(tester.takeException(), isNull);
+    }
+    expect(shifts, greaterThanOrEqualTo(3));
+    timeline.removeListener(observeShift);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets(
       'clamped older-edge overscroll defers an earlier window shift until drag ends',
       (tester) async {
     final client = _OfflineClient();

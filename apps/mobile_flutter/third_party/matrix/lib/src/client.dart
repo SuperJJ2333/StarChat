@@ -1646,6 +1646,10 @@ class Client extends MatrixApi {
   /// When a new sync response is coming in, this gives the complete payload.
   final CachedStreamController<SyncUpdate> onSync = CachedStreamController();
 
+  /// Local cached preview repairs; this is not a remote sync receipt.
+  final CachedStreamController<void> onRoomListUpdated =
+      CachedStreamController();
+
   /// This gives the current status of the synchronization
   final CachedStreamController<SyncStatusUpdate> onSyncStatus =
       CachedStreamController();
@@ -1853,7 +1857,8 @@ class Client extends MatrixApi {
     }
 
     if (storeInDatabase) {
-      await database?.prepareTimelineStorage([roomId]);
+      await database
+          ?.prepareTimelineAuthority([roomId], eventIds: [event.eventId]);
       await database?.transaction(() async {
         await database.storeEventUpdate(
             EventUpdate(
@@ -2126,9 +2131,29 @@ class Client extends MatrixApi {
         userDeviceKeysLoading = database
             .getUserDeviceKeys(this)
             .then((keys) => _userDeviceKeys = keys);
-        roomsLoading = database.getRoomList(this).then((rooms) {
+        roomsLoading = database.getCachedRoomList(this).then((rooms) {
           _rooms = rooms;
           _sortRooms();
+          final account = this.userID;
+          bool isCurrent() =>
+              !_disposed &&
+              this.userID == account &&
+              identical(this.database, database) &&
+              identical(_rooms, rooms);
+          // Give cached metadata to the caller before reading any legacy
+          // timeline heads. Required states/account data are already loaded.
+          unawaited(Future<void>(() async {
+            if (!isCurrent()) return;
+            await database.refreshRoomListPreviews(
+                rooms.toList(growable: false), this,
+                isCurrent: isCurrent);
+            if (!isCurrent()) return;
+            _sortRooms();
+            onRoomListUpdated.add(null);
+          }).catchError((Object error) {
+            Logs().w(
+                'Optional cached preview repair failed (${error.runtimeType})');
+          }));
         });
         _accountDataLoading = database.getAccountData().then((data) {
           _accountData = data;
@@ -2391,8 +2416,8 @@ class Client extends MatrixApi {
         await roomsLoading;
         await _accountDataLoading;
         if (!ownsLoop() || _disposed || _aborted) return;
-        await database.prepareSyncTimelineStorage(syncResp,
-            _eventsPendingDecryption.map((e) => e.event.roomID));
+        await database.prepareSyncTimelineStorage(
+            syncResp, _eventsPendingDecryption.map((e) => e.event.roomID));
         _currentTransaction = database.transaction(() async {
           // An abort before this queued transaction starts must leave the
           // replacement loop's cache untouched. Once _handleSync has begun,

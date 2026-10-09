@@ -112,6 +112,7 @@ final class MatrixRoomTimelineAdapter
     String? sourceRoomId,
     required RoomHistoryDirection direction,
     int rawLimit = 64,
+    Future<void> Function()? beforeRead,
   }) {
     if (!supportsPagedHistory) {
       throw UnsupportedError('Read-only history paging unavailable');
@@ -121,6 +122,7 @@ final class MatrixRoomTimelineAdapter
         anchorEventId: anchorEventId,
         sourceRoomId: sourceRoomId,
         direction: direction,
+        beforeRead: beforeRead,
         rawLimit: rawLimit);
   }
 
@@ -237,20 +239,20 @@ final class MatrixRoomTimelineAdapter
   bool selectAnchor(String id) =>
       _window?.selectAnchor(id) ?? _fallbackWindow?.anchor(id) ?? false;
   @override
-  void selectEarlier() {
+  void selectEarlier({String? retainEventId}) {
     if (_window != null) {
-      _window!.selectEarlier();
+      _window!.selectEarlier(retainEventId: retainEventId);
     } else {
-      _fallbackWindow?.earlier();
+      _fallbackWindow?.earlier(retainEventId: retainEventId);
     }
   }
 
   @override
-  void selectLater() {
+  void selectLater({String? retainEventId}) {
     if (_window != null) {
-      _window!.selectLater();
+      _window!.selectLater(retainEventId: retainEventId);
     } else {
-      _fallbackWindow?.later();
+      _fallbackWindow?.later(retainEventId: retainEventId);
     }
   }
 

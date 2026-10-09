@@ -206,6 +206,28 @@ final class TimelineScrollAnchor {
   TimelineScrollAnchor(this.eventId, this.globalY);
   final String eventId;
   final double globalY;
+
+  /// Select the outer visible row on the side a window shift would discard.
+  /// Include partial rows: a tall bubble may have its top outside the viewport.
+  static String? visibleBoundaryEventId(Map<String, GlobalKey> keys,
+      GlobalKey viewportKey, Iterable<String> newestFirst,
+      {required bool earlier}) {
+    final viewport = viewportKey.currentContext?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return null;
+    final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
+    String? oldestVisible;
+    for (final id in newestFirst) {
+      final box = keys[id]?.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      if (!(box.localToGlobal(Offset.zero) & box.size).overlaps(bounds)) {
+        continue;
+      }
+      if (earlier) return id;
+      oldestVisible = id;
+    }
+    return oldestVisible;
+  }
+
   static TimelineScrollAnchor? capture(
       Map<String, GlobalKey> keys, GlobalKey viewportKey) {
     final viewport = viewportKey.currentContext?.findRenderObject();

@@ -1324,7 +1324,8 @@ class Room {
     }
 
     if (client.database != null) {
-      await client.database?.prepareTimelineStorage([id]);
+      await client.database?.prepareTimelineAuthority([id],
+          eventIds: resp.chunk.map((event) => event.eventId));
       await client.database?.transaction(() async {
         if (generation != historyGeneration) return;
         if (storeInDatabase) {
@@ -1476,6 +1477,7 @@ class Room {
     await postLoad();
 
     List<Event> events;
+    final storedGeneration = historyGeneration;
 
     if (!isArchived) {
       events = await client.database?.getEventList(
@@ -1511,6 +1513,17 @@ class Room {
     final timeline = Timeline(
         room: this,
         chunk: chunk,
+        // The bounded local database read already proves these bodies and IDs
+        // are persisted. Resolving their full-history ordinal again would put
+        // old-index preparation back on the cached first-paint path.
+        persistedInitialIds: !isArchived &&
+                eventContextId == null &&
+                storedGeneration == historyGeneration &&
+                client.database != null
+            ? events
+                .where((event) => event.status.isSynced)
+                .map((event) => event.eventId)
+            : const [],
         onChange: onChange,
         onRemove: onRemove,
         onInsert: onInsert,
@@ -1541,7 +1554,8 @@ class Room {
             );
           } else if (client.database != null) {
             // else, we need the database
-            await client.database?.prepareTimelineStorage([id]);
+            await client.database?.prepareTimelineAuthority([id],
+                eventIds: chunk.events.map((event) => event.eventId));
             await client.database?.transaction(() async {
               for (var i = 0; i < chunk.events.length; i++) {
                 if (chunk.events[i].content['can_request_session'] == true) {
@@ -1706,7 +1720,7 @@ class Room {
       );
 
       // Store user in database:
-      await client.database?.prepareTimelineStorage([id]);
+      // State-only persistence does not mutate timeline ordering.
       await client.database?.transaction(() async {
         await client.database?.storeEventUpdate(
           EventUpdate(
@@ -2327,7 +2341,7 @@ class Room {
   Future<void> _handleFakeSync(SyncUpdate syncUpdate,
       {Direction? direction}) async {
     if (client.database != null) {
-      await client.database?.prepareTimelineStorage([id]);
+      await client.database?.prepareSyncTimelineStorage(syncUpdate, const []);
       await client.database?.transaction(() async {
         await client.handleSync(syncUpdate, direction: direction);
       });

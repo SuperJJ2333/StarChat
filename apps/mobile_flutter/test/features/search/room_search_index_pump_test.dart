@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/features/search/room_search_index_pump.dart';
 
@@ -20,6 +21,7 @@ RoomMessageViewModel row(String id,
     );
 
 void main() {
+  setUp(() => MaintenanceActivity.instance.resetForTesting());
   testWidgets('steady updates do not replay already indexed history',
       (tester) async {
     var reads = 0;

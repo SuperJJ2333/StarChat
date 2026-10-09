@@ -45,6 +45,12 @@ abstract interface class RoomPagedHistorySource {
     String? sourceRoomId,
     required RoomHistoryDirection direction,
     int rawLimit = 64,
+
+    /// Optional maintenance checkpoint before/after asynchronous reads and each body.
+    /// Throwing aborts without returning a page. A logical reader may already
+    /// have consumed earlier source heads; close and restart the reader after
+    /// interruption rather than retrying with the same cursor.
+    Future<void> Function()? beforeRead,
   });
 }
 

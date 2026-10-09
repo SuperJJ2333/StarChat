@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_read_state.dart';
@@ -22,6 +23,36 @@ import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 import 'package:liuhetong_mobile/ui/motion/motion_page_route.dart';
 
 import 'profile_repository_test.dart' show MemoryProfileStore;
+
+class _RetryMentionPreferences extends InMemorySharedPreferencesStore {
+  _RetryMentionPreferences() : super.empty();
+  bool failing = true;
+  int attempts = 0;
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (key.contains('chat-mentions-v2:')) {
+      attempts++;
+      if (failing) throw StateError('synthetic transient preference failure');
+    }
+    return super.setValue(valueType, key, value);
+  }
+}
+
+class _DelayedMentionPreferences extends InMemorySharedPreferencesStore {
+  _DelayedMentionPreferences() : super.empty();
+  final release = Completer<void>();
+  bool requested = false;
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    if (key.contains('chat-mentions-v2:')) {
+      requested = true;
+      await release.future;
+    }
+    return super.setValue(valueType, key, value);
+  }
+}
 
 class _LifecycleClient extends Client {
   _LifecycleClient({http.Client? httpClient})
@@ -93,15 +124,36 @@ class _LifecycleRoom extends Room {
   }
 }
 
+class _RetryMentionClient extends _LifecycleClient {
+  @override
+  String? get userID => '@retry-mention:synthetic.test';
+}
+
+class _RetiredMentionClient extends _LifecycleClient {
+  @override
+  String? get userID => '@retired-mention:synthetic.test';
+}
+
+class _MetadataLifecycleClient extends _LifecycleClient {
+  _MetadataLifecycleClient(this.initiallyDirect);
+  final bool initiallyDirect;
+  @override
+  String? get userID => '@metadata-$initiallyDirect:lifecycle.test';
+}
+
 Future<MatrixRoomLease> _mountLifecycleRoom(
     WidgetTester tester, _LifecycleClient client,
-    {bool pushRoute = false}) async {
+    {bool pushRoute = false,
+    SharedPreferencesStorePlatform? preferences}) async {
   tester.view.physicalSize = const Size(360, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   SharedPreferences.setMockInitialValues({});
+  if (preferences != null) {
+    SharedPreferencesStorePlatform.instance = preferences;
+  }
   final matrix = MatrixSdkE2eeClient(client,
       homeserver: Uri.parse('https://lifecycle.test'),
       readContinuityMetadata: client.localRoom.realTimeline == null
@@ -149,6 +201,92 @@ Future<MatrixRoomLease> _mountLifecycleRoom(
 void main() {
   setUp(() => ConversationReadState.shared().resetForTest());
   tearDown(() => ConversationReadState.shared().resetForTest());
+
+  testWidgets('deferred mention bootstrap retries after a timeline update',
+      (tester) async {
+    final client = _RetryMentionClient();
+    client.localRoom.direct = false;
+    final preferences = _RetryMentionPreferences();
+    final lease =
+        await _mountLifecycleRoom(tester, client, preferences: preferences);
+    final page = tester.state(find.byType(RoomPage)) as dynamic;
+    expect(page.controller, isNotNull);
+    expect(page.unreadMentions, isNull);
+    expect(preferences.attempts, greaterThan(0));
+    preferences.failing = false;
+    client.localRoom.timeline.events.insert(
+        0,
+        Event(
+            room: client.localRoom,
+            eventId: 'synthetic-after-preference-recovery',
+            senderId: '@peer:lifecycle.test',
+            type: EventTypes.Message,
+            originServerTs: DateTime.utc(2026, 10, 9),
+            content: {
+              'msgtype': 'm.text',
+              'body': 'synthetic recovered update'
+            }));
+    client.localRoom.update?.call();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final restored = page.unreadMentions != null;
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+    await tester.pump(const Duration(seconds: 1));
+    expect(restored, isTrue,
+        reason: 'transient optional storage failure must not disable mentions');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'cached group bubbles render while mention persistence is pending',
+      (tester) async {
+    final client = _LifecycleClient();
+    client.localRoom.direct = false;
+    final preferences = _DelayedMentionPreferences();
+    final lease =
+        await _mountLifecycleRoom(tester, client, preferences: preferences);
+    await tester.pump(const Duration(milliseconds: 100));
+    final page = tester.state(find.byType(RoomPage)) as dynamic;
+    final hasCachedController = page.controller != null;
+    final hasCachedList =
+        find.byType(AnchoredTimelineList).evaluate().isNotEmpty;
+    // Release even on RED so teardown does not leave a live pending operation.
+    preferences.release.complete();
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    await lease.cancel();
+    await tester.pump(const Duration(seconds: 1));
+    expect(preferences.requested, isTrue);
+    expect(hasCachedController, isTrue,
+        reason:
+            'optional mention writes must not gate cached timeline hydration');
+    expect(hasCachedList, isTrue,
+        reason:
+            'cached bubbles must reach the rendered scroll list before writes');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('retired room cannot publish a held mention bootstrap',
+      (tester) async {
+    final client = _RetiredMentionClient();
+    client.localRoom.direct = false;
+    final preferences = _DelayedMentionPreferences();
+    final lease =
+        await _mountLifecycleRoom(tester, client, preferences: preferences);
+    final page = tester.state(find.byType(RoomPage)) as dynamic;
+    expect(page.controller, isNotNull);
+    expect(page.unreadMentions, isNull);
+    expect(preferences.requested, isTrue);
+    await tester.pumpWidget(const SizedBox());
+    preferences.release.complete();
+    await tester.pump();
+    await lease.cancel();
+    await tester.pump(const Duration(seconds: 1));
+    expect(page.unreadMentions, isNull,
+        reason: 'late completion must not attach a retired room listener');
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
       'fast history flicks and visibility timers keep one mounted scroll view',
@@ -398,7 +536,9 @@ void main() {
     testWidgets(
         'group metadata and delayed announcement during drag, initiallyDirect=$initiallyDirect',
         (tester) async {
-      final client = _LifecycleClient();
+      // Each widget test owns a FakeAsync zone. Do not reuse a completed
+      // singleton mention Future created in another test's retired zone.
+      final client = _MetadataLifecycleClient(initiallyDirect);
       final room = client.localRoom..direct = initiallyDirect;
       room.setState(User(client.userID!, membership: 'join', room: room));
       room.setState(

@@ -291,6 +291,7 @@ final class ImagePickerPage extends StatefulWidget {
     this.pagerBuilder,
     this.photosOnly = false,
     this.staticImagesOnly = false,
+    this.allowFlash = true,
     this.isGroup = false,
     this.confirmLabel = '发送',
     this.showOriginalToggle = true,
@@ -303,6 +304,9 @@ final class ImagePickerPage extends StatefulWidget {
   final DeviceGalleryPager Function()? pagerBuilder;
   final bool photosOnly;
   final bool staticImagesOnly;
+
+  /// Chat supports flash photos; persistent-content pickers disable this action.
+  final bool allowFlash;
   final bool isGroup;
   final String confirmLabel;
   final bool showOriginalToggle;
@@ -1103,14 +1107,15 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           photo: photo,
           selected: selection.isSelected(photo.id),
           onToggle: () => _toggle(photo),
-          onSendFlash: photo.isVideo || widget.staticImagesOnly
-              ? null
-              : () {
-                  // 先关预览页，再以闪照结果关闭整个选择器。
-                  Navigator.of(context).pop();
-                  Navigator.of(context)
-                      .pop((photos: [photo], original: true, flash: true));
-                },
+          onSendFlash:
+              !widget.allowFlash || photo.isVideo || widget.staticImagesOnly
+                  ? null
+                  : () {
+                      // 先关预览页，再以闪照结果关闭整个选择器。
+                      Navigator.of(context).pop();
+                      Navigator.of(context)
+                          .pop((photos: [photo], original: true, flash: true));
+                    },
           // 编辑结果作为**新的媒体对象**（`editedGalleryPhoto`）结束选择器：
           // 设备原照片不被覆盖，也不再需要二次选择。
           onEditedSend: (bytes) async {

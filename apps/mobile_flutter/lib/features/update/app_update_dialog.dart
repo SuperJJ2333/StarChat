@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import 'app_update.dart';
+import 'android_delta_update.dart';
 
 /// 版本更新弹窗。
 ///
@@ -15,44 +16,103 @@ Future<void> showAppUpdateDialog(
   VoidCallback? onDeferred,
 }) {
   final forced = requiresForcedUpdate(info, currentBuild);
-  return showCupertinoDialog(
+  var working = false;
+  var permissionRequired = false;
+  var statusText = '';
+  final dialog = showCupertinoDialog<void>(
     context: context,
     barrierDismissible: !forced,
     routeSettings:
         RouteSettings(name: forced ? 'app-update/forced' : 'app-update'),
-    builder: (dialogContext) => PopScope(
-      canPop: !forced,
-      child: CupertinoAlertDialog(
-        key: Key(forced ? 'app-update-forced-dialog' : 'app-update-dialog'),
-        title: Text('发现新版本 ${info.latestVersion}'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 6),
-          Text(info.notes),
-          const SizedBox(height: 6),
-          if (forced)
-            const Text(
-              '当前版本过旧，必须更新后才能继续使用',
-              style: TextStyle(fontSize: 12, color: CupertinoColors.systemRed),
-            ),
-        ]),
-        actions: [
-          if (!forced)
-            CupertinoDialogAction(
-              key: const Key('app-update-defer'),
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                onDeferred?.call();
-              },
-              child: const Text('稍后再说'),
-            ),
-          CupertinoDialogAction(
-            key: const Key('app-update-now'),
-            isDefaultAction: true,
-            onPressed: () => launchExternal(info.downloadUrl),
-            child: Text(forced ? '立即更新' : '更新'),
-          ),
-        ],
-      ),
-    ),
+    builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => PopScope(
+              canPop: !forced,
+              child: CupertinoAlertDialog(
+                key: Key(
+                    forced ? 'app-update-forced-dialog' : 'app-update-dialog'),
+                title: Text('发现新版本 ${info.latestVersion}'),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const SizedBox(height: 6),
+                  Text(info.notes),
+                  if (statusText.isNotEmpty) Text(statusText),
+                  const SizedBox(height: 6),
+                  if (forced)
+                    const Text(
+                      '当前版本过旧，必须更新后才能继续使用',
+                      style: TextStyle(
+                          fontSize: 12, color: CupertinoColors.systemRed),
+                    ),
+                ]),
+                actions: [
+                  if (!forced)
+                    CupertinoDialogAction(
+                      key: const Key('app-update-defer'),
+                      onPressed: () {
+                        if (working) AndroidDeltaUpdater.cancel();
+                        Navigator.of(dialogContext).pop();
+                        onDeferred?.call();
+                      },
+                      child: const Text('稍后再说'),
+                    ),
+                  CupertinoDialogAction(
+                    key: const Key('app-update-now'),
+                    isDefaultAction: true,
+                    onPressed: working
+                        ? null
+                        : () async {
+                            if (permissionRequired) {
+                              await AndroidDeltaUpdater.requestPermission();
+                              if (dialogContext.mounted) {
+                                setState(() {
+                                  permissionRequired = false;
+                                  statusText = '授权后点击更新继续安装';
+                                });
+                              }
+                              return;
+                            }
+                            setState(() {
+                              working = true;
+                              statusText = info.androidDelta == null
+                                  ? ''
+                                  : '正在准备更新…';
+                            });
+                            try {
+                              final outcome = await launchAppUpdate(info,
+                                  launchExternal: launchExternal);
+                              if (!dialogContext.mounted) return;
+                              setState(() {
+                                permissionRequired = outcome ==
+                                    DeltaUpdateOutcome.permissionRequired;
+                                statusText =
+                                    permissionRequired ? '需要允许本应用安装更新' : '';
+                              });
+                            } finally {
+                              if (dialogContext.mounted) {
+                                setState(() => working = false);
+                              }
+                            }
+                          },
+                    child: Text(permissionRequired
+                        ? '允许安装更新'
+                        : working
+                            ? '准备更新中…'
+                            : forced
+                                ? '立即更新'
+                                : '更新'),
+                  ),
+                  if (info.androidDelta != null)
+                    CupertinoDialogAction(
+                      onPressed: () async {
+                        await AndroidDeltaUpdater.cancel();
+                        await launchExternal(info.downloadUrl);
+                      },
+                      child: const Text('下载完整安装包'),
+                    ),
+                ],
+              ),
+            )),
   );
+  return info.androidDelta == null
+      ? dialog
+      : dialog.whenComplete(AndroidDeltaUpdater.cancel);
 }

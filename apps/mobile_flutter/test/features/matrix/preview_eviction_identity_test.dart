@@ -98,11 +98,16 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       final snapshot = matrix.conversations.snapshot();
       await client.store.entered!.future;
+      expect((await snapshot).rooms.single.id, newer.id,
+          reason: 'cached list must remain usable while counts are held');
       client.store.ids[old.id] = List.generate(120, (i) => '\$expanded-$i');
       history('\$second-history');
       await Future<void>.delayed(Duration.zero);
+      final refined = matrix.localConversationUpdates.first
+          .timeout(const Duration(seconds: 5));
       staleRead.complete(20);
-      expect((await snapshot).rooms.single.id, old.id,
+      await refined;
+      expect((await matrix.conversations.snapshot()).rooms.single.id, old.id,
           reason:
               'a stale count read cannot undo same-head history invalidation');
       expect(matrix.logicalPrimaryRoomIdSync(newer.id), old.id);

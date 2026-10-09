@@ -86,7 +86,7 @@ Future<void> _startApplicationShell(StartupDiagnostics startupDiagnostics,
     StartupFailureObserver recordStartupFailure) async {
   scheduleAppStartupFirstFrame();
   installChatErrorReporter();
-  MediaResourcePolicy(clearEncoded: clearMediaMemoryCaches).install();
+  MediaResourcePolicy(clearEncoded: trimOptionalMediaMemoryCaches).install();
   PerformanceMetrics.instance.startFrameObservation();
   await AppConfig.loadRuntimeVersion();
   startupDiagnostics.updateVersion(

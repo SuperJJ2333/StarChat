@@ -63,21 +63,26 @@ void main() {
     );
     await database.storeEventUpdate(update, client);
 
+    var syncRuns = 0;
+    final subscription = client.onSyncStatus.stream.listen((_) => syncRuns++);
+    // The first database reconstruction below starts self-healing immediately.
+    // Subscribe before that read and await the real sync's final publication:
+    // onSync is emitted only after timeline preparation and persistence finish.
+    final healed = client.onSync.stream.firstWhere((sync) =>
+        sync.rooms?.join?[roomId]?.timeline?.events
+            ?.any((event) => event.eventId == r'$stale-send') ??
+        false);
+
     // Sanity: the row really is stored as `sending`, which is the precondition
     // of the self-heal.
     final stored = await database.getEventById(r'$stale-send', room);
     expect(stored?.status, EventStatus.sending);
 
-    var syncRuns = 0;
-    final subscription = client.onSyncStatus.stream.listen((_) => syncRuns++);
-
     // Reconstruct the way the persistence and timeline paths do.
     for (var i = 0; i < 25; i++) {
       Event.fromJson(Map<String, dynamic>.from(staleSendingEvent()), room);
     }
-    await Future<void>.delayed(Duration.zero);
-    await Future<void>.delayed(Duration.zero);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await healed.timeout(const Duration(seconds: 10));
 
     expect(syncRuns, lessThanOrEqualTo(1),
         reason: 'one stale event must self-heal at most once per '

@@ -2,9 +2,14 @@ import 'package:matrix/src/database/database_api.dart';
 
 /// Web databases keep their existing compatibility implementation.
 class TimelineIdStore {
-  TimelineIdStore(Object collection, TimelineMigrationReader? reader);
+  TimelineIdStore(Object collection, TimelineMigrationReader? reader,
+      {Future<void> Function()? waitForMaintenance,
+      Future<void Function()?> Function(Future<void>)? acquireMaintenanceLease,
+      TimelineLegacyPageReader? legacyPageReader});
+  Map<String, int> get maintenanceMetrics => const {};
   Future<void> open() async {}
   Future<void> prepare(String key) async {}
+  Future<void> prepareComplete(String key) async {}
   Stream<List<String>> retainedLegacyIds(String key) => const Stream.empty();
   Future<void> add(String key, String id,
       {bool tail = false, bool move = false}) async {}

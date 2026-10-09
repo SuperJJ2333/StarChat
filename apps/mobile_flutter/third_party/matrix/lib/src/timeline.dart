@@ -103,6 +103,8 @@ class Timeline {
   bool _residentEnabled = false;
   int _residentMaximum = 1000;
   final Set<String> _residentSavedIds = {};
+  final Set<String> _persistedInitialIds = {};
+  int? _persistedInitialGeneration;
   final Map<String, ({String eventId, String senderId, DateTime timestamp})>
       _retainedMembershipInvites = {};
 
@@ -125,16 +127,24 @@ class Timeline {
     final generation = room.historyGeneration;
     final candidates = events.where((e) => e.status.isSynced).toList();
     if (!await _hydrateMembers(candidates, generation)) return;
-    final savedIds = <String>{};
-    for (var offset = 0; offset < candidates.length; offset += 256) {
+    final savedIds = generation == _persistedInitialGeneration
+        ? candidates
+            .map((e) => e.eventId)
+            .where(_persistedInitialIds.contains)
+            .toSet()
+        : <String>{};
+    final unverified =
+        candidates.where((e) => !savedIds.contains(e.eventId)).toList();
+    for (var offset = 0; offset < unverified.length; offset += 256) {
       final positions = await database.getTimelineEventPositions(
-          room, candidates.skip(offset).take(256).map((e) => e.eventId));
+          room, unverified.skip(offset).take(256).map((e) => e.eventId));
       if (_pinnedDisposed || generation != room.historyGeneration) return;
       savedIds.addAll(positions.keys);
     }
     _residentSavedIds
       ..clear()
       ..addAll(savedIds);
+    _persistedInitialIds.clear();
     _residentMaximum = maximumEvents;
     _residentEnabled = true;
     _trimResident(Direction.f);
@@ -843,7 +853,10 @@ class Timeline {
       this.onInsert,
       this.onRemove,
       this.onNewEvent,
+      Iterable<String> persistedInitialIds = const [],
       required this.chunk}) {
+    _persistedInitialIds.addAll(persistedInitialIds.take(1000));
+    _persistedInitialGeneration = room.historyGeneration;
     sub = room.client.onEvent.stream.listen(_handleEventUpdate);
 
     // If the timeline is limited we want to clear our events cache

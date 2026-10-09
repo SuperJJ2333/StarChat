@@ -400,8 +400,8 @@ abstract interface class RoomWindowedTimelineSource {
   RoomMessageViewModel? get newestMessage;
   DateTime? previousTimestamp(String id);
   bool selectAnchor(String id);
-  void selectEarlier();
-  void selectLater();
+  void selectEarlier({String? retainEventId});
+  void selectLater({String? retainEventId});
   void selectLatest();
   void pinWindow();
 }
@@ -450,6 +450,7 @@ final class RoomTimelineController extends ChangeNotifier
     String? sourceRoomId,
     required RoomHistoryDirection direction,
     int rawLimit = 64,
+    Future<void> Function()? beforeRead,
   }) async {
     if (_disposed) throw StateError('Timeline controller disposed');
     if (!supportsPagedHistory) {
@@ -460,6 +461,7 @@ final class RoomTimelineController extends ChangeNotifier
         anchorEventId: anchorEventId,
         sourceRoomId: sourceRoomId,
         direction: direction,
+        beforeRead: beforeRead,
         rawLimit: rawLimit);
     if (_disposed) {
       page.nextCursor?.dispose();
@@ -685,14 +687,14 @@ final class RoomTimelineController extends ChangeNotifier
     _echoRevision++;
   }
 
-  Future<void> showEarlierWindow() async {
-    _windowSource?.selectEarlier();
+  Future<void> showEarlierWindow({String? retainEventId}) async {
+    _windowSource?.selectEarlier(retainEventId: retainEventId);
     _echoRevision++;
     await refresh();
   }
 
-  Future<void> showLaterWindow() async {
-    _windowSource?.selectLater();
+  Future<void> showLaterWindow({String? retainEventId}) async {
+    _windowSource?.selectLater(retainEventId: retainEventId);
     _echoRevision++;
     await refresh();
   }

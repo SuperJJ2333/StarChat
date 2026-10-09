@@ -3,6 +3,43 @@ import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_viewport.dart';
 
 void main() {
+  RoomTimelineViewport<int> retainedWindow() => RoomTimelineViewport<int>(
+      idOf: (id) => '$id',
+      project: (id) => RoomMessageViewModel(
+          id: '$id',
+          senderId: 'synthetic',
+          text: 'fixture',
+          isOwn: false,
+          timestamp: DateTime.utc(2026),
+          deliveryState: RoomDeliveryState.sent))
+    ..update(List.generate(1000, (i) => i))
+    ..anchor('500');
+
+  test('edge retention clips both shifts without exceeding 200 rows', () {
+    final window = retainedWindow();
+    window.earlier(retainEventId: '550');
+    expect(window.snapshot().first.id, '351');
+    expect(window.snapshot().last.id, '550');
+    window.later(retainEventId: '375');
+    expect(window.snapshot().first.id, '375');
+    expect(window.retainedModels, 200);
+    window.later(retainEventId: '375');
+    expect(window.snapshot().first.id, '375',
+        reason: 'wait until the visible boundary moves before dropping it');
+    window.later(retainEventId: '480');
+    expect(window.snapshot().first.id, '475',
+        reason: 'history advances when the protected row leaves the trim edge');
+  });
+
+  test('missing and out of window retained IDs cannot navigate history', () {
+    for (final id in ['absent', '999', '0']) {
+      final earlier = retainedWindow()..earlier(retainEventId: id);
+      expect(earlier.snapshot().first.id, '300');
+      final later = retainedWindow()..later(retainEventId: id);
+      expect(later.snapshot().first.id, '500');
+    }
+  });
+
   test(
       '50000 references project forty initially and at most 200 across anchors',
       () {

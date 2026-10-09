@@ -54,7 +54,7 @@ class TimelineAnchorUnavailable implements Exception {
 enum TimelineIdDirection { older, newer }
 
 abstract class TimelineIdSnapshot {
-  /// Captured fragment count, not remaining rows after an anchor.
+  /// Captured fragment count, or -1 while legacy coverage is incomplete.
   /// Only page.hasMore determines cursor exhaustion.
   int get length;
   Future<TimelineIdPage> next({int limit = 30});
@@ -65,6 +65,31 @@ abstract class TimelineIdSnapshot {
   void accept(TimelineIdPage page);
   void dispose();
 }
+
+extension TimelineIdSnapshotCoverage on TimelineIdSnapshot {
+  /// Unknown coverage is distinct from an empty fragment. Page.hasMore remains
+  /// authoritative; callers needing an exact count use the maintenance API.
+  int? get exactLength => length < 0 ? null : length;
+}
+
+class TimelineLegacyPage {
+  TimelineLegacyPage(this.ids,
+      {required this.start, required this.hasMore, this.positions = const {}});
+  final List<String> ids;
+  final int start;
+  final bool hasMore;
+  final Map<String, int> positions;
+}
+
+/// Independent foreground BLOB access. Seeking a historical anchor may scan
+/// old bytes in a worker, but never holds the collection transaction gate.
+typedef TimelineLegacyPageReader = Future<TimelineLegacyPage> Function(
+    String fragment, String sourceIdentity,
+    {int start,
+    int limit,
+    List<String>? findEventIds,
+    bool reverse,
+    bool Function()? isCancelled});
 
 class ListTimelineIdSnapshot implements TimelineIdSnapshot {
   ListTimelineIdSnapshot(List<String> ids,
@@ -152,6 +177,12 @@ typedef TimelineMigrationReader = Stream<List<String>> Function(
 abstract class DatabaseApi {
   Future<void> prepareTimelineStorage(Iterable<String> roomIds) async {}
 
+  /// Foreground authority preflight. Incremental backends need not finish
+  /// canonical migration; existing backends retain their preparation behavior.
+  Future<void> prepareTimelineAuthority(Iterable<String> roomIds,
+          {Iterable<String> eventIds = const []}) =>
+      prepareTimelineStorage(roomIds);
+
   /// Preflight only the ordering metadata that this response can mutate.
   /// Backends without an incremental store retain their existing behavior.
   Future<void> prepareSyncTimelineStorage(
@@ -220,6 +251,13 @@ abstract class DatabaseApi {
   );
 
   Future<List<Room>> getRoomList(Client client);
+
+  /// Restore required local room metadata without optional history repair.
+  Future<List<Room>> getCachedRoomList(Client client) => getRoomList(client);
+
+  /// Optional local preview repair after the cached room list is published.
+  Future<void> refreshRoomListPreviews(List<Room> rooms, Client client,
+      {bool Function()? isCurrent}) async {}
 
   Future<Room?> getSingleRoom(Client client, String roomId,
       {bool loadImportantStates = true});

@@ -204,7 +204,9 @@ void main() {
           [r'$new']);
       release.complete();
       final snapshot = await opening;
-      expect((await snapshot.next()).ids, [r'$new']);
+      // The foreground capture now completes before maintenance; it leases
+      // its old epoch while the new limited epoch is published independently.
+      expect((await snapshot.next()).ids, [r'$old']);
       snapshot.dispose();
       expect(await db.getEventIdList(room, limit: 30), [r'$new']);
     } finally {

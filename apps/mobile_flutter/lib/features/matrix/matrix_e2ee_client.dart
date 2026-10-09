@@ -863,7 +863,7 @@ final class MatrixConversationCapability {
         if (registry != null && selfUserId != null) {
           await registry.rememberLocalIdentities(selfUserId, observed);
         }
-        await _owner._refreshLocalMessageCounts(client);
+        _owner._queueLocalMessageCounts(client);
         if (client.userID != snapshotAccount) {
           throw StateError('Conversation snapshot account changed');
         }
@@ -2136,7 +2136,13 @@ final class MatrixRoomLease
 
     _refreshLogicalSources = attachSources;
     try {
-      await attachSources();
+      if (anchorEventId != null &&
+          anchorRoomId != null &&
+          anchorRoomId != roomId) {
+        await attachSources();
+      } else {
+        unawaited(attachSources().catchError((Object _) {}));
+      }
       if (canceled || !identical(_logicalTimeline, merged)) {
         throw StateError('Logical timeline unavailable');
       }
@@ -3062,7 +3068,9 @@ final class _SdkRoomTimelineCapability
     String? sourceRoomId,
     required RoomHistoryDirection direction,
     int rawLimit = 64,
+    Future<void> Function()? beforeRead,
   }) async {
+    await beforeRead?.call();
     _ensureActive();
     if (rawLimit < 1 || rawLimit > 256) {
       throw RangeError.range(rawLimit, 1, 256);
@@ -3084,6 +3092,7 @@ final class _SdkRoomTimelineCapability
                 ? TimelineIdDirection.older
                 : TimelineIdDirection.newer);
         try {
+          await beforeRead?.call();
           _ensureActive();
         } catch (_) {
           handle.dispose();
@@ -3113,13 +3122,17 @@ final class _SdkRoomTimelineCapability
     }
     current.reading = true;
     try {
+      await beforeRead?.call();
       final page = await current.handle.next(limit: rawLimit);
+      await beforeRead?.call();
       _ensureActive();
       if (current.disposed) throw StateError('History cursor disposed');
       final messages = <RoomMessageViewModel>[];
       final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
       for (final id in page.ids) {
+        await beforeRead?.call();
         final event = await room.getLocalEventById(id);
+        await beforeRead?.call();
         _ensureActive();
         if (current.disposed) throw StateError('History cursor disposed');
         if (event == null) {
@@ -3409,15 +3422,15 @@ final class _SdkRoomTimelineCapability
   }
 
   @override
-  void selectEarlier() {
+  void selectEarlier({String? retainEventId}) {
     _windowRevision++;
-    _viewport?.earlier();
+    _viewport?.earlier(retainEventId: retainEventId);
   }
 
   @override
-  void selectLater() {
+  void selectLater({String? retainEventId}) {
     _windowRevision++;
-    _viewport?.later();
+    _viewport?.later(retainEventId: retainEventId);
   }
 
   @override
@@ -6889,6 +6902,18 @@ final class MatrixSdkE2eeClient
   final Uri homeserver;
   final StreamController<void> _syncEvents = StreamController.broadcast();
   Timer? _syncProjectionTimer;
+  final StreamController<void> _localConversationUpdates =
+      StreamController.broadcast();
+  Timer? _localConversationProjectionTimer;
+
+  void _scheduleLocalConversationProjection() {
+    if (!_localConversationUpdates.hasListener) return;
+    _localConversationProjectionTimer ??=
+        Timer(const Duration(milliseconds: 16), () {
+      _localConversationProjectionTimer = null;
+      if (!_accessRevoked) _localConversationUpdates.add(null);
+    });
+  }
 
   // Consumers project the newest client snapshot. Keep event/decryption and
   // outgoing-ack streams lossless, while sharing one UI refresh per burst.
@@ -6903,6 +6928,8 @@ final class MatrixSdkE2eeClient
   void _cancelSyncProjection() {
     _syncProjectionTimer?.cancel();
     _syncProjectionTimer = null;
+    _localConversationProjectionTimer?.cancel();
+    _localConversationProjectionTimer = null;
   }
 
   final StreamController<MatrixDecryptionUpdate> _decryptionUpdates =
@@ -6912,8 +6939,12 @@ final class MatrixSdkE2eeClient
   final _localCountRevisions = <String, Object>{};
   Object _localCountSession = Object();
   String? _localMessageCountAccount;
+  Future<void>? _localCountsRefresh;
+  Client? _localCountsRefreshClient;
+  String? _localCountsRefreshAccount;
   MatrixClientContinuityMetadata? _decryptionCacheContinuity;
   StreamSubscription<EventUpdate>? _decryptionSubscription;
+  StreamSubscription<void>? _roomListPreviewSubscription;
   StreamSubscription<EventUpdate>? _outgoingEchoSubscription;
   final List<_ManagedClientStreamBase> _managedSubscriptions = [];
   final List<_ManagedClientResourceBase> _managedResources = [];
@@ -6928,6 +6959,27 @@ final class MatrixSdkE2eeClient
   /// Canonical selection uses durable history counts, never evictable previews.
   int _decryptedEventCount(String roomId) =>
       _localMessageCounts[roomId]?.$2 ?? 0;
+
+  void _queueLocalMessageCounts(Client client) {
+    if (_localCountsRefresh != null &&
+        identical(_localCountsRefreshClient, client) &&
+        _localCountsRefreshAccount == client.userID) {
+      return;
+    }
+    _localCountsRefreshClient = client;
+    _localCountsRefreshAccount = client.userID;
+    late final Future<void> task;
+    task = _refreshLocalMessageCounts(client).catchError((Object error) {
+      // Optional ranking metadata is retryable; cached identities remain the
+      // authority for the first projection. The next snapshot retries it.
+      Logs().w(
+          'Optional local history ranking unavailable (${error.runtimeType})');
+    }).whenComplete(() {
+      if (identical(_localCountsRefresh, task)) _localCountsRefresh = null;
+    });
+    _localCountsRefresh = task;
+    unawaited(task);
+  }
 
   Future<void> _refreshLocalMessageCounts(Client client) async {
     final account = client.userID;
@@ -6983,6 +7035,7 @@ final class MatrixSdkE2eeClient
           continue;
         }
         _localMessageCounts[room.id] = (head, count);
+        _scheduleLocalConversationProjection();
         break;
       }
     }
@@ -6996,7 +7049,7 @@ final class MatrixSdkE2eeClient
         if (registry != null) {
           await loadDirectRoomAssociations(client, registry);
         }
-        await _refreshLocalMessageCounts(client);
+        _queueLocalMessageCounts(client);
       });
 
   String? logicalPrimaryRoomIdSync(String roomId) {
@@ -8037,6 +8090,10 @@ final class MatrixSdkE2eeClient
   }
 
   Stream<void> get syncEvents => _syncEvents.stream;
+
+  /// Local optional preview/ranking repairs. This never represents a remote
+  /// sync receipt and must only trigger the conversation list projection.
+  Stream<void> get localConversationUpdates => _localConversationUpdates.stream;
   Stream<MatrixDecryptionUpdate> get decryptionUpdates =>
       _decryptionUpdates.stream;
 
@@ -8053,6 +8110,11 @@ final class MatrixSdkE2eeClient
   }
 
   void _attachDecryptionListener(Client client) {
+    unawaited(_roomListPreviewSubscription?.cancel());
+    _roomListPreviewSubscription = client.onRoomListUpdated.stream.listen((_) {
+      if (_accessRevoked || !identical(client, _client)) return;
+      _scheduleLocalConversationProjection();
+    });
     _decryptionSubscription?.cancel();
     _decryptionSubscription = client.onEvent.stream.listen((update) {
       if (_accessRevoked || !identical(client, _client)) return;

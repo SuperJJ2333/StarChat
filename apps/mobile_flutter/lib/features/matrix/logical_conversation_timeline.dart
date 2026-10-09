@@ -124,6 +124,7 @@ final class LogicalConversationTimelineCapability
     String? sourceRoomId,
     required RoomHistoryDirection direction,
     int rawLimit = 64,
+    Future<void> Function()? beforeRead,
   }) async {
     _checkActive();
     if (rawLimit < 1 || rawLimit > 256) {
@@ -189,11 +190,19 @@ final class LogicalConversationTimelineCapability
             allReady = false;
             break;
           }
+          await beforeRead?.call();
           final page = await frontier.source.readHistoryPage(
               cursor: frontier.cursor,
               anchorEventId: frontier.opened ? null : frontier.anchor,
               direction: direction,
+              beforeRead: beforeRead,
               rawLimit: 1);
+          try {
+            await beforeRead?.call();
+          } catch (_) {
+            page.nextCursor?.dispose();
+            rethrow;
+          }
           if (_disposed || current.disposed) {
             page.nextCursor?.dispose();
             throw StateError('Logical history cursor disposed');
@@ -379,22 +388,22 @@ final class LogicalConversationTimelineCapability
   }
 
   @override
-  void selectEarlier() {
+  void selectEarlier({String? retainEventId}) {
     _windowRevision++;
     if (_singleWindow != null) {
-      _singleWindow!.selectEarlier();
+      _singleWindow!.selectEarlier(retainEventId: retainEventId);
     } else {
-      _mergedWindow?.earlier();
+      _mergedWindow?.earlier(retainEventId: retainEventId);
     }
   }
 
   @override
-  void selectLater() {
+  void selectLater({String? retainEventId}) {
     _windowRevision++;
     if (_singleWindow != null) {
-      _singleWindow!.selectLater();
+      _singleWindow!.selectLater(retainEventId: retainEventId);
     } else {
-      _mergedWindow?.later();
+      _mergedWindow?.later(retainEventId: retainEventId);
     }
   }
 

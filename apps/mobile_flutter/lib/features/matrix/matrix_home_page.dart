@@ -289,6 +289,7 @@ class _MatrixHomePageState extends State<MatrixHomePage>
 
   bool syncing = false;
   StreamSubscription<Object?>? syncSubscription;
+  StreamSubscription<void>? localConversationSubscription;
   StreamSubscription<MatrixDecryptionUpdate>? decryptionSubscription;
   final SnapshotRefreshCoordinator<MatrixConversationSnapshot>
       _snapshotRefresh = SnapshotRefreshCoordinator(
@@ -653,6 +654,10 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _lastRecoveryNetwork = _recoveryNetwork?.current;
     _recoveryNetwork?.state.addListener(_identityNetworkChanged);
     final matrix = widget.matrix;
+    localConversationSubscription = matrix.localConversationUpdates.listen((_) {
+      if (!mounted || !identical(widget.matrix, matrix)) return;
+      unawaited(_refreshClientSnapshot());
+    });
     syncSubscription = matrix.syncEvents.listen((_) {
       if (!mounted || !identical(widget.matrix, matrix)) return;
       _scanMentions();
@@ -689,6 +694,8 @@ class _MatrixHomePageState extends State<MatrixHomePage>
     _identityRecoveryAttempt = 0;
     unawaited(syncSubscription?.cancel() ?? Future<void>.value());
     syncSubscription = null;
+    unawaited(localConversationSubscription?.cancel() ?? Future<void>.value());
+    localConversationSubscription = null;
     unawaited(decryptionSubscription?.cancel() ?? Future<void>.value());
     decryptionSubscription = null;
   }

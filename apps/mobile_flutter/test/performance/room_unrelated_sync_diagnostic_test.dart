@@ -25,13 +25,16 @@ void main() {
           homeserver: Uri.parse('https://matrix.example'));
       final lease = await owner.openRoomLease(room.id);
       var logicalUpdates = 0;
+      final initialAttachment = Completer<void>();
       Completer<void>? nextUpdate;
       final timeline = await lease.openLogicalRoomTimeline(onUpdate: () {
         logicalUpdates++;
+        if (!initialAttachment.isCompleted) initialAttachment.complete();
         final pending = nextUpdate;
         if (pending != null && !pending.isCompleted) pending.complete();
       });
       try {
+        await initialAttachment.future.timeout(const Duration(seconds: 5));
         expect(logicalUpdates, 1, reason: 'initial source attachment callback');
         expect(room.sdkUpdates, 0);
         expect(timeline.snapshot(), isEmpty);

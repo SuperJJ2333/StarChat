@@ -298,6 +298,10 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   final String name;
   TimelineIdStore? _timelineOrder;
   final TimelineMigrationReader? timelineMigrationReader;
+  final Future<void> Function()? timelineMaintenanceWait;
+  final Future<void Function()?> Function(Future<void>)?
+      timelineMaintenanceLease;
+  final TimelineLegacyPageReader? timelineLegacyPageReader;
   final TimelineSearchMigrationReader? timelineSearchMigrationReader;
   RetainedSearchStore? _retainedSearch;
 
@@ -425,6 +429,9 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     this.name, {
     this.database,
     this.timelineMigrationReader,
+    this.timelineMaintenanceWait,
+    this.timelineMaintenanceLease,
+    this.timelineLegacyPageReader,
     this.timelineSearchMigrationReader,
     this.idbFactory,
     this.sqfliteFactory,
@@ -475,7 +482,20 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
       version: version,
     );
     if (database != null) {
-      _timelineOrder = TimelineIdStore(_collection, timelineMigrationReader);
+      // A read-only SQLCipher BLOB worker must coexist with foreground writes.
+      // DELETE journals can leave a writer and a new keyed reader contending;
+      // WAL keeps bounded reads off the SDK write path. In-memory drivers
+      // retain their native 'memory' journal mode.
+      final journal = await database!.rawQuery('PRAGMA journal_mode=WAL');
+      final mode = journal.isEmpty ? null : journal.single.values.single;
+      if (mode != 'wal' && mode != 'memory') {
+        throw StateError(
+            'Timeline database requires concurrent reader journal');
+      }
+      _timelineOrder = TimelineIdStore(_collection, timelineMigrationReader,
+          waitForMaintenance: timelineMaintenanceWait,
+          acquireMaintenanceLease: timelineMaintenanceLease,
+          legacyPageReader: timelineLegacyPageReader);
       await _timelineOrder!.open();
       _retainedSearch =
           RetainedSearchStore(_collection, timelineSearchMigrationReader);
@@ -571,7 +591,9 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     // adoption transaction when the released bridge marker actually exists.
     if ((await sql.query(_clientBoxName,
             columns: ['k'], where: 'k=?', whereArgs: [marker]))
-        .isEmpty) return;
+        .isEmpty) {
+      return;
+    }
     await sql.transaction((transaction) async {
       final legacy = await transaction.query(_clientBoxName,
           columns: ['v'], where: 'k=?', whereArgs: [marker]);
@@ -661,11 +683,12 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   @override
   Future<void> close() async {
     try {
-      try {
-        await _retainedSearch?.close();
-      } finally {
-        await _timelineOrder?.close();
-      }
+      // Signal both owners before draining either: retained search can wait
+      // for a transaction whose legacy membership reader needs cancellation.
+      await Future.wait<void>([
+        if (_retainedSearch != null) _retainedSearch!.close(),
+        if (_timelineOrder != null) _timelineOrder!.close(),
+      ], eagerError: false);
     } finally {
       await _collection.close();
     }
@@ -676,9 +699,32 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     final order = _timelineOrder;
     if (order == null) return;
     for (final id in roomIds.toSet()) {
-      await order.prepare(TupleKey(id, '').toString());
-      await order.prepare(TupleKey(id, 'SENDING').toString());
-      await order.prepare(TupleKey(id, 'RECOVERY').toString());
+      await order.prepareComplete(TupleKey(id, '').toString());
+      await order.prepareComplete(TupleKey(id, 'SENDING').toString());
+      await order.prepareComplete(TupleKey(id, 'RECOVERY').toString());
+    }
+  }
+
+  /// Aggregate bounded maintenance timings for platform verification.
+  Map<String, int> get timelineMaintenanceMetrics =>
+      _timelineOrder?.maintenanceMetrics ?? const {};
+
+  @override
+  Future<void> prepareTimelineAuthority(Iterable<String> roomIds,
+      {Iterable<String> eventIds = const []}) async {
+    final order = _timelineOrder;
+    if (order == null) return;
+    for (final id in roomIds.toSet()) {
+      for (final fragment in ['', 'SENDING', 'RECOVERY']) {
+        await order.prepare(TupleKey(id, fragment).toString());
+        if (eventIds.isNotEmpty) {
+          final ids = eventIds.toSet().toList();
+          for (var start = 0; start < ids.length; start += 256) {
+            await order.positions(TupleKey(id, fragment).toString(),
+                ids.sublist(start, min(start + 256, ids.length)));
+          }
+        }
+      }
     }
   }
 
@@ -703,6 +749,20 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
       }
       await order.prepare(TupleKey(id, 'SENDING').toString());
       await order.prepare(TupleKey(id, 'RECOVERY').toString());
+      final eventIds =
+          joins?[id]?.timeline?.events?.map((event) => event.eventId).toSet() ??
+              <String>{};
+      if (eventIds.isNotEmpty) {
+        for (final fragment in ['']) {
+          if (fragment.isEmpty && joins?[id]?.timeline?.limited == true) {
+            continue;
+          }
+          for (var offset = 0; offset < eventIds.length; offset += 256) {
+            await order.positions(TupleKey(id, fragment).toString(),
+                eventIds.skip(offset).take(256));
+          }
+        }
+      }
     }
   }
 
@@ -721,6 +781,7 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     final mainKey = TupleKey(room.id, '').toString();
     final sendingKey = TupleKey(room.id, 'SENDING').toString();
     await order.prepare(mainKey);
+    if (afterEventId != null) await order.positions(mainKey, [afterEventId]);
     if (includeSending && afterEventId == null) await order.prepare(sendingKey);
     // Migration finishes before acquiring the short capture gate. Both local
     // echo and synced fragments are then captured against the same batch edge.
@@ -1008,6 +1069,19 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
   @override
   Future<List<Room>> getRoomList(Client client) =>
+      _loadRoomList(client, repairPreviews: true);
+
+  @override
+  Future<List<Room>> getCachedRoomList(Client client) =>
+      _loadRoomList(client, repairPreviews: false);
+
+  @override
+  Future<void> refreshRoomListPreviews(List<Room> rooms, Client client,
+          {bool Function()? isCurrent}) =>
+      _restoreRoomPreviews(rooms, client, isCurrent: isCurrent);
+
+  Future<List<Room>> _loadRoomList(Client client,
+          {required bool repairPreviews}) =>
       runBenchmarked<List<Room>>('Get room list from store', () async {
         final rooms = <String, Room>{};
 
@@ -1022,7 +1096,9 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
         }
 
         try {
-          await _restoreRoomPreviews(rooms.values.toList(), client);
+          if (repairPreviews) {
+            await _restoreRoomPreviews(rooms.values.toList(), client);
+          }
         } on FormatException {
           Logs().w('Ignore malformed optional room preview cache');
         } on TypeError {
@@ -1074,8 +1150,19 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   /// Repair legacy room snapshots from a bounded canonical timeline head.
   /// Normal sync already commits both stores together. Independent event
   /// persistence and older caches can nevertheless leave last_event behind.
-  Future<void> _restoreRoomPreviews(List<Room> rooms, Client client) async {
+  Future<void> _restoreRoomPreviews(List<Room> rooms, Client client,
+      {bool Function()? isCurrent}) async {
     if (rooms.isEmpty) return;
+    final initialEvents = [for (final room in rooms) room.lastEvent];
+    final initialHeads = [
+      for (final room in rooms)
+        (
+          room.lastEvent?.eventId,
+          room.lastEvent?.originServerTs,
+          room.lastEvent?.status,
+          room.lastEvent?.redacted
+        ),
+    ];
     final fragmentKeys = [
       for (final room in rooms) ...[
         TupleKey(room.id, '').toString(),
@@ -1118,6 +1205,17 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     final raws = Map<String, Map?>.fromIterables(keys, values);
     for (var i = 0; i < rooms.length; i++) {
       final room = rooms[i];
+      if (isCurrent?.call() == false) return;
+      if (!identical(initialEvents[i], room.lastEvent)) continue;
+      if (initialHeads[i] !=
+          (
+            room.lastEvent?.eventId,
+            room.lastEvent?.originServerTs,
+            room.lastEvent?.status,
+            room.lastEvent?.redacted
+          )) {
+        continue;
+      }
       Event? read(String id) {
         final raw = raws[TupleKey(room.id, id).toString()];
         if (raw == null) return null;
@@ -1409,7 +1507,7 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   @override
   Future<void> removeEvent(String eventId, String roomId) async {
     if (_retainedSearch != null && !_retainedSearch!.ownsTransaction) {
-      await prepareTimelineStorage([roomId]);
+      await prepareTimelineAuthority([roomId], eventIds: [eventId]);
       await transaction(() => removeEvent(eventId, roomId));
       return;
     }
@@ -1566,7 +1664,15 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   Future<void> storeEventUpdate(EventUpdate eventUpdate, Client client) async {
     if (_retainedSearch != null && !_retainedSearch!.ownsTransaction) {
       if (eventUpdate.type == EventUpdateType.ephemeral) return;
-      await prepareTimelineStorage([eventUpdate.roomID]);
+      final eventIds = <String>{
+        if (eventUpdate.content['event_id'] is String)
+          eventUpdate.content['event_id'] as String,
+        if (eventUpdate.content['unsigned'] is Map &&
+            (eventUpdate.content['unsigned'] as Map)['transaction_id']
+                is String)
+          (eventUpdate.content['unsigned'] as Map)['transaction_id'] as String,
+      };
+      await prepareTimelineAuthority([eventUpdate.roomID], eventIds: eventIds);
       await transaction(() => _storeEventUpdate(eventUpdate, client));
       return;
     }
@@ -2755,14 +2861,15 @@ class _CombinedTimelineSnapshot implements TimelineIdSnapshot {
   bool _first = true;
   TimelineIdPage? _pending, _source;
   @override
-  int get length => first.length + second.length;
+  int get length =>
+      first.length < 0 || second.length < 0 ? -1 : first.length + second.length;
   @override
   Future<TimelineIdPage> next({int limit = 30}) async {
     if (_pending != null) return _pending!;
     final page = await (_first ? first : second).next(limit: limit);
     _source = page;
     return _pending = TimelineIdPage(page.ids,
-        hasMore: page.hasMore || (_first && second.length > 0),
+        hasMore: page.hasMore || (_first && second.length != 0),
         cursor: page.cursor,
         rawCount: page.rawCount);
   }

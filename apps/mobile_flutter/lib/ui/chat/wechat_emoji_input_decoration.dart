@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
 
-import '../../features/emoji/fluent_emoji_catalog.dart';
 import '../../features/emoji/fluent_vector_emoji_catalog.dart';
 import 'emoji_text.dart';
 import 'emoji_text_controller.dart';
@@ -121,9 +120,8 @@ final class _WeChatEmojiInputDecorationState
     var start = 0;
     for (final grapheme in widget.controller.text.characters) {
       final end = start + grapheme.length;
-      final animated = fluentEmojiByChar(grapheme);
-      final vector = animated == null ? vectorEmojiByChar(grapheme) : null;
-      if (animated != null || vector != null) {
+      final vector = vectorEmojiByChar(grapheme);
+      if (vector != null) {
         var boxIndex = 0;
         for (final box in editable.getBoxesForSelection(
           TextSelection(baseOffset: start, extentOffset: end),
@@ -147,10 +145,8 @@ final class _WeChatEmojiInputDecorationState
               sourceOffset: start,
               boxIndex: boxIndex,
               rect: rect,
-              asset: animated?.asset ?? vector!.asset,
-              child: animated != null
-                  ? EmojiAnimatedGlyph(asset: animated.asset, size: size)
-                  : EmojiVectorGlyph(asset: vector!.asset, size: size),
+              asset: vector.asset,
+              child: EmojiVectorGlyph(asset: vector.asset, size: size),
             ));
           }
           boxIndex++;

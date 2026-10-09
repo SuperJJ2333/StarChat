@@ -43,9 +43,11 @@ class WindowSource extends Source
   @override
   bool selectAnchor(String id) => window.anchor(id);
   @override
-  void selectEarlier() => window.earlier();
+  void selectEarlier({String? retainEventId}) =>
+      window.earlier(retainEventId: retainEventId);
   @override
-  void selectLater() => window.later();
+  void selectLater({String? retainEventId}) =>
+      window.later(retainEventId: retainEventId);
   @override
   void selectLatest() => window.latest();
   @override
