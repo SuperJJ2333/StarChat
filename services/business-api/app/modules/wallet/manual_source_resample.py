@@ -13,6 +13,8 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
     started = clock()
     polls = 0
     sample = monitor.source.read_reserve_sample(timeout_seconds=1.0)
+    context = dict(failed_conditions=list(getattr(sample, 'failed_conditions', ())) or
+                   (['OBSERVATION_STALE'] if getattr(sample, 'age_expired_only', False) else ['UNKNOWN']))
 
     def reject(code, *, source_read_timeout=False):
         if "deadline" in state:
@@ -26,7 +28,9 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
                 poll_count=polls,
             )
         return {"result": monitor._failed_source(code,
-            source_read_timeout=source_read_timeout)}
+            source_read_timeout=source_read_timeout,
+            alert_context=dict(failed_conditions=['SOURCE_READ_BUDGET_EXPIRED'])
+                if source_read_timeout else context)}
 
     def valid(sample):
         return (
@@ -81,13 +85,18 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
             sample = monitor.source.read_reserve_sample(
                 timeout_seconds=min(1.0, available)
             )
-        except FundingSourcePending:
-            return reject("MANUAL_SOURCE_UNHEALTHY")
+        except FundingSourcePending as pending:
+            return {"result": monitor._pending_source(pending)}
         except FundingSourceError as exc:
             if monitor._is_source_read_budget_expired(exc):
                 return reject("MANUAL_SOURCE_UNAVAILABLE", source_read_timeout=True)
+            context = dict(failed_conditions=[str(exc)] if str(exc) in
+                           ('SOURCE_MALFORMED', 'SOURCE_IDENTITY_MISMATCH', 'SOURCE_REGRESSION')
+                           else ['UNKNOWN'])
             return reject("MANUAL_SOURCE_UNAVAILABLE")
         polls += 1
+        context = dict(failed_conditions=list(getattr(sample, 'failed_conditions', ())) or
+                       (['OBSERVATION_STALE'] if getattr(sample, 'age_expired_only', False) else ['UNKNOWN']))
         if clock() >= deadline:
             break
         if not valid(sample):
@@ -110,16 +119,21 @@ def read_fresh_cut(monitor, expected, state, valid_cut):
                 second = monitor.source.read_reserve_sample(
                     timeout_seconds=min(1.0, available)
                 )
-            except FundingSourcePending:
-                return reject("MANUAL_SOURCE_UNHEALTHY")
+            except FundingSourcePending as pending:
+                return {"result": monitor._pending_source(pending)}
             except FundingSourceError as exc:
                 if monitor._is_source_read_budget_expired(exc):
                     return reject("MANUAL_SOURCE_UNAVAILABLE", source_read_timeout=True)
+                context = dict(failed_conditions=[str(exc)] if str(exc) in
+                               ('SOURCE_MALFORMED', 'SOURCE_IDENTITY_MISMATCH', 'SOURCE_REGRESSION')
+                               else ['UNKNOWN'])
                 return reject("MANUAL_SOURCE_UNAVAILABLE")
             if clock() >= deadline:
                 break
             if not valid(second):
                 return reject("MANUAL_SOURCE_INVALID")
+            context = dict(failed_conditions=list(second.failed_conditions) or
+                           (['OBSERVATION_STALE'] if second.age_expired_only else ['UNKNOWN']))
             confirmation_ms = int(monitor.clock().timestamp() * 1000)
             if not second.cut.healthy or not (
                 second.cut.heartbeat_ms <= confirmation_ms <= second.cut.fresh_until_ms

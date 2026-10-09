@@ -16,7 +16,7 @@ def queued_alert(factory):
     with factory() as session:
         row = session.scalar(select(OutboxEvent).where(OutboxEvent.topic == 'wallet.alert'))
         return OutboxMessage(row.id, row.topic, row.event_type, row.aggregate_type,
-            row.aggregate_id, dict(row.payload), {}, 1)
+            row.aggregate_id, dict(row.payload), dict(row.event_headers), 1)
 
 
 def test_queued_p0_smtp_alert_replays_with_original_severity_after_t2_correction(factory):

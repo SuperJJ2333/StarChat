@@ -1,0 +1,58 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_____ test_pending_alert_waits_ten_minutes_without_publishing_or_pausing ______
+
+core = (<app.modules.wallet.receipts.DepositReceiptService object at 0x000001F8FE91A840>, sessionmaker(class_='Session', bind...allet.receipt_models.DepositReceipt'>, datetime.datetime(2026, 10, 5, 11, 13, 1, 493231, tzinfo=datetime.timezone.utc))
+monitor = (<app.modules.wallet.manual_reserve_monitor.ManualReserveMonitor object at 0x000001F8FE8A88F0>, <test_manual_reserve_m...ource object at 0x000001F8FE8A89E0>, [datetime.datetime(2026, 10, 5, 11, 23, 3, 493231, tzinfo=datetime.timezone.utc)])
+
+    def test_pending_alert_waits_ten_minutes_without_publishing_or_pausing(core, monitor):
+        service, source, clock = monitor
+        since = int(clock[0].timestamp() * 1000)
+        def pending():
+            raise FundingSourcePending(since, int(clock[0].timestamp() * 1000) + 120000)
+        source.read_reserve_cut = pending
+        assert service.run_once()['complete'] is False
+        clock[0] += timedelta(seconds=599)
+        service.run_once()
+        with core[1]() as session:
+>           assert session.scalar(select(func.count()).select_from(OutboxEvent)
+                .where(OutboxEvent.topic == 'wallet.alert')) == 0
+E           AssertionError: assert 1 == 0
+E            +  where 1 = scalar(<sqlalchemy.sql.selectable.Select object at 0x000001F8FEA7F320>)
+E            +    where scalar = <sqlalchemy.orm.session.Session object at 0x000001F8FE8B61E0>.scalar
+E            +    and   <sqlalchemy.sql.selectable.Select object at 0x000001F8FEA7F320> = where(<sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001F8FDC6A840> == 'wallet.alert')
+E            +      where where = <sqlalchemy.sql.selectable.Select object at 0x000001F8FE63B890>.where
+E            +        where <sqlalchemy.sql.selectable.Select object at 0x000001F8FE63B890> = select_from(OutboxEvent)
+E            +          where select_from = <sqlalchemy.sql.selectable.Select object at 0x000001F8FE412DB0>.select_from
+E            +            where <sqlalchemy.sql.selectable.Select object at 0x000001F8FE412DB0> = select(<sqlalchemy.sql.functions.count at 0x1f8fe91a4b0; count>)
+E            +              where <sqlalchemy.sql.functions.count at 0x1f8fe91a4b0; count> = <sqlalchemy.sql.functions._FunctionGenerator object at 0x000001F8FE41BD70>()
+E            +                where <sqlalchemy.sql.functions._FunctionGenerator object at 0x000001F8FE41BD70> = func.count
+E            +      and   <sqlalchemy.orm.attributes.InstrumentedAttribute object at 0x000001F8FDC6A840> = OutboxEvent.topic
+
+tests\business_api\wallet\test_source_alert_monitor.py:21: AssertionError
+---------------------------- Captured stderr call -----------------------------
+{"timestamp":"2026-10-05T11:13:01.712809+00:00","schema_version":1,"service":"business-api","component":"manual_monitor","event":"monitor_block_requested","level":"WARNING","trace_id":"3f0b64a8035242b598c037f60f733588","reason_code":"MANUAL_SOURCE_UNHEALTHY"}
+{"timestamp":"2026-10-05T11:13:01.716897+00:00","schema_version":1,"service":"business-api","component":"incidents","event":"incident_committed","level":"INFO","trace_id":"3f0b64a8035242b598c037f60f733588","incident_id":"7f1f7a36-5d12-4a62-9097-b29363e14ba7","event_id":"f48f8e4f-63f5-46aa-af91-9b14ab18915b","generation":1,"reason_code":"MANUAL_SOURCE_UNHEALTHY","status":"OPEN","action":"opened"}
+{"timestamp":"2026-10-05T11:13:01.716897+00:00","schema_version":1,"service":"business-api","component":"incidents","event":"alert_queued","level":"INFO","trace_id":"3f0b64a8035242b598c037f60f733588","incident_id":"7f1f7a36-5d12-4a62-9097-b29363e14ba7","event_id":"a97603b1-2a69-4a3c-82a5-dacbdf5af733","generation":1,"reason_code":"MANUAL_SOURCE_UNHEALTHY","status":"OPEN","action":"opened"}
+_________ test_email_explains_immutable_reason_time_impact_and_action _________
+
+    def test_email_explains_immutable_reason_time_impact_and_action():
+        sent = []
+        def factory(*args, **kwargs):
+            smtp = RecordingSmtp(*args, **kwargs)
+            sent.append(smtp)
+            return smtp
+        sender = SmtpEmailSender(SmtpConfig(host='smtp.example.test', port=587,
+            from_address='alerts@example.test', use_starttls=True), smtp_factory=factory)
+>       sender.send_wallet_alert(recipient='ops@example.test', event_id='event-1',
+            code='MANUAL_SOURCE_UNHEALTHY', severity='P1', incident_id='incident-1',
+            occurred_at='2026-10-04T16:00:27Z',
+            diagnostics={'failed_conditions':['BALANCE_UNSTABLE', 'RECONCILIATION_PENDING'],
+                         'duration_seconds':600})
+E       TypeError: SmtpEmailSender.send_wallet_alert() got an unexpected keyword argument 'incident_id'
+
+tests\business_worker\test_wallet_alert_content.py:13: TypeError
+=========================== short test summary info ===========================
+FAILED tests/business_api/wallet/test_source_alert_monitor.py::test_pending_alert_waits_ten_minutes_without_publishing_or_pausing
+FAILED tests/business_worker/test_wallet_alert_content.py::test_email_explains_immutable_reason_time_impact_and_action
+2 failed in 1.69s

@@ -8,11 +8,13 @@ from uuid import uuid4
 from app.integrations.tron import diagnostics as diag
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.errors import AppError
 from app.core.outbox import OutboxEvent, OutboxMessage, OutboxPublisher
 from app.modules.audit.models import AuditEvent
-from app.modules.wallet.incident_models import WalletAlertReceipt, WalletIncident, WalletIncidentCommand
+from app.modules.wallet.incident_models import WalletAlertReceipt, WalletIncident, WalletIncidentCommand, WalletSourceAlertState
+from app.modules.wallet.alert_context import TRANSIENT, validate_context
 
 
 SOURCE_TIMEOUT_IDENTITY = dict(fingerprint='manual-reserve:MANUAL_SOURCE_UNAVAILABLE',
@@ -68,7 +70,7 @@ class WalletIncidentService:
         self.factory = factory
         self.now_factory = now_factory or (lambda: datetime.now(timezone.utc))
 
-    def _record(self, session, row, action, actor, reason, now, key=None, alert=False, audit_evidence=None):
+    def _record(self, session, row, action, actor, reason, now, key=None, alert=False, audit_evidence=None, alert_context=None):
         payload = dict(incident_id=row.id, subject_id=row.subject_id, code=row.code, severity=row.severity)
         after_data = dict(status=row.status, generation=row.generation, version=row.version,
                           condition_active=row.condition_active)
@@ -86,9 +88,19 @@ class WalletIncidentService:
                           incident_id=row.id, event_id=recorded, generation=row.generation,
                           reason_code=row.code, status=row.status, action=action.rsplit('.', 1)[-1])
         if alert:
+            if alert_context is None and action == 'wallet.incident.escalated':
+                previous = session.scalar(select(OutboxEvent).where(
+                    OutboxEvent.topic == 'wallet.alert', OutboxEvent.aggregate_id == row.id)
+                    .order_by(OutboxEvent.created_at.desc(), OutboxEvent.id.desc()).limit(1))
+                alert_context = (previous.event_headers.get('wallet_diagnostics')
+                                 if previous is not None else None)
+            if alert_context is None:
+                alert_context = dict(failed_conditions=['UNKNOWN'])
             alert_event = OutboxPublisher.enqueue(session, topic='wallet.alert', event_type=action,
                                     aggregate_type='wallet_incident', aggregate_id=row.id,
-                                    payload=payload, now=now)
+                                    payload=payload, now=now,
+                                    headers={'wallet_diagnostics': validate_context(alert_context)}
+                                        if alert_context is not None else None)
             diag.after_commit(session, 'alert_queued', component='incidents',
                               incident_id=row.id, event_id=alert_event, generation=row.generation,
                               reason_code=row.code, status=row.status, action=action.rsplit('.', 1)[-1])
@@ -97,7 +109,7 @@ class WalletIncidentService:
         with self.factory.begin() as session:
             return self.observe_in_session(session, signals, actor_id=actor_id, complete=complete)
 
-    def observe_in_session(self, session, signals, actor_id='wallet-monitor', complete=False, clear_prefix=None):
+    def observe_in_session(self, session, signals, actor_id='wallet-monitor', complete=False, clear_prefix=None, alert_context=None):
         """Join the caller transaction; never commit a financial caller's work.
 
         Financial callers acquire reserve/control locks before this incident lock.
@@ -110,6 +122,8 @@ class WalletIncidentService:
         if clear_prefix is not None and (not _safe(clear_prefix, 100) or not clear_prefix.endswith(':')):
             raise _error('WALLET_INCIDENT_SIGNAL_INVALID', 422)
         observed = {}
+        if alert_context is not None:
+            alert_context = validate_context(alert_context)
         for signal in signals:
             if (not isinstance(signal, dict) or set(signal) != {'fingerprint', 'code', 'severity', 'subject_id'}
                     or not _safe(signal['fingerprint'], 128) or not _safe(signal['subject_id'], 128)
@@ -133,7 +147,7 @@ class WalletIncidentService:
                                      version=1, condition_active=True, opened_at=now,
                                      last_seen_at=now, last_escalation_slot=0)
                 session.add(row)
-                self._record(session, row, 'wallet.incident.opened', actor_id, row.code, now, alert=True)
+                self._record(session, row, 'wallet.incident.opened', actor_id, row.code, now, alert=True, alert_context=alert_context)
             elif not row.condition_active:
                 row.generation += 1
                 row.version += 1
@@ -145,17 +159,22 @@ class WalletIncidentService:
                 row.acknowledged_by = row.resolved_by = row.clearance_digest = None
                 row.last_escalation_slot = 0
                 row.severity = signal['severity']
-                self._record(session, row, 'wallet.incident.reopened', actor_id, row.code, now, alert=True)
+                self._record(session, row, 'wallet.incident.reopened', actor_id, row.code, now, alert=True, alert_context=alert_context)
             else:
                 row.last_seen_at = now
                 if row.severity != signal['severity']:
                     row.severity = signal['severity']
                     row.version += 1
-                    self._record(session, row, 'wallet.incident.severity_changed', actor_id, row.code, now, alert=True)
+                    self._record(session, row, 'wallet.incident.severity_changed', actor_id, row.code, now, alert=True, alert_context=alert_context)
             result.append(_dto(row))
         for fingerprint, row in existing.items():
             if (complete and fingerprint not in observed and row.condition_active
                     and (clear_prefix is None or fingerprint.startswith(clear_prefix))):
+                if fingerprint in ('manual-reserve:MANUAL_SOURCE_UNHEALTHY',
+                                   'manual-reserve:MANUAL_SOURCE_UNAVAILABLE'):
+                    continuity = session.get(WalletSourceAlertState, 'global')
+                    if continuity is not None and continuity.failed_since is not None:
+                        continue
                 row.condition_active = False
                 row.cleared_at = now
                 row.version += 1
@@ -164,6 +183,89 @@ class WalletIncidentService:
                                                    cleared_at=now.isoformat()))
                 self._record(session, row, 'wallet.incident.condition_cleared', actor_id, row.code, now)
         return result
+
+    def source_failure_in_session(self, session, signal, context, *, actor_id, since_ms=None):
+        context = validate_context(context)
+        if (signal.get('fingerprint') != 'manual-reserve:' + signal.get('code', '')
+                or signal.get('code') not in ('MANUAL_SOURCE_UNHEALTHY', 'MANUAL_SOURCE_UNAVAILABLE')
+                or signal.get('subject_id') != 'global'
+                or set(signal) != {'fingerprint', 'code', 'severity', 'subject_id'}
+                or signal.get('severity') not in ('P0', 'P1', 'T2')
+                or (signal.get('severity') == 'T2' and signal != SOURCE_TIMEOUT_IDENTITY)):
+            raise ValueError('WALLET_SOURCE_ALERT_IDENTITY_INVALID')
+        _lock(session)
+        now = _aware(self.now_factory())
+        state = session.get(WalletSourceAlertState, 'global')
+        if state is None:
+            state = WalletSourceAlertState(id='global', healthy_count=0, last_observation_id=0,
+                                          notified_conditions=[], first_context={}, latest_context={})
+            session.add(state)
+        conditions = set(context['failed_conditions'])
+        transient = bool(conditions) and conditions <= TRANSIENT
+        if state.failed_since is None:
+            state.failed_since = now
+            state.first_context = dict(context)
+            if since_ms is not None:
+                if type(since_ms) is not int or not 0 <= since_ms <= int(now.timestamp() * 1000):
+                    raise ValueError('WALLET_SOURCE_ALERT_CLOCK_INVALID')
+                state.failed_since = datetime.fromtimestamp(since_ms / 1000, timezone.utc)
+        state.healthy_count = 0
+        state.last_observation_id = max(state.last_observation_id, context.get('observation_id', 0))
+        duration = int((now - _aware(state.failed_since)).total_seconds())
+        if duration < 0:
+            transient = False
+            context['failed_conditions'] = ['CLOCK_AHEAD']
+            conditions = {'CLOCK_AHEAD'}
+        context['duration_seconds'] = max(0, duration)
+        context['initial_conditions'] = list(state.first_context.get('failed_conditions', ['UNKNOWN']))
+        state.latest_context = dict(context)
+        if transient and duration < 600:
+            session.flush()
+            return False
+        previous = session.scalar(select(WalletIncident).where(
+            WalletIncident.fingerprint == signal['fingerprint']))
+        cause_changed = (previous is not None and previous.condition_active
+                         and previous.severity == signal['severity'] and not transient
+                         and conditions - set(state.notified_conditions))
+        self.observe_in_session(session, [signal], actor_id=actor_id,
+                                complete=False, alert_context=context)
+        if cause_changed:
+            previous.version += 1
+            self._record(session, previous, 'wallet.incident.cause_changed',
+                         actor_id, 'SOURCE_CAUSE_CHANGED', now, alert=True, alert_context=context)
+        state.notified_conditions = sorted(set(state.notified_conditions) | conditions)
+        return True
+
+    def source_healthy_in_session(self, session, observation_id, *, actor_id):
+        if type(observation_id) is not int or observation_id <= 0:
+            raise ValueError('WALLET_SOURCE_ALERT_OBSERVATION_INVALID')
+        _lock(session)
+        state = session.get(WalletSourceAlertState, 'global')
+        if state is None or state.failed_since is None:
+            return
+        if observation_id <= state.last_observation_id:
+            return
+        state.last_observation_id = observation_id
+        state.healthy_count += 1
+        if state.healthy_count >= 3:
+            state.failed_since = None
+            state.healthy_count = 0
+            state.notified_conditions = []
+        session.flush()
+
+    def source_interrupted_in_session(self, session):
+        # A missing/corrupt notification table must not prevent the existing
+        # P0 incident/Outbox path from reporting a monitor failure.
+        try:
+            with session.begin_nested():
+                _lock(session)
+                state = session.get(WalletSourceAlertState, 'global')
+                if state is not None:
+                    state.healthy_count = 0
+                    session.flush()
+        except SQLAlchemyError:
+            diag.emit('ERROR', 'monitor_block_requested', component='incidents',
+                      reason_code='MANUAL_MONITOR_UNAVAILABLE')
 
     def get(self, incident_id):
         with self.factory() as session:
@@ -444,7 +546,8 @@ class SandboxWalletAlertHandler:
             if (persisted is None or persisted.topic != 'wallet.alert'
                     or persisted.aggregate_type != 'wallet_incident'
                     or persisted.event_type not in ('wallet.incident.opened', 'wallet.incident.reopened',
-                        'wallet.incident.severity_changed', 'wallet.incident.escalated')
+                        'wallet.incident.severity_changed', 'wallet.incident.escalated',
+                        'wallet.incident.cause_changed')
                     or any(getattr(persisted, field) != getattr(event, field)
                         for field in ('topic', 'event_type', 'aggregate_type', 'aggregate_id', 'payload'))
                     or persisted.aggregate_id != payload['incident_id']):

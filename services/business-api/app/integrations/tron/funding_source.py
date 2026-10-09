@@ -25,9 +25,10 @@ class FundingSourceError(ValueError):
 
 class FundingSourcePending(FundingSourceError):
     """Fresh but not yet reconciled sampling; no balance evidence is supplied."""
-    def __init__(self, since_ms, fresh_until_ms):
+    def __init__(self, since_ms, fresh_until_ms, failed_conditions=('RECONCILIATION_PENDING',), observation_id=0):
         super().__init__('SOURCE_SAMPLING_PENDING')
         self.since_ms, self.fresh_until_ms = since_ms, fresh_until_ms
+        self.failed_conditions, self.observation_id = failed_conditions, observation_id
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ class SourceBatch:
     balance_units: int | None = None
     pending_since_ms: int | None = None
     age_expired_only: bool = False
+    failed_conditions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ class ReserveCut:
 class ReserveCutSample:
     cut: ReserveCut
     age_expired_only: bool
+    failed_conditions: tuple[str, ...] = ()
 
 
 def _integer(value):
@@ -109,12 +112,13 @@ class SQLiteFundingSource:
         """Classify expiry in the same transaction as the unchanged financial cut."""
         batch = self.read_batch(after_rowid=0, limit=1, timeout_seconds=timeout_seconds)
         if batch.pending_since_ms is not None:
-            raise FundingSourcePending(batch.pending_since_ms, batch.fresh_until_ms)
+            raise FundingSourcePending(batch.pending_since_ms, batch.fresh_until_ms,
+                                       batch.failed_conditions, batch.observation_id)
         values = {key: getattr(batch, key) for key in ('source_identity', 'observation_id',
             'max_rowid', 'checkpoint_ms', 'solid_block', 'balance_units', 'heartbeat_ms',
             'fresh_until_ms', 'healthy')}
         digest = hashlib.sha256(json.dumps(values, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-        return ReserveCutSample(ReserveCut(**values, digest=digest), batch.age_expired_only)
+        return ReserveCutSample(ReserveCut(**values, digest=digest), batch.age_expired_only, batch.failed_conditions)
 
     def read_batch(self, *, after_rowid, limit=100, timeout_seconds=5.0):
         if type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 5:
@@ -185,6 +189,19 @@ class SQLiteFundingSource:
                 fresh = (all(0 <= now_ms-value <= self.max_age_seconds*1000 for value in (heartbeat,observed))
                     and 0 <= now_ms-solid_ms <= self.solid_head_max_age_seconds*1000)
                 healthy = fresh and run['status'] == 'OK' and run['error_code'] is None and stable and reconciliation == 'SOURCE_MATCHED'
+                failed_conditions = tuple(reason for reason, failed in (
+                    ('CLOCK_AHEAD', min(now_ms-heartbeat, now_ms-observed, now_ms-solid_ms) < 0),
+                    ('HEARTBEAT_STALE', now_ms-heartbeat > self.max_age_seconds*1000),
+                    ('OBSERVATION_STALE', now_ms-observed > self.max_age_seconds*1000),
+                    ('SOLID_HEAD_STALE', now_ms-solid_ms > self.solid_head_max_age_seconds*1000),
+                    ('SOURCE_NETWORK_ERROR', run['error_code'] == 'SOURCE_NETWORK_ERROR'),
+                    ('SOURCE_HTTP_UNAVAILABLE', run['error_code'] == 'SOURCE_HTTP_UNAVAILABLE'),
+                    ('SOURCE_RUN_ERROR', (run['status'] != 'OK' or run['error_code'] is not None)
+                     and run['error_code'] not in ('SOURCE_NETWORK_ERROR', 'SOURCE_HTTP_UNAVAILABLE')),
+                    ('BALANCE_UNSTABLE', not stable),
+                    ('RECONCILIATION_PENDING', reconciliation == 'RECONCILIATION_UNVERIFIED'),
+                    ('BALANCE_DISCREPANCY', reconciliation == 'BALANCE_DISCREPANCY'),
+                ) if failed)
                 fresh_until = min(min(heartbeat, observed)+self.max_age_seconds*1000,
                     solid_ms+self.solid_head_max_age_seconds*1000)
                 age_expired_only = (run['status'] == 'OK' and run['error_code'] is None
@@ -204,7 +221,8 @@ class SQLiteFundingSource:
                             WHERE stable_balance=1 AND reconciliation='SOURCE_MATCHED'),0)""").fetchone()[0])
                     if pending_since > observed:
                         raise FundingSourceError('SOURCE_MALFORMED')
-                if (fresh and run['status'] == 'ERROR' and run['error_code'] == 'SNAPSHOT_FAILED'
+                if (fresh and run['status'] == 'ERROR' and run['error_code'] in
+                        ('SNAPSHOT_FAILED', 'SOURCE_NETWORK_ERROR', 'SOURCE_HTTP_UNAVAILABLE')
                         and reconciliation != 'BALANCE_DISCREPANCY'):
                     failed_since = _integer(execute("""SELECT MIN(heartbeat_ms) FROM runs
                         WHERE id > COALESCE((SELECT MAX(id) FROM runs WHERE status='OK' AND error_code IS NULL),0)
@@ -241,7 +259,7 @@ class SQLiteFundingSource:
                     maximum,checkpoint,heartbeat,solid,stable,reconciliation,healthy,
                     min(min(heartbeat,observed)+self.max_age_seconds*1000,
                         solid_ms+self.solid_head_max_age_seconds*1000),tuple(events),
-                    _integer(observation['id']),int(balance),pending_since,age_expired_only)
+                    _integer(observation['id']),int(balance),pending_since,age_expired_only,failed_conditions)
         except FundingSourceError:
             raise
         except sqlite3.OperationalError as exc:

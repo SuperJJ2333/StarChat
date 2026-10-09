@@ -1,0 +1,13 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+__ test_new_critical_cause_notifies_even_during_existing_transient_incident ___
+tests\business_api\wallet\test_source_alert_policy.py:118: in test_new_critical_cause_notifies_even_during_existing_transient_incident
+    assert count_alerts(factory) == 2
+E   AssertionError: assert 1 == 2
+E    +  where 1 = count_alerts(sessionmaker(class_='Session', bind=Engine(sqlite://), autoflush=False, expire_on_commit=False))
+---------------------------- Captured stderr call -----------------------------
+{"timestamp":"2026-10-05T11:23:28.312675+00:00","schema_version":1,"service":"business-api","component":"incidents","event":"incident_committed","level":"INFO","trace_id":"5e95baa3738e4821b6e41518f834729e","incident_id":"ccda004b-3014-4b0b-945d-99d1551e5a25","event_id":"f72908ac-9187-4d62-a22e-d1d991715989","generation":1,"reason_code":"MANUAL_SOURCE_UNHEALTHY","status":"OPEN","action":"opened"}
+{"timestamp":"2026-10-05T11:23:28.312675+00:00","schema_version":1,"service":"business-api","component":"incidents","event":"alert_queued","level":"INFO","trace_id":"e82d21a3cb4841de806fa81dfe0a5d51","incident_id":"ccda004b-3014-4b0b-945d-99d1551e5a25","event_id":"a26ddeb7-8eb3-46aa-9bc0-ec663e4fc8e7","generation":1,"reason_code":"MANUAL_SOURCE_UNHEALTHY","status":"OPEN","action":"opened"}
+=========================== short test summary info ===========================
+FAILED tests/business_api/wallet/test_source_alert_policy.py::test_new_critical_cause_notifies_even_during_existing_transient_incident
+1 failed in 1.76s

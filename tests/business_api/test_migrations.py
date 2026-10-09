@@ -37,7 +37,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_support_finance_recovery_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0094_support_finance_order_recovery (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0095_wallet_source_alerts (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history

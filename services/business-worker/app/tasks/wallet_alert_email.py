@@ -27,7 +27,8 @@ class WalletAlertEmailHandler:
             envelope=self.delivery.prepare(event)
             if envelope is None: return
             self.email_sender.send_wallet_alert(recipient=self.recipient,event_id=envelope.event_id,
-                code=envelope.code,severity=envelope.severity)
+                code=envelope.code,severity=envelope.severity, incident_id=envelope.incident_id,
+                occurred_at=envelope.occurred_at, diagnostics=envelope.diagnostics)
             # If this commit fails after SMTP accepted the message, retry may
             # send again. Stable Message-ID is not an exactly-once guarantee.
             self.delivery.record_smtp_delivery(event)

@@ -9,6 +9,7 @@ import sqlite3
 import time
 from typing import Any, Callable, Protocol
 from . import diagnostics as diag
+from .reader import TronTemporaryReadError
 
 
 class SnapshotReader(Protocol):
@@ -189,7 +190,8 @@ class Observer:
                 balance = None
                 block = None
                 reconciliation = "RECONCILIATION_UNVERIFIED"
-                error_code = str(exc) if isinstance(exc, ObservationError) else "SNAPSHOT_FAILED"
+                error_code = (str(exc) if isinstance(exc, ObservationError) else
+                              exc.reason if isinstance(exc, TronTemporaryReadError) else "SNAPSHOT_FAILED")
                 with conn:
                     failed_cursor = conn.execute("INSERT INTO runs VALUES (NULL,?,?,?,?)", (now, checkpoint, "ERROR", error_code))
                 diag.emit('ERROR', 'scan_failed', component='observer',

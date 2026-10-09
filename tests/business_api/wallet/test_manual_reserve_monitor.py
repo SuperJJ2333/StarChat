@@ -67,6 +67,10 @@ def test_source_read_budget_expiry_records_t2_without_global_pause(core, monitor
     assert result == dict(complete=False, status='BLOCKED',
                           codes=['MANUAL_SOURCE_UNAVAILABLE'])
     with core[1]() as session:
+        assert session.scalar(select(WalletIncident)) is None
+    clock[0] += timedelta(seconds=600)
+    service.run_once()
+    with core[1]() as session:
         control = session.get(WalletControl, 'global')
         safety = session.get(WalletSafetyState, 'global')
         reserve = session.get(RedeemabilityReserve, 'global')
@@ -102,7 +106,7 @@ def test_non_budget_source_error_remains_p0_and_pauses(core, monitor, error):
 
 
 def test_source_read_budget_expiry_preserves_independent_pause(core, monitor):
-    service, source, _ = monitor
+    service, source, clock = monitor
     with core[1].begin() as session:
         control = session.get(WalletControl, 'global')
         control.withdrawals_paused = True
@@ -113,6 +117,8 @@ def test_source_read_budget_expiry_preserves_independent_pause(core, monitor):
 
     source.read_reserve_cut = timed_out
     assert service.run_once()['codes'] == ['MANUAL_SOURCE_UNAVAILABLE']
+    clock[0] += timedelta(seconds=600)
+    service.run_once()
     with core[1]() as session:
         control = session.get(WalletControl, 'global')
         assert control.withdrawals_paused
