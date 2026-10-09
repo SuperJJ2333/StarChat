@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           flutter build ios --release --no-codesign --no-pub \
-            --build-name=0.4.36 --build-number=2205 --no-tree-shake-icons \
+            --build-name=0.4.44 --build-number=2213 --no-tree-shake-icons \
             --dart-define=CHATFLOW_PERFORMANCE_METRICS=true \
             --dart-define=LIUHETONG_IN_APP_UPDATE=true \
             --dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com \
@@ -126,18 +126,18 @@ jobs:
           ditto --norsrc --noextattr apps/mobile_flutter/build/ios/iphoneos/Runner.app "$stage/Payload/Runner.app"
           export COPYFILE_DISABLE=1
           ditto -c -k --keepParent --norsrc --noextattr "$stage/Payload" \
-            "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.36-build2205-unsigned.ipa"
+            "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.44-build2213-unsigned.ipa"
           python3 scripts/prepare_ios_unsigned_ipa.py \
             --app apps/mobile_flutter/build/ios/iphoneos/Runner.app \
-            --ipa "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.36-build2205-unsigned.ipa" \
+            --ipa "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.44-build2213-unsigned.ipa" \
             --source-root apps/mobile_flutter \
             --output-dir "$RUNNER_TEMP/unsigned-ios" \
             --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY" \
-            --version 0.4.36 --build 2205 \
+            --version 0.4.44 --build 2213 \
             --toolchain-report "$RUNNER_TEMP/device-evidence/toolchain.txt" \
             2>&1 | tee "$RUNNER_TEMP/device-evidence/unsigned-package-gate.log"
-          shasum -a 256 "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.36-build2205-unsigned.ipa" \
+          shasum -a 256 "$RUNNER_TEMP/unsigned-ios/ChatFlow-0.4.44-build2213-unsigned.ipa" \
             > "$RUNNER_TEMP/device-evidence/ipa-sha256.txt"
       - name: Capture generated device inputs even on failure
         if: always()
@@ -170,7 +170,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ChatFlow-0.4.36-build2205-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ChatFlow-0.4.44-build2213-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/unsigned-ios/
           if-no-files-found: error
           retention-days: 14
