@@ -26,10 +26,10 @@ test('download page offers the 2213 direct fallback and the published network se
 
 test('published iOS install warning remains visible without an automatic redirect', () => {
   const html = source('../download.html');
-  assert.match(html, /0\.4\.36（2205）/);
+  assert.match(html, /0\.4\.44（2213）/);
   assert.match(html, /id="ios-signing-warning"[^>]*>[^<]*更换企业签名团队/);
   assert.match(html, /aria-describedby="ios-signing-warning"/);
-  assert.match(html, /ChatFlow-0\.4\.36-2205-enterprise-a122af83\.ipa/);
+  assert.match(html, /ChatFlow-0\.4\.44-2213-enterprise-9e5d3582\.ipa/);
   assert.doesNotMatch(html, /已有版本请直接覆盖升级/);
   assert.match(source('../src/styles/download.css'), /\.download-caution[^\n]*border-left/);
   const location = {search: '?install=1', assign() { assert.fail('iOS install must wait for a deliberate click'); }};

@@ -1,4 +1,8 @@
 # 当前工作状态
+## 2026-10-09 iOS0.4.44+2213指定回签包仅官网已分发
+
+21:42:40+08 STATIC_IOS_DISTRIBUTION_PASS；37966033bytes/SHA9e5d3582…bc8a21。官网下载/首页iOS标签/OTA清单已更新，十项应用更新设置及容器身份保持，未启用2213弹窗；iOS应用内配置仍2205、Android2213。真实RED→五专项GREEN、SPEC→QUALITY及双端HTTPS后验通过。严格身份/原包比较FAIL已留证，按同会话用户直接分发偏好发布精确回签文件；未称真机安装或纯重签通过。main回填仅iOS标签，保留既有提现cacheEpoch鉴权。见[报告](../verification/2026-10-09-ios2213-static-distribution.md)、[任务](tasks/2026-10-09-ios2213-static-distribution.md)。
+
 ## 2026-10-09 iOS0.4.44+2213待企业签名IPA已交付
 
 候选2f423a34/run37919997058，两macOSjob SUCCESS，完整arm64/29plugins/46frameworks，Ruby2/原生13+4+1=18PASS；共享main5758/analyze证据精确复用。IPA34839152bytes/SHA3cfa40ed…47b952，Downloads及primary delivery副本一致，SPEC→QUALITY成品审查通过。等待用户企业签名回传，未改官网或更新弹窗，正式Android2213/iOS2205保持；真机保数据覆盖与最终签名权益待回签包。见[报告](../verification/2026-10-09-ios2213-signing-handoff.md)、[任务](tasks/2026-10-09-ios2213-signing-handoff.md)。
