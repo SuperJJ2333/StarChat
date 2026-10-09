@@ -7,3 +7,5 @@ User requests latest iOS IPA for their enterprise signing, then later distributi
 3. SPEC then QUALITY review, commit and push only codex/ios-history-ipa-2213 to trigger existing unsigned workflow. No main push or TestFlight upload.
 4. Bind run/head/attempt, inspect complete arm64 device app and native tests, download exact artifact and verify manifest/source/payload SHA/CRC/entitlements. Preserve failed attempts.
 5. Deliver IPA and entitlement handoff, record SHA/path and pending enterprise signature/device upgrade checks. Later distribution uses returned signed bytes and a separate final signature gate.
+
+Completed: device and simulator run37919997058 success; native18PASS/attempt1, actual IPA and all46framework SHA verified, ordered reviews accepted. Candidate SHA3cfa40ed…47b952 delivered locally. Final signed distribution waits for returned IPA.

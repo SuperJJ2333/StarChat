@@ -1,4 +1,8 @@
 # 当前工作状态
+## 2026-10-09 iOS0.4.44+2213待企业签名IPA已交付
+
+候选2f423a34/run37919997058，两macOSjob SUCCESS，完整arm64/29plugins/46frameworks，Ruby2/原生13+4+1=18PASS；共享main5758/analyze证据精确复用。IPA34839152bytes/SHA3cfa40ed…47b952，Downloads及primary delivery副本一致，SPEC→QUALITY成品审查通过。等待用户企业签名回传，未改官网或更新弹窗，正式Android2213/iOS2205保持；真机保数据覆盖与最终签名权益待回签包。见[报告](../verification/2026-10-09-ios2213-signing-handoff.md)、[任务](tasks/2026-10-09-ios2213-signing-handoff.md)。
+
 ## 2026-10-09 本地 Git 分支已合入 main
 
 12 个原分支及 Android2213 源码检查点均可由 main 追溯；合并分支引用已安全删除，5 个工作树原位 detached、2 个失效登记清理，其他任务未提交文件及构建证据保留。Flutter5758/9、前端562、边界373/23、后台四分组加修复夹具完整覆盖3930/130、真实PG4、SPEC→QUALITY通过；串行verify中止后用等价分组门禁完成，未称原脚本exit0。正式Android2213/iOS2205渠道保持，未推送远端或部署。见[报告](../verification/2026-10-09-git-main-integration.md)、[任务](tasks/2026-10-09-git-main-integration.md)。
