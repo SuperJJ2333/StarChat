@@ -23,6 +23,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+  testWidgets('local cached preview repair refreshes rows without remote sync',
+      (tester) async {
+    final client = _NoNetworkClient();
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://matrix.example'));
+    var loads = 0;
+    await tester.pumpWidget(_home(matrix: matrix, previewOnly: false,
+        snapshotLoader: () async => _snapshot('local${++loads}')));
+    await tester.pumpAndSettle();
+    final before = loads;
+    client.onRoomListUpdated.add(null);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pumpAndSettle();
+    final afterRepair = loads;
+    await tester.pumpWidget(const SizedBox());
+    client.onRoomListUpdated.add(null);
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(afterRepair, before + 1,
+        reason: 'local preview repair must refresh cached list independently');
+    expect(loads, afterRepair, reason: 'retired page must ignore local updates');
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('real push and pop animations defer nonurgent home snapshots',
       (tester) async {
     var loads = 0;

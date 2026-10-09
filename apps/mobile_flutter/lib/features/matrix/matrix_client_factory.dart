@@ -12,10 +12,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../core/matrix_local_binding.dart';
+import '../../core/maintenance_activity.dart';
 import '../../core/session_store.dart';
 import '../../core/startup_failure_metadata.dart';
 import 'matrix_e2ee_client.dart';
 import 'cooperative_matrix_database.dart';
+import 'timeline_migration_reader_stub.dart'
+    if (dart.library.io) 'timeline_migration_reader.dart';
 import 'local_identity_preflight.dart';
 import 'matrix_security_logger.dart';
 
@@ -799,6 +802,12 @@ final class MatrixClientFactory {
       ffiInit: SQfLiteEncryptionHelper.ffiInit,
     );
     await databaseFactory.deleteDatabase(path);
+    final metadataPath = '$path.timeline_pages.sqlite';
+    await databaseFactory.deleteDatabase(metadataPath);
+    for (final suffix in ['-wal', '-shm', '-journal']) {
+      final file = File('$metadataPath$suffix');
+      if (await file.exists()) await file.delete();
+    }
   }
 
   static String? _readFingerprint(Client client) =>
@@ -961,6 +970,56 @@ final class MatrixClientFactory {
           clientName,
           database: database,
           sqfliteFactory: databaseFactory,
+          timelineSearchMigrationReader: (roomId, afterEventId) async* {
+            final rows = await database.rawQuery(
+                "SELECT k,v FROM box_client WHERE k IN ('user_id','device_id')");
+            final identity = {for (final row in rows) row['k']: row['v']};
+            yield* readEncryptedRetainedSearch(
+                path: databasePath,
+                cipher: cipher,
+                roomId: roomId,
+                afterEventId: afterEventId,
+                userId: identity['user_id'] as String?,
+                deviceId: identity['device_id'] as String?);
+          },
+          timelineMaintenanceLease: (cancellation) async {
+            final lease = await MaintenanceActivity.instance
+                .acquireHeavy(cancellation: cancellation);
+            return lease?.release;
+          },
+          timelineLegacyPageReader: (fragment, sourceIdentity,
+              {int start = 0,
+              int limit = 256,
+              List<String>? findEventIds,
+              bool reverse = false,
+              bool Function()? isCancelled}) async {
+            final rows = await database.rawQuery(
+                "SELECT k,v FROM box_client WHERE k IN ('user_id','device_id')");
+            final identity = {for (final row in rows) row['k']: row['v']};
+            return readEncryptedTimelinePage(
+                path: databasePath,
+                cipher: cipher,
+                fragment: fragment,
+                sourceIdentity: sourceIdentity,
+                start: start,
+                limit: limit,
+                findEventIds: findEventIds,
+                reverse: reverse,
+                isCancelled: isCancelled,
+                userId: identity['user_id'] as String?,
+                deviceId: identity['device_id'] as String?);
+          },
+          timelineMigrationReader: (fragment) async* {
+            final rows = await database.rawQuery(
+                "SELECT k,v FROM box_client WHERE k IN ('user_id','device_id')");
+            final identity = {for (final row in rows) row['k']: row['v']};
+            yield* readEncryptedTimelineIds(
+                path: databasePath,
+                cipher: cipher,
+                fragment: fragment,
+                userId: identity['user_id'] as String?,
+                deviceId: identity['device_id'] as String?);
+          },
         );
         return initializeDatabase(matrixDatabase, database.close);
       },

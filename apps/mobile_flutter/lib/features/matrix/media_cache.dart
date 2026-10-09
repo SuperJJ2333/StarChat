@@ -1260,6 +1260,13 @@ VoidCallback registerAccountMediaCacheClearer(
   return () => _accountMediaCacheClearers.remove(clear);
 }
 
+/// Memory pressure reclaims optional encoded/video/preview entries only.
+/// Active downloads, per-account generations, shared flights and live decoded
+/// consumers retain ownership; sign-out and explicit clear use the full boundary.
+void trimOptionalMediaMemoryCaches() {
+  sharedMediaMemoryBudget.trimRetained();
+}
+
 /// Call when clearing cache or signing out. In-flight work cannot repopulate
 /// the shared memory cache after this boundary.
 void clearMediaMemoryCaches() {

@@ -1,3 +1,4 @@
+import '../../core/maintenance_activity.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -198,6 +199,8 @@ final class CallUiManager {
     _outgoingSession = false;
     _controller?.removeListener(_handleCallState);
     _controller = null;
+    MaintenanceActivity.instance
+        .setInteractive('application-call-${identityHashCode(this)}', false);
     _callAudioActivity.value = false;
     _mediaBackend = null;
     _outgoingCallPageVisible = () => false;
@@ -335,12 +338,15 @@ final class CallUiManager {
   }
 
   void _updateAudioActivity(CallPhase phase) {
-    _callAudioActivity.value = {
+    final active = {
       CallPhase.requestingPermission,
       CallPhase.ringing,
       CallPhase.connecting,
       CallPhase.connected,
     }.contains(phase);
+    MaintenanceActivity.instance
+        .setInteractive('application-call-${identityHashCode(this)}', active);
+    _callAudioActivity.value = active;
   }
 
   bool _incomingOpen() => _incomingRoute?.isActive ?? false;

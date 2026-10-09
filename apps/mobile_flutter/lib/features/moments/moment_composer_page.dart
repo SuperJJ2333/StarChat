@@ -740,6 +740,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           Navigator.of(context, rootNavigator: true)
               .push<MomentGallerySelection>(MotionPageRoute(
                   builder: (_) => ImagePickerPage(
+                      allowFlash: false,
                       maxCount: remaining,
                       confirmLabel: '添加',
                       showOriginalToggle: false))));

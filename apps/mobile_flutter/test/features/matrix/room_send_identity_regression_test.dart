@@ -41,7 +41,9 @@ final class _Transport
   Future<void> markRead() async {}
   @override
   Future<String> sendRedPacketReference(String packetId, String greeting,
-          {String? mode, String? recipientId, String? recipientMatrixId}) async =>
+          {String? mode,
+          String? recipientId,
+          String? recipientMatrixId}) async =>
       'unused';
   @override
   Future<String> sendTransferReference(
@@ -110,7 +112,7 @@ void main() {
     controller.dispose();
   });
 
-  test('retry publishes fresh local sending state before transport completes',
+  test('retry publishes sending state while preserving original insertion time',
       () async {
     final transport = _Transport();
     final controller = RoomTimelineController(transport);
@@ -124,8 +126,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 2));
     final retry = controller.retry(local.id);
     expect(controller.messages.single.deliveryState, RoomDeliveryState.sending);
-    expect(
-        controller.messages.single.timestamp.isAfter(local.timestamp), isTrue);
+    expect(controller.messages.single.timestamp, local.timestamp);
     expect(controller.messages.single.stableId, local.stableId);
     transport.events = [
       local.copyWith(deliveryState: RoomDeliveryState.sending)

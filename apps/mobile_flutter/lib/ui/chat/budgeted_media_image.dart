@@ -1,7 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'media_activity.dart';
+import '../../core/maintenance_activity.dart';
 
-final _sharedBudget = MediaAnimationBudget();
+final _sharedBudget =
+    MediaAnimationBudget(maintenance: MaintenanceActivity.instance);
 
 final class BudgetedMediaImage extends StatefulWidget {
   const BudgetedMediaImage(

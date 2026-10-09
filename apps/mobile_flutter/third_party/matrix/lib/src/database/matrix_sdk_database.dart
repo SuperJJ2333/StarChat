@@ -19,6 +19,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:matrix/src/database/timeline_id_store_stub.dart'
+    if (dart.library.io) 'package:matrix/src/database/timeline_id_store.dart';
+import 'package:matrix/src/database/retained_search_store_stub.dart'
+    if (dart.library.io) 'package:matrix/src/database/retained_search_store.dart';
 
 import 'package:sqflite_common/sqflite.dart';
 
@@ -74,6 +78,16 @@ final class MatrixSearchSnapshotBudget {
   }
 }
 
+class _SearchBudgetLease {
+  _SearchBudgetLease(this.budget, this.bytes);
+  final MatrixSearchSnapshotBudget? budget;
+  final int bytes;
+  int references = 1;
+  void release() {
+    if (--references == 0) budget?._release(bytes);
+  }
+}
+
 /// One search query's ordered local event IDs. The low-memory form retains
 /// page anchors instead of another copy of a large timeline fragment.
 final class MatrixSearchEventIds {
@@ -102,6 +116,27 @@ final class MatrixSearchEventIds {
         _budget = null,
         _retainedBytes = 0;
 
+  MatrixSearchEventIds._indexed(TimelineIdSnapshot handle)
+      : _ids = null,
+        _readCurrent = null,
+        _readSqlPage = null,
+        _first = null,
+        _last = null,
+        _length = handle.length,
+        _budget = null,
+        _retainedBytes = 0 {
+    _indexed = handle;
+  }
+  TimelineIdSnapshot? _indexed;
+  _SearchBudgetLease? _sharedBudget;
+  int _indexedOffset = 0;
+  int _lastRawCount = 0, _nextOffset = 0;
+  int? _lastOffset;
+  List<String>? _lastPage;
+  bool _hasMore = true;
+  int get lastRawCount => _lastRawCount;
+  int get nextOffset => _nextOffset;
+  bool get hasMore => !_disposed && _hasMore;
   List<String>? _ids;
   final Future<List<String>> Function()? _readCurrent;
   final Future<List<String>> Function(int, int, String?)? _readSqlPage;
@@ -112,8 +147,67 @@ final class MatrixSearchEventIds {
   final Map<int, String> _checkpoints = {};
   bool _disposed = false;
 
-  Future<List<String>> page(int offset, int limit) async {
+  /// One bounded rollback point for a multi-page search operation.
+  Future<MatrixSearchEventIds> checkpoint() async {
     if (_disposed) throw StateError('Search ID snapshot was disposed');
+    final source = _indexed;
+    if (source == null) {
+      final MatrixSearchEventIds clone;
+      if (_ids != null) {
+        clone = MatrixSearchEventIds._fixed(_ids!);
+      } else if (_readSqlPage != null) {
+        clone = MatrixSearchEventIds._sqlPaged(_readSqlPage, _length);
+      } else {
+        clone = MatrixSearchEventIds._anchored(
+            _readCurrent, _first, _last, _length);
+      }
+      final lease =
+          _sharedBudget ??= _SearchBudgetLease(_budget, _retainedBytes);
+      lease.references++;
+      clone._sharedBudget = lease;
+      clone._checkpoints.addAll(_checkpoints);
+      clone._lastRawCount = _lastRawCount;
+      clone._nextOffset = _nextOffset;
+      clone._hasMore = _hasMore;
+      return clone;
+    }
+    return MatrixSearchEventIds._indexed(await source.checkpoint())
+      .._indexedOffset = _indexedOffset
+      .._lastRawCount = _lastRawCount
+      .._nextOffset = _nextOffset
+      .._lastOffset = _lastOffset
+      .._lastPage = _lastPage
+      .._hasMore = _hasMore;
+  }
+
+  Future<List<String>> page(int offset, int limit) async {
+    final result = await _page(offset, limit);
+    if (_indexed == null) {
+      _lastRawCount = result.length;
+      _nextOffset = offset + result.length;
+      _hasMore = _nextOffset < _length;
+    }
+    return result;
+  }
+
+  Future<List<String>> _page(int offset, int limit) async {
+    if (_disposed) throw StateError('Search ID snapshot was disposed');
+    final indexed = _indexed;
+    if (indexed != null) {
+      if (offset == _lastOffset) return _lastPage!;
+      if (offset != _indexedOffset) {
+        throw const MatrixSearchSnapshotInvalidated();
+      }
+      if (limit < 1) return [];
+      final page = await indexed.next(limit: limit.clamp(1, 256));
+      indexed.accept(page);
+      _lastOffset = offset;
+      _lastRawCount = page.rawCount;
+      _indexedOffset += page.rawCount;
+      _nextOffset = _indexedOffset;
+      _hasMore = page.hasMore;
+      return _lastPage = page.ids;
+    }
     if (offset < 0) throw RangeError.value(offset, 'offset');
     if (limit <= 0 || offset >= _length) return const [];
     final fixed = _ids;
@@ -173,8 +267,15 @@ final class MatrixSearchEventIds {
     if (_disposed) return;
     _disposed = true;
     _ids = null;
+    _indexed?.dispose();
+    _indexed = null;
+    _lastPage = null;
     _checkpoints.clear();
-    _budget?._release(_retainedBytes);
+    if (_sharedBudget != null) {
+      _sharedBudget!.release();
+    } else {
+      _budget?._release(_retainedBytes);
+    }
   }
 }
 
@@ -195,6 +296,14 @@ final class MatrixSearchEventIds {
 class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   static const int version = 9;
   final String name;
+  TimelineIdStore? _timelineOrder;
+  final TimelineMigrationReader? timelineMigrationReader;
+  final Future<void> Function()? timelineMaintenanceWait;
+  final Future<void Function()?> Function(Future<void>)?
+      timelineMaintenanceLease;
+  final TimelineLegacyPageReader? timelineLegacyPageReader;
+  final TimelineSearchMigrationReader? timelineSearchMigrationReader;
+  RetainedSearchStore? _retainedSearch;
 
   late BoxCollection _collection;
   late Box<String> _clientBox;
@@ -319,6 +428,11 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   MatrixSdkDatabase(
     this.name, {
     this.database,
+    this.timelineMigrationReader,
+    this.timelineMaintenanceWait,
+    this.timelineMaintenanceLease,
+    this.timelineLegacyPageReader,
+    this.timelineSearchMigrationReader,
     this.idbFactory,
     this.sqfliteFactory,
     this.maxFileSize = 0,
@@ -367,6 +481,27 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
       idbFactory: idbFactory,
       version: version,
     );
+    if (database != null) {
+      // A read-only SQLCipher BLOB worker must coexist with foreground writes.
+      // DELETE journals can leave a writer and a new keyed reader contending;
+      // WAL keeps bounded reads off the SDK write path. In-memory drivers
+      // retain their native 'memory' journal mode.
+      final journal = await database!.rawQuery('PRAGMA journal_mode=WAL');
+      final mode = journal.isEmpty ? null : journal.single.values.single;
+      if (mode != 'wal' && mode != 'memory') {
+        throw StateError(
+            'Timeline database requires concurrent reader journal');
+      }
+      _timelineOrder = TimelineIdStore(_collection, timelineMigrationReader,
+          waitForMaintenance: timelineMaintenanceWait,
+          acquireMaintenanceLease: timelineMaintenanceLease,
+          legacyPageReader: timelineLegacyPageReader);
+      await _timelineOrder!.open();
+      _retainedSearch =
+          RetainedSearchStore(_collection, timelineSearchMigrationReader);
+      await _retainedSearch!.open();
+      await _adoptLegacyRollbackAuthority();
+    }
     _clientBox = _collection.openBox<String>(
       _clientBoxName,
     );
@@ -445,6 +580,48 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     return;
   }
 
+  /// The released 2206 SDK writes the retained legacy format after its bridge.
+  /// Invalidate only additive index metadata before any Box caches are opened;
+  /// migrate histories/search lazily. Credentials, bodies and keys stay intact.
+  Future<void> _adoptLegacyRollbackAuthority() async {
+    final sql = database;
+    if (sql == null) return;
+    const marker = 'android_2206_legacy_rollback_complete';
+    // Ordinary opens do not need a write transaction. Recheck under the atomic
+    // adoption transaction when the released bridge marker actually exists.
+    if ((await sql.query(_clientBoxName,
+            columns: ['k'], where: 'k=?', whereArgs: [marker]))
+        .isEmpty) {
+      return;
+    }
+    await sql.transaction((transaction) async {
+      final legacy = await transaction.query(_clientBoxName,
+          columns: ['v'], where: 'k=?', whereArgs: [marker]);
+      if (legacy.isEmpty) return;
+      if (legacy.single['v'] != jsonEncode('complete')) {
+        throw StateError('Legacy rollback marker is invalid');
+      }
+      await transaction.execute('UPDATE matrix_timeline_fragment_state SET '
+          'legacy_epoch_floor=current_epoch+1,current_epoch=current_epoch+1,'
+          'head_seq=0,tail_seq=-1,item_count=0,revision=0,migration_next=0,'
+          "migration_state=CASE WHEN EXISTS (SELECT 1 FROM $_timelineFragmentsBoxName t WHERE t.k=fragment_key) THEN 'copying' ELSE 'ready' END,"
+          'source_identity=(SELECT CAST(t.rowid AS TEXT)||\':\'||COALESCE(r.revision,0) '
+          'FROM $_timelineFragmentsBoxName t LEFT JOIN matrix_timeline_legacy_revision r '
+          'ON r.fragment_key=t.k WHERE t.k=matrix_timeline_fragment_state.fragment_key)');
+      await transaction.execute(
+          'INSERT OR IGNORE INTO matrix_retained_search_state '
+          '(room_id,revision,item_count,ready,legacy_revision) '
+          'SELECT DISTINCT substr(fragment_key,1,instr(fragment_key,\'|\')-1),0,0,0,0 '
+          'FROM matrix_timeline_fragment_state WHERE instr(fragment_key,\'|\')>0');
+      await transaction.execute('UPDATE matrix_retained_search_state SET '
+          'ready=0,after_id=NULL,legacy_revision=revision');
+      // Atomically consume the old bridge marker. A later rollback must export
+      // any new indexed writes again instead of treating its first bridge as done.
+      await transaction
+          .delete(_clientBoxName, where: 'k=?', whereArgs: [marker]);
+    });
+  }
+
   Future<void> _migrateFromVersion(int currentVersion) async {
     Logs().i('Migrate store database from version $currentVersion to $version');
 
@@ -476,7 +653,11 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   }
 
   @override
-  Future<void> clear() => _collection.clear();
+  Future<void> clear() async {
+    await _retainedSearch?.clear();
+    await _timelineOrder?.clear();
+    await _collection.clear();
+  }
 
   @override
   Future<void> clearCache() => transaction(() async {
@@ -488,6 +669,8 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
         await _roomMembersBox.clear();
         await _eventsBox.clear();
         await _timelineFragmentsBox.clear();
+        await _timelineOrder?.clear();
+        await _retainedSearch?.clear();
         await _outboundGroupSessionsBox.clear();
         await _presencesBox.clear();
         await _userProfilesBox.clear();
@@ -498,7 +681,134 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   Future<void> clearSSSSCache() => _ssssCacheBox.clear();
 
   @override
-  Future<void> close() async => _collection.close();
+  Future<void> close() async {
+    try {
+      // Signal both owners before draining either: retained search can wait
+      // for a transaction whose legacy membership reader needs cancellation.
+      await Future.wait<void>([
+        if (_retainedSearch != null) _retainedSearch!.close(),
+        if (_timelineOrder != null) _timelineOrder!.close(),
+      ], eagerError: false);
+    } finally {
+      await _collection.close();
+    }
+  }
+
+  @override
+  Future<void> prepareTimelineStorage(Iterable<String> roomIds) async {
+    final order = _timelineOrder;
+    if (order == null) return;
+    for (final id in roomIds.toSet()) {
+      await order.prepareComplete(TupleKey(id, '').toString());
+      await order.prepareComplete(TupleKey(id, 'SENDING').toString());
+      await order.prepareComplete(TupleKey(id, 'RECOVERY').toString());
+    }
+  }
+
+  /// Aggregate bounded maintenance timings for platform verification.
+  Map<String, int> get timelineMaintenanceMetrics =>
+      _timelineOrder?.maintenanceMetrics ?? const {};
+
+  @override
+  Future<void> prepareTimelineAuthority(Iterable<String> roomIds,
+      {Iterable<String> eventIds = const []}) async {
+    final order = _timelineOrder;
+    if (order == null) return;
+    for (final id in roomIds.toSet()) {
+      for (final fragment in ['', 'SENDING', 'RECOVERY']) {
+        await order.prepare(TupleKey(id, fragment).toString());
+        if (eventIds.isNotEmpty) {
+          final ids = eventIds.toSet().toList();
+          for (var start = 0; start < ids.length; start += 256) {
+            await order.positions(TupleKey(id, fragment).toString(),
+                ids.sublist(start, min(start + 256, ids.length)));
+          }
+        }
+      }
+    }
+  }
+
+  @override
+  Future<void> prepareSyncTimelineStorage(
+      SyncUpdate sync, Iterable<String> pendingDecryptionRooms) async {
+    final order = _timelineOrder;
+    if (order == null) return;
+    final joins = sync.rooms?.join;
+    final rooms = <String>{
+      ...pendingDecryptionRooms,
+      for (final entry
+          in joins?.entries ?? <MapEntry<String, JoinedRoomUpdate>>[])
+        if (entry.value.timeline?.events?.isNotEmpty == true) entry.key,
+    };
+    for (final id in rooms) {
+      // _handleRooms resets limited main fragments inside the same sync batch.
+      // Migrating the obsolete fragment first can hold every room behind a
+      // whole-history copy. Pending echoes/recovery remain independently kept.
+      if (joins?[id]?.timeline?.limited != true) {
+        await order.prepare(TupleKey(id, '').toString());
+      }
+      await order.prepare(TupleKey(id, 'SENDING').toString());
+      await order.prepare(TupleKey(id, 'RECOVERY').toString());
+      final eventIds =
+          joins?[id]?.timeline?.events?.map((event) => event.eventId).toSet() ??
+              <String>{};
+      if (eventIds.isNotEmpty) {
+        for (final fragment in ['']) {
+          if (fragment.isEmpty && joins?[id]?.timeline?.limited == true) {
+            continue;
+          }
+          for (var offset = 0; offset < eventIds.length; offset += 256) {
+            await order.positions(TupleKey(id, fragment).toString(),
+                eventIds.skip(offset).take(256));
+          }
+        }
+      }
+    }
+  }
+
+  @override
+  Future<TimelineIdSnapshot> openTimelineIdSnapshot(Room room,
+      {String? afterEventId,
+      bool includeSending = false,
+      TimelineIdDirection direction = TimelineIdDirection.older}) async {
+    final order = _timelineOrder;
+    if (order == null) {
+      return super.openTimelineIdSnapshot(room,
+          afterEventId: afterEventId,
+          includeSending: includeSending,
+          direction: direction);
+    }
+    final mainKey = TupleKey(room.id, '').toString();
+    final sendingKey = TupleKey(room.id, 'SENDING').toString();
+    await order.prepare(mainKey);
+    if (afterEventId != null) await order.positions(mainKey, [afterEventId]);
+    if (includeSending && afterEventId == null) await order.prepare(sendingKey);
+    // Migration finishes before acquiring the short capture gate. Both local
+    // echo and synced fragments are then captured against the same batch edge.
+    return _searchRead(() async {
+      final main = await order.snapshot(mainKey,
+          afterEventId: afterEventId, direction: direction);
+      if (!includeSending || afterEventId != null) return main;
+      try {
+        final sending = await order.snapshot(sendingKey);
+        return _CombinedTimelineSnapshot(sending, main);
+      } catch (_) {
+        main.dispose();
+        rethrow;
+      }
+    });
+  }
+
+  @override
+  Future<Map<String, int>> getTimelineEventPositions(
+          Room room, Iterable<String> ids) =>
+      _timelineOrder?.positions(TupleKey(room.id, '').toString(), ids) ??
+      super.getTimelineEventPositions(room, ids);
+
+  @override
+  Future<int> getTimelineEventCount(Room room) =>
+      _timelineOrder?.count(TupleKey(room.id, '').toString()) ??
+      super.getTimelineEventCount(room);
 
   @override
   Future<void> deleteFromToDeviceQueue(int id) async {
@@ -508,6 +818,11 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
   @override
   Future<void> forgetRoom(String roomId) async {
+    await _retainedSearch?.clear(room: roomId);
+    await _timelineOrder?.reset(TupleKey(roomId, '').toString());
+    await _timelineOrder?.reset(TupleKey(roomId, 'SENDING').toString());
+    await _timelineOrder?.reset(TupleKey(roomId, 'RECOVERY').toString());
+    await _timelineFragmentsBox.delete(TupleKey(roomId, 'RECOVERY').toString());
     await _timelineFragmentsBox.delete(TupleKey(roomId, '').toString());
     final eventsBoxKeys = await _eventsBox.getAllKeys();
     for (final key in eventsBoxKeys) {
@@ -616,6 +931,17 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     int? limit,
   }) =>
       runBenchmarked<List<Event>>('Get event list', () async {
+        final order = _timelineOrder;
+        if (order != null) {
+          final ids = <String>[
+            if (start == 0)
+              ...await order.page(TupleKey(room.id, 'SENDING').toString()),
+            if (!onlySending)
+              ...await order.page(TupleKey(room.id, '').toString(),
+                  start: start, limit: limit),
+          ];
+          return _getEventsByIds(ids, room);
+        }
         // Get the synced event IDs from the store
         final timelineKey = TupleKey(room.id, '').toString();
         final timelineEventIds =
@@ -743,6 +1069,19 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
   @override
   Future<List<Room>> getRoomList(Client client) =>
+      _loadRoomList(client, repairPreviews: true);
+
+  @override
+  Future<List<Room>> getCachedRoomList(Client client) =>
+      _loadRoomList(client, repairPreviews: false);
+
+  @override
+  Future<void> refreshRoomListPreviews(List<Room> rooms, Client client,
+          {bool Function()? isCurrent}) =>
+      _restoreRoomPreviews(rooms, client, isCurrent: isCurrent);
+
+  Future<List<Room>> _loadRoomList(Client client,
+          {required bool repairPreviews}) =>
       runBenchmarked<List<Room>>('Get room list from store', () async {
         final rooms = <String, Room>{};
 
@@ -757,7 +1096,9 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
         }
 
         try {
-          await _restoreRoomPreviews(rooms.values.toList(), client);
+          if (repairPreviews) {
+            await _restoreRoomPreviews(rooms.values.toList(), client);
+          }
         } on FormatException {
           Logs().w('Ignore malformed optional room preview cache');
         } on TypeError {
@@ -809,15 +1150,35 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   /// Repair legacy room snapshots from a bounded canonical timeline head.
   /// Normal sync already commits both stores together. Independent event
   /// persistence and older caches can nevertheless leave last_event behind.
-  Future<void> _restoreRoomPreviews(List<Room> rooms, Client client) async {
+  Future<void> _restoreRoomPreviews(List<Room> rooms, Client client,
+      {bool Function()? isCurrent}) async {
     if (rooms.isEmpty) return;
+    final initialEvents = [for (final room in rooms) room.lastEvent];
+    final initialHeads = [
+      for (final room in rooms)
+        (
+          room.lastEvent?.eventId,
+          room.lastEvent?.originServerTs,
+          room.lastEvent?.status,
+          room.lastEvent?.redacted
+        ),
+    ];
     final fragmentKeys = [
       for (final room in rooms) ...[
         TupleKey(room.id, '').toString(),
         TupleKey(room.id, 'SENDING').toString(),
       ],
     ];
-    final fragments = await _timelineFragmentsBox.getAll(fragmentKeys);
+    final List<List?> fragments;
+    if (_timelineOrder == null) {
+      fragments = await _timelineFragmentsBox.getAll(fragmentKeys);
+    } else {
+      fragments = [];
+      for (var i = 0; i < fragmentKeys.length; i++) {
+        fragments.add(
+            await _timelineOrder!.preview(fragmentKeys[i], i.isEven ? 32 : 8));
+      }
+    }
     final heads = <List<String>>[];
     final pending = <List<String>>[];
     final eventKeys = <String>{};
@@ -844,6 +1205,17 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
     final raws = Map<String, Map?>.fromIterables(keys, values);
     for (var i = 0; i < rooms.length; i++) {
       final room = rooms[i];
+      if (isCurrent?.call() == false) return;
+      if (!identical(initialEvents[i], room.lastEvent)) continue;
+      if (initialHeads[i] !=
+          (
+            room.lastEvent?.eventId,
+            room.lastEvent?.originServerTs,
+            room.lastEvent?.status,
+            room.lastEvent?.redacted
+          )) {
+        continue;
+      }
       Event? read(String id) {
         final raw = raws[TupleKey(room.id, id).toString()];
         if (raw == null) return null;
@@ -1134,7 +1506,21 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
   @override
   Future<void> removeEvent(String eventId, String roomId) async {
+    if (_retainedSearch != null && !_retainedSearch!.ownsTransaction) {
+      await prepareTimelineAuthority([roomId], eventIds: [eventId]);
+      await transaction(() => removeEvent(eventId, roomId));
+      return;
+    }
+    await _retainedSearch?.remove(roomId, eventId);
     await _eventsBox.delete(TupleKey(roomId, eventId).toString());
+    if (_timelineOrder != null) {
+      await _timelineOrder!.remove(TupleKey(roomId, '').toString(), eventId);
+      await _timelineOrder!
+          .remove(TupleKey(roomId, 'SENDING').toString(), eventId);
+      await _timelineOrder!
+          .remove(TupleKey(roomId, 'RECOVERY').toString(), eventId);
+      return;
+    }
     final keys = await _timelineFragmentsBox.getAllKeys();
     for (final key in keys) {
       final multiKey = TupleKey.fromString(key);
@@ -1276,6 +1662,24 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
 
   @override
   Future<void> storeEventUpdate(EventUpdate eventUpdate, Client client) async {
+    if (_retainedSearch != null && !_retainedSearch!.ownsTransaction) {
+      if (eventUpdate.type == EventUpdateType.ephemeral) return;
+      final eventIds = <String>{
+        if (eventUpdate.content['event_id'] is String)
+          eventUpdate.content['event_id'] as String,
+        if (eventUpdate.content['unsigned'] is Map &&
+            (eventUpdate.content['unsigned'] as Map)['transaction_id']
+                is String)
+          (eventUpdate.content['unsigned'] as Map)['transaction_id'] as String,
+      };
+      await prepareTimelineAuthority([eventUpdate.roomID], eventIds: eventIds);
+      await transaction(() => _storeEventUpdate(eventUpdate, client));
+      return;
+    }
+    return _storeEventUpdate(eventUpdate, client);
+  }
+
+  Future<void> _storeEventUpdate(EventUpdate eventUpdate, Client client) async {
     // Ephemerals should not be stored
     if (eventUpdate.type == EventUpdateType.ephemeral) return;
     final tmpRoom = client.getRoomById(eventUpdate.roomID) ??
@@ -1376,41 +1780,62 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
           ?.tryGet<String>('transaction_id');
       await _eventsBox.put(TupleKey(eventUpdate.roomID, eventId).toString(),
           eventUpdate.content);
+      await _retainedSearch?.upsert(
+          eventUpdate.roomID,
+          TimelineSearchEntry(
+              eventId,
+              eventUpdate.content['origin_server_ts'] is int
+                  ? eventUpdate.content['origin_server_ts'] as int
+                  : null,
+              isSent: status.isSent));
 
       // Update timeline fragments
       final key = TupleKey(eventUpdate.roomID, status.isSent ? '' : 'SENDING')
           .toString();
 
-      final eventIds =
-          List<String>.from(await _timelineFragmentsBox.get(key) ?? []);
-
-      if (!eventIds.contains(eventId)) {
-        if (eventUpdate.type == EventUpdateType.history) {
-          eventIds.add(eventId);
-        } else {
-          eventIds.insert(0, eventId);
+      if (_timelineOrder != null) {
+        await _timelineOrder!.add(key, eventId,
+            tail: eventUpdate.type == EventUpdateType.history,
+            move: status.isSynced &&
+                prevStatus != null &&
+                prevStatus.isSent &&
+                !prevStatus.isSynced &&
+                eventUpdate.type != EventUpdateType.history);
+        if (status.isSent) {
+          await _timelineOrder!.remove(
+              TupleKey(eventUpdate.roomID, 'SENDING').toString(), eventId);
         }
-        await _timelineFragmentsBox.put(key, eventIds);
-      } else if (status.isSynced &&
-          prevStatus != null &&
-          prevStatus.isSent &&
-          eventUpdate.type != EventUpdateType.history) {
-        // Status changes from 1 -> 2? Make sure event is correctly sorted.
-        eventIds.remove(eventId);
-        eventIds.insert(0, eventId);
-      }
-
-      // If event comes from server timeline, remove sending events with this ID
-      if (status.isSent) {
-        final key = TupleKey(eventUpdate.roomID, 'SENDING').toString();
+      } else {
         final eventIds =
             List<String>.from(await _timelineFragmentsBox.get(key) ?? []);
-        final i = eventIds.indexWhere((id) => id == eventId);
-        if (i != -1) {
-          await _timelineFragmentsBox.put(key, eventIds..removeAt(i));
+
+        if (!eventIds.contains(eventId)) {
+          if (eventUpdate.type == EventUpdateType.history) {
+            eventIds.add(eventId);
+          } else {
+            eventIds.insert(0, eventId);
+          }
+          await _timelineFragmentsBox.put(key, eventIds);
+        } else if (status.isSynced &&
+            prevStatus != null &&
+            prevStatus.isSent &&
+            eventUpdate.type != EventUpdateType.history) {
+          // Status changes from 1 -> 2? Make sure event is correctly sorted.
+          eventIds.remove(eventId);
+          eventIds.insert(0, eventId);
+        }
+
+        // If event comes from server timeline, remove sending events with this ID
+        if (status.isSent) {
+          final key = TupleKey(eventUpdate.roomID, 'SENDING').toString();
+          final eventIds =
+              List<String>.from(await _timelineFragmentsBox.get(key) ?? []);
+          final i = eventIds.indexWhere((id) => id == eventId);
+          if (i != -1) {
+            await _timelineFragmentsBox.put(key, eventIds..removeAt(i));
+          }
         }
       }
-
       // Is there a transaction id? Then delete the event with this id.
       if (!status.isError && !status.isSending && transactionId != null) {
         await removeEvent(transactionId, eventUpdate.roomID);
@@ -1573,8 +1998,13 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   }
 
   @override
-  Future<void> deleteTimelineForRoom(String roomId) =>
-      _timelineFragmentsBox.delete(TupleKey(roomId, '').toString());
+  Future<void> deleteTimelineForRoom(String roomId) async {
+    if (_timelineOrder != null) {
+      await _timelineOrder!.reset(TupleKey(roomId, '').toString());
+    } else {
+      await _timelineFragmentsBox.delete(TupleKey(roomId, '').toString());
+    }
+  }
 
   @override
   Future<void> storeSSSSCache(
@@ -1735,21 +2165,30 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   @override
   Future<List<StoredInboundGroupSession>> getInboundGroupSessionsPage(
       {String? afterSessionId, int limit = 80}) async {
-    final page = await _inboundGroupSessionsBox.getPage(after: afterSessionId, limit: limit);
-    return page.values.map((raw) => StoredInboundGroupSession.fromJson(copyMap(raw))).toList();
+    final page = await _inboundGroupSessionsBox.getPage(
+        after: afterSessionId, limit: limit);
+    return page.values
+        .map((raw) => StoredInboundGroupSession.fromJson(copyMap(raw)))
+        .toList();
   }
 
   /// A verified retained SQLCipher store can be read without SDK initialization,
   /// migrations, old credentials, or allocating a full session collection.
   static Future<List<StoredInboundGroupSession>> readRetainedSessionsPage(
-      Database database, {String? afterSessionId, int limit = 80}) async {
+      Database database,
+      {String? afterSessionId,
+      int limit = 80}) async {
     if (limit < 1 || limit > 80) throw RangeError.range(limit, 1, 80);
     final rows = await database.query(_inboundGroupSessionsBoxName,
-        columns: ['v'], where: afterSessionId == null ? null : 'k > ?',
+        columns: ['v'],
+        where: afterSessionId == null ? null : 'k > ?',
         whereArgs: afterSessionId == null ? null : [afterSessionId],
-        orderBy: 'k', limit: limit);
-    return rows.map((r) => StoredInboundGroupSession.fromJson(
-        Map<String, dynamic>.from(jsonDecode(r['v'] as String)))).toList();
+        orderBy: 'k',
+        limit: limit);
+    return rows
+        .map((r) => StoredInboundGroupSession.fromJson(
+            Map<String, dynamic>.from(jsonDecode(r['v'] as String))))
+        .toList();
   }
 
   @override
@@ -1766,19 +2205,24 @@ class MatrixSdkDatabase extends DatabaseApi with DatabaseFileStorage {
   Future<int> recoveryProtectedCount(String version) async {
     final sql = database;
     if (sql == null) throw UnsupportedError('Native recovery requires SQLite');
-    final rows = await sql.rawQuery('SELECT COUNT(*) AS n FROM "$_clientBoxName" '
-        'WHERE k LIKE \'recovery.v1:receipt.%\' AND json_extract(v, \'\$.version\') = ?', [version]);
+    final rows = await sql.rawQuery(
+        'SELECT COUNT(*) AS n FROM "$_clientBoxName" '
+        'WHERE k LIKE \'recovery.v1:receipt.%\' AND json_extract(v, \'\$.version\') = ?',
+        [version]);
     return (rows.single['n'] as num).toInt();
   }
 
   @override
   Future<List<String>> getRecoveryPendingEventIds(Room room,
-      {required int windowStart, required int windowEnd,
-      String? afterEventId, int limit = 80}) async {
+      {required int windowStart,
+      required int windowEnd,
+      String? afterEventId,
+      int limit = 80}) async {
     if (limit < 1 || limit > 80) throw ArgumentError('Invalid recovery page');
     final sql = database;
     if (sql == null) throw UnsupportedError('Recovery replay requires SQLite');
-    final rows = await sql.rawQuery('''SELECT json_extract(v, '\$.event_id') AS id
+    final rows = await sql.rawQuery(
+        '''SELECT json_extract(v, '\$.event_id') AS id
 FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
  AND json_extract(v, '\$.type') = 'm.room.encrypted'
  AND json_extract(v, '\$.origin_server_ts') >= ?
@@ -1791,16 +2235,19 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
   }
 
   @override
-  Future<List<String>> getRecoveryEventIds(Room room, {int start = 0, int limit = 80}) async {
-    if (start < 0 || limit < 1 || limit > 80) throw ArgumentError('Invalid recovery page');
+  Future<List<String>> getRecoveryEventIds(Room room,
+      {int start = 0, int limit = 80}) async {
+    if (start < 0 || limit < 1 || limit > 80) {
+      throw ArgumentError('Invalid recovery page');
+    }
     final sql = database;
     if (sql == null) throw UnsupportedError('Native recovery requires SQLite');
-    return _searchRead(() async {
-      final rows = await sql.rawQuery('SELECT j.value AS id FROM "$_timelineFragmentsBoxName" t, '
-          'json_each(t.v) j WHERE t.k = ? AND j.key >= ? AND j.key < ? ORDER BY j.key',
-          [TupleKey(room.id, '').toString(), start, start + limit]);
-      return rows.map((r) => r['id'] as String).toList();
-    });
+    final order = _timelineOrder;
+    if (order != null) {
+      return order.page(TupleKey(room.id, 'RECOVERY').toString(),
+          start: start, limit: limit);
+    }
+    return getEventIdList(room, start: start, limit: limit);
   }
 
   @override
@@ -1808,14 +2255,15 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
       await _clientBox.get('recovery.cursor:$key:$cursor') != null;
 
   @override
-  Future<void> storeRecoveryDecryptedEvent(Event event) => transaction(() async {
-    final key = TupleKey(event.room.id, event.eventId).toString();
-    final prior = await _eventsBox.get(key);
-    if (prior == null) return;
-    final stored = Event.fromJson(copyMap(prior), event.room);
-    if (stored.redacted || stored.type != EventTypes.Encrypted) return;
-    await _eventsBox.put(key, event.toJson());
-  });
+  Future<void> storeRecoveryDecryptedEvent(Event event) =>
+      transaction(() async {
+        final key = TupleKey(event.room.id, event.eventId).toString();
+        final prior = await _eventsBox.get(key);
+        if (prior == null) return;
+        final stored = Event.fromJson(copyMap(prior), event.room);
+        if (stored.redacted || stored.type != EventTypes.Encrypted) return;
+        await _eventsBox.put(key, event.toJson());
+      });
 
   @override
   Future<({int downloaded, int decrypted, int missing})> recoveryRoomCounts(
@@ -1835,27 +2283,35 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
  AND json_extract(v, '\$.unsigned.redacted_because') IS NULL
 ''', ['${room.id}|', windowStart, windowEnd]);
     final row = rows.single;
-    return (downloaded: (row['downloaded'] as num?)?.toInt() ?? 0,
-        decrypted: (row['decrypted'] as num?)?.toInt() ?? 0,
-        missing: (row['missing'] as num?)?.toInt() ?? 0);
+    return (
+      downloaded: (row['downloaded'] as num?)?.toInt() ?? 0,
+      decrypted: (row['decrypted'] as num?)?.toInt() ?? 0,
+      missing: (row['missing'] as num?)?.toInt() ?? 0
+    );
   }
 
   @override
-  Future<bool> commitRecoveryHistoryPage(Room room, String key,
-      int expectedRevision, List<Map<String, dynamic>> events,
+  Future<bool> commitRecoveryHistoryPage(
+      Room room,
+      String key,
+      int expectedRevision,
+      List<Map<String, dynamic>> events,
       Map<String, dynamic> checkpoint) async {
     if (events.length > 80 || checkpoint['revision'] != expectedRevision + 1) {
       throw ArgumentError('Invalid recovery page');
     }
+    final recoveryKey = TupleKey(room.id, 'RECOVERY').toString();
+    await _timelineOrder?.prepare(recoveryKey);
     var committed = false;
     await transaction(() async {
       final current = await getRecoveryCheckpoint(key);
       if ((current?['revision'] ?? 0) != expectedRevision) return;
-      final fragmentKey = TupleKey(room.id, '').toString();
-      final ids = <String>[];
+      // Recovery bodies are independently retained; only normal sync/history
+      // with a proven room token may extend the continuous fragment.
       for (final raw in events) {
         final id = raw['event_id'];
-        if (id is! String || (raw['room_id'] != null && raw['room_id'] != room.id)) {
+        if (id is! String ||
+            (raw['room_id'] != null && raw['room_id'] != room.id)) {
           throw FormatException('Invalid recovery event binding');
         }
         final eventKey = TupleKey(room.id, id).toString();
@@ -1863,35 +2319,50 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
         // Existing decrypted/redacted rows and local metadata win over old
         // ciphertext. Restoring a fragment never reverses a tombstone.
         if (existing == null) {
-          final tombstone = await _clientBox.get('recovery.redaction:$eventKey');
+          final tombstone =
+              await _clientBox.get('recovery.redaction:$eventKey');
           if (tombstone == null) {
             await _eventsBox.put(eventKey, copyMap(raw));
           } else {
-            final event = Event.fromJson(copyMap(raw), room)..setRedactionEvent(
-                Event.fromJson(Map<String,dynamic>.from(jsonDecode(tombstone)), room));
+            final event = Event.fromJson(copyMap(raw), room)
+              ..setRedactionEvent(Event.fromJson(
+                  Map<String, dynamic>.from(jsonDecode(tombstone)), room));
             await _eventsBox.put(eventKey, event.toJson());
           }
         }
-        ids.add(id);
+        // This independent order records recovery-page replay only. It never
+        // establishes adjacency with the room's continuous chat fragment.
+        await _timelineOrder?.add(recoveryKey, id, tail: true);
+        final retained = existing ?? raw;
+        await _retainedSearch?.upsert(
+            room.id,
+            TimelineSearchEntry(
+                id,
+                retained['origin_server_ts'] is int
+                    ? retained['origin_server_ts'] as int
+                    : null));
         if (raw['type'] == EventTypes.Redaction) {
           final redaction = Event.fromJson(copyMap(raw), room);
           final target = raw['redacts'] ?? redaction.content['redacts'];
           if (target is String) {
             final targetKey = TupleKey(room.id, target).toString();
-            await _clientBox.put('recovery.redaction:$targetKey', jsonEncode(raw));
+            await _clientBox.put(
+                'recovery.redaction:$targetKey', jsonEncode(raw));
             final targetRaw = await _eventsBox.get(targetKey);
             if (targetRaw != null) {
-              final event = Event.fromJson(copyMap(targetRaw), room)..setRedactionEvent(redaction);
+              final event = Event.fromJson(copyMap(targetRaw), room)
+                ..setRedactionEvent(redaction);
               await _eventsBox.put(targetKey, event.toJson());
             }
           }
         }
       }
-      await _timelineFragmentsBox.appendUnique(fragmentKey, ids);
       await _clientBox.put('recovery.v1:$key', jsonEncode(checkpoint));
       final cursor = checkpoint['cursor'];
       if (cursor is String) {
-        await _clientBox.put('recovery.cursor:$key:${checkpoint['walk'] ?? checkpoint['head']}:$cursor', '1');
+        await _clientBox.put(
+            'recovery.cursor:$key:${checkpoint['walk'] ?? checkpoint['head']}:$cursor',
+            '1');
       }
       committed = true;
     });
@@ -1953,7 +2424,8 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
           await _userCrossSigningKeysBox.getAllValues(),
       _ssssCacheBoxName: await _ssssCacheBox.getAllValues(),
       _presencesBoxName: await _presencesBox.getAllValues(),
-      _timelineFragmentsBoxName: await _timelineFragmentsBox.getAllValues(),
+      _timelineFragmentsBoxName: await (_timelineOrder?.exportLegacy() ??
+          _timelineFragmentsBox.getAllValues()),
       _eventsBoxName: await _eventsBox.getAllValues(),
       _seenDeviceIdsBoxName: await _seenDeviceIdsBox.getAllValues(),
       _seenDeviceKeysBoxName: await _seenDeviceKeysBox.getAllValues(),
@@ -2027,6 +2499,9 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
       for (final key in json[_presencesBoxName]!.keys) {
         await _presencesBox.put(key, json[_presencesBoxName]![key]);
       }
+      for (final key in json[_eventsBoxName]?.keys ?? const []) {
+        await _eventsBox.put(key, json[_eventsBoxName]![key]);
+      }
       for (final key in json[_timelineFragmentsBoxName]!.keys) {
         await _timelineFragmentsBox.put(
             key, json[_timelineFragmentsBoxName]![key]);
@@ -2052,6 +2527,34 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
     int? limit,
   }) =>
       runBenchmarked<List<String>>('Get event id list', () async {
+        final order = _timelineOrder;
+        if (order != null) {
+          final handle = await openTimelineIdSnapshot(room,
+              includeSending: includeSending);
+          final ids = <String>[];
+          var skipped = 0;
+          try {
+            while (limit == null || ids.length < limit) {
+              final page = await handle.next(
+                  limit: (limit == null
+                          ? 256
+                          : start - skipped + limit - ids.length)
+                      .clamp(1, 256));
+              for (final id in page.ids) {
+                if (skipped < start) {
+                  skipped++;
+                } else {
+                  ids.add(id);
+                }
+              }
+              handle.accept(page);
+              if (!page.hasMore) break;
+            }
+            return ids;
+          } finally {
+            handle.dispose();
+          }
+        }
         // Get the synced event IDs from the store
         final timelineKey = TupleKey(room.id, '').toString();
         final timelineEventIds = List<String>.from(
@@ -2074,18 +2577,13 @@ FROM "$_eventsBoxName" WHERE instr(k, ?) = 1
           ...sendingEventIds,
           ...timelineEventIds,
         ];
-        if (limit != null && eventIds.length > limit) {
-          eventIds.removeRange(limit, eventIds.length);
-        }
-
-        return eventIds;
+        return eventIds.skip(start).take(limit ?? eventIds.length).toList();
       });
 
   /// Count the existing durable fragment without materializing event payloads
   /// or retaining another ID list in an application presentation cache.
-  Future<int> getLocalTimelineEventCount(Room room) async =>
-      (await _timelineFragmentsBox.get(TupleKey(room.id, '').toString()) ?? [])
-          .length;
+  Future<int> getLocalTimelineEventCount(Room room) =>
+      getTimelineEventCount(room);
 
   Future<T> _searchRead<T>(Future<T> Function() operation) async {
     late T result;
@@ -2133,6 +2631,17 @@ SELECT v FROM "$_timelineFragmentsBoxName" WHERE k = ?
   Future<MatrixSearchEventIds> openSearchEventIds(Room room,
       {int maxBytes = 32 * 1024 * 1024,
       MatrixSearchSnapshotBudget? budget}) async {
+    final retained = _retainedSearch;
+    if (retained != null) {
+      await retained.prepare(room.id, () => openTimelineIdSnapshot(room),
+          legacy: () => _timelineOrder!
+              .retainedLegacyIds(TupleKey(room.id, '').toString()));
+      _timelineOrder!.scheduleGarbage(TupleKey(room.id, '').toString());
+      _timelineOrder!.scheduleGarbage(TupleKey(room.id, 'SENDING').toString());
+      retained.scheduleGarbage(room.id);
+      return MatrixSearchEventIds._indexed(await retained.snapshot(room.id));
+    }
+
     final key = TupleKey(room.id, '').toString();
     Future<List<String>> readCurrent() async =>
         List<String>.from(await _timelineFragmentsBox.get(key) ?? const []);
@@ -2344,4 +2853,65 @@ WHERE fragment.k = ? AND (
         userId,
         profile.toJson(),
       );
+}
+
+class _CombinedTimelineSnapshot implements TimelineIdSnapshot {
+  _CombinedTimelineSnapshot(this.first, this.second);
+  final TimelineIdSnapshot first, second;
+  bool _first = true;
+  TimelineIdPage? _pending, _source;
+  @override
+  int get length =>
+      first.length < 0 || second.length < 0 ? -1 : first.length + second.length;
+  @override
+  Future<TimelineIdPage> next({int limit = 30}) async {
+    if (_pending != null) return _pending!;
+    final page = await (_first ? first : second).next(limit: limit);
+    _source = page;
+    return _pending = TimelineIdPage(page.ids,
+        hasMore: page.hasMore || (_first && second.length != 0),
+        cursor: page.cursor,
+        rawCount: page.rawCount);
+  }
+
+  @override
+  Future<TimelineIdSnapshot> checkpoint() async {
+    final a = await first.checkpoint();
+    try {
+      return _CombinedTimelineSnapshot(a, await second.checkpoint())
+        .._first = _first;
+    } catch (_) {
+      a.dispose();
+      rethrow;
+    }
+  }
+
+  @override
+  Future<TimelineIdSnapshot> fork(
+      {required String afterEventId,
+      TimelineIdDirection direction = TimelineIdDirection.older}) async {
+    try {
+      return await second.fork(
+          afterEventId: afterEventId, direction: direction);
+    } on TimelineAnchorUnavailable {
+      return first.fork(afterEventId: afterEventId, direction: direction);
+    }
+  }
+
+  @override
+  void accept(TimelineIdPage page) {
+    if (!identical(page, _pending)) throw StateError('Invalid timeline page');
+    (_first ? first : second).accept(_source!);
+    if (_first && !_source!.hasMore) _first = false;
+    _pending = null;
+    _source = null;
+  }
+
+  @override
+  void dispose() {
+    first.dispose();
+    second.dispose();
+    _pending = null;
+    _source = null;
+  }
 }

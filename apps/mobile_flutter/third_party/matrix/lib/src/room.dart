@@ -58,6 +58,13 @@ class Room {
   /// A token that can be supplied to the from parameter of the rooms/{roomId}/messages endpoint.
   String? prev_batch;
 
+  int _historyGeneration = 0;
+  int get historyGeneration => _historyGeneration;
+
+  /// A limited sync starts a different live fragment. Requests from the old
+  /// fragment may finish, but cannot publish into or move the new fragment.
+  void invalidateHistoryFragment() => _historyGeneration++;
+
   RoomSummary summary;
 
   /// The room states are a key value store of the key (`type`,`state_key`) => State(event).
@@ -1253,6 +1260,7 @@ class Room {
       void Function()? onHistoryReceived,
       direction = Direction.b}) async {
     final prev_batch = this.prev_batch;
+    final generation = historyGeneration;
 
     final storeInDatabase = !isArchived;
 
@@ -1267,10 +1275,12 @@ class Room {
       filter: jsonEncode(StateFilter(lazyLoadMembers: true).toJson()),
     );
 
+    if (generation != historyGeneration) return 0;
     if (onHistoryReceived != null) onHistoryReceived();
     this.prev_batch = resp.end;
 
     Future<void> loadFn() async {
+      if (generation != historyGeneration) return;
       if (resp.chunk.isEmpty) return;
 
       await client.handleSync(
@@ -1314,7 +1324,10 @@ class Room {
     }
 
     if (client.database != null) {
+      await client.database?.prepareTimelineAuthority([id],
+          eventIds: resp.chunk.map((event) => event.eventId));
       await client.database?.transaction(() async {
+        if (generation != historyGeneration) return;
         if (storeInDatabase) {
           await client.database?.setRoomPrevBatch(resp.end, id, client);
         }
@@ -1464,6 +1477,7 @@ class Room {
     await postLoad();
 
     List<Event> events;
+    final storedGeneration = historyGeneration;
 
     if (!isArchived) {
       events = await client.database?.getEventList(
@@ -1499,6 +1513,17 @@ class Room {
     final timeline = Timeline(
         room: this,
         chunk: chunk,
+        // The bounded local database read already proves these bodies and IDs
+        // are persisted. Resolving their full-history ordinal again would put
+        // old-index preparation back on the cached first-paint path.
+        persistedInitialIds: !isArchived &&
+                eventContextId == null &&
+                storedGeneration == historyGeneration &&
+                client.database != null
+            ? events
+                .where((event) => event.status.isSynced)
+                .map((event) => event.eventId)
+            : const [],
         onChange: onChange,
         onRemove: onRemove,
         onInsert: onInsert,
@@ -1529,6 +1554,8 @@ class Room {
             );
           } else if (client.database != null) {
             // else, we need the database
+            await client.database?.prepareTimelineAuthority([id],
+                eventIds: chunk.events.map((event) => event.eventId));
             await client.database?.transaction(() async {
               for (var i = 0; i < chunk.events.length; i++) {
                 if (chunk.events[i].content['can_request_session'] == true) {
@@ -1693,6 +1720,7 @@ class Room {
       );
 
       // Store user in database:
+      // State-only persistence does not mutate timeline ordering.
       await client.database?.transaction(() async {
         await client.database?.storeEventUpdate(
           EventUpdate(
@@ -2313,6 +2341,7 @@ class Room {
   Future<void> _handleFakeSync(SyncUpdate syncUpdate,
       {Direction? direction}) async {
     if (client.database != null) {
+      await client.database?.prepareSyncTimelineStorage(syncUpdate, const []);
       await client.database?.transaction(() async {
         await client.handleSync(syncUpdate, direction: direction);
       });

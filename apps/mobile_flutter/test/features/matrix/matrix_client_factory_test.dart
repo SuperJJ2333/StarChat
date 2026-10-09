@@ -549,7 +549,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   group('Matrix 测试存储目录隔离（CI 并发回归）', () {
-    test('文档目录是进程私有且位于仓库之外', () async {
+    test('文档目录是进程私有且不写入源码目录', () async {
       final path =
           await PathProviderPlatform.instance.getApplicationDocumentsPath();
       expect(path, isNotNull);
@@ -558,10 +558,19 @@ void main() {
       expect(path, contains('$pid'), reason: '目录必须按进程隔离，否则并发测试会共享同一个数据库');
       expect(path, contains('chatflow-matrix-tests-'),
           reason: '目录名需可辨识，便于 CI 排查残留');
-      // 不落进仓库（避免把测试库写进源码树 / 让并发进程复用它）。
-      final repoRoot = Directory.current.parent.parent.absolute.path;
-      expect(File(path!).absolute.path.startsWith(repoRoot), isFalse,
-          reason: '测试数据库不得落在仓库目录内');
+      // AGENTS要求临时验证产物只能位于docs/verification；CI仍可使用
+      // 仓库外进程私有目录。两种布局都必须与源码、共享数据库隔离。
+      String normalized(String value) =>
+          value.replaceAll('\\', '/').toLowerCase();
+      final repoRoot = normalized(Directory.current.parent.parent.absolute.path)
+          .replaceFirst(RegExp(r'/+$'), '');
+      final absolute = normalized(File(path!).absolute.path);
+      final verification = '$repoRoot/docs/verification/artifacts';
+      expect(
+          absolute.startsWith(repoRoot) &&
+              !absolute.startsWith('$verification/'),
+          isFalse,
+          reason: '仓库内测试数据库必须只位于命名验证产物目录');
       expect(Directory(path).existsSync(), isTrue,
           reason: '目录必须在返回前就存在（SDK 不会创建多级父目录）');
     });

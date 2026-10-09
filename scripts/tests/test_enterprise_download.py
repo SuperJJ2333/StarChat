@@ -16,7 +16,7 @@ class EnterpriseDownloadTest(unittest.TestCase):
         self.assertIn('/downloads/latest-arm64.apk', page)
         self.assertIn('/assets/download-qr.png', page)
         self.assertIn('download-install', page)
-        self.assertIn('勿卸载应用', page)
+        self.assertIn('请勿覆盖或卸载旧版', page)
         self.assertIn('Safari', page)
 
     def test_install_link_uses_https_manifest_served_by_download_routes(self):

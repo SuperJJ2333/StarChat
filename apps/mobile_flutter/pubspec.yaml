@@ -1,7 +1,7 @@
 name: liuhetong_mobile
 publish_to: none
 description: 畅聊 ChatFlow Android/iOS Flutter client
-version: 0.4.34+2203
+version: 0.4.44+2213
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
@@ -24,6 +24,8 @@ dependencies:
   record: ^7.1.1
   path_provider: 2.1.5
   path: 1.9.1
+  ffi: 2.2.0
+  sqlite3: 2.9.4
   sqflite_common_ffi: 2.3.6
   sqlcipher_flutter_libs: 0.6.8
   flutter_olm: ^2.0.0
@@ -76,13 +78,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/branding/
+    - assets/branding/liuhetong_logo.svg
     - assets/landing.png
-    - assets/emoji/
+    - assets/emoji/NOTICE.txt
+    - assets/emoji/ANIMATED_SOURCE_LICENSE.txt
     - assets/emoji_vector/
     - assets/html/
     - assets/sounds/
-    - assets/diagnostics/
 flutter_launcher_icons:
   android: true
   ios: true

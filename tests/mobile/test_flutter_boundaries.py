@@ -49,7 +49,7 @@ def test_video_call_surface_uses_flexible_height_on_compact_devices():
     assert "SafeArea(" in video_body and "const Spacer()" in video_body
     assert "_videoControls(state, connected)" in video_body
     # Only the local picture-in-picture is fixed size and screen-corner anchored.
-    picture_in_picture = video_body.split("if (connected)", 1)[1].split("SafeArea(", 1)[0]
+    picture_in_picture = video_body.split("if (connected && state.cameraEnabled)", 1)[1].split("SafeArea(", 1)[0]
     assert "Positioned(" in picture_in_picture and "right:" in picture_in_picture
     assert "top: safeTop" in picture_in_picture
     assert "SizedBox(" in picture_in_picture

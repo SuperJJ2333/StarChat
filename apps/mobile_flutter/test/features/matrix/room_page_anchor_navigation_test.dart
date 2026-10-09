@@ -611,6 +611,41 @@ void main() {
     await _disposeRoom(tester);
   });
 
+  testWidgets('room trace excludes synthetic progress from sync phase timing',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final records = <PerformanceRecord>[];
+    var nowUs = 0;
+    final recorder = PerformanceTraceRecorder(
+        enabled: () => true, clockUs: () => nowUs, onRecord: records.add);
+    final trace = recorder.start(PerformanceOperationType.conversationOpen);
+    final sync = StreamController<SyncStatusUpdate>.broadcast(sync: true);
+    final timelineGate = Completer<void>();
+    addTearDown(sync.close);
+    await _pumpRoom(tester, null,
+        performanceTrace: trace,
+        remoteSyncStatus: sync.stream,
+        timelineGate: timelineGate,
+        roomId: '!anchor-synthetic-progress:test', afterFirstFrame: () {
+      sync.add(SyncStatusUpdate(SyncStatus.waitingForResponse));
+      nowUs = 1000000;
+      sync.add(SyncStatusUpdate(SyncStatus.processing, progress: 1));
+      nowUs = 30000000;
+      sync.add(SyncStatusUpdate(SyncStatus.processing));
+      nowUs = 30040000;
+      sync.add(SyncStatusUpdate(SyncStatus.cleaningUp));
+      nowUs = 30042000;
+      sync.add(SyncStatusUpdate(SyncStatus.finished));
+      timelineGate.complete();
+    });
+    final record = records.single;
+    expect(record.timingSummaryMs['sync_response_wait_ms'], 30000);
+    expect(record.timingSummaryMs['sync_processing_ms'], 40);
+    expect(record.timingSummaryMs['sync_cleanup_ms'], 2);
+    expect(record.stagesUs, contains(PerformanceStage.remoteSyncReady));
+    await _disposeRoom(tester);
+  });
+
   testWidgets('mid-cycle room entry measures processing without a wait start',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

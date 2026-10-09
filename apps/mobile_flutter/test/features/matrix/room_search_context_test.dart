@@ -69,7 +69,7 @@ class _Room extends Room {
           : super
               .getTimeline(onUpdate: onUpdate, eventContextId: eventContextId);
   Completer<void>? localGate;
-  final localEntered = Completer<void>();
+  var localEntered = Completer<void>();
   @override
   bool get isDirectChat => false;
   @override
@@ -135,6 +135,10 @@ void main() {
   testWidgets(
       'RoomPage date and keyword jumps retain context and route ownership',
       (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     for (final dateJump in [true, false]) {
       const selected = String.fromEnvironment('CONTEXT_SCENARIO');
       if (selected.isNotEmpty && selected != (dateJump ? 'date' : 'keyword')) {
@@ -268,7 +272,6 @@ void main() {
         await tester.tap(find.text('查找聊天记录'));
         await _settle(tester);
         if (dateJump) {
-          client.room.localGate = Completer<void>();
           await tester.tap(find.byKey(const Key('chat-search-filter-date')));
           await _settle(tester);
           if (old.month != now.month || old.year != now.year) {
@@ -280,6 +283,10 @@ void main() {
           expect(
               lease.localAnchorForDay(DateTime(old.year, old.month, old.day)),
               r'$old-anchor');
+          expect(day.hitTestable(), findsOneWidget,
+              reason: 'The selected date must receive a real pointer tap');
+          client.room.localGate = Completer<void>();
+          client.room.localEntered = Completer<void>();
           await tester.tap(find.descendant(
               of: day, matching: find.text(old.day.toString())));
           await _settle(tester);

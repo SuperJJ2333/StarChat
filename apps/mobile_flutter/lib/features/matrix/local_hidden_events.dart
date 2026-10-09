@@ -98,17 +98,33 @@ final class SharedPreferencesLocalHiddenEvents
 
   final SharedPreferences preferences;
   final String accountId;
+  static final _filters = Expando<Map<String, (int, LocalHistoryFilter)>>();
+  static final _revisions = Expando<Map<String, int>>();
+
+  int visibilityRevision(String roomId) =>
+      _revisions[preferences]?[_key(roomId)] ?? 0;
+
+  void _invalidate(String roomId) {
+    final key = _key(roomId);
+    _filters[preferences]?.remove(key);
+    final revisions = _revisions[preferences] ??= {};
+    revisions[key] = (revisions[key] ?? 0) + 1;
+  }
 
   @override
   LocalHistoryFilter readFilter(String roomId) {
-    final ids =
-        preferences.getStringList(_key(roomId))?.toSet() ?? const <String>{};
+    final key = _key(roomId);
+    final revision = visibilityRevision(roomId);
+    final filters = _filters[preferences] ??= {};
+    final cached = filters[key];
+    if (cached != null && cached.$1 == revision) return cached.$2;
+    final ids = preferences.getStringList(key)?.toSet() ?? const <String>{};
     final cutoff = _lastHistoryCutoff(roomId);
-    return (id, timestamp) =>
+    bool filter(String id, DateTime? timestamp) =>
         ids.contains(id) ||
-        (cutoff != null &&
-            timestamp != null &&
-            !timestamp.isAfter(cutoff));
+        (cutoff != null && timestamp != null && !timestamp.isAfter(cutoff));
+    filters[key] = (revision, filter);
+    return filter;
   }
 
   DateTime? _lastHistoryCutoff(String roomId) {
@@ -140,19 +156,22 @@ final class SharedPreferencesLocalHiddenEvents
   }
 
   @override
-  Future<void> clearThrough(String roomId, DateTime cutoff) =>
-      _storeCutoff('${_key(roomId)}.$_deletedSuffix', cutoff);
+  Future<void> clearThrough(String roomId, DateTime cutoff) async {
+    await _storeCutoff('${_key(roomId)}.$_deletedSuffix', cutoff);
+    _invalidate(roomId);
+  }
 
   @override
-  Future<void> clearHistoryThrough(String roomId, DateTime cutoff) =>
-      _storeCutoff('${_key(roomId)}.$_historySuffix', cutoff);
+  Future<void> clearHistoryThrough(String roomId, DateTime cutoff) async {
+    await _storeCutoff('${_key(roomId)}.$_historySuffix', cutoff);
+    _invalidate(roomId);
+  }
 
   /// 截止时间只前进不后退：重复清空不得把已隐藏的历史重新暴露出来。
   Future<void> _storeCutoff(String key, DateTime cutoff) async {
     final previous = preferences.getInt(key);
     if (previous != null && cutoff.millisecondsSinceEpoch <= previous) return;
-    final saved =
-        await preferences.setInt(key, cutoff.millisecondsSinceEpoch);
+    final saved = await preferences.setInt(key, cutoff.millisecondsSinceEpoch);
     if (!saved) throw StateError('Unable to save local history cutoff');
   }
 
@@ -163,6 +182,7 @@ final class SharedPreferencesLocalHiddenEvents
     ids.add(eventId);
     final stable = ids.toList(growable: false)..sort();
     await preferences.setStringList(key, stable);
+    _invalidate(roomId);
   }
 
   @override

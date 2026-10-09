@@ -16,6 +16,7 @@ import me.leolin.shortcutbadger.ShortcutBadger
 /// 桌面角标通道（PRD §35）：Dart 侧 BadgeService 经此设置启动器角标。
 /// 厂商启动器差异由 ShortcutBadger 适配；不支持时静默降级，不报错。
 class MainActivity : FlutterActivity() {
+    private var deltaUpdate: com.liuhetong.mobile.update.AndroidDeltaUpdate? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -71,6 +72,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        deltaUpdate = com.liuhetong.mobile.update.AndroidDeltaUpdate(this, flutterEngine.dartExecutor.binaryMessenger)
         com.liuhetong.mobile.push.NativeMessageNotifications.attach(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
         com.liuhetong.mobile.push.NativeMessageNotifications.acceptIntent(applicationContext, intent)
         com.liuhetong.mobile.media.BackgroundMediaDownloads.setUp(
@@ -465,10 +467,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        deltaUpdate?.foreground(true)
         com.liuhetong.mobile.push.NativeMessageNotifications.lifecycle(applicationContext, true)
     }
 
     override fun onPause() {
+        deltaUpdate?.foreground(false)
         com.liuhetong.mobile.push.NativeMessageNotifications.lifecycle(applicationContext, false)
         super.onPause()
     }
@@ -483,7 +487,16 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) deltaUpdate?.pressure()
+    }
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        deltaUpdate?.close()
+        deltaUpdate = null
         // 引擎销毁：移除通道处理器与 CallManager 监听（防泄漏/防重复注册）。
         com.liuhetong.mobile.call.CallBridge.teardown()
         com.liuhetong.mobile.call.NativeCallBridge.teardown()

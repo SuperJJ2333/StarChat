@@ -115,7 +115,9 @@ class ReceiptEventContent {
 
           if (userId is! String ||
               !userId.isValidMatrixId ||
-              receiptContent is! Map) continue;
+              receiptContent is! Map) {
+            continue;
+          }
 
           final ts = receiptContent['ts'];
           final threadId = receiptContent['thread_id'];
@@ -280,7 +282,18 @@ class LatestReceiptState {
     // set the latest receipt to the one furthest down in the timeline, or if we don't know that, the newest ts.
     if (updatedTimelines.isEmpty) return;
 
-    final eventOrder = await room.client.database?.getEventIdList(room) ?? [];
+    final eventOrder = <String, int>{};
+    final requested = <String>{
+      for (final timeline in updatedTimelines) ...[
+        if (timeline.ownPrivate != null) timeline.ownPrivate!.eventId,
+        if (timeline.ownPublic != null) timeline.ownPublic!.eventId,
+      ]
+    }.toList();
+    for (var offset = 0; offset < requested.length; offset += 256) {
+      eventOrder.addAll(await room.client.database?.getTimelineEventPositions(
+              room, requested.skip(offset).take(256)) ??
+          {});
+    }
 
     for (final timeline in updatedTimelines) {
       if (timeline.ownPrivate?.eventId == timeline.ownPublic?.eventId) {
@@ -298,12 +311,12 @@ class LatestReceiptState {
       } else if (public == null) {
         timeline.latestOwnReceipt = private;
       } else {
-        final privatePos = eventOrder.indexOf(private.eventId);
-        final publicPos = eventOrder.indexOf(public.eventId);
+        final privatePos = eventOrder[private.eventId];
+        final publicPos = eventOrder[public.eventId];
 
-        if (publicPos < 0 ||
-            privatePos <= publicPos ||
-            (privatePos < 0 && private.ts > public.ts)) {
+        if (publicPos == null ||
+            (privatePos != null && privatePos <= publicPos) ||
+            (privatePos == null && private.ts > public.ts)) {
           timeline.latestOwnReceipt = private;
         } else {
           timeline.latestOwnReceipt = public;

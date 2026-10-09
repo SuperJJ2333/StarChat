@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'emoji_resource_glyph.dart';
 
-import '../../features/emoji/fluent_emoji_catalog.dart';
 import '../../features/emoji/fluent_vector_emoji_catalog.dart';
 
 /// 内联 emoji 字形相对字号的比例，使矢量字形与系统文本字高视觉对齐。
@@ -10,19 +10,16 @@ const _kEmojiGlyphSizeFactor = 1.18;
 /// 动态字形（Animated Fluent WebP）：文本流中持续播放动画，
 /// 混排（文字+emoji）场景不再退化为静态图。
 final class EmojiAnimatedGlyph extends StatelessWidget {
-  const EmojiAnimatedGlyph({super.key, required this.asset, required this.size});
+  const EmojiAnimatedGlyph(
+      {super.key, required this.asset, required this.size});
 
   final String asset;
   final double size;
 
   @override
-  Widget build(BuildContext context) => Image.asset(
-        asset,
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        gaplessPlayback: true,
-        filterQuality: FilterQuality.high,
+  Widget build(BuildContext context) => EmojiResourceGlyph(
+        asset: asset,
+        size: size,
       );
 }
 
@@ -55,21 +52,6 @@ List<InlineSpan>? buildEmojiInlineSpans(String text, {double fontSize = 16}) {
   }
 
   for (final grapheme in text.characters) {
-    // 动态库优先：混排场景保持动画播放；未收录再回退矢量静态字形。
-    final animated = fluentEmojiByChar(grapheme);
-    if (animated != null) {
-      flushPlain();
-      (spans ??= <InlineSpan>[]).add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: EmojiAnimatedGlyph(
-            asset: animated.asset,
-            size: fontSize * _kEmojiGlyphSizeFactor,
-          ),
-        ),
-      );
-      continue;
-    }
     final emoji = vectorEmojiByChar(grapheme);
     if (emoji == null) {
       plain.write(grapheme);

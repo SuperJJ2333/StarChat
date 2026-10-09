@@ -70,6 +70,18 @@ final class MediaMemoryBudget {
     }
   }
 
+  /// Reclaim optional retained bytes without changing account generations or
+  /// invalidating a consumer's pending media flight.
+  void trimRetained() {
+    final callbacks = _entries.values.map((entry) => entry.evict).toList();
+    _entries.clear();
+    _objects.clear();
+    _bytes = 0;
+    for (final evict in callbacks) {
+      evict();
+    }
+  }
+
   void clear() {
     // Include owners with only pending loads, so a clear cannot be undone by
     // a late completion that had not registered a resident entry yet.

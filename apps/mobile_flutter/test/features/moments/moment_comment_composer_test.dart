@@ -7,9 +7,11 @@ import 'package:http/http.dart' as http;
 import 'package:liuhetong_mobile/features/moments/moment_comment_composer.dart';
 import 'package:liuhetong_mobile/features/matrix/image_picker_page.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_emoji_panel.dart';
+import 'package:liuhetong_mobile/features/emoji/fluent_vector_emoji_catalog.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
@@ -54,6 +56,30 @@ Future<void> settleMediaWork(
 }
 
 void main() {
+  testWidgets('opaque session without identity never persists emoji credential',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = await momentsApi((_) async => http.Response('{}', 503));
+    await tester.pumpWidget(CupertinoApp(
+        home: Builder(
+            builder: (context) => CupertinoButton(
+                child: const Text('open'),
+                onPressed: () => showMomentCommentComposer(context,
+                    api: api, momentId: 'm1')))));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(CupertinoIcons.smiley));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('vector-emoji-${vectorEmojis.first.name}')));
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    final encodedCredential = base64Url.encode(utf8.encode('access'));
+    expect(prefs.getKeys().any((key) =>
+        key.contains('access') || key.contains(encodedCredential)), isFalse,
+        reason: 'recent emoji preferences must never encode an access token');
+    expect(tester.widget<ChatEmojiPanel>(find.byType(ChatEmojiPanel)).accountId,
+        isNull);
+  });
   for (final dpr in [2.0, 5.0]) {
     testWidgets('comment original preview bounds both decoded axes at DPR $dpr',
         (tester) async {
@@ -311,7 +337,7 @@ void main() {
     expect(find.text('登录状态已变化，请重新打开评论'), findsOneWidget);
   });
   testWidgets(
-      'comment uses the complete chat emoji catalog and cursor insertion',
+      'comment uses static emoji catalog and cursor insertion without dynamic sending',
       (tester) async {
     final api = await momentsApi((_) async => http.Response('{}', 200));
     await tester.pumpWidget(CupertinoApp(
@@ -329,7 +355,10 @@ void main() {
     await tester.tap(find.byIcon(CupertinoIcons.smiley));
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.byType(ChatEmojiPanel), findsOneWidget);
-    await tester.tap(find.byKey(const Key('fluent-emoji-grinning')));
+    expect(find.byKey(const Key('emoji-tab-super')), findsNothing,
+        reason: 'comments do not support standalone animated chat messages');
+    final emoji = vectorEmojiByChar('😄')!;
+    await tester.tap(find.byKey(Key('vector-emoji-${emoji.name}')));
     await tester.pump();
     expect(input.controller!.text, 'a😄b');
     expect(input.controller!.selection.baseOffset, 3);

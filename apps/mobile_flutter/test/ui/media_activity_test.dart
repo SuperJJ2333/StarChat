@@ -3,15 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/media_activity.dart';
 
 void main() {
-  test('default grants every visible GIF and pauses ineligible GIFs', () {
+  test('default caps visible GIFs at four and transfers ineligible grants', () {
     final budget = MediaAnimationBudget();
     final tokens = List.generate(6, (_) => budget.register(priority: 1));
-    expect(tokens.map((token) => token.granted.value), everyElement(isTrue));
+    expect(tokens.where((token) => token.granted.value).length, 4);
     tokens[2].update(eligible: false);
     expect(tokens[2].granted.value, isFalse);
-    expect(tokens.where((token) => token.granted.value).length, 5);
+    expect(tokens.where((token) => token.granted.value).length, 4);
     tokens[2].update(eligible: true);
-    expect(tokens.map((token) => token.granted.value), everyElement(isTrue));
+    expect(tokens.where((token) => token.granted.value).length, 4);
     for (final token in tokens) {
       token.dispose();
     }

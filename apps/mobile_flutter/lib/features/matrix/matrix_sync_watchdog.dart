@@ -161,6 +161,7 @@ final class MatrixSyncWatchdog {
               },
             );
   bool _disposed = false;
+  bool _processingSyncResponse = false;
   DateTime _lastProgress = DateTime.now();
   DateTime? _lastHealthySyncAt;
   bool _hasConnected = false;
@@ -203,6 +204,15 @@ final class MatrixSyncWatchdog {
     }
     _subscription = target.syncStatus.listen((update) {
       if (_disposed) return;
+      // Only _innerSync's progress-free status establishes response arrival.
+      // Room progress also comes from synthetic history/local echo updates:
+      // while waiting it cannot renew the loop heartbeat or move diagnostics.
+      // After a real response, preserve progress heartbeats for slow batches.
+      if (update.status == SyncStatus.processing && update.progress != null) {
+        if (_processingSyncResponse) _lastProgress = _clock();
+        return;
+      }
+      _processingSyncResponse = update.status == SyncStatus.processing;
       // waitingForResponse 每轮长轮询必发，是最可靠的心跳；
       // finished/processing 视为额外进展。error 不算心跳——持续报错
       // 的循环同样需要被强制重建。

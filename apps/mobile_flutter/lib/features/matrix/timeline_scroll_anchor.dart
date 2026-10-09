@@ -46,6 +46,17 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
     return result;
   }
 
+  void _correctLayoutPosition(ScrollPosition position, double pixels) {
+    if (!position.hasPixels) {
+      position.correctPixels(pixels);
+      return;
+    }
+    // Mark the correction for the next layout even if its extents stay equal.
+    // Flutter then rebases ballistic motion at the current velocity, while a
+    // held drag retains its activity and gesture.
+    position.correctBy(pixels - position.pixels);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -83,7 +94,8 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
           : 0.0;
       if (oldLeading != newLeading && widget.controller.hasClients) {
         final position = widget.controller.position;
-        position.correctPixels(position.pixels + newLeading - oldLeading);
+        _correctLayoutPosition(
+            position, position.pixels + newLeading - oldLeading);
       }
       return;
     }
@@ -99,12 +111,12 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
         if (!rect.overlaps(bounds)) continue;
         _centerId = id;
         // In reverse layout the center row's bottom is the sliver origin.
-        // correctPixels is a coordinate change, not a new scroll activity: an
-        // incoming drag remains active and cannot cancel a half-finished seek.
+        // Rebase layout and its ongoing simulation together. The next tick
+        // must not restore pixels from a simulation with the old origin.
         final leadingPadding =
             widget.eventIds.first == id ? widget.padding.bottom : 0.0;
-        widget.controller.position
-            .correctPixels(rect.bottom - bounds.bottom + leadingPadding);
+        _correctLayoutPosition(widget.controller.position,
+            rect.bottom - bounds.bottom + leadingPadding);
         return;
       }
     }
@@ -113,7 +125,7 @@ class _AnchoredTimelineListState extends State<AnchoredTimelineList> {
     // responsibility.
     _centerId = widget.eventIds.firstOrNull;
     if (widget.controller.hasClients) {
-      widget.controller.position.correctPixels(0);
+      _correctLayoutPosition(widget.controller.position, 0);
     }
   }
 
@@ -194,6 +206,28 @@ final class TimelineScrollAnchor {
   TimelineScrollAnchor(this.eventId, this.globalY);
   final String eventId;
   final double globalY;
+
+  /// Select the outer visible row on the side a window shift would discard.
+  /// Include partial rows: a tall bubble may have its top outside the viewport.
+  static String? visibleBoundaryEventId(Map<String, GlobalKey> keys,
+      GlobalKey viewportKey, Iterable<String> newestFirst,
+      {required bool earlier}) {
+    final viewport = viewportKey.currentContext?.findRenderObject();
+    if (viewport is! RenderBox || !viewport.hasSize) return null;
+    final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
+    String? oldestVisible;
+    for (final id in newestFirst) {
+      final box = keys[id]?.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      if (!(box.localToGlobal(Offset.zero) & box.size).overlaps(bounds)) {
+        continue;
+      }
+      if (earlier) return id;
+      oldestVisible = id;
+    }
+    return oldestVisible;
+  }
+
   static TimelineScrollAnchor? capture(
       Map<String, GlobalKey> keys, GlobalKey viewportKey) {
     final viewport = viewportKey.currentContext?.findRenderObject();

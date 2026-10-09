@@ -105,14 +105,20 @@ void main() {
         (tester) async {
       final semantics = tester.ensureSemantics();
       var requests = 0;
-      final server = await tester
-          .runAsync(() => HttpServer.bind(InternetAddress.loopbackIPv4, 0));
-      server!.listen((request) async {
-        requests++;
-        request.response.persistentConnection = false;
-        request.response.headers.contentType = ContentType('image', 'png');
-        request.response.add(png);
-        await request.response.close();
+      final server = (await tester
+          .runAsync(() => HttpServer.bind(InternetAddress.loopbackIPv4, 0)))!;
+      await tester.runAsync(() async {
+        server.listen((request) async {
+          requests++;
+          // Exercise completion after the former two-second polling window.
+          if (!viewer) {
+            await Future<void>.delayed(const Duration(seconds: 3));
+          }
+          request.response.persistentConnection = false;
+          request.response.headers.contentType = ContentType('image', 'png');
+          request.response.add(png);
+          await request.response.close();
+        });
       });
       final url = 'http://127.0.0.1:${server.port}/retry.png';
       await tester.runAsync(() =>
@@ -135,18 +141,31 @@ void main() {
       }
       expect(find.bySemanticsLabel('重新加载图片'), findsOneWidget);
       expect(tester.getSize(bounds), before);
+      final previousKey = tester.widget<Image>(find.byType(Image)).key;
       await tester.tap(find.bySemanticsLabel('重新加载图片'));
-      for (var i = 0; i < 20; i++) {
-        await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 100)));
-        await tester.pump();
-        if (requests == 1 &&
-            tester
-                .widgetList<RawImage>(find.byType(RawImage))
-                .any((image) => image.image != null)) {
-          break;
+      // Retry performs asynchronous disk eviction before replacing the Image.
+      // Observe that replacement instead of assuming a wall-clock paint delay.
+      final deadline = Stopwatch()..start();
+      while (tester.widget<Image>(find.byType(Image)).key == previousKey) {
+        if (deadline.elapsed > const Duration(seconds: 20)) {
+          fail('Retry never replaced the corrupt image after disk eviction');
         }
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump();
       }
+      deadline.reset();
+      while (!tester
+          .widgetList<RawImage>(find.byType(RawImage))
+          .any((image) => image.image != null)) {
+        if (deadline.elapsed > const Duration(seconds: 20)) {
+          fail('Retry never painted the recovered image');
+        }
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
       expect(requests, 1, reason: 'retry must recover a corrupt disk entry');
       expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
       expect(tester.getSize(bounds), before);

@@ -1,14 +1,22 @@
 import 'package:flutter/foundation.dart';
+import '../../core/maintenance_activity.dart';
 
-/// Runs every eligible animation by default; callers may explicitly cap work.
+/// Shared default ceiling is four; interaction gates can revoke all grants.
 final class MediaAnimationBudget {
-  MediaAnimationBudget({this.maxActive}) {
+  MediaAnimationBudget({this.maxActive = 4, this.maintenance}) {
     if (maxActive != null && maxActive! <= 0) {
       throw ArgumentError.value(maxActive, 'maxActive');
     }
   }
 
   final int? maxActive;
+  final MaintenanceActivity? maintenance;
+  void dispose() {
+    for (final entry in List<_MediaActivityToken>.of(_entries)) {
+      entry.dispose();
+    }
+  }
+
   final _entries = <_MediaActivityToken>[];
   var _nextSequence = 0;
   var _recomputing = false;
@@ -17,13 +25,16 @@ final class MediaAnimationBudget {
   MediaActivityToken register({required int priority, bool eligible = true}) {
     final token =
         _MediaActivityToken(this, priority, eligible, _nextSequence++);
+    final first = _entries.isEmpty;
     _entries.add(token);
+    if (first) maintenance?.addListener(_recompute);
     _recompute();
     return token;
   }
 
   void _remove(_MediaActivityToken token) {
     _entries.remove(token);
+    if (_entries.isEmpty) maintenance?.removeListener(_recompute);
     _recompute();
   }
 
@@ -37,12 +48,17 @@ final class MediaAnimationBudget {
       _recomputing = true;
       try {
         final snapshot = List<_MediaActivityToken>.of(_entries);
-        final active =
-            snapshot.where((e) => e._eligible && !e._disposed).toList()
-              ..sort((a, b) {
-                final p = b._priority.compareTo(a._priority);
-                return p != 0 ? p : a._sequence.compareTo(b._sequence);
-              });
+        final active = snapshot
+            .where((e) =>
+                e._eligible &&
+                !e._disposed &&
+                ((maintenance?.canMaintain ?? true) &&
+                    (maintenance?.isForeground ?? true)))
+            .toList()
+          ..sort((a, b) {
+            final p = b._priority.compareTo(a._priority);
+            return p != 0 ? p : a._sequence.compareTo(b._sequence);
+          });
         final winners =
             (maxActive == null ? active : active.take(maxActive!)).toSet();
         for (final entry in snapshot) {

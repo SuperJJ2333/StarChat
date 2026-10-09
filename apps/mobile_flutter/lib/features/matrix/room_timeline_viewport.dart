@@ -84,21 +84,40 @@ final class RoomTimelineViewport<T> {
     return true;
   }
 
-  void earlier() {
+  void earlier({String? retainEventId}) {
+    final previousStart = _start;
     final end = (_start + _count).clamp(0, total);
     _count = maximumCount;
     _start = (_start - maximumCount ~/ 2).clamp(0, total);
     if (end - _start < maximumCount) {
       _start = (end - maximumCount).clamp(0, total);
     }
+    // Pixel proximity to an edge does not imply a fixed number of rows.
+    // Keep the newest visible row even when a tall bubble spans the overlap.
+    final retained = _indices[retainEventId];
+    if (retained != null &&
+        retained >= previousStart &&
+        retained < end &&
+        retained >= _start + _count) {
+      _start = retained - _count + 1;
+    }
     _latest = false;
     _remember();
   }
 
-  void later() {
+  void later({String? retainEventId}) {
+    final previousStart = _start;
+    final previousEnd = (_start + _count).clamp(0, total);
     _count = maximumCount;
     _start =
         (_start + maximumCount ~/ 2).clamp(0, (total - _count).clamp(0, total));
+    final retained = _indices[retainEventId];
+    if (retained != null &&
+        retained >= previousStart &&
+        retained < previousEnd &&
+        retained < _start) {
+      _start = retained;
+    }
     _latest = _start + _count >= total;
     _remember();
   }

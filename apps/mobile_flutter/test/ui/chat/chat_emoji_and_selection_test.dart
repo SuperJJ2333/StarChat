@@ -65,8 +65,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 🥲 在动态目录中：输入框内出现与气泡相同的动态字形覆盖层。
-    expect(find.byType(EmojiAnimatedGlyph), findsOneWidget);
+    // 草稿中的表情使用静态矢量覆盖层，文本与选区仍由原生编辑器处理。
+    expect(find.byType(EmojiVectorGlyph), findsOneWidget);
     // 文本内容保持不变：光标/选区/发送路径仍操作原始字符串。
     expect(controller.text, 'a🥲b');
   });
@@ -90,14 +90,14 @@ void main() {
     await tester.pumpWidget(app(const TextScaler.linear(2)));
     await tester.pump();
     expect(
-      tester.widget<EmojiAnimatedGlyph>(find.byType(EmojiAnimatedGlyph)).size,
+      tester.widget<EmojiVectorGlyph>(find.byType(EmojiVectorGlyph)).size,
       closeTo(17 * 1.18 * 2, 0.01),
     );
 
     await tester.pumpWidget(app(const TextScaler.linear(1)));
     await tester.pump();
     expect(
-      tester.widget<EmojiAnimatedGlyph>(find.byType(EmojiAnimatedGlyph)).size,
+      tester.widget<EmojiVectorGlyph>(find.byType(EmojiVectorGlyph)).size,
       closeTo(17 * 1.18, 0.01),
     );
   });
@@ -115,10 +115,10 @@ void main() {
       ),
     ));
     await tester.pump();
-    expect(find.byType(EmojiAnimatedGlyph), findsOneWidget);
+    expect(find.byType(EmojiVectorGlyph), findsOneWidget);
     controller.clear();
     await tester.pump();
-    expect(find.byType(EmojiAnimatedGlyph), findsNothing);
+    expect(find.byType(EmojiVectorGlyph), findsNothing);
   });
 
   testWidgets(
@@ -139,7 +139,7 @@ void main() {
           .toPlainText(),
       'a🥲b',
     );
-    expect(find.byType(EmojiAnimatedGlyph), findsNothing);
+    expect(find.byType(EmojiVectorGlyph), findsNothing);
   });
 
   testWidgets('controller replacement and unmount detach emoji overlay safely',
@@ -197,7 +197,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(renderEditable.offset.pixels, greaterThan(0));
     final inputRect = tester.getRect(find.byKey(const Key('composer-input')));
-    for (final glyph in find.byType(EmojiAnimatedGlyph).evaluate()) {
+    for (final glyph in find.byType(EmojiVectorGlyph).evaluate()) {
       final glyphFinder =
           find.byElementPredicate((element) => identical(element, glyph));
       expect(inputRect.overlaps(tester.getRect(glyphFinder)), isTrue);
@@ -259,7 +259,7 @@ void main() {
 
     expect(controller.text, '🥲🥲Zokx');
     expect(controller.selection, const TextSelection.collapsed(offset: 7));
-    expect(find.byType(EmojiAnimatedGlyph), findsNWidgets(2));
+    expect(find.byType(EmojiVectorGlyph), findsNWidgets(2));
   });
 
   testWidgets('多行 ZWJ 文本保留原始 composing 与 UTF-16 span', (tester) async {
@@ -309,7 +309,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.byType(EmojiAnimatedGlyph), findsNothing);
+    expect(find.byType(EmojiVectorGlyph), findsNothing);
     expect(find.byType(EmojiVectorGlyph), findsNothing);
     expect(find.text('abc'), findsOneWidget);
   });

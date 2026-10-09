@@ -1,4 +1,6 @@
+import '../../core/maintenance_activity.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/rendering.dart' show RenderPadding;
 import 'logical_conversation_timeline.dart';
 import 'room_navigation_coordinator.dart';
 import '../settings/voice_auto_play_preferences.dart';
@@ -146,6 +148,7 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
+import 'room_paged_history_source.dart';
 import 'sent_video_local_registry.dart';
 import 'room_history_date_capability.dart';
 import '../../ui/chat/room_image_gallery.dart';
@@ -364,8 +367,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
+  String _maintenanceReason(String name) =>
+      'room-${identityHashCode(this)}-$name';
   @override
-  void didChangeMetrics() => _keyboardProbe?.onMetricsChanged();
+  void didChangeMetrics() {
+    MaintenanceActivity.instance.pulse(_maintenanceReason('keyboard'));
+    _keyboardProbe?.onMetricsChanged();
+  }
 
   StreamSubscription<SyncStatusUpdate>? _performanceSyncSubscription;
   Timer? _performanceSyncDeadline;
@@ -615,18 +623,40 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
 
   /// BUG-40：同会话内 [eventId] 之后最近的一条**未播过**的非本人语音。
-  RoomMessageViewModel? _nextUnreadVoiceAfter(String eventId) {
+  Future<RoomMessageViewModel?> _nextUnreadVoiceAfter(String eventId) async {
     final timeline = controller;
     if (timeline == null) return null;
     final current = timeline.findMessage(eventId);
     if (current == null) return null;
+    final playback = voicePlayback;
+    final generation = playback.playbackGeneration;
+    bool active() =>
+        mounted &&
+        !_disposing &&
+        identical(controller, timeline) &&
+        identical(_voicePlayback, playback) &&
+        playback.playbackGeneration == generation &&
+        voiceAutoPlayPreferences.autoPlayNext &&
+        _canPlayVoice;
     RoomMessageViewModel? best;
-    for (final message in timeline.allMessages) {
-      if (message.isOwn || message.kind != RoomMessageKind.voice) continue;
-      if (voicePlayback.isPlayed(message.id)) continue;
-      if (!message.timestamp.isAfter(current.timestamp)) continue;
-      if (best == null || message.timestamp.isBefore(best.timestamp)) {
+    void consider(RoomMessageViewModel message) {
+      if (message.isOwn || message.kind != RoomMessageKind.voice) return;
+      if (playback.isPlayed(message.id)) return;
+      if (!message.timestamp.isAfter(current.timestamp)) return;
+      if (best == null || message.timestamp.isBefore(best!.timestamp)) {
         best = message;
+      }
+    }
+
+    if (timeline.supportsPagedHistory) {
+      return nextUnreadVoiceFromHistory(
+          source: timeline,
+          completed: current,
+          isActive: active,
+          isPlayed: playback.isPlayed);
+    } else {
+      for (final message in timeline.allMessages) {
+        consider(message);
       }
     }
     return best;
@@ -797,6 +827,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   RoomSearchIndexPump? _searchIndexPump;
   final Set<String> _acknowledgedVisibleIds = {};
   bool _immediateVisibleReceipt = false;
+
+  Rect? _messageBodyBounds(RenderObject? rendered) {
+    // The anchor key measures the whole padded row. Read/mention visibility
+    // continues to measure only its message body, as before that key moved.
+    final body = rendered is RenderPadding ? rendered.child : rendered;
+    if (body is! RenderBox || !body.hasSize) return null;
+    return body.localToGlobal(Offset.zero) & body.size;
+  }
+
   void _observeVisibleReadReceipts() {
     // E1：滑动加载历史时元素会经历 deactivated 窗口，此时任何
     // findRenderObject/ModalRoute.of 都会抛断言（debug 红框）。整体跳过。
@@ -820,9 +859,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       } catch (_) {
         continue; // 元素正处于 deactivate/activate 过渡，跳过本轮。
       }
-      final box = ro;
-      if (box is! RenderBox || !box.hasSize) continue;
-      final rect = box.localToGlobal(Offset.zero) & box.size;
+      final rect = _messageBodyBounds(ro);
+      if (rect == null) continue;
       if (!_acknowledgedVisibleIds.contains(entry.key) &&
           rect.overlaps(bounds) &&
           !rect.intersect(bounds).isEmpty) {
@@ -857,12 +895,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final now = DateTime.now();
     var changed = false;
     for (final id in state.pendingEventIdsNewestFirst()) {
-      final box = messageKeys[id]?.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.hasSize) {
+      final rect = _messageBodyBounds(
+          messageKeys[id]?.currentContext?.findRenderObject());
+      if (rect == null) {
         _mentionVisibleSince.remove(id);
         continue;
       }
-      final rect = box.localToGlobal(Offset.zero) & box.size;
       final intersection = rect.intersect(bounds);
       final visible = !intersection.isEmpty &&
           rect.height > 0 &&
@@ -886,6 +924,34 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<void> _ingestMentions() async {
     if (!isGroup || widget.roomLease.canceled) return;
     await widget.roomLease.ingestMentions();
+  }
+
+  bool _mentionRestoreActive = false;
+  Future<void> _restoreMentionsAfterTimeline() async {
+    if (!isGroup ||
+        !mounted ||
+        _disposing ||
+        widget.roomLease.canceled ||
+        unreadMentions != null ||
+        _mentionRestoreActive) {
+      return;
+    }
+    _mentionRestoreActive = true;
+    try {
+      final restored = await widget.roomLease.openMentions();
+      if (!mounted || _disposing || widget.roomLease.canceled) return;
+      unreadMentions = restored;
+      RoomMentionStore.shared.addListener(_mentionStateChanged);
+      _mentionRevision.value++;
+      await _ingestMentions();
+      if (!mounted || _disposing || widget.roomLease.canceled) return;
+      await widget.roomLease.scanMentions();
+    } catch (_) {
+      // Optional mention metadata can retry on subsequent room updates.
+      // Cached conversation content remains usable if persistence is delayed.
+    } finally {
+      _mentionRestoreActive = false;
+    }
   }
 
   late final VoiceTranscriber voiceTranscriber =
@@ -1054,6 +1120,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    MaintenanceActivity.instance.install();
+    MaintenanceActivity.instance.pulse(_maintenanceReason('entry'));
+    voiceRecording.addListener(_onMaintenanceRecordingChanged);
     _performanceRemoteSeen = widget.remoteSyncAlreadyReady;
     if (_performanceRemoteSeen) {
       widget.performanceTrace?.mark(PerformanceStage.remoteSyncReady);
@@ -1062,6 +1131,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     if (!_performanceRemoteSeen) {
       _performanceSyncSubscription = widget.remoteSyncStatus?.listen((update) {
+        // Synthetic history/local echo room work publishes progress on this
+        // same stream. It does not establish a received /sync response.
+        if (update.status == SyncStatus.processing && update.progress != null) {
+          return;
+        }
         _observePerformanceSyncPhase(update.status);
         if (update.status == SyncStatus.finished) {
           _performanceRemoteSeen = true;
@@ -1085,6 +1159,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
     MessageTextSelectionSession.dismissActive();
     callAudioActivity.addListener(_handleCallAudioActivity);
+    _handleCallAudioActivity();
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
     widget.navigationRequests?.addListener(_onNavigationRequest);
     roomInfo = widget.roomLease.roomInfo;
@@ -1383,12 +1458,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         preferences: await SharedPreferences.getInstance(),
         accountId: accountId,
       );
-      if (isGroup) {
-        unreadMentions = await widget.roomLease.openMentions();
-        if (!mounted) return;
-        RoomMentionStore.shared.addListener(_mentionStateChanged);
-        unawaited(widget.roomLease.scanMentions());
-      }
       final timeline =
           // Timeline 分页策略（优化 4）：初始窗口直读 Matrix 本地 DB
           // （不等待服务器）；历史分页 requestHistory 默认 30 条/页
@@ -1442,13 +1511,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             controller?.lookupReplyMessage(eventId) ?? Future.value(null),
         onChanged: _replyResolutionChanged,
       );
+      final revisionBeforeInitialRefresh = _timelineRevision.value;
       await controller!.refresh();
+      if (!mounted || _disposing) return;
+      // The constructor already owns its initial snapshot. An unchanged first
+      // refresh need not publish, but the page must replace its empty subtree.
+      if (_timelineRevision.value == revisionBeforeInitialRefresh) {
+        _timelineRevision.value++;
+      }
       // A cached initial snapshot may not emit a controller change.
       // Apply the route anchor once the first projection is ready.
       _applyInitialAnchorIfNeeded();
-      await _ingestMentions();
-      if (!mounted) return;
       _markLocalTimelineReady();
+      unawaited(_trackMatrixOperation(_restoreMentionsAfterTimeline()));
       _mentionVisibilityTimer = Timer.periodic(
         const Duration(milliseconds: 100),
         (_) {
@@ -1930,7 +2005,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   void _changed() {
     if (_disposing || !mounted) return;
     _syncOpenNotificationRooms();
-    unawaited(_ingestMentions());
+    if (unreadMentions == null) {
+      unawaited(_trackMatrixOperation(_restoreMentionsAfterTimeline()));
+    } else {
+      unawaited(_ingestMentions());
+    }
     _applyInitialAnchorIfNeeded();
     final timeline = controller;
     // Sending switches to the latest window and publishes a local bubble before
@@ -1969,6 +2048,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     } catch (_) {
       _showMediaMessage('重发失败，请稍后再试');
     }
+  }
+
+  Future<void> _sendDynamicEmoji(String text) async {
+    final emoji = fluentEmojisInMessage(text);
+    final timeline = controller;
+    if (emoji.length != 1 ||
+        timeline == null ||
+        !mounted ||
+        _disposing ||
+        widget.roomLease.canceled) {
+      return;
+    }
+    // Separate selection never consumes the composer's reply, mentions or edit value.
+    MessageTextSelectionSession.dismissActive();
+    await timeline.sendText(emoji.single.char);
   }
 
   Future<void> _send() async {
@@ -2977,6 +3071,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       !callAudioActivity.value && !_startingVoice && voiceService == null;
 
   void _handleCallAudioActivity() {
+    MaintenanceActivity.instance.setInteractive(
+        _maintenanceReason('call'), !_disposing && callAudioActivity.value);
     if (!callAudioActivity.value || _disposing) return;
     if (_startingVoice) _voiceStartCancelled = true;
     unawaited(_voicePlayback?.stopAll().catchError((Object _) {}));
@@ -3781,6 +3877,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       found = false;
     } finally {
       _locatingMessage = false;
+      _lastTimelineScrollOffset = messageScrollController.hasClients
+          ? messageScrollController.offset
+          : null;
+    }
+    if (found && mounted) {
+      _explicitHistoryReturn = true;
+      _showReturnLatest.value = true;
     }
     if (!found) {
       // A new drag, route transition or another locator invalidates this
@@ -5180,6 +5283,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final epoch = repository.accountEpoch;
     _searchIndexPump ??= RoomSearchIndexPump(
       source: () => controller?.newestFirstMessages ?? const [],
+      pagedSource: timeline.supportsPagedHistory ? timeline : null,
       isActive: () =>
           mounted &&
           !_disposing &&
@@ -5237,6 +5341,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    MaintenanceActivity.instance
+        .setInteractive(_maintenanceReason('scroll'), false);
+    MaintenanceActivity.instance
+        .setInteractive(_maintenanceReason('recording'), false);
+    voiceRecording.removeListener(_onMaintenanceRecordingChanged);
     inputFocusNode.removeListener(_onComposerFocusChanged);
     _keyboardProbe?.dispose();
     _roomFlutterView = null;
@@ -5247,6 +5356,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       openTrace.finish(result: PerformanceResult.cancelled);
     }
     callAudioActivity.removeListener(_handleCallAudioActivity);
+    MaintenanceActivity.instance
+        .setInteractive(_maintenanceReason('call'), false);
     _disposing = true;
     dismissActionMenu();
     // 切换会话/退出会话页：取消文本选择弹层（根 Overlay 不随页面销毁）。
@@ -5273,6 +5384,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     unawaited(_trackMatrixOperation(_onVoiceCancel(VoiceArmedTarget.cancel)));
     _timelineRevision.dispose();
+    _showReturnLatest.dispose();
     _mentionRevision.dispose();
     replyResolver?.dispose();
     replyResolver = null;
@@ -5400,9 +5512,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (!messageScrollController.hasClients) return;
     final position = messageScrollController.position;
     _observeTimelineScrollActivity(position);
-    final previousOffset = _lastTimelineScrollOffset ?? 0;
+    final previousOffset =
+        _lastTimelineScrollOffset ?? position.minScrollExtent;
     final offset = position.pixels;
     _lastTimelineScrollOffset = offset;
+    // Window rebases run under _shiftingWindow and reset the previous offset
+    // afterwards. Count reading distance, not the changing local pixel origin.
+    _latestReadingDistance = (_latestReadingDistance + offset - previousOffset)
+        .clamp(0, double.infinity);
+    if (!(controller?.hasLaterWindow ?? false) && position.extentBefore < 80) {
+      _latestReadingDistance = 0;
+      _explicitHistoryReturn = false;
+    }
+    final threshold =
+        position.viewportDimension < 600 ? 600.0 : position.viewportDimension;
+    _showReturnLatest.value =
+        _explicitHistoryReturn || _latestReadingDistance >= threshold;
     final towardEarlier = offset > previousOffset + .5;
     final towardLater = offset < previousOffset - .5;
     if (position.extentBefore > 80) {
@@ -5446,7 +5571,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     position.isScrollingNotifier.addListener(_onTimelineScrollActivityChanged);
   }
 
+  void _onMaintenanceRecordingChanged() {
+    final state = voiceRecording.state;
+    MaintenanceActivity.instance.setInteractive(
+        _maintenanceReason('recording'),
+        state == VoiceRecordingState.recording ||
+            state == VoiceRecordingState.cancelArmed ||
+            state == VoiceRecordingState.textArmed ||
+            state == VoiceRecordingState.sendArmed);
+  }
+
   void _onTimelineScrollActivityChanged() {
+    MaintenanceActivity.instance.setInteractive(
+        _maintenanceReason('scroll'), _scrollInteractionActive());
     if (!_scrollInteractionActive()) {
       unawaited(_applyPendingWindowShift());
     }
@@ -5475,7 +5612,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _applyPendingWindowShift() async {
     if (_shiftingWindow ||
-        _scrollInteractionActive() ||
+        _userTimelineDragActive ||
         !mounted ||
         !messageScrollController.hasClients ||
         ModalRoute.of(context)?.isCurrent != true) {
@@ -5495,9 +5632,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       return;
     }
     _pendingEarlierWindow = null;
+    final current = controller;
+    if (current == null) return;
+    final retainedStableId = TimelineScrollAnchor.visibleBoundaryEventId(
+        _stableMessageKeys,
+        _timelineViewportKey,
+        current.messages.reversed.map((m) => m.stableId),
+        earlier: earlier);
+    final retainedEventId = current.messages
+        .where((m) => m.stableId == retainedStableId)
+        .firstOrNull
+        ?.id;
+    // No laid-out overlap means there is no safe pixel origin to retain yet.
+    if (retainedEventId == null) return;
     await _shiftWindow(earlier
-        ? () => controller!.showEarlierWindow()
-        : () => controller!.showLaterWindow());
+        ? () => current.showEarlierWindow(retainEventId: retainedEventId)
+        : () => current.showLaterWindow(retainEventId: retainedEventId));
   }
 
   Future<void> _shiftWindow(Future<void> Function() shift) async {
@@ -5524,6 +5674,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _cancelPendingTimelineWindowShift();
     await controller?.showLatest();
     if (!mounted) return;
+    _latestReadingDistance = 0;
+    _explicitHistoryReturn = false;
+    _showReturnLatest.value = false;
     _timelineRevision.value++;
     await WidgetsBinding.instance.endOfFrame;
     if (mounted && messageScrollController.hasClients) {
@@ -5569,7 +5722,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     try {
       // A forward page can append newer rows before this user gesture ends.
       // Pin first so refresh preserves the visible window until the guarded
-      // deferred shift runs after drag/ballistic motion has settled.
+      // guarded shift can run after finger release, including ballistic motion.
       currentController.pinWindow();
       await currentController.loadFutureHistory();
     } catch (_) {
@@ -5658,6 +5811,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   bool _onTimelineScrollNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
     if (notification is ScrollStartNotification) {
+      MaintenanceActivity.instance
+          .setInteractive(_maintenanceReason('scroll'), true);
       MessageTextSelectionSession.dismissActive();
       messageListScrolling.value = true;
       if (notification.dragDetails != null) {
@@ -5665,6 +5820,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         _userTimelineDragActive = true;
         _cancelPendingTimelineWindowShift();
       }
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails == null &&
+        _userTimelineDragActive) {
+      // Finger release starts ballistic updates before ScrollEnd. The anchored
+      // slivers rebase their ongoing simulation when the bounded window moves,
+      // so keep admitting history without waiting for the fling to stop.
+      _userTimelineDragActive = false;
     }
     if (notification is ScrollUpdateNotification &&
         notification.dragDetails != null) {
@@ -5685,6 +5848,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _requestWindowForUserScrollDelta(notification.dragDetails!.delta.dy);
     }
     if (notification is ScrollEndNotification) {
+      MaintenanceActivity.instance
+          .setInteractive(_maintenanceReason('scroll'), false);
       messageListScrolling.value = false;
       if (_userTimelineDragActive) {
         _userTimelineDragActive = false;
@@ -5695,6 +5860,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   final _timelineRevision = ValueNotifier<int>(0);
+  final _showReturnLatest = ValueNotifier<bool>(false);
+  double _latestReadingDistance = 0;
+  bool _explicitHistoryReturn = false;
   int _rowPresentationRevision = 0;
   Object? _rowPresentationStamp;
 
@@ -5794,12 +5962,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         sameReply) {
       return cached.$5;
     }
-    final row = Padding(
+    final row = KeyedSubtree(
         key: ValueKey(message.stableId),
-        padding: const EdgeInsets.only(bottom: WeChatSpacing.sm),
-        child: KeyedSubtree(
+        child: Padding(
             key: messageKeys[message.id] =
                 _stableMessageKeys.putIfAbsent(message.stableId, GlobalKey.new),
+            padding: const EdgeInsets.only(bottom: WeChatSpacing.sm),
             child: Stack(clipBehavior: Clip.none, children: [
               if (selection.active &&
                   selection.selectedIds.contains(message.id))
@@ -5910,16 +6078,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             onTap: () => unawaited(_returnToQuoteOrigin()),
           ),
         ),
-      if ((controller?.hasLaterWindow ?? false) ||
-          (controller?.isViewingHistoryContext ?? false))
-        Positioned(
-            right: 12,
-            bottom: 12,
-            child: ModernActionButton(
-                key: const Key('timeline-return-latest'),
-                onPressed: _showLatestWindow,
-                icon: CupertinoIcons.arrow_down_to_line,
-                label: '回到最新消息')),
+      Positioned(
+          right: 12,
+          bottom: 12,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _showReturnLatest,
+            builder: (context, show, _) => show
+                ? ModernActionButton(
+                    key: const Key('timeline-return-latest'),
+                    onPressed: _showLatestWindow,
+                    icon: CupertinoIcons.arrow_down_to_line,
+                    label: '回到最新消息')
+                : const SizedBox.shrink(),
+          )),
     ]);
   }
 
@@ -6164,7 +6335,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                       child: SizedBox(
                         height: 280,
                         child: ChatEmojiPanel(
+                          accountId: roomInfo.currentUserId,
                           onEmojiSelected: _insertEmoji,
+                          onDynamicEmojiSelected: (char) =>
+                              _trackAction(() => _sendDynamicEmoji(char)),
                           customItems: customEmojiItems,
                           onCustomSelected: (item) =>
                               _trackAction(() => _sendCustomEmoji(item)),

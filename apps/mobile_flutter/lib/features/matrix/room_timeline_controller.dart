@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'room_paged_history_source.dart';
 import 'dart:io';
 
 import 'room_history_date_capability.dart';
@@ -399,13 +400,14 @@ abstract interface class RoomWindowedTimelineSource {
   RoomMessageViewModel? get newestMessage;
   DateTime? previousTimestamp(String id);
   bool selectAnchor(String id);
-  void selectEarlier();
-  void selectLater();
+  void selectEarlier({String? retainEventId});
+  void selectLater({String? retainEventId});
   void selectLatest();
   void pinWindow();
 }
 
-final class RoomTimelineController extends ChangeNotifier {
+final class RoomTimelineController extends ChangeNotifier
+    implements RoomPagedHistorySource {
   RoomTimelineController(this.adapter,
       {this.canSendNow,
       this.outboxRoomId,
@@ -435,6 +437,39 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   final RoomTimelineAdapter adapter;
+
+  @override
+  bool get supportsPagedHistory =>
+      adapter is RoomPagedHistorySource &&
+      (adapter as RoomPagedHistorySource).supportsPagedHistory;
+
+  @override
+  Future<RoomHistoryMessagePage> readHistoryPage({
+    RoomHistoryReadCursor? cursor,
+    String? anchorEventId,
+    String? sourceRoomId,
+    required RoomHistoryDirection direction,
+    int rawLimit = 64,
+    Future<void> Function()? beforeRead,
+  }) async {
+    if (_disposed) throw StateError('Timeline controller disposed');
+    if (!supportsPagedHistory) {
+      throw UnsupportedError('Read-only history paging unavailable');
+    }
+    final page = await (adapter as RoomPagedHistorySource).readHistoryPage(
+        cursor: cursor,
+        anchorEventId: anchorEventId,
+        sourceRoomId: sourceRoomId,
+        direction: direction,
+        beforeRead: beforeRead,
+        rawLimit: rawLimit);
+    if (_disposed) {
+      page.nextCursor?.dispose();
+      throw StateError('Timeline controller disposed');
+    }
+    return page;
+  }
+
   final void Function()? onSourceRefreshed;
   final PerformanceTraceRecorder _performanceRecorder;
   final void Function(String localId, PerformanceCorrelationContext context)?
@@ -652,14 +687,14 @@ final class RoomTimelineController extends ChangeNotifier {
     _echoRevision++;
   }
 
-  Future<void> showEarlierWindow() async {
-    _windowSource?.selectEarlier();
+  Future<void> showEarlierWindow({String? retainEventId}) async {
+    _windowSource?.selectEarlier(retainEventId: retainEventId);
     _echoRevision++;
     await refresh();
   }
 
-  Future<void> showLaterWindow() async {
-    _windowSource?.selectLater();
+  Future<void> showLaterWindow({String? retainEventId}) async {
+    _windowSource?.selectLater(retainEventId: retainEventId);
     _echoRevision++;
     await refresh();
   }
@@ -1211,9 +1246,10 @@ final class RoomTimelineController extends ChangeNotifier {
     PerformanceResult? adapterRetryFailure;
     try {
       if (tx != null) {
-        final fresh = _localEchoes[tx]!.copyWith(
-            timestamp: _nextLocalTimestamp(),
-            deliveryState: RoomDeliveryState.sending);
+        // A retry is another attempt of the same pending message. Keep its
+        // insertion time; dispatch diagnostics track attempt timing separately.
+        final fresh = _localEchoes[tx]!
+            .copyWith(deliveryState: RoomDeliveryState.sending);
         _echoRevision++;
         _localEchoes[tx] = fresh;
         messages = _snapshot();

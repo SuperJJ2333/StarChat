@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../core/performance_metrics.dart';
+import '../../core/maintenance_activity.dart';
 import '../foundation/changliao_icons.dart';
 import '../foundation/wechat_tokens.dart';
 import 'chat_composer_state.dart';
@@ -77,6 +78,7 @@ final class _WeChatComposerState extends State<WeChatComposer> {
   }
 
   void _refresh() {
+    MaintenanceActivity.instance.pulse('composer-${identityHashCode(this)}');
     final next =
         (_focusNode.hasFocus, widget.controller.text.trim().isNotEmpty);
     // EditableText owns text, selection and composing updates. Only rebuild

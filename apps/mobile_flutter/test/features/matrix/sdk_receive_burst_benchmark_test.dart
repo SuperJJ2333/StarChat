@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'fixtures/delegating_sqlite_database.dart';
+
 const _roomId = '!receive-burst:synthetic';
 const _timelineTable = 'box_timeline_fragments';
 const _eventsTable = 'box_events';
@@ -17,7 +19,7 @@ void main() {
   for (final historySize in [1500, 10000]) {
     test('SQLite timeline burst measures $historySize seeded events', () async {
       final evidenceRoot = Directory(
-          '../../docs/verification/artifacts/2026-09-12/history-latency/receive-burst')
+          '../../docs/verification/artifacts/2026-10-08/history-interaction-fix/storage/fixtures/receive-burst')
         ..createSync(recursive: true);
       final evidencePrefix =
           '${evidenceRoot.absolute.path}${Platform.pathSeparator}';
@@ -37,6 +39,7 @@ void main() {
       try {
         await database.open();
         await _bulkSeed(raw, seedIds);
+        await database.prepareTimelineStorage([_roomId]);
         counter.reset();
 
         var actionMicros = 0;
@@ -63,8 +66,13 @@ void main() {
         expect(events.map((event) => event.eventId), expectedIds);
         expect(events.map((event) => event.eventId).toSet().length,
             expectedIds.length);
-        expect(counter.timelineFragmentWrites, 1);
-        expect(counter.serializedBytes, finalListBytes);
+        expect(counter.timelineFragmentWrites, 0);
+        expect(counter.serializedBytes, 0);
+        expect(counter.eventBodyWrites, burstIds.length);
+        expect(counter.indexInsertStatements, burstIds.length);
+        expect(await database.getTimelineEventCount(room), expectedIds.length);
+        expect((await raw.query(_eventsTable, columns: ['k'])).length,
+            expectedIds.length);
 
         final writesBeforeReplay = counter.timelineFragmentWrites;
         await database.transaction(() async {
@@ -88,7 +96,9 @@ void main() {
           'burst_count': burstIds.length,
           'timeline_fragment_batch_inserts': counter.timelineFragmentWrites,
           'timeline_fragment_serialized_utf8_bytes': counter.serializedBytes,
-          'final_timeline_serialized_utf8_bytes': finalListBytes,
+          'equivalent_legacy_full_list_bytes_not_written': finalListBytes,
+          'event_body_batch_inserts': counter.eventBodyWrites,
+          'indexed_id_insert_statements': counter.indexInsertStatements,
           'instrumented_action_microseconds': actionMicros,
           'instrumented_commit_microseconds':
               total.elapsedMicroseconds - actionMicros,
@@ -96,9 +106,8 @@ void main() {
         };
         debugPrint(jsonEncode(measurement));
 
-        // A single native batch may touch several rooms. Coalescing must be
-        // scoped to each fragment key, rather than retaining only the final
-        // room's fragment.
+        // One original native batch may update independent room indexes.
+        // Neither room may rewrite a complete legacy fragment.
         const otherRoomId = '!receive-burst-other:synthetic';
         final otherRoom = Room(id: otherRoomId, client: client);
         final nextPrimaryIds = List.generate(3, (index) => '\$next-$index');
@@ -120,10 +129,10 @@ void main() {
             }
           }
         });
-        expect(counter.writesByKey, {
-          '$_roomId|': 1,
-          '$otherRoomId|': 1,
-        });
+        expect(counter.writesByKey, isEmpty);
+        expect(counter.serializedBytes, 0);
+        expect(counter.eventBodyWrites, 6);
+        expect(counter.indexInsertStatements, 6);
         final finalPrimaryIds = <String>[
           ...nextPrimaryIds.reversed,
           ...expectedIds,
@@ -176,8 +185,8 @@ void main() {
           await store(EventUpdateType.history, encrypted);
           await store(EventUpdateType.timeline, synced);
         });
-        expect(counter.writesByKey['$_roomId|'], 1);
-        expect(counter.writesByKey['$_roomId|SENDING'], 1);
+        expect(counter.writesByKey, isEmpty);
+        expect(counter.serializedBytes, 0);
         expect(await database.getEventById(r'$local', room), isNull);
         final mixedExpected = <String>[
           r'$recall',
@@ -259,9 +268,12 @@ Future<void> _bulkSeed(Database raw, List<String> eventIds) async {
 class _TimelineFragmentWriteCounter {
   int timelineFragmentWrites = 0;
   int serializedBytes = 0;
+  int eventBodyWrites = 0;
+  int indexInsertStatements = 0;
   final writesByKey = <String, int>{};
 
   void record(String table, Map<String, Object?> values) {
+    if (table == _eventsTable) eventBodyWrites++;
     if (table != _timelineTable) return;
     final value = values['v'];
     if (value is! String) return;
@@ -274,144 +286,17 @@ class _TimelineFragmentWriteCounter {
   void reset() {
     timelineFragmentWrites = 0;
     serializedBytes = 0;
+    eventBodyWrites = 0;
+    indexInsertStatements = 0;
     writesByKey.clear();
   }
 }
 
-class _CountingDatabase implements Database {
-  _CountingDatabase(this._delegate, this._counter);
-
-  final Database _delegate;
+class _CountingDatabase extends DelegatingSqliteDatabase {
+  _CountingDatabase(super.delegate, this._counter);
   final _TimelineFragmentWriteCounter _counter;
-
   @override
-  Batch batch() => _CountingBatch(_delegate.batch(), _counter);
-
-  @override
-  Future<void> close() => _delegate.close();
-
-  @override
-  Database get database => this;
-
-  @override
-  Future<int> delete(String table, {String? where, List<Object?>? whereArgs}) =>
-      _delegate.delete(table, where: where, whereArgs: whereArgs);
-
-  @override
-  Future<T> devInvokeMethod<T>(String method, [Object? arguments]) {
-    // ignore: deprecated_member_use
-    return _delegate.devInvokeMethod<T>(method, arguments);
-  }
-
-  @override
-  Future<T> devInvokeSqlMethod<T>(String method, String sql,
-      [List<Object?>? arguments]) {
-    // ignore: deprecated_member_use
-    return _delegate.devInvokeSqlMethod<T>(method, sql, arguments);
-  }
-
-  @override
-  Future<void> execute(String sql, [List<Object?>? arguments]) =>
-      _delegate.execute(sql, arguments);
-
-  @override
-  Future<int> insert(String table, Map<String, Object?> values,
-          {String? nullColumnHack, ConflictAlgorithm? conflictAlgorithm}) =>
-      _delegate.insert(table, values,
-          nullColumnHack: nullColumnHack, conflictAlgorithm: conflictAlgorithm);
-
-  @override
-  bool get isOpen => _delegate.isOpen;
-
-  @override
-  String get path => _delegate.path;
-
-  @override
-  Future<List<Map<String, Object?>>> query(String table,
-          {bool? distinct,
-          List<String>? columns,
-          String? where,
-          List<Object?>? whereArgs,
-          String? groupBy,
-          String? having,
-          String? orderBy,
-          int? limit,
-          int? offset}) =>
-      _delegate.query(table,
-          distinct: distinct,
-          columns: columns,
-          where: where,
-          whereArgs: whereArgs,
-          groupBy: groupBy,
-          having: having,
-          orderBy: orderBy,
-          limit: limit,
-          offset: offset);
-
-  @override
-  Future<QueryCursor> queryCursor(String table,
-          {bool? distinct,
-          List<String>? columns,
-          String? where,
-          List<Object?>? whereArgs,
-          String? groupBy,
-          String? having,
-          String? orderBy,
-          int? limit,
-          int? offset,
-          int? bufferSize}) =>
-      _delegate.queryCursor(table,
-          distinct: distinct,
-          columns: columns,
-          where: where,
-          whereArgs: whereArgs,
-          groupBy: groupBy,
-          having: having,
-          orderBy: orderBy,
-          limit: limit,
-          offset: offset,
-          bufferSize: bufferSize);
-
-  @override
-  Future<int> rawDelete(String sql, [List<Object?>? arguments]) =>
-      _delegate.rawDelete(sql, arguments);
-
-  @override
-  Future<int> rawInsert(String sql, [List<Object?>? arguments]) =>
-      _delegate.rawInsert(sql, arguments);
-
-  @override
-  Future<List<Map<String, Object?>>> rawQuery(String sql,
-          [List<Object?>? arguments]) =>
-      _delegate.rawQuery(sql, arguments);
-
-  @override
-  Future<QueryCursor> rawQueryCursor(String sql, List<Object?>? arguments,
-          {int? bufferSize}) =>
-      _delegate.rawQueryCursor(sql, arguments, bufferSize: bufferSize);
-
-  @override
-  Future<int> rawUpdate(String sql, [List<Object?>? arguments]) =>
-      _delegate.rawUpdate(sql, arguments);
-
-  @override
-  Future<T> readTransaction<T>(Future<T> Function(Transaction txn) action) =>
-      _delegate.readTransaction(action);
-
-  @override
-  Future<T> transaction<T>(Future<T> Function(Transaction txn) action,
-          {bool? exclusive}) =>
-      _delegate.transaction(action, exclusive: exclusive);
-
-  @override
-  Future<int> update(String table, Map<String, Object?> values,
-          {String? where,
-          List<Object?>? whereArgs,
-          ConflictAlgorithm? conflictAlgorithm}) =>
-      _delegate.update(table, values,
-          where: where,
-          whereArgs: whereArgs,
-          conflictAlgorithm: conflictAlgorithm);
+  Batch batch() => _CountingBatch(delegate.batch(), _counter);
 }
 
 class _CountingBatch implements Batch {
@@ -478,8 +363,12 @@ class _CountingBatch implements Batch {
       _delegate.rawDelete(sql, arguments);
 
   @override
-  void rawInsert(String sql, [List<Object?>? arguments]) =>
-      _delegate.rawInsert(sql, arguments);
+  void rawInsert(String sql, [List<Object?>? arguments]) {
+    if (sql.startsWith('INSERT INTO matrix_timeline_fragment_ids(')) {
+      _counter.indexInsertStatements++;
+    }
+    _delegate.rawInsert(sql, arguments);
+  }
 
   @override
   void rawQuery(String sql, [List<Object?>? arguments]) =>

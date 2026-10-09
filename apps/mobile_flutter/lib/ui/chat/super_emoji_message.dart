@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart';
 
 import '../../features/emoji/fluent_emoji_catalog.dart';
 import 'wechat_message_bubble.dart';
+import 'emoji_resource_glyph.dart';
+import 'emoji_text.dart';
 import '../../core/support_identity_repository.dart';
 
 /// 超级表情消息（纯动效emoji）：复用 [WeChatMessageBubble] 的消息行布局，
@@ -51,7 +53,7 @@ final class SuperEmojiMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final edge = emojis.length == 1 ? singleEmojiEdge : multiEmojiEdge;
+    final single = emojis.length == 1;
     return WeChatMessageBubble(
       bubbleKey: bubbleKey,
       direction: direction,
@@ -78,14 +80,12 @@ final class SuperEmojiMessage extends StatelessWidget {
             for (final emoji in emojis)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Image.asset(
-                  emoji.asset,
-                  width: edge,
-                  height: edge,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                  filterQuality: FilterQuality.high,
-                ),
+                child: single
+                    ? EmojiResourceGlyph(
+                        asset: emoji.asset, size: singleEmojiEdge)
+                    : EmojiText(emoji.char,
+                        style:
+                            const TextStyle(fontSize: multiEmojiEdge / 1.18)),
               ),
           ],
         ),

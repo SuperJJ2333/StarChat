@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
@@ -66,11 +67,37 @@ class _CommentComposerState extends State<_CommentComposer> {
   String? requestKey;
   bool get locked => busy || picking;
   late final Future<String?> initialAccount;
+  String? _emojiAccountId;
 
   @override
   void initState() {
     super.initState();
     initialAccount = accountScope();
+    unawaited(_loadEmojiAccountScope());
+  }
+
+  Future<void> _loadEmojiAccountScope() async {
+    try {
+      final session = await widget.api.sessionStore.session();
+      String? account = session?.matrixUserId;
+      if (account?.isEmpty == true) account = null;
+      if (account == null && session != null) {
+        final parts = session.accessToken.split('.');
+        if (parts.length == 3) {
+          final claims = jsonDecode(
+              utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+          if (claims is Map &&
+              claims['sub'] is String &&
+              (claims['sub'] as String).isNotEmpty) {
+            account = 'business:${claims['sub']}';
+          }
+        }
+      }
+      if (mounted) setState(() => _emojiAccountId = account);
+    } catch (_) {
+      // Without a stable public identity, recents stay in panel memory.
+      // Session credentials are never a persistent emoji cache namespace.
+    }
   }
 
   Future<String?> accountScope() async {
@@ -118,8 +145,10 @@ class _CommentComposerState extends State<_CommentComposer> {
       final selected = await (widget.galleryPicker?.call(context, maxCount) ??
           Navigator.of(context, rootNavigator: true)
               .push<MomentGallerySelection>(MotionPageRoute(
-                  builder: (_) =>
-                      ImagePickerPage(photosOnly: true, maxCount: maxCount))));
+                  builder: (_) => ImagePickerPage(
+                      allowFlash: false,
+                      photosOnly: true,
+                      maxCount: maxCount))));
       if (!mounted || selected == null) return;
       await ensureAccount();
       if (!mounted) return;
@@ -338,7 +367,10 @@ class _CommentComposerState extends State<_CommentComposer> {
                       SizedBox(
                           height: MediaQuery.sizeOf(context).height * .3,
                           child: ChatEmojiPanel(
+                            accountId: _emojiAccountId,
                             onEmojiSelected: insertEmoji,
+                            allowDynamicEmojis: false,
+                            onDynamicEmojiSelected: (_) {},
                             customItems: [
                               for (final entry in localEmoji.entries)
                                 CustomEmojiItem(

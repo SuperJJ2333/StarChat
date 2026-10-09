@@ -22,7 +22,6 @@ import 'dart:convert';
 import 'package:collection/collection.dart';
 
 import 'package:matrix/matrix.dart';
-import 'package:matrix/src/models/timeline_chunk.dart';
 
 /// Represents the timeline of a room. The callback [onUpdate] will be triggered
 /// automatically. The initial
@@ -31,9 +30,12 @@ import 'package:matrix/src/models/timeline_chunk.dart';
 class Timeline {
   final Room room;
   List<Event> get events => chunk.events;
+  int _presentationRevision = 0;
+  int get presentationRevision => _presentationRevision;
 
   /// Map of event ID to map of type to set of aggregated events
   final Map<String, Map<String, Set<Event>>> aggregatedEvents = {};
+  final Map<String, String> _aggregationAliases = {};
 
   final void Function()? onUpdate;
   final void Function(int index)? onChange;
@@ -65,7 +67,11 @@ class Timeline {
     if (_eventCache.containsKey(id)) return _eventCache[id];
     final requestedEvent = await room.getEventById(id);
     if (requestedEvent == null) return null;
+    if (_pinnedDisposed) return requestedEvent;
     _eventCache[id] = requestedEvent;
+    while (_eventCache.length > 256) {
+      _eventCache.remove(_eventCache.keys.first);
+    }
     return _eventCache[id];
   }
 
@@ -77,10 +83,212 @@ class Timeline {
 
   // We confirmed, that there are no more events to load from the database.
   bool _fetchedAllDatabaseEvents = false;
-  bool _trimmedLiveHistory = false;
-  int _sessionDecryptionInFlight = 0;
+
+  int? _pinnedGeneration;
+  String? _pinnedPrevBatch;
+  TimelineIdSnapshot? _pinnedIds;
+  TimelineIdSnapshot? _newerIds;
+  TimelineIdSnapshot? _liveOlderIds;
+  bool _pinnedOpened = false;
+  bool _pinnedHasMore = true;
+  bool _pinnedDisposed = false;
+  bool _pinnedNeedsContext = false;
+  bool _pinnedOlderNeedsRebase = false;
+  bool _localNewerAvailable = false;
+  bool _awayFromLiveHead = false;
+  int? _awayGeneration;
+  int _deferredLiveRevision = 0;
+  bool _contextOlderEvicted = false;
+  bool _contextNewerEvicted = false;
+  bool _residentEnabled = false;
+  int _residentMaximum = 1000;
+  final Set<String> _residentSavedIds = {};
+  final Set<String> _persistedInitialIds = {};
+  int? _persistedInitialGeneration;
+  final Map<String, ({String eventId, String senderId, DateTime timestamp})>
+      _retainedMembershipInvites = {};
+
+  /// Actual invite facts needed by joins still in the resident window. These
+  /// records retain no event bodies and are bounded by resident member joins.
+  Map<String, ({String eventId, String senderId, DateTime timestamp})>
+      get retainedMembershipInvites =>
+          Map.unmodifiable(_retainedMembershipInvites);
+
+  /// Activate bounded residency only when local storage can reload the rows.
+  /// Call before publishing a newly opened timeline; no database means no
+  /// eviction, since injected/unpersisted events have no reload authority.
+  Future<void> enableResidentWindow({int maximumEvents = 1000}) async {
+    if (maximumEvents < 356 || maximumEvents > 1000) {
+      throw RangeError.range(maximumEvents, 356, 1000);
+    }
+    if (_residentEnabled || _pinnedDisposed) return;
+    final database = room.client.database;
+    if (database == null) return;
+    final generation = room.historyGeneration;
+    final candidates = events.where((e) => e.status.isSynced).toList();
+    if (!await _hydrateMembers(candidates, generation)) return;
+    final savedIds = generation == _persistedInitialGeneration
+        ? candidates
+            .map((e) => e.eventId)
+            .where(_persistedInitialIds.contains)
+            .toSet()
+        : <String>{};
+    final unverified =
+        candidates.where((e) => !savedIds.contains(e.eventId)).toList();
+    for (var offset = 0; offset < unverified.length; offset += 256) {
+      final positions = await database.getTimelineEventPositions(
+          room, unverified.skip(offset).take(256).map((e) => e.eventId));
+      if (_pinnedDisposed || generation != room.historyGeneration) return;
+      savedIds.addAll(positions.keys);
+    }
+    _residentSavedIds
+      ..clear()
+      ..addAll(savedIds);
+    _persistedInitialIds.clear();
+    _residentMaximum = maximumEvents;
+    _residentEnabled = true;
+    _trimResident(Direction.f);
+  }
+
+  Future<bool> _hydrateMembers(Iterable<Event> page, int generation) async {
+    final database = room.client.database;
+    if (database == null) return !_pinnedDisposed;
+    final seen = <String>{};
+    for (final event in page) {
+      final sender = event.senderId;
+      if (sender.isEmpty ||
+          !seen.add(sender) ||
+          room.getState(EventTypes.RoomMember, sender) != null) {
+        continue;
+      }
+      final member = await database.getUser(sender, room);
+      if (_pinnedDisposed ||
+          (!isFragmentedTimeline && generation != room.historyGeneration)) {
+        return false;
+      }
+      if (member != null &&
+          room.getState(EventTypes.RoomMember, sender) == null) {
+        room.setState(member);
+        _presentationRevision++;
+      }
+    }
+    return !_pinnedDisposed &&
+        (isFragmentedTimeline || generation == room.historyGeneration);
+  }
+
+  bool _trimResident(Direction direction, {bool contextReloadable = false}) {
+    if (!_residentEnabled) return false;
+    final settled = events.where((e) => e.status.isSynced).toList();
+    final excess = settled.length - _residentMaximum;
+    if (excess <= 0) return false;
+    final candidates = direction == Direction.b
+        ? settled.take(excess)
+        : settled.skip(_residentMaximum);
+    final removed = candidates
+        .where((event) =>
+            contextReloadable || _residentSavedIds.contains(event.eventId))
+        .toList();
+    if (removed.isEmpty) return false;
+    final removedIds = removed.map((e) => e.eventId).toSet();
+    final requiredJoins = events
+        .where((e) =>
+            !removedIds.contains(e.eventId) &&
+            e.type == EventTypes.RoomMember &&
+            e.content['membership'] == 'join')
+        .map((e) => e.stateKey)
+        .whereType<String>()
+        .toSet();
+    for (final event in removed) {
+      final member = event.stateKey;
+      if (member != null &&
+          requiredJoins.contains(member) &&
+          event.type == EventTypes.RoomMember &&
+          event.content['membership'] == 'invite') {
+        _retainedMembershipInvites[member] = (
+          eventId: event.eventId,
+          senderId: event.senderId,
+          timestamp: event.originServerTs
+        );
+      }
+    }
+    _retainedMembershipInvites
+        .removeWhere((key, _) => !requiredJoins.contains(key));
+    for (var index = events.length - 1; index >= 0; index--) {
+      if (!removedIds.contains(events[index].eventId)) continue;
+      events.removeAt(index);
+      onRemove?.call(index);
+    }
+    for (final event in removed) {
+      _eventCache.remove(event.eventId);
+      _residentSavedIds.remove(event.eventId);
+    }
+    _rebuildAggregatedEvents();
+    if (direction == Direction.b) {
+      _newerIds?.dispose();
+      _newerIds = null;
+      if (contextReloadable) {
+        _contextNewerEvicted = true;
+        _localNewerAvailable = false;
+      } else {
+        _localNewerAvailable = true;
+        if (!isFragmentedTimeline) {
+          _awayFromLiveHead = true;
+          _awayGeneration = room.historyGeneration;
+          allowNewEvent = false;
+        }
+      }
+    } else {
+      _liveOlderIds?.dispose();
+      _liveOlderIds = null;
+      if (contextReloadable) {
+        _contextOlderEvicted = true;
+      } else {
+        _pinnedOlderNeedsRebase = true;
+        _pinnedHasMore = true;
+        _fetchedAllDatabaseEvents = false;
+      }
+    }
+    _presentationRevision++;
+    return true;
+  }
+
+  Set<String>? _pinnedPageIds;
+  final Map<String, Event> _pinnedPageRedactions = {};
+
+  /// Retain the current reading fragment separately from the live head. The
+  /// local identifier cursor is captured lazily; it never keeps extra models.
+  /// A changed live fragment requires a real context token at the old edge.
+  static Timeline forkHistory(
+      {required Timeline source,
+      required Room room,
+      void Function()? onUpdate}) {
+    var retainedInvites = const <String,
+        ({String eventId, String senderId, DateTime timestamp})>{};
+    try {
+      retainedInvites = source.retainedMembershipInvites;
+    } on NoSuchMethodError {
+      // Legacy Timeline implementations may omit this optional facts getter.
+    } on UnimplementedError {
+      // Fake implementations can report an absent getter this way instead.
+    }
+    final fork = Timeline(
+        room: room,
+        chunk: TimelineChunk(events: List.of(source.events), isFragment: true),
+        onUpdate: onUpdate)
+      .._pinnedGeneration = room.historyGeneration
+      .._pinnedPrevBatch = room.prev_batch;
+    fork._retainedMembershipInvites.addAll(retainedInvites);
+    return fork;
+  }
 
   bool get canRequestHistory {
+    if (_contextOlderEvicted) return true;
+    if (_pinnedGeneration != null) {
+      return !_pinnedOpened ||
+          _pinnedNeedsContext ||
+          _pinnedHasMore ||
+          chunk.prevBatch.isNotEmpty;
+    }
     if (isFragmentedTimeline) {
       return chunk.prevBatch.isNotEmpty &&
           events.lastOrNull?.type != EventTypes.RoomCreate;
@@ -107,7 +315,195 @@ class Timeline {
     }
   }
 
-  bool get canRequestFuture => !allowNewEvent && chunk.nextBatch.isNotEmpty;
+  Future<void> _requestPinnedEvents(int count) async {
+    if (_pinnedDisposed) throw StateError('Pinned timeline disposed');
+    if (!_pinnedOpened) {
+      final database = room.client.database;
+      final oldest = events.lastWhereOrNull((event) => event.status.isSynced);
+      if (database != null &&
+          oldest != null &&
+          room.historyGeneration == _pinnedGeneration) {
+        try {
+          final handle = await database.openTimelineIdSnapshot(room,
+              afterEventId: oldest.eventId);
+          if (_pinnedDisposed || room.historyGeneration != _pinnedGeneration) {
+            handle.dispose();
+          } else {
+            _pinnedIds = handle;
+            chunk.prevBatch = _pinnedPrevBatch ?? '';
+          }
+        } on TimelineAnchorUnavailable {
+          // Missing current-fragment anchor needs a real context token.
+        }
+      }
+      if (_pinnedDisposed) throw StateError('Pinned timeline disposed');
+      _pinnedOpened = true;
+      _pinnedHasMore = _pinnedIds != null;
+      if (_pinnedIds == null) _pinnedNeedsContext = oldest != null;
+    }
+    if (_pinnedIds != null && _pinnedOlderNeedsRebase) {
+      final oldest = events.lastWhereOrNull((e) => e.status.isSynced);
+      if (oldest != null) {
+        final replacement =
+            await _pinnedIds!.fork(afterEventId: oldest.eventId);
+        if (_pinnedDisposed) {
+          replacement.dispose();
+          return;
+        }
+        _pinnedIds!.dispose();
+        _pinnedIds = replacement;
+      }
+      _pinnedOlderNeedsRebase = false;
+    }
+    final handle = _pinnedIds;
+    if (handle != null && _pinnedHasMore) {
+      final ids = await handle.next(limit: count.clamp(1, 256));
+      final page = <Event>[];
+      _pinnedPageIds = ids.ids.toSet();
+      try {
+        for (final id in ids.ids) {
+          final event = await room.getLocalEventById(id);
+          if (_pinnedDisposed) throw StateError('Pinned timeline disposed');
+          if (event == null) {
+            throw StateError('Retained history event is unavailable');
+          }
+          page.add(event);
+        }
+        if (!await _hydrateMembers(page, room.historyGeneration)) return;
+        handle.accept(ids);
+        _appendPinnedEvents(page);
+        _residentSavedIds.addAll(ids.ids);
+        _pinnedHasMore = ids.hasMore;
+        _trimResident(Direction.b);
+      } finally {
+        _pinnedPageIds = null;
+        _pinnedPageRedactions.clear();
+      }
+      return;
+    }
+    if (_pinnedNeedsContext) {
+      final oldest = events.lastWhereOrNull((event) => event.status.isSynced);
+      if (oldest == null) return;
+      final context = await room.getEventContext(oldest.eventId);
+      if (_pinnedDisposed) return;
+      final index = context?.events
+              .indexWhere((event) => event.eventId == oldest.eventId) ??
+          -1;
+      if (context == null || index < 0) {
+        throw StateError('Retained history context is unavailable');
+      }
+      // Its forward token belongs to the oldest-row context, not our retained
+      // newest edge. Returning to the current live head uses selectLatest.
+      _appendPinnedEvents(context.events.skip(index + 1));
+      chunk.prevBatch = context.prevBatch;
+      _pinnedNeedsContext = false;
+      _trimResident(Direction.b, contextReloadable: true);
+      return;
+    }
+    if (chunk.prevBatch.isNotEmpty) {
+      await getRoomEvents(historyCount: count, direction: Direction.b);
+    }
+  }
+
+  void _appendPinnedEvents(Iterable<Event> page) {
+    final ids = events.map((event) => event.eventId).toSet();
+    var changed = false;
+    for (final event in page) {
+      if (!ids.add(event.eventId)) continue;
+      final redaction = _pinnedPageRedactions[event.eventId];
+      if (redaction != null) event.setRedactionEvent(redaction);
+      events.add(event);
+      changed = true;
+      _presentationRevision++;
+      onInsert?.call(events.length - 1);
+    }
+    if (changed) _rebuildAggregatedEvents();
+  }
+
+  bool get canRequestFuture =>
+      _localNewerAvailable ||
+      _contextNewerEvicted ||
+      (!allowNewEvent && chunk.nextBatch.isNotEmpty);
+
+  Future<void> _requestLocalFuture(int count) async {
+    final generation = room.historyGeneration;
+    bool current() =>
+        !_pinnedDisposed &&
+        (isFragmentedTimeline || generation == room.historyGeneration);
+    final newest = events.firstWhereOrNull((event) => event.status.isSynced);
+    final database = room.client.database;
+    if (newest == null || database == null) return;
+    final handle = _newerIds ??= _pinnedIds != null
+        ? await _pinnedIds!.fork(
+            afterEventId: newest.eventId, direction: TimelineIdDirection.newer)
+        : await database.openTimelineIdSnapshot(room,
+            afterEventId: newest.eventId, direction: TimelineIdDirection.newer);
+    try {
+      if (!current()) return;
+      final ids = await handle.next(limit: count.clamp(1, 256));
+      final page = <Event>[];
+      _pinnedPageIds = ids.ids.toSet();
+      for (final id in ids.ids) {
+        final event = await room.getLocalEventById(id);
+        if (!current()) return;
+        if (event == null) {
+          throw StateError('Retained history event is unavailable');
+        }
+        final redaction = _pinnedPageRedactions[id];
+        if (redaction != null) event.setRedactionEvent(redaction);
+        page.add(event);
+      }
+      if (!await _hydrateMembers(page, generation) || !current()) return;
+      final existing = events.map((e) => e.eventId).toSet();
+      for (final event in page) {
+        final redaction = _pinnedPageRedactions[event.eventId];
+        if (redaction != null) event.setRedactionEvent(redaction);
+      }
+      final incoming =
+          page.reversed.where((e) => existing.add(e.eventId)).toList();
+      handle.accept(ids);
+      if (incoming.isNotEmpty) {
+        // Pending sends retain their own place and stable identity.
+        final index = events.indexWhere((e) => e.status.isSynced);
+        events.insertAll(index < 0 ? events.length : index, incoming);
+        _rebuildAggregatedEvents();
+        _presentationRevision++;
+      }
+      _residentSavedIds.addAll(ids.ids);
+      _localNewerAvailable = ids.hasMore;
+      _trimResident(Direction.f);
+      if (_awayFromLiveHead && !ids.hasMore) {
+        // A captured page may end before sync's current head. Rejoin only
+        // after a small authoritative read proves adjacency; sync arriving
+        // during that await invalidates the proof via this local revision.
+        handle.dispose();
+        _newerIds = null;
+        final observedRevision = _deferredLiveRevision;
+        final head = (await database.getEventList(room, limit: 1))
+            .firstWhereOrNull((event) => event.status.isSynced);
+        if (!current()) return;
+        final residentHead =
+            events.firstWhereOrNull((event) => event.status.isSynced);
+        if (observedRevision == _deferredLiveRevision &&
+            head?.eventId == residentHead?.eventId) {
+          _awayFromLiveHead = false;
+          _awayGeneration = null;
+          allowNewEvent = true;
+        } else {
+          _localNewerAvailable = true;
+        }
+      }
+    } on TimelineSnapshotDisposed {
+      if (current()) rethrow;
+    } finally {
+      _pinnedPageIds = null;
+      _pinnedPageRedactions.clear();
+      if (!_localNewerAvailable || !current()) {
+        handle.dispose();
+        if (identical(_newerIds, handle)) _newerIds = null;
+      }
+    }
+  }
 
   Future<void> requestFuture(
       {int historyCount = Room.defaultHistoryCount}) async {
@@ -127,21 +523,44 @@ class Timeline {
   Future<void> _requestEvents(
       {int historyCount = Room.defaultHistoryCount,
       required Direction direction}) async {
+    final generation = room.historyGeneration;
     onUpdate?.call();
 
     try {
-      // Look up for events in the database first. With fragmented view, we should delete the database cache
+      await enableResidentWindow();
+      if (_pinnedDisposed) return;
+      if (!isFragmentedTimeline && generation != room.historyGeneration) return;
+      historyCount = historyCount.clamp(1, 256);
+      if (direction == Direction.f && _localNewerAvailable) {
+        await _requestLocalFuture(historyCount);
+        return;
+      }
+      if ((direction == Direction.b && _contextOlderEvicted) ||
+          (direction == Direction.f && _contextNewerEvicted)) {
+        await _requestEvictedContext(direction);
+        return;
+      }
+      if (_pinnedGeneration != null && direction == Direction.b) {
+        await _requestPinnedEvents(historyCount);
+        return;
+      }
+      if (_residentEnabled &&
+          !isFragmentedTimeline &&
+          await _requestResidentHistory(historyCount, generation)) {
+        return;
+      }
+      // Compatibility path for stores without resident adoption.
       final eventsFromStore = isFragmentedTimeline
           ? null
-          : await room.client.database?.getEventList(
-              room,
-              start: _trimmedLiveHistory
-                  ? events
-                      .where((e) => !e.status.isSending && !e.status.isError)
-                      .length
-                  : events.length,
-              limit: historyCount,
-            );
+          : _residentEnabled
+              ? <Event>[]
+              : await room.client.database?.getEventList(
+                  room,
+                  start: events.length,
+                  limit: historyCount,
+                );
+
+      if (!isFragmentedTimeline && generation != room.historyGeneration) return;
 
       if (eventsFromStore != null && eventsFromStore.isNotEmpty) {
         // Fetch all users from database we have got here.
@@ -154,8 +573,13 @@ class Timeline {
           if (dbUser != null) room.setState(dbUser);
         }
 
+        if (!isFragmentedTimeline && generation != room.historyGeneration) {
+          return;
+        }
+
         if (direction == Direction.b) {
           events.addAll(eventsFromStore);
+          _presentationRevision++;
           final startIndex = events.length - eventsFromStore.length;
           final endIndex = events.length;
           for (var i = startIndex; i < endIndex; i++) {
@@ -163,12 +587,14 @@ class Timeline {
           }
         } else {
           events.insertAll(0, eventsFromStore);
+          _presentationRevision++;
           final startIndex = eventsFromStore.length;
           final endIndex = 0;
           for (var i = startIndex; i > endIndex; i--) {
             onInsert?.call(i);
           }
         }
+        _rebuildAggregatedEvents();
       } else {
         _fetchedAllDatabaseEvents = true;
         Logs().i('No more events found in the store. Request from server...');
@@ -194,7 +620,104 @@ class Timeline {
       }
     } finally {
       _collectHistoryUpdates = false;
-      onUpdate?.call();
+      if (!_pinnedDisposed) onUpdate?.call();
+    }
+  }
+
+  Future<bool> _requestResidentHistory(int count, int generation) async {
+    final database = room.client.database;
+    if (database == null || _fetchedAllDatabaseEvents) return false;
+    final oldest = events.lastWhereOrNull((e) => e.status.isSynced);
+    TimelineIdSnapshot handle;
+    try {
+      handle = _liveOlderIds ??= await database.openTimelineIdSnapshot(room,
+          afterEventId: oldest?.eventId);
+    } on TimelineAnchorUnavailable {
+      if (_pinnedDisposed || generation != room.historyGeneration) return true;
+      // A non-persisted live head cannot address the local fragment. Continue
+      // only through the room's real remote token, never an offset guess.
+      _fetchedAllDatabaseEvents = true;
+      return false;
+    }
+    bool current() =>
+        !_pinnedDisposed &&
+        generation == room.historyGeneration &&
+        identical(_liveOlderIds, handle);
+    try {
+      // A sync append may move the retained edge while opening the snapshot,
+      // before there is a handle for eviction to invalidate.
+      if (events.lastWhereOrNull((e) => e.status.isSynced)?.eventId !=
+          oldest?.eventId) {
+        if (identical(_liveOlderIds, handle)) _liveOlderIds = null;
+        return true;
+      }
+      if (!current()) return true;
+      final ids = await handle.next(limit: count);
+      if (!current()) return true;
+      final page = <Event>[];
+      _pinnedPageIds = ids.ids.toSet();
+      for (final id in ids.ids) {
+        final event = await room.getLocalEventById(id);
+        if (!current()) return true;
+        if (event == null) {
+          throw StateError('Retained history event is unavailable');
+        }
+        page.add(event);
+      }
+      if (!await _hydrateMembers(page, generation) || !current()) return true;
+      handle.accept(ids);
+      _appendPinnedEvents(page);
+      _residentSavedIds.addAll(ids.ids);
+      _fetchedAllDatabaseEvents = !ids.hasMore;
+      _trimResident(Direction.b);
+      return ids.rawCount > 0 || ids.hasMore;
+    } on TimelineSnapshotDisposed {
+      if (current()) rethrow;
+      return true;
+    } finally {
+      _pinnedPageIds = null;
+      _pinnedPageRedactions.clear();
+      if (_fetchedAllDatabaseEvents || !current()) {
+        handle.dispose();
+        if (identical(_liveOlderIds, handle)) _liveOlderIds = null;
+      }
+    }
+  }
+
+  /// An evicted remote edge must be re-anchored with a real /context response.
+  /// Its matching edge token is installed only after the anchor is verified;
+  /// failure/disposal leaves the resident window and continuation untouched.
+  Future<void> _requestEvictedContext(Direction direction) async {
+    final anchor = direction == Direction.b
+        ? events.lastWhereOrNull((e) => e.status.isSynced)
+        : events.firstWhereOrNull((e) => e.status.isSynced);
+    if (anchor == null) return;
+    final context = await room.getEventContext(anchor.eventId);
+    if (_pinnedDisposed) return;
+    final index =
+        context?.events.indexWhere((e) => e.eventId == anchor.eventId) ?? -1;
+    if (context == null || index < 0) {
+      throw StateError('Retained history context is unavailable');
+    }
+    if (direction == Direction.b) {
+      _appendPinnedEvents(context.events.skip(index + 1));
+      chunk.prevBatch = context.prevBatch;
+      _contextOlderEvicted = false;
+    } else {
+      final existing = events.map((e) => e.eventId).toSet();
+      final page = context.events
+          .take(index)
+          .where((e) => existing.add(e.eventId))
+          .toList();
+      final insertion = events.indexWhere((e) => e.status.isSynced);
+      events.insertAll(insertion < 0 ? events.length : insertion, page);
+      _rebuildAggregatedEvents();
+      if (page.isNotEmpty) _presentationRevision++;
+      chunk.nextBatch = context.nextBatch;
+      _contextNewerEvicted = false;
+    }
+    if (!_trimResident(direction, contextReloadable: true)) {
+      _rebuildAggregatedEvents();
     }
   }
 
@@ -212,6 +735,7 @@ class Timeline {
       limit: historyCount,
       filter: jsonEncode(StateFilter(lazyLoadMembers: true).toJson()),
     );
+    if (_pinnedDisposed) return 0;
 
     if (resp.end == null) {
       Logs().w('We reached the end of the timeline');
@@ -242,7 +766,9 @@ class Timeline {
 
     if (!allowNewEvent && !isFragmentedTimeline) {
       if (resp.start == resp.end ||
-          (resp.end == null && direction == Direction.f)) allowNewEvent = true;
+          (resp.end == null && direction == Direction.f)) {
+        allowNewEvent = true;
+      }
 
       if (allowNewEvent) {
         Logs().d('We now allow sync update into the timeline.');
@@ -263,6 +789,7 @@ class Timeline {
         }
       }
     }
+    if (_pinnedDisposed) return 0;
 
     // Context pages can overlap. Preserve the already loaded Event instance so
     // a late original cannot duplicate or undo a locally observed redaction.
@@ -281,6 +808,7 @@ class Timeline {
         if (redaction != null) {
           removeAggregatedEvent(loaded);
           loaded.setRedactionEvent(redaction);
+          _presentationRevision++;
           final index = events.indexOf(loaded);
           if (index >= 0) onChange?.call(index);
         }
@@ -289,6 +817,7 @@ class Timeline {
     });
 
     // update chunk anchors
+    if (newEvents.isNotEmpty) _presentationRevision++;
     if (type == EventUpdateType.history) {
       chunk.prevBatch = newPrevBatch ?? '';
 
@@ -308,6 +837,9 @@ class Timeline {
       }
     }
 
+    if (!_trimResident(direction, contextReloadable: true)) {
+      _rebuildAggregatedEvents();
+    }
     if (onUpdate != null) {
       onUpdate!();
     }
@@ -321,7 +853,10 @@ class Timeline {
       this.onInsert,
       this.onRemove,
       this.onNewEvent,
+      Iterable<String> persistedInitialIds = const [],
       required this.chunk}) {
+    _persistedInitialIds.addAll(persistedInitialIds.take(1000));
+    _persistedInitialGeneration = room.historyGeneration;
     sub = room.client.onEvent.stream.listen(_handleEventUpdate);
 
     // If the timeline is limited we want to clear our events cache
@@ -337,9 +872,7 @@ class Timeline {
         room.client.onCancelSendEvent.stream.listen(_cleanUpCancelledEvent);
 
     // we want to populate our aggregated events
-    for (final e in events) {
-      addAggregatedEvent(e);
-    }
+    _rebuildAggregatedEvents();
 
     // we are using a fragmented timeline
     if (chunk.isFragment || chunk.nextBatch != '') {
@@ -353,8 +886,10 @@ class Timeline {
   void _cleanUpCancelledEvent(String eventId) {
     final i = _findEvent(event_id: eventId);
     if (i < events.length) {
-      removeAggregatedEvent(events[i]);
+      _residentSavedIds.remove(events[i].eventId);
       events.removeAt(i);
+      _rebuildAggregatedEvents();
+      _presentationRevision++;
       onRemove?.call(i);
       onUpdate?.call();
     }
@@ -364,11 +899,42 @@ class Timeline {
   void _removeEventsNotInThisSync(SyncUpdate sync) {
     final newSyncEvents = sync.rooms?.join?[room.id]?.timeline?.events ?? [];
     final keepEventIds = newSyncEvents.map((e) => e.eventId);
-    events.removeWhere((e) => !keepEventIds.contains(e.eventId));
+    final before = events.length;
+    final hadInviteDependencies = _retainedMembershipInvites.isNotEmpty;
+    events.removeWhere(
+        (e) => e.status.isSynced && !keepEventIds.contains(e.eventId));
+    _liveOlderIds?.dispose();
+    _liveOlderIds = null;
+    _eventCache.clear();
+    aggregatedEvents.clear();
+    _retainedMembershipInvites.clear();
+    _newerIds?.dispose();
+    _newerIds = null;
+    _localNewerAvailable = false;
+    _awayFromLiveHead = false;
+    _awayGeneration = null;
+    allowNewEvent = true;
+    _fetchedAllDatabaseEvents = false;
+    _residentSavedIds.retainAll(events.map((e) => e.eventId));
+    _rebuildAggregatedEvents();
+    if (events.length != before || hadInviteDependencies) {
+      _presentationRevision++;
+    }
   }
 
   /// Don't forget to call this before you dismiss this object!
   void cancelSubscriptions() {
+    _pinnedDisposed = true;
+    _pinnedIds?.dispose();
+    _pinnedIds = null;
+    _newerIds?.dispose();
+    _newerIds = null;
+    _liveOlderIds?.dispose();
+    _liveOlderIds = null;
+    _eventCache.clear();
+    _aggregationAliases.clear();
+    aggregatedEvents.clear();
+    _retainedMembershipInvites.clear();
     // ignore: discarded_futures
     sub?.cancel();
     // ignore: discarded_futures
@@ -379,79 +945,62 @@ class Timeline {
     cancelSendEventSub?.cancel();
   }
 
-  /// Release only a live presentation buffer; persisted events are unchanged.
-  /// Callers must keep anchored history windows intact. Paging can reload the
-  /// discarded suffix from the same local fragment, starting at events.length.
+  /// Compatibility hook after [enableResidentWindow] has verified persistence.
+  /// Unverified sources are never synchronously discarded.
   void trimLiveHistory({required int maximumEvents}) {
     if (maximumEvents <= 0) throw ArgumentError.value(maximumEvents);
-    if (room.client.database == null ||
-        isFragmentedTimeline ||
-        isRequestingHistory ||
-        isRequestingFuture ||
-        _sessionDecryptionInFlight > 0 ||
-        events.length <= maximumEvents) return;
-    final removed = <Event>[];
-    final kept = <Event>[];
-    var settledCount = 0;
-    for (var i = 0; i < events.length; i++) {
-      final event = events[i];
-      // Unsettled local sends remain owned by the sender, including retries.
-      final pending = event.status.isSending || event.status.isError;
-      if (pending || settledCount++ < maximumEvents) {
-        kept.add(event);
-      } else {
-        removed.add(event);
-      }
+    if (_residentEnabled &&
+        !isFragmentedTimeline &&
+        !isRequestingHistory &&
+        !isRequestingFuture) {
+      _trimResident(Direction.f);
     }
-    if (removed.isEmpty) return;
-    events
-      ..clear()
-      ..addAll(kept);
-    for (final event in removed) {
-      removeAggregatedEvent(event);
-      _eventCache.remove(event.eventId);
-    }
-    _fetchedAllDatabaseEvents = false;
-    _trimmedLiveHistory = true;
   }
 
   void _sessionKeyReceived(String sessionId) async {
-    _sessionDecryptionInFlight++;
     var decryptAtLeastOneEvent = false;
     Future<void> decryptFn() async {
       final encryption = room.client.encryption;
       if (!room.client.encryptionEnabled || encryption == null) {
         return;
       }
-      for (var i = 0; i < events.length; i++) {
-        if (events[i].type == EventTypes.Encrypted &&
-            events[i].messageType == MessageTypes.BadEncrypted &&
-            events[i].content['session_id'] == sessionId) {
-          events[i] = await encryption.decryptRoomEvent(
+      for (final original in List<Event>.of(events)) {
+        if (_pinnedDisposed) return;
+        if (original.type == EventTypes.Encrypted &&
+            original.messageType == MessageTypes.BadEncrypted &&
+            original.content['session_id'] == sessionId) {
+          final decrypted = await encryption.decryptRoomEvent(
             room.id,
-            events[i],
+            original,
             store: true,
             updateType: EventUpdateType.history,
           );
-          addAggregatedEvent(events[i]);
-          onChange?.call(i);
-          if (events[i].type != EventTypes.Encrypted) {
+          if (_pinnedDisposed) return;
+          final index =
+              events.indexWhere((event) => identical(event, original));
+          // A sync replacement, redaction, eviction or cancellation wins over
+          // this in-flight decode. Never write through a stale list index.
+          if (index < 0 || original.redacted) continue;
+          events[index] = decrypted;
+          _presentationRevision++;
+          _rebuildAggregatedEvents();
+          onChange?.call(index);
+          if (decrypted.type != EventTypes.Encrypted) {
             decryptAtLeastOneEvent = true;
           }
         }
       }
     }
 
-    try {
-      if (room.client.database != null) {
-        await room.client.database?.transaction(decryptFn);
-      } else {
-        await decryptFn();
-      }
-    } finally {
-      _sessionDecryptionInFlight--;
+    final database = room.client.database;
+    if (database != null) {
+      await database.prepareTimelineStorage([room.id]);
+      if (_pinnedDisposed) return;
+      await database.transaction(decryptFn);
+    } else {
+      await decryptFn();
     }
-    if (decryptAtLeastOneEvent) onUpdate?.call();
+    if (decryptAtLeastOneEvent && !_pinnedDisposed) onUpdate?.call();
   }
 
   /// Request the keys for undecryptable events of this timeline
@@ -522,6 +1071,41 @@ class Timeline {
                 event.unsigned?.tryGet<String>('transaction_id')));
   }
 
+  /// Aggregations describe loaded events, not all historical relations. Build
+  /// once per resident mutation so opposite-edge eviction cannot discard a
+  /// still-loaded contribution or leave an ever-growing empty target map.
+  void _rebuildAggregatedEvents() {
+    final ids = events.map((event) => event.eventId).toSet();
+    _aggregationAliases.removeWhere((id, _) => !ids.contains(id));
+    final canonical = <String, Event>{};
+    final redactedTargets = <String>{};
+    for (final event in events) {
+      final transactionId = event.unsigned?.tryGet<String>('transaction_id');
+      if (transactionId != null) {
+        _aggregationAliases[event.eventId] = transactionId;
+      }
+      final identity = _aggregationAliases[event.eventId] ?? event.eventId;
+      final previous = canonical[identity];
+      if (previous == null ||
+          event.status.intValue > previous.status.intValue) {
+        canonical[identity] = event;
+      }
+      if (event.redacted) redactedTargets.add(event.eventId);
+    }
+    aggregatedEvents.clear();
+    for (final event in canonical.values) {
+      final target = event.relationshipEventId;
+      final type = event.relationshipType;
+      if (event.redacted ||
+          target == null ||
+          type == null ||
+          redactedTargets.contains(target)) {
+        continue;
+      }
+      ((aggregatedEvents[target] ??= {})[type] ??= <Event>{}).add(event);
+    }
+  }
+
   void addAggregatedEvent(Event event) {
     // we want to add an event to the aggregation tree
     final relationshipType = event.relationshipType;
@@ -535,6 +1119,7 @@ class Timeline {
     _removeEventFromSet(events, event);
     // add the new one
     events.add(event);
+    _presentationRevision++;
     if (onChange != null) {
       final index = _findEvent(event_id: relationshipEventId);
       onChange?.call(index);
@@ -556,6 +1141,15 @@ class Timeline {
   void _handleEventUpdate(EventUpdate eventUpdate, {bool update = true}) {
     try {
       if (eventUpdate.roomID != room.id) return;
+
+      // A limited sync's event stream can precede its onSync callback. Its
+      // newly authoritative head belongs to a different generation and must
+      // be admitted before the callback discards the old resident fragment.
+      if (_awayFromLiveHead && _awayGeneration != room.historyGeneration) {
+        _awayFromLiveHead = false;
+        _awayGeneration = null;
+        allowNewEvent = true;
+      }
 
       if (eventUpdate.type != EventUpdateType.timeline &&
           eventUpdate.type != EventUpdateType.history) {
@@ -579,16 +1173,35 @@ class Timeline {
                   ? redactionContent['redacts'] as String?
                   : null)
           : null;
+      if (redactionTarget != null &&
+          _pinnedPageIds?.contains(redactionTarget) == true) {
+        // A cached row can already be read while another row still awaits
+        // the store. Replay authoritative recalls before publishing the page.
+        _pinnedPageRedactions[redactionTarget] =
+            Event.fromJson(eventUpdate.content, room);
+      }
       final updatesLoadedEvent = i < events.length ||
           redactionTarget != null &&
               _findEvent(event_id: redactionTarget) < events.length;
-      if (!allowNewEvent && !updatesLoadedEvent) return;
-
       final status = eventStatusFromInt(eventUpdate.content['status'] ??
           (eventUpdate.content['unsigned'] is Map<String, dynamic>
               ? eventUpdate.content['unsigned'][messageSendingStatusKey]
               : null) ??
           EventStatus.synced.intValue);
+      if (!allowNewEvent && !updatesLoadedEvent && status.isSynced) {
+        if (_awayFromLiveHead && eventUpdate.type == EventUpdateType.timeline) {
+          _deferredLiveRevision++;
+        }
+        return;
+      }
+      // SDK emits these updates after its authoritative database write. Local
+      // sends remain separately owned until the first synced confirmation.
+      if (_residentEnabled &&
+          (allowNewEvent || updatesLoadedEvent) &&
+          status.isSynced) {
+        final id = eventUpdate.content['event_id'];
+        if (id is String) _residentSavedIds.add(id);
+      }
 
       if (i < events.length) {
         // /sync can beat the HTTP send response. A late local ACK/error still
@@ -602,6 +1215,7 @@ class Timeline {
           eventUpdate.content,
           room,
         );
+        _presentationRevision++;
         // A delayed history/decryption result cannot undo a server redaction.
         if (priorRedaction != null && !events[i].redacted) {
           events[i].setRedactionEvent(priorRedaction);
@@ -611,18 +1225,20 @@ class Timeline {
             !(status.isError && oldStatus.isSending)) {
           events[i].status = oldStatus;
         }
-        addAggregatedEvent(events[i]);
         onChange?.call(i);
       } else if (allowNewEvent || !isRedaction) {
         final newEvent = Event.fromJson(
           eventUpdate.content,
           room,
         );
+        _presentationRevision++;
 
         if (eventUpdate.type == EventUpdateType.history &&
             events.indexWhere(
                     (e) => e.eventId == eventUpdate.content['event_id']) !=
-                -1) return;
+                -1) {
+          return;
+        }
         var index = events.length;
         if (eventUpdate.type == EventUpdateType.history) {
           events.add(newEvent);
@@ -631,8 +1247,6 @@ class Timeline {
           events.insert(index, newEvent);
         }
         onInsert?.call(index);
-
-        addAggregatedEvent(newEvent);
       }
 
       // Handle redaction events
@@ -658,11 +1272,26 @@ class Timeline {
             eventUpdate.content,
             room,
           ));
+          _presentationRevision++;
           onChange?.call(index);
         }
       }
 
-      if (update && !_collectHistoryUpdates) {
+      if (!_trimResident(eventUpdate.type == EventUpdateType.history
+          ? Direction.b
+          : Direction.f)) {
+        _rebuildAggregatedEvents();
+      }
+      _residentSavedIds.retainAll(events.map((event) => event.eventId));
+      final residentJoins = events
+          .where((e) =>
+              e.type == EventTypes.RoomMember &&
+              e.content['membership'] == 'join')
+          .map((e) => e.stateKey)
+          .toSet();
+      _retainedMembershipInvites
+          .removeWhere((key, _) => !residentJoins.contains(key));
+      if (update && !_collectHistoryUpdates && !_pinnedDisposed) {
         onUpdate?.call();
       }
     } catch (e, s) {

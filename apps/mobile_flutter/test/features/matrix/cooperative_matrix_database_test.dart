@@ -280,6 +280,79 @@ void main() {
     }
   });
 
+  test(
+      'owned batch pages merge bounded changes while other zones await rollback',
+      () async {
+    final fixture = await _Fixture.open();
+    final entered = Completer<void>();
+    final observerStarted = Completer<void>();
+    var observerFinished = false;
+    try {
+      final seed = List.generate(600, (i) => 'seed-$i');
+      await fixture.seed(seed);
+      await fixture.database.prepareTimelineStorage([fixture.room.id]);
+      // Created outside the owner zone: this read must never see its overlay.
+      final observer = (() async {
+        await entered.future;
+        observerStarted.complete();
+        final page =
+            await fixture.database.getEventList(fixture.room, limit: 3);
+        observerFinished = true;
+        return page.map((event) => event.eventId).toList();
+      })();
+      final failure = StateError('synthetic paged rollback');
+      await expectLater(fixture.database.transaction(() async {
+        await fixture.store(_message('pending-a'));
+        await fixture.store(_message('pending-b'));
+        await fixture.database.removeEvent('seed-0', fixture.room.id);
+        await fixture.database.removeEvent('pending-a', fixture.room.id);
+        await fixture.store(_message('older'), type: EventUpdateType.history);
+        expect(
+            (await fixture.database.getEventList(fixture.room, limit: 3))
+                .map((event) => event.eventId),
+            ['pending-b', 'seed-1', 'seed-2']);
+        expect(
+            (await fixture.database
+                    .getEventList(fixture.room, start: 1, limit: 2))
+                .map((event) => event.eventId),
+            ['seed-1', 'seed-2']);
+        expect(await fixture.database.getEventById('pending-a', fixture.room),
+            isNull);
+        entered.complete();
+        await observerStarted.future;
+        await Future<void>.delayed(Duration.zero);
+        expect(observerFinished, isFalse);
+        await fixture.database.deleteTimelineForRoom(fixture.room.id);
+        await fixture.store(_message('after-reset'));
+        expect(
+            (await fixture.database.getEventList(fixture.room, limit: 2))
+                .map((event) => event.eventId),
+            ['after-reset']);
+        expect(
+            (await fixture.database.getEventById('after-reset', fixture.room))
+                ?.eventId,
+            'after-reset');
+        throw failure;
+      }), throwsA(same(failure)));
+      expect(await observer, seed.take(3));
+      expect(await fixture.database.getEventById('pending-b', fixture.room),
+          isNull);
+      expect(await fixture.database.getEventById('after-reset', fixture.room),
+          isNull);
+      expect(
+          (await fixture.database.getEventList(fixture.room))
+              .map((event) => event.eventId),
+          seed);
+      await fixture.reopen();
+      expect(
+          (await fixture.database.getEventList(fixture.room, limit: 3))
+              .map((event) => event.eventId),
+          seed.take(3));
+    } finally {
+      await fixture.close();
+    }
+  });
+
   test('commit failure clears cache before a later standalone write', () async {
     final fixture = await _Fixture.open();
     try {
@@ -479,7 +552,7 @@ class _Fixture {
 
   static Future<_Fixture> open() async {
     final root = Directory(
-        '../../docs/verification/artifacts/2026-09-27/mobile-stability-followup/sdk');
+        '../../docs/verification/artifacts/2026-10-08/history-interaction-fix/storage/fixtures/cooperative');
     await root.create(recursive: true);
     final directory = await root.createTemp('cooperative-');
     final path = '${directory.path}${Platform.pathSeparator}matrix.sqlite';
@@ -531,7 +604,7 @@ class _Fixture {
     await database.close();
     await client.dispose();
     final approvedRoot = Directory(
-            '../../docs/verification/artifacts/2026-09-27/mobile-stability-followup/sdk')
+            '../../docs/verification/artifacts/2026-10-08/history-interaction-fix/storage/fixtures/cooperative')
         .absolute
         .path;
     if (!directory.absolute.path

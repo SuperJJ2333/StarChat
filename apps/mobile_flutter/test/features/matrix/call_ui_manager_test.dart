@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/core/maintenance_activity.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -160,8 +161,15 @@ void main() {
         CupertinoApp(navigatorKey: key, home: const Text('login-root')));
     await _emit(tester, backend.events, _incoming());
     expect(callAudioActivity.value, isTrue);
+    expect(MaintenanceActivity.instance.interactive, isTrue,
+        reason: 'calls pause maintenance beyond the room route');
     await tester.pumpAndSettle();
     expect(manager.isIncomingPageOpen, isTrue);
+    await tester.pumpWidget(const SizedBox());
+    expect(MaintenanceActivity.instance.interactive, isTrue,
+        reason: 'route disposal cannot release an application call');
+    await tester.pumpWidget(
+        CupertinoApp(navigatorKey: key, home: const Text('login-root')));
     final unrelated =
         CupertinoPageRoute<void>(builder: (_) => const Text('unrelated-page'));
     unawaited(key.currentState!.push(unrelated));
@@ -169,6 +177,7 @@ void main() {
     notifications.calls.clear();
     await manager.detach();
     await tester.pumpAndSettle();
+    expect(MaintenanceActivity.instance.interactive, isFalse);
     expect(unrelated.isCurrent, isTrue);
     expect(notifications.calls, containsAll(['hideIncoming', 'hideOngoing']));
     key.currentState!.removeRoute(unrelated);
@@ -453,6 +462,7 @@ void main() {
 
     // SDK ended 是终态：关闭延迟只用于展示结果，迟到 connected 不得复活。
     await _emit(tester, backend.events, const CallBackendEvent.ended());
+    expect(MaintenanceActivity.instance.interactive, isFalse);
     await tester.pump(const Duration(seconds: 1));
     // 页面必须仍在（关闭延迟内），显示结束态而非被 pop。
     expect(find.text('通话已结束'), findsOneWidget, reason: '结束状态在关闭延迟内展示（页面仍在栈内）');
@@ -616,5 +626,35 @@ void main() {
     expect(find.text('邀请你进行视频通话'), findsOneWidget, reason: '来电内容可见');
 
     await _teardown(tester, backend.events, manager);
+  });
+  testWidgets(
+      'already-active call attachment survives route disposal and waits for idle after detach',
+      (tester) async {
+    final backend = _FakeCallBackend();
+    final controller =
+        CallController(backend: backend, permissions: _AllowedPermissions());
+    controller.state = const CallViewState(CallPhase.connected);
+    final manager = CallUiManager(
+        navigatorKey: GlobalKey<NavigatorState>(),
+        notifications: _RecordingCallNotifications(),
+        isAppResumed: () => true)
+      ..attach(controller);
+    final gate = MaintenanceActivity.instance;
+    expect(
+        gate.activeReasons
+            .any((reason) => reason.startsWith('application-call-')),
+        true);
+    await tester.pumpWidget(const SizedBox());
+    expect(gate.interactive, true);
+    await manager.detach();
+    expect(gate.interactive, false);
+    expect(gate.canMaintain, false);
+    var ready = false;
+    gate.waitForIdle().then((_) => ready = true);
+    expect(ready, false);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(ready, true);
+    controller.dispose();
+    await backend.events.close();
   });
 }

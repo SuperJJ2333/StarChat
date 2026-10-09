@@ -169,9 +169,9 @@ final class DeferredHistoryTimelineAdapter extends FakeTimelineAdapter
   @override
   bool selectAnchor(String id) => false;
   @override
-  void selectEarlier() {}
+  void selectEarlier({String? retainEventId}) {}
   @override
-  void selectLater() {}
+  void selectLater({String? retainEventId}) {}
   @override
   void pinWindow() {}
 }

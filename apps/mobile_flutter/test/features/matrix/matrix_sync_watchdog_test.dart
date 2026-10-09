@@ -10,9 +10,12 @@ import 'package:liuhetong_mobile/features/matrix/matrix_sync_phase_metrics.dart'
 import 'package:liuhetong_mobile/features/matrix/matrix_sync_watchdog.dart';
 import 'package:matrix/matrix.dart'
     show
+        Client,
         JoinedRoomUpdate,
         LeftRoomUpdate,
         MatrixEvent,
+        Membership,
+        Room,
         RoomsUpdate,
         SyncStatus,
         SyncStatusUpdate,
@@ -24,6 +27,180 @@ import 'package:matrix/matrix.dart'
 /// 停跳先踢一次 oneShotSync，仍停跳强制 abortSync + 重启循环。
 void main() {
   SyncStatusUpdate status(SyncStatus s) => SyncStatusUpdate(s);
+
+  test('synthetic room progress cannot turn long polling into processing time',
+      () async {
+    var nowUs = 0;
+    final records = <PerformanceRecord>[];
+    final metrics = PerformanceMetrics(enabled: true);
+    final recorder = PerformanceTraceRecorder(
+        metrics: metrics, clockUs: () => nowUs, onRecord: records.add);
+    final client = Client('offline-sync-phase-regression');
+    final room = Room(
+        id: '!offline:invalid', client: client, membership: Membership.join);
+    client.rooms.add(room);
+    final observedProgress = <double?>[];
+    final progressSubscription = client.onSyncStatus.stream.listen((update) {
+      if (update.status == SyncStatus.processing) {
+        observedProgress.add(update.progress);
+      }
+    });
+    final watchdog = MatrixSyncWatchdog(
+      target: ClientSyncWatchdogTarget(client),
+      syncPhaseMetrics: MatrixSyncPhaseMetrics(
+          metrics: metrics, clockUs: () => nowUs, traceRecorder: recorder),
+    );
+    addTearDown(() async {
+      watchdog.dispose();
+      await progressSubscription.cancel();
+      await client.dispose();
+    });
+    watchdog.start();
+    client.onSyncStatus.add(status(SyncStatus.waitingForResponse));
+    await _settle();
+    nowUs = 1000000;
+    // The real vendored SDK path used by history persistence and local echoes
+    // emits processing(progress: 1.0), without a /sync response having arrived.
+    await client.handleSync(SyncUpdate(
+        nextBatch: '',
+        rooms: RoomsUpdate(join: {
+          room.id: JoinedRoomUpdate(timeline: TimelineUpdate(events: [])),
+        })));
+    await _settle();
+    nowUs = 30000000;
+    client.onSyncStatus.add(status(SyncStatus.processing));
+    await _settle();
+    nowUs = 30040000;
+    client.onSyncStatus.add(status(SyncStatus.cleaningUp));
+    await _settle();
+    nowUs = 30042000;
+    client.onSyncStatus.add(status(SyncStatus.finished));
+    await _settle();
+
+    expect(observedProgress, [1.0, null],
+        reason: 'The SDK/UI progress stream remains available');
+    expect(
+        records.single.betweenMs(PerformanceStage.syncResponseWaitStarted,
+            PerformanceStage.syncResponseReceived),
+        30000);
+    expect(
+        records.single.betweenMs(PerformanceStage.syncResponseReceived,
+            PerformanceStage.syncProcessingDone),
+        40);
+    expect(
+        records.single.betweenMs(PerformanceStage.syncProcessingDone,
+            PerformanceStage.syncCleanupDone),
+        2);
+    expect(records.single.timelineEventCount, isNull,
+        reason: 'Synthetic envelope counts cannot enter a waiting cycle');
+  });
+
+  test('synthetic room progress cannot conceal a stalled sync loop', () async {
+    final target = _FakeWatchdogTarget();
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    addTearDown(watchdog.dispose);
+    watchdog.start();
+    target.emit(status(SyncStatus.finished));
+    target.emit(status(SyncStatus.waitingForResponse));
+    await _settle();
+
+    target.clock.elapse(const Duration(minutes: 3));
+    target.emit(SyncStatusUpdate(SyncStatus.processing, progress: 1));
+    await _settle();
+    expect(watchdog.lastHealthySyncAge, const Duration(minutes: 3));
+    await watchdog.tick();
+    await _settle();
+    expect(target.oneShots, 1);
+    expect(target.restarts, 0);
+
+    target.clock.elapse(const Duration(minutes: 3));
+    target.emit(SyncStatusUpdate(SyncStatus.processing, progress: 0.5));
+    await _settle();
+    await watchdog.tick();
+    await _settle();
+    expect(target.restarts, 1);
+    expect(watchdog.lastHealthySyncAge, const Duration(minutes: 6));
+  });
+
+  test('real response processing remains a watchdog heartbeat', () async {
+    final target = _FakeWatchdogTarget();
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    addTearDown(watchdog.dispose);
+    watchdog.start();
+    target.emit(status(SyncStatus.waitingForResponse));
+    await _settle();
+    target.clock.elapse(const Duration(minutes: 3));
+    target.emit(status(SyncStatus.processing));
+    await _settle();
+    target.clock.elapse(const Duration(minutes: 2));
+    await watchdog.tick();
+    await _settle();
+    expect(target.oneShots, 0);
+    expect(target.restarts, 0);
+    expect(watchdog.lastHealthySyncAge, isNull,
+        reason: 'Only finished establishes a healthy sync');
+  });
+
+  test('active real room processing progress does not restart a slow batch',
+      () async {
+    final target = _FakeWatchdogTarget();
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    addTearDown(watchdog.dispose);
+    watchdog.start();
+    target.emit(status(SyncStatus.waitingForResponse));
+    target.emit(status(SyncStatus.processing));
+    await _settle();
+
+    // A genuine response can take longer than both stall thresholds while
+    // its rooms continue completing. The SDK publishes the same non-null
+    // progress shape as synthetic history, after its genuine response marker.
+    for (final progress in [0.25, 0.5, 0.75]) {
+      target.clock.elapse(const Duration(minutes: 2));
+      target.emit(SyncStatusUpdate(SyncStatus.processing, progress: progress));
+      await _settle();
+      await watchdog.tick();
+      await _settle();
+    }
+
+    expect(target.oneShots, 0,
+        reason: 'A progressing real response must not receive a soft kick');
+    expect(target.restarts, 0,
+        reason: 'A progressing real response must not be aborted');
+    expect(watchdog.lastHealthySyncAge, isNull,
+        reason: 'Partial room progress does not establish a healthy sync');
+  });
+
+  for (final boundary in [
+    SyncStatus.waitingForResponse,
+    SyncStatus.cleaningUp,
+    SyncStatus.finished,
+    SyncStatus.error,
+  ]) {
+    test('room progress after $boundary cannot conceal a stalled sync',
+        () async {
+      final target = _FakeWatchdogTarget();
+      final watchdog =
+          MatrixSyncWatchdog(target: target, clock: target.clock.now);
+      addTearDown(watchdog.dispose);
+      watchdog.start();
+      target.emit(status(SyncStatus.waitingForResponse));
+      target.emit(status(SyncStatus.processing));
+      target.emit(status(boundary));
+      await _settle();
+
+      target.clock.elapse(const Duration(minutes: 3));
+      target.emit(SyncStatusUpdate(SyncStatus.processing, progress: 1));
+      await _settle();
+      await watchdog.tick();
+      await _settle();
+
+      expect(target.oneShots, 1);
+      expect(target.restarts, 0);
+    });
+  }
 
   test('watchdog records bounded timeline envelope count from active sync',
       () async {

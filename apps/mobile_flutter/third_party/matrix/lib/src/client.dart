@@ -73,8 +73,10 @@ class Client extends MatrixApi {
   DatabaseApi? get database => _database;
 
   Encryption? get encryption => _encryption;
+
   /// Installed by the application for a captured authorized DB lifetime.
   RecoveryOperationOwner? recoveryOwner;
+
   /// Application lifecycle barrier after authorized credentials are adopted,
   /// before encryption initialization, durable credentials, or initial sync.
   Future<void> Function()? onRecoveryIdentityAdopted;
@@ -1644,6 +1646,10 @@ class Client extends MatrixApi {
   /// When a new sync response is coming in, this gives the complete payload.
   final CachedStreamController<SyncUpdate> onSync = CachedStreamController();
 
+  /// Local cached preview repairs; this is not a remote sync receipt.
+  final CachedStreamController<void> onRoomListUpdated =
+      CachedStreamController();
+
   /// This gives the current status of the synchronization
   final CachedStreamController<SyncStatusUpdate> onSyncStatus =
       CachedStreamController();
@@ -1851,6 +1857,8 @@ class Client extends MatrixApi {
     }
 
     if (storeInDatabase) {
+      await database
+          ?.prepareTimelineAuthority([roomId], eventIds: [event.eventId]);
       await database?.transaction(() async {
         await database.storeEventUpdate(
             EventUpdate(
@@ -2123,9 +2131,29 @@ class Client extends MatrixApi {
         userDeviceKeysLoading = database
             .getUserDeviceKeys(this)
             .then((keys) => _userDeviceKeys = keys);
-        roomsLoading = database.getRoomList(this).then((rooms) {
+        roomsLoading = database.getCachedRoomList(this).then((rooms) {
           _rooms = rooms;
           _sortRooms();
+          final account = this.userID;
+          bool isCurrent() =>
+              !_disposed &&
+              this.userID == account &&
+              identical(this.database, database) &&
+              identical(_rooms, rooms);
+          // Give cached metadata to the caller before reading any legacy
+          // timeline heads. Required states/account data are already loaded.
+          unawaited(Future<void>(() async {
+            if (!isCurrent()) return;
+            await database.refreshRoomListPreviews(
+                rooms.toList(growable: false), this,
+                isCurrent: isCurrent);
+            if (!isCurrent()) return;
+            _sortRooms();
+            onRoomListUpdated.add(null);
+          }).catchError((Object error) {
+            Logs().w(
+                'Optional cached preview repair failed (${error.runtimeType})');
+          }));
         });
         _accountDataLoading = database.getAccountData().then((data) {
           _accountData = data;
@@ -2257,7 +2285,9 @@ class Client extends MatrixApi {
         return;
       }
       _currentSync = null;
-      if (_backgroundSync && isLogged() && !_disposed) { unawaited(_sync()); }
+      if (_backgroundSync && isLogged() && !_disposed) {
+        unawaited(_sync());
+      }
     });
     return _currentSync = currentSync;
   }
@@ -2386,6 +2416,8 @@ class Client extends MatrixApi {
         await roomsLoading;
         await _accountDataLoading;
         if (!ownsLoop() || _disposed || _aborted) return;
+        await database.prepareSyncTimelineStorage(
+            syncResp, _eventsPendingDecryption.map((e) => e.event.roomID));
         _currentTransaction = database.transaction(() async {
           // An abort before this queued transaction starts must leave the
           // replacement loop's cache untouched. Once _handleSync has begun,
@@ -2470,6 +2502,8 @@ class Client extends MatrixApi {
     sync.deviceOneTimeKeysCount ??= {
       'signed_curve25519': encryption?.olmManager.maxNumberOfOneTimeKeys ?? 100,
     };
+    await database?.prepareSyncTimelineStorage(
+        sync, _eventsPendingDecryption.map((e) => e.event.roomID));
     await _handleSync(sync, direction: direction);
   }
 
@@ -2592,8 +2626,8 @@ class Client extends MatrixApi {
         final List<BasicEvent> events = [];
         for (final event in _eventsPendingDecryption) {
           if (event.event.roomID != roomId) continue;
-          if (!sessionIds.contains(
-              event.event.content['content']?['session_id'])) {
+          if (!sessionIds
+              .contains(event.event.content['content']?['session_id'])) {
             continue;
           }
 
@@ -2626,14 +2660,21 @@ class Client extends MatrixApi {
       ));
       final id = entry.key;
       final syncRoomUpdate = entry.value;
+      final historyGeneration =
+          direction == Direction.b ? getRoomById(id)?.historyGeneration : null;
 
       // Is the timeline limited? Then all previous messages should be
       // removed from the database!
       if (syncRoomUpdate is JoinedRoomUpdate &&
           syncRoomUpdate.timeline?.limited == true) {
+        getRoomById(id)?.invalidateHistoryFragment();
         await database?.deleteTimelineForRoom(id);
       }
       final room = await _updateRoomsByRoomUpdate(id, syncRoomUpdate);
+      bool currentHistory() =>
+          historyGeneration == null ||
+          room.historyGeneration == historyGeneration;
+      if (!currentHistory()) continue;
 
       final timelineUpdateType = direction != null
           ? (direction == Direction.b
@@ -2651,12 +2692,14 @@ class Client extends MatrixApi {
             room,
             state,
             EventUpdateType.state,
+            historyGeneration: historyGeneration,
           );
         }
 
         final timelineEvents = syncRoomUpdate.timeline?.events;
         if (timelineEvents != null && timelineEvents.isNotEmpty) {
-          await _handleRoomEvents(room, timelineEvents, timelineUpdateType);
+          await _handleRoomEvents(room, timelineEvents, timelineUpdateType,
+              historyGeneration: historyGeneration);
         }
 
         final ephemeral = syncRoomUpdate.ephemeral;
@@ -2674,6 +2717,7 @@ class Client extends MatrixApi {
             room,
             accountData,
             EventUpdateType.accountData,
+            historyGeneration: historyGeneration,
           );
         }
       }
@@ -2682,18 +2726,18 @@ class Client extends MatrixApi {
         final timelineEvents = syncRoomUpdate.timeline?.events;
         if (timelineEvents != null && timelineEvents.isNotEmpty) {
           await _handleRoomEvents(room, timelineEvents, timelineUpdateType,
-              store: false);
+              store: false, historyGeneration: historyGeneration);
         }
         final accountData = syncRoomUpdate.accountData;
         if (accountData != null && accountData.isNotEmpty) {
           await _handleRoomEvents(
               room, accountData, EventUpdateType.accountData,
-              store: false);
+              store: false, historyGeneration: historyGeneration);
         }
         final state = syncRoomUpdate.state;
         if (state != null && state.isNotEmpty) {
           await _handleRoomEvents(room, state, EventUpdateType.state,
-              store: false);
+              store: false, historyGeneration: historyGeneration);
         }
       }
 
@@ -2703,7 +2747,10 @@ class Client extends MatrixApi {
           await _handleRoomEvents(room, state, EventUpdateType.inviteState);
         }
       }
-      await database?.storeRoomUpdate(id, syncRoomUpdate, room.lastEvent, this);
+      if (currentHistory()) {
+        await database?.storeRoomUpdate(
+            id, syncRoomUpdate, room.lastEvent, this);
+      }
     }
   }
 
@@ -2746,12 +2793,16 @@ class Client extends MatrixApi {
 
   Future<void> _handleRoomEvents(
       Room room, List<BasicEvent> events, EventUpdateType type,
-      {bool store = true}) async {
+      {bool store = true, int? historyGeneration}) async {
+    bool currentHistory() =>
+        historyGeneration == null ||
+        room.historyGeneration == historyGeneration;
     // Calling events can be omitted if they are outdated from the same sync. So
     // we collect them first before we handle them.
     final callEvents = <Event>[];
 
     for (final event in events) {
+      if (!currentHistory()) return;
       // The client must ignore any new m.room.encryption event to prevent
       // man-in-the-middle attacks!
       if ((event.type == EventTypes.Encryption &&
@@ -2768,6 +2819,7 @@ class Client extends MatrixApi {
           EventUpdate(roomID: room.id, type: type, content: event.toJson());
       if (event.type == EventTypes.Encrypted && encryptionEnabled) {
         update = await update.decrypt(room);
+        if (!currentHistory()) return;
 
         // if the event failed to decrypt, add it to the queue
         if (update.content.tryGet<String>('type') == EventTypes.Encrypted) {
@@ -2786,6 +2838,7 @@ class Client extends MatrixApi {
           // an unknown amount of network requests as we never know how many
           // member change events can come down in a single sync update.
           await database?.markUserProfileAsOutdated(userId);
+          if (!currentHistory()) return;
           onUserProfileUpdate.add(userId);
         }
       }
@@ -2797,6 +2850,7 @@ class Client extends MatrixApi {
           room.getState(EventTypes.RoomMember, event.senderId) == null) {
         // In order to correctly render room list previews we need to fetch the member from the database
         final user = await database?.getUser(event.senderId, room);
+        if (!currentHistory()) return;
         if (user != null) {
           room.setState(user);
         }
@@ -2804,9 +2858,11 @@ class Client extends MatrixApi {
       _updateRoomsByEventUpdate(room, update);
       if (type != EventUpdateType.ephemeral && store) {
         await database?.storeEventUpdate(update, this);
+        if (!currentHistory()) return;
       }
       if (encryptionEnabled) {
         await encryption?.handleEventUpdate(update);
+        if (!currentHistory()) return;
       }
       onEvent.add(update);
 

@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/emoji_text.dart';
+
 Widget _host(String text) => CupertinoApp(
       home: CupertinoPageScaffold(
         child: EmojiText(text),
@@ -18,23 +19,24 @@ void main() {
     expect(find.byType(SvgPicture), findsNothing);
   });
 
-  testWidgets('known emoji renders the inline ANIMATED glyph', (tester) async {
+  testWidgets(
+      'known emoji retains offline inline SVG while animated resource is absent',
+      (tester) async {
     // 混排动效：动态库收录的表情在文本流中持续播放（Animated WebP）。
     await tester.pumpWidget(_host('你好😂'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(EmojiAnimatedGlyph), findsOneWidget);
-    final rich = tester.widget<Text>(find.byType(Text)).textSpan!
-        as TextSpan;
+    expect(find.byType(EmojiAnimatedGlyph), findsNothing);
+    final rich = tester.widget<Text>(find.byType(Text)).textSpan! as TextSpan;
     final spans = rich.children!;
     expect(spans, hasLength(2));
     expect((spans[0] as TextSpan).text, '你好');
     final widgetSpan = spans[1] as WidgetSpan;
     expect(widgetSpan.alignment, PlaceholderAlignment.middle);
-    final glyph = widgetSpan.child as EmojiAnimatedGlyph;
-    expect(glyph.asset, 'assets/emoji/joy.webp');
-    expect(find.byType(Image), findsOneWidget);
-    expect(find.byType(SvgPicture), findsNothing);
+    final glyph = widgetSpan.child as EmojiVectorGlyph;
+    expect(glyph.asset, endsWith('.svg'));
+    expect(find.byType(Image), findsNothing);
+    expect(find.byType(SvgPicture), findsOneWidget);
   });
 
   testWidgets('mixed text splits plain segments around each emoji',
@@ -43,10 +45,9 @@ void main() {
     await tester.pumpWidget(_host('a😂b⭐c'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(EmojiAnimatedGlyph), findsOneWidget);
-    expect(find.byType(SvgPicture), findsOneWidget);
-    final rich = tester.widget<Text>(find.byType(Text)).textSpan!
-        as TextSpan;
+    expect(find.byType(EmojiAnimatedGlyph), findsNothing);
+    expect(find.byType(SvgPicture), findsNWidgets(2));
+    final rich = tester.widget<Text>(find.byType(Text)).textSpan! as TextSpan;
     final spans = rich.children!;
     expect((spans[0] as TextSpan).text, 'a');
     expect(spans[1], isA<WidgetSpan>());

@@ -403,7 +403,7 @@ void main() {
     await client.dispose();
   });
 
-  test('initial history attachment failure disposes already opened primary',
+  test('required history anchor failure disposes already opened primary',
       () async {
     final registry = DuplicateRoomRegistry();
     await registry.record(
@@ -420,7 +420,36 @@ void main() {
         homeserver: Uri.parse('https://test'), duplicateRooms: registry);
     final lease = await owner.openRoomLease(primary.id);
     await expectLater(
-        lease.openLogicalRoomTimeline(onUpdate: () {}), throwsStateError);
+        lease.openLogicalRoomTimeline(
+            onUpdate: () {},
+            anchorRoomId: '!old:test',
+            anchorEventId: 'synthetic-required-anchor'),
+        throwsStateError);
+    expect(primary.timeline.cancellations, 1);
+    await lease.cancel();
+  });
+
+  test('optional history failure leaves cached primary usable', () async {
+    final registry = DuplicateRoomRegistry();
+    await registry.record(
+        accountId: '@me:test',
+        peerId: '@peer:test',
+        primaryRoomId: '!new:test',
+        duplicateRoomId: '!old:test');
+    final client = _Client();
+    final primary = _Room(client, '!new:test', peer: '@peer:test');
+    client.roomsById[primary.id] = primary;
+    client.roomsById['!old:test'] = _Room(client, '!old:test')
+      ..failTimeline = true;
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'), duplicateRooms: registry);
+    final lease = await owner.openRoomLease(primary.id);
+    final timeline = await lease.openLogicalRoomTimeline(onUpdate: () {});
+    await Future<void>.delayed(Duration.zero);
+    expect(primary.timeline.cancellations, 0,
+        reason: 'optional secondary failure must not retire the usable head');
+    expect(timeline.snapshot(), isEmpty);
+    timeline.dispose();
     expect(primary.timeline.cancellations, 1);
     await lease.cancel();
   });
