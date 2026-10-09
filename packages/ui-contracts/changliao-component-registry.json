@@ -2800,5 +2800,30 @@
       "moments-composer-video-too-large"
     ],
     "scope": "Android release only; shared Flutter implementation"
+  },
+  "adminNavigationStaff20260930": {
+    "scope": "admin-web-only; no Flutter changes",
+    "html": [
+      "frontend/src/admin-dashboard.js",
+      "frontend/src/admin-pagination.js",
+      "frontend/src/admin-support-panel.js",
+      "frontend/src/admin-user-panel.js"
+    ],
+    "demo": "frontend/src/catalog/admin-navigation-staff.html",
+    "variants": [
+      "administrator",
+      "staff",
+      "desktop",
+      "narrow"
+    ],
+    "states": [
+      "loading",
+      "empty",
+      "error",
+      "paged",
+      "confirmation",
+      "role-removed"
+    ],
+    "tokens": "existing admin-modern palette; Chinese role badges and nested wallet navigation"
   }
 }

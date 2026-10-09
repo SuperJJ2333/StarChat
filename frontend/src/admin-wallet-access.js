@@ -1,12 +1,16 @@
 // The server owns authorization. This clock only hides stale private UI earlier.
 const failure=code=>Object.assign(Error('钱包验证状态已变化，请重新验证并查询当前状态。'),{code,status:403});
 const WALLET_READ_METHODS=new Set([
+  'getSupportPayouts','getSupportPayout','getFxRate',
   'getDepositRepairCandidates','getManualDepositCaseContext','getManualDepositCase','getManualDepositCaseOperation',
   'getWalletRepair','getOwnerTransfer','getManualWalletDiagnostics','getWalletIncidents','getWalletIncident',
   'getWalletMonitorStatus','getManualWalletControl','getWalletHandover','getManualPayouts','getManualPayout',
   'getChainSummary','getChainTransactions','getChainTransaction','getWalletOperationSecurity','getWalletMfaStatus'
 ]);
 const CREDENTIAL_METHODS=new Set(['setWalletOperationPassword','enrollWalletMfa','enableWalletMfa','abortWalletMfaEnrollment']);
+const PAYOUT_SESSION_ACTIONS=new Set(['claim','review-claim','heartbeat']);
+const PAYOUT_PROOF_ACTIONS=new Set(['begin-payment','adjust-rate','txid','correct-candidate','cancel-unstarted','stop-for-review']);
+const PAYOUT_PROOF_METHODS=new Set(['rejectSupportPayout','takeoverSupportPayout','selectSupportPayoutCandidate','voidUnbroadcastPayout']);
 export function createWalletAccess({api,actorId,getActorId=()=>actorId,now=()=>performance.now(),setTimer=setTimeout,clearTimer=clearTimeout,onChange=()=>{}}) {
   let current={kind:'unknown'},deadline=0,timer,disposed=false,generation=0,writeEpoch=0,readEpoch=0;
   function change(kind,extra={}) {
@@ -53,7 +57,7 @@ export function createWalletAccess({api,actorId,getActorId=()=>actorId,now=()=>p
     check:()=>update(()=>api.getWalletAccess()),
     verify:proof=>update(()=>api.verifyWalletAccess(proof),{verificationAttempt:true}),
     lock(){if(!disposed){++generation;change('unknown');}},
-    async read(call){if(!readAllowed())throw failure('WALLET_ACCESS_REQUIRED');const version=readEpoch;try{const value=await call();if(!readAllowed()||version!==readEpoch)throw failure('WALLET_ACCESS_REQUIRED');return value;}catch(error){if(!disposed&&version===readEpoch){if(error?.code==='WALLET_ACCESS_REQUIRED')change('forbidden');else if(['NETWORK_ERROR','AUTH_REQUIRED','ACCESS_TOKEN_INVALID','ADMIN_SESSION_CHANGED','UNAUTHORIZED','PERMISSION_DENIED'].includes(error?.code)||[401,403].includes(error?.status))reject(error);else change('network',{error:'暂时无法确认钱包资料，请检查网络后重试。'});}throw error;}},
+    async read(call){if(!readAllowed())throw failure('WALLET_ACCESS_REQUIRED');const version=readEpoch;try{const value=await call();if(version!==readEpoch)throw failure('WALLET_READ_RECHECK');if(!readAllowed())throw failure('WALLET_ACCESS_REQUIRED');return value;}catch(error){if(!disposed&&version===readEpoch){if(error?.code==='WALLET_ACCESS_REQUIRED')change('forbidden');else if(['NETWORK_ERROR','AUTH_REQUIRED','ACCESS_TOKEN_INVALID','ADMIN_SESSION_CHANGED','UNAUTHORIZED','PERMISSION_DENIED'].includes(error?.code)||[401,403].includes(error?.status))reject(error);else change('network',{error:'暂时无法确认钱包资料，请检查网络后重试。'});}throw error;}},
     async guard(call,{credentialChange=false}={}){if(!allowed())throw failure('WALLET_ACCESS_REQUIRED');const version=writeEpoch;try{const value=await call();if(!allowed()||version!==writeEpoch)throw failure('WALLET_ACCESS_REQUIRED');return value;}catch(error){if(!disposed&&current.kind!=='legacy'&&version===writeEpoch&&!(credentialChange&&error?.code==='RECENT_LOGIN_REQUIRED')&&(['WALLET_ACCESS_REQUIRED','AUTH_REQUIRED','ACCESS_TOKEN_INVALID','UNAUTHORIZED'].includes(error?.code)||[401,403].includes(error?.status)))reject(error,{verificationAttempt:true});throw error;}},
     dispose(){disposed=true;++generation;++writeEpoch;++readEpoch;clearTimer(timer);}
   };
@@ -65,7 +69,7 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
   const content=make('div'),pending=make('p','正在确认钱包验证状态…');
   pending.setAttribute('role','status');pending.hidden=true;root.append(content,pending);
   let child,dialog,disposed=false,sessionChanged=false,background,previousOverflow,poll,setup,dialogKind,writeRequested=false,lastReadKind=null;
-  let pendingRecheck=null,pollPending=false,pollToken=0,suspended=false;
+  let pendingRecheck=null,pendingPoll=null,pollPending=false,pollToken=0,suspended=false;
   const channel=typeof BroadcastChannel==='function'?new BroadcastChannel(`chatflow-${scope}-access`):null;
   function clearContent(){child?.dispose?.();child=null;content.replaceChildren();}
   function close(){setup?.dispose?.();setup=null;dialogKind=null;if(dialog){dialog.close();dialog.remove();dialog=null;}if(background){background.inert=false;background.classList.remove('wallet-access-obscured');background=null;}if(previousOverflow!==undefined){document.body.style.overflow=previousOverflow;previousOverflow=undefined;}}
@@ -129,16 +133,42 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
     usesGrant:()=>gate.state().kind!=='legacy',
     async requestWriteGrant(){if(!sameSession()){invalidateSession();return false;}if(pollPending)return false;if(gate.allowed())return true;if(!gate.readAllowed())return false;writeRequested=true;show(gate.state());return false;}
   };
+  const waitForCheck=async()=>{let check;while((check=pendingRecheck??pendingPoll))await check;};
+  const checkedRead=async invoke=>{
+    await waitForCheck();
+    try{return await gate.read(invoke);}catch(error){
+      // Only a locally invalidated GET may be fetched anew; never retry an
+      // authorization denial, a network failure, or a financial command.
+      if(error?.code!=='WALLET_READ_RECHECK'||disposed||!sameSession())throw error;
+      await waitForCheck();if(!gate.readAllowed()||disposed||!sameSession())throw error;
+      return gate.read(invoke);
+    }
+  };
   const guarded=new Proxy(api,{get(target,key){const value=target[key];if(typeof value!=='function')return value;return async(...args)=>{
+    if(disposed)throw failure('WALLET_ACCESS_REQUIRED');
     if(!sameSession()){invalidateSession();throw failure('WALLET_ACCESS_REQUIRED');}
     const invoke=async()=>{const result=await value.apply(target,args);if(!sameSession()){invalidateSession();throw failure('WALLET_ACCESS_REQUIRED');}return result;};
-    if(key==='getModule')return args[0]==='wallet'?gate.read(invoke):Promise.reject(failure('WALLET_ACCESS_REQUIRED'));
-    if(WALLET_READ_METHODS.has(key))return gate.read(invoke);
+    if(key==='getModule')return args[0]==='wallet'?checkedRead(invoke):Promise.reject(failure('WALLET_ACCESS_REQUIRED'));
+    if(WALLET_READ_METHODS.has(key))return checkedRead(invoke);
+    if(key==='supportPayoutCommand'&&PAYOUT_SESSION_ACTIONS.has(args[1])){
+      await waitForCheck();return gate.read(invoke);
+    }
     if(CREDENTIAL_METHODS.has(key)){
       if(!gate.readAllowed())throw failure('WALLET_ACCESS_REQUIRED');
       const result=await invoke();gate.lock();channel?.postMessage('changed');await gate.check();return result;
     }
+    const body=key==='supportPayoutCommand'&&PAYOUT_PROOF_ACTIONS.has(args[1])?args[2]:PAYOUT_PROOF_METHODS.has(key)?args[1]:null;
+    const proof=body?.proof??(key==='voidUnbroadcastPayout'?body:null);
+    if(gate.state().auth_mode==='operation_password'&&typeof proof?.operation_password==='string'&&proof.operation_password.length){
+      await waitForCheck();
+      if(disposed||!sameSession())throw failure('WALLET_ACCESS_REQUIRED');
+      if(!gate.allowed()&&!await gate.verify({operation_password:proof.operation_password}))throw failure('WALLET_ACCESS_REQUIRED');
+    }
     if(pollPending)throw failure('WALLET_ACCESS_REQUIRED');
+    if(!gate.allowed()){
+      await accessController.requestWriteGrant();
+      throw failure('WALLET_ACCESS_REQUIRED');
+    }
     return gate.guard(invoke);
   };}});
   const recheck=()=>{if(disposed||document.hidden)return Promise.resolve(false);if(pendingRecheck)return pendingRecheck;if(pollPending){pollPending=false;++pollToken;}gate.lock();pendingRecheck=gate.check().finally(()=>{pendingRecheck=null;});return pendingRecheck;};
@@ -147,7 +177,7 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
   if(channel)channel.onmessage=recheck;
   globalThis.addEventListener('focus',focus);globalThis.addEventListener('storage',storage);document.addEventListener('visibilitychange',focus);
   // Read-only polling discovers server revocation and updates from other tabs.
-  poll=setInterval(()=>{if(disposed||document.hidden||pollPending||pendingRecheck||['login','forbidden'].includes(gate.state().kind))return;if(!sameSession()){invalidateSession();return;}pollPending=true;const token=++pollToken;void gate.check().finally(()=>{if(token===pollToken)pollPending=false;});},30000);
+  poll=setInterval(()=>{if(disposed||document.hidden||pollPending||pendingRecheck||['login','forbidden'].includes(gate.state().kind))return;if(!sameSession()){invalidateSession();return;}pollPending=true;const token=++pollToken;const check=gate.check().finally(()=>{if(token===pollToken)pollPending=false;if(pendingPoll===check)pendingPoll=null;});pendingPoll=check;},30000);
   root.exportReadView=()=>!disposed&&sameSession()&&!pendingRecheck&&!pollPending&&gate.readAllowed()?child?.exportReadView?.()??null:null;
   root.refreshOrders=async()=>{if(!sameSession()){invalidateSession();return;}if(gate.readAllowed())await child?.refreshOrders?.();};
   root.refresh=async()=>{await recheck();if(!sameSession()){invalidateSession();return false;}if(!gate.readAllowed())return false;return await child?.refresh?.();};

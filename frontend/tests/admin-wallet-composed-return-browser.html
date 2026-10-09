@@ -51,9 +51,9 @@ const fetchStub = async (input) => {
   if (path === '/api/v1/admin/wallet/chain/transactions') {
     const query = Object.fromEntries(url.searchParams);
     calls.lists.push(query);
-    const offset = Number(query.offset ?? 0), count = Math.min(25, 30 - offset);
+    const offset = Number(query.offset ?? 0), count = Math.min(Number(query.limit), 15 - offset);
     return json({items: Array.from({length: count}, (_, i) => transaction(offset + i)),
-      total: 30, offset, snapshot: chainVersion === 1 ? 7 : 8});
+      total: 15, offset, snapshot: chainVersion === 1 ? 7 : 8});
   }
   if (path.startsWith('/api/v1/admin/wallet/chain/transactions/')) {
     calls.details++;
@@ -108,14 +108,14 @@ try {
   const {adminSession} = await import(`/src/${sessionImport}`);
   await import('/src/admin-home.js');
   document.body.dataset.stage = 'shell';
-  await until(() => document.querySelector('[data-module="wallet"]'), 'real admin shell');
-  nav('wallet');
+  await until(() => document.querySelector('[data-module="wallet-chain"]'), 'real admin shell');
+  nav('wallet-chain');
   document.body.dataset.stage = 'initial-auth';
   await until(() => accessReplies.length === 1, 'initial owner check');
   noPrivateView('initial entry');
   accessReplies.shift()();
   document.body.dataset.stage = 'initial-chain';
-  await until(() => chain()?.querySelectorAll('tbody tr').length === 25, 'initial chain page');
+  await until(() => chain()?.querySelectorAll('tbody tr').length === 10, 'initial chain page');
   check(calls.summary === 1 && calls.lists.length === 1, 'initial chain data is loaded once');
 
   const first = chain();
@@ -126,7 +126,7 @@ try {
   button(first, '下一页').click();
   document.body.dataset.stage = 'page-two';
   await until(() => calls.lists.length === 3 && first.querySelectorAll('tbody tr').length === 5, 'second page');
-  check(calls.lists.at(-1).offset === '25' && calls.lists.at(-1).direction === 'UNMATCHED_OUTFLOW',
+  check(calls.lists.at(-1).offset === '10' && calls.lists.at(-1).direction === 'UNMATCHED_OUTFLOW',
     'applied filter and offset reached the second page');
   first.querySelector('input[aria-label="完整交易哈希"]').value = draftTxid;
   const rows = first.querySelector('.admin-table-scroll');
@@ -145,7 +145,7 @@ try {
   await until(() => document.querySelector('.admin-module-panel'), 'other menu');
   check(!details()?.open, 'menu switch closes the detached detail');
   const beforeReturn = counts();
-  nav('wallet');
+  nav('wallet-chain');
   document.body.dataset.stage = 'return-auth';
   await until(() => accessReplies.length === 1, 'return owner check');
   noPrivateView('same-session return');
@@ -158,7 +158,7 @@ try {
   const restored = chain();
   check(restored.querySelector('select[aria-label="流水方向"]').value === 'UNMATCHED_OUTFLOW', 'applied direction restored');
   check(restored.querySelector('input[aria-label="完整交易哈希"]').value === draftTxid, 'unapplied filter draft restored');
-  check(restored.textContent.includes('显示 26–30') && restored.textContent.includes('本页缓存于'), 'page and cache time restored');
+  check(restored.textContent.includes('显示 11–15') && restored.textContent.includes('本页缓存于'), 'page and cache time restored');
   check(restored.textContent.includes('最近成功扫描'), 'observer scan time remains separate');
   check(details().textContent.includes('cached-owner-unique'), 'already read detail restored');
   check(restored.querySelector('.admin-table-scroll').scrollLeft === savedScroll[0], 'table horizontal scroll restored');
@@ -183,7 +183,7 @@ try {
   chainVersion = 2;
   const beforeReplacement = counts();
   const accessBeforeReplacement = calls.access;
-  nav('wallet');
+  nav('wallet-chain');
   document.body.dataset.stage = 'epoch-auth';
   await until(() => calls.access === accessBeforeReplacement + 1 && accessReplies.length === 1, 'new-epoch owner check');
   noPrivateView('same-actor new session');

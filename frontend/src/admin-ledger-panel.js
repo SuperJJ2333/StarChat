@@ -1,3 +1,4 @@
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
 import {formatBeijingTime, parseBeijingInput} from './admin-formatters.js';
 const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
 const scenes={GROUP:'群聊红包',EXCLUSIVE:'专属红包',DIRECT:'单聊红包',TRANSFER:'转账',OTHER:'其他',UNKNOWN:'红包场景待核实'};
@@ -30,11 +31,13 @@ export function ledgerPanel(api){
   const state=node('p','正在读取流水…','admin-audit-note');state.setAttribute('role','status');
   const rows=node('div',undefined,'admin-table-scroll'),paging=node('div',undefined,'admin-filters');
   const previous=node('button','上一页','admin-secondary'),next=node('button','下一页','admin-secondary');previous.type=next.type='button';paging.append(previous,next);panel.append(form,state,rows,paging);
+  let pageSize=10;
+  paging.append(pageSizeControl(changePageSize(value=>pageSize=value,()=>load(active,0,[undefined]))));
   let active={},stack=[undefined],index=0,nextCursor,revision=0,disposed=false,busy=false;
   async function load(filters=active,page=index,cursors=stack){
     const version=++revision;busy=true;submit.disabled=reset.disabled=previous.disabled=next.disabled=true;rows.setAttribute('aria-busy','true');
     try{
-      const result=await api.getLedgerEntries({...filters,limit:25,cursor:cursors[page]});if(disposed||version!==revision)return false;
+      const result=await api.getLedgerEntries({...filters,limit:pageSize,cursor:cursors[page]});if(disposed||version!==revision)return false;
       active=filters;index=page;stack=cursors;nextCursor=result.next_cursor;
       const table=node('table',undefined,'admin-table'),head=node('thead'),headers=node('tr'),body=node('tbody');
       for(const text of ['时间（北京时间）','畅聊号','用户名','类型','金额（点钻）','原因','交易编号'])headers.append(node('th',text));head.append(headers);

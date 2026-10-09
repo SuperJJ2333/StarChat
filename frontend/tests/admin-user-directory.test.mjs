@@ -21,7 +21,7 @@ async function setup(api){
 
 test('administrator directory shows exact contact and balance fields from its dedicated endpoint',async()=>{
   const calls=[];const panel=await setup({searchUsers:async query=>{calls.push(query);return {items:[account],total:1,next_cursor:null};}});
-  assert.deepEqual(calls,[{q:'',limit:50,cursor:null}]);
+  assert.deepEqual(calls,[{q:'',limit:10,cursor:null}]);
   assert.deepEqual(panel.find('th').map(item=>item.textContent),['畅聊号','昵称','邮箱','手机号','点钻余额','账号状态','客服头衔']);
   const cells=panel.find('td').map(item=>item.textContent);
   assert.ok(cells.includes('chat0001'));assert.ok(cells.some(value=>value.includes('a@example.test')));
@@ -40,7 +40,7 @@ test('directory search and cursor navigation ignore a stale response',async()=>{
   assert.ok(panel.find('td').some(item=>item.textContent==='new'));
   assert.ok(!panel.find('td').some(item=>item.textContent==='old'));
   await panel.find('button').find(item=>item.textContent==='下一页').handlers.click();
-  assert.deepEqual(requests.at(-1),{q:'new@example.test',limit:50,cursor:'opaque'});
+  assert.deepEqual(requests.at(-1),{q:'new@example.test',limit:10,cursor:'opaque'});
   panel.dispose();
 });
 
@@ -51,7 +51,7 @@ test('failed directory search keeps the displayed page and offers explicit retry
   await panel.find('form')[0].handlers.submit({preventDefault(){}});
   assert.ok(panel.find('td').some(item=>item.textContent==='chat0001'));
   fail=false;await panel.find('button').find(item=>item.textContent==='重新加载').handlers.click();
-  assert.deepEqual(requests.at(-1),{q:'nobody',limit:50,cursor:null});
+  assert.deepEqual(requests.at(-1),{q:'nobody',limit:10,cursor:null});
   assert.ok(panel.find('td').some(item=>item.textContent==='chat0001'));
 });
 

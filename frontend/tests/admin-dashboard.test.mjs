@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {formatPoints, trendGeometry, refreshCoordinator} from '../src/admin-dashboard.js';
+import {formatPoints, trendGeometry, refreshCoordinator, walletNavigation} from '../src/admin-dashboard.js';
 
 test('staff navigation excludes administrator USDT wallet without broadening permissions',async()=>{
   const {visibleAdminModules}=await import('../src/admin-dashboard.js');
@@ -38,4 +38,9 @@ test('one refresh joins repeated clicks and isolates partial failures',async()=>
   const tasks=[()=>{calls++;return new Promise(r=>{finish=r;});},async()=>{throw Error('offline');}];
   const first=refresh(tasks),second=refresh(tasks);await Promise.resolve();assert.equal(calls,1);finish('done');
   const result=await first;await second;assert.equal(result[0].status,'fulfilled');assert.equal(result[1].status,'rejected');
+});
+
+test('wallet navigation exposes five distinct authorized submodule routes',()=>{
+  assert.deepEqual(walletNavigation({permissions:['*']}).map(x=>x[0]),['wallet-chain','wallet-payout','wallet-monitor','wallet-owner','wallet-security']);
+  assert.deepEqual(walletNavigation({permissions:['admin.withdrawals.read']}),[]);
 });

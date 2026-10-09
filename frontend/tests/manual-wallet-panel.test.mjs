@@ -931,3 +931,118 @@ test('critical wallet writes expose a dedicated button class while read actions 
  assert.match(submitFor(paused,'control-resume').className,/\bwallet-critical-action\b/);
  assert.match(submitFor(paused,'txid').className,/\bwallet-critical-action\b/);
 });
+
+test('void preview explicitly requests write grant before querying then requires another confirmation',async()=>{
+ let authorized=false,requests=0,previews=0;const current={...order,status:'UNKNOWN',version:1,claimed_by:'owner'};
+ const panel=setup({getManualPayout:async()=>current,getVoidUnbroadcastPreview:async()=>{previews++;return {status:'READY',evidence:{observation_id:'fixture',checkpoint:1790748000000}};}},{walletAccess:true,accessController:{canWrite:()=>authorized,requestWriteGrant:async()=>{requests++;return authorized;}}});
+ await settle();await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+ assert.equal(previews,0);const verify=modal.find('button').find(x=>x.textContent==='验证钱包操作权限并重新核验');assert.ok(verify);
+ await verify.handlers.click();assert.equal(requests,1);assert.equal(previews,0);
+ authorized=true;await verify.handlers.click();assert.equal(requests,2);assert.equal(previews,1);
+ const form=modal.find('form').find(x=>x.name==='void-unbroadcast');assert.ok(form);
+ assert.ok(form.find('input').some(x=>x.name==='mfa_proof'),'void retains independent proof');panel.dispose();
+});
+
+
+test('CAIBI funded adjusted payout validates original USDT quote and copies final payable',async()=>{
+ const values=[];const funded={...order,status:'UNKNOWN',version:1,claimed_by:'owner',amount:'29.754820',final_receive:'10.000000',snapshot:{...order.snapshot,funding_asset:'CAIBI',funding_amount:'200.00',amount:'200.000000',hold:'29.754820',receive:'29.754820'}};
+ const panel=setup({getManualPayout:async()=>funded,getVoidUnbroadcastPreview:async()=>({status:'READY',evidence:{observation_id:'fixture',checkpoint:1790748000000}})},{clipboard:{writeText:async value=>values.push(value)}});
+ await settle();await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+ assert.ok(modal.find('form').some(x=>x.name==='void-unbroadcast'));
+ assert.ok(modal.find('dt').some(x=>x.textContent==='申请本金 点钻'));
+ assert.ok(modal.find('dd').some(x=>x.textContent==='200.00'));
+ await modal.find('button').find(x=>x.textContent==='复制精确金额').handlers.click();assert.deepEqual(values,['10.000000']);panel.dispose();
+});
+
+
+test('CAIBI quote mismatch keeps payout actions closed',async()=>{
+ const funded={...order,status:'UNKNOWN',version:1,claimed_by:'owner',amount:'29.754820',snapshot:{...order.snapshot,funding_asset:'CAIBI',funding_amount:'200.00',amount:'201.000000',hold:'29.754820',receive:'29.754820'}};
+ const panel=setup({getManualPayout:async()=>funded});await settle();await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');assert.equal(modal.find('form').length,0);assert.ok(modal.find('p').some(x=>x.textContent?.includes('金额校验失败')));panel.dispose();
+});
+
+
+test('view payout opens modal immediately and exposes failed read there',async()=>{
+ let rejectRead;const panel=setup({getManualPayout:()=>new Promise((_,reject)=>{rejectRead=reject;})});
+ await settle();const pending=panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+ assert.ok(modal?.open);assert.ok(modal.find('p').some(x=>x.textContent?.includes('正在加载')));
+ rejectRead(new Error('unavailable'));await pending;
+ assert.ok(modal.find('p').some(x=>x.textContent?.includes('详情读取或金额校验失败')));
+ panel.dispose();assert.equal(modal.open,false);
+});
+
+
+test('closing payout modal prevents late read from restoring details',async()=>{
+ let complete;const panel=setup({getManualPayout:()=>new Promise(resolve=>{complete=resolve;})});
+ await settle();const pending=panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+ const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');assert.ok(modal?.open);
+ modal.find('button').find(x=>x['aria-label']==='关闭出款详情').handlers.click();
+ complete(order);await pending;assert.equal(modal.open,false);assert.equal(modal.find('form').length,0);panel.dispose();
+});
+
+
+test('payout auth failures expose reauthentication within the open modal',async()=>{
+ for(const error of [{code:'RECENT_LOGIN_REQUIRED'},{status:401,code:'UNAUTHORIZED'}]){
+  const panel=setup({getManualPayout:async()=>{throw error;}},{onReauthenticate:async()=>true});await settle();
+  await panel.find('button').find(x=>x.textContent==='查看出款').handlers.click();
+  const modal=document.body.find('dialog').find(x=>x['aria-label']==='出款详情');
+  assert.ok(modal?.open);assert.ok(modal.find('button').some(x=>x.textContent==='重新登录'));panel.dispose();
+ }
+});
+
+
+test('standalone wallet sections do not load other module lists',async()=>{
+  for(const view of ['payout','monitor','owner','security']){
+    const calls=[];const panel=setup({getManualPayouts:async()=>{calls.push('payout');return {items:[]};},getWalletIncidents:async()=>{calls.push('monitor');return {items:[]};}},{view,walletAccess:true});await settle();
+    assert.deepEqual(calls,view==='payout'?['payout']:view==='monitor'?['monitor']:[]);panel.dispose();
+  }
+});
+
+
+test('unknown payout void requires both declarations and keeps its request key after an unknown result',async()=>{
+ const calls=[],store=storage();
+ const pending={...order,status:'UNKNOWN',version:3,final_receive:'10.000000',claimed_by:'owner',claimed_at:'2026-09-29T14:45:51Z'};
+ const panel=setup({getManualPayout:async()=>pending,getVoidUnbroadcastPreview:async()=>({status:'READY',reason_code:null,evidence:{observation_id:'42',checkpoint:1790710000000,matching_outflows:0,suspicious_outflows:0}}),voidUnbroadcastPayout:async(id,body,options)=>{calls.push({id,body,options});throw {code:'NETWORK_ERROR'};}},{storage:store,walletAccess:true});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ const form=panel.find('form').find(n=>n.name==='void-unbroadcast');
+ assert.ok(form);
+ assert.ok(panel.find('p').some(n=>n.textContent?.includes('链上观察已覆盖')));
+ assert.ok(panel.find('dd').some(n=>n.textContent==='10.000000'));
+ form.find('input').find(n=>n.name==='reason_code').value='NEVER_BROADCAST_CONFIRMED';
+ form.find('input').find(n=>n.name==='mfa_proof').value='123456';
+ await form.handlers.submit({preventDefault(){}});assert.equal(calls.length,0);
+ form.find('input').find(n=>n.name==='never_signed').checked=true;
+ form.find('input').find(n=>n.name==='never_broadcast').checked=true;
+ form.find('input').find(n=>n.name==='mfa_proof').value='123456';
+ await form.handlers.submit({preventDefault(){}});
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].body.expected_version,3);
+ assert.equal(calls[0].body.never_signed,true);
+ assert.equal(calls[0].body.never_broadcast,true);
+ assert.equal(calls[0].body.mfa_proof,'123456');
+ await panel.refresh();
+ const restored=panel.find('form').find(n=>n.name==='void-unbroadcast');
+ for(const name of ['never_signed','never_broadcast'])restored.find('input').find(n=>n.name===name).checked=true;
+ restored.find('input').find(n=>n.name==='mfa_proof').value='654321';
+ await restored.handlers.submit({preventDefault(){}});
+ assert.equal(calls.length,2);
+ assert.equal(calls[0].options.idempotencyKey,calls[1].options.idempotencyKey);
+ assert.ok(!JSON.stringify([...store.data]).includes('123456'));
+});
+
+test('unavailable chain preview keeps unknown payout visible but disables void submission',async()=>{
+ const panel=setup({getManualPayout:async()=>({...order,status:'UNKNOWN',version:3,claimed_by:'owner'}),getVoidUnbroadcastPreview:async()=>({status:'UNAVAILABLE',reason_code:'WALLET_PAYOUT_VOID_EVIDENCE_UNAVAILABLE',evidence:null})});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ assert.ok(panel.find('p').some(n=>n.textContent?.includes('链上观察暂不可用')));
+ assert.equal(panel.find('form').some(n=>n.name==='void-unbroadcast'),false);
+});
+
+test('voided payout is terminal and has a distinct status label',async()=>{
+ const panel=setup({getManualPayout:async()=>({...order,status:'VOIDED',version:4})});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ assert.ok(panel.find('p').some(n=>n.textContent==='已撤销（确认未广播）'));
+ assert.equal(panel.find('form').some(n=>n.name==='void-unbroadcast'),false);
+});

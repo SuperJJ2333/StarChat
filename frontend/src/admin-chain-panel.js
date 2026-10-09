@@ -1,7 +1,8 @@
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
 import { formatBeijingTime, parseBeijingInput } from './admin-formatters.js';
 import {detailDialog} from './admin-detail-dialog.js';
 import {walletRepairDialog} from './admin-wallet-repair-dialog.js?v=20260928-admin-entry';
-import {shortHash,shortChainValue,transferKey,validateChainReadView} from './admin-chain-view-state.js?v=20260929-wallet-workspace';
+import {shortHash,shortChainValue,transferKey,validateChainReadView} from './admin-chain-view-state.js?v=20260930-admin-navigation';
 
 function node(tag, text, className) {
   const result = document.createElement(tag);
@@ -107,7 +108,8 @@ export function chainPanel(api, {actorId,accessController,onSelectOwnerTransfer,
   let offset = 0, snapshot, activeFilters = {}, generation = 0, detailGeneration = 0, candidateGeneration = 0;
   let selectedRecord,readDetail,suspendedReadDetail,visibleItems,visibleTotal,healthSummary;
   let loading = false, disposed = false, suspendedForAccessCheck = false;
-  const limit = 25;
+  let limit = 10;
+  const sizeControl=pageSizeControl(changePageSize(value=>limit=value,()=>load({fresh:true,requestedOffset:0})));paging.append(sizeControl);
   let lastPaging=[true,true],stableState=state.textContent;
   function staleDetail(message) {
     detail.replaceChildren(...Array.from(detail.children).filter(child=>child.className!=="admin-chain-stale"),
@@ -295,7 +297,7 @@ export function chainPanel(api, {actorId,accessController,onSelectOwnerTransfer,
     txid.value=view.draftFilters.txid??'';
     dates[0].value=view.draftFilters.start??'';
     dates[1].value=view.draftFilters.end??'';
-    activeFilters=view.activeFilters;offset=view.offset;snapshot=view.snapshot;
+    limit=view.pageSize;sizeControl.commitPageSize(limit);activeFilters=view.activeFilters;offset=view.offset;snapshot=view.snapshot;
     visibleItems=view.items;visibleTotal=view.total;healthSummary=view.summary;
     renderSummary(healthSummary);
     state.textContent=view.total?
@@ -318,7 +320,7 @@ export function chainPanel(api, {actorId,accessController,onSelectOwnerTransfer,
     if(disposed||suspendedForAccessCheck||!healthSummary||!visibleItems)return null;
     return validateChainReadView({
       draftFilters:{direction:direction.value,txid:txid.value,start:dates[0].value,end:dates[1].value},
-      activeFilters,offset,snapshot,items:visibleItems.slice(0,limit),summary:healthSummary,total:visibleTotal,
+      pageSize:limit,activeFilters,offset,snapshot,items:visibleItems.slice(0,limit),summary:healthSummary,total:visibleTotal,
       pageScrollY:globalThis.window?.scrollY??0,scrollLeft:rows.scrollLeft??0,
       ...(detailModal&&readDetail&&selectedRecord?{detail:{item:readDetail.item,record:readDetail.record,open:true}}:{}),
       cachedAt:Date.now()
@@ -347,6 +349,6 @@ export function chainPanel(api, {actorId,accessController,onSelectOwnerTransfer,
   panel.dispose=()=>{disposed=true;suspendedForAccessCheck=true;suspendedReadDetail=undefined;
     ++generation;++detailGeneration;++candidateGeneration;detailModal?.close();repairModal?.close();};
   const restored=initialReadView?validateChainReadView(initialReadView):null;
-  if(restored)restoreReadView(restored);else void load();
+  if(restored&&[10,20,50].includes(restored.pageSize))restoreReadView(restored);else void load();
   return panel;
 }

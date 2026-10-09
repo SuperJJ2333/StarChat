@@ -70,9 +70,10 @@ function filters(source,draft){
 
 // A short-lived menu view is ordinary bounded data; unknown keys never enter the cache.
 export function validateChainReadView(source) {
-  if(!source||typeof source!=='object'||Array.isArray(source)||
-      !Array.isArray(source.items)||source.items.length>25||
-      !Number.isSafeInteger(source.offset)||source.offset<0||source.offset>1_000_000||source.offset%25!==0||
+  const pageSize=source?.pageSize??25;
+  if(![10,20,25,50].includes(pageSize)||!source||typeof source!=='object'||Array.isArray(source)||
+      !Array.isArray(source.items)||source.items.length>pageSize||
+      !Number.isSafeInteger(source.offset)||source.offset<0||source.offset>1_000_000||source.offset%pageSize!==0||
       !Number.isSafeInteger(source.total)||source.total<source.offset+source.items.length||
       !Number.isSafeInteger(source.snapshot)||source.snapshot<0||
       !Number.isSafeInteger(source.cachedAt)||source.cachedAt<0)return null;
@@ -92,6 +93,6 @@ export function validateChainReadView(source) {
         item.log_index!==record.log_index)return null;
     detail={item,record,open:true};
   }
-  return {draftFilters,activeFilters,offset:source.offset,snapshot:source.snapshot,items,summary,total:source.total,
+  return {...(source.pageSize!==undefined?{pageSize}:{}),draftFilters,activeFilters,offset:source.offset,snapshot:source.snapshot,items,summary,total:source.total,
     pageScrollY,scrollLeft,...(detail?{detail}:{}),cachedAt:source.cachedAt};
 }

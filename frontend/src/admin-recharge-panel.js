@@ -1,4 +1,5 @@
-import {refreshIcon} from './admin-dashboard.js';
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
+import {refreshIcon} from './admin-dashboard.js?v=20260930-admin-navigation';
 import {formatBeijingTime} from './admin-formatters.js';
 // ADR-0077 后台：人工充值案件 / 官方客服目录 / 汇率与储备三类数量。
 // 纪律：前端不凭提交成功就展示已充值——登记状态只来自服务端权威回执。
@@ -134,7 +135,10 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const head = table.createTHead().insertRow();
   ["订单", "用户", "申请金额", "参考汇率", "到账核验", "处理状态", "操作"].forEach((h) => head.append(element("th", null, h)));
   const body = table.createTBody();
-  let nextCasesCursor=null, casesPageCursor=null;
+  let casesSize=10,reviewSize=10,historySize=10;
+  let nextCasesCursor=null, casesPageCursor=null,casesPage=0,casesStack=[null];
+  sectionHead.append(pageSizeControl(changePageSize(value=>casesSize=value,()=>loadCases(false,{cursor:null,index:0,stack:[null]})),{label:'充值请求每页条数'}));
+  const previousCases=element('button','admin-button','上一页充值案件');previousCases.disabled=true;previousCases.addEventListener('click',()=>{if(!previousCases.disabled)void loadCases(false,{cursor:casesStack[casesPage-1],index:casesPage-1,stack:casesStack});});
   const nextCases=element('button','admin-button','下一页充值案件');nextCases.disabled=true;
   nextCases.addEventListener('click',()=>{if(!nextCases.disabled)void loadCases(true);});
   let currentItems = [];
@@ -317,24 +321,25 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
     for(const dialog of operationDialogs){const draft=drafts.get(dialog.dataset?.orderId);if(draft)for(const input of dialog.querySelectorAll?.('input')??[]){if(!input.disabled&&Object.hasOwn(draft,input.placeholder)){input.value=draft[input.placeholder];input.dispatchEvent(new Event('input',{bubbles:true}));}}}
     rebuilding=false;
   };
-  const loadCases = async (nextPage=false) => {
+  const loadCases = async (nextPage=false,target) => {
     if(!authorized())return;
-    if(nextPage){if(nextCases.disabled)return;casesPageCursor=nextCasesCursor;}
+    if(nextPage&&nextCases.disabled)return false;
+    const requested=target??(nextPage?{cursor:nextCasesCursor,index:casesPage+1,stack:[...casesStack.slice(0,casesPage+1),nextCasesCursor]}:{cursor:casesPageCursor,index:casesPageCursor?casesPage:0,stack:casesPageCursor?casesStack:[null]});
     nextCases.disabled=true;
     const generation = ++casesGeneration;
     try {
-      const [page, snapshot] = await Promise.all([api.getRechargePending({scope:filter,...casesPageCursor?{cursor:casesPageCursor}:{},limit:50}), loadReference()]);
+      const [page, snapshot] = await Promise.all([api.getRechargePending({scope:filter,...requested.cursor?{cursor:requested.cursor}:{},limit:casesSize}), loadReference()]);
       if(!authorized() || generation!==casesGeneration)return;
       currentFx=snapshot;
-      nextCasesCursor=page.next_cursor??null;nextCases.disabled=!nextCasesCursor;
+      casesPage=requested.index;casesStack=requested.stack;casesPageCursor=requested.cursor;previousCases.disabled=casesPage===0;nextCasesCursor=page.next_cursor??null;nextCases.disabled=!nextCasesCursor;
       currentItems=page.items??[];
       for(const id of claims.keys())if(!currentItems.some(item=>item.id===id && (!item.expires_at||item.can_process===true)))claims.delete(id);
-      renderCases();
+      renderCases();return true;
     } catch(error) {
       if(disposed || generation!==casesGeneration)return;
       claims.clear();currentItems=[];body.replaceChildren();
       for(const dialog of operationDialogs){clearProof(dialog);dialog.close?.();dialog.replaceChildren();dialogs.delete(dialog);}operationDialogs.clear();drafts.clear();activeOrder=null;activeKind=null;operationFeedback=null;
-      body.insertRow().append(element('td','admin-status-cell','案件加载失败，请检查权限或网络；修改已停止'));
+      body.insertRow().append(element('td','admin-status-cell','案件加载失败，请检查权限或网络；修改已停止'));return false;
     }
   };
   const tabs=element('div','recharge-filter-tabs');tabs.setAttribute('role','group');tabs.setAttribute('aria-label','充值请求范围');
@@ -364,7 +369,7 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   panel.dispose=()=>{disposed=true;for(const dialog of dialogs){clearProof(dialog);dialog.close?.();dialog.replaceChildren();dialog.remove?.();}dialogs.clear();++casesGeneration;claims.clear();drafts.clear();clearInterval(leaseTimer);document.removeEventListener?.('visibilitychange',resume);globalThis.removeEventListener?.('admin-session-expired',revokeSession);};
   const reloadButton = refreshControl("刷新充值请求",()=>{casesPageCursor=null;return loadCases();});
   const tableScroll=element("div","admin-table-scroll");tableScroll.append(table);
-  sectionHead.append(reloadButton);section.append(tableScroll, nextCases);
+  sectionHead.append(reloadButton);section.append(tableScroll,previousCases,nextCases);
   panel.append(section);
 
   // ---------------------------------------------------------- 待核对队列
@@ -374,29 +379,30 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const rHead = reviewTable.createTHead().insertRow();
   ["案件", "状态", "失败原因", "操作"].forEach((h) => rHead.append(element("th", null, h)));
   const rBody = reviewTable.createTBody();
-  let reviewCursor = null, reviewGeneration = 0;
+  reviewSection.append(pageSizeControl(changePageSize(value=>reviewSize=value,()=>loadReview(true)),{label:'审核列表每页条数'}));
+  let reviewCursor=null,reviewGeneration=0,reviewPage=0,reviewStack=[null];
   const reviewDialogs=new Map(), reviewDrafts=new Map();
-  const loadReview = async (reset = true) => {
+  const loadReview = async (reset = true,target) => {
     if(!canManage)return;
-    if (!reset && moreReviewButton.disabled) return;
+    if (!reset && !target && moreReviewButton.disabled) return false;
     const generation = ++reviewGeneration;
-    if (reset) reviewCursor = null;
+    const requested=target??(reset?{cursor:null,index:0,stack:[null]}:{cursor:reviewCursor,index:reviewPage+1,stack:[...reviewStack.slice(0,reviewPage+1),reviewCursor]});
     moreReviewButton.disabled = true;
     const previousReviewDialogs=[...reviewDialogs.values()];reviewDialogs.clear();for(const dialog of previousReviewDialogs){dialog.close?.();dialogs.delete(dialog);}
     rBody.replaceChildren();
     let items = [];
     try {
-      const page = await api.getRechargeReviewQueue(reviewCursor ? {cursor:reviewCursor,limit:20} : {limit:20});
+      const page = await api.getRechargeReviewQueue(requested.cursor?{cursor:requested.cursor,limit:reviewSize}:{limit:reviewSize});
       if (generation !== reviewGeneration) return;
       items = page.items ?? [];
-      reviewCursor = page.next_cursor ?? null;
+      reviewPage=requested.index;reviewStack=requested.stack;previousReview.disabled=reviewPage===0;reviewCursor=page.next_cursor??null;
       moreReviewButton.disabled = !reviewCursor;
     } catch {
       if (generation !== reviewGeneration) return;
       rBody.insertRow().append(element('td','admin-status-cell','待核对队列加载失败，请检查权限或网络后重试'));
-      return;
+      return false;
     }
-    if (!items.length) { rBody.insertRow().append(element("td", "admin-status-cell", "无待核对绑定")); return; }
+    if (!items.length) { rBody.insertRow().append(element("td", "admin-status-cell", "无待核对绑定")); return true; }
     for (const item of items) {
       const reviewAlert=message=>panelAlert(message,item.request_id);
       const tr = rBody.insertRow();
@@ -449,12 +455,14 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
       tr.append(actions);
       if(activeKind==='review'&&activeOrder===item.request_id){operationFeedback=reviewFeedback;actions.append(reviewDialog);reviewDialog.hidden=false;reviewDialog.showModal?.();}
     }
+    return true;
   };
   const reloadReviewButton = refreshControl("刷新异常登记", loadReview);
   const moreReviewButton = element('button','admin-button','下一页待核对');
   moreReviewButton.disabled = true;
   moreReviewButton.addEventListener('click',()=>settle(loadReview(false)));
-  reviewSection.append(reloadReviewButton, reviewTable, moreReviewButton);
+  const previousReview=element('button','admin-button','上一页待核对');previousReview.disabled=true;previousReview.addEventListener('click',()=>void loadReview(false,{cursor:reviewStack[reviewPage-1],index:reviewPage-1,stack:reviewStack}));
+  reviewSection.append(reloadReviewButton,reviewTable,previousReview,moreReviewButton);
   if(canManage)tools.append(reviewSection);
 
   // ---------------------------------------------------------- 案件历史（分页）
@@ -464,14 +472,14 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
   const hHead = historyTable.createTHead().insertRow();
   ["申请单", "用户", "金额（USDT）", "订单状态", "结算状态", "最终点钻"].forEach((h) => hHead.append(element("th", null, h)));
   const hBody = historyTable.createTBody();
-  let historyCursor = null, historyGeneration = 0;
-  const loadHistory = async (reset) => {
-    if (!reset && moreButton.disabled) return;
+  let historyCursor=null,historyGeneration=0,historyPage=0,historyStack=[null];
+  const loadHistory = async (reset,target) => {
+    if (!reset && !target && moreButton.disabled) return false;
     const generation = ++historyGeneration;
-    if (reset) historyCursor = null;
+    const requested=target??(reset?{cursor:null,index:0,stack:[null]}:{cursor:historyCursor,index:historyPage+1,stack:[...historyStack.slice(0,historyPage+1),historyCursor]});
     moreButton.disabled = true;
     try {
-      const page = await api.listRechargeRequests(historyCursor ? { cursor: historyCursor, limit: 20 } : { limit: 20 });
+      const page = await api.listRechargeRequests(requested.cursor?{cursor:requested.cursor,limit:historySize}:{limit:historySize});
       if (generation !== historyGeneration) return;
       hBody.replaceChildren();
       for (const item of page.items ?? []) {
@@ -481,20 +489,21 @@ export function rechargePanel(api, { actor = {}, canReview = false, canApprove =
           element("td", null, statusName(item.binding_state??"—")),
           element("td", null, item.final_caibi_amount ?? "—"));
       }
-      historyCursor = page.next_cursor ?? null;
-      moreButton.disabled = !historyCursor;
+      historyPage=requested.index;historyStack=requested.stack;previousHistory.disabled=historyPage===0;historyCursor=page.next_cursor??null;
+      moreButton.disabled = !historyCursor;return true;
     } catch {
       if (generation !== historyGeneration) return;
       hBody.replaceChildren();
       hBody.insertRow().append(element("td", "admin-status-cell", "案件历史加载失败（需要财务权限）"));
-      moreButton.disabled = true;
+      moreButton.disabled = true;return false;
     }
   };
   const moreButton = element("button", "admin-button", "加载下一页");
   moreButton.disabled = true;
   moreButton.addEventListener("click", () => settle(loadHistory(false)));
   const reloadHistoryButton = refreshControl("刷新订单查询",()=>loadHistory(true));
-  const historyHeading=element("header","admin-panel-heading");historyHeading.append(element("h3", null, "订单查询"),reloadHistoryButton);historySection.append(historyHeading,historyTable,moreButton);
+  const previousHistory=element('button','admin-button','上一页订单查询');previousHistory.disabled=true;previousHistory.addEventListener('click',()=>void loadHistory(false,{cursor:historyStack[historyPage-1],index:historyPage-1,stack:historyStack}));
+  const historyHeading=element("header","admin-panel-heading");historyHeading.append(pageSizeControl(changePageSize(value=>historySize=value,()=>loadHistory(true)),{label:'订单查询每页条数'}),element("h3", null, "订单查询"),reloadHistoryButton);historySection.append(historyHeading,historyTable,previousHistory,moreButton);
   panel.append(historySection);
 
   // ---------------------------------------------------------- 审计时间线详情

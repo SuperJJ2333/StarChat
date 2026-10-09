@@ -23,11 +23,18 @@ const visibleText=panel=>[panel,...panel.children.flatMap(function walk(node){re
 const future=new Date(Date.now()+300000).toISOString();
 const caps=(overrides={})=>({can_claim:false,can_takeover:false,can_begin:false,can_evidence:false,...overrides});
 
+test('payout panel without explicit administrator authorization performs no reads or writes',async()=>{
+  globalThis.document={createElement:tag=>new Element(tag),hidden:false};let calls=0;
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>{calls++;return {items:[]};},supportPayoutCommand:async()=>{calls++;}},{actor:{id:'staff'}});
+  await flush();assert.equal(calls,0);assert.match(visibleText(panel),/仅管理员可处理提现/);
+  assert.equal(panel.find('button').length,0);panel.dispose();
+});
+
 test('expired unstarted payout uses explicit review claim via scoped API',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};const calls=[];
   const order={id:'expired',status:'REQUESTED',processing_stage:'NEEDS_REVIEW',amount:'10',expires_at:'2020-01-01T00:00:00Z',...caps({can_claim:true})};
   const api=createAdminApi({fetchImpl:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>options.method==='POST'?{...order,processing_stage:'REVIEWING',claimed_by:'staff',claim_token:'review-lease',claim_expires_at:future,...caps({can_begin:true})}:{items:[order]}};}});
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});await flush();
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});await flush();
   button(panel,'处理请求').handlers.click();await flush();await flush();
   assert.equal(calls[1].url,'/api/v1/admin/support-orders/payouts/expired/review-claim');
   assert.deepEqual(JSON.parse(calls[1].options.body),{reason_code:'SUPPORT_PAYOUT_EXPIRED_REVIEW'});
@@ -53,7 +60,7 @@ test('payout has no full address before begin and drops writes on lost heartbeat
     if(action==='heartbeat')throw {status:403};
     return order;
   }};
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});await flush();
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});await flush();
   button(panel,'处理请求').handlers.click();await flush();
   assert.doesNotMatch(visibleText(panel),/isolated-address/u);
   await panel.heartbeat();
@@ -65,7 +72,7 @@ test('payout has no full address before begin and drops writes on lost heartbeat
 test('expired started payout keeps evidence and reconciliation only, never a second payment',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const calls=[];const order={id:'late',status:'UNKNOWN',processing_stage:'NEEDS_REVIEW',claimed_by:'staff',claim_token:'lease',claim_expires_at:'2020-01-01T00:00:00Z',execution_started_at:'2019-12-31T23:59:00Z',amount:'10',...caps({can_evidence:true})};
-  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,readSupportPayoutAddress:async()=>({target_address:'Taddress',network:'TRON'}),discoverSupportPayout:async(id,token)=>{calls.push({id,token});return {status:'EMPTY',candidates:[]};}},{actor:{id:'staff'}});await flush();
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,readSupportPayoutAddress:async()=>({target_address:'Taddress',network:'TRON'}),discoverSupportPayout:async(id,token)=>{calls.push({id,token});return {status:'EMPTY',candidates:[]};}},{canOperate:true,actor:{id:'staff'}});await flush();
   assert.equal(button(panel,'接手处理'),undefined);assert.equal(button(panel,'确认开始出款'),undefined);
   button(panel,'处理请求').handlers.click();await flush();await flush();
   assert.ok(button(panel,'提交出款交易凭证'));button(panel,'查找链上出款').handlers.click();await flush();
@@ -75,7 +82,7 @@ test('expired started payout keeps evidence and reconciliation only, never a sec
 test('unknown payment permits audited candidate correction without starting another payment',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};const calls=[];
   const order={id:'unknown',status:'UNKNOWN',claimed_by:'staff',claim_token:'lease',claim_expires_at:'2020-01-01T00:00:00Z',execution_started_at:'2019-12-31T23:59:00Z',candidate_txid:'old-proof',amount:'10',...caps({can_evidence:true})};
-  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,readSupportPayoutAddress:async()=>({target_address:'Taddress',network:'TRON'}),supportPayoutCommand:async(id,action,body)=>{calls.push({action,body});return order;}},{actor:{id:'staff'}});await flush();
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,readSupportPayoutAddress:async()=>({target_address:'Taddress',network:'TRON'}),supportPayoutCommand:async(id,action,body)=>{calls.push({action,body});return order;}},{canOperate:true,actor:{id:'staff'}});await flush();
   button(panel,'处理请求').handlers.click();await flush();await flush();
   panel.find('input').find(input=>input.placeholder==='出款交易哈希').value='corrected-proof';button(panel,'更正出款交易凭证').handlers.click();await flush();
   assert.deepEqual(calls,[{action:'correct-candidate',body:{txid:'corrected-proof',reason_code:'PAYOUT_TXID_CORRECTION',claim_token:'lease'}}]);
@@ -89,7 +96,7 @@ test('payout A late completion cannot appear as payout B success',async()=>{
    if(id==='A')return new Promise(resolve=>{finishA=resolve;});
    return {claimed_by:'staff',claim_token:'lease-B',claim_expires_at:future,status:'REQUESTED',...caps({can_begin:true})};
  }};
- const panel=supportPayoutPanel(api,{actor:{id:'staff'}});await flush();
+ const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});await flush();
  panel.find('button').filter(b=>b.textContent==='处理请求')[0].handlers.click();await flush();
  panel.find('button').find(b=>b.textContent==='×').handlers.click();
  panel.find('button').filter(b=>b.textContent==='处理请求')[1].handlers.click();await flush();
@@ -102,7 +109,7 @@ test('another staff lease is genuinely disabled by server capability and sends n
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const calls=[];
   const order={id:'locked',status:'REQUESTED',claimed_by:'other',claim_expires_at:future,amount:'10.000000',...caps()};
-  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),supportPayoutCommand:async(...args)=>{calls.push(args);}},{actor:{id:'staff'}});
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),supportPayoutCommand:async(...args)=>{calls.push(args);}},{canOperate:true,actor:{id:'staff'}});
   await flush();
   const occupied=button(panel,'正被其他客服处理中');
   assert.ok(occupied);
@@ -119,7 +126,7 @@ test('owner opens read-only detail and uses separate confirmed takeover with fre
   const api={getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
     getWalletOperationSecurity:async()=>({auth_mode:'operation_password'}),
     takeoverSupportPayout:async(id,body,options)=>{calls.push({id,body,options});return {...order,claim_version:5,claimed_by:'owner',claim_token:'new-lease',...caps({can_begin:true})};}};
-  const panel=supportPayoutPanel(api,{actor:{id:'owner'}});await flush();
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'owner'}});await flush();
   assert.equal(button(panel,'处理请求'),undefined);
   button(panel,'查看订单').handlers.click();await flush();
   assert.deepEqual(calls,[]);
@@ -146,7 +153,7 @@ test('rate preparation stays cancellable, begin needs a second confirmation and 
       if(action==='adjust-rate')order={...order,prepared_rate:body.new_rate,prepared_receive:'9.000000',prepared_version:order.prepared_version+1,prepared_digest:(order.prepared_version===0?'b':'c').repeat(64)};
       if(action==='begin-payment')order={...order,status:'CLAIMED',execution_started_at:new Date().toISOString(),...caps({can_evidence:true})};
       return order;},readSupportPayoutAddress:async()=>({target_address:'Tfull-private-address',network:'TRON'})};
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});await flush();
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});await flush();
   button(panel,'处理请求').handlers.click();await flush();
   assert.doesNotMatch(visibleText(panel),/Tfull-private-address/u);
   panel.find('input').find(input=>input.placeholder==='确认结算汇率（点钻/USDT）').value='7.500000';
@@ -180,7 +187,7 @@ test('completed payment reveals full address for explicit copy and identity loss
   const order={id:'paid',status:'UNKNOWN',amount:'10.00',execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
   const api={getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
     readSupportPayoutAddress:async()=>{calls.push('read');return {target_address:'Tfull-private-address',network:'TRON'};}};
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});
   try{
     await flush();button(panel,'处理请求').handlers.click();await flush();await flush();
     assert.match(visibleText(panel),/Tfull-private-address/u);
@@ -208,7 +215,7 @@ test('discovery distinguishes incomplete and conflict, and selection never autom
     discoverSupportPayout:async()=>discovery,
     selectSupportPayoutCandidate:async(id,body,options)=>{calls.push({id,body,options});return {...order,candidate_txid:body.txid};},
     supportPayoutCommand:async(id,action)=>{calls.push({id,action});return order;}};
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();await flush();
   button(panel,'查找链上出款').handlers.click();await flush();
   assert.match(visibleText(panel),/不代表未付款/u);
@@ -238,7 +245,7 @@ test('an unknown begin response refreshes authority without another payment comm
   const order={id:'uncertain',status:'REQUESTED',amount:'10.00',final_receive:'10.000000',digest:'a'.repeat(64),target_address_masked:'T••abc',claim_token:'lease',...caps({can_begin:true})};
   const api={getSupportPayouts:async()=>{reads++;return {items:[order]};},getSupportPayout:async()=>order,
     supportPayoutCommand:async(id,action,body,options)=>{writes.push({action,options});throw {code:'NETWORK_ERROR'};}};
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();
   button(panel,'确认开始出款').handlers.click();button(panel,'确认且开始出款').handlers.click();await flush();await flush();
   assert.deepEqual(writes.map(entry=>entry.action),['begin-payment']);
@@ -253,7 +260,7 @@ test('forbidden payout command immediately removes stale preparation and evidenc
   const order={id:'revoked',status:'REQUESTED',funding_asset:'CAIBI',prepared_version:0,claim_token:'lease',...caps({can_begin:true})};
   const api={getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
     supportPayoutCommand:async(id,action)=>{writes.push(action);throw {status:403};}};
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();
   panel.find('input').find(input=>input.placeholder==='确认结算汇率（点钻/USDT）').value='7.500000';
   button(panel,'保存结算汇率').handlers.click();await flush();
@@ -267,7 +274,7 @@ test('forbidden address read revokes the evidence UI without retaining its draft
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'read-revoked',status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
   const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
-    readSupportPayoutAddress:async()=>{throw {status:403,message:'forbidden'};}},{actor:{id:'staff'}});
+    readSupportPayoutAddress:async()=>{throw {status:403,message:'forbidden'};}},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();await flush();
   assert.equal(button(panel,'查找链上出款'),undefined);
   assert.equal(button(panel,'提交出款交易凭证'),undefined);
@@ -278,7 +285,7 @@ test('forbidden address read revokes the evidence UI without retaining its draft
 test('returning from a payout keeps the selected list filter and restores focus',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'mine',status:'REQUESTED',claimed_by:'staff',claim_token:'lease',...caps({can_begin:true})};
-  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order},{actor:{id:'staff'}});
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'我正在处理').handlers.click();
   const opener=button(panel,'处理请求');opener.handlers.click();await flush();
   assert.ok(button(panel,'返回提现列表'));
@@ -297,7 +304,7 @@ test('forbidden list refresh removes a previously read full address and all old 
   const api={getSupportPayouts:async()=>{if(++reads>1)throw {status:403,message:'forbidden'};return {items:[order]};},
     getSupportPayout:async()=>({...order,instructions:{target_address:'Tnested-private-address'}}),
     readSupportPayoutAddress:async()=>({target_address:'Tfull-private-address',network:'TRON'})};
-  const panel=supportPayoutPanel(api,{actor:{id:'staff'}});
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();await flush();
   assert.match(visibleText(panel),/Tfull-private-address/u);
   await panel.refresh();
@@ -311,7 +318,7 @@ test('forbidden detail read revokes previously projected evidence actions',async
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'private-detail',status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
   const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),
-    getSupportPayout:async()=>{throw {status:403,message:'forbidden'};}},{actor:{id:'staff'}});
+    getSupportPayout:async()=>{throw {status:403,message:'forbidden'};}},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();
   assert.equal(button(panel,'查找链上出款'),undefined);
   assert.equal(button(panel,'提交出款交易凭证'),undefined);
@@ -321,7 +328,7 @@ test('forbidden detail read revokes previously projected evidence actions',async
 test('payment cannot begin until the server provides masked destination and payable amount',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'no-destination',status:'REQUESTED',amount:'10.00',digest:'a'.repeat(64),claim_token:'lease',...caps({can_begin:true})};
-  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order},{actor:{id:'staff'}});
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();
   assert.equal(button(panel,'确认开始出款').disabled,true);
   assert.equal(button(panel,'确认且开始出款'),undefined);
@@ -331,7 +338,7 @@ test('payment cannot begin until the server provides masked destination and paya
 test('pre-payment writes stay disabled when capability is present but lease token is absent',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'missing-lease',status:'REQUESTED',funding_asset:'CAIBI',prepared_version:0,amount:'10.00',...caps({can_begin:true})};
-  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order},{actor:{id:'staff'}});
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();
   assert.equal(button(panel,'保存结算汇率').disabled,true);
   assert.equal(button(panel,'拒绝提现').disabled,true);
@@ -342,7 +349,7 @@ test('pre-payment writes stay disabled when capability is present but lease toke
 test('rejected payout remains visible in history without a processing action',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'rejected',status:'REJECTED',amount:'10.00',...caps()};
-  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]})},{actor:{id:'staff'}});
+  const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]})},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'已完成与取消').handlers.click();
   assert.match(visibleText(panel),/提现单 rejected/u);
   assert.match(visibleText(panel),/已拒绝/u);
@@ -355,7 +362,7 @@ test('staged receive and rejected projection reflect the server processing stage
   const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[
     {id:'staged',status:'REQUESTED',prepared_receive:'9.000000',final_receive:'10.000000',...caps()},
     {id:'rejected-stage',status:'CANCELLED',processing_stage:'REJECTED',...caps()}
-  ]})},{actor:{id:'staff'}});await flush();
+  ]})},{canOperate:true,actor:{id:'staff'}});await flush();
   assert.match(visibleText(panel),/应付 9.000000 USDT/u);
   assert.doesNotMatch(visibleText(panel),/应付 10.000000 USDT|订单已取消/u);
   assert.match(visibleText(panel),/订单已拒绝/u);panel.dispose();
@@ -367,7 +374,7 @@ test('configured owner rejection collects a fresh selected proof rather than a c
   const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
     getWalletOperationSecurity:async()=>({auth_mode:'totp'}),
     rejectSupportPayout:async(id,body)=>{writes.push(body);return {...order,status:'CANCELLED',processing_stage:'REJECTED',...caps()};}
-  },{actor:{id:'owner'}});await flush();button(panel,'处理请求').handlers.click();await flush();
+  },{canOperate:true,actor:{id:'owner'}});await flush();button(panel,'处理请求').handlers.click();await flush();
   button(panel,'拒绝提现').handlers.click();await flush();
   assert.equal(writes.length,0);
   const proof=panel.find('input').find(node=>node.placeholder==='当前六位验证码');assert.ok(proof);
@@ -381,7 +388,7 @@ test('forbidden discovery immediately scrubs the full address and all evidence c
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'discovery-revoked',status:'UNKNOWN',execution_started_at:'2020-01-01T00:00:00Z',claim_version:1,claim_token:'lease',...caps({can_evidence:true})};
   const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,
-    readSupportPayoutAddress:async()=>({target_address:'Tprivate-revoked-address'}),discoverSupportPayout:async()=>{throw {status:403};}},{actor:{id:'staff'}});
+    readSupportPayoutAddress:async()=>({target_address:'Tprivate-revoked-address'}),discoverSupportPayout:async()=>{throw {status:403};}},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();await flush();assert.match(visibleText(panel),/Tprivate-revoked-address/u);
   button(panel,'查找链上出款').handlers.click();await flush();
   assert.doesNotMatch(visibleText(panel),/Tprivate-revoked-address/u);
@@ -392,7 +399,7 @@ test('unknown discovery evidence status is never selectable',async()=>{
   globalThis.document={createElement:tag=>new Element(tag),hidden:false};
   const order={id:'unknown-candidate',status:'UNKNOWN',claim_version:3,execution_started_at:'2020-01-01T00:00:00Z',claim_token:'lease',...caps({can_evidence:true})};
   const panel=supportPayoutPanel({getSupportPayouts:async()=>({items:[order]}),getSupportPayout:async()=>order,readSupportPayoutAddress:async()=>({target_address:'Tsynthetic'}),
-    discoverSupportPayout:async()=>({status:'COMPLETE',claim_version:3,evidence_version:0,candidates:[{txid:'unknown-status-transaction',log_index:0,evidence_status:'FUTURE_UNKNOWN'}]})},{actor:{id:'staff'}});
+    discoverSupportPayout:async()=>({status:'COMPLETE',claim_version:3,evidence_version:0,candidates:[{txid:'unknown-status-transaction',log_index:0,evidence_status:'FUTURE_UNKNOWN'}]})},{canOperate:true,actor:{id:'staff'}});
   await flush();button(panel,'处理请求').handlers.click();await flush();button(panel,'查找链上出款').handlers.click();await flush();
   assert.equal(button(panel,'选择此交易'),undefined);panel.dispose();
 });
@@ -405,7 +412,7 @@ test('started takeover uses evidence token and discovery versions for candidate 
     takeoverSupportPayout:async(id,body)=>{sent.push(['takeover',body]);return transferred;},
     discoverSupportPayout:async(id,token)=>{sent.push(['discover',token]);return {status:'COMPLETE',claim_version:5,evidence_version:1,candidates:[{txid:'verified-evidence-transaction',log_index:6,evidence_status:'VERIFIED'}]};},
     selectSupportPayoutCandidate:async(id,body)=>{sent.push(['select',body]);return {...transferred,candidate_txid:body.txid};}};
-  const panel=supportPayoutPanel(api,{actor:{id:'owner'}});await flush();button(panel,'查看订单').handlers.click();await flush();button(panel,'申请接管').handlers.click();await flush();
+  const panel=supportPayoutPanel(api,{canOperate:true,actor:{id:'owner'}});await flush();button(panel,'查看订单').handlers.click();await flush();button(panel,'申请接管').handlers.click();await flush();
   panel.find('input').find(node=>node.placeholder==='当前六位验证码').value='123456';button(panel,'确认接管').handlers.click();await flush();
   assert.equal(button(panel,'确认开始出款'),undefined);button(panel,'查找链上出款').handlers.click();await flush();button(panel,'选择此交易').handlers.click();await flush();
   assert.deepEqual(sent[0],['takeover',{expected_claim_version:4,reason_code:'SUPPORT_PAYOUT_EVIDENCE_TAKEOVER',proof:{mfa_proof:'123456'}}]);

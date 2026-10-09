@@ -320,3 +320,114 @@ test('same-actor management session replacement clears an existing wallet view o
   await assert.rejects(viewApi.getManualPayouts(),{code:'WALLET_ACCESS_REQUIRED'});
  }finally{root?.dispose();dom.restore();}
 });
+
+test('unverified or expired responses show the existing access dialog only after server confirmation',async()=>{
+ for(const response of [panelStatus({verified:false}),panelStatus({expires_at:new Date(start).toISOString()})]) {
+  const dom=installPanelDocument();let root;
+  try {
+   root=module.walletAccessPanel({getWalletAccess:async()=>response},{actor:{id:'a'},renderContent:()=>assert.fail('locked access must not render content')});dom.app.append(root);await settle();await settle();
+   const dialog=dom.body.find('dialog')[0];assert.ok(dialog?.open);assert.equal(dom.app.inert,true);
+  } finally { root?.dispose();dom.restore(); }
+ }
+});
+
+
+test('unverified wallet can read administrator payout list, detail and reference FX without executing commands',async()=>{
+ const dom=installPanelDocument();let root,guarded,reads=0,writes=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getSupportPayouts:async()=>{reads++;return {items:[]};},getSupportPayout:async()=>{reads++;return {id:'p1'};},getFxRate:async()=>{reads++;return {rate:'7'};},supportPayoutCommand:async()=>{writes++;}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();assert.ok(guarded);
+  await Promise.all([guarded.getSupportPayouts(),guarded.getSupportPayout('p1'),guarded.getFxRate()]);
+  assert.equal(reads,3);assert.equal(writes,0);assert.equal(dom.body.find('dialog').length,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('explicit payout command requests wallet verification and never executes or replays until resubmitted',async()=>{
+ const dom=installPanelDocument();let root,guarded,writes=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),verifyWalletAccess:async()=>panelStatus(),supportPayoutCommand:async()=>{writes++;return {status:'CLAIMED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await assert.rejects(guarded.supportPayoutCommand('p1','begin-payment'),{code:'WALLET_ACCESS_REQUIRED'});
+  assert.equal(writes,0);const dialog=dom.body.find('dialog')[0];assert.ok(dialog?.open);
+  const input=dialog.find('input')[0];input.value='test-proof';await dialog.find('form')[0].handlers.submit({preventDefault(){}});
+  assert.equal(writes,0);assert.equal(input.value,'');await guarded.supportPayoutCommand('p1','begin-payment');assert.equal(writes,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('real payout panel loads through wallet access wrapper before operation verification',async()=>{
+ const {supportPayoutPanel}=await import('../src/admin-support-payout-panel.js');const dom=installPanelDocument();let root,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),getSupportPayouts:async()=>{reads++;return {items:[{id:'payout-read-integration',status:'REQUESTED',processing_stage:'REQUESTED',amount:'70.00',final_receive:'10.000000',can_claim:true}]};},getFxRate:async()=>({rate:'7'})},{actor:{id:'a'},renderContent:api=>supportPayoutPanel(api,{actor:{id:'a'},canOperate:true})});
+  await settle();await settle();await settle();assert.equal(reads,1);assert.ok(root.find('button').some(x=>x.textContent==='处理请求'));
+  assert.equal(root.find('p').some(x=>x.textContent.startsWith('提现列表加载失败')),false);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('payout query waits for focus authorization recheck without warning',async()=>{
+ const dom=installPanelDocument();let root,guarded,release,checks=0,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>++checks===1?Promise.resolve(panelStatus()):new Promise(r=>release=r),getSupportPayouts:async()=>{reads++;return {items:[]};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();dom.focus();const read=guarded.getSupportPayouts();read.catch(()=>{});await settle();assert.equal(reads,0);
+  release(panelStatus());assert.deepEqual(await read,{items:[]});assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('only a stale GET is fetched again after healthy focus recheck',async()=>{
+ const dom=installPanelDocument();let root,guarded,release,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus(),getSupportPayouts:()=>++reads===1?new Promise(r=>release=r):Promise.resolve({items:['current']})},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();const read=guarded.getSupportPayouts();read.catch(()=>{});await settle();assert.equal(reads,1);dom.focus();await settle();release({items:['stale']});
+  assert.deepEqual(await read,{items:['current']});assert.equal(reads,2);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('one explicitly supplied cancellation password satisfies grant and fresh operation proof',async()=>{
+ const dom=installPanelDocument();let root,guarded,verifies=0,commands=0;
+ const body={proof:{operation_password:'single-test-proof'},expected_version:1};
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),verifyWalletAccess:async proof=>{verifies++;assert.deepEqual(proof,body.proof);return panelStatus();},supportPayoutCommand:async(id,action,payload)=>{commands++;assert.equal(action,'cancel-unstarted');assert.equal(payload,body);return {status:'CANCELLED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();assert.deepEqual(await guarded.supportPayoutCommand('p1','cancel-unstarted',body),{status:'CANCELLED'});
+  assert.equal(verifies,1);assert.equal(commands,1);assert.equal(dom.body.find('dialog').length,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('claim and heartbeat use the live session without asking for a wallet password',async()=>{
+ const dom=installPanelDocument();let root,guarded,calls=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),supportPayoutCommand:async()=>{calls++;return {status:'CLAIMED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await guarded.supportPayoutCommand('p1','claim',{});await guarded.supportPayoutCommand('p1','heartbeat',{});assert.equal(calls,2);assert.equal(dom.body.find('dialog').length,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('server authorization denial is never retried as a stale GET',async()=>{
+ const dom=installPanelDocument();let root,guarded,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus(),getSupportPayouts:async()=>{reads++;throw {status:403,code:'PERMISSION_DENIED'};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await assert.rejects(guarded.getSupportPayouts(),{code:'PERMISSION_DENIED'});assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('failed single-password verification never sends a cancellation',async()=>{
+ const dom=installPanelDocument();let root,guarded,commands=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:async()=>panelStatus({verified:false}),verifyWalletAccess:async()=>{throw {status:403,code:'OPERATION_PASSWORD_INVALID'};},supportPayoutCommand:async()=>{commands++;}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();await assert.rejects(guarded.supportPayoutCommand('p1','cancel-unstarted',{proof:{operation_password:'wrong-test-proof'}}));assert.equal(commands,0);
+ }finally{root?.dispose();dom.restore();}
+});
+
+
+test('query waits for periodic check and sends only one fresh GET',async()=>{
+ const interval=globalThis.setInterval;let poll;globalThis.setInterval=fn=>{poll=fn;return {unref(){}};};
+ const dom=installPanelDocument();let root,guarded,release,checks=0,reads=0;
+ try{
+  root=module.walletAccessPanel({getWalletAccess:()=>++checks===1?Promise.resolve(panelStatus()):new Promise(r=>release=r),getSupportPayouts:async()=>{reads++;return {items:[]};}},{actor:{id:'a'},renderContent:api=>{guarded=api;return new PanelElement('article');}});
+  await settle();await settle();poll();const read=guarded.getSupportPayouts();read.catch(()=>{});await settle();assert.equal(reads,0);release(panelStatus());await read;assert.equal(reads,1);
+ }finally{root?.dispose();dom.restore();globalThis.setInterval=interval;}
+});

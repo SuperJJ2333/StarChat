@@ -1,3 +1,4 @@
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
 import {statusLabel} from './admin-formatters.js';
 
 const element = (tag, className, text) => {
@@ -43,8 +44,9 @@ export function userDirectory(api) {
     if (!loading && nextCursor) void load({query, cursors:[...cursors.slice(0,page+1),nextCursor], page:page+1});
   });
   const retry = action('重新加载', () => {void load(failedRequest ?? undefined);});
-  pager.append(previous, position, next, retry);
+  pager.append(previous, position, next, retry,pageSizeControl(changePageSize(value=>pageSize=value,()=>load({query,cursors:[null],page:0}))));
   panel.append(search, message, wrap, pager);
+  let pageSize=10;
   let revision = 0, disposed = false, query = '', cursors = [null], page = 0;
   let nextCursor = null, loading = false, failedRequest = null;
   function controls() {
@@ -80,7 +82,7 @@ export function userDirectory(api) {
     const request = ++revision;
     loading = true; controls(); message.textContent = '正在加载用户…';
     try {
-      const data = await api.searchUsers({q:target.query, limit:50, cursor:target.cursors[target.page]});
+      const data = await api.searchUsers({q:target.query, limit:pageSize, cursor:target.cursors[target.page]});
       if (disposed || request !== revision) return false;
       query = target.query; cursors = [...target.cursors]; page = target.page;
       failedRequest = null; render(data); return true;

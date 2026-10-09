@@ -88,6 +88,7 @@ class AdminUserItem(BaseModel):
     created_at: str
     updated_at: str
     email_verified_at: str | None
+    active_ban: dict | None = None
 
 
 class AdminUserPage(BaseModel):
@@ -119,3 +120,5 @@ class AdminDirectoryPage(BaseModel):
 class AdminModulePage(BaseModel):
     module: str
     items: list[dict]
+    has_more: bool = False
+    offset: int = 0

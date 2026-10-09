@@ -41,7 +41,8 @@ async def test_activated_staff_share_aggregate_overview_without_admin_module_acc
     assert 'admin.overview.read' in context.json()['permissions']
     assert '*' not in context.json()['permissions']
     assert 'wallet' not in context.json()['modules']
-    assert settings.status_code == detail.status_code == 403
+    assert settings.status_code == 403
+    assert detail.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -95,7 +96,7 @@ async def test_issuance_route_permission_pagination_validation_and_missing_detai
         detail = await client.get('/api/v1/admin/point-issuance/missing', headers=headers)
         bad_cursor = await client.get('/api/v1/admin/point-issuance?cursor=bad', headers=headers)
         bad_limit = await client.get('/api/v1/admin/point-issuance?limit=101', headers=headers)
-    assert denied.status_code == 403
+    assert denied.status_code == 200
     assert empty.status_code == 200 and empty.json() == {'items': [], 'next_cursor': None}
     assert detail.status_code == 404
     assert bad_cursor.status_code == bad_limit.status_code == 422

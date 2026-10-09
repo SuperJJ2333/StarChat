@@ -8,7 +8,7 @@ class Element {
  prepend(node){this.children.unshift(node);}
  replaceChildren(...nodes){this.children=nodes;}
  setAttribute(name,value){this[name]=value;}
- addEventListener(name,callback){this.handlers[name]=callback;}
+ addEventListener(name,callback){const previous=this.handlers[name];this.handlers[name]=previous?event=>{previous(event);callback(event);}:callback;}
  removeEventListener(name){delete this.handlers[name];}
  remove(){this.removed=true;}
  focus(){}
@@ -45,16 +45,16 @@ test('wallet menu return passes a one-page read view only within the same actor 
    getWalletCacheEpoch:()=>epoch,
    renderModule:(key,_,context)=>{
     rendered.push({key,context});const panel=new Element('section');
-    if(key==='wallet'){panel.exportReadView=()=>({offset:25,items:[{txid:'a'.repeat(64)}]});panel.dispose=()=>{};}
+    if(key==='wallet-chain'){panel.exportReadView=()=>({offset:25,items:[{txid:'a'.repeat(64)}]});panel.dispose=()=>{};}
     return panel;
    }
   });
-  await settle();navigate(page,'wallet');await settle();
+  await settle();navigate(page,'wallet-chain');await settle();
   assert.equal(rendered.at(-1).context.walletReadView,undefined);
-  navigate(page,'ledger');await settle();navigate(page,'wallet');await settle();
+  navigate(page,'ledger');await settle();navigate(page,'wallet-chain');await settle();
   assert.equal(rendered.at(-1).context.walletReadView.offset,25);
   assert.equal(rendered.at(-1).context.walletReadViewEpoch,1);
-  navigate(page,'ledger');await settle();epoch=2;navigate(page,'wallet');await settle();
+  navigate(page,'ledger');await settle();epoch=2;navigate(page,'wallet-chain');await settle();
   assert.equal(rendered.at(-1).context.walletReadView,undefined,'a new management session cannot inherit the old view');
  }finally{page?.dispose();restore();}
 });
@@ -68,13 +68,13 @@ test('wallet denial clears an exported menu snapshot before another menu return'
    getWalletCacheEpoch:()=>1,
    renderModule:(key,_,context)=>{
     rendered.push({key,context});const panel=new Element('section');
-    if(key==='wallet'){panel.exportReadView=()=>({offset:25});panel.dispose=()=>{};}
+    if(key==='wallet-chain'){panel.exportReadView=()=>({offset:25});panel.dispose=()=>{};}
     return panel;
    }
   });
-  await settle();navigate(page,'wallet');await settle();navigate(page,'ledger');await settle();
-  rendered.find(row=>row.key==='wallet').context.onWalletReadDenied();
-  navigate(page,'wallet');await settle();
+  await settle();navigate(page,'wallet-chain');await settle();navigate(page,'ledger');await settle();
+  rendered.find(row=>row.key==='wallet-chain').context.onWalletReadDenied();
+  navigate(page,'wallet-chain');await settle();
   assert.equal(rendered.at(-1).context.walletReadView,undefined);
  }finally{page?.dispose();restore();}
 });

@@ -1,4 +1,5 @@
-import {refreshIcon} from './admin-dashboard.js';
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
+import {refreshIcon} from './admin-dashboard.js?v=20260930-admin-navigation';
 
 const make=(tag,cls,text)=>{const node=document.createElement(tag);node.className=cls??'';if(text!==undefined)node.textContent=String(text);return node;};
 const capabilities=['can_claim','can_takeover','can_begin','can_evidence'];
@@ -9,11 +10,13 @@ const payable=item=>item.execution_started_at?item.final_receive:item.prepared_r
 const has=(item,capability)=>item?.[capability]===true;
 const shortHash=value=>typeof value==='string'&&value.length>=16?`${value.slice(0,8)}…${value.slice(-8)}`:'交易哈希待核对';
 
-export function supportPayoutPanel(api,{actor={},onBack,onOpenWallet}={}) {
+export function supportPayoutPanel(api,{actor={},onBack,onOpenWallet,canOperate=false}={}) {
   const actorId=actor.id??actor.user_id;
   const panel=make('section','admin-card admin-recharge-panel admin-support-payout-panel');
   const status=make('p','admin-audit-note');status.setAttribute('role','status');
-  const body=make('div','recharge-section');panel.append(make('h2',null,'客服提现订单'),status);
+  const body=make('div','recharge-section');panel.append(make('h2',null,'提现订单'),status);
+  if(!canOperate){status.textContent='仅管理员可处理提现';panel.dispose=()=>{};return panel;}
+  let pageSize=10,payoutPage=0,payoutStack=[null];
   let disposed=false,invalidated=false,generation=0,items=[],filter='all',cursor=null,activeOrder=null,opener=null;
   let address=null,discovery=null,confirmation=null,securityMode=null,copyFeedback='';
   const tokens=new Map(),busy=new Set(),uncertain=new Set(),drafts=new Map(),messages=new Map();
@@ -68,7 +71,8 @@ export function supportPayoutPanel(api,{actor={},onBack,onOpenWallet}={}) {
   const header=make('header','admin-panel-heading');header.append(filters);
   const refresh=refreshIcon(async()=>{if(refresh.disabled)return;refresh.disabled=true;refresh.setAttribute('aria-busy','true');try{await load();}finally{refresh.disabled=false;refresh.setAttribute('aria-busy','false');}});
   refresh.title='刷新提现请求';refresh.setAttribute('aria-label',refresh.title);header.append(refresh);
-  panel.append(header,body);const next=button(panel,'下一页提现',()=>load(false),true);panel.append(dialog);
+  header.append(pageSizeControl(changePageSize(value=>pageSize=value,()=>load(true))));
+  panel.append(header,body);const next=button(panel,'下一页提现',()=>load(false),true);const previous=button(panel,'上一页提现',()=>load(false,{cursor:payoutStack[payoutPage-1],index:payoutPage-1,stack:payoutStack}),true);panel.append(dialog);
 
   function renderList(){
     body.replaceChildren();openers.clear();
@@ -249,19 +253,20 @@ export function supportPayoutPanel(api,{actor={},onBack,onOpenWallet}={}) {
     if(has(item,'can_evidence')&&item.execution_started_at)renderEvidence(item);
     if(!has(item,'can_begin')&&!has(item,'can_evidence'))dialogBody.append(make('p','admin-audit-note','当前仅可查看，处理资格请以服务端状态为准。'));
   }
-  async function load(reset=true){
-    const version=++generation;next.disabled=true;if(reset)cursor=null;address=null;discovery=null;copyFeedback='';
+  async function load(reset=true,target){
+    const requested=target??(reset?{cursor:null,index:0,stack:[null]}:{cursor,index:payoutPage+1,stack:[...payoutStack.slice(0,payoutPage+1),cursor]});
+    const version=++generation;next.disabled=previous.disabled=true;address=null;discovery=null;copyFeedback='';
     if(!items.length)body.replaceChildren(make('p','admin-audit-note','正在加载提现请求…'));
-    try{const page=await api.getSupportPayouts({...cursor?{cursor}:{},limit:50});if(!authorized()||version!==generation)return;
+    try{const page=await api.getSupportPayouts({...requested.cursor?{cursor:requested.cursor}:{},limit:pageSize});if(!authorized()||version!==generation)return;
       items=(page.items??[]).map(raw=>{const item={...raw},saved=tokens.get(item.id)??{};
         delete item.target_address;if(item.instructions){item.instructions={...item.instructions};delete item.instructions.target_address;}
         if(typeof item.claim_token==='string')saved.claim=item.claim_token;if(typeof item.evidence_token==='string')saved.evidence=item.evidence_token;
         if(saved.claim||saved.evidence)tokens.set(item.id,saved);delete item.claim_token;delete item.evidence_token;
         for(const capability of capabilities)item[capability]=raw[capability]===true;
         if(!has(item,'can_begin')&&!has(item,'can_evidence'))tokens.delete(item.id);return item;});
-      cursor=page.next_cursor??null;next.disabled=!cursor;
-      const active=current();if(active&&!has(active,'can_evidence')){address=null;discovery=null;drafts.delete(active.id);}renderList();
-    }catch(error){if(authorized()&&version===generation){scrub();items=[];openers.clear();body.replaceChildren();renderDialog();notify(null,`提现列表加载失败：${error?.message??'请重试'}`,true);}}
+      payoutPage=requested.index;payoutStack=requested.stack;cursor=page.next_cursor??null;next.disabled=!cursor;previous.disabled=payoutPage===0;
+      const active=current();if(active&&!has(active,'can_evidence')){address=null;discovery=null;if(!has(active,'can_begin'))drafts.delete(active.id);}renderList();return true;
+    }catch(error){if(authorized()&&version===generation){scrub();items=[];openers.clear();body.replaceChildren();renderDialog();notify(null,`提现列表加载失败：${error?.message??'请重试'}`,true);}return false;}
   }
   panel.heartbeat=async()=>{if(!authorized()||document.hidden)return;
     for(const item of items){if(!has(item,'can_begin')||item.execution_started_at||!tokenFor(item)||busy.has(item.id))continue;

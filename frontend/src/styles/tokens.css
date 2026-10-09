@@ -420,3 +420,16 @@
   --wallet-workspace-color-fcfefe: #fcfefe;
   --wallet-workspace-color-fff: #fff;
 }
+
+:root {
+  --admin-navigation-color-226949: #226949;
+  --admin-navigation-color-245fa8: #245fa8;
+  --admin-navigation-color-6841a1: #6841a1;
+  --admin-navigation-color-a7d6bb: #a7d6bb;
+  --admin-navigation-color-b8d1f4: #b8d1f4;
+  --admin-navigation-color-cab8ef: #cab8ef;
+  --admin-navigation-color-e4eaf2: #e4eaf2;
+  --admin-navigation-color-edf5ff: #edf5ff;
+  --admin-navigation-color-edf8f2: #edf8f2;
+  --admin-navigation-color-f3efff: #f3efff;
+}

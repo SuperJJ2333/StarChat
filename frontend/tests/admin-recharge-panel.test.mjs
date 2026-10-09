@@ -213,8 +213,8 @@ test('real admin API implements review queue, history, timeline and review comma
     calls.push({url,options});return {ok:true,json:async()=>({items:[]})};
   }});
   const cursor='2026-09-22T00:00:00+00:00|binding-id';
-  await api.getRechargeReviewQueue({cursor,limit:20});
-  await api.listRechargeRequests({status:'CREDITED',cursor,limit:20});
+  await api.getRechargeReviewQueue({cursor,limit:10});
+  await api.listRechargeRequests({status:'CREDITED',cursor,limit:10});
   await api.getRechargeTimeline('case/id');
   await api.reviewRecharge('case/id',{action:'release',binding_id:'b1',reason:'已核实拒绝'},
     {idempotencyKey:'release:b1'});
@@ -263,8 +263,8 @@ test('history section paginates with cursor and disables next page when exhauste
   assert.ok(panel.find('td').some(td=>td.textContent==='r2'));
   assert.equal(more.disabled,true,'无更多页时下一页按钮应禁用');
   const historyCalls=calls.filter(([k])=>k==='history');
-  assert.deepEqual(historyCalls[0][1],{limit:20});
-  assert.deepEqual(historyCalls[1][1],{cursor:'2026-09-21T00:00:00|c1',limit:20});
+  assert.deepEqual(historyCalls[0][1],{limit:10});
+  assert.deepEqual(historyCalls[1][1],{cursor:'2026-09-21T00:00:00|c1',limit:10});
 });
 
 

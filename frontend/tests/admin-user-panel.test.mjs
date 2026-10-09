@@ -25,7 +25,7 @@ const submit=(panel,name)=>panel.find('form').find(x=>x.name===name).handlers.su
 test('security uses Chinese selections and submits selected internal identity only on confirmation',async()=>{
   const calls=[];let reads=0;
   const panel=await setup({getModule:async()=>{reads++;return {items:[row],total:1};},command:async(...args)=>{calls.push(args);return {status:'ACTIVE'};}});
-  assert.deepEqual(panel.find('select').map(x=>x.name),['target_type','reason_code','duration_minutes']);
+  assert.deepEqual(panel.find('select').filter(x=>x.name).map(x=>x.name),['target_type','reason_code','duration_minutes']);
   assert.equal(calls.length,0);click(panel,'选择封禁');assert.equal(calls.length,0);
   assert.ok(panel.find('input').some(x=>x.value==='小星（chat123）'));
   await submit(panel,'ban-user');
@@ -41,7 +41,7 @@ test('server search and cursor pages never let an older response replace a newer
   pending[1]({items:[{...row,username:'new'}],total:2,next_cursor:'opaque'});await settle();
   pending[0]({items:[{...row,username:'old'}],total:1});await settle();
   assert.ok(panel.find('td').some(x=>x.textContent==='new'));assert.ok(!panel.find('td').some(x=>x.textContent==='old'));
-  click(panel,'下一页');assert.deepEqual(calls.at(-1),{q:'new',limit:50,cursor:'opaque'});
+  click(panel,'下一页');assert.deepEqual(calls.at(-1),{q:'new',limit:10,cursor:'opaque'});
   assert.equal(panel.find('form').some(x=>x.name==='ban-user'),false);panel.dispose();
 });
 
@@ -64,7 +64,16 @@ test('read-only analytics displays exact user columns and no command controls',a
   const panel=await setup({getModule:async()=>({items:[row],total:1})},{module:'analytics'});
   assert.deepEqual(panel.find('th').map(x=>x.textContent),['注册时间','畅聊号','用户名','邮箱验证','账号状态']);
   assert.ok(panel.find('td').some(x=>x.textContent==='2026-09-10 08:00:00'));
-  assert.equal(panel.find('select').length,0);
+  assert.equal(panel.find('select').filter(x=>x.name).length,0);
+});
+
+test('active user and IP bans revoke the exact observed round',async()=>{
+  globalThis.confirm=()=>true;const calls=[];
+  const record={id:'ip-ban',target_type:'ip',target:'192.0.2.12',starts_at:'2026-09-30T01:00:00+00:00'};
+  const panel=await setup({getModule:async()=>({items:[{...row,status:'SUSPENDED',active_ban:{id:'user-ban',starts_at:record.starts_at}}],total:1}),getActiveBans:async()=>({items:[record],total:1}),command:async(...args)=>{calls.push(args);return {status:'REVOKED'};}});
+  await settle();assert.equal(panel.find('button').filter(x=>x.textContent==='选择封禁').length,0);
+  const buttons=panel.find('button').filter(x=>x.textContent==='解除封禁');assert.equal(buttons.length,2);
+  await buttons[1].handlers.click();assert.equal(calls[0][0],'/api/v1/admin/security/bans/ip-ban/revoke');assert.equal(calls[0][1].expected_starts_at,record.starts_at);
 });
 
 test('failed next page preserves committed page and retry advances exactly once',async()=>{
@@ -74,7 +83,7 @@ test('failed next page preserves committed page and retry advances exactly once'
   assert.ok(panel.find('span').some(x=>x.textContent==='第 1 页 · 共 100 位用户'));
   assert.equal(panel.find('button').find(x=>x.textContent==='上一页').disabled,true);
   fail=false;click(panel,'重新加载');await settle();
-  assert.deepEqual(calls.at(-1),{q:'',limit:50,cursor:'second'});
+  assert.deepEqual(calls.at(-1),{q:'',limit:10,cursor:'second'});
   assert.ok(panel.find('span').some(x=>x.textContent==='第 2 页 · 共 100 位用户'));
   click(panel,'上一页');await settle();
   assert.equal(calls.at(-1).cursor,undefined);
@@ -86,8 +95,14 @@ test('failed search keeps old query cursors for next page and retries the failed
   panel.find('input').find(x=>x.name==='q').value='new';await submit(panel,'user-search');
   assert.equal(panel.find('button').find(x=>x.textContent==='下一页').disabled,false);
   click(panel,'下一页');await settle();
-  assert.deepEqual(calls.at(-1),{q:'',limit:50,cursor:'old-next'});
+  assert.deepEqual(calls.at(-1),{q:'',limit:10,cursor:'old-next'});
   await submit(panel,'user-search');fail=false;click(panel,'重新加载');await settle();
-  assert.deepEqual(calls.at(-1),{q:'new',limit:50,cursor:undefined});
+  assert.deepEqual(calls.at(-1),{q:'new',limit:10,cursor:undefined});
   assert.ok(panel.find('span').some(x=>x.textContent==='第 1 页 · 共 100 位用户'));
+});
+
+test('creating a ban refreshes the active user and IP ban list',async()=>{
+ let bansReads=0;
+ const panel=await setup({getModule:async()=>({items:[row],total:1}),getActiveBans:async()=>{bansReads++;return {items:[],total:0};},command:async()=>({status:'ACTIVE'})});
+ click(panel,'选择封禁');await submit(panel,'ban-user');assert.equal(bansReads,2);
 });

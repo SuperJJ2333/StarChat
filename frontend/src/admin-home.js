@@ -1,20 +1,21 @@
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
 import {adminSession} from "./admin-session.js?v=20260929-wallet-workspace";
-import {createAdminShell} from "./admin-dashboard.js?v=20260929-wallet-workspace";
+import {createAdminShell} from "./admin-dashboard.js?v=20260930-admin-navigation";
 import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260928-admin-entry";
 import { element, button } from "./components/base.js";
-import { browserAdminApi, can } from "./admin-api.js?v=20260929-wallet-workspace";
+import { browserAdminApi, can } from "./admin-api.js?v=20260930-admin-navigation";
 import { presentModuleRows } from "./admin-presenters.js";
-import { userPanel } from "./admin-user-panel.js";
-import {userDirectory} from './admin-user-directory.js';
-import { ledgerPanel } from './admin-ledger-panel.js';
+import { userPanel } from "./admin-user-panel.js?v=20260930-admin-navigation";
+import {userDirectory} from './admin-user-directory.js?v=20260930-admin-navigation';
+import { ledgerPanel } from './admin-ledger-panel.js?v=20260930-admin-navigation';
 import { statusLabel } from "./admin-formatters.js";
-import { chainPanel } from "./admin-chain-panel.js?v=20260929-wallet-workspace";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260929-wallet-workspace";
-import { walletAccessPanel } from './admin-wallet-access.js?v=20260929-wallet-workspace';
-import { supportPanel } from './admin-support-panel.js?v=20260920-grant';
-import { rechargePanel } from './admin-recharge-panel.js?v=20260923-direct';
+import { chainPanel } from "./admin-chain-panel.js?v=20260930-admin-navigation";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260930-admin-navigation";
+import { walletAccessPanel } from './admin-wallet-access.js?v=20260930-payout-auth-race';
+import { supportPanel } from './admin-support-panel.js?v=20260930-admin-navigation';
+import { rechargePanel } from './admin-recharge-panel.js?v=20260930-admin-navigation';
 import {supportOrderAccessPanel} from './admin-support-order-access.js';
-import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260923-direct';
+import {supportPayoutPanel} from './admin-support-payout-panel.js?v=20260930-admin-navigation';
 import {staffPasswordDialog} from './admin-staff-password-dialog.js';
 import {adminLoadingView} from './admin-loading.js';
 
@@ -69,14 +70,14 @@ function modulePanel(key, title, context) {
   if(key==='recharge')return supportOrderAccessPanel(browserAdminApi(),{actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,onReauthenticate:reauthenticateManualWallet,renderContent:api=>supportOrderContent(api,context)});
   if(key==='finance')return supportPanel(browserAdminApi(),{mode:'grant'});
   if(key==='ledger')return ledgerPanel(browserAdminApi());
-  if(key==='wallet') return walletAccessPanel(browserAdminApi(),{
+  if(key==='wallet'||key.startsWith('wallet-')) return walletAccessPanel(browserAdminApi(),{
     actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,onWalletReadDenied:context.onWalletReadDenied,
     expectedCacheEpoch:context.walletCacheEpochAtRender,getCacheEpoch:()=>adminSession.cacheEpoch(),
     renderSetup:(api,onSecurityChanged)=>manualWalletPanel(api,{actor:context.actor,securityOnly:true,onSecurityChanged,onReauthenticate:reauthenticateManualWallet}),
     renderContent:(api,accessController)=>{
       const sameSession=context.walletReadViewEpoch===adminSession.cacheEpoch();
       if(context.walletReadView&&!sameSession)context.onWalletReadDenied?.();
-      return walletContent(api,{...context,walletReadView:sameSession?context.walletReadView:undefined},accessController);
+      return walletContent(api,{...context,walletRoute:key,walletReadView:sameSession?context.walletReadView:undefined},accessController);
     }
   });
   if (key === 'security' || key === 'analytics') return userPanel(browserAdminApi(), {module:key,context,initialData:context.modules[key],onReauthenticate:reauthenticateManualWallet});
@@ -85,41 +86,41 @@ function modulePanel(key, title, context) {
   const tableDataset = Array.isArray(dataset.items)
     ? { headers: headerFallbacks[key], rows: presentModuleRows(key, dataset.items) }
     : dataset;
-  panel.append(tableFor(key, tableDataset));
+  const rows=element('div','admin-table-scroll'),paging=element('div','admin-user-pagination'),feedback=element('p','admin-audit-note');rows.append(tableFor(key,tableDataset));
+  let offset=0,pageSize=10,revision=0,disposed=false,hasMore=dataset.has_more??false;
+  const previous=element('button','admin-secondary','上一页'),next=element('button','admin-secondary','下一页');previous.type=next.type='button';
+  const controls=()=>{previous.disabled=offset===0;next.disabled=!hasMore;};controls();
+  const load=async(targetOffset=offset)=>{const version=++revision;previous.disabled=next.disabled=true;try{const result=await browserAdminApi().getModule(key,{limit:pageSize,offset:targetOffset});if(disposed||version!==revision)return false;offset=targetOffset;hasMore=result.has_more;rows.replaceChildren(tableFor(key,{headers:headerFallbacks[key],rows:presentModuleRows(key,result.items??[])}));feedback.textContent=`第 ${Math.floor(offset/pageSize)+1} 页`;controls();return true;}catch(error){if(!disposed&&version===revision){feedback.textContent=`列表加载失败：${error.message??'请重试'}。上次数据可能已过期。`;controls();}return false;}};
+  previous.addEventListener('click',()=>{if(!previous.disabled)void load(Math.max(0,offset-pageSize));});next.addEventListener('click',()=>{if(!next.disabled)void load(offset+pageSize);});
+  paging.append(previous,feedback,next,pageSizeControl(changePageSize(value=>pageSize=value,()=>load(0))));panel.append(rows,paging);panel.refresh=()=>load();panel.dispose=()=>{disposed=true;++revision;};
   if (["support-role", "ads", "notice", "finance"].includes(key)) panel.append(commandForm(key, context));
-  panel.append(element("p", "admin-audit-note", "管理员可直接操作；服务端持续保留 RBAC、幂等键、审计与 Outbox。")); return panel;
+  panel.append(element("p", "admin-audit-note", "按当前账号权限操作，所有提交均保留审计记录。")); return panel;
 }
 function supportOrderContent(api,context){
   const container=element('section');let child;
-  const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),canManage:can(context,'*'),onOpenPayout:showPayout});container.replaceChildren(child);};
-  const showPayout=()=>{child?.dispose?.();child=supportPayoutPanel(api,{actor:context.actor,onOpenWallet:can(context,'*')?context.onOpenPayout:null,onBack:showRecharge});container.replaceChildren(child);};
+  const showRecharge=()=>{child?.dispose?.();child=rechargePanel(api,{actor:context.actor,canReview:can(context,'admin.finance.review'),canApprove:can(context,'*'),canManage:can(context,'*'),onOpenPayout:can(context,'*')?showPayout:null});container.replaceChildren(child);};
+  const showPayout=()=>{if(!can(context,'*'))return;child?.dispose?.();child=walletAccessPanel(browserAdminApi(),{actor:context.actor,expectedCacheEpoch:adminSession.cacheEpoch(),getCacheEpoch:()=>adminSession.cacheEpoch(),title:'提现订单',onExit:showRecharge,onLogin:expireSession,onReauthenticate:reauthenticateManualWallet,renderContent:guarded=>supportPayoutPanel(guarded,{actor:context.actor,canOperate:true,onBack:showRecharge,onOpenWallet:context.onOpenPayout})});container.replaceChildren(child);};
   container.refresh=()=>child?.refresh?.();container.refreshOrders=()=>child?.refreshOrders?.();container.dispose=()=>child?.dispose?.();
   showRecharge();return container;
 }
 function walletContent(api,context,accessController){
+  const route=context.walletRoute==='wallet'?'wallet-chain':context.walletRoute;
+  const titles={'wallet-chain':'链上流水','wallet-payout':'人工出款','wallet-monitor':'监控与事故','wallet-owner':'所有者转出','wallet-security':'账户安全'};
   const panel=element('section','admin-wallet-workspace');
-  const hero=element('header','admin-wallet-hero');
-  const heroCopy=element('div');heroCopy.append(element('p','admin-wallet-eyebrow','TRON · OFFICIAL WALLET'),element('h2',null,'USDT 钱包操作台'),element('p',null,'链上事实、人工出款和事故处置在同一工作区核对。链上观察余额不等于账本可用余额。'));
-  hero.append(heroCopy,element('span','admin-wallet-hero-badge','链上核对工作区'));
-  const navigation=element('nav','admin-wallet-section-nav');navigation.setAttribute('aria-label','钱包页面分区');
-  for(const [id,label] of [['wallet-chain','链上流水'],['wallet-payout','人工出款'],['wallet-monitor','监控与事故'],['wallet-owner','所有者转出'],['wallet-security','账户安全']]){const link=element('a',null,label);link.href=`#${id}`;navigation.append(link);}
-  const wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess:accessController.usesGrant(),accessController});
-  const chain=chainPanel(api,{actorId:context.actor?.id,accessController,initialReadView:context.walletReadView,onSelectOwnerTransfer:value=>wallet.selectOwnerTransferCandidate?.(value)??false});chain.id='wallet-chain';
-  const history=element('section','admin-card admin-wallet-history');history.append(element('h3',null,'托管提现申请记录'),element('p','admin-audit-note','托管提现申请编号用于定位平台申请与审计记录；人工出款订单编号跟踪领取、链下签名和核对，链上交易哈希定位实际转账。三者关联后才能核定结算。'));
-  const table=element('div','admin-table-scroll');history.append(table);
-  panel.append(hero,navigation,chain,wallet,history);let disposed=false,revision=0;
-  const loadTable=async()=>{const version=++revision;try{const payload=await api.getModule('wallet');if(!disposed&&version===revision)table.replaceChildren(tableFor('wallet',{headers:headerFallbacks.wallet,rows:presentModuleRows('wallet',payload.items??[])}));return true;}catch(error){if(!disposed)table.replaceChildren(element('p','admin-load-error',error.message??'托管提现申请记录加载失败，请重试。'));return false;}};
-  panel.exportReadView=()=>disposed?null:chain.exportReadView?.()??null;
-  panel.suspendForAccessCheck=()=>{chain.suspendForAccessCheck?.();wallet.suspendForAccessCheck?.();};
-  panel.resumeReadDetail=()=>chain.resumeReadDetail?.();
-  panel.dispose=()=>{disposed=true;++revision;wallet.dispose?.();chain.dispose?.();table.replaceChildren();};
-  panel.refresh=async()=>{const results=await Promise.allSettled([wallet.refresh(),chain.refresh(),loadTable()]);return results.every(r=>r.status==='fulfilled'&&r.value!==false);};
-  void loadTable();return panel;
+  const hero=element('header','admin-wallet-hero'),copy=element('div');
+  copy.append(element('p','admin-wallet-eyebrow','TRON · OFFICIAL WALLET'),element('h2',null,titles[route]??'链上流水'),element('p',null,'链上观察余额不等于账本可用余额。操作与核验记录分别保留。'));
+  hero.append(copy,element('span','admin-wallet-hero-badge','USDT提现与支付'));panel.append(hero);
+  const child=route==='wallet-chain'?chainPanel(api,{actorId:context.actor?.id,accessController,initialReadView:context.walletReadView,onSelectOwnerTransfer:context.onSelectOwnerTransfer}):manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess:accessController.usesGrant(),accessController,view:route.slice(7),ownerCandidate:context.ownerCandidate});
+  child.id=route;panel.append(child);
+  panel.exportReadView=()=>child.exportReadView?.()??null;
+  panel.suspendForAccessCheck=()=>child.suspendForAccessCheck?.();panel.resumeReadDetail=()=>child.resumeReadDetail?.();
+  panel.dispose=()=>child.dispose?.();panel.refresh=()=>child.refresh?.();return panel;
 }
+
 function commandForm(key, context) {
   const form = element("form", "admin-command-form"); const title = element("h3", null, {"support-role":"配置客服角色", ads:"创建广告草稿", notice:"发布官方公告", finance:"发放点钻给客服"}[key]);
   const fields = {"support-role":[["user_id","用户 ID"],["role_code","角色：SUPPORT_AGENT"]], ads:[["advertiser_name","广告主"],["text","广告文案"],["link_url","落地页 URL"]], notice:[["title","公告标题"],["content","公告正文"],["audience","受众：ALL"]], finance:[["user_id","客服用户 ID"],["amount","发放数量（点钻）"],["reason_code","原因代码：SUPPORT_CAIBI_GRANT"]]}[key];
-  const hint=element("p","admin-audit-note",key==="support-role"?"填写目标用户 ID，角色选 SUPPORT_AGENT；提交后用户即可获得客服权限。":key==="finance"?"先在“升级为客服”中为目标账号配置 SUPPORT_AGENT，再填写客服用户 ID、点钻数量和原因代码直接发放。":"管理员权限可直接执行此操作，系统会记录幂等键与审计事件。");
+  const hint=element("p","admin-audit-note",key==="support-role"?"填写目标用户 ID，角色选 SUPPORT_AGENT；提交后用户即可获得客服权限。":key==="finance"?"先在“升级为客服”中为目标账号配置 SUPPORT_AGENT，再填写客服用户 ID、点钻数量和原因代码直接发放。":"提交后系统将按当前账号权限验证并记录操作。");
   const inputs={}; const fieldsWrap=element("div","admin-command-fields"); fields.forEach(([name, placeholder])=>{const input=element(name==="content"?"textarea":"input","admin-filter");input.name=name;input.placeholder=placeholder;input.required=name!=="duration_minutes";inputs[name]=input;fieldsWrap.append(input);});
   const submit=button("admin-primary","提交操作");submit.type="submit";submit.textContent="提交操作";const status=element("p","admin-audit-note");
   form.append(title,hint,fieldsWrap,submit,status); form.addEventListener("submit",async event=>{event.preventDefault();submit.disabled=true;status.textContent="正在提交…";const body=Object.fromEntries(Object.entries(inputs).map(([name,input])=>[name,input.value]));let path={"support-role":`/api/v1/admin/support-roles/${encodeURIComponent(body.user_id)}`,ads:"/api/v1/admin/ads",notice:"/api/v1/admin/notices",finance:"/api/v1/admin/finance/adjustments"}[key];if(key==="support-role")delete body.user_id;try{const result=await browserAdminApi().command(path,body,{idempotencyKey:crypto.randomUUID()});status.textContent=key==="finance"?`已发放：${text(result.amount)} 点钻`:`已提交：${result.status?statusLabel(result.status):"成功"}`;form.reset();}catch(error){status.textContent=error.message||"提交失败";if(error.code==='RECENT_LOGIN_REQUIRED'){const verify=button('admin-secondary','验证身份');verify.textContent='验证身份';verify.type='button';verify.addEventListener('click',async()=>{verify.disabled=true;const ok=await reauthenticateManualWallet();status.textContent=ok?'身份已验证，请核对表单后再次提交。':'尚未完成身份验证。';});status.append(verify);}}finally{submit.disabled=false;}});return form;
@@ -169,9 +170,9 @@ function platformButtons() {
   actions.append(row);
   const ios = element("a", "land-btn land-btn-primary");
   ios.href = "/download";
-  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.36（2205）");
+  ios.setAttribute("aria-label", "下载 iOS 正式版 0.4.25（2194）");
   const iosLabel = element("span", "land-platform-chip", "iOS 版下载");
-  iosLabel.append(element("span", "land-platform-status", "0.4.36（2205）· 企业正式版"));
+  iosLabel.append(element("span", "land-platform-status", "0.4.25（2194）· 企业正式版"));
   ios.append(iosLabel);
   actions.append(ios);
   return actions;

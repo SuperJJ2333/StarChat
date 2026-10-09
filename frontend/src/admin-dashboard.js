@@ -1,3 +1,4 @@
+import {pageSizeControl,changePageSize} from './admin-pagination.js?v=20260930-admin-navigation';
 import {formatBeijingTime, reasonLabel, actorLabel} from './admin-formatters.js';
 import {installSidebarResize} from './admin-sidebar.js';
 import {openProofDialog} from './admin-proof-dialog.js';
@@ -43,6 +44,9 @@ export function canChangeStaffPassword(context) {
   const roles = context.actor?.roles ?? [];
   return !roles.includes('SUPER_ADMIN') && roles.some(role => ['SUPPORT_AGENT','FINANCE_SUPPORT','SUPPORT_SUPERVISOR'].includes(role));
 }
+const WALLET_NAVIGATION=Object.freeze([['wallet-chain','链上流水'],['wallet-payout','人工出款'],['wallet-monitor','监控与事故'],['wallet-owner','所有者转出'],['wallet-security','账户安全']]);
+export function walletNavigation(context){return context.permissions?.includes('*')?WALLET_NAVIGATION:[];}
+const isWallet=key=>key==='wallet'||key.startsWith('wallet-');
 export function createAdminShell({context,api,modules,renderModule,onLogout,onChangePassword,getWalletCacheEpoch=()=>null}) {
   const page=el('div','admin-page admin-modern'),shell=el('div','admin-shell'),side=el('aside','admin-sidebar');side.id='admin-sidebar';
   const can=p=>context.permissions.includes('*')||context.permissions.includes(p);
@@ -58,23 +62,30 @@ export function createAdminShell({context,api,modules,renderModule,onLogout,onCh
   const content=el('main','admin-content');content.id='admin-content';const backdrop=btn('',()=>setHidden(true),'admin-sidebar-backdrop');backdrop.setAttribute('aria-label','关闭侧边栏');
   main.append(top,content);shell.append(side,main);page.append(shell,backdrop);
   const sidebar=installSidebarResize({page,side,main});let closeProof=null;
-  let current='overview',generation=0,days=30,currentPanel=null,initialOverview=true,walletViewSnapshot=null,walletPanelEpoch=null;
+  let current='overview',generation=0,days=30,currentPanel=null,initialOverview=true,walletViewSnapshot=null,walletPanelEpoch=null,ownerCandidate=null;
   const coordinate=refreshCoordinator();
   const links=new Map();
-  function addNavigation(key,label){const item=btn(label,()=>{if(key==='recharge')notifications?.markRead?.();if(current===key)return;
-    if(current==='wallet'){
+  function addNavigation(key,label,parent=nav){const item=btn(label,()=>{if(key==='recharge')notifications?.markRead?.();if(current===key)return;
+    if(isWallet(current)){
       const epoch=getWalletCacheEpoch();
       const view=epoch!==null&&epoch===walletPanelEpoch?currentPanel?.exportReadView?.():null;
       walletViewSnapshot=view?{view,actorId:context.actor?.id,epoch}:null;
     }
-    current=key;for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;nav.append(item);links.set(key,item);}
+    current=key;if(globalThis.history&&globalThis.location?.hash!==`#${key}`)globalThis.history.pushState(null,'',`#${key}`);for(const [k,b] of links){b.classList.toggle('active',k===key);b.setAttribute('aria-current',k===key?'page':'false');}routeTitle.textContent=label;closeProof?.();closeProof=null;if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();currentPanel=null;content.replaceChildren();void loadCurrent(false);if(matchMedia('(max-width:760px)').matches)setHidden(true);});item.dataset.module=key;parent.append(item);links.set(key,item);return item;}
   addNavigation('overview','运营概览');links.get('overview').classList.add('active');links.get('overview').setAttribute('aria-current','page');
   const groups=[['用户与安全',['users','security','support-role','analytics','online']],['运营',['ads','notice']],['财务',['recharge','finance','ledger','wallet']]];
-  for(const [label,keys] of groups){const entries=visibleAdminModules(context,modules).filter(([, ,key])=>keys.includes(key));if(!entries.length)continue;nav.append(el('p','admin-nav-group',label));for(const [name,,key] of entries)addNavigation(key,name);}
+  for(const [label,keys] of groups){const entries=visibleAdminModules(context,modules).filter(([, ,key])=>keys.includes(key));if(!entries.length)continue;nav.append(el('p','admin-nav-group',label));for(const [name,,key] of entries){
+      if(key!=='wallet'){addNavigation(key,name);continue;}
+      const parent=el('div','admin-wallet-nav-group'),children=el('div','admin-wallet-subnav');children.id='admin-wallet-subnav';children.hidden=true;
+      const toggle=btn(name+' ▾',()=>{children.hidden=!children.hidden;toggle.setAttribute('aria-expanded',String(!children.hidden));},'admin-wallet-nav-toggle');toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls',children.id);
+      parent.append(toggle,children);nav.append(parent);
+      for(const [route,label] of walletNavigation(context)){const item=addNavigation(route,label,children);item.classList.add('admin-wallet-subnav-item');item.addEventListener('click',()=>{children.hidden=false;toggle.setAttribute('aria-expanded','true');});}
+
+    }}
   const esc=event=>{if(event.key==='Escape'&&!side.hidden&&matchMedia('(max-width:760px)').matches)setHidden(true);};page.addEventListener('keydown',esc);
   const notifications=can('admin.finance.read') && typeof api.getOrderEvents==='function' ? orderNotifications(api,{actorId:context.actor.id,onOpen:()=>links.get('recharge')?.click(),onChange:async()=>{await currentPanel?.refreshOrders?.();}}):null;
   if(notifications)tools.append(notifications);
-  page.dispose=()=>{++generation;walletViewSnapshot=null;notifications?.dispose();sidebar.dispose();closeProof?.();page.removeEventListener('keydown',esc);if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();};
+  page.dispose=()=>{++generation;walletViewSnapshot=null;ownerCandidate=null;globalThis.removeEventListener?.('hashchange',onRoute);notifications?.dispose();sidebar.dispose();closeProof?.();page.removeEventListener('keydown',esc);if(currentPanel?.dispose)currentPanel.dispose();else currentPanel?.querySelector('.admin-manual-wallet-panel')?.dispose?.();};
   async function loadCurrent(isRefresh){
     const revision=++generation;
     try{
@@ -89,12 +100,12 @@ export function createAdminShell({context,api,modules,renderModule,onLogout,onCh
       if(currentPanel?.refresh&&isRefresh)return await currentPanel.refresh();
       if(currentPanel&&isRefresh){const wallet=currentPanel.querySelector('.admin-manual-wallet-panel');if(wallet?.refresh){const result=await wallet.refresh();return result!==false&&(!Array.isArray(result)||result.every(r=>r.status!=='rejected'));}}
       // Wallet owns its privacy gate; no sensitive module request before verification.
-      const payload=['wallet','recharge','users'].includes(current)?{}:await api.getModule(current);if(revision!==generation)return;
+      const payload=(isWallet(current)||['recharge','users'].includes(current))?{}:await api.getModule(current);if(revision!==generation)return;
       // Module tables refresh independently of command forms to retain user drafts.
       const epoch=getWalletCacheEpoch();
       if(walletViewSnapshot&&(epoch===null||walletViewSnapshot.epoch!==epoch||walletViewSnapshot.actorId!==context.actor?.id))walletViewSnapshot=null;
-      const rendered=renderModule(current,routeTitle.textContent,{...context,onWalletExit:()=>links.get('overview').click(),onWalletReadDenied:()=>{walletViewSnapshot=null;},walletReadView:current==='wallet'?walletViewSnapshot?.view:undefined,walletReadViewEpoch:current==='wallet'?walletViewSnapshot?.epoch:undefined,walletCacheEpochAtRender:current==='wallet'?epoch:undefined,onOpenPayout:can('admin.withdrawals.read')?()=>links.get('wallet')?.click():null,modules:{...context.modules,[current]:payload}});
-      if(current==='wallet')walletPanelEpoch=epoch;
+      const rendered=renderModule(current,routeTitle.textContent,{...context,onWalletExit:()=>links.get('overview').click(),onWalletReadDenied:()=>{walletViewSnapshot=null;ownerCandidate=null;},ownerCandidate:isWallet(current)?ownerCandidate:null,onSelectOwnerTransfer:value=>{ownerCandidate=value;links.get('wallet-owner')?.click();return true;},walletReadView:isWallet(current)?walletViewSnapshot?.view:undefined,walletReadViewEpoch:isWallet(current)?walletViewSnapshot?.epoch:undefined,walletCacheEpochAtRender:isWallet(current)?epoch:undefined,onOpenPayout:can('*')?()=>links.get('wallet-payout')?.click():null,modules:{...context.modules,[current]:payload}});
+      if(isWallet(current))walletPanelEpoch=epoch;
       if(isRefresh&&currentPanel){const oldTable=currentPanel.querySelector('.admin-table'),newTable=rendered.querySelector('.admin-table');if(oldTable&&newTable)oldTable.replaceWith(newTable);}
       else{currentPanel=rendered;content.replaceChildren(rendered);}return true;
     }catch(error){if(revision!==generation)return;const old=content.querySelector('.admin-load-error');old?.remove();content.prepend(el('p','admin-load-error',`数据读取失败：${error.message??'请重试'}。现有数据可能已过期。`));return false;}
@@ -110,10 +121,13 @@ export function createAdminShell({context,api,modules,renderModule,onLogout,onCh
     if(overviewAccess||can('admin.analytics.read')){const chart=el('section','admin-card admin-trend-card'),head=el('div','admin-panel-heading'),select=el('select','admin-filter');select.setAttribute('aria-label','注册趋势日期范围');for(const value of [7,30,90]){const option=el('option',null,`最近 ${value} 天`);option.value=String(value);select.append(option);}select.value=String(days);select.addEventListener('change',()=>{days=Number(select.value);void loadCurrent(true);});head.append(el('h2',null,'注册用户趋势'),select);chart.append(head,chartView(data.registration_trend));root.insertBefore(chart,root.querySelector('.admin-supply'));}return root;
   }
   async function showIssuance(parent){
-    parent.querySelector('.admin-issuance')?.remove();const box=el('section','admin-card admin-issuance');parent.append(box);const title=el('h2',null,'发行与回收凭证'),kind=el('select','admin-filter');kind.setAttribute('aria-label','凭证类型');for(const [value,label] of [['','全部'],['issued','发行'],['returned','回收 / 冲正']]){const option=el('option',null,label);option.value=value;kind.append(option);}const records=el('div','admin-table-scroll'),feedback=el('p','admin-audit-note');box.append(title,kind,feedback,records);let revision=0;
-    async function load(cursor){const requestedKind=kind.value,version=++revision;feedback.textContent='正在读取凭证…';try{const result=await api.getPointIssuance({limit:25,cursor,kind:requestedKind});if(version!==revision)return;currentCursor=cursor;currentKind=requestedKind;records.replaceChildren();const table=el('table','admin-table');table.createTHead().insertRow().append(...['交易 / 原交易','时间','数量（点钻）','操作人','原因','审计'].map(x=>el('th',null,x)));const body=table.createTBody();for(const item of result.items){const row=body.insertRow();row.append(...[item.transaction_id,formatBeijingTime(item.created_at),formatPoints(item.amount),actorLabel(item),reasonLabel(item.reason_code)].map(x=>el('td',null,x??'—')));const audit=el('td');audit.append(btn('查看凭证',()=>showProof(item.transaction_id)));row.append(audit);if(item.reversal_of_id)row.children[0].append(btn(`查看原交易 ${item.reversal_of_id}`,()=>showProof(item.reversal_of_id)));}records.append(table);if(result.next_cursor)records.append(btn('下一页',()=>load(result.next_cursor)));feedback.textContent=result.items.length?'按账本交易逐笔追溯':'暂无发行或回收记录';return true;}catch(error){if(version===revision){kind.value=currentKind;feedback.textContent=`凭证读取失败：${error.message}。保留上次数据。`;}return false;}}
-    let currentCursor,currentKind='';box.refresh=()=>load(currentCursor);kind.addEventListener('change',()=>load());return await load();
+    parent.querySelector('.admin-issuance')?.remove();const box=el('section','admin-card admin-issuance');parent.append(box);const title=el('h2',null,'发行与回收凭证'),kind=el('select','admin-filter');kind.setAttribute('aria-label','凭证类型');for(const [value,label] of [['','全部'],['issued','发行'],['returned','回收 / 冲正']]){const option=el('option',null,label);option.value=value;kind.append(option);}const records=el('div','admin-table-scroll'),feedback=el('p','admin-audit-note');box.append(title,kind,feedback,records);let revision=0,pageSize=10,issuancePage=0,issuanceStack=[undefined];box.append(pageSizeControl(changePageSize(value=>pageSize=value,()=>load(undefined,{index:0,stack:[undefined]})),{label:'凭证每页条数'}));
+    async function load(cursor,{index=issuancePage,stack=issuanceStack}={}){const requestedKind=kind.value,version=++revision;feedback.textContent='正在读取凭证…';try{const result=await api.getPointIssuance({limit:pageSize,cursor,kind:requestedKind});if(version!==revision)return;currentCursor=cursor;currentKind=requestedKind;issuancePage=index;issuanceStack=stack;records.replaceChildren();const table=el('table','admin-table');table.createTHead().insertRow().append(...['交易 / 原交易','时间','数量（点钻）','操作人','原因','审计'].map(x=>el('th',null,x)));const body=table.createTBody();for(const item of result.items){const row=body.insertRow();row.append(...[item.transaction_id,formatBeijingTime(item.created_at),formatPoints(item.amount),actorLabel(item),reasonLabel(item.reason_code)].map(x=>el('td',null,x??'—')));const audit=el('td');audit.append(btn('查看凭证',()=>showProof(item.transaction_id)));row.append(audit);if(item.reversal_of_id)row.children[0].append(btn(`查看原交易 ${item.reversal_of_id}`,()=>showProof(item.reversal_of_id)));}records.append(table);if(issuancePage>0)records.append(btn('上一页',()=>load(issuanceStack[issuancePage-1],{index:issuancePage-1})));if(result.next_cursor)records.append(btn('下一页',()=>load(result.next_cursor,{index:issuancePage+1,stack:[...issuanceStack.slice(0,issuancePage+1),result.next_cursor]})));feedback.textContent=result.items.length?'按账本交易逐笔追溯':'暂无发行或回收记录';return true;}catch(error){if(version===revision){kind.value=currentKind;feedback.textContent=`凭证读取失败：${error.message}。保留上次数据。`;}return false;}}
+    let currentCursor,currentKind='';box.refresh=()=>load(currentCursor);kind.addEventListener('change',()=>load(undefined,{index:0,stack:[undefined]}));return await load();
   }
   function showProof(id){closeProof?.();closeProof=openProofDialog({id,api,formatPoints});}
-  void loadCurrent(false);return page;
+  const onRoute=()=>{const route=globalThis.location?.hash?.slice(1),key=route==='wallet'?'wallet-chain':route;if(links.has(key))links.get(key).click();};
+  globalThis.addEventListener?.('hashchange',onRoute);
+  const rawRoute=globalThis.location?.hash?.slice(1),initialRoute=rawRoute==='wallet'?'wallet-chain':rawRoute;if(initialRoute&&links.has(initialRoute)&&initialRoute!=='overview')links.get(initialRoute).click();else void loadCurrent(false);
+  return page;
 }

@@ -195,7 +195,7 @@ test('owner transfer candidate requires complete distinct observed outflow detai
   assert.deepEqual(chosen,[{txid:distinctiveTxid,log_index:7,amount:selected.amount,
     to_address:selected.to_address,timestamp_ms:selected.timestamp_ms}]);
   assert.equal(panel.find('select')[0].value,'UNMATCHED_OUTFLOW');
-  await panel.refresh();assert.equal(calls.at(-1).offset,25);
+  await panel.refresh();assert.equal(calls.at(-1).offset,10);
   assert.equal(calls.at(-1).direction,'UNMATCHED_OUTFLOW');
 });
 
@@ -260,7 +260,7 @@ test('menu snapshot keeps only one read page and restores draft, applied filters
     panel.find('div').find(div=>div.className==='admin-table-scroll').scrollLeft=78;
     await panel.find('button').find(button=>button.textContent==='详情').handlers.click();
     const snapshot=panel.exportReadView();
-    assert.ok(snapshot);assert.equal(snapshot.items.length,1);assert.equal(snapshot.offset,25);
+    assert.ok(snapshot);assert.equal(snapshot.items.length,1);assert.equal(snapshot.offset,10);
     assert.equal(snapshot.activeFilters.direction,'UNMATCHED_OUTFLOW');
     assert.equal(snapshot.draftFilters.direction,'INFLOW');
     assert.equal(snapshot.pageScrollY,312);assert.equal(snapshot.scrollLeft,78);
@@ -303,6 +303,20 @@ test('chain repair entry asks for grant and opens only after a second click',asy
   await repair.handlers.click();await settle();assert.equal(candidates,1);assert.equal(document.body.find('dialog').length,1);
 });
 
+test('page size cannot skip records when changed during an initial request',async()=>{
+  installDocument();const calls=[];let resolveFirst;
+  const panel=chainPanel({getChainSummary:async()=>summary,getChainTransactions:query=>{calls.push(query);return calls.length===1?new Promise(resolve=>resolveFirst=resolve):Promise.resolve({items:[record],total:100,snapshot:1});}});
+  await settle();const size=panel.find('select').find(x=>x.className.includes('admin-page-size'));size.value='50';await size.handlers.change();
+  resolveFirst({items:[record],total:100,snapshot:1});await settle();await panel.find('button').find(x=>x.textContent==='下一页').handlers.click();await settle();
+  assert.equal(calls.at(-1).offset,10);assert.equal(calls.at(-1).limit,10);
+});
+
+test('read view validates page size 50 and its offset rather than a fixed 25',async()=>{
+  const {validateChainReadView}=await import('../src/admin-chain-view-state.js');
+  const view=validateChainReadView({pageSize:50,draftFilters:{},activeFilters:{},offset:50,snapshot:1,items:Array.from({length:50},(_,i)=>({...record,log_index:i,asset:'USDT'})),summary,total:100,pageScrollY:0,scrollLeft:0,cachedAt:1});
+  assert.ok(view);assert.equal(view.pageSize,50);
+});
+
 test('chain absolute times and filter serialization use Beijing time in every browser timezone', async () => {
   const originalTimezone = process.env.TZ;
   try {
@@ -340,7 +354,7 @@ test("chain panel uses stable pages, renders exact amount and fetches detail", a
   panel.find("button").find(item => item.textContent === "下一页").handlers.click();
   await settle();
   assert.equal(calls[1].snapshot, 44);
-  assert.equal(calls[1].offset, 25);
+  assert.equal(calls[1].offset, 10);
   panel.find("button").find(item => item.textContent === "详情").handlers.click();
   await settle();
   assert.ok(document.body.find("dd").some(item => item.textContent === "destination"));
@@ -410,7 +424,7 @@ test('global chain refresh preserves filters page rows and selected detail on fa
  await panel.find('button').find(n=>n.textContent==='详情').handlers.click();
  fail=true;assert.equal(await panel.refresh(),false);
  assert.ok(panel.find('td').some(n=>n.textContent==='10.000001'));assert.ok(document.body.find('dd').some(n=>n.textContent==='destination-1'));
- assert.ok(document.body.find('p').some(n=>n.textContent?.includes('过期')));assert.equal(calls.at(-1).offset,25);assert.equal(calls.at(-1).direction,'INFLOW');assert.equal(calls.at(-1).snapshot,undefined);
+ assert.ok(document.body.find('p').some(n=>n.textContent?.includes('过期')));assert.equal(calls.at(-1).offset,10);assert.equal(calls.at(-1).direction,'INFLOW');assert.equal(calls.at(-1).snapshot,undefined);
  fail=false;assert.equal(await panel.refresh(),true);assert.equal(detailReads,2);assert.ok(document.body.find('dd').some(n=>n.textContent==='destination-2'));
 });
 
@@ -470,7 +484,7 @@ test('validated deposit needs explicit submission and refreshes the current chai
     assert.deepEqual(executes[0][1],{preview_id:'preview-1',digest:'a'.repeat(64),expected_version:1,operation_id:executes[0][1].operation_id,confirmed:true});
     assert.equal(executes[0][2].idempotencyKey,executes[0][1].operation_id);
     assert.equal(pageCalls.length,4,'execution refreshes the visible chain page');
-    assert.equal(pageCalls[3].offset,25);
+    assert.equal(pageCalls[3].offset,10);
     assert.equal(pageCalls[3].direction,'INFLOW');
     assert.ok(panel.find('td').some(item=>item.textContent?.includes('已入账')));
   } finally { globalThis.localStorage = originalStorage; }

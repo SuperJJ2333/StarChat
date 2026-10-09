@@ -18,6 +18,11 @@ class Permission(StrEnum):
     SUPERVISOR_APPROVE = "supervisor.approve"
     AUDIT_VIEW = "audit.view"
     SYSTEM_ADMIN = "system.admin"
+    BANS_MANAGE = "admin.bans.manage"
+    ANALYTICS_VIEW = "admin.analytics.view"
+    ADS_MANAGE = "admin.ads.manage"
+    NOTICES_MANAGE = "admin.notices.manage"
+    LEDGER_VIEW = "admin.ledger.view"
 
 
 ROLE_PERMISSIONS: dict[RoleCode, frozenset[Permission]] = {
@@ -40,6 +45,11 @@ ROLE_PERMISSIONS: dict[RoleCode, frozenset[Permission]] = {
     ),
     RoleCode.SUPER_ADMIN: frozenset(Permission),
 }
+
+STAFF_MODULE_PERMISSIONS = frozenset({Permission.BANS_MANAGE, Permission.ANALYTICS_VIEW,
+    Permission.ADS_MANAGE, Permission.NOTICES_MANAGE, Permission.LEDGER_VIEW})
+for _role in (RoleCode.SUPPORT_AGENT, RoleCode.FINANCE_SUPPORT, RoleCode.SUPPORT_SUPERVISOR):
+    ROLE_PERMISSIONS[_role] = ROLE_PERMISSIONS[_role] | STAFF_MODULE_PERMISSIONS
 
 
 class RbacService:
@@ -67,5 +77,4 @@ class RbacService:
     @staticmethod
     def _denied() -> None:
         raise AppError(code="PERMISSION_DENIED", message="无权执行此操作", status_code=403)
-
 

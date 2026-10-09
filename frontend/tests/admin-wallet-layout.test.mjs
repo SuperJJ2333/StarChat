@@ -6,14 +6,16 @@ const source=path=>readFile(new URL(path,import.meta.url),'utf8');
 
 test('wallet workspace labels platform applications separately from chain facts and payout orders',async()=>{
  const home=await source('../src/admin-home.js');
- assert.match(home,/USDT 钱包操作台/u);
- assert.match(home,/托管提现申请记录/u);
- assert.match(home,/托管提现申请编号/u);
- assert.match(home,/人工出款订单编号/u);
- assert.match(home,/链上交易哈希/u);
- assert.match(home,/钱包页面分区/u);
- for(const anchor of ['wallet-chain','wallet-payout','wallet-monitor','wallet-owner','wallet-security'])assert.ok(home.includes(`'${anchor}'`),`navigation includes ${anchor}`);
- assert.match(home,/link\.href=`#\$\{id\}`/u);
+ const dashboard=await source('../src/admin-dashboard.js');
+ const payout=await source('../src/admin-manual-wallet-panel.js');
+ assert.match(home,/USDT提现与支付/u);
+ assert.match(home,/链上观察余额不等于账本可用余额/u);
+ assert.match(payout,/用户提现申请/u);
+ assert.match(payout,/人工出款订单编号/u);
+ assert.match(payout,/链上交易哈希/u);
+ for(const route of ['wallet-chain','wallet-payout','wallet-monitor','wallet-owner','wallet-security'])assert.ok(dashboard.includes(`'${route}'`),`navigation includes ${route}`);
+ assert.match(dashboard,/aria-controls/u);
+ assert.match(dashboard,/route==='wallet'\?'wallet-chain':route/u);
 });
 
 test('wallet presentation keeps tables scrollable, details legible and reduced motion respected',async()=>{
