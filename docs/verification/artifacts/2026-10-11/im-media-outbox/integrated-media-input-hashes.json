@@ -1,0 +1,157 @@
+{
+  "baseline": "9902d35079e9cb051125808a251ae479b06893cb",
+  "capturedUtc": "2026-10-11T06:56:07.6070138Z",
+  "scope": "test/comment-only",
+  "sources": [
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "bytes": 386441,
+      "sha256": "40f57796add2aedcd3b3ad12531b2ca321b18e2f8d699bf0ab46012f1b8c03be"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart",
+      "bytes": 105411,
+      "sha256": "4df5dc23eb7e1d3385aa44f202830ea0da3ed7fff5387a1c63ee554a5973fea8"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart",
+      "bytes": 20550,
+      "sha256": "5c63d666387a03628500d1bf09f243b654b4b46ae117271e8403c91e6e700bdc"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/verified_media_content.dart",
+      "bytes": 2622,
+      "sha256": "298a2c176d514d092ffae0ff5967378ba9a983daea0d5cb00e2524d5837b51b0"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/content_addressed_media.dart",
+      "bytes": 15933,
+      "sha256": "81d14fb18a31831038eed3e9aab0927eaef6160ef6aaebe9643a716b92d0d105"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_cache.dart",
+      "bytes": 74240,
+      "sha256": "7e8d1103344f604fcb9d3974b6a1f878b8ea95526f35c16cdfbcee75e5e49d5c"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_transfer_budget.dart",
+      "bytes": 10133,
+      "sha256": "645414c326ab06769f6032f0bcbbb2df52d1ee08f8c0b8cf53a61fc7b4146c51"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/matrix_outgoing_work_coordinator.dart",
+      "bytes": 38928,
+      "sha256": "3b057c947dd6f3fc7fa6b4b3df4f5ea27537690d26cf2959239b4e527715ba1f"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart",
+      "bytes": 11000,
+      "sha256": "753d4f16367640df25aabc412d00a79af6454c5c10151dd4b0f38b32e2700881"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/content_addressed_media_test.dart",
+      "bytes": 34400,
+      "sha256": "556c33686ba99b635af869e9ce4a7bc15da1a249043d623b21ddcab85e29fde3"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart",
+      "bytes": 32264,
+      "sha256": "1ae7894fe120fb4f526aa5d7883e74aa38abcfc96e1ea817d3054317234e77b4"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart",
+      "bytes": 3302,
+      "sha256": "cb5f83b387e08ec0cea9919984b6f976c2036d8db2ac660a7e24f0abc325403a"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.yaml",
+      "bytes": 2606,
+      "sha256": "2454781434a8cef72705ecbfa1ede211e66d0bed8a728dda7be5ab26d9243033"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "bytes": 56116,
+      "sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/integrated-media-red.txt",
+      "bytes": 43406,
+      "sha256": "044dcce500b0eae037131c25d584796f130fddc7420ae42923242150cd584a2b",
+      "createdUtc": "2026-10-11T06:47:50.9292233Z",
+      "lastWriteUtc": "2026-10-11T06:48:08.6494363Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/integrated-forward-deadline-red.txt",
+      "bytes": 4256,
+      "sha256": "75a832833a80c08cef15d0ca2c42e8ba2e18ad0b5cd4146e30299864e9fd4f2e",
+      "createdUtc": "2026-10-11T06:50:52.6542145Z",
+      "lastWriteUtc": "2026-10-11T06:51:01.7290845Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/integrated-forward-deadline-red.patch",
+      "bytes": 1786,
+      "sha256": "f377b56d9197dfa10d4cd230c31b4c084290899f791118b99b7c7d719b544f27",
+      "createdUtc": "2026-10-11T06:51:33.4249134Z",
+      "lastWriteUtc": "2026-10-11T06:51:33.4258919Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/integrated-media-fakeasync-attempt.txt",
+      "bytes": 55631,
+      "sha256": "f74edd562f6a8c70742dad9af8834ddb70831ac3305aa23b83d8cbf6c19d5782",
+      "createdUtc": "2026-10-11T06:51:33.8647372Z",
+      "lastWriteUtc": "2026-10-11T06:52:40.9802933Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/integrated-media-green.txt",
+      "bytes": 43211,
+      "sha256": "eb003cc7b378be31423b8418995cc2d45ef701eb7cc45a53486ed2556b1ec121",
+      "createdUtc": "2026-10-11T06:51:33.8647372Z",
+      "lastWriteUtc": "2026-10-11T06:53:25.9468919Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/integrated-media-adjacent.txt",
+      "bytes": 17475,
+      "sha256": "ea018e19123a2095e5f64860b004135d450d22d9fe4300fbf61fe280df646347",
+      "createdUtc": "2026-10-11T06:54:31.2175682Z",
+      "lastWriteUtc": "2026-10-11T06:54:42.6105408Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/integrated-media-analyze.txt",
+      "bytes": 121,
+      "sha256": "09b8a28896534e51ad666bb7d04ad732b31bfa66f08bd845a71dd12a708f9f4a",
+      "createdUtc": "2026-10-11T06:54:31.2146422Z",
+      "lastWriteUtc": "2026-10-11T06:54:37.2217364Z"
+    }
+  ],
+  "gates": {
+    "baseline": {
+      "exit": 1,
+      "pass": 82,
+      "fail": 1
+    },
+    "final": {
+      "exit": 0,
+      "pass": 83,
+      "fail": 0,
+      "skip": 0
+    },
+    "controlledOldDeadline": {
+      "exit": 1,
+      "pass": 0,
+      "fail": 1
+    },
+    "adjacent": {
+      "exit": 0,
+      "pass": 66,
+      "fail": 0,
+      "skip": 0
+    },
+    "analyze": {
+      "exit": 0,
+      "files": 3,
+      "issues": 0
+    }
+  }
+}

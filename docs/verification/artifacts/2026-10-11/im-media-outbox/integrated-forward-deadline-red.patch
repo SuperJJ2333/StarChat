@@ -1,0 +1,42 @@
+diff --git a/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart b/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart
+index 057fe6dd..900c544a 100644
+--- a/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart
+@@ -151,6 +151,8 @@ final class _ForwardTargetRoom extends Room {
+       : super(id: '!target:matrix.test');
+ 
+   final sentTxids = <String?>[];
++  final sendStarted = Completer<void>();
++  Completer<void>? settlement;
+ 
+   @override
+   bool get encrypted => true;
+@@ -173,6 +175,8 @@ final class _ForwardTargetRoom extends Room {
+     String? threadRootEventId,
+     String? threadLastEventId,
+   }) async {
++    if (!sendStarted.isCompleted) sendStarted.complete();
++    await settlement?.future;
+     sentTxids.add(txid);
+     return r'$forwarded';
+   }
+@@ -418,6 +422,7 @@ void main() {
+     );
+     final source = client.source;
+     final target = client.target;
++    target.settlement = Completer<void>();
+     source.events = [
+       _HeldForwardVideo(room: source, envelope: envelope),
+     ];
+@@ -526,7 +531,10 @@ void main() {
+ 
+     lease.revokeNow();
+     await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+-    releaseDownload.complete(http.Response.bytes(envelope.encrypted.data, 200));
++    await tester.runAsync(() async {
++      releaseDownload.complete(http.Response.bytes(envelope.encrypted.data, 200));
++      Timer(const Duration(milliseconds: 1500), () => target.settlement!.complete());
++    });
+     var drained = false;
+     unawaited(matrix.outgoingWork.drain().then((_) => drained = true));
+     for (var tick = 0; tick < 100 && !drained; tick++) {

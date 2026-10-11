@@ -9770,9 +9770,9 @@ final class MatrixSdkE2eeClient
 
   /// 发送加密媒体。
   ///
-  /// 参数为 `Uint8List` 且**直接透传**给 SDK——此前这里对正文与缩略图
-  /// 各做一次 `Uint8List.fromList` 全量拷贝，视频路径上凭空多出两份
-  /// 完整内存副本（SDK 加密内部还会再做一次原生拷贝，无法避免）。
+  /// `Uint8List` 在入口不重复复制；后续 worker 校验建立账号作用域内的
+  /// 不可变快照，并将缓存持有的可信字节交给 SDK。外部可修改数组不与
+  /// 已校验的正文或缩略图共享别名，已持有的可信快照可复用校验结果。
   Future<String> sendEncryptedMedia(
           String roomId, List<int> plaintext, String mimeType,
           {Map<String, dynamic>? extraContent,

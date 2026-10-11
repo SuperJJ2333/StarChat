@@ -1,0 +1,425 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: Matrix 测试存储目录隔离（CI 并发回归） 文档目录是进程私有且不写入源码目录
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: Matrix 测试存储目录隔离（CI 并发回归） 跨进程隔离只由 pid 决定（同 base + 不同 pid = 不同目录）
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: Matrix 测试存储目录隔离（CI 并发回归） 同一进程内保持一致（跨实例持久化测试依赖）
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: 同库并发初始化必须串行（CI box_client 写入竞态回归） 两次并发 create 不得重叠执行 opener
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: 同库并发初始化必须串行（CI box_client 写入竞态回归） 多路并发 create 全部串行完成，且队列排空后不残留
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: 同库并发初始化必须串行（CI box_client 写入竞态回归） 串行 create 仍然各自成功（锁不破坏正常路径）
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: normal sync cannot adopt a fresh client after explicit clear
+{"trace_id":"0YOMdLJYmaq_EhRMaE1m45Ly","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_RESUME_UNVERIFIED"}
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: clear cannot authorize adoption of an already logged-in client
+{"trace_id":"gPl8A9oiimB9WcYHAprELCRb","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_RESUME_UNVERIFIED"}
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed fresh opener can retry only through explicit login
+00:00 +9: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: token refresh adopts a server-rotated device id instead of L04
+[Matrix] [32mInitialize client stale[0m
+00:00 +10: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: token login after confirmed local clear opens fresh client
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +11: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +12: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +13: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +14: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +14: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: soft logged out continuity retains identity and validates binding
+{"trace_id":"ZzVtPyDS9FmCfZMY5L_TiDl5","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+{"trace_id":"ZzVtPyDS9FmCfZMY5L_TiDl5","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_BINDING_MIGRATED"}
+{"trace_id":"tIFpX1HKlFNehVVgVRsreM_3","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +15: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +16: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +17: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +17: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed SDK init closes retained client handle
+[Matrix] [32mInitialize client failed-init[0m
+[Matrix] [31m!!!CRITICAL!!! Client initialization failed - Bad state: synthetic open failure
+#0      new FailedInitClient.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart:129:17)
+#1      Client.init.<anonymous closure> (package:matrix/src/client.dart:1955:44)
+#2      runBenchmarked (package:matrix/src/utils/run_benchmarked.dart:30:16)
+#3      Client.init (package:matrix/src/client.dart:1953:29)
+#4      MatrixClientFactory.initializeClient (package:liuhetong_mobile/features/matrix/matrix_client_factory.dart:1035:20)
+#5      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart:1025:31)
+#6      Declarer.test.<anonymous closure>.<anonymous closure> (package:test_api/src/backend/declarer.dart:253:25)
+<asynchronous suspension>
+#7      Declarer.test.<anonymous closure> (package:test_api/src/backend/declarer.dart:250:11)
+<asynchronous suspension>
+#8      Invoker._waitForOutstandingCallbacks.<anonymous closure> (package:test_api/src/backend/invoker.dart:318:9)
+<asynchronous suspension>
+[0m
+00:00 +18: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +19: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +20: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +20: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: new factory rejects a changed persisted Ed25519 fingerprint
+{"trace_id":"xXY95neoZtzZczE_2N49zlWD","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +21: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +21: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: first wrapper operation validates the persisted restart fingerprint
+{"trace_id":"xrogvnUIsIUSSiM8N9vbNwuf","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +22: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +23: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +24: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +25: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +26: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +27: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +28: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +29: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +29: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: suspend closes storage without reopening or exposing disposed client
+{"trace_id":"2E_A1tssSXeo-1lz60RpZ3WR","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"2E_A1tssSXeo-1lz60RpZ3WR","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"2E_A1tssSXeo-1lz60RpZ3WR","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +30: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +30: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: explicit local clear also works after the client is suspended
+{"trace_id":"TN4tgvX_pxK5tLYlBmpC--dF","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"TN4tgvX_pxK5tLYlBmpC--dF","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"TN4tgvX_pxK5tLYlBmpC--dF","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +31: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +31: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: sync resumes lazily and retries after resume creation fails
+{"trace_id":"LNFH9gWYhEbzXYmsgydNxWMA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"LNFH9gWYhEbzXYmsgydNxWMA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"LNFH9gWYhEbzXYmsgydNxWMA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +32: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +32: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume rejects a different Matrix device identity
+{"trace_id":"XTiE2iSJ0crQh9hmP-Z3SkOD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"XTiE2iSJ0crQh9hmP-Z3SkOD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"XTiE2iSJ0crQh9hmP-Z3SkOD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"XTiE2iSJ0crQh9hmP-Z3SkOD","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_BINDING_MISMATCH"}
+00:00 +33: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +33: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume rejects the same device with a different Ed25519 fingerprint
+{"trace_id":"qQvJlSLLrsi1yF8db0b8dGpl","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"qQvJlSLLrsi1yF8db0b8dGpl","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"qQvJlSLLrsi1yF8db0b8dGpl","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"qQvJlSLLrsi1yF8db0b8dGpl","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +34: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +34: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume rejects the same device from a different database generation
+{"trace_id":"QdxFrVdH1xwUNJtgL1rqKDWP","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"QdxFrVdH1xwUNJtgL1rqKDWP","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"QdxFrVdH1xwUNJtgL1rqKDWP","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"QdxFrVdH1xwUNJtgL1rqKDWP","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_GENERATION_MISMATCH"}
+00:00 +35: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +35: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: concurrent sync operations share one resume attempt
+{"trace_id":"wi1O6zLpM4_Sun9xkh7RUuQp","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"wi1O6zLpM4_Sun9xkh7RUuQp","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"wi1O6zLpM4_Sun9xkh7RUuQp","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +36: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +36: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: suspend during resume waits and then closes the resumed handle
+{"trace_id":"qU5mQad51AVHaavCd5H33VzY","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"qU5mQad51AVHaavCd5H33VzY","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"qU5mQad51AVHaavCd5H33VzY","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"u9mdrvjLrHMcgUziVMdG07Ow","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"u9mdrvjLrHMcgUziVMdG07Ow","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"u9mdrvjLrHMcgUziVMdG07Ow","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +37: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +37: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume waits until an in-flight suspend finishes
+{"trace_id":"NeRxyDVxzeadH4sTzu6vt-fe","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"NeRxyDVxzeadH4sTzu6vt-fe","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"NeRxyDVxzeadH4sTzu6vt-fe","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +38: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +38: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed suspend keeps the active handle and can be retried
+{"trace_id":"2rnz7hrGx5Sntz06aXtWjj1v","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"2rnz7hrGx5Sntz06aXtWjj1v","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"2rnz7hrGx5Sntz06aXtWjj1v","stage":"lifecycle","outcome":"failure","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_FAILED"}
+{"trace_id":"dg5qok9vP4x8c5T1GYxT7F0g","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"dg5qok9vP4x8c5T1GYxT7F0g","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"dg5qok9vP4x8c5T1GYxT7F0g","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +39: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +39: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: clear waits for an in-flight resume and clears its only handle
+{"trace_id":"Vo6ESzL9N_Gd5EzIK4k_JNJq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"Vo6ESzL9N_Gd5EzIK4k_JNJq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"Vo6ESzL9N_Gd5EzIK4k_JNJq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +40: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +40: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: tracked capability action fails closed during an in-flight suspend
+{"trace_id":"iXLCqyEWFuM1m7MS_Uw-GtiA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"iXLCqyEWFuM1m7MS_Uw-GtiA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"iXLCqyEWFuM1m7MS_Uw-GtiA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +41: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +42: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +42: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: suspend fails closed within a bound without closing an in-use database
+{"trace_id":"tD1Nlpv7boB9usyXj_bEvOGH","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"tD1Nlpv7boB9usyXj_bEvOGH","stage":"lifecycle","outcome":"timeout","event_code":"E2EE_LIFECYCLE_DRAIN_TIMEOUT"}
+{"trace_id":"tD1Nlpv7boB9usyXj_bEvOGH","stage":"lifecycle","outcome":"failure","event_code":"E2EE_LIFECYCLE_DRAIN_TIMEOUT"}
+{"trace_id":"Sm5i1PmD5PdSRi8dD--a7Xj4","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"Sm5i1PmD5PdSRi8dD--a7Xj4","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"Sm5i1PmD5PdSRi8dD--a7Xj4","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +43: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +44: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +45: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +45: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: token response tuple preserves continuity before a phased tombstone clear
+[Matrix] [32mInitialize client old[0m
+00:00 +46: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +47: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +48: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +48: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: conversation member projection is pruned and reset with its client
+{"trace_id":"gATSuaOauhzU-UbkrhAr-vHF","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"gATSuaOauhzU-UbkrhAr-vHF","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"gATSuaOauhzU-UbkrhAr-vHF","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +49: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +50: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +51: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +52: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +53: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +54: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +55: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +55: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member refresh state resets after resume with a new SDK client
+{"trace_id":"FU1PaCtNaxVek4gEWT1yHNRS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"FU1PaCtNaxVek4gEWT1yHNRS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"FU1PaCtNaxVek4gEWT1yHNRS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +56: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +57: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +57: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: home pusher cleanup after revoke removes only created identity without queue deadlock
+{"trace_id":"6o8tN2JE9FcxyVcqhB19KW-t","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"6o8tN2JE9FcxyVcqhB19KW-t","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"6o8tN2JE9FcxyVcqhB19KW-t","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +58: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +59: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:00 +60: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +61: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +62: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +62: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: home capability reattaches before resumed client is published
+{"trace_id":"f75xedQ-UH0Ek0nL8TRCn0L8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"f75xedQ-UH0Ek0nL8TRCn0L8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"f75xedQ-UH0Ek0nL8TRCn0L8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +63: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +64: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +64: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: background sync cannot reopen suspended session while explicit sync can
+{"trace_id":"p8y3TfQOeWXvoU92S5vwd1pO","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"p8y3TfQOeWXvoU92S5vwd1pO","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"p8y3TfQOeWXvoU92S5vwd1pO","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +65: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +66: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +66: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: managed client stream detaches on suspend and rebuilds on resume
+{"trace_id":"NfvEg3YVthAUL3Ih50OeaGRJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"NfvEg3YVthAUL3Ih50OeaGRJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"NfvEg3YVthAUL3Ih50OeaGRJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +67: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +67: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: managed client resource closes before suspend and rebuilds on resume
+{"trace_id":"FXQKP4uyDb_0V-TSYwrbwlRz","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"FXQKP4uyDb_0V-TSYwrbwlRz","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"FXQKP4uyDb_0V-TSYwrbwlRz","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +68: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +68: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease is revoked before suspend without holding the queue
+{"trace_id":"Aon2KvjiMjwmcQrj19Uqo7LX","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"Aon2KvjiMjwmcQrj19Uqo7LX","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"Aon2KvjiMjwmcQrj19Uqo7LX","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +69: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:01 +70: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease owns encrypted media sends and rejects them after revoke
+{"trace_id":"zdwmz_yVg6AXUcV2LFCuKdmD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"zdwmz_yVg6AXUcV2LFCuKdmD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"zdwmz_yVg6AXUcV2LFCuKdmD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +71: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +71: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease reentrant cancellation cannot deadlock suspension
+{"trace_id":"jpndL21MUuUqIvKmQPywfAUk","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"jpndL21MUuUqIvKmQPywfAUk","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"jpndL21MUuUqIvKmQPywfAUk","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +72: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +72: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease drain failure retains the active database for retry
+{"trace_id":"hQ1A7inF9NHwH3U1Sl7p2unm","stage":"room_lease_drain","outcome":"failure","event_code":"E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED"}
+{"trace_id":"k6xnMQulmSI26vPEDOrf_ZLl","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"k6xnMQulmSI26vPEDOrf_ZLl","stage":"room_lease_drain","outcome":"failure","event_code":"E2EE_ROOM_LEASE_DRAIN_FAILED"}
+{"trace_id":"k6xnMQulmSI26vPEDOrf_ZLl","stage":"room_lease_drain","outcome":"failure","event_code":"E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED"}
+{"trace_id":"SyGXi5IBmyQEHVkHj2bMlgUS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"SyGXi5IBmyQEHVkHj2bMlgUS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"SyGXi5IBmyQEHVkHj2bMlgUS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +73: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +73: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease drain timeout retains the active database for retry
+{"trace_id":"SL-3z2J2DwUR77agZpwAV9S2","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"SL-3z2J2DwUR77agZpwAV9S2","stage":"room_lease_drain","outcome":"timeout","event_code":"E2EE_ROOM_LEASE_DRAIN_TIMEOUT"}
+{"trace_id":"oYUMLGZkmDpQbuUs4bDyY6I-","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"oYUMLGZkmDpQbuUs4bDyY6I-","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"oYUMLGZkmDpQbuUs4bDyY6I-","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +74: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +75: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +76: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +76: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: login sync failure suspends without deleting Matrix identity or key
+[Matrix] [32mInitialize client old[0m
+{"trace_id":"ErZ5zJMYHMr8JBU-51nEPbEj","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"ErZ5zJMYHMr8JBU-51nEPbEj","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"ErZ5zJMYHMr8JBU-51nEPbEj","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +77: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +77: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: revoked session cannot reopen a room lease
+{"trace_id":"k14jtCRiABwep2DBFEwqXi7T","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"k14jtCRiABwep2DBFEwqXi7T","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"k14jtCRiABwep2DBFEwqXi7T","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +78: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +78: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: revoked session cannot register a home resource
+{"trace_id":"EEZK_s1im__tpiEYgFic18kA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"EEZK_s1im__tpiEYgFic18kA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"EEZK_s1im__tpiEYgFic18kA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +79: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+00:01 +79: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: revoked session cannot register a subscription
+{"trace_id":"uvhfHD4btbZeOYSCfX5XbQBa","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"uvhfHD4btbZeOYSCfX5XbQBa","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"uvhfHD4btbZeOYSCfX5XbQBa","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +80: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+00:01 +81: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room lease cancellation drains an in-flight picked media action
+00:01 +82: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: RoomPage forwards held encrypted media through the owner after its source lease closes
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[chatflow/mediaindex] degraded: UnimplementedError
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TimeoutException was thrown while running async test code:
+TimeoutException after 0:00:30.000000: Future not completed
+
+When the exception was thrown, this was the stack:
+<asynchronous suspension>
+#1      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart:537:7)
+<asynchronous suspension>
+<asynchronous suspension>
+#3      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart:534:5)
+<asynchronous suspension>
+#4      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#5      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 3 frames from dart:async and package:stack_trace)
+
+The exception was caught asynchronously.
+════════════════════════════════════════════════════════════════════════════════════════════════════
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TimeoutException was thrown while running async test code:
+TimeoutException after 0:00:30.000000: Future not completed
+
+When the exception was thrown, this was the stack:
+<asynchronous suspension>
+#1      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart:547:7)
+<asynchronous suspension>
+<asynchronous suspension>
+#3      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart:545:5)
+<asynchronous suspension>
+#4      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#5      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 3 frames from dart:async and package:stack_trace)
+
+The exception was caught asynchronously.
+════════════════════════════════════════════════════════════════════════════════════════════════════
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: true
+  Actual: <false>
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart:550:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart line 550
+The test description was:
+  RoomPage forwards held encrypted media through the owner after its source lease closes
+════════════════════════════════════════════════════════════════════════════════════════════════════
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following message was thrown:
+Multiple exceptions (3) were detected during the running of the current test, and at least one was
+unexpected.
+════════════════════════════════════════════════════════════════════════════════════════════════════
+01:02 +82 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: RoomPage forwards held encrypted media through the owner after its source lease closes [E]
+  Test failed. See exception logs above.
+  The test description was: RoomPage forwards held encrypted media through the owner after its source lease closes
+  
+01:02 +82 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: RoomPage forwards held encrypted media through the owner after its source lease closes

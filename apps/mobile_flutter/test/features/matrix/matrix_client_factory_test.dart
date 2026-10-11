@@ -2442,7 +2442,7 @@ void main() {
     expect(matrix.debugDecryptedPreviewCount, 0);
   });
 
-  test('owned media bytes and thumbnails preserve Uint8List identity',
+  test('media send owns immutable content snapshots without mutable aliases',
       () async {
     final client = EncryptedMediaTrackingClient('bytes');
     final room = MediaTrackingRoom(id: '!room:test', client: client);
@@ -2454,12 +2454,32 @@ void main() {
     final thumbnail = mediaTestPng();
     await lease.sendEncryptedMedia(room.id, bytes, 'video/mp4',
         thumbnailBytes: thumbnail);
-    expect(identical(room.sentFile!.bytes, bytes), isTrue);
-    expect(identical(room.sentThumbnail!.bytes, thumbnail), isTrue);
+    final sentBytes = room.sentFile!.bytes;
+    final sentThumbnail = room.sentThumbnail!.bytes;
+    final expectedThumbnail = Uint8List.fromList(thumbnail);
+    expect(sentBytes, [1, 2, 3]);
+    expect(sentThumbnail, expectedThumbnail);
+    // R7b's verified digest belongs to an owned, immutable snapshot. Keeping
+    // the caller's mutable identity would let later edits invalidate that proof.
+    expect(sentBytes, isNot(same(bytes)));
+    expect(sentThumbnail, isNot(same(thumbnail)));
+    bytes[0] = 9;
+    thumbnail[0] = 0;
+    expect(sentBytes, [1, 2, 3]);
+    expect(sentThumbnail, expectedThumbnail);
+    expect(() => sentBytes[0] = 9, throwsUnsupportedError);
+    expect(() => sentThumbnail.buffer.asUint8List()[0] = 0,
+        throwsUnsupportedError);
     final gif = base64Decode(
         'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
     await matrix.sendEncryptedMedia(room.id, gif, 'image/gif');
-    expect(identical(room.sentFile!.bytes, gif), isTrue);
+    final sentGif = room.sentFile!.bytes;
+    final expectedGif = Uint8List.fromList(gif);
+    expect(sentGif, expectedGif);
+    expect(sentGif, isNot(same(gif)));
+    gif[0] = 0;
+    expect(sentGif, expectedGif);
+    expect(() => sentGif[0] = 0, throwsUnsupportedError);
   });
 
   test('core sync leaves group invites pending for business preference gate',

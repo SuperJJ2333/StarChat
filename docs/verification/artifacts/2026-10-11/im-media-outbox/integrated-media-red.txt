@@ -1,0 +1,331 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: Matrix 测试存储目录隔离（CI 并发回归） 文档目录是进程私有且不写入源码目录
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: Matrix 测试存储目录隔离（CI 并发回归） 跨进程隔离只由 pid 决定（同 base + 不同 pid = 不同目录）
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: Matrix 测试存储目录隔离（CI 并发回归） 同一进程内保持一致（跨实例持久化测试依赖）
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: 同库并发初始化必须串行（CI box_client 写入竞态回归） 两次并发 create 不得重叠执行 opener
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: 同库并发初始化必须串行（CI box_client 写入竞态回归） 多路并发 create 全部串行完成，且队列排空后不残留
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: 同库并发初始化必须串行（CI box_client 写入竞态回归） 串行 create 仍然各自成功（锁不破坏正常路径）
+00:00 +6: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: normal sync cannot adopt a fresh client after explicit clear
+{"trace_id":"4XG2LtKk9iKo8gZhW2QSgwHK","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_RESUME_UNVERIFIED"}
+00:00 +7: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: clear cannot authorize adoption of an already logged-in client
+{"trace_id":"rqXX_7tpqZuu8IJlyK2A237z","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_RESUME_UNVERIFIED"}
+00:00 +8: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed fresh opener can retry only through explicit login
+00:00 +9: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: token refresh adopts a server-rotated device id instead of L04
+[Matrix] [32mInitialize client stale[0m
+00:00 +10: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: token login after confirmed local clear opens fresh client
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +11: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: uses a stable encrypted database path and secure key
+00:00 +12: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: migrates an existing client to the configured public homeserver
+00:00 +13: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: factory continuity metadata persists fingerprint and DB generation
+00:00 +14: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: soft logged out continuity retains identity and validates binding
+{"trace_id":"Jxu6wvbSFEIHtlXLtglkJVKI","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+{"trace_id":"Jxu6wvbSFEIHtlXLtglkJVKI","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_BINDING_MIGRATED"}
+{"trace_id":"aPgSpQZjW2NU2B2km9fYgm_T","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +15: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: stale binding on an empty store is reset so reinstall can log in
+00:00 +16: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed migration closes client without deleting store
+00:00 +17: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed SDK init closes retained client handle
+[Matrix] [32mInitialize client failed-init[0m
+[Matrix] [31m!!!CRITICAL!!! Client initialization failed - Bad state: synthetic open failure
+#0      new FailedInitClient.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart:129:17)
+#1      Client.init.<anonymous closure> (package:matrix/src/client.dart:1955:44)
+#2      runBenchmarked (package:matrix/src/utils/run_benchmarked.dart:30:16)
+#3      Client.init (package:matrix/src/client.dart:1953:29)
+#4      MatrixClientFactory.initializeClient (package:liuhetong_mobile/features/matrix/matrix_client_factory.dart:1035:20)
+#5      main.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart:1025:31)
+#6      Declarer.test.<anonymous closure>.<anonymous closure> (package:test_api/src/backend/declarer.dart:253:25)
+<asynchronous suspension>
+#7      Declarer.test.<anonymous closure> (package:test_api/src/backend/declarer.dart:250:11)
+<asynchronous suspension>
+#8      Invoker._waitForOutstandingCallbacks.<anonymous closure> (package:test_api/src/backend/invoker.dart:318:9)
+<asynchronous suspension>
+[0m
+00:00 +18: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: startup waits for local data but never a stalled first network sync
+00:00 +19: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed SDK database open closes raw SQLite handle
+00:00 +20: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: new factory rejects a changed persisted Ed25519 fingerprint
+{"trace_id":"G_Gxb53KvOYCNx3w-UGIDc9k","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +21: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: first wrapper operation validates the persisted restart fingerprint
+{"trace_id":"DkVBruUphkK56KcH9tJdSScj","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +22: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: token login persists logged-in continuity before returning
+00:00 +23: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: version 1 binding is upgraded once with the current fingerprint
+00:00 +24: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: explicit local clear deletes the database and rotates its cipher key
+00:00 +25: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: explicit clear never waits for a homeserver logout
+00:00 +26: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: factory restart completes a tombstoned clear before reopening storage
+00:00 +27: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: tombstone survives close failure and restart completes the clear
+00:00 +28: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: tombstone survives identity-key deletion failure and retries all phases
+00:00 +29: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: suspend closes storage without reopening or exposing disposed client
+{"trace_id":"jWHyC1A2LA4xOUHuXUJ2_z6u","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"jWHyC1A2LA4xOUHuXUJ2_z6u","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"jWHyC1A2LA4xOUHuXUJ2_z6u","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +30: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: explicit local clear also works after the client is suspended
+{"trace_id":"tsBODOAf7zqUDhVY4fRZRoqD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"tsBODOAf7zqUDhVY4fRZRoqD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"tsBODOAf7zqUDhVY4fRZRoqD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +31: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: sync resumes lazily and retries after resume creation fails
+{"trace_id":"HDB-nGxNJQNGNwrguP5DlIQ2","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"HDB-nGxNJQNGNwrguP5DlIQ2","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"HDB-nGxNJQNGNwrguP5DlIQ2","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +32: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume rejects a different Matrix device identity
+{"trace_id":"R9tZQ4BOrLX8NOgPv5xzKFRD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"R9tZQ4BOrLX8NOgPv5xzKFRD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"R9tZQ4BOrLX8NOgPv5xzKFRD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"R9tZQ4BOrLX8NOgPv5xzKFRD","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_BINDING_MISMATCH"}
+00:00 +33: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume rejects the same device with a different Ed25519 fingerprint
+{"trace_id":"4H3amD19m5V7QOUB9YoRwM8x","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"4H3amD19m5V7QOUB9YoRwM8x","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"4H3amD19m5V7QOUB9YoRwM8x","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"4H3amD19m5V7QOUB9YoRwM8x","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+00:00 +34: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume rejects the same device from a different database generation
+{"trace_id":"E5ahd6FGCO33Um0cZ8lVWbag","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"E5ahd6FGCO33Um0cZ8lVWbag","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"E5ahd6FGCO33Um0cZ8lVWbag","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"E5ahd6FGCO33Um0cZ8lVWbag","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_GENERATION_MISMATCH"}
+00:00 +35: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: concurrent sync operations share one resume attempt
+{"trace_id":"p4ymw7gLLVt1D4DvZmLSNQxv","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"p4ymw7gLLVt1D4DvZmLSNQxv","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"p4ymw7gLLVt1D4DvZmLSNQxv","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +36: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: suspend during resume waits and then closes the resumed handle
+{"trace_id":"dU6fy-UYVUSIUSj-v83A5mOp","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"dU6fy-UYVUSIUSj-v83A5mOp","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"dU6fy-UYVUSIUSj-v83A5mOp","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+{"trace_id":"xvONHFfxwJg7PqTTZZDd2q_x","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"xvONHFfxwJg7PqTTZZDd2q_x","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"xvONHFfxwJg7PqTTZZDd2q_x","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +37: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: resume waits until an in-flight suspend finishes
+{"trace_id":"XORrMd3DUicmX1qZqO4Zl8AJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"XORrMd3DUicmX1qZqO4Zl8AJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"XORrMd3DUicmX1qZqO4Zl8AJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +38: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed suspend keeps the active handle and can be retried
+{"trace_id":"qgouse3cCZEzh9wsPnPHDsJK","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"qgouse3cCZEzh9wsPnPHDsJK","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"qgouse3cCZEzh9wsPnPHDsJK","stage":"lifecycle","outcome":"failure","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_FAILED"}
+{"trace_id":"bG0jxdcLZz7mDNPgt_9socBi","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"bG0jxdcLZz7mDNPgt_9socBi","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"bG0jxdcLZz7mDNPgt_9socBi","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +39: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: clear waits for an in-flight resume and clears its only handle
+{"trace_id":"0Dh52nBGR00RGdv2KwHL8FAJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"0Dh52nBGR00RGdv2KwHL8FAJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"0Dh52nBGR00RGdv2KwHL8FAJ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +40: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: tracked capability action fails closed during an in-flight suspend
+{"trace_id":"2JYgul-tzStizoTeyWtsjoQx","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"2JYgul-tzStizoTeyWtsjoQx","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"2JYgul-tzStizoTeyWtsjoQx","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +41: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: tracked capability action completes before explicit clear
+00:00 +42: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: suspend fails closed within a bound without closing an in-use database
+{"trace_id":"jZL3mwNTOnmrvrnkixtXnx_I","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"jZL3mwNTOnmrvrnkixtXnx_I","stage":"lifecycle","outcome":"timeout","event_code":"E2EE_LIFECYCLE_DRAIN_TIMEOUT"}
+{"trace_id":"jZL3mwNTOnmrvrnkixtXnx_I","stage":"lifecycle","outcome":"failure","event_code":"E2EE_LIFECYCLE_DRAIN_TIMEOUT"}
+{"trace_id":"lbp-DbN1zAn0h6_ef31WFpVD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"lbp-DbN1zAn0h6_ef31WFpVD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"lbp-DbN1zAn0h6_ef31WFpVD","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +43: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: M_UNKNOWN_TOKEN records explicit invalid credential state
+00:00 +44: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: M_FORBIDDEN records explicit invalid credential state
+00:00 +45: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: token response tuple preserves continuity before a phased tombstone clear
+[Matrix] [32mInitialize client old[0m
+00:00 +46: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: conversation snapshot is local, joined only, and retains message metadata
+00:00 +47: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: conversation snapshots reuse unchanged room member projections
+00:00 +48: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: conversation member projection is pruned and reset with its client
+{"trace_id":"gQViJroPRdtD3v-pwzQ1l-70","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"gQViJroPRdtD3v-pwzQ1l-70","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"gQViJroPRdtD3v-pwzQ1l-70","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +49: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: conversation snapshots keep dynamic room metadata current
+00:00 +50: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member refresh revalidates new, changed, and expired group rooms
+00:00 +51: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member hydration does not reissue its completed server request
+00:00 +52: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member refresh retries an offline failure after its retry window
+00:00 +53: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member refresh retains a sync membership change during a held request
+00:00 +54: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member refresh state does not cross accounts on one SDK client
+00:00 +55: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member refresh state resets after resume with a new SDK client
+{"trace_id":"grNUldwAr9mr2WANLtMKoQWb","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"grNUldwAr9mr2WANLtMKoQWb","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"grNUldwAr9mr2WANLtMKoQWb","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +56: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: member refresh limits held requests to three workers
+00:00 +57: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: home pusher cleanup after revoke removes only created identity without queue deadlock
+{"trace_id":"LjRbwYF9wwCVCcd0I7XziCO5","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"LjRbwYF9wwCVCcd0I7XziCO5","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"LjRbwYF9wwCVCcd0I7XziCO5","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:00 +58: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: managed home watchdog reports only bounded sync timeline count
+00:00 +59: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: clear and account changes cannot reuse previous decrypted preview
+00:00 +60: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: owned media bytes and thumbnails preserve Uint8List identity
+00:01 +60 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: owned media bytes and thumbnails preserve Uint8List identity [E]
+  Expected: true
+    Actual: <false>
+  
+  package:matcher                                              expect
+  package:flutter_test/src/widget_tester.dart 473:18           expect
+  test\features\matrix\matrix_client_factory_test.dart 2457:5  main.<fn>
+  
+00:01 +60 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: core sync leaves group invites pending for business preference gate
+00:01 +61 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: home capability reattaches before resumed client is published
+{"trace_id":"Zyw4ihvUG0EKtSzAEUne4UBM","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"Zyw4ihvUG0EKtSzAEUne4UBM","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"Zyw4ihvUG0EKtSzAEUne4UBM","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +62 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: clear racing backup key creation cannot retain recovery secret
+00:01 +63 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: background sync cannot reopen suspended session while explicit sync can
+{"trace_id":"WdfRTKmGjdku_UsXGBZG0Ysq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"WdfRTKmGjdku_UsXGBZG0Ysq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"WdfRTKmGjdku_UsXGBZG0Ysq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +64 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: conversation capability returns only immutable snapshot data
+00:01 +65 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: managed client stream detaches on suspend and rebuilds on resume
+{"trace_id":"yUg-eYSWyNOMBx5cpIqYAFyz","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"yUg-eYSWyNOMBx5cpIqYAFyz","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"yUg-eYSWyNOMBx5cpIqYAFyz","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +66 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: managed client resource closes before suspend and rebuilds on resume
+{"trace_id":"u9aMWC6GN9QEQ0QaAcsswxwX","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"u9aMWC6GN9QEQ0QaAcsswxwX","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"u9aMWC6GN9QEQ0QaAcsswxwX","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +67 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease is revoked before suspend without holding the queue
+{"trace_id":"bEaFh2OOnTfa6neknyNsRpIb","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"bEaFh2OOnTfa6neknyNsRpIb","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"bEaFh2OOnTfa6neknyNsRpIb","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +68 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease owns encrypted media sends and rejects them after revoke
+{"trace_id":"hPFXeRmgtRcie04mTBXBo_Oc","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"hPFXeRmgtRcie04mTBXBo_Oc","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"hPFXeRmgtRcie04mTBXBo_Oc","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +69 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease reentrant cancellation cannot deadlock suspension
+{"trace_id":"Hbdn_egdOp2G1nm7kl37EKFA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"Hbdn_egdOp2G1nm7kl37EKFA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"Hbdn_egdOp2G1nm7kl37EKFA","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +70 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease drain failure retains the active database for retry
+{"trace_id":"jCKJDkbsNw-MZJ1s3PV6D7gA","stage":"room_lease_drain","outcome":"failure","event_code":"E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED"}
+{"trace_id":"USBG5L6ZaiDjrhkSm3ly4bjt","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"USBG5L6ZaiDjrhkSm3ly4bjt","stage":"room_lease_drain","outcome":"failure","event_code":"E2EE_ROOM_LEASE_DRAIN_FAILED"}
+{"trace_id":"USBG5L6ZaiDjrhkSm3ly4bjt","stage":"room_lease_drain","outcome":"failure","event_code":"E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED"}
+{"trace_id":"vgXNN49jymozDk8tgyLBbCFE","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"vgXNN49jymozDk8tgyLBbCFE","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"vgXNN49jymozDk8tgyLBbCFE","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +71 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease drain timeout retains the active database for retry
+{"trace_id":"Po5pQ1A2rz-UTXzymDfeZAUO","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"Po5pQ1A2rz-UTXzymDfeZAUO","stage":"room_lease_drain","outcome":"timeout","event_code":"E2EE_ROOM_LEASE_DRAIN_TIMEOUT"}
+{"trace_id":"GwtY-aVbl1R25qSG0hN9NJey","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"GwtY-aVbl1R25qSG0hN9NJey","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"GwtY-aVbl1R25qSG0hN9NJey","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +72 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: room lease timeout emits an allowlisted security event
+00:01 +73 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: failed clear blocks resume and retries the same client handle
+00:01 +74 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: login sync failure suspends without deleting Matrix identity or key
+[Matrix] [32mInitialize client old[0m
+{"trace_id":"FnbR1uD6Jji1oF7nBB9z81O7","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"FnbR1uD6Jji1oF7nBB9z81O7","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"FnbR1uD6Jji1oF7nBB9z81O7","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +75 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: revoked session cannot reopen a room lease
+{"trace_id":"o6HvZXzZACmt_clURWoEAZcx","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"o6HvZXzZACmt_clURWoEAZcx","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"o6HvZXzZACmt_clURWoEAZcx","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +76 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: revoked session cannot register a home resource
+{"trace_id":"bPrj3lLm175p4DjV7f9S-_g8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"bPrj3lLm175p4DjV7f9S-_g8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"bPrj3lLm175p4DjV7f9S-_g8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +77 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: revoked session cannot register a subscription
+{"trace_id":"5qPcFsHQS5svAVa92zXfhpSV","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"5qPcFsHQS5svAVa92zXfhpSV","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"5qPcFsHQS5svAVa92zXfhpSV","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:02 +78 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room image action sends through its owned Matrix room lease
+00:03 +79 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: pending video file upload keeps typing, scrolling and menus interactive
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+00:04 +80 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: room lease cancellation drains an in-flight picked media action
+00:04 +81 -1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_room_media_ui_test.dart: RoomPage forwards held encrypted media through the owner after its source lease closes
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[chatflow/mediaindex] degraded: UnimplementedError
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+00:06 +82 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart: owned media bytes and thumbnails preserve Uint8List identity

@@ -26,6 +26,32 @@ final class _ForwardUiPaths extends PathProviderPlatform {
   Future<String?> getApplicationDocumentsPath() async => root;
 }
 
+// Owner work combines real worker/file I/O with continuations in FakeAsync.
+// Advance both until the actual milestone; the wall-clock bound only diagnoses
+// a hung test and never completes/releases the production owner operation.
+Future<void> _pumpUntilOwnerSettles(
+    WidgetTester tester, Future<void> milestone) async {
+  var settled = false;
+  Object? failure;
+  StackTrace? stack;
+  final observed = milestone.then((_) => settled = true,
+      onError: (Object error, StackTrace trace) {
+    failure = error;
+    stack = trace;
+    settled = true;
+    return true;
+  });
+  final clock = Stopwatch()..start();
+  while (!settled && clock.elapsed < const Duration(seconds: 30)) {
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump(const Duration(milliseconds: 20));
+  }
+  expect(settled, isTrue, reason: 'The real owner milestone did not settle.');
+  await observed;
+  if (failure != null) Error.throwWithStackTrace(failure!, stack!);
+}
+
 final class _RoomClient extends Client {
   _RoomClient({this.group = false}) : super('media-ui');
   final bool group;
@@ -151,6 +177,8 @@ final class _ForwardTargetRoom extends Room {
       : super(id: '!target:matrix.test');
 
   final sentTxids = <String?>[];
+  final sendStarted = Completer<void>();
+  Completer<void>? settlement;
 
   @override
   bool get encrypted => true;
@@ -173,6 +201,8 @@ final class _ForwardTargetRoom extends Room {
     String? threadRootEventId,
     String? threadLastEventId,
   }) async {
+    if (!sendStarted.isCompleted) sendStarted.complete();
+    await settlement?.future;
     sentTxids.add(txid);
     return r'$forwarded';
   }
@@ -418,6 +448,7 @@ void main() {
     );
     final source = client.source;
     final target = client.target;
+    target.settlement = Completer<void>();
     source.events = [
       _HeldForwardVideo(room: source, envelope: envelope),
     ];
@@ -527,13 +558,16 @@ void main() {
     lease.revokeNow();
     await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
     releaseDownload.complete(http.Response.bytes(envelope.encrypted.data, 200));
+    await _pumpUntilOwnerSettles(tester, target.sendStarted.future);
     var drained = false;
-    unawaited(matrix.outgoingWork.drain().then((_) => drained = true));
-    for (var tick = 0; tick < 100 && !drained; tick++) {
-      await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)));
-      await tester.pump(const Duration(milliseconds: 20));
-    }
+    final drain = matrix.outgoingWork.drain().then((_) => drained = true);
+    await tester.pump(const Duration(seconds: 2));
+    expect(drained, isFalse,
+        reason: 'Closing the source lease must not release the actual send.');
+    expect(target.sentTxids, isEmpty);
+    target.settlement!.complete();
+    await _pumpUntilOwnerSettles(tester, drain);
+    await tester.pump();
     expect(drained, isTrue);
     expect(target.sentTxids, hasLength(1));
     expect(tester.takeException(), isNull);
