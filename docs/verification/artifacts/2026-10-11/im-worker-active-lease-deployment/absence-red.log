@@ -1,0 +1,150 @@
+F.s                                                                      [100%]
+================================== FAILURES ===================================
+____ test_five_destinations_verify_new_module_absent_on_rollback[rollback] ____
+
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-1263/test_five_destinations_verify_0')
+operation = 'rollback'
+
+    @pytest.mark.parametrize("operation", ["rollback", "deploy"])
+    def test_five_destinations_verify_new_module_absent_on_rollback(tmp_path, operation):
+        private = tmp_path / "private"
+        private.mkdir()
+        (private / "worker-inspect.json").write_text("{}")
+        files = {}
+        for name in ("main.py", "worker.py", "lease_renewal.py", "outbox.py", "outbox-source.py"):
+            target = tmp_path / name
+            old = b"old synthetic source"
+            new = b"new synthetic source"
+            old_sha = "ABSENT" if name == "lease_renewal.py" else hashlib.sha256(old).hexdigest()
+            if operation == "deploy":
+                target.write_bytes(new)
+            elif old_sha != "ABSENT":
+                target.write_bytes(old)
+            files[name] = (str(target), old_sha, hashlib.sha256(new).hexdigest())
+        roles = {}
+        for role in ("api", "worker"):
+            hashes = {}
+            for kind in ("rollback", "candidate"):
+                path = private / f"{role}-{kind}.json"
+                path.write_text("{}")
+                hashes[kind] = hashlib.sha256(path.read_bytes()).hexdigest()
+            roles[role] = {"config_hashes": hashes}
+        roles["worker"].update(name="synthetic-worker", candidate_image="candidate", old_image="old", files=files)
+        checked = []
+        def check_output(argv, **kwargs):
+            assert argv[:5] == ["docker", "exec", "synthetic-worker", "python", "-c"]
+            checked.append(argv[-1])
+            # Execute the actual digest snippet only against our synthetic temp files.
+            return subprocess.check_output([sys.executable, "-c", argv[-1]], text=True, timeout=2)
+        namespace = {
+            "PRIVATE": private, "roles": roles, "GUARD": Path("synthetic-guard"),
+            "guard_identity": lambda: None, "hashlib": hashlib, "json": json,
+            "guarded_process": lambda *_: None,
+            "inspect": lambda _: {"Image": "candidate" if operation == "deploy" else "old",
+                "State": {"Running": True, "Health": {"Status": "healthy"}}},
+            "same_runtime": lambda *_: None,
+            "subprocess": SimpleNamespace(check_output=check_output),
+        }
+        tree = ast.parse((HERE / "deploy.py").read_text(encoding="utf-8"))
+        names = {"switch"}
+        if any(isinstance(node, ast.FunctionDef) and node.name == "source_sha" for node in tree.body):
+            names.add("source_sha")
+>       functions("deploy.py", names, namespace)["switch"](operation)
+
+docs\verification\artifacts\2026-10-11\im-worker-active-lease-deployment\test_release_boundaries.py:67:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+deploy.py:93: in switch
+    ???
+docs\verification\artifacts\2026-10-11\im-worker-active-lease-deployment\test_release_boundaries.py:53: in check_output
+    return subprocess.check_output([sys.executable, "-c", argv[-1]], text=True, timeout=2)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\subprocess.py:466: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+input = None, capture_output = False, timeout = 2, check = True
+popenargs = (['C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe', '-c', 'import hashlib;print(has...of-Administrator\\\\pytest-1263\\\\test_five_destinations_verify_0\\\\lease_renewal.py\',"rb").read()).hexdigest())'],)
+kwargs = {'stdout': -1, 'text': True}
+process = <Popen: returncode: 1 args: ['C:\\Users\\Administrator\\AppData\\Local\\Prog...>
+stdout = '', stderr = None, retcode = 1
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\python.exe', '-c', 'import hashlib;print(hashlib.sha256(open(\'C:\\\\Users\\\\Administrator\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-Administrator\\\\pytest-1263\\\\test_five_destinations_verify_0\\\\lease_renewal.py\',"rb").read()).hexdigest())']' returned non-zero exit status 1.
+
+..\..\..\..\AppData\Local\Programs\Python\Python312\Lib\subprocess.py:571: CalledProcessError
+---------------------------- Captured stderr call -----------------------------
+Traceback (most recent call last):
+
+  File "<string>", line 1, in <module>
+
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Administrator\\AppData\\Local\\Temp\\pytest-of-Administrator\\pytest-1263\\test_five_destinations_verify_0\\lease_renewal.py'
+
+=========================== short test summary info ===========================
+FAILED docs/verification/artifacts/2026-10-11/im-worker-active-lease-deployment/test_release_boundaries.py::test_five_destinations_verify_new_module_absent_on_rollback[rollback]
+1 failed, 1 passed, 1 skipped in 1.80s

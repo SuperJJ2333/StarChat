@@ -1,0 +1,32 @@
+{
+  "observed_utc": "2026-10-11T09:49:37.234247+00:00",
+  "roles": {
+    "api": {
+      "name": "starchat-business-api-1",
+      "id": "87c62739027c607d1ae1b13af206a5960f44539a1b1a9c7ad60b3e11697c33c8",
+      "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+      "running": true,
+      "health": "healthy",
+      "restart_count": 0,
+      "oom_killed": false,
+      "compose_layers": {
+        "/opt/starchat/releases/guarded-dep8aza6/compose.json": "1d0a9cd4be2ae9acb03729bc81ea5950aff3709fdfbc528b118d6b0a7b9711a5"
+      }
+    },
+    "worker": {
+      "name": "starchat-business-worker-1",
+      "id": "db3001d69e9425b16ad4eda5b81cd99c71232bf85cc0e6251c86008ee03b118f",
+      "image": "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+      "running": true,
+      "health": "healthy",
+      "restart_count": 0,
+      "oom_killed": false,
+      "compose_layers": {
+        "/opt/starchat/releases/guarded-f_9yigd3/compose.json": "c27a1353eb39e0d5298d96c65ef6c5fa5eaf9fbad9f85a9e08939e433f1916fa"
+      }
+    }
+  },
+  "business_release_guard.py": "46d98c6e2d9632b8168d20748b697744d89396852363f259d5eb0d83a7653b9b",
+  "business_refresh_image_probe.py": "2a6de21ddc26b12bf4b0124365ba20834f821e0ea2d2700fe077f16e96b84a15",
+  "schema": "0095_wallet_source_alerts"
+}

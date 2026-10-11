@@ -1,0 +1,9 @@
+# R9b-2 deployment preparation, not cutover
+
+Authorization: root's delegated deployment preparation on 2026-10-11; Android publication must precede any later worker switch. Owned files: this independent artifact directory only. Source `c3dd314212c73414c5ab371b4363e077bc9104c2`, independent source review `cc1c` (root holds full review identity).
+
+1. Fresh read-only jumper inspect API/worker image/container/Compose-layer hashes, guard/probe hashes and schema. No env/DSN/body output. Completed 09:49:37Z: API a935, worker bfde, schema0095, new permanent guard/probe unchanged.
+2. Inherit reviewed v2 preparation/cutover/validation, retain UNKNOWN switch refusal and exact worker-only guard. Add five exact destinations with new module old ABSENT, verify absent using lstat/FileNotFoundError only, and never misclassify permission/read errors. Bind c3dd Git payload bytes.
+3. TDD local substitutes: rollback absence, candidate hashes, drift rejection, main default import assembly, named isolated validation cleanup, unchanged uncertain/nonzero/timeout recovery. No Docker or production operations in these probes.
+4. Build candidate as a network-none overlay of live immutable bfde; store private resolved Compose snapshots on server mode0700. Preserve current guard/probe; no installation. Run candidate default cwd/import checks and active-handler/entrypoint tests inside network-none read-only containers, without PYTHONPATH/source mounts or live env/data. Validate both role protocol gates for candidate and rollback.
+5. Freeze exact scripts, payload, image and evidence for independent SPEC then QUALITY. The deploy script is only prepared; no switch until root confirms Android publication and refreshes live drift/authorization. Unknown switch never causes blind rollback. Old module ABSENT is an explicit rollback postcondition.
