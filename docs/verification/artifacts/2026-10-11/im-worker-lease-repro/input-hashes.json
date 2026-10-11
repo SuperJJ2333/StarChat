@@ -1,0 +1,14 @@
+{
+  "baseline": "3b52c63290d5ee4ae5f207d5c53ccf87255586db",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "python": "3.12.10",
+  "inputs": {
+    "services/business-worker/app/worker.py": "e4166427233d489ab7f7e483373546417c54a5c4dddd194153e1dfad38dd1638",
+    "services/business-api/app/core/outbox.py": "ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27",
+    "services/business-api/app/core/outbox_handover.py": "2b98dc5d02d630c64adc62fbd6d16d96a1aa4c87caa10b4ed231bbb86dcd932d",
+    "services/business-api/app/core/outbox_handover_models.py": "ddddb09214a964fb8f988e012c8a29b0de9e7fa4a42104ba4323bf16eb7c8223",
+    "services/business-worker/app/main.py": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1",
+    "services/business-api/pyproject.toml": "ad430fe077fa8443b511e9980739d106353ef6175d7615d60549e89cacdb28e0",
+    "tests/business_worker/test_worker_lease_window.py": "5201b9d69f0dee14fa511383daf768355438075344a6a23eab23feebf19dd509"
+  }
+}

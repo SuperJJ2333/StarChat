@@ -1,0 +1,89 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Administrator\.codex\worktrees\im-worker-lease-repro\StarChat
+plugins: anyio-4.14.2, asyncio-0.26.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 4 items
+
+tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[1-301] FAILED [ 25%]
+tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[49-7] FAILED [ 50%]
+tests/business_worker/test_worker_lease_window.py::test_active_handler_is_not_reclaimed_while_original_handler_is_still_running FAILED [ 75%]
+tests/business_worker/test_worker_lease_window.py::test_crashed_owner_is_reclaimable_only_at_lease_boundary PASSED [100%]
+
+================================== FAILURES ===================================
+_ test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[1-301] _
+tests\business_worker\test_worker_lease_window.py:104: in test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker
+    assert dispatches == ["worker-b"], {
+E   AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+E   assert ['worker-b', 'worker-a'] == ['worker-b']
+E     
+E     Left contains one more item: 'worker-a'
+E     
+E     Full diff:
+E       [
+E           'worker-b',
+E     +     'worker-a',
+E       ]
+_ test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[49-7] __
+tests\business_worker\test_worker_lease_window.py:104: in test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker
+    assert dispatches == ["worker-b"], {
+E   AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+E   assert ['worker-b', 'worker-a'] == ['worker-b']
+E     
+E     Left contains one more item: 'worker-a'
+E     
+E     Full diff:
+E       [
+E           'worker-b',
+E     +     'worker-a',
+E       ]
+_ test_active_handler_is_not_reclaimed_while_original_handler_is_still_running _
+tests\business_worker\test_worker_lease_window.py:140: in test_active_handler_is_not_reclaimed_while_original_handler_is_still_running
+    assert trace == ["a-enter", "a-exit"], {
+E   AssertionError: {'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', 'handler_interleaving': ['a-enter', 'b-enter', 'a-exit']}
+E   assert ['a-enter', 'b-enter', 'a-exit'] == ['a-enter', 'a-exit']
+E     
+E     At index 1 diff: 'b-enter' != 'a-exit'
+E     Left contains one more item: 'a-exit'
+E     
+E     Full diff:
+E       [
+E           'a-enter',
+E     +     'b-enter',
+E           'a-exit',
+E       ]
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[1-301] - AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+assert ['worker-b', 'worker-a'] == ['worker-b']
+  
+  Left contains one more item: 'worker-a'
+  
+  Full diff:
+    [
+        'worker-b',
+  +     'worker-a',
+    ]
+FAILED tests/business_worker/test_worker_lease_window.py::test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker[49-7] - AssertionError: {'competitor_attempts': [2], 'competitor_processed': 1, 'elapsed_seconds': 301.0, 'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', ...}
+assert ['worker-b', 'worker-a'] == ['worker-b']
+  
+  Left contains one more item: 'worker-a'
+  
+  Full diff:
+    [
+        'worker-b',
+  +     'worker-a',
+    ]
+FAILED tests/business_worker/test_worker_lease_window.py::test_active_handler_is_not_reclaimed_while_original_handler_is_still_running - AssertionError: {'first_worker_finalization_error': 'OUTBOX_LOCK_MISMATCH', 'handler_interleaving': ['a-enter', 'b-enter', 'a-exit']}
+assert ['a-enter', 'b-enter', 'a-exit'] == ['a-enter', 'a-exit']
+  
+  At index 1 diff: 'b-enter' != 'a-exit'
+  Left contains one more item: 'a-exit'
+  
+  Full diff:
+    [
+        'a-enter',
+  +     'b-enter',
+        'a-exit',
+    ]
+========================= 3 failed, 1 passed in 1.33s =========================
