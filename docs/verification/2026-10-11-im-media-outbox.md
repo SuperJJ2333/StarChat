@@ -38,3 +38,7 @@
 ## 独立审查返工
 
 850710bd 的独立审查发现四项真实边界缺口，已形成独立返工；旧 35 项门禁不等价于独立审查通过。见 [四边界修复](artifacts/2026-10-11/im-media-outbox/four-boundaries-review-fix.md) 与 [当前返工输入](artifacts/2026-10-11/im-media-outbox/review-input-hashes.json)。可选 nonlocal gallery duration 候选未混入本轮 release，组合页面夹具失败明确保留。
+
+## 同 txid 准备增量返工（最终本地门禁）
+
+基于 3b8e1bd，独立复审的新同 txid preparing 竞争已真实 RED→GREEN；源码仅 store 的真实 preparation Future join。新增同/异 handle、8 参数冲突及 cancel/close 实际结算测试。最终完整专项同一次 45 PASS / 0 failure / 0 skip / exit 0，包含 700 次 SQLite/文件重开；18 文件 analyze 无问题。详见 [增量说明](artifacts/2026-10-11/im-media-outbox/duplicate-preparation-review-fix.md)、[精确输入与结果](artifacts/2026-10-11/im-media-outbox/duplicate-input-hashes.json)。这取代此前需要分项补验的当前本地专项结论；平台和独立复审仍待根任务完成。

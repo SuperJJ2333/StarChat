@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_duplicate_preparation_test.dart
+00:00 +0: duplicate same transaction never poisons a live preparation
+00:00 +0 -1: duplicate same transaction never poisons a live preparation [E]
+  Expected: MediaOutboxStage:<MediaOutboxStage.sent>
+    Actual: MediaOutboxStage:<MediaOutboxStage.failed>
+  a duplicate caller must join preparation or preserve it; first=MediaOutboxException(canceled); duplicate=MediaOutboxException(source-incomplete)
+  
+  package:matcher                                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18                  expect
+  test\core\outbox\media_outbox_duplicate_preparation_test.dart 58:5  main.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_duplicate_preparation_test.dart: duplicate same transaction never poisons a live preparation

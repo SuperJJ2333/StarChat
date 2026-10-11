@@ -49,3 +49,7 @@
 ## 独立审查返工（2026-10-11 05:57 UTC）
 
 根任务要求先冻结四阻断修复：resolver 意图写入阻塞、重试计时器较晚截止、替换实例取消活动 copy、旧 flight 迟到成为孤儿。实现和 RED→GREEN 见 four-boundaries-review-fix.md；新增真实准备 2 槽与跨 SQLite handle 的 128 原子 intent 上限门禁。已知返工区间由 review-regressions-behavior-red.txt 至 four-boundaries-final.txt 文件时间给出，不反推主动工时。当前下一步为独立复审；非默认 gallery duration 兼容分支按根任务指示留在当前发布范围之外。
+
+## 同 txid 增量修复（2026-10-11 06:21 UTC）
+
+独立复审暴露 duplicate preparing 导致原件被 source-incomplete 误伤；已按固定 root/owner scope/txid join 真实 preparation Future，8 个不可变字段先核对。最终同次 45 PASS、18 文件 analyze 0，700 故障迭代重跑。日志开始/结束时间和 SHA 见 duplicate-input-hashes.json；下一步为根任务触发 reviewer 增量 SPEC/domain→QUALITY，随后共享候选/原生门禁。未运行部署/打包，optional duration 继续排除。

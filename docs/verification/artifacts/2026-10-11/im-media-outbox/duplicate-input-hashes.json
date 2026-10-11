@@ -1,0 +1,208 @@
+{
+  "generated_at_utc": "2026-10-11T06:22:33.4712149Z",
+  "base_candidate": "3b8e1bd26ff562d6bfa695b1707127bc6cb9628b",
+  "source_files": [
+    {
+      "path": "apps/mobile_flutter/integration_test/media_outbox_persistence_native_test.dart",
+      "sha256": "165b517b1b6094f5033646b84d74699eda2e962b6f0677ff57ad4a26ba81d6ca"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/app_home.dart",
+      "sha256": "2314168d362c2dd269cbd7bceb378ce10a41a5da004cfc51bf71284ee2fa6835"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_recovery_service.dart",
+      "sha256": "7f03fb9266ecfa5364159f7dd2b54c8c4685803b0db3eccfabc3d2c577b0e8cf"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/media_outbox_store.dart",
+      "sha256": "f7d6a7a2fb6522962b80d9e9782519aba933375e340670443a3c49d7e3cdfd22"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "sha256": "04197f8ee22f4043ec9a324a8a31cf4ce939748d4076d5aa86c1985ad936a757"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_outbox_pending_view.dart",
+      "sha256": "0bd9ae06cf23d098dc45b6ad97a368391a3712621f1021d821591f9aa7367067"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_outbox_sender.dart",
+      "sha256": "c9dcf7fed6303e4ad939402c3d4099b916439d0a452bb9b6b5aa7517f26bba82"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "sha256": "6f07ea4afa640c60dd581645607c77e60d816043d21ae7001104595c010f0ddf"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart",
+      "sha256": "4a32fec1133fa4fbe46a8a5660bec82ed28dad32199946f90540c93347cd30c5"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart",
+      "sha256": "cd0b1f0616e9fb315e23d362538defda17b3f6d0a2deac75cffaa9fd0961cb5f"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart",
+      "sha256": "a77098f0e7f2bac1a315a03c42936cc08517a7eb9d986bfc1173b61dbe6ed06b"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart",
+      "sha256": "a9968498afe3a4f592eb192e3f8e43593270428bb1bda6046a3d35820611d4af"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/pending_media_directory_test.dart",
+      "sha256": "ff3d1b3eed9c7530aa4eb9b624c5a925599e869c7aae82253a0e42f22bd1686e"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart",
+      "sha256": "abc093da867523378410356525ade5e070ff5e799e77bb29bf5ade47cd3f3e03"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_outbox_coordinator_test.dart",
+      "sha256": "f59ee6cedf425a5e590c2fc23f423f06dc1d2b019b025866a780de48a59187cf"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_outbox_pending_view_test.dart",
+      "sha256": "07035125c65dc3b9aa5f6216e37ce4af7eb902a6d9017bb9bb21e5bd81f4e68b"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart",
+      "sha256": "cacaea9281be4177403ddc758135a2d9889b3d5cceac2d0b795c7543c92f045b"
+    },
+    {
+      "path": "apps/mobile_flutter/test/core/outbox/media_outbox_duplicate_preparation_test.dart",
+      "sha256": "3c82231a912fcfae2f5d908a23c93e05190bee17cb15882fb54d2ac3a2f86941"
+    }
+  ],
+  "related_inputs": [
+    {
+      "path": "apps/mobile_flutter/pubspec.yaml",
+      "sha256": "229e154aa59ee980e672229de2d33dc52c26e52d7cb026143c99f29dfb31eea8"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_transfer_budget.dart",
+      "sha256": "645414c326ab06769f6032f0bcbbb2df52d1ee08f8c0b8cf53a61fc7b4146c51"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_message_service.dart",
+      "sha256": "edd968ef0285bd0e068a0a1ff689ce3c414aee56fcdc01713cc655e6aa400872"
+    },
+    {
+      "path": "apps/mobile_flutter/lib/core/outbox/server_retry_policy.dart",
+      "sha256": "72f35d0ec816b3416ac7cee838a28df81ffdcaece80d6a6849ccaac50d65324a"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/room.dart",
+      "sha256": "77ce2134149f367adb353f94a31b708f09e178189ef8ccda8db459e65306692f"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/client.dart",
+      "sha256": "595732dd120e73e6a88df65645f66b7d9e566eacb916e47c0283642f172f6ec7"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/utils/matrix_file.dart",
+      "sha256": "375a20a5264bab89def4018efd3908fef7b2e09499f70054d04bc49b73ed4a03"
+    },
+    {
+      "path": "apps/mobile_flutter/third_party/matrix/lib/src/utils/crypto/encrypted_file.dart",
+      "sha256": "a048e789347b8e3f0c78f3ba433798fab697252b2ed3299d28024943c24a30de"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/video_forward_backend_test.dart",
+      "sha256": "1ae7894fe120fb4f526aa5d7883e74aa38abcfc96e1ea817d3054317234e77b4"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/canonical_send_guard_test.dart",
+      "sha256": "a5a3bbe4ba2ae50074e2a5b4d189626463bc8573ec5979fd2e8b386fef64b09e"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_transfer_budget_test.dart",
+      "sha256": "e1e9acc04a09513cf90ead8116e7204033be693be1093a458dc838895b7b6582"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_transfer_admission_test.dart",
+      "sha256": "7544886bd06e1566785bb1922a1b0af78c72f19e445e3ce60606f44cde51cd81"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_upload_preflight_test.dart",
+      "sha256": "04615ae264796c01f8972dd0fbac0759b6f337bfc5c79bc07a5e321a02f2441b"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/matrix_media_upload_limit_test.dart",
+      "sha256": "cb5f83b387e08ec0cea9919984b6f976c2036d8db2ac660a7e24f0abc325403a"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-preparation-red.txt",
+      "sha256": "b5391662a84533dc8899d31968ac0adbefe8ad157e67158115c4306abb6be772",
+      "created_utc": "2026-10-11T06:16:08.6829524Z",
+      "last_write_utc": "2026-10-11T06:16:12.8953979Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-preparation-green.txt",
+      "sha256": "716d3bf20964c82ec2975ef011165b60d53ab707c989a44d4178f7928a56d413",
+      "created_utc": "2026-10-11T06:17:45.2435225Z",
+      "last_write_utc": "2026-10-11T06:17:49.1217459Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-preparation-boundaries-green.txt",
+      "sha256": "6a80a654e04f9611bda24fb493c3139e2d48e64f97a17bbfe111ae4bc933c17b",
+      "created_utc": "2026-10-11T06:18:57.9688627Z",
+      "last_write_utc": "2026-10-11T06:19:10.3105723Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-final.txt",
+      "sha256": "61204c85c585db0e6b78596a0eb45aac45bfbc25369cee3734fd9e8b2ae2b549",
+      "created_utc": "2026-10-11T06:20:15.6677720Z",
+      "last_write_utc": "2026-10-11T06:21:05.4840936Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-analyze.txt",
+      "sha256": "fadba57aed1afeaf5c5abe6a4cf9ba9c8c7a12e46bf0e64961f768b2f3c0d6a5",
+      "created_utc": "2026-10-11T06:20:15.6775371Z",
+      "last_write_utc": "2026-10-11T06:20:26.2306956Z"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-outbox/duplicate-preparation-review-fix.md",
+      "sha256": "7b00272ffd124f35224532cbe4437f1576aedf44f7bf316974a351fe2173698e",
+      "created_utc": "2026-10-11T06:21:29.3508749Z",
+      "last_write_utc": "2026-10-11T06:21:29.3508749Z"
+    }
+  ],
+  "gates": [
+    {
+      "name": "full scoped final",
+      "log": "duplicate-final.txt",
+      "exit_code": 0,
+      "passed": 45,
+      "failed": 0,
+      "skipped": 0,
+      "synthetic_sqlite_file_reopens": 700,
+      "native_device": false
+    },
+    {
+      "name": "18-file scoped analyze",
+      "log": "duplicate-analyze.txt",
+      "exit_code": 0,
+      "issues": 0
+    },
+    {
+      "name": "62 adjacent",
+      "reuse": "unchanged Matrix/RoomPage/MMS/media-budget/SDK code from 850710bd"
+    },
+    {
+      "name": "platform and complete project",
+      "status": "root owns integrated native Android/iOS fixture and shared full gates; not executed here"
+    },
+    {
+      "name": "optional gallery duration",
+      "status": "excluded from release product source; WIP patch retained only; combined widget failure not counted as PASS"
+    }
+  ]
+}

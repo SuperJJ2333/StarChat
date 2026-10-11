@@ -1,0 +1,21 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_duplicate_preparation_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_duplicate_preparation_test.dart: duplicate same transaction joins same handle preparation
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: a hanging resolver does not prevent another durable intent
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: a hanging resolver does not prevent another durable intent
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +5: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:02 +6: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +7: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +8: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +9: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +10: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +11: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +12: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +13: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +14: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement owner cancellation retains an active source copy
+00:03 +15: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement recovery retries a suspended same-owner flight after settle
+00:04 +16: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: two preparation slots leave later intents durable without loading them
+00:04 +17: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement SQLite handles atomically reserve the last pending slot
+00:07 +18: All tests passed!

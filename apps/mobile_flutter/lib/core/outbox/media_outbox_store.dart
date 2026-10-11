@@ -170,14 +170,19 @@ final class SqliteMediaOutboxStore {
   static final _canceledSources = <(String, String)>{};
   static final _preparationSlots = _MediaPreparationSlots();
   static final _metadataTails = <String, Future<void>>{};
+  static final _preparations = <(String, String), Future<MediaOutboxTask>>{};
   (String, String) _sourceKey(String txid) => (_root!.absolute.path, txid);
   static const chunkBytes = 64 * 1024;
   static const reserveBytes = 16 * 1024 * 1024;
   static const maxPending = 128;
 
   Future<MediaOutboxTask> _trackPreparation(
-      Future<MediaOutboxTask> Function() operation) {
-    final result = operation();
+      Future<MediaOutboxTask> Function(Future<MediaOutboxTask>) operation) {
+    final completed = Completer<MediaOutboxTask>();
+    final result = completed.future;
+    Future.sync(() => operation(result)).then(completed.complete,
+        onError: (Object error, StackTrace stack) =>
+            completed.completeError(error, stack));
     _writes.add(result);
     result.then<void>((_) => _writes.remove(result),
         onError: (Object _, StackTrace __) {
@@ -398,7 +403,7 @@ final class SqliteMediaOutboxStore {
           int? width,
           int? height,
           bool Function()? isCurrentOwner}) =>
-      _trackPreparation(() async {
+      _trackPreparation((preparation) async {
         void checkOwner() {
           if (_root != null && _canceledSources.contains(_sourceKey(txid))) {
             throw const MediaOutboxException('canceled');
@@ -460,6 +465,18 @@ final class SqliteMediaOutboxStore {
                     'stage': 'preparing',
                     'created_at': DateTime.now().millisecondsSinceEpoch
                   });
+                  // Publish ownership inside the same short admission transaction.
+                  // A second handle cannot observe preparing without its real Future.
+                  final key = _sourceKey(txid);
+                  _preparations[key] = preparation;
+                  void retire() {
+                    if (identical(_preparations[key], preparation)) {
+                      _preparations.remove(key);
+                    }
+                  }
+
+                  preparation.then<void>((_) => retire(),
+                      onError: (Object _, StackTrace __) => retire());
                   return null;
                 }));
         checkOwner();
@@ -474,7 +491,17 @@ final class SqliteMediaOutboxStore {
               existing.height != height) {
             throw const MediaOutboxException('transaction-conflict');
           }
-          return existing;
+          final pending = _preparations[_sourceKey(txid)];
+          if (pending != null) {
+            final preparedTask = await pending;
+            checkOwner();
+            return preparedTask;
+          }
+          // The original may have completed between the row read and this
+          // continuation; never return an earlier preparing snapshot.
+          final latest = await byTxid(txid);
+          checkOwner();
+          return latest!;
         }
         final target = _source(txid);
         final temporary = File('${target.path}.part');

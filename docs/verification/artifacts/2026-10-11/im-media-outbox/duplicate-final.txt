@@ -1,0 +1,134 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart
+00:00 +0: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_store_test.dart: pending byte cap charges originals until explicit cancel releases them
+00:00 +1: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:00 +2: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:00 +3: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:00 +4: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:00 +5: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +6: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +7: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +8: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +9: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +10: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +11: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:01 +12: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_recovery_service_test.dart: a hanging room does not prevent later timer retry or a fresh recovery scan
+00:02 +13: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:02 +14: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:02 +15: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +16: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +17: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +18: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +19: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:03 +20: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: earlier automatic retry replaces an existing later timer
+00:04 +21: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement owner cancellation retains an active source copy
+00:04 +22: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement recovery retries a suspended same-owner flight after settle
+00:04 +23: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: two preparation slots leave later intents durable without loading them
+00:04 +24: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_review_regression_test.dart: replacement SQLite handles atomically reserve the last pending slot
+00:07 +25: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart: production sender real SDK ACK-loss retry preserves image as file and txid
+[chatflow/mediaindex] degraded: UnimplementedError
+[Matrix] [33mProblem while sending message - SocketException: synthetic ACK loss
+#0      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart:111:13)
+#1      new MockClient.<anonymous closure> (package:http/src/mock_client.dart:54:36)
+<asynchronous suspension>
+#2      MockClient.send (package:http/src/mock_client.dart:82:12)
+<asynchronous suspension>
+#3      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1061:7)
+<asynchronous suspension>
+#4      TimeoutHttpClient.send (package:matrix/src/utils/http_timeout.dart:53:22)
+<asynchronous suspension>
+#5      Api.sendMessage (package:matrix/matrix_api_lite/generated/api.dart:4282:22)
+<asynchronous suspension>
+#6      Room._sendContent (package:matrix/src/room.dart:940:12)
+<asynchronous suspension>
+#7      Room.sendEvent (package:matrix/src/room.dart:1090:17)
+<asynchronous suspension>
+#8      Room.sendFileEvent (package:matrix/src/room.dart:893:21)
+<asynchronous suspension>
+#9      MatrixSdkE2eeClient._sendMedia.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:10018:19)
+<asynchronous suspension>
+#10     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#11     MatrixSdkE2eeClient._sendStoredMediaFromLease.<anonymous closure>.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9844:22)
+<asynchronous suspension>
+#12     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#13     MatrixSdkE2eeClient._withClient (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9258:14)
+<asynchronous suspension>
+#14     sendPersistedMedia (package:liuhetong_mobile/features/matrix/media_outbox_sender.dart:22:14)
+<asynchronous suspension>
+#15     MediaOutboxRecoveryService._dispatch (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:269:23)
+<asynchronous suspension>
+#16     _MediaRoomSlots._run (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:503:31)
+<asynchronous suspension>
+[0m
+00:08 +26: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart: production sender real SDK ACK-loss retry preserves image as file and txid
+00:08 +27: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart: production sender real SDK ACK-loss retry preserves image as file and txid
+00:08 +28: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart: production sender real SDK ACK-loss retry preserves image as file and txid
+00:08 +29: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart: production sender real SDK ACK-loss retry preserves image as file and txid
+00:08 +30: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:09 +30: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart: production sender real SDK ACK-loss retry preserves prepared video and txid
+[Matrix] [33mProblem while sending message - SocketException: synthetic ACK loss
+#0      main.<anonymous closure>.<anonymous closure> (file:///C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_sdk_transaction_test.dart:111:13)
+#1      new MockClient.<anonymous closure> (package:http/src/mock_client.dart:54:36)
+<asynchronous suspension>
+#2      MockClient.send (package:http/src/mock_client.dart:82:12)
+<asynchronous suspension>
+#3      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1061:7)
+<asynchronous suspension>
+#4      TimeoutHttpClient.send (package:matrix/src/utils/http_timeout.dart:53:22)
+<asynchronous suspension>
+#5      Api.sendMessage (package:matrix/matrix_api_lite/generated/api.dart:4282:22)
+<asynchronous suspension>
+#6      Room._sendContent (package:matrix/src/room.dart:940:12)
+<asynchronous suspension>
+#7      Room.sendEvent (package:matrix/src/room.dart:1090:17)
+<asynchronous suspension>
+#8      Room.sendFileEvent (package:matrix/src/room.dart:893:21)
+<asynchronous suspension>
+#9      MatrixSdkE2eeClient._sendMedia.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:10018:19)
+<asynchronous suspension>
+#10     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#11     MatrixSdkE2eeClient._sendStoredMediaFromLease.<anonymous closure>.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9844:22)
+<asynchronous suspension>
+#12     MediaTransferBudget.run (package:liuhetong_mobile/features/matrix/media_transfer_budget.dart:202:22)
+<asynchronous suspension>
+#13     MatrixSdkE2eeClient._withClient (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9258:14)
+<asynchronous suspension>
+#14     sendPersistedMedia (package:liuhetong_mobile/features/matrix/media_outbox_sender.dart:22:14)
+<asynchronous suspension>
+#15     MediaOutboxRecoveryService._dispatch (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:269:23)
+<asynchronous suspension>
+#16     _MediaRoomSlots._run (package:liuhetong_mobile/core/outbox/media_outbox_recovery_service.dart:503:31)
+<asynchronous suspension>
+[0m
+00:10 +31: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:10 +32: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:10 +33: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:10 +34: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:10 +35: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:10 +36: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:12 +36: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart: real RoomPage camera entry persists a separate source before sender admission
+[AvatarFirstPaint] source=room-message phase=initial metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=room-message phase=resolved metadata=false resolved=false
+[AvatarFirstPaint] source=room-message fallback-rendered=true metadata=false
+camera-fixture: sender entered
+camera-fixture: page disposed
+camera-fixture: ACK persisted
+00:13 +37: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:13 +37: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/features/matrix/media_outbox_camera_entry_test.dart: real RoomPage camera entry persists a separate source before sender admission
+{"trace_id":"Bvb1mH7IVxZavAIvBRHZ4aMZ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"Bvb1mH7IVxZavAIvBRHZ4aMZ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"Bvb1mH7IVxZavAIvBRHZ4aMZ","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+camera-fixture: client closed
+00:13 +38: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at intent retain intent or fixed-tx delivery
+00:15 +39: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at copy retain intent or fixed-tx delivery
+00:19 +40: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at source retain intent or fixed-tx delivery
+00:23 +41: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at queued retain intent or fixed-tx delivery
+00:27 +42: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at upload retain intent or fixed-tx delivery
+00:33 +43: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at event retain intent or fixed-tx delivery
+00:39 +44: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: 100 synthetic process interruptions at ack retain intent or fixed-tx delivery
+00:44 +45: C:/Users/Administrator/.codex/worktrees/im-media-outbox/StarChat/apps/mobile_flutter/test/core/outbox/media_outbox_fault_boundaries_test.dart: (tearDownAll)
+00:44 +45: All tests passed!
