@@ -7,6 +7,7 @@
 import asyncio
 import logging
 import json
+import threading
 from typing import Any
 
 import anyio.to_thread
@@ -21,7 +22,12 @@ from .getui_client import (
     GetuiTransientError,
 )
 from .notify import sanitize_notification
-from .rate_limit import CidRateLimiter
+from .rate_limit import (
+    CidRateLimiter,
+    NativeMessageLimiter,
+    NativeResult,
+    RateLimitCapacityError,
+)
 
 logger = logging.getLogger("getui-bridge")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
@@ -42,6 +48,10 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
         or httpx.Client(timeout=httpx.Timeout(10.0)),
     )
     limiter = CidRateLimiter(min_interval_ms=config.rate_limit_ms)
+    native_limiter = NativeMessageLimiter(config.rate_limit_ms, config.notify_ttl_ms)
+    # Shared across requests, including independently cancelled ASGI requests.
+    # No provider wait queue: overload is explicitly retried by the upstream.
+    provider_slots = threading.BoundedSemaphore(MAX_CONCURRENT_PUSHES)
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
@@ -73,20 +83,34 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
                 return JSONResponse({"error": "invalid body"}, status_code=400)
             return JSONResponse({})
 
-        # 单 CID 投递：同步 httpx 调用经线程池卸载（C01），并发受信号量
-        # 约束。结果：True=供应商已受理；False=临时失败（限频资格已回滚，
-        # 由 503 触发协议重试）；None=限频窗口内收敛跳过（风暴去重）。
-        async def _deliver_one(cid: str, semaphore: asyncio.Semaphore) -> bool | None:
-            reservation = limiter.reserve(cid, sanitized.kind)
-            if reservation is None:
-                # 窗口内重复风暴：静默收敛（不视为设备失效，也不重试）。
-                return None
+        def _deliver_sync(cid: str) -> bool | None:
+            envelope = sanitized.envelopes.get(cid)
+            if envelope is not None:
+                reservation = native_limiter.reserve(cid, envelope)
+                if reservation is NativeResult.ACCEPTED:
+                    return True
+                if reservation is NativeResult.REJECTED:
+                    raise _PermanentRejection(cid)
+                if reservation is NativeResult.RETRY:
+                    return False
+            else:
+                try:
+                    reservation = limiter.reserve(cid, sanitized.kind)
+                except RateLimitCapacityError:
+                    return False
+                if reservation is None:
+                    # Legacy/calls carry no event association: retain their
+                    # documented per-CID/kind coalescing compatibility.
+                    return None
+
+            outcome = NativeResult.RETRY
+            acquired = provider_slots.acquire(blocking=False)
             try:
-                async with semaphore:
-                    await anyio.to_thread.run_sync(
-                        lambda cid=cid: client.push_cid(cid, sanitized.kind, config.notify_ttl_ms,
-                            **({'envelope': sanitized.envelopes[cid]} if cid in sanitized.envelopes else {}))
-                    )
+                if not acquired:
+                    return False
+                client.push_cid(cid, sanitized.kind, config.notify_ttl_ms,
+                                **({'envelope': envelope} if envelope is not None else {}))
+                outcome = NativeResult.ACCEPTED
                 return True
             except GetuiPushError as error:
                 if error.is_permanent:
@@ -97,9 +121,9 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
                         sanitized.kind,
                         error.code,
                     )
+                    outcome = NativeResult.REJECTED
                     raise _PermanentRejection(cid) from error
                 # 临时业务错误：回滚限频资格，交给协议重试。
-                limiter.release(cid, sanitized.kind, reservation=reservation)
                 logger.warning(
                     "push transient (non-permanent) kind=%s code=%s",
                     sanitized.kind,
@@ -109,36 +133,43 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
             except GetuiTransientError as error:
                 # 网络/超时/5xx：绝不进 rejected；回滚限频资格后由 503
                 # 触发 Synapse 重试（一次服务器故障不能让用户收不到推送）。
-                limiter.release(cid, sanitized.kind, reservation=reservation)
                 logger.warning("push transport error kind=%s err=%s", sanitized.kind, error)
                 return False
             except Exception as error:  # noqa: BLE001 —— 未预期异常同临时处理
-                limiter.release(cid, sanitized.kind, reservation=reservation)
                 logger.warning(
                     "push unexpected error kind=%s err_type=%s",
                     sanitized.kind,
                     type(error).__name__,
                 )
                 return False
+            finally:
+                # Own reservations and slots in the actual worker. Cancelling
+                # an HTTP waiter must not release a still-running provider call.
+                if envelope is not None:
+                    native_limiter.finish(cid, envelope, reservation, outcome)
+                elif outcome is NativeResult.RETRY:
+                    limiter.release(cid, sanitized.kind, reservation=reservation)
+                if acquired:
+                    provider_slots.release()
 
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT_PUSHES)
-        try:
-            results = await asyncio.gather(
-                *(_deliver_one(cid, semaphore) for cid in sanitized.cids),
-                return_exceptions=True,
-            )
-        except Exception:  # pragma: no cover —— gather(return_exceptions) 不抛
-            results = []
+        results = await asyncio.gather(
+            *(anyio.to_thread.run_sync(_deliver_sync, cid) for cid in sanitized.cids),
+            return_exceptions=True,
+        )
 
         rejected = [
             outcome.cid
             for outcome in results
             if isinstance(outcome, _PermanentRejection)
         ]
-        transient_failures = any(outcome is False for outcome in results)
+        transient_failures = any(
+            outcome is False or (isinstance(outcome, BaseException)
+                                 and not isinstance(outcome, _PermanentRejection))
+            for outcome in results
+        )
         if transient_failures:
             # P01：存在临时失败 → 503 让 Synapse 按协议重试本通知；
-            # 已成功的 CID 保留限频窗口（重试时被去重，不重复提醒），
+            # v1 已成功的 CID 保留事件结果（重试时被去重，不重复提醒），
             # 失败的 CID 已回滚资格（重试会真正重发）。仅永久失效设备
             # 进入 rejected（与重试状态码互不干扰：Synapse 对 503 响应
             # 不处理 rejected 列表，pusher 不受影响）。
