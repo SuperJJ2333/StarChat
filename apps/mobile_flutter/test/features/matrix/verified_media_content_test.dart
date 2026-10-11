@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import '../media/media_test_fixtures.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -130,6 +131,48 @@ void main() {
     expect(prepared.extraContent!['chatflow_media']['content_sha256'],
         sha256.convert(bytes).toString());
     expect(prepared.file.bytes, isNot(same(bytes)));
+  });
+
+  test('owned cache snapshot preserves original and thumbnail blurhash',
+      () async {
+    final bytes = mediaTestPng();
+    final prepared = await prepareContentAddressedMedia(
+      file: MatrixImageFile(
+          bytes: bytes,
+          name: 'photo.png',
+          width: 2,
+          height: 3,
+          blurhash: 'original-placeholder'),
+      thumbnail: MatrixImageFile(
+          bytes: mediaTestPng(width: 1, height: 1),
+          name: 'thumb.png',
+          width: 1,
+          height: 1,
+          blurhash: 'thumb-placeholder'),
+      accountId: 'alice',
+      cacheContent: (input) =>
+          cacheOutgoingMedia(accountId: 'alice', roomId: 'room', bytes: input),
+    );
+    expect((prepared.file as MatrixImageFile).blurhash, 'original-placeholder');
+    expect(prepared.thumbnail!.blurhash, 'thumb-placeholder');
+    expect(prepared.file.bytes, isNot(same(bytes)));
+  });
+
+  test('transformed image does not retain its old blurhash', () async {
+    final bytes = mediaTestPng(width: 4096, height: 1);
+    final prepared = await prepareContentAddressedMedia(
+      file: MatrixImageFile(
+          bytes: bytes,
+          name: 'wide.png',
+          width: 4096,
+          height: 1,
+          blurhash: 'stale-placeholder'),
+      accountId: 'alice',
+      cacheContent: (input) =>
+          cacheOutgoingMedia(accountId: 'alice', roomId: 'room', bytes: input),
+    );
+    expect((prepared.file as MatrixImageFile).width, lessThan(4096));
+    expect((prepared.file as MatrixImageFile).blurhash, isNull);
   });
 
   test('store persists the worker snapshot even when producer mutates',

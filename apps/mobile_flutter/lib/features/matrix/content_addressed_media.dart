@@ -218,11 +218,14 @@ final class MediaEnvelope {
 /// Retains concrete SDK media types and metadata and reuses the prepared
 /// envelope through retries. Original bytes have already been processed.
 MatrixFile _preparedFile(MatrixFile file, EncryptedFile? encrypted,
-    {MediaAsset? original, (int, int)? dimensions}) {
+    {MediaAsset? original,
+    (int, int)? dimensions,
+    bool contentUnchanged = false}) {
   final bytes = original?.bytes ?? file.bytes;
   final name = original?.filename ?? file.name;
   final mimeType = original?.mimeType ?? file.mimeType;
-  if (encrypted == null && identical(bytes, file.bytes)) {
+  final unchanged = contentUnchanged || identical(bytes, file.bytes);
+  if (encrypted == null && unchanged) {
     encrypted = file.preEncrypted;
   }
   if (file is MatrixImageFile) {
@@ -232,7 +235,7 @@ MatrixFile _preparedFile(MatrixFile file, EncryptedFile? encrypted,
         mimeType: mimeType,
         width: dimensions?.$1 ?? gifDimensions(bytes)?.$1 ?? file.width,
         height: dimensions?.$2 ?? gifDimensions(bytes)?.$2 ?? file.height,
-        blurhash: identical(bytes, file.bytes) ? file.blurhash : null,
+        blurhash: unchanged ? file.blurhash : null,
         preEncrypted: encrypted);
   }
   if (file is MatrixVideoFile) {
@@ -296,6 +299,7 @@ Future<
       file is MatrixImageFile || source.mimeType.startsWith('image/');
   final preparedBytes =
       isImage ? await ImageCompressionPolicy.prepare(file.bytes) : file.bytes;
+  final contentUnchanged = identical(preparedBytes, file.bytes);
   var original = identical(preparedBytes, file.bytes)
       ? source
       : await MediaAssetGateway.inspect(preparedBytes,
@@ -308,6 +312,7 @@ Future<
       ? null
       : await MediaAssetGateway.inspect(thumbnail.bytes,
           mimeType: thumbnail.mimeType, filename: thumbnail.name);
+  // The cache callback must preserve content, returning an owned snapshot.
   // Cache the final transformed snapshot and retain the returned owned bytes.
   // The envelope can reuse its worker proof rather than hash the source again.
   if (cacheContent != null) {
@@ -330,12 +335,15 @@ Future<
     ..remove('info');
   if (!deterministic) {
     return (
-      file:
-          _preparedFile(file, null, original: original, dimensions: dimensions),
+      file: _preparedFile(file, null,
+          original: original,
+          dimensions: dimensions,
+          contentUnchanged: contentUnchanged),
       thumbnail: thumbnail == null
           ? null
-          : _preparedFile(thumbnail, null, original: thumbOriginal)
-              as MatrixImageFile,
+          : _preparedFile(thumbnail, null,
+              original: thumbOriginal,
+              contentUnchanged: true) as MatrixImageFile,
       extraContent: extra.isEmpty ? null : extra
     );
   }
@@ -351,11 +359,13 @@ Future<
   };
   return (
     file: _preparedFile(file, envelope.encrypted,
-        original: original, dimensions: dimensions),
+        original: original,
+        dimensions: dimensions,
+        contentUnchanged: contentUnchanged),
     thumbnail: thumbnail == null
         ? null
         : _preparedFile(thumbnail, thumbEnvelope!.encrypted,
-            original: thumbOriginal) as MatrixImageFile,
+            original: thumbOriginal, contentUnchanged: true) as MatrixImageFile,
     extraContent: extra
   );
 }

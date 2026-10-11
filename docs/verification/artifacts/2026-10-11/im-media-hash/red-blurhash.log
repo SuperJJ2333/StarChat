@@ -1,0 +1,17 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart
+00:00 +0: owned cache snapshot preserves original and thumbnail blurhash
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +0 -1: owned cache snapshot preserves original and thumbnail blurhash [E]
+  Expected: 'original-placeholder'
+    Actual: <null>
+     Which: not an <Instance of 'String'>
+
+  package:matcher                                              expect
+  package:flutter_test/src/widget_tester.dart 473:18           expect
+  test\features\matrix\verified_media_content_test.dart 147:5  main.<fn>
+
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart: owned cache snapshot preserves original and thumbnail blurhash

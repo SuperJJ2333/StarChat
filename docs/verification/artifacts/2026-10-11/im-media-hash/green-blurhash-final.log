@@ -1,0 +1,15 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-hash/StarChat/apps/mobile_flutter/test/features/matrix/verified_media_content_test.dart
+00:00 +0: 100 MiB cold load uses one worker digest through store and memory
+[chatflow/mediaindex] degraded: UnimplementedError
+00:02 +1: large immediate preview does no synchronous digest
+00:02 +2: proof owns bytes and cannot be reused for a forged hash or new epoch
+00:02 +3: outgoing cache and encryption share one final-byte digest
+00:02 +4: owned cache snapshot preserves original and thumbnail blurhash
+00:02 +5: transformed image does not retain its old blurhash
+00:02 +6: store persists the worker snapshot even when producer mutates
+00:02 +7: clear at worker completion cannot repopulate memory or disk
+00:02 +8: cancel at worker completion cannot persist a late cold result
+00:02 +9: large transient previews are budgeted separately until verified
+00:02 +10: late preview proof cannot overwrite a replacement or undo clear
+00:02 +11: All tests passed!
