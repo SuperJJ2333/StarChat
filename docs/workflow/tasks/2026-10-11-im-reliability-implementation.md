@@ -118,3 +118,9 @@ R9b源码9920947c（root集成91d48d03）只新增必填代次Consumer接口及W
 iOS完整插件unsigned候选run38118485155（9902）两个job SUCCESS，但不含后续媒体修复，需最终冻结后重建。Android native-storage2214-r1被安装前包名守卫拒绝（全局Gradle false覆盖环境变量）；调整仅测试构建系统属性后r2固定75b31重建/对齐/签名/内容/包名验证通过，APK SHA7ec5863b。5558 streaming安装长时间无进展，停止已核身份的本次adb client；确认无包后同一APK非streaming安装成功。真实原生目录保护fixture通过，SQLite持久附件fixture报libsqlite3.so未找到，作者正在核生产bootstrap与测试初始化差异。此时没有客户端发布，也未触碰5556已有测试数据。
 
 下一步：关闭媒体late-store边界并增量独立复核；修复/解释真实Android DB初始化门禁；冻结新共享输入，运行完整Flutter/analyze及Android最终ARM64固定重建，重建iOS完整插件unsigned交付。真实手机、iOS最终企业签名/OEM审核与长时间场景验收仍单独记录，不虚构到达率、功耗或P99。
+
+## 15:37+08 数据库初始化顺序根因已关闭于源码
+
+Android r2 实际失败已确认是生产初始化顺序耦合：sqflite_common_ffi 每个调用 isolate 只创建一个 SQL worker，首次 factory 的 ffiInit 决定载入库；metadata 先开会查找未打包的 libsqlite3.so，Matrix 先开则偶然正常。9218be37 已集成 a37fad28，六个 metadata 默认入口统一使用现有 SQLCipher loader；未改变 schema、key、PRAGMA 或文件格式。真实 Windows DLL 两个全新 isolate 的 metadata-first RED/Matrix-first GREEN，修复后两者GREEN；11文件135 PASS、九文件analyze0，独立SPEC/domain→QUALITY通过。不能将此计为Android验收，原native r2失败证据保留。
+
+Android原生fixture追加两种全新isolate冷启动顺序、真实channel/文件seal/默认factory、原件持久与取消、明文metadata和加密Matrix文件头、正确key重开及错key拒绝。iOS既有SQLCipher native target另增两种cold order（df1b3e92→218d2c73），不依赖或放宽模拟器文件保护；root独立静态双审通过，原生执行待最终候选CI。07:33:16Z只读复查worker仍bfde7c86/db3001d6 healthy/0 restart/OOMfalse。永久protocol guard漏检修补及缓存c3c66fbc增量双审并行进行。
