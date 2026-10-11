@@ -1,0 +1,27 @@
+--- R9a/prepare.py
++++ R9b/prepare.py
+@@ -9 +9 @@
+-ROOT = Path('/opt/starchat/releases/im-worker-jit-20261011')
++ROOT = Path('/opt/starchat/releases/im-worker-fence-20261011')
+@@ -12,8 +12 @@
+-SPECS = {'api': ('starchat-business-api-1',
+-         'sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3',
+-         {}),
+- 'worker': ('starchat-business-worker-1',
+-            'sha256:5a9cec63cc780e1e3cc769d3f249e120499bdfc5a37a99419302bd1c862bdbe1',
+-            {'worker.py': ('/opt/business-worker/app/worker.py',
+-                           'e4166427233d489ab7f7e483373546417c54a5c4dddd194153e1dfad38dd1638',
+-                           '96f67aa7ed95a98b91650cf487033dcf8237564ac4ce17a899ded05989a2d72d')})}
++SPECS = {'api': ('starchat-business-api-1', 'sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3', {}), 'worker': ('starchat-business-worker-1', 'sha256:18a88c4dde6e09fb75122aef1f011fd11c7a0421e61559b0548ed78c1b8b3ecf', {'worker.py': ('/opt/business-worker/app/worker.py', '96f67aa7ed95a98b91650cf487033dcf8237564ac4ce17a899ded05989a2d72d', 'f88387d6c957f774b6c137f786b82235b74e8a5cf26a5e282259c7da94eb2299'), 'outbox.py': ('/opt/business-api/app/core/outbox.py', 'ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27', 'a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680')})}
+@@ -23 +16 @@
+-    return subprocess.check_output(args, text=True)
++    return subprocess.check_output(args, text=True, timeout=30)
+@@ -43 +36 @@
+-    rendered = subprocess.run(command + ['config', '--format', 'json'], text=True, capture_output=True)
++    rendered = subprocess.run(command + ['config', '--format', 'json'], text=True, capture_output=True, timeout=30)
+@@ -71 +64 @@
+-        tag = 'starchat/' + role + ':im-worker-jit-20261011'
++        tag = 'starchat/' + role + ':im-worker-fence-20261011'
+@@ -74 +67 @@
+-                           stdout=log, stderr=subprocess.STDOUT, check=True)
++                           stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)

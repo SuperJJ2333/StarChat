@@ -1,0 +1,22 @@
+{
+  "test_file_workspace_sha256": "80e45f56f1469d75f03343c979369c350e18d0bdda0c7c9cb99f4d4ace3d2b0e",
+  "scope_outside_target_identical": true,
+  "assertions_identical": 6,
+  "millisecond_durations_unchanged": [
+    "20",
+    "50",
+    "300",
+    "20",
+    "50",
+    "100"
+  ],
+  "runAsync_count_before": 8,
+  "runAsync_count_after": 1,
+  "timeout_seconds": 45,
+  "evidence": {
+    "environment-moments-receipt.json": "ed9db641947e57d76e34a19229234444bba2539df48973b14ba440ba049d6377",
+    "environment-moments.log": "c138f15d1d399cedaed872785f4f8686513a2eaaf99c8e979fd8a941ab0214d5",
+    "moment-video-instrumented-red.log": "ed5a879992a221d90f1bc3f90037270092da6f63a568bed9f03c8010b40131a3",
+    "moment-video-original-test.txt": "e2b565cc3311daf07d64df95730d709573a0c79a7c0ea1315b3e34b40466cf9d"
+  }
+}

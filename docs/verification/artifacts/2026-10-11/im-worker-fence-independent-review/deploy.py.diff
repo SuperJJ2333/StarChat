@@ -1,0 +1,17 @@
+--- R9a/deploy.py
++++ R9b/deploy.py
+@@ -4 +4 @@
+-ROOT=Path('/opt/starchat/releases/im-worker-jit-20261011')
++ROOT=Path('/opt/starchat/releases/im-worker-fence-20261011')
+@@ -92,4 +92,4 @@
+-    target,old_sha,new_sha=roles['worker']['files']['worker.py']
+-    actual=subprocess.check_output(['docker','exec',roles['worker']['name'],'python','-c',
+-        f'import hashlib;print(hashlib.sha256(open({target!r},"rb").read()).hexdigest())'],text=True,timeout=10).strip()
+-    assert actual==(new_sha if operation=='deploy' else old_sha)
++    for target,old_sha,new_sha in roles['worker']['files'].values():
++        actual=subprocess.check_output(['docker','exec',roles['worker']['name'],'python','-c',
++            f'import hashlib;print(hashlib.sha256(open({target!r},"rb").read()).hexdigest())'],text=True,timeout=10).strip()
++        assert actual==(new_sha if operation=='deploy' else old_sha)
+@@ -136 +136 @@
+-        source_sha256=roles['worker']['files']['worker.py'][2],unrelated_containers_unchanged=True,
++        source_sha256={name:row[2] for name,row in roles['worker']['files'].items()},unrelated_containers_unchanged=True,
