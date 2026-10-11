@@ -36,6 +36,7 @@ from tasks.chat_transfer_expiry import ChatTransferExpiryTask
 from tasks.wallet import WalletMaintenanceTask
 from tasks.moments import MomentsModerationTask
 from worker import Worker
+from lease_renewal import create_renewal_engine
 
 
 def build_internal_publication_handlers(session_factory) -> dict:
@@ -206,6 +207,9 @@ def main() -> None:
         session_factory = create_session_factory(engine)
         consumer = (OutboxConsumer(session_factory, wallet_handover_preparation_mode=True)
             if getattr(settings, 'wallet_handover_preparation_mode', False) else OutboxConsumer(session_factory))
+        renewal_engine = create_renewal_engine(settings.database_url)
+        resources.callback(renewal_engine.dispose)
+        renewal_consumer = OutboxConsumer(create_session_factory(renewal_engine))
         redpacket_expiry = RedPacketExpiryTask(session_factory, RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total))
         commission_sweep = RedPacketCommissionSweepTask(session_factory)
         chat_transfer_expiry = ChatTransferExpiryTask(session_factory, ChatTransferService(session_factory, LedgerService(session_factory)))
@@ -265,6 +269,7 @@ def main() -> None:
 
         worker = Worker(
             consumer=consumer,
+            renewal_consumer=renewal_consumer,
             handlers={**identity_handlers, **alert_handlers,
                       **build_internal_publication_handlers(session_factory)},
             worker_id=os.getenv("WORKER_ID", "business-worker-1"),

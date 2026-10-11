@@ -1,0 +1,103 @@
+F.FFF                                                                    [100%]
+================================== FAILURES ===================================
+_____________ test_aborted_renewal_thread_is_unknown_not_success ______________
+
+active_queue = (sessionmaker(class_='Session', bind=Engine(sqlite+pysqlite:///C:/Users/Administrator/AppData/Local/Temp/pytest-of-Adm....timezone.utc)], <app.core.outbox.OutboxConsumer object at 0x0000024E42B080E0>, '2bc2fe71-382a-4bec-b44e-887e192f626f')
+
+    def test_aborted_renewal_thread_is_unknown_not_success(active_queue):
+        factory, _, consumer, event_id = active_queue
+        attempted = Event()
+        class Aborted(BaseException):
+            pass
+        class AbortedRenewal:
+            def renew_claim(self, *_, **__):
+                attempted.set()
+                raise Aborted()
+        worker = Worker(consumer=consumer, renewal_consumer=AbortedRenewal(),
+            handlers={"synthetic.active": lambda _: attempted.wait(2)}, worker_id="a",
+            renewal_interval_seconds=0.01)
+>       with pytest.raises(worker_module.LeaseRenewalError, match="renewal_unknown"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'worker.LeaseRenewalError'>
+
+tests\business_worker\test_worker_active_lease.py:309: Failed
+__ test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal[options1] __
+
+active_queue = (sessionmaker(class_='Session', bind=Engine(sqlite+pysqlite:///C:/Users/Administrator/AppData/Local/Temp/pytest-of-Adm....timezone.utc)], <app.core.outbox.OutboxConsumer object at 0x0000024E42D575C0>, 'e9675861-0b64-41e3-af8d-d986c48f7e16')
+options = {'renewal_max_seconds': inf}
+
+    @pytest.mark.parametrize("options", [
+        {"renewal_interval_seconds": float("inf"), "renewal_max_seconds": float("inf")},
+        {"renewal_max_seconds": float("inf")}, {"renewal_join_seconds": float("inf")},
+        {"renewal_join_seconds": float("nan")},
+    ])
+    def test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal(active_queue, options):
+        _, _, consumer, _ = active_queue
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests\business_worker\test_worker_active_lease.py:321: Failed
+__ test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal[options2] __
+
+active_queue = (sessionmaker(class_='Session', bind=Engine(sqlite+pysqlite:///C:/Users/Administrator/AppData/Local/Temp/pytest-of-Adm....timezone.utc)], <app.core.outbox.OutboxConsumer object at 0x0000024E42E6D850>, '2fd68317-445a-4cfd-8005-1fdfb3481a3c')
+options = {'renewal_join_seconds': inf}
+
+    @pytest.mark.parametrize("options", [
+        {"renewal_interval_seconds": float("inf"), "renewal_max_seconds": float("inf")},
+        {"renewal_max_seconds": float("inf")}, {"renewal_join_seconds": float("inf")},
+        {"renewal_join_seconds": float("nan")},
+    ])
+    def test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal(active_queue, options):
+        _, _, consumer, _ = active_queue
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests\business_worker\test_worker_active_lease.py:321: Failed
+__ test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal[options3] __
+
+active_queue = (sessionmaker(class_='Session', bind=Engine(sqlite+pysqlite:///C:/Users/Administrator/AppData/Local/Temp/pytest-of-Adm....timezone.utc)], <app.core.outbox.OutboxConsumer object at 0x0000024E42E6F140>, 'c1822ece-03b9-4247-b31e-e5a198c63aee')
+options = {'renewal_join_seconds': nan}
+
+    @pytest.mark.parametrize("options", [
+        {"renewal_interval_seconds": float("inf"), "renewal_max_seconds": float("inf")},
+        {"renewal_max_seconds": float("inf")}, {"renewal_join_seconds": float("inf")},
+        {"renewal_join_seconds": float("nan")},
+    ])
+    def test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal(active_queue, options):
+        _, _, consumer, _ = active_queue
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests\business_worker\test_worker_active_lease.py:321: Failed
+============================== warnings summary ===============================
+tests/business_worker/test_worker_active_lease.py::test_aborted_renewal_thread_is_unknown_not_success
+  C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread outbox-lease
+
+  Traceback (most recent call last):
+    File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+      self.run()
+    File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+      self._target(*self._args, **self._kwargs)
+    File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\services\business-worker\app\worker.py", line 52, in _run
+      self._renew()
+    File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\services\business-worker\app\worker.py", line 245, in <lambda>
+      lambda: self._renewal_consumer.renew_claim(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\Administrator\.codex\worktrees\im-worker-active-lease\StarChat\tests\business_worker\test_worker_active_lease.py", line 305, in renew_claim
+      raise Aborted()
+  test_worker_active_lease.test_aborted_renewal_thread_is_unknown_not_success.<locals>.Aborted
+
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_worker_active_lease.py::test_aborted_renewal_thread_is_unknown_not_success
+FAILED tests/business_worker/test_worker_active_lease.py::test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal[options1]
+FAILED tests/business_worker/test_worker_active_lease.py::test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal[options2]
+FAILED tests/business_worker/test_worker_active_lease.py::test_nonfinite_lifecycle_budget_cannot_enable_unbounded_renewal[options3]
+4 failed, 1 passed, 13 deselected, 1 warning in 0.96s

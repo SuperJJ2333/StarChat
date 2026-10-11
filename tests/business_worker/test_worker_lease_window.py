@@ -135,12 +135,12 @@ def test_unstarted_tail_is_not_preleased_then_dispatched_by_stale_worker(
     assert finalization_error is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="R9b unresolved: active handler can exceed lease; R9a only removes queued preclaims",
-)
-def test_active_handler_is_not_reclaimed_while_original_handler_is_still_running(queue):
+def test_whole_process_pause_beyond_lease_allows_reclaim_and_rejects_late_ack(queue):
+    """Instant jump gives the renewer no opportunity, like a paused process.
+
+    This remains an at-least-once limit. Operating renewal is tested with a
+    genuinely blocked handler and incremental clock in test_worker_active_lease.
+    """
     factory, clock, consumer = queue
     enqueue(factory, clock, ["synthetic.active"])
     trace = []
@@ -164,11 +164,11 @@ def test_active_handler_is_not_reclaimed_while_original_handler_is_still_running
         now_factory=lambda: clock["now"],
     )
     finalization_error = run_capturing_lock_loss(first)
-    assert trace == ["a-enter", "a-exit"], {
+    assert trace == ["a-enter", "b-enter", "a-exit"], {
         "handler_interleaving": trace,
         "first_worker_finalization_error": finalization_error,
     }
-    assert finalization_error is None
+    assert finalization_error == "OUTBOX_LOCK_MISMATCH"
 
 
 def test_crashed_owner_is_reclaimable_only_at_lease_boundary(queue):

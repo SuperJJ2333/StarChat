@@ -1,0 +1,46 @@
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+______ test_default_claim_and_renew_use_database_clock_despite_host_skew ______
+
+pg_active = ('postgresql+psycopg://lease_fixture@127.0.0.1:55483/im_worker_lease_active_utf8', Engine(postgresql+psycopg://lease_f...1:55483/im_worker_lease_active_utf8), autoflush=False, expire_on_commit=False), 'b151609b-60d8-441c-b96d-05ab64a666a7')
+
+    def test_default_claim_and_renew_use_database_clock_despite_host_skew(pg_active):
+        _, _, _, factory, event_id = pg_active
+        consumer = OutboxConsumer(factory)
+        # Simulate a host clock far ahead; default lease decisions must share DB time.
+        consumer._now_factory = lambda: datetime(2099, 1, 1, tzinfo=timezone.utc)
+        with factory() as session:
+            before = session.scalar(text("SELECT clock_timestamp()"))
+        [message] = consumer.claim_batch(worker_id="clock", limit=1)
+        assert message.id == event_id
+        consumer.renew_claim(event_id, worker_id="clock", attempt_count=1)
+        with factory() as session:
+            locked = session.get(OutboxEvent, event_id).locked_at
+            after = session.scalar(text("SELECT clock_timestamp()"))
+>       assert before <= locked <= after
+E       AssertionError: assert datetime.datetime(2099, 1, 1, 8, 0, tzinfo=zoneinfo.ZoneInfo(key='Asia/Shanghai')) <= datetime.datetime(2026, 10, 11, 17, 10, 22, 75034, tzinfo=zoneinfo.ZoneInfo(key='Asia/Shanghai'))
+
+tests\business_worker\test_worker_active_lease_postgres.py:66: AssertionError
+_____ test_dedicated_engine_enforces_real_statement_and_pool_wait_budgets _____
+
+pg_active = ('postgresql+psycopg://lease_fixture@127.0.0.1:55483/im_worker_lease_active_utf8', Engine(postgresql+psycopg://lease_f...1:55483/im_worker_lease_active_utf8), autoflush=False, expire_on_commit=False), 'b64a7f1e-a66c-4efe-8a3a-ffca065bd79e')
+
+    def test_dedicated_engine_enforces_real_statement_and_pool_wait_budgets(pg_active):
+>       from lease_renewal import create_renewal_engine
+E       ModuleNotFoundError: No module named 'lease_renewal'
+
+tests\business_worker\test_worker_active_lease_postgres.py:70: ModuleNotFoundError
+_______ test_postgres_blocked_handler_renews_on_independent_connection ________
+
+pg_active = ('postgresql+psycopg://lease_fixture@127.0.0.1:55483/im_worker_lease_active_utf8', Engine(postgresql+psycopg://lease_f...1:55483/im_worker_lease_active_utf8), autoflush=False, expire_on_commit=False), 'c06793d4-86da-44b2-ae08-e587edc08123')
+
+    def test_postgres_blocked_handler_renews_on_independent_connection(pg_active):
+>       from lease_renewal import create_renewal_engine
+E       ModuleNotFoundError: No module named 'lease_renewal'
+
+tests\business_worker\test_worker_active_lease_postgres.py:98: ModuleNotFoundError
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_worker_active_lease_postgres.py::test_default_claim_and_renew_use_database_clock_despite_host_skew
+FAILED tests/business_worker/test_worker_active_lease_postgres.py::test_dedicated_engine_enforces_real_statement_and_pool_wait_budgets
+FAILED tests/business_worker/test_worker_active_lease_postgres.py::test_postgres_blocked_handler_renews_on_independent_connection
+3 failed in 1.35s

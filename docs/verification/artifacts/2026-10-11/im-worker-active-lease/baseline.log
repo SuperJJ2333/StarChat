@@ -1,0 +1,32 @@
+........................................................................ [ 22%]
+........................................................................ [ 44%]
+............................F........................................... [ 67%]
+..................................................ssssssssss........x... [ 89%]
+..s.............................s                                        [100%]
+================================== FAILURES ===================================
+_ test_disabled_funds_worker_obeys_attribution_unique_and_empty_receipt_gates _
+
+    def test_disabled_funds_worker_obeys_attribution_unique_and_empty_receipt_gates():
+>       probe=load_probe()
+              ^^^^^^^^^^^^
+
+tests\business_worker\test_support_recovery_compatibility.py:18:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\business_worker\test_support_recovery_compatibility.py:13: in load_probe
+    spec.loader.exec_module(module)
+<frozen importlib._bootstrap_external>:995: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1132: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x00000198E574E6F0>
+path = 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-active-lease\\StarChat\\docs\\verification\\artifacts\\2026-09-30\\support-worker-compatibility\\worker_probe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-active-lease\\StarChat\\docs\\verification\\artifacts\\2026-09-30\\support-worker-compatibility\\worker_probe.py'
+
+<frozen importlib._bootstrap_external>:1190: FileNotFoundError
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_support_recovery_compatibility.py::test_disabled_funds_worker_obeys_attribution_unique_and_empty_receipt_gates
+1 failed, 307 passed, 12 skipped, 1 xfailed in 33.51s

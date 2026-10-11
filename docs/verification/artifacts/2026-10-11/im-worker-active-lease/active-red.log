@@ -1,0 +1,46 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____ test_blocked_handler_crossing_five_minutes_retains_single_dispatch ______
+
+active_queue = (sessionmaker(class_='Session', bind=Engine(sqlite+pysqlite:///C:/Users/Administrator/AppData/Local/Temp/pytest-of-Adm....timezone.utc)], <app.core.outbox.OutboxConsumer object at 0x00000256E4960380>, '5fc66f10-a5df-400d-86fa-2c78dd07d0a9')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x00000256E4EEE1E0>
+
+    def test_blocked_handler_crossing_five_minutes_retains_single_dispatch(active_queue, monkeypatch):
+        factory, clock, consumer, event_id = active_queue
+        # Shorten only scheduling cadence; the real consumer lease stays 300 seconds.
+        monkeypatch.setattr(worker_module, "DEFAULT_RENEWAL_INTERVAL_SECONDS", 0.01, raising=False)
+        entered, release = Event(), Event()
+        dispatches, handler_threads = [], []
+        def handler(message):
+            dispatches.append(("a", message.attempt_count))
+            handler_threads.append(get_ident())
+            entered.set()
+            assert release.wait(10)
+        worker = Worker(consumer=consumer, handlers={"synthetic.active": handler}, worker_id="a")
+        thread, outcomes = launch(lambda: worker.run_once(limit=1))
+        try:
+            assert entered.wait(2)
+            for _ in range(6):
+                clock[0] += timedelta(seconds=60)
+                wait_for(lambda: row(factory, event_id)[3] == clock[0], timeout=0.3)
+            competitor = Worker(
+                consumer=OutboxConsumer(factory, now_factory=lambda: clock[0]),
+                handlers={"synthetic.active": lambda message: dispatches.append(("b", message.attempt_count))},
+                worker_id="b",
+            )
+            competitor.run_once(limit=1)
+        finally:
+            release.set()
+            thread.join(3)
+        assert not thread.is_alive()
+>       assert dispatches == [("a", 1)], (dispatches, outcomes)
+E       AssertionError: ([('a', 1), ('b', 2)], [AppError('outbox event is not locked by this worker and claim generation')])
+E       assert [('a', 1), ('b', 2)] == [('a', 1)]
+E
+E         Left contains one more item: ('b', 2)
+E         Use -v to get more diff
+
+tests\business_worker\test_worker_active_lease.py:95: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_worker_active_lease.py::test_blocked_handler_crossing_five_minutes_retains_single_dispatch
+1 failed in 3.55s

@@ -58,12 +58,12 @@ def test_wallet_builds_callable_tasks_without_production_sandbox_handler(worker_
 
 
 def test_main_passes_bare_wallet_callables_and_merges_alert_handler(worker_main, monkeypatch):
-    settings = SimpleNamespace(environment='development', red_packet_max_total=100,
+    settings = SimpleNamespace(environment='development', red_packet_max_total=100, database_url='sqlite://',
         adjustment_admin_threshold='1000', wallet_confirmation_threshold=20, wallet_conversions_enabled=False,
         email_verification_secret=None, password_reset_secret=None, matrix_provision_secret=None,
         avatar_storage_root='unused')
     monkeypatch.setattr(worker_main, 'Settings', lambda: settings)
-    for name in ('create_engine', 'create_session_factory', 'OutboxConsumer', 'RedPacketService', 'LedgerService',
+    for name in ('create_engine', 'create_renewal_engine', 'create_session_factory', 'OutboxConsumer', 'RedPacketService', 'LedgerService',
                  'ChatTransferService', 'RedPacketExpiryTask', 'ChatTransferExpiryTask', 'MomentsModerationTask',
                  'email_sender_from_environment', 'SynapseMatrixAdminGateway', 'LocalPrivateAvatarReader',
                  'build_blob_backend', 'signal'):
@@ -87,6 +87,7 @@ def test_main_passes_bare_wallet_callables_and_merges_alert_handler(worker_main,
     assert worker.call_args.kwargs['handlers'] == {**identity, 'wallet.alert': alert}
     worker.return_value.run_forever.assert_called_once()
     worker_main.create_engine.return_value.dispose.assert_called_once()
+    worker_main.create_renewal_engine.return_value.dispose.assert_called_once()
 
 
 def test_same_named_maintenance_tasks_are_scheduled_independently():
@@ -188,9 +189,9 @@ def test_manual_mode_requires_observer_path_before_runtime_creation(worker_main,
 
 @pytest.mark.parametrize('close_fails', [False, True])
 def test_startup_failure_closes_wallet_and_engine(worker_main, monkeypatch, close_fails):
-    settings = SimpleNamespace(red_packet_max_total=100)
+    settings = SimpleNamespace(red_packet_max_total=100, database_url='sqlite://')
     monkeypatch.setattr(worker_main, 'Settings', lambda: settings)
-    for name in ('create_engine', 'create_session_factory', 'OutboxConsumer', 'RedPacketService',
+    for name in ('create_engine', 'create_renewal_engine', 'create_session_factory', 'OutboxConsumer', 'RedPacketService',
                  'LedgerService', 'ChatTransferService', 'RedPacketExpiryTask', 'ChatTransferExpiryTask'):
         monkeypatch.setattr(worker_main, name, MagicMock())
     class Task:
@@ -204,3 +205,4 @@ def test_startup_failure_closes_wallet_and_engine(worker_main, monkeypatch, clos
         worker_main.main()
     task.close.assert_called_once()
     worker_main.create_engine.return_value.dispose.assert_called_once()
+    worker_main.create_renewal_engine.return_value.dispose.assert_called_once()

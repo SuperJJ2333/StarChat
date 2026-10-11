@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, and_, or_, select
+from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, and_, func, or_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.database import Base
@@ -89,6 +89,7 @@ class OutboxConsumer:
     ) -> None:
         self._session_factory = session_factory
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
+        self._database_lease_clock = now_factory is None
         self._lease_timeout = lease_timeout
         self._wallet_handover_preparation_mode = wallet_handover_preparation_mode
 
@@ -101,10 +102,10 @@ class OutboxConsumer:
         """
         if limit < 1:
             return []
-        now = self._now_factory()
         from app.core.outbox_handover import OutboxHandover, SUMMARY_EVENT
-        stale_before = now - self._lease_timeout
         with self._session_factory.begin() as session:
+            now = self._lease_now(session)
+            stale_before = now - self._lease_timeout
             statement = (
                 select(OutboxEvent)
                 .where(
@@ -181,7 +182,7 @@ class OutboxConsumer:
         """
         with self._session_factory.begin() as session:
             event = self._claimed_event(session, event_id, worker_id, attempt_count, nowait=True)
-            now = self._now_factory()
+            now = self._lease_now(session)
             locked_at = event.locked_at
             if locked_at is not None and locked_at.tzinfo is None:
                 locked_at = locked_at.replace(tzinfo=timezone.utc)
@@ -192,6 +193,13 @@ class OutboxConsumer:
                     status_code=409,
                 )
             event.locked_at = now
+
+    def _lease_now(self, session: Session) -> datetime:
+        # A single authority for default production lease decisions, independent
+        # of worker host clock skew. Explicit fixture clocks remain supported.
+        if self._database_lease_clock and session.get_bind().dialect.name == "postgresql":
+            return session.scalar(select(func.clock_timestamp()))
+        return self._now_factory()
 
     def mark_claim_succeeded(self, event_id: str, *, worker_id: str, attempt_count: int) -> None:
         """Complete this generation, including expired claims not yet reclaimed."""

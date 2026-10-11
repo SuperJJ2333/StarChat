@@ -1,0 +1,182 @@
+{
+  "recorded_at_utc": "2026-10-11T09:20:19.025878+00:00",
+  "base_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "branch": "codex/im-worker-active-lease",
+  "production_operations": "none",
+  "independent_review": "pending",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "python": "3.12.10",
+  "sqlalchemy": "2.0.52",
+  "psycopg": "3.3.4",
+  "postgresql": "18.3 native Windows, loopback synthetic UTF8 fixture only",
+  "sources": [
+    {
+      "path": "services/business-worker/app/worker.py",
+      "sha256": "b59f5619156e5ea7c0c43dfc71cd729166b4aa5ee1ed6f7d02cadce1adde7a59",
+      "bytes": 13715
+    },
+    {
+      "path": "services/business-worker/app/main.py",
+      "sha256": "f320662c59491b66c2fe9e776c83634c16f5ac780db00d0ecc0d4fd272312494",
+      "bytes": 16717
+    },
+    {
+      "path": "services/business-worker/app/lease_renewal.py",
+      "sha256": "37ae78fa6488a81936ff81e5d753b54678edc9047d8552ee665ca8c0726bd4d1",
+      "bytes": 1275
+    },
+    {
+      "path": "services/business-api/app/core/outbox.py",
+      "sha256": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12",
+      "bytes": 13493
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/business_worker/test_worker_active_lease.py",
+      "sha256": "54458c86db51c630bda3c03d9f0abf6abd973430b3015f7b963f696ad72f55df",
+      "bytes": 13230
+    },
+    {
+      "path": "tests/business_worker/test_worker_active_lease_postgres.py",
+      "sha256": "856cc882a325e4e95189ea91b0089986d87f55998ecfd7106b6784a95a3c7a7a",
+      "bytes": 8536
+    },
+    {
+      "path": "tests/business_worker/test_published_worker_entrypoint.py",
+      "sha256": "2e39b634c1e3e18b2ed02ab28d8b413c13a8dae1e1f4eb8d810e77e9afea0623",
+      "bytes": 6052
+    },
+    {
+      "path": "tests/business_worker/test_worker_lease_window.py",
+      "sha256": "204f84d08a6dfa8d7f018a1d33ca85388751c43341e758c0c67f8711f131a681",
+      "bytes": 10863
+    },
+    {
+      "path": "tests/business_worker/test_reserve_monitor_runner.py",
+      "sha256": "f73f90752017d8fdd1d326bf39b44bdd69309cb4695fb19c6d6dfe5945a16792",
+      "bytes": 6501
+    },
+    {
+      "path": "tests/business_worker/test_wallet_operations_wiring.py",
+      "sha256": "a208ea711fc348040cb5b7855b6026d6dbb636a711dd44deba71e711d3e29bba",
+      "bytes": 11612
+    }
+  ],
+  "dependencies": [
+    {
+      "path": "services/business-api/requirements.lock",
+      "sha256": "f64b119c66265cb59b3272d074afe32b4560da1715f30499580c3a046346bf8f",
+      "bytes": 1462
+    },
+    {
+      "path": "services/business-api/pyproject.toml",
+      "sha256": "ad430fe077fa8443b511e9980739d106353ef6175d7615d60549e89cacdb28e0",
+      "bytes": 1109
+    }
+  ],
+  "evidence": [
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/baseline.log",
+      "sha256": "867d2e1b9ca971e06bedb2838c77560cbed3bff49fa26e80db633e248bd41b78",
+      "bytes": 2049,
+      "exit": 1,
+      "passed": 307,
+      "skipped": 12,
+      "xfailed": 1,
+      "failed": 1,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker tests/business_api/test_outbox.py tests/business_api/test_outbox_handover.py tests/business_api/audit/test_outbox_publication_receipts.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/active-red.log",
+      "sha256": "a892f6350adce59a5788da48b670d3a383e86e72fd6a1d858be385bbc19913bf",
+      "bytes": 2671,
+      "exit": 1,
+      "failed": 1,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/active-green.log",
+      "sha256": "16bf8ec884a36e217ab993ab399e0c564e45caf3b5f8a45906e7c2539cb70dbf",
+      "bytes": 100,
+      "exit": 0,
+      "passed": 1,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/lifecycle-green.log",
+      "sha256": "f224db97367524a177d7230e6947a1dda8ba8ed2a260bfb72d00504485eb64f5",
+      "bytes": 101,
+      "exit": 0,
+      "passed": 13,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/pg-contract-red.log",
+      "sha256": "6dc62bd294db852fb4e4a8a85cb1f7d76041af315c8ea5ca09f9afc4bfff23f0",
+      "bytes": 3417,
+      "exit": 1,
+      "failed": 3,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease_postgres.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/pg-contract-green.log",
+      "sha256": "28a26e2933b0eeafc5d83d01005e380d2716ab91a0431b5ff124cda491fcd803",
+      "bytes": 101,
+      "exit": 0,
+      "passed": 16,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease.py tests/business_worker/test_worker_active_lease_postgres.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/budget-red.log",
+      "sha256": "0116ec6df3acc0ae0c1d7590ef46b5ec04730707eb6d4268bde5cc2693936b37",
+      "bytes": 6739,
+      "exit": 1,
+      "failed": 4,
+      "passed": 1,
+      "warning": 1,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease.py -k 'aborted or nonfinite'"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/default-entry-negative-control.log",
+      "sha256": "a313e22ca37b98bd75b5fc92601068695d742f49a1bc974677cb70296298826a",
+      "bytes": 6249,
+      "exit": 1,
+      "failed": 1,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_published_worker_entrypoint.py -k actual_main"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/default-entry-green.log",
+      "sha256": "28fdf012e401253466b0f01774b2297331268c5f9b72d19d58cd35771c5cc6c2",
+      "bytes": 100,
+      "exit": 0,
+      "passed": 2,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_published_worker_entrypoint.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/impact-first.log",
+      "sha256": "d7ea1daaf2575ddac427c52298cf119ff57aad7bbc11ae296e99a2ffeefe0924",
+      "bytes": 6602,
+      "exit": 1,
+      "passed": 339,
+      "skipped": 1,
+      "failed": 2,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker tests/business_api/test_outbox.py tests/business_api/test_outbox_handover.py tests/business_api/audit/test_outbox_publication_receipts.py --ignore=tests/business_worker/test_support_recovery_compatibility.py"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-worker-active-lease/impact-green.log",
+      "sha256": "9d11f18f673e95c8163be39307cdda68fd02b99e1167e515a949014698a3fcc0",
+      "bytes": 438,
+      "exit": 0,
+      "passed": 342,
+      "skipped": 1,
+      "command": "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker tests/business_api/test_outbox.py tests/business_api/test_outbox_handover.py tests/business_api/audit/test_outbox_publication_receipts.py --ignore=tests/business_worker/test_support_recovery_compatibility.py"
+    }
+  ],
+  "notes": [
+    "Final impact log is bound to all final source/test identities above; earlier logs describe incremental phases in README.",
+    "Baseline is unchanged base; old-main negative control loads git-show base main ahead of worker PYTHONPATH.",
+    "Initial SQL_ASCII fixture and incomplete receipt test payload were corrected; neither is claimed as behavioral RED.",
+    "Full verify.ps1 and production/container gates are not claimed executed. Independent review pending."
+  ]
+}

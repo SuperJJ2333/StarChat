@@ -1,8 +1,10 @@
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
+from math import isfinite
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
+from time import monotonic
 from typing import Any, Protocol
 
 logger = logging.getLogger("business-worker")
@@ -11,10 +13,67 @@ logger = logging.getLogger("business-worker")
 # 超过最大尝试次数进入可审计死信（DEAD），不再占用热队列。
 DEFAULT_MAX_ATTEMPTS = 10
 BACKOFF_CAP = timedelta(hours=1)
+DEFAULT_RENEWAL_INTERVAL_SECONDS = 60.0
+DEFAULT_RENEWAL_MAX_SECONDS = 900.0
+DEFAULT_RENEWAL_JOIN_SECONDS = 30.0
+
+
+class LeaseRenewalError(RuntimeError):
+    """Ownership is lost/unknown; this Worker must not acknowledge or claim again."""
+
+
+class _ActiveClaim:
+    def __init__(self, renew, *, interval, maximum, join_timeout, clock):
+        self._renew = renew
+        self._interval = interval
+        self._deadline = clock() + maximum
+        self._join_timeout = join_timeout
+        self._clock = clock
+        self._stop = Event()
+        self.failure: str | None = None
+        # If even bounded driver I/O fails to return, process exit must remain
+        # possible. A stopped lifecycle never starts another operation.
+        self._thread = Thread(target=self._run, name="outbox-lease", daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def _run(self):
+        while not self._stop.is_set():
+            remaining = self._deadline - self._clock()
+            if remaining <= 0:
+                self.failure = "renewal_limit"
+                return
+            if self._stop.wait(min(self._interval, remaining)):
+                return
+            if self._clock() >= self._deadline:
+                self.failure = "renewal_limit"
+                return
+            try:
+                self._renew()
+            except BaseException as exc:
+                # Do not expose database exception strings/DSNs or payloads.
+                self.failure = (
+                    "lease_lost" if getattr(exc, "code", None) in {
+                        "OUTBOX_LOCK_MISMATCH", "OUTBOX_LEASE_EXPIRED"
+                    } else "renewal_unknown"
+                )
+                return
+
+    def finish(self):
+        self._stop.set()
+        self._thread.join(self._join_timeout)
+        if self._thread.is_alive():
+            self.failure = "renewal_unsettled"
+        elif self._clock() >= self._deadline:
+            self.failure = self.failure or "renewal_limit"
+        return self.failure
 
 
 class OutboxConsumerProtocol(Protocol):
     def claim_batch(self, *, worker_id: str, limit: int, topics: list[str] | None = None) -> list[Any]: ...
+
+    def renew_claim(self, event_id: str, *, worker_id: str, attempt_count: int) -> None: ...
 
     def mark_claim_succeeded(self, event_id: str, *, worker_id: str, attempt_count: int) -> None: ...
 
@@ -65,11 +124,32 @@ class Worker:
         maintenance_interval: timedelta = timedelta(seconds=30),
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         reap_undeliverable_age: timedelta | None = None,
+        renewal_consumer: OutboxConsumerProtocol | None = None,
+        renewal_interval_seconds: float | None = None,
+        renewal_max_seconds: float = DEFAULT_RENEWAL_MAX_SECONDS,
+        renewal_join_seconds: float = DEFAULT_RENEWAL_JOIN_SECONDS,
+        monotonic_factory=monotonic,
     ) -> None:
         for method in ("mark_claim_succeeded", "mark_claim_failed", "mark_claim_dead"):
             if not callable(getattr(consumer, method, None)):
                 raise TypeError(f"consumer requires generation-fenced claim completion: {method}")
         self._consumer = consumer
+        self._renewal_consumer = renewal_consumer if renewal_consumer is not None else consumer
+        if not callable(getattr(self._renewal_consumer, "renew_claim", None)):
+            raise TypeError("consumer requires generation-fenced claim renewal: renew_claim")
+        self._renewal_interval = (
+            DEFAULT_RENEWAL_INTERVAL_SECONDS if renewal_interval_seconds is None
+            else renewal_interval_seconds
+        )
+        if (not all(isfinite(value) for value in (
+                self._renewal_interval, renewal_max_seconds, renewal_join_seconds))
+                or not (0 < self._renewal_interval < renewal_max_seconds)
+                or renewal_join_seconds <= 0):
+            raise ValueError("renewal requires positive interval < maximum and positive join budget")
+        self._renewal_max = renewal_max_seconds
+        self._renewal_join = renewal_join_seconds
+        self._monotonic = monotonic_factory
+        self._lease_fault: str | None = None
         self._handlers = dict(handlers)
         self._worker_id = worker_id
         self._retry_delay = retry_delay
@@ -150,11 +230,13 @@ class Worker:
                 self.handled_topics,
             )
 
-    def run_once(self, limit: int = 50) -> int:
+    def run_once(self, limit: int = 50, *, stop_event: Event | None = None) -> int:
+        if self._lease_fault is not None:
+            raise LeaseRenewalError(self._lease_fault)
         self.run_maintenance_once()
         self._reap_undeliverable()
         processed = 0
-        while processed < limit:
+        while processed < limit and not (stop_event is not None and stop_event.is_set()):
             # Claim only when ready to dispatch: queued work must not consume
             # its lease while an earlier handler is still running.
             messages = self._consumer.claim_batch(
@@ -163,13 +245,29 @@ class Worker:
             if not messages:
                 break
             message = messages[0]
+            lease = _ActiveClaim(
+                lambda: self._renewal_consumer.renew_claim(
+                    message.id, worker_id=self._worker_id, attempt_count=message.attempt_count
+                ),
+                interval=self._renewal_interval, maximum=self._renewal_max,
+                join_timeout=self._renewal_join, clock=self._monotonic,
+            )
+            lease.start()
+            handler_error = None
             try:
                 handler = self._handlers.get(message.topic)
                 if handler is None:
                     raise RuntimeError(f"no handler registered for topic {message.topic}")
                 handler(message)
             except Exception as exc:
-                error = str(exc) or exc.__class__.__name__
+                handler_error = exc
+            finally:
+                self._lease_fault = lease.finish()
+                if self._lease_fault is not None:
+                    logger.error("outbox active claim stopped reason=%s", self._lease_fault)
+                    raise LeaseRenewalError(self._lease_fault) from None
+            if handler_error is not None:
+                error = str(handler_error) or handler_error.__class__.__name__
                 if message.attempt_count >= self._max_attempts:
                     # 死信终态：保留事件与错误供人工重放。
                     self._consumer.mark_claim_dead(
@@ -212,7 +310,7 @@ class Worker:
         limit: int = 50,
     ) -> None:
         while not stop_event.is_set():
-            self.run_once(limit=limit)
+            self.run_once(limit=limit, stop_event=stop_event)
             stop_event.wait(poll_interval_seconds)
 
     def _touch_heartbeat(self) -> None:

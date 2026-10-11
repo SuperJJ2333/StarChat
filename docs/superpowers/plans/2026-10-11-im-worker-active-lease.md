@@ -1,0 +1,12 @@
+# R9b-2 bounded active-handler lease renewal
+
+Approved scope: R9 in `2026-10-11-im-reliability-remediation.md`, resumed explicitly by the user/root on 2026-10-11. Base `5988deb48185f4f2fb0743615f17ccea597671ce`. Own independent worktree; no deployment or production reads/writes.
+
+1. Prove the remaining duplicate-dispatch window using a genuinely blocked handler, real Consumer, two workers and a gradually advanced five-minute lease clock. Do not treat an instantaneous 301-second jump as a scheduler receiving renewal opportunities.
+2. Keep handler execution on its original thread. One renewal lifecycle per claim, original mandatory event/worker/attempt token, fresh short Session on a separate one-connection engine in the real entrypoint. Renew every 60 seconds, with a 900-second monotonic operational cap. No further renewal begins after cap; one in-flight I/O may settle later. This cap reduces a bounded window; it does not protect arbitrarily long handlers.
+3. Use PostgreSQL clock_timestamp for default claim/renew lease decisions. Explicit injected clocks remain for deterministic tests. Bound dedicated renewal connection/lock/statement waits; do not change API pool settings. Stop then join renewal before any completion. Ownership loss, unknown DB result, cap exhaustion or unresolved join poison this Worker, prevent further claims and prevent completion of that claim; leave recovery to lease expiry. Never log DB exception text/payload.
+4. SIGTERM stops new claims, while the active handler retains the same bounded renewal policy. No background heartbeat refresh. Handler cannot be forcibly stopped: late external effects remain at-least-once and need existing handler idempotency. Queue fencing is not external exactly-once.
+5. RED/GREEN fault boundaries: success/retry/DEAD, original thread, STOP, cap, lease loss/reset generation, DB failure/unknown commit, no renewal after settlement, bounded stuck-call shutdown. Real PostgreSQL contention and actual default-import assembly. Existing whole-process-pause/crash reclaim remains required.
+6. Freeze with evidence for independent SPEC/domain then QUALITY/security. No schema, financial handler, legacy historical DEAD replay/delete, audit or E2EE changes. Deployment awaits root's fresh exact-baseline decision after mobile release.
+
+Rollback is a source/image rollback of this candidate only; no data migration. Tests must retain generation fencing and default registered publication handlers. No protected financial transition or policy is changed.

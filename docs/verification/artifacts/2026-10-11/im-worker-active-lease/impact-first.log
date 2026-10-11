@@ -1,0 +1,100 @@
+........................................................................ [ 21%]
+........................................................................ [ 42%]
+.......................................................................F [ 63%]
+F....................................................................... [ 84%]
+.....................................................s                   [100%]
+================================== FAILURES ===================================
+____________ test_startup_failure_closes_wallet_and_engine[False] _____________
+
+worker_main = <module 'wallet_operations_worker_main' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-active-lease\\StarChat\\services\\business-worker\\app\\main.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000020E42F7CD70>
+close_fails = False
+
+    @pytest.mark.parametrize('close_fails', [False, True])
+    def test_startup_failure_closes_wallet_and_engine(worker_main, monkeypatch, close_fails):
+        settings = SimpleNamespace(red_packet_max_total=100)
+        monkeypatch.setattr(worker_main, 'Settings', lambda: settings)
+        for name in ('create_engine', 'create_session_factory', 'OutboxConsumer', 'RedPacketService',
+                     'LedgerService', 'ChatTransferService', 'RedPacketExpiryTask', 'ChatTransferExpiryTask'):
+            monkeypatch.setattr(worker_main, name, MagicMock())
+        class Task:
+            close = MagicMock(side_effect=RuntimeError('close failed') if close_fails else None)
+            def run_once(self):
+                pass
+        task = Task()
+        monkeypatch.setattr(worker_main, 'build_wallet_tasks', lambda *_: (task.run_once, lambda: None, {}))
+        monkeypatch.setattr(worker_main, 'MomentsModerationTask', MagicMock(side_effect=RuntimeError('startup failed')))
+        with pytest.raises(RuntimeError):
+>           worker_main.main()
+
+tests\business_worker\test_wallet_operations_wiring.py:204:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def main() -> None:
+        logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+        from app.integrations.tron import diagnostics
+        diagnostics.configure('business-worker')
+        diagnostics.emit('INFO', 'service_started', component='worker')
+        settings = Settings()
+        engine = create_engine(settings)
+        with ExitStack() as resources:
+            resources.callback(engine.dispose)
+            session_factory = create_session_factory(engine)
+            consumer = (OutboxConsumer(session_factory, wallet_handover_preparation_mode=True)
+                if getattr(settings, 'wallet_handover_preparation_mode', False) else OutboxConsumer(session_factory))
+>           renewal_engine = create_renewal_engine(settings.database_url)
+                                                   ^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'database_url'
+
+services\business-worker\app\main.py:210: AttributeError
+---------------------------- Captured stderr call -----------------------------
+{"timestamp":"2026-10-11T09:13:56.488718+00:00","schema_version":1,"service":"business-worker","component":"worker","event":"service_started","level":"INFO","trace_id":"39cf612a348f42b6971f9ccd5d957d36"}
+_____________ test_startup_failure_closes_wallet_and_engine[True] _____________
+
+worker_main = <module 'wallet_operations_worker_main' from 'C:\\Users\\Administrator\\.codex\\worktrees\\im-worker-active-lease\\StarChat\\services\\business-worker\\app\\main.py'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000020E42845DF0>
+close_fails = True
+
+    @pytest.mark.parametrize('close_fails', [False, True])
+    def test_startup_failure_closes_wallet_and_engine(worker_main, monkeypatch, close_fails):
+        settings = SimpleNamespace(red_packet_max_total=100)
+        monkeypatch.setattr(worker_main, 'Settings', lambda: settings)
+        for name in ('create_engine', 'create_session_factory', 'OutboxConsumer', 'RedPacketService',
+                     'LedgerService', 'ChatTransferService', 'RedPacketExpiryTask', 'ChatTransferExpiryTask'):
+            monkeypatch.setattr(worker_main, name, MagicMock())
+        class Task:
+            close = MagicMock(side_effect=RuntimeError('close failed') if close_fails else None)
+            def run_once(self):
+                pass
+        task = Task()
+        monkeypatch.setattr(worker_main, 'build_wallet_tasks', lambda *_: (task.run_once, lambda: None, {}))
+        monkeypatch.setattr(worker_main, 'MomentsModerationTask', MagicMock(side_effect=RuntimeError('startup failed')))
+        with pytest.raises(RuntimeError):
+>           worker_main.main()
+
+tests\business_worker\test_wallet_operations_wiring.py:204:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+    def main() -> None:
+        logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+        from app.integrations.tron import diagnostics
+        diagnostics.configure('business-worker')
+        diagnostics.emit('INFO', 'service_started', component='worker')
+        settings = Settings()
+        engine = create_engine(settings)
+        with ExitStack() as resources:
+            resources.callback(engine.dispose)
+            session_factory = create_session_factory(engine)
+            consumer = (OutboxConsumer(session_factory, wallet_handover_preparation_mode=True)
+                if getattr(settings, 'wallet_handover_preparation_mode', False) else OutboxConsumer(session_factory))
+>           renewal_engine = create_renewal_engine(settings.database_url)
+                                                   ^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'types.SimpleNamespace' object has no attribute 'database_url'
+
+services\business-worker\app\main.py:210: AttributeError
+---------------------------- Captured stderr call -----------------------------
+{"timestamp":"2026-10-11T09:13:56.784156+00:00","schema_version":1,"service":"business-worker","component":"worker","event":"service_started","level":"INFO","trace_id":"721d13d942834c4a96c7ec89a28cdff7"}
+=========================== short test summary info ===========================
+FAILED tests/business_worker/test_wallet_operations_wiring.py::test_startup_failure_closes_wallet_and_engine[False]
+FAILED tests/business_worker/test_wallet_operations_wiring.py::test_startup_failure_closes_wallet_and_engine[True]
+2 failed, 339 passed, 1 skipped in 27.37s

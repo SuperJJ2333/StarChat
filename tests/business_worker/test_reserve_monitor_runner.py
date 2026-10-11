@@ -84,6 +84,9 @@ def test_blocked_monitor_leaves_caller_free_for_outbox_work():
         def mark_claim_dead(self, *args, **kwargs):
             pytest.fail("synthetic successful delivery must not dead-letter")
 
+        def renew_claim(self, *args, **kwargs):
+            pytest.fail("instant synthetic handler must not need renewal")
+
     worker = import_module("worker").Worker(
         consumer=Consumer(),
         handlers={"wallet.alert": lambda message: outbox_work.append("delivered")},
