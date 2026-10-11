@@ -1,0 +1,32 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart
+00:00 +0: playback preparation cancellation boundary: valid
+[chatflow/mediaindex] degraded: UnimplementedError
+00:00 +0 -1: playback preparation cancellation boundary: valid [E]
+  Expected: null
+    Actual: MediaLoadCanceled:<Bad state: Media load canceled>
+
+  package:matcher                                                   expect
+  package:flutter_test/src/widget_tester.dart 473:18                expect
+  test\features\matrix\media_playback_preparation_test.dart 127:11  main.<fn>
+
+00:00 +0 -1: playback preparation cancellation boundary: callerCancel
+00:00 +1 -1: playback preparation cancellation boundary: noCache
+00:00 +2 -1: playback preparation cancellation boundary: corrupt
+00:00 +3 -1: playback preparation cancellation boundary: accountClear
+00:00 +4 -1: playback preparation cancellation boundary: globalClear
+00:00 +5 -1: playback preparation cancellation boundary: laterIoFailure
+00:00 +5 -2: playback preparation cancellation boundary: laterIoFailure [E]
+  Expected: <Instance of 'FileSystemException'>
+    Actual: MediaLoadCanceled:<Bad state: Media load canceled>
+     Which: is not an instance of 'FileSystemException'
+
+  package:matcher                                                   expect
+  package:flutter_test/src/widget_tester.dart 473:18                expect
+  test\features\matrix\media_playback_preparation_test.dart 132:13  main.<fn>
+
+00:00 +5 -2: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: laterIoFailure
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart: playback preparation cancellation boundary: valid

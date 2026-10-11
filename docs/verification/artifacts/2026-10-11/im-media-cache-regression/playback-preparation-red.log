@@ -1,0 +1,20 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-playback-preparation-probe_test.dart
+00:00 +0: playback waits independent preparation: cancelFirst=false
+[chatflow/mediaindex] degraded: UnimplementedError
+synthetic_prepare_first_cancel=false second_active=true second_error=null
+00:00 +1: playback waits independent preparation: cancelFirst=true
+synthetic_prepare_first_cancel=true second_active=true second_error=MediaLoadCanceled
+00:00 +1 -1: playback waits independent preparation: cancelFirst=true [E]
+  Expected: null
+    Actual: MediaLoadCanceled:<Bad state: Media load canceled>
+  A canceled independent preparation must not fail playback of B already published valid reference
+
+  package:matcher                                                                                                                 expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                                              expect
+  ..\..\docs\verification\artifacts\2026-10-11\im-media-cache-regression\independent-playback-preparation-probe_test.dart 123:11  main.<fn>
+
+00:00 +1 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/Administrator/.codex/worktrees/im-media-cache-regression/StarChat/docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-playback-preparation-probe_test.dart: playback waits independent preparation: cancelFirst=true

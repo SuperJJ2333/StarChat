@@ -1,0 +1,66 @@
+{
+  "flutter": "3.44.9",
+  "commands": [
+    "flutter test --no-pub test/features/matrix/media_playback_preparation_test.dart ../../docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-playback-preparation-probe_test.dart --reporter expanded",
+    "flutter test --no-pub test/features/matrix/media_cache_publication_test.dart test/features/matrix/media_consumer_integration_test.dart test/features/matrix/media_transfer_integrity_test.dart test/features/matrix/media_index_phase2_test.dart test/features/matrix/media_cache_clear_test.dart test/features/matrix/media_load_scheduler_test.dart test/ui/chat/contain_image_bubble_lifecycle_test.dart test/features/matrix/media_download_budget_test.dart test/features/matrix/media_audit_test.dart test/features/matrix/video_playback_extension_test.dart test/features/matrix/incoming_media_prefetch_test.dart test/features/matrix/media_cache_object_join_test.dart test/features/matrix/media_playback_preparation_test.dart --reporter expanded",
+    "flutter analyze --no-pub lib/features/matrix/media_cache.dart test/features/matrix/media_playback_preparation_test.dart"
+  ],
+  "base": "34d1263ceb53b8f9e3efe703e548aa58de82dd5e",
+  "review": "d111a29571c9c5d7ab74abf59560db886bfd2d00",
+  "logs": [
+    {
+      "path": "playback-preparation-red.log",
+      "raw_sha256": "0c979f7ec750262425b2ba55213baf38f6d924c5bedab8a20b6ce8c05ee14bf5",
+      "raw_log_finished_utc": "2026-10-11T08:20:00.4415426Z",
+      "lf_sha256": "0c979f7ec750262425b2ba55213baf38f6d924c5bedab8a20b6ce8c05ee14bf5"
+    },
+    {
+      "path": "playback-owned-red.log",
+      "raw_sha256": "82263d65707c664d1618dfa4a9e8ca861b22a39b932290ea7fdd9744d2cf827c",
+      "raw_log_finished_utc": "2026-10-11T08:22:00.3355671Z",
+      "lf_sha256": "82263d65707c664d1618dfa4a9e8ca861b22a39b932290ea7fdd9744d2cf827c"
+    },
+    {
+      "path": "playback-preparation-green.log",
+      "raw_sha256": "b6b5f11d3e970bd04649481ed0d8df62ffd03c7df7ead9ab20778121d3c03b64",
+      "raw_log_finished_utc": "2026-10-11T08:23:45.7916369Z",
+      "lf_sha256": "b6b5f11d3e970bd04649481ed0d8df62ffd03c7df7ead9ab20778121d3c03b64"
+    },
+    {
+      "path": "playback-impact.log",
+      "raw_sha256": "701873f98e5a80ae1aac8ee0319d26bc92d6d86a15eb98a01e60ae57d5bfbac7",
+      "raw_log_finished_utc": "2026-10-11T08:23:20.8351516Z",
+      "lf_sha256": "701873f98e5a80ae1aac8ee0319d26bc92d6d86a15eb98a01e60ae57d5bfbac7"
+    },
+    {
+      "path": "playback-analyze.log",
+      "raw_sha256": "4fa300cbcc50eca1102ccf1b7b13ef416665e88a42a1d04d3208eb9c6e828e67",
+      "raw_log_finished_utc": "2026-10-11T08:23:44.9458815Z",
+      "lf_sha256": "4fa300cbcc50eca1102ccf1b7b13ef416665e88a42a1d04d3208eb9c6e828e67"
+    }
+  ],
+  "generated_utc": "2026-10-11T08:28:32.3436999Z",
+  "sources": [
+    {
+      "path": "apps/mobile_flutter/lib/features/matrix/media_cache.dart",
+      "raw_sha256": "3d66477c8443e5a43d5db4fbdd73f37c68e614aab88cb49a5aea4396a3dbc37c",
+      "lf_sha256": "3d66477c8443e5a43d5db4fbdd73f37c68e614aab88cb49a5aea4396a3dbc37c"
+    },
+    {
+      "path": "apps/mobile_flutter/test/features/matrix/media_playback_preparation_test.dart",
+      "raw_sha256": "9f62366dd157a3f248ce85b663b3472462cc8264643ce74d4deb551adb8f05a0",
+      "lf_sha256": "9f62366dd157a3f248ce85b663b3472462cc8264643ce74d4deb551adb8f05a0"
+    },
+    {
+      "path": "apps/mobile_flutter/pubspec.lock",
+      "raw_sha256": "a43833c8e7c3d6faa93d21babdc61dfe4b3563c7ac00912006f26daa8e0ecc5d",
+      "lf_sha256": "b552a7f5184b438d1487dc6168ccc984f43e03050ab51e306748ad9d957c4439"
+    },
+    {
+      "path": "docs/verification/artifacts/2026-10-11/im-media-cache-regression/independent-playback-preparation-probe_test.dart",
+      "raw_sha256": "cfea0cd1cb32901d78741a57cfc254e2cd958b45921cd26788915871fb2e25c4",
+      "lf_sha256": "e144093a3bf4ea40337727954751684a039b28f4922cf052abf04c1dad0ff3e1"
+    }
+  ],
+  "dart": "3.12.2"
+}

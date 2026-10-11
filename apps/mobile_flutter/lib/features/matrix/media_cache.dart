@@ -797,14 +797,47 @@ final class MediaCache {
 
   static Future<File> preparePlaybackFile(String roomId, String eventId,
       {String accountId = '', String? contentSha256}) async {
+    final generation = _mediaGeneration;
+    final accountEpoch = accountGeneration(accountId);
+    final scope = MediaConsumerScope.current;
+    void checkRequest() {
+      if (generation != _mediaGeneration ||
+          accountEpoch != accountGeneration(accountId)) {
+        throw StateError('Media cache session changed');
+      }
+      if (scope != null && !scope.isActive) throw MediaLoadCanceled();
+    }
+
+    checkRequest();
     final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
-    await Future.wait([
+    MediaLoadCanceled? cancellation;
+    StackTrace? cancellationTrace;
+    // Each preparation owns its consumer. A departed independent source must
+    // not invalidate another source's already published reference. Observe all
+    // real settlements and retain non-cancellation failures, even if a canceled
+    // preparation finished first.
+    await Future.wait<void>([
       for (final entry in _storeFlights.entries)
-        if (entry.key.startsWith('$flightKey:')) entry.value,
+        if (entry.key.startsWith('$flightKey:'))
+          (() async {
+            try {
+              await entry.value;
+            } on MediaLoadCanceled catch (error, stackTrace) {
+              cancellation ??= error;
+              cancellationTrace ??= stackTrace;
+            }
+          })(),
     ]);
+    checkRequest();
     final file = await cached(roomId, eventId,
         accountId: accountId, contentSha256: contentSha256);
-    if (file == null) throw FileSystemException('Video cache is unavailable');
+    checkRequest();
+    if (file == null) {
+      if (cancellation != null) {
+        Error.throwWithStackTrace(cancellation!, cancellationTrace!);
+      }
+      throw FileSystemException('Video cache is unavailable');
+    }
     return file;
   }
 

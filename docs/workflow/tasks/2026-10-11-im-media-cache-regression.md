@@ -22,6 +22,12 @@ Independent review of c3 found a newly introduced cross-source cancellation regr
 
 New evidence: independent c3 probe 1 PASS / 1 FAIL; actual-object-flush probe 2 PASS / 1 FAIL; intermediate same-reference probe 3 PASS / 1 FAIL. Final 13 boundary cases PASS, impacted 12 files / 97 tests PASS, three-file analyze zero issues. The 97 include prior 93 plus the new four join cases; counts overlap the 13 and are not summed. The new report explicitly corrects the original sidecar-versus-object test barrier description. No df1b3/iOS test dependency; cherry-pick order is 44dab -> c3 -> this follow-up. Parent must still validate the integrated shared SQLCipher factory/full suite/native package candidate. Next executable step: backend_review's independent SPEC/domain -> quality/security review of the frozen follow-up, then accepted integration.
 
+## Playback preparation review correction
+
+Review d111a295 found valid public B playback still inherits canceled A's pending store preparation. On 34d the unchanged reviewer probe reproduced 1 PASS / 1 FAIL; seven new owned boundaries gave 5 PASS / 2 FAIL, including early cancellation hiding later real I/O failure. preparePlaybackFile now handles only each individual MediaLoadCanceled, waits every real settlement, checks requester/global/account generation before and after existing cache verification, and bypasses cancellation only for a valid current file. Missing/damaged cache, canceled caller, generation change and real I/O failure remain failures. No preparation registration or budget lifecycle changes.
+
+Final 9 focused cases PASS, 13 files / 104 impacted tests PASS, two-file analyze zero issues. Counts overlap. See playback-preparation-followup.md, playback-input-identities.json and retained RED/GREEN logs. Next step: backend_review SPEC/domain -> quality/security on the frozen follow-up, then root integrated full/native/package acceptance; cherry-pick order 44dab -> c3 -> 34d -> follow-up, with no df1b3 dependency.
+
 ## Evidence and decisions
 
 The artifact README maps each reported failure to its demonstrated cause and correction. Baseline five-file run was 20 PASS/14 FAIL; the dedicated priority RED observed 192 MiB reserved before source scheduling. Final impact suite is 87 PASS; separate chain suite is 111 PASS with six overlapping consumer tests; eight-file analysis has zero issues. Failed intermediate lifecycle output is retained, followed by its real-settlement GREEN.
