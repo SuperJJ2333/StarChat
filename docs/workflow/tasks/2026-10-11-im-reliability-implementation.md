@@ -102,3 +102,19 @@ iOS第二轮能力附件证实当前模拟器file protection读回nil，备份�
 部署脚本最终SHA`dc5e6dc8f02f6f1d01d79bb635fcab6545b57b105aa048a34d1cc542c4a94b44`，独立规格→质量及11项无副作用故障分支通过；旧版本未执行。内/外层guard失败、wait/清理异常均视为不确定，停止自动回退；只有切换明确成功后后验失败才自动回退。回退镜像仍为`sha256:5a9cec63cc780e1e3cc769d3f249e120499bdfc5a37a99419302bd1c862bdbe1`；冻结配置/旧日志保存在`/opt/starchat/releases/im-worker-jit-20261011/private`。历史死信不重放，金融handler/schema不变，active handler超五分钟R9b仍未修。完整receipt和review见`artifacts/2026-10-11/im-worker-jit-deployment/`及`im-worker-lease-independent-review/`。
 
 13:54:33+08 只读正式版本仍两端0.4.44+2213、无2214下载文件；源码候选升为0.4.45+2214（522b2e22），既有版本/隐私4专项PASS。尚未构建/上传客户端；新版本号不表示产品发布。
+
+## 15:18+08 共享回归纠正及 R9b 第一阶段发布
+
+9902d350 初次完整 Flutter 门禁出现媒体调度/缓存准备两个真实缺陷，以及环境/夹具问题；朋友圈视频用例十分钟超时、后继 reentrant 后人工结束运行，未声称全套完成或全绿。原始 flutter-final.log 保留在 im-reliability-release 下。补齐两个空历史 fixture 父目录、使用本任务 W 短路径后，恢复/身份三文件28 PASS；Moments legacy-ready 两个路径超长失败消失。视频草稿测试在清理阶段挂起，测试阶段探针定位 clear start 无 end；同一 real async 生命周期包含清理、保留所有断言和原延迟并加45秒边界后，两份完整 Moments 文件33 PASS，独立审查通过。旧主题变量名字面契约纠正后单文件10 PASS；原边界组400 PASS/1 FAIL/1 SKIP 的历史结果不改写。
+
+媒体44dabcc9修复了调度前过早占用内存预算、worker hash之前未登记store flight两个问题，作者87与111项影响组通过但有重叠。独立审查额外复现 late-store 最后observer取消仍写入缓存；基线9902也存在，属尚未关闭的既有边界，已交作者补充修复，不能把作者通过视作最终共享门禁。36de3670修正不可变快照与转发实际settle测试契约，83专项/66相邻及独立双审通过；不含可执行产品行为修改。
+
+R9b源码9920947c（root集成91d48d03）只新增必填代次Consumer接口及Worker调用，保留原schema/财务handler；root独立规格→质量及49 PASS/1 PG fixture SKIP/1既有active strict XFAIL。第一候选13f3c67b于07:04:04Z切换后启动失败，脚本确认切换完成后按设计回滚；15:08+08确认18a88c4d healthy/0 restart。根因为镜像pip安装的Consumer位于site-packages，而首候选仅覆盖/opt源码副本；首轮隔离pytest覆写PYTHONPATH隐藏了真实导入，原镜像协议守卫也未覆盖此组装。该首轮不算成功发布，记录与审查缺口均保留，不宣称队列用户可感知无延迟。
+
+第二候选同时更新实际安装Consumer和源码副本，并保持worker同一冻结版本。默认cwd/importpath下构造main导出的Consumer(None)+Worker(empty handlers)，不执行handler/DB；旧候选RED、新候选GREEN。隔离pytest仅append工具zip、不覆写生产importpath，49 PASS/1 SKIP/1 strict XFAIL，实际argv/image/SHA/退出码在default-runtime-receipt.json；三镜像协议检查与独立19个部署边界mock通过。
+
+07:15:57–07:16:20Z第二候选部署PASS：worker `sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a`，容器db3001d6，worker.py f88387d6、实际installed Consumer a2e60611，默认路径现场读回一致；schema0095、其他容器保持。07:18:08Z后验healthy、0 restart/OOM、API/Matrix HTTPS200；有限500行窗口实际3行、0 traceback/ERROR。回退18a88c4d；证据 `im-worker-fence-v2-deployment/`。active超过五分钟仍可能被重新领取，代次校验防止旧worker篡改新队列状态，不能代表消除重复外部副作用。
+
+iOS完整插件unsigned候选run38118485155（9902）两个job SUCCESS，但不含后续媒体修复，需最终冻结后重建。Android native-storage2214-r1被安装前包名守卫拒绝（全局Gradle false覆盖环境变量）；调整仅测试构建系统属性后r2固定75b31重建/对齐/签名/内容/包名验证通过，APK SHA7ec5863b。5558 streaming安装长时间无进展，停止已核身份的本次adb client；确认无包后同一APK非streaming安装成功。真实原生目录保护fixture通过，SQLite持久附件fixture报libsqlite3.so未找到，作者正在核生产bootstrap与测试初始化差异。此时没有客户端发布，也未触碰5556已有测试数据。
+
+下一步：关闭媒体late-store边界并增量独立复核；修复/解释真实Android DB初始化门禁；冻结新共享输入，运行完整Flutter/analyze及Android最终ARM64固定重建，重建iOS完整插件unsigned交付。真实手机、iOS最终企业签名/OEM审核与长时间场景验收仍单独记录，不虚构到达率、功耗或P99。

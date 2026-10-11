@@ -1,0 +1,61 @@
+{
+  "started_utc": "2026-10-11T07:13:32.873404+00:00",
+  "image": "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+  "probe_sha256": "63c686248b66a867aaf2d00e16528323f69ece94b01e8f4b44ce20b1cd2b00c8",
+  "test_tools_sha256": "71a0a7c69a9027d17445d07808dd09e01919b19c61dad06e34dda3d2e6b380ee",
+  "checks": {
+    "default_entry": {
+      "argv": [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,size=32m",
+        "-e",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "-v",
+        "/opt/starchat/releases/im-worker-fence-v2-20261011/default_entry_probe.py:/probe.py:ro",
+        "--entrypoint",
+        "python",
+        "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+        "-c",
+        "exec(open('/probe.py').read())"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"result\": \"PASS\", \"default_entry_consumer\": \"/usr/local/lib/python3.12/site-packages/app/core/outbox.py\", \"worker\": \"/opt/business-worker/app/worker.py\", \"source_hashes\": {\"/opt/business-worker/app/worker.py\": \"f88387d6c957f774b6c137f786b82235b74e8a5cf26a5e282259c7da94eb2299\", \"/usr/local/lib/python3.12/site-packages/app/core/outbox.py\": \"a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680\", \"/opt/business-api/app/core/outbox.py\": \"a2e606116fef84986d7d4781090d792f6d8d6f0785b8679db3299160a660f680\"}, \"handlers_executed\": false, \"database_factory\": null}\n",
+      "stderr": ""
+    },
+    "default_pytest": {
+      "argv": [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,size=64m",
+        "-v",
+        "/opt/starchat/releases/im-worker-fence-v2-20261011/tests:/tests:ro",
+        "-v",
+        "/opt/starchat/releases/im-worker-fence-v2-20261011/test-tools.zip:/test-tools.zip:ro",
+        "-e",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "-e",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+        "--entrypoint",
+        "python",
+        "sha256:bfde7c86f327360738d8f8864d90a49fabd5cd2305ff938b2708554bf9838b3a",
+        "-c",
+        "import sys;sys.path.append('/test-tools.zip');import app.core.outbox as o;assert o.__file__=='/usr/local/lib/python3.12/site-packages/app/core/outbox.py';import pytest;raise SystemExit(pytest.main(['/tests/test_worker_claim_fencing.py','/tests/test_worker_lease_window.py','-q','-rsx','-p','no:cacheprovider']))"
+      ],
+      "exit_code": 0,
+      "stdout": "............................................x.....s                      [100%]\n=========================== short test summary info ============================\nSKIPPED [1] ../../../tests/test_worker_lease_window.py:246: isolated native PostgreSQL lease gate requires explicit test URL\nXFAIL ../../../tests/test_worker_lease_window.py::test_active_handler_is_not_reclaimed_while_original_handler_is_still_running - R9b unresolved: active handler can exceed lease; R9a only removes queued preclaims\n49 passed, 1 skipped, 1 xfailed in 0.79s\n",
+      "stderr": ""
+    }
+  },
+  "ended_utc": "2026-10-11T07:13:38.166170+00:00"
+}

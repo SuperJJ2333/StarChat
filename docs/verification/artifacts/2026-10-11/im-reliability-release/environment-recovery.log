@@ -1,0 +1,293 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart
+00:00 +0: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: (setUpAll)
+00:00 +0: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: single network event rejects explicit foreign room binding
+00:00 +1: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: five-day SQLCipher ciphertext resolves text outside live window
+00:00 +2: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_archive_test.dart: verified SQLCipher archive restores surviving Megolm; old Olm missing=false
+00:00 +3: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_archive_test.dart: verified SQLCipher archive restores surviving Megolm; old Olm missing=false
+00:01 +4: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK startup preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:01 +5: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK startup preserves original encrypted history
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"j5RCzAAD1W0trP4IwqzmE1Xr","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"j5RCzAAD1W0trP4IwqzmE1Xr","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"j5RCzAAD1W0trP4IwqzmE1Xr","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:01 +6: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK startup preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"4meM3Uuw6KgV7rFDjgElHwcL","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"YeP5T9uCy6ZMYNkuV1IT91Ju","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"YeP5T9uCy6ZMYNkuV1IT91Ju","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"YeP5T9uCy6ZMYNkuV1IT91Ju","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:01 +7: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: five-day SQLCipher ciphertext resolves wrong-room outside live window
+00:01 +8: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK held first continuity preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+00:02 +9: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK held first continuity preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"h1LC1O0riespIkLKNCSZKjWm","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"h1LC1O0riespIkLKNCSZKjWm","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"h1LC1O0riespIkLKNCSZKjWm","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"wrYu4A0nFDUnNMbrdq8xjwmx","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"CDDuwUa-kgwxxtKXxT7xAZp6","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+00:02 +10: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK held first continuity preserves original encrypted history
+{"trace_id":"CDDuwUa-kgwxxtKXxT7xAZp6","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"CDDuwUa-kgwxxtKXxT7xAZp6","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:02 +11: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: five-day SQLCipher ciphertext resolves bad-key outside live window
+00:02 +11: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK held rotation preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:02 +12: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK held rotation preserves original encrypted history
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [31m!!!CRITICAL!!! Client initialization failed - TimeoutException after 0:00:00.030000: Future not completed
+#0      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1042:24)
+<asynchronous suspension>
+#1      MatrixSdkE2eeClient._bindRecoveryWrites.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:6827:9)
+<asynchronous suspension>
+#2      Client.init (package:matrix/src/client.dart:2009:9)
+<asynchronous suspension>
+#3      MatrixSdkE2eeClient._loginWithToken.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:8502:11)
+<asynchronous suspension>
+#4      MatrixSdkE2eeClient._withClient (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:9258:14)
+<asynchronous suspension>
+#5      MatrixSdkE2eeClient._loginWithToken (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:8450:7)
+<asynchronous suspension>
+#6      Throws._matchFuture (package:matcher/src/expect/throws_matcher.dart:103:19)
+<asynchronous suspension>
+#7      _expect.<anonymous closure> (package:matcher/src/expect/expect.dart:153:17)
+<asynchronous suspension>
+#8      StackZoneSpecification._registerCallback.<anonymous closure> (package:stack_trace/src/stack_zone_specification.dart:114:42)
+<asynchronous suspension>
+#9      expectLater.<anonymous closure> (package:flutter_test/src/widget_tester.dart:508:19)
+<asynchronous suspension>
+#10     RetainedRecoveryIdentityFixture.rotateAfterHeldWrite (file:///W:/apps/mobile_flutter/test/support/retained_recovery_identity_fixture.dart:228:7)
+<asynchronous suspension>
+#11     main.<anonymous closure> (file:///W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart:87:42)
+<asynchronous suspension>
+#12     Declarer.test.<anonymous closure>.<anonymous closure> (package:test_api/src/backend/declarer.dart:253:15)
+<asynchronous suspension>
+#13     Declarer.test.<anonymous closure> (package:test_api/src/backend/declarer.dart:250:11)
+<asynchronous suspension>
+#14     Invoker._waitForOutstandingCallbacks.<anonymous closure> (package:test_api/src/backend/invoker.dart:318:9)
+<asynchronous suspension>
+[0m
+{"trace_id":"xeX3sykPDFuxKrJPxXvALOyI","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+00:02 +13: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK held rotation preserves original encrypted history
+{"trace_id":"xeX3sykPDFuxKrJPxXvALOyI","stage":"lifecycle","outcome":"timeout","event_code":"E2EE_LIFECYCLE_SUSPEND_DRAIN_TIMEOUT"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"Zyt5wruj5u9YtxiG0dM8QV44","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_BINDING_MIGRATED"}
+{"trace_id":"XNlLb3XtPDEJ-KvIJLzSCwGw","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"XNlLb3XtPDEJ-KvIJLzSCwGw","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"XNlLb3XtPDEJ-KvIJLzSCwGw","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"XNlLb3XtPDEJ-KvIJLzSCwGw","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"QakJs6Dur2qUQ4jzTa0chQm3","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"6cL-7bBlHw2UPQSdzqSFa06v","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"6cL-7bBlHw2UPQSdzqSFa06v","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"6cL-7bBlHw2UPQSdzqSFa06v","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +14: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK held rotation preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"6cL-7bBlHw2UPQSdzqSFa06v","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:03 +15: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: five-day SQLCipher ciphertext resolves retry-key outside live window
+00:03 +15: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK same device preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+00:03 +16: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK same device preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"S-8NU45PiWq_uIHXYxvQT0I7","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"S-8NU45PiWq_uIHXYxvQT0I7","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"S-8NU45PiWq_uIHXYxvQT0I7","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"_yXznBWADhLQ5LDSGhjJJYOS","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"KBl2fxGVi75x4m4FWhS218Hg","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"KBl2fxGVi75x4m4FWhS218Hg","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"KBl2fxGVi75x4m4FWhS218Hg","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:03 +17: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK same device preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:03 +18: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: five-day SQLCipher ciphertext resolves revoked outside live window
+00:03 +18: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK post-persistence failure preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:04 +19: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK post-persistence failure preserves original encrypted history
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"RgBefsoRW5x6SNp7OMfp7N20","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"TK7z_3a2Zp-M_kx8bneCeJhi","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+{"trace_id":"TK7z_3a2Zp-M_kx8bneCeJhi","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_BINDING_MIGRATED"}
+{"trace_id":"PjG7ubXK9ZcAqLKFbSOOqBLc","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"PjG7ubXK9ZcAqLKFbSOOqBLc","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"PjG7ubXK9ZcAqLKFbSOOqBLc","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+00:04 +20: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK post-persistence failure preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"PjG7ubXK9ZcAqLKFbSOOqBLc","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"4qpb7xrKiqpseS4mi3c-I8Ku","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"lLNdx7SEXQNRrAVdTTCitSfn","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"lLNdx7SEXQNRrAVdTTCitSfn","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"lLNdx7SEXQNRrAVdTTCitSfn","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"lLNdx7SEXQNRrAVdTTCitSfn","stage":"device_rotation","outcome":"success","event_code":"E2EE_DEVICE_ROTATION_DETECTED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:04 +21: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: five-day SQLCipher ciphertext resolves held-index outside live window
+00:04 +22: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK late foreign user preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"6wynSE31kVAHCpBgtjGednvn","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"6wynSE31kVAHCpBgtjGednvn","stage":"lifecycle","outcome":"timeout","event_code":"E2EE_LIFECYCLE_DRAIN_TIMEOUT"}
+{"trace_id":"6wynSE31kVAHCpBgtjGednvn","stage":"lifecycle","outcome":"failure","event_code":"E2EE_LIFECYCLE_DRAIN_TIMEOUT"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:04 +23: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK late foreign user preserves original encrypted history
+{"trace_id":"x03QwbetMiTGON68dHEb3DX8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"x03QwbetMiTGON68dHEb3DX8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"x03QwbetMiTGON68dHEb3DX8","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"UuZV1Drjv6NhGp0U-3quWt8p","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"eej4tz0PNoQyE8nRolusV-CG","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"eej4tz0PNoQyE8nRolusV-CG","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"eej4tz0PNoQyE8nRolusV-CG","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:05 +24: W:/apps/mobile_flutter/test/features/matrix/historical_encrypted_event_resolution_test.dart: five-day SQLCipher ciphertext resolves redacted-after-cache outside live window
+00:05 +25: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK corrupt binding preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+{"trace_id":"NU8CV38i75q-NDjT5-RI0Qwd","stage":"continuity","outcome":"failure","event_code":"E2EE_CONTINUITY_FINGERPRINT_MISMATCH"}
+{"trace_id":"aOiFW6ljj9T0m9E6Pec6S2dl","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"aOiFW6ljj9T0m9E6Pec6S2dl","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"aOiFW6ljj9T0m9E6Pec6S2dl","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"FE3ZJ1jY3wngTmWFER_2R6YP","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"ImzlyM-BukMnCKk51UV4MBEL","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"ImzlyM-BukMnCKk51UV4MBEL","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"ImzlyM-BukMnCKk51UV4MBEL","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:05 +26: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK provisional credentials preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [31m!!!CRITICAL!!! Client initialization failed - TimeoutException after 0:00:00.030000: Future not completed
+#0      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1042:24)
+<asynchronous suspension>
+#1      MatrixSdkE2eeClient._bindRecoveryWrites.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:6827:9)
+<asynchronous suspension>
+#2      Client.init (package:matrix/src/client.dart:2009:9)
+<asynchronous suspension>
+#3      Throws._matchFuture (package:matcher/src/expect/throws_matcher.dart:103:19)
+<asynchronous suspension>
+#4      _expect.<anonymous closure> (package:matcher/src/expect/expect.dart:153:17)
+<asynchronous suspension>
+#5      StackZoneSpecification._registerCallback.<anonymous closure> (package:stack_trace/src/stack_zone_specification.dart:114:42)
+<asynchronous suspension>
+#6      expectLater.<anonymous closure> (package:flutter_test/src/widget_tester.dart:508:19)
+<asynchronous suspension>
+#7      main.<anonymous closure> (file:///W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart:176:13)
+<asynchronous suspension>
+#8      Declarer.test.<anonymous closure>.<anonymous closure> (package:test_api/src/backend/declarer.dart:253:15)
+<asynchronous suspension>
+#9      Declarer.test.<anonymous closure> (package:test_api/src/backend/declarer.dart:250:11)
+<asynchronous suspension>
+#10     Invoker._waitForOutstandingCallbacks.<anonymous closure> (package:test_api/src/backend/invoker.dart:318:9)
+<asynchronous suspension>
+[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"N3NuaWbyFFQF86xTSBWDHqll","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"N3NuaWbyFFQF86xTSBWDHqll","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"N3NuaWbyFFQF86xTSBWDHqll","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"MOSpOIupUqNS27ea0yWt9DtX","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"3VRWNLj7EE5Ectzai2dNCKXU","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"3VRWNLj7EE5Ectzai2dNCKXU","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"3VRWNLj7EE5Ectzai2dNCKXU","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:06 +27: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: real retained SDK provisional credentials without preserve preserves original encrypted history
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [31m!!!CRITICAL!!! Client initialization failed - TimeoutException after 0:00:00.030000: Future not completed
+#0      Future.timeout.<anonymous closure> (dart:async/future_impl.dart:1042:24)
+<asynchronous suspension>
+#1      MatrixSdkE2eeClient._bindRecoveryWrites.<anonymous closure> (package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart:6827:9)
+<asynchronous suspension>
+#2      Client.init (package:matrix/src/client.dart:2009:9)
+<asynchronous suspension>
+#3      Throws._matchFuture (package:matcher/src/expect/throws_matcher.dart:103:19)
+<asynchronous suspension>
+#4      _expect.<anonymous closure> (package:matcher/src/expect/expect.dart:153:17)
+<asynchronous suspension>
+#5      StackZoneSpecification._registerCallback.<anonymous closure> (package:stack_trace/src/stack_zone_specification.dart:114:42)
+<asynchronous suspension>
+#6      expectLater.<anonymous closure> (package:flutter_test/src/widget_tester.dart:508:19)
+<asynchronous suspension>
+#7      main.<anonymous closure> (file:///W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart:176:13)
+<asynchronous suspension>
+#8      Declarer.test.<anonymous closure>.<anonymous closure> (package:test_api/src/backend/declarer.dart:253:15)
+<asynchronous suspension>
+#9      Declarer.test.<anonymous closure> (package:test_api/src/backend/declarer.dart:250:11)
+<asynchronous suspension>
+#10     Invoker._waitForOutstandingCallbacks.<anonymous closure> (package:test_api/src/backend/invoker.dart:318:9)
+<asynchronous suspension>
+[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"WPBePt-POx8nsT63SEeYDNhS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"WPBePt-POx8nsT63SEeYDNhS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"WPBePt-POx8nsT63SEeYDNhS","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+{"trace_id":"hYPVsjmgeCW2gh3IKKZVFCEH","stage":"account_selection","outcome":"success","event_code":"E2EE_ACCOUNT_SELECT_BEGIN"}
+{"trace_id":"8iwcy9NGSJk5eQnxRBEt-pEq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}
+{"trace_id":"8iwcy9NGSJk5eQnxRBEt-pEq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_CLIENT_DISPOSE_BEGIN"}
+{"trace_id":"8iwcy9NGSJk5eQnxRBEt-pEq","stage":"lifecycle","outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_COMPLETED"}
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+[Matrix] [32mSuccessfully connected as continuity with https://synthetic.example.test[0m
+[Matrix] [32mInitialize client retained-recovery-identity[0m
+00:06 +28: W:/apps/mobile_flutter/test/features/matrix/retained_recovery_identity_test.dart: (tearDownAll)
+00:06 +28: All tests passed!

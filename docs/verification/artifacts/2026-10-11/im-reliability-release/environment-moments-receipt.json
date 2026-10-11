@@ -1,0 +1,8 @@
+{
+  "source_head": "9902d35079e9cb051125808a251ae479b06893cb",
+  "started_at_utc": "2026-10-11T06:55:44.5563209+00:00",
+  "gate": "Moments",
+  "exit_code": 0,
+  "environment_changes": "empty fixture parents and owned W alias; no product edits",
+  "ended_at_utc": "2026-10-11T06:55:58.1509096+00:00"
+}

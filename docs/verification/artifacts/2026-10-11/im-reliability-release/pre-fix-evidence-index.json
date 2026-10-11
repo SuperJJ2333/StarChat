@@ -1,0 +1,53 @@
+{
+  "scope": "Historical 9902 shared gates and pre-fix native fixture; NOT final acceptance",
+  "full_flutter_result": "Interrupted manually after failures and one 10-minute test hang. No complete run receipt. Never count as PASS.",
+  "environment_followup": "Short W path and empty fixture parent directories; Moments test async fixture corrected with unchanged assertions.",
+  "native_r2_result": "Fixed identity rebuilt APK; one protection fixture passed, SQLite persistence fixture failed before factory fix.",
+  "files": [
+    {
+      "path": "flutter-final.log",
+      "bytes": 3625672,
+      "sha256": "ccb0c415d193671d04e9f6455c2cc137ba967f46fffe02d64971e2c894eb3815"
+    },
+    {
+      "path": "analyze-final.log",
+      "bytes": 203,
+      "sha256": "3037750cd87aa62dbd72afb4889ab32021a61e1b9facc3b668e0c80355efd51a"
+    },
+    {
+      "path": "boundaries-final.log",
+      "bytes": 1721,
+      "sha256": "d5c3358ba8bfb0478dde3a2549b925dfbedd8bca9a9c833313995cdde3c34b76"
+    },
+    {
+      "path": "policy-final.log",
+      "bytes": 71,
+      "sha256": "e775f41e6c48a41d7870a60c6762b8512f22131c57eb2a574d0d943467b1d48a"
+    },
+    {
+      "path": "environment-moments.log",
+      "bytes": 7131,
+      "sha256": "c138f15d1d399cedaed872785f4f8686513a2eaaf99c8e979fd8a941ab0214d5"
+    },
+    {
+      "path": "environment-recovery.log",
+      "bytes": 28381,
+      "sha256": "1c42501f221b040c58736a761fd08f098f2acb2f8f53bf6b5c033bda939664f0"
+    },
+    {
+      "path": "moment-video-instrumented-red.log",
+      "bytes": 3609,
+      "sha256": "ed5a879992a221d90f1bc3f90037270092da6f63a568bed9f03c8010b40131a3"
+    },
+    {
+      "path": "native-storage2214-r2/native-drive.log",
+      "bytes": 10758,
+      "sha256": "1c10a144d0773769543f9d05b379b5fbdd129bc1eae617170f9a7d60dbb4631e"
+    },
+    {
+      "path": "native-storage2214-r2/final.apk",
+      "bytes": 112687649,
+      "sha256": "7ec5863b389e0c1902d6b20933491924276c99daad27c25a66d79ff9ae58f4ee"
+    }
+  ]
+}

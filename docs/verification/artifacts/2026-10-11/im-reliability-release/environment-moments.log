@@ -1,0 +1,62 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart
+00:00 +0: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: (setUpAll)
+00:00 +0: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: unstarted legacy ready GIF is capped before begin and survives restore retry
+[chatflow/network] business_request -> HTTP 503
+00:00 +1: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: account clear fences an in-flight Moments video download
+00:00 +1: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: prepared compliant image repairs MIME before begin without replacing ready bytes
+[chatflow/network] business_request -> HTTP 503
+00:00 +2: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: account clear fences an in-flight Moments video download
+00:00 +3: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: begun unconfirmed legacy large upload requires cancel and reselect before requests
+00:00 +4: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:00 +4: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: confirmed legacy put replays immutable reference and stable publish payload
+[chatflow/network] business_request -> HTTP 503
+00:00 +5: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:00 +5: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: confirmed legacy result replays immutable reference and stable publish payload
+[chatflow/network] business_request -> HTTP 503
+00:00 +6: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:00 +7: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:00 +8: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:01 +8: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: expired confirmed legacy large session keeps immutable phase and requires reselect
+[chatflow/network] business_request -> HTTP 409
+[chatflow/network] business_request -> HTTP 409
+00:01 +9: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:03 +10: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: saving draft locks deletion and publish until upload completes
+00:04 +11: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: saving video draft without a frame retains its local source
+00:04 +12: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: poster 404 keeps a completed draft video for paired retry
+[chatflow/network] business_request -> HTTP 404
+00:04 +13: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: saved video draft restores account poster after URL renewal and removes it
+00:05 +14: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: mixed image video draft reopens and publishes with real request contract
+00:05 +15: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: GIF composer uploads original animation with gif MIME
+00:05 +16: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: album GIF stays animated and uploads without JPEG conversion
+00:06 +17: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: published video reuses its uploaded bytes after URL renewal
+[chatflow/network] business_request -> ERROR:StateError
+00:06 +18: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: album video renders cached first frame before publish
+00:06 +19: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: feed video shows its account-cached poster before playback
+00:07 +20: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: personal Moments list and detail play through viewer account cache
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+[chatflow/network] business_request -> ERROR:ArgumentError
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+[chatflow/network] business_request -> ERROR:ArgumentError
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+[chatflow/network] business_request -> ERROR:ArgumentError
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+00:07 +21: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: cancel retains copied source until its admitted local writer settles
+00:07 +22: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: cancel releases local source without waiting for an admitted HTTP PUT
+00:07 +23: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: admitted upload allows page controls while immutable task continues
+00:07 +24: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: gallery photo with missing thumbnail uses loaded image bytes
+00:07 +25: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: pending gallery bytes lock publish until selected media is ready
+00:07 +26: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: album entry routes to shared mixed gallery and cancellation returns
+00:07 +27: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: album compressed video is measured without reading its original bytes
+00:07 +28: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: restored posterless video draft cannot publish
+00:08 +29: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: restored paired video poster retries publish without upload
+[chatflow/network] business_request -> HTTP 503
+00:08 +30: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: shared viewer mode hides gallery selection and offers failure retry
+00:08 +31: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: video DTO survives reaction copy and renders a play entry
+[AvatarFirstPaint] source=moments-feed fallback-rendered=true metadata=false
+00:08 +32: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: composer uploads video without image conversion and retries publish without reupload
+[chatflow/network] business_request -> HTTP 503
+00:08 +33: All tests passed!

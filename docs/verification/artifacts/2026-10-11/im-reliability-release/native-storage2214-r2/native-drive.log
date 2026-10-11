@@ -1,0 +1,144 @@
+Installing C:\Users\Administrator\.codex\worktrees\im-reliability\StarChat\docs\verification\artifacts\2026-10-11\im-reliability-release\native-storage2214-r2\final.apk...         5.8s
+D/EGL_emulation( 6733): eglCreateContext: 0x7638927f4a80: maj 3 min 1 rcv 4
+D/HostConnection( 6733): ExtendedRCEncoderContext GL_VERSION return OpenGL ES 3.1 v1
+E/eglCodecCommon( 6733): glUtilsParamSize: unknow param 0x00008c29
+E/eglCodecCommon( 6733): glUtilsParamSize: unknow param 0x000087fe
+D/vndksupport( 6733): Loading /vendor/lib64/hw/android.hardware.graphics.mapper@2.0-impl.so from current namespace instead of sphal namespace.
+D/vndksupport( 6733): Loading /vendor/lib64/hw/gralloc.default.so from current namespace instead of sphal namespace.
+E/EGL_emulation( 6733): tid 6770: eglSurfaceAttrib(1504): error 0x3009 (EGL_BAD_MATCH)
+W/OpenGLRenderer( 6733): Failed to set EGL_SWAP_BEHAVIOR on surface 0x76388887b880, error=EGL_BAD_MATCH
+I/        ( 6733): fastpipe: Connect success
+D/HostConnection( 6733): HostRPC::connect sucess: app=com.liuhetong.mobile.debug, pid=6733, tid=6754, this=0x763888896900
+D/HostConnection( 6733): queryAndSetGLESMaxVersion select gles-version: 3.1 hostGLVersion:46 process:com.liuhetong.mobile.debug
+D/HostConnection( 6733): ExtendedRCEncoderContext GL_VERSION return OpenGL ES 3.1 v1
+E/eglCodecCommon( 6733): glUtilsParamSize: unknow param 0x000084ff
+E/eglCodecCommon( 6733): glUtilsParamSize: unknow param 0x000087fe
+W/FlutterWebRTCPlugin( 6733): audioFocusChangeListener [Speakerphone(name=Speakerphone)] Speakerphone(name=Speakerphone)
+W/ng.mobile.debu( 6733): Accessing hidden method Landroid/os/Trace;->asyncTraceEnd(JLjava/lang/String;I)V (light greylist, reflection)
+D/FlutterJNI( 6733): Sending viewport metrics to the engine.
+W/ng.mobile.debu( 6733): Accessing hidden method Landroid/os/Trace;->traceCounter(JLjava/lang/String;I)V (light greylist, reflection)
+I/flutter ( 6733): 00:00 +0: native pending files are protected and excluded with no path API
+I/flutter ( 6733): 00:00 +1: native protected pending source and SQLite survive reopen
+I/flutter ( 6733): ══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+I/flutter ( 6733): The following SqfliteFfiException was thrown running a test:
+I/flutter ( 6733): SqfliteFfiException(error, Invalid argument(s): Failed to load dynamic library
+I/flutter ( 6733): '/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so': dlopen failed: library
+I/flutter ( 6733): "/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so" not found}) DatabaseException(Invalid
+I/flutter ( 6733): argument(s): Failed to load dynamic library
+I/flutter ( 6733): '/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so': dlopen failed: library
+I/flutter ( 6733): "/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so" not found)
+I/flutter ( 6733): 
+I/flutter ( 6733): When the exception was thrown, this was the stack:
+I/flutter ( 6733): #0      responseToResultOrThrow (package:sqflite_common_ffi/src/method_call.dart:125:9)
+I/flutter ( 6733): #1      SqfliteIsolate.handle (package:sqflite_common_ffi/src/isolate.dart:35:12)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #2      _isolateHandle (package:sqflite_common_ffi/src/database_factory_ffi_io.dart:106:10)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #3      ffiMethodCallhandleInIsolate (package:sqflite_common_ffi/src/database_factory_ffi_io.dart:59:18)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #4      _SqfliteDatabaseFactoryImpl.invokeMethod (package:sqflite_common/src/mixin/factory.dart:22:8)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #5      SqfliteDatabaseMixin.openDatabase (package:sqflite_common/src/database_mixin.dart:941:24)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #6      SqfliteDatabaseMixin.doOpen (package:sqflite_common/src/database_mixin.dart:1072:22)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #7      SqfliteDatabaseOpenHelper.openDatabase (package:sqflite_common/src/database.dart:46:7)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #8      SqfliteDatabaseFactoryMixin.openDatabase.<anonymous closure> (package:sqflite_common/src/factory_mixin.dart:130:16)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #9      ReentrantLock.synchronized.<anonymous closure> (package:synchronized/src/reentrant_lock.dart:33:18)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #10     BasicLock.synchronized (package:synchronized/src/basic_lock.dart:38:16)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #11     SqliteMediaOutboxStore._open (package:liuhetong_mobile/core/outbox/media_outbox_store.dart:230:16)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #12     SqliteMediaOutboxStore._persist.<anonymous closure> (package:liuhetong_mobile/core/outbox/media_outbox_store.dart:432:20)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #14     main.<anonymous closure> (file:///W:/apps/mobile_flutter/integration_test/media_outbox_persistence_native_test.dart:21:20)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #15     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #16     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): #17     TestWidgetsFlutterBinding._createTestCompletionHandler.<anonymous closure> (package:flutter_test/src/binding.dart:1706:12)
+I/flutter ( 6733): <asynchronous suspension>
+I/flutter ( 6733): (elided one frame from dart:async)
+I/flutter ( 6733): 
+I/flutter ( 6733): The test description was:
+I/flutter ( 6733):   native protected pending source and SQLite survive reopen
+I/flutter ( 6733): ════════════════════════════════════════════════════════════════════════════════════════════════════
+I/flutter ( 6733): 00:01 +1: native protected pending source and SQLite survive reopen [E]
+I/flutter ( 6733):   Test failed. See exception logs above.
+I/flutter ( 6733):   The test description was: native protected pending source and SQLite survive reopen
+I/flutter ( 6733):   
+I/flutter ( 6733): 00:01 +1 -1: (tearDownAll)
+I/flutter ( 6733): 00:01 +2 -1: Some tests failed.
+Failure Details:
+Failure in method: native protected pending source and SQLite survive reopen
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞═════════════════
+The following SqfliteFfiException was thrown running a test:
+SqfliteFfiException(error, Invalid argument(s): Failed to load
+dynamic library
+'/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so': dlopen
+failed: library
+"/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so" not
+found}) DatabaseException(Invalid argument(s): Failed to load
+dynamic library
+'/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so': dlopen
+failed: library
+"/data/data/com.liuhetong.mobile.debug/lib/libsqlite3.so" not
+found)
+
+When the exception was thrown, this was the stack:
+#0      responseToResultOrThrow (package:sqflite_common_ffi/src/method_call.dart:125:9)
+#1      SqfliteIsolate.handle (package:sqflite_common_ffi/src/isolate.dart:35:12)
+<asynchronous suspension>
+#2      _isolateHandle (package:sqflite_common_ffi/src/database_factory_ffi_io.dart:106:10)
+<asynchronous suspension>
+#3      ffiMethodCallhandleInIsolate (package:sqflite_common_ffi/src/database_factory_ffi_io.dart:59:18)
+<asynchronous suspension>
+#4      _SqfliteDatabaseFactoryImpl.invokeMethod (package:sqflite_common/src/mixin/factory.dart:22:8)
+<asynchronous suspension>
+#5      SqfliteDatabaseMixin.openDatabase (package:sqflite_common/src/database_mixin.dart:941:24)
+<asynchronous suspension>
+#6      SqfliteDatabaseMixin.doOpen (package:sqflite_common/src/database_mixin.dart:1072:22)
+<asynchronous suspension>
+#7      SqfliteDatabaseOpenHelper.openDatabase (package:sqflite_common/src/database.dart:46:7)
+<asynchronous suspension>
+#8      SqfliteDatabaseFactoryMixin.openDatabase.<anonymous closure> (package:sqflite_common/src/factory_mixin.dart:130:16)
+<asynchronous suspension>
+#9      ReentrantLock.synchronized.<anonymous closure> (package:synchronized/src/reentrant_lock.dart:33:18)
+<asynchronous suspension>
+#10     BasicLock.synchronized (package:synchronized/src/basic_lock.dart:38:16)
+<asynchronous suspension>
+#11     SqliteMediaOutboxStore._open (package:liuhetong_mobile/core/outbox/media_outbox_store.dart:230:16)
+<asynchronous suspension>
+#12     SqliteMediaOutboxStore._persist.<anonymous closure> (package:liuhetong_mobile/core/outbox/media_outbox_store.dart:432:20)
+<asynchronous suspension>
+<asynchronous suspension>
+#14     main.<anonymous closure> (file:///W:/apps/mobile_flutter/integration_test/media_outbox_persistence_native_test.dart:21:20)
+<asynchronous suspension>
+#15     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#16     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+#17     TestWidgetsFlutterBinding._createTestCompletionHandler.<anonymous closure> (package:flutter_test/src/binding.dart:1706:12)
+<asynchronous suspension>
+(elided one frame from dart:async)
+
+The test description was:
+  native protected pending source and SQLite survive reopen
+═════════════════════════════════════════════════════════════════
+
+end of failure 1
+
+
+
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+VMServiceFlutterDriver: Connecting to Flutter application at http://127.0.0.1:62340/8bYSuakGn5E=/
+VMServiceFlutterDriver: Isolate found with number: 4939999126985851
+VMServiceFlutterDriver: Isolate 4939999126985851 is runnable.
+VMServiceFlutterDriver: Isolate is paused at start.
+VMServiceFlutterDriver: Attempting to resume isolate
+VMServiceFlutterDriver: Connected to Flutter application.

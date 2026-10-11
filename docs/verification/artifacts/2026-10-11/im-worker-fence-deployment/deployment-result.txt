@@ -1,0 +1,6 @@
+{"stage": "failed", "receipt": {"stage": "FAILED", "started_utc": "2026-10-11T07:04:04Z", "failure_type": "RuntimeError", "rolled_back": true}}
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['python3', '/opt/starchat/releases/im-worker-fence-20261011/deploy.py']' returned non-zero exit status 1.

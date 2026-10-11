@@ -1,0 +1,39 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart
+00:00 +0: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: (setUpAll)
+00:00 +0: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: unstarted legacy ready GIF is capped before begin and survives restore retry
+[chatflow/network] business_request -> HTTP 503
+00:00 +1: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: account clear fences an in-flight Moments video download
+00:00 +1: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: prepared compliant image repairs MIME before begin without replacing ready bytes
+[chatflow/network] business_request -> HTTP 503
+00:00 +2: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: account clear fences an in-flight Moments video download
+00:00 +3: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: begun unconfirmed legacy large upload requires cancel and reselect before requests
+00:00 +4: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:00 +4: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: confirmed legacy put replays immutable reference and stable publish payload
+[chatflow/network] business_request -> HTTP 503
+00:00 +5: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:00 +5: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: confirmed legacy result replays immutable reference and stable publish payload
+[chatflow/network] business_request -> HTTP 503
+00:01 +6: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:01 +7: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:01 +8: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:01 +8: W:/apps/mobile_flutter/test/features/moments/moment_publish_legacy_ready_test.dart: expired confirmed legacy large session keeps immutable phase and requires reselect
+[chatflow/network] business_request -> HTTP 409
+[chatflow/network] business_request -> HTTP 409
+00:01 +9: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: renewed server draft uses only an existing account poster
+00:04 +10: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: saving draft locks deletion and publish until upload completes
+00:04 +11: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: saving video draft without a frame retains its local source
+00:04 +12: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: poster 404 keeps a completed draft video for paired retry
+[chatflow/network] business_request -> HTTP 404
+00:04 +13: W:/apps/mobile_flutter/test/features/moments/moment_video_test.dart: saved video draft restores account poster after URL renewal and removes it
+STAGE poster begin
+STAGE poster pump
+STAGE poster pump
+STAGE poster pump
+STAGE poster pump
+STAGE poster saved=true
+STAGE poster pump
+STAGE poster pump
+STAGE poster pump
+STAGE poster pump
+STAGE poster clear start

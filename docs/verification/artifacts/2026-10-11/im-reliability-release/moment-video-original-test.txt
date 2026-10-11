@@ -1,0 +1,142 @@
+      'saved video draft restores account poster after URL renewal and removes it',
+      (tester) async {
+    provideVideoFrame();
+    final oldPaths = PathProviderPlatform.instance;
+    final scratch = Directory(path.normalize(path.absolute(
+        '../../docs/verification/artifacts/2026-09-23/feedback-2165-moments/poster-widget')));
+    await tester.runAsync(() => scratch.create(recursive: true));
+    PathProviderPlatform.instance = _PosterPaths(scratch.path);
+    const account = '@draft-poster:example';
+    const origin = 'https://example.test';
+    const first = '$origin/api/v1/moments/media/content/first';
+    const renewed = '$origin/api/v1/moments/media/content/renewed';
+    final key = 'c' * 64;
+    const posterId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+    var saved = false;
+    Map<String, dynamic>? savedPayload;
+    final previousDraftStore = MomentDraftStores.shared;
+    MomentDraftStores.shared = InMemoryMomentDraftStore();
+    final sessions = SecureSessionStore(_Store());
+    await sessions.saveSession(
+        accessToken: 'a', refreshToken: 'r', matrixUserId: account);
+    final api = BusinessApiClient(
+        baseUri: Uri.parse(origin),
+        sessionStore: sessions,
+        client: MockClient((request) async {
+          if (request.url.path.endsWith('/draft')) {
+            if (request.method == 'PUT') {
+              saved = true;
+              savedPayload = Map<String, dynamic>.from(
+                  jsonDecode(request.body)['payload']);
+            }
+            return http.Response(
+                jsonEncode(saved
+                    ? {
+                        'video_urls': [first],
+                        'video_poster_media_ids': [posterId],
+                      }
+                    : {}),
+                200);
+          }
+          if (request.url.path.endsWith('/video-posters/uploads')) {
+            return http.Response(jsonEncode({'id': posterId}), 201);
+          }
+          if (request.url.path.endsWith('/uploads')) {
+            return http.Response('{"id":"v"}', 201);
+          }
+          if (request.url.path.endsWith('/complete')) {
+            return request.url.path.contains('/$posterId/')
+                ? http.Response(
+                    '{"status":"COMPLETED","media_url":"media://moments/u/poster.jpg"}',
+                    200)
+                : http.Response(
+                    jsonEncode({
+                      'status': 'COMPLETED',
+                      'media_url': first,
+                      'media_cache_key': key
+                    }),
+                    200);
+          }
+          if (request.url.path.endsWith('/content') &&
+              request.method == 'PUT') {
+            return http.Response('', 204);
+          }
+          throw StateError(
+              'Unexpected request: ${request.method} ${request.url}');
+        }));
+    try {
+      await tester.pumpWidget(CupertinoApp(
+          home: MomentComposerPage(
+              api: api,
+              galleryPicker: (_, __) async => (
+                    photos: [
+                      GalleryPhoto(
+                          id: '1',
+                          thumbnail: png,
+                          isVideo: true,
+                          mimeType: 'video/mp4',
+                          originalBytes: () async => Uint8List.fromList([1]),
+                          compressedBytes: () async => Uint8List.fromList([1]))
+                    ],
+                    original: true,
+                    flash: false
+                  ))));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('moment-pick-images')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('moment-compose-cancel')));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => tester.tap(find.text('保存草稿')));
+      for (var i = 0; i < 100 && !saved; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+      }
+      await tester.pumpAndSettle();
+      expect(saved, isTrue);
+      expect(savedPayload?['video_poster_media_ids'], [posterId]);
+      expect(
+          MomentDraftStores.shared!.read()!.payload['video_cache_keys'], [key]);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(CupertinoApp(home: MomentComposerPage(api: api)));
+      await tester.pumpAndSettle();
+      expect(
+          MomentDraftStores.shared!.read()!.payload['video_cache_keys'], [key],
+          reason:
+              'server draft omits local cache keys but must not erase them');
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 100 && find.byType(Image).evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+      }
+      await tester.pump();
+      expect(find.byType(Image), findsOneWidget);
+      await tester.runAsync(
+          () => tester.tap(find.byIcon(CupertinoIcons.clear_circled_solid)));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(
+            await MomentMediaCache.cachedVideoPoster(renewed,
+                cacheKey: key,
+                accountKey: 'matrix:$account',
+                trustedOrigin: origin),
+            isNull);
+      });
+    } finally {
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(() => MediaCache.clearAccount(account));
+      MomentDraftStores.shared = previousDraftStore;
+      PathProviderPlatform.instance = oldPaths;
+    }
+  });
+

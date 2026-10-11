@@ -1,0 +1,8 @@
+{
+  "ended_at_utc": "2026-10-11T06:48:38.4856993+00:00",
+  "environment_changes": "empty fixture parents and owned W alias; no product edits",
+  "source_head": "9902d35079e9cb051125808a251ae479b06893cb",
+  "exit_code": 0,
+  "gate": "Recovery",
+  "started_at_utc": "2026-10-11T06:48:16.1783757+00:00"
+}

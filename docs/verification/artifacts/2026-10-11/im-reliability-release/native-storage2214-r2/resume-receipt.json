@@ -1,0 +1,42 @@
+{
+  "started_utc": "2026-10-11T07:17:06.912390+00:00",
+  "source_commit": "2a0fc392",
+  "apk_sha256": "7ec5863b389e0c1902d6b20933491924276c99daad27c25a66d79ff9ae58f4ee",
+  "device": "emulator-5558",
+  "package": "com.liuhetong.mobile.debug",
+  "steps": [
+    {
+      "name": "resume-state",
+      "exit_code": 0
+    },
+    {
+      "name": "resume-preflight",
+      "exit_code": 0
+    },
+    {
+      "name": "resume-map",
+      "exit_code": 0
+    },
+    {
+      "name": "install-no-streaming",
+      "exit_code": 0
+    },
+    {
+      "name": "native-drive",
+      "exit_code": 1
+    },
+    {
+      "name": "resume-installed-path",
+      "exit_code": 1
+    },
+    {
+      "name": "resume-mapping-check",
+      "exit_code": 0
+    },
+    {
+      "name": "resume-unmap",
+      "exit_code": 0
+    }
+  ],
+  "ended_utc": "2026-10-11T07:17:29.582171+00:00"
+}
