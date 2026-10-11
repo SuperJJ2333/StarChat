@@ -31,3 +31,11 @@ iOS run38112151641（bdbaab66）编译及运行成功但3项XCTest失败，不�
 ## 13:50+08 能力定位
 
 第二轮run38113845125（c8dba609）已结束，4项策略成功路径XCTest因`protectionUnavailable`失败；能力诊断本身完成。诊断run38115523536只解析既有xcresult并提取附件，没有再次构建。artifact11693053043 SHA256 `dda772a2af0c25c23714521a8fe22400a6a0769ac1cd17d8c8442356c09cf95c`；原始附件读回`protection=nil, excluded=Optional(true), importantCapacity=Optional(35125567488), capacity=Optional(35125567488), systemFree=Optional(35125567488)`。这是该iOS26模拟器未提供文件保护读回的证据，不是iPhone数据保护失败的证据。生产严格校验保持，依赖真实保护能力的成功路径不能标PASS；独立owner正在区分模拟器显式能力缺口和仍可执行的路径/失败拒绝门禁。重复目录源码修正尚不能靠本轮提前失败的测试声称已通过。
+
+## 第三轮真实 XCTest：4 PASS / 4 SKIP / 0 FAIL
+
+run38116935821，源码11904803，2026-10-11T06:05:43Z开始、06:16:43Z工作流完成。真实iPhone15模拟器iOS26.2（23C54）、arm64、macOS15.7.9，artifact11693856437 SHA256 `94b5510b9c1615fbe6b3a8e071690b290ff186b1163c94c3e86521d2d7d1857d`，原生编译与测试工作流success；xcresult计8项，**4PASS/4SKIP/0FAIL/0expectedFailure**。成功的是能力探针、实际production failclosed且重复调用保留内容、路径/符号链接/类型检查，以及Runner实际bundle包含所需隐私声明。4项依赖Data Protection成功路径，仅在Simulator且实际设置后保护nil、备份排除true和容量非负条件同时成立时显式skip；真实设备没有该skip分支。生产apply仍无条件调用原entry guard并设/读回保护，未提供替代保护参数或cache回退。
+
+root逐行独立复核f0c629e4的原guard提取和能力条件，保持原语义；Swift实际编译由上述CI补齐。d17689f2隐私声明另经独立审查C617.1/CA92.1/PBX接线通过，E174.1在持久任务冻结850710bd+3b8e1bd的真实低空间准入及用户可见错误路径核验后通过，容量不进入manifest/日志或设备外。该结论不关闭新发现的same-txid准备竞争，也不替代整个产品隐私审计。
+
+日志保留第三方Pod最低版本警告，以及photo_manager的PrivacyInfo处理警告；本次Runner manifest实测存在不能代替最终全插件IPA内各SDK隐私资源检查。后续完整iPhoneOS unsigned包仍需独立构建。4项skip不是手机保护/备份排除/覆盖升级验收，最终签名与真机门禁继续保留。

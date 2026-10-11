@@ -1,0 +1,245 @@
+{
+  "schema": 2,
+  "since_utc": "2026-10-11T06:01:46.923187+00:00",
+  "until_utc": "2026-10-11T06:06:46.923187+00:00",
+  "observed_utc": "2026-10-11T06:06:54.076698+00:00",
+  "window_seconds": 300,
+  "limits": {
+    "tail_lines_per_service": 10000,
+    "log_bytes_per_service": 2097152,
+    "command_timeout_seconds": 10.0,
+    "command_cleanup_timeout_seconds": 2
+  },
+  "semantics": "HTTP observations only; recovery routes are not users; provider HTTP is not device delivery; uncompleted starts may cross window boundaries; zero database fetches in long sync are candidates only, not evidence of idle or empty responses.",
+  "services": [
+    {
+      "service": "business_api",
+      "runtime": {
+        "error": null,
+        "value": {
+          "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+          "status": "running",
+          "health": "healthy",
+          "restart_count": 0
+        }
+      },
+      "resources": {
+        "error": null,
+        "value": {
+          "cpu_percent": 27.52,
+          "memory_percent": 4.29,
+          "memory_bytes": 355362406,
+          "memory_limit_bytes": 8283918172,
+          "pids": 10
+        }
+      },
+      "logs": {
+        "error": null,
+        "summary": {
+          "log_lines": 856,
+          "line_buckets": {
+            "http_completed": 519,
+            "http_started": 0,
+            "http_without_completion_status": 0,
+            "traceback_header": 0,
+            "partial_line": 0,
+            "oversized_line": 0,
+            "unmatched": 337
+          },
+          "http_completed": 519,
+          "http_buckets": {
+            "other:200": 404,
+            "other:202": 6,
+            "other:204": 19,
+            "other:401": 12,
+            "other:409": 17,
+            "other:429": 1,
+            "recovery_route:200": 60
+          },
+          "started_request_records": 0,
+          "completed_with_observed_start": 0,
+          "completed_without_observed_start": 519,
+          "started_without_observed_completion": 0,
+          "uncorrelated_started_records": 0,
+          "http_without_completion_status": 0,
+          "long_sync_30s_zero_db_fetch_candidates": 0,
+          "traceback_headers": 0,
+          "truncation": {
+            "tail_limit": 10000,
+            "tail_limit_reached": false,
+            "byte_limit_reached": false,
+            "command_timeout": false,
+            "partial_last_line": false
+          }
+        }
+      }
+    },
+    {
+      "service": "getui_bridge",
+      "runtime": {
+        "error": null,
+        "value": {
+          "image": "sha256:0d3c204b0df4863a8826aef6b58556f0fc9c8a6c89d5ca0ec137eec81fe7f43c",
+          "status": "running",
+          "health": null,
+          "restart_count": 0
+        }
+      },
+      "resources": {
+        "error": null,
+        "value": {
+          "cpu_percent": 0.2,
+          "memory_percent": 0.52,
+          "memory_bytes": 43180359,
+          "memory_limit_bytes": 8283918172,
+          "pids": 6
+        }
+      },
+      "logs": {
+        "error": null,
+        "summary": {
+          "log_lines": 0,
+          "line_buckets": {
+            "http_completed": 0,
+            "http_started": 0,
+            "http_without_completion_status": 0,
+            "traceback_header": 0,
+            "partial_line": 0,
+            "oversized_line": 0,
+            "unmatched": 0
+          },
+          "http_completed": 0,
+          "http_buckets": {},
+          "started_request_records": 0,
+          "completed_with_observed_start": 0,
+          "completed_without_observed_start": 0,
+          "started_without_observed_completion": 0,
+          "uncorrelated_started_records": 0,
+          "http_without_completion_status": 0,
+          "long_sync_30s_zero_db_fetch_candidates": 0,
+          "traceback_headers": 0,
+          "truncation": {
+            "tail_limit": 10000,
+            "tail_limit_reached": false,
+            "byte_limit_reached": false,
+            "command_timeout": false,
+            "partial_last_line": false
+          }
+        }
+      }
+    },
+    {
+      "service": "synapse",
+      "runtime": {
+        "error": null,
+        "value": {
+          "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d",
+          "status": "running",
+          "health": "healthy",
+          "restart_count": 0
+        }
+      },
+      "resources": {
+        "error": null,
+        "value": {
+          "cpu_percent": 0.39,
+          "memory_percent": 1.96,
+          "memory_bytes": 162634137,
+          "memory_limit_bytes": 8283918172,
+          "pids": 24
+        }
+      },
+      "logs": {
+        "error": null,
+        "summary": {
+          "log_lines": 256,
+          "line_buckets": {
+            "http_completed": 200,
+            "http_started": 0,
+            "http_without_completion_status": 0,
+            "traceback_header": 0,
+            "partial_line": 0,
+            "oversized_line": 0,
+            "unmatched": 56
+          },
+          "http_completed": 200,
+          "http_buckets": {
+            "other:200": 190,
+            "sync:200": 10
+          },
+          "started_request_records": 0,
+          "completed_with_observed_start": 0,
+          "completed_without_observed_start": 200,
+          "started_without_observed_completion": 0,
+          "uncorrelated_started_records": 0,
+          "http_without_completion_status": 0,
+          "long_sync_30s_zero_db_fetch_candidates": 10,
+          "traceback_headers": 0,
+          "truncation": {
+            "tail_limit": 10000,
+            "tail_limit_reached": false,
+            "byte_limit_reached": false,
+            "command_timeout": false,
+            "partial_last_line": false
+          }
+        }
+      }
+    },
+    {
+      "service": "sync_worker",
+      "runtime": {
+        "error": null,
+        "value": {
+          "image": "sha256:0e861d72f57d56367c393994959cb4e85a1c485142adef7928fe5662d565185d",
+          "status": "running",
+          "health": "healthy",
+          "restart_count": 0
+        }
+      },
+      "resources": {
+        "error": null,
+        "value": {
+          "cpu_percent": 0.35,
+          "memory_percent": 1.79,
+          "memory_bytes": 148583219,
+          "memory_limit_bytes": 8283918172,
+          "pids": 25
+        }
+      },
+      "logs": {
+        "error": null,
+        "summary": {
+          "log_lines": 45,
+          "line_buckets": {
+            "http_completed": 22,
+            "http_started": 0,
+            "http_without_completion_status": 2,
+            "traceback_header": 0,
+            "partial_line": 0,
+            "oversized_line": 0,
+            "unmatched": 21
+          },
+          "http_completed": 22,
+          "http_buckets": {
+            "sync:200": 22
+          },
+          "started_request_records": 0,
+          "completed_with_observed_start": 0,
+          "completed_without_observed_start": 22,
+          "started_without_observed_completion": 0,
+          "uncorrelated_started_records": 0,
+          "http_without_completion_status": 2,
+          "long_sync_30s_zero_db_fetch_candidates": 22,
+          "traceback_headers": 0,
+          "truncation": {
+            "tail_limit": 10000,
+            "tail_limit_reached": false,
+            "byte_limit_reached": false,
+            "command_timeout": false,
+            "partial_last_line": false
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+2026-10-11 06:16:06.375 xcodebuild[25690:82340] [MT] IDETestOperationsObserverDebug: 158.575 elapsed -- Testing started completed.
+2026-10-11 06:16:06.375 xcodebuild[25690:82340] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-11 06:16:06.375 xcodebuild[25690:82340] [MT] IDETestOperationsObserverDebug: 158.575 sec, +158.575 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/runner/work/StarChat/StarChat/docs/verification/artifacts/2026-10-11/im-native-storage-ci/storage.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started
+Test suite 'IOSMediaStoragePolicyTests' started on 'Clone 1 of IM storage synthetic gate - Runner (43362)'
+Test case 'IOSMediaStoragePolicyTests.testDirectoryPreparationMatchesCapabilityAndPreservesContent()' passed on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.062 seconds)
+Test case 'IOSMediaStoragePolicyTests.testEntryValidationWithoutDataProtectionRejectsUnsafeEntries()' passed on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.007 seconds)
+Test case 'IOSMediaStoragePolicyTests.testPendingDirectoryIsProtectedExcludedAndSeparateFromCache()' skipped on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.121 seconds)
+Test case 'IOSMediaStoragePolicyTests.testRejectsDirectoriesAndDanglingOptionalEntries()' skipped on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.107 seconds)
+Test case 'IOSMediaStoragePolicyTests.testRepeatedDirectoryPreparationPreservesExistingContent()' skipped on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.009 seconds)
+Test case 'IOSMediaStoragePolicyTests.testReportsSyntheticFilesystemCapabilities()' passed on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.007 seconds)
+Test case 'IOSMediaStoragePolicyTests.testRunnerBundlesStoragePrivacyReasons()' passed on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.010 seconds)
+Test case 'IOSMediaStoragePolicyTests.testSealsSyntheticSourceAndRejectsTraversalAndSymlink()' skipped on 'Clone 1 of IM storage synthetic gate - Runner (43362)' (0.286 seconds)
