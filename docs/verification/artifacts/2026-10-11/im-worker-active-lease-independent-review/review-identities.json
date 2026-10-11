@@ -1,0 +1,146 @@
+{
+  "reviewed_commit": "c3dd314212c73414c5ab371b4363e077bc9104c2",
+  "recorded_utc": "2026-10-11T09:31:36.919047+00:00",
+  "review_order": [
+    "SPEC/domain",
+    "Quality/Security"
+  ],
+  "distinct_cases_executed": 35,
+  "candidate_image_checked": false,
+  "production_operations": false,
+  "commands": [
+    "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease.py tests/business_worker/test_published_worker_entrypoint.py tests/business_worker/test_worker_lease_window.py --basetemp <review>/pytest-focused",
+    "py -3.12 -m pytest -q -p no:cacheprovider tests/business_worker/test_worker_active_lease_postgres.py tests/business_worker/test_worker_lease_window.py --basetemp <review>/pytest-pg",
+    "py -3.12 -m pytest -q -p no:cacheprovider <review>/test_independent_lease_edges.py --basetemp <review>/pytest-independent"
+  ],
+  "environment": {
+    "shell": "pwsh.exe; console/pipeline UTF-8 without BOM",
+    "PYTHONUTF8": "1",
+    "PYTHONIOENCODING": "utf-8",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "<frozen-source>/services/business-api;<frozen-source>/services/business-worker/app;<frozen-source>",
+    "IM_WORKER_LEASE_TEST_DATABASE_URL": "postgresql+psycopg://lease_fixture@127.0.0.1:55483/im_worker_lease_independent_utf8 (last two calls only)"
+  },
+  "source": [
+    {
+      "path": "services/business-worker/app/worker.py",
+      "git_blob_sha256": "b59f5619156e5ea7c0c43dfc71cd729166b4aa5ee1ed6f7d02cadce1adde7a59",
+      "git_blob_bytes": 13715,
+      "working_bytes_sha256": "b59f5619156e5ea7c0c43dfc71cd729166b4aa5ee1ed6f7d02cadce1adde7a59"
+    },
+    {
+      "path": "services/business-worker/app/main.py",
+      "git_blob_sha256": "f320662c59491b66c2fe9e776c83634c16f5ac780db00d0ecc0d4fd272312494",
+      "git_blob_bytes": 16717,
+      "working_bytes_sha256": "f320662c59491b66c2fe9e776c83634c16f5ac780db00d0ecc0d4fd272312494"
+    },
+    {
+      "path": "services/business-worker/app/lease_renewal.py",
+      "git_blob_sha256": "37ae78fa6488a81936ff81e5d753b54678edc9047d8552ee665ca8c0726bd4d1",
+      "git_blob_bytes": 1275,
+      "working_bytes_sha256": "37ae78fa6488a81936ff81e5d753b54678edc9047d8552ee665ca8c0726bd4d1"
+    },
+    {
+      "path": "services/business-api/app/core/outbox.py",
+      "git_blob_sha256": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12",
+      "git_blob_bytes": 13493,
+      "working_bytes_sha256": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12"
+    },
+    {
+      "path": "tests/business_worker/test_worker_active_lease.py",
+      "git_blob_sha256": "54458c86db51c630bda3c03d9f0abf6abd973430b3015f7b963f696ad72f55df",
+      "git_blob_bytes": 13230,
+      "working_bytes_sha256": "54458c86db51c630bda3c03d9f0abf6abd973430b3015f7b963f696ad72f55df"
+    },
+    {
+      "path": "tests/business_worker/test_published_worker_entrypoint.py",
+      "git_blob_sha256": "2e39b634c1e3e18b2ed02ab28d8b413c13a8dae1e1f4eb8d810e77e9afea0623",
+      "git_blob_bytes": 6052,
+      "working_bytes_sha256": "2e39b634c1e3e18b2ed02ab28d8b413c13a8dae1e1f4eb8d810e77e9afea0623"
+    },
+    {
+      "path": "tests/business_worker/test_worker_lease_window.py",
+      "git_blob_sha256": "204f84d08a6dfa8d7f018a1d33ca85388751c43341e758c0c67f8711f131a681",
+      "git_blob_bytes": 10863,
+      "working_bytes_sha256": "204f84d08a6dfa8d7f018a1d33ca85388751c43341e758c0c67f8711f131a681"
+    },
+    {
+      "path": "tests/business_worker/test_worker_active_lease_postgres.py",
+      "git_blob_sha256": "856cc882a325e4e95189ea91b0089986d87f55998ecfd7106b6784a95a3c7a7a",
+      "git_blob_bytes": 8536,
+      "working_bytes_sha256": "856cc882a325e4e95189ea91b0089986d87f55998ecfd7106b6784a95a3c7a7a"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-10-11-im-worker-active-lease.md",
+      "git_blob_sha256": "4fd8680bd3cb72c1c0ceb6aa8773ee951848e2109a7e6ef13f1c689b135f1cd5",
+      "git_blob_bytes": 2525,
+      "working_bytes_sha256": "4fd8680bd3cb72c1c0ceb6aa8773ee951848e2109a7e6ef13f1c689b135f1cd5"
+    }
+  ],
+  "evidence": {
+    ".gitattributes": {
+      "sha256": "f75d1a63795ab2b4b44f17dff014cc9f6497325ebfaa322ef079c9c0eea4ce73",
+      "bytes": 139
+    },
+    ".gitignore": {
+      "sha256": "98651a2a3f6710a9fb37d50425ab0c21982965bd68b033b8904ea9beae4493c4",
+      "bytes": 25
+    },
+    "focused.exit.txt": {
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "bytes": 1
+    },
+    "focused.log": {
+      "sha256": "78377f330e460f85994856e1ef7b3e2899a926e3376b4325d7fb26f0f29e9540",
+      "bytes": 112
+    },
+    "independent-edges.exit.txt": {
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "bytes": 1
+    },
+    "independent-edges.log": {
+      "sha256": "9366fb38391b36111fce82d4e14c5a7d8b630f753fb98f37cd70f7313853ad3b",
+      "bytes": 100
+    },
+    "pg-server.log": {
+      "sha256": "70a1b1bd8fbc4bedc40e3f7790c052043c75f7fc6c8edc521a4d22a9ea3c1613",
+      "bytes": 3248
+    },
+    "pg-start.log": {
+      "sha256": "46038efb813fbca18a92272496901190638dea3f97b51f7af0daa1ca2eb13818",
+      "bytes": 54
+    },
+    "pg-stop.exit.txt": {
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "bytes": 1
+    },
+    "pg-stop.log": {
+      "sha256": "3589d2bd01f8295cc7c9ec3f5e07625fcd347ccb6f33f2d80edafe5f5217c1fb",
+      "bytes": 58
+    },
+    "postgres.exit.txt": {
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "bytes": 1
+    },
+    "postgres.log": {
+      "sha256": "3f77cc243f9065df458a41c3b4903b178ee7b7280b03d9f8a68f2d64faa1dae5",
+      "bytes": 101
+    },
+    "quality-security-review.md": {
+      "sha256": "57f6f071f7d05ea3036d1751cdb25d72b758bfc71088c312b1f5c0b06929c070",
+      "bytes": 4317
+    },
+    "record_review.py": {
+      "sha256": "292ad519c8cae9894c88ae13f2ecd3156bd9703f12166d127c9e9b3ab150cc58",
+      "bytes": 3323
+    },
+    "spec-review.md": {
+      "sha256": "1d36efa4c5ba926798662e9118762cb69b8f959c022bef5dca2544e200c522e8",
+      "bytes": 3644
+    },
+    "test_independent_lease_edges.py": {
+      "sha256": "866b643788d581a511277707bf67d3e877f9e0d0cd43679e7a2cf4fee7646db1",
+      "bytes": 4710
+    }
+  }
+}

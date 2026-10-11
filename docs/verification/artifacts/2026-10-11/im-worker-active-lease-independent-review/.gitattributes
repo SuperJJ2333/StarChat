@@ -1,0 +1,7 @@
+*.md text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.log -text -diff
+*.txt -text -diff
+.gitattributes text eol=lf
+.gitignore text eol=lf

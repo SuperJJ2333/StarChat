@@ -1,0 +1,19 @@
+2026-10-11 17:24:49.575 CST [121512] LOG:  starting PostgreSQL 18.3 on x86_64-windows, compiled by msvc-19.44.35225, 64-bit
+2026-10-11 17:24:49.580 CST [121512] LOG:  listening on IPv4 address "127.0.0.1", port 55483
+2026-10-11 17:24:49.822 CST [103272] LOG:  database system was shut down at 2026-10-11 17:19:35 CST
+2026-10-11 17:24:49.834 CST [121512] LOG:  database system is ready to accept connections
+2026-10-11 17:25:34.969 CST [160008] FATAL:  role "postgres" does not exist
+2026-10-11 17:25:51.543 CST [163464] FATAL:  role "Administrator" does not exist
+2026-10-11 17:27:21.873 CST [164804] ERROR:  canceling statement due to statement timeout
+2026-10-11 17:27:21.873 CST [164804] STATEMENT:  SELECT pg_sleep(10)
+2026-10-11 17:27:22.436 CST [160516] ERROR:  could not obtain lock on row in relation "outbox_events"
+2026-10-11 17:27:22.436 CST [160516] STATEMENT:  SELECT active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.id, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.topic, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.event_type, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.aggregate_type, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.aggregate_id, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.payload, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.event_headers, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.status, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.attempt_count, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.available_at, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.locked_at, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.locked_by, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.last_error, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.created_at, active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.published_at 
+	FROM active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events 
+	WHERE active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.id = $1::VARCHAR AND active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.status = $2::VARCHAR AND active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.locked_by = $3::VARCHAR AND active_fixture_4279db4c9655462ebb6c751724856d83.outbox_events.attempt_count = $4::INTEGER FOR UPDATE NOWAIT
+2026-10-11 17:29:04.235 CST [121512] LOG:  received fast shutdown request
+2026-10-11 17:29:04.236 CST [121512] LOG:  aborting any active transactions
+2026-10-11 17:29:04.240 CST [121512] LOG:  background worker "logical replication launcher" (PID 168492) exited with exit code 1
+2026-10-11 17:29:04.240 CST [123520] LOG:  shutting down
+2026-10-11 17:29:04.241 CST [123520] LOG:  checkpoint starting: shutdown immediate
+2026-10-11 17:29:04.387 CST [123520] LOG:  checkpoint complete: wrote 1008 buffers (6.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.025 s, sync=0.107 s, total=0.147 s; sync files=368, longest=0.002 s, average=0.001 s; distance=5198 kB, estimate=5198 kB; lsn=0/2B04268, redo lsn=0/2B04268
+2026-10-11 17:29:04.407 CST [121512] LOG:  database system is shut down
