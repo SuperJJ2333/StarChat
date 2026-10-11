@@ -1,0 +1,66 @@
+{
+  "reviewed_commit": "2760bc102650fe92da5777e3b769ee756cee6e6d",
+  "mismatch_count": 10,
+  "files": [
+    {
+      "file": "absence-green.log",
+      "recorded": "59c695ab6858f220c79fc4bd5b9b7c3bd9299ee64fd4e1d83ef9de0c428c2d44",
+      "git_sha256": "2bb67d447184e54fd485681f5c81ec67f628c207ad2efcf4719323e82b4fa132",
+      "bytes": 98
+    },
+    {
+      "file": "absence-red.log",
+      "recorded": "7bca38a97ae6c2e9450f4a96bf5d1923de0b6382f7d81df8e38913dd6974036e",
+      "git_sha256": "e9951fee06fd8d7681f1a417ebf2ce7cda69597da68e61c7094d12996c51e83f",
+      "bytes": 8761
+    },
+    {
+      "file": "candidate-checks-result.txt",
+      "recorded": "bf94221c736c694c0bc64e8c4dbf8805e293344402a2343ae2b675ec622b7ed0",
+      "git_sha256": "bdba897ad518d05df6a32d9e24715fee127382c25233202f35ea09cfcc8012f5",
+      "bytes": 348
+    },
+    {
+      "file": "configuration-proof.json",
+      "recorded": "4111c8940fbd63bd49ce6f09a74b01d4c3af75c65ba6e06b89e8a1c26f54e68a",
+      "git_sha256": "eeaaed9a58bcd6bf535f901e51027241b38032ac52af8b6dfdea807a83a5c9c2",
+      "bytes": 763
+    },
+    {
+      "file": "live-preflight.json",
+      "recorded": "b306e9cccd1c736db5ce09f4c0ebc02ade2238e1181055ed7472c6a50c217a6f",
+      "git_sha256": "85b93c7fada834eca3660eeb29325fc469c2d756d6afbb2ecc55d577e6206f9a",
+      "bytes": 1323
+    },
+    {
+      "file": "local-boundaries.log",
+      "recorded": "0107d00fcca5fea7884143679872f27d9b8270b54f9cf8fe3ef3ed473bebb51f",
+      "git_sha256": "c3b51b2feae839bd3a05c4a3ac63cf956218f4de1ae10255742d5ab1f9e35f40",
+      "bytes": 99
+    },
+    {
+      "file": "payload-spec.json",
+      "recorded": "8b1fb27a110a8ec42f0dbc1ae4a40d0608842fd9bd893b08dd98b8939a1c8e0e",
+      "git_sha256": "48c82e18053b8ee01d949dc137ee806c2519fe3a6f1a31b4e980770b081ea4d7",
+      "bytes": 1598
+    },
+    {
+      "file": "prepare-result.txt",
+      "recorded": "519c1d4af20719e6a07525afe20ae44ffc0acaad0aa3b093a522c4e075eb21c6",
+      "git_sha256": "e75e102a3fa23cca400193867413b69372577bb67dec9c8a5c16cb0a4766d8ee",
+      "bytes": 2419
+    },
+    {
+      "file": "running-containers-after.json",
+      "recorded": "f92a10b5aa0d22d822184b28af37d6ef1ecec77f4e90413b8a269a7bce4740ef",
+      "git_sha256": "a6fce79dc101f90f19c8c8f67380ecc958c03fd02470b57ed0aa96e115010b89",
+      "bytes": 3437
+    },
+    {
+      "file": "unknown-boundaries.json",
+      "recorded": "9f6b1ee1e3b984bc13917f5d584070b936830bcb9c6de9811226be114ed724a9",
+      "git_sha256": "047791821f5dcfaa422625f46d9fdffd2eb62e4ab2701845119a656725430e94",
+      "bytes": 1567
+    }
+  ]
+}

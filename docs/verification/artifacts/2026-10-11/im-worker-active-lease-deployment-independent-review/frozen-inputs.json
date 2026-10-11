@@ -1,0 +1,106 @@
+{
+  "author_commit": "77ca608c7d98a147a2af4d657c2cb8c82be9e495",
+  "directory": "docs/verification/artifacts/2026-10-11/im-worker-active-lease-deployment",
+  "files": {
+    "PLAN.md": {
+      "sha256": "46ce25de78ae8b37dc0746e59dbd6e70c9e6ee8aa9ce7b271a534a5ac6fe03e0",
+      "bytes": 1839
+    },
+    "README.md": {
+      "sha256": "3d806a1fa69b8de934402d8895c29654d28d5e86dc296a53059e45e0294ac229",
+      "bytes": 5065
+    },
+    "absence-green.log": {
+      "sha256": "2bb67d447184e54fd485681f5c81ec67f628c207ad2efcf4719323e82b4fa132",
+      "bytes": 98
+    },
+    "absence-red.log": {
+      "sha256": "e9951fee06fd8d7681f1a417ebf2ce7cda69597da68e61c7094d12996c51e83f",
+      "bytes": 8761
+    },
+    "assemble.py": {
+      "sha256": "dcf731aae278336e5781db48b655315076176f7fb6ad3279475761020a653bb9",
+      "bytes": 2114
+    },
+    "default_entry_probe.py": {
+      "sha256": "4281ab97ecce079b66b496525af617c2191bf4bf7b7c6970f97a4a24fecf5737",
+      "bytes": 1925
+    },
+    "deploy.py": {
+      "sha256": "41dfc1f2228fbfc1fb8960c0043ff6e77c7efa1251d725f00350362a9efdb94c",
+      "bytes": 10133
+    },
+    "live-preflight.json": {
+      "sha256": "85b93c7fada834eca3660eeb29325fc469c2d756d6afbb2ecc55d577e6206f9a",
+      "bytes": 1323
+    },
+    "live_preflight.py": {
+      "sha256": "b6b864c7a1611ba94ae4ec27ade54ef73f6a40cf51314abef20158c657da61ae",
+      "bytes": 1724
+    },
+    "local-boundaries.log": {
+      "sha256": "c3b51b2feae839bd3a05c4a3ac63cf956218f4de1ae10255742d5ab1f9e35f40",
+      "bytes": 99
+    },
+    "payload-spec.json": {
+      "sha256": "48c82e18053b8ee01d949dc137ee806c2519fe3a6f1a31b4e980770b081ea4d7",
+      "bytes": 1598
+    },
+    "prepare.py": {
+      "sha256": "a4f6590b58b86b9b107ffbaff6e01e18f9cad9bf6af918b1d8874c68623bdd7a",
+      "bytes": 4718
+    },
+    "test_release_boundaries.py": {
+      "sha256": "082fcf694f59ee80eb3bb71875803a32b4a3145e828b49215bed7d6b858dd956",
+      "bytes": 8578
+    },
+    "test_unknown_boundaries.py": {
+      "sha256": "d68cbaba1e672f64c88e0792c43b92e810ca06d21e2aa38656a9795fe5af94b9",
+      "bytes": 9566
+    },
+    "tests/test_published_worker_entrypoint.py": {
+      "sha256": "2e39b634c1e3e18b2ed02ab28d8b413c13a8dae1e1f4eb8d810e77e9afea0623",
+      "bytes": 6052
+    },
+    "tests/test_worker_active_lease.py": {
+      "sha256": "54458c86db51c630bda3c03d9f0abf6abd973430b3015f7b963f696ad72f55df",
+      "bytes": 13230
+    },
+    "tests/test_worker_claim_fencing.py": {
+      "sha256": "57626b3d7d6a31669c7c876908e863ca36c7fe8cbe64313e599bfbc32db9d29d",
+      "bytes": 9786
+    },
+    "tests/test_worker_lease_window.py": {
+      "sha256": "204f84d08a6dfa8d7f018a1d33ca85388751c43341e758c0c67f8711f131a681",
+      "bytes": 10863
+    },
+    "unknown-boundaries.json": {
+      "sha256": "047791821f5dcfaa422625f46d9fdffd2eb62e4ab2701845119a656725430e94",
+      "bytes": 1567
+    },
+    "validate_default_runtime.py": {
+      "sha256": "00504e859d2e109de4039afa3b1ebff71689e41f4ad3d54e75facd94791a030a",
+      "bytes": 4108
+    },
+    "worker/lease_renewal.py": {
+      "sha256": "37ae78fa6488a81936ff81e5d753b54678edc9047d8552ee665ca8c0726bd4d1",
+      "bytes": 1275
+    },
+    "worker/main.py": {
+      "sha256": "f320662c59491b66c2fe9e776c83634c16f5ac780db00d0ecc0d4fd272312494",
+      "bytes": 16717
+    },
+    "worker/outbox-source.py": {
+      "sha256": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12",
+      "bytes": 13493
+    },
+    "worker/outbox.py": {
+      "sha256": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12",
+      "bytes": 13493
+    },
+    "worker/worker.py": {
+      "sha256": "b59f5619156e5ea7c0c43dfc71cd729166b4aa5ee1ed6f7d02cadce1adde7a59",
+      "bytes": 13715
+    }
+  }
+}

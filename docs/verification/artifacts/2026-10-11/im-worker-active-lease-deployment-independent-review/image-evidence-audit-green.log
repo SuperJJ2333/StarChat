@@ -1,0 +1,16 @@
+{
+  "result": "PASS",
+  "final_author_commit": "41e878449186294df9cf14b4236c3561cf470436",
+  "core_scripts_commit": "77ca608c7d98a147a2af4d657c2cb8c82be9e495",
+  "candidate_image": "sha256:abda33f8fe5bb4abca45464a5d300fff8981a8b68908be1b64f6e3ee0d8a0e7f",
+  "core_and_payloads_unchanged": true,
+  "exact_seven_validation_inputs": true,
+  "default_image_tests_passed": 70,
+  "default_image_tests_skipped": 1,
+  "skip_reason": "explicit isolated PG URL absent",
+  "protocol_images": 3,
+  "all_container_ids_unchanged": 60,
+  "running_containers": 35,
+  "reviewer_docker_or_network_operations": 0,
+  "deployed": false
+}
