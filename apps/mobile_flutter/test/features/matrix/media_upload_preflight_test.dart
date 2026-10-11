@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +14,7 @@ class _Gateway
   final int? limit;
   var sends = 0;
   var limits = 0;
+  String? lastTransaction;
   Object? limitFailure;
   @override
   Future<int?> maximumUploadBytes() async {
@@ -33,6 +33,7 @@ class _Gateway
       int? thumbnailWidth,
       int? thumbnailHeight}) async {
     sends++;
+    lastTransaction = txid;
     return 'synthetic-event';
   }
 }
@@ -158,6 +159,7 @@ void main() {
     }, createFile: (_) => spy);
     expect(spy.reads, 1);
     expect(gateway.sends, 1);
+    expect(gateway.lastTransaction, 'stable-tx');
   });
 
   for (final limit in [8 * 1024 * 1024, 20 * 1024 * 1024]) {
