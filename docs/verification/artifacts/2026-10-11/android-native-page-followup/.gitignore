@@ -1,0 +1,8 @@
+/source/
+/build-*/
+/install-*/
+/*.tar.gz
+/*.part
+/*.so
+/perl-support/
+/baseline-*/

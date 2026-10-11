@@ -1,0 +1,12 @@
+{
+  "started_utc": "2026-10-11T08:42:02.117428+00:00",
+  "duration_seconds": 7.093,
+  "command": [
+    "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\android2214-release\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android-native-page-followup\\build-recipe.sh",
+    "arm64"
+  ],
+  "recipe_sha256": "3ec8262a7ed240d29039d70145a9e3b8ef4378f3da51947890b0d5f155b4a8ea",
+  "exit_code": 1,
+  "log_sha256": "73a76ad55aba788b61944af9923b23ff225e1052cd1c1f4d0ea4e4024e338d32"
+}

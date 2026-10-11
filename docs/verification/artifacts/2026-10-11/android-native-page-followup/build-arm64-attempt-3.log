@@ -1,0 +1,14 @@
+Configuring OpenSSL version 1.1.1q (0x1010111fL) for android-arm64
+Using os-specific seed configuration
+Creating configdata.pm
+Creating Makefile
+Can't locate Pod/Escapes.pm in @INC (you may need to install the Pod::Escapes module) (@INC entries checked: . /c/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support /usr/lib/perl5/site_perl /usr/share/perl5/site_perl /usr/lib/perl5/vendor_perl /usr/share/perl5/vendor_perl /usr/lib/perl5/core_perl /usr/share/perl5/core_perl) at /c/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support/Pod/Simple.pm line 8.
+BEGIN failed--compilation aborted at /c/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support/Pod/Simple.pm line 8.
+Compilation failed in require at /c/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support/Pod/Text.pm line 24.
+BEGIN failed--compilation aborted at /c/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support/Pod/Text.pm line 24.
+Compilation failed in require at (eval 5) line 1.
+BEGIN failed--compilation aborted at /c/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support/Pod/Usage.pm line 30.
+Compilation failed in require at configdata.pm line 17117.
+BEGIN failed--compilation aborted at configdata.pm line 17117.
+Compilation failed in require.
+BEGIN failed--compilation aborted.

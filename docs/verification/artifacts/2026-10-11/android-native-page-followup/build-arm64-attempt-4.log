@@ -1,0 +1,22 @@
+Configuring OpenSSL version 1.1.1q (0x1010111fL) for android-arm64
+Using os-specific seed configuration
+Creating configdata.pm
+Creating Makefile
+
+**********************************************************************
+***                                                                ***
+***   OpenSSL has been successfully configured                     ***
+***                                                                ***
+***   If you encounter a problem while building, please open an    ***
+***   issue on GitHub <https://github.com/openssl/openssl/issues>  ***
+***   and include the output from the following command:           ***
+***                                                                ***
+***       perl configdata.pm --dump                                ***
+***                                                                ***
+***   (If you are new to OpenSSL, you might want to consult the    ***
+***   'Troubleshooting' section in the INSTALL file first)         ***
+***                                                                ***
+**********************************************************************
+Makefile:754: target 'libcrypto.so' given more than once in the same rule
+Makefile:5905: target 'libssl.so' given more than once in the same rule
+make: *** No rule to make target '/c/Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/source/openssl-1.1.1q/Configurations/00-base-templates.conf', needed by 'configdata.pm'.  Stop.

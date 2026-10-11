@@ -1,0 +1,80 @@
+{
+  "build-arm64-attempt-1.log": {
+    "warnings": {},
+    "duplicate_target_lines": []
+  },
+  "build-arm64-attempt-2.log": {
+    "warnings": {},
+    "duplicate_target_lines": []
+  },
+  "build-arm64-attempt-3.log": {
+    "warnings": {},
+    "duplicate_target_lines": []
+  },
+  "build-arm64-attempt-4.log": {
+    "warnings": {},
+    "duplicate_target_lines": [
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule"
+    ]
+  },
+  "build-arm64-attempt-5.log": {
+    "warnings": {},
+    "duplicate_target_lines": [
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule"
+    ]
+  },
+  "build-arm64-attempt-6.log": {
+    "warnings": {
+      "'__ANDROID_API__' macro redefined [-Wmacro-redefined]": 709,
+      "<command line>:15:9: '__ANDROID_API__' macro redefined [-Wmacro-redefined]": 1,
+      "variable 'line' set but not used [-Wunused-but-set-variable]": 1,
+      "variable 'ln' set but not used [-Wunused-but-set-variable]": 1,
+      "variable 'l' set but not used [-Wunused-but-set-variable]": 1,
+      "creating apps/libapps.a": 1,
+      "creating libssl.a": 1,
+      "creating test/libtestutil.a": 1,
+      "creating libcrypto.a": 1
+    },
+    "duplicate_target_lines": [
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule",
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule",
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule"
+    ]
+  },
+  "build-arm64-attempt-7.log": {
+    "warnings": {},
+    "duplicate_target_lines": [
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule",
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule",
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5905: target 'libssl.so' given more than once in the same rule"
+    ]
+  },
+  "build-x86_64-attempt-1.log": {
+    "warnings": {
+      "'__ANDROID_API__' macro redefined [-Wmacro-redefined]": 693,
+      "variable 'line' set but not used [-Wunused-but-set-variable]": 1,
+      "variable 'ln' set but not used [-Wunused-but-set-variable]": 1,
+      "variable 'l' set but not used [-Wunused-but-set-variable]": 1,
+      "creating apps/libapps.a": 1,
+      "creating libssl.a": 1,
+      "creating test/libtestutil.a": 1,
+      "creating libcrypto.a": 1
+    },
+    "duplicate_target_lines": [
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5929: target 'libssl.so' given more than once in the same rule",
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5929: target 'libssl.so' given more than once in the same rule",
+      "Makefile:754: target 'libcrypto.so' given more than once in the same rule",
+      "Makefile:5929: target 'libssl.so' given more than once in the same rule"
+    ]
+  }
+}

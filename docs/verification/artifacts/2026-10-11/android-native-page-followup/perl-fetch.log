@@ -1,0 +1,56 @@
+Traceback (most recent call last):
+  File "D:\python\Lib\urllib\request.py", line 1348, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "D:\python\Lib\http\client.py", line 1303, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "D:\python\Lib\http\client.py", line 1349, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "D:\python\Lib\http\client.py", line 1298, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "D:\python\Lib\http\client.py", line 1058, in _send_output
+    self.send(msg)
+  File "D:\python\Lib\http\client.py", line 996, in send
+    self.connect()
+  File "D:\python\Lib\http\client.py", line 1475, in connect
+    self.sock = self._context.wrap_socket(self.sock,
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\ssl.py", line 517, in wrap_socket
+    return self.sslsocket_class._create(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\ssl.py", line 1104, in _create
+    self.do_handshake()
+  File "D:\python\Lib\ssl.py", line 1382, in do_handshake
+    self._sslobj.do_handshake()
+ConnectionResetError: [WinError 10054] 远程主机强迫关闭了一个现有的连接。
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android-native-page-followup\fetch-perl-support.py", line 53, in <module>
+    visit(f'cpan/{package}/lib')
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android-native-page-followup\fetch-perl-support.py", line 37, in visit
+    visit(item['path'], name)
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android-native-page-followup\fetch-perl-support.py", line 40, in visit
+    data = get(raw_url)
+           ^^^^^^^^^^^^
+  File "C:\Users\Administrator\.codex\worktrees\android2214-release\StarChat\docs\verification\artifacts\2026-10-11\android-native-page-followup\fetch-perl-support.py", line 18, in get
+    with urllib.request.urlopen(request, timeout=30) as response:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\urllib\request.py", line 216, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\urllib\request.py", line 519, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\urllib\request.py", line 536, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\urllib\request.py", line 496, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "D:\python\Lib\urllib\request.py", line 1391, in https_open
+    return self.do_open(http.client.HTTPSConnection, req,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\urllib\request.py", line 1351, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [WinError 10054] 远程主机强迫关闭了一个现有的连接。>

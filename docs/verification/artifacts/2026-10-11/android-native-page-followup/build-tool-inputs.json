@@ -1,0 +1,102 @@
+{
+  "host": "Windows-10-10.0.19045-SP0",
+  "python": "3.11.11 (main, Jan 14 2025, 22:46:06) [MSC v.1942 64 bit (AMD64)]",
+  "inputs": [
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\source.properties",
+      "bytes": 108,
+      "sha256": "c00aa236fdb205e9be9edd9e2169763e48aca52735efff4e16f34205d49783b5"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\prebuilt\\windows-x86_64\\bin\\make.exe",
+      "bytes": 299616,
+      "sha256": "0399888d520b66cd75e9bf3abc8453af188a5a51484326730b58bfd675cb373c"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "bytes": 128240224,
+      "sha256": "7d31c6f6fad98987b6c9d21b800afaa8b3e37f052e94aaddc941d42ff2a35579"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\ld.lld.exe",
+      "bytes": 74947680,
+      "sha256": "3208134dfd067fb969f8d052db5da2e9e44802e239494e051113d81ce8700e83"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-ar.exe",
+      "bytes": 15932000,
+      "sha256": "f17d96f5f207a887e620c82afcdf2a55fd3bb1db69f50c8cd3061184d3664bc8"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-readelf.exe",
+      "bytes": 8428128,
+      "sha256": "2646e382d8b2559b5c4ae91e9a98e187ed9bd59f23936054d424049ef795ba5e"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\llvm-nm.exe",
+      "bytes": 17003616,
+      "sha256": "90236526ebb24c232e59ec573675e32a92190b3346cf3a342c8b0eb5ad0f8203"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\aarch64-linux-android21-clang",
+      "bytes": 209,
+      "sha256": "d7c6ebdd4b362e63f940c53d0a248f411099222e55b6fe2f2c9e2ca2b531226a"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\aarch64-linux-android21-clang.cmd",
+      "bytes": 436,
+      "sha256": "f2e0c22a614fc49b9ff2687692cf58b36437e17e4f2ba8027af790ada5c0ad8f"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\x86_64-linux-android21-clang",
+      "bytes": 208,
+      "sha256": "cc5e4027bceb5fc9dcf1105ce424c9be4d882af904b72a823aba29466a93bf77"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Android\\Sdk\\ndk\\28.2.13676358\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\x86_64-linux-android21-clang.cmd",
+      "bytes": 435,
+      "sha256": "e5e1a8ea8ff94c5801013d8e6d838293c38b09ee5f8d20a105e8a0e962464997"
+    },
+    {
+      "path": "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+      "bytes": 2553064,
+      "sha256": "fc362aae1f217d34d02237d99527839dd6cf85b37c7a0277109400bfa0faa594"
+    },
+    {
+      "path": "C:\\Program Files\\Git\\usr\\bin\\sh.exe",
+      "bytes": 2553064,
+      "sha256": "fc362aae1f217d34d02237d99527839dd6cf85b37c7a0277109400bfa0faa594"
+    },
+    {
+      "path": "C:\\Program Files\\Git\\usr\\bin\\perl.exe",
+      "bytes": 14315,
+      "sha256": "ba92b05b95b2a8c70534b7517d23623332e15b3395641c30ecc1deffc1ed5f27"
+    },
+    {
+      "path": "C:\\Program Files\\Git\\usr\\bin\\msys-2.0.dll",
+      "bytes": 3355762,
+      "sha256": "c30c8744de788aace27e17e7abedb219b4ec9882ac80660ca494b0f2a0e7f58b"
+    },
+    {
+      "path": "D:\\python\\python.exe",
+      "bytes": 91648,
+      "sha256": "f37987f26903e31bd82591eadd513b455fa3a439f98275f36f1ebc1faa80132e"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.codex\\worktrees\\android2214-release\\StarChat\\docs\\verification\\artifacts\\2026-10-11\\android-native-page-followup\\openssl-1.1.1q.tar.gz",
+      "bytes": 9864061,
+      "sha256": "d7939ce614029cdff0b6c20f0e2e5703158a489a72b2507b8bd51bf8c8fd10ca"
+    }
+  ],
+  "versions": {
+    "clang.exe": "Android (13624864, based on r530567e) clang version 19.0.1 (https://android.googlesource.com/toolchain/llvm-project 97a699bf4812a18fb657c2779f5296a4ab2694d2)\nTarget: x86_64-w64-windows-gnu\nThread model: posix\nInstalledDir: C:/Users/Administrator/AppData/Local/Android/Sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/windows-x86_64/bin\n",
+    "make.exe": "GNU Make 4.3\nBuilt for Windows32\nCopyright (C) 1988-2020 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n",
+    "bash.exe": "GNU bash, version 5.2.37(1)-release (x86_64-pc-msys)\nCopyright (C) 2022 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n\nThis is free software; you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\n",
+    "perl.exe": "\nThis is perl 5, version 38, subversion 2 (v5.38.2) built for x86_64-msys-thread-multi\n\nCopyright 1987-2023, Larry Wall\n\nPerl may be copied only under the terms of either the Artistic License or the\nGNU General Public License, which may be found in the Perl 5 source kit.\n\nComplete documentation for Perl, including FAQ lists, should be found on\nthis system using \"man perl\" or \"perldoc perl\".  If you have access to the\nInternet, point your browser at https://www.perl.org/, the Perl Home Page.\n\n"
+  },
+  "ndk_source_properties": "Pkg.Desc = Android NDK\nPkg.Revision = 28.2.13676358\nPkg.BaseRevision = 28.2.13676358\nPkg.ReleaseName = r28c\n",
+  "official_openssl_archive": "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1q/openssl-1.1.1q.tar.gz",
+  "tool_installation_mutated": false,
+  "openssl_source_patched": false,
+  "client_gradle_pubcache_production_changed": false
+}

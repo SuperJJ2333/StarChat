@@ -1,0 +1,83 @@
+ELF Header:
+  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00
+  Class:                             ELF64
+  Data:                              2's complement, little endian
+  Version:                           1 (current)
+  OS/ABI:                            UNIX - System V
+  ABI Version:                       0
+  Type:                              DYN (Shared object file)
+  Machine:                           AArch64
+  Version:                           0x1
+  Entry point address:               0x0
+  Start of program headers:          64 (bytes into file)
+  Start of section headers:          677744 (bytes into file)
+  Flags:                             0x0
+  Size of this header:               64 (bytes)
+  Size of program headers:           56 (bytes)
+  Number of program headers:         10
+  Size of section headers:           64 (bytes)
+  Number of section headers:         29
+  Section header string table index: 27
+
+Elf file type is DYN (Shared object file)
+Entry point 0x0
+There are 10 program headers, starting at offset 64
+
+Program Headers:
+  Type           Offset   VirtAddr           PhysAddr           FileSiz  MemSiz   Flg Align
+  PHDR           0x000040 0x0000000000000040 0x0000000000000040 0x000230 0x000230 R   0x8
+  LOAD           0x000000 0x0000000000000000 0x0000000000000000 0x038da4 0x038da4 R   0x4000
+  LOAD           0x038db0 0x000000000003cdb0 0x000000000003cdb0 0x04a6d0 0x04a6d0 R E 0x4000
+  LOAD           0x083480 0x000000000008b480 0x000000000008b480 0x008a68 0x008b80 RW  0x4000
+  LOAD           0x08bee8 0x0000000000097ee8 0x0000000000097ee8 0x003718 0x0038d8 RW  0x4000
+  DYNAMIC        0x08ad70 0x0000000000092d70 0x0000000000092d70 0x0001e0 0x0001e0 RW  0x8
+  GNU_RELRO      0x083480 0x000000000008b480 0x000000000008b480 0x008a68 0x008b80 R   0x1
+  GNU_EH_FRAME   0x027a0c 0x0000000000027a0c 0x0000000000027a0c 0x00255c 0x00255c R   0x4
+  GNU_STACK      0x000000 0x0000000000000000 0x0000000000000000 0x000000 0x000000 RW  0x0
+  NOTE           0x000270 0x0000000000000270 0x0000000000000270 0x000098 0x000098 R   0x4
+
+ Section to Segment mapping:
+  Segment Sections...
+   00     
+   01     .note.android.ident .dynsym .gnu.version .gnu.version_d .gnu.version_r .gnu.hash .hash .dynstr .rela.dyn .rela.plt .rodata .eh_frame_hdr .eh_frame 
+   02     .text .plt 
+   03     .data.rel.ro .fini_array .init_array .dynamic .got .got.plt .relro_padding 
+   04     .data .bss 
+   05     .dynamic 
+   06     .data.rel.ro .fini_array .init_array .dynamic .got .got.plt .relro_padding 
+   07     .eh_frame_hdr 
+   08     
+   09     .note.android.ident 
+   None   .comment .symtab .shstrtab .strtab 
+Dynamic section at offset 0x8ad70 contains 30 entries:
+  Tag                Type           Name/Value
+  0x0000000000000001 (NEEDED)       Shared library: [libcrypto.so]
+  0x0000000000000001 (NEEDED)       Shared library: [libdl.so]
+  0x0000000000000001 (NEEDED)       Shared library: [libc.so]
+  0x000000000000000e (SONAME)       Library soname: [libssl.so]
+  0x000000000000001e (FLAGS)        SYMBOLIC BIND_NOW 
+  0x000000006ffffffb (FLAGS_1)      NOW NODELETE 
+  0x0000000000000007 (RELA)         0xdc80
+  0x0000000000000008 (RELASZ)       55368 (bytes)
+  0x0000000000000009 (RELAENT)      24 (bytes)
+  0x000000006ffffff9 (RELACOUNT)    2272
+  0x0000000000000017 (JMPREL)       0x1b4c8
+  0x0000000000000002 (PLTRELSZ)     10632 (bytes)
+  0x0000000000000003 (PLTGOT)       0x930f8
+  0x0000000000000014 (PLTREL)       RELA
+  0x0000000000000006 (SYMTAB)       0x308
+  0x000000000000000b (SYMENT)       24 (bytes)
+  0x0000000000000005 (STRTAB)       0x9088
+  0x000000000000000a (STRSZ)        19446 (bytes)
+  0x000000006ffffef5 (GNU_HASH)     0x64f8
+  0x0000000000000004 (HASH)         0x72b0
+  0x0000000000000019 (INIT_ARRAY)   0x92d60
+  0x000000000000001b (INIT_ARRAYSZ) 16 (bytes)
+  0x000000000000001a (FINI_ARRAY)   0x92d50
+  0x000000000000001c (FINI_ARRAYSZ) 16 (bytes)
+  0x000000006ffffff0 (VERSYM)       0x5c78
+  0x000000006ffffffc (VERDEF)       0x63ec
+  0x000000006ffffffd (VERDEFNUM)    5
+  0x000000006ffffffe (VERNEED)      0x6478
+  0x000000006fffffff (VERNEEDNUM)   2
+  0x0000000000000000 (NULL)         0x0

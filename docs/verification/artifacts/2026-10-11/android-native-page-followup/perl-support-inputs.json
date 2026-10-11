@@ -1,0 +1,303 @@
+{
+  "official_commit": "55dd2f792ffc8cefe614350a411f785374281b24",
+  "perl_release": "5.38.2",
+  "total_bytes": 623926,
+  "files": [
+    {
+      "path": "Pod/Usage.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Usage/lib/Pod/Usage.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/0ed3a60315a41e30403fb32abf3d0c41ce012a7f",
+      "git_blob_sha1": "0ed3a60315a41e30403fb32abf3d0c41ce012a7f",
+      "sha256": "975114b4d7f03bdcf09608e2c23575d3dfa1d80522922421fa369db23a146d23",
+      "bytes": 30993
+    },
+    {
+      "path": "Pod/Simple.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/ee89c0a4898227599c9de779d3c8b54d6ae6e988",
+      "git_blob_sha1": "ee89c0a4898227599c9de779d3c8b54d6ae6e988",
+      "sha256": "05d654f9be142b3359ab2bd0bffb150f56e487aea3bc202383224bf6ea65c7e1",
+      "bytes": 54797
+    },
+    {
+      "path": "Pod/Simple/BlackBox.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/BlackBox.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/7c0d9aa469afc2bb547778b91046739979f11ed5",
+      "git_blob_sha1": "7c0d9aa469afc2bb547778b91046739979f11ed5",
+      "sha256": "b9a01516528beb25722b28731094ee162b99e824346be135f3eae861be3edbe2",
+      "bytes": 86688
+    },
+    {
+      "path": "Pod/Simple/Checker.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/Checker.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/3b22a3d6cd91792360bbda3dbd6531e0b358fde9",
+      "git_blob_sha1": "3b22a3d6cd91792360bbda3dbd6531e0b358fde9",
+      "sha256": "6de9f1003bc95479633f8f9c7f377f99131930ef2cc38260e1a1dd584af221ff",
+      "bytes": 5432
+    },
+    {
+      "path": "Pod/Simple/Debug.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/Debug.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/7f51efa9dc47e9a506f835c77fb37c2f836876f8",
+      "git_blob_sha1": "7f51efa9dc47e9a506f835c77fb37c2f836876f8",
+      "sha256": "13201f552f30a649e105c7cbe41b157f6bcc337757f988a1f60efe33f734dffe",
+      "bytes": 4625
+    },
+    {
+      "path": "Pod/Simple/DumpAsText.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/DumpAsText.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/dfcee5d2b4ab066015a9577b6ede361e64cdf1f4",
+      "git_blob_sha1": "dfcee5d2b4ab066015a9577b6ede361e64cdf1f4",
+      "sha256": "02a36b8ad151dcda7e2d40396947659ac20c658204b3e1594aabfda5098b8d42",
+      "bytes": 4035
+    },
+    {
+      "path": "Pod/Simple/DumpAsXML.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/DumpAsXML.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/c5e719cdf8e76fee22d4acf72cc4d8ed3dc29461",
+      "git_blob_sha1": "c5e719cdf8e76fee22d4acf72cc4d8ed3dc29461",
+      "sha256": "9281df7760d986f45d31efcdfe3dbd91123be7d0fb787a1b10985b4081c7f8cd",
+      "bytes": 4560
+    },
+    {
+      "path": "Pod/Simple/HTML.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/HTML.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/cebf5702a8b1e63577ba825b5ac1c16b3376dca1",
+      "git_blob_sha1": "cebf5702a8b1e63577ba825b5ac1c16b3376dca1",
+      "sha256": "4e01e8fd5b18cff27220bba1083b705e503e0193b372419f1022b254dd9aeaae",
+      "bytes": 34759
+    },
+    {
+      "path": "Pod/Simple/HTMLBatch.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/HTMLBatch.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/cd33a4c97c12f227328bf963eff8ddb48b324c91",
+      "git_blob_sha1": "cd33a4c97c12f227328bf963eff8ddb48b324c91",
+      "sha256": "64517300bf128f02ae9540ee7977bdbc5e051f0a5873a2f20544c7dde96e77ca",
+      "bytes": 40656
+    },
+    {
+      "path": "Pod/Simple/HTMLLegacy.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/HTMLLegacy.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/f78de90144fbf42f63e99987194b752246b450f3",
+      "git_blob_sha1": "f78de90144fbf42f63e99987194b752246b450f3",
+      "sha256": "1f1b70ba8c03e9717b9be182920b15b84243f52dc2771392cafad3fb3dd34452",
+      "bytes": 2758
+    },
+    {
+      "path": "Pod/Simple/JustPod.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/JustPod.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/935c9e8282158e6b29568131695d9897c86202ec",
+      "git_blob_sha1": "935c9e8282158e6b29568131695d9897c86202ec",
+      "sha256": "16d6a84afd73a692c58f6d40b982a81ab3550b8834f8e3406a48e5b97b6ded48",
+      "bytes": 9637
+    },
+    {
+      "path": "Pod/Simple/LinkSection.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/LinkSection.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/c14dabcea277b4ec3cdda49c275688a1226a6ace",
+      "git_blob_sha1": "c14dabcea277b4ec3cdda49c275688a1226a6ace",
+      "sha256": "ab7c90540f9b93895903026f0125df56fcaa75e663274d75d5d8c7396a585277",
+      "bytes": 4301
+    },
+    {
+      "path": "Pod/Simple/Methody.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/Methody.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/cc096facbb501034b3f9d45393f3b489385f2c99",
+      "git_blob_sha1": "cc096facbb501034b3f9d45393f3b489385f2c99",
+      "sha256": "903526d53a26225072cfbff723f607ff41926e230d60b925b9c89c13075245f2",
+      "bytes": 3571
+    },
+    {
+      "path": "Pod/Simple/Progress.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/Progress.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/d1eaba2d6f70f62c52ca84f50e0f4f90538e50a8",
+      "git_blob_sha1": "d1eaba2d6f70f62c52ca84f50e0f4f90538e50a8",
+      "sha256": "8d2f8a7e5b546ff40ca3cd61c44910d3626fdda1bc779c2fdd928fa686aae3fc",
+      "bytes": 2413
+    },
+    {
+      "path": "Pod/Simple/PullParser.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/PullParser.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/8c00592fba7339bcb3be3bd8f394b0c0228a41fa",
+      "git_blob_sha1": "8c00592fba7339bcb3be3bd8f394b0c0228a41fa",
+      "sha256": "b14d10e0bb584f4b2211528be99d9a9e440dd9bd486249e74a1de8d6b9aee862",
+      "bytes": 25729
+    },
+    {
+      "path": "Pod/Simple/PullParserEndToken.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/PullParserEndToken.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/2d656e088fbbe4bec1d23b82d368c5f722cee9e3",
+      "git_blob_sha1": "2d656e088fbbe4bec1d23b82d368c5f722cee9e3",
+      "sha256": "1349677d6034a60231272e0868e8d24f6c989e715fd677b0bdb40f24bffe478e",
+      "bytes": 2884
+    },
+    {
+      "path": "Pod/Simple/PullParserStartToken.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/PullParserStartToken.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/5e1bf71ed9a6be8b7075bf73ab46c8d1a73f8622",
+      "git_blob_sha1": "5e1bf71ed9a6be8b7075bf73ab46c8d1a73f8622",
+      "sha256": "58766643aed03c0585f44bde91bbeeacfe44212d0df73bdce4defa73a62a640c",
+      "bytes": 4146
+    },
+    {
+      "path": "Pod/Simple/PullParserTextToken.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/PullParserTextToken.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/159839952e0c1fa7ee0ac69715b3e8a15c4475af",
+      "git_blob_sha1": "159839952e0c1fa7ee0ac69715b3e8a15c4475af",
+      "sha256": "a4c468f0aeb336d852bd7198fb242d213ef2891252e4b826d9e5235a66341069",
+      "bytes": 3363
+    },
+    {
+      "path": "Pod/Simple/PullParserToken.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/PullParserToken.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/48cece540f5b6b62edb87935a74ebeb473df5b75",
+      "git_blob_sha1": "48cece540f5b6b62edb87935a74ebeb473df5b75",
+      "sha256": "1b30c6a80a503d3f125fe1cba9848c2fa0e6718cc8524040a452931ee30cd63c",
+      "bytes": 4004
+    },
+    {
+      "path": "Pod/Simple/RTF.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/RTF.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/793a8b2a49821dd3659ceaefff639b7426cbd552",
+      "git_blob_sha1": "793a8b2a49821dd3659ceaefff639b7426cbd552",
+      "sha256": "66f3669f9f75bbb245edccd7989d470afd4a723b4fe8ff07501926e147fd7e2f",
+      "bytes": 23556
+    },
+    {
+      "path": "Pod/Simple/Search.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/Search.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/6462549492dc22b6eebf3ca14cb6c088e5770967",
+      "git_blob_sha1": "6462549492dc22b6eebf3ca14cb6c088e5770967",
+      "sha256": "e3c0c0a797477a9c7aaec751549fd31ce0f8ee02f6eab1817ea25b5b76f9f665",
+      "bytes": 35836
+    },
+    {
+      "path": "Pod/Simple/SimpleTree.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/SimpleTree.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/15f457baaff0c3cd409b4b41c1e2dfd712011721",
+      "git_blob_sha1": "15f457baaff0c3cd409b4b41c1e2dfd712011721",
+      "sha256": "4d912b6b8061b878a157ea9bfcbd2ba12c845fa9b6e94c457c4c6a075240b387",
+      "bytes": 4632
+    },
+    {
+      "path": "Pod/Simple/Text.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/Text.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/f44987f4e43840174a07db9c0e0b328ab5e6bb75",
+      "git_blob_sha1": "f44987f4e43840174a07db9c0e0b328ab5e6bb75",
+      "sha256": "48f36c84b3eecfd1d6a25d6a0653cb7b07ded1eadb4d776d5065b7ff92cecf8f",
+      "bytes": 5103
+    },
+    {
+      "path": "Pod/Simple/TextContent.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/TextContent.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/9c2932e37d111154d20000d2458219ba5222f3e7",
+      "git_blob_sha1": "9c2932e37d111154d20000d2458219ba5222f3e7",
+      "sha256": "78032ae43daaedc97f0bfc4f0a6277061f42ff02889b3f1ef2dd6477bb5f8458",
+      "bytes": 2518
+    },
+    {
+      "path": "Pod/Simple/TiedOutFH.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/TiedOutFH.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/af5e745a3026fbd917d8249eb305c56b9f4c7150",
+      "git_blob_sha1": "af5e745a3026fbd917d8249eb305c56b9f4c7150",
+      "sha256": "b3903d3a8d170284e60f9e08c660e091bb1e8d9f8ae4191fc87e5dd41096dac9",
+      "bytes": 2751
+    },
+    {
+      "path": "Pod/Simple/Transcode.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/Transcode.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/fef5d17d45da3e5b4ca3e475021b0885741c9a58",
+      "git_blob_sha1": "fef5d17d45da3e5b4ca3e475021b0885741c9a58",
+      "sha256": "6282bf72cdebe16c95f31929743d8b6aac1a072ec2ccd4054afa8a9df987993f",
+      "bytes": 736
+    },
+    {
+      "path": "Pod/Simple/TranscodeDumb.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/TranscodeDumb.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/776b06764599f515b195e6f160d27ae307f2729d",
+      "git_blob_sha1": "776b06764599f515b195e6f160d27ae307f2729d",
+      "sha256": "620dad5fe2c24dd9a055aa6095c291e31a1f1386fc97300f607d093a6d25c5cb",
+      "bytes": 2693
+    },
+    {
+      "path": "Pod/Simple/TranscodeSmart.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/TranscodeSmart.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/f46d1f9d05a2361b3d7ca27ef278156179781d1d",
+      "git_blob_sha1": "f46d1f9d05a2361b3d7ca27ef278156179781d1d",
+      "sha256": "d3a61148df8d8bdca821786a93d5b339607f6187e4f17dafeeaad9bbf926469d",
+      "bytes": 715
+    },
+    {
+      "path": "Pod/Simple/XHTML.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/XHTML.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/e8d7e1112709a3be54dd3666d8cce3f36b8d7c90",
+      "git_blob_sha1": "e8d7e1112709a3be54dd3666d8cce3f36b8d7c90",
+      "sha256": "2aac1bea0862fe831002256f8a7a68d5c902824f2cbcc163a57dabdbd9678a29",
+      "bytes": 26592
+    },
+    {
+      "path": "Pod/Simple/XMLOutStream.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Simple/lib/Pod/Simple/XMLOutStream.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/74d8c16b7b672bd0e2cc985d332ff643862691fd",
+      "git_blob_sha1": "74d8c16b7b672bd0e2cc985d332ff643862691fd",
+      "sha256": "31f29c497f6949ad6f9bd53b05a06ab76cd15eaf90a34b19214ce06df97ac093",
+      "bytes": 4666
+    },
+    {
+      "path": "Pod/Man.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/podlators/lib/Pod/Man.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/5ed95bbc90d21ff736fdb1b12ac3539c8cfa8129",
+      "git_blob_sha1": "5ed95bbc90d21ff736fdb1b12ac3539c8cfa8129",
+      "sha256": "97cf37fd8a60d7f66c0335e7ddcfb02e27e6c9cd600d4fa8b041939a612a2d4c",
+      "bytes": 93121
+    },
+    {
+      "path": "Pod/ParseLink.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/podlators/lib/Pod/ParseLink.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/83bc3f7565b2705e31b45ecea19b773dbafc5025",
+      "git_blob_sha1": "83bc3f7565b2705e31b45ecea19b773dbafc5025",
+      "sha256": "67aa0f26783e23ccb8b4ee47173481eba5d949f6cb859e939026508b36d54339",
+      "bytes": 6377
+    },
+    {
+      "path": "Pod/Text.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/podlators/lib/Pod/Text.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/83a7ce22a823420f00efa332f7dd6c0e8dc0d057",
+      "git_blob_sha1": "83a7ce22a823420f00efa332f7dd6c0e8dc0d057",
+      "sha256": "31251661deaa5b7fe07227f82bda6198d6e113fcc212778363fa4b84c6484a04",
+      "bytes": 44460
+    },
+    {
+      "path": "Pod/Text/Color.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/podlators/lib/Pod/Text/Color.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/2d656d6a3dc302dea6b439532e52816eec4e2ec8",
+      "git_blob_sha1": "2d656d6a3dc302dea6b439532e52816eec4e2ec8",
+      "sha256": "e29257ca94847100eb2a039845941d1714f89712d68e44d55578ac1d3849d60b",
+      "bytes": 6558
+    },
+    {
+      "path": "Pod/Text/Overstrike.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/podlators/lib/Pod/Text/Overstrike.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/3135c8863cbaa8cf3dcf79e3b0543488e5081999",
+      "git_blob_sha1": "3135c8863cbaa8cf3dcf79e3b0543488e5081999",
+      "sha256": "ea326f97c9ba0bbe57c724429293545382fd62906dd52fdebc9454aa8db79599",
+      "bytes": 6915
+    },
+    {
+      "path": "Pod/Text/Termcap.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/podlators/lib/Pod/Text/Termcap.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/d4b74874d87a9a07d36a5ef46ee04ac227c0b030",
+      "git_blob_sha1": "d4b74874d87a9a07d36a5ef46ee04ac227c0b030",
+      "sha256": "3696e9469910a0e9e58ee35dbaa545328d975427ead9371b30bc2fbf969471b2",
+      "bytes": 9458
+    },
+    {
+      "path": "Pod/Escapes.pm",
+      "url": "https://raw.githubusercontent.com/Perl/perl5/55dd2f792ffc8cefe614350a411f785374281b24/cpan/Pod-Escapes/lib/Pod/Escapes.pm",
+      "retrieval_url": "https://api.github.com/repos/Perl/perl5/git/blobs/00501db3e8849eea72cdd17d287b9625c318bf9f",
+      "git_blob_sha1": "00501db3e8849eea72cdd17d287b9625c318bf9f",
+      "sha256": "30906651e42081fe5f4490c45a3c4647e4c1fdbd3d1a8c8672fee271f6e94df0",
+      "bytes": 17888
+    }
+  ]
+}

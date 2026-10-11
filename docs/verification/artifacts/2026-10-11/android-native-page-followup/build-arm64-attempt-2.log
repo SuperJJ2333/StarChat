@@ -1,0 +1,8 @@
+Configuring OpenSSL version 1.1.1q (0x1010111fL) for android-arm64
+Using os-specific seed configuration
+Creating configdata.pm
+Creating Makefile
+Can't locate Pod/Usage.pm in @INC (you may need to install the Pod::Usage module) (@INC entries checked: . /usr/lib/perl5/site_perl /usr/share/perl5/site_perl /usr/lib/perl5/vendor_perl /usr/share/perl5/vendor_perl /usr/lib/perl5/core_perl /usr/share/perl5/core_perl) at configdata.pm line 17117.
+BEGIN failed--compilation aborted at configdata.pm line 17117.
+Compilation failed in require.
+BEGIN failed--compilation aborted.

@@ -1,0 +1,36 @@
+Configuring OpenSSL version 1.1.1q (0x1010111fL) for android-arm64
+Using os-specific seed configuration
+Creating configdata.pm
+Creating Makefile
+
+**********************************************************************
+***                                                                ***
+***   OpenSSL has been successfully configured                     ***
+***                                                                ***
+***   If you encounter a problem while building, please open an    ***
+***   issue on GitHub <https://github.com/openssl/openssl/issues>  ***
+***   and include the output from the following command:           ***
+***                                                                ***
+***       perl configdata.pm --dump                                ***
+***                                                                ***
+***   (If you are new to OpenSSL, you might want to consult the    ***
+***   'Troubleshooting' section in the INSTALL file first)         ***
+***                                                                ***
+**********************************************************************
+Makefile:754: target 'libcrypto.so' given more than once in the same rule
+Makefile:5905: target 'libssl.so' given more than once in the same rule
+perl "-I." -Mconfigdata "../source/openssl-1.1.1q/util/dofile.pl" \
+    "-oMakefile" ../source/openssl-1.1.1q/include/crypto/bn_conf.h.in > include/crypto/bn_conf.h
+perl "-I." -Mconfigdata "../source/openssl-1.1.1q/util/dofile.pl" \
+    "-oMakefile" ../source/openssl-1.1.1q/include/crypto/dso_conf.h.in > include/crypto/dso_conf.h
+Can't locate Pod/Usage.pm in @INC (you may need to install the Pod::Usage module) (@INC entries checked: . C /Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support /usr/lib/perl5/site_perl /usr/share/perl5/site_perl /usr/lib/perl5/vendor_perl /usr/share/perl5/vendor_perl /usr/lib/perl5/core_perl /usr/share/perl5/core_perl) at configdata.pm line 17117.
+BEGIN failed--compilation aborted at configdata.pm line 17117.
+Compilation failed in require.
+BEGIN failed--compilation aborted.
+make: *** [Makefile:695: include/crypto/bn_conf.h] Error 2
+make: *** Waiting for unfinished jobs....
+Can't locate Pod/Usage.pm in @INC (you may need to install the Pod::Usage module) (@INC entries checked: . C /Users/Administrator/.codex/worktrees/android2214-release/StarChat/docs/verification/artifacts/2026-10-11/android-native-page-followup/perl-support /usr/lib/perl5/site_perl /usr/share/perl5/site_perl /usr/lib/perl5/vendor_perl /usr/share/perl5/vendor_perl /usr/lib/perl5/core_perl /usr/share/perl5/core_perl) at configdata.pm line 17117.
+BEGIN failed--compilation aborted at configdata.pm line 17117.
+Compilation failed in require.
+BEGIN failed--compilation aborted.
+make: *** [Makefile:698: include/crypto/dso_conf.h] Error 2

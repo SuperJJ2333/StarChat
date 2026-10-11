@@ -1,0 +1,7 @@
+arm64 config_equal True
+crypto layout True True removed 0 added 0 soname True needed True
+ssl layout True True removed 0 added 0 soname True needed True
+x86_64 config_equal True
+crypto layout True True removed 0 added 0 soname True needed True
+ssl layout True True removed 0 added 0 soname True needed True
+STATIC GATE PASS; Android runtime and crypto vector gates NOT RUN
