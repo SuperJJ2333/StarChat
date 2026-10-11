@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:liuhetong_mobile/core/local_database_factory.dart';
 import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 import 'package:liuhetong_mobile/features/matrix/local_identity_preflight.dart';
 import 'package:matrix/matrix.dart';
@@ -20,9 +22,113 @@ Future<Map<String, List<int>?>> _bytesOf(String path) async {
   return state;
 }
 
+// No platform channel or pending-media directory is involved. Each invocation
+// runs in a fresh isolate so sqflite's first factory callback is truly cold.
+Future<Map<String, Object?>> _coldLibraryOrder(bool metadataFirst) async {
+  final fixture = await Directory.systemTemp.createTemp('ios_factory_order_');
+  final metadataPath = p.join(fixture.path, 'metadata.sqlite');
+  final cipherPath = p.join(fixture.path, 'keyed.sqlite');
+  final keyedFactory =
+      createDatabaseFactoryFfi(ffiInit: SQfLiteEncryptionHelper.ffiInit);
+  final encryption = SQfLiteEncryptionHelper(
+      factory: keyedFactory, path: cipherPath, cipher: _cipher);
+  Database? metadata;
+  Database? keyed;
+  Future<void> openMetadata() async {
+    metadata = await localMetadataDatabaseFactory.openDatabase(metadataPath,
+        options: OpenDatabaseOptions(singleInstance: false));
+  }
+
+  Future<void> openKeyed() async {
+    keyed = await keyedFactory.openDatabase(cipherPath,
+        options: OpenDatabaseOptions(
+            singleInstance: false, onConfigure: encryption.applyPragmaKey));
+  }
+
+  Future<String> header(String path) async {
+    final file = await File(path).open();
+    try {
+      return String.fromCharCodes(await file.read(16));
+    } finally {
+      await file.close();
+    }
+  }
+
+  try {
+    if (metadataFirst) {
+      await openMetadata();
+      await openKeyed();
+    } else {
+      await openKeyed();
+      await openMetadata();
+    }
+    final metadataCipher = await metadata!.rawQuery('PRAGMA cipher_version');
+    final keyedCipher = await keyed!.rawQuery('PRAGMA cipher_version');
+    await metadata!.execute('CREATE TABLE synthetic (v INTEGER)');
+    await keyed!.execute('CREATE TABLE synthetic (v INTEGER)');
+    await metadata!.insert('synthetic', {'v': 17});
+    await keyed!.insert('synthetic', {'v': 29});
+    await metadata!.close();
+    metadata = null;
+    await keyed!.close();
+    keyed = null;
+    final metadataHeader = await header(metadataPath);
+    final keyedHeader = await header(cipherPath);
+    await openMetadata();
+    await openKeyed();
+    var wrongKeyRejected = false;
+    Database? wrongKey;
+    try {
+      final wrong = SQfLiteEncryptionHelper(
+          factory: keyedFactory,
+          path: cipherPath,
+          cipher: 'incorrect-synthetic-key');
+      wrongKey = await keyedFactory.openDatabase(cipherPath,
+          options: OpenDatabaseOptions(
+              singleInstance: false, onConfigure: wrong.applyPragmaKey));
+      await wrongKey.query('synthetic');
+    } on DatabaseException {
+      wrongKeyRejected = true;
+    } finally {
+      await wrongKey?.close();
+    }
+    // Read both live connections after the wrong-key attempt, not before it.
+    return {
+      'metadataCipher': metadataCipher.isNotEmpty,
+      'keyedCipher': keyedCipher.isNotEmpty,
+      'metadataHeader': metadataHeader,
+      'keyedHeader': keyedHeader,
+      'metadataValue': (await metadata!.query('synthetic')).single['v'],
+      'keyedValue': (await keyed!.query('synthetic')).single['v'],
+      'wrongKeyRejected': wrongKeyRejected,
+    };
+  } finally {
+    await keyed?.close();
+    await metadata?.close();
+    await fixture.delete(recursive: true);
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized().defaultTestTimeout =
       const Timeout(Duration(minutes: 2));
+
+  for (final metadataFirst in [true, false]) {
+    testWidgets(
+        'real iOS cold ${metadataFirst ? 'metadata' : 'Matrix keyed'} '
+        'first isolates connection keys and preserves file formats', (_) async {
+      expect(Platform.isIOS, isTrue,
+          reason: 'This gate must exercise the linked iOS SQLCipher library.');
+      final result = await Isolate.run(() => _coldLibraryOrder(metadataFirst));
+      expect(result['metadataCipher'], isTrue);
+      expect(result['keyedCipher'], isTrue);
+      expect(result['metadataHeader'], 'SQLite format 3\u0000');
+      expect(result['keyedHeader'], isNot('SQLite format 3\u0000'));
+      expect(result['metadataValue'], 17);
+      expect(result['keyedValue'], 29);
+      expect(result['wrongKeyRejected'], isTrue);
+    });
+  }
 
   testWidgets('real iOS SQLCipher preflight reads WAL without touching files',
       (_) async {
