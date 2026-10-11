@@ -18,6 +18,13 @@ class _RecordingPusherGateway implements MatrixPusherGateway {
   _RecordingPusherGateway({this.failCreate = false});
   final bool failCreate;
   final created = <Pusher>[];
+  bool failRead = false;
+
+  @override
+  Future<List<Pusher>> list() async {
+    if (failRead) throw StateError('synthetic unavailable');
+    return List.of(created);
+  }
 
   @override
   Future<void> create(Pusher pusher) async {
@@ -94,7 +101,8 @@ void main() {
       gateway: _RecordingPusherGateway(),
       tokenProvider: _FakeTokenProvider('t'),
       appId: MatrixPusherService.appIdGetui,
-      gatewayUrl: Uri.parse('https://push.example.test/_matrix/push/v1/getui/notify'),
+      gatewayUrl:
+          Uri.parse('https://push.example.test/_matrix/push/v1/getui/notify'),
     );
     registry.register(service);
     expect(registry.services, hasLength(1));
@@ -102,8 +110,7 @@ void main() {
     expect(registry.services, isEmpty);
   });
 
-  testWidgets('诊断页：个推通道完整状态行；CID 只显示存在性（脱敏红线）',
-      (tester) async {
+  testWidgets('诊断页：个推通道完整状态行；CID 只显示存在性（脱敏红线）', (tester) async {
     await _mockGetui(cid: 'SECRET-cid-must-not-leak');
     final provider = GetuiPushTokenProvider();
     await provider.initialize();
@@ -132,6 +139,9 @@ void main() {
     expect(text, contains('已初始化'), reason: 'SDK 初始化状态行');
     expect(text, contains('已获取'), reason: 'CID 存在性行');
     expect(text, contains('已注册'), reason: 'pusher 注册状态行');
+    expect(text, contains('最近写入'));
+    expect(text, contains('最近核验'));
+    expect(text, contains('已核验'));
     expect(text, contains('push.example.test'), reason: '网关主机可见');
     expect(text, contains('通知权限'), reason: '通知权限状态行');
     expect(text, contains('电池优化'), reason: '电池优化状态行');
@@ -173,14 +183,14 @@ void main() {
     await service.dispose();
   });
 
-  testWidgets('诊断页：非个推通道不显示 SDK/CID 行（该行仅个推适用）',
-      (tester) async {
+  testWidgets('诊断页：非个推通道不显示 SDK/CID 行（该行仅个推适用）', (tester) async {
     await _mockGetui(cid: 'SECRET-cid-must-not-leak');
     final service = MatrixPusherService(
       gateway: _RecordingPusherGateway(),
       tokenProvider: _FakeTokenProvider('fcm-token'),
       appId: MatrixPusherService.appIdAndroid,
-      gatewayUrl: Uri.parse('https://sygnal.example.test/_matrix/push/v1/notify'),
+      gatewayUrl:
+          Uri.parse('https://sygnal.example.test/_matrix/push/v1/notify'),
     );
     await service.ensureRegistered();
     final registry = PushStatusRegistry()..register(service);
@@ -195,9 +205,30 @@ void main() {
 
     final text = _allText(tester);
     expect(text, contains('已注册'));
-    expect(text.contains('SDK 初始化'), isFalse,
-        reason: 'SDK/CID 行只对个推通道渲染');
+    expect(text.contains('SDK 初始化'), isFalse, reason: 'SDK/CID 行只对个推通道渲染');
     expect(text.contains('fcm-token'), isFalse, reason: 'pushkey 原值不落 UI');
+    await service.dispose();
+  });
+
+  testWidgets('remote read failure shows unknown despite past successful write',
+      (tester) async {
+    final gateway = _RecordingPusherGateway();
+    final service = MatrixPusherService(
+        gateway: gateway,
+        tokenProvider: _FakeTokenProvider('synthetic-status-token'),
+        appId: MatrixPusherService.appIdIOS,
+        gatewayUrl: Uri.parse('https://push.test/_matrix/push/v1/notify'));
+    await service.ensureRegistered();
+    gateway.failRead = true;
+    await service.recheck();
+    final registry = PushStatusRegistry()..register(service);
+    await tester.pumpWidget(CupertinoApp(
+        home: NotificationDiagnosticsPage(
+            registry: registry, consentStore: _FakeConsentStore(true))));
+    await tester.pumpAndSettle();
+    expect(_allText(tester), contains('待同步/未知'));
+    expect(_allText(tester), isNot(contains('已核验')));
+    expect(service.lastSuccessAt, isNotNull);
     await service.dispose();
   });
 }

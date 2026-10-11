@@ -391,16 +391,24 @@ void main() {
 final class _RecordingPusherGateway implements MatrixPusherGateway {
   final created = <Pusher>[];
   final deleted = <PusherId>[];
+  final current = <(String, String), Pusher>{};
   var failCreate = false;
+
+  @override
+  Future<List<Pusher>> list() async => current.values.toList();
 
   @override
   Future<void> create(Pusher pusher) async {
     if (failCreate) throw Exception('synapse 502');
     created.add(pusher);
+    current[(pusher.appId, pusher.pushkey)] = pusher;
   }
 
   @override
-  Future<void> delete(PusherId id) async => deleted.add(id);
+  Future<void> delete(PusherId id) async {
+    deleted.add(id);
+    current.remove((id.appId, id.pushkey));
+  }
 }
 
 final class _FakeTokenProvider implements PushTokenProvider {
@@ -444,6 +452,9 @@ final class _GatedPusherGateway implements MatrixPusherGateway {
   Pusher? current;
 
   @override
+  Future<List<Pusher>> list() async => [if (current != null) current!];
+
+  @override
   Future<void> create(Pusher pusher) async {
     onCreateEntered?.call();
     final gate = gateCreate;
@@ -461,6 +472,7 @@ final class _GatedPusherGateway implements MatrixPusherGateway {
 
 final class _RemoteBinding {
   String? account;
+  Pusher? pusher;
 }
 
 final class _AccountGateway implements MatrixPusherGateway {
@@ -470,11 +482,16 @@ final class _AccountGateway implements MatrixPusherGateway {
   final entered = Completer<void>();
   Completer<void>? gate;
   @override
+  Future<List<Pusher>> list() async => [
+        if (remote.account == account && remote.pusher != null) remote.pusher!,
+      ];
+  @override
   Future<void> create(Pusher pusher) async {
     if (!entered.isCompleted) entered.complete();
     await gate?.future;
     // append=false removes another account's existing app/token binding.
     remote.account = account;
+    remote.pusher = pusher;
   }
 
   @override

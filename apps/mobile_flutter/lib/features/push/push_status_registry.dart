@@ -16,5 +16,15 @@ final class PushStatusRegistry {
 
   void register(MatrixPusherService service) => _services.add(service);
 
+  Future<void> recheck() => Future.wait(
+        List.of(_services).map((service) => service.recheck()),
+      );
+
+  /// Preference changes may create a new identity even during read retry backoff.
+  Future<void> synchronizePreferences() async {
+    await Future.wait(
+        List.of(_services).map((service) => service.ensureRegistered()));
+  }
+
   void clear() => _services.clear();
 }

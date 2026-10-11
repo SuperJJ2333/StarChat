@@ -8,6 +8,8 @@ import 'push_token_provider.dart';
 
 /// Matrix pusher 网关抽象（测试替身注入；SDK Client 为具体类不可 mock）。
 abstract interface class MatrixPusherGateway {
+  Future<List<Pusher>> list();
+
   Future<void> create(Pusher pusher);
 
   Future<void> delete(PusherId id);
@@ -18,6 +20,11 @@ final class ClientMatrixPusherGateway implements MatrixPusherGateway {
   ClientMatrixPusherGateway(this.client);
 
   final Client client;
+
+  @override
+  Future<List<Pusher>> list() async =>
+      await client.getPushers() ??
+      (throw StateError('pusher list unavailable'));
 
   @override
   Future<void> create(Pusher pusher) => client.postPusher(pusher);
@@ -77,8 +84,11 @@ final class MatrixPusherService {
     required this.gatewayUrl,
     this.deviceDisplayName = 'ChatFlow',
     this.nativeMetadata,
+    this.iosSoundEnabled,
+    DateTime Function()? now,
     NotificationDiagnostics? diagnostics,
-  }) : diagnostics = diagnostics ?? NotificationDiagnostics.shared;
+  })  : now = now ?? DateTime.now,
+        diagnostics = diagnostics ?? NotificationDiagnostics.shared;
 
   static const appIdAndroid = 'com.liuhetong.mobile.android';
   static const appIdIOS = 'com.liuhetong.mobile.ios';
@@ -102,7 +112,10 @@ final class MatrixPusherService {
   final Uri? gatewayUrl;
   final String deviceDisplayName;
   final Map<String, Object>? Function()? nativeMetadata;
+  final bool Function()? iosSoundEnabled;
   final NotificationDiagnostics diagnostics;
+  final DateTime Function() now;
+  static const verificationInterval = Duration(minutes: 5);
 
   String? _registeredToken;
   String? _registeredIdentity;
@@ -128,16 +141,30 @@ final class MatrixPusherService {
   DateTime? _lastSuccessAt;
   DateTime? _lastFailureAt;
   String _lastFailureKind = '';
+  DateTime? _lastRemoteVerifiedAt;
+  DateTime? _nextRetryAt;
+  bool _remoteKnown = false;
+  bool _forceRemoteCheck = false;
+  bool _checkingRemote = false;
+  Timer? _verificationTimer;
 
   static const _retryDelays = <Duration>[
     Duration(seconds: 10),
     Duration(seconds: 30),
     Duration(minutes: 2),
-    Duration(minutes: 10),
+    Duration(minutes: 5),
   ];
 
   bool get isRegistered => _registeredToken != null;
   DateTime? get lastSuccessAt => _lastSuccessAt;
+  DateTime? get lastRemoteVerifiedAt => _lastRemoteVerifiedAt;
+  bool get isRemoteVerified =>
+      !_disposed &&
+      !_unregistering &&
+      _binding?.owner == _owner &&
+      _remoteKnown &&
+      _lastRemoteVerifiedAt != null &&
+      now().difference(_lastRemoteVerifiedAt!) < verificationInterval;
   DateTime? get lastFailureAt => _lastFailureAt;
   String get lastFailureKind => _lastFailureKind;
 
@@ -195,7 +222,8 @@ final class MatrixPusherService {
     if (generation != _generation) return false;
     if (token == null || token.isEmpty) {
       _lastFailureKind = 'no-token';
-      _lastFailureAt = DateTime.now();
+      _lastFailureAt = now();
+      _remoteKnown = false;
       diagnostics.record(
           NotificationDiagStage.push, 'no device token; pusher off');
       if (generation == _generation) _scheduleRetry();
@@ -203,41 +231,53 @@ final class MatrixPusherService {
     }
     final metadata = nativeMetadata?.call();
     if (nativeMetadata != null && metadata == null) return false;
-    final identity = jsonEncode([token, metadata]);
+    final audible =
+        appId == appIdIOS ? (iosSoundEnabled?.call() ?? true) : null;
+    final identity = jsonEncode([token, metadata, audible]);
     try {
       final binding = _lease(token);
       if (binding.owner > _owner) return false;
       binding.owner = _owner;
       return await binding.write(() async {
         if (generation != _generation || binding.owner != _owner) return false;
-        if (identity == _registeredIdentity) return true;
-        await gateway.create(
-          Pusher(
-            appId: appId,
-            pushkey: token,
-            kind: 'http',
-            appDisplayName: 'ChatFlow',
-            deviceDisplayName: deviceDisplayName,
-            lang: 'zh-CN',
-            data: PusherData(
-              format: _pushFormat,
-              url: url,
-              additionalProperties: appId == appIdIOS
-                  ? const {
-                      'default_payload': {
-                        'aps': {
-                          'alert': {
-                            'title': '畅聊 ChatFlow',
-                            'body': '您有一条新消息',
-                          },
-                          'sound': 'default',
+        final desired = Pusher(
+          appId: appId,
+          pushkey: token,
+          kind: 'http',
+          appDisplayName: 'ChatFlow',
+          deviceDisplayName: deviceDisplayName,
+          lang: 'zh-CN',
+          data: PusherData(
+            format: _pushFormat,
+            url: url,
+            additionalProperties: appId == appIdIOS
+                ? {
+                    'default_payload': {
+                      'aps': {
+                        'alert': {
+                          'title': '畅聊 ChatFlow',
+                          'body': '您有一条新消息',
                         },
+                        if (audible!) 'sound': 'default',
                       },
-                    }
-                  : metadata ?? const {},
-            ),
+                    },
+                  }
+                : metadata ?? const {},
           ),
         );
+        if (identity == _registeredIdentity) {
+          if (!_forceRemoteCheck && isRemoteVerified) return true;
+          final matches = await _readMatches(desired);
+          if (generation != _generation || binding.owner != _owner) {
+            return false;
+          }
+          if (matches) {
+            _verified();
+            return true;
+          }
+        }
+        _remoteKnown = false;
+        await gateway.create(desired);
         if (generation != _generation) {
           // 注册完成时会话已注销/切换：服务端已存在该 pusher → 立即补偿
           // 删除，不把旧账号推送绑定留下来。
@@ -249,33 +289,78 @@ final class MatrixPusherService {
         if (binding.owner != _owner) return false;
         _registeredToken = token;
         _registeredIdentity = identity;
-        _lastSuccessAt = DateTime.now();
-        _lastFailureKind = '';
-        _retryCount = 0;
-        _cancelRetry();
+        _lastSuccessAt = now();
+        final matches = await _readMatches(desired);
+        if (generation != _generation || binding.owner != _owner) return false;
+        if (!matches) throw StateError('pusher readback mismatch');
+        _verified();
         diagnostics.record(NotificationDiagStage.push,
             'pusher registered (format=$_pushFormat)');
         return true;
       });
     } catch (error) {
-      if (generation != _generation) return false;
+      if (generation != _generation || _binding?.owner != _owner) return false;
+      _remoteKnown = false;
       _lastFailureKind = error.runtimeType.toString();
-      _lastFailureAt = DateTime.now();
+      _lastFailureAt = now();
       diagnostics.record(
           NotificationDiagStage.push, 'register failed: ${error.runtimeType}');
-      _scheduleRetry();
+      final retryAfter =
+          error is MatrixException && error.errcode == 'M_LIMIT_EXCEEDED'
+              ? error.retryAfterMs
+              : null;
+      _scheduleRetry(
+          minimumDelay: retryAfter != null && retryAfter > 0
+              ? Duration(milliseconds: retryAfter)
+              : null);
       return false;
     }
   }
 
-  void _scheduleRetry() {
-    if (_retryCount >= _retryDelays.length) {
-      diagnostics.record(NotificationDiagStage.push,
-          'pusher retry: exhausted ${_retryDelays.length} attempts; waiting for external trigger');
-      return;
+  Future<bool> _readMatches(Pusher desired) async {
+    _forceRemoteCheck = false;
+    _checkingRemote = true;
+    try {
+      final entries = await gateway.list().timeout(const Duration(seconds: 10));
+      return entries.any((entry) =>
+          entry.appId == desired.appId &&
+          entry.pushkey == desired.pushkey &&
+          entry.kind == desired.kind &&
+          _sameJson(entry.data.toJson(), desired.data.toJson()));
+    } finally {
+      _checkingRemote = false;
     }
+  }
+
+  void _verified() {
+    _remoteKnown = true;
+    _lastRemoteVerifiedAt = now();
+    _lastFailureKind = '';
+    _cancelRetry();
+  }
+
+  static bool _sameJson(Object? left, Object? right) {
+    if (left is Map && right is Map) {
+      return left.length == right.length &&
+          left.keys.every((key) =>
+              right.containsKey(key) && _sameJson(left[key], right[key]));
+    }
+    if (left is List && right is List) {
+      return left.length == right.length &&
+          List.generate(left.length, (i) => i)
+              .every((i) => _sameJson(left[i], right[i]));
+    }
+    return left == right;
+  }
+
+  void _scheduleRetry({Duration? minimumDelay}) {
     _retryTimer?.cancel();
-    final delay = _retryDelays[_retryCount++];
+    final index = _retryCount < _retryDelays.length
+        ? _retryCount++
+        : _retryDelays.length - 1;
+    var delay = _retryDelays[index];
+    if (minimumDelay != null && minimumDelay > delay) delay = minimumDelay;
+    _nextRetryAt = now().add(delay);
     diagnostics.record(NotificationDiagStage.push,
         'pusher retry scheduled in ${delay.inSeconds}s (attempt $_retryCount/${_retryDelays.length})');
     _retryTimer = Timer(delay, () {
@@ -288,23 +373,23 @@ final class MatrixPusherService {
     _retryTimer?.cancel();
     _retryTimer = null;
     _retryCount = 0;
+    _nextRetryAt = null;
   }
 
   /// 外部触发重检查（resume/网络恢复/登录恢复）：不重置退避计数，
   /// 但立即尝试一次；若已在注册中则跳过。
   Future<void> recheck() async {
-    if (isRegistered) {
-      // 已注册：仅在有 CID 变化时重注册（token() 有等待逻辑会返回
-      // 当前 CID，如果与已注册一致则幂等跳过）。
-      await ensureRegistered();
-      return;
-    }
-    _cancelRetry();
+    if (_nextRetryAt != null && now().isBefore(_nextRetryAt!)) return;
+    if (!_checkingRemote) _forceRemoteCheck = true;
     await ensureRegistered();
   }
 
   /// Token 轮换监听：FCM 刷新 token 后自动重注册。
   Future<void> watchTokenRefresh() async {
+    if (_disposed || _unregistering) return;
+    _verificationTimer ??= Timer.periodic(verificationInterval, (_) {
+      unawaited(recheck());
+    });
     _tokenSub ??= tokenProvider.tokenUpdates().listen((token) {
       if (token == null || token.isEmpty) return;
       if (token == _registeredToken) return;
@@ -321,6 +406,9 @@ final class MatrixPusherService {
     if (_unregistering) return;
     _unregistering = true;
     _generation++;
+    _remoteKnown = false;
+    _verificationTimer?.cancel();
+    _verificationTimer = null;
     _cancelRetry();
     try {
       // 等待在途注册收敛（注销不与注册竞态）。
@@ -359,6 +447,9 @@ final class MatrixPusherService {
     if (_disposed) return;
     _disposed = true;
     _generation++;
+    _remoteKnown = false;
+    _verificationTimer?.cancel();
+    _verificationTimer = null;
     _cancelRetry();
     await _tokenSub?.cancel();
     _tokenSub = null;

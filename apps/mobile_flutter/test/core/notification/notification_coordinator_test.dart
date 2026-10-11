@@ -48,12 +48,14 @@ final class _FakePreferenceStore implements NotificationPreferenceStore {
   _FakePreferenceStore([this.values = const NotificationPreferenceValues()]);
 
   NotificationPreferenceValues values;
+  Object? saveError;
 
   @override
   Future<NotificationPreferenceValues> load() async => values;
 
   @override
   Future<void> save(NotificationPreferenceValues value) async {
+    if (saveError != null) throw saveError!;
     values = value;
   }
 }
@@ -190,6 +192,7 @@ NotificationCoordinator _buildCoordinator({
   InAppBannerController? banners,
   SoundCooldownGate? cooldownGate,
   NativeMessagePolicy? nativePolicy,
+  Future<void> Function()? onPreferencesChanged,
 }) =>
     NotificationCoordinator(
       preferenceStore: prefs,
@@ -203,6 +206,7 @@ NotificationCoordinator _buildCoordinator({
       unreadSource: unread,
       cooldownGate: cooldownGate,
       nativePolicy: nativePolicy,
+      onPreferencesChanged: onPreferencesChanged,
     );
 
 /// 等待广播流事件与未 await 的 handleEvent 微任务完成。
@@ -236,6 +240,39 @@ Future<void> _disposeWidgetCoordinator(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+      'remote preference convergence follows durable save and current snapshot',
+      () async {
+    final prefs = _FakePreferenceStore();
+    final source = _StreamEventSource();
+    final observed = <bool>[];
+    late NotificationCoordinator coordinator;
+    coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: _FakeSystemPresenter(),
+      source: source,
+      prefs: prefs,
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager(),
+      onPreferencesChanged: () async {
+        expect(prefs.values, coordinator.preferences);
+        observed.add(coordinator.preferences.soundEnabled);
+      },
+    );
+    await coordinator.updatePreferences(const NotificationPreferenceValues(
+        soundEnabled: false, badgeEnabled: false));
+    expect(observed, [false]);
+    prefs.saveError = StateError('synthetic storage unavailable');
+    await expectLater(
+        coordinator.updatePreferences(const NotificationPreferenceValues()),
+        throwsStateError);
+    expect(observed, [false],
+        reason: 'failed persistence must not change remote policy');
+    await coordinator.dispose();
+    await source.close();
+  });
   test('queued exact old read rechecks current presented ID after newer show',
       () async {
     final reads = ConversationReadState.shared()..resetForTest();

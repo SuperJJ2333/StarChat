@@ -963,6 +963,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           appId: MatrixPusherService.appIdIOS,
           gatewayUrl: gatewayUrl.resolve('/_matrix/push/v1/notify'),
           deviceDisplayName: 'ChatFlow iOS',
+          iosSoundEnabled: () =>
+              _notificationCoordinator?.preferences.soundEnabled ?? false,
         ));
       }
     } else {
@@ -1037,6 +1039,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unreadSource: _matrixHomeCapability!.createUnreadSnapshotSource(),
       deduplicator: deduplicator,
       nativePolicy: NativeMessagePolicy.shared,
+      onPreferencesChanged: PushStatusRegistry.shared.synchronizePreferences,
     );
     _notificationEventSource = eventSource;
     _notificationCoordinator = coordinator;
@@ -1580,6 +1583,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     syncWatchdog.transportAvailable.addListener(transportListener);
     _transportStateListener = transportListener;
     transportListener();
+    var previouslyConnected = false;
     void listener() {
       // 2026-09-19 修正：`serviceUnavailable`（sync 明确报错/服务端不可达）
       // 不再把传输层事实翻成 `true`——那会让网络状态机在服务器失联时仍认为
@@ -1587,6 +1591,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // connectivity/watchdog 的 offline 判定负责），连续两次即进入 offline，
       // 发送侧据此快速失败并转红叹号等待恢复。
       final status = syncWatchdog.connectionStatus.value;
+      final connected = status == MatrixConnectionStatus.connected;
+      if (connected && !previouslyConnected) {
+        unawaited(PushStatusRegistry.shared.recheck());
+      }
+      previouslyConnected = connected;
       manager.report(
         serverReachable: status == MatrixConnectionStatus.connected
             ? true

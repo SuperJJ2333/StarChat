@@ -38,6 +38,8 @@ class _ChannelStatus {
     required this.registered,
     required this.lastSuccessLabel,
     required this.lastFailureLabel,
+    required this.remoteVerified,
+    required this.lastRemoteLabel,
     this.sdkInitialized,
     this.cidPresent,
   });
@@ -47,6 +49,8 @@ class _ChannelStatus {
   final bool registered;
   final String lastSuccessLabel;
   final String lastFailureLabel;
+  final bool remoteVerified;
+  final String lastRemoteLabel;
 
   /// 仅个推通道非 null（其他通道无 SDK/CID 概念）。
   final bool? sdkInitialized;
@@ -93,6 +97,8 @@ final class _NotificationDiagnosticsPageState
         gatewayHost: service.gatewayUrl?.host ?? '未配置',
         registered: service.isRegistered,
         lastSuccessLabel: _timeLabel(service.lastSuccessAt),
+        remoteVerified: service.isRemoteVerified,
+        lastRemoteLabel: _timeLabel(service.lastRemoteVerifiedAt),
         lastFailureLabel: service.lastFailureAt == null
             ? '-'
             : '${_timeLabel(service.lastFailureAt)}'
@@ -237,7 +243,9 @@ final class _NotificationDiagnosticsPageState
               _row('CID', channel.cidPresent! ? '已获取' : '未获取'),
             _row('网关', channel.gatewayHost),
             _row('注册状态', channel.registered ? '已注册' : '未注册'),
-            _row('最近成功', channel.lastSuccessLabel),
+            _row('远端状态', channel.remoteVerified ? '已核验' : '待同步/未知'),
+            _row('最近写入', channel.lastSuccessLabel),
+            _row('最近核验', channel.lastRemoteLabel),
             _row('最近失败', channel.lastFailureLabel),
           ],
           if (channels != null && channels.isEmpty)

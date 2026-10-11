@@ -69,6 +69,7 @@ final class NotificationCoordinator {
     ConversationReadState? readState,
     DateTime Function()? now,
     this.nativePolicy,
+    this.onPreferencesChanged,
   })  : deduplicator = deduplicator ?? NotificationDeduplicator(),
         cooldownGate = cooldownGate ?? SoundCooldownGate(),
         usageRecorder =
@@ -93,6 +94,7 @@ final class NotificationCoordinator {
   final DateTime Function() now;
   final ConversationReadState readState;
   final NativeMessagePolicy? nativePolicy;
+  final Future<void> Function()? onPreferencesChanged;
 
   NotificationPreferenceValues _prefs = const NotificationPreferenceValues();
 
@@ -215,6 +217,12 @@ final class NotificationCoordinator {
       rethrow;
     }
     _prefs = values;
+    try {
+      await onPreferencesChanged?.call();
+    } catch (error) {
+      diagnostics.record(NotificationDiagStage.push,
+          'remote preference sync pending: ${error.runtimeType}');
+    }
     if (values.badgeEnabled) {
       await refreshLauncherBadge();
     } else {
