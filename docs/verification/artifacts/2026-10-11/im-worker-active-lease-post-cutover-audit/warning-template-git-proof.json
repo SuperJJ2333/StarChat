@@ -1,0 +1,16 @@
+{
+  "result": "PASS",
+  "comparison_domain": "exact Git blob bytes; no production module import",
+  "old_commit": "5988deb48185f4f2fb0743615f17ccea597671ce",
+  "old_main_sha256": "03b74f5ec9283464b8a1596dad142dd1a01bdc2e0fdb9211c248f84c67e3c4c1",
+  "new_commit": "c3dd314212c73414c5ab371b4363e077bc9104c2",
+  "new_main_sha256": "f320662c59491b66c2fe9e776c83634c16f5ac780db00d0ecc0d4fd272312494",
+  "static_template": "wallet custody not configured (mode=%s); wallet maintenance skipped",
+  "old_line": [
+    183
+  ],
+  "new_line": [
+    184
+  ],
+  "interpretation": "Template predates renewal change; does not by itself prove historical runtime occurrence or desired custody configuration."
+}

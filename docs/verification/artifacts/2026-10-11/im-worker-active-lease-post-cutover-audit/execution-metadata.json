@@ -1,0 +1,12 @@
+{
+  "frozen_script_commit": "246f42db2c537b4710b7edbfbdebdc711629dfe1",
+  "frozen_script_sha256": "8c4fb0112b1394598ae05e44a6dfe78999e30f0a94d97f1ac4ac39ece487aa15",
+  "expected_worker_id": "db5d65ff01ae55a878fe1a2231e25954df84f9aec8bfdabfacd90c535dae0b7c",
+  "expected_cutover_started_utc": "2026-10-11T10:39:52Z",
+  "observation_started_utc": "2026-10-11T10:42:12.2668577Z",
+  "observation_completed_utc": "2026-10-11T10:42:15.2940176Z",
+  "wrapper_exit_code": 0,
+  "remote_invocations": 1,
+  "created_containers": 0,
+  "service_mutations": 0
+}

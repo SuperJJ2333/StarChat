@@ -1,0 +1,8 @@
+{
+  "result": "PASS",
+  "python_ast": "PASS",
+  "synthetic_allowlist_counts": "PASS",
+  "sensitive_marker_not_emitted": true,
+  "classifier_sha256": "8ef74cae751f8a1e150dc2665f863dd157683cb3979d5f1a1bf677f4e999a215",
+  "remote_executed_by_this_validation": false
+}

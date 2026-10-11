@@ -1,0 +1,12 @@
+{
+  "classifier_sha256": "8ef74cae751f8a1e150dc2665f863dd157683cb3979d5f1a1bf677f4e999a215",
+  "authorization": "Root separately authorized one bounded allowlist classification after original audit",
+  "expected_worker_id": "db5d65ff01ae55a878fe1a2231e25954df84f9aec8bfdabfacd90c535dae0b7c",
+  "observation_started_utc": "2026-10-11T10:45:26.5955294Z",
+  "observation_completed_utc": "2026-10-11T10:45:27.9646571Z",
+  "wrapper_exit_code": 0,
+  "supplemental_remote_invocations": 1,
+  "created_containers": 0,
+  "service_mutations": 0,
+  "original_audit_unchanged": true
+}

@@ -1,0 +1,81 @@
+{
+  "mode": "read_only_post_cutover",
+  "observed_utc": "2026-10-11T10:42:11.726982+00:00",
+  "checks": {
+    "settled_receipt": true,
+    "worker": true,
+    "api": true,
+    "runtime_source_sha256": true,
+    "permanent_guard_sha256": true,
+    "container_identity": true,
+    "schema": true,
+    "api_https_readiness": true,
+    "bounded_worker_log_aggregation": true
+  },
+  "observations": {
+    "settled_receipt": {
+      "stage": "PASS",
+      "id": "db5d65ff01ae55a878fe1a2231e25954df84f9aec8bfdabfacd90c535dae0b7c",
+      "image": "sha256:abda33f8fe5bb4abca45464a5d300fff8981a8b68908be1b64f6e3ee0d8a0e7f",
+      "started_utc": "2026-10-11T10:39:52Z",
+      "completed_utc": "2026-10-11T10:40:17Z",
+      "schema": "0095_wallet_source_alerts"
+    },
+    "worker": {
+      "id": "db5d65ff01ae55a878fe1a2231e25954df84f9aec8bfdabfacd90c535dae0b7c",
+      "image": "sha256:abda33f8fe5bb4abca45464a5d300fff8981a8b68908be1b64f6e3ee0d8a0e7f",
+      "running": true,
+      "status": "running",
+      "health": "healthy",
+      "restart_count": 0,
+      "oom_killed": false,
+      "started_at": "2026-10-11T10:40:04.658330755Z"
+    },
+    "api": {
+      "id": "87c62739027c607d1ae1b13af206a5960f44539a1b1a9c7ad60b3e11697c33c8",
+      "image": "sha256:a935b4144d18ebfb7486bcc014a4441eb8cd45c06b9f97cb5b19217e0cfccab3",
+      "running": true,
+      "status": "running",
+      "health": "healthy",
+      "restart_count": 0,
+      "oom_killed": false,
+      "started_at": "2026-10-11T03:16:25.975858882Z"
+    },
+    "runtime_source_sha256": {
+      "/opt/business-worker/app/main.py": "f320662c59491b66c2fe9e776c83634c16f5ac780db00d0ecc0d4fd272312494",
+      "/opt/business-worker/app/worker.py": "b59f5619156e5ea7c0c43dfc71cd729166b4aa5ee1ed6f7d02cadce1adde7a59",
+      "/opt/business-worker/app/lease_renewal.py": "37ae78fa6488a81936ff81e5d753b54678edc9047d8552ee665ca8c0726bd4d1",
+      "/usr/local/lib/python3.12/site-packages/app/core/outbox.py": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12",
+      "/opt/business-api/app/core/outbox.py": "8306c0b0c516ab70b3e1b556a3c17ad1053a16d7f92016b4df162ea58f535a12"
+    },
+    "permanent_guard_sha256": {
+      "/opt/starchat/ops/refresh-guards/business_release_guard.py": "46d98c6e2d9632b8168d20748b697744d89396852363f259d5eb0d83a7653b9b",
+      "/opt/starchat/ops/refresh-guards/business_refresh_image_probe.py": "2a6de21ddc26b12bf4b0124365ba20834f821e0ea2d2700fe077f16e96b84a15"
+    },
+    "container_identity": {
+      "before_all_count": 60,
+      "after_all_count": 60,
+      "unrelated_drift_names": [],
+      "running_count": 35,
+      "running_id_set_sha256": "8b5d462a7cbd0b24a5e9f80406827c6b8b9b5814463e3f3db67aa5679b4e1fca"
+    },
+    "schema": {
+      "expected_revision_present": true
+    },
+    "api_https_readiness": {
+      "http_status": 200
+    },
+    "bounded_worker_log_aggregation": {
+      "sample_lines": 10,
+      "categories_may_overlap": true,
+      "fixed_category_counts": {
+        "warning_level_lines": 1
+      },
+      "since_utc": "2026-10-11T10:39:52Z",
+      "tail_limit": 2000,
+      "review_required": true,
+      "scope": "bounded worker sample; zero counts do not prove complete absence of errors"
+    }
+  },
+  "result": "STRUCTURAL_PASS_LOG_REVIEW_REQUIRED"
+}

@@ -1,0 +1,25 @@
+{
+  "observed_utc": "2026-10-11T10:45:27.374404+00:00",
+  "since_utc": "2026-10-11T10:39:52Z",
+  "tail_limit": 2000,
+  "timeout_seconds": 12,
+  "original_audit_preserved": true,
+  "warning_categories": {
+    "custody_not_configured_maintenance_skipped": 0,
+    "maintenance_task_failed": 0,
+    "outbox_reap_failed": 0,
+    "other_warning": 1
+  },
+  "other_fixed_counts": {
+    "traceback_lines": 0,
+    "error_level_lines": 0,
+    "lease_lost": 0,
+    "renewal_unknown": 0,
+    "renewal_limit": 0,
+    "renewal_unsettled": 0
+  },
+  "unknown_warning_requires_review": true,
+  "nonempty_combined_stream_lines": 15,
+  "result": "UNKNOWN_WARNING_REQUIRES_REVIEW",
+  "scope": "Fixed categories only; no mode, exception, event ID or raw line output. Classification is not a configuration or financial-function acceptance."
+}
