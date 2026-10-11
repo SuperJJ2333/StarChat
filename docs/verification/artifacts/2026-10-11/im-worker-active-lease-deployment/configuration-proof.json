@@ -1,0 +1,25 @@
+{
+  "observed_utc": "2026-10-11T10:07:12.134608+00:00",
+  "roles": {
+    "api": {
+      "service": "business-api",
+      "only_image_may_differ": true,
+      "fully_identical": true,
+      "live_id_unchanged": true,
+      "live_image_unchanged": true,
+      "running": true,
+      "health": "healthy"
+    },
+    "worker": {
+      "service": "business-worker",
+      "only_image_may_differ": true,
+      "fully_identical": false,
+      "live_id_unchanged": true,
+      "live_image_unchanged": true,
+      "running": true,
+      "health": "healthy"
+    }
+  },
+  "business_release_guard.py": "46d98c6e2d9632b8168d20748b697744d89396852363f259d5eb0d83a7653b9b",
+  "business_refresh_image_probe.py": "2a6de21ddc26b12bf4b0124365ba20834f821e0ea2d2700fe077f16e96b84a15"
+}

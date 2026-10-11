@@ -1,0 +1,15 @@
+{
+  "started_utc": "2026-10-11T10:03:07.104590+00:00",
+  "stage": "isolated_checks_only",
+  "checks": {
+    "default_runtime_exit": 0,
+    "protocol_exit": 0
+  },
+  "ended_utc": "2026-10-11T10:03:26.101554+00:00",
+  "before_count": 60,
+  "after_count": 60,
+  "exact_container_ids_unchanged": true,
+  "added": [],
+  "removed": [],
+  "changed": []
+}
