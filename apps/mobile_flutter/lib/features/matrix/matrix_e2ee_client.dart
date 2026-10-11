@@ -500,6 +500,13 @@ final class _ManagedPusherGateway implements MatrixPusherGateway {
   String _id(PusherId value) =>
       '${value.appId.length}:${value.appId}${value.pushkey}';
   @override
+  Future<List<Pusher>> list() => _capability._execute((client) async {
+        final rows = await client.getPushers();
+        _capability._ensureActive();
+        return rows ?? (throw StateError('pusher list unavailable'));
+      });
+
+  @override
   Future<void> create(Pusher value) => _capability._execute((client) async {
         await client.postPusher(value);
         _created.add(_id(value));
