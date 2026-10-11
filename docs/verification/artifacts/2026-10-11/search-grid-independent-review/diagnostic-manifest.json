@@ -1,0 +1,42 @@
+{
+  "base": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "generated_utc": "2026-10-11T09:18:30.989181+00:00",
+  "candidate_gate": false,
+  "files": [
+    {
+      "path": "diagnostic-followup.md",
+      "bytes": 2400,
+      "sha256": "2e2cc4623c00afb4b58d1c3d61c86eab2527ad05f1012da7218dd9ed7409e734"
+    },
+    {
+      "path": "state-trace-r1/bubble-state-diagnostic.patch",
+      "bytes": 2888,
+      "sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10"
+    },
+    {
+      "path": "state-trace-r1/receipt.json",
+      "bytes": 1030,
+      "sha256": "be930671db3dd29ea455beac94fe6057e2600b9a554b13830a7901987f085c5a"
+    },
+    {
+      "path": "state-trace-r1/state-trace.log",
+      "bytes": 5060,
+      "sha256": "9a86c44eabe36e2eb97e3e24fafa0c08126beb1f356b2aa62da3b49e4dff6b63"
+    },
+    {
+      "path": "state-trace-r2/milestone-probe.patch",
+      "bytes": 1911,
+      "sha256": "78c9de6ea27704edddf38a53cc9a8a538fadc55d5668ca6125a2286b6fe0b855"
+    },
+    {
+      "path": "state-trace-r2/receipt.json",
+      "bytes": 1093,
+      "sha256": "04b98b27460be9d55cfdde253bb33947ea5e6e0ac2da8472fe673aebdd0168f2"
+    },
+    {
+      "path": "state-trace-r2/state-trace.log",
+      "bytes": 5425,
+      "sha256": "95d5fc1f7f1787abcc41cf557f66ae8e8e12ea41cce1ac5776fca796da53c255"
+    }
+  ]
+}

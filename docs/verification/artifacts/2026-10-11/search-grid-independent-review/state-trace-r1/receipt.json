@@ -1,0 +1,16 @@
+{
+  "before_source_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+  "restored_source_sha256": "485f15b5370d4575adc391b48477139ed170d5d51ca8e0fdf6353ea001eb3477",
+  "elapsed_seconds": 29.3030835,
+  "diagnostic_source_sha256": "06d90e54ff578b52d9b6b99761416db81519e6df96e708bb03d9d5d5021ddcd7",
+  "restoration_match": true,
+  "exit_code": 1,
+  "started_utc": "2026-10-11T09:14:32.7745755Z",
+  "command": "flutter test --no-pub --dart-define=SEARCH_MEDIA_SCENARIO=current image --dart-define=SEARCH_MEDIA_DIAGNOSTICS=true test/features/matrix/room_search_media_grid_test.dart --reporter expanded",
+  "base": "f59cf233b22a827723db47784eaaa5df45f4eefc",
+  "candidate_gate": false,
+  "ended_utc": "2026-10-11T09:15:02.0776590Z",
+  "patch_sha256": "b6aa6f88380877e0a1f6805f1c1ca0871ad0fe9d39402459414499b2a8fa4b10",
+  "original_test_sha256": "56bf805ea63d49a49715b3b661b5b65cdc40e6f0edaac68e8354e039f7817933",
+  "diagnostic_test_sha256": "56bf805ea63d49a49715b3b661b5b65cdc40e6f0edaac68e8354e039f7817933"
+}
